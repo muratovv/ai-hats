@@ -6,12 +6,14 @@ import os
 import signal
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 from .assembler import Assembler
 from .models import LifecycleEvent, ProfileConfig
-from .observe import Session, SessionManager, TraceTag
+from .observe import AuditWriter, Session, SessionManager, SidecarTracer, TraceTag
 from .providers import get_provider
+from .worktree import IsolationMode, WorktreeManager
 
 
 class HooksRunner:
@@ -70,6 +72,58 @@ class HooksRunner:
             return {"script": str(script), "returncode": -1, "error": str(e)}
 
 
+def _claude_jsonl_path(project_dir: Path, claude_session_id: str) -> Path | None:
+    """Resolve path to Claude Code's JSONL conversation file."""
+    project_key = str(project_dir).replace("/", "-")
+    return Path.home() / ".claude" / "projects" / project_key / f"{claude_session_id}.jsonl"
+
+
+def _print_session_start(role: str, provider: str, session_id: str) -> None:
+    role_info = f"\033[1;36m{role or 'none'}\033[0m"
+    provider_info = f"\033[1;35m{provider}\033[0m"
+    print(f"\n[*] Role: {role_info} | Provider: {provider_info} | Session: {session_id}\n")
+
+
+def _fmt_duration(session_id: str) -> str:
+    from datetime import datetime, timezone
+    try:
+        start = datetime.strptime(session_id[:15], "%Y%m%d-%H%M%S").replace(
+            tzinfo=timezone.utc
+        )
+        secs = int((datetime.now(timezone.utc) - start).total_seconds())
+        return f"{secs // 60}m {secs % 60}s" if secs >= 60 else f"{secs}s"
+    except Exception:
+        return "?"
+
+
+def _print_session_end(session: "Session") -> None:
+    req_count = 0
+    if session.trace_path.exists():
+        for line in session.trace_path.read_text().splitlines():
+            if "[REQ]" in line:
+                req_count += 1
+
+    audit_info = "—"
+    if session.audit_path.exists():
+        audit_info = f"{session.audit_path.stat().st_size / 1024:.1f}KB"
+
+    trace_info = "—"
+    if session.trace_path.exists():
+        trace_info = f"{session.trace_path.stat().st_size / 1024:.1f}KB"
+
+    duration = _fmt_duration(session.session_id)
+
+    # Clear any remnants of the CLI TUI (status bar, cursor position) before printing
+    sys.stdout.write("\r\033[J\033[0m\n")
+    sys.stdout.flush()
+    print(f"\033[1;32m✨ Session {session.session_id} complete!\033[0m")
+    print("━" * 52)
+    print(f"  ⏱  {duration}   💬 {req_count} turns")
+    print(f"  📄 Audit: {audit_info}   📊 Trace: {trace_info}")
+    print(f"  📂 {session.session_dir}")
+    print("━" * 52 + "\n")
+
+
 class WrapRunner:
     """PTY-proxied CLI wrapper for interactive sessions."""
 
@@ -88,13 +142,18 @@ class WrapRunner:
         # Resolve provider
         provider = get_provider(provider_name)
 
-        # Apply role override if specified, or re-assemble for target provider
+        # Determine which role to use
         profile = ProfileConfig.load(self.project_dir / "profile.json")
-        if role_override:
-            self.assembler.set_role(role_override, provider_name)
-        elif profile.active_role and profile.provider != provider_name:
-            # Provider mismatch — re-assemble current role for target provider
-            self.assembler.set_role(profile.active_role, provider_name)
+        effective_role = role_override or profile.active_role or self.assembler.project_config.default_role
+
+        if effective_role:
+            needs_assembly = (
+                role_override  # explicit override — always reassemble
+                or not profile.active_role  # no role set yet
+                or profile.provider != provider_name  # provider mismatch
+            )
+            if needs_assembly:
+                self.assembler.set_role(effective_role, provider_name)
 
         profile = ProfileConfig.load(self.project_dir / "profile.json")
 
@@ -122,13 +181,20 @@ class WrapRunner:
         hooks_runner.run(LifecycleEvent.SESSION_START, env=env)
         session.log_trace(TraceTag.SYS, "hooks.session_start completed")
 
-        # Build CLI command
+        # Build CLI command with session ID for JSONL linkage
+        claude_session_id = str(uuid.uuid4())
         cmd = provider.get_cli_command(extra_args)
+        if provider_name == "claude":
+            cmd += ["--session-id", claude_session_id]
         session.log_trace(TraceTag.SYS, f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")
 
-        # PTY proxy via pty.spawn
-        exit_code = self._pty_spawn(cmd, env)
+        _print_session_start(profile.active_role, provider_name, session.session_id)
+
+        # PTY proxy via pty.spawn with sidecar trace
+        tracer = SidecarTracer(session)
+        exit_code = self._pty_spawn(cmd, env, tracer)
+        tracer.flush_response()  # flush last model response if any
 
         # Run hooks: session_end
         session.log_trace(TraceTag.SYS, f"Session ended: exit_code={exit_code}")
@@ -141,21 +207,23 @@ class WrapRunner:
             "provider": provider_name,
         })
 
+        # Post-process → enriched audit.md (JSONL if Claude, trace.log fallback)
+        jsonl_path = _claude_jsonl_path(self.project_dir, claude_session_id)
+        AuditWriter().build(session, jsonl_path=jsonl_path)
+
+        _print_session_end(session)
+
         return exit_code
 
-    def _pty_spawn(self, cmd: list[str], env: dict[str, str]) -> int:
-        """Spawn a process with PTY for interactive terminal passthrough."""
+    def _pty_spawn(self, cmd: list[str], env: dict[str, str], tracer: SidecarTracer) -> int:
+        """Spawn a process with PTY for interactive terminal passthrough + sidecar trace."""
         import pty
 
-        # Use pty.spawn for full terminal passthrough
-        def _set_env():
-            for k, v in env.items():
-                os.environ[k] = v
-
-        _set_env()
+        for k, v in env.items():
+            os.environ[k] = v
 
         try:
-            exit_status = pty.spawn(cmd)
+            exit_status = pty.spawn(cmd, tracer.make_master_read(), tracer.make_stdin_read())
             if isinstance(exit_status, int):
                 return os.waitstatus_to_exitcode(exit_status) if exit_status > 255 else exit_status
             return 0
@@ -182,6 +250,7 @@ class SubAgentRunner:
         ticket_id: str = "",
         model: str = "",
         parent_session: str | None = None,
+        isolation_mode: str = "discard",
     ) -> Session:
         """Execute a sub-agent in isolation."""
         # Create sub-session
@@ -216,37 +285,43 @@ class SubAgentRunner:
         # Add prompt via stdin for non-interactive execution
         session.log_trace(TraceTag.SUB, f"Executing: {' '.join(cmd)}")
 
-        try:
-            proc = subprocess.run(
-                cmd + ["--print", "-p", meta_prompt] if provider.name == "claude" else cmd,
-                cwd=str(self.project_dir),
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=600,
-            )
-            session.log_trace(TraceTag.RES, f"Exit code: {proc.returncode}")
+        mode = IsolationMode(isolation_mode)
+        session.log_trace(TraceTag.SUB, f"Isolation: {mode.value}")
 
-            # Save transcript
-            transcript_path = session.session_dir / "transcript.txt"
-            transcript_path.write_text(proc.stdout)
+        with WorktreeManager(self.project_dir, role_name, session.session_id, mode) as work_dir:
+            session.log_trace(TraceTag.SUB, f"Working directory: {work_dir}")
+            try:
+                proc = subprocess.run(
+                    cmd + ["--print", "-p", meta_prompt] if provider.name == "claude" else cmd,
+                    cwd=str(work_dir),
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
+                )
+                session.log_trace(TraceTag.RES, f"Exit code: {proc.returncode}")
 
-            if proc.stderr:
-                reasoning_path = session.session_dir / "reasoning.log"
-                reasoning_path.write_text(proc.stderr)
+                # Save transcript
+                transcript_path = session.session_dir / "transcript.txt"
+                transcript_path.write_text(proc.stdout)
 
-            session.finalize_audit({
-                "exit_code": proc.returncode,
-                "role": role_name,
-                "model": model,
-            })
+                if proc.stderr:
+                    reasoning_path = session.session_dir / "reasoning.log"
+                    reasoning_path.write_text(proc.stderr)
 
-        except subprocess.TimeoutExpired:
-            session.log_trace(TraceTag.SYS, "Sub-agent timed out")
-            session.append_audit("TIMEOUT")
-        except Exception as e:
-            session.log_trace(TraceTag.SYS, f"Sub-agent error: {e}")
-            session.append_audit(f"ERROR: {e}")
+                session.finalize_audit({
+                    "exit_code": proc.returncode,
+                    "role": role_name,
+                    "model": model,
+                    "isolation_mode": mode.value,
+                })
+
+            except subprocess.TimeoutExpired:
+                session.log_trace(TraceTag.SYS, "Sub-agent timed out")
+                session.append_audit("TIMEOUT")
+            except Exception as e:
+                session.log_trace(TraceTag.SYS, f"Sub-agent error: {e}")
+                session.append_audit(f"ERROR: {e}")
 
         return session
 

@@ -23,11 +23,19 @@ def _assembler(project_dir: Path | None = None):
     return Assembler(project_dir or _project_dir())
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(version=__version__)
-def main():
-    """ai-hats — AI agent role composition framework."""
-    pass
+@click.option("--provider", "-p", default=None, help="Provider override (gemini/claude)", is_eager=True)
+@click.option("--role", "-r", default=None, help="Role override", is_eager=True)
+@click.pass_context
+def main(ctx, provider: str | None, role: str | None):
+    """ai-hats — AI agent role composition framework.
+
+    Without a subcommand, launches a wrapped CLI session.
+    """
+    ctx.ensure_object(dict)
+    if ctx.invoked_subcommand is None:
+        _do_wrap(provider=provider, role=role)
 
 
 # -- init --
@@ -167,32 +175,32 @@ def whoami():
 
 # -- wrap --
 
-@main.group()
-def wrap():
-    """Launch a CLI session through ai-hats wrapper."""
-    pass
-
-
-@wrap.command("gemini")
-@click.option("--role", default=None, help="Role override")
-@click.argument("extra_args", nargs=-1)
-def wrap_gemini(role: str | None, extra_args: tuple):
-    """Launch Gemini CLI through ai-hats wrapper."""
+def _do_wrap(provider: str | None = None, role: str | None = None, extra_args: list[str] | None = None):
+    """Shared wrap logic — launch a CLI session."""
+    from .models import ProfileConfig, ProjectConfig
     from .runtime import WrapRunner
-    runner = WrapRunner(_project_dir())
-    exit_code = runner.run("gemini", role_override=role, extra_args=list(extra_args) or None)
+
+    project_dir = _project_dir()
+    profile = ProfileConfig.load(project_dir / "profile.json")
+    config = ProjectConfig.from_yaml(project_dir / "ai-hats.yaml")
+
+    effective_provider = provider or profile.provider or config.provider
+    if not effective_provider:
+        console.print("[red]No provider configured[/]. Use -p or run ai-hats init.")
+        sys.exit(1)
+
+    runner = WrapRunner(project_dir)
+    exit_code = runner.run(effective_provider, role_override=role, extra_args=extra_args)
     sys.exit(exit_code)
 
 
-@wrap.command("claude")
-@click.option("--role", default=None, help="Role override")
+@main.command()
+@click.option("--provider", "-p", default=None, help="Provider override (gemini/claude)")
+@click.option("--role", "-r", default=None, help="Role override")
 @click.argument("extra_args", nargs=-1)
-def wrap_claude(role: str | None, extra_args: tuple):
-    """Launch Claude CLI through ai-hats wrapper."""
-    from .runtime import WrapRunner
-    runner = WrapRunner(_project_dir())
-    exit_code = runner.run("claude", role_override=role, extra_args=list(extra_args) or None)
-    sys.exit(exit_code)
+def wrap(provider: str | None, role: str | None, extra_args: tuple):
+    """Launch a CLI session (same as running ai-hats with no subcommand)."""
+    _do_wrap(provider=provider, role=role, extra_args=list(extra_args) or None)
 
 
 # -- run --
@@ -202,7 +210,12 @@ def wrap_claude(role: str | None, extra_args: tuple):
 @click.option("--ticket", default=None, help="Ticket/task ID for context")
 @click.option("--model", default=None, help="Model override")
 @click.option("--task", default=None, help="Task description")
-def run_subagent(role: str, ticket: str | None, model: str | None, task: str | None):
+@click.option(
+    "--isolation", default="discard",
+    type=click.Choice(["discard", "squash", "branch"]),
+    help="Worktree isolation mode (default: discard)",
+)
+def run_subagent(role: str, ticket: str | None, model: str | None, task: str | None, isolation: str):
     """Run a sub-agent with the given role."""
     from .runtime import SubAgentRunner
     runner = SubAgentRunner(_project_dir())
@@ -211,9 +224,106 @@ def run_subagent(role: str, ticket: str | None, model: str | None, task: str | N
         task=task or "",
         ticket_id=ticket or "",
         model=model or "",
+        isolation_mode=isolation,
     )
     console.print(f"[green]Sub-agent completed[/]: {session.session_id}")
     console.print(f"  Session dir: {session.session_dir}")
+
+
+# -- wt (worktree) --
+
+@main.group()
+def wt():
+    """Manage git worktrees for isolated work."""
+    pass
+
+
+@wt.command("create")
+@click.argument("branch")
+def wt_create(branch: str):
+    """Create an isolated worktree on a new branch."""
+    from .worktree import WorktreeManager
+
+    project_dir = _project_dir()
+    active = WorktreeManager.load_active(project_dir)
+    if active is not None:
+        console.print(f"[red]Active worktree already exists[/]: {active.branch_name}")
+        console.print(f"  Path: {active.worktree_path}")
+        console.print("  Run [bold]ai-hats wt merge[/] or [bold]ai-hats wt discard[/] first.")
+        sys.exit(1)
+
+    mgr = WorktreeManager(project_dir, branch_name=branch)
+    wt_path = mgr.create()
+    mgr.save_state()
+    console.print(f"[green]Worktree created[/]: {branch}")
+    console.print(f"  Path: {wt_path}")
+    console.print(f"  [dim]cd {wt_path}[/]")
+
+
+@wt.command("merge")
+@click.option("--no-squash", is_flag=True, default=False, help="Regular merge instead of squash")
+def wt_merge(no_squash: bool):
+    """Merge worktree changes back and clean up."""
+    from .worktree import WorktreeManager
+
+    mgr = WorktreeManager.load_active(_project_dir())
+    if mgr is None:
+        console.print("[yellow]No active worktree[/]")
+        sys.exit(1)
+
+    branch = mgr.branch_name
+    mgr.merge(squash=not no_squash)
+    console.print(f"[green]Merged[/]: {branch}")
+
+
+@wt.command("discard")
+def wt_discard():
+    """Discard worktree changes and clean up."""
+    from .worktree import WorktreeManager
+
+    mgr = WorktreeManager.load_active(_project_dir())
+    if mgr is None:
+        console.print("[yellow]No active worktree[/]")
+        sys.exit(1)
+
+    branch = mgr.branch_name
+    mgr.discard()
+    console.print(f"[green]Discarded[/]: {branch}")
+
+
+@wt.command("list")
+def wt_list():
+    """List all git worktrees."""
+    from .worktree import WorktreeManager
+
+    project_dir = _project_dir()
+    worktrees = WorktreeManager.list_worktrees(project_dir)
+    active = WorktreeManager.load_active(project_dir)
+    active_branch = active.branch_name if active else None
+
+    if not worktrees:
+        console.print("[dim]No worktrees[/]")
+        return
+
+    for w in worktrees:
+        branch = w.get("branch", "?")
+        path = w.get("path", "?")
+        marker = " [green]← active[/]" if branch == active_branch else ""
+        console.print(f"  {branch}: {path}{marker}")
+
+
+@wt.command("status")
+def wt_status():
+    """Show active worktree info."""
+    from .worktree import WorktreeManager
+
+    mgr = WorktreeManager.load_active(_project_dir())
+    if mgr is None:
+        console.print("[dim]No active worktree[/]")
+        return
+
+    console.print(f"  Branch: [bold]{mgr.branch_name}[/]")
+    console.print(f"  Path: {mgr.worktree_path}")
 
 
 # -- judge --

@@ -12,6 +12,7 @@ composition:
   skills:
     - backlog-manager
     - git-mastery
+    - worktree-isolation
   hooks:
     session_start: []
     session_end: []
