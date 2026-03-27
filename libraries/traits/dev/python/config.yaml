@@ -2,8 +2,7 @@ name: dev::python
 composition:
   traits:
     - trait-base
-  rules:
-    - dev_rule_tdd
+  rules: []
   skills: []
   hooks: {}
   mcp: []

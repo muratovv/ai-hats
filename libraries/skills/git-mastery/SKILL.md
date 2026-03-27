@@ -12,6 +12,9 @@ Advanced git operations for development workflow.
 
 ## Conventions
 - Branch naming: `type/description` (e.g., `feat/add-auth`, `fix/login-bug`)
+- Conventional commits: `type(scope): description`
+- Types: feat, fix, refactor, docs, test, chore, ci
+- Write meaningful commit messages explaining WHY, not WHAT
+- Commit frequently with atomic changes
 - Always check status before operations
-- Verify changes after each operation
 - Never force push without explicit approval

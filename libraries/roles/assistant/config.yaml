@@ -8,15 +8,16 @@ composition:
     - trait-base
     - trait-agent
     - dev::python
-  rules:
-    - dev_rule_git_workflow
+  rules: []
   skills:
     - backlog-manager
     - git-mastery
   hooks:
     session_start: []
     session_end: []
-    task_complete: []
+    task_complete:
+      - git status
+      - git diff --stat
   mcp: []
 injection: |
   # ROLE: PRIMARY AUTOMATION ASSISTANT
