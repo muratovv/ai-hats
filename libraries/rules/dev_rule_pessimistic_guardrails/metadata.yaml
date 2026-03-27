@@ -1,0 +1,4 @@
+name: dev_rule_pessimistic_guardrails
+description: Slow down — verify before proceeding, audit assumptions, no premature optimization
+author: ai-hats
+tags: [verification, behavior, quality]

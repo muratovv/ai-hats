@@ -1,0 +1,4 @@
+name: global_rule_destructive_actions
+description: Protect sacred files, confirm before any destructive operation
+author: ai-hats
+tags: [safety, global, destructive]

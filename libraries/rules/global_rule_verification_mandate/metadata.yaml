@@ -1,0 +1,4 @@
+name: global_rule_verification_mandate
+description: Verify every change — never assume success, always run a check command
+author: ai-hats
+tags: [verification, global, quality]

@@ -1,0 +1,15 @@
+name: trait-se-mindset
+composition:
+  traits: []
+  rules: []
+  skills: []
+  hooks: {}
+  mcp: []
+injection: |
+  ## SE MINDSET
+
+  - Write clean, idiomatic, and highly maintainable code.
+  - Simplicity first: KISS and YAGNI. Avoid over-engineering and premature optimization.
+  - Tests are first-class citizens. Follow Red-Green-Refactor.
+  - Apply SOLID and DRY principles where they reduce complexity, not where they add it.
+  - Use modern language features and standard tooling.

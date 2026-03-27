@@ -1,0 +1,4 @@
+name: dev_rule_secure_coding
+description: Security-first coding — defense in depth, SAST, least privilege, no hardcoded secrets
+author: ai-hats
+tags: [security, coding, sast]
