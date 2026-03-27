@@ -1,7 +1,6 @@
 name: dev::go
 composition:
-  traits:
-    - trait-base
+  traits: []
   rules: []
   skills: []
   hooks: {}

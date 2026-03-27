@@ -1,7 +1,6 @@
 name: trait-agent
 composition:
-  traits:
-    - trait-base
+  traits: []
   rules: []
   skills:
     - backlog-manager

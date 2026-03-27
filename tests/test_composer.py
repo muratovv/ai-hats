@@ -23,7 +23,7 @@ def library(tmp_path):
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text("# Test Skill\nCan do stuff.")
 
-    # Base trait
+    # Base trait (flat — no sub-traits)
     trait_base = lib / "traits" / "trait-base"
     trait_base.mkdir(parents=True)
     (trait_base / "config.yaml").write_text("""
@@ -32,21 +32,19 @@ injection: |
   Base injection text.
 """)
 
-    # Composite trait (includes base)
+    # Composite trait (flat — rules only, no sub-traits)
     trait_composite = lib / "traits" / "trait-composite"
     trait_composite.mkdir(parents=True)
     (trait_composite / "config.yaml").write_text("""
 name: trait-composite
 composition:
-  traits:
-    - trait-base
   rules:
     - test_rule
 injection: |
   Composite injection text.
 """)
 
-    # Role
+    # Role lists traits explicitly (flat)
     role_dir = lib / "roles" / "test-role"
     role_dir.mkdir(parents=True)
     (role_dir / "config.yaml").write_text("""
@@ -56,6 +54,7 @@ priorities:
   - Speed
 composition:
   traits:
+    - trait-base
     - trait-composite
   rules:
     - test_rule
@@ -81,9 +80,9 @@ def test_compose_role(composer):
     assert len(result.errors) == 0
 
 
-def test_compose_resolves_traits_recursively(composer):
+def test_compose_resolves_traits(composer):
     result = composer.compose("test-role")
-    # Should have base injection, composite injection, and role injection
+    # base injection, composite injection, role injection
     assert len(result.injections) == 3
     assert "Base injection" in result.injections[0]
     assert "Composite injection" in result.injections[1]
@@ -116,49 +115,77 @@ def test_compose_merged_injection(composer):
     assert "Base injection" in merged
     assert "Composite injection" in merged
     assert "Role injection" in merged
-    # Order: base first, then composite, then role (depth-first)
+    # Order: base first, then composite, then role
     assert merged.index("Base") < merged.index("Composite") < merged.index("Role")
 
 
-def test_compose_prevents_cycles(tmp_path):
-    """Traits that reference each other should not cause infinite recursion."""
+def test_trait_with_subtraits_is_rejected(tmp_path):
+    """Trait that references other traits must produce an error."""
     lib = tmp_path / "lib"
 
-    trait_a = lib / "traits" / "trait-a"
-    trait_a.mkdir(parents=True)
-    (trait_a / "config.yaml").write_text("""
-name: trait-a
+    trait_base = lib / "traits" / "trait-base"
+    trait_base.mkdir(parents=True)
+    (trait_base / "config.yaml").write_text("name: trait-base\ninjection: Base.\n")
+
+    # This trait illegally includes another trait
+    trait_bad = lib / "traits" / "trait-bad"
+    trait_bad.mkdir(parents=True)
+    (trait_bad / "config.yaml").write_text("""
+name: trait-bad
 composition:
   traits:
-    - trait-b
-injection: A
+    - trait-base
+injection: Bad.
 """)
 
-    trait_b = lib / "traits" / "trait-b"
-    trait_b.mkdir(parents=True)
-    (trait_b / "config.yaml").write_text("""
-name: trait-b
-composition:
-  traits:
-    - trait-a
-injection: B
-""")
-
-    role_dir = lib / "roles" / "cyclic-role"
+    role_dir = lib / "roles" / "test-role"
     role_dir.mkdir(parents=True)
     (role_dir / "config.yaml").write_text("""
-name: cyclic-role
+name: test-role
 composition:
   traits:
-    - trait-a
+    - trait-bad
 """)
 
     resolver = LibraryResolver([lib])
-    composer = Composer(resolver)
-    result = composer.compose("cyclic-role")
-    # Should not raise, should handle cycle gracefully
-    assert "A" in result.merged_injection
-    assert "B" in result.merged_injection
+    result = Composer(resolver).compose("test-role")
+
+    assert any("trait-bad" in e and "sub-traits" in e for e in result.errors)
+    # trait-bad's injection is skipped; trait-base is never included
+    assert "Bad" not in result.merged_injection
+    assert "Base" not in result.merged_injection
+
+
+def test_trait_with_subtraits_does_not_recurse(tmp_path):
+    """Sub-traits of an invalid trait must not be silently resolved."""
+    lib = tmp_path / "lib"
+
+    trait_base = lib / "traits" / "trait-base"
+    trait_base.mkdir(parents=True)
+    (trait_base / "config.yaml").write_text("name: trait-base\ninjection: Base.\n")
+
+    trait_bad = lib / "traits" / "trait-bad"
+    trait_bad.mkdir(parents=True)
+    (trait_bad / "config.yaml").write_text("""
+name: trait-bad
+composition:
+  traits:
+    - trait-base
+injection: Bad.
+""")
+
+    role_dir = lib / "roles" / "test-role"
+    role_dir.mkdir(parents=True)
+    (role_dir / "config.yaml").write_text("""
+name: test-role
+composition:
+  traits:
+    - trait-bad
+""")
+
+    resolver = LibraryResolver([lib])
+    result = Composer(resolver).compose("test-role")
+    assert "Base" not in result.merged_injection
 
 
 def test_compose_namespace_resolution(tmp_path):
@@ -182,6 +209,5 @@ composition:
 """)
 
     resolver = LibraryResolver([lib])
-    composer = Composer(resolver)
-    result = composer.compose("ns-role")
+    result = Composer(resolver).compose("ns-role")
     assert "Python trait" in result.merged_injection

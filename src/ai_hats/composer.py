@@ -152,20 +152,13 @@ class Composer:
                 errors.append(f"Trait '{trait_name}' not found")
                 continue
 
-            # Recurse into sub-traits first (depth-first)
-            self._resolve_traits(
-                config.composition.traits,
-                seen_injections=seen_injections,
-                seen_rules=seen_rules,
-                seen_skills=seen_skills,
-                rules=rules,
-                skills=skills,
-                injections=injections,
-                hooks=hooks,
-                mcp=mcp,
-                errors=errors,
-                visited=visited,
-            )
+            # Traits cannot include other traits
+            if config.composition.traits:
+                errors.append(
+                    f"Trait '{trait_name}' contains sub-traits "
+                    f"{config.composition.traits} — traits cannot include other traits"
+                )
+                continue
 
             # Resolve trait's rules
             self._resolve_rules(
