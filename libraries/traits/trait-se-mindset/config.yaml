@@ -8,8 +8,24 @@ composition:
 injection: |
   ## SE MINDSET
 
-  - Write clean, idiomatic, and highly maintainable code.
-  - Simplicity first: KISS and YAGNI. Avoid over-engineering and premature optimization.
+  ### Core Principles
+  - Simplicity first: KISS and YAGNI. Avoid over-engineering and premature abstraction.
   - Tests are first-class citizens. Follow Red-Green-Refactor.
-  - Apply SOLID and DRY principles where they reduce complexity, not where they add it.
-  - Use modern language features and standard tooling.
+  - Apply SOLID and DRY where they reduce complexity, not where they add it.
+  - Design before coding: explore alternatives, ask clarifying questions before touching code.
+
+  ### Architecture
+  - Separate domain logic from infrastructure (DB, API, external services).
+  - Rely on abstractions over concrete implementations for modularity.
+  - Design for testability — if a component is hard to test, its design is flawed.
+  - Document non-obvious architectural decisions (ADR).
+
+  ### Testing
+  - Given-When-Then structure: setup → action → assertion.
+  - Always test edge cases, error conditions, and empty/null states. Not just happy path.
+  - Integration tests over excessive mocking for critical paths.
+
+  ### Debugging
+  - Evidence first: gather logs and reproduce before forming a hypothesis.
+  - Write a failing test that isolates the bug before fixing it.
+  - A fix is not done until the test passes and regression suite is green.
