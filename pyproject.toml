@@ -34,3 +34,6 @@ line-length = 100
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: tests that spawn real subprocesses or use real PTY",
+]

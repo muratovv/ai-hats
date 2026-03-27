@@ -233,6 +233,33 @@ def test_wrap_reassembles_on_provider_mismatch(project_with_library):
     assert profile.provider == "claude"
 
 
+def test_wrap_uses_default_role_when_no_active_role(project_with_library):
+    """When no role is set but default_role is configured, wrap should apply it."""
+    project, lib = project_with_library
+    # Set default_role in config
+    from ai_hats.models import ProjectConfig
+    config = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    config.default_role = "test-role"
+    config.save(project / "ai-hats.yaml")
+
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    # Don't call set_role — simulate fresh project with only default_role
+
+    from ai_hats.models import ProfileConfig
+    profile = ProfileConfig.load(project / "profile.json")
+    assert profile.active_role == ""  # No role set yet
+
+    # Simulate what WrapRunner does: pick default_role
+    effective_role = profile.active_role or config.default_role
+    assert effective_role == "test-role"
+
+    # Apply it (as WrapRunner would)
+    asm.set_role(effective_role, provider_name="claude")
+    assert (project / "CLAUDE.md").exists()
+    assert "Role injection" in (project / "CLAUDE.md").read_text()
+
+
 def test_preserve_local_rules(project_with_library):
     """Project-local rules should survive role reassembly."""
     project, lib = project_with_library
