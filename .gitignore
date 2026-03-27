@@ -17,6 +17,7 @@ venv/
 # ai-hats runtime (generated per-project)
 .agent/
 .gitlog/
+ai-hats.yaml
 profile.json
 GEMINI.md
 CLAUDE.md
