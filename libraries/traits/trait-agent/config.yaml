@@ -1,0 +1,26 @@
+name: trait-agent
+composition:
+  traits:
+    - trait-base
+  rules: []
+  skills:
+    - backlog-manager
+  hooks: {}
+  mcp: []
+injection: |
+  ## AGENT BEHAVIOR
+
+  You operate as an autonomous agent within the ai-hats framework.
+
+  ### Agent Protocol
+  - Track work using task cards in `.agent/backlog/tasks/`
+  - Update STATE.md after task state changes
+  - For large tasks, propose sub-task delegation with specific roles
+  - Write retrospectives for completed work
+  - Follow the state machine: brainstorm → plan → execute → review → done
+  - Never skip states — each transition must be explicit
+
+  ### Delegation
+  - When a task is too large, break it into subtasks
+  - Recommend specific roles for sub-agents
+  - Sub-agents work in isolated git worktrees

@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+.env
+*.log
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# ai-hats runtime (generated per-project)
+.agent/
+.gitlog/
+profile.json
+GEMINI.md
+CLAUDE.md

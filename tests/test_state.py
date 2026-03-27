@@ -1,0 +1,167 @@
+"""Tests for state management — task lifecycle, work logs, indexes."""
+
+import pytest
+from pathlib import Path
+
+from ai_hats.models import TaskState
+from ai_hats.state import TaskManager
+
+
+@pytest.fixture
+def mgr(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
+    (project / ".agent" / "STATE.md").write_text("")
+    return TaskManager(project)
+
+
+def test_create_task_with_priority(mgr):
+    t = mgr.create_task("T-1", "High priority task", priority="high", reviewer="agent")
+    assert t.priority == "high"
+    assert t.reviewer == "agent"
+    assert t.state == TaskState.BRAINSTORM
+
+
+def test_auto_id(mgr):
+    mgr.create_task("HATS-001", "First")
+    mgr.create_task("HATS-002", "Second")
+    next_id = mgr.next_id()
+    assert next_id == "HATS-003"
+
+
+def test_auto_id_empty(mgr):
+    assert mgr.next_id() == "HATS-001"
+
+
+def test_work_log(mgr):
+    mgr.create_task("T-1", "Task with logs")
+    t = mgr.log_work("T-1", "Started implementation", session_id="sess-001")
+    assert len(t.work_log) == 1
+    assert "sess-001" in t.work_log[0].message
+    assert "Started implementation" in t.work_log[0].message
+
+    t = mgr.log_work("T-1", "Fixed bug")
+    assert len(t.work_log) == 2
+
+
+def test_work_log_persists(mgr):
+    mgr.create_task("T-1", "Task")
+    mgr.log_work("T-1", "Entry 1")
+    mgr.log_work("T-1", "Entry 2")
+
+    # Reload from disk
+    t = mgr.get_task("T-1")
+    assert len(t.work_log) == 2
+    assert "Entry 1" in t.work_log[0].message
+
+
+def test_plan_scaffold_created_on_transition(mgr):
+    mgr.create_task("T-1", "Plan me")
+    mgr.transition("T-1", TaskState.PLAN)
+
+    plan_path = mgr.tasks_dir / "T-1" / "plan.md"
+    assert plan_path.exists()
+    content = plan_path.read_text()
+    assert "T-1" in content
+    assert "Plan me" in content
+    assert "## Steps" in content
+
+
+def test_plan_scaffold_not_overwritten(mgr):
+    mgr.create_task("T-1", "Plan me")
+
+    # Create custom plan before transition
+    plan_path = mgr.tasks_dir / "T-1" / "plan.md"
+    plan_path.write_text("# My custom plan")
+
+    mgr.transition("T-1", TaskState.PLAN)
+
+    assert plan_path.read_text() == "# My custom plan"
+
+
+def test_completed_at_set_on_done(mgr):
+    mgr.create_task("T-1", "Complete me")
+    mgr.transition("T-1", TaskState.PLAN)
+    mgr.transition("T-1", TaskState.EXECUTE)
+    mgr.transition("T-1", TaskState.REVIEW)
+    mgr.transition("T-1", TaskState.DONE)
+
+    t = mgr.get_task("T-1")
+    assert t.completed_at != ""
+    assert t.state == TaskState.DONE
+
+
+def test_final_state(mgr):
+    mgr.create_task("T-1", "Review me")
+    mgr.transition("T-1", TaskState.PLAN)
+    mgr.transition("T-1", TaskState.EXECUTE)
+    mgr.set_final_state("T-1", "Implemented feature X with full test coverage")
+    mgr.transition("T-1", TaskState.REVIEW)
+
+    t = mgr.get_task("T-1")
+    assert t.final_state == "Implemented feature X with full test coverage"
+
+
+def test_backlog_md_generated(mgr):
+    mgr.create_task("T-1", "First task", priority="high")
+    mgr.create_task("T-2", "Second task")
+
+    assert mgr.backlog_md_path.exists()
+    content = mgr.backlog_md_path.read_text()
+    assert "T-1" in content
+    assert "T-2" in content
+    assert "high" in content
+    assert "| ID |" in content  # Table header
+
+
+def test_state_md_shows_priority(mgr):
+    mgr.create_task("T-1", "Important", priority="high")
+
+    content = mgr.state_md_path.read_text()
+    assert "[high]" in content
+
+
+def test_sync(mgr):
+    mgr.create_task("T-1", "Task 1")
+    mgr.create_task("T-2", "Task 2")
+
+    # Manually delete backlog.md to test sync
+    mgr.backlog_md_path.unlink()
+    assert not mgr.backlog_md_path.exists()
+
+    count = mgr.sync()
+    assert count == 2
+    assert mgr.backlog_md_path.exists()
+
+
+def test_tags_on_task(mgr):
+    t = mgr.create_task("T-1", "Tagged task", tags=["p0", "mvp"])
+    assert t.tags == ["p0", "mvp"]
+
+    t = mgr.get_task("T-1")
+    assert t.tags == ["p0", "mvp"]
+
+
+def test_full_lifecycle_with_logs(mgr):
+    """Full state machine walkthrough with work logging."""
+    mgr.create_task("T-1", "End-to-end", priority="high", reviewer="user")
+
+    mgr.log_work("T-1", "Brainstorming approaches")
+    mgr.transition("T-1", TaskState.PLAN)
+
+    mgr.log_work("T-1", "Plan written")
+    mgr.transition("T-1", TaskState.EXECUTE)
+
+    mgr.log_work("T-1", "Implementation complete")
+    mgr.set_final_state("T-1", "Feature implemented and tested")
+    mgr.transition("T-1", TaskState.REVIEW)
+
+    mgr.log_work("T-1", "Review passed")
+    mgr.transition("T-1", TaskState.DONE)
+
+    t = mgr.get_task("T-1")
+    assert t.state == TaskState.DONE
+    assert t.completed_at != ""
+    assert t.final_state == "Feature implemented and tested"
+    assert len(t.work_log) == 4

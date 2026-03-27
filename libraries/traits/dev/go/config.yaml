@@ -1,0 +1,26 @@
+name: dev::go
+composition:
+  traits:
+    - trait-base
+  rules: []
+  skills: []
+  hooks: {}
+  mcp: []
+injection: |
+  ## GO DEVELOPMENT
+
+  ### Standards
+  - Go 1.22+ with generics where appropriate
+  - Follow effective Go idioms
+  - Use go modules for dependency management
+  - Error handling: wrap errors with context, never ignore
+
+  ### Testing
+  - Table-driven tests
+  - Use testify for assertions when helpful
+  - Benchmark critical paths
+
+  ### Project Layout
+  - cmd/ for entry points
+  - internal/ for private packages
+  - pkg/ for public packages
