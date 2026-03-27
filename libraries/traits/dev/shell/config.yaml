@@ -1,0 +1,14 @@
+name: dev::shell
+composition:
+  traits: []
+  rules: []
+  skills:
+    - bash-mastery
+  hooks: {}
+  mcp: []
+injection: |
+  ## SHELL DEVELOPMENT
+
+  - Bash scripts: `#!/usr/bin/env bash`, `set -euo pipefail`, idempotent by default.
+  - Makefiles: self-documenting `help` target, `.PHONY` all targets.
+  - Prefer modern CLI tools: `rg`, `fd`, `jq`, `yq`, `bat`, `eza`.

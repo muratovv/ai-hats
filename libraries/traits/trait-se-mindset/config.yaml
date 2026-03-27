@@ -2,7 +2,9 @@ name: trait-se-mindset
 composition:
   traits: []
   rules: []
-  skills: []
+  skills:
+    - systematic-debugging
+    - audit-reviewer
   hooks: {}
   mcp: []
 injection: |
