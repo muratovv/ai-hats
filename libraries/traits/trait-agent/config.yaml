@@ -6,6 +6,8 @@ composition:
     - backlog-manager
     - request-supervisor
     - self-retrospective
+    - git-mastery
+    - worktree-isolation
   hooks: {}
   mcp: []
 injection: |

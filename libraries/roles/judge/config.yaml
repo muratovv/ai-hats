@@ -6,8 +6,10 @@ priorities:
 composition:
   traits:
     - trait-base
+    - skill-engineer
   rules: []
-  skills: []
+  skills:
+    - judge-protocol
   hooks: {}
   mcp: []
 injection: |

@@ -8,13 +8,11 @@ composition:
     - trait-base
     - trait-agent
     - trait-se-mindset
-    - secure-coder
+    - skill-engineer
     - dev::python
     - dev::shell
   rules: []
-  skills:
-    - git-mastery
-    - worktree-isolation
+  skills: []
   hooks:
     session_start: []
     session_end: []

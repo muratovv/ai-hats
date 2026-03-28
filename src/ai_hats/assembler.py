@@ -252,7 +252,7 @@ class Assembler:
         """Remove only library-sourced rules, keep project-local ones."""
         marker_file = rules_dir / ".library_rules"
         if marker_file.exists():
-            library_rules = set(marker_file.read_text().strip().split("\n"))
+            library_rules = {r for r in marker_file.read_text().strip().split("\n") if r}
             for rule_name in library_rules:
                 rule_path = rules_dir / rule_name
                 if rule_path.exists():

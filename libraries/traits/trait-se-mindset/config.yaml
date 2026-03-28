@@ -3,6 +3,7 @@ composition:
   traits: []
   rules:
     - dev_rule_pessimistic_guardrails
+    - dev_rule_secure_coding
   skills:
     - systematic-debugging
     - audit-reviewer
@@ -32,3 +33,9 @@ injection: |
   - Evidence first: gather logs and reproduce before forming a hypothesis.
   - Write a failing test that isolates the bug before fixing it.
   - A fix is not done until the test passes and regression suite is green.
+
+  ### Secure Coding
+  - Never trust user input — validate and sanitize at entry points.
+  - Never use raw string concatenation for SQL, shell, or templates.
+  - Secrets must never appear in code, logs, or chat.
+  - Minimize permissions — least privilege always.
