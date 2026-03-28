@@ -5,7 +5,7 @@ set -euo pipefail
 
 ROLE=""
 PROVIDER=""
-REPO_URL="https://github.com/fedor/ai-hats.git"
+REPO_URL="https://github.com/muratovv/ai-hats.git"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
