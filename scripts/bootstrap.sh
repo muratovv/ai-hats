@@ -1,19 +1,35 @@
 #!/usr/bin/env bash
-# ai-hats bootstrap — one-command setup
-# Usage: curl -sSL <url>/bootstrap.sh | sh -s -- [--role <name>] [--provider <name>]
+# ai-hats bootstrap — one-command project setup
+#
+# Usage (from local clone):
+#   git clone git@github.com:muratovv/ai-hats.git /tmp/ai-hats && \
+#     bash /tmp/ai-hats/scripts/bootstrap.sh --role go-dev --provider claude
+#
+# Usage (from within ai-hats repo):
+#   bash scripts/bootstrap.sh --role assistant
+#
+# Usage (if ai-hats already installed):
+#   ai-hats init --role go-dev --provider claude
 set -euo pipefail
 
 ROLE=""
 PROVIDER=""
-REPO_URL="https://github.com/muratovv/ai-hats.git"
+REPO_URL="git+ssh://git@github.com/muratovv/ai-hats.git"
+
+# Detect repo root relative to this script (works when run from a clone)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --role)    ROLE="$2"; shift 2 ;;
+        --role)     ROLE="$2"; shift 2 ;;
         --provider) PROVIDER="$2"; shift 2 ;;
-        --repo)    REPO_URL="$2"; shift 2 ;;
-        *)         echo "Unknown option: $1"; exit 1 ;;
+        --repo)     REPO_URL="$2"; shift 2 ;;
+        -h|--help)
+            echo "Usage: bootstrap.sh [--role <name>] [--provider gemini|claude] [--repo <git-url>]"
+            exit 0 ;;
+        *)  echo "Unknown option: $1"; exit 1 ;;
     esac
 done
 
@@ -41,6 +57,7 @@ if [[ -z "${VIRTUAL_ENV:-}" ]]; then
         echo "  Creating venv..."
         python3 -m venv .venv
     fi
+    # shellcheck disable=SC1091
     source .venv/bin/activate
     echo "  venv: activated ✓"
 fi
@@ -48,16 +65,16 @@ fi
 # 3. Install ai-hats
 echo "  Installing ai-hats..."
 pip install --quiet --upgrade pip
-pip install --quiet "ai-hats @ git+${REPO_URL}" 2>/dev/null || {
-    # Fallback: install from local if available
-    if [[ -f pyproject.toml ]]; then
-        pip install --quiet -e ".[dev]"
-    else
-        echo "ERROR: Cannot install ai-hats. Clone the repo first or provide --repo URL."
-        exit 1
-    fi
-}
-echo "  ai-hats: installed ✓"
+
+if [[ -f "$REPO_ROOT/pyproject.toml" ]]; then
+    # Install from local clone (fastest, works offline)
+    pip install --quiet "$REPO_ROOT"
+    echo "  ai-hats: installed from local clone ✓"
+else
+    # Install from git URL
+    pip install --quiet "ai-hats @ ${REPO_URL}"
+    echo "  ai-hats: installed from git ✓"
+fi
 
 # 4. Initialize project
 INIT_ARGS="init"
