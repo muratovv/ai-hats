@@ -21,6 +21,9 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.4",
 ]
+costs = [
+    "anthropic>=0.40",
+]
 
 [project.scripts]
 ai-hats = "ai_hats.cli:main"

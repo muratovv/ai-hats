@@ -174,6 +174,44 @@ def whoami():
         console.print(f"  {k}: [bold]{v}[/]")
 
 
+# -- token-stats --
+
+@main.command("token-stats")
+@click.argument("name")
+@click.option("--trait", "as_trait", is_flag=True, default=False, help="Analyze as trait instead of role")
+@click.option("--approx", is_flag=True, default=False, help="Use len//4 instead of Anthropic SDK")
+def token_stats(name: str, as_trait: bool, approx: bool):
+    """Show token cost breakdown for a role or trait."""
+    from rich.table import Table
+
+    from .composer import Composer
+    from .costs import analyze_composition
+    from .library import LibraryResolver
+
+    asm = _assembler()
+    composer = Composer(asm.resolver)
+
+    breakdown = analyze_composition(composer, name, as_trait=as_trait, exact=not approx)
+
+    if breakdown.errors:
+        for e in breakdown.errors:
+            console.print(f"[red]Error[/]: {e}")
+        return
+
+    table = Table(title=f"Token costs: {name}", show_footer=True)
+    table.add_column("Component", footer="TOTAL")
+    table.add_column("Category", style="dim")
+    table.add_column("Tokens", justify="right", footer=f"[bold]{breakdown.total_tokens:,}[/]")
+    table.add_column("Chars", justify="right", style="dim", footer=f"{sum(c.chars for c in breakdown.components):,}")
+
+    for c in breakdown.components:
+        table.add_row(c.name, c.category, f"{c.tokens:,}", f"{c.chars:,}")
+
+    console.print(table)
+    method = "anthropic SDK" if breakdown.exact else "approx (len//4)"
+    console.print(f"[dim]Method: {method}[/]")
+
+
 # -- wrap --
 
 def _do_wrap(
