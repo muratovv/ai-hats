@@ -1,0 +1,5 @@
+name: backlog-manager
+description: Task lifecycle orchestration via YAML cards (brainstorm→plan→execute→review→done)
+author: ai-hats
+tags: [agent-protocol, task-management, orchestration]
+pattern: orchestrator

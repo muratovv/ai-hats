@@ -1,0 +1,5 @@
+name: network-documentation
+description: Maintain network topology and DNS documentation as source of truth
+author: ai-hats
+tags: [operations, network, documentation]
+pattern: protocol

@@ -1,0 +1,5 @@
+name: audit-reviewer
+description: Triple-perspective code review (architect, security, quality)
+author: ai-hats
+tags: [review, quality, security]
+pattern: protocol

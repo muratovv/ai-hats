@@ -1,0 +1,5 @@
+name: domain-reviewer
+description: Coordinate deep-dive reviews via specialized sub-agents as critics
+author: ai-hats
+tags: [review, architecture, delegation]
+pattern: orchestrator

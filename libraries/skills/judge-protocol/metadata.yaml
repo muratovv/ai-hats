@@ -1,0 +1,5 @@
+name: judge-protocol
+description: Forensic adversarial analysis of agent performance from audit logs
+author: ai-hats
+tags: [evaluation, agent-protocol, quality]
+pattern: protocol

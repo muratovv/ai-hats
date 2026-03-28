@@ -1,0 +1,5 @@
+name: security-expert
+description: Infrastructure security — secrets, access control, environment hardening
+author: ai-hats
+tags: [security, operations, infrastructure]
+pattern: reference

@@ -72,7 +72,13 @@ class LibraryResolver:
             base = lib_path / subdir
             if not base.exists():
                 continue
-            for item in base.rglob("config.yaml" if component_type != ComponentType.RULE else "rule.md"):
+            marker = {
+                ComponentType.RULE: "rule.md",
+                ComponentType.SKILL: "SKILL.md",
+                ComponentType.TRAIT: "config.yaml",
+                ComponentType.ROLE: "config.yaml",
+            }[component_type]
+            for item in base.rglob(marker):
                 rel = item.parent.relative_to(base)
                 name = str(rel).replace("/", "::")
                 seen.add(name)

@@ -2,6 +2,11 @@
 
 Shell scripting, Makefile conventions, and modern CLI tooling.
 
+## When to Use
+- Writing or reviewing shell scripts
+- Creating or modifying Makefiles
+- Choosing CLI tools for automation tasks
+
 ## Bash Scripts
 - Shebang: `#!/usr/bin/env bash`
 - Always use `set -euo pipefail`.
@@ -33,3 +38,8 @@ Prefer modern tools when available:
 | YAML | `yq` | manual parsing |
 
 Fall back to traditional tools if modern ones are unavailable, but note the preference.
+
+## Anti-Patterns
+- Scripts without `set -euo pipefail` — silent failures hide bugs
+- Makefiles without `help` target — users can't discover available commands
+- Hardcoded tool paths — use env vars and `?=` defaults

@@ -1,7 +1,11 @@
 # Judge Protocol (The Investigator)
 
-Forensic, adversarial, data-driven analysis of agent performance.
-You are not a spectator — you are an investigator.
+Forensic, adversarial, data-driven analysis of agent performance. You are not a spectator — you are an investigator.
+
+## When to Use
+- Evaluating completed agent sessions for quality and correctness
+- Post-mortem analysis of agent failures
+- Benchmarking agent behavior against expectations
 
 ## 1. Input Context Acquisition
 
@@ -32,3 +36,13 @@ You are not a spectator — you are an investigator.
   or instruction violations. Be specific, not generic.
 - **Actionable Corrections:** Mandatory corrective steps or rule/skill updates
   for the next iteration. No generic advice.
+
+## Completion
+- Adversarial report saved to `.agent/retrospectives/`
+- Every finding has specific evidence (audit event, log line, diff)
+- Corrective actions are concrete and actionable
+
+## Anti-Patterns
+- Generic praise ("agent did well overall") — be adversarial, find the gaps
+- Findings without evidence — cite specific audit events or log lines
+- Corrective actions without specificity ("be more careful") — propose exact rule/skill changes

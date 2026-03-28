@@ -74,14 +74,14 @@ ai-hats migrate
 | Компонент | Описание | Формат |
 |-----------|----------|--------|
 | **Rules** | Поведенческие директивы | `rule.md` + `metadata.yaml` |
-| **Skills** | Навыки с реализацией | `SKILL.md` + `scripts/` + `references/` |
+| **Skills** | Навыки с реализацией | `SKILL.md` + `metadata.yaml` + `scripts/` + `references/` |
 | **Traits** | Составные компоненты | `config.yaml` (composition + injection) |
 | **Roles** | Корневые конфигурации | `config.yaml` (traits + priorities + injection) |
 
 ### Композиция
 
 - Non-commutative — порядок определяет приоритет (поздний > ранний)
-- Рекурсивная — трейты включают другие трейты на любую глубину
+- Плоская — трейты не включают другие трейты (flat model)
 - Дедупликация — одинаковые injection/rules не повторяются
 - Пространства имён — `dev::python` → `dev/python` на FS
 - Приоритеты — только из корневой роли
@@ -125,11 +125,28 @@ GEMINI.md / CLAUDE.md       # System prompt
 
 ```
 libraries/
-  rules/          dev_rule_git_workflow, dev_rule_tdd
-  skills/         backlog-manager, git-mastery
-  traits/         trait-base, trait-agent, dev::python, dev::go
-  roles/          assistant, judge
+  rules/          global_rule_*, dev_rule_*, env_rule_*
+  skills/         24 скилла (backlog-manager, git-mastery, skill-template, ...)
+  traits/         trait-base, trait-agent, trait-se-mindset, skill-engineer, dev::*
+  roles/          assistant, test-agent, architect, sre, judge, go-dev
 ```
+
+### Шаблон скилла
+
+Каждый скилл следует каноническому фор��ату (см. `skill-template`):
+
+```markdown
+# Skill Name
+One-line purpose.
+
+## When to Use         ← триггеры активации
+## <Main Section>      ← Procedure | Checklist | Workflow | Conventions
+## Completion          ← критерии завершения
+## Anti-Patterns       ← типичные ошибки
+```
+
+Паттерны: `protocol`, `checklist`, `orchestrator`, `reference`, `template`.
+Метаданные: `metadata.yaml` (name, description, author, tags, pattern).
 
 ### Пример config.yaml роли
 

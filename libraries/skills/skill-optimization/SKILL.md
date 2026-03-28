@@ -1,7 +1,12 @@
 # Skill Optimization
 
-Audit and refactor library components (rules, skills, traits) to eliminate
-redundancy, verbosity, and stale instructions.
+Audit and refactor library components (rules, skills, traits) to eliminate redundancy, verbosity, and stale instructions.
+
+## When to Use
+- Periodic library maintenance
+- After adding multiple new skills or rules
+- When token budget for a role is too high
+- After retrospectives identify component issues
 
 ## Procedure
 
@@ -25,3 +30,13 @@ redundancy, verbosity, and stale instructions.
    - Run `composer.compose()` for affected roles — 0 errors
    - Run test suite — all green
    - Spot-check assembled prompt — no regressions
+
+## Completion
+- Audit report produced with identified debt
+- Refactoring applied and validated (0 errors, tests green)
+- Token impact measured before/after
+
+## Anti-Patterns
+- Refactoring without measuring token impact — optimization must be quantified
+- Deleting components without checking wiring — verify every trait/role still resolves
+- Cosmetic changes disguised as optimization — focus on real redundancy and staleness

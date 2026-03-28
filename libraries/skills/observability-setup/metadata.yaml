@@ -1,0 +1,5 @@
+name: observability-setup
+description: Logging, metrics, alerting, and dashboards setup (RED method)
+author: ai-hats
+tags: [operations, reliability, monitoring]
+pattern: protocol

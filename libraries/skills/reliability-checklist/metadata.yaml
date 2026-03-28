@@ -1,0 +1,5 @@
+name: reliability-checklist
+description: Production readiness verification for services and infrastructure
+author: ai-hats
+tags: [operations, reliability, verification]
+pattern: checklist

@@ -2,6 +2,10 @@
 
 Protocol for deciding whether to request help from supervisor (user or parent-agent).
 
+## When to Use
+- Before any communication with the user or parent-agent
+- When uncertain whether to act autonomously or escalate
+
 ## Before Making Any Request — Checklist
 
 1. **Do I have a tool that can do this?** (bash, curl, file read/write, etc.)
@@ -26,3 +30,7 @@ Protocol for deciding whether to request help from supervisor (user or parent-ag
 - Running tests or verification
 - Installing dependencies
 - Looking up documentation
+
+## Completion
+- Decision made: either acted autonomously or sent a focused request
+- If requesting: specific question with context, not a vague "what should I do?"

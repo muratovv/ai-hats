@@ -1,7 +1,11 @@
 # Self-Retrospective
 
 Analyze completed or failed work to identify systemic improvements.
-Run after task completion — especially after failures or inefficient iterations.
+
+## When to Use
+- After task completion (especially with failures or backtracks)
+- After a failed task (mandatory)
+- When backlog-manager transitions to `review` or `failed` state
 
 ## Procedure
 
@@ -32,3 +36,13 @@ Run after task completion — especially after failures or inefficient iteration
 
 7. **Backlog:** For deferred improvements, create task cards via backlog-manager.
    Every identified improvement must either be fixed now or tracked.
+
+## Completion
+- Retrospective report saved to `.agent/retrospectives/`
+- Every improvement either applied or tracked as a task card
+- Quantified impact (wasted iterations, failed attempts)
+
+## Anti-Patterns
+- Vague findings ("things could be better") — be specific with numbers and examples
+- Only listing problems without root cause analysis — use 5 Whys
+- Skipping the backlog step — improvements that aren't tracked will be forgotten

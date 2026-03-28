@@ -15,3 +15,12 @@ adopting a new pattern, choosing between competing approaches.
 
 ## Storage
 Save all ADRs sequentially in `docs/adr/` (e.g., `0001-use-grpc-for-internal-services.md`).
+
+## Completion
+- ADR file created in `docs/adr/` with sequential numbering
+- All 5 sections filled (Title, Context, Decision, Status, Consequences)
+
+## Anti-Patterns
+- Missing consequences — the most valuable section, forces thinking about trade-offs
+- Documenting after the fact without context — write the ADR when the decision is fresh
+- ADR without status — unclear whether this is a proposal or accepted decision

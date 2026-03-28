@@ -1,0 +1,5 @@
+name: system-design-verifier
+description: Audit architectures against failure modes (resilience, scalability, consistency, security)
+author: ai-hats
+tags: [architecture, design, verification]
+pattern: protocol

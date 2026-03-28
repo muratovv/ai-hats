@@ -1,7 +1,11 @@
 # Backlog Manager
 
 Orchestrate task lifecycle using YAML task cards in `.agent/backlog/tasks/`.
-Each task follows a strict state machine. Other agent skills activate at specific transitions.
+
+## When to Use
+- Starting any new task or work item
+- Managing task state transitions (brainstorm → plan → execute → review → done)
+- Coordinating sub-agent delegation
 
 ## Task Card
 
@@ -83,3 +87,8 @@ Task is blocked by external dependency from any active state.
 - **request-supervisor**: document what blocks and request from supervisor
 - Record blocking reason in task.yaml work_log
 - Transition back to previous state when unblocked
+
+## Anti-Patterns
+- Skipping states — each transition must be explicit, no brainstorm→execute jumps
+- Working without a task card — all work must be tracked
+- Forgetting work_log updates — the card becomes useless for handover

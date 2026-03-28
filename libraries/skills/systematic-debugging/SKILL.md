@@ -2,6 +2,11 @@
 
 4-phase protocol for bug fixing and error investigation. No guess-and-check.
 
+## When to Use
+- Investigating any error, failure, or unexpected behavior
+- Bug reports from users or monitoring
+- Test failures with non-obvious causes
+
 ## Phase 1: Evidence Gathering
 - Read full stack traces and error logs.
 - Inspect environment state (env vars, active processes, disk space).
@@ -22,3 +27,14 @@
 - Run the reproduction script to confirm the fix.
 - Run the full test suite for regression check.
 - A task is not done until behavioral correctness is verified.
+
+## Completion
+- Root cause identified and documented
+- Fix applied with minimal surgical changes
+- Reproduction script or failing test confirms the fix
+- Full test suite passes (no regressions)
+
+## Anti-Patterns
+- Guess-and-check — changing things randomly hoping it works
+- Fixing symptoms instead of root cause — the bug will return
+- Skipping regression check — fix one bug, introduce two more

@@ -1,0 +1,5 @@
+name: rollback-plan
+description: Explicit revert paths for infrastructure and configuration changes
+author: ai-hats
+tags: [operations, reliability, change-management]
+pattern: protocol

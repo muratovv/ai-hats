@@ -1,0 +1,5 @@
+name: request-supervisor
+description: Decision protocol for when to act autonomously vs escalate to supervisor
+author: ai-hats
+tags: [agent-protocol, communication]
+pattern: checklist

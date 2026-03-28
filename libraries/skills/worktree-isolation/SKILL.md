@@ -48,3 +48,8 @@ Isolated development using git worktrees. Each task gets its own working copy �
 - One active worktree at a time (per project)
 - Always `cd` back to project dir before merge/discard
 - Commit your work in the worktree before merging
+
+## Anti-Patterns
+- Working directly on main branch for non-trivial changes — use a worktree
+- Forgetting to `cd` back to project dir before merge/discard — commands fail silently
+- Multiple active worktrees without tracking — leads to forgotten branches

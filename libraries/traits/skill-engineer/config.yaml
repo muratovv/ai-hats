@@ -4,6 +4,7 @@ composition:
   rules: []
   skills:
     - skill-optimization
+    - skill-template
   hooks: {}
   mcp: []
 injection: |
@@ -24,6 +25,7 @@ injection: |
   - If the behavior already exists in another component — update, don't duplicate
   - If a rule has a procedure behind it — convert to skill
   - If a skill is just a constraint — convert to rule or injection bullet
+  - When creating a new skill — follow **skill-template** for structure and validation
 
   ### Review Checklist
   - Every rule attached to at least one trait

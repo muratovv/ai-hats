@@ -1,0 +1,5 @@
+name: skill-optimization
+description: Audit and refactor library components to eliminate redundancy and staleness
+author: ai-hats
+tags: [library, meta, maintenance]
+pattern: protocol
