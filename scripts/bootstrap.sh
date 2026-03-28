@@ -88,7 +88,9 @@ fi
 ai-hats $INIT_ARGS
 echo ""
 echo "=== ai-hats ready ==="
-echo "  Run: ai-hats status"
+echo ""
+echo "  Activate venv:  source .venv/bin/activate"
+echo "  Then run:        ai-hats status"
 if [[ -n "$ROLE" ]]; then
-    echo "  Role: $ROLE"
+    echo "  Role:            $ROLE"
 fi
