@@ -1,0 +1,11 @@
+# Incident Response
+
+Structured procedure for investigating and resolving production incidents.
+
+## Procedure
+1. **Triage**: Assess severity and blast radius. Who/what is affected?
+2. **Diagnose**: Verify Network -> Process -> Logs -> Gateway. Follow the dependency chain.
+3. **Mitigate**: Apply the fastest safe fix to restore service. Permanent fix can follow.
+4. **Communicate**: Keep stakeholders informed of status and ETA.
+5. **Document**: Record timeline, root cause, and fix in `.agent/retrospectives/`. Include what worked and what didn't.
+6. **Follow up**: Create tasks for permanent fix, monitoring gaps, and process improvements.

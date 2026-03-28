@@ -1,4 +1,0 @@
-name: dev_rule_devops_workflow
-description: IaC tool hierarchy, observation loop, production readiness checks, time-bounded operations
-author: ai-hats
-tags: [devops, infrastructure, iac, sre]
