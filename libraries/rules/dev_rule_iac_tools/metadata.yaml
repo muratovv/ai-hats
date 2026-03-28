@@ -1,0 +1,4 @@
+name: dev_rule_iac_tools
+description: IaC config rules — docs first, no hardcoded versions, environment awareness
+author: ai-hats
+tags: [iac, terraform, ansible, packer]
