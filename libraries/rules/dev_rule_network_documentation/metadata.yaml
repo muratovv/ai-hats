@@ -1,4 +1,0 @@
-name: dev_rule_network_documentation
-description: Network topology documentation, pre/post-change verification, no ghost ports
-author: ai-hats
-tags: [network, documentation, routing, firewall]
