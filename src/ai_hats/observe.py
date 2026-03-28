@@ -434,21 +434,29 @@ class AuditWriter:
 
         return "\n".join(lines)
 
-    def build(self, session: Session, jsonl_path: Path | None = None) -> None:
-        """Build enriched audit.md + metrics.json. Uses JSONL if available."""
+    def build(
+        self,
+        session: Session,
+        jsonl_path: Path | None = None,
+        keep_raw: bool = False,
+    ) -> None:
+        """Build enriched audit.md + metrics.json. Uses JSONL if available.
+
+        Deletes trace.log after successful audit unless keep_raw=True.
+        """
         if jsonl_path and jsonl_path.exists():
             turns, model_stats, agg_usage = self._parse_jsonl(jsonl_path)
             audit_content = self._format_audit(session, turns, model_stats=model_stats)
-            # Enrich metrics.json with JSONL data
             self._write_metrics(session, turns, model_stats, agg_usage)
-            # trace.log is redundant when JSONL is available
-            if session.trace_path.exists():
-                session.trace_path.unlink()
         else:
             entries = self._parse_trace(session.trace_path)
             turns = self._extract_turns(entries)
             audit_content = self._format_audit(session, turns)
         session.audit_path.write_text(audit_content)
+
+        # Clean up raw trace — redundant after audit is written
+        if not keep_raw and session.trace_path.exists():
+            session.trace_path.unlink()
 
     def _write_metrics(
         self,

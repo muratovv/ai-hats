@@ -27,15 +27,16 @@ def _assembler(project_dir: Path | None = None):
 @click.version_option(version=__version__)
 @click.option("--provider", "-p", default=None, help="Provider override (gemini/claude)", is_eager=True)
 @click.option("--role", "-r", default=None, help="Role override", is_eager=True)
+@click.option("--keep-raw", is_flag=True, default=False, help="Keep raw trace.log after audit", is_eager=True)
 @click.pass_context
-def main(ctx, provider: str | None, role: str | None):
+def main(ctx, provider: str | None, role: str | None, keep_raw: bool):
     """ai-hats — AI agent role composition framework.
 
     Without a subcommand, launches a wrapped CLI session.
     """
     ctx.ensure_object(dict)
     if ctx.invoked_subcommand is None:
-        _do_wrap(provider=provider, role=role)
+        _do_wrap(provider=provider, role=role, keep_raw=keep_raw)
 
 
 # -- init --
@@ -175,7 +176,12 @@ def whoami():
 
 # -- wrap --
 
-def _do_wrap(provider: str | None = None, role: str | None = None, extra_args: list[str] | None = None):
+def _do_wrap(
+    provider: str | None = None,
+    role: str | None = None,
+    extra_args: list[str] | None = None,
+    keep_raw: bool = False,
+):
     """Shared wrap logic — launch a CLI session."""
     from .models import ProfileConfig, ProjectConfig
     from .runtime import WrapRunner
@@ -190,17 +196,20 @@ def _do_wrap(provider: str | None = None, role: str | None = None, extra_args: l
         sys.exit(1)
 
     runner = WrapRunner(project_dir)
-    exit_code = runner.run(effective_provider, role_override=role, extra_args=extra_args)
+    exit_code = runner.run(
+        effective_provider, role_override=role, extra_args=extra_args, keep_raw=keep_raw,
+    )
     sys.exit(exit_code)
 
 
 @main.command()
 @click.option("--provider", "-p", default=None, help="Provider override (gemini/claude)")
 @click.option("--role", "-r", default=None, help="Role override")
+@click.option("--keep-raw", is_flag=True, default=False, help="Keep raw trace.log after audit")
 @click.argument("extra_args", nargs=-1)
-def wrap(provider: str | None, role: str | None, extra_args: tuple):
+def wrap(provider: str | None, role: str | None, keep_raw: bool, extra_args: tuple):
     """Launch a CLI session (same as running ai-hats with no subcommand)."""
-    _do_wrap(provider=provider, role=role, extra_args=list(extra_args) or None)
+    _do_wrap(provider=provider, role=role, extra_args=list(extra_args) or None, keep_raw=keep_raw)
 
 
 # -- run --

@@ -96,20 +96,27 @@ def _fmt_duration(session_id: str) -> str:
         return "?"
 
 
-def _print_session_end(session: "Session") -> None:
-    req_count = 0
+def _collect_trace_stats(session: "Session") -> dict:
+    """Collect trace stats before cleanup may delete the file."""
+    stats: dict = {"req_count": 0, "trace_size": 0}
     if session.trace_path.exists():
-        for line in session.trace_path.read_text().splitlines():
-            if "[REQ]" in line:
-                req_count += 1
+        text = session.trace_path.read_text()
+        stats["req_count"] = text.count("[REQ]")
+        stats["trace_size"] = session.trace_path.stat().st_size
+    return stats
+
+
+def _print_session_end(session: "Session", trace_stats: dict | None = None) -> None:
+    if trace_stats is None:
+        trace_stats = _collect_trace_stats(session)
 
     audit_info = "—"
     if session.audit_path.exists():
         audit_info = f"{session.audit_path.stat().st_size / 1024:.1f}KB"
 
-    trace_info = "—"
-    if session.trace_path.exists():
-        trace_info = f"{session.trace_path.stat().st_size / 1024:.1f}KB"
+    trace_size = trace_stats.get("trace_size", 0)
+    trace_info = f"{trace_size / 1024:.1f}KB" if trace_size else "cleaned"
+    req_count = trace_stats.get("req_count", 0)
 
     duration = _fmt_duration(session.session_id)
 
@@ -137,6 +144,7 @@ class WrapRunner:
         provider_name: str,
         role_override: str | None = None,
         extra_args: list[str] | None = None,
+        keep_raw: bool = False,
     ) -> int:
         """Launch a wrapped CLI session with PTY proxying."""
         # Resolve provider
@@ -207,11 +215,14 @@ class WrapRunner:
             "provider": provider_name,
         })
 
+        # Collect trace stats before cleanup
+        trace_stats = _collect_trace_stats(session)
+
         # Post-process → enriched audit.md (JSONL if Claude, trace.log fallback)
         jsonl_path = _claude_jsonl_path(self.project_dir, claude_session_id)
-        AuditWriter().build(session, jsonl_path=jsonl_path)
+        AuditWriter().build(session, jsonl_path=jsonl_path, keep_raw=keep_raw)
 
-        _print_session_end(session)
+        _print_session_end(session, trace_stats=trace_stats)
 
         return exit_code
 

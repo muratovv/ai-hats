@@ -173,6 +173,67 @@ def test_fallback_to_trace_when_no_jsonl(tmp_path):
     assert "Session Audit" in audit
 
 
+# --- trace cleanup ---
+
+
+def test_jsonl_path_deletes_trace(tmp_path):
+    """When JSONL is available, trace.log must be deleted after build."""
+    session = make_session(tmp_path)
+    session.trace_path.write_text("18:15:00.000 [SYS] dummy trace\n")
+    jsonl = make_jsonl(tmp_path, [
+        user_msg("привет"),
+        assistant_msg([{"type": "text", "text": "Привет!"}]),
+    ])
+
+    AuditWriter().build(session, jsonl_path=jsonl)
+
+    assert not session.trace_path.exists()
+    assert session.audit_path.exists()
+
+
+def test_fallback_path_deletes_trace(tmp_path):
+    """When no JSONL, trace.log must still be deleted after successful audit."""
+    session = make_session(tmp_path)
+    session.trace_path.write_text(
+        '18:15:00.000 [SYS] Session started\n'
+        '18:15:10.000 [REQ] test request\n'
+    )
+
+    AuditWriter().build(session, jsonl_path=None)
+
+    assert not session.trace_path.exists()
+    assert session.audit_path.exists()
+
+
+def test_keep_raw_preserves_trace_jsonl(tmp_path):
+    """keep_raw=True preserves trace.log even with JSONL."""
+    session = make_session(tmp_path)
+    session.trace_path.write_text("18:15:00.000 [SYS] dummy trace\n")
+    jsonl = make_jsonl(tmp_path, [
+        user_msg("привет"),
+        assistant_msg([{"type": "text", "text": "Привет!"}]),
+    ])
+
+    AuditWriter().build(session, jsonl_path=jsonl, keep_raw=True)
+
+    assert session.trace_path.exists()
+    assert session.audit_path.exists()
+
+
+def test_keep_raw_preserves_trace_fallback(tmp_path):
+    """keep_raw=True preserves trace.log in fallback path."""
+    session = make_session(tmp_path)
+    session.trace_path.write_text(
+        '18:15:00.000 [SYS] Session started\n'
+        '18:15:10.000 [REQ] test request\n'
+    )
+
+    AuditWriter().build(session, jsonl_path=None, keep_raw=True)
+
+    assert session.trace_path.exists()
+    assert session.audit_path.exists()
+
+
 # --- integration test ---
 
 
