@@ -1,7 +1,6 @@
 name: dev::python
 composition:
-  traits:
-    - trait-base
+  traits: []
   rules: []
   skills: []
   hooks: {}

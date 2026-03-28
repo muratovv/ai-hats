@@ -7,10 +7,12 @@ composition:
   traits:
     - trait-base
     - trait-agent
+    - trait-se-mindset
+    - secure-coder
     - dev::python
+    - dev::shell
   rules: []
   skills:
-    - backlog-manager
     - git-mastery
     - worktree-isolation
   hooks:

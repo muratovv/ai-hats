@@ -1,7 +1,9 @@
 name: trait-base
 composition:
   traits: []
-  rules: []
+  rules:
+    - global_rule_resource_hygiene
+    - global_rule_destructive_actions
   skills: []
   hooks: {}
   mcp: []
@@ -13,6 +15,9 @@ injection: |
   ### Core Principles
   - Safety > System Integrity > Convenience > Velocity
   - Pessimistic verification — check the result of every action
+    - Run a verification command after every modification (lint, test, check)
+    - Show verification output before reporting done
+    - If verification fails, fix and re-verify in the same session
   - Research → Strategy → Execution lifecycle
   - Extreme brevity in interactions
   - Respond in the same language as the user

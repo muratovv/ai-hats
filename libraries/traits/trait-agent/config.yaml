@@ -4,6 +4,8 @@ composition:
   rules: []
   skills:
     - backlog-manager
+    - request-supervisor
+    - self-retrospective
   hooks: {}
   mcp: []
 injection: |

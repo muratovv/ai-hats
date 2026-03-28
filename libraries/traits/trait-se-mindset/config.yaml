@@ -1,7 +1,8 @@
 name: trait-se-mindset
 composition:
   traits: []
-  rules: []
+  rules:
+    - dev_rule_pessimistic_guardrails
   skills:
     - systematic-debugging
     - audit-reviewer
