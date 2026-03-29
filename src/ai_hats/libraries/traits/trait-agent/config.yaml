@@ -8,6 +8,9 @@ composition:
     - self-retrospective
     - git-mastery
     - worktree-isolation
+    - context-reset
+    - context-handoff
+    - task-summary
   hooks: {}
   mcp: []
 injection: |
@@ -27,3 +30,9 @@ injection: |
   - When a task is too large, break it into subtasks
   - Recommend specific roles for sub-agents
   - Sub-agents work in isolated git worktrees
+
+  ### Memory Management
+  - On context pressure — run **context-reset** to save state and hand off cleanly
+  - After completing a task — run **task-summary** to capture decisions and pitfalls
+  - Before delegating — run **context-handoff** to brief the sub-agent
+  - Summaries are surgical: only arch decisions, decision forks (with WHY), and pitfalls
