@@ -108,3 +108,130 @@ def test_init_idempotent_via_cli(cli_project):
 
     prompt_second = (project / "CLAUDE.md").read_text()
     assert prompt_first == prompt_second
+
+
+# -- Role override (shadow prompt) e2e tests --
+
+
+def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
+    """--role override produces a temp file and leaves CLAUDE.md untouched."""
+    from pathlib import Path
+
+    from ai_hats.assembler import Assembler
+    from ai_hats.models import ProfileConfig
+    from ai_hats.providers import ClaudeProvider
+
+    project, runner = cli_project
+
+    # Init + set base role
+    runner.invoke(main, ["init", "--role", "assistant", "--provider", "claude"])
+    original_claude = (project / "CLAUDE.md").read_text()
+    original_profile = ProfileConfig.load(project / "profile.json")
+    assert original_profile.active_role == "assistant"
+
+    # Build override for a different role (simulate what WrapRunner.run does)
+    asm = Assembler(project)
+    provider = ClaudeProvider()
+    result = asm.composer.compose("judge")
+    args, env = provider.build_override(project, result, None)
+
+    # Shadow prompt created
+    assert args[0] == "--system-prompt-file"
+    override_path = Path(args[1])
+    assert override_path.exists()
+    override_content = override_path.read_text()
+    assert "judge" in override_content.lower() or "SESSION" in override_content
+
+    # Project files NOT modified
+    assert (project / "CLAUDE.md").read_text() == original_claude
+    after_profile = ProfileConfig.load(project / "profile.json")
+    assert after_profile.active_role == "assistant"
+
+    override_path.unlink()
+
+
+def test_multiple_parallel_overrides_are_independent(cli_project):
+    """Multiple simultaneous role overrides get independent temp files."""
+    from pathlib import Path
+
+    from ai_hats.assembler import Assembler
+    from ai_hats.providers import ClaudeProvider
+
+    project, runner = cli_project
+    runner.invoke(main, ["init", "--role", "assistant", "--provider", "claude"])
+
+    asm = Assembler(project)
+    provider = ClaudeProvider()
+
+    # Simulate 3 parallel override sessions for different roles
+    overrides = {}
+    for role in ("judge", "go-dev", "architect"):
+        result = asm.composer.compose(role)
+        args, _ = provider.build_override(project, result, None)
+        override_path = Path(args[1])
+        overrides[role] = {
+            "path": override_path,
+            "content": override_path.read_text(),
+        }
+
+    # All temp files exist simultaneously
+    for role, info in overrides.items():
+        assert info["path"].exists(), f"Override file for {role} missing"
+
+    # All temp files are distinct paths
+    paths = [str(info["path"]) for info in overrides.values()]
+    assert len(set(paths)) == 3, "Override files must be distinct"
+
+    # Each contains its own role content, not another role's
+    assert "judge" in overrides["judge"]["content"].lower() or "SESSION" in overrides["judge"]["content"]
+    assert "GO DEVELOPER" in overrides["go-dev"]["content"]
+    assert "architect" in overrides["architect"]["content"].lower() or "ARCHITECT" in overrides["architect"]["content"]
+
+    # Project CLAUDE.md unchanged through all this
+    claude_content = (project / "CLAUDE.md").read_text()
+    assert "assistant" in claude_content.lower() or "PRIMARY" in claude_content
+
+    # Cleanup
+    for info in overrides.values():
+        info["path"].unlink()
+
+
+def test_gemini_override_creates_session_rules_dir(cli_project):
+    """Gemini override uses GEMINI_CLI_PROJECT_RULES_PATH with isolated rules dir."""
+    import shutil
+    from pathlib import Path
+
+    from ai_hats.assembler import Assembler
+    from ai_hats.providers import GeminiProvider
+
+    project, runner = cli_project
+    runner.invoke(main, ["init", "--role", "assistant", "--provider", "gemini"])
+
+    asm = Assembler(project)
+    provider = GeminiProvider()
+
+    # Build two parallel overrides
+    result_a = asm.composer.compose("judge")
+    _, env_a = provider.build_override(project, result_a, None)
+    result_b = asm.composer.compose("go-dev")
+    _, env_b = provider.build_override(project, result_b, None)
+
+    dir_a = Path(env_a["GEMINI_CLI_PROJECT_RULES_PATH"])
+    dir_b = Path(env_b["GEMINI_CLI_PROJECT_RULES_PATH"])
+
+    # Independent dirs
+    assert dir_a != dir_b
+    assert dir_a.exists()
+    assert dir_b.exists()
+
+    # Each has its own mandatory role file
+    assert (dir_a / "00_MANDATORY_ROLE.md").exists()
+    assert (dir_b / "00_MANDATORY_ROLE.md").exists()
+    assert (dir_a / "00_MANDATORY_ROLE.md").read_text() != (dir_b / "00_MANDATORY_ROLE.md").read_text()
+
+    # GEMINI.md untouched
+    gemini_content = (project / "GEMINI.md").read_text()
+    assert "assistant" in gemini_content.lower() or "PRIMARY" in gemini_content
+
+    shutil.rmtree(dir_a)
+    shutil.rmtree(dir_b)

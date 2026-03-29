@@ -30,7 +30,7 @@ def project_with_library(tmp_path):
     trait_dir.mkdir(parents=True)
     (trait_dir / "config.yaml").write_text("name: trait-base\ninjection: Base.\n")
 
-    # Role
+    # Role A
     role_dir = lib / "roles" / "test-role"
     role_dir.mkdir(parents=True)
     (role_dir / "config.yaml").write_text("""
@@ -45,6 +45,21 @@ composition:
   skills:
     - test_skill
 injection: Role injection.
+""")
+
+    # Role B (for override tests)
+    role_b_dir = lib / "roles" / "other-role"
+    role_b_dir.mkdir(parents=True)
+    (role_b_dir / "config.yaml").write_text("""
+name: other-role
+priorities:
+  - Speed
+composition:
+  traits:
+    - trait-base
+  rules: []
+  skills: []
+injection: Other role injection.
 """)
 
     # Create project config
@@ -277,3 +292,157 @@ def test_preserve_local_rules(project_with_library):
 
     # Local rule should still exist
     assert (project / ".agent" / "rules" / "my_local_rule" / "rule.md").exists()
+
+
+def test_rollback_restores_previous_role(project_with_library):
+    """After set_role(B), rollback() restores role A's prompt and profile."""
+    from ai_hats.models import ProfileConfig
+
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    # Set role A
+    asm.set_role("test-role", provider_name="claude")
+    prompt_a = (project / "CLAUDE.md").read_text()
+    assert "Role injection" in prompt_a
+    profile_a = ProfileConfig.load(project / "profile.json")
+    assert profile_a.active_role == "test-role"
+
+    # Set role B (override)
+    asm.set_role("other-role", provider_name="claude")
+    prompt_b = (project / "CLAUDE.md").read_text()
+    assert "Other role injection" in prompt_b
+    profile_b = ProfileConfig.load(project / "profile.json")
+    assert profile_b.active_role == "other-role"
+
+    # Rollback → should restore role A
+    assert asm.rollback()
+    prompt_restored = (project / "CLAUDE.md").read_text()
+    assert "Role injection" in prompt_restored
+    assert "Other role injection" not in prompt_restored
+    profile_restored = ProfileConfig.load(project / "profile.json")
+    assert profile_restored.active_role == "test-role"
+
+
+def test_rollback_cleans_up_backup_dir(project_with_library):
+    """rollback() should remove the temp backup dir and .last_backup ref."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    asm.set_role("test-role")
+
+    # .last_backup ref should exist after set_role
+    ref_path = project / ".agent" / ".last_backup"
+    assert ref_path.exists()
+    backup_dir = Path(ref_path.read_text().strip())
+    assert backup_dir.exists()
+
+    # Rollback
+    asm.rollback()
+
+    # Backup dir and ref should be cleaned up
+    assert not backup_dir.exists()
+    assert not ref_path.exists()
+
+
+def test_rollback_returns_false_when_no_backup(project_with_library):
+    """rollback() returns False when there's nothing to rollback to."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    assert not asm.rollback()
+
+
+def test_claude_build_override_creates_temp_file(project_with_library):
+    """ClaudeProvider.build_override() creates temp file with override prompt."""
+    from ai_hats.providers import ClaudeProvider
+
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    # Set base role so CLAUDE.md exists with project content
+    asm.set_role("test-role", provider_name="claude")
+    # Add project-local content after markers
+    claude_md = project / "CLAUDE.md"
+    existing = claude_md.read_text()
+    claude_md.write_text(existing + "\n# My Project Rules\nDo stuff.\n")
+
+    # Build override for other-role
+    provider = ClaudeProvider()
+    result = asm.composer.compose("other-role")
+    args, env = provider.build_override(project, result, None)
+
+    assert len(args) == 2
+    assert args[0] == "--system-prompt-file"
+    override_path = Path(args[1])
+    assert override_path.exists()
+
+    content = override_path.read_text()
+    # Override prompt is injected
+    assert "Other role injection" in content
+    # Project-local content is preserved
+    assert "My Project Rules" in content
+    # Original role injection is NOT present
+    assert "Role injection." not in content
+
+    # Cleanup
+    override_path.unlink()
+
+
+def test_claude_build_override_does_not_modify_project_claude_md(project_with_library):
+    """build_override() must never modify the project CLAUDE.md."""
+    from ai_hats.providers import ClaudeProvider
+
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role", provider_name="claude")
+
+    original_content = (project / "CLAUDE.md").read_text()
+
+    provider = ClaudeProvider()
+    result = asm.composer.compose("other-role")
+    args, _ = provider.build_override(project, result, None)
+
+    # CLAUDE.md unchanged
+    assert (project / "CLAUDE.md").read_text() == original_content
+    # Cleanup
+    Path(args[1]).unlink()
+
+
+def test_gemini_build_override_creates_rules_dir(project_with_library):
+    """GeminiProvider.build_override() creates session rules dir with override."""
+    import shutil
+    from ai_hats.providers import GeminiProvider
+
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")  # sets up .agent/rules/
+
+    provider = GeminiProvider()
+    result = asm.composer.compose("other-role")
+    args, env = provider.build_override(project, result, None)
+
+    assert args == []
+    assert "GEMINI_CLI_PROJECT_RULES_PATH" in env
+    rules_dir = Path(env["GEMINI_CLI_PROJECT_RULES_PATH"])
+    assert rules_dir.exists()
+
+    # Mandatory role file exists
+    mandatory = rules_dir / "00_MANDATORY_ROLE.md"
+    assert mandatory.exists()
+    assert "Other role injection" in mandatory.read_text()
+
+    # Project rules copied
+    assert (rules_dir / "test_rule").exists()
+
+    # GEMINI.md not touched
+    assert "Role injection" in (project / "GEMINI.md").read_text()
+
+    # Cleanup
+    shutil.rmtree(rules_dir)

@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import abc
 import shutil
+import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .composer import CompositionResult, ResolvedComponent
+
+if TYPE_CHECKING:
+    from .observe import SessionManager
 
 
 INJECTION_START = "<!-- AI-HATS:START -->"
@@ -43,6 +48,19 @@ class Provider(abc.ABC):
     @abc.abstractmethod
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         """Get environment variables needed for the provider."""
+
+    def build_override(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_mgr: "SessionManager",
+    ) -> tuple[list[str], dict[str, str]]:
+        """Build CLI args and env vars for a temporary role override.
+
+        Returns (extra_args, extra_env). Must NOT modify project files.
+        Default: no-op (subclasses override).
+        """
+        return [], {}
 
     def update_system_prompt(self, project_dir: Path, content: str) -> None:
         """Write or update system prompt between markers in the prompt file."""
@@ -110,6 +128,33 @@ class GeminiProvider(Provider):
                     shutil.rmtree(dest)
                 shutil.copytree(rule.source_path, dest)
 
+    def build_override(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_mgr: "SessionManager",
+    ) -> tuple[list[str], dict[str, str]]:
+        """Create session-scoped rules dir with override prompt.
+
+        Uses GEMINI_CLI_PROJECT_RULES_PATH to inject without touching GEMINI.md.
+        """
+        prompt_content = self.build_system_prompt(result)
+
+        # Create isolated rules dir in temp
+        rules_dir = Path(tempfile.mkdtemp(prefix="ai-hats-override-rules-"))
+
+        # Copy existing project rules
+        project_rules = project_dir / ".agent" / "rules"
+        if project_rules.exists():
+            for item in project_rules.iterdir():
+                if item.is_dir():
+                    shutil.copytree(item, rules_dir / item.name)
+
+        # Write mandatory role override (00_ prefix = highest priority)
+        (rules_dir / "00_MANDATORY_ROLE.md").write_text(prompt_content)
+
+        return [], {"GEMINI_CLI_PROJECT_RULES_PATH": str(rules_dir)}
+
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         cmd = ["gemini"]
         if args:
@@ -169,6 +214,37 @@ class ClaudeProvider(Provider):
                 if dest.exists():
                     shutil.rmtree(dest)
                 shutil.copytree(rule.source_path, dest)
+
+    def build_override(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_mgr: "SessionManager",
+    ) -> tuple[list[str], dict[str, str]]:
+        """Write override prompt to temp file, pass via --system-prompt-file.
+
+        Preserves project-local content outside AI-HATS markers.
+        """
+        prompt_content = self.build_system_prompt(result)
+
+        # Build full file content preserving project-local sections
+        existing_path = self.system_prompt_path(project_dir)
+        if existing_path.exists():
+            existing = existing_path.read_text()
+            if INJECTION_START in existing and INJECTION_END in existing:
+                before = existing[: existing.index(INJECTION_START)]
+                after = existing[existing.index(INJECTION_END) + len(INJECTION_END) :]
+                full_content = f"{before}{INJECTION_START}\n{prompt_content}\n{INJECTION_END}{after}"
+            else:
+                full_content = f"{INJECTION_START}\n{prompt_content}\n{INJECTION_END}\n"
+        else:
+            full_content = f"{INJECTION_START}\n{prompt_content}\n{INJECTION_END}\n"
+
+        # Write to temp file (survives sigkill — just orphaned, no harm)
+        override_file = Path(tempfile.mktemp(prefix="ai-hats-override-", suffix=".md"))
+        override_file.write_text(full_content)
+
+        return ["--system-prompt-file", str(override_file)], {}
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         cmd = ["claude"]

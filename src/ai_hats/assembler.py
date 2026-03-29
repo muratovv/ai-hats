@@ -140,7 +140,7 @@ class Assembler:
         return result
 
     def rollback(self) -> bool:
-        """Rollback to the last backup."""
+        """Rollback to the last backup. Cleans up temp backup dir after restore."""
         ref_path = self._backup_ref_path()
         if not ref_path.exists():
             return False
@@ -148,6 +148,8 @@ class Assembler:
         if not backup_path.exists():
             return False
         self._restore_backup(backup_path)
+        shutil.rmtree(backup_path, ignore_errors=True)
+        ref_path.unlink(missing_ok=True)
         return True
 
     def clean(self) -> None:

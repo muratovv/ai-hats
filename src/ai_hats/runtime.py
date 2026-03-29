@@ -154,31 +154,43 @@ class WrapRunner:
         profile = ProfileConfig.load(self.project_dir / "profile.json")
         effective_role = role_override or profile.active_role or self.assembler.project_config.default_role
 
-        if effective_role:
+        # Role override uses shadow prompt (temp file) — never modifies project files.
+        # Permanent assembly only when no override.
+        override_args: list[str] = []
+        override_env: dict[str, str] = {}
+
+        if role_override and profile.active_role:
+            # Shadow override: compose to temp file, pass via CLI flags
+            result = self.assembler.composer.compose(effective_role)
+            override_args, override_env = provider.build_override(
+                self.project_dir, result, self.session_mgr,
+            )
+        elif effective_role:
             needs_assembly = (
-                role_override  # explicit override — always reassemble
-                or not profile.active_role  # no role set yet
+                not profile.active_role  # no role set yet
                 or profile.provider != provider_name  # provider mismatch
             )
             if needs_assembly:
                 self.assembler.set_role(effective_role, provider_name)
 
         profile = ProfileConfig.load(self.project_dir / "profile.json")
+        active_role = role_override or profile.active_role
 
         # Create session
         session = self.session_mgr.create_session()
         session.init_audit(
-            role=profile.active_role,
+            role=active_role,
             provider=provider_name,
         )
-        session.log_trace(TraceTag.SYS, f"Session started: role={profile.active_role}")
+        session.log_trace(TraceTag.SYS, f"Session started: role={active_role}")
 
         # Build environment
         env = {
             **os.environ,
             **session.get_env(),
             **provider.get_env(session.session_dir, self.project_dir),
-            "AI_HATS_ROLE": profile.active_role,
+            **override_env,
+            "AI_HATS_ROLE": active_role,
         }
 
         # Run hooks: session_start
@@ -192,12 +204,13 @@ class WrapRunner:
         # Build CLI command with session ID for JSONL linkage
         claude_session_id = str(uuid.uuid4())
         cmd = provider.get_cli_command(extra_args)
+        cmd.extend(override_args)
         if provider_name == "claude":
             cmd += ["--session-id", claude_session_id]
         session.log_trace(TraceTag.SYS, f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")
 
-        _print_session_start(profile.active_role, provider_name, session.session_id)
+        _print_session_start(active_role, provider_name, session.session_id)
 
         # PTY proxy via pty.spawn with sidecar trace
         tracer = SidecarTracer(session)
@@ -211,7 +224,7 @@ class WrapRunner:
 
         session.finalize_audit({
             "exit_code": exit_code,
-            "role": profile.active_role,
+            "role": active_role,
             "provider": provider_name,
         })
 
