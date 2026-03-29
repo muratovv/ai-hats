@@ -40,8 +40,8 @@ class Assembler:
         """Build ordered library paths (earlier = lower priority)."""
         paths: list[Path] = []
 
-        # Built-in libraries (shipped with ai-hats)
-        builtin = Path(__file__).parent.parent.parent / "libraries"
+        # Built-in libraries (shipped with ai-hats package)
+        builtin = Path(__file__).parent / "libraries"
         if builtin.is_dir():
             paths.append(builtin)
 

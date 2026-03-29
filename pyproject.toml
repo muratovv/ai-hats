@@ -31,6 +31,9 @@ ai-hats = "ai_hats.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+ai_hats = ["libraries/**/*"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
