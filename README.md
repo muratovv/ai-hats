@@ -15,27 +15,49 @@ roles/assistant ── trait-base + trait-agent + dev::python
 
 ## Быстрый старт
 
+### Подключение к новому проекту (bootstrap)
+
 ```bash
-# Установка
+cd ~/dev/my-project
+
+# Из локального клона ai-hats
+bash ~/dev/ai-hats/scripts/bootstrap.sh --role go-dev --provider claude
+
+# Или склонировать и установить за один шаг
+git clone git@github.com:muratovv/ai-hats.git /tmp/ai-hats && \
+  bash /tmp/ai-hats/scripts/bootstrap.sh --role go-dev --provider claude
+```
+
+Скрипт создаст `.venv`, установит ai-hats через pip, сгенерирует `ai-hats.yaml` и `CLAUDE.md`.
+
+### Ручная установка (если ai-hats уже установлен)
+
+```bash
+cd ~/dev/my-project
+source .venv/bin/activate
+ai-hats init --role go-dev --provider claude
+```
+
+### После установки
+
+```bash
+source .venv/bin/activate
+ai-hats status              # проверить состояние
+ai-hats set <role>          # сменить роль
+ai-hats bump                # обновить prompt после изменений в библиотеке
+ai-hats wrap claude         # запустить обёрнутую сессию
+```
+
+### Разработка ai-hats
+
+```bash
+git clone git@github.com:muratovv/ai-hats.git && cd ai-hats
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
-
-# Инициализация проекта
-ai-hats init --provider gemini
-
-# Применить роль
-ai-hats set assistant
-
-# Запустить обёрнутую сессию
-ai-hats wrap gemini
-ai-hats wrap claude
+pip install -e ".[dev]"
+pytest tests/ -v
 ```
 
-Или одной командой (bootstrap):
-
-```bash
-curl -sSL <url>/scripts/bootstrap.sh | sh -s -- --role assistant
-```
+Доступные роли: `go-dev`, `assistant`, `architect`, `sre`, `judge`, `test-agent`.
 
 ## CLI
 
@@ -124,7 +146,7 @@ GEMINI.md / CLAUDE.md       # System prompt
 ## Библиотека
 
 ```
-libraries/
+src/ai_hats/libraries/
   rules/          global_rule_*, dev_rule_*, env_rule_*
   skills/         24 скилла (backlog-manager, git-mastery, skill-template, ...)
   traits/         trait-base, trait-agent, trait-se-mindset, skill-engineer, dev::*
@@ -171,9 +193,3 @@ injection: |
   ...
 ```
 
-## Разработка
-
-```bash
-pip install -e ".[dev]"
-pytest tests/ -v
-```
