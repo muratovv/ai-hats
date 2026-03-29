@@ -35,9 +35,18 @@ Create or refine the task card. Clarify requirements.
 
 Draft an implementation plan. Attach to task directory as `plan.md`.
 
+- **Requirement traceability:** If the user listed specific approaches, options,
+  or alternatives to consider, create a checklist in plan.md:
+  ```
+  ## Approaches
+  - [ ] Approach A: <name> — explored / rejected with reason
+  - [ ] Approach B: <name> — explored / rejected with reason
+  ```
+  Every user-mentioned approach MUST appear. None may be silently skipped.
+  If rejected, document the specific reason.
 - Break large tasks into subtasks with delegation recommendations
 - Output: `.agent/backlog/tasks/<ID>/plan.md`
-- Transition to `execute` when plan is ready
+- Transition to `execute` when plan is ready AND all approaches are addressed
 
 ### plan → execute
 
@@ -92,3 +101,4 @@ Task is blocked by external dependency from any active state.
 - Skipping states — each transition must be explicit, no brainstorm→execute jumps
 - Working without a task card — all work must be tracked
 - Forgetting work_log updates — the card becomes useless for handover
+- Silently skipping user-mentioned approaches — every approach must be explicitly addressed

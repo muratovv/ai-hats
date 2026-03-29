@@ -4,6 +4,7 @@ composition:
   rules:
     - dev_rule_pessimistic_guardrails
     - dev_rule_secure_coding
+    - dev_rule_edit_efficiency
   skills:
     - systematic-debugging
     - audit-reviewer

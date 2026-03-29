@@ -51,6 +51,14 @@ Choose the main section heading by pattern:
 - [ ] `metadata.yaml` exists alongside SKILL.md
 - [ ] Total length ≤ 50 lines (orchestrators may exceed)
 
+## References
+
+For detailed guidance on success metrics, testing, and troubleshooting,
+see `references/anthropic-skills-guide.md`.
+
+For external frameworks (skillcreator, Anthropic skill-creator),
+see `references/external-skill-frameworks.md`.
+
 ## Anti-Patterns
 - Dumping hundreds of lines into one SKILL.md — split heavy content into `references/`
 - Vague "When to Use" that triggers on everything — be specific

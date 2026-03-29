@@ -5,6 +5,7 @@ composition:
   skills:
     - skill-optimization
     - skill-template
+    - retro-to-framework
   hooks: {}
   mcp: []
 injection: |

@@ -1,0 +1,5 @@
+name: scope-guard
+description: Enforce user-defined task boundaries, prevent scope creep and over-implementation
+author: ai-hats
+tags: [agent-protocol, discipline, scope]
+pattern: checklist

@@ -24,7 +24,21 @@ Advanced git operations for development workflow.
 - Always check status before operations
 - Never force push without explicit approval
 
+## Pre-Commit Checklist
+Before every `git add` / `git commit`:
+1. Run `git status` and `git diff --stat` to review what will be committed
+2. For each file, verify:
+   - Is this project code? (not agent config like ai-hats.yaml, .agent/)
+   - Does this file have meaningful content? (not empty placeholders)
+   - Should this file be in the repo? (not .env, credentials, temp files)
+3. Do NOT commit:
+   - Empty or placeholder files (empty CLAUDE.md, stub configs)
+   - Agent framework configs (ai-hats.yaml, .agent/, profile.json)
+   - Files that belong in .gitignore
+
 ## Anti-Patterns
 - Force push without approval — can destroy team members' work
 - Giant commits mixing multiple concerns — keep commits atomic
 - Commit messages describing what ("changed X") instead of why
+- Committing agent config files to project repos — these are local agent state
+- Committing empty/placeholder files — wait until they have real content
