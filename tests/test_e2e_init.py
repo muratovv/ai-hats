@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 
 import pytest
 from click.testing import CliRunner
@@ -235,3 +236,68 @@ def test_gemini_override_creates_session_rules_dir(cli_project):
 
     shutil.rmtree(dir_a)
     shutil.rmtree(dir_b)
+
+
+# -- Update command tests --
+
+
+def test_update_command_uses_force_reinstall():
+    """Update command must use --force-reinstall to bypass pip cache."""
+    from ai_hats.cli import _build_update_cmd
+
+    cmd = _build_update_cmd()
+    assert "--force-reinstall" in cmd, "pip caches git installs; --force-reinstall is required"
+    assert "--no-deps" in cmd, "--no-deps avoids re-downloading all dependencies"
+    assert any("git+ssh://" in arg for arg in cmd), "must install from git"
+    assert cmd[0] == sys.executable, "must use current Python interpreter"
+    assert "pip" in cmd, "must use pip"
+
+
+def test_update_command_runs_via_cli(cli_project, monkeypatch):
+    """ai-hats update invokes pip with correct flags (mocked subprocess)."""
+    import subprocess
+
+    project, runner = cli_project
+
+    # Init project so migrate doesn't fail
+    runner.invoke(main, ["init", "--provider", "claude"])
+
+    captured_cmds = []
+
+    original_run = subprocess.run
+
+    def mock_run(cmd, **kwargs):
+        captured_cmds.append(cmd)
+        # Return success
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    result = runner.invoke(main, ["update"])
+    assert result.exit_code == 0, result.output
+    assert "Updating from GitHub" in result.output
+    assert "Updated" in result.output
+
+    # Verify pip was called with correct flags
+    assert len(captured_cmds) == 1
+    pip_cmd = captured_cmds[0]
+    assert "--force-reinstall" in pip_cmd
+    assert "--no-deps" in pip_cmd
+    assert any("git+ssh://git@github.com/muratovv/ai-hats.git" in arg for arg in pip_cmd)
+
+
+def test_update_command_reports_failure(cli_project, monkeypatch):
+    """ai-hats update shows error when pip fails."""
+    import subprocess
+
+    project, runner = cli_project
+    runner.invoke(main, ["init", "--provider", "claude"])
+
+    def mock_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="Connection refused")
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    result = runner.invoke(main, ["update"])
+    assert "Update failed" in result.output
+    assert "Connection refused" in result.output

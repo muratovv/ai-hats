@@ -557,6 +557,15 @@ def task_sync():
 GIT_INSTALL_URL = "git+ssh://git@github.com/muratovv/ai-hats.git"
 
 
+def _build_update_cmd() -> list[str]:
+    """Build the pip command for updating ai-hats from GitHub."""
+    return [
+        sys.executable, "-m", "pip", "install",
+        "--force-reinstall", "--no-deps",
+        f"ai-hats @ {GIT_INSTALL_URL}",
+    ]
+
+
 # -- update --
 
 @main.command()
@@ -568,13 +577,8 @@ def update():
     console.print(f"Current version: {__version__}")
     console.print("Updating from GitHub...")
 
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install",
-         "--force-reinstall", "--no-deps",
-         f"ai-hats @ {GIT_INSTALL_URL}"],
-        capture_output=True,
-        text=True,
-    )
+    cmd = _build_update_cmd()
+    result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         console.print(f"[red]Update failed[/]: {result.stderr}")
         return
