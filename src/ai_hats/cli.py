@@ -569,7 +569,8 @@ def update():
     console.print("Updating from GitHub...")
 
     result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--upgrade",
+        [sys.executable, "-m", "pip", "install",
+         "--force-reinstall", "--no-deps",
          f"ai-hats @ {GIT_INSTALL_URL}"],
         capture_output=True,
         text=True,
