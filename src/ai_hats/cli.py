@@ -568,13 +568,58 @@ def _build_update_cmd() -> list[str]:
 
 # -- update --
 
+def _get_installed_version() -> str:
+    """Get the currently installed ai-hats version via subprocess.
+
+    Uses a fresh Python process to avoid import caching.
+    """
+    import subprocess
+
+    result = subprocess.run(
+        [sys.executable, "-c", "from ai_hats import __version__; print(__version__)"],
+        capture_output=True, text=True,
+    )
+    return result.stdout.strip() if result.returncode == 0 else "unknown"
+
+
+def _get_changelog(old_version: str, new_version: str) -> str:
+    """Get git log between versions via pip's installed metadata."""
+    import subprocess
+
+    # Try to get recent commits from the installed package source
+    result = subprocess.run(
+        [sys.executable, "-c", """
+import importlib.metadata
+try:
+    meta = importlib.metadata.metadata('ai-hats')
+    url = meta.get('Home-page', '') or ''
+    print(url)
+except Exception:
+    pass
+"""],
+        capture_output=True, text=True,
+    )
+    # Fall back to git log from local repo if available
+    from pathlib import Path
+    repo = Path(__file__).resolve().parent.parent.parent
+    git_dir = repo / ".git"
+    if git_dir.exists():
+        log = subprocess.run(
+            ["git", "-C", str(repo), "log", "--oneline", "-10"],
+            capture_output=True, text=True,
+        )
+        if log.returncode == 0 and log.stdout.strip():
+            return log.stdout.strip()
+    return ""
+
+
 @main.command()
 def update():
     """Update ai-hats from GitHub."""
     import subprocess
 
-    from . import __version__
-    console.print(f"Current version: {__version__}")
+    from . import __version__ as old_version
+    console.print(f"Current version: [bold]{old_version}[/]")
     console.print("Updating from GitHub...")
 
     cmd = _build_update_cmd()
@@ -583,7 +628,20 @@ def update():
         console.print(f"[red]Update failed[/]: {result.stderr}")
         return
 
-    console.print("[green]Updated[/]")
+    new_version = _get_installed_version()
+
+    if new_version == old_version:
+        console.print(f"[green]Already up to date[/] ({old_version})")
+    else:
+        console.print(f"[green]Updated[/]: {old_version} → [bold]{new_version}[/]")
+
+        changelog = _get_changelog(old_version, new_version)
+        if changelog:
+            console.print("\n[bold]Recent changes:[/]")
+            for line in changelog.splitlines()[:7]:
+                console.print(f"  {line}")
+            console.print()
+
     # Auto-migrate
     console.print("Running migration...")
     migrate.invoke(click.Context(migrate))

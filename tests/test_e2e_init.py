@@ -264,24 +264,22 @@ def test_update_command_runs_via_cli(cli_project, monkeypatch):
 
     captured_cmds = []
 
-    original_run = subprocess.run
-
     def mock_run(cmd, **kwargs):
         captured_cmds.append(cmd)
-        # Return success
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        # For version check subprocess, return a version string
+        stdout = "0.3.0" if "__version__" in str(cmd) else ""
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
 
     monkeypatch.setattr(subprocess, "run", mock_run)
 
     result = runner.invoke(main, ["update"])
     assert result.exit_code == 0, result.output
     assert "Updating from GitHub" in result.output
-    assert "Updated" in result.output
 
-    # Verify pip was called with correct flags
-    assert len(captured_cmds) == 1
-    pip_cmd = captured_cmds[0]
-    assert "--force-reinstall" in pip_cmd
+    # Find the pip install command among all subprocess calls
+    pip_cmds = [c for c in captured_cmds if "--force-reinstall" in c]
+    assert len(pip_cmds) == 1, f"Expected 1 pip install call, got {len(pip_cmds)}"
+    pip_cmd = pip_cmds[0]
     assert "--no-deps" in pip_cmd
     assert any("git+ssh://git@github.com/muratovv/ai-hats.git" in arg for arg in pip_cmd)
 
@@ -301,3 +299,59 @@ def test_update_command_reports_failure(cli_project, monkeypatch):
     result = runner.invoke(main, ["update"])
     assert "Update failed" in result.output
     assert "Connection refused" in result.output
+
+
+def test_update_shows_version_transition(cli_project, monkeypatch):
+    """ai-hats update shows old → new version when version changes."""
+    import subprocess
+
+    project, runner = cli_project
+    runner.invoke(main, ["init", "--provider", "claude"])
+
+    call_count = 0
+
+    def mock_run(cmd, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        # Version check returns new version
+        if "__version__" in str(cmd):
+            return subprocess.CompletedProcess(cmd, 0, stdout="0.5.0\n", stderr="")
+        # git log for changelog
+        if "git" in cmd and "log" in cmd:
+            return subprocess.CompletedProcess(
+                cmd, 0,
+                stdout="abc1234 feat: new feature\ndef5678 fix: bug fix\n",
+                stderr="",
+            )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    result = runner.invoke(main, ["update"])
+    assert result.exit_code == 0, result.output
+    # Shows version transition
+    assert "0.5.0" in result.output
+    # Shows changelog
+    assert "Recent changes" in result.output
+    assert "new feature" in result.output
+
+
+def test_update_shows_already_up_to_date(cli_project, monkeypatch):
+    """ai-hats update shows 'already up to date' when versions match."""
+    import subprocess
+
+    from ai_hats import __version__
+
+    project, runner = cli_project
+    runner.invoke(main, ["init", "--provider", "claude"])
+
+    def mock_run(cmd, **kwargs):
+        if "__version__" in str(cmd):
+            return subprocess.CompletedProcess(cmd, 0, stdout=f"{__version__}\n", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    result = runner.invoke(main, ["update"])
+    assert result.exit_code == 0, result.output
+    assert "Already up to date" in result.output
