@@ -554,25 +554,36 @@ def task_sync():
     console.print(f"[green]Synced[/]: {count} tasks")
 
 
-# -- self-update --
+GIT_INSTALL_URL = "git+ssh://git@github.com/muratovv/ai-hats.git"
 
-@main.command("self-update")
-def self_update():
-    """Update ai-hats framework."""
+
+# -- update --
+
+@main.command()
+def update():
+    """Update ai-hats from GitHub."""
     import subprocess
-    console.print("Updating ai-hats...")
+
+    from . import __version__
+    console.print(f"Current version: {__version__}")
+    console.print("Updating from GitHub...")
+
     result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--upgrade", "ai-hats"],
+        [sys.executable, "-m", "pip", "install", "--upgrade",
+         f"ai-hats @ {GIT_INSTALL_URL}"],
         capture_output=True,
         text=True,
     )
-    if result.returncode == 0:
-        console.print("[green]Updated[/]")
-        # Auto-migrate
-        console.print("Running migration...")
-        migrate.invoke(click.Context(migrate))
-    else:
+    if result.returncode != 0:
         console.print(f"[red]Update failed[/]: {result.stderr}")
+        return
+
+    console.print("[green]Updated[/]")
+    # Auto-migrate
+    console.print("Running migration...")
+    migrate.invoke(click.Context(migrate))
+
+
 
 
 # -- migrate --

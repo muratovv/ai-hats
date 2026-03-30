@@ -85,7 +85,7 @@ ai-hats task list [--state <state>]
 ai-hats task show <ID>
 ai-hats task sync
 
-ai-hats self-update
+ai-hats update
 ai-hats migrate
 ```
 
