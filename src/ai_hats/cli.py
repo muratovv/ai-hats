@@ -582,35 +582,30 @@ def _get_installed_version() -> str:
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 
-def _get_changelog(old_version: str, new_version: str) -> str:
-    """Get git log between versions via pip's installed metadata."""
+def _get_changelog() -> str:
+    """Get recent commits from GitHub via shallow clone."""
     import subprocess
+    import tempfile
 
-    # Try to get recent commits from the installed package source
-    result = subprocess.run(
-        [sys.executable, "-c", """
-import importlib.metadata
-try:
-    meta = importlib.metadata.metadata('ai-hats')
-    url = meta.get('Home-page', '') or ''
-    print(url)
-except Exception:
-    pass
-"""],
-        capture_output=True, text=True,
-    )
-    # Fall back to git log from local repo if available
-    from pathlib import Path
-    repo = Path(__file__).resolve().parent.parent.parent
-    git_dir = repo / ".git"
-    if git_dir.exists():
+    tmp = tempfile.mkdtemp(prefix="ai-hats-changelog-")
+    try:
+        result = subprocess.run(
+            ["git", "clone", "--depth", "10", "--filter=blob:none", "--quiet",
+             f"ssh://git@github.com/muratovv/ai-hats.git", tmp],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return ""
         log = subprocess.run(
-            ["git", "-C", str(repo), "log", "--oneline", "-10"],
+            ["git", "-C", tmp, "log", "--oneline", "-7"],
             capture_output=True, text=True,
         )
-        if log.returncode == 0 and log.stdout.strip():
-            return log.stdout.strip()
-    return ""
+        return log.stdout.strip() if log.returncode == 0 else ""
+    except Exception:
+        return ""
+    finally:
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 @main.command()
@@ -635,7 +630,7 @@ def update():
     else:
         console.print(f"[green]Updated[/]: {old_version} → [bold]{new_version}[/]")
 
-        changelog = _get_changelog(old_version, new_version)
+        changelog = _get_changelog()
         if changelog:
             console.print("\n[bold]Recent changes:[/]")
             for line in changelog.splitlines()[:7]:

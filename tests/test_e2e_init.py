@@ -309,14 +309,13 @@ def test_update_shows_version_transition(cli_project, monkeypatch):
     project, runner = cli_project
     runner.invoke(main, ["init", "--provider", "claude"])
 
-    call_count = 0
-
     def mock_run(cmd, **kwargs):
-        nonlocal call_count
-        call_count += 1
         # Version check returns new version
         if "__version__" in str(cmd):
             return subprocess.CompletedProcess(cmd, 0, stdout="0.5.0\n", stderr="")
+        # git clone for changelog — simulate success
+        if "git" in cmd and "clone" in cmd:
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         # git log for changelog
         if "git" in cmd and "log" in cmd:
             return subprocess.CompletedProcess(
