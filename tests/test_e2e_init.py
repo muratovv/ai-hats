@@ -247,6 +247,7 @@ def test_update_command_uses_force_reinstall():
 
     cmd = _build_update_cmd()
     assert "--force-reinstall" in cmd, "pip caches git installs; --force-reinstall is required"
+    assert "--no-cache-dir" in cmd, "pip caches wheels; --no-cache-dir forces fresh git clone"
     assert "--no-deps" in cmd, "--no-deps avoids re-downloading all dependencies"
     assert any("git+ssh://" in arg for arg in cmd), "must install from git"
     assert cmd[0] == sys.executable, "must use current Python interpreter"

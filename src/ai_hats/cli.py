@@ -561,7 +561,7 @@ def _build_update_cmd() -> list[str]:
     """Build the pip command for updating ai-hats from GitHub."""
     return [
         sys.executable, "-m", "pip", "install",
-        "--force-reinstall", "--no-deps",
+        "--force-reinstall", "--no-deps", "--no-cache-dir",
         f"ai-hats @ {GIT_INSTALL_URL}",
     ]
 
