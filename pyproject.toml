@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-hats"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Framework for composing and managing AI agents through composite roles"
 requires-python = ">=3.11"
 dependencies = [
@@ -27,6 +27,9 @@ costs = [
 
 [project.scripts]
 ai-hats = "ai_hats.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "ai_hats.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
