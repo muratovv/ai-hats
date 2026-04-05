@@ -35,17 +35,19 @@ git clone git@github.com:muratovv/ai-hats.git /tmp/ai-hats && \
 ```bash
 cd ~/dev/my-project
 source .venv/bin/activate
-ai-hats init --role go-dev --provider claude
+ai-hats set -r go-dev -p claude
 ```
 
 ### После установки
 
 ```bash
 source .venv/bin/activate
+ai-hats                     # запустить сессию с текущими настройками
+ai-hats --resume            # флаги передаются провайдеру (claude/gemini)
 ai-hats status              # проверить состояние
-ai-hats set <role>          # сменить роль
+ai-hats set -r <role>       # сменить роль
+ai-hats set -p gemini       # сменить провайдер
 ai-hats bump                # обновить prompt после изменений в библиотеке
-ai-hats wrap claude         # запустить обёрнутую сессию
 ```
 
 ### Разработка ai-hats
@@ -61,23 +63,30 @@ pytest tests/ -v
 
 ## CLI
 
-```
-ai-hats init [--role <name>] [--provider gemini|claude]
-ai-hats set <role> [--provider gemini|claude]
-ai-hats status
-ai-hats bump
-ai-hats rollback
-ai-hats clean
-ai-hats whoami
+```bash
+# Сессия — ai-hats без subcommand запускает провайдер
+ai-hats                                    # текущие настройки
+ai-hats --resume                           # флаги передаются провайдеру
+ai-hats -p claude -r architect             # override провайдера и роли
+ai-hats "fix the bug"                      # промпт передаётся провайдеру
 
-ai-hats wrap gemini [--role <name>]
-ai-hats wrap claude [--role <name>]
+# Конфигурация
+ai-hats set -r <role> -p <provider>        # настроить роль и/или провайдер
+ai-hats status                             # текущая роль, дерево, health
+ai-hats bump                               # пересобрать prompt
+ai-hats rollback                           # откатить к предыдущему состоянию
+ai-hats clean                              # очистить .agent/
+ai-hats whoami                             # диагностика
 
-ai-hats run <role> [--ticket <ID>] [--model <name>]
+# Суб-агенты
+ai-hats run <role> [--ticket <ID>] [--model <name>] [--task <desc>]
+
+# Наблюдаемость
 ai-hats judge [--session <ID>] [--last N]
 ai-hats retro [--session <ID>]
 ai-hats audit [--session <ID>]
 
+# Задачи
 ai-hats task create [ID] <title> [-d <desc>] [-p high|medium|low]
 ai-hats task transition <ID> <state>
 ai-hats task log <ID> <message>
@@ -85,6 +94,7 @@ ai-hats task list [--state <state>]
 ai-hats task show <ID>
 ai-hats task sync
 
+# Обслуживание
 ai-hats update
 ai-hats migrate
 ```
@@ -113,7 +123,7 @@ ai-hats migrate
 - **Gemini** — `GEMINI.md` + `GEMINI_CLI_PROJECT_RULES_PATH`
 - **Claude** — `CLAUDE.md`
 
-Переключение между провайдерами: `ai-hats set <role> --provider claude`. Wrap автоматически пересобирает prompt при смене провайдера.
+Переключение между провайдерами: `ai-hats set -p claude`. При запуске сессии prompt автоматически пересобирается если провайдер изменился.
 
 ### Task State Machine
 
