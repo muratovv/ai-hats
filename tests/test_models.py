@@ -21,13 +21,15 @@ def test_resolve_namespace():
 def test_task_state_valid_transitions():
     assert TaskState.BRAINSTORM.can_transition_to(TaskState.PLAN)
     assert TaskState.PLAN.can_transition_to(TaskState.EXECUTE)
-    assert TaskState.EXECUTE.can_transition_to(TaskState.REVIEW)
+    assert TaskState.EXECUTE.can_transition_to(TaskState.DOCUMENT)
+    assert TaskState.DOCUMENT.can_transition_to(TaskState.REVIEW)
     assert TaskState.REVIEW.can_transition_to(TaskState.DONE)
 
 
 def test_task_state_invalid_transitions():
     assert not TaskState.BRAINSTORM.can_transition_to(TaskState.EXECUTE)
     assert not TaskState.BRAINSTORM.can_transition_to(TaskState.DONE)
+    assert not TaskState.EXECUTE.can_transition_to(TaskState.REVIEW)
     assert not TaskState.REVIEW.can_transition_to(TaskState.BRAINSTORM)
     assert not TaskState.DONE.can_transition_to(TaskState.BRAINSTORM)
 
@@ -36,6 +38,7 @@ def test_task_state_blocked_recovery():
     assert TaskState.BLOCKED.can_transition_to(TaskState.BRAINSTORM)
     assert TaskState.BLOCKED.can_transition_to(TaskState.PLAN)
     assert TaskState.BLOCKED.can_transition_to(TaskState.EXECUTE)
+    assert TaskState.BLOCKED.can_transition_to(TaskState.DOCUMENT)
 
 
 def test_task_state_failed_recovery():

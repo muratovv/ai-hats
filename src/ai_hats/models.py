@@ -22,6 +22,7 @@ class TaskState(str, Enum):
     BRAINSTORM = "brainstorm"
     PLAN = "plan"
     EXECUTE = "execute"
+    DOCUMENT = "document"
     REVIEW = "review"
     DONE = "done"
     BLOCKED = "blocked"
@@ -32,9 +33,10 @@ class TaskState(str, Enum):
         return {
             TaskState.BRAINSTORM: [TaskState.PLAN, TaskState.BLOCKED],
             TaskState.PLAN: [TaskState.EXECUTE, TaskState.BLOCKED],
-            TaskState.EXECUTE: [TaskState.REVIEW, TaskState.BLOCKED, TaskState.FAILED],
+            TaskState.EXECUTE: [TaskState.DOCUMENT, TaskState.BLOCKED, TaskState.FAILED],
+            TaskState.DOCUMENT: [TaskState.REVIEW, TaskState.BLOCKED],
             TaskState.REVIEW: [TaskState.DONE, TaskState.FAILED],
-            TaskState.BLOCKED: [TaskState.BRAINSTORM, TaskState.PLAN, TaskState.EXECUTE],
+            TaskState.BLOCKED: [TaskState.BRAINSTORM, TaskState.PLAN, TaskState.EXECUTE, TaskState.DOCUMENT],
             TaskState.FAILED: [TaskState.BRAINSTORM],
             TaskState.DONE: [],
         }

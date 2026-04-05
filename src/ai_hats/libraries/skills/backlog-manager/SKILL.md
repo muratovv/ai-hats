@@ -1,6 +1,6 @@
 ---
 name: backlog-manager
-description: Task lifecycle orchestration via YAML cards (brainstorm→plan→execute→review→done)
+description: Task lifecycle orchestration via YAML cards (brainstorm→plan→execute→document→review→done)
 ---
 # Backlog Manager
 
@@ -8,7 +8,7 @@ Orchestrate task lifecycle using YAML task cards in `.agent/backlog/tasks/`.
 
 ## When to Use
 - Starting any new task or work item
-- Managing task state transitions (brainstorm → plan → execute → review → done)
+- Managing task state transitions (brainstorm → plan → execute → document → review → done)
 - Coordinating sub-agent delegation
 
 ## Task Card
@@ -18,9 +18,9 @@ Each task gets a directory: `.agent/backlog/tasks/<ID>/task.yaml` + artifacts.
 ## State Machine
 
 ```
-brainstorm → plan → execute → review → done
-               ↕       ↕        ↕
-            blocked  blocked   failed → brainstorm
+brainstorm → plan → execute → document → review → done
+               ↕       ↕         ↕          ↕
+            blocked  blocked   blocked    failed → brainstorm
 ```
 
 ---
@@ -49,6 +49,7 @@ Draft an implementation plan. Attach to task directory as `plan.md`.
   Every user-mentioned approach MUST appear. None may be silently skipped.
   If rejected, document the specific reason.
 - Break large tasks into subtasks with delegation recommendations
+- Before delegating → **context-handoff**: summarize context for sub-agent
 - Output: `.agent/backlog/tasks/<ID>/plan.md`
 - Transition to `execute` when plan is ready AND all approaches are addressed
 
@@ -61,14 +62,29 @@ Draft an implementation plan. Attach to task directory as `plan.md`.
 
 Active development in the worktree.
 
+- Check task boundaries before starting → **scope-guard**: verify scope alignment
 - Commit frequently with conventional format → **git-mastery**: `type(scope): description`
 - Before requesting anything from user → **request-supervisor**: run the checklist
+- On context pressure → **context-reset**: save state, write handoff, hand off cleanly
 - Log significant actions in task.yaml `work_log`
 
-### execute → review
+### execute → document
 
 1. Ensure all changes committed → **git-mastery**: `git status` clean
 2. Update task.yaml work_log with summary of what was done
+
+### document
+
+Update documentation affected by changes.
+
+- README, CHANGELOG, inline docs — anything users or future agents read
+- If no documentation changes needed — transition immediately to `review`
+- Keep docs minimal and accurate — don't over-document
+
+### document → review
+
+1. Verify docs reflect the actual changes (not stale)
+2. Commit documentation changes → **git-mastery**
 
 ### review
 
@@ -81,9 +97,10 @@ Analyze quality of work done.
 
 ### review → done
 
-1. Merge worktree back → **worktree-isolation**: `ai-hats wt merge`
-2. Update task.yaml: `state: done`, `completed_at: <timestamp>`
-3. Update STATE.md
+1. Run **task-summary**: capture architectural decisions, decision forks, and pitfalls
+2. Merge worktree back → **worktree-isolation**: `ai-hats wt merge`
+3. Update task.yaml: `state: done`, `completed_at: <timestamp>`
+4. Update STATE.md
 
 ### failed
 

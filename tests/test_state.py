@@ -84,6 +84,7 @@ def test_completed_at_set_on_done(mgr):
     mgr.create_task("T-1", "Complete me")
     mgr.transition("T-1", TaskState.PLAN)
     mgr.transition("T-1", TaskState.EXECUTE)
+    mgr.transition("T-1", TaskState.DOCUMENT)
     mgr.transition("T-1", TaskState.REVIEW)
     mgr.transition("T-1", TaskState.DONE)
 
@@ -97,6 +98,7 @@ def test_final_state(mgr):
     mgr.transition("T-1", TaskState.PLAN)
     mgr.transition("T-1", TaskState.EXECUTE)
     mgr.set_final_state("T-1", "Implemented feature X with full test coverage")
+    mgr.transition("T-1", TaskState.DOCUMENT)
     mgr.transition("T-1", TaskState.REVIEW)
 
     t = mgr.get_task("T-1")
@@ -155,6 +157,9 @@ def test_full_lifecycle_with_logs(mgr):
 
     mgr.log_work("T-1", "Implementation complete")
     mgr.set_final_state("T-1", "Feature implemented and tested")
+    mgr.transition("T-1", TaskState.DOCUMENT)
+
+    mgr.log_work("T-1", "Docs updated")
     mgr.transition("T-1", TaskState.REVIEW)
 
     mgr.log_work("T-1", "Review passed")
@@ -164,4 +169,4 @@ def test_full_lifecycle_with_logs(mgr):
     assert t.state == TaskState.DONE
     assert t.completed_at != ""
     assert t.final_state == "Feature implemented and tested"
-    assert len(t.work_log) == 4
+    assert len(t.work_log) == 5

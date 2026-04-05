@@ -1,7 +1,9 @@
 name: trait-agent
 composition:
   traits: []
-  rules: []
+  rules:
+    - dev_rule_backlog_discipline
+    - dev_rule_edit_efficiency
   skills:
     - backlog-manager
     - request-supervisor
@@ -24,7 +26,7 @@ injection: |
   - Update STATE.md after task state changes
   - For large tasks, propose sub-task delegation with specific roles
   - Write retrospectives for completed work
-  - Follow the state machine: brainstorm → plan → execute → review → done
+  - Follow the state machine: brainstorm → plan → execute → document → review → done
   - Never skip states — each transition must be explicit
 
   ### Delegation

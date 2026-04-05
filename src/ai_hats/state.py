@@ -196,7 +196,7 @@ class TaskManager:
         for task in tasks:
             by_state.setdefault(task.state.value, []).append(task)
 
-        state_order = ["execute", "plan", "brainstorm", "review", "blocked", "failed", "done"]
+        state_order = ["execute", "document", "plan", "brainstorm", "review", "blocked", "failed", "done"]
         for state_name in state_order:
             state_tasks = by_state.get(state_name, [])
             if state_tasks:

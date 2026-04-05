@@ -128,9 +128,9 @@ ai-hats migrate
 ### Task State Machine
 
 ```
-brainstorm → plan → execute → review → done
-     ↑          ↓        ↑       ↓
-     └── blocked ←────────┘   failed
+brainstorm → plan → execute → document → review → done
+     ↑          ↓        ↓         ↓        ↓
+     └── blocked ←────────┴─────────┘     failed
 ```
 
 При переходе в `plan` — создаётся `plan.md` scaffold. Work log с session tracking. File-lock защита от race conditions.
