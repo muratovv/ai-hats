@@ -1,3 +1,7 @@
+---
+name: backlog-manager
+description: Task lifecycle orchestration via YAML cards (brainstorm→plan→execute→review→done)
+---
 # Backlog Manager
 
 Orchestrate task lifecycle using YAML task cards in `.agent/backlog/tasks/`.
@@ -96,6 +100,14 @@ Task is blocked by external dependency from any active state.
 - **request-supervisor**: document what blocks and request from supervisor
 - Record blocking reason in task.yaml work_log
 - Transition back to previous state when unblocked
+
+## Bundled Rules
+
+### Backlog Discipline
+1. **Work Log Cadence**: Update task.yaml work_log after every significant action.
+2. **State Transitions**: Update task.yaml state immediately when work changes phase.
+3. **STATE.md Sync**: After any task state change, update .agent/STATE.md.
+4. **Completion Gate**: Task not done until: state is done, work_log has final entry, STATE.md updated.
 
 ## Anti-Patterns
 - Skipping states — each transition must be explicit, no brainstorm→execute jumps

@@ -1,3 +1,7 @@
+---
+name: task-summary
+description: Focused post-task summary — architectural decisions, decision forks, pitfalls, plan deviations
+---
 # Task Summary
 
 Produce a focused summary of a completed task, capturing only decision-critical knowledge.

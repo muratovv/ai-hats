@@ -1,3 +1,7 @@
+---
+name: ansible-ops
+description: Ansible playbook management — inventory, vault, syntax checks, idempotency
+---
 # Ansible Ops
 
 Manage infrastructure using Ansible playbooks and roles.

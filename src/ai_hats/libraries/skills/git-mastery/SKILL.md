@@ -1,3 +1,7 @@
+---
+name: git-mastery
+description: Advanced git operations — branches, conventional commits, worktrees, rebasing
+---
 # Git Mastery
 
 Advanced git operations for development workflow.

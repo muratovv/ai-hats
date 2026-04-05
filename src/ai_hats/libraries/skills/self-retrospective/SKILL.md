@@ -1,3 +1,7 @@
+---
+name: self-retrospective
+description: Post-work analysis to identify systemic improvements (5 Whys, classify, archive)
+---
 # Self-Retrospective
 
 Analyze completed or failed work to identify systemic improvements.

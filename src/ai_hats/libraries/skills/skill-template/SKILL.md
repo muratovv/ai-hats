@@ -1,3 +1,7 @@
+---
+name: skill-template
+description: Canonical template and validation guide for creating ai-hats skills
+---
 # Skill Template
 
 Guide for creating and validating skills in the ai-hats library.

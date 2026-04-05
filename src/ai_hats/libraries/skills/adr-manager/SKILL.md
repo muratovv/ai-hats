@@ -1,3 +1,7 @@
+---
+name: adr-manager
+description: Document architectural decisions using Michael Nygard ADR format
+---
 # ADR Manager
 
 Standardize documentation of architectural decisions for traceability.
@@ -19,6 +23,14 @@ Save all ADRs sequentially in `docs/adr/` (e.g., `0001-use-grpc-for-internal-ser
 ## Completion
 - ADR file created in `docs/adr/` with sequential numbering
 - All 5 sections filled (Title, Context, Decision, Status, Consequences)
+
+## Bundled Rules
+
+### Architecture Foundation
+1. **Context Management**: Summarize architectural state into ADRs. Operate at C4 level.
+2. **Distributed Systems**: Design for failure — retries, circuit breakers, graceful degradation.
+3. **API-First**: Define contracts before systems (OpenAPI/Protobuf). Strict backward compatibility.
+4. **Delegation**: Delegate deep dives to sub-agents, synthesize findings into ADR updates.
 
 ## Anti-Patterns
 - Missing consequences — the most valuable section, forces thinking about trade-offs

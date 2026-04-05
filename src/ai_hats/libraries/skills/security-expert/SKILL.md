@@ -1,3 +1,7 @@
+---
+name: security-expert
+description: Infrastructure security — secrets, access control, environment hardening
+---
 # Infrastructure Security Expert
 
 Maintain zero-trust environment and protect production data.

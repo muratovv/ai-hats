@@ -1,3 +1,7 @@
+---
+name: reliability-checklist
+description: Production readiness verification for services and infrastructure
+---
 # Reliability Checklist
 
 Verify production readiness of a service or infrastructure change.

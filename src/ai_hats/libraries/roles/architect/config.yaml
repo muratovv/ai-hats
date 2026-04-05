@@ -7,8 +7,7 @@ composition:
   traits:
     - trait-base
     - trait-se-mindset
-  rules:
-    - dev_rule_architect_foundation
+  rules: []
   skills:
     - system-design-verifier
   hooks:

@@ -1,3 +1,7 @@
+---
+name: audit-reviewer
+description: Triple-perspective code review (architect, security, quality)
+---
 # Audit Reviewer
 
 Internal code review via triple-perspective debate before finalizing any non-trivial change.
@@ -33,6 +37,14 @@ Include a brief "Internal Review" section in your response noting the three pers
 - All 3 perspectives evaluated with at least one concern each
 - Blocking issues resolved before approval
 - "Internal Review" section present in the response
+
+## Bundled Rules
+
+### Edit Efficiency
+1. **New Files**: Use Write for new files. Never build incrementally with Edit.
+2. **Full Rewrites**: If >3 consecutive Edits target the same file — STOP, use Write.
+3. **Surgical Edits**: Use Edit only for targeted, isolated modifications.
+4. **Plan Before Editing**: Read the file, plan all modifications, execute in fewest operations.
 
 ## Anti-Patterns
 - Rubber-stamp review — all three perspectives say "looks good" without substance

@@ -1,3 +1,7 @@
+---
+name: scope-guard
+description: Enforce user-defined task boundaries, prevent scope creep and over-implementation
+---
 # Scope Guard
 
 Enforce user-defined task boundaries. Prevent scope creep and over-implementation.

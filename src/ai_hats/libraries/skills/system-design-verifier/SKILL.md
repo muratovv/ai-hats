@@ -1,3 +1,7 @@
+---
+name: system-design-verifier
+description: Audit architectures against failure modes (resilience, scalability, consistency, security)
+---
 # System Design Verifier
 
 Audit proposed or existing architectures against common failure modes.

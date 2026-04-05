@@ -1,3 +1,7 @@
+---
+name: network-documentation
+description: Maintain network topology and DNS documentation as source of truth
+---
 # Network Documentation
 
 Maintain the network source of truth throughout SRE tasks.

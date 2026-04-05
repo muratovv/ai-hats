@@ -1,3 +1,7 @@
+---
+name: observability-setup
+description: Logging, metrics, alerting, and dashboards setup (RED method)
+---
 # Observability Setup
 
 Ensure every service is observable: logs, metrics, alerts.

@@ -1,3 +1,7 @@
+---
+name: incident-response
+description: Structured procedure for investigating and resolving production incidents
+---
 # Incident Response
 
 Structured procedure for investigating and resolving production incidents.

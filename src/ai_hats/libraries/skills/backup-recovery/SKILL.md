@@ -1,3 +1,7 @@
+---
+name: backup-recovery
+description: 3-2-1 backup strategy with verified restore procedures
+---
 # Backup & Recovery
 
 Ensure data safety through verified backup strategy.

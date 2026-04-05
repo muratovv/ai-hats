@@ -1,3 +1,7 @@
+---
+name: network-change-verification
+description: Pre/post verification checklist for network and routing changes
+---
 # Network Change Verification
 
 Pre/post verification checklist for network and routing changes.

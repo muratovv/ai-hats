@@ -1,3 +1,7 @@
+---
+name: request-supervisor
+description: Decision protocol for when to act autonomously vs escalate to supervisor
+---
 # Request Supervisor
 
 Protocol for deciding whether to request help from supervisor (user or parent-agent).

@@ -1,8 +1,7 @@
 name: trait-agent
 composition:
   traits: []
-  rules:
-    - dev_rule_backlog_discipline
+  rules: []
   skills:
     - backlog-manager
     - request-supervisor

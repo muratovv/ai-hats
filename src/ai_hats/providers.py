@@ -17,6 +17,30 @@ if TYPE_CHECKING:
 INJECTION_START = "<!-- AI-HATS:START -->"
 INJECTION_END = "<!-- AI-HATS:END -->"
 
+# Always-on rules that stay in prompt (safety-critical)
+ALWAYS_ON_RULES = {
+    "global_rule_destructive_actions",
+    "global_rule_resource_hygiene",
+    "dev_rule_secure_coding",
+}
+
+
+def _extract_frontmatter_description(skill: ResolvedComponent) -> str:
+    """Extract description from SKILL.md YAML frontmatter."""
+    skill_md = skill.source_path / "SKILL.md"
+    if not skill_md.exists():
+        return skill.name
+    text = skill_md.read_text()
+    if not text.startswith("---"):
+        return skill.name
+    end = text.find("---", 3)
+    if end == -1:
+        return skill.name
+    for line in text[3:end].splitlines():
+        if line.startswith("description:"):
+            return line.split(":", 1)[1].strip()
+    return skill.name
+
 
 class Provider(abc.ABC):
     """Abstract provider interface."""
@@ -62,6 +86,26 @@ class Provider(abc.ABC):
         """
         return [], {}
 
+    @abc.abstractmethod
+    def skills_export_dir(self, project_dir: Path) -> Path:
+        """Provider-native skills directory."""
+
+    def export_skills(self, project_dir: Path, skills: list[ResolvedComponent]) -> None:
+        """Copy skills to provider-native directory for /skills discovery."""
+        target_dir = self.skills_export_dir(project_dir)
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for skill in skills:
+            if skill.source_path.is_dir():
+                shutil.copytree(skill.source_path, target_dir / skill.name)
+
+    def cleanup_skills(self, project_dir: Path) -> None:
+        """Remove provider-native skills directory."""
+        target_dir = self.skills_export_dir(project_dir)
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+
     def update_system_prompt(self, project_dir: Path, content: str) -> None:
         """Write or update system prompt between markers in the prompt file."""
         prompt_path = self.system_prompt_path(project_dir)
@@ -88,6 +132,9 @@ class GeminiProvider(Provider):
     def system_prompt_path(self, project_dir: Path) -> Path:
         return project_dir / "GEMINI.md"
 
+    def skills_export_dir(self, project_dir: Path) -> Path:
+        return project_dir / ".gemini" / "skills"
+
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"
 
@@ -102,19 +149,22 @@ class GeminiProvider(Provider):
         if result.merged_injection:
             sections.append(result.merged_injection)
 
-        if result.rules:
+        # Only always-on rules in prompt
+        always_on = [r for r in result.rules if r.name in ALWAYS_ON_RULES]
+        if always_on:
             rules_section = "## RULES\n"
-            for rule in result.rules:
+            for rule in always_on:
                 if rule.injection:
                     rules_section += f"\n### {rule.name}\n{rule.injection}\n"
             sections.append(rules_section)
 
+        # Skills: index only (body loaded on demand via native provider)
         if result.skills:
-            skills_section = "## SKILLS\n"
+            lines = ["## AVAILABLE SKILLS\n"]
             for skill in result.skills:
-                if skill.injection:
-                    skills_section += f"\n### {skill.name}\n{skill.injection}\n"
-            sections.append(skills_section)
+                desc = _extract_frontmatter_description(skill)
+                lines.append(f"- **{skill.name}** — {desc}")
+            sections.append("\n".join(lines))
 
         return "\n\n".join(sections)
 
@@ -175,6 +225,9 @@ class ClaudeProvider(Provider):
     def system_prompt_path(self, project_dir: Path) -> Path:
         return project_dir / "CLAUDE.md"
 
+    def skills_export_dir(self, project_dir: Path) -> Path:
+        return project_dir / ".claude" / "skills"
+
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"
 
@@ -189,19 +242,22 @@ class ClaudeProvider(Provider):
         if result.merged_injection:
             sections.append(result.merged_injection)
 
-        if result.rules:
+        # Only always-on rules in prompt
+        always_on = [r for r in result.rules if r.name in ALWAYS_ON_RULES]
+        if always_on:
             rules_section = "## RULES\n"
-            for rule in result.rules:
+            for rule in always_on:
                 if rule.injection:
                     rules_section += f"\n### {rule.name}\n{rule.injection}\n"
             sections.append(rules_section)
 
+        # Skills: index only (body loaded on demand via native provider)
         if result.skills:
-            skills_section = "## SKILLS\n"
+            lines = ["## AVAILABLE SKILLS\n"]
             for skill in result.skills:
-                if skill.injection:
-                    skills_section += f"\n### {skill.name}\n{skill.injection}\n"
-            sections.append(skills_section)
+                desc = _extract_frontmatter_description(skill)
+                lines.append(f"- **{skill.name}** — {desc}")
+            sections.append("\n".join(lines))
 
         return "\n\n".join(sections)
 

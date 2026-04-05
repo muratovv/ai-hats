@@ -7,8 +7,7 @@ composition:
   traits:
     - trait-base
     - trait-se-mindset
-  rules:
-    - dev_rule_iac_tools
+  rules: []
   skills:
     - ansible-ops
     - terraform-expert

@@ -1,3 +1,7 @@
+---
+name: bash-mastery
+description: Shell scripting, Makefile conventions, and modern CLI tooling
+---
 # Bash Mastery
 
 Shell scripting, Makefile conventions, and modern CLI tooling.

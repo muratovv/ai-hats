@@ -1,3 +1,7 @@
+---
+name: context-handoff
+description: Summarize critical context (decisions, forks, pitfalls) into a handoff file for the next agent
+---
 # Context Handoff
 
 Summarize critical context and write a handoff file for the next agent or session.

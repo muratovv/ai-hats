@@ -117,18 +117,21 @@ class Assembler:
             # 3. Copy components
             self._copy_components(result)
 
-            # 4. Update system prompt
+            # 4. Export skills to provider-native directory
+            provider.export_skills(self.project_dir, result.skills)
+
+            # 5. Update system prompt
             prompt_content = provider.build_system_prompt(result)
             provider.update_system_prompt(self.project_dir, prompt_content)
 
-            # 5. Verify
+            # 6. Verify
             self._verify(result, provider)
 
-            # 6. Update profile
+            # 7. Update profile
             profile = ProfileConfig(active_role=role_name, provider=provider.name)
             profile.save(self.profile_path)
 
-            # 7. Save backup reference
+            # 8. Save backup reference
             self._save_backup_ref(backup_path)
 
         except Exception:
@@ -152,9 +155,13 @@ class Assembler:
         ref_path.unlink(missing_ok=True)
         return True
 
-    def clean(self) -> None:
+    def clean(self, provider_name: str | None = None) -> None:
         """Clean all active directories."""
         self._clean(preserve_local=False)
+        # Clean provider-native skills
+        pname = provider_name or self.project_config.provider
+        provider = get_provider(pname)
+        provider.cleanup_skills(self.project_dir)
 
     def status(self) -> dict:
         """Get current status: role, dependency tree, health."""
@@ -206,6 +213,11 @@ class Assembler:
             src = self.project_dir / name
             if src.exists():
                 shutil.copy2(src, backup_dir / name)
+        # Backup provider-native skills
+        for provider_dir in (".claude/skills", ".gemini/skills"):
+            src = self.project_dir / provider_dir
+            if src.exists():
+                shutil.copytree(src, backup_dir / provider_dir)
         # Backup profile
         if self.profile_path.exists():
             shutil.copy2(self.profile_path, backup_dir / PROFILE_FILE)
@@ -223,6 +235,15 @@ class Assembler:
             src = backup_path / name
             if src.exists():
                 shutil.copy2(src, self.project_dir / name)
+
+        # Restore provider-native skills
+        for provider_dir in (".claude/skills", ".gemini/skills"):
+            src = backup_path / provider_dir
+            dest = self.project_dir / provider_dir
+            if src.exists():
+                if dest.exists():
+                    shutil.rmtree(dest)
+                shutil.copytree(src, dest)
 
         profile_backup = backup_path / PROFILE_FILE
         if profile_backup.exists():

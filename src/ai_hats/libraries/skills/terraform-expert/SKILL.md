@@ -1,3 +1,7 @@
+---
+name: terraform-expert
+description: Terraform/OpenTofu IaC — state management, DRY modules, safety practices
+---
 # Terraform/OpenTofu Expert
 
 Maintain robust, DRY, and secure infrastructure as code.
@@ -13,6 +17,13 @@ Maintain robust, DRY, and secure infrastructure as code.
 - **Data-Driven**: Fetch existing IDs via `data` sources. Validate inputs with `validation` blocks.
 - **Safety**: `sensitive = true` for secrets. `prevent_destroy = true` for production resources.
 - **Scaling**: Prefer `for_each` over `count` for resource sets.
+
+## Bundled Rules
+
+### IaC Tools
+1. **Documentation First**: Check current official docs before generating any IaC config.
+2. **No Hardcoded Versions**: Verify OS images, ISOs, container tags exist before referencing.
+3. **Environment Awareness**: Consult project environment docs for endpoints, storage, networks.
 
 ## Anti-Patterns
 - `tofu apply` without `plan` — always review the plan first

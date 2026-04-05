@@ -1,3 +1,7 @@
+---
+name: domain-reviewer
+description: Coordinate deep-dive reviews via specialized sub-agents as critics
+---
 # Domain & Module Reviewer
 
 Coordinate deep-dive reviews of specific system domains or modules by engaging specialized sub-agents as critics.

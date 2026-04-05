@@ -1,3 +1,7 @@
+---
+name: worktree-isolation
+description: Isolated development using git worktrees — main branch stays clean
+---
 # Worktree Isolation
 
 Isolated development using git worktrees. Each task gets its own working copy — main branch stays clean.

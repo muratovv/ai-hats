@@ -1,3 +1,7 @@
+---
+name: skill-optimization
+description: Audit and refactor library components to eliminate redundancy and staleness
+---
 # Skill Optimization
 
 Audit and refactor library components (rules, skills, traits) to eliminate redundancy, verbosity, and stale instructions.

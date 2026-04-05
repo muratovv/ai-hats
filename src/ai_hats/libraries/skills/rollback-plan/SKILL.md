@@ -1,3 +1,7 @@
+---
+name: rollback-plan
+description: Explicit revert paths for infrastructure and configuration changes
+---
 # Rollback Plan
 
 Ensure every infrastructure change has an explicit revert path.

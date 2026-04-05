@@ -1,3 +1,7 @@
+---
+name: systematic-debugging
+description: 4-phase bug-fix protocol (evidence, pattern, hypothesis, verify)
+---
 # Systematic Debugging
 
 4-phase protocol for bug fixing and error investigation. No guess-and-check.
@@ -33,6 +37,14 @@
 - Fix applied with minimal surgical changes
 - Reproduction script or failing test confirms the fix
 - Full test suite passes (no regressions)
+
+## Bundled Rules
+
+### Pessimistic Verification
+1. **Anti-Momentum**: Do NOT proceed to the next step until the current one is physically verified (tests, lint, check command).
+2. **Assumption Audit**: Before execution, list assumptions. If testable, test first.
+3. **Foundation First**: When modifying shared components, sanity check after every file modification.
+4. **No Premature Optimization**: Do not clean up unrelated code during a critical fix.
 
 ## Anti-Patterns
 - Guess-and-check — changing things randomly hoping it works

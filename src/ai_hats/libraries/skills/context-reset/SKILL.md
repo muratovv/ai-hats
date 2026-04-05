@@ -1,3 +1,7 @@
+---
+name: context-reset
+description: Clean context reset protocol — commit work, write handoff, update task card, inform supervisor
+---
 # Context Reset
 
 Protocol for cleanly resetting agent context when the context window fills up or a fresh start is needed.

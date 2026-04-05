@@ -1,3 +1,7 @@
+---
+name: retro-to-framework
+description: Convert project retrospective findings into framework-level improvements (rules, skills, skill updates)
+---
 # Retro-to-Framework
 
 Convert project-level retrospective findings into framework-level improvements.
