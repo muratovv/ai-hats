@@ -27,6 +27,17 @@ Enforce user-defined task boundaries. Prevent scope creep and over-implementatio
    (e.g., minimal implementation needed to compile), ASK the user first.
    Never silently expand scope.
 
+### Execution Checkpoints
+6. **Checkpoint rule:** After every **5 significant tool calls** (Edit, Write, Bash that changes state),
+   pause and deliver a brief status:
+   - What was done so far (1-2 lines)
+   - What's next (1-2 lines)
+   - Any deviations from plan
+7. **Large task threshold:** If executing 10+ tool calls in a single response,
+   STOP after 5 and checkpoint. Do not continue silently.
+8. **"discuss before implement" gate:** On non-trivial tasks, present the approach
+   before executing. One paragraph, not a wall of text. Wait for confirmation.
+
 ### After Completing Work
 6. **Scope audit:** Compare what you delivered against the original constraints.
    Did you do more than asked? Flag it.
@@ -41,3 +52,5 @@ Enforce user-defined task boundaries. Prevent scope creep and over-implementatio
 - Justifying scope expansion internally without asking — the user decides, not you
 - Writing full implementations when asked for signatures/interfaces
 - Writing tests when asked for design only
+- 30+ tool calls in a single response without a checkpoint — the user loses visibility
+- Skipping "discuss approach" on tasks with multiple implementation options

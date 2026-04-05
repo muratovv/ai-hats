@@ -21,6 +21,15 @@ Protocol for deciding whether to request help from supervisor (user or parent-ag
 4. **Does this require information only the supervisor has?** (business context, priorities, preferences)
    → YES: Request with specific questions.
 
+## Pre-Flight Check — Before Suggesting Commands to User
+
+**Never suggest a CLI command without verifying it first.**
+
+1. **Command exists?** Run `<tool> --help` or `which <tool>` before recommending.
+2. **Subcommand exists?** Run `<tool> <subcommand> --help` to confirm.
+3. **Can I run it myself?** If yes — run it, don't ask the user to run it for you.
+4. **If it fails** — read the error, debug the root cause. Do NOT retry blindly or suggest reinstall as first fix.
+
 ## Valid Reasons to Request
 - Authentication or authorization you cannot perform
 - Approval for destructive or irreversible actions
@@ -34,6 +43,8 @@ Protocol for deciding whether to request help from supervisor (user or parent-ag
 - Running tests or verification
 - Installing dependencies
 - Looking up documentation
+- Suggesting CLI commands you haven't verified with `--help`
+- Asking user to run something you can run via Bash tool
 
 ## Completion
 - Decision made: either acted autonomously or sent a focused request
