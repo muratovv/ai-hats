@@ -23,11 +23,26 @@ def _assembler(project_dir: Path | None = None):
     return Assembler(project_dir or _project_dir())
 
 
-@click.group()
+@click.group(
+    invoke_without_command=True,
+    context_settings={
+        "ignore_unknown_options": True,
+        "allow_extra_args": True,
+        "allow_interspersed_args": False,
+    },
+)
 @click.version_option(version=__version__)
-def main():
-    """ai-hats — AI agent role composition framework."""
-    pass
+@click.option("--provider", "-p", default=None, help="Provider override (gemini/claude)")
+@click.option("--role", "-r", default=None, help="Role override")
+@click.pass_context
+def main(ctx, provider: str | None, role: str | None):
+    """ai-hats — AI agent role composition framework.
+
+    Without a subcommand, launches a wrapped provider CLI session.
+    Unknown flags are passed through to the provider.
+    """
+    if ctx.invoked_subcommand is None:
+        _launch_session(provider=provider, role=role, extra_args=ctx.args)
 
 
 # -- set --
@@ -203,14 +218,12 @@ def token_stats(name: str, as_trait: bool, approx: bool):
     console.print(f"[dim]Method: {method}[/]")
 
 
-# -- wrap --
-
-@main.command()
-@click.option("--provider", "-p", default=None, help="Provider override (gemini/claude)")
-@click.option("--role", "-r", default=None, help="Role override")
-@click.argument("extra_args", nargs=-1)
-def wrap(provider: str | None, role: str | None, extra_args: tuple):
-    """Launch a CLI session."""
+def _launch_session(
+    provider: str | None = None,
+    role: str | None = None,
+    extra_args: list[str] | None = None,
+):
+    """Launch a wrapped provider CLI session."""
     from .models import ProfileConfig, ProjectConfig
     from .runtime import WrapRunner
 
@@ -225,7 +238,7 @@ def wrap(provider: str | None, role: str | None, extra_args: tuple):
 
     runner = WrapRunner(project_dir)
     exit_code = runner.run(
-        effective_provider, role_override=role, extra_args=list(extra_args) or None,
+        effective_provider, role_override=role, extra_args=extra_args or None,
     )
     sys.exit(exit_code)
 

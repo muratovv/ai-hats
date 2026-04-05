@@ -107,6 +107,31 @@ def test_set_idempotent_via_cli(cli_project):
 # -- Role override (shadow prompt) e2e tests --
 
 
+def test_passthrough_args_reach_main_context(cli_project):
+    """Unknown flags like --resume are collected in ctx.args, not rejected."""
+    project, runner = cli_project
+
+    # ai-hats --resume should NOT fail with "no such option"
+    # It will fail because WrapRunner can't actually launch a provider,
+    # but the important thing is it doesn't fail at Click parsing level.
+    result = runner.invoke(main, ["--resume"])
+    # Should not be a Click UsageError about unknown option
+    assert "No such option" not in (result.output or "")
+    assert "no such option" not in (result.output or "")
+
+
+def test_subcommands_work_with_passthrough_context(cli_project):
+    """Subcommands like set/status still work despite ignore_unknown_options."""
+    project, runner = cli_project
+
+    r = runner.invoke(main, ["set", "-r", ALL_ROLES[0], "-p", "claude"])
+    assert r.exit_code == 0, r.output
+
+    r = runner.invoke(main, ["status"])
+    assert r.exit_code == 0, r.output
+    assert ALL_ROLES[0] in r.output
+
+
 def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
     """--role override produces a temp file and leaves CLAUDE.md untouched."""
     from pathlib import Path
