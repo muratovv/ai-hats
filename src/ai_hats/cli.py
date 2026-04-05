@@ -23,56 +23,47 @@ def _assembler(project_dir: Path | None = None):
     return Assembler(project_dir or _project_dir())
 
 
-@click.group(invoke_without_command=True)
+@click.group()
 @click.version_option(version=__version__)
-@click.option("--provider", "-p", default=None, help="Provider override (gemini/claude)", is_eager=True)
-@click.option("--role", "-r", default=None, help="Role override", is_eager=True)
-@click.option("--keep-raw", is_flag=True, default=False, help="Keep raw trace.log after audit", is_eager=True)
-@click.pass_context
-def main(ctx, provider: str | None, role: str | None, keep_raw: bool):
-    """ai-hats — AI agent role composition framework.
-
-    Without a subcommand, launches a wrapped CLI session.
-    """
-    ctx.ensure_object(dict)
-    if ctx.invoked_subcommand is None:
-        _do_wrap(provider=provider, role=role, keep_raw=keep_raw)
-
-
-# -- init --
-
-@main.command()
-@click.option("--role", default=None, help="Initial role to apply")
-@click.option("--provider", default=None, help="Provider (gemini/claude)")
-def init(role: str | None, provider: str | None):
-    """Initialize project for ai-hats."""
-    project_dir = _project_dir()
-    asm = _assembler(project_dir)
-    asm.init(role=role, provider=provider)
-    console.print(f"[green]Initialized[/] ai-hats in {project_dir}")
-    if role:
-        console.print(f"  Role: [bold]{role}[/]")
-    console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
+def main():
+    """ai-hats — AI agent role composition framework."""
+    pass
 
 
 # -- set --
 
 @main.command("set")
-@click.argument("role")
-@click.option("--provider", default=None, help="Override provider")
-def set_role(role: str, provider: str | None):
-    """Apply a role to the project."""
-    asm = _assembler()
-    result = asm.set_role(role, provider_name=provider)
+@click.option("--provider", "-p", default=None, help="Provider (gemini/claude)")
+@click.option("--role", "-r", default=None, help="Role to apply")
+def set_role(provider: str | None, role: str | None):
+    """Configure project: set provider and/or role."""
+    if not provider and not role:
+        console.print("[red]Specify --role/-r and/or --provider/-p[/]")
+        raise SystemExit(1)
 
-    if result.errors:
-        for err in result.errors:
-            console.print(f"  [yellow]Warning[/]: {err}")
+    project_dir = _project_dir()
+    asm = _assembler(project_dir)
 
-    console.print(f"[green]Role set[/]: [bold]{result.name}[/]")
-    console.print(f"  Rules: {len(result.rules)}")
-    console.print(f"  Skills: {len(result.skills)}")
-    console.print(f"  Injections: {len(result.injections)}")
+    # Auto-init if project not yet initialized
+    if not (project_dir / "ai-hats.yaml").exists():
+        asm.init(provider=provider)
+        console.print(f"[green]Initialized[/] ai-hats in {project_dir}")
+    elif provider and not role:
+        # Provider-only update
+        asm.project_config.provider = provider
+        asm.project_config.save(asm.config_path)
+
+    if role:
+        result = asm.set_role(role, provider_name=provider)
+        if result.errors:
+            for err in result.errors:
+                console.print(f"  [yellow]Warning[/]: {err}")
+        console.print(f"[green]Role set[/]: [bold]{result.name}[/]")
+        console.print(f"  Rules: {len(result.rules)}")
+        console.print(f"  Skills: {len(result.skills)}")
+        console.print(f"  Injections: {len(result.injections)}")
+
+    console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
 
 
 # -- status --
@@ -214,13 +205,12 @@ def token_stats(name: str, as_trait: bool, approx: bool):
 
 # -- wrap --
 
-def _do_wrap(
-    provider: str | None = None,
-    role: str | None = None,
-    extra_args: list[str] | None = None,
-    keep_raw: bool = False,
-):
-    """Shared wrap logic — launch a CLI session."""
+@main.command()
+@click.option("--provider", "-p", default=None, help="Provider override (gemini/claude)")
+@click.option("--role", "-r", default=None, help="Role override")
+@click.argument("extra_args", nargs=-1)
+def wrap(provider: str | None, role: str | None, extra_args: tuple):
+    """Launch a CLI session."""
     from .models import ProfileConfig, ProjectConfig
     from .runtime import WrapRunner
 
@@ -230,24 +220,14 @@ def _do_wrap(
 
     effective_provider = provider or profile.provider or config.provider
     if not effective_provider:
-        console.print("[red]No provider configured[/]. Use -p or run ai-hats init.")
+        console.print("[red]No provider configured[/]. Run: ai-hats set -p <provider>")
         sys.exit(1)
 
     runner = WrapRunner(project_dir)
     exit_code = runner.run(
-        effective_provider, role_override=role, extra_args=extra_args, keep_raw=keep_raw,
+        effective_provider, role_override=role, extra_args=list(extra_args) or None,
     )
     sys.exit(exit_code)
-
-
-@main.command()
-@click.option("--provider", "-p", default=None, help="Provider override (gemini/claude)")
-@click.option("--role", "-r", default=None, help="Role override")
-@click.option("--keep-raw", is_flag=True, default=False, help="Keep raw trace.log after audit")
-@click.argument("extra_args", nargs=-1)
-def wrap(provider: str | None, role: str | None, keep_raw: bool, extra_args: tuple):
-    """Launch a CLI session (same as running ai-hats with no subcommand)."""
-    _do_wrap(provider=provider, role=role, extra_args=list(extra_args) or None, keep_raw=keep_raw)
 
 
 # -- run --

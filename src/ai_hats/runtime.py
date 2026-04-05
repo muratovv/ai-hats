@@ -144,7 +144,6 @@ class WrapRunner:
         provider_name: str,
         role_override: str | None = None,
         extra_args: list[str] | None = None,
-        keep_raw: bool = False,
     ) -> int:
         """Launch a wrapped CLI session with PTY proxying."""
         # Resolve provider
@@ -233,7 +232,7 @@ class WrapRunner:
 
         # Post-process → enriched audit.md (JSONL if Claude, trace.log fallback)
         jsonl_path = _claude_jsonl_path(self.project_dir, claude_session_id)
-        AuditWriter().build(session, jsonl_path=jsonl_path, keep_raw=keep_raw)
+        AuditWriter().build(session, jsonl_path=jsonl_path)
 
         _print_session_end(session, trace_stats=trace_stats)
 

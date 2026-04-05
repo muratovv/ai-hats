@@ -34,11 +34,11 @@ def cli_project(tmp_path, monkeypatch):
     return project, CliRunner()
 
 
-def test_init_creates_project(cli_project):
-    """ai-hats init --role <role> --provider claude creates all artifacts."""
+def test_set_creates_project(cli_project):
+    """ai-hats set -r <role> -p claude auto-inits and creates all artifacts."""
     project, runner = cli_project
 
-    result = runner.invoke(main, ["init", "--role", ALL_ROLES[0], "--provider", "claude"])
+    result = runner.invoke(main, ["set", "-r", ALL_ROLES[0], "-p", "claude"])
 
     assert result.exit_code == 0, result.output
     assert (project / "ai-hats.yaml").exists()
@@ -55,12 +55,7 @@ def test_set_all_roles(cli_project, role):
     """Every built-in role assembles without errors via CLI."""
     project, runner = cli_project
 
-    # init first
-    r = runner.invoke(main, ["init", "--provider", "claude"])
-    assert r.exit_code == 0, r.output
-
-    # set role
-    r = runner.invoke(main, ["set", role, "--provider", "claude"])
+    r = runner.invoke(main, ["set", "-r", role, "-p", "claude"])
     assert r.exit_code == 0, r.output
     assert "Warning" not in r.output
     assert (project / "CLAUDE.md").exists()
@@ -71,8 +66,7 @@ def test_status_after_set(cli_project):
     """ai-hats status shows role and components after set."""
     project, runner = cli_project
 
-    runner.invoke(main, ["init", "--provider", "claude"])
-    runner.invoke(main, ["set", ALL_ROLES[0], "--provider", "claude"])
+    runner.invoke(main, ["set", "-r", ALL_ROLES[0], "-p", "claude"])
 
     r = runner.invoke(main, ["status"])
     assert r.exit_code == 0, r.output
@@ -83,8 +77,7 @@ def test_bump_after_set(cli_project):
     """ai-hats bump re-assembles without errors."""
     project, runner = cli_project
 
-    runner.invoke(main, ["init", "--provider", "claude"])
-    runner.invoke(main, ["set", ALL_ROLES[0], "--provider", "claude"])
+    runner.invoke(main, ["set", "-r", ALL_ROLES[0], "-p", "claude"])
 
     prompt_before = (project / "CLAUDE.md").read_text()
 
@@ -97,14 +90,14 @@ def test_bump_after_set(cli_project):
     assert prompt_before == prompt_after
 
 
-def test_init_idempotent_via_cli(cli_project):
-    """Repeated init does not break existing state."""
+def test_set_idempotent_via_cli(cli_project):
+    """Repeated set does not break existing state."""
     project, runner = cli_project
 
-    runner.invoke(main, ["init", "--role", ALL_ROLES[0], "--provider", "claude"])
+    runner.invoke(main, ["set", "-r", ALL_ROLES[0], "-p", "claude"])
     prompt_first = (project / "CLAUDE.md").read_text()
 
-    r = runner.invoke(main, ["init", "--role", ALL_ROLES[0], "--provider", "claude"])
+    r = runner.invoke(main, ["set", "-r", ALL_ROLES[0], "-p", "claude"])
     assert r.exit_code == 0, r.output
 
     prompt_second = (project / "CLAUDE.md").read_text()
@@ -125,7 +118,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
     project, runner = cli_project
 
     # Init + set base role
-    runner.invoke(main, ["init", "--role", "assistant", "--provider", "claude"])
+    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
     original_claude = (project / "CLAUDE.md").read_text()
     original_profile = ProfileConfig.load(project / "profile.json")
     assert original_profile.active_role == "assistant"
@@ -159,7 +152,7 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
     from ai_hats.providers import ClaudeProvider
 
     project, runner = cli_project
-    runner.invoke(main, ["init", "--role", "assistant", "--provider", "claude"])
+    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
 
     asm = Assembler(project)
     provider = ClaudeProvider()
@@ -206,7 +199,7 @@ def test_gemini_override_creates_session_rules_dir(cli_project):
     from ai_hats.providers import GeminiProvider
 
     project, runner = cli_project
-    runner.invoke(main, ["init", "--role", "assistant", "--provider", "gemini"])
+    runner.invoke(main, ["set", "-r", "assistant", "-p", "gemini"])
 
     asm = Assembler(project)
     provider = GeminiProvider()
@@ -261,7 +254,7 @@ def test_update_command_runs_via_cli(cli_project, monkeypatch):
     project, runner = cli_project
 
     # Init project so migrate doesn't fail
-    runner.invoke(main, ["init", "--provider", "claude"])
+    runner.invoke(main, ["set", "-p", "claude"])
 
     captured_cmds = []
 
@@ -290,7 +283,7 @@ def test_update_command_reports_failure(cli_project, monkeypatch):
     import subprocess
 
     project, runner = cli_project
-    runner.invoke(main, ["init", "--provider", "claude"])
+    runner.invoke(main, ["set", "-p", "claude"])
 
     def mock_run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="Connection refused")
@@ -307,7 +300,7 @@ def test_update_shows_version_transition(cli_project, monkeypatch):
     import subprocess
 
     project, runner = cli_project
-    runner.invoke(main, ["init", "--provider", "claude"])
+    runner.invoke(main, ["set", "-p", "claude"])
 
     def mock_run(cmd, **kwargs):
         # Version check returns new version
@@ -343,7 +336,7 @@ def test_update_shows_already_up_to_date(cli_project, monkeypatch):
     from ai_hats import __version__
 
     project, runner = cli_project
-    runner.invoke(main, ["init", "--provider", "claude"])
+    runner.invoke(main, ["set", "-p", "claude"])
 
     def mock_run(cmd, **kwargs):
         if "__version__" in str(cmd):
