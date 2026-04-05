@@ -113,7 +113,9 @@ def test_set_role(project_with_library):
 
     prompt = (project / "GEMINI.md").read_text()
     assert "Role injection" in prompt
-    assert "Test Rule" in prompt
+    # Rules are copied to .agent/rules/ but only always-on rules appear in prompt
+    # Context-specific rules load on demand via native provider skills
+    assert (project / ".agent" / "rules" / "test_rule" / "rule.md").exists()
 
 
 def test_set_role_with_claude(project_with_library):
@@ -241,7 +243,6 @@ def test_wrap_reassembles_on_provider_mismatch(project_with_library):
     assert (project / "CLAUDE.md").exists()
     prompt = (project / "CLAUDE.md").read_text()
     assert "Role injection" in prompt
-    assert "Test Rule" in prompt
 
     # Profile updated
     profile = ProfileConfig.load(project / "profile.json")
