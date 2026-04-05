@@ -1,0 +1,5 @@
+name: worktree-isolation
+description: Isolated development using git worktrees — main branch stays clean
+author: ai-hats
+tags: [development, git, isolation]
+pattern: template

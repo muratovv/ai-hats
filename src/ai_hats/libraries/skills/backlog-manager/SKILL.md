@@ -11,6 +11,32 @@ Orchestrate task lifecycle using YAML task cards in `.agent/backlog/tasks/`.
 - Managing task state transitions (brainstorm → plan → execute → document → review → done)
 - Coordinating sub-agent delegation
 
+## CLI Interface
+
+**All backlog operations MUST use the `ai-hats task` CLI. Never create task directories or YAML files manually.**
+
+```bash
+# Create task (ID auto-generated if omitted)
+ai-hats task create "Title" -d "Description" -p medium --tag dx --tag cleanup
+
+# Show task
+ai-hats task show HATS-042
+
+# Transition state
+ai-hats task transition HATS-042 plan
+ai-hats task transition HATS-042 execute
+ai-hats task transition HATS-042 done
+
+# Log work progress
+ai-hats task log HATS-042 "Implemented X, tests green"
+
+# List tasks
+ai-hats task list
+
+# Sync STATE.md and backlog.md
+ai-hats task sync
+```
+
 ## Task Card
 
 Each task gets a directory: `.agent/backlog/tasks/<ID>/task.yaml` + artifacts.
@@ -31,9 +57,10 @@ brainstorm → plan → execute → document → review → done
 
 Create or refine the task card. Clarify requirements.
 
+- Create task: `ai-hats task create "Title" -d "Description" -p <priority>`
 - If requirements are unclear → **request-supervisor**: ask supervisor for context
 - Output: task.yaml with clear description and acceptance criteria
-- Transition to `plan` when scope is understood
+- Transition: `ai-hats task transition <ID> plan` when scope is understood
 
 ### plan
 
@@ -51,12 +78,13 @@ Draft an implementation plan. Attach to task directory as `plan.md`.
 - Break large tasks into subtasks with delegation recommendations
 - Before delegating → **context-handoff**: summarize context for sub-agent
 - Output: `.agent/backlog/tasks/<ID>/plan.md`
-- Transition to `execute` when plan is ready AND all approaches are addressed
+- Transition: `ai-hats task transition <ID> execute` when plan is ready AND all approaches are addressed
 
 ### plan → execute
 
-1. Create isolated workspace → **worktree-isolation**: `ai-hats wt create type/TICKET-ID`
-2. Work happens in worktree — main branch stays clean
+1. `ai-hats task transition <ID> execute`
+2. Create isolated workspace → **worktree-isolation**: `ai-hats wt create type/TICKET-ID`
+3. Work happens in worktree — main branch stays clean
 
 ### execute
 
@@ -66,12 +94,13 @@ Active development in the worktree.
 - Commit frequently with conventional format → **git-mastery**: `type(scope): description`
 - Before requesting anything from user → **request-supervisor**: run the checklist
 - On context pressure → **context-reset**: save state, write handoff, hand off cleanly
-- Log significant actions in task.yaml `work_log`
+- Log significant actions: `ai-hats task log <ID> "message"`
 
 ### execute → document
 
 1. Ensure all changes committed → **git-mastery**: `git status` clean
-2. Update task.yaml work_log with summary of what was done
+2. Log summary: `ai-hats task log <ID> "summary of what was done"`
+3. `ai-hats task transition <ID> document`
 
 ### document
 
@@ -85,6 +114,7 @@ Update documentation affected by changes.
 
 1. Verify docs reflect the actual changes (not stale)
 2. Commit documentation changes → **git-mastery**
+3. `ai-hats task transition <ID> review`
 
 ### review
 
@@ -99,8 +129,8 @@ Analyze quality of work done.
 
 1. Run **task-summary**: capture architectural decisions, decision forks, and pitfalls
 2. Merge worktree back → **worktree-isolation**: `ai-hats wt merge`
-3. Update task.yaml: `state: done`, `completed_at: <timestamp>`
-4. Update STATE.md
+3. `ai-hats task transition <ID> done`
+4. `ai-hats task sync`
 
 ### failed
 
@@ -108,23 +138,26 @@ Task cannot be completed from execute or review.
 
 - **self-retrospective**: mandatory — analyze why it failed
 - Worktree: keep for analysis or discard → **worktree-isolation**: `ai-hats wt discard`
-- Transition back to `brainstorm` with lessons learned in work_log
+- `ai-hats task log <ID> "failure reason and lessons learned"`
+- `ai-hats task transition <ID> brainstorm`
 
 ### blocked
 
 Task is blocked by external dependency from any active state.
 
 - **request-supervisor**: document what blocks and request from supervisor
-- Record blocking reason in task.yaml work_log
+- `ai-hats task log <ID> "blocked: <reason>"`
+- `ai-hats task transition <ID> blocked`
 - Transition back to previous state when unblocked
 
 ## Bundled Rules
 
 ### Backlog Discipline
-1. **Work Log Cadence**: Update task.yaml work_log after every significant action.
-2. **State Transitions**: Update task.yaml state immediately when work changes phase.
-3. **STATE.md Sync**: After any task state change, update .agent/STATE.md.
-4. **Completion Gate**: Task not done until: state is done, work_log has final entry, STATE.md updated.
+1. **CLI Only**: All task operations go through `ai-hats task` CLI. Never edit task.yaml manually.
+2. **Work Log Cadence**: `ai-hats task log <ID> "message"` after every significant action.
+3. **State Transitions**: `ai-hats task transition <ID> <state>` immediately when work changes phase.
+4. **STATE.md Sync**: Run `ai-hats task sync` after task state changes.
+5. **Completion Gate**: Task not done until: state is done, work_log has final entry, sync is run.
 
 ## Anti-Patterns
 - Skipping states — each transition must be explicit, no brainstorm→execute jumps

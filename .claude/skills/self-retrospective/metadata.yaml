@@ -1,0 +1,5 @@
+name: self-retrospective
+description: Post-work analysis to identify systemic improvements (5 Whys, classify, archive)
+author: ai-hats
+tags: [process, agent-protocol, improvement]
+pattern: protocol
