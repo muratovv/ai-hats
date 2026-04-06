@@ -871,23 +871,87 @@ def _get_changelog() -> str:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _snapshot_library() -> dict[str, set[str]]:
+    """Snapshot available component names from built-in + global library paths."""
+    from .library import LibraryResolver
+    from .models import ComponentType
+
+    builtin = Path(__file__).parent / "libraries"
+    paths = [p for p in [builtin, Path.home() / ".ai-hats"] if p.is_dir()]
+    resolver = LibraryResolver(paths)
+    return {ct.value: set(resolver.list_components(ct)) for ct in ComponentType}
+
+
+def _format_component_diff(
+    before: dict[str, set[str]], after: dict[str, set[str]],
+) -> bool:
+    """Print added/removed components. Returns True if any changes found."""
+    any_changes = False
+    for component_type in ("role", "trait", "rule", "skill"):
+        old = before.get(component_type, set())
+        new = after.get(component_type, set())
+        added = sorted(new - old)
+        removed = sorted(old - new)
+        if added or removed:
+            any_changes = True
+            for name in added:
+                console.print(f"  [green]+[/] {component_type}: {name}", highlight=False)
+            for name in removed:
+                console.print(f"  [red]-[/] {component_type}: {name}", highlight=False)
+    return any_changes
+
+
+def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
+    """Snapshot current role's rules and skills via composition."""
+    from .models import ProfileConfig
+
+    profile = ProfileConfig.load(asm.profile_path)
+    if not profile.active_role:
+        return set(), set()
+    try:
+        result = asm.composer.compose(
+            profile.active_role, overlay=asm._get_overlay(profile.active_role),
+        )
+        return {r.name for r in result.rules}, {s.name for s in result.skills}
+    except Exception:
+        return set(), set()
+
+
 @main.command()
 def update():
     """Update ai-hats from GitHub."""
     import subprocess
 
     from . import __version__ as old_version
-    console.print(f"Current version: [bold]{old_version}[/]")
-    console.print("Updating from GitHub...")
+    from .models import ProfileConfig
 
+    console.print(f"Current version: [bold]{old_version}[/]")
+
+    # 1. Snapshot before update
+    before_lib = _snapshot_library()
+    project_dir = _project_dir()
+    profile_path = project_dir / "profile.json"
+    active_role = None
+    before_rules: set[str] = set()
+    before_skills: set[str] = set()
+
+    if profile_path.exists() and (project_dir / "ai-hats.yaml").exists():
+        profile = ProfileConfig.load(profile_path)
+        active_role = profile.active_role or None
+        if active_role:
+            asm = _assembler(project_dir)
+            before_rules, before_skills = _snapshot_composition(asm)
+
+    # 2. Install
+    console.print("Updating from GitHub...")
     cmd = _build_update_cmd()
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         console.print(f"[red]Update failed[/]: {result.stderr}")
         return
 
+    # 3. Version diff
     new_version = _get_installed_version()
-
     if new_version == old_version:
         console.print(f"[green]Already up to date[/] ({old_version})")
     else:
@@ -898,11 +962,47 @@ def update():
             console.print("\n[bold]Recent changes:[/]")
             for line in changelog.splitlines()[:7]:
                 console.print(f"  {line}")
-            console.print()
 
-    # Auto-migrate
-    console.print("Running migration...")
+    # 4. Library diff
+    after_lib = _snapshot_library()
+    console.print("\n[bold]Library:[/]")
+    if not _format_component_diff(before_lib, after_lib):
+        console.print("  [dim]No changes[/]")
+
+    # 5. Auto-migrate
+    console.print("\n[bold]Migration:[/]")
     migrate.invoke(click.Context(migrate))
+
+    # 6. Auto-bump if role active
+    if active_role:
+        console.print(f"\n[bold]Re-assembling:[/] {active_role}")
+        try:
+            asm = _assembler(project_dir)
+            bump_result = asm.bump()
+            if bump_result:
+                after_rules = {r.name for r in bump_result.rules}
+                after_skills = {s.name for s in bump_result.skills}
+                added_r = sorted(after_rules - before_rules)
+                removed_r = sorted(before_rules - after_rules)
+                added_s = sorted(after_skills - before_skills)
+                removed_s = sorted(before_skills - after_skills)
+                has_diff = bool(added_r or removed_r or added_s or removed_s)
+                if has_diff:
+                    for r in added_r:
+                        console.print(f"  [green]+[/] rule: {r}", highlight=False)
+                    for r in removed_r:
+                        console.print(f"  [red]-[/] rule: {r}", highlight=False)
+                    for s in added_s:
+                        console.print(f"  [green]+[/] skill: {s}", highlight=False)
+                    for s in removed_s:
+                        console.print(f"  [red]-[/] skill: {s}", highlight=False)
+                else:
+                    console.print("  [dim]No composition changes[/]")
+                if bump_result.errors:
+                    for err in bump_result.errors:
+                        console.print(f"  [yellow]{err}[/]")
+        except Exception as e:
+            console.print(f"  [red]Bump failed[/]: {e}")
 
 
 
