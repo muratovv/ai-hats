@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 
 import pytest
@@ -352,6 +351,31 @@ def test_update_shows_version_transition(cli_project, monkeypatch):
     # Shows changelog
     assert "Recent changes" in result.output
     assert "new feature" in result.output
+
+
+# -- Task create CLI tests --
+
+
+def test_task_create_auto_id(cli_project):
+    """ai-hats task create TITLE works without --id."""
+    project, runner = cli_project
+    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+
+    result = runner.invoke(main, ["task", "create", "My test task", "-d", "desc"])
+    assert result.exit_code == 0, result.output
+    assert "Created" in result.output
+    assert "My test task" in result.output
+
+
+def test_task_create_explicit_id(cli_project):
+    """ai-hats task create TITLE --id ID uses the given ID."""
+    project, runner = cli_project
+    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+
+    result = runner.invoke(main, ["task", "create", "Explicit ID task", "--id", "CUSTOM-001"])
+    assert result.exit_code == 0, result.output
+    assert "CUSTOM-001" in result.output
+    assert (project / ".agent" / "backlog" / "tasks" / "CUSTOM-001" / "task.yaml").exists()
 
 
 def test_update_shows_already_up_to_date(cli_project, monkeypatch):

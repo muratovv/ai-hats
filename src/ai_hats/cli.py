@@ -192,7 +192,6 @@ def token_stats(name: str, as_trait: bool, approx: bool):
 
     from .composer import Composer
     from .costs import analyze_composition
-    from .library import LibraryResolver
 
     asm = _assembler()
     composer = Composer(asm.resolver)
@@ -435,8 +434,8 @@ def task():
 
 
 @task.command("create")
-@click.argument("task_id", required=False, default=None)
 @click.argument("title")
+@click.option("--id", "task_id", default=None, help="Task ID (auto-generated if omitted)")
 @click.option("--description", "-d", default="", help="Task description")
 @click.option("--priority", "-p", default="medium", help="Priority (low/medium/high)")
 @click.option("--role", default="", help="Assigned role")
@@ -584,7 +583,7 @@ def _get_changelog() -> str:
     try:
         result = subprocess.run(
             ["git", "clone", "--depth", "10", "--filter=blob:none", "--quiet",
-             f"ssh://git@github.com/muratovv/ai-hats.git", tmp],
+             "ssh://git@github.com/muratovv/ai-hats.git", tmp],
             capture_output=True, text=True, timeout=15,
         )
         if result.returncode != 0:

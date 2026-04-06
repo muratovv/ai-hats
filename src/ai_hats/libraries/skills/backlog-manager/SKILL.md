@@ -17,7 +17,7 @@ Orchestrate task lifecycle using YAML task cards in `.agent/backlog/tasks/`.
 
 ```bash
 # Create task (ID auto-generated if omitted)
-ai-hats task create "Title" -d "Description" -p medium --tag dx --tag cleanup
+ai-hats task create "Title" -d "Description" -p medium --tag dx --tag cleanup --id HATS-042
 
 # Show task
 ai-hats task show HATS-042

@@ -87,7 +87,7 @@ ai-hats retro [--session <ID>]
 ai-hats audit [--session <ID>]
 
 # Задачи
-ai-hats task create [ID] <title> [-d <desc>] [-p high|medium|low]
+ai-hats task create <title> [--id ID] [-d <desc>] [-p high|medium|low]
 ai-hats task transition <ID> <state>
 ai-hats task log <ID> <message>
 ai-hats task list [--state <state>]
