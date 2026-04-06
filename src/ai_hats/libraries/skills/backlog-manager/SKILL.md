@@ -27,6 +27,11 @@ ai-hats task transition HATS-042 plan
 ai-hats task transition HATS-042 execute
 ai-hats task transition HATS-042 done
 
+# Update task fields
+ai-hats task update HATS-042 -p high
+ai-hats task update HATS-042 --description "New description" --resolution "Closed: duplicate"
+ai-hats task update HATS-042 --add-tag refactor --remove-tag wip
+
 # Log work progress
 ai-hats task log HATS-042 "Implemented X, tests green"
 
