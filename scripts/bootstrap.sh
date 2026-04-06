@@ -102,17 +102,13 @@ ok "python" "${PY_VERSION}"
 
 # -- 2. Create / activate venv --
 
-if [[ -z "${VIRTUAL_ENV:-}" ]]; then
-    if [[ ! -d .venv ]]; then
-        info "venv" "creating .venv..."
-        python3 -m venv .venv
-    fi
-    # shellcheck disable=SC1091
-    source .venv/bin/activate
-    ok "venv" ".venv activated"
-else
-    ok "venv" "$(basename "$VIRTUAL_ENV")"
+if [[ ! -d .venv ]]; then
+    info "venv" "creating .venv..."
+    python3 -m venv .venv
 fi
+# shellcheck disable=SC1091
+source .venv/bin/activate
+ok "venv" ".venv activated"
 
 # -- 3. Install ai-hats --
 
