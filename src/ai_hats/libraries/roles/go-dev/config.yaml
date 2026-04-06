@@ -11,7 +11,12 @@ composition:
     - dev::go
   rules: []
   skills: []
-  hooks: {}
+  hooks:
+    session_start: []
+    session_end: []
+    task_complete:
+      - go vet ./...
+      - go test -race ./...
   mcp: []
 injection: |
   # ROLE: GO DEVELOPER

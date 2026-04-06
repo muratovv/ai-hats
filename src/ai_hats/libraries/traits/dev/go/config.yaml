@@ -9,17 +9,41 @@ injection: |
   ## GO DEVELOPMENT
 
   ### Standards
-  - Go 1.22+ with generics where appropriate
+  - Go 1.24+ with generics where appropriate
   - Follow effective Go idioms
   - Use go modules for dependency management
-  - Error handling: wrap errors with context, never ignore
+  - Format with `gofmt`/`goimports` — non-negotiable
+
+  ### Error Handling
+  - Always wrap errors with context: `fmt.Errorf("operation failed: %w", err)`
+  - Use `errors.Is`/`errors.As` for error inspection, not type assertions
+  - Define sentinel errors (`var ErrNotFound = errors.New(...)`) for expected conditions
+  - Never ignore errors — handle or explicitly discard with comment
+
+  ### Concurrency
+  - Pass `context.Context` as the first parameter in API functions
+  - Use `errgroup` for goroutine lifecycle management
+  - Always run `go test -race ./...` to detect data races
+  - Prefer channels for communication, mutexes for state protection
 
   ### Testing
-  - Table-driven tests
+  - Table-driven tests as default pattern
   - Use testify for assertions when helpful
-  - Benchmark critical paths
+  - Benchmark critical paths with `testing.B`
+  - Race detector enabled in CI: `go test -race ./...`
+
+  ### Tooling
+  - `go vet ./...` — catch common mistakes
+  - `golangci-lint run` — comprehensive linting
+  - `staticcheck ./...` — advanced static analysis
+  - `gosec ./...` — security-focused analysis
+
+  ### Dependencies
+  - Minimal dependencies — stdlib first
+  - `go mod tidy` after changing imports
+  - Pin versions via go.mod, review go.sum changes
 
   ### Project Layout
   - cmd/ for entry points
   - internal/ for private packages
-  - pkg/ for public packages
+  - Root packages for public API (avoid pkg/ convention)
