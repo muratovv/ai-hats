@@ -7,6 +7,7 @@ composition:
   traits:
     - trait-base
     - trait-se-mindset
+    - env::proxmox
   rules: []
   skills:
     - ansible-ops

@@ -1,0 +1,9 @@
+name: env::proxmox
+composition:
+  traits: []
+  rules:
+    - env_rule_proxmox_infra
+  skills: []
+  hooks: {}
+  mcp: []
+injection: ""

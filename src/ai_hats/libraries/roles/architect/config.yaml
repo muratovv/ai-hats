@@ -10,6 +10,8 @@ composition:
   rules: []
   skills:
     - system-design-verifier
+    - adr-manager
+    - domain-reviewer
   hooks:
     session_start: []
     session_end: []
