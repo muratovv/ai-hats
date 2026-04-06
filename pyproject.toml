@@ -28,8 +28,8 @@ costs = [
 [project.scripts]
 ai-hats = "ai_hats.cli:main"
 
-[tool.setuptools.dynamic]
-version = {attr = "ai_hats.__version__"}
+[tool.setuptools_scm]
+version_file = "src/ai_hats/_version.py"
 
 [tool.setuptools.packages.find]
 where = ["src"]
