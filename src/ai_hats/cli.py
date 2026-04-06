@@ -244,7 +244,7 @@ def status():
         console.print("\n[bold]Health:[/]")
         for component, status_val in st["health"].items():
             icon = "[green]OK[/]" if status_val == "OK" else "[red]Missing[/]"
-            console.print(f"  {component}: {icon}")
+            console.print(f"  {component}: {icon}", highlight=False)
 
     if st.get("errors"):
         console.print("\n[bold yellow]Errors:[/]")
