@@ -98,10 +98,17 @@ class Assembler:
         if role:
             self.set_role(role)
 
+    def _get_overlay(self, role_name: str):
+        """Get overlay for a role from project config, or None."""
+        overlay = self.project_config.customizations.get(role_name)
+        if overlay and overlay.is_empty:
+            return None
+        return overlay
+
     def set_role(self, role_name: str, provider_name: str | None = None) -> CompositionResult:
         """Apply a role to the project. Full assembly cycle."""
         provider = get_provider(provider_name or self.project_config.provider)
-        result = self.composer.compose(role_name)
+        result = self.composer.compose(role_name, overlay=self._get_overlay(role_name))
 
         if result.errors:
             # Still proceed with what we have, but report errors
@@ -176,7 +183,9 @@ class Assembler:
         }
 
         if profile.active_role:
-            result = self.composer.compose(profile.active_role)
+            result = self.composer.compose(
+                profile.active_role, overlay=self._get_overlay(profile.active_role),
+            )
             status["tree"] = self._build_tree(result)
             status["health"] = self._check_health(result)
             status["errors"] = result.errors

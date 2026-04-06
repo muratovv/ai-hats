@@ -1,10 +1,10 @@
 """Tests for composition engine."""
 
 import pytest
-from pathlib import Path
 
 from ai_hats.composer import Composer
 from ai_hats.library import LibraryResolver
+from ai_hats.models import OverlayConfig
 
 
 @pytest.fixture
@@ -211,3 +211,141 @@ composition:
     resolver = LibraryResolver([lib])
     result = Composer(resolver).compose("ns-role")
     assert "Python trait" in result.merged_injection
+
+
+# -- Overlay tests --
+
+
+@pytest.fixture
+def overlay_library(tmp_path):
+    """Library with extra components for overlay testing."""
+    lib = tmp_path / "lib"
+
+    # Rules
+    for name in ("rule_a", "rule_b"):
+        d = lib / "rules" / name
+        d.mkdir(parents=True)
+        (d / "rule.md").write_text(f"# {name}")
+        (d / "metadata.yaml").write_text(f"name: {name}\n")
+
+    # Skills
+    for name in ("skill_a", "skill_b"):
+        d = lib / "skills" / name
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {name}\n---\n# {name}")
+
+    # Traits
+    trait_x = lib / "traits" / "trait-x"
+    trait_x.mkdir(parents=True)
+    (trait_x / "config.yaml").write_text("name: trait-x\ninjection: Trait X injection.\n")
+
+    trait_y = lib / "traits" / "trait-y"
+    trait_y.mkdir(parents=True)
+    (trait_y / "config.yaml").write_text("name: trait-y\ninjection: Trait Y injection.\n")
+
+    # Role with trait-x, rule_a, skill_a
+    role_dir = lib / "roles" / "base-role"
+    role_dir.mkdir(parents=True)
+    (role_dir / "config.yaml").write_text("""
+name: base-role
+priorities:
+  - Reliability
+composition:
+  traits:
+    - trait-x
+  rules:
+    - rule_a
+  skills:
+    - skill_a
+injection: |
+  Base role injection.
+""")
+
+    return lib
+
+
+@pytest.fixture
+def overlay_composer(overlay_library):
+    resolver = LibraryResolver([overlay_library])
+    return Composer(resolver)
+
+
+def test_overlay_add_trait(overlay_composer):
+    overlay = OverlayConfig(add_traits=["trait-y"])
+    result = overlay_composer.compose("base-role", overlay=overlay)
+    assert "Trait X injection" in result.merged_injection
+    assert "Trait Y injection" in result.merged_injection
+    assert len(result.errors) == 0
+
+
+def test_overlay_remove_trait(overlay_composer):
+    overlay = OverlayConfig(remove_traits=["trait-x"])
+    result = overlay_composer.compose("base-role", overlay=overlay)
+    assert "Trait X injection" not in result.merged_injection
+    assert "Base role injection" in result.merged_injection
+    assert len(result.errors) == 0
+
+
+def test_overlay_add_skill(overlay_composer):
+    overlay = OverlayConfig(add_skills=["skill_b"])
+    result = overlay_composer.compose("base-role", overlay=overlay)
+    skill_names = [s.name for s in result.skills]
+    assert "skill_a" in skill_names
+    assert "skill_b" in skill_names
+
+
+def test_overlay_remove_skill(overlay_composer):
+    overlay = OverlayConfig(remove_skills=["skill_a"])
+    result = overlay_composer.compose("base-role", overlay=overlay)
+    skill_names = [s.name for s in result.skills]
+    assert "skill_a" not in skill_names
+
+
+def test_overlay_add_and_remove(overlay_composer):
+    overlay = OverlayConfig(
+        add_traits=["trait-y"],
+        remove_traits=["trait-x"],
+        add_skills=["skill_b"],
+        remove_skills=["skill_a"],
+    )
+    result = overlay_composer.compose("base-role", overlay=overlay)
+    assert "Trait Y injection" in result.merged_injection
+    assert "Trait X injection" not in result.merged_injection
+    skill_names = [s.name for s in result.skills]
+    assert "skill_b" in skill_names
+    assert "skill_a" not in skill_names
+    assert len(result.errors) == 0
+
+
+def test_overlay_injection_append(overlay_composer):
+    overlay = OverlayConfig(injection_append="Custom user injection.")
+    result = overlay_composer.compose("base-role", overlay=overlay)
+    merged = result.merged_injection
+    assert "Custom user injection." in merged
+    # Must come after role injection
+    assert merged.index("Base role injection") < merged.index("Custom user injection")
+
+
+def test_overlay_remove_nonexistent_warns(overlay_composer):
+    overlay = OverlayConfig(remove_traits=["nonexistent-trait"], remove_skills=["nonexistent-skill"])
+    result = overlay_composer.compose("base-role", overlay=overlay)
+    warnings = [e for e in result.errors if "Overlay" in e]
+    assert len(warnings) == 2
+    assert any("nonexistent-trait" in w for w in warnings)
+    assert any("nonexistent-skill" in w for w in warnings)
+
+
+def test_overlay_none_is_noop(overlay_composer):
+    """compose() with overlay=None should behave identically to no overlay."""
+    result_no_overlay = overlay_composer.compose("base-role")
+    result_none = overlay_composer.compose("base-role", overlay=None)
+    assert result_no_overlay.merged_injection == result_none.merged_injection
+    assert [s.name for s in result_no_overlay.skills] == [s.name for s in result_none.skills]
+
+
+def test_overlay_empty_is_noop(overlay_composer):
+    """Empty OverlayConfig should not change composition."""
+    overlay = OverlayConfig()
+    result_base = overlay_composer.compose("base-role")
+    result_overlay = overlay_composer.compose("base-role", overlay=overlay)
+    assert result_base.merged_injection == result_overlay.merged_injection

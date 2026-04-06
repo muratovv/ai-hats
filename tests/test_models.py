@@ -6,6 +6,8 @@ from ai_hats.models import (
     ComponentConfig,
     Composition,
     HooksConfig,
+    OverlayConfig,
+    ProjectConfig,
     TaskCard,
     TaskState,
     resolve_namespace,
@@ -111,3 +113,94 @@ injection: |
     assert config.priorities == ["Safety", "Speed"]
     assert config.composition.traits == ["trait-base"]
     assert "Test injection" in config.injection
+
+
+# -- OverlayConfig tests --
+
+
+def test_overlay_config_from_dict():
+    data = {
+        "add": {"traits": ["my-trait"], "skills": ["my-skill"]},
+        "remove": {"traits": ["old-trait"], "rules": ["old-rule"]},
+        "injection_append": "Extra text.",
+    }
+    overlay = OverlayConfig.from_dict(data)
+    assert overlay.add_traits == ["my-trait"]
+    assert overlay.add_skills == ["my-skill"]
+    assert overlay.remove_traits == ["old-trait"]
+    assert overlay.remove_rules == ["old-rule"]
+    assert overlay.injection_append == "Extra text."
+    assert overlay.add_rules == []
+    assert overlay.remove_skills == []
+
+
+def test_overlay_config_from_empty():
+    overlay = OverlayConfig.from_dict(None)
+    assert overlay.is_empty
+    overlay2 = OverlayConfig.from_dict({})
+    assert overlay2.is_empty
+
+
+def test_overlay_config_roundtrip():
+    original = OverlayConfig(
+        add_traits=["t1"], remove_skills=["s1"], injection_append="text",
+    )
+    d = original.to_dict()
+    restored = OverlayConfig.from_dict(d)
+    assert restored.add_traits == original.add_traits
+    assert restored.remove_skills == original.remove_skills
+    assert restored.injection_append == original.injection_append
+
+
+def test_overlay_config_to_dict_omits_empty():
+    overlay = OverlayConfig(add_traits=["t1"])
+    d = overlay.to_dict()
+    assert "add" in d
+    assert "remove" not in d
+    assert "injection_append" not in d
+
+
+def test_overlay_config_is_empty():
+    assert OverlayConfig().is_empty
+    assert not OverlayConfig(add_traits=["x"]).is_empty
+    assert not OverlayConfig(injection_append="x").is_empty
+
+
+# -- ProjectConfig with customizations --
+
+
+def test_project_config_customizations_roundtrip(tmp_path):
+    config = ProjectConfig(
+        provider="claude",
+        default_role="sre",
+        customizations={
+            "sre": OverlayConfig(add_traits=["my-trait"], remove_skills=["old-skill"]),
+        },
+    )
+    path = tmp_path / "ai-hats.yaml"
+    config.save(path)
+
+    loaded = ProjectConfig.from_yaml(path)
+    assert "sre" in loaded.customizations
+    assert loaded.customizations["sre"].add_traits == ["my-trait"]
+    assert loaded.customizations["sre"].remove_skills == ["old-skill"]
+
+
+def test_project_config_no_customizations_backward_compat(tmp_path):
+    """Existing ai-hats.yaml without customizations field should load fine."""
+    path = tmp_path / "ai-hats.yaml"
+    path.write_text("provider: claude\ndefault_role: assistant\nschema_version: 1\n")
+
+    config = ProjectConfig.from_yaml(path)
+    assert config.customizations == {}
+    assert config.provider == "claude"
+
+
+def test_project_config_empty_customizations_not_serialized(tmp_path):
+    """Empty customizations should not appear in saved YAML."""
+    config = ProjectConfig(provider="claude", customizations={})
+    path = tmp_path / "ai-hats.yaml"
+    config.save(path)
+
+    content = path.read_text()
+    assert "customizations" not in content

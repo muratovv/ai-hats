@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .library import LibraryResolver
-from .models import ComponentConfig, ComponentType, HooksConfig, MCPServerConfig
+from .models import ComponentConfig, ComponentType, HooksConfig, MCPServerConfig, OverlayConfig
 
 
 @dataclass
@@ -49,7 +49,7 @@ class Composer:
     def __init__(self, resolver: LibraryResolver) -> None:
         self.resolver = resolver
 
-    def compose(self, role_name: str) -> CompositionResult:
+    def compose(self, role_name: str, overlay: OverlayConfig | None = None) -> CompositionResult:
         """Compose a role by resolving its full dependency tree."""
         config = self.resolver.resolve_role_config(role_name)
         if config is None:
@@ -73,6 +73,10 @@ class Composer:
         injections: list[str] = []
         hooks = HooksConfig()
         mcp: list[MCPServerConfig] = []
+
+        # Apply overlay (add/remove) before resolution
+        if overlay:
+            self._apply_overlay(config, overlay, errors)
 
         # Recursively resolve traits first (depth-first, pre-order)
         self._resolve_traits(
@@ -116,6 +120,13 @@ class Composer:
             injections.append(config.injection.strip())
             seen_injections.add(config.injection.strip())
 
+        # Append overlay injection after role's own
+        if overlay and overlay.injection_append.strip():
+            inj = overlay.injection_append.strip()
+            if inj not in seen_injections:
+                injections.append(inj)
+                seen_injections.add(inj)
+
         return CompositionResult(
             name=config.name,
             priorities=config.priorities,  # Only from root role
@@ -126,6 +137,33 @@ class Composer:
             injections=injections,
             errors=errors,
         )
+
+    @staticmethod
+    def _apply_overlay(
+        config: ComponentConfig, overlay: OverlayConfig, errors: list[str],
+    ) -> None:
+        """Mutate config composition lists according to overlay add/remove."""
+        comp = config.composition
+        # Remove (with warnings for nonexistent)
+        for trait in overlay.remove_traits:
+            if trait in comp.traits:
+                comp.traits.remove(trait)
+            else:
+                errors.append(f"Overlay: cannot remove trait '{trait}' — not in base role")
+        for rule in overlay.remove_rules:
+            if rule in comp.rules:
+                comp.rules.remove(rule)
+            else:
+                errors.append(f"Overlay: cannot remove rule '{rule}' — not in base role")
+        for skill in overlay.remove_skills:
+            if skill in comp.skills:
+                comp.skills.remove(skill)
+            else:
+                errors.append(f"Overlay: cannot remove skill '{skill}' — not in base role")
+        # Add (append; dedup handled during resolution)
+        comp.traits.extend(overlay.add_traits)
+        comp.rules.extend(overlay.add_rules)
+        comp.skills.extend(overlay.add_skills)
 
     def _resolve_traits(
         self,

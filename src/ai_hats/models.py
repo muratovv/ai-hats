@@ -166,6 +166,67 @@ class RuleMetadata:
 
 
 @dataclass
+class OverlayConfig:
+    """Per-role customization overlay (add/remove components)."""
+
+    add_traits: list[str] = field(default_factory=list)
+    add_rules: list[str] = field(default_factory=list)
+    add_skills: list[str] = field(default_factory=list)
+    remove_traits: list[str] = field(default_factory=list)
+    remove_rules: list[str] = field(default_factory=list)
+    remove_skills: list[str] = field(default_factory=list)
+    injection_append: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> OverlayConfig:
+        if not data:
+            return cls()
+        add = data.get("add", {})
+        remove = data.get("remove", {})
+        return cls(
+            add_traits=add.get("traits", []),
+            add_rules=add.get("rules", []),
+            add_skills=add.get("skills", []),
+            remove_traits=remove.get("traits", []),
+            remove_rules=remove.get("rules", []),
+            remove_skills=remove.get("skills", []),
+            injection_append=data.get("injection_append", ""),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {}
+        add: dict[str, list[str]] = {}
+        if self.add_traits:
+            add["traits"] = self.add_traits
+        if self.add_rules:
+            add["rules"] = self.add_rules
+        if self.add_skills:
+            add["skills"] = self.add_skills
+        if add:
+            d["add"] = add
+        remove: dict[str, list[str]] = {}
+        if self.remove_traits:
+            remove["traits"] = self.remove_traits
+        if self.remove_rules:
+            remove["rules"] = self.remove_rules
+        if self.remove_skills:
+            remove["skills"] = self.remove_skills
+        if remove:
+            d["remove"] = remove
+        if self.injection_append:
+            d["injection_append"] = self.injection_append
+        return d
+
+    @property
+    def is_empty(self) -> bool:
+        return not any([
+            self.add_traits, self.add_rules, self.add_skills,
+            self.remove_traits, self.remove_rules, self.remove_skills,
+            self.injection_append,
+        ])
+
+
+@dataclass
 class ProjectConfig:
     """ai-hats.yaml project configuration."""
 
@@ -173,6 +234,7 @@ class ProjectConfig:
     default_role: str = ""
     schema_version: int = 1
     library_paths: list[str] = field(default_factory=list)
+    customizations: dict[str, OverlayConfig] = field(default_factory=dict)
 
     @classmethod
     def from_yaml(cls, path: Path) -> ProjectConfig:
@@ -180,20 +242,31 @@ class ProjectConfig:
             return cls()
         with open(path) as f:
             data = yaml.safe_load(f) or {}
+        customizations: dict[str, OverlayConfig] = {}
+        for role_name, overlay_data in data.get("customizations", {}).items():
+            customizations[role_name] = OverlayConfig.from_dict(overlay_data)
         return cls(
             provider=data.get("provider", "gemini"),
             default_role=data.get("default_role", ""),
             schema_version=data.get("schema_version", 1),
             library_paths=data.get("library_paths", []),
+            customizations=customizations,
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "provider": self.provider,
             "default_role": self.default_role,
             "schema_version": self.schema_version,
             "library_paths": self.library_paths,
         }
+        if self.customizations:
+            d["customizations"] = {
+                name: overlay.to_dict()
+                for name, overlay in self.customizations.items()
+                if not overlay.is_empty
+            }
+        return d
 
     def save(self, path: Path) -> None:
         with open(path, "w") as f:

@@ -160,7 +160,9 @@ class WrapRunner:
 
         if role_override and profile.active_role:
             # Shadow override: compose to temp file, pass via CLI flags
-            result = self.assembler.composer.compose(effective_role)
+            result = self.assembler.composer.compose(
+                effective_role, overlay=self.assembler._get_overlay(effective_role),
+            )
             override_args, override_env = provider.build_override(
                 self.project_dir, result, self.session_mgr,
             )
@@ -280,7 +282,9 @@ class SubAgentRunner:
         session = self.session_mgr.create_session(parent_session=parent_session)
 
         # Compose the role
-        result = self.assembler.composer.compose(role_name)
+        result = self.assembler.composer.compose(
+            role_name, overlay=self.assembler._get_overlay(role_name),
+        )
         provider = get_provider(self.assembler.project_config.provider)
 
         # Build meta-prompt
