@@ -141,8 +141,6 @@ ok "version" "${INSTALLED_VERSION}"
 
 CONFLICTS=()
 [[ -f "ai-hats.yaml" ]]  && CONFLICTS+=("ai-hats.yaml")
-[[ -f "CLAUDE.md" ]]     && CONFLICTS+=("CLAUDE.md")
-[[ -f "GEMINI.md" ]]     && CONFLICTS+=("GEMINI.md")
 [[ -d ".agent" ]]        && CONFLICTS+=(".agent/")
 
 if [[ ${#CONFLICTS[@]} -gt 0 && "$FORCE" != true ]]; then

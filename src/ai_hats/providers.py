@@ -114,10 +114,17 @@ class Provider(abc.ABC):
         if prompt_path.exists():
             existing = prompt_path.read_text()
             if INJECTION_START in existing and INJECTION_END in existing:
+                # Update between markers, preserve everything outside
                 before = existing[: existing.index(INJECTION_START)]
                 after = existing[existing.index(INJECTION_END) + len(INJECTION_END) :]
                 new_content = f"{before}{INJECTION_START}\n{content}\n{INJECTION_END}{after}"
                 prompt_path.write_text(new_content)
+                return
+            if existing.strip():
+                # Existing file without markers — preserve as project context
+                prompt_path.write_text(
+                    f"{INJECTION_START}\n{content}\n{INJECTION_END}\n\n{existing}"
+                )
                 return
 
         # Fresh write with markers
