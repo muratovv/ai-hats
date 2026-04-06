@@ -1,5 +1,0 @@
-name: task-summary
-description: Focused post-task summary — architectural decisions, decision forks, pitfalls, plan deviations
-author: ai-hats
-tags: [agent-protocol, memory, context-management]
-pattern: protocol

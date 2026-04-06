@@ -1,5 +1,0 @@
-name: systematic-debugging
-description: 4-phase bug-fix protocol (evidence, pattern, hypothesis, verify)
-author: ai-hats
-tags: [development, debugging]
-pattern: protocol

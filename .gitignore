@@ -21,3 +21,5 @@ ai-hats.yaml
 profile.json
 GEMINI.md
 CLAUDE.md
+.claude/skills/
+.gemini/

@@ -1,5 +1,0 @@
-name: context-handoff
-description: Summarize critical context (decisions, forks, pitfalls) into a handoff file for the next agent
-author: ai-hats
-tags: [agent-protocol, memory, context-management]
-pattern: protocol
