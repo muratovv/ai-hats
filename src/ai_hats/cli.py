@@ -45,6 +45,28 @@ def main(ctx, provider: str | None, role: str | None):
         _launch_session(provider=provider, role=role, extra_args=ctx.args)
 
 
+# -- init --
+
+@main.command()
+@click.option("--provider", "-p", default=None, help="Provider (gemini/claude)")
+@click.option("--role", "-r", default=None, help="Role to apply after init")
+def init(provider: str | None, role: str | None):
+    """Initialize ai-hats in the current directory."""
+    project_dir = _project_dir()
+
+    if (project_dir / "ai-hats.yaml").exists():
+        console.print("[yellow]Already initialized[/]. Use [bold]ai-hats set[/] to change role/provider.")
+        return
+
+    asm = _assembler(project_dir)
+    asm.init(provider=provider, role=role)
+    console.print(f"[green]Initialized[/] ai-hats in {project_dir}")
+
+    if role:
+        console.print(f"  Role: [bold]{role}[/]")
+    console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
+
+
 # -- set --
 
 @main.command("set")
@@ -79,6 +101,102 @@ def set_role(provider: str | None, role: str | None):
         console.print(f"  Injections: {len(result.injections)}")
 
     console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
+
+
+# -- customize --
+
+@main.command()
+@click.argument("role")
+@click.option("--add-trait", multiple=True, help="Add a trait to the role")
+@click.option("--remove-trait", multiple=True, help="Remove a trait from the role")
+@click.option("--add-rule", multiple=True, help="Add a rule to the role")
+@click.option("--remove-rule", multiple=True, help="Remove a rule from the role")
+@click.option("--add-skill", multiple=True, help="Add a skill to the role")
+@click.option("--remove-skill", multiple=True, help="Remove a skill from the role")
+@click.option("--injection-append", default=None, help="Append injection text")
+@click.option("--show", "show_only", is_flag=True, help="Show current customizations")
+@click.option("--reset", "do_reset", is_flag=True, help="Remove all customizations for role")
+def customize(
+    role: str,
+    add_trait: tuple, remove_trait: tuple,
+    add_rule: tuple, remove_rule: tuple,
+    add_skill: tuple, remove_skill: tuple,
+    injection_append: str | None,
+    show_only: bool, do_reset: bool,
+):
+    """Customize a role: add/remove traits, rules, skills."""
+    from .models import OverlayConfig, ProjectConfig
+
+    project_dir = _project_dir()
+    config_path = project_dir / "ai-hats.yaml"
+    if not config_path.exists():
+        console.print("[red]No ai-hats.yaml found[/]. Run: ai-hats set -r <role> -p <provider>")
+        raise SystemExit(1)
+
+    config = ProjectConfig.from_yaml(config_path)
+
+    if do_reset:
+        config.customizations.pop(role, None)
+        config.save(config_path)
+        console.print(f"[green]Reset[/] customizations for [bold]{role}[/]")
+        return
+
+    overlay = config.customizations.get(role, OverlayConfig())
+
+    if show_only:
+        if overlay.is_empty:
+            console.print(f"[dim]No customizations for {role}[/]")
+        else:
+            import yaml
+            console.print(f"[bold]{role}[/] customizations:")
+            console.print(yaml.dump(overlay.to_dict(), default_flow_style=False).rstrip())
+        return
+
+    has_changes = any([add_trait, remove_trait, add_rule, remove_rule, add_skill, remove_skill, injection_append])
+    if not has_changes:
+        console.print("[yellow]No changes specified[/]. Use --add-trait, --remove-trait, etc.")
+        return
+
+    # Merge new values into existing overlay
+    for t in add_trait:
+        if t not in overlay.add_traits:
+            overlay.add_traits.append(t)
+        # If previously removed, undo
+        if t in overlay.remove_traits:
+            overlay.remove_traits.remove(t)
+    for t in remove_trait:
+        if t not in overlay.remove_traits:
+            overlay.remove_traits.append(t)
+        if t in overlay.add_traits:
+            overlay.add_traits.remove(t)
+    for r in add_rule:
+        if r not in overlay.add_rules:
+            overlay.add_rules.append(r)
+        if r in overlay.remove_rules:
+            overlay.remove_rules.remove(r)
+    for r in remove_rule:
+        if r not in overlay.remove_rules:
+            overlay.remove_rules.append(r)
+        if r in overlay.add_rules:
+            overlay.add_rules.remove(r)
+    for s in add_skill:
+        if s not in overlay.add_skills:
+            overlay.add_skills.append(s)
+        if s in overlay.remove_skills:
+            overlay.remove_skills.remove(s)
+    for s in remove_skill:
+        if s not in overlay.remove_skills:
+            overlay.remove_skills.append(s)
+        if s in overlay.add_skills:
+            overlay.add_skills.remove(s)
+    if injection_append is not None:
+        overlay.injection_append = injection_append
+
+    config.customizations[role] = overlay
+    config.save(config_path)
+    console.print(f"[green]Updated[/] customizations for [bold]{role}[/]")
+    import yaml
+    console.print(yaml.dump(overlay.to_dict(), default_flow_style=False).rstrip())
 
 
 # -- status --
