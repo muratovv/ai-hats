@@ -175,6 +175,44 @@ def test_full_lifecycle_with_logs(mgr):
     assert len(t.work_log) == 5
 
 
+# -- Update tests --
+
+
+def test_update_priority(mgr):
+    mgr.create_task("T-1", "Update me")
+    t = mgr.update_task("T-1", priority="high")
+    assert t.priority == "high"
+    # Persists
+    t = mgr.get_task("T-1")
+    assert t.priority == "high"
+
+
+def test_update_description_and_title(mgr):
+    mgr.create_task("T-1", "Old title", description="old desc")
+    t = mgr.update_task("T-1", title="New title", description="new desc")
+    assert t.title == "New title"
+    assert t.description == "new desc"
+
+
+def test_update_resolution(mgr):
+    mgr.create_task("T-1", "Close me")
+    t = mgr.update_task("T-1", resolution="Closed: duplicate of T-2")
+    assert t.resolution == "Closed: duplicate of T-2"
+
+
+def test_update_tags(mgr):
+    mgr.create_task("T-1", "Tag me", tags=["a", "b"])
+    t = mgr.update_task("T-1", add_tags=["c"], remove_tags=["a"])
+    assert "c" in t.tags
+    assert "a" not in t.tags
+    assert "b" in t.tags
+
+
+def test_update_nonexistent_task(mgr):
+    with pytest.raises(ValueError, match="not found"):
+        mgr.update_task("NOPE", priority="high")
+
+
 # -- Worktree integration tests --
 
 

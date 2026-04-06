@@ -709,6 +709,44 @@ def task_transition(task_id: str, new_state: str, final_state: str | None):
         sys.exit(1)
 
 
+@task.command("update")
+@click.argument("task_id")
+@click.option("--title", default=None, help="New title")
+@click.option("--description", "-d", default=None, help="New description")
+@click.option("--priority", "-p", default=None, type=click.Choice(["low", "medium", "high"]), help="Priority")
+@click.option("--resolution", default=None, help="Resolution note (why closed)")
+@click.option("--role", default=None, help="Assigned role")
+@click.option("--reviewer", default=None, help="Reviewer")
+@click.option("--add-tag", multiple=True, help="Add tag")
+@click.option("--remove-tag", multiple=True, help="Remove tag")
+def task_update(
+    task_id: str, title: str | None, description: str | None,
+    priority: str | None, resolution: str | None, role: str | None,
+    reviewer: str | None, add_tag: tuple, remove_tag: tuple,
+):
+    """Update task card fields."""
+    from .state import TaskManager
+    mgr = TaskManager(_project_dir())
+
+    has_changes = any([title, description, priority, resolution, role, reviewer, add_tag, remove_tag])
+    if not has_changes:
+        console.print("[yellow]No changes specified[/]. Use --title, --priority, --description, etc.")
+        return
+
+    try:
+        t = mgr.update_task(
+            task_id,
+            title=title, description=description, priority=priority,
+            resolution=resolution, role=role, reviewer=reviewer,
+            add_tags=list(add_tag) if add_tag else None,
+            remove_tags=list(remove_tag) if remove_tag else None,
+        )
+        console.print(f"[green]Updated[/]: {t.id} — {t.title} [{t.priority}]")
+    except ValueError as e:
+        console.print(f"[red]Error[/]: {e}")
+        sys.exit(1)
+
+
 @task.command("log")
 @click.argument("task_id")
 @click.argument("message")

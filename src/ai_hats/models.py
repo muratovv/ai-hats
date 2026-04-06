@@ -332,6 +332,7 @@ class TaskCard:
     tags: list[str] = field(default_factory=list)
     work_log: list[WorkLogEntry] = field(default_factory=list)
     final_state: str = ""
+    resolution: str = ""
     created: str = ""
     updated: str = ""
     completed_at: str = ""

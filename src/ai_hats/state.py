@@ -142,6 +142,53 @@ class TaskManager:
 
         return task
 
+    def update_task(
+        self,
+        task_id: str,
+        *,
+        title: str | None = None,
+        description: str | None = None,
+        priority: str | None = None,
+        resolution: str | None = None,
+        role: str | None = None,
+        reviewer: str | None = None,
+        add_tags: list[str] | None = None,
+        remove_tags: list[str] | None = None,
+    ) -> TaskCard:
+        """Update task card fields."""
+        lock_path = self.tasks_dir / task_id / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with FileLock(str(lock_path)):
+            task = self.get_task(task_id)
+            if task is None:
+                raise ValueError(f"Task '{task_id}' not found")
+
+            if title is not None:
+                task.title = title
+            if description is not None:
+                task.description = description
+            if priority is not None:
+                task.priority = priority
+            if resolution is not None:
+                task.resolution = resolution
+            if role is not None:
+                task.role = role
+            if reviewer is not None:
+                task.reviewer = reviewer
+            if add_tags:
+                for tag in add_tags:
+                    if tag not in task.tags:
+                        task.tags.append(tag)
+            if remove_tags:
+                task.tags = [t for t in task.tags if t not in remove_tags]
+
+            task.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            self._save_task(task)
+            self._update_indexes()
+
+        return task
+
     def set_final_state(self, task_id: str, final_state: str) -> TaskCard:
         """Record the final accomplished state before review."""
         lock_path = self.tasks_dir / task_id / ".lock"
