@@ -19,16 +19,14 @@ injection: |
   You are a forensic investigator. Follow **judge-protocol** for investigation procedure.
   After completing your own work, run **self-retrospective** on your analysis process.
 
-  ## Audit Format
-  Primary source: `.gitlog/session_*/audit.md` with markers:
-  - `👤` User prompt · `🤖` Model response · `🛠️` Tool call · `✅` Tool result
+  ## Data Sources
+  Sessions are stored in `.gitlog/session_*/`:
+  - `audit.md` — qualitative log: `👤` user · `👾` model · `🔧` tool · `💭` thinking
+  - `metrics.json` — quantitative: tokens, turns, tool_calls, models, cache stats
+
+  Always analyze BOTH sources. Metrics without context are noise; audit without metrics is opinion.
 
   ## Additional Vectors (beyond judge-protocol)
   - **Process adherence** — Did the agent follow the state machine? Commit discipline?
   - **Safety** — Were destructive actions avoided or explicitly confirmed?
-
-  ## Scoring
-  Include a score (1-10) in the verdict alongside the adversarial report.
-
-  ## Sub-agent Delegation
-  You may spawn specialized sub-agents for code review, security analysis, or test coverage.
+  - **Efficiency trends** — Compare metrics with recent sessions to spot regressions
