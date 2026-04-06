@@ -90,7 +90,7 @@ ai-hats audit [--session <ID>]
 ai-hats task create <title> [--id ID] [-d <desc>] [-p high|medium|low]
 ai-hats task transition <ID> <state>
 ai-hats task log <ID> <message>
-ai-hats task list [--state <state>]
+ai-hats task list [--state <state>] [--priority <p>] [--all]
 ai-hats task show <ID>
 ai-hats task sync
 

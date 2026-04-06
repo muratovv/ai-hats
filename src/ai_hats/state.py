@@ -7,7 +7,6 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-import yaml
 from filelock import FileLock
 
 from .models import TaskCard, TaskState
@@ -150,8 +149,12 @@ class TaskManager:
 
         return task
 
-    def list_tasks(self, state: TaskState | None = None) -> list[TaskCard]:
-        """List all tasks, optionally filtered by state."""
+    def list_tasks(
+        self,
+        state: TaskState | None = None,
+        priority: str | None = None,
+    ) -> list[TaskCard]:
+        """List all tasks, optionally filtered by state and/or priority."""
         tasks = []
         if not self.tasks_dir.exists():
             return tasks
@@ -159,8 +162,11 @@ class TaskManager:
             task_file = task_dir / "task.yaml"
             if task_file.exists():
                 task = TaskCard.from_yaml(task_file)
-                if state is None or task.state == state:
-                    tasks.append(task)
+                if state is not None and task.state != state:
+                    continue
+                if priority is not None and task.priority != priority:
+                    continue
+                tasks.append(task)
         return tasks
 
     def sync(self) -> int:

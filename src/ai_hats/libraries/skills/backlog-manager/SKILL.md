@@ -30,8 +30,14 @@ ai-hats task transition HATS-042 done
 # Log work progress
 ai-hats task log HATS-042 "Implemented X, tests green"
 
-# List tasks
+# List open tasks (done/failed hidden by default)
 ai-hats task list
+
+# All tasks including done
+ai-hats task list --all
+
+# Filter by state or priority
+ai-hats task list --state brainstorm --priority high
 
 # Sync STATE.md and backlog.md
 ai-hats task sync

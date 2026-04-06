@@ -502,19 +502,65 @@ def task_log(task_id: str, message: str, session: str | None):
 
 @task.command("list")
 @click.option("--state", default=None, help="Filter by state")
-def task_list(state: str | None):
+@click.option("--priority", default=None, help="Filter by priority (low/medium/high)")
+@click.option("--all", "-a", "show_all", is_flag=True, help="Include done/failed tasks")
+def task_list(state: str | None, priority: str | None, show_all: bool):
     """List all task cards."""
+    from rich.table import Table
+
     from .models import TaskState
     from .state import TaskManager
+
+    STATE_ORDER = {
+        TaskState.EXECUTE: 0,
+        TaskState.DOCUMENT: 1,
+        TaskState.REVIEW: 2,
+        TaskState.PLAN: 3,
+        TaskState.BRAINSTORM: 4,
+        TaskState.BLOCKED: 5,
+        TaskState.DONE: 6,
+        TaskState.FAILED: 7,
+    }
+    PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+
     mgr = TaskManager(_project_dir())
     filter_state = TaskState(state) if state else None
-    tasks = mgr.list_tasks(state=filter_state)
+    tasks = mgr.list_tasks(state=filter_state, priority=priority)
+
+    if not show_all and filter_state is None:
+        tasks = [t for t in tasks if t.state not in (TaskState.DONE, TaskState.FAILED)]
+
     if not tasks:
         console.print("[dim]No tasks[/]")
         return
+
+    tasks.sort(key=lambda t: (STATE_ORDER.get(t.state, 99), PRIORITY_ORDER.get(t.priority, 99)))
+
+    table = Table(show_header=True, header_style="bold", padding=(0, 1))
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("State", no_wrap=True)
+    table.add_column("Pri", no_wrap=True)
+    table.add_column("Title")
+
+    state_styles = {
+        TaskState.EXECUTE: "bold green",
+        TaskState.PLAN: "yellow",
+        TaskState.BRAINSTORM: "dim",
+        TaskState.BLOCKED: "bold red",
+        TaskState.DONE: "dim green",
+        TaskState.FAILED: "dim red",
+    }
+
     for t in tasks:
-        priority_tag = f" [{t.priority}]" if t.priority != "medium" else ""
-        console.print(f"  [{t.state.value:10}] {t.id}: {t.title}{priority_tag}")
+        style = state_styles.get(t.state, "")
+        table.add_row(
+            t.id,
+            f"[{style}]{t.state.value}[/{style}]" if style else t.state.value,
+            t.priority,
+            t.title,
+        )
+
+    console.print(table)
 
 
 @task.command("show")

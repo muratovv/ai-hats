@@ -378,6 +378,44 @@ def test_task_create_explicit_id(cli_project):
     assert (project / ".agent" / "backlog" / "tasks" / "CUSTOM-001" / "task.yaml").exists()
 
 
+def test_task_list_table_filters(cli_project):
+    """ai-hats task list shows table, hides done, supports filters."""
+    project, runner = cli_project
+    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+
+    # Create tasks with different states and priorities
+    runner.invoke(main, ["task", "create", "Active task", "-p", "high"])
+    runner.invoke(main, ["task", "create", "Low task", "-p", "low"])
+    runner.invoke(main, ["task", "create", "Done task", "-p", "medium"])
+
+    # Transition third task to done (brainstorm → plan → execute → document → review → done)
+    for state in ["plan", "execute", "document", "review", "done"]:
+        runner.invoke(main, ["task", "transition", "HATS-003", state])
+
+    # Default: done is hidden
+    result = runner.invoke(main, ["task", "list"])
+    assert result.exit_code == 0, result.output
+    assert "Active task" in result.output
+    assert "Low task" in result.output
+    assert "Done task" not in result.output
+
+    # --all includes done
+    result = runner.invoke(main, ["task", "list", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "Done task" in result.output
+
+    # --priority filter
+    result = runner.invoke(main, ["task", "list", "--priority", "high"])
+    assert result.exit_code == 0, result.output
+    assert "Active task" in result.output
+    assert "Low task" not in result.output
+
+    # --state filter
+    result = runner.invoke(main, ["task", "list", "--state", "brainstorm"])
+    assert result.exit_code == 0, result.output
+    assert "Active task" in result.output
+
+
 def test_update_shows_already_up_to_date(cli_project, monkeypatch):
     """ai-hats update shows 'already up to date' when versions match."""
     import subprocess
