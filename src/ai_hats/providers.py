@@ -90,21 +90,41 @@ class Provider(abc.ABC):
     def skills_export_dir(self, project_dir: Path) -> Path:
         """Provider-native skills directory."""
 
+    _MANAGED_MARKER = ".ai-hats-managed"
+
     def export_skills(self, project_dir: Path, skills: list[ResolvedComponent]) -> None:
         """Copy skills to provider-native directory for /skills discovery."""
         target_dir = self.skills_export_dir(project_dir)
-        if target_dir.exists():
-            shutil.rmtree(target_dir)
+        self._clean_managed_skills(target_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
+
+        managed_names: list[str] = []
         for skill in skills:
             if skill.source_path.is_dir():
-                shutil.copytree(skill.source_path, target_dir / skill.name)
+                dest = target_dir / skill.name
+                if dest.exists():
+                    shutil.rmtree(dest)
+                shutil.copytree(skill.source_path, dest)
+                managed_names.append(skill.name)
+
+        # Track which skills we own
+        (target_dir / self._MANAGED_MARKER).write_text("\n".join(managed_names) + "\n")
 
     def cleanup_skills(self, project_dir: Path) -> None:
-        """Remove provider-native skills directory."""
+        """Remove only ai-hats-managed skills, keep user-created ones."""
         target_dir = self.skills_export_dir(project_dir)
-        if target_dir.exists():
-            shutil.rmtree(target_dir)
+        self._clean_managed_skills(target_dir)
+
+    def _clean_managed_skills(self, target_dir: Path) -> None:
+        """Remove skills tracked by the managed marker."""
+        marker = target_dir / self._MANAGED_MARKER
+        if not marker.exists():
+            return
+        for name in marker.read_text().strip().splitlines():
+            skill_path = target_dir / name
+            if skill_path.exists():
+                shutil.rmtree(skill_path)
+        marker.unlink()
 
     def update_system_prompt(self, project_dir: Path, content: str) -> None:
         """Write or update system prompt between markers in the prompt file."""
