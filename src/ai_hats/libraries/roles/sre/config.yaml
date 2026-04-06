@@ -6,8 +6,9 @@ priorities:
 composition:
   traits:
     - trait-base
+    - trait-agent
     - trait-se-mindset
-    - env::proxmox
+    - dev::shell
   rules: []
   skills:
     - ansible-ops
@@ -23,7 +24,9 @@ composition:
   hooks:
     session_start: []
     session_end: []
-    task_complete: []
+    task_complete:
+      - git status
+      - git diff --stat
   mcp: []
 injection: |
   # ROLE: SITE RELIABILITY ENGINEER
