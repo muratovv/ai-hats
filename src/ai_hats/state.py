@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from datetime import datetime, timezone
@@ -10,6 +11,8 @@ from pathlib import Path
 from filelock import FileLock
 
 from .models import TaskCard, TaskState
+
+logger = logging.getLogger(__name__)
 
 
 PLAN_SCAFFOLD = """\
@@ -107,8 +110,13 @@ class TaskManager:
             # State-specific side effects
             if new_state == TaskState.PLAN:
                 self._create_plan_scaffold(task)
+            elif new_state == TaskState.EXECUTE:
+                self._setup_worktree(task)
             elif new_state == TaskState.DONE:
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                self._teardown_worktree(merge=True)
+            elif new_state == TaskState.FAILED:
+                self._teardown_worktree(merge=False)
 
             self._save_task(task)
             self._update_indexes()
@@ -179,6 +187,50 @@ class TaskManager:
     def _save_task(self, task: TaskCard) -> None:
         task_file = self.tasks_dir / task.id / "task.yaml"
         task.save(task_file)
+
+    def _setup_worktree(self, task: TaskCard) -> Path | None:
+        """Create isolated worktree when task enters execute state."""
+        from .worktree import WorktreeManager
+
+        active = WorktreeManager.load_active(self.project_dir)
+        if active is not None:
+            # Check if it belongs to this task (reuse after blocked → execute)
+            expected_branch = f"task/{task.id.lower()}"
+            if active.branch_name == expected_branch:
+                return active.worktree_path
+            raise ValueError(
+                f"Active worktree exists on branch '{active.branch_name}'. "
+                f"Merge or discard first: ai-hats wt merge / ai-hats wt discard"
+            )
+
+        branch = f"task/{task.id.lower()}"
+        mgr = WorktreeManager(self.project_dir, branch_name=branch)
+        path = mgr.create()
+        if path != self.project_dir:  # git repo — worktree created
+            mgr.save_state()
+            return path
+        return None
+
+    def _teardown_worktree(self, *, merge: bool = True) -> None:
+        """Merge or discard active worktree on task completion/failure."""
+        from .worktree import WorktreeManager
+
+        active = WorktreeManager.load_active(self.project_dir)
+        if active is None:
+            return
+
+        try:
+            if merge:
+                active.merge(squash=True)
+            else:
+                active.discard()
+        except Exception:
+            logger.warning(
+                "Worktree %s failed, branch '%s' preserved",
+                "merge" if merge else "discard",
+                active.branch_name,
+                exc_info=True,
+            )
 
     def _create_plan_scaffold(self, task: TaskCard) -> None:
         """Create plan.md scaffold when task moves to plan state."""

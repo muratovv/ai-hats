@@ -479,6 +479,17 @@ def task_transition(task_id: str, new_state: str, final_state: str | None):
             plan_path = mgr.tasks_dir / task_id / "plan.md"
             if plan_path.exists():
                 console.print(f"  Plan scaffold: {plan_path}")
+        elif state == TaskState.EXECUTE:
+            from .worktree import WorktreeManager
+            active = WorktreeManager.load_active(_project_dir())
+            if active and active.worktree_path:
+                console.print(f"  Worktree: {active.worktree_path}")
+                console.print(f"  Branch: {active.branch_name}")
+                console.print(f"  [dim]cd {active.worktree_path}[/]")
+        elif state == TaskState.DONE:
+            console.print("  Worktree merged")
+        elif state == TaskState.FAILED:
+            console.print("  Worktree discarded")
     except ValueError as e:
         console.print(f"[red]Error[/]: {e}")
         sys.exit(1)

@@ -1,10 +1,13 @@
 """Tests for state management — task lifecycle, work logs, indexes."""
 
+import subprocess
+
 import pytest
 from pathlib import Path
 
 from ai_hats.models import TaskState
 from ai_hats.state import TaskManager
+from ai_hats.worktree import WorktreeManager
 
 
 @pytest.fixture
@@ -170,3 +173,114 @@ def test_full_lifecycle_with_logs(mgr):
     assert t.completed_at != ""
     assert t.final_state == "Feature implemented and tested"
     assert len(t.work_log) == 5
+
+
+# -- Worktree integration tests --
+
+
+def _init_git(path: Path) -> None:
+    """Initialize a git repo with an initial commit."""
+    subprocess.run(["git", "init"], cwd=str(path), capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True, check=True)
+    (path / "README.md").write_text("# test")
+    subprocess.run(["git", "add", "."], cwd=str(path), capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=str(path), capture_output=True, check=True)
+
+
+@pytest.fixture
+def git_mgr(tmp_path):
+    """TaskManager backed by a real git repo."""
+    project = tmp_path / "project"
+    project.mkdir()
+    _init_git(project)
+    (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
+    (project / ".agent" / "STATE.md").write_text("")
+    return TaskManager(project)
+
+
+def test_execute_creates_worktree(git_mgr):
+    git_mgr.create_task("T-1", "Work in worktree")
+    git_mgr.transition("T-1", TaskState.PLAN)
+    git_mgr.transition("T-1", TaskState.EXECUTE)
+
+    active = WorktreeManager.load_active(git_mgr.project_dir)
+    assert active is not None
+    assert active.branch_name == "task/t-1"
+    assert active.worktree_path.exists()
+
+
+def test_done_merges_worktree(git_mgr):
+    git_mgr.create_task("T-1", "Merge on done")
+    git_mgr.transition("T-1", TaskState.PLAN)
+    git_mgr.transition("T-1", TaskState.EXECUTE)
+
+    # Make a change in the worktree
+    active = WorktreeManager.load_active(git_mgr.project_dir)
+    (active.worktree_path / "new_file.txt").write_text("hello")
+    subprocess.run(["git", "add", "."], cwd=str(active.worktree_path), capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "add file"], cwd=str(active.worktree_path), capture_output=True, check=True)
+
+    git_mgr.transition("T-1", TaskState.DOCUMENT)
+    git_mgr.transition("T-1", TaskState.REVIEW)
+    git_mgr.transition("T-1", TaskState.DONE)
+
+    # Worktree cleaned up
+    assert WorktreeManager.load_active(git_mgr.project_dir) is None
+    # Change merged into main
+    assert (git_mgr.project_dir / "new_file.txt").exists()
+
+
+def test_failed_discards_worktree(git_mgr):
+    git_mgr.create_task("T-1", "Fail and discard")
+    git_mgr.transition("T-1", TaskState.PLAN)
+    git_mgr.transition("T-1", TaskState.EXECUTE)
+
+    active = WorktreeManager.load_active(git_mgr.project_dir)
+    wt_path = active.worktree_path
+    assert wt_path.exists()
+
+    git_mgr.transition("T-1", TaskState.FAILED)
+
+    # Worktree removed
+    assert WorktreeManager.load_active(git_mgr.project_dir) is None
+    assert not wt_path.exists()
+
+
+def test_execute_blocks_if_worktree_active(git_mgr):
+    git_mgr.create_task("T-1", "First task")
+    git_mgr.create_task("T-2", "Second task")
+    git_mgr.transition("T-1", TaskState.PLAN)
+    git_mgr.transition("T-1", TaskState.EXECUTE)
+
+    git_mgr.transition("T-2", TaskState.PLAN)
+    with pytest.raises(ValueError, match="Active worktree exists"):
+        git_mgr.transition("T-2", TaskState.EXECUTE)
+
+
+def test_execute_reuses_worktree_after_blocked(git_mgr):
+    git_mgr.create_task("T-1", "Block and resume")
+    git_mgr.transition("T-1", TaskState.PLAN)
+    git_mgr.transition("T-1", TaskState.EXECUTE)
+
+    active = WorktreeManager.load_active(git_mgr.project_dir)
+    wt_path = active.worktree_path
+
+    git_mgr.transition("T-1", TaskState.BLOCKED)
+    # Worktree still active after blocked
+    assert WorktreeManager.load_active(git_mgr.project_dir) is not None
+
+    git_mgr.transition("T-1", TaskState.EXECUTE)
+    # Same worktree reused
+    active2 = WorktreeManager.load_active(git_mgr.project_dir)
+    assert active2.worktree_path == wt_path
+
+
+def test_no_worktree_in_non_git_project(mgr):
+    """Non-git projects skip worktree creation silently."""
+    mgr.create_task("T-1", "No git here")
+    mgr.transition("T-1", TaskState.PLAN)
+    mgr.transition("T-1", TaskState.EXECUTE)
+
+    active = WorktreeManager.load_active(mgr.project_dir)
+    assert active is None
