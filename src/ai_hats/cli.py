@@ -53,14 +53,13 @@ def main(ctx, provider: str | None, role: str | None):
 def init(provider: str | None, role: str | None):
     """Initialize ai-hats in the current directory."""
     project_dir = _project_dir()
-
-    if (project_dir / "ai-hats.yaml").exists():
-        console.print("[yellow]Already initialized[/]. Use [bold]ai-hats set[/] to change role/provider.")
-        return
+    already = (project_dir / "ai-hats.yaml").exists()
 
     asm = _assembler(project_dir)
     asm.init(provider=provider, role=role)
-    console.print(f"[green]Initialized[/] ai-hats in {project_dir}")
+
+    label = "Re-initialized" if already else "Initialized"
+    console.print(f"[green]{label}[/] ai-hats in {project_dir}")
 
     if role:
         console.print(f"  Role: [bold]{role}[/]")
