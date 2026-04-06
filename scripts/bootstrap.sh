@@ -116,14 +116,14 @@ fi
 
 # -- 3. Install ai-hats --
 
-info "install" "pip install ai-hats..."
-pip install --quiet --upgrade pip
+info "install" "python3 -m pip install ai-hats..."
+python3 -m pip install --quiet --upgrade pip
 
 if [[ -n "$LOCAL_ROOT" && -f "${LOCAL_ROOT}/pyproject.toml" ]]; then
-    pip install --quiet "$LOCAL_ROOT"
+    python3 -m pip install --quiet "$LOCAL_ROOT"
     ok "install" "from local clone"
 else
-    pip install --quiet "ai-hats @ ${REPO_URL}"
+    python3 -m pip install --quiet "ai-hats @ ${REPO_URL}"
     ok "install" "from git"
 fi
 
