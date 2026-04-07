@@ -1,0 +1,15 @@
+name: dev::go-ci
+composition:
+  traits: []
+  rules: []
+  skills:
+    - golang-continuous-integration
+  hooks: {}
+  mcp: []
+injection: |
+  ## GO CI/CD
+
+  Production CI on GitHub Actions: race detection, coverage thresholds,
+  golangci-lint, govulncheck, CodeQL, Bearer, automated dependency
+  updates (Dependabot/Renovate), GoReleaser for cross-platform binaries
+  and Docker images.

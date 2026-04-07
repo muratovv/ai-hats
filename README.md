@@ -59,7 +59,10 @@ pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
-Доступные роли: `go-dev`, `assistant`, `architect`, `sre`, `judge`, `test-agent`.
+Доступные роли: `go-dev`, `go-dev-full`, `assistant`, `architect`, `sre`, `judge`, `test-agent`.
+
+`go-dev` — лёгкий профиль (core Go skills + testing-extended + ci, ~28 скиллов).
+`go-dev-full` — все 11 `dev::go-*` traits сразу (database, grpc, cli, observability, performance, security, di, samber ecosystem, …, ~44 скилла). Используй для полидоменных Go-проектов; для узких задач подключай applied-traits через `customize`.
 
 ## CLI
 
@@ -199,10 +202,12 @@ GEMINI.md / CLAUDE.md       # System prompt
 ```
 src/ai_hats/libraries/
   rules/          global_rule_*, dev_rule_*, env_rule_*
-  skills/         24 скилла (backlog-manager, git-mastery, skill-template, ...)
-  traits/         trait-base, trait-agent, trait-se-mindset, skill-engineer, dev::*
-  roles/          assistant, test-agent, architect, sre, judge, go-dev
+  skills/         62 скилла (29 нативных + 33 vendored golang-* из samber/cc-skills-golang)
+  traits/         trait-base, trait-agent, trait-se-mindset, skill-engineer, dev::go-*, dev::python, dev::shell, env::*
+  roles/          assistant, test-agent, architect, sre, judge, go-dev, go-dev-full
 ```
+
+Vendored golang-* skills хранят upstream commit SHA, LICENSE и atribution в `metadata.yaml.upstream.*` — фундамент для будущей плагинной системы (см. HATS-050).
 
 ### Шаблон скилла
 

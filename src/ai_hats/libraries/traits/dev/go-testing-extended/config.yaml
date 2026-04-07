@@ -1,0 +1,14 @@
+name: dev::go-testing-extended
+composition:
+  traits: []
+  rules: []
+  skills:
+    - golang-stretchr-testify
+  hooks: {}
+  mcp: []
+injection: |
+  ## GO TESTING (EXTENDED)
+
+  stretchr/testify for assertions, mocking, and suite organization.
+  Use `assert` for non-fatal checks, `require` to abort the test on
+  failure. Embed `mock.Mock`, always call `AssertExpectations(t)`.

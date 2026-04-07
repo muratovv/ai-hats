@@ -1,0 +1,16 @@
+name: dev::go-security
+composition:
+  traits: []
+  rules: []
+  skills:
+    - golang-security
+  hooks: {}
+  mcp: []
+injection: |
+  ## GO SECURITY
+
+  Go-specific security: STRIDE threat modeling, injection prevention
+  (SQL/command/template), XSS, path traversal, timing attacks,
+  cryptography defaults. Run `gosec ./...` and `govulncheck ./...`
+  before merging. Complements the framework-wide `dev_rule_secure_coding`
+  rule with Go-specific guidance.

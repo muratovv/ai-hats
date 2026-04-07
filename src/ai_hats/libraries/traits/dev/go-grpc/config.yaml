@@ -1,0 +1,15 @@
+name: dev::go-grpc
+composition:
+  traits: []
+  rules: []
+  skills:
+    - golang-grpc
+  hooks: {}
+  mcp: []
+injection: |
+  ## GO gRPC
+
+  Production-ready gRPC services: health checks, graceful shutdown,
+  specific status codes, interceptors for logging/auth/recovery,
+  TLS/mTLS, in-memory bufconn for testing. Stream when payloads are
+  large or unbounded.

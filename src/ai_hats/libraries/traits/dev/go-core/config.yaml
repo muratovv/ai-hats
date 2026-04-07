@@ -1,0 +1,33 @@
+name: dev::go-core
+composition:
+  traits: []
+  rules: []
+  skills:
+    - golang-code-style
+    - golang-naming
+    - golang-error-handling
+    - golang-concurrency
+    - golang-context
+    - golang-data-structures
+    - golang-structs-interfaces
+    - golang-safety
+    - golang-testing
+    - golang-design-patterns
+    - golang-modernize
+    - golang-linter
+    - golang-project-layout
+    - golang-dependency-management
+    - golang-documentation
+  hooks: {}
+  mcp: []
+injection: |
+  ## GO DEVELOPMENT (CORE)
+
+  Idiomatic, well-tested Go. The loaded skills cover style, naming, errors,
+  concurrency, context, data structures, type system, safety, testing,
+  design patterns, modernization, linting, project layout, dependencies,
+  and documentation. Each skill has `references/` and `evals/` for deeper
+  dives — invoke them on-demand instead of inlining everything.
+
+  Vendored from samber/cc-skills-golang. See each skill's `metadata.yaml`
+  for upstream commit and license.

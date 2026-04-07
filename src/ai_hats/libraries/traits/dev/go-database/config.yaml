@@ -1,0 +1,15 @@
+name: dev::go-database
+composition:
+  traits: []
+  rules: []
+  skills:
+    - golang-database
+  hooks: {}
+  mcp: []
+injection: |
+  ## GO DATABASE
+
+  Safe, explicit SQL in Go. Use parameterized queries always. Prefer sqlx
+  or pgx over heavy ORMs unless schema migration story dictates otherwise.
+  Always propagate `context.Context`, defer `rows.Close()`, handle
+  `sql.ErrNoRows` explicitly.

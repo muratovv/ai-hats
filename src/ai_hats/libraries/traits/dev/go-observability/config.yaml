@@ -1,0 +1,17 @@
+name: dev::go-observability
+composition:
+  traits: []
+  rules: []
+  skills:
+    - golang-observability
+    - golang-samber-slog
+  hooks: {}
+  mcp: []
+injection: |
+  ## GO OBSERVABILITY
+
+  Production observability: structured logging with `slog`, Prometheus
+  metrics (counters/gauges/histograms), OpenTelemetry distributed
+  tracing, on-demand pprof + continuous Pyroscope profiling. Compose
+  log pipelines via samber/slog-multi (sampling → formatting → routing
+  → sinks).

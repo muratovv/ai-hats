@@ -1,0 +1,16 @@
+name: dev::go-performance
+composition:
+  traits: []
+  rules: []
+  skills:
+    - golang-performance
+    - golang-benchmark
+  hooks: {}
+  mcp: []
+injection: |
+  ## GO PERFORMANCE
+
+  Measurement-first optimization: profile before optimizing, benchmark
+  with `b.Loop()`, compare statistically with `benchstat -count=10`,
+  change one thing at a time, re-measure. Watch struct layout, GC
+  pressure, allocation hot paths, cache behavior.

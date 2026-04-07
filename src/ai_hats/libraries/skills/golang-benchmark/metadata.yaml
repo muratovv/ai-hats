@@ -1,0 +1,17 @@
+name: golang-benchmark
+description: "Benchmarking with b.Loop(), benchstat statistical comparison, regression detection"
+author: ai-hats
+tags: [go, performance]
+pattern: reference
+
+# === upstream provenance (preparation for future plugin system) ===
+upstream:
+  source: samber/cc-skills-golang
+  url: https://github.com/samber/cc-skills-golang
+  commit: b29499a6f6f64fab8c3005418e4452955e22ee24
+  commit_url: https://github.com/samber/cc-skills-golang/commit/b29499a6f6f64fab8c3005418e4452955e22ee24
+  path: skills/golang-benchmark
+  fetched_at: 2026-04-07
+  license: MIT
+  license_file: LICENSE
+  attribution: "Authored by Samuel Berthe (samber) and contributors"

@@ -1,0 +1,14 @@
+name: dev::go-cli
+composition:
+  traits: []
+  rules: []
+  skills:
+    - golang-cli
+  hooks: {}
+  mcp: []
+injection: |
+  ## GO CLI
+
+  Build CLIs with Cobra + Viper. Respect Unix conventions: stdout for
+  data, stderr for diagnostics, exit codes meaningful, signals handled,
+  shell completion provided, version embedded at build time.

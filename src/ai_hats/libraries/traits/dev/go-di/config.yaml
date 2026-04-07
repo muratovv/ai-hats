@@ -1,0 +1,16 @@
+name: dev::go-di
+composition:
+  traits: []
+  rules: []
+  skills:
+    - golang-dependency-injection
+    - golang-samber-do
+  hooks: {}
+  mcp: []
+injection: |
+  ## GO DEPENDENCY INJECTION
+
+  DI patterns: prefer manual constructor injection for <10 services.
+  For larger graphs, choose between google/wire (compile-time),
+  uber-go/dig+fx (runtime), or samber/do (type-safe with generics).
+  Compose at the root, keep dependency trees shallow.

@@ -1,0 +1,21 @@
+name: dev::go-samber
+composition:
+  traits: []
+  rules: []
+  skills:
+    - golang-samber-lo
+    - golang-samber-mo
+    - golang-samber-oops
+    - golang-samber-hot
+    - golang-samber-ro
+    - golang-popular-libraries
+  hooks: {}
+  mcp: []
+injection: |
+  ## GO SAMBER ECOSYSTEM
+
+  Type-safe generic helpers from the samber/* family: lo (functional),
+  mo (Option/Result/Either monads), oops (structured errors), hot
+  (in-memory cache with 9 eviction algorithms), ro (reactive streams).
+  Reach for them when stdlib falls short — but always evaluate
+  dependency footprint first via `golang-popular-libraries`.
