@@ -639,6 +639,76 @@ def audit(session: str | None):
         console.print(f"[yellow]No audit for session {s.session_id}[/]")
 
 
+# -- retro schema utilities --
+
+@main.command("retro-validate")
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+def retro_validate(paths: tuple[Path, ...]) -> None:
+    """Validate one or more retro files (session-retro / bundle / judge-retro)."""
+    from .retro.loader import load
+
+    failures = 0
+    for path in paths:
+        try:
+            model, _ = load(path)
+            family = type(model).__name__
+            console.print(f"[green]OK[/] {path} [dim]({family})[/]")
+        except Exception as exc:
+            failures += 1
+            console.print(f"[red]FAIL[/] {path}")
+            console.print(f"  [dim]{type(exc).__name__}: {exc}[/]")
+
+    if failures:
+        console.print(f"\n[red]{failures}/{len(paths)} files failed validation[/]")
+        sys.exit(1)
+
+
+@main.command("retro-migrate")
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--dry-run", is_flag=True, help="Show what would change without writing")
+def retro_migrate(paths: tuple[Path, ...], dry_run: bool) -> None:
+    """Migrate retro files in-place to the latest schema for their family.
+
+    No-op for files already at the latest version. Validates the migrated
+    output before writing back.
+    """
+    from .retro.loader import SCHEMA_FAMILY_TO_MODEL, parse
+    from .retro.migrations import family_of, migrate_to_latest
+    from .retro.writer import dump
+
+    changed = 0
+    for path in paths:
+        try:
+            raw, body = parse(path.read_text())
+            before_version = raw.get("schema", "<missing>")
+            migrated = migrate_to_latest(raw)
+            after_version = migrated["schema"]
+
+            if before_version == after_version:
+                console.print(f"[dim]·[/] {path} [dim](already {after_version})[/]")
+                continue
+
+            model_cls = SCHEMA_FAMILY_TO_MODEL[family_of(after_version)]
+            model = model_cls.model_validate(migrated)
+
+            if dry_run:
+                console.print(
+                    f"[yellow]WOULD MIGRATE[/] {path}: {before_version} → {after_version}"
+                )
+            else:
+                dump(model, path, body=body)
+                console.print(
+                    f"[green]MIGRATED[/] {path}: {before_version} → {after_version}"
+                )
+                changed += 1
+        except Exception as exc:
+            console.print(f"[red]FAIL[/] {path}: {type(exc).__name__}: {exc}")
+            sys.exit(1)
+
+    if not dry_run and changed:
+        console.print(f"\n[green]{changed}/{len(paths)} files migrated[/]")
+
+
 # -- task management --
 
 @main.group()

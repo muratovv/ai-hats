@@ -63,27 +63,80 @@ Forensic, adversarial, data-driven analysis of agent performance. You are not a 
 
 ## 3. Adversarial Report
 
-- **Output:** Structured retrospective in `.agent/retrospectives/YYYY-MM-DD-session-ID.md`
-- **Required sections:**
-  1. **Session summary** — what was asked, what was done
-  2. **Metrics overview** — key numbers from metrics.json, comparison with baselines
-  3. **Findings** — shortcuts, technical debts, hallucinations, instruction violations
-  4. **Efficiency assessment** — was the token/tool budget reasonable for the task?
-  5. **Actionable corrections** — concrete rule/skill changes for next iteration
-  6. **Score** (1-10) with justification
+- **Output:** Structured judge retrospective at
+  `.agent/retrospectives/judge/YYYY-MM-DD-judge-NNN.md` following
+  **`hats-judge-retro/v1`** schema (see `src/ai_hats/retro/judge_retro.py`).
+- **Mandatory:** YAML frontmatter at the top of the file. Without it,
+  `ai-hats retro-validate` will reject the report.
+
+### Frontmatter requirements
+```yaml
+---
+schema: hats-judge-retro/v1
+judge_run_id: judge-YYYY-MM-DD-NNN
+project: <project-name>
+date: YYYY-MM-DD
+bundle_id: BUNDLE-YYYY-MM-DD-NNN   # references the analyzed bundle
+findings:                           # min 1 required
+  - id: F1
+    title: ...
+    category: knowledge|environment|process|communication|assumption|tooling
+    severity: low|medium|high|critical
+    cost_minutes: <float>
+    root_cause: ...
+    evidence:                       # min 1 required
+      - session_id: <which session>
+        source: audit|metrics|session_retro|git|external
+        location: "audit.md:Turn 4"
+        quote: ...                  # optional
+    proposed_fix:                   # optional
+      type: skill_update|rule_create|memory|code_change|...
+      target:
+        kind: skill|rule|trait|memory|project_md|code|external
+        name: <identifier>
+      description: ...
+      expected_impact:              # REQUIRED if status=tracked AND type is skill/rule
+        reduces_category: ...
+        reduces_root_cause_pattern: ...
+        target_frequency_after: 0.0
+        observation_window_retros: 10
+    status: open|applied|tracked|rejected
+    task_ref: <backlog id>          # REQUIRED if status=tracked
+patterns_to_keep:
+  - "..."
+meta_critique: "..."                # optional self-assessment
+---
+
+# Markdown body — narrative analysis (sections 1-7 below)
+```
+
+### Markdown body (under frontmatter)
+1. **Session summary** — what was asked, what was done
+2. **Metrics overview** — key numbers from metrics.json, baseline comparison
+3. **Findings** — shortcuts, technical debts, hallucinations, instruction violations
+4. **Efficiency assessment** — was the token/tool budget reasonable?
+5. **Actionable corrections** — concrete rule/skill changes for next iteration
+6. **Score** (1-10) with justification
+7. **Meta-retrospective** — self-critique of the judge analysis itself
+
+The body content should mirror the findings in the frontmatter — frontmatter
+is the machine-readable index, body is the human-readable narrative.
 
 - **Hard Truths:** Explicitly list problems. Be specific, not generic.
 - **Evidence:** Every finding must cite specific audit events, log lines, or metric values.
 
 ## Completion
-- Adversarial report saved to `.agent/retrospectives/`
-- Every finding has specific evidence (audit event, metric value, diff)
-- Corrective actions are concrete and actionable
+- Judge retro saved at `.agent/retrospectives/judge/YYYY-MM-DD-judge-NNN.md`
+- `ai-hats retro-validate <path>` exits 0
+- Every finding has min 1 evidence with explicit `session_id`
+- Tracked skill/rule fixes carry `expected_impact` for longitudinal validation
 - Metrics comparison included (current vs baseline)
 
 ## Anti-Patterns
+- Writing free-form markdown without frontmatter (will fail validation)
 - Generic praise ("agent did well overall") — be adversarial, find the gaps
 - Findings without evidence — cite specific audit events or metric values
 - Corrective actions without specificity ("be more careful") — propose exact rule/skill changes
 - Ignoring metrics.json — always include quantitative analysis
 - Analyzing audit.md without checking metrics — qualitative alone is insufficient
+- Tracked skill/rule fix without `expected_impact` — breaks longitudinal cycle
