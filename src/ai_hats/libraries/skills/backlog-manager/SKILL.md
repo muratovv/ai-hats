@@ -93,9 +93,18 @@ Draft an implementation plan. Attach to task directory as `plan.md`.
 
 ### plan → execute
 
-1. `ai-hats task transition <ID> execute`
-2. Create isolated workspace → **worktree-isolation**: `ai-hats wt create type/TICKET-ID`
-3. Work happens in worktree — main branch stays clean
+Two equivalent flows — pick one, do not mix:
+
+**A. Auto worktree (single command, branch named `task/<id>`):**
+1. `ai-hats task transition <ID> execute` — creates a `task/<id>` worktree automatically
+2. `cd <printed-worktree-path>`
+
+**B. Custom branch name (manual worktree first):**
+1. `ai-hats wt create type/TICKET-ID` (e.g. `feat/HATS-004`) → **worktree-isolation**
+2. `cd <printed-worktree-path>`
+3. `ai-hats task transition <ID> execute` — adopts the worktree you just `cd`'d into (no nesting)
+
+In both flows, work happens in the worktree — main branch stays clean. Do NOT run `wt create` from inside an existing linked worktree (it will be refused).
 
 ### execute
 
