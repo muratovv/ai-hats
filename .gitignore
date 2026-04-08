@@ -15,6 +15,9 @@ venv/
 .ruff_cache/
 .pytest_cache/
 
+# uv.lock — local dev tool artifact, ai-hats is a library installed via pip
+uv.lock
+
 # ai-hats runtime (generated per-project)
 .agent/
 .gitlog/
