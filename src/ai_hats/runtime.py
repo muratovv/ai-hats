@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import signal
 import subprocess
@@ -106,6 +107,29 @@ def _collect_trace_stats(session: "Session") -> dict:
     return stats
 
 
+def _format_tokens(session: "Session") -> str:
+    """Format the aggregated token usage line from metrics.json.
+
+    Returns a single line with input/output tokens and cache hit/creation
+    counts. Falls back to ``🪙 Tokens: n/a`` when the metrics file is missing,
+    unreadable, or lacks a ``tokens`` block (e.g. non-Claude providers).
+    """
+    if not session.metrics_path.exists():
+        return "🪙 Tokens: n/a"
+    try:
+        metrics = json.loads(session.metrics_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return "🪙 Tokens: n/a"
+    tokens = metrics.get("tokens")
+    if not tokens:
+        return "🪙 Tokens: n/a"
+    tin = tokens.get("input", 0)
+    tout = tokens.get("output", 0)
+    cread = tokens.get("cache_read", 0)
+    cnew = tokens.get("cache_creation", 0)
+    return f"🪙 📥 {tin:,} in   📤 {tout:,} out   •   ♻️  {cread:,} hit   ✨ {cnew:,} new"
+
+
 def _print_session_end(session: "Session", trace_stats: dict | None = None) -> None:
     if trace_stats is None:
         trace_stats = _collect_trace_stats(session)
@@ -127,6 +151,7 @@ def _print_session_end(session: "Session", trace_stats: dict | None = None) -> N
     print("━" * 52)
     print(f"  ⏱  {duration}   💬 {req_count} turns")
     print(f"  📄 Audit: {audit_info}   📊 Trace: {trace_info}")
+    print(f"  {_format_tokens(session)}")
     print(f"  📂 {session.session_dir}")
     print("━" * 52 + "\n")
 
