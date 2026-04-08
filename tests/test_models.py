@@ -63,6 +63,126 @@ def test_task_card_invalid_transition():
         task.transition_to(TaskState.DONE)
 
 
+# --- HATS-055: extras round-trip + dropped resolution fix ---
+
+
+def test_task_card_unknown_field_captured_into_extras():
+    data = {
+        "id": "T-1",
+        "title": "Test",
+        "acceptance_criteria": ["ac one", "ac two"],
+        "custom_field": {"nested": True},
+    }
+    card = TaskCard.from_dict(data)
+    assert card.extras == {
+        "acceptance_criteria": ["ac one", "ac two"],
+        "custom_field": {"nested": True},
+    }
+
+
+def test_task_card_extras_round_trip_via_to_dict():
+    data = {
+        "id": "T-1",
+        "title": "Test",
+        "acceptance_criteria": ["ac one", "ac two"],
+    }
+    card = TaskCard.from_dict(data)
+    out = card.to_dict()
+    assert out["acceptance_criteria"] == ["ac one", "ac two"]
+
+
+def test_task_card_extras_survive_state_transition():
+    """Regression for HATS-055: transition must not drop unknown fields."""
+    data = {
+        "id": "T-1",
+        "title": "Test",
+        "state": "brainstorm",
+        "acceptance_criteria": ["must work after transition"],
+        "custom_field": "value",
+    }
+    card = TaskCard.from_dict(data)
+    card.transition_to(TaskState.PLAN)
+    card.transition_to(TaskState.EXECUTE)
+    out = card.to_dict()
+    assert out["state"] == "execute"
+    assert out["acceptance_criteria"] == ["must work after transition"]
+    assert out["custom_field"] == "value"
+
+
+def test_task_card_extras_survive_full_yaml_round_trip(tmp_path):
+    """End-to-end: from_yaml + save + from_yaml preserves unknown fields."""
+    import yaml
+
+    src = tmp_path / "task.yaml"
+    src.write_text(yaml.safe_dump({
+        "id": "T-1",
+        "title": "Test",
+        "state": "plan",
+        "acceptance_criteria": ["a", "b", "c"],
+        "weird_field": [1, 2, {"k": "v"}],
+    }))
+
+    card = TaskCard.from_yaml(src)
+    card.transition_to(TaskState.EXECUTE)
+    card.save(src)
+
+    reloaded = TaskCard.from_yaml(src)
+    assert reloaded.state == TaskState.EXECUTE
+    assert reloaded.extras["acceptance_criteria"] == ["a", "b", "c"]
+    assert reloaded.extras["weird_field"] == [1, 2, {"k": "v"}]
+
+
+def test_task_card_resolution_field_no_longer_dropped():
+    """Regression: 'resolution' field was declared but never serialized."""
+    data = {
+        "id": "T-1",
+        "title": "Test",
+        "resolution": "closed: superseded by HATS-100",
+    }
+    card = TaskCard.from_dict(data)
+    assert card.resolution == "closed: superseded by HATS-100"
+    out = card.to_dict()
+    assert out["resolution"] == "closed: superseded by HATS-100"
+
+
+def test_task_card_empty_resolution_omitted_from_output():
+    card = TaskCard.from_dict({"id": "T-1", "title": "Test"})
+    out = card.to_dict()
+    assert "resolution" not in out
+
+
+def test_task_card_empty_extras_not_in_output():
+    card = TaskCard.from_dict({"id": "T-1", "title": "Test"})
+    out = card.to_dict()
+    assert "extras" not in out
+
+
+def test_task_card_extras_cannot_shadow_known_field_via_to_dict():
+    """Defensive: even if user mutates extras to contain a known key,
+    the typed field wins in to_dict output."""
+    card = TaskCard(id="T-1", title="Real Title")
+    card.extras["title"] = "IMPOSTER"
+    out = card.to_dict()
+    assert out["title"] == "Real Title"
+
+
+def test_task_card_known_fields_not_double_captured():
+    """from_dict should NOT put known keys into extras."""
+    data = {
+        "id": "T-1",
+        "title": "Test",
+        "state": "plan",
+        "priority": "high",
+        "tags": ["bug"],
+        "extra1": "in extras",
+    }
+    card = TaskCard.from_dict(data)
+    assert "id" not in card.extras
+    assert "state" not in card.extras
+    assert "tags" not in card.extras
+    assert card.extras == {"extra1": "in extras"}
+
+
 def test_composition_from_dict():
     data = {
         "traits": ["trait-base"],

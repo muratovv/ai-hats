@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import yaml
 
@@ -317,7 +317,20 @@ class WorkLogEntry:
 
 @dataclass
 class TaskCard:
-    """YAML task card for state machine."""
+    """YAML task card for state machine.
+
+    Unknown YAML keys are captured into ``extras`` and round-tripped verbatim
+    on save. This guards against silent data loss when callers add new fields
+    (e.g. ``acceptance_criteria``) that aren't part of the typed schema.
+    """
+
+    #: typed fields recognized by from_dict / to_dict; everything else → extras
+    _KNOWN_FIELDS: ClassVar[frozenset[str]] = frozenset({
+        "id", "title", "state", "description", "priority",
+        "assignee", "reviewer", "role", "parent_task", "subtasks",
+        "tags", "work_log", "final_state", "resolution",
+        "created", "updated", "completed_at",
+    })
 
     id: str
     title: str
@@ -336,6 +349,7 @@ class TaskCard:
     created: str = ""
     updated: str = ""
     completed_at: str = ""
+    extras: dict[str, Any] = field(default_factory=dict)
 
     def transition_to(self, new_state: TaskState) -> None:
         if not self.state.can_transition_to(new_state):
@@ -371,8 +385,16 @@ class TaskCard:
         }
         if self.final_state:
             d["final_state"] = self.final_state
+        if self.resolution:
+            d["resolution"] = self.resolution
         if self.completed_at:
             d["completed_at"] = self.completed_at
+        # Round-trip unknown fields verbatim. Known fields take precedence in
+        # case of accidental collision (extras should never contain known keys
+        # since from_dict filters them out, but we defend against direct mutation).
+        for k, v in self.extras.items():
+            if k not in self._KNOWN_FIELDS:
+                d[k] = v
         return d
 
     @classmethod
@@ -381,6 +403,7 @@ class TaskCard:
             WorkLogEntry.from_dict(e) if isinstance(e, dict) else WorkLogEntry(timestamp="", message=str(e))
             for e in data.get("work_log", [])
         ]
+        extras = {k: v for k, v in data.items() if k not in cls._KNOWN_FIELDS}
         return cls(
             id=data["id"],
             title=data["title"],
@@ -395,9 +418,11 @@ class TaskCard:
             tags=data.get("tags", []),
             work_log=work_log,
             final_state=data.get("final_state", ""),
+            resolution=data.get("resolution", ""),
             created=data.get("created", ""),
             updated=data.get("updated", ""),
             completed_at=data.get("completed_at", ""),
+            extras=extras,
         )
 
     @classmethod
