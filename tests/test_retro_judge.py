@@ -84,8 +84,17 @@ class FakeSubAgentRunner:
 # --- helpers ---
 
 
-def _valid_judge_retro(bundle_id: str, date_str: str = "2026-04-08") -> str:
-    """Produce a minimal valid hats-judge-retro/v1 markdown document."""
+def _valid_judge_retro(
+    bundle_id: str,
+    *,
+    evidence_session_id: str = "20260408-101010-1",
+    date_str: str = "2026-04-08",
+) -> str:
+    """Produce a minimal valid hats-judge-retro/v1 markdown document.
+
+    `evidence_session_id` must be in the bundle being judged or the new
+    integrity check (HATS-066) will reject it.
+    """
     return f"""---
 schema: hats-judge-retro/v1
 judge_run_id: judge-test-001
@@ -99,7 +108,7 @@ findings:
     severity: low
     root_cause: Example root cause
     evidence:
-      - session_id: 20260408-101010-1
+      - session_id: {evidence_session_id}
         source: audit
         location: audit.md:Turn 1
 ---
@@ -162,7 +171,14 @@ def test_judge_auto_creates_bundle_from_sessions(project: Path) -> None:
 def test_judge_auto_creates_bundle_from_last_n(project: Path) -> None:
     for sid in ("20260408-101010-1", "20260408-111111-1", "20260408-121212-1"):
         _make_session(project, sid)
-    transcript = _wrap_in_delimiters(_valid_judge_retro("BUNDLE-2026-04-08-001"))
+    # Last 2 sessions are [111111, 121212]; evidence must reference one of them
+    # for the integrity check (HATS-066) to pass.
+    transcript = _wrap_in_delimiters(
+        _valid_judge_retro(
+            "BUNDLE-2026-04-08-001",
+            evidence_session_id="20260408-111111-1",
+        )
+    )
     fake = FakeSubAgentRunner(project, [transcript])
     bm = BundleManager(project)
     runner = JudgeRunner(project, subagent_runner=fake, bundle_manager=bm)
@@ -310,3 +326,113 @@ def test_judge_validation_failure_after_retry_raises(project: Path) -> None:
     with pytest.raises(JudgeValidationError, match="failed validation"):
         runner.judge(bundle_id=bundle.bundle_id)
     assert len(fake.calls) == 2  # 1 original + 1 retry
+
+
+# --- HATS-066: integrity validation (post-schema semantic checks) ---
+
+
+def test_judge_integrity_rejects_wrong_bundle_id_then_recovers(project: Path) -> None:
+    """Schema-valid output with wrong bundle_id triggers retry with explicit hint."""
+    _make_session(project, "20260408-101010-1")
+    bm = BundleManager(project)
+    bundle = bm.create(["20260408-101010-1"])
+    assert bundle.bundle_id == "BUNDLE-2026-04-08-001"
+
+    # First attempt: wrong bundle_id (LLM hallucination) — schema passes,
+    # integrity rejects.
+    bad = _wrap_in_delimiters(_valid_judge_retro("BUNDLE-2026-04-08-002"))
+    good = _wrap_in_delimiters(_valid_judge_retro(bundle.bundle_id))
+    fake = FakeSubAgentRunner(project, [bad, good])
+    runner = JudgeRunner(project, subagent_runner=fake, bundle_manager=bm)
+
+    path = runner.judge(bundle_id=bundle.bundle_id)
+    assert path.exists()
+    assert len(fake.calls) == 2
+    # Retry prompt must echo the exact required bundle_id so the LLM can fix it.
+    retry_task = fake.calls[1]["task"]
+    assert "BUNDLE-2026-04-08-001" in retry_task
+    assert "MUST be exactly" in retry_task
+
+
+def test_judge_integrity_rejects_out_of_scope_evidence_then_recovers(project: Path) -> None:
+    """Evidence pointing to a session not in the bundle triggers retry."""
+    _make_session(project, "20260408-101010-1")
+    _make_session(project, "20260408-202020-1")  # exists but NOT in bundle
+    bm = BundleManager(project)
+    bundle = bm.create(["20260408-101010-1"])
+
+    bad = _wrap_in_delimiters(
+        _valid_judge_retro(
+            bundle.bundle_id,
+            evidence_session_id="20260408-202020-1",  # out of bundle
+        )
+    )
+    good = _wrap_in_delimiters(
+        _valid_judge_retro(bundle.bundle_id, evidence_session_id="20260408-101010-1")
+    )
+    fake = FakeSubAgentRunner(project, [bad, good])
+    runner = JudgeRunner(project, subagent_runner=fake, bundle_manager=bm)
+
+    path = runner.judge(bundle_id=bundle.bundle_id)
+    assert path.exists()
+    assert len(fake.calls) == 2
+    # Retry prompt must list allowed session_ids and warn against scope creep.
+    retry_task = fake.calls[1]["task"]
+    assert "20260408-101010-1" in retry_task
+    assert "scope is this bundle only" in retry_task
+
+
+def test_judge_integrity_persistent_failure_raises(project: Path) -> None:
+    """Both attempts violate integrity → JudgeValidationError with details."""
+    _make_session(project, "20260408-101010-1")
+    bm = BundleManager(project)
+    bundle = bm.create(["20260408-101010-1"])
+
+    bad1 = _wrap_in_delimiters(_valid_judge_retro("BUNDLE-2026-04-08-002"))
+    bad2 = _wrap_in_delimiters(_valid_judge_retro("BUNDLE-2026-04-08-003"))
+    fake = FakeSubAgentRunner(project, [bad1, bad2])
+    runner = JudgeRunner(project, subagent_runner=fake, bundle_manager=bm)
+
+    with pytest.raises(JudgeValidationError, match="integrity"):
+        runner.judge(bundle_id=bundle.bundle_id)
+    assert len(fake.calls) == 2  # 1 original + 1 retry
+
+
+def test_judge_integrity_check_via_validate_integrity_directly(project: Path) -> None:
+    """Direct unit test of _validate_integrity to lock the violation message format."""
+    from ai_hats.retro.judge import JudgeIntegrityError
+    from ai_hats.retro.judge_retro import JudgeRetroV1
+
+    _make_session(project, "20260408-101010-1")
+    bm = BundleManager(project)
+    bundle = bm.create(["20260408-101010-1"])
+    runner = JudgeRunner(project, subagent_runner=FakeSubAgentRunner(project, []), bundle_manager=bm)
+
+    # Build a model with both violations: wrong bundle_id + out-of-scope evidence.
+    bad_model = JudgeRetroV1.model_validate({
+        "schema": "hats-judge-retro/v1",
+        "judge_run_id": "x",
+        "project": "ai-hats",
+        "date": "2026-04-08",
+        "bundle_id": "BUNDLE-2026-04-08-999",
+        "findings": [{
+            "id": "F1",
+            "title": "x",
+            "category": "process",
+            "severity": "low",
+            "root_cause": "rc",
+            "evidence": [{
+                "session_id": "session-not-in-bundle",
+                "source": "audit",
+                "location": "audit.md",
+            }],
+        }],
+    })
+    with pytest.raises(JudgeIntegrityError) as exc_info:
+        runner._validate_integrity(bad_model, bundle)
+    msg = str(exc_info.value)
+    assert "bundle_id mismatch" in msg
+    assert "BUNDLE-2026-04-08-999" in msg
+    assert "BUNDLE-2026-04-08-001" in msg
+    assert "session-not-in-bundle" in msg
+    assert "F1" in msg

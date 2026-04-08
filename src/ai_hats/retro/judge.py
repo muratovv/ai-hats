@@ -40,6 +40,16 @@ class JudgeValidationError(Exception):
     """Judge sub-agent output failed schema validation after all retries."""
 
 
+class JudgeIntegrityError(ValueError):
+    """Judge output passed schema validation but violated bundle-scoped semantics.
+
+    Examples: bundle_id in output does not match the bundle the judge was asked
+    to analyze, or evidence references a session_id that is not part of the
+    bundle. The schema validator only checks format/types — these checks ensure
+    the judge actually analyzed what we asked it to.
+    """
+
+
 class JudgeRunner:
     """Orchestrates bundle → judge sub-session → validated JudgeRetroV1."""
 
@@ -195,19 +205,54 @@ class JudgeRunner:
                 raw, body = parse(md)
                 migrated = migrate_to_latest(raw)
                 model = JudgeRetroV1.model_validate(migrated)
+                # Schema-level checks pass. Now run semantic integrity checks
+                # against the bundle the judge was actually asked to analyze.
+                # Catches LLM hallucinations that the regex-only schema can't.
+                self._validate_integrity(model, bundle)
                 return model, body
             except (ValidationError, ValueError, yaml.YAMLError) as e:
                 last_error = e
                 if attempt >= max_retries:
                     break
                 attempt += 1
-                current_prompt = self._retry_prompt(prompt, md, str(e))
+                current_prompt = self._retry_prompt(prompt, bundle, md, str(e))
         raise JudgeValidationError(
             f"Judge output failed validation after {attempt + 1} attempt(s): "
             f"{last_error}\n"
             f"Last transcript: {last_session_dir}/transcript.txt\n"
             f"Last extracted markdown:\n{last_transcript[:500]}"
         )
+
+    def _validate_integrity(self, model: JudgeRetroV1, bundle: BundleV1) -> None:
+        """Verify the judge output actually analyzed the bundle we passed in.
+
+        Raises JudgeIntegrityError listing all violations found. Two checks:
+        1. `bundle_id` in output must equal the bundle the judge was given
+           (regex schema only enforces format, not value)
+        2. Every `evidence.session_id` must be in `bundle.session_ids`
+           (judge sub-agent has filesystem access and may reference out-of-scope
+           sessions from `.gitlog/`)
+        """
+        violations: list[str] = []
+        if model.bundle_id != bundle.bundle_id:
+            violations.append(
+                f"bundle_id mismatch: output has {model.bundle_id!r}, "
+                f"expected exactly {bundle.bundle_id!r}"
+            )
+        allowed = set(bundle.session_ids)
+        for finding in model.findings:
+            for ev in finding.evidence:
+                if ev.session_id not in allowed:
+                    violations.append(
+                        f"finding {finding.id}: evidence references session "
+                        f"{ev.session_id!r} which is not in the bundle "
+                        f"(allowed: {sorted(allowed)})"
+                    )
+        if violations:
+            raise JudgeIntegrityError(
+                "Judge output failed integrity checks:\n"
+                + "\n".join(f"  - {v}" for v in violations)
+            )
 
     def _get_runner(self) -> "SubAgentRunner":
         if self._subagent_runner is not None:
@@ -230,11 +275,21 @@ class JudgeRunner:
             return transcript[fm:]
         return transcript
 
-    def _retry_prompt(self, original: str, bad_output: str, error: str) -> str:
+    def _retry_prompt(
+        self, original: str, bundle: BundleV1, bad_output: str, error: str
+    ) -> str:
+        allowed_sessions = "\n".join(f"  - {sid}" for sid in bundle.session_ids)
         return (
-            "The previous attempt to produce a judge retrospective failed schema "
+            "The previous attempt to produce a judge retrospective failed "
             "validation. You must correct the errors and produce a new, complete "
             f"output between {JUDGE_DELIM_START} and {JUDGE_DELIM_END} markers.\n\n"
+            "--- Hard requirements (these are NOT suggestions) ---\n"
+            f"1. The frontmatter field `bundle_id` MUST be exactly: {bundle.bundle_id}\n"
+            "2. Every `evidence.session_id` in every finding MUST be one of the\n"
+            "   sessions listed in this bundle:\n"
+            f"{allowed_sessions}\n"
+            "   Do NOT reference any other session from .gitlog/ even if you can\n"
+            "   read it — your scope is this bundle only.\n\n"
             "--- Original task ---\n"
             f"{original}\n\n"
             "--- Previous output (this failed) ---\n"
