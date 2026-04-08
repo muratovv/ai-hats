@@ -57,3 +57,14 @@ Isolated development using git worktrees. Each task gets its own working copy �
 - Working directly on main branch for non-trivial changes — use a worktree
 - Forgetting to `cd` back to project dir before merge/discard — commands fail silently
 - Multiple active worktrees without tracking — leads to forgotten branches
+- Running `ai-hats wt create` from inside a linked worktree — blocked with an error. Always `cd` back to the main repo first.
+- Mixing manual `wt create` with `task transition execute` from the main repo — if you created a worktree manually and want the task to use it, `cd` into the worktree first, then transition. Otherwise the transition errors out with a clear remediation message.
+
+## If You End Up With a Stray Worktree
+```
+git worktree list                 # audit
+git worktree remove <path>        # remove a stray linked worktree
+git worktree prune                # clean stale metadata
+rm .agent/worktree.json           # if ai-hats state is stale
+```
+Rule of thumb: one task, one worktree, one `.agent/worktree.json` (in the main repo).

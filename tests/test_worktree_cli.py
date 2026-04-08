@@ -194,3 +194,34 @@ class TestListWorktrees:
         assert len(wts) >= 1
         paths = [w["path"] for w in wts]
         assert str(git_project) in paths
+
+
+# ---------------------------------------------------------------------------
+# is_inside_linked_worktree (HATS-060)
+# ---------------------------------------------------------------------------
+
+
+class TestIsInsideLinkedWorktree:
+    def test_main_worktree_returns_false(self, git_project: Path) -> None:
+        assert WorktreeManager.is_inside_linked_worktree(git_project) is False
+
+    def test_linked_worktree_returns_true(self, git_project: Path) -> None:
+        mgr = WorktreeManager(git_project, branch_name="feat/linked")
+        wt = mgr.create()
+        try:
+            assert WorktreeManager.is_inside_linked_worktree(wt) is True
+        finally:
+            mgr.cleanup()
+
+    def test_nested_subdir_of_linked_worktree_returns_true(self, git_project: Path) -> None:
+        mgr = WorktreeManager(git_project, branch_name="feat/nested")
+        wt = mgr.create()
+        try:
+            sub = wt / "a" / "b"
+            sub.mkdir(parents=True)
+            assert WorktreeManager.is_inside_linked_worktree(sub) is True
+        finally:
+            mgr.cleanup()
+
+    def test_non_git_dir_returns_false(self, tmp_path: Path) -> None:
+        assert WorktreeManager.is_inside_linked_worktree(tmp_path) is False

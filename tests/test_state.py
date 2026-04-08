@@ -322,3 +322,50 @@ def test_no_worktree_in_non_git_project(mgr):
 
     active = WorktreeManager.load_active(mgr.project_dir)
     assert active is None
+
+
+def test_execute_inside_linked_worktree_does_not_nest(tmp_path):
+    """HATS-060: `task transition execute` from inside a manually-created
+    linked worktree must NOT create a second nested worktree.
+
+    Mirrors the bug repro: user runs `wt create` from main, cd's in,
+    creates the task FROM the worktree (since .agent/ is gitignored and
+    the worktree starts with no task cards), and then transitions to
+    execute. Pre-fix this would silently nest a `task/t-1` worktree.
+    """
+    project = tmp_path / "project"
+    project.mkdir()
+    _init_git(project)
+    (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
+    (project / ".agent" / "STATE.md").write_text("")
+
+    # Step 1: replicate `ai-hats wt create feat/T-1-foo` from main.
+    wt = WorktreeManager(project, branch_name="feat/T-1-foo")
+    wt_path = wt.create()
+    wt.save_state()
+
+    # Step 2: from inside the linked worktree, the user creates and plans
+    # the task. The worktree's .agent/ does not exist yet (gitignored in
+    # the real project; never committed in tests). TaskManager.__init__
+    # will create the tasks/ subdir for us.
+    wt_mgr = TaskManager(wt_path)
+    wt_mgr.create_task("T-1", "Created from inside worktree")
+    wt_mgr.transition("T-1", TaskState.PLAN)
+
+    # Step 3: the line that triggers the bug pre-fix.
+    wt_mgr.transition("T-1", TaskState.EXECUTE)
+
+    # Assertion 1: no second worktree created on task/t-1.
+    wts = WorktreeManager.list_worktrees(project)
+    branches = {w.get("branch", "") for w in wts}
+    assert "task/t-1" not in branches, f"Nested worktree created: {branches}"
+
+    # Assertion 2: state file in main repo still points at the original.
+    active = WorktreeManager.load_active(project)
+    assert active is not None
+    assert active.branch_name == "feat/T-1-foo"
+    assert active.worktree_path == wt_path
+
+    # Assertion 3: no stray worktree.json inside the linked worktree —
+    # the short-circuit must NOT call save_state on the wrong project_dir.
+    assert not (wt_path / ".agent" / "worktree.json").exists()

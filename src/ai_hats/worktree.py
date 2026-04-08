@@ -171,6 +171,39 @@ class WorktreeManager:
         return mgr
 
     @staticmethod
+    def is_inside_linked_worktree(path: Path) -> bool:
+        """True iff `path` is inside a git linked worktree (not the main worktree).
+
+        Compares `git rev-parse --git-dir` against `--git-common-dir`: in the
+        main worktree they resolve to the same path; in a linked worktree
+        --git-dir points to .git/worktrees/<name> while --git-common-dir
+        points to the canonical .git directory.
+
+        Fail-safe: returns False on any subprocess error or non-git path.
+        Caller is responsible for not blocking on this signal.
+        """
+        try:
+            git_dir = subprocess.run(
+                ["git", "rev-parse", "--path-format=absolute", "--git-dir"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            common_dir = subprocess.run(
+                ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
+        if not git_dir or not common_dir:
+            return False
+        return Path(git_dir).resolve() != Path(common_dir).resolve()
+
+    @staticmethod
     def list_worktrees(project_dir: Path) -> list[dict[str, str]]:
         """List all git worktrees for this project."""
         try:

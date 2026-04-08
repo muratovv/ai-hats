@@ -236,18 +236,36 @@ class TaskManager:
         task.save(task_file)
 
     def _setup_worktree(self, task: TaskCard) -> Path | None:
-        """Create isolated worktree when task enters execute state."""
+        """Create or adopt an isolated worktree when task enters execute state.
+
+        Returns the adopted linked-worktree path if invoked from inside one
+        (HATS-060 short-circuit — the linked worktree IS the task workspace,
+        do not nest), the existing/created worktree path on the happy path,
+        or None for non-git projects.
+        """
         from .worktree import WorktreeManager
+
+        # HATS-060: invoked from inside a linked worktree → adopt it.
+        # The worktree.json state file lives in the main repo, not here,
+        # so load_active would spuriously return None and create a nested
+        # worktree. Trust the caller's cwd instead.
+        if WorktreeManager.is_inside_linked_worktree(self.project_dir):
+            return self.project_dir
 
         active = WorktreeManager.load_active(self.project_dir)
         if active is not None:
-            # Check if it belongs to this task (reuse after blocked → execute)
+            # Reuse only when the active worktree belongs to this task
+            # (e.g. after blocked → execute). Otherwise the user must
+            # resolve the conflict explicitly.
             expected_branch = f"task/{task.id.lower()}"
             if active.branch_name == expected_branch:
                 return active.worktree_path
             raise ValueError(
                 f"Active worktree exists on branch '{active.branch_name}'. "
-                f"Merge or discard first: ai-hats wt merge / ai-hats wt discard"
+                f"Either merge/discard it ('ai-hats wt merge' / "
+                f"'ai-hats wt discard'), or cd into that worktree and "
+                f"re-run 'ai-hats task transition {task.id} execute' "
+                f"to adopt it."
             )
 
         branch = f"task/{task.id.lower()}"

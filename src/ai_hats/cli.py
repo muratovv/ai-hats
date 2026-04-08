@@ -498,6 +498,16 @@ def wt_create(branch: str):
     from .worktree import WorktreeManager
 
     project_dir = _project_dir()
+
+    # HATS-060: refuse to create from inside a linked worktree —
+    # otherwise we'd write worktree.json into the wrong .agent/ and
+    # produce a nested worktree.
+    if WorktreeManager.is_inside_linked_worktree(project_dir):
+        console.print("[red]Cannot create a worktree from inside a linked worktree[/]")
+        console.print(f"  You are in: {project_dir}")
+        console.print("  Run [bold]ai-hats wt create[/] from the main repo.")
+        sys.exit(1)
+
     active = WorktreeManager.load_active(project_dir)
     if active is not None:
         console.print(f"[red]Active worktree already exists[/]: {active.branch_name}")
@@ -907,11 +917,15 @@ def task_transition(task_id: str, new_state: str, final_state: str | None):
                 console.print(f"  Plan scaffold: {plan_path}")
         elif state == TaskState.EXECUTE:
             from .worktree import WorktreeManager
-            active = WorktreeManager.load_active(_project_dir())
+            project_dir = _project_dir()
+            active = WorktreeManager.load_active(project_dir)
             if active and active.worktree_path:
                 console.print(f"  Worktree: {active.worktree_path}")
                 console.print(f"  Branch: {active.branch_name}")
                 console.print(f"  [dim]cd {active.worktree_path}[/]")
+            elif WorktreeManager.is_inside_linked_worktree(project_dir):
+                # HATS-060: adopted the caller's linked worktree.
+                console.print(f"  Worktree: {project_dir} [dim](adopted — already cwd)[/]")
         elif state == TaskState.DONE:
             console.print("  Worktree merged")
         elif state == TaskState.FAILED:
