@@ -582,36 +582,178 @@ def wt_status():
 # -- judge --
 
 @main.command()
-@click.option("--session", default=None, help="Session ID to judge")
-@click.option("--last", "last_n", default=None, type=int, help="Judge last N sessions")
-def judge(session: str | None, last_n: int | None):
-    """Evaluate session quality."""
-    from .feedback import JudgeRunner
-    runner = JudgeRunner(_project_dir())
+@click.option("--bundle", "bundle_id", default=None, help="Bundle id to judge")
+@click.option("--sessions", default=None, help="Comma-separated session ids (auto-bundle)")
+@click.option("--last", "last_n", default=None, type=int, help="Judge last N sessions (auto-bundle)")
+@click.option("--focus", default=None, help="Focus lens for the judge")
+def judge(bundle_id: str | None, sessions: str | None, last_n: int | None, focus: str | None):
+    """Spawn judge sub-agent over a bundle and validate its output."""
+    from .retro.judge import JudgeRunner, JudgeValidationError
 
-    if session:
-        verdict_path = runner.judge_session(session)
-        console.print(f"[green]Verdict[/]: {verdict_path}")
-    elif last_n:
-        verdicts = runner.judge_last(last_n)
-        for v in verdicts:
-            console.print(f"[green]Verdict[/]: {v}")
-    else:
-        verdicts = runner.judge_last(1)
-        for v in verdicts:
-            console.print(f"[green]Verdict[/]: {v}")
+    runner = JudgeRunner(_project_dir())
+    session_ids = [s.strip() for s in sessions.split(",")] if sessions else None
+    label = bundle_id or (
+        f"sessions={','.join(session_ids)}" if session_ids
+        else f"last={last_n}" if last_n else "?"
+    )
+    try:
+        with console.status(
+            f"[cyan]Judging {label} (spawning judge sub-agent, may take a few minutes)...[/]",
+            spinner="dots",
+        ):
+            path = runner.judge(
+                bundle_id=bundle_id,
+                session_ids=session_ids,
+                last_n=last_n,
+                focus=focus,
+            )
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(f"[red]Error[/]: {exc}")
+        sys.exit(1)
+    except JudgeValidationError as exc:
+        console.print(f"[red]Judge output failed validation[/]:\n{exc}")
+        sys.exit(2)
+    console.print(f"[green]Judge retro[/]: {path}")
 
 
 # -- retro --
 
 @main.command()
-@click.option("--session", default=None, help="Session ID for retrospective")
-def retro(session: str | None):
-    """Generate retrospective for a session."""
-    from .feedback import RetroGenerator
-    gen = RetroGenerator(_project_dir())
-    retro_path = gen.generate(session_id=session)
-    console.print(f"[green]Retrospective[/]: {retro_path}")
+@click.argument("session_id", required=False)
+@click.option("--last", "use_last", is_flag=True, help="Use the most recent session")
+@click.option(
+    "--mode",
+    type=click.Choice(["programmatic", "llm"]),
+    default="programmatic",
+    help="Builder mode: programmatic (fast, no LLM) or llm (narrative summary)",
+)
+@click.option(
+    "--timeout",
+    default=600,
+    type=int,
+    help="LLM call timeout in seconds (llm/hybrid only, default 600)",
+)
+def retro(session_id: str | None, use_last: bool, mode: str, timeout: int):
+    """Generate a structured session retrospective (HATS-051 schema)."""
+    from .observe import SessionManager
+    from .retro.builder import BuilderMode, SessionRetroBuilder
+    from .retro.llm_caller import SubprocessLLMCaller
+
+    project_dir = _project_dir()
+    if use_last or not session_id:
+        sessions = SessionManager(project_dir).list_sessions(last_n=1)
+        if not sessions:
+            console.print("[red]No sessions found[/]")
+            sys.exit(1)
+        session_id = sessions[0].session_id
+
+    builder_mode = BuilderMode(mode)
+    use_llm = builder_mode == BuilderMode.LLM
+    llm_caller = SubprocessLLMCaller(project_dir, timeout=timeout) if use_llm else None
+    builder = SessionRetroBuilder(project_dir, llm_caller=llm_caller)
+
+    def _do_build() -> Path:
+        return builder.build_and_save(session_id, mode=builder_mode)
+
+    try:
+        if use_llm:
+            with console.status(
+                f"[cyan]Generating retrospective for {session_id} "
+                f"(mode={mode}, timeout={timeout}s, calling LLM)...[/]",
+                spinner="dots",
+            ):
+                path = _do_build()
+        else:
+            path = _do_build()
+    except FileNotFoundError as exc:
+        console.print(f"[red]Error[/]: {exc}")
+        sys.exit(1)
+    except RuntimeError as exc:
+        console.print(f"[red]LLM call failed[/]: {exc}")
+        console.print(
+            "[dim]Tip: try --timeout 600 or fall back to --mode programmatic[/]"
+        )
+        sys.exit(1)
+    console.print(f"[green]Session retro[/]: {path}")
+
+
+# -- bundle --
+
+@main.group()
+def bundle():
+    """Manage session bundles for judge analysis."""
+
+
+@bundle.command("create")
+@click.option("--sessions", default=None, help="Comma-separated session ids")
+@click.option("--last", "last_n", default=None, type=int, help="Use last N sessions")
+@click.option("--since", default=None, help="Use sessions since YYYY-MM-DD")
+@click.option("--notes", default=None, help="Free-form notes")
+def bundle_create(
+    sessions: str | None,
+    last_n: int | None,
+    since: str | None,
+    notes: str | None,
+):
+    """Create a new bundle artifact (lens-agnostic; pass --focus on `judge`)."""
+    from datetime import date as _date
+
+    from .retro.bundles import BundleManager
+
+    bm = BundleManager(_project_dir())
+    try:
+        if sessions:
+            ids = [s.strip() for s in sessions.split(",") if s.strip()]
+            b = bm.create(ids, notes=notes)
+        elif last_n:
+            b = bm.create_from_last(last_n, notes=notes)
+        elif since:
+            b = bm.create_from_since(_date.fromisoformat(since), notes=notes)
+        else:
+            console.print("[red]Specify one of: --sessions, --last, --since[/]")
+            sys.exit(1)
+    except (ValueError, FileNotFoundError) as exc:
+        console.print(f"[red]Error[/]: {exc}")
+        sys.exit(1)
+    console.print(f"[green]Bundle[/]: {b.bundle_id}")
+    console.print(f"  Sessions: {len(b.session_ids)}")
+
+
+@bundle.command("list")
+def bundle_list():
+    """List existing bundles."""
+    from .retro.bundles import BundleManager
+
+    bm = BundleManager(_project_dir())
+    bundles = bm.list()
+    if not bundles:
+        console.print("[dim]No bundles[/]")
+        return
+    for b in bundles:
+        notes = f" — {b.notes}" if b.notes else ""
+        console.print(f"  {b.bundle_id}  ({len(b.session_ids)} session(s)){notes}")
+
+
+@bundle.command("show")
+@click.argument("bundle_id")
+def bundle_show(bundle_id: str):
+    """Show contents of one bundle."""
+    from .retro.bundles import BundleManager
+
+    bm = BundleManager(_project_dir())
+    try:
+        b = bm.get(bundle_id)
+    except FileNotFoundError as exc:
+        console.print(f"[red]Error[/]: {exc}")
+        sys.exit(1)
+    console.print(f"[bold]{b.bundle_id}[/]")
+    console.print(f"  Project: {b.project}")
+    console.print(f"  Created: {b.created.isoformat()}")
+    if b.notes:
+        console.print(f"  Notes: {b.notes}")
+    console.print("  Sessions:")
+    for sid in b.session_ids:
+        console.print(f"    - {sid}")
 
 
 # -- audit --

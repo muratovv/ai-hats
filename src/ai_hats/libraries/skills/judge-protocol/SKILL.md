@@ -63,14 +63,24 @@ Forensic, adversarial, data-driven analysis of agent performance. You are not a 
 
 ## 3. Adversarial Report
 
-- **Output:** Structured judge retrospective at
-  `.agent/retrospectives/judge/YYYY-MM-DD-judge-NNN.md` following
-  **`hats-judge-retro/v1`** schema (see `src/ai_hats/retro/judge_retro.py`).
-- **Mandatory:** YAML frontmatter at the top of the file. Without it,
-  `ai-hats retro-validate` will reject the report.
+- **Output channel:** Print the full judge retrospective to **stdout**, wrapped
+  between the literal markers `BEGIN_JUDGE_RETRO` and `END_JUDGE_RETRO`. The
+  parent process (JudgeRunner) extracts everything between these markers,
+  validates it via the HATS-051 loader, and saves it to
+  `.agent/retrospectives/judge/YYYY-MM-DD-judge-NNN.md`. **Do NOT write the file
+  yourself** — the parent assigns the filename and counter.
+- **Format:** `hats-judge-retro/v1` markdown — YAML frontmatter (`---`) followed
+  by a markdown body. The frontmatter MUST be the first thing inside
+  `BEGIN_JUDGE_RETRO`. Anything you print outside the markers is ignored.
+- **Validation:** The parent runs the loader on your output. On schema failure
+  the parent will spawn you again with a correction prompt that includes the
+  validation error — respond by reprinting a corrected document between the
+  markers.
 
-### Frontmatter requirements
-```yaml
+### Output template (print this to stdout)
+
+```
+BEGIN_JUDGE_RETRO
 ---
 schema: hats-judge-retro/v1
 judge_run_id: judge-YYYY-MM-DD-NNN
@@ -108,6 +118,7 @@ meta_critique: "..."                # optional self-assessment
 ---
 
 # Markdown body — narrative analysis (sections 1-7 below)
+END_JUDGE_RETRO
 ```
 
 ### Markdown body (under frontmatter)
@@ -126,13 +137,18 @@ is the machine-readable index, body is the human-readable narrative.
 - **Evidence:** Every finding must cite specific audit events, log lines, or metric values.
 
 ## Completion
-- Judge retro saved at `.agent/retrospectives/judge/YYYY-MM-DD-judge-NNN.md`
-- `ai-hats retro-validate <path>` exits 0
+- Full judge retro printed to stdout between `BEGIN_JUDGE_RETRO` and
+  `END_JUDGE_RETRO` markers (parent saves the file)
+- `hats-judge-retro/v1` schema validation passes (parent runs the loader)
 - Every finding has min 1 evidence with explicit `session_id`
 - Tracked skill/rule fixes carry `expected_impact` for longitudinal validation
 - Metrics comparison included (current vs baseline)
 
 ## Anti-Patterns
+- Writing the file yourself instead of printing between markers (parent will
+  not pick it up; the worktree runs in `discard` mode and the file will be lost)
+- Adding commentary or analysis outside the `BEGIN_JUDGE_RETRO`/`END_JUDGE_RETRO`
+  markers (ignored by the parent extractor)
 - Writing free-form markdown without frontmatter (will fail validation)
 - Generic praise ("agent did well overall") — be adversarial, find the gaps
 - Findings without evidence — cite specific audit events or metric values

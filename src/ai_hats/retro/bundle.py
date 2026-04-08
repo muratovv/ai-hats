@@ -1,13 +1,12 @@
 """BundleV1: first-class artifact grouping session retros for judge analysis.
 
 A bundle is a thin pointer object — it lists the session_ids the judge will
-analyze together, plus an optional `focus` lens (user-provided instruction)
-and free-form `notes`. Bundles live in `.agent/retrospectives/bundles/` as
-standalone YAML files (no markdown body).
+analyze together, plus optional free-form `notes`. Bundles live in
+`.agent/retrospectives/bundles/` as standalone YAML files (no markdown body).
 
-Bundles are independent artifacts so the same set of sessions can be analyzed
-by multiple judge runs (e.g. one judge looks at git discipline, another at
-test coverage), and so judge runs can be reproduced from a saved input.
+Bundles are deliberately lens-agnostic: the same set of sessions can be judged
+multiple times with different `--focus` lenses, each producing a separate
+JudgeRetroV1. The bundle is the data subject; focus is a research question.
 """
 
 from __future__ import annotations
@@ -39,8 +38,4 @@ class BundleV1(BaseModel):
     project: str = Field(..., min_length=1)
     created: datetime
     session_ids: list[str] = Field(..., min_length=1)
-    focus: str | None = Field(
-        None,
-        description="User-provided lens, e.g. 'look at git discipline'",
-    )
     notes: str | None = None

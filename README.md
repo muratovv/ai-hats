@@ -88,10 +88,17 @@ ai-hats whoami                             # диагностика
 # Суб-агенты
 ai-hats run <role> [--ticket <ID>] [--model <name>] [--task <desc>]
 
-# Наблюдаемость
-ai-hats judge [--session <ID>] [--last N]
-ai-hats retro [--session <ID>]
-ai-hats audit [--session <ID>]
+# Наблюдаемость и feedback loop
+ai-hats audit [--session <ID>]                                       # показать audit.md сессии
+ai-hats retro <session_id> [--last] [--mode programmatic|llm]        # session-retro snapshot
+ai-hats bundle create --sessions s1,s2 [--notes "..."]               # сгруппировать сессии для анализа
+ai-hats bundle create --last N | --since YYYY-MM-DD
+ai-hats bundle list | show <bundle_id>
+ai-hats judge --bundle <id> [--focus "..."]                          # forensic analysis от judge-агента
+ai-hats judge --sessions s1,s2 [--focus "..."]                       # auto-bundle + judge
+ai-hats judge --last N [--focus "..."]
+ai-hats retro-validate <path>                                        # проверить файл по HATS-051 schema
+ai-hats retro-migrate <path> [--dry-run]                             # миграция к latest схеме
 
 # Задачи
 ai-hats task create <title> [--id ID] [-d <desc>] [-p high|medium|low]
@@ -179,22 +186,96 @@ brainstorm → plan → execute → document → review → done
 
 При переходе в `plan` — создаётся `plan.md` scaffold. Work log с session tracking. File-lock защита от race conditions.
 
+### Feedback loop
+
+ai-hats строит feedback из реальных сессий через три слоя артефактов (схемы зафиксированы в HATS-051, runtime — в HATS-001):
+
+```
+.gitlog/session_<id>/                       layer 0: raw телеметрия
+  ├── audit.md                              после ⟶
+  ├── metrics.json
+  └── transcript.txt
+
+.agent/retrospectives/sessions/<mode>/<id>.md   layer 1: SessionRetroV1 (factual snapshot)
+  ├── programmatic/                             ← быстрый, из парсера, для хука
+  └── llm/                                      ← narrative summary через LLM, для глубокого ревью
+
+.agent/retrospectives/bundles/BUNDLE-...yaml    layer 2: bundle (lens-agnostic pointer)
+.agent/retrospectives/judge/<date>-judge-NNN.md layer 3: JudgeRetroV1 (analytical findings)
+```
+
+**Layer 1 — Session retro.** Снимок одной сессии: метрики, изменённые файлы, коммиты, закрытые задачи. Два режима:
+- `programmatic` (default) — быстро, без LLM, для авто-генерации хуком
+- `llm` — narrative summary + observations через провайдер; занимает 30+ секунд
+
+```bash
+ai-hats retro 20260406-050419-1                  # programmatic, мгновенно
+ai-hats retro 20260406-050419-1 --mode llm       # narrative от LLM
+ai-hats retro --last                             # для последней сессии
+```
+
+Каждый mode пишет в свою подпапку — два режима не затирают друг друга.
+
+**Layer 2 — Bundle.** Группа сессий для совместного судейского анализа. Bundles **lens-agnostic**: один и тот же набор сессий можно судить много раз с разными `--focus` линзами. Идемпотентны по `sorted(session_ids)` — повторный create с теми же сессиями вернёт тот же bundle.
+
+```bash
+ai-hats bundle create --sessions 20260406-050419-1,20260408-111835-1 --notes "training run"
+ai-hats bundle create --last 5
+ai-hats bundle create --since 2026-04-01
+ai-hats bundle list
+ai-hats bundle show BUNDLE-2026-04-08-001
+```
+
+**Layer 3 — Judge retro.** Forensic анализ bundle через спавн `judge` роли как sub-agent. Judge печатает результат в stdout между `BEGIN_JUDGE_RETRO`/`END_JUDGE_RETRO` маркерами; родительский CLI извлекает, валидирует через HATS-051 loader, делает один retry с correction prompt при ошибке схемы, сохраняет на диск.
+
+```bash
+# Существующий bundle с дефолтным анализом
+ai-hats judge --bundle BUNDLE-2026-04-08-001
+
+# Тот же bundle с разной линзой → разные findings
+ai-hats judge --bundle BUNDLE-2026-04-08-001 --focus "tool-call efficiency and retry loops"
+ai-hats judge --bundle BUNDLE-2026-04-08-001 --focus "git workflow — commit granularity"
+
+# Auto-bundle из последних N сессий (создаёт bundle и сразу судит)
+ai-hats judge --last 3 --focus "decision-making patterns"
+
+# Auto-bundle из конкретных сессий
+ai-hats judge --sessions s1,s2,s3 --focus "..."
+```
+
+Judge sub-session запускается в worktree (`discard` mode), может занять минуты — CLI показывает spinner. Timeout по умолчанию 600s; для медленных провайдеров можно поднять через `--timeout` (на retro команде).
+
+Output JudgeRetroV1 содержит findings (с обязательным evidence + session_id), patterns_to_keep, опциональный meta_critique. Каждая finding классифицирована по category/severity, может содержать proposed_fix с expected_impact для longitudinal validation.
+
+**Валидация артефактов.** Любой retro-файл (session / bundle / judge) можно проверить против схемы:
+
+```bash
+ai-hats retro-validate .agent/retrospectives/judge/2026-04-08-judge-001.md
+ai-hats retro-migrate <path> [--dry-run]
+```
+
 ## Структура проекта
 
 ```
-.agent/                     # Активные компоненты (генерируется)
-  rules/                    # Физические копии правил из роли
-  skills/                   # Физические копии навыков
-  hooks/                    # Hook-скрипты
+.agent/                                # Активные компоненты (генерируется)
+  rules/                               # Физические копии правил из роли
+  skills/                              # Физические копии навыков
+  hooks/                               # Hook-скрипты
   backlog/
-    tasks/<ID>/             # Task card + plan.md + retro.md
-  backlog.md                # Табличный индекс
-  STATE.md                  # Текущее состояние задач
+    tasks/<ID>/                        # Task card + plan.md + retro.md
+  backlog.md                           # Табличный индекс
+  STATE.md                             # Текущее состояние задач
+  retrospectives/                      # Feedback loop (HATS-001 / HATS-051)
+    sessions/
+      programmatic/<id>.md             # SessionRetroV1, factual snapshot
+      llm/<id>.md                      # SessionRetroV1, narrative summary
+    bundles/BUNDLE-YYYY-MM-DD-NNN.yaml # BundleV1, lens-agnostic pointer
+    judge/YYYY-MM-DD-judge-NNN.md      # JudgeRetroV1, forensic analysis
 .gitlog/
-  session_<ID>/             # trace.log, audit.md, metrics.json
-ai-hats.yaml                # Конфиг проекта
-profile.json                # Активная роль
-GEMINI.md / CLAUDE.md       # System prompt
+  session_<ID>/                        # trace.log, audit.md, metrics.json, transcript.txt
+ai-hats.yaml                           # Конфиг проекта
+profile.json                           # Активная роль
+GEMINI.md / CLAUDE.md                  # System prompt
 ```
 
 ## Библиотека

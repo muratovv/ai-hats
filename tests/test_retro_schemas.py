@@ -114,10 +114,25 @@ def test_bundle_happy_path() -> None:
         "project": "test",
         "created": "2026-04-08T09:00:00Z",
         "session_ids": ["s1", "s2"],
-        "focus": "git discipline",
+        "notes": "test bundle",
     })
     assert b.bundle_id == "BUNDLE-2026-04-08-001"
     assert len(b.session_ids) == 2
+    assert b.notes == "test bundle"
+
+
+def test_bundle_rejects_focus_field() -> None:
+    """`focus` was removed in favor of judge-time --focus; should be rejected."""
+    from pydantic import ValidationError as _VE
+    with pytest.raises(_VE):
+        BundleV1.model_validate({
+            "schema": BUNDLE_VERSION,
+            "bundle_id": "BUNDLE-2026-04-08-001",
+            "project": "test",
+            "created": "2026-04-08T09:00:00Z",
+            "session_ids": ["s1"],
+            "focus": "rejected",
+        })
 
 
 def test_judge_retro_happy_path() -> None:
