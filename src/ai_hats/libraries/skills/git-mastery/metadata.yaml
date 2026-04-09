@@ -3,3 +3,9 @@ description: Advanced git operations — branches, conventional commits, worktre
 author: ai-hats
 tags: [development, git]
 pattern: reference
+
+# Skill-contributed git hooks (HATS-088 framework). The assembler installs
+# these into the project's .githooks/<event>.d/ at composition time.
+git_hooks:
+  pre-commit:
+    - git_hooks/pre-commit-privacy.sh

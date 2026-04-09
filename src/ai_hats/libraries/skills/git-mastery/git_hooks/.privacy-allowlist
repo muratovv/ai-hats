@@ -1,0 +1,13 @@
+# Privacy hook allowlist — known-safe files where the privacy patterns
+# raise false positives (managed by HATS-083 / git-mastery skill).
+#
+# Format: one glob per line. Globs match either the full path from repo root
+# or just the basename. Lines starting with '#' are comments.
+#
+# Examples:
+#   docs/security.md            # full path
+#   *.fixture.md                # basename glob
+#   tests/fixtures/safe-*.md
+#
+# Empty by default — add entries when you understand exactly why a hit
+# is benign. Prefer fixing the file over allowlisting.
