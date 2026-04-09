@@ -1222,8 +1222,11 @@ def task_log(task_id: str, message: str, session: str | None):
 @click.option("--state", default=None, help="Filter by state")
 @click.option("--priority", default=None, help="Filter by priority (low/medium/high)")
 @click.option("--all", "-a", "show_all", is_flag=True, help="Include done/failed tasks")
-def task_list(state: str | None, priority: str | None, show_all: bool):
+@click.option("--search", "-s", default=None, help="Regex search across id, title, description, tags, parent_task")
+def task_list(state: str | None, priority: str | None, show_all: bool, search: str | None):
     """List all task cards."""
+    import re as _re
+
     from rich.table import Table
 
     from .models import TaskState
@@ -1248,6 +1251,19 @@ def task_list(state: str | None, priority: str | None, show_all: bool):
     if not show_all and filter_state is None:
         tasks = [t for t in tasks if t.state not in (TaskState.DONE, TaskState.FAILED)]
 
+    if search:
+        try:
+            pattern = _re.compile(search, _re.IGNORECASE)
+        except _re.error as e:
+            console.print(f"[red]Bad regex[/]: {e}")
+            sys.exit(1)
+        tasks = [
+            t for t in tasks
+            if pattern.search(
+                "\n".join([t.id, t.title, t.description, t.parent_task, *t.tags])
+            )
+        ]
+
     if not tasks:
         console.print("[dim]No tasks[/]")
         return
@@ -1259,6 +1275,7 @@ def task_list(state: str | None, priority: str | None, show_all: bool):
     table.add_column("State", no_wrap=True)
     table.add_column("Pri", no_wrap=True)
     table.add_column("Title")
+    table.add_column("Parent", style="dim")
 
     state_styles = {
         TaskState.EXECUTE: "bold green",
@@ -1276,6 +1293,7 @@ def task_list(state: str | None, priority: str | None, show_all: bool):
             f"[{style}]{t.state.value}[/{style}]" if style else t.state.value,
             t.priority,
             t.title,
+            t.parent_task or "",
         )
 
     console.print(table)

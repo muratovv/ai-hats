@@ -44,6 +44,11 @@ ai-hats task list --all
 # Filter by state or priority
 ai-hats task list --state brainstorm --priority high
 
+# Search by regex across id, title, description, tags, parent_task
+ai-hats task list --search epic              # find epics
+ai-hats task list --search HATS-092          # epic + children (via parent_task)
+ai-hats task list --search "judge|retro"     # regex OR
+
 # Sync STATE.md and backlog.md
 ai-hats task sync
 ```

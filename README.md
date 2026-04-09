@@ -104,7 +104,7 @@ ai-hats retro-migrate <path> [--dry-run]                             # мигр�
 ai-hats task create <title> [--id ID] [-d <desc>] [-p high|medium|low]
 ai-hats task transition <ID> <state>
 ai-hats task log <ID> <message>
-ai-hats task list [--state <state>] [--priority <p>] [--all]
+ai-hats task list [--state <state>] [--priority <p>] [--search <regex>] [--all]
 ai-hats task show <ID>
 ai-hats task sync
 
@@ -185,6 +185,18 @@ brainstorm → plan → execute → document → review → done
 ```
 
 При переходе в `plan` — создаётся `plan.md` scaffold. Work log с session tracking. File-lock защита от race conditions.
+
+#### Поиск задач
+
+`--search` принимает regex (case-insensitive) и ищет по id, title, description, tags, parent_task:
+
+```bash
+ai-hats task list --search epic              # все эпики (по тегу или title)
+ai-hats task list --search HATS-092          # эпик + все его дети (по parent_task)
+ai-hats task list --search judge             # всё связанное с judge
+ai-hats task list --search "HATS-09[2-3]"   # regex: два эпика сразу
+ai-hats task list --search worktree --all    # включая done/failed
+```
 
 ### Feedback loop
 
