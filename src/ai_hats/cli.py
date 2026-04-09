@@ -778,6 +778,41 @@ def wt_env():
 # -- judge --
 
 
+def _launch_interactive_judge(project_dir: Path, retro_path: Path) -> None:
+    """Exec provider CLI in interactive TTY mode with judge retro as context."""
+    from .models import ProfileConfig, ProjectConfig
+    from .providers import get_provider
+
+    profile = ProfileConfig.load(project_dir / "profile.json")
+    config = ProjectConfig.from_yaml(project_dir / "ai-hats.yaml")
+    provider_name = profile.provider or config.provider
+    if not provider_name:
+        console.print("[red]No provider configured[/]. Run: ai-hats set -p <provider>")
+        sys.exit(1)
+
+    provider = get_provider(provider_name)
+    retro_text = retro_path.read_text()
+
+    initial_prompt = (
+        "You are reviewing the following judge retro findings with the user. "
+        "Help them understand the findings, discuss priorities, and decide on "
+        "improvements. If they want to create a hypothesis task, help draft it.\n\n"
+        f"---\n{retro_text}\n---\n\n"
+        "What would you like to discuss?"
+    )
+
+    cmd = provider.get_cli_command()
+    if provider.name == "claude":
+        full_cmd = cmd + ["-p", initial_prompt]
+    elif provider.name == "gemini":
+        full_cmd = cmd + [initial_prompt]
+    else:
+        full_cmd = cmd
+
+    console.print("[dim]Launching interactive session with judge findings...[/]")
+    os.execvp(full_cmd[0], full_cmd)
+
+
 @main.command()
 @click.option("--bundle", "bundle_id", default=None, help="Bundle id to judge")
 @click.option("--sessions", default=None, help="Comma-separated session ids (auto-bundle)")
@@ -785,11 +820,22 @@ def wt_env():
     "--last", "last_n", default=None, type=int, help="Judge last N sessions (auto-bundle)"
 )
 @click.option("--focus", default=None, help="Focus lens for the judge")
-def judge(bundle_id: str | None, sessions: str | None, last_n: int | None, focus: str | None):
+@click.option(
+    "--interactive", "-i", is_flag=True, default=False,
+    help="Drop into interactive chat with judge findings after retro is saved",
+)
+def judge(
+    bundle_id: str | None,
+    sessions: str | None,
+    last_n: int | None,
+    focus: str | None,
+    interactive: bool,
+):
     """Spawn judge sub-agent over a bundle and validate its output."""
     from .retro.judge import JudgeRunner, JudgeValidationError
 
-    runner = JudgeRunner(_project_dir())
+    project_dir = _project_dir()
+    runner = JudgeRunner(project_dir)
     session_ids = [s.strip() for s in sessions.split(",")] if sessions else None
     label = bundle_id or (
         f"sessions={','.join(session_ids)}" if session_ids else f"last={last_n}" if last_n else "?"
@@ -812,6 +858,9 @@ def judge(bundle_id: str | None, sessions: str | None, last_n: int | None, focus
         console.print(f"[red]Judge output failed validation[/]:\n{exc}")
         sys.exit(2)
     console.print(f"[green]Judge retro[/]: {path}")
+
+    if interactive:
+        _launch_interactive_judge(project_dir, path)
 
 
 @main.command("judge-aggregate")
