@@ -106,17 +106,74 @@ def test_set_idempotent_via_cli(cli_project):
 # -- Role override (shadow prompt) e2e tests --
 
 
-def test_passthrough_args_reach_main_context(cli_project):
-    """Unknown flags like --resume are collected in ctx.args, not rejected."""
-    project, runner = cli_project
+def _capture_launch(monkeypatch):
+    """Replace _launch_session with a recorder. Returns the captured calls list.
 
-    # ai-hats --resume should NOT fail with "no such option"
-    # It will fail because WrapRunner can't actually launch a provider,
-    # but the important thing is it doesn't fail at Click parsing level.
-    result = runner.invoke(main, ["--resume"])
-    # Should not be a Click UsageError about unknown option
+    Used by HATS-087 tests to verify unknown top-level flags are forwarded
+    to the session-launch path with the correct extra_args.
+    """
+    import ai_hats.cli as cli
+
+    calls: list[dict] = []
+
+    def _record(provider=None, role=None, extra_args=None):
+        calls.append({"provider": provider, "role": role, "extra_args": list(extra_args or [])})
+
+    monkeypatch.setattr(cli, "_launch_session", _record)
+    return calls
+
+
+def test_passthrough_resume_flag_forwarded_to_launch(cli_project, monkeypatch):
+    """HATS-087: `ai-hats --resume <id>` forwards the flag through to _launch_session
+    instead of failing with 'No such command' / 'No such option'."""
+    project, runner = cli_project
+    calls = _capture_launch(monkeypatch)
+
+    result = runner.invoke(main, ["--resume", "abc123"])
+
+    assert "No such command" not in (result.output or "")
     assert "No such option" not in (result.output or "")
-    assert "no such option" not in (result.output or "")
+    assert len(calls) == 1, f"_launch_session was called {len(calls)} times, output: {result.output!r}"
+    assert calls[0]["extra_args"] == ["--resume", "abc123"]
+
+
+def test_passthrough_provider_then_unknown_flag(cli_project, monkeypatch):
+    """Known top-level flags are still consumed by click; unknown flags pass through."""
+    project, runner = cli_project
+    calls = _capture_launch(monkeypatch)
+
+    result = runner.invoke(main, ["--provider", "claude", "--resume", "abc123"])
+
+    assert "No such command" not in (result.output or "")
+    assert len(calls) == 1
+    assert calls[0]["provider"] == "claude"
+    assert calls[0]["extra_args"] == ["--resume", "abc123"]
+
+
+def test_passthrough_no_args_still_launches_session(cli_project, monkeypatch):
+    """Bare `ai-hats` (no args) still routes through _launch_session with empty extras."""
+    project, runner = cli_project
+    calls = _capture_launch(monkeypatch)
+
+    runner.invoke(main, [])
+
+    assert len(calls) == 1
+    assert calls[0]["extra_args"] == []
+
+
+def test_passthrough_known_subcommand_still_dispatches(cli_project, monkeypatch):
+    """`ai-hats status` still routes via click subcommand dispatcher, not _launch_session."""
+    project, runner = cli_project
+    calls = _capture_launch(monkeypatch)  # should NOT be called
+
+    # Use `status` (a no-side-effect read-only command); `task list` would also
+    # work but requires .agent/ to be initialized.
+    result = runner.invoke(main, ["status"])
+
+    # Subcommand may exit non-zero on uninitialized project — that's fine,
+    # the point is _launch_session was NOT invoked.
+    assert "No such command" not in (result.output or "")
+    assert len(calls) == 0
 
 
 def test_subcommands_work_with_passthrough_context(cli_project):

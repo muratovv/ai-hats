@@ -23,7 +23,37 @@ def _assembler(project_dir: Path | None = None):
     return Assembler(project_dir or _project_dir())
 
 
+class _PassthroughGroup(click.Group):
+    """Click group that treats unknown flag-like leftover args as extras
+    instead of failing with 'No such command'. HATS-087.
+
+    Click 8.x splits the parser leftover into ``ctx._protected_args[:1]``
+    (the candidate subcommand name) and ``ctx.args[1:]``. If the first
+    leftover token starts with ``-``, it is a flag the user wants
+    forwarded to the underlying provider, NOT a subcommand. This override
+    moves those tokens back into ``ctx.args`` so the no-subcommand path
+    runs and the bare ``def main(ctx, ...)`` body sees them.
+
+    No-op on click 9.x where ``_protected_args`` is removed and ``args``
+    already contains all leftover tokens — the ``getattr`` defensiveness
+    handles the absence gracefully.
+
+    Caveat: subcommands whose name starts with ``-`` would be mis-routed.
+    The project has none today; if one is added, this override needs
+    updating.
+    """
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        result = super().parse_args(ctx, args)
+        protected = getattr(ctx, "_protected_args", None)
+        if protected and protected[0].startswith("-"):
+            ctx.args = list(protected) + list(ctx.args)
+            ctx._protected_args = []
+        return result
+
+
 @click.group(
+    cls=_PassthroughGroup,
     invoke_without_command=True,
     context_settings={
         "ignore_unknown_options": True,
