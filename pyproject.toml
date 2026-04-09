@@ -24,6 +24,9 @@ dev = [
 costs = [
     "anthropic>=0.40",
 ]
+aggregation = [
+    "rapidfuzz>=3.0",
+]
 
 [project.scripts]
 ai-hats = "ai_hats.cli:main"

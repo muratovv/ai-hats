@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from .aggregation import SCHEMA_VERSION as AGGREGATION_LATEST
 from .bundle import SCHEMA_VERSION as BUNDLE_LATEST
 from .judge_retro import SCHEMA_VERSION as JUDGE_RETRO_LATEST
 from .session_retro import SCHEMA_VERSION as SESSION_RETRO_LATEST
@@ -22,6 +23,7 @@ LATEST_VERSIONS: dict[str, str] = {
     "hats-session-retro": SESSION_RETRO_LATEST,
     "hats-bundle": BUNDLE_LATEST,
     "hats-judge-retro": JUDGE_RETRO_LATEST,
+    "hats-aggregation": AGGREGATION_LATEST,
 }
 
 #: registry of migration steps; key is (from_version, to_version)

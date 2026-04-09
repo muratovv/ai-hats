@@ -1,0 +1,5 @@
+name: hypothesis-workflow
+description: Closed-loop improvement cycle — aggregate findings, discuss, hypothesize, validate
+author: ai-hats
+tags: [process, feedback-loop, improvement]
+pattern: protocol

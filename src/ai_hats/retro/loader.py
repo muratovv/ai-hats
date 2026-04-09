@@ -31,6 +31,7 @@ from typing import Union
 import yaml
 from pydantic import BaseModel
 
+from .aggregation import AggregationV1
 from .bundle import BundleV1
 from .judge_retro import JudgeRetroV1
 from .migrations import family_of, migrate_to_latest
@@ -41,10 +42,11 @@ SCHEMA_FAMILY_TO_MODEL: dict[str, type[BaseModel]] = {
     "hats-session-retro": SessionRetroV1,
     "hats-bundle": BundleV1,
     "hats-judge-retro": JudgeRetroV1,
+    "hats-aggregation": AggregationV1,
 }
 
 #: union type for any retro artifact
-RetroArtifact = Union[SessionRetroV1, BundleV1, JudgeRetroV1]
+RetroArtifact = Union[SessionRetroV1, BundleV1, JudgeRetroV1, AggregationV1]
 
 
 def parse(text: str) -> tuple[dict, str]:
