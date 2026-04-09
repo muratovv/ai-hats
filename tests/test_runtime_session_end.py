@@ -1,11 +1,15 @@
-"""Tests for _format_tokens — token usage line in session summary (HATS-057)."""
+"""Tests for _format_tokens (HATS-057) and _finalize_session (HATS-086)."""
 
 from __future__ import annotations
 
 import json
 
+import pytest
+
+from ai_hats import runtime as runtime_module
+from ai_hats.models import LifecycleEvent
 from ai_hats.observe import Session
-from ai_hats.runtime import _format_tokens
+from ai_hats.runtime import _finalize_session, _format_tokens
 
 
 def make_session(tmp_path) -> Session:
@@ -90,3 +94,124 @@ def test_format_tokens_empty_tokens_dict(tmp_path):
 
     # Empty dict is falsy → fallback
     assert _format_tokens(session) == "🪙 Tokens: n/a"
+
+
+# ---------------------------------------------------------------------------
+# _finalize_session — guaranteed cleanup + session-end print (HATS-086)
+# ---------------------------------------------------------------------------
+
+
+class _StubHooksRunner:
+    """Minimal HooksRunner stub. If `exc` is set, .run() raises it."""
+
+    def __init__(self, exc: BaseException | None = None) -> None:
+        self.exc = exc
+        self.calls: list = []
+
+    def run(self, event, env=None):
+        self.calls.append(event)
+        if self.exc is not None:
+            raise self.exc
+        return []
+
+
+class _StubTracer:
+    """Minimal SidecarTracer stub. flush_response() is a no-op unless `exc` set."""
+
+    def __init__(self, exc: BaseException | None = None) -> None:
+        self.exc = exc
+        self.flushed = False
+
+    def flush_response(self) -> None:
+        self.flushed = True
+        if self.exc is not None:
+            raise self.exc
+
+
+@pytest.fixture
+def finalize_kwargs(tmp_path):
+    """Build keyword args for `_finalize_session(...)` with sensible defaults.
+
+    Test-specific behavior is injected by overriding `hooks_runner` or
+    monkeypatching `runtime_module.AuditWriter`.
+    """
+    session = make_session(tmp_path)
+    session.init_audit(role="primary", provider="claude")
+    return {
+        "session": session,
+        "exit_code": 0,
+        "active_role": "primary",
+        "provider_name": "claude",
+        "claude_session_id": "abc-123",
+        "project_dir": tmp_path,
+        "env": {},
+        "hooks_runner": _StubHooksRunner(),
+        "tracer": _StubTracer(),
+    }
+
+
+def test_finalize_session_prints_summary_on_clean_run(finalize_kwargs, capsys):
+    """Happy path: every cleanup step succeeds, summary box prints."""
+    _finalize_session(**finalize_kwargs)
+
+    out = capsys.readouterr().out
+    assert "Session test complete!" in out
+    # The session-end hook ran (proves we got past tracer flush).
+    assert finalize_kwargs["hooks_runner"].calls == [LifecycleEvent.SESSION_END]
+    assert finalize_kwargs["tracer"].flushed
+
+
+def test_finalize_session_prints_summary_when_hooks_runner_fails(finalize_kwargs, capsys):
+    """A SESSION_END hook raising RuntimeError must NOT skip the summary."""
+    finalize_kwargs["hooks_runner"] = _StubHooksRunner(exc=RuntimeError("hook boom"))
+
+    _finalize_session(**finalize_kwargs)
+
+    out = capsys.readouterr().out
+    assert "Session test complete!" in out
+
+
+def test_finalize_session_prints_summary_when_audit_writer_fails(
+    finalize_kwargs, capsys, monkeypatch
+):
+    """AuditWriter.build raising must NOT skip the summary."""
+
+    class _ExplodingAuditWriter:
+        def build(self, *args, **kwargs):
+            raise RuntimeError("audit boom")
+
+    monkeypatch.setattr(runtime_module, "AuditWriter", _ExplodingAuditWriter)
+
+    _finalize_session(**finalize_kwargs)
+
+    out = capsys.readouterr().out
+    assert "Session test complete!" in out
+
+
+def test_finalize_session_prints_summary_on_keyboard_interrupt_in_step(finalize_kwargs, capsys):
+    """A SECOND Ctrl+C raised during a cleanup step (here: from the hook
+    runner) must still let _finalize_session run to completion and print
+    the summary. KeyboardInterrupt MUST NOT propagate out of finalize."""
+    finalize_kwargs["hooks_runner"] = _StubHooksRunner(exc=KeyboardInterrupt())
+
+    # Must not raise.
+    _finalize_session(**finalize_kwargs)
+
+    out = capsys.readouterr().out
+    assert "Session test complete!" in out
+
+
+def test_finalize_session_prints_summary_when_finalize_audit_fails(
+    finalize_kwargs, capsys, monkeypatch
+):
+    """Session.finalize_audit raising must NOT skip the summary."""
+
+    def _explode(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(finalize_kwargs["session"], "finalize_audit", _explode)
+
+    _finalize_session(**finalize_kwargs)
+
+    out = capsys.readouterr().out
+    assert "Session test complete!" in out

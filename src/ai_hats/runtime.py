@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -15,6 +16,8 @@ from .models import LifecycleEvent, ProfileConfig
 from .observe import AuditWriter, Session, SessionManager, SidecarTracer, TraceTag
 from .providers import get_provider
 from .worktree import IsolationMode, WorktreeManager
+
+logger = logging.getLogger(__name__)
 
 
 class HooksRunner:
@@ -156,6 +159,76 @@ def _print_session_end(session: "Session", trace_stats: dict | None = None) -> N
     print("━" * 52 + "\n")
 
 
+def _finalize_session(
+    session: "Session",
+    *,
+    exit_code: int,
+    active_role: str | None,
+    provider_name: str,
+    claude_session_id: str,
+    project_dir: Path,
+    env: dict[str, str],
+    hooks_runner: "HooksRunner",
+    tracer: "SidecarTracer",
+) -> None:
+    """Run all post-pty cleanup steps with per-step isolation. ALWAYS
+    calls _print_session_end at the end, even when individual steps fail
+    or are interrupted by SIGINT mid-cleanup. HATS-086.
+
+    Each step catches both ``Exception`` and ``KeyboardInterrupt`` so a
+    second Ctrl+C cannot kill cleanup partway. Errors are logged at WARN
+    level. The summary print is the last step and is itself wrapped — if
+    even that fails, we fall back to a bare-bones session-id line so the
+    user never loses the id.
+    """
+    trace_stats: dict | None = None
+
+    try:
+        try:
+            tracer.flush_response()
+        except (Exception, KeyboardInterrupt):
+            logger.warning("trace flush failed", exc_info=True)
+
+        try:
+            session.log_trace(TraceTag.SYS, f"Session ended: exit_code={exit_code}")
+            hooks_runner.run(LifecycleEvent.SESSION_END, env=env)
+            session.append_audit(f"Session ended with code {exit_code}")
+        except (Exception, KeyboardInterrupt):
+            logger.warning("session_end hook failed", exc_info=True)
+
+        try:
+            session.finalize_audit({
+                "exit_code": exit_code,
+                "role": active_role,
+                "provider": provider_name,
+            })
+        except (Exception, KeyboardInterrupt):
+            logger.warning("audit finalization failed", exc_info=True)
+
+        try:
+            trace_stats = _collect_trace_stats(session)
+        except (Exception, KeyboardInterrupt):
+            logger.warning("trace stats collection failed", exc_info=True)
+
+        try:
+            jsonl_path = _claude_jsonl_path(project_dir, claude_session_id)
+            AuditWriter().build(session, jsonl_path=jsonl_path)
+        except (Exception, KeyboardInterrupt):
+            logger.warning("audit writer failed", exc_info=True)
+    finally:
+        # The summary print is the only thing that surfaces the session id
+        # to the user. It MUST run, even on second SIGINT, even if every
+        # step above failed.
+        try:
+            _print_session_end(session, trace_stats=trace_stats)
+        except (Exception, KeyboardInterrupt):
+            logger.warning("session-end print failed", exc_info=True)
+            try:
+                print(f"\n✨ Session {session.session_id} complete!")
+            except Exception:
+                pass
+
+
 class WrapRunner:
     """PTY-proxied CLI wrapper for interactive sessions."""
 
@@ -238,30 +311,29 @@ class WrapRunner:
 
         _print_session_start(active_role, provider_name, session.session_id)
 
-        # PTY proxy via pty.spawn with sidecar trace
+        # PTY proxy via pty.spawn with sidecar trace.
+        # HATS-086: wrap _pty_spawn so SIGINT during the interactive part
+        # routes through _finalize_session in the finally block, ensuring
+        # the session-end summary (with the all-important session id) is
+        # always printed.
         tracer = SidecarTracer(session)
-        exit_code = self._pty_spawn(cmd, env, tracer)
-        tracer.flush_response()  # flush last model response if any
-
-        # Run hooks: session_end
-        session.log_trace(TraceTag.SYS, f"Session ended: exit_code={exit_code}")
-        hooks_runner.run(LifecycleEvent.SESSION_END, env=env)
-        session.append_audit(f"Session ended with code {exit_code}")
-
-        session.finalize_audit({
-            "exit_code": exit_code,
-            "role": active_role,
-            "provider": provider_name,
-        })
-
-        # Collect trace stats before cleanup
-        trace_stats = _collect_trace_stats(session)
-
-        # Post-process → enriched audit.md (JSONL if Claude, trace.log fallback)
-        jsonl_path = _claude_jsonl_path(self.project_dir, claude_session_id)
-        AuditWriter().build(session, jsonl_path=jsonl_path)
-
-        _print_session_end(session, trace_stats=trace_stats)
+        exit_code = 130  # canonical SIGINT default if _pty_spawn raises pre-assignment
+        try:
+            exit_code = self._pty_spawn(cmd, env, tracer)
+        except KeyboardInterrupt:
+            exit_code = 130
+        finally:
+            _finalize_session(
+                session,
+                exit_code=exit_code,
+                active_role=active_role,
+                provider_name=provider_name,
+                claude_session_id=claude_session_id,
+                project_dir=self.project_dir,
+                env=env,
+                hooks_runner=hooks_runner,
+                tracer=tracer,
+            )
 
         return exit_code
 
