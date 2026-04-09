@@ -75,6 +75,7 @@ class TestStatePersistence:
         state_path = mgr.save_state()
         try:
             assert state_path.exists()
+            assert state_path.parent.name == "worktrees"
             data = json.loads(state_path.read_text())
             assert data["branch"] == "feat/test-save"
             assert Path(data["worktree_path"]).is_dir()
@@ -82,13 +83,12 @@ class TestStatePersistence:
         finally:
             mgr.cleanup()
 
-    def test_load_active_restores_state(self, git_project: Path) -> None:
+    def test_load_for_branch_restores_state(self, git_project: Path) -> None:
         mgr = WorktreeManager(git_project, branch_name="feat/test-load")
         wt = mgr.create()
         mgr.save_state()
 
-        # Simulate new process — load from state
-        loaded = WorktreeManager.load_active(git_project)
+        loaded = WorktreeManager.load_for_branch(git_project, "feat/test-load")
         try:
             assert loaded is not None
             assert loaded.branch_name == "feat/test-load"
@@ -97,12 +97,27 @@ class TestStatePersistence:
         finally:
             loaded.cleanup()
 
+    def test_load_active_compat_shim(self, git_project: Path) -> None:
+        """Deprecated load_active still works via list_active."""
+        mgr = WorktreeManager(git_project, branch_name="feat/compat")
+        wt = mgr.create()
+        mgr.save_state()
+
+        loaded = WorktreeManager.load_active(git_project)
+        try:
+            assert loaded is not None
+            assert loaded.branch_name == "feat/compat"
+        finally:
+            loaded.cleanup()
+
     def test_load_active_returns_none_when_no_state(self, git_project: Path) -> None:
         assert WorktreeManager.load_active(git_project) is None
 
     def test_load_active_returns_none_when_stale(self, git_project: Path) -> None:
-        """If worktree dir was deleted externally, load_active cleans up."""
-        state_path = git_project / ".agent" / "worktree.json"
+        """If worktree dir was deleted externally, load cleans up."""
+        states_dir = git_project / ".agent" / "worktrees"
+        states_dir.mkdir(parents=True, exist_ok=True)
+        state_path = states_dir / "feat-stale.json"
         state_path.write_text(
             json.dumps(
                 {
@@ -112,7 +127,7 @@ class TestStatePersistence:
                 }
             )
         )
-        assert WorktreeManager.load_active(git_project) is None
+        assert WorktreeManager.load_for_branch(git_project, "feat/stale") is None
         assert not state_path.exists()
 
 
@@ -124,26 +139,21 @@ class TestStatePersistence:
 class TestPersistentMerge:
     def test_create_save_load_merge(self, git_project: Path) -> None:
         """Full agent flow: create → work → save → load → merge."""
-        # Agent starts task
         mgr = WorktreeManager(git_project, branch_name="feat/agent-task")
         wt = mgr.create()
         mgr.save_state()
 
-        # Agent works in worktree
         (wt / "result.txt").write_text("done")
         _git(wt, "add", ".")
         _git(wt, "commit", "-m", "complete task")
 
-        # Later: agent merges
-        mgr2 = WorktreeManager.load_active(git_project)
+        mgr2 = WorktreeManager.load_for_branch(git_project, "feat/agent-task")
         assert mgr2 is not None
         mgr2.merge(squash=True)
 
-        # Result is in main tree
         assert (git_project / "result.txt").read_text() == "done"
         # State file is gone
-        assert not (git_project / ".agent" / "worktree.json").exists()
-        # Worktree dir is gone
+        assert not (git_project / ".agent" / "worktrees" / "feat-agent-task.json").exists()
         assert not wt.exists()
 
     def test_create_save_load_discard(self, git_project: Path) -> None:
@@ -156,13 +166,13 @@ class TestPersistentMerge:
         _git(wt, "add", ".")
         _git(wt, "commit", "-m", "bad commit")
 
-        mgr2 = WorktreeManager.load_active(git_project)
+        mgr2 = WorktreeManager.load_for_branch(git_project, "feat/bad-idea")
         assert mgr2 is not None
         mgr2.discard()
 
         assert not (git_project / "junk.txt").exists()
         assert not wt.exists()
-        assert not (git_project / ".agent" / "worktree.json").exists()
+        assert not (git_project / ".agent" / "worktrees" / "feat-bad-idea.json").exists()
 
     def test_merge_no_squash(self, git_project: Path) -> None:
         """Regular merge (not squash)."""
@@ -174,7 +184,7 @@ class TestPersistentMerge:
         _git(wt, "add", ".")
         _git(wt, "commit", "-m", "a change")
 
-        mgr2 = WorktreeManager.load_active(git_project)
+        mgr2 = WorktreeManager.load_for_branch(git_project, "feat/full-merge")
         mgr2.merge(squash=False)
 
         assert (git_project / "merged.txt").read_text() == "merged"
@@ -261,6 +271,11 @@ def active_worktree(git_project: Path, monkeypatch):
 
 
 class TestWtExec:
+    def _patch_subprocess(self, monkeypatch, fake_run):
+        """Patch subprocess.run and prevent is_inside_linked_worktree from using it."""
+        monkeypatch.setattr("ai_hats.cli.subprocess.run", fake_run)
+        monkeypatch.setattr(WorktreeManager, "is_inside_linked_worktree", staticmethod(lambda _: False))
+
     def test_runs_in_worktree_cwd_with_pythonpath(self, active_worktree, monkeypatch) -> None:
         project, wt = active_worktree
         captured: dict = {}
@@ -271,7 +286,7 @@ class TestWtExec:
             captured["env"] = env
             return _FakeCompleted(returncode=0)
 
-        monkeypatch.setattr("ai_hats.cli.subprocess.run", fake_run)
+        self._patch_subprocess(monkeypatch, fake_run)
         runner = CliRunner()
         result = runner.invoke(main, ["wt", "exec", "--", "pytest", "-xvs"])
 
@@ -289,7 +304,7 @@ class TestWtExec:
             captured["env"] = env
             return _FakeCompleted(returncode=0)
 
-        monkeypatch.setattr("ai_hats.cli.subprocess.run", fake_run)
+        self._patch_subprocess(monkeypatch, fake_run)
         runner = CliRunner()
         runner.invoke(main, ["wt", "exec", "--", "true"])
 
@@ -299,7 +314,7 @@ class TestWtExec:
         def fake_run(cmd, cwd=None, env=None, **kwargs):
             return _FakeCompleted(returncode=42)
 
-        monkeypatch.setattr("ai_hats.cli.subprocess.run", fake_run)
+        self._patch_subprocess(monkeypatch, fake_run)
         runner = CliRunner()
         result = runner.invoke(main, ["wt", "exec", "--", "false"])
         assert result.exit_code == 42
@@ -348,3 +363,125 @@ class TestWtEnv:
         runner = CliRunner()
         result = runner.invoke(main, ["wt", "env"])
         assert result.exit_code == 1
+
+
+# ---------------------------------------------------------------------------
+# Per-task worktree registry (HATS-061)
+# ---------------------------------------------------------------------------
+
+
+class TestPerTaskRegistry:
+    def test_save_and_load_for_task(self, git_project: Path) -> None:
+        mgr = WorktreeManager(git_project, branch_name="task/hats-086")
+        mgr.create()
+        mgr.save_state()
+        try:
+            loaded = WorktreeManager.load_for_task(git_project, "hats-086")
+            assert loaded is not None
+            assert loaded.branch_name == "task/hats-086"
+        finally:
+            mgr.cleanup()
+
+    def test_save_and_load_for_branch(self, git_project: Path) -> None:
+        mgr = WorktreeManager(git_project, branch_name="feat/hats-060-foo")
+        mgr.create()
+        mgr.save_state()
+        try:
+            loaded = WorktreeManager.load_for_branch(git_project, "feat/hats-060-foo")
+            assert loaded is not None
+            assert loaded.branch_name == "feat/hats-060-foo"
+        finally:
+            mgr.cleanup()
+
+    def test_list_active_returns_all(self, git_project: Path) -> None:
+        mgr1 = WorktreeManager(git_project, branch_name="task/t-1")
+        mgr2 = WorktreeManager(git_project, branch_name="task/t-2")
+        mgr1.create()
+        mgr1.save_state()
+        mgr2.create()
+        mgr2.save_state()
+        try:
+            active = WorktreeManager.list_active(git_project)
+            assert len(active) == 2
+            branches = {m.branch_name for m in active}
+            assert branches == {"task/t-1", "task/t-2"}
+        finally:
+            mgr1.cleanup()
+            mgr2.cleanup()
+
+    def test_list_active_prunes_stale(self, git_project: Path) -> None:
+        mgr = WorktreeManager(git_project, branch_name="task/stale")
+        mgr.create()
+        mgr.save_state()
+        # Remove worktree directory externally
+        import shutil
+
+        shutil.rmtree(mgr.worktree_path)
+        active = WorktreeManager.list_active(git_project)
+        assert len(active) == 0
+
+    def test_migrate_singleton(self, git_project: Path) -> None:
+        """Old worktree.json is auto-migrated to worktrees/ on load_active."""
+        mgr = WorktreeManager(git_project, branch_name="task/old")
+        wt = mgr.create()
+        # Write old-style singleton
+        old_path = git_project / ".agent" / "worktree.json"
+        old_path.write_text(
+            json.dumps(
+                {
+                    "branch": "task/old",
+                    "worktree_path": str(wt),
+                    "original_branch": "master",
+                }
+            )
+        )
+
+        try:
+            loaded = WorktreeManager.load_active(git_project)
+            assert loaded is not None
+            assert loaded.branch_name == "task/old"
+            # Old file deleted
+            assert not old_path.exists()
+            # New file exists
+            assert (git_project / ".agent" / "worktrees" / "task-old.json").exists()
+        finally:
+            mgr.cleanup()
+
+    def test_migrate_idempotent(self, git_project: Path) -> None:
+        """Calling migration twice doesn't error."""
+        mgr = WorktreeManager(git_project, branch_name="task/idem")
+        wt = mgr.create()
+        old_path = git_project / ".agent" / "worktree.json"
+        old_path.write_text(
+            json.dumps(
+                {
+                    "branch": "task/idem",
+                    "worktree_path": str(wt),
+                    "original_branch": "master",
+                }
+            )
+        )
+
+        try:
+            WorktreeManager.load_active(git_project)
+            # Second call — old file already gone
+            WorktreeManager.load_active(git_project)
+            assert not old_path.exists()
+        finally:
+            mgr.cleanup()
+
+    def test_clear_state_per_key(self, git_project: Path) -> None:
+        mgr1 = WorktreeManager(git_project, branch_name="task/keep")
+        mgr2 = WorktreeManager(git_project, branch_name="task/remove")
+        mgr1.create()
+        mgr1.save_state()
+        mgr2.create()
+        mgr2.save_state()
+
+        try:
+            mgr2._clear_state()
+            assert WorktreeManager.load_for_branch(git_project, "task/keep") is not None
+            assert WorktreeManager.load_for_branch(git_project, "task/remove") is None
+        finally:
+            mgr1.cleanup()
+            mgr2.cleanup()

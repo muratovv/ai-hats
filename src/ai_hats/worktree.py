@@ -13,7 +13,17 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-STATE_FILE = ".agent/worktree.json"
+STATE_FILE = ".agent/worktree.json"  # legacy singleton, see _migrate_singleton
+STATES_DIR = ".agent/worktrees"
+
+
+def _state_key(branch_name: str) -> str:
+    """Derive the state file key from a branch name.
+
+    task/hats-086 → task-hats-086
+    feat/HATS-060-foo → feat-hats-060-foo
+    """
+    return branch_name.replace("/", "-").lower()
 
 
 class IsolationMode(str, Enum):
@@ -135,40 +145,100 @@ class WorktreeManager:
     # State persistence
     # ------------------------------------------------------------------
 
-    def save_state(self) -> Path:
-        """Persist active worktree state to .agent/worktree.json."""
-        state_path = self.project_dir / STATE_FILE
-        state_path.parent.mkdir(parents=True, exist_ok=True)
+    def save_state(self, *, key: str | None = None) -> Path:
+        """Persist worktree state to .agent/worktrees/<key>.json."""
+        k = key or _state_key(self.branch_name)
+        state_dir = self.project_dir / STATES_DIR
+        state_dir.mkdir(parents=True, exist_ok=True)
+        state_path = state_dir / f"{k}.json"
         state: dict[str, Any] = {
             "branch": self.branch_name,
             "worktree_path": str(self.worktree_path),
             "original_branch": self._original_branch,
         }
         state_path.write_text(json.dumps(state, indent=2))
+        self._state_key_cached = k
         return state_path
 
-    def _clear_state(self) -> None:
-        state_path = self.project_dir / STATE_FILE
+    def _clear_state(self, *, key: str | None = None) -> None:
+        k = key or getattr(self, "_state_key_cached", None) or _state_key(self.branch_name)
+        state_path = self.project_dir / STATES_DIR / f"{k}.json"
         if state_path.exists():
             state_path.unlink()
 
     @classmethod
-    def load_active(cls, project_dir: Path) -> WorktreeManager | None:
-        """Load active worktree from persisted state. Returns None if no active worktree."""
-        state_path = project_dir / STATE_FILE
+    def load_for_task(cls, project_dir: Path, task_id: str) -> WorktreeManager | None:
+        """Load the worktree state for a specific task ID.
+
+        Derives the key via the same _state_key used by save_state:
+        task_id "HATS-086" → branch "task/hats-086" → key "task-hats-086".
+        """
+        key = _state_key(f"task/{task_id}")
+        return cls._load_by_key(project_dir, key)
+
+    @classmethod
+    def load_for_branch(cls, project_dir: Path, branch: str) -> WorktreeManager | None:
+        """Load worktree state by branch name."""
+        key = _state_key(branch)
+        return cls._load_by_key(project_dir, key)
+
+    @classmethod
+    def _load_by_key(cls, project_dir: Path, key: str) -> WorktreeManager | None:
+        state_path = project_dir / STATES_DIR / f"{key}.json"
         if not state_path.exists():
             return None
         data = json.loads(state_path.read_text())
         wt_path = Path(data["worktree_path"])
         if not wt_path.exists():
-            # Stale state — clean up
-            state_path.unlink()
+            state_path.unlink()  # stale
             return None
         mgr = cls(project_dir, branch_name=data["branch"])
         mgr.worktree_path = wt_path
         mgr._original_branch = data.get("original_branch")
         mgr._is_git = True
+        mgr._state_key_cached = key
         return mgr
+
+    @classmethod
+    def list_active(cls, project_dir: Path) -> list[WorktreeManager]:
+        """Load all active worktree states. Prunes stale entries."""
+        states_dir = project_dir / STATES_DIR
+        if not states_dir.exists():
+            return []
+        result = []
+        for f in sorted(states_dir.glob("*.json")):
+            key = f.stem
+            mgr = cls._load_by_key(project_dir, key)
+            if mgr is not None:
+                result.append(mgr)
+        return result
+
+    @classmethod
+    def load_active(cls, project_dir: Path) -> WorktreeManager | None:
+        """DEPRECATED compat shim. Returns first active worktree or None.
+
+        Migrate callers to load_for_task / load_for_branch / list_active.
+        Auto-migrates singleton .agent/worktree.json if present.
+        """
+        cls._migrate_singleton(project_dir)
+        active = cls.list_active(project_dir)
+        return active[0] if active else None
+
+    @classmethod
+    def _migrate_singleton(cls, project_dir: Path) -> None:
+        """One-shot migration: .agent/worktree.json → .agent/worktrees/<key>.json."""
+        old = project_dir / ".agent" / "worktree.json"
+        if not old.exists():
+            return
+        data = json.loads(old.read_text())
+        branch = data.get("branch", "")
+        key = _state_key(branch)
+        new_dir = project_dir / STATES_DIR
+        new_dir.mkdir(parents=True, exist_ok=True)
+        new_path = new_dir / f"{key}.json"
+        if not new_path.exists():
+            new_path.write_text(old.read_text())
+        old.unlink()
 
     @staticmethod
     def is_inside_linked_worktree(path: Path) -> bool:

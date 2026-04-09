@@ -551,6 +551,39 @@ def run_subagent(
 # -- wt (worktree) --
 
 
+def _resolve_worktree(branch: str | None = None):
+    """Resolve a WorktreeManager from branch arg, CWD, or first active.
+
+    Returns None when nothing can be found.
+    """
+    import subprocess as _sp
+
+    from .worktree import WorktreeManager
+
+    project_dir = _project_dir()
+
+    if branch is not None:
+        return WorktreeManager.load_for_branch(project_dir, branch)
+
+    # CWD is inside a linked worktree → detect branch automatically.
+    if WorktreeManager.is_inside_linked_worktree(project_dir):
+        try:
+            head = _sp.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=str(project_dir),
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+        except _sp.CalledProcessError:
+            return None
+        return WorktreeManager.load_for_branch(project_dir, head)
+
+    # Fallback: first active worktree.
+    active = WorktreeManager.list_active(project_dir)
+    return active[0] if active else None
+
+
 @main.group()
 def wt():
     """Manage git worktrees for isolated work."""
@@ -565,20 +598,18 @@ def wt_create(branch: str):
 
     project_dir = _project_dir()
 
-    # HATS-060: refuse to create from inside a linked worktree —
-    # otherwise we'd write worktree.json into the wrong .agent/ and
-    # produce a nested worktree.
+    # HATS-060: refuse to create from inside a linked worktree.
     if WorktreeManager.is_inside_linked_worktree(project_dir):
         console.print("[red]Cannot create a worktree from inside a linked worktree[/]")
         console.print(f"  You are in: {project_dir}")
         console.print("  Run [bold]ai-hats wt create[/] from the main repo.")
         sys.exit(1)
 
-    active = WorktreeManager.load_active(project_dir)
-    if active is not None:
-        console.print(f"[red]Active worktree already exists[/]: {active.branch_name}")
-        console.print(f"  Path: {active.worktree_path}")
-        console.print("  Run [bold]ai-hats wt merge[/] or [bold]ai-hats wt discard[/] first.")
+    # HATS-061: check if this specific branch already has a worktree.
+    existing = WorktreeManager.load_for_branch(project_dir, branch)
+    if existing is not None:
+        console.print(f"[red]Worktree already exists for branch[/]: {existing.branch_name}")
+        console.print(f"  Path: {existing.worktree_path}")
         sys.exit(1)
 
     mgr = WorktreeManager(project_dir, branch_name=branch)
@@ -590,34 +621,42 @@ def wt_create(branch: str):
 
 
 @wt.command("merge")
+@click.argument("branch", required=False)
 @click.option("--no-squash", is_flag=True, default=False, help="Regular merge instead of squash")
-def wt_merge(no_squash: bool):
-    """Merge worktree changes back and clean up."""
-    from .worktree import WorktreeManager
+def wt_merge(branch: str | None, no_squash: bool):
+    """Merge worktree changes back and clean up.
 
-    mgr = WorktreeManager.load_active(_project_dir())
+    Without BRANCH: auto-detect from CWD (if inside a linked worktree).
+    """
+    mgr = _resolve_worktree(branch)
     if mgr is None:
         console.print("[yellow]No active worktree[/]")
+        if branch is None:
+            console.print("  Specify a branch: [bold]ai-hats wt merge <branch>[/]")
         sys.exit(1)
 
-    branch = mgr.branch_name
+    name = mgr.branch_name
     mgr.merge(squash=not no_squash)
-    console.print(f"[green]Merged[/]: {branch}")
+    console.print(f"[green]Merged[/]: {name}")
 
 
 @wt.command("discard")
-def wt_discard():
-    """Discard worktree changes and clean up."""
-    from .worktree import WorktreeManager
+@click.argument("branch", required=False)
+def wt_discard(branch: str | None):
+    """Discard worktree changes and clean up.
 
-    mgr = WorktreeManager.load_active(_project_dir())
+    Without BRANCH: auto-detect from CWD (if inside a linked worktree).
+    """
+    mgr = _resolve_worktree(branch)
     if mgr is None:
         console.print("[yellow]No active worktree[/]")
+        if branch is None:
+            console.print("  Specify a branch: [bold]ai-hats wt discard <branch>[/]")
         sys.exit(1)
 
-    branch = mgr.branch_name
+    name = mgr.branch_name
     mgr.discard()
-    console.print(f"[green]Discarded[/]: {branch}")
+    console.print(f"[green]Discarded[/]: {name}")
 
 
 @wt.command("list")
@@ -627,8 +666,7 @@ def wt_list():
 
     project_dir = _project_dir()
     worktrees = WorktreeManager.list_worktrees(project_dir)
-    active = WorktreeManager.load_active(project_dir)
-    active_branch = active.branch_name if active else None
+    tracked_branches = {m.branch_name for m in WorktreeManager.list_active(project_dir)}
 
     if not worktrees:
         console.print("[dim]No worktrees[/]")
@@ -637,22 +675,22 @@ def wt_list():
     for w in worktrees:
         branch = w.get("branch", "?")
         path = w.get("path", "?")
-        marker = " [green]← active[/]" if branch == active_branch else ""
+        marker = " [green]← tracked[/]" if branch in tracked_branches else ""
         console.print(f"  {branch}: {path}{marker}")
 
 
 @wt.command("status")
 def wt_status():
-    """Show active worktree info."""
+    """Show all tracked worktrees."""
     from .worktree import WorktreeManager
 
-    mgr = WorktreeManager.load_active(_project_dir())
-    if mgr is None:
-        console.print("[dim]No active worktree[/]")
+    active = WorktreeManager.list_active(_project_dir())
+    if not active:
+        console.print("[dim]No active worktrees[/]")
         return
 
-    console.print(f"  Branch: [bold]{mgr.branch_name}[/]")
-    console.print(f"  Path: {mgr.worktree_path}")
+    for mgr in active:
+        console.print(f"  Branch: [bold]{mgr.branch_name}[/]  Path: {mgr.worktree_path}")
 
 
 @wt.command("exec", context_settings={"ignore_unknown_options": True})
@@ -673,9 +711,7 @@ def wt_exec(cmd_args: tuple[str, ...]):
         ai-hats wt exec -- python -c 'import ai_hats; print(ai_hats.__file__)'
         ai-hats wt exec -- ruff check src/
     """
-    from .worktree import WorktreeManager
-
-    mgr = WorktreeManager.load_active(_project_dir())
+    mgr = _resolve_worktree()
     if mgr is None:
         console.print("[yellow]No active worktree[/]")
         sys.exit(1)
@@ -708,9 +744,7 @@ def wt_env():
         eval "$(ai-hats wt env)"
         # now $WT and $PYTHONPATH are set; cd to it manually if needed
     """
-    from .worktree import WorktreeManager
-
-    mgr = WorktreeManager.load_active(_project_dir())
+    mgr = _resolve_worktree()
     if mgr is None:
         click.echo("# no active worktree", err=True)
         sys.exit(1)
@@ -1078,7 +1112,7 @@ def task_transition(task_id: str, new_state: str, final_state: str | None):
             from .worktree import WorktreeManager
 
             project_dir = _project_dir()
-            active = WorktreeManager.load_active(project_dir)
+            active = WorktreeManager.load_for_task(project_dir, task_id)
             if active and active.worktree_path:
                 console.print(f"  Worktree: {active.worktree_path}")
                 console.print(f"  Branch: {active.branch_name}")

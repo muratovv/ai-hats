@@ -242,7 +242,7 @@ def test_execute_creates_worktree(git_mgr):
     git_mgr.transition("T-1", TaskState.PLAN)
     git_mgr.transition("T-1", TaskState.EXECUTE)
 
-    active = WorktreeManager.load_active(git_mgr.project_dir)
+    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
     assert active is not None
     assert active.branch_name == "task/t-1"
     assert active.worktree_path.exists()
@@ -254,7 +254,7 @@ def test_done_merges_worktree(git_mgr):
     git_mgr.transition("T-1", TaskState.EXECUTE)
 
     # Make a change in the worktree
-    active = WorktreeManager.load_active(git_mgr.project_dir)
+    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
     (active.worktree_path / "new_file.txt").write_text("hello")
     subprocess.run(["git", "add", "."], cwd=str(active.worktree_path), capture_output=True, check=True)
     subprocess.run(["git", "commit", "-m", "add file"], cwd=str(active.worktree_path), capture_output=True, check=True)
@@ -264,7 +264,7 @@ def test_done_merges_worktree(git_mgr):
     git_mgr.transition("T-1", TaskState.DONE)
 
     # Worktree cleaned up
-    assert WorktreeManager.load_active(git_mgr.project_dir) is None
+    assert WorktreeManager.load_for_task(git_mgr.project_dir, "T-1") is None
     # Change merged into main
     assert (git_mgr.project_dir / "new_file.txt").exists()
 
@@ -274,26 +274,66 @@ def test_failed_discards_worktree(git_mgr):
     git_mgr.transition("T-1", TaskState.PLAN)
     git_mgr.transition("T-1", TaskState.EXECUTE)
 
-    active = WorktreeManager.load_active(git_mgr.project_dir)
+    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
     wt_path = active.worktree_path
     assert wt_path.exists()
 
     git_mgr.transition("T-1", TaskState.FAILED)
 
     # Worktree removed
-    assert WorktreeManager.load_active(git_mgr.project_dir) is None
+    assert WorktreeManager.load_for_task(git_mgr.project_dir, "T-1") is None
     assert not wt_path.exists()
 
 
-def test_execute_blocks_if_worktree_active(git_mgr):
+def test_parallel_tasks_get_independent_worktrees(git_mgr):
+    """HATS-061: two tasks in execute → two independent worktrees."""
     git_mgr.create_task("T-1", "First task")
     git_mgr.create_task("T-2", "Second task")
     git_mgr.transition("T-1", TaskState.PLAN)
-    git_mgr.transition("T-1", TaskState.EXECUTE)
-
     git_mgr.transition("T-2", TaskState.PLAN)
-    with pytest.raises(ValueError, match="Active worktree exists"):
-        git_mgr.transition("T-2", TaskState.EXECUTE)
+    git_mgr.transition("T-1", TaskState.EXECUTE)
+    git_mgr.transition("T-2", TaskState.EXECUTE)
+
+    wt1 = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    wt2 = WorktreeManager.load_for_task(git_mgr.project_dir, "T-2")
+    assert wt1 is not None
+    assert wt2 is not None
+    assert wt1.worktree_path != wt2.worktree_path
+    assert wt1.branch_name == "task/t-1"
+    assert wt2.branch_name == "task/t-2"
+
+    # list_active returns both
+    active = WorktreeManager.list_active(git_mgr.project_dir)
+    assert len(active) == 2
+
+
+def test_done_merges_only_its_own_worktree(git_mgr):
+    """HATS-061: done on task A leaves task B's worktree untouched."""
+    git_mgr.create_task("T-1", "Task A")
+    git_mgr.create_task("T-2", "Task B")
+    git_mgr.transition("T-1", TaskState.PLAN)
+    git_mgr.transition("T-2", TaskState.PLAN)
+    git_mgr.transition("T-1", TaskState.EXECUTE)
+    git_mgr.transition("T-2", TaskState.EXECUTE)
+
+    # Make a change in T-1's worktree
+    wt1 = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    (wt1.worktree_path / "from_t1.txt").write_text("t1")
+    subprocess.run(["git", "add", "."], cwd=str(wt1.worktree_path), capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "t1 work"], cwd=str(wt1.worktree_path), capture_output=True, check=True)
+
+    # Complete T-1
+    git_mgr.transition("T-1", TaskState.DOCUMENT)
+    git_mgr.transition("T-1", TaskState.REVIEW)
+    git_mgr.transition("T-1", TaskState.DONE)
+
+    # T-1 merged, T-2 still active
+    assert WorktreeManager.load_for_task(git_mgr.project_dir, "T-1") is None
+    assert (git_mgr.project_dir / "from_t1.txt").exists()
+
+    wt2 = WorktreeManager.load_for_task(git_mgr.project_dir, "T-2")
+    assert wt2 is not None
+    assert wt2.worktree_path.exists()
 
 
 def test_execute_reuses_worktree_after_blocked(git_mgr):
@@ -301,16 +341,16 @@ def test_execute_reuses_worktree_after_blocked(git_mgr):
     git_mgr.transition("T-1", TaskState.PLAN)
     git_mgr.transition("T-1", TaskState.EXECUTE)
 
-    active = WorktreeManager.load_active(git_mgr.project_dir)
+    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
     wt_path = active.worktree_path
 
     git_mgr.transition("T-1", TaskState.BLOCKED)
     # Worktree still active after blocked
-    assert WorktreeManager.load_active(git_mgr.project_dir) is not None
+    assert WorktreeManager.load_for_task(git_mgr.project_dir, "T-1") is not None
 
     git_mgr.transition("T-1", TaskState.EXECUTE)
     # Same worktree reused
-    active2 = WorktreeManager.load_active(git_mgr.project_dir)
+    active2 = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
     assert active2.worktree_path == wt_path
 
 
@@ -320,18 +360,13 @@ def test_no_worktree_in_non_git_project(mgr):
     mgr.transition("T-1", TaskState.PLAN)
     mgr.transition("T-1", TaskState.EXECUTE)
 
-    active = WorktreeManager.load_active(mgr.project_dir)
+    active = WorktreeManager.load_for_task(mgr.project_dir, "T-1")
     assert active is None
 
 
 def test_execute_inside_linked_worktree_does_not_nest(tmp_path):
     """HATS-060: `task transition execute` from inside a manually-created
     linked worktree must NOT create a second nested worktree.
-
-    Mirrors the bug repro: user runs `wt create` from main, cd's in,
-    creates the task FROM the worktree (since .agent/ is gitignored and
-    the worktree starts with no task cards), and then transitions to
-    execute. Pre-fix this would silently nest a `task/t-1` worktree.
     """
     project = tmp_path / "project"
     project.mkdir()
@@ -344,10 +379,7 @@ def test_execute_inside_linked_worktree_does_not_nest(tmp_path):
     wt_path = wt.create()
     wt.save_state()
 
-    # Step 2: from inside the linked worktree, the user creates and plans
-    # the task. The worktree's .agent/ does not exist yet (gitignored in
-    # the real project; never committed in tests). TaskManager.__init__
-    # will create the tasks/ subdir for us.
+    # Step 2: from inside the linked worktree, create and plan the task.
     wt_mgr = TaskManager(wt_path)
     wt_mgr.create_task("T-1", "Created from inside worktree")
     wt_mgr.transition("T-1", TaskState.PLAN)
@@ -361,11 +393,11 @@ def test_execute_inside_linked_worktree_does_not_nest(tmp_path):
     assert "task/t-1" not in branches, f"Nested worktree created: {branches}"
 
     # Assertion 2: state file in main repo still points at the original.
-    active = WorktreeManager.load_active(project)
+    active = WorktreeManager.load_for_branch(project, "feat/T-1-foo")
     assert active is not None
     assert active.branch_name == "feat/T-1-foo"
     assert active.worktree_path == wt_path
 
-    # Assertion 3: no stray worktree.json inside the linked worktree —
-    # the short-circuit must NOT call save_state on the wrong project_dir.
+    # Assertion 3: no stray state files inside the linked worktree.
     assert not (wt_path / ".agent" / "worktree.json").exists()
+    assert not (wt_path / ".agent" / "worktrees").exists()

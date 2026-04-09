@@ -114,9 +114,9 @@ class TaskManager:
                 self._setup_worktree(task)
             elif new_state == TaskState.DONE:
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                self._teardown_worktree(merge=True)
+                self._teardown_worktree(task, merge=True)
             elif new_state == TaskState.FAILED:
-                self._teardown_worktree(merge=False)
+                self._teardown_worktree(task, merge=False)
 
             self._save_task(task)
             self._update_indexes()
@@ -238,36 +238,25 @@ class TaskManager:
     def _setup_worktree(self, task: TaskCard) -> Path | None:
         """Create or adopt an isolated worktree when task enters execute state.
 
+        HATS-061: each task gets its own worktree state slot — no singleton
+        conflict between parallel tasks.
+
         Returns the adopted linked-worktree path if invoked from inside one
-        (HATS-060 short-circuit — the linked worktree IS the task workspace,
-        do not nest), the existing/created worktree path on the happy path,
-        or None for non-git projects.
+        (HATS-060 short-circuit), the existing/created worktree path on the
+        happy path, or None for non-git projects.
         """
         from .worktree import WorktreeManager
 
         # HATS-060: invoked from inside a linked worktree → adopt it.
-        # The worktree.json state file lives in the main repo, not here,
-        # so load_active would spuriously return None and create a nested
-        # worktree. Trust the caller's cwd instead.
         if WorktreeManager.is_inside_linked_worktree(self.project_dir):
             return self.project_dir
 
-        active = WorktreeManager.load_active(self.project_dir)
-        if active is not None:
-            # Reuse only when the active worktree belongs to this task
-            # (e.g. after blocked → execute). Otherwise the user must
-            # resolve the conflict explicitly.
-            expected_branch = f"task/{task.id.lower()}"
-            if active.branch_name == expected_branch:
-                return active.worktree_path
-            raise ValueError(
-                f"Active worktree exists on branch '{active.branch_name}'. "
-                f"Either merge/discard it ('ai-hats wt merge' / "
-                f"'ai-hats wt discard'), or cd into that worktree and "
-                f"re-run 'ai-hats task transition {task.id} execute' "
-                f"to adopt it."
-            )
+        # Per-task lookup (HATS-061) — each task has its own state slot.
+        existing = WorktreeManager.load_for_task(self.project_dir, task.id)
+        if existing is not None:
+            return existing.worktree_path
 
+        # No existing worktree for this task — create one.
         branch = f"task/{task.id.lower()}"
         mgr = WorktreeManager(self.project_dir, branch_name=branch)
         path = mgr.create()
@@ -276,11 +265,11 @@ class TaskManager:
             return path
         return None
 
-    def _teardown_worktree(self, *, merge: bool = True) -> None:
-        """Merge or discard active worktree on task completion/failure."""
+    def _teardown_worktree(self, task: TaskCard, *, merge: bool = True) -> None:
+        """Merge or discard the worktree for a specific task (HATS-061)."""
         from .worktree import WorktreeManager
 
-        active = WorktreeManager.load_active(self.project_dir)
+        active = WorktreeManager.load_for_task(self.project_dir, task.id)
         if active is None:
             return
 
