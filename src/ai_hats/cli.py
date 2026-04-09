@@ -814,6 +814,44 @@ def judge(bundle_id: str | None, sessions: str | None, last_n: int | None, focus
     console.print(f"[green]Judge retro[/]: {path}")
 
 
+@main.command("judge-aggregate")
+@click.option(
+    "--strategy",
+    type=click.Choice(["freq"]),
+    default="freq",
+    help="Aggregation strategy (default: freq)",
+)
+@click.option("--since", default=None, help="Only include retros since YYYY-MM-DD")
+@click.option(
+    "--min-severity",
+    type=click.Choice(["low", "medium", "high", "critical"]),
+    default=None,
+    help="Exclude findings below this severity",
+)
+def judge_aggregate(strategy: str, since: str | None, min_severity: str | None):
+    """Aggregate judge retros to surface recurring patterns."""
+    from datetime import date as date_cls
+
+    from .retro.aggregator import Aggregator
+    from .retro.common import Severity
+
+    since_date = date_cls.fromisoformat(since) if since else None
+    sev = Severity(min_severity) if min_severity else None
+
+    agg = Aggregator(_project_dir())
+    try:
+        path = agg.aggregate(strategy=strategy, since=since_date, min_severity=sev)
+    except (ValueError, FileNotFoundError) as exc:
+        console.print(f"[red]Error[/]: {exc}")
+        sys.exit(1)
+
+    from .retro.loader import load
+
+    model, body = load(path)
+    console.print(f"[green]Aggregation saved[/]: {path}")
+    console.print(body)
+
+
 # -- retro --
 
 
