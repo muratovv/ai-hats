@@ -189,3 +189,4 @@ Task is blocked by external dependency from any active state.
 - Working without a task card — all work must be tracked
 - Forgetting work_log updates — the card becomes useless for handover
 - Silently skipping user-mentioned approaches — every approach must be explicitly addressed
+- Shell loops over `.agent/backlog/tasks/` (`for t in $(ls ...); do ...`) — use `ai-hats task list`, `ai-hats task show <id>`, or `Glob` + `Read` tools instead
