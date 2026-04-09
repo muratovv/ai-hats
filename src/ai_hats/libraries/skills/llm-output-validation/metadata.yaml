@@ -1,0 +1,5 @@
+name: llm-output-validation
+description: Post-schema semantic validation checklist for structured LLM output
+author: ai-hats
+tags: [llm, validation, security]
+pattern: reference

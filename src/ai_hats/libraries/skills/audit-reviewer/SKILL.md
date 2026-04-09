@@ -24,6 +24,8 @@ Internal code review via triple-perspective debate before finalizing any non-tri
 ### 3. Quality Engineer (Verification & Performance)
 - Test coverage, edge cases, silent failure modes.
 - Is there a scenario where this fails silently or performs poorly?
+- If code consumes structured LLM output → verify **llm-output-validation**
+  checklist applied (semantic checks in code immediately after schema parse).
 
 ## Self-Refinement Loop
 1. **Debate** — one key concern from each perspective.
