@@ -47,3 +47,14 @@ Fall back to traditional tools if modern ones are unavailable, but note the pref
 - Scripts without `set -euo pipefail` — silent failures hide bugs
 - Makefiles without `help` target — users can't discover available commands
 - Hardcoded tool paths — use env vars and `?=` defaults
+- Multi-line shell loops in Claude Code Bash calls — write as one-liners:
+  ```bash
+  # WRONG — Claude CLI parses each line as a separate command, generates garbage permissions:
+  for f in *.yaml
+  do
+    echo "$f"
+  done
+
+  # CORRECT — single command, one permission entry:
+  for f in *.yaml; do echo "$f"; done
+  ```

@@ -76,9 +76,19 @@ cd $WT
 - Always `cd` back to project dir before merge/discard
 - Commit your work in the worktree before merging
 
+## Syncing After Skill Edits
+
+After editing `src/ai_hats/libraries/skills/*/SKILL.md`, run:
+```
+ai-hats bump
+```
+This re-copies all skills to `.claude/skills/` and `.agent/skills/`.
+**Never manually `cp` skill files** — it generates garbage permission entries.
+
 ## Anti-Patterns
 - Working directly on main branch for non-trivial changes — use a worktree
 - Forgetting to `cd` back to project dir before merge/discard — commands fail silently
+- Manually copying skill files with `cp src/.../SKILL.md .claude/skills/.../SKILL.md` — use `ai-hats bump` instead
 - Multiple active worktrees without tracking — leads to forgotten branches
 - Running `ai-hats wt create` from inside a linked worktree — blocked with an error. Always `cd` back to the main repo first.
 - Mixing manual `wt create` with `task transition execute` from the main repo — if you created a worktree manually and want the task to use it, `cd` into the worktree first, then transition. Otherwise the transition errors out with a clear remediation message.
