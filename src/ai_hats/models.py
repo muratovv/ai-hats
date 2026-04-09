@@ -165,6 +165,64 @@ class RuleMetadata:
         )
 
 
+# Git hook events recognized by the framework. Skills declare their hooks
+# under one of these keys in metadata.yaml's `git_hooks:` block. The keys
+# match git's actual hook filenames so the dispatcher path is unambiguous.
+GIT_HOOK_EVENTS: tuple[str, ...] = (
+    "pre-commit",
+    "prepare-commit-msg",
+    "commit-msg",
+    "post-commit",
+    "pre-push",
+    "pre-rebase",
+)
+
+
+@dataclass
+class SkillMetadata:
+    """Parsed metadata.yaml for a skill.
+
+    `git_hooks` lets a skill declare scripts that should be installed into
+    the project's `.githooks/<event>.d/` during composition. Keys are git
+    hook event names (see GIT_HOOK_EVENTS); values are lists of script
+    paths relative to the skill directory.
+    """
+
+    name: str = ""
+    description: str = ""
+    author: str = ""
+    tags: list[str] = field(default_factory=list)
+    pattern: str = ""
+    git_hooks: dict[str, list[str]] = field(default_factory=dict)
+
+    @classmethod
+    def from_yaml(cls, path: Path) -> SkillMetadata:
+        if not path.exists():
+            return cls()
+        with open(path) as f:
+            data = yaml.safe_load(f) or {}
+        raw_hooks = data.get("git_hooks") or {}
+        # Normalize: accept either "pre-commit" or "pre_commit" in yaml.
+        git_hooks: dict[str, list[str]] = {}
+        if isinstance(raw_hooks, dict):
+            for ev, scripts in raw_hooks.items():
+                if not isinstance(scripts, list):
+                    continue
+                normalized = str(ev).replace("_", "-")
+                if normalized not in GIT_HOOK_EVENTS:
+                    # Unknown event — silently skip; surfaces upstream via tests.
+                    continue
+                git_hooks[normalized] = [str(s) for s in scripts]
+        return cls(
+            name=data.get("name", ""),
+            description=data.get("description", ""),
+            author=data.get("author", ""),
+            tags=data.get("tags", []),
+            pattern=data.get("pattern", ""),
+            git_hooks=git_hooks,
+        )
+
+
 @dataclass
 class OverlayConfig:
     """Per-role customization overlay (add/remove components)."""

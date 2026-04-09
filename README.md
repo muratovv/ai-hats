@@ -307,6 +307,22 @@ One-line purpose.
 Паттерны: `protocol`, `checklist`, `orchestrator`, `reference`, `template`.
 Метаданные: `metadata.yaml` (name, description, author, tags, pattern).
 
+Скилл может опционально декларировать **git-хуки**, которые автоматически
+устанавливаются в `.githooks/` при сборке роли (HATS-088):
+
+```yaml
+# <skill>/metadata.yaml
+git_hooks:
+  pre-commit:
+    - git_hooks/check.sh   # путь относительно директории скилла
+```
+
+Сборщик копирует скрипты в `.githooks/<event>.d/<skill>-<basename>`,
+генерирует диспетчер `.githooks/<event>` и выставляет
+`core.hooksPath = .githooks` идемпотентно. Если у пользователя уже
+настроен `core.hooksPath` или существует свой dispatcher без нашего
+маркера — они не трогаются, выводится предупреждение с инструкцией.
+
 ### Пример config.yaml роли
 
 ```yaml

@@ -35,7 +35,7 @@ version_file = "src/ai_hats/_version.py"
 where = ["src"]
 
 [tool.setuptools.package-data]
-ai_hats = ["libraries/**/*"]
+ai_hats = ["libraries/**/*", "templates/**/*"]
 
 [tool.ruff]
 target-version = "py311"

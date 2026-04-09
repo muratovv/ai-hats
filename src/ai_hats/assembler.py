@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .composer import Composer, CompositionResult
 from .library import LibraryResolver
-from .models import ProfileConfig, ProjectConfig
+from .models import ProfileConfig, ProjectConfig, SkillMetadata
 from .providers import Provider, get_provider
 
 
@@ -18,6 +19,12 @@ AGENT_DIR = ".agent"
 GITLOG_DIR = ".gitlog"
 PROJECT_CONFIG = "ai-hats.yaml"
 PROFILE_FILE = "profile.json"
+GITHOOKS_DIR = ".githooks"
+GITHOOKS_MANIFEST = ".ai-hats-manifest"
+GITHOOKS_DISPATCHER_MARKER = "AI-HATS-DISPATCHER-MARKER"
+GITHOOKS_DISPATCHER_TEMPLATE = (
+    Path(__file__).parent / "templates" / "githooks" / "dispatcher.sh"
+)
 
 
 class Assembler:
@@ -123,6 +130,9 @@ class Assembler:
 
             # 3. Copy components
             self._copy_components(result)
+
+            # 3b. Install skill-contributed git hooks (HATS-088)
+            self._install_git_hooks(result)
 
             # 4. Export skills to provider-native directory
             provider.export_skills(self.project_dir, result.skills)
@@ -360,6 +370,202 @@ class Assembler:
             if candidate.exists():
                 return candidate
         return None
+
+    # ----- Skill-contributed git hooks (HATS-088) -----
+
+    def _install_git_hooks(self, result: CompositionResult) -> None:
+        """Install git hooks declared by composed skills.
+
+        Skills declare hooks in their `metadata.yaml` under `git_hooks:`.
+        Each declared script is copied into `.githooks/<event>.d/<skill>-<basename>`,
+        a dispatcher script is generated at `.githooks/<event>`, and
+        `core.hooksPath` is set to `.githooks` (idempotently).
+
+        Conflict policy:
+        - If `.githooks/<event>` exists WITHOUT our marker → leave alone, warn.
+        - If `core.hooksPath` is set to a non-`.githooks` value → leave alone, warn.
+        - Files inside `<event>.d/` from previous installs are tracked via a
+          manifest at `.githooks/.ai-hats-manifest` and removed before re-install,
+          so stale hooks from removed skills don't linger.
+        """
+        declared = self._collect_skill_git_hooks(result)
+        if not declared:
+            # No skill declares git hooks. Don't touch user's repo.
+            # Still clean up our previously-installed managed files (in case the
+            # user removed all skills with git_hooks) so stale entries don't linger.
+            self._cleanup_managed_git_hooks()
+            return
+
+        githooks_dir = self.project_dir / GITHOOKS_DIR
+        githooks_dir.mkdir(exist_ok=True)
+
+        # Remove anything we previously owned, then re-install fresh.
+        self._cleanup_managed_git_hooks()
+
+        new_manifest: list[str] = []
+        warnings: list[str] = []
+
+        for event, entries in declared.items():
+            if not entries:
+                continue
+            event_d = githooks_dir / f"{event}.d"
+            event_d.mkdir(exist_ok=True)
+
+            for skill_name, script_path in entries:
+                src = self._resolve_skill_script(skill_name, script_path, result)
+                if src is None:
+                    warnings.append(
+                        f"git_hooks: skill '{skill_name}' declares script "
+                        f"'{script_path}' but file not found"
+                    )
+                    continue
+                dest_basename = f"{skill_name}-{src.name}"
+                dest = event_d / dest_basename
+                shutil.copy2(src, dest)
+                dest.chmod(0o755)
+                new_manifest.append(f"{event}.d/{dest_basename}")
+
+            # Generate dispatcher (or warn on conflict).
+            dispatcher_path = githooks_dir / event
+            installed = self._install_dispatcher(dispatcher_path)
+            if installed:
+                new_manifest.append(event)
+            else:
+                warnings.append(
+                    f"git_hooks: existing {dispatcher_path} is not managed by "
+                    f"ai-hats — left in place. Hooks for '{event}' will not run "
+                    f"unless you wire {event}.d/* into it manually."
+                )
+
+        # Persist manifest of files we own.
+        manifest_path = githooks_dir / GITHOOKS_MANIFEST
+        manifest_path.write_text("\n".join(new_manifest) + "\n")
+
+        # Configure core.hooksPath (idempotent + safe).
+        self._configure_hooks_path(warnings)
+
+        for w in warnings:
+            print(f"[ai-hats] WARNING: {w}")
+
+    def _collect_skill_git_hooks(
+        self, result: CompositionResult,
+    ) -> dict[str, list[tuple[str, str]]]:
+        """Walk composed skills and collect their declared git hooks.
+
+        Returns: {event_name: [(skill_name, script_path), ...]}
+        """
+        collected: dict[str, list[tuple[str, str]]] = {}
+        for skill in result.skills:
+            metadata_path = skill.source_path / "metadata.yaml"
+            metadata = SkillMetadata.from_yaml(metadata_path)
+            if not metadata.git_hooks:
+                continue
+            for event, scripts in metadata.git_hooks.items():
+                collected.setdefault(event, []).extend(
+                    (skill.name, script) for script in scripts
+                )
+        return collected
+
+    @staticmethod
+    def _resolve_skill_script(
+        skill_name: str,
+        script_path: str,
+        result: CompositionResult,
+    ) -> Path | None:
+        """Resolve a script path declared in a skill's metadata to an absolute path."""
+        for skill in result.skills:
+            if skill.name != skill_name:
+                continue
+            candidate = (skill.source_path / script_path).resolve()
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _install_dispatcher(self, dispatcher_path: Path) -> bool:
+        """Write the dispatcher script. Returns True if installed/updated, False on conflict."""
+        if dispatcher_path.exists():
+            try:
+                existing = dispatcher_path.read_text()
+            except OSError:
+                return False
+            if GITHOOKS_DISPATCHER_MARKER not in existing:
+                return False  # Foreign file, leave it alone.
+        if not GITHOOKS_DISPATCHER_TEMPLATE.exists():
+            # Should never happen with package-data set, but defend against it.
+            return False
+        shutil.copy2(GITHOOKS_DISPATCHER_TEMPLATE, dispatcher_path)
+        dispatcher_path.chmod(0o755)
+        return True
+
+    def _cleanup_managed_git_hooks(self) -> None:
+        """Remove files listed in our manifest. Idempotent."""
+        githooks_dir = self.project_dir / GITHOOKS_DIR
+        manifest_path = githooks_dir / GITHOOKS_MANIFEST
+        if not manifest_path.exists():
+            return
+        try:
+            entries = manifest_path.read_text().splitlines()
+        except OSError:
+            return
+        for entry in entries:
+            entry = entry.strip()
+            if not entry:
+                continue
+            target = githooks_dir / entry
+            if target.is_file():
+                # For dispatcher files, only remove if the marker is still ours.
+                if "/" not in entry:
+                    try:
+                        if GITHOOKS_DISPATCHER_MARKER not in target.read_text():
+                            continue
+                    except OSError:
+                        continue
+                target.unlink(missing_ok=True)
+        manifest_path.unlink(missing_ok=True)
+        # Remove empty <event>.d/ subdirs.
+        for child in githooks_dir.iterdir():
+            if child.is_dir() and child.name.endswith(".d") and not any(child.iterdir()):
+                child.rmdir()
+
+    def _configure_hooks_path(self, warnings: list[str]) -> None:
+        """Set git config core.hooksPath = .githooks if safe to do so."""
+        try:
+            current = subprocess.run(
+                ["git", "config", "--get", "core.hooksPath"],
+                cwd=str(self.project_dir),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except (OSError, FileNotFoundError):
+            warnings.append("git not found — cannot configure core.hooksPath")
+            return
+
+        existing = current.stdout.strip() if current.returncode == 0 else ""
+        target = GITHOOKS_DIR
+
+        if existing == target:
+            return  # Already correct.
+        if existing and existing != target:
+            warnings.append(
+                f"core.hooksPath is already set to '{existing}' — not "
+                f"overwriting. To enable ai-hats hooks, run: "
+                f"git config core.hooksPath {target}  (or merge dispatchers manually)"
+            )
+            return
+
+        try:
+            subprocess.run(
+                ["git", "config", "core.hooksPath", target],
+                cwd=str(self.project_dir),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            warnings.append(
+                f"failed to set core.hooksPath: {e.stderr.strip() or e}"
+            )
 
     def _verify(self, result: CompositionResult, provider: Provider) -> None:
         """Verify assembly correctness."""
