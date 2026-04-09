@@ -275,7 +275,7 @@ class TaskManager:
 
         try:
             if merge:
-                active.merge(squash=True)
+                active.merge()
             else:
                 active.discard()
         except Exception:

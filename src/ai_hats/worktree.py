@@ -84,7 +84,7 @@ class WorktreeManager:
         logger.info("Created worktree %s on branch %s", self.worktree_path, self.branch_name)
         return self.worktree_path
 
-    def merge(self, *, squash: bool = True) -> None:
+    def merge(self, *, squash: bool = False) -> None:
         """Merge worktree changes back into the original branch and clean up."""
         if not self._is_git or self.worktree_path is None:
             return
@@ -346,13 +346,13 @@ class WorktreeManager:
         logger.info("Squash-merged %s into %s", self.branch_name, self._original_branch)
 
     def _fast_forward_merge(self) -> None:
-        """Regular merge of worktree branch."""
+        """Merge worktree branch with --no-ff to preserve commit history."""
         head_main = self._git("rev-parse", self._original_branch).stdout.strip()
         head_wt = self._git("rev-parse", self.branch_name).stdout.strip()
         if head_main == head_wt:
             return
 
-        self._git("merge", self.branch_name)
+        self._git("merge", "--no-ff", self.branch_name)
         logger.info("Merged %s into %s", self.branch_name, self._original_branch)
 
     def _remove_worktree(self) -> None:

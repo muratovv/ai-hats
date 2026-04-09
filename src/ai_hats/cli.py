@@ -622,11 +622,12 @@ def wt_create(branch: str):
 
 @wt.command("merge")
 @click.argument("branch", required=False)
-@click.option("--no-squash", is_flag=True, default=False, help="Regular merge instead of squash")
-def wt_merge(branch: str | None, no_squash: bool):
+@click.option("--squash", is_flag=True, default=False, help="Squash all commits into one")
+def wt_merge(branch: str | None, squash: bool):
     """Merge worktree changes back and clean up.
 
     Without BRANCH: auto-detect from CWD (if inside a linked worktree).
+    Default: --no-ff merge preserving commit history.
     """
     mgr = _resolve_worktree(branch)
     if mgr is None:
@@ -636,7 +637,7 @@ def wt_merge(branch: str | None, no_squash: bool):
         sys.exit(1)
 
     name = mgr.branch_name
-    mgr.merge(squash=not no_squash)
+    mgr.merge(squash=squash)
     console.print(f"[green]Merged[/]: {name}")
 
 
