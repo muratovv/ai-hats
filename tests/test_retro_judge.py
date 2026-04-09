@@ -156,9 +156,15 @@ def test_judge_end_to_end_with_existing_bundle(project: Path) -> None:
 def test_judge_auto_creates_bundle_from_sessions(project: Path) -> None:
     _make_session(project, "20260408-101010-1")
     _make_session(project, "20260408-111111-1")
-    transcript = _wrap_in_delimiters(_valid_judge_retro("BUNDLE-2026-04-08-001"))
-    fake = FakeSubAgentRunner(project, [transcript])
     bm = BundleManager(project)
+    # Pre-create with a fixed date so the bundle_id is deterministic.
+    # _resolve_bundle's idempotency will find this bundle on any system date.
+    bundle = bm.create(
+        ["20260408-101010-1", "20260408-111111-1"],
+        now=datetime(2026, 4, 8, 12, 0, tzinfo=timezone.utc),
+    )
+    transcript = _wrap_in_delimiters(_valid_judge_retro(bundle.bundle_id))
+    fake = FakeSubAgentRunner(project, [transcript])
     runner = JudgeRunner(project, subagent_runner=fake, bundle_manager=bm)
 
     runner.judge(session_ids=["20260408-101010-1", "20260408-111111-1"])
@@ -171,16 +177,21 @@ def test_judge_auto_creates_bundle_from_sessions(project: Path) -> None:
 def test_judge_auto_creates_bundle_from_last_n(project: Path) -> None:
     for sid in ("20260408-101010-1", "20260408-111111-1", "20260408-121212-1"):
         _make_session(project, sid)
-    # Last 2 sessions are [111111, 121212]; evidence must reference one of them
-    # for the integrity check (HATS-066) to pass.
+    bm = BundleManager(project)
+    # Pre-create the bundle with a fixed date for deterministic ID.
+    # Last 2 sessions are [111111, 121212]; idempotency will match.
+    bundle = bm.create(
+        ["20260408-111111-1", "20260408-121212-1"],
+        now=datetime(2026, 4, 8, 12, 0, tzinfo=timezone.utc),
+    )
+    # Evidence must reference one of the bundle's sessions.
     transcript = _wrap_in_delimiters(
         _valid_judge_retro(
-            "BUNDLE-2026-04-08-001",
+            bundle.bundle_id,
             evidence_session_id="20260408-111111-1",
         )
     )
     fake = FakeSubAgentRunner(project, [transcript])
-    bm = BundleManager(project)
     runner = JudgeRunner(project, subagent_runner=fake, bundle_manager=bm)
 
     runner.judge(last_n=2)
@@ -335,7 +346,10 @@ def test_judge_integrity_rejects_wrong_bundle_id_then_recovers(project: Path) ->
     """Schema-valid output with wrong bundle_id triggers retry with explicit hint."""
     _make_session(project, "20260408-101010-1")
     bm = BundleManager(project)
-    bundle = bm.create(["20260408-101010-1"])
+    bundle = bm.create(
+        ["20260408-101010-1"],
+        now=datetime(2026, 4, 8, 12, 0, tzinfo=timezone.utc),
+    )
     assert bundle.bundle_id == "BUNDLE-2026-04-08-001"
 
     # First attempt: wrong bundle_id (LLM hallucination) — schema passes,
@@ -350,7 +364,7 @@ def test_judge_integrity_rejects_wrong_bundle_id_then_recovers(project: Path) ->
     assert len(fake.calls) == 2
     # Retry prompt must echo the exact required bundle_id so the LLM can fix it.
     retry_task = fake.calls[1]["task"]
-    assert "BUNDLE-2026-04-08-001" in retry_task
+    assert bundle.bundle_id in retry_task
     assert "MUST be exactly" in retry_task
 
 
@@ -405,7 +419,10 @@ def test_judge_integrity_check_via_validate_integrity_directly(project: Path) ->
 
     _make_session(project, "20260408-101010-1")
     bm = BundleManager(project)
-    bundle = bm.create(["20260408-101010-1"])
+    bundle = bm.create(
+        ["20260408-101010-1"],
+        now=datetime(2026, 4, 8, 12, 0, tzinfo=timezone.utc),
+    )
     runner = JudgeRunner(project, subagent_runner=FakeSubAgentRunner(project, []), bundle_manager=bm)
 
     # Build a model with both violations: wrong bundle_id + out-of-scope evidence.
@@ -433,6 +450,6 @@ def test_judge_integrity_check_via_validate_integrity_directly(project: Path) ->
     msg = str(exc_info.value)
     assert "bundle_id mismatch" in msg
     assert "BUNDLE-2026-04-08-999" in msg
-    assert "BUNDLE-2026-04-08-001" in msg
+    assert bundle.bundle_id in msg
     assert "session-not-in-bundle" in msg
     assert "F1" in msg
