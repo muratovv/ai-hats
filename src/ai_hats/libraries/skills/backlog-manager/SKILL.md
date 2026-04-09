@@ -111,7 +111,7 @@ In both flows, work happens in the worktree — main branch stays clean. Do NOT 
 Active development in the worktree.
 
 - Check task boundaries before starting → **scope-guard**: verify scope alignment
-- Commit frequently with conventional format → **git-mastery**: `type(scope): description`
+- **Commit at every checkpoint** (test pass, sub-task done, file done editing) — not "at the end". Worktrees are NOT safe storage; uncommitted work can be destroyed by parallel sessions or cleanup with no recovery. Conventional format → **git-mastery**: `type(scope): description`.
 - Before requesting anything from user → **request-supervisor**: run the checklist
 - On context pressure → **context-reset**: save state, write handoff, hand off cleanly
 - Log significant actions: `ai-hats task log <ID> "message"`
