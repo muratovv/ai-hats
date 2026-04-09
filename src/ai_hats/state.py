@@ -277,7 +277,7 @@ class TaskManager:
             if merge:
                 active.merge()
             else:
-                active.discard()
+                active.discard(force=True)  # failed → intentional discard
         except Exception:
             logger.warning(
                 "Worktree %s failed, branch '%s' preserved",

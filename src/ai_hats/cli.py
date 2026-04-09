@@ -623,12 +623,16 @@ def wt_create(branch: str):
 @wt.command("merge")
 @click.argument("branch", required=False)
 @click.option("--squash", is_flag=True, default=False, help="Squash all commits into one")
-def wt_merge(branch: str | None, squash: bool):
+@click.option("--force", is_flag=True, default=False, help="Merge even with uncommitted changes")
+def wt_merge(branch: str | None, squash: bool, force: bool):
     """Merge worktree changes back and clean up.
 
     Without BRANCH: auto-detect from CWD (if inside a linked worktree).
     Default: --no-ff merge preserving commit history.
+    Refuses if worktree has uncommitted changes (use --force to override).
     """
+    from .worktree import WorktreeDirtyError
+
     mgr = _resolve_worktree(branch)
     if mgr is None:
         console.print("[yellow]No active worktree[/]")
@@ -637,17 +641,25 @@ def wt_merge(branch: str | None, squash: bool):
         sys.exit(1)
 
     name = mgr.branch_name
-    mgr.merge(squash=squash)
+    try:
+        mgr.merge(squash=squash, force=force)
+    except WorktreeDirtyError as e:
+        console.print(f"[red]Refused[/]: {e}")
+        sys.exit(1)
     console.print(f"[green]Merged[/]: {name}")
 
 
 @wt.command("discard")
 @click.argument("branch", required=False)
-def wt_discard(branch: str | None):
+@click.option("--force", is_flag=True, default=False, help="Discard even with uncommitted changes")
+def wt_discard(branch: str | None, force: bool):
     """Discard worktree changes and clean up.
 
     Without BRANCH: auto-detect from CWD (if inside a linked worktree).
+    Refuses if worktree has uncommitted changes (use --force to override).
     """
+    from .worktree import WorktreeDirtyError
+
     mgr = _resolve_worktree(branch)
     if mgr is None:
         console.print("[yellow]No active worktree[/]")
@@ -656,7 +668,11 @@ def wt_discard(branch: str | None):
         sys.exit(1)
 
     name = mgr.branch_name
-    mgr.discard()
+    try:
+        mgr.discard(force=force)
+    except WorktreeDirtyError as e:
+        console.print(f"[red]Refused[/]: {e}")
+        sys.exit(1)
     console.print(f"[green]Discarded[/]: {name}")
 
 

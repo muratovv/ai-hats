@@ -26,6 +26,10 @@ def _state_key(branch_name: str) -> str:
     return branch_name.replace("/", "-").lower()
 
 
+class WorktreeDirtyError(Exception):
+    """Raised when a destructive operation targets a worktree with uncommitted changes."""
+
+
 class IsolationMode(str, Enum):
     DISCARD = "discard"
     SQUASH = "squash"
@@ -84,10 +88,16 @@ class WorktreeManager:
         logger.info("Created worktree %s on branch %s", self.worktree_path, self.branch_name)
         return self.worktree_path
 
-    def merge(self, *, squash: bool = False) -> None:
-        """Merge worktree changes back into the original branch and clean up."""
+    def merge(self, *, squash: bool = False, force: bool = False) -> None:
+        """Merge worktree changes back into the original branch and clean up.
+
+        Raises WorktreeDirtyError if the worktree has uncommitted changes
+        unless force=True (HATS-062).
+        """
         if not self._is_git or self.worktree_path is None:
             return
+        if not force:
+            self._check_clean()
         try:
             if squash:
                 self._squash_merge()
@@ -102,10 +112,16 @@ class WorktreeManager:
         self._delete_branch()
         self._clear_state()
 
-    def discard(self) -> None:
-        """Remove worktree and branch without merging."""
+    def discard(self, *, force: bool = False) -> None:
+        """Remove worktree and branch without merging.
+
+        Raises WorktreeDirtyError if the worktree has uncommitted changes
+        unless force=True (HATS-062).
+        """
         if not self._is_git or self.worktree_path is None:
             return
+        if not force:
+            self._check_clean()
         self._remove_worktree()
         self._delete_branch()
         self.worktree_path = None
@@ -317,6 +333,21 @@ class WorktreeManager:
             text=True,
             check=True,
         )
+
+    def _check_clean(self) -> None:
+        """Raise WorktreeDirtyError if the worktree has uncommitted changes."""
+        if self.worktree_path is None:
+            return
+        try:
+            result = self._git("status", "--porcelain", cwd=self.worktree_path)
+        except subprocess.CalledProcessError:
+            return  # can't check — don't block
+        if result.stdout.strip():
+            raise WorktreeDirtyError(
+                f"Worktree '{self.branch_name}' has uncommitted changes.\n"
+                f"  Path: {self.worktree_path}\n"
+                f"  Commit your work first, or use --force to discard anyway."
+            )
 
     def _check_is_git(self) -> bool:
         if not (self.project_dir / ".git").exists():

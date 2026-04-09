@@ -485,3 +485,86 @@ class TestPerTaskRegistry:
         finally:
             mgr1.cleanup()
             mgr2.cleanup()
+
+
+# ---------------------------------------------------------------------------
+# Dirty worktree safety (HATS-062)
+# ---------------------------------------------------------------------------
+
+
+class TestDirtyWorktreeSafety:
+    def test_discard_refuses_on_dirty_worktree(self, git_project: Path) -> None:
+        from ai_hats.worktree import WorktreeDirtyError
+
+        mgr = WorktreeManager(git_project, branch_name="feat/dirty-discard")
+        wt = mgr.create()
+        mgr.save_state()
+
+        # Create uncommitted change
+        (wt / "unsaved.txt").write_text("work in progress")
+
+        try:
+            with pytest.raises(WorktreeDirtyError, match="uncommitted changes"):
+                mgr.discard()
+            # Worktree still exists
+            assert wt.exists()
+        finally:
+            mgr.discard(force=True)
+
+    def test_discard_force_overrides(self, git_project: Path) -> None:
+        mgr = WorktreeManager(git_project, branch_name="feat/dirty-force")
+        wt = mgr.create()
+        mgr.save_state()
+
+        (wt / "unsaved.txt").write_text("will be lost")
+        mgr.discard(force=True)
+
+        assert not wt.exists()
+
+    def test_discard_clean_worktree_succeeds(self, git_project: Path) -> None:
+        mgr = WorktreeManager(git_project, branch_name="feat/clean-discard")
+        wt = mgr.create()
+        mgr.save_state()
+
+        # Committed change — worktree is clean
+        (wt / "committed.txt").write_text("done")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "save work")
+
+        mgr.discard()
+        assert not wt.exists()
+
+    def test_merge_refuses_on_dirty_worktree(self, git_project: Path) -> None:
+        from ai_hats.worktree import WorktreeDirtyError
+
+        mgr = WorktreeManager(git_project, branch_name="feat/dirty-merge")
+        wt = mgr.create()
+        mgr.save_state()
+
+        (wt / "committed.txt").write_text("saved")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "saved work")
+        # Then add uncommitted change
+        (wt / "unsaved.txt").write_text("not committed")
+
+        try:
+            with pytest.raises(WorktreeDirtyError, match="uncommitted changes"):
+                mgr.merge()
+            assert wt.exists()
+        finally:
+            mgr.discard(force=True)
+
+    def test_merge_force_overrides(self, git_project: Path) -> None:
+        mgr = WorktreeManager(git_project, branch_name="feat/dirty-merge-force")
+        wt = mgr.create()
+        mgr.save_state()
+
+        (wt / "saved.txt").write_text("committed")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "save")
+        (wt / "extra.txt").write_text("uncommitted")
+
+        mgr.merge(force=True)
+        assert not wt.exists()
+        # Committed work merged
+        assert (git_project / "saved.txt").exists()
