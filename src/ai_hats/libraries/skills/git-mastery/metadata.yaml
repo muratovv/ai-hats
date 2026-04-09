@@ -9,3 +9,4 @@ pattern: reference
 git_hooks:
   pre-commit:
     - git_hooks/pre-commit-privacy.sh
+    - git_hooks/pre-commit-smoke.sh

@@ -78,6 +78,37 @@ defeats the entire purpose of the hook. The hook exists because the agent
 already proved it could not catch leaks unaided (HATS-001 retro). Treat
 its findings as a peer review, not as an obstacle.
 
+## Pre-Commit Smoke Gate (HATS-081)
+
+A second pre-commit hook (`pre-commit-smoke.sh`) runs `pytest -m smoke`
+whenever the **active ai-hats task** carries the `integration` tag.
+
+### How it works
+1. Hook reads `.agent/backlog/tasks/*/task.yaml` for any task in `execute` state.
+2. If such a task has `- integration` in its `tags:`, the hook runs
+   `pytest -m smoke -q --tb=line --no-header`.
+3. If all smoke tests pass → commit proceeds.
+4. If any test fails → commit is blocked with a short report.
+5. If no task is active, or the active task has no `integration` tag →
+   hook is a silent no-op (exit 0).
+6. If pytest is not installed or no tests are marked `@pytest.mark.smoke` →
+   silent pass.
+
+### Setting the `integration` tag
+The decision is made by the agent during **brainstorm** or **plan** (see
+backlog-manager). Heuristic: tag as `integration` when the task touches
+integration with an external tool, process, network call, sub-agent
+invocation, or filesystem writes outside `.agent/`.
+
+```bash
+ai-hats task update <ID> --add-tag integration
+```
+
+### Override
+```bash
+AI_HATS_SMOKE_SKIP=1 git commit ...
+```
+
 ## Anti-Patterns
 - Force push without approval — can destroy team members' work
 - Giant commits mixing multiple concerns — keep commits atomic
@@ -85,3 +116,4 @@ its findings as a peer review, not as an obstacle.
 - Committing agent config files to project repos — these are local agent state
 - Committing empty/placeholder files — wait until they have real content
 - Bypassing the privacy hook (`AI_HATS_PRIVACY_ACK=1`) without showing the user what was flagged
+- Declaring "done" on integration work without running the real-path smoke test at least once

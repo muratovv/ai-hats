@@ -45,4 +45,5 @@ line-length = 100
 testpaths = ["tests"]
 markers = [
     "integration: tests that spawn real subprocesses or use real PTY",
+    "smoke: lightweight real-path tests run by the pre-commit smoke gate on integration tasks",
 ]

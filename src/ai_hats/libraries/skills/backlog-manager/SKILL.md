@@ -70,6 +70,11 @@ Create or refine the task card. Clarify requirements.
 
 - Create task: `ai-hats task create "Title" -d "Description" -p <priority>`
 - If requirements are unclear → **request-supervisor**: ask supervisor for context
+- **Integration tagging:** decide whether the task involves integration with an
+  external tool, process, network call, sub-agent, or filesystem writes outside
+  `.agent/`. If yes → `ai-hats task update <ID> --add-tag integration`. This
+  activates the pre-commit smoke gate (owned by **git-mastery**), which runs
+  `pytest -m smoke` on every commit throughout the task lifecycle.
 - Output: task.yaml with clear description and acceptance criteria
 - Transition: `ai-hats task transition <ID> plan` when scope is understood
 
