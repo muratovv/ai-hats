@@ -43,6 +43,13 @@ line-length = 100
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    # Python 3.14 deprecates forkpty() in multi-threaded processes.
+    # Our PTY tests (test_observe.py) use pty.spawn() which calls forkpty()
+    # internally — there is no alternative API in stdlib. Safe to suppress
+    # until pty.spawn is updated upstream.
+    "ignore:.*use of forkpty.*:DeprecationWarning",
+]
 markers = [
     "integration: tests that spawn real subprocesses or use real PTY",
     "smoke: lightweight real-path tests run by the pre-commit smoke gate on integration tasks",
