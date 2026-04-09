@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -20,6 +22,7 @@ def _project_dir() -> Path:
 
 def _assembler(project_dir: Path | None = None):
     from .assembler import Assembler
+
     return Assembler(project_dir or _project_dir())
 
 
@@ -77,6 +80,7 @@ def main(ctx, provider: str | None, role: str | None):
 
 # -- init --
 
+
 @main.command()
 @click.option("--provider", "-p", default=None, help="Provider (gemini/claude)")
 @click.option("--role", "-r", default=None, help="Role to apply after init")
@@ -97,6 +101,7 @@ def init(provider: str | None, role: str | None):
 
 
 # -- set --
+
 
 @main.command("set")
 @click.option("--provider", "-p", default=None, help="Provider (gemini/claude)")
@@ -134,6 +139,7 @@ def set_role(provider: str | None, role: str | None):
 
 # -- customize --
 
+
 @main.command()
 @click.argument("role")
 @click.option("--add-trait", multiple=True, help="Add a trait to the role")
@@ -147,11 +153,15 @@ def set_role(provider: str | None, role: str | None):
 @click.option("--reset", "do_reset", is_flag=True, help="Remove all customizations for role")
 def customize(
     role: str,
-    add_trait: tuple, remove_trait: tuple,
-    add_rule: tuple, remove_rule: tuple,
-    add_skill: tuple, remove_skill: tuple,
+    add_trait: tuple,
+    remove_trait: tuple,
+    add_rule: tuple,
+    remove_rule: tuple,
+    add_skill: tuple,
+    remove_skill: tuple,
     injection_append: str | None,
-    show_only: bool, do_reset: bool,
+    show_only: bool,
+    do_reset: bool,
 ):
     """Customize a role: add/remove traits, rules, skills."""
     from .models import OverlayConfig, ProjectConfig
@@ -177,11 +187,14 @@ def customize(
             console.print(f"[dim]No customizations for {role}[/]")
         else:
             import yaml
+
             console.print(f"[bold]{role}[/] customizations:")
             console.print(yaml.dump(overlay.to_dict(), default_flow_style=False).rstrip())
         return
 
-    has_changes = any([add_trait, remove_trait, add_rule, remove_rule, add_skill, remove_skill, injection_append])
+    has_changes = any(
+        [add_trait, remove_trait, add_rule, remove_rule, add_skill, remove_skill, injection_append]
+    )
     if not has_changes:
         console.print("[yellow]No changes specified[/]. Use --add-trait, --remove-trait, etc.")
         return
@@ -225,10 +238,12 @@ def customize(
     config.save(config_path)
     console.print(f"[green]Updated[/] customizations for [bold]{role}[/]")
     import yaml
+
     console.print(yaml.dump(overlay.to_dict(), default_flow_style=False).rstrip())
 
 
 # -- status --
+
 
 @main.command()
 def status():
@@ -283,6 +298,7 @@ def status():
 
 # -- bump --
 
+
 @main.command()
 def bump():
     """Update to latest component versions (re-assemble)."""
@@ -296,6 +312,7 @@ def bump():
 
 # -- rollback --
 
+
 @main.command()
 def rollback():
     """Rollback to previous state."""
@@ -308,6 +325,7 @@ def rollback():
 
 # -- clean --
 
+
 @main.command()
 def clean():
     """Clean active directories."""
@@ -317,6 +335,7 @@ def clean():
 
 
 # -- list --
+
 
 @main.group("list")
 def list_cmd():
@@ -415,6 +434,7 @@ def list_skills():
 
 # -- whoami --
 
+
 @main.command()
 def whoami():
     """Show diagnostic session info."""
@@ -426,9 +446,12 @@ def whoami():
 
 # -- token-stats --
 
+
 @main.command("token-stats")
 @click.argument("name")
-@click.option("--trait", "as_trait", is_flag=True, default=False, help="Analyze as trait instead of role")
+@click.option(
+    "--trait", "as_trait", is_flag=True, default=False, help="Analyze as trait instead of role"
+)
 @click.option("--approx", is_flag=True, default=False, help="Use len//4 instead of Anthropic SDK")
 def token_stats(name: str, as_trait: bool, approx: bool):
     """Show token cost breakdown for a role or trait."""
@@ -451,7 +474,12 @@ def token_stats(name: str, as_trait: bool, approx: bool):
     table.add_column("Component", footer="TOTAL")
     table.add_column("Category", style="dim")
     table.add_column("Tokens", justify="right", footer=f"[bold]{breakdown.total_tokens:,}[/]")
-    table.add_column("Chars", justify="right", style="dim", footer=f"{sum(c.chars for c in breakdown.components):,}")
+    table.add_column(
+        "Chars",
+        justify="right",
+        style="dim",
+        footer=f"{sum(c.chars for c in breakdown.components):,}",
+    )
 
     for c in breakdown.components:
         table.add_row(c.name, c.category, f"{c.tokens:,}", f"{c.chars:,}")
@@ -481,12 +509,15 @@ def _launch_session(
 
     runner = WrapRunner(project_dir)
     exit_code = runner.run(
-        effective_provider, role_override=role, extra_args=extra_args or None,
+        effective_provider,
+        role_override=role,
+        extra_args=extra_args or None,
     )
     sys.exit(exit_code)
 
 
 # -- run --
+
 
 @main.command("run")
 @click.argument("role")
@@ -494,13 +525,17 @@ def _launch_session(
 @click.option("--model", default=None, help="Model override")
 @click.option("--task", default=None, help="Task description")
 @click.option(
-    "--isolation", default="discard",
+    "--isolation",
+    default="discard",
     type=click.Choice(["discard", "squash", "branch"]),
     help="Worktree isolation mode (default: discard)",
 )
-def run_subagent(role: str, ticket: str | None, model: str | None, task: str | None, isolation: str):
+def run_subagent(
+    role: str, ticket: str | None, model: str | None, task: str | None, isolation: str
+):
     """Run a sub-agent with the given role."""
     from .runtime import SubAgentRunner
+
     runner = SubAgentRunner(_project_dir())
     session = runner.run(
         role_name=role,
@@ -514,6 +549,7 @@ def run_subagent(role: str, ticket: str | None, model: str | None, task: str | N
 
 
 # -- wt (worktree) --
+
 
 @main.group()
 def wt():
@@ -619,12 +655,84 @@ def wt_status():
     console.print(f"  Path: {mgr.worktree_path}")
 
 
+@wt.command("exec", context_settings={"ignore_unknown_options": True})
+@click.argument("cmd_args", nargs=-1, type=click.UNPROCESSED, required=True)
+def wt_exec(cmd_args: tuple[str, ...]):
+    """Run a command inside the active worktree (cwd + PYTHONPATH=src).
+
+    Replaces gnarly shell boilerplate like:
+
+    \b
+        WT=/var/folders/.../ai-hats-wt-...
+        PYTHONPATH=$WT/src python -m pytest tests/test_foo.py -xvs
+
+    Use `--` to separate ai-hats args from the inner command:
+
+    \b
+        ai-hats wt exec -- pytest tests/test_foo.py -xvs
+        ai-hats wt exec -- python -c 'import ai_hats; print(ai_hats.__file__)'
+        ai-hats wt exec -- ruff check src/
+    """
+    from .worktree import WorktreeManager
+
+    mgr = WorktreeManager.load_active(_project_dir())
+    if mgr is None:
+        console.print("[yellow]No active worktree[/]")
+        sys.exit(1)
+
+    wt_path = mgr.worktree_path
+    if wt_path is None:
+        console.print("[red]Active worktree has no path[/]")
+        sys.exit(1)
+
+    env = os.environ.copy()
+    src_path = str(wt_path / "src")
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{src_path}:{existing}" if existing else src_path
+
+    try:
+        result = subprocess.run(list(cmd_args), cwd=str(wt_path), env=env)
+    except FileNotFoundError as e:
+        console.print(f"[red]Command not found:[/] {e.filename}")
+        sys.exit(127)
+    sys.exit(result.returncode)
+
+
+@wt.command("env")
+def wt_env():
+    """Print shell exports for the active worktree (eval-friendly).
+
+    Usage:
+
+    \b
+        eval "$(ai-hats wt env)"
+        # now $WT and $PYTHONPATH are set; cd to it manually if needed
+    """
+    from .worktree import WorktreeManager
+
+    mgr = WorktreeManager.load_active(_project_dir())
+    if mgr is None:
+        click.echo("# no active worktree", err=True)
+        sys.exit(1)
+
+    wt_path = mgr.worktree_path
+    if wt_path is None:
+        click.echo("# active worktree has no path", err=True)
+        sys.exit(1)
+
+    click.echo(f'export WT="{wt_path}"')
+    click.echo(f'export PYTHONPATH="{wt_path}/src${{PYTHONPATH:+:$PYTHONPATH}}"')
+
+
 # -- judge --
+
 
 @main.command()
 @click.option("--bundle", "bundle_id", default=None, help="Bundle id to judge")
 @click.option("--sessions", default=None, help="Comma-separated session ids (auto-bundle)")
-@click.option("--last", "last_n", default=None, type=int, help="Judge last N sessions (auto-bundle)")
+@click.option(
+    "--last", "last_n", default=None, type=int, help="Judge last N sessions (auto-bundle)"
+)
 @click.option("--focus", default=None, help="Focus lens for the judge")
 def judge(bundle_id: str | None, sessions: str | None, last_n: int | None, focus: str | None):
     """Spawn judge sub-agent over a bundle and validate its output."""
@@ -633,8 +741,7 @@ def judge(bundle_id: str | None, sessions: str | None, last_n: int | None, focus
     runner = JudgeRunner(_project_dir())
     session_ids = [s.strip() for s in sessions.split(",")] if sessions else None
     label = bundle_id or (
-        f"sessions={','.join(session_ids)}" if session_ids
-        else f"last={last_n}" if last_n else "?"
+        f"sessions={','.join(session_ids)}" if session_ids else f"last={last_n}" if last_n else "?"
     )
     try:
         with console.status(
@@ -657,6 +764,7 @@ def judge(bundle_id: str | None, sessions: str | None, last_n: int | None, focus
 
 
 # -- retro --
+
 
 @main.command()
 @click.argument("session_id", required=False)
@@ -710,14 +818,13 @@ def retro(session_id: str | None, use_last: bool, mode: str, timeout: int):
         sys.exit(1)
     except RuntimeError as exc:
         console.print(f"[red]LLM call failed[/]: {exc}")
-        console.print(
-            "[dim]Tip: try --timeout 600 or fall back to --mode programmatic[/]"
-        )
+        console.print("[dim]Tip: try --timeout 600 or fall back to --mode programmatic[/]")
         sys.exit(1)
     console.print(f"[green]Session retro[/]: {path}")
 
 
 # -- bundle --
+
 
 @main.group()
 def bundle():
@@ -798,11 +905,13 @@ def bundle_show(bundle_id: str):
 
 # -- audit --
 
+
 @main.command()
 @click.option("--session", default=None, help="Session ID to audit")
 def audit(session: str | None):
     """Show audit for a session."""
     from .observe import SessionManager
+
     mgr = SessionManager(_project_dir())
 
     if session:
@@ -823,8 +932,11 @@ def audit(session: str | None):
 
 # -- retro schema utilities --
 
+
 @main.command("retro-validate")
-@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument(
+    "paths", nargs=-1, required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path)
+)
 def retro_validate(paths: tuple[Path, ...]) -> None:
     """Validate one or more retro files (session-retro / bundle / judge-retro)."""
     from .retro.loader import load
@@ -846,7 +958,9 @@ def retro_validate(paths: tuple[Path, ...]) -> None:
 
 
 @main.command("retro-migrate")
-@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument(
+    "paths", nargs=-1, required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path)
+)
 @click.option("--dry-run", is_flag=True, help="Show what would change without writing")
 def retro_migrate(paths: tuple[Path, ...], dry_run: bool) -> None:
     """Migrate retro files in-place to the latest schema for their family.
@@ -879,9 +993,7 @@ def retro_migrate(paths: tuple[Path, ...], dry_run: bool) -> None:
                 )
             else:
                 dump(model, path, body=body)
-                console.print(
-                    f"[green]MIGRATED[/] {path}: {before_version} → {after_version}"
-                )
+                console.print(f"[green]MIGRATED[/] {path}: {before_version} → {after_version}")
                 changed += 1
         except Exception as exc:
             console.print(f"[red]FAIL[/] {path}: {type(exc).__name__}: {exc}")
@@ -892,6 +1004,7 @@ def retro_migrate(paths: tuple[Path, ...], dry_run: bool) -> None:
 
 
 # -- task management --
+
 
 @main.group()
 def task():
@@ -907,16 +1020,29 @@ def task():
 @click.option("--role", default="", help="Assigned role")
 @click.option("--reviewer", default="user", help="Reviewer (user or agent)")
 @click.option("--tag", multiple=True, help="Tags")
-def task_create(task_id: str | None, title: str, description: str, priority: str, role: str, reviewer: str, tag: tuple):
+def task_create(
+    task_id: str | None,
+    title: str,
+    description: str,
+    priority: str,
+    role: str,
+    reviewer: str,
+    tag: tuple,
+):
     """Create a new task card. ID is auto-generated if omitted."""
     from .state import TaskManager
+
     mgr = TaskManager(_project_dir())
     if task_id is None:
         task_id = mgr.next_id()
     t = mgr.create_task(
-        task_id, title,
-        description=description, priority=priority,
-        role=role, reviewer=reviewer, tags=list(tag),
+        task_id,
+        title,
+        description=description,
+        priority=priority,
+        role=role,
+        reviewer=reviewer,
+        tags=list(tag),
     )
     console.print(f"[green]Created[/]: {t.id} — {t.title} [{t.state.value}] ({t.priority})")
 
@@ -924,11 +1050,14 @@ def task_create(task_id: str | None, title: str, description: str, priority: str
 @task.command("transition")
 @click.argument("task_id")
 @click.argument("new_state")
-@click.option("--final-state", default=None, help="Final accomplished state (for review transition)")
+@click.option(
+    "--final-state", default=None, help="Final accomplished state (for review transition)"
+)
 def task_transition(task_id: str, new_state: str, final_state: str | None):
     """Transition a task to a new state."""
     from .models import TaskState
     from .state import TaskManager
+
     mgr = TaskManager(_project_dir())
     try:
         state = TaskState(new_state)
@@ -947,6 +1076,7 @@ def task_transition(task_id: str, new_state: str, final_state: str | None):
                 console.print(f"  Plan scaffold: {plan_path}")
         elif state == TaskState.EXECUTE:
             from .worktree import WorktreeManager
+
             project_dir = _project_dir()
             active = WorktreeManager.load_active(project_dir)
             if active and active.worktree_path:
@@ -969,31 +1099,48 @@ def task_transition(task_id: str, new_state: str, final_state: str | None):
 @click.argument("task_id")
 @click.option("--title", default=None, help="New title")
 @click.option("--description", "-d", default=None, help="New description")
-@click.option("--priority", "-p", default=None, type=click.Choice(["low", "medium", "high"]), help="Priority")
+@click.option(
+    "--priority", "-p", default=None, type=click.Choice(["low", "medium", "high"]), help="Priority"
+)
 @click.option("--resolution", default=None, help="Resolution note (why closed)")
 @click.option("--role", default=None, help="Assigned role")
 @click.option("--reviewer", default=None, help="Reviewer")
 @click.option("--add-tag", multiple=True, help="Add tag")
 @click.option("--remove-tag", multiple=True, help="Remove tag")
 def task_update(
-    task_id: str, title: str | None, description: str | None,
-    priority: str | None, resolution: str | None, role: str | None,
-    reviewer: str | None, add_tag: tuple, remove_tag: tuple,
+    task_id: str,
+    title: str | None,
+    description: str | None,
+    priority: str | None,
+    resolution: str | None,
+    role: str | None,
+    reviewer: str | None,
+    add_tag: tuple,
+    remove_tag: tuple,
 ):
     """Update task card fields."""
     from .state import TaskManager
+
     mgr = TaskManager(_project_dir())
 
-    has_changes = any([title, description, priority, resolution, role, reviewer, add_tag, remove_tag])
+    has_changes = any(
+        [title, description, priority, resolution, role, reviewer, add_tag, remove_tag]
+    )
     if not has_changes:
-        console.print("[yellow]No changes specified[/]. Use --title, --priority, --description, etc.")
+        console.print(
+            "[yellow]No changes specified[/]. Use --title, --priority, --description, etc."
+        )
         return
 
     try:
         t = mgr.update_task(
             task_id,
-            title=title, description=description, priority=priority,
-            resolution=resolution, role=role, reviewer=reviewer,
+            title=title,
+            description=description,
+            priority=priority,
+            resolution=resolution,
+            role=role,
+            reviewer=reviewer,
             add_tags=list(add_tag) if add_tag else None,
             remove_tags=list(remove_tag) if remove_tag else None,
         )
@@ -1010,6 +1157,7 @@ def task_update(
 def task_log(task_id: str, message: str, session: str | None):
     """Log work progress on a task."""
     from .state import TaskManager
+
     mgr = TaskManager(_project_dir())
     try:
         t = mgr.log_work(task_id, message, session_id=session or "")
@@ -1087,6 +1235,7 @@ def task_list(state: str | None, priority: str | None, show_all: bool):
 def task_show(task_id: str):
     """Show task card details."""
     from .state import TaskManager
+
     mgr = TaskManager(_project_dir())
     t = mgr.get_task(task_id)
     if t is None:
@@ -1106,6 +1255,7 @@ def task_show(task_id: str):
 def task_sync():
     """Synchronize backlog.md and STATE.md with task cards."""
     from .state import TaskManager
+
     mgr = TaskManager(_project_dir())
     count = mgr.sync()
     console.print(f"[green]Synced[/]: {count} tasks")
@@ -1117,13 +1267,19 @@ GIT_INSTALL_URL = "git+ssh://git@github.com/muratovv/ai-hats.git"
 def _build_update_cmd() -> list[str]:
     """Build the pip command for updating ai-hats from GitHub."""
     return [
-        sys.executable, "-m", "pip", "install",
-        "--force-reinstall", "--no-deps", "--no-cache-dir",
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--force-reinstall",
+        "--no-deps",
+        "--no-cache-dir",
         f"ai-hats @ {GIT_INSTALL_URL}",
     ]
 
 
 # -- update --
+
 
 def _get_installed_version() -> str:
     """Get the currently installed ai-hats version via subprocess.
@@ -1134,7 +1290,8 @@ def _get_installed_version() -> str:
 
     result = subprocess.run(
         [sys.executable, "-c", "from ai_hats import __version__; print(__version__)"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
@@ -1147,21 +1304,33 @@ def _get_changelog() -> str:
     tmp = tempfile.mkdtemp(prefix="ai-hats-changelog-")
     try:
         result = subprocess.run(
-            ["git", "clone", "--depth", "10", "--filter=blob:none", "--quiet",
-             "ssh://git@github.com/muratovv/ai-hats.git", tmp],
-            capture_output=True, text=True, timeout=15,
+            [
+                "git",
+                "clone",
+                "--depth",
+                "10",
+                "--filter=blob:none",
+                "--quiet",
+                "ssh://git@github.com/muratovv/ai-hats.git",
+                tmp,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         if result.returncode != 0:
             return ""
         log = subprocess.run(
             ["git", "-C", tmp, "log", "--oneline", "-7"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         return log.stdout.strip() if log.returncode == 0 else ""
     except Exception:
         return ""
     finally:
         import shutil
+
         shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -1177,7 +1346,8 @@ def _snapshot_library() -> dict[str, set[str]]:
 
 
 def _format_component_diff(
-    before: dict[str, set[str]], after: dict[str, set[str]],
+    before: dict[str, set[str]],
+    after: dict[str, set[str]],
 ) -> bool:
     """Print added/removed components. Returns True if any changes found."""
     any_changes = False
@@ -1204,7 +1374,8 @@ def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
         return set(), set()
     try:
         result = asm.composer.compose(
-            profile.active_role, overlay=asm._get_overlay(profile.active_role),
+            profile.active_role,
+            overlay=asm._get_overlay(profile.active_role),
         )
         return {r.name for r in result.rules}, {s.name for s in result.skills}
     except Exception:
@@ -1299,14 +1470,14 @@ def update():
             console.print(f"  [red]Bump failed[/]: {e}")
 
 
-
-
 # -- migrate --
+
 
 @main.command()
 def migrate():
     """Run migrations for ai-hats updates."""
     from .models import ProjectConfig
+
     project_dir = _project_dir()
     config_path = project_dir / "ai-hats.yaml"
 

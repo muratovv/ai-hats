@@ -38,6 +38,29 @@ Isolated development using git worktrees. Each task gets its own working copy �
 | `ai-hats wt discard` | Delete worktree and branch |
 | `ai-hats wt list` | Show all worktrees |
 | `ai-hats wt status` | Show active worktree |
+| `ai-hats wt exec -- <cmd>` | Run command in worktree (auto cwd + PYTHONPATH=src) |
+| `ai-hats wt env` | Print `export WT=... PYTHONPATH=...` for eval |
+
+## Running Commands in Worktree
+
+**Always use `wt exec` instead of manual WT=/PYTHONPATH= boilerplate:**
+
+```bash
+# CORRECT — single command, no env vars, no permission noise:
+ai-hats wt exec -- pytest tests/test_foo.py -xvs
+ai-hats wt exec -- python -c 'import ai_hats; print(ai_hats.__file__)'
+ai-hats wt exec -- ruff check src/
+
+# WRONG — generates garbage permission entries on every new worktree:
+WT=/var/folders/.../ai-hats-wt-...
+PYTHONPATH=$WT/src python -m pytest tests/test_foo.py -xvs
+```
+
+For interactive shell work (rare):
+```bash
+eval "$(ai-hats wt env)"
+cd $WT
+```
 
 ## When to Use
 

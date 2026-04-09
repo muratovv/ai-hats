@@ -7,7 +7,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 
+from ai_hats.cli import main
 from ai_hats.worktree import WorktreeManager
 
 
@@ -40,6 +42,7 @@ def git_project(tmp_path: Path) -> Path:
 # Explicit branch name
 # ---------------------------------------------------------------------------
 
+
 class TestExplicitBranch:
     def test_create_with_branch_name(self, git_project: Path) -> None:
         mgr = WorktreeManager(git_project, branch_name="feat/my-feature")
@@ -63,6 +66,7 @@ class TestExplicitBranch:
 # ---------------------------------------------------------------------------
 # State persistence
 # ---------------------------------------------------------------------------
+
 
 class TestStatePersistence:
     def test_save_state_creates_file(self, git_project: Path) -> None:
@@ -99,11 +103,15 @@ class TestStatePersistence:
     def test_load_active_returns_none_when_stale(self, git_project: Path) -> None:
         """If worktree dir was deleted externally, load_active cleans up."""
         state_path = git_project / ".agent" / "worktree.json"
-        state_path.write_text(json.dumps({
-            "branch": "feat/stale",
-            "worktree_path": "/tmp/nonexistent-worktree-12345",
-            "original_branch": "master",
-        }))
+        state_path.write_text(
+            json.dumps(
+                {
+                    "branch": "feat/stale",
+                    "worktree_path": "/tmp/nonexistent-worktree-12345",
+                    "original_branch": "master",
+                }
+            )
+        )
         assert WorktreeManager.load_active(git_project) is None
         assert not state_path.exists()
 
@@ -111,6 +119,7 @@ class TestStatePersistence:
 # ---------------------------------------------------------------------------
 # Persistent merge flow (create → save → load → merge)
 # ---------------------------------------------------------------------------
+
 
 class TestPersistentMerge:
     def test_create_save_load_merge(self, git_project: Path) -> None:
@@ -175,6 +184,7 @@ class TestPersistentMerge:
 # List worktrees
 # ---------------------------------------------------------------------------
 
+
 class TestListWorktrees:
     def test_list_includes_created_worktree(self, git_project: Path) -> None:
         mgr = WorktreeManager(git_project, branch_name="feat/listed")
@@ -225,3 +235,116 @@ class TestIsInsideLinkedWorktree:
 
     def test_non_git_dir_returns_false(self, tmp_path: Path) -> None:
         assert WorktreeManager.is_inside_linked_worktree(tmp_path) is False
+
+
+# ---------------------------------------------------------------------------
+# wt exec / wt env (HATS-089 category A: worktree boilerplate replacement)
+# ---------------------------------------------------------------------------
+
+
+class _FakeCompleted:
+    """Stand-in for subprocess.CompletedProcess used by wt_exec."""
+
+    def __init__(self, returncode: int) -> None:
+        self.returncode = returncode
+
+
+@pytest.fixture
+def active_worktree(git_project: Path, monkeypatch):
+    """Create a worktree, save state, and chdir to project. Auto-cleanup."""
+    monkeypatch.chdir(git_project)
+    mgr = WorktreeManager(git_project, branch_name="feat/exec-test")
+    wt = mgr.create()
+    mgr.save_state()
+    yield git_project, wt
+    mgr.cleanup()
+
+
+class TestWtExec:
+    def test_runs_in_worktree_cwd_with_pythonpath(self, active_worktree, monkeypatch) -> None:
+        project, wt = active_worktree
+        captured: dict = {}
+
+        def fake_run(cmd, cwd=None, env=None, **kwargs):
+            captured["cmd"] = cmd
+            captured["cwd"] = cwd
+            captured["env"] = env
+            return _FakeCompleted(returncode=0)
+
+        monkeypatch.setattr("ai_hats.cli.subprocess.run", fake_run)
+        runner = CliRunner()
+        result = runner.invoke(main, ["wt", "exec", "--", "pytest", "-xvs"])
+
+        assert result.exit_code == 0, result.output
+        assert captured["cmd"] == ["pytest", "-xvs"]
+        assert captured["cwd"] == str(wt)
+        assert captured["env"]["PYTHONPATH"].startswith(f"{wt}/src")
+
+    def test_pythonpath_prepends_existing(self, active_worktree, monkeypatch) -> None:
+        project, wt = active_worktree
+        monkeypatch.setenv("PYTHONPATH", "/pre/existing")
+        captured: dict = {}
+
+        def fake_run(cmd, cwd=None, env=None, **kwargs):
+            captured["env"] = env
+            return _FakeCompleted(returncode=0)
+
+        monkeypatch.setattr("ai_hats.cli.subprocess.run", fake_run)
+        runner = CliRunner()
+        runner.invoke(main, ["wt", "exec", "--", "true"])
+
+        assert captured["env"]["PYTHONPATH"] == f"{wt}/src:/pre/existing"
+
+    def test_propagates_exit_code(self, active_worktree, monkeypatch) -> None:
+        def fake_run(cmd, cwd=None, env=None, **kwargs):
+            return _FakeCompleted(returncode=42)
+
+        monkeypatch.setattr("ai_hats.cli.subprocess.run", fake_run)
+        runner = CliRunner()
+        result = runner.invoke(main, ["wt", "exec", "--", "false"])
+        assert result.exit_code == 42
+
+    def test_no_active_worktree_exits_1(self, git_project: Path, monkeypatch) -> None:
+        monkeypatch.chdir(git_project)
+        runner = CliRunner()
+        result = runner.invoke(main, ["wt", "exec", "--", "echo", "hi"])
+        assert result.exit_code == 1
+        assert "No active worktree" in result.output
+
+    def test_command_not_found_exits_127(self, git_project: Path, monkeypatch) -> None:
+        # Self-contained: create + run + cleanup before any patch teardown,
+        # so the fake subprocess.run never collides with worktree cleanup.
+        monkeypatch.chdir(git_project)
+        mgr = WorktreeManager(git_project, branch_name="feat/notfound-test")
+        mgr.create()
+        mgr.save_state()
+        try:
+            from unittest.mock import patch
+
+            def fake_run(cmd, cwd=None, env=None, **kwargs):
+                raise FileNotFoundError(2, "not found", "missing-binary")
+
+            with patch("ai_hats.cli.subprocess.run", fake_run):
+                runner = CliRunner()
+                result = runner.invoke(main, ["wt", "exec", "--", "missing-binary"])
+            assert result.exit_code == 127
+            assert "missing-binary" in result.output
+        finally:
+            mgr.cleanup()
+
+
+class TestWtEnv:
+    def test_outputs_exports(self, active_worktree) -> None:
+        project, wt = active_worktree
+        runner = CliRunner()
+        result = runner.invoke(main, ["wt", "env"])
+
+        assert result.exit_code == 0
+        assert f'export WT="{wt}"' in result.output
+        assert f'export PYTHONPATH="{wt}/src' in result.output
+
+    def test_no_active_worktree_exits_1(self, git_project: Path, monkeypatch) -> None:
+        monkeypatch.chdir(git_project)
+        runner = CliRunner()
+        result = runner.invoke(main, ["wt", "env"])
+        assert result.exit_code == 1

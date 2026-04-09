@@ -304,7 +304,13 @@ class WrapRunner:
         claude_session_id = str(uuid.uuid4())
         cmd = provider.get_cli_command(extra_args)
         cmd.extend(override_args)
-        if provider_name == "claude":
+        # Don't inject --session-id when the user is resuming/continuing
+        # an existing session — it already has its own id, and Claude CLI
+        # rejects --session-id + --resume without --fork-session.
+        _resuming = extra_args and any(
+            f in extra_args for f in ("--resume", "--continue", "-c")
+        )
+        if provider_name == "claude" and not _resuming:
             cmd += ["--session-id", claude_session_id]
         session.log_trace(TraceTag.SYS, f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")
