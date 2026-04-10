@@ -793,19 +793,19 @@ def _launch_interactive_judge(project_dir: Path, retro_path: Path) -> None:
     provider = get_provider(provider_name)
     retro_text = retro_path.read_text()
 
-    initial_prompt = (
-        "You are reviewing the following judge retro findings with the user. "
+    system_prompt = (
+        "You are reviewing judge retro findings with the user. "
         "Help them understand the findings, discuss priorities, and decide on "
         "improvements. If they want to create a hypothesis task, help draft it.\n\n"
-        f"---\n{retro_text}\n---\n\n"
-        "What would you like to discuss?"
+        "Judge retro:\n"
+        f"---\n{retro_text}\n---"
     )
 
     cmd = provider.get_cli_command()
     if provider.name == "claude":
-        full_cmd = cmd + ["-p", initial_prompt]
+        full_cmd = cmd + ["--system-prompt", system_prompt]
     elif provider.name == "gemini":
-        full_cmd = cmd + [initial_prompt]
+        full_cmd = cmd + [system_prompt]
     else:
         full_cmd = cmd
 
