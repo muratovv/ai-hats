@@ -29,6 +29,16 @@ def _make_session(project: Path, session_id: str) -> Path:
     (sdir / "metrics.json").write_text(
         json.dumps({"role": "test", "turns": 1, "tool_calls": 2, "exit_code": 0})
     )
+    # Create a minimal session retro so _ensure_session_retro doesn't
+    # attempt LLM generation (which requires a real provider CLI).
+    retro_dir = project / ".agent" / "retrospectives" / "sessions" / "programmatic"
+    retro_dir.mkdir(parents=True, exist_ok=True)
+    (retro_dir / f"{session_id}.md").write_text(
+        f"---\nschema: hats-session-retro/v1\nsession_id: {session_id}\n"
+        f"project: test\nrole: test\ndate: '2026-04-08'\n"
+        f"metrics: {{exit_code: 0, turns: 1, tool_calls: 2}}\n"
+        f"summary: test session\n---\n# Retro\n"
+    )
     return sdir
 
 
@@ -453,3 +463,74 @@ def test_judge_integrity_check_via_validate_integrity_directly(project: Path) ->
     assert bundle.bundle_id in msg
     assert "session-not-in-bundle" in msg
     assert "F1" in msg
+
+
+# --- HATS-110: _ensure_session_retro auto-generation ---
+
+
+def _write_session_retro(project: Path, session_id: str, mode: str = "llm") -> Path:
+    """Write a minimal session retro file and return its path."""
+    retro_dir = project / ".agent" / "retrospectives" / "sessions" / mode
+    retro_dir.mkdir(parents=True, exist_ok=True)
+    path = retro_dir / f"{session_id}.md"
+    path.write_text(
+        f"---\nschema: hats-session-retro/v1\nsession_id: {session_id}\n"
+        f"project: test\nrole: test\ndate: '2026-04-08'\n"
+        f"metrics: {{exit_code: 0, turns: 1, tool_calls: 1}}\n"
+        f"summary: test summary\n---\n# Retro\n"
+    )
+    return path
+
+
+def test_ensure_session_retro_returns_existing(project: Path) -> None:
+    """When retro already exists, _ensure_session_retro returns it without generating."""
+    sid = "20260408-101010-1"
+    _make_session(project, sid)
+    existing = _write_session_retro(project, sid, mode="llm")
+
+    bm = BundleManager(project)
+    runner = JudgeRunner(project, subagent_runner=FakeSubAgentRunner(project, []), bundle_manager=bm)
+
+    result = runner._ensure_session_retro(sid)
+    assert result == existing
+
+
+def test_ensure_session_retro_generates_programmatic_on_llm_failure(
+    project: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When LLM generation fails, falls back to programmatic mode."""
+    sid = "20260408-101010-1"
+    _make_session(project, sid)
+    # Also need a git repo for SessionRetroBuilder._git calls
+    import subprocess
+    subprocess.run(["git", "init"], cwd=project, capture_output=True, check=True)
+
+    bm = BundleManager(project)
+    runner = JudgeRunner(project, subagent_runner=FakeSubAgentRunner(project, []), bundle_manager=bm)
+
+    # Patch SubprocessLLMCaller to always fail
+    from ai_hats.retro.llm_caller import SubprocessLLMCaller
+
+    def _boom_call(self, prompt):
+        raise RuntimeError("LLM unavailable")
+
+    monkeypatch.setattr(SubprocessLLMCaller, "__call__", _boom_call)
+
+    result = runner._ensure_session_retro(sid)
+    assert result is not None
+    assert "/programmatic/" in str(result)
+    assert result.exists()
+
+
+def test_ensure_session_retro_returns_none_when_all_fail(
+    project: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When both LLM and programmatic fail, returns None."""
+    sid = "20260408-999999-1"  # non-existent session dir
+    # Don't create session dir → SessionRetroBuilder will raise FileNotFoundError
+
+    bm = BundleManager(project)
+    runner = JudgeRunner(project, subagent_runner=FakeSubAgentRunner(project, []), bundle_manager=bm)
+
+    result = runner._ensure_session_retro(sid)
+    assert result is None

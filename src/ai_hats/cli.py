@@ -778,40 +778,6 @@ def wt_env():
 # -- judge --
 
 
-def _launch_interactive_judge(project_dir: Path, retro_path: Path) -> None:
-    """Launch a full ai-hats session with judge role and retro context."""
-    import tempfile
-
-    retro_text = retro_path.read_text()
-
-    retro_context = (
-        "You are reviewing the following judge retro with the user. "
-        "Help them understand findings, discuss priorities, and decide on improvements. "
-        "You can create hypothesis tasks via `ai-hats task create`.\n\n"
-        "Judge retro:\n"
-        f"---\n{retro_text}\n---"
-    )
-
-    initial_message = (
-        "Summarize the key findings from this judge retro. "
-        "List them by priority with a brief explanation of impact and recommended action."
-    )
-
-    # Write context to temp file to avoid huge CLI argument that can break terminal rendering.
-    # File is cleaned up by OS after session exits (delete=False so child process can read it).
-    ctx_file = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".md", prefix="judge-ctx-", delete=False,
-    )
-    ctx_file.write(retro_context)
-    ctx_file.close()
-
-    console.print(f"[dim]Launching interactive judge session (retro: {retro_path.name})...[/]")
-    _launch_session(
-        role="judge",
-        extra_args=["--append-system-prompt-file", ctx_file.name, initial_message],
-    )
-
-
 @main.command()
 @click.option("--bundle", "bundle_id", default=None, help="Bundle id to judge")
 @click.option("--sessions", default=None, help="Comma-separated session ids (auto-bundle)")
@@ -819,30 +785,14 @@ def _launch_interactive_judge(project_dir: Path, retro_path: Path) -> None:
     "--last", "last_n", default=None, type=int, help="Judge last N sessions (auto-bundle)"
 )
 @click.option("--focus", default=None, help="Focus lens for the judge")
-@click.option(
-    "--interactive", "-i", is_flag=True, default=False,
-    help="Drop into interactive chat with judge findings after retro is saved",
-)
-@click.option(
-    "--retro", "retro_path", default=None,
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Skip judging, open interactive session with existing retro file",
-)
 def judge(
     bundle_id: str | None,
     sessions: str | None,
     last_n: int | None,
     focus: str | None,
-    interactive: bool,
-    retro_path: Path | None,
 ):
     """Spawn judge sub-agent over a bundle and validate its output."""
     project_dir = _project_dir()
-
-    # --retro: skip judging, go straight to interactive
-    if retro_path is not None:
-        _launch_interactive_judge(project_dir, retro_path)
-        return  # _launch_session calls sys.exit
 
     from .retro.judge import JudgeRunner, JudgeValidationError
 
@@ -873,9 +823,6 @@ def judge(
         console.print(f"[red]Judge output failed validation[/]:\n{exc}")
         sys.exit(2)
     console.print(f"[green]Judge retro[/]: {path}")
-
-    if interactive:
-        _launch_interactive_judge(project_dir, path)
 
 
 def _print_judge_context(
