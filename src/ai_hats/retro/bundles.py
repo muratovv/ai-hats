@@ -132,6 +132,13 @@ class BundleManager:
                 return existing
         return None
 
+    def reviewed_session_ids(self) -> set[str]:
+        """Return all session_ids that appear in any existing bundle."""
+        reviewed: set[str] = set()
+        for bundle in self.list():
+            reviewed.update(bundle.session_ids)
+        return reviewed
+
     def create_from_last(
         self,
         n: int,
