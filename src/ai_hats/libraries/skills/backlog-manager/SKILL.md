@@ -106,6 +106,11 @@ Create or refine the task card. Clarify requirements.
 
 Draft an implementation plan. Attach to task directory as `plan.md`.
 
+- **Approach validation (before elaborating):** Describe the proposed approach
+  in 2-3 sentences — core idea, key trade-off, alternative considered.
+  Wait for user confirmation before writing the full plan.
+  Do NOT elaborate implementation details, component breakdowns, or
+  state machines until the user confirms the direction.
 - **Requirement traceability:** If the user listed specific approaches, options,
   or alternatives to consider, create a checklist in plan.md:
   ```
