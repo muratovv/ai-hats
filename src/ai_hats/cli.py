@@ -813,19 +813,35 @@ def _launch_interactive_judge(project_dir: Path, retro_path: Path) -> None:
     "--interactive", "-i", is_flag=True, default=False,
     help="Drop into interactive chat with judge findings after retro is saved",
 )
+@click.option(
+    "--retro", "retro_path", default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Skip judging, open interactive session with existing retro file",
+)
 def judge(
     bundle_id: str | None,
     sessions: str | None,
     last_n: int | None,
     focus: str | None,
     interactive: bool,
+    retro_path: Path | None,
 ):
     """Spawn judge sub-agent over a bundle and validate its output."""
+    project_dir = _project_dir()
+
+    # --retro: skip judging, go straight to interactive
+    if retro_path is not None:
+        _launch_interactive_judge(project_dir, retro_path)
+        return  # _launch_session calls sys.exit
+
     from .retro.judge import JudgeRunner, JudgeValidationError
 
-    project_dir = _project_dir()
     runner = JudgeRunner(project_dir)
     session_ids = [s.strip() for s in sessions.split(",")] if sessions else None
+
+    # Show what we're about to judge
+    _print_judge_context(runner, bundle_id, session_ids, last_n, focus)
+
     label = bundle_id or (
         f"sessions={','.join(session_ids)}" if session_ids else f"last={last_n}" if last_n else "?"
     )
@@ -850,6 +866,35 @@ def judge(
 
     if interactive:
         _launch_interactive_judge(project_dir, path)
+
+
+def _print_judge_context(
+    runner, bundle_id: str | None, session_ids: list[str] | None,
+    last_n: int | None, focus: str | None,
+) -> None:
+    """Show bundle/session info before judging starts."""
+    try:
+        if bundle_id:
+            bundle = runner.bundles.get(bundle_id)
+            sids = bundle.session_ids
+        elif session_ids:
+            sids = session_ids
+        elif last_n:
+            from .observe import SessionManager
+            sessions = SessionManager(runner.project_dir).list_sessions(last_n=last_n)
+            sids = [s.session_id for s in sessions]
+        else:
+            return
+    except (FileNotFoundError, ValueError):
+        return
+
+    console.print("[bold]Judge run[/]")
+    console.print(f"  Sessions ({len(sids)}):")
+    for sid in sids:
+        console.print(f"    - {sid}")
+    if focus:
+        console.print(f"  Focus: [cyan]{focus}[/]")
+    console.print()
 
 
 @main.command("judge-aggregate")
