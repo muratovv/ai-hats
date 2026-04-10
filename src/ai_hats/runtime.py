@@ -217,6 +217,18 @@ def _finalize_session(
         except (Exception, KeyboardInterrupt):
             logger.warning("audit writer failed", exc_info=True)
 
+        # Smoke-test: non-error session should have turns after enrichment
+        try:
+            if exit_code == 0 and session.metrics_path.exists():
+                metrics = json.loads(session.metrics_path.read_text())
+                if metrics.get("turns", 0) == 0:
+                    logger.warning(
+                        "session %s: exit_code=0 but turns=0 — metrics may be incomplete",
+                        session.session_id,
+                    )
+        except (Exception, KeyboardInterrupt):
+            pass
+
         # Run session_end hooks AFTER metrics.json and enriched audit
         # are written, so hooks (e.g. auto-retro) can read them.
         try:

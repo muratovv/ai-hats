@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class TraceTag:
@@ -472,9 +475,17 @@ class AuditWriter:
             audit_content = self._format_audit(session, turns, model_stats=model_stats)
             self._write_metrics(session, turns, model_stats, agg_usage)
         else:
+            if jsonl_path:
+                logger.warning("JSONL not found at %s — falling back to trace", jsonl_path)
             entries = self._parse_trace(session.trace_path)
             turns = self._extract_turns(entries)
             audit_content = self._format_audit(session, turns)
+            # Write partial metrics from trace (no token data available)
+            self._write_metrics(
+                session, turns, model_stats={},
+                agg_usage={"input_tokens": 0, "output_tokens": 0,
+                           "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
+            )
         session.audit_path.write_text(audit_content)
 
         # Clean up raw trace — redundant after audit is written
