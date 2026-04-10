@@ -12,6 +12,7 @@ Pipeline:
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -29,6 +30,8 @@ from .writer import dump
 
 if TYPE_CHECKING:
     from ..runtime import SubAgentRunner
+
+logger = logging.getLogger(__name__)
 
 JUDGE_DELIM_START = "BEGIN_JUDGE_RETRO"
 JUDGE_DELIM_END = "END_JUDGE_RETRO"
@@ -152,12 +155,46 @@ class JudgeRunner:
                 return path
         return None
 
+    def _ensure_session_retro(self, session_id: str) -> Path | None:
+        """Return path to session retro, generating one if missing.
+
+        Tries LLM mode first; on failure warns and falls back to programmatic.
+        """
+        path = self._find_session_retro(session_id)
+        if path is not None:
+            return path
+
+        from .builder import BuilderMode, SessionRetroBuilder
+        from .llm_caller import SubprocessLLMCaller
+
+        # Try LLM mode
+        try:
+            llm_caller = SubprocessLLMCaller(self.project_dir)
+            builder = SessionRetroBuilder(self.project_dir, llm_caller=llm_caller)
+            return builder.build_and_save(session_id, mode=BuilderMode.LLM)
+        except Exception:
+            logger.warning(
+                "LLM retro generation failed for %s, falling back to programmatic",
+                session_id,
+                exc_info=True,
+            )
+
+        # Fallback to programmatic
+        try:
+            builder = SessionRetroBuilder(self.project_dir)
+            return builder.build_and_save(session_id, mode=BuilderMode.PROGRAMMATIC)
+        except Exception:
+            logger.warning(
+                "Programmatic retro generation also failed for %s",
+                session_id,
+                exc_info=True,
+            )
+            return None
+
     def _render_session_section(self, session_id: str) -> str:
         sdir = self.gitlog_dir / f"{SESSION_PREFIX}{session_id}"
         parts = [f"### Session {session_id}"]
-        # Inline session retro if it exists. Prefer llm version over programmatic
-        # because it has narrative content the judge can actually use.
-        retro_path = self._find_session_retro(session_id)
+        retro_path = self._ensure_session_retro(session_id)
         if retro_path is not None:
             parts.append(f"Session retro:\n```\n{retro_path.read_text()}\n```")
         # Inline metrics
