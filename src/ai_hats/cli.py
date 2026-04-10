@@ -779,24 +779,13 @@ def wt_env():
 
 
 def _launch_interactive_judge(project_dir: Path, retro_path: Path) -> None:
-    """Exec provider CLI in interactive TTY mode with judge retro as context."""
-    from .models import ProfileConfig, ProjectConfig
-    from .providers import get_provider
-
-    profile = ProfileConfig.load(project_dir / "profile.json")
-    config = ProjectConfig.from_yaml(project_dir / "ai-hats.yaml")
-    provider_name = profile.provider or config.provider
-    if not provider_name:
-        console.print("[red]No provider configured[/]. Run: ai-hats set -p <provider>")
-        sys.exit(1)
-
-    provider = get_provider(provider_name)
+    """Launch a full ai-hats session with judge role and retro context."""
     retro_text = retro_path.read_text()
 
-    system_prompt = (
-        "You are a judge retro reviewer. You help the user understand findings, "
-        "discuss priorities, and decide on improvements. "
-        "If they want to create a hypothesis task, help draft it.\n\n"
+    retro_context = (
+        "You are reviewing the following judge retro with the user. "
+        "Help them understand findings, discuss priorities, and decide on improvements. "
+        "You can create hypothesis tasks via `ai-hats task create`.\n\n"
         "Judge retro:\n"
         f"---\n{retro_text}\n---"
     )
@@ -806,16 +795,11 @@ def _launch_interactive_judge(project_dir: Path, retro_path: Path) -> None:
         "List them by priority with a brief explanation of impact and recommended action."
     )
 
-    cmd = provider.get_cli_command()
-    if provider.name == "claude":
-        full_cmd = cmd + ["--system-prompt", system_prompt, initial_message]
-    elif provider.name == "gemini":
-        full_cmd = cmd + [system_prompt + "\n\n" + initial_message]
-    else:
-        full_cmd = cmd
-
-    console.print("[dim]Launching interactive session with judge findings...[/]")
-    os.execvp(full_cmd[0], full_cmd)
+    console.print("[dim]Launching interactive judge session...[/]")
+    _launch_session(
+        role="judge",
+        extra_args=["--append-system-prompt", retro_context, initial_message],
+    )
 
 
 @main.command()
