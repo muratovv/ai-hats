@@ -191,11 +191,12 @@ def _finalize_session(
 
         try:
             session.log_trace(TraceTag.SYS, f"Session ended: exit_code={exit_code}")
-            hooks_runner.run(LifecycleEvent.SESSION_END, env=env)
             session.append_audit(f"Session ended with code {exit_code}")
         except (Exception, KeyboardInterrupt):
-            logger.warning("session_end hook failed", exc_info=True)
+            logger.warning("session trace/audit append failed", exc_info=True)
 
+        # Finalize metrics and build enriched audit BEFORE hooks, so
+        # session_end hooks can read metrics.json (e.g. auto-retro).
         try:
             session.finalize_audit({
                 "exit_code": exit_code,
@@ -215,6 +216,13 @@ def _finalize_session(
             AuditWriter().build(session, jsonl_path=jsonl_path)
         except (Exception, KeyboardInterrupt):
             logger.warning("audit writer failed", exc_info=True)
+
+        # Run session_end hooks AFTER metrics.json and enriched audit
+        # are written, so hooks (e.g. auto-retro) can read them.
+        try:
+            hooks_runner.run(LifecycleEvent.SESSION_END, env=env)
+        except (Exception, KeyboardInterrupt):
+            logger.warning("session_end hook failed", exc_info=True)
     finally:
         # The summary print is the only thing that surfaces the session id
         # to the user. It MUST run, even on second SIGINT, even if every
