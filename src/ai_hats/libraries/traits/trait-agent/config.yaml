@@ -4,6 +4,7 @@ composition:
   rules:
     - dev_rule_backlog_discipline
     - dev_rule_edit_efficiency
+    - dev_rule_tool_call_hygiene
   skills:
     - backlog-manager
     - request-supervisor

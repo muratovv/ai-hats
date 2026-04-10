@@ -1,0 +1,4 @@
+name: dev_rule_tool_call_hygiene
+description: Batch and parallelize tool calls, minimize sequential round-trips
+author: ai-hats
+tags: [development, efficiency, tools, batching]
