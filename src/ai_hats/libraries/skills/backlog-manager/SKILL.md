@@ -53,6 +53,25 @@ ai-hats task list --search "judge|retro"     # regex OR
 ai-hats task sync
 ```
 
+## CLI-Only Enforcement
+
+The CLI is the **sole interface** to the backlog. Direct filesystem access to `.agent/backlog/tasks/` is forbidden.
+
+### NEVER do this → DO this instead
+
+| ❌ NEVER | ✅ ALWAYS |
+|----------|----------|
+| `Read .agent/backlog/tasks/HATS-018/task.yaml` | `ai-hats task show HATS-018` |
+| `Glob .agent/backlog/tasks/**/*` | `ai-hats task list` or `ai-hats task list --search <regex>` |
+| `Grep` / `Bash(ls)` over `.agent/backlog/tasks/` | `ai-hats task list --search <regex>` |
+| `mkdir -p .agent/backlog/tasks/HATS-038/` + `Write task.yaml` | `ai-hats task create "Title" -d "Description"` |
+| `Edit task.yaml` to change state/priority/tags | `ai-hats task update` / `ai-hats task transition` |
+| `Edit task.yaml` to add work log entry | `ai-hats task log HATS-042 "message"` |
+| `Edit STATE.md` or `Edit backlog.md` manually | `ai-hats task sync` |
+
+This applies to **all tools**: Read, Write, Edit, Glob, Grep, Bash.
+No exceptions. No "just this once". No "it's faster manually".
+
 ## Task Card
 
 Each task gets a directory: `.agent/backlog/tasks/<ID>/task.yaml` + artifacts.
@@ -190,8 +209,14 @@ Task is blocked by external dependency from any active state.
 5. **Completion Gate**: Task not done until: state is done, work_log has final entry, sync is run.
 
 ## Anti-Patterns
+
+### Filesystem access (see CLI-Only Enforcement above)
+- `Read/Glob/Grep/Bash` on `.agent/backlog/tasks/` — use CLI commands instead
+- `mkdir` + `Write` to create task cards — use `ai-hats task create`
+- `Edit` on `task.yaml` / `STATE.md` / `backlog.md` — use `ai-hats task update/transition/sync`
+
+### Process
 - Skipping states — each transition must be explicit, no brainstorm→execute jumps
 - Working without a task card — all work must be tracked
 - Forgetting work_log updates — the card becomes useless for handover
 - Silently skipping user-mentioned approaches — every approach must be explicitly addressed
-- Shell loops over `.agent/backlog/tasks/` (`for t in $(ls ...); do ...`) — use `ai-hats task list`, `ai-hats task show <id>`, or `Glob` + `Read` tools instead
