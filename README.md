@@ -89,16 +89,19 @@ ai-hats whoami                             # диагностика
 ai-hats run <role> [--ticket <ID>] [--model <name>] [--task <desc>]
 
 # Наблюдаемость и feedback loop
-ai-hats audit [--session <ID>]                                       # показать audit.md сессии
-ai-hats retro <session_id> [--last] [--mode programmatic|llm]        # session-retro snapshot
-ai-hats bundle create --sessions s1,s2 [--notes "..."]               # сгруппировать сессии для анализа
+ai-hats session list [--last N] [--min-turns N] [--productive] [--all] # список сессий с метриками
+ai-hats session show <session_id>                                      # детали конкретной сессии
+ai-hats audit [--session <ID>]                                         # показать audit.md сессии
+ai-hats retro <session_id> [--last] [--mode programmatic|llm]         # session-retro snapshot
+ai-hats bundle create --sessions s1,s2 [--notes "..."]                # сгруппировать сессии для анализа
 ai-hats bundle create --last N | --since YYYY-MM-DD
 ai-hats bundle list | show <bundle_id>
-ai-hats judge --bundle <id> [--focus "..."]                          # forensic analysis от judge-агента
-ai-hats judge --sessions s1,s2 [--focus "..."]                       # auto-bundle + judge
-ai-hats judge --last N [--focus "..."]
-ai-hats retro-validate <path>                                        # проверить файл по HATS-051 schema
-ai-hats retro-migrate <path> [--dry-run]                             # миграция к latest схеме
+ai-hats judge --bundle <id> [--focus "..."]                           # forensic analysis от judge-агента
+ai-hats judge --last N [--focus "..."] [--interactive]                # auto-bundle + judge + обсуждение
+ai-hats judge --retro <path>                                          # обсудить существующий retro
+ai-hats judge-aggregate [--since ...] [--min-severity ...]            # паттерны из judge retros
+ai-hats retro-validate <path>                                         # проверить файл по HATS-051 schema
+ai-hats retro-migrate <path> [--dry-run]                              # миграция к latest схеме
 
 # Задачи
 ai-hats task create <title> [--id ID] [-d <desc>] [-p high|medium|low]
@@ -255,11 +258,48 @@ ai-hats judge --last 3 --focus "decision-making patterns"
 ai-hats judge --sessions s1,s2,s3 --focus "..."
 ```
 
-Judge sub-session запускается в worktree (`discard` mode), может занять минуты — CLI показывает spinner. Timeout по умолчанию 600s; для медленных провайдеров можно поднять через `--timeout` (на retro команде).
+Judge sub-session запускается в worktree (`discard` mode), может занять минуты — CLI показывает spinner. Перед запуском показывает какие сессии и фокус будет анализировать. Timeout по умолчанию 600s.
 
 Output JudgeRetroV1 содержит findings (с обязательным evidence + session_id), patterns_to_keep, опциональный meta_critique. Каждая finding классифицирована по category/severity, может содержать proposed_fix с expected_impact для longitudinal validation.
 
-**Валидация артефактов.** Любой retro-файл (session / bundle / judge) можно проверить против схемы:
+**Interactive mode.** `--interactive` / `-i` после сохранения judge retro открывает полноценную ai-hats сессию с ролью `judge`. Агент видит findings, имеет доступ к бэклогу, может создавать задачи-гипотезы. Для обсуждения существующего retro без пересоздания — `--retro <path>`.
+
+```bash
+# Полный цикл: judge + обсуждение
+ai-hats judge --last 5 --focus "tool-call efficiency" --interactive
+
+# Обсудить существующий retro
+ai-hats judge --retro .agent/retrospectives/judge/2026-04-10-judge-001.md
+```
+
+**Layer 4 — Aggregation.** Кластеризация findings из нескольких judge retros для выявления повторяющихся паттернов. Группирует по (category, target), fuzzy-matching root_cause, вычисляет частоту появления.
+
+```bash
+ai-hats judge-aggregate                              # все judge retros
+ai-hats judge-aggregate --since 2026-04-01           # только свежие
+ai-hats judge-aggregate --min-severity medium         # только medium+
+```
+
+Output: `.agent/retrospectives/aggregated/AGG-YYYY-MM-DD-NNN.md` — AggregationV1 schema с кластерами. Каждый кластер содержит frequency, rate (% retros), source findings, proposed fix.
+
+**Просмотр сессий.** Для выбора интересных сессий перед созданием бандла:
+
+```bash
+ai-hats session list --min-turns 10              # только сессии с ≥10 ходами
+ai-hats session list --productive                # только продуктивные (turns>0, tools>0)
+ai-hats session show 20260408-192417-1           # детальные метрики
+```
+
+**Hypothesis workflow.** Замкнутый цикл улучшений через задачи-гипотезы (см. `hypothesis-workflow` skill):
+
+1. `ai-hats judge-aggregate` — найти повторяющиеся паттерны
+2. `ai-hats judge --last N --interactive` — обсудить findings с judge
+3. `ai-hats task create "hypothesis: ..." --tag hypothesis` — зафиксировать гипотезу
+4. Реализовать изменение, накопить N новых сессий
+5. `ai-hats judge-aggregate --since <date>` — проверить, снизилась ли частота
+6. Закрыть задачу-гипотезу с результатом
+
+**Валидация артефактов.** Любой retro-файл (session / bundle / judge / aggregation) можно проверить против схемы:
 
 ```bash
 ai-hats retro-validate .agent/retrospectives/judge/2026-04-08-judge-001.md
@@ -277,12 +317,13 @@ ai-hats retro-migrate <path> [--dry-run]
     tasks/<ID>/                        # Task card + plan.md + retro.md
   backlog.md                           # Табличный индекс
   STATE.md                             # Текущее состояние задач
-  retrospectives/                      # Feedback loop (HATS-001 / HATS-051)
+  retrospectives/                      # Feedback loop (HATS-001 / HATS-051 / HATS-052)
     sessions/
       programmatic/<id>.md             # SessionRetroV1, factual snapshot
       llm/<id>.md                      # SessionRetroV1, narrative summary
     bundles/BUNDLE-YYYY-MM-DD-NNN.yaml # BundleV1, lens-agnostic pointer
     judge/YYYY-MM-DD-judge-NNN.md      # JudgeRetroV1, forensic analysis
+    aggregated/AGG-YYYY-MM-DD-NNN.md   # AggregationV1, cross-session patterns
 .gitlog/
   session_<ID>/                        # trace.log, audit.md, metrics.json, transcript.txt
 ai-hats.yaml                           # Конфиг проекта
