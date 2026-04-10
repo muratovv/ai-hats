@@ -1157,6 +1157,7 @@ def session_list(last_n: int, show_all: bool, min_turns: int, productive: bool):
     from rich.table import Table
 
     table = Table(show_header=True, header_style="bold")
+    table.add_column("Date", style="dim")
     table.add_column("Session ID", style="cyan")
     table.add_column("Role")
     table.add_column("Provider")
@@ -1165,14 +1166,21 @@ def session_list(last_n: int, show_all: bool, min_turns: int, productive: bool):
     table.add_column("Duration", justify="right")
     table.add_column("Tokens out", justify="right")
 
+    def _session_date(sid: str) -> str:
+        try:
+            return f"{sid[:4]}-{sid[4:6]}-{sid[6:8]}"
+        except (IndexError, ValueError):
+            return "?"
+
     for s in sessions:
+        date_str = _session_date(s.session_id)
         if not s.metrics_path.exists():
-            table.add_row(s.session_id, "?", "?", "?", "?", "?", "?")
+            table.add_row(date_str, s.session_id, "?", "?", "?", "?", "?", "?")
             continue
         try:
             m = json.loads(s.metrics_path.read_text())
         except (json.JSONDecodeError, OSError):
-            table.add_row(s.session_id, "?", "?", "?", "?", "?", "?")
+            table.add_row(date_str, s.session_id, "?", "?", "?", "?", "?", "?")
             continue
 
         role = m.get("role", "?")
@@ -1198,7 +1206,7 @@ def session_list(last_n: int, show_all: bool, min_turns: int, productive: bool):
         tok_out_str = f"{tok_out:,}" if isinstance(tok_out, int) else str(tok_out)
 
         table.add_row(
-            s.session_id, str(role), str(provider),
+            date_str, s.session_id, str(role), str(provider),
             str(turns), str(tools), str(duration), tok_out_str,
         )
 
