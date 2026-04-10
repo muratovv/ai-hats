@@ -780,6 +780,8 @@ def wt_env():
 
 def _launch_interactive_judge(project_dir: Path, retro_path: Path) -> None:
     """Launch a full ai-hats session with judge role and retro context."""
+    import tempfile
+
     retro_text = retro_path.read_text()
 
     retro_context = (
@@ -795,10 +797,18 @@ def _launch_interactive_judge(project_dir: Path, retro_path: Path) -> None:
         "List them by priority with a brief explanation of impact and recommended action."
     )
 
-    console.print("[dim]Launching interactive judge session...[/]")
+    # Write context to temp file to avoid huge CLI argument that can break terminal rendering.
+    # File is cleaned up by OS after session exits (delete=False so child process can read it).
+    ctx_file = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", prefix="judge-ctx-", delete=False,
+    )
+    ctx_file.write(retro_context)
+    ctx_file.close()
+
+    console.print(f"[dim]Launching interactive judge session (retro: {retro_path.name})...[/]")
     _launch_session(
         role="judge",
-        extra_args=["--append-system-prompt", retro_context, initial_message],
+        extra_args=["--append-system-prompt-file", ctx_file.name, initial_message],
     )
 
 
