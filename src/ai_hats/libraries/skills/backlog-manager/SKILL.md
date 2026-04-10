@@ -213,6 +213,11 @@ Task is blocked by external dependency from any active state.
 4. **STATE.md Sync**: Run `ai-hats task sync` after task state changes.
 5. **Completion Gate**: Task not done until: state is done, work_log has final entry, sync is run.
 
+### Session Scoping
+After closing **2 or more tasks** in a single session, suggest wrapping up and
+starting a new session. This preserves session-level granularity for
+retrospective analysis and reduces blast radius of context drift.
+
 ## Anti-Patterns
 
 ### Filesystem access (see CLI-Only Enforcement above)
