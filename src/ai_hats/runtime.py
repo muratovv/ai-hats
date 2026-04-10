@@ -388,7 +388,9 @@ class SubAgentRunner:
         result = self.assembler.composer.compose(
             role_name, overlay=self.assembler._get_overlay(role_name),
         )
-        provider = get_provider(self.assembler.project_config.provider)
+        profile = ProfileConfig.load(self.project_dir / "profile.json")
+        provider_name = profile.provider or self.assembler.project_config.provider
+        provider = get_provider(provider_name)
 
         # Build meta-prompt
         meta_prompt = self._build_meta_prompt(
