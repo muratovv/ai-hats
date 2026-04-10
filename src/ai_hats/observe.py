@@ -50,15 +50,24 @@ class SessionManager:
             return None
         return Session(session_id=session_id, session_dir=session_dir)
 
-    def list_sessions(self, last_n: int | None = None) -> list[Session]:
-        """List sessions, optionally the last N."""
+    def list_sessions(
+        self, last_n: int | None = None, productive_only: bool = False,
+    ) -> list[Session]:
+        """List sessions, optionally the last N.
+
+        If productive_only=True, skip sessions with 0 turns or 0 tool_calls
+        (empty sub-agent sessions, crashed sessions, etc.).
+        """
         sessions = []
         if not self.gitlog_dir.exists():
             return sessions
         for d in sorted(self.gitlog_dir.iterdir()):
             if d.is_dir() and d.name.startswith("session_"):
                 sid = d.name[len("session_"):]
-                sessions.append(Session(session_id=sid, session_dir=d))
+                s = Session(session_id=sid, session_dir=d)
+                if productive_only and not s.is_productive():
+                    continue
+                sessions.append(s)
         if last_n:
             sessions = sessions[-last_n:]
         return sessions
@@ -75,6 +84,20 @@ class Session:
         self.reasoning_path = session_dir / "reasoning.log"
         self.metrics_path = session_dir / "metrics.json"
         self.meta_prompt_path = session_dir / "meta_prompt.txt"
+
+    def is_productive(self) -> bool:
+        """Return True if this session had meaningful work (turns > 0 and tool_calls > 0)."""
+        if not self.metrics_path.exists():
+            return False
+        try:
+            metrics = json.loads(self.metrics_path.read_text())
+            turns = metrics.get("turns")
+            tool_calls = metrics.get("tool_calls")
+            if turns is None or tool_calls is None:
+                return False
+            return turns > 0 and tool_calls > 0
+        except (json.JSONDecodeError, OSError):
+            return False
 
     def log_trace(self, tag: str, message: str) -> None:
         """Append a trace entry."""

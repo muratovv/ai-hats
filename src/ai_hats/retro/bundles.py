@@ -141,9 +141,11 @@ class BundleManager:
         """Create a bundle from the N most recent sessions in .gitlog/."""
         from ..observe import SessionManager
 
-        sessions = SessionManager(self.project_dir).list_sessions(last_n=n)
+        sessions = SessionManager(self.project_dir).list_sessions(
+            last_n=n, productive_only=True,
+        )
         if not sessions:
-            raise ValueError("No sessions found in .gitlog/")
+            raise ValueError("No productive sessions found in .gitlog/")
         return self.create([s.session_id for s in sessions], notes=notes)
 
     def create_from_since(
@@ -155,7 +157,7 @@ class BundleManager:
         """Create a bundle from all sessions whose timestamp is on or after `since`."""
         from ..observe import SessionManager
 
-        sessions = SessionManager(self.project_dir).list_sessions()
+        sessions = SessionManager(self.project_dir).list_sessions(productive_only=True)
         keep: list[str] = []
         for s in sessions:
             try:

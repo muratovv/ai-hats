@@ -15,11 +15,15 @@ from ai_hats.retro.loader import load
 # --- fixtures ---
 
 
-def _make_session(project: Path, session_id: str) -> None:
+def _make_session(project: Path, session_id: str, *, productive: bool = True) -> None:
     """Create a fake .gitlog/session_<id>/ directory so existence checks pass."""
     sdir = project / ".gitlog" / f"session_{session_id}"
     sdir.mkdir(parents=True, exist_ok=True)
     (sdir / "audit.md").write_text(f"# Session Audit: {session_id}\n")
+    if productive:
+        (sdir / "metrics.json").write_text(
+            '{"turns": 5, "tool_calls": 3, "exit_code": 0}'
+        )
 
 
 @pytest.fixture()
