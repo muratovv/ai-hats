@@ -1017,21 +1017,46 @@ def bundle():
 @click.option("--sessions", default=None, help="Comma-separated session ids")
 @click.option("--last", "last_n", default=None, type=int, help="Use last N sessions")
 @click.option("--since", default=None, help="Use sessions since YYYY-MM-DD")
+@click.option("--unreviewed", is_flag=True, help="Use all productive sessions not yet in any bundle")
+@click.option("--min-turns", default=0, type=int, help="With --unreviewed: minimum turns filter")
 @click.option("--notes", default=None, help="Free-form notes")
 def bundle_create(
     sessions: str | None,
     last_n: int | None,
     since: str | None,
+    unreviewed: bool,
+    min_turns: int,
     notes: str | None,
 ):
     """Create a new bundle artifact (lens-agnostic; pass --focus on `judge`)."""
+    import json
     from datetime import date as _date
 
     from .retro.bundles import BundleManager
 
     bm = BundleManager(_project_dir())
     try:
-        if sessions:
+        if unreviewed:
+            from .observe import SessionManager
+            all_sessions = SessionManager(_project_dir()).list_sessions(productive_only=True)
+            reviewed = bm.reviewed_session_ids()
+            ids = []
+            for s in all_sessions:
+                if s.session_id in reviewed:
+                    continue
+                if min_turns > 0 and s.metrics_path.exists():
+                    try:
+                        m = json.loads(s.metrics_path.read_text())
+                        if m.get("turns", 0) < min_turns:
+                            continue
+                    except (json.JSONDecodeError, OSError):
+                        continue
+                ids.append(s.session_id)
+            if not ids:
+                console.print("[yellow]No unreviewed sessions found[/]")
+                sys.exit(0)
+            b = bm.create(ids, notes=notes)
+        elif sessions:
             ids = [s.strip() for s in sessions.split(",") if s.strip()]
             b = bm.create(ids, notes=notes)
         elif last_n:
@@ -1039,7 +1064,7 @@ def bundle_create(
         elif since:
             b = bm.create_from_since(_date.fromisoformat(since), notes=notes)
         else:
-            console.print("[red]Specify one of: --sessions, --last, --since[/]")
+            console.print("[red]Specify one of: --sessions, --last, --since, --unreviewed[/]")
             sys.exit(1)
     except (ValueError, FileNotFoundError) as exc:
         console.print(f"[red]Error[/]: {exc}")
@@ -1125,7 +1150,8 @@ def session():
 @click.option("--all", "show_all", is_flag=True, help="Show all sessions")
 @click.option("--min-turns", default=0, type=int, help="Only sessions with >= N turns")
 @click.option("--productive", is_flag=True, help="Only productive sessions (turns>0, tools>0)")
-def session_list(last_n: int, show_all: bool, min_turns: int, productive: bool):
+@click.option("--unreviewed", is_flag=True, help="Only sessions not yet in any bundle")
+def session_list(last_n: int, show_all: bool, min_turns: int, productive: bool, unreviewed: bool):
     """List sessions with key metrics."""
     import json
 
@@ -1137,6 +1163,12 @@ def session_list(last_n: int, show_all: bool, min_turns: int, productive: bool):
     if not sessions:
         console.print("[yellow]No sessions found[/]")
         return
+
+    # Filter by unreviewed
+    if unreviewed:
+        from .retro.bundles import BundleManager
+        reviewed = BundleManager(_project_dir()).reviewed_session_ids()
+        sessions = [s for s in sessions if s.session_id not in reviewed]
 
     # Filter by min-turns
     if min_turns > 0:
