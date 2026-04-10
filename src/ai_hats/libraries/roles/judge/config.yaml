@@ -11,6 +11,8 @@ composition:
   skills:
     - judge-protocol
     - self-retrospective
+    - backlog-manager
+    - hypothesis-workflow
   hooks: {}
   mcp: []
 injection: |
