@@ -13,19 +13,8 @@ from ai_hats.retro.builder import BuilderMode, SessionRetroBuilder
 from ai_hats.retro.loader import load
 from ai_hats.retro.session_retro import SessionRetroV1
 
-# `real_session` fixture is a sanitized snapshot of a developer-local session;
-# it is gitignored and only present on machines that copied it manually. Tests
-# that depend on it are skipped on a clean checkout. HATS-078 tracks the work
-# to replace this with a committed synthetic fixture.
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "real_session"
 FIXTURE_SESSION_ID = "20260406-034154-1"
-_FIXTURE_AVAILABLE = (FIXTURE_DIR / "audit.md").exists() and (
-    FIXTURE_DIR / "metrics.json"
-).exists()
-requires_real_fixture = pytest.mark.skipif(
-    not _FIXTURE_AVAILABLE,
-    reason="real_session fixture absent (gitignored) — see HATS-078",
-)
 
 
 # --- helpers ---
@@ -64,19 +53,18 @@ def project(tmp_path: Path) -> Path:
 # --- programmatic mode ---
 
 
-@requires_real_fixture
 def test_programmatic_builds_valid_session_retro_v1(project: Path) -> None:
     _make_project_with_real_fixture(project)
     builder = SessionRetroBuilder(project)
     retro = builder.build(FIXTURE_SESSION_ID, mode=BuilderMode.PROGRAMMATIC)
     assert isinstance(retro, SessionRetroV1)
     assert retro.session_id == FIXTURE_SESSION_ID
-    assert retro.role == "assistant"  # from real metrics.json
-    assert retro.metrics.turns == 14
-    assert retro.metrics.tool_calls == 88
-    assert retro.metrics.tokens_in == 6882
+    assert retro.role == "assistant"
+    assert retro.metrics.turns == 6
+    assert retro.metrics.tool_calls == 15
+    assert retro.metrics.tokens_in == 1200
     assert retro.observations == []
-    assert "Session of 14 turn(s)" in retro.summary
+    assert "Session of 6 turn(s)" in retro.summary
 
 
 def test_programmatic_handles_missing_metrics_json(project: Path) -> None:
@@ -137,7 +125,6 @@ def test_programmatic_parses_git_artifacts(tmp_path: Path) -> None:
     assert any("test commit" in c for c in retro.artifacts.commits)
 
 
-@requires_real_fixture
 def test_build_and_save_writes_to_mode_subdir(project: Path) -> None:
     _make_project_with_real_fixture(project)
     builder = SessionRetroBuilder(project)
@@ -154,7 +141,6 @@ def test_build_and_save_writes_to_mode_subdir(project: Path) -> None:
     assert path.exists()
 
 
-@requires_real_fixture
 def test_build_and_save_separates_programmatic_and_llm(project: Path) -> None:
     """Each mode writes to its own subdir; the two files coexist."""
     _make_project_with_real_fixture(project)
@@ -170,7 +156,6 @@ def test_build_and_save_separates_programmatic_and_llm(project: Path) -> None:
     assert p_path.exists() and l_path.exists()
 
 
-@requires_real_fixture
 def test_build_and_save_output_roundtrips_through_loader(project: Path) -> None:
     _make_project_with_real_fixture(project)
     builder = SessionRetroBuilder(project)
@@ -190,7 +175,6 @@ def test_builder_fails_on_missing_session(project: Path) -> None:
 # --- llm / hybrid modes ---
 
 
-@requires_real_fixture
 def test_llm_mode_uses_injected_caller(project: Path) -> None:
     _make_project_with_real_fixture(project)
     captured: dict = {}
@@ -215,7 +199,6 @@ def test_llm_mode_uses_injected_caller(project: Path) -> None:
     assert "METRICS" in captured["prompt"]
 
 
-@requires_real_fixture
 def test_llm_mode_robust_to_extra_text(project: Path) -> None:
     _make_project_with_real_fixture(project)
 
@@ -235,7 +218,6 @@ def test_llm_mode_robust_to_extra_text(project: Path) -> None:
     assert retro.observations == ["single observation"]
 
 
-@requires_real_fixture
 def test_llm_mode_without_caller_raises(project: Path) -> None:
     _make_project_with_real_fixture(project)
     builder = SessionRetroBuilder(project)  # no llm_caller
@@ -243,7 +225,6 @@ def test_llm_mode_without_caller_raises(project: Path) -> None:
         builder.build(FIXTURE_SESSION_ID, mode=BuilderMode.LLM)
 
 
-@requires_real_fixture
 def test_llm_mode_disabled_by_env(monkeypatch, project: Path) -> None:
     _make_project_with_real_fixture(project)
     monkeypatch.setenv("AI_HATS_NO_LLM", "1")

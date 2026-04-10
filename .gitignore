@@ -27,7 +27,3 @@ GEMINI.md
 CLAUDE.md
 .claude/skills/
 .gemini/
-
-# Real-session fixture is a sanitized snapshot kept locally only;
-# committed tests must use synthetic fixtures (see HATS-078).
-tests/fixtures/real_session/

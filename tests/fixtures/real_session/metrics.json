@@ -1,0 +1,20 @@
+{
+  "exit_code": 0,
+  "role": "assistant",
+  "provider": "claude",
+  "turns": 6,
+  "tokens": {
+    "input": 1200,
+    "output": 4800,
+    "cache_read": 85000,
+    "cache_creation": 12000
+  },
+  "models": {
+    "claude-opus-4-6": {
+      "calls": 18,
+      "input_tokens": 1200,
+      "output_tokens": 4800
+    }
+  },
+  "tool_calls": 15
+}
