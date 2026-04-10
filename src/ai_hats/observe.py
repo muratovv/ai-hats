@@ -191,6 +191,9 @@ class SidecarTracer:
             return data
         return master_read
 
+    _CONTEXT_CLEAR_RE = re.compile(r"^/clear\b")
+    _CONTEXT_COMPACT_RE = re.compile(r"^/compact\b")
+
     def make_stdin_read(self) -> Callable[[int], bytes]:
         """Returns stdin_read callback for pty.spawn — logs user input as [REQ] on newline."""
         def stdin_read(fd: int) -> bytes:
@@ -202,6 +205,13 @@ class SidecarTracer:
                     text = line.decode("utf-8", errors="replace")
                     self.flush_response()
                     self.session.log_trace(TraceTag.REQ, text)
+                    # Detect context-changing slash commands
+                    if self._CONTEXT_CLEAR_RE.match(text):
+                        self.session.append_audit("🧹 Context cleared")
+                        self.session.log_trace(TraceTag.SYS, "Context cleared by user")
+                    elif self._CONTEXT_COMPACT_RE.match(text):
+                        self.session.append_audit("🗜️ Context compacted")
+                        self.session.log_trace(TraceTag.SYS, "Context compacted by user")
                 self._req_buf.clear()
             return data
         return stdin_read

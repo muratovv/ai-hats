@@ -303,6 +303,10 @@ class WrapRunner:
         )
         session.log_trace(TraceTag.SYS, f"Session started: role={active_role}")
 
+        # Log CLI restart gap from previous session (helps judge distinguish
+        # restarts from provider stalls).
+        self._log_restart_gap(session)
+
         # Build environment
         env = {
             **os.environ,
@@ -362,6 +366,30 @@ class WrapRunner:
             )
 
         return exit_code
+
+    def _log_restart_gap(self, session: Session) -> None:
+        """If there's a recent previous session, log the gap as a CLI restart event."""
+        from datetime import datetime, timezone
+        try:
+            all_sessions = self.session_mgr.list_sessions()
+            # Need at least 2 sessions (current + previous)
+            if len(all_sessions) < 2:
+                return
+            prev = all_sessions[-2]
+            # Parse timestamps from session IDs
+            fmt = "%Y%m%d-%H%M%S"
+            prev_start = datetime.strptime(prev.session_id[:15], fmt).replace(tzinfo=timezone.utc)
+            cur_start = datetime.strptime(session.session_id[:15], fmt).replace(tzinfo=timezone.utc)
+            gap_secs = int((cur_start - prev_start).total_seconds())
+            if gap_secs < 7200:  # Only note restarts within 2 hours
+                if gap_secs >= 60:
+                    gap_str = f"{gap_secs // 60}m {gap_secs % 60}s"
+                else:
+                    gap_str = f"{gap_secs}s"
+                session.append_audit(f"🔄 CLI restarted — {gap_str} since previous session")
+                session.log_trace(TraceTag.SYS, f"CLI restart gap: {gap_str}")
+        except Exception:
+            pass
 
     def _pty_spawn(self, cmd: list[str], env: dict[str, str], tracer: SidecarTracer) -> int:
         """Spawn a process with PTY for interactive terminal passthrough + sidecar trace."""
