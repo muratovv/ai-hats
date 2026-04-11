@@ -144,8 +144,10 @@ class Assembler:
             # 6. Verify
             self._verify(result, provider)
 
-            # 7. Update profile
-            profile = ProfileConfig(active_role=role_name, provider=provider.name)
+            # 7. Update profile (preserve existing feedback config)
+            profile = ProfileConfig.load(self.profile_path)
+            profile.active_role = role_name
+            profile.provider = provider.name
             profile.save(self.profile_path)
 
             # 8. Save backup reference
