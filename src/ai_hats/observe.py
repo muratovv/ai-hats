@@ -486,7 +486,7 @@ class AuditWriter:
             self._write_metrics(session, turns, model_stats, agg_usage)
         else:
             if jsonl_path:
-                logger.warning("JSONL not found at %s — falling back to trace", jsonl_path)
+                logger.debug("JSONL not found at %s — falling back to trace", jsonl_path)
             entries = self._parse_trace(session.trace_path)
             turns = self._extract_turns(entries)
             audit_content = self._format_audit(session, turns)
