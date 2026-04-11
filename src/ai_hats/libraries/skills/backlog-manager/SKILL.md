@@ -53,24 +53,7 @@ ai-hats task list --search "judge|retro"     # regex OR
 ai-hats task sync
 ```
 
-## CLI-Only Enforcement
-
-The CLI is the **sole interface** to the backlog. Direct filesystem access to `.agent/backlog/tasks/` is forbidden.
-
-### NEVER do this → DO this instead
-
-| ❌ NEVER | ✅ ALWAYS |
-|----------|----------|
-| `Read .agent/backlog/tasks/HATS-018/task.yaml` | `ai-hats task show HATS-018` |
-| `Glob .agent/backlog/tasks/**/*` | `ai-hats task list` or `ai-hats task list --search <regex>` |
-| `Grep` / `Bash(ls)` over `.agent/backlog/tasks/` | `ai-hats task list --search <regex>` |
-| `mkdir -p .agent/backlog/tasks/HATS-038/` + `Write task.yaml` | `ai-hats task create "Title" -d "Description"` |
-| `Edit task.yaml` to change state/priority/tags | `ai-hats task update` / `ai-hats task transition` |
-| `Edit task.yaml` to add work log entry | `ai-hats task log HATS-042 "message"` |
-| `Edit STATE.md` or `Edit backlog.md` manually | `ai-hats task sync` |
-
-This applies to **all tools**: Read, Write, Edit, Glob, Grep, Bash.
-No exceptions. No "just this once". No "it's faster manually".
+> **CLI-only enforcement** is owned by rule **dev_rule_backlog_discipline**. Never access `.agent/backlog/tasks/` directly — use the CLI commands above.
 
 ## Task Card
 
@@ -204,28 +187,13 @@ Task is blocked by external dependency from any active state.
 - `ai-hats task transition <ID> blocked`
 - Transition back to previous state when unblocked
 
-## Bundled Rules
+## Session Scoping
 
-### Backlog Discipline
-1. **CLI Only**: All task operations go through `ai-hats task` CLI. Never edit task.yaml manually.
-2. **Work Log Cadence**: `ai-hats task log <ID> "message"` after every significant action.
-3. **State Transitions**: `ai-hats task transition <ID> <state>` immediately when work changes phase.
-4. **STATE.md Sync**: Run `ai-hats task sync` after task state changes.
-5. **Completion Gate**: Task not done until: state is done, work_log has final entry, sync is run.
-
-### Session Scoping
 After closing **2 or more tasks** in a single session, suggest wrapping up and
 starting a new session. This preserves session-level granularity for
 retrospective analysis and reduces blast radius of context drift.
 
 ## Anti-Patterns
-
-### Filesystem access (see CLI-Only Enforcement above)
-- `Read/Glob/Grep/Bash` on `.agent/backlog/tasks/` — use CLI commands instead
-- `mkdir` + `Write` to create task cards — use `ai-hats task create`
-- `Edit` on `task.yaml` / `STATE.md` / `backlog.md` — use `ai-hats task update/transition/sync`
-
-### Process
 - Skipping states — each transition must be explicit, no brainstorm→execute jumps
 - Working without a task card — all work must be tracked
 - Forgetting work_log updates — the card becomes useless for handover
