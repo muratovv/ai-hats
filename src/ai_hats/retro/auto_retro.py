@@ -87,10 +87,13 @@ def main() -> None:
     mode = config.feedback.session_retro.mode
 
     from .builder import BuilderMode, SessionRetroBuilder
+    from .llm_caller import SubprocessLLMCaller
 
-    builder = SessionRetroBuilder(project_dir)
+    builder_mode = BuilderMode(mode)
+    llm_caller = SubprocessLLMCaller(project_dir) if builder_mode == BuilderMode.LLM else None
+    builder = SessionRetroBuilder(project_dir, llm_caller=llm_caller)
     try:
-        builder.build_and_save(session_id, mode=BuilderMode(mode))
+        builder.build_and_save(session_id, mode=builder_mode)
     except Exception as exc:
         print(f"auto-retro failed: {exc}", file=sys.stderr)
 
