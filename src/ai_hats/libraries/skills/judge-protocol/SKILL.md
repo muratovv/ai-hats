@@ -55,6 +55,20 @@ Forensic, adversarial, data-driven analysis of agent performance. You are not a 
   Very low in coding sessions = possible hallucination without verification.
 - **Exit code:** Non-zero indicates abnormal termination. Investigate why.
 
+### Root Cause Depth (5 Whys)
+For each finding, ask "Why?" iteratively until you reach the deepest
+actionable cause. Do not stop at the first level — that's usually a symptom.
+
+Example:
+1. Why did the agent read YAML files directly? → Injection said "Track work in .agent/backlog/tasks/"
+2. Why does the injection say that? → trait-agent config.yaml has that line
+3. Why wasn't it updated? → CLI was added later, trait wasn't revised
+→ Fix: update trait-agent in ai-hats (not the downstream project)
+
+The deepest "why" determines where the fix belongs.
+Downstream project config is almost always a symptom; framework components
+(traits, skills, rules) are almost always the root cause.
+
 ### Efficiency Red Flags
 - `tool_calls / turns > 10` — excessive tool use, possible retry loops
 - `output tokens > 30k` for routine tasks — over-explanation or scope creep
@@ -156,3 +170,4 @@ is the machine-readable index, body is the human-readable narrative.
 - Ignoring metrics.json — always include quantitative analysis
 - Analyzing audit.md without checking metrics — qualitative alone is insufficient
 - Tracked skill/rule fix without `expected_impact` — breaks longitudinal cycle
+- Stopping at the first "why" — surface-level findings lead to project-level patches instead of framework fixes
