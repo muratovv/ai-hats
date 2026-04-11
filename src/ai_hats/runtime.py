@@ -232,7 +232,10 @@ def _finalize_session(
         # Run session_end hooks AFTER metrics.json and enriched audit
         # are written, so hooks (e.g. auto-retro) can read them.
         try:
-            hooks_runner.run(LifecycleEvent.SESSION_END, env=env)
+            hook_results = hooks_runner.run(LifecycleEvent.SESSION_END, env=env)
+            for hr in hook_results:
+                if hr.get("stderr"):
+                    print(hr["stderr"], end="", file=sys.stderr)
         except (Exception, KeyboardInterrupt):
             logger.warning("session_end hook failed", exc_info=True)
     finally:
