@@ -76,10 +76,11 @@ def main() -> None:
     action, reason = should_run(profile_path, metrics_path)
 
     if action == "skip":
+        print(f"[auto-retro] skip: {reason}", file=sys.stderr)
         return
 
     if action == "hint":
-        print(f"Tip: ai-hats retro {session_id}  ({reason})", file=sys.stderr)
+        print(f"[auto-retro] hint: ai-hats retro {session_id}  ({reason})", file=sys.stderr)
         return
 
     # action == "run"
@@ -92,10 +93,12 @@ def main() -> None:
     builder_mode = BuilderMode(mode)
     llm_caller = SubprocessLLMCaller(project_dir) if builder_mode == BuilderMode.LLM else None
     builder = SessionRetroBuilder(project_dir, llm_caller=llm_caller)
+    print(f"[auto-retro] generating {mode} retro for {session_id}...", file=sys.stderr)
     try:
-        builder.build_and_save(session_id, mode=builder_mode)
+        path = builder.build_and_save(session_id, mode=builder_mode)
+        print(f"[auto-retro] saved: {path}", file=sys.stderr)
     except Exception as exc:
-        print(f"auto-retro failed: {exc}", file=sys.stderr)
+        print(f"[auto-retro] failed: {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":
