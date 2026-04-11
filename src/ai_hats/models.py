@@ -284,53 +284,6 @@ class OverlayConfig:
         ])
 
 
-@dataclass
-class ProjectConfig:
-    """ai-hats.yaml project configuration."""
-
-    provider: str = "gemini"
-    default_role: str = ""
-    schema_version: int = 1
-    library_paths: list[str] = field(default_factory=list)
-    customizations: dict[str, OverlayConfig] = field(default_factory=dict)
-
-    @classmethod
-    def from_yaml(cls, path: Path) -> ProjectConfig:
-        if not path.exists():
-            return cls()
-        with open(path) as f:
-            data = yaml.safe_load(f) or {}
-        customizations: dict[str, OverlayConfig] = {}
-        for role_name, overlay_data in data.get("customizations", {}).items():
-            customizations[role_name] = OverlayConfig.from_dict(overlay_data)
-        return cls(
-            provider=data.get("provider", "gemini"),
-            default_role=data.get("default_role", ""),
-            schema_version=data.get("schema_version", 1),
-            library_paths=data.get("library_paths", []),
-            customizations=customizations,
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        d: dict[str, Any] = {
-            "provider": self.provider,
-            "default_role": self.default_role,
-            "schema_version": self.schema_version,
-            "library_paths": self.library_paths,
-        }
-        if self.customizations:
-            d["customizations"] = {
-                name: overlay.to_dict()
-                for name, overlay in self.customizations.items()
-                if not overlay.is_empty
-            }
-        return d
-
-    def save(self, path: Path) -> None:
-        with open(path, "w") as f:
-            yaml.dump(self.to_dict(), f, default_flow_style=False, allow_unicode=True)
-
-
 class FeedbackPolicy(str, Enum):
     OFF = "off"
     ALWAYS = "always"
@@ -428,8 +381,106 @@ class FeedbackConfig:
 
 
 @dataclass
+class ProjectConfig:
+    """ai-hats.yaml — unified project configuration.
+
+    Sections:
+      - Project: provider, library_paths
+      - Role: active_role, default_role, customizations
+      - Feedback: session_retro, judge
+      - Meta: schema_version (2 = current)
+    """
+
+    provider: str = "gemini"
+    default_role: str = ""
+    active_role: str = ""
+    schema_version: int = 2
+    library_paths: list[str] = field(default_factory=list)
+    customizations: dict[str, OverlayConfig] = field(default_factory=dict)
+    feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
+
+    @classmethod
+    def from_yaml(cls, path: Path) -> ProjectConfig:
+        if not path.exists():
+            return cls()
+        with open(path) as f:
+            data = yaml.safe_load(f) or {}
+        if data.get("schema_version", 1) < 2:
+            data = _migrate_v1_to_v2(path, data)
+        customizations: dict[str, OverlayConfig] = {}
+        for role_name, overlay_data in data.get("customizations", {}).items():
+            customizations[role_name] = OverlayConfig.from_dict(overlay_data)
+        return cls(
+            provider=data.get("provider", "gemini"),
+            default_role=data.get("default_role", ""),
+            active_role=data.get("active_role", ""),
+            schema_version=data.get("schema_version", 2),
+            library_paths=data.get("library_paths", []),
+            customizations=customizations,
+            feedback=FeedbackConfig.from_dict(data.get("feedback")),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
+            "schema_version": 2,
+            "provider": self.provider,
+            "library_paths": self.library_paths,
+            "active_role": self.active_role,
+            "default_role": self.default_role,
+        }
+        if self.customizations:
+            d["customizations"] = {
+                name: overlay.to_dict()
+                for name, overlay in self.customizations.items()
+                if not overlay.is_empty
+            }
+        if not self.feedback.is_default:
+            d["feedback"] = self.feedback.to_dict()
+        return d
+
+    def save(self, path: Path) -> None:
+        with open(path, "w") as f:
+            yaml.dump(self.to_dict(), f, default_flow_style=False, allow_unicode=True)
+
+
+def _migrate_v1_to_v2(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:
+    """Auto-migrate schema v1 → v2: merge profile.json into ai-hats.yaml.
+
+    Runs once when a v1 ai-hats.yaml is loaded. Merges active_role, provider,
+    and feedback from adjacent profile.json (if present), writes the unified
+    YAML, and renames profile.json to profile.json.bak.
+    """
+    import json
+    import sys
+
+    profile_path = yaml_path.parent / "profile.json"
+    if profile_path.exists():
+        try:
+            with open(profile_path) as f:
+                profile = json.load(f)
+            if profile.get("provider"):
+                data["provider"] = profile["provider"]
+            data["active_role"] = profile.get("active_role", "")
+            if "feedback" in profile:
+                data["feedback"] = profile["feedback"]
+            profile_path.rename(profile_path.with_suffix(".json.bak"))
+        except (json.JSONDecodeError, OSError):
+            pass  # corrupt profile.json — skip, use YAML as-is
+
+    data["schema_version"] = 2
+    with open(yaml_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+    print("[ai-hats] Migrated profile.json → ai-hats.yaml (schema v2)", file=sys.stderr)
+    return data
+
+
+@dataclass
 class ProfileConfig:
-    """profile.json — active role tracking + feedback config."""
+    """Deprecated: shim that reads/writes through ai-hats.yaml.
+
+    Use ProjectConfig directly instead. This exists for backward compat
+    during the transition period.
+    """
 
     active_role: str = ""
     provider: str = ""
@@ -437,6 +488,16 @@ class ProfileConfig:
 
     @classmethod
     def load(cls, path: Path) -> ProfileConfig:
+        # Try ai-hats.yaml first (unified config)
+        yaml_path = path.parent / "ai-hats.yaml"
+        if yaml_path.exists():
+            cfg = ProjectConfig.from_yaml(yaml_path)
+            return cls(
+                active_role=cfg.active_role,
+                provider=cfg.provider,
+                feedback=cfg.feedback,
+            )
+        # Fallback: read legacy profile.json (tests, external tools)
         if not path.exists():
             return cls()
         import json
@@ -450,6 +511,16 @@ class ProfileConfig:
         )
 
     def save(self, path: Path) -> None:
+        # Write through to ai-hats.yaml
+        yaml_path = path.parent / "ai-hats.yaml"
+        if yaml_path.exists():
+            cfg = ProjectConfig.from_yaml(yaml_path)
+            cfg.active_role = self.active_role
+            cfg.provider = self.provider
+            cfg.feedback = self.feedback
+            cfg.save(yaml_path)
+            return
+        # Fallback: write legacy JSON
         import json
 
         out: dict[str, Any] = {

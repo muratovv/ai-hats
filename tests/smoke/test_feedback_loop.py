@@ -59,10 +59,14 @@ def _setup_project(project: Path) -> None:
     (project / ".agent" / "retrospectives" / "judge").mkdir(parents=True)
 
 
-def _write_profile(project: Path, *, policy: str = "smart") -> None:
-    (project / "profile.json").write_text(json.dumps({
-        "active_role": "assistant",
+def _write_config(project: Path, *, policy: str = "smart") -> None:
+    import yaml
+    data = {
+        "schema_version": 2,
         "provider": "claude",
+        "active_role": "assistant",
+        "default_role": "",
+        "library_paths": [],
         "feedback": {
             "session_retro": {
                 "policy": policy,
@@ -72,7 +76,9 @@ def _write_profile(project: Path, *, policy: str = "smart") -> None:
             },
             "judge": {"policy": "manual"},
         },
-    }))
+    }
+    with open(project / "ai-hats.yaml", "w") as f:
+        yaml.dump(data, f)
 
 
 def _create_session(project: Path, session_id: str, *, turns: int = 6, tool_calls: int = 15) -> Path:
@@ -124,14 +130,14 @@ def test_feedback_loop_session_to_judge(tmp_path: Path) -> None:
     """Full loop: session → should_run → retro → bundle → judge."""
     project = tmp_path
     _setup_project(project)
-    _write_profile(project, policy="smart")
+    _write_config(project, policy="smart")
 
     # 1. Create synthetic session
     _create_session(project, SESSION_ID, turns=6, tool_calls=15)
 
     # 2. Policy decision: should_run returns 'run'
     action, reason = should_run(
-        project / "profile.json",
+        project / "ai-hats.yaml",
         project / ".gitlog" / f"session_{SESSION_ID}" / "metrics.json",
     )
     assert action == "run", f"Expected 'run', got '{action}': {reason}"

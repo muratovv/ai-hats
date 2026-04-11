@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 from click.testing import CliRunner
 
@@ -15,15 +13,16 @@ def cli_project(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
     monkeypatch.chdir(project)
-    # Minimal profile.json
-    (project / "profile.json").write_text(
-        json.dumps({"active_role": "assistant", "provider": "claude"})
+    # Minimal ai-hats.yaml (v2)
+    (project / "ai-hats.yaml").write_text(
+        "schema_version: 2\nprovider: claude\nactive_role: assistant\ndefault_role: ''\nlibrary_paths: []\n"
     )
     return project, CliRunner()
 
 
-def _load_profile(project):
-    return json.loads((project / "profile.json").read_text())
+def _load_config(project):
+    import yaml
+    return yaml.safe_load((project / "ai-hats.yaml").read_text())
 
 
 def test_config_feedback_show(cli_project):
@@ -39,7 +38,7 @@ def test_config_feedback_session_retro_set_policy(cli_project):
     result = runner.invoke(main, ["config", "feedback", "session-retro", "off"])
     assert result.exit_code == 0, result.output
 
-    data = _load_profile(project)
+    data = _load_config(project)
     assert data["feedback"]["session_retro"]["policy"] == "off"
 
 
@@ -50,7 +49,7 @@ def test_config_feedback_session_retro_set_threshold(cli_project):
     )
     assert result.exit_code == 0, result.output
 
-    data = _load_profile(project)
+    data = _load_config(project)
     sr = data["feedback"]["session_retro"]
     assert sr["smart_threshold"]["min_turns"] == 15
     assert sr["smart_threshold"]["min_tool_calls"] == 20
@@ -63,7 +62,7 @@ def test_config_feedback_session_retro_set_mode(cli_project):
     )
     assert result.exit_code == 0, result.output
 
-    data = _load_profile(project)
+    data = _load_config(project)
     assert data["feedback"]["session_retro"]["mode"] == "llm"
 
 
@@ -74,7 +73,7 @@ def test_config_feedback_session_retro_set_background(cli_project):
     )
     assert result.exit_code == 0, result.output
 
-    data = _load_profile(project)
+    data = _load_config(project)
     assert data["feedback"]["session_retro"]["background"] is False
 
 
@@ -89,7 +88,7 @@ def test_config_feedback_judge_set_policy(cli_project):
     result = runner.invoke(main, ["config", "feedback", "judge", "off"])
     assert result.exit_code == 0, result.output
 
-    data = _load_profile(project)
+    data = _load_config(project)
     assert data["feedback"]["judge"]["policy"] == "off"
 
 

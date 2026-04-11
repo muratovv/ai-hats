@@ -23,7 +23,8 @@ uv.lock
 .githooks/
 .gitlog/
 ai-hats.yaml
-profile.json
+profile.json       # legacy, migrated to ai-hats.yaml
+profile.json.bak
 GEMINI.md
 CLAUDE.md
 .claude/skills/

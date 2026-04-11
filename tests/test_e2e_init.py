@@ -41,7 +41,6 @@ def test_set_creates_project(cli_project):
 
     assert result.exit_code == 0, result.output
     assert (project / "ai-hats.yaml").exists()
-    assert (project / "profile.json").exists()
     assert (project / ".agent" / "rules").is_dir()
     assert (project / ".agent" / "skills").is_dir()
     assert (project / ".agent" / "backlog" / "tasks").is_dir()

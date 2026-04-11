@@ -12,7 +12,7 @@ import uuid
 from pathlib import Path
 
 from .assembler import Assembler
-from .models import LifecycleEvent, ProfileConfig
+from .models import LifecycleEvent
 from .observe import AuditWriter, Session, SessionManager, SidecarTracer, TraceTag
 from .providers import get_provider
 from .worktree import IsolationMode, WorktreeManager
@@ -271,15 +271,15 @@ class WrapRunner:
         provider = get_provider(provider_name)
 
         # Determine which role to use
-        profile = ProfileConfig.load(self.project_dir / "profile.json")
-        effective_role = role_override or profile.active_role or self.assembler.project_config.default_role
+        cfg = self.assembler.project_config
+        effective_role = role_override or cfg.active_role or cfg.default_role
 
         # Role override uses shadow prompt (temp file) — never modifies project files.
         # Permanent assembly only when no override.
         override_args: list[str] = []
         override_env: dict[str, str] = {}
 
-        if role_override and profile.active_role:
+        if role_override and cfg.active_role:
             # Shadow override: compose to temp file, pass via CLI flags
             result = self.assembler.composer.compose(
                 effective_role, overlay=self.assembler._get_overlay(effective_role),
@@ -289,14 +289,15 @@ class WrapRunner:
             )
         elif effective_role:
             needs_assembly = (
-                not profile.active_role  # no role set yet
-                or profile.provider != provider_name  # provider mismatch
+                not cfg.active_role  # no role set yet
+                or cfg.provider != provider_name  # provider mismatch
             )
             if needs_assembly:
                 self.assembler.set_role(effective_role, provider_name)
 
-        profile = ProfileConfig.load(self.project_dir / "profile.json")
-        active_role = role_override or profile.active_role
+        # Reload after potential set_role
+        cfg = self.assembler.project_config
+        active_role = role_override or cfg.active_role
 
         # Create session
         session = self.session_mgr.create_session()
@@ -439,8 +440,7 @@ class SubAgentRunner:
         result = self.assembler.composer.compose(
             role_name, overlay=self.assembler._get_overlay(role_name),
         )
-        profile = ProfileConfig.load(self.project_dir / "profile.json")
-        provider_name = profile.provider or self.assembler.project_config.provider
+        provider_name = self.assembler.project_config.provider
         provider = get_provider(provider_name)
 
         # Build meta-prompt

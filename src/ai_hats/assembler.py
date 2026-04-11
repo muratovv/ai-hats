@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 
 from .composer import Composer, CompositionResult
 from .library import LibraryResolver
-from .models import ProfileConfig, ProjectConfig, SkillMetadata
+from .models import ProjectConfig, SkillMetadata
 from .providers import Provider, get_provider
 
 
 AGENT_DIR = ".agent"
 GITLOG_DIR = ".gitlog"
 PROJECT_CONFIG = "ai-hats.yaml"
-PROFILE_FILE = "profile.json"
+PROFILE_FILE = "profile.json"  # legacy, used only for backup compat
 GITHOOKS_DIR = ".githooks"
 GITHOOKS_MANIFEST = ".ai-hats-manifest"
 GITHOOKS_DISPATCHER_MARKER = "AI-HATS-DISPATCHER-MARKER"
@@ -35,7 +33,6 @@ class Assembler:
         self.agent_dir = project_dir / AGENT_DIR
         self.gitlog_dir = project_dir / GITLOG_DIR
         self.config_path = project_dir / PROJECT_CONFIG
-        self.profile_path = project_dir / PROFILE_FILE
         self.project_config = ProjectConfig.from_yaml(self.config_path)
 
         # Build library paths: built-in + project config + explicit
@@ -92,10 +89,6 @@ class Assembler:
             self.project_config.provider = provider
             self.project_config.save(self.config_path)
 
-        # Create profile.json
-        if not self.profile_path.exists():
-            ProfileConfig().save(self.profile_path)
-
         # Create STATE.md
         state_md = self.agent_dir / "STATE.md"
         if not state_md.exists():
@@ -144,11 +137,10 @@ class Assembler:
             # 6. Verify
             self._verify(result, provider)
 
-            # 7. Update profile (preserve existing feedback config)
-            profile = ProfileConfig.load(self.profile_path)
-            profile.active_role = role_name
-            profile.provider = provider.name
-            profile.save(self.profile_path)
+            # 7. Update config (active_role + provider)
+            self.project_config.active_role = role_name
+            self.project_config.provider = provider.name
+            self.project_config.save(self.config_path)
 
             # 8. Save backup reference
             self._save_backup_ref(backup_path)
@@ -184,19 +176,19 @@ class Assembler:
 
     def status(self) -> dict:
         """Get current status: role, dependency tree, health."""
-        profile = ProfileConfig.load(self.profile_path)
+        cfg = self.project_config
         status = {
-            "role": profile.active_role,
-            "provider": profile.provider or self.project_config.provider,
+            "role": cfg.active_role,
+            "provider": cfg.provider,
             "project_dir": str(self.project_dir),
             "library_paths": [str(p) for p in self.library_paths],
             "health": {},
             "tree": None,
         }
 
-        if profile.active_role:
+        if cfg.active_role:
             result = self.composer.compose(
-                profile.active_role, overlay=self._get_overlay(profile.active_role),
+                cfg.active_role, overlay=self._get_overlay(cfg.active_role),
             )
             status["tree"] = self._build_tree(result)
             status["health"] = self._check_health(result)
@@ -206,17 +198,15 @@ class Assembler:
 
     def bump(self) -> CompositionResult | None:
         """Re-apply current role (update to latest)."""
-        profile = ProfileConfig.load(self.profile_path)
-        if not profile.active_role:
+        if not self.project_config.active_role:
             return None
-        return self.set_role(profile.active_role, profile.provider or None)
+        return self.set_role(self.project_config.active_role, self.project_config.provider or None)
 
     def whoami(self) -> dict:
         """Diagnostic info about current session."""
-        profile = ProfileConfig.load(self.profile_path)
         return {
-            "role": profile.active_role,
-            "provider": profile.provider or self.project_config.provider,
+            "role": self.project_config.active_role,
+            "provider": self.project_config.provider,
             "project_dir": str(self.project_dir),
             "schema_version": self.project_config.schema_version,
         }
@@ -239,9 +229,9 @@ class Assembler:
             src = self.project_dir / provider_dir
             if src.exists():
                 shutil.copytree(src, backup_dir / provider_dir)
-        # Backup profile
-        if self.profile_path.exists():
-            shutil.copy2(self.profile_path, backup_dir / PROFILE_FILE)
+        # Backup ai-hats.yaml
+        if self.config_path.exists():
+            shutil.copy2(self.config_path, backup_dir / PROJECT_CONFIG)
         return backup_dir
 
     def _restore_backup(self, backup_path: Path) -> None:
@@ -266,9 +256,10 @@ class Assembler:
                     shutil.rmtree(dest)
                 shutil.copytree(src, dest)
 
-        profile_backup = backup_path / PROFILE_FILE
-        if profile_backup.exists():
-            shutil.copy2(profile_backup, self.profile_path)
+        config_backup = backup_path / PROJECT_CONFIG
+        if config_backup.exists():
+            shutil.copy2(config_backup, self.config_path)
+            self.project_config = ProjectConfig.from_yaml(self.config_path)
 
     def _save_backup_ref(self, backup_path: Path | None) -> None:
         ref = self._backup_ref_path()

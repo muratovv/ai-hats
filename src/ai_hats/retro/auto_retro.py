@@ -14,18 +14,18 @@ import os
 import sys
 from pathlib import Path
 
-from ..models import FeedbackPolicy, ProfileConfig
+from ..models import FeedbackPolicy, ProjectConfig
 
 
 def should_run(
-    profile_path: Path,
+    config_path: Path,
     metrics_path: Path,
 ) -> tuple[str, str]:
     """Decide whether to generate a session retro.
 
     Returns (action, reason) where action is 'run', 'hint', or 'skip'.
     """
-    config = ProfileConfig.load(profile_path)
+    config = ProjectConfig.from_yaml(config_path)
     sr = config.feedback.session_retro
     policy = sr.policy
 
@@ -70,10 +70,10 @@ def main() -> None:
         return
 
     project_dir = Path.cwd()
-    profile_path = project_dir / "profile.json"
+    config_path = project_dir / "ai-hats.yaml"
     metrics_path = project_dir / ".gitlog" / f"session_{session_id}" / "metrics.json"
 
-    action, reason = should_run(profile_path, metrics_path)
+    action, reason = should_run(config_path, metrics_path)
 
     if action == "skip":
         print(f"[auto-retro] skip: {reason}", file=sys.stderr)
@@ -84,7 +84,7 @@ def main() -> None:
         return
 
     # action == "run"
-    config = ProfileConfig.load(profile_path)
+    config = ProjectConfig.from_yaml(config_path)
     sr = config.feedback.session_retro
     mode = sr.mode
     background = sr.background
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == "--foreground":
         sid = sys.argv[2]
         project_dir = Path.cwd()
-        config = ProfileConfig.load(project_dir / "profile.json")
+        config = ProjectConfig.from_yaml(project_dir / "ai-hats.yaml")
         _run_foreground(project_dir, sid, config.feedback.session_retro.mode)
     else:
         main()

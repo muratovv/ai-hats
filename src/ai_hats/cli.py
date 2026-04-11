@@ -156,10 +156,10 @@ main.add_command(config)
 @config_feedback.command("show")
 def config_feedback_show():
     """Display current feedback configuration."""
-    from .models import ProfileConfig
+    from .models import ProjectConfig
 
-    profile = ProfileConfig.load(_project_dir() / "profile.json")
-    fc = profile.feedback
+    config = ProjectConfig.from_yaml(_project_dir() / "ai-hats.yaml")
+    fc = config.feedback
     sr = fc.session_retro
 
     console.print("[bold]Feedback config[/]")
@@ -177,11 +177,11 @@ def config_feedback_show():
 @click.option("--background/--no-background", default=None, help="Run retro in background")
 def config_feedback_session_retro(policy: str | None, threshold: str | None, retro_mode: str | None, background: bool | None):
     """Configure session-retro policy and options."""
-    from .models import FeedbackPolicy, ProfileConfig
+    from .models import FeedbackPolicy, ProjectConfig
 
-    path = _project_dir() / "profile.json"
-    profile = ProfileConfig.load(path)
-    sr = profile.feedback.session_retro
+    path = _project_dir() / "ai-hats.yaml"
+    config = ProjectConfig.from_yaml(path)
+    sr = config.feedback.session_retro
 
     if policy is None and threshold is None and retro_mode is None and background is None:
         console.print("[red]Specify a policy and/or options (--threshold, --mode, --background)[/]")
@@ -204,7 +204,7 @@ def config_feedback_session_retro(policy: str | None, threshold: str | None, ret
     if background is not None:
         sr.background = background
 
-    profile.save(path)
+    config.save(path)
     console.print("[green]Updated[/] feedback.session_retro")
     config_feedback_show.invoke(click.Context(config_feedback_show))
 
@@ -213,12 +213,12 @@ def config_feedback_session_retro(policy: str | None, threshold: str | None, ret
 @click.argument("policy", type=click.Choice(["off", "manual"]))
 def config_feedback_judge(policy: str):
     """Configure judge policy."""
-    from .models import JudgePolicy, ProfileConfig
+    from .models import JudgePolicy, ProjectConfig
 
-    path = _project_dir() / "profile.json"
-    profile = ProfileConfig.load(path)
-    profile.feedback.judge.policy = JudgePolicy(policy)
-    profile.save(path)
+    path = _project_dir() / "ai-hats.yaml"
+    config = ProjectConfig.from_yaml(path)
+    config.feedback.judge.policy = JudgePolicy(policy)
+    config.save(path)
     console.print(f"[green]Updated[/] feedback.judge.policy = {policy}")
 
 
@@ -580,14 +580,13 @@ def _launch_session(
     extra_args: list[str] | None = None,
 ):
     """Launch a wrapped provider CLI session."""
-    from .models import ProfileConfig, ProjectConfig
+    from .models import ProjectConfig
     from .runtime import WrapRunner
 
     project_dir = _project_dir()
-    profile = ProfileConfig.load(project_dir / "profile.json")
     config = ProjectConfig.from_yaml(project_dir / "ai-hats.yaml")
 
-    effective_provider = provider or profile.provider or config.provider
+    effective_provider = provider or config.provider
     if not effective_provider:
         console.print("[red]No provider configured[/]. Run: ai-hats set -p <provider>")
         sys.exit(1)
@@ -1773,15 +1772,12 @@ def _format_component_diff(
 
 def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
     """Snapshot current role's rules and skills via composition."""
-    from .models import ProfileConfig
-
-    profile = ProfileConfig.load(asm.profile_path)
-    if not profile.active_role:
+    if not asm.project_config.active_role:
         return set(), set()
     try:
         result = asm.composer.compose(
-            profile.active_role,
-            overlay=asm._get_overlay(profile.active_role),
+            asm.project_config.active_role,
+            overlay=asm._get_overlay(asm.project_config.active_role),
         )
         return {r.name for r in result.rules}, {s.name for s in result.skills}
     except Exception:
@@ -1794,21 +1790,21 @@ def update():
     import subprocess
 
     from . import __version__ as old_version
-    from .models import ProfileConfig
+    from .models import ProjectConfig
 
     console.print(f"Current version: [bold]{old_version}[/]")
 
     # 1. Snapshot before update
     before_lib = _snapshot_library()
     project_dir = _project_dir()
-    profile_path = project_dir / "profile.json"
+    config_path = project_dir / "ai-hats.yaml"
     active_role = None
     before_rules: set[str] = set()
     before_skills: set[str] = set()
 
-    if profile_path.exists() and (project_dir / "ai-hats.yaml").exists():
-        profile = ProfileConfig.load(profile_path)
-        active_role = profile.active_role or None
+    if config_path.exists():
+        config = ProjectConfig.from_yaml(config_path)
+        active_role = config.active_role or None
         if active_role:
             asm = _assembler(project_dir)
             before_rules, before_skills = _snapshot_composition(asm)

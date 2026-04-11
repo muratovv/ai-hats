@@ -406,61 +406,148 @@ def test_feedback_config_from_empty():
     assert FeedbackConfig.from_dict({}) == FeedbackConfig()
 
 
-def test_profile_config_backward_compat(tmp_path):
-    """profile.json without feedback section loads with defaults."""
-    import json
-
-    path = tmp_path / "profile.json"
-    path.write_text(json.dumps({"active_role": "assistant", "provider": "claude"}))
-
-    profile = ProfileConfig.load(path)
-    assert profile.active_role == "assistant"
-    assert profile.feedback.is_default
+# -- ProjectConfig v2: unified config with feedback --
 
 
-def test_profile_config_feedback_roundtrip(tmp_path):
-    import json
-
-    profile = ProfileConfig(
-        active_role="assistant",
+def test_project_config_v2_roundtrip(tmp_path):
+    config = ProjectConfig(
         provider="claude",
+        active_role="assistant",
         feedback=FeedbackConfig(
-            session_retro=SessionRetroConfig(policy=FeedbackPolicy.HINT),
+            session_retro=SessionRetroConfig(policy=FeedbackPolicy.HINT, mode="llm"),
         ),
     )
-    path = tmp_path / "profile.json"
-    profile.save(path)
+    path = tmp_path / "ai-hats.yaml"
+    config.save(path)
 
-    loaded = ProfileConfig.load(path)
+    loaded = ProjectConfig.from_yaml(path)
+    assert loaded.active_role == "assistant"
+    assert loaded.provider == "claude"
     assert loaded.feedback.session_retro.policy == FeedbackPolicy.HINT
-    assert loaded.feedback.judge.policy == JudgePolicy.MANUAL
+    assert loaded.feedback.session_retro.mode == "llm"
+    assert loaded.schema_version == 2
 
 
-def test_profile_config_default_feedback_not_serialized(tmp_path):
-    """Default feedback config should not appear in profile.json."""
-    import json
+def test_project_config_v2_default_feedback_not_serialized(tmp_path):
+    config = ProjectConfig(provider="claude", active_role="assistant")
+    path = tmp_path / "ai-hats.yaml"
+    config.save(path)
 
-    profile = ProfileConfig(active_role="assistant", provider="claude")
-    path = tmp_path / "profile.json"
-    profile.save(path)
-
-    data = json.loads(path.read_text())
-    assert "feedback" not in data
+    content = path.read_text()
+    assert "feedback" not in content
 
 
-def test_profile_config_non_default_feedback_serialized(tmp_path):
-    import json
-
-    profile = ProfileConfig(
-        active_role="assistant",
+def test_project_config_v2_non_default_feedback_serialized(tmp_path):
+    config = ProjectConfig(
         provider="claude",
         feedback=FeedbackConfig(
             session_retro=SessionRetroConfig(policy=FeedbackPolicy.OFF),
         ),
     )
-    path = tmp_path / "profile.json"
-    profile.save(path)
+    path = tmp_path / "ai-hats.yaml"
+    config.save(path)
 
-    data = json.loads(path.read_text())
+    import yaml as _yaml
+    data = _yaml.safe_load(path.read_text())
     assert "feedback" in data
     assert data["feedback"]["session_retro"]["policy"] == "off"
+
+
+# -- Migration v1 → v2 --
+
+
+def test_migration_v1_to_v2_merges_profile(tmp_path):
+    """v1 ai-hats.yaml + profile.json → merged v2 ai-hats.yaml."""
+    import json
+
+    yaml_path = tmp_path / "ai-hats.yaml"
+    yaml_path.write_text("provider: gemini\ndefault_role: sre\nschema_version: 1\n")
+
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(json.dumps({
+        "active_role": "assistant",
+        "provider": "claude",
+        "feedback": {
+            "session_retro": {"policy": "hint", "mode": "llm"},
+            "judge": {"policy": "manual"},
+        },
+    }))
+
+    config = ProjectConfig.from_yaml(yaml_path)
+    assert config.schema_version == 2
+    assert config.active_role == "assistant"
+    assert config.provider == "claude"  # profile wins
+    assert config.default_role == "sre"  # preserved from yaml
+    assert config.feedback.session_retro.policy == FeedbackPolicy.HINT
+    # profile.json renamed to .bak
+    assert not profile_path.exists()
+    assert profile_path.with_suffix(".json.bak").exists()
+
+
+def test_migration_v1_without_profile(tmp_path):
+    """v1 ai-hats.yaml without profile.json still migrates to v2."""
+    yaml_path = tmp_path / "ai-hats.yaml"
+    yaml_path.write_text("provider: claude\ndefault_role: go-dev\nschema_version: 1\n")
+
+    config = ProjectConfig.from_yaml(yaml_path)
+    assert config.schema_version == 2
+    assert config.provider == "claude"
+    assert config.active_role == ""
+    assert config.feedback.is_default
+
+
+def test_migration_idempotent(tmp_path):
+    """Loading a v2 config does not re-migrate."""
+    config = ProjectConfig(provider="claude", active_role="sre")
+    path = tmp_path / "ai-hats.yaml"
+    config.save(path)
+
+    loaded = ProjectConfig.from_yaml(path)
+    assert loaded.schema_version == 2
+    assert loaded.active_role == "sre"
+
+
+# -- ProfileConfig shim --
+
+
+def test_profile_shim_reads_from_yaml(tmp_path):
+    """ProfileConfig.load() reads from ai-hats.yaml when it exists."""
+    config = ProjectConfig(
+        provider="claude",
+        active_role="assistant",
+        feedback=FeedbackConfig(
+            session_retro=SessionRetroConfig(policy=FeedbackPolicy.HINT),
+        ),
+    )
+    (tmp_path / "ai-hats.yaml").write_text("")
+    config.save(tmp_path / "ai-hats.yaml")
+
+    profile = ProfileConfig.load(tmp_path / "profile.json")
+    assert profile.active_role == "assistant"
+    assert profile.feedback.session_retro.policy == FeedbackPolicy.HINT
+
+
+def test_profile_shim_writes_to_yaml(tmp_path):
+    """ProfileConfig.save() writes through to ai-hats.yaml."""
+    import yaml as _yaml
+
+    config = ProjectConfig(provider="gemini", active_role="sre")
+    config.save(tmp_path / "ai-hats.yaml")
+
+    profile = ProfileConfig(active_role="assistant", provider="claude")
+    profile.save(tmp_path / "profile.json")
+
+    data = _yaml.safe_load((tmp_path / "ai-hats.yaml").read_text())
+    assert data["active_role"] == "assistant"
+    assert data["provider"] == "claude"
+
+
+def test_profile_shim_fallback_to_json(tmp_path):
+    """ProfileConfig.load() falls back to JSON when no ai-hats.yaml."""
+    import json
+
+    path = tmp_path / "profile.json"
+    path.write_text(json.dumps({"active_role": "test", "provider": "claude"}))
+
+    profile = ProfileConfig.load(path)
+    assert profile.active_role == "test"

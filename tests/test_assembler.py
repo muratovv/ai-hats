@@ -82,7 +82,7 @@ def test_init_creates_structure(tmp_path):
     assert (project / ".agent" / "hooks").is_dir()
     assert (project / ".agent" / "backlog" / "tasks").is_dir()
     assert (project / ".gitlog").is_dir()
-    assert (project / "profile.json").exists()
+    assert (project / "ai-hats.yaml").exists()
     assert (project / ".agent" / "STATE.md").exists()
 
 
