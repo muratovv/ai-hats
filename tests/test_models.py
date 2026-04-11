@@ -5,9 +5,16 @@ import pytest
 from ai_hats.models import (
     ComponentConfig,
     Composition,
+    FeedbackConfig,
+    FeedbackPolicy,
     HooksConfig,
+    JudgeConfig,
+    JudgePolicy,
     OverlayConfig,
+    ProfileConfig,
     ProjectConfig,
+    SessionRetroConfig,
+    SmartThreshold,
     TaskCard,
     TaskState,
     resolve_namespace,
@@ -324,3 +331,136 @@ def test_project_config_empty_customizations_not_serialized(tmp_path):
 
     content = path.read_text()
     assert "customizations" not in content
+
+
+# -- FeedbackConfig tests --
+
+
+def test_smart_threshold_defaults():
+    t = SmartThreshold()
+    assert t.min_turns == 5
+    assert t.min_tool_calls == 10
+
+
+def test_smart_threshold_roundtrip():
+    t = SmartThreshold(min_turns=15, min_tool_calls=20)
+    restored = SmartThreshold.from_dict(t.to_dict())
+    assert restored == t
+
+
+def test_smart_threshold_from_empty():
+    assert SmartThreshold.from_dict(None) == SmartThreshold()
+    assert SmartThreshold.from_dict({}) == SmartThreshold()
+
+
+def test_session_retro_config_defaults():
+    c = SessionRetroConfig()
+    assert c.policy == FeedbackPolicy.SMART
+    assert c.background is True
+    assert c.mode == "programmatic"
+
+
+def test_session_retro_config_roundtrip():
+    c = SessionRetroConfig(
+        policy=FeedbackPolicy.HINT,
+        smart_threshold=SmartThreshold(min_turns=10, min_tool_calls=5),
+        background=False,
+        mode="llm",
+    )
+    restored = SessionRetroConfig.from_dict(c.to_dict())
+    assert restored == c
+
+
+def test_judge_config_roundtrip():
+    c = JudgeConfig(policy=JudgePolicy.OFF)
+    restored = JudgeConfig.from_dict(c.to_dict())
+    assert restored == c
+
+
+def test_feedback_config_defaults():
+    fc = FeedbackConfig()
+    assert fc.session_retro.policy == FeedbackPolicy.SMART
+    assert fc.judge.policy == JudgePolicy.MANUAL
+    assert fc.is_default
+
+
+def test_feedback_config_is_default_false_after_change():
+    fc = FeedbackConfig()
+    fc.session_retro.policy = FeedbackPolicy.OFF
+    assert not fc.is_default
+
+
+def test_feedback_config_roundtrip():
+    fc = FeedbackConfig(
+        session_retro=SessionRetroConfig(
+            policy=FeedbackPolicy.ALWAYS, mode="hybrid",
+        ),
+        judge=JudgeConfig(policy=JudgePolicy.OFF),
+    )
+    restored = FeedbackConfig.from_dict(fc.to_dict())
+    assert restored == fc
+
+
+def test_feedback_config_from_empty():
+    assert FeedbackConfig.from_dict(None) == FeedbackConfig()
+    assert FeedbackConfig.from_dict({}) == FeedbackConfig()
+
+
+def test_profile_config_backward_compat(tmp_path):
+    """profile.json without feedback section loads with defaults."""
+    import json
+
+    path = tmp_path / "profile.json"
+    path.write_text(json.dumps({"active_role": "assistant", "provider": "claude"}))
+
+    profile = ProfileConfig.load(path)
+    assert profile.active_role == "assistant"
+    assert profile.feedback.is_default
+
+
+def test_profile_config_feedback_roundtrip(tmp_path):
+    import json
+
+    profile = ProfileConfig(
+        active_role="assistant",
+        provider="claude",
+        feedback=FeedbackConfig(
+            session_retro=SessionRetroConfig(policy=FeedbackPolicy.HINT),
+        ),
+    )
+    path = tmp_path / "profile.json"
+    profile.save(path)
+
+    loaded = ProfileConfig.load(path)
+    assert loaded.feedback.session_retro.policy == FeedbackPolicy.HINT
+    assert loaded.feedback.judge.policy == JudgePolicy.MANUAL
+
+
+def test_profile_config_default_feedback_not_serialized(tmp_path):
+    """Default feedback config should not appear in profile.json."""
+    import json
+
+    profile = ProfileConfig(active_role="assistant", provider="claude")
+    path = tmp_path / "profile.json"
+    profile.save(path)
+
+    data = json.loads(path.read_text())
+    assert "feedback" not in data
+
+
+def test_profile_config_non_default_feedback_serialized(tmp_path):
+    import json
+
+    profile = ProfileConfig(
+        active_role="assistant",
+        provider="claude",
+        feedback=FeedbackConfig(
+            session_retro=SessionRetroConfig(policy=FeedbackPolicy.OFF),
+        ),
+    )
+    path = tmp_path / "profile.json"
+    profile.save(path)
+
+    data = json.loads(path.read_text())
+    assert "feedback" in data
+    assert data["feedback"]["session_retro"]["policy"] == "off"

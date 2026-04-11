@@ -1,28 +1,15 @@
 #!/usr/bin/env bash
-# Auto session-retro: generate programmatic retro for productive work sessions.
+# Auto session-retro: policy-aware retro generation.
 # Runs as session_end hook — metrics.json is guaranteed to exist (HATS-071).
+# Policy/threshold/mode logic lives in Python (ai_hats.retro.auto_retro).
 set -euo pipefail
 
-# Skip non-work sessions (judge, sub-agent, test-agent, etc.)
+# Fast guards (no Python needed)
 ROLE="${AI_HATS_ROLE:-}"
 case "$ROLE" in
     judge|test-agent|"") exit 0 ;;
 esac
+[ -n "${AI_HATS_SESSION_ID:-}" ] || exit 0
 
-# Read metrics
-SESSION_ID="${AI_HATS_SESSION_ID:-}"
-[ -n "$SESSION_ID" ] || exit 0
-
-METRICS=".gitlog/session_${SESSION_ID}/metrics.json"
-[ -f "$METRICS" ] || exit 0
-
-# Check productivity: turns >= threshold
-MIN_TURNS="${AI_HATS_AUTO_RETRO_MIN_TURNS:-5}"
-TURNS=$(python3 -c "import json; print(json.load(open('$METRICS')).get('turns', 0))" 2>/dev/null || echo 0)
-
-if [ "$TURNS" -lt "$MIN_TURNS" ]; then
-    exit 0
-fi
-
-# Generate programmatic retro (fast, no LLM, no cost)
-ai-hats retro "$SESSION_ID" --mode programmatic >/dev/null 2>&1 || true
+# Delegate to Python for policy decision + execution
+python3 -m ai_hats.retro.auto_retro || true

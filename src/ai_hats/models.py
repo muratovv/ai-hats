@@ -331,12 +331,109 @@ class ProjectConfig:
             yaml.dump(self.to_dict(), f, default_flow_style=False, allow_unicode=True)
 
 
+class FeedbackPolicy(str, Enum):
+    OFF = "off"
+    ALWAYS = "always"
+    SMART = "smart"
+    HINT = "hint"
+
+
+class JudgePolicy(str, Enum):
+    OFF = "off"
+    MANUAL = "manual"
+
+
+@dataclass
+class SmartThreshold:
+    min_turns: int = 5
+    min_tool_calls: int = 10
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> SmartThreshold:
+        if not data:
+            return cls()
+        return cls(
+            min_turns=data.get("min_turns", 5),
+            min_tool_calls=data.get("min_tool_calls", 10),
+        )
+
+    def to_dict(self) -> dict[str, int]:
+        return {"min_turns": self.min_turns, "min_tool_calls": self.min_tool_calls}
+
+
+@dataclass
+class SessionRetroConfig:
+    policy: FeedbackPolicy = FeedbackPolicy.SMART
+    smart_threshold: SmartThreshold = field(default_factory=SmartThreshold)
+    background: bool = True
+    mode: str = "programmatic"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> SessionRetroConfig:
+        if not data:
+            return cls()
+        return cls(
+            policy=FeedbackPolicy(data.get("policy", "smart")),
+            smart_threshold=SmartThreshold.from_dict(data.get("smart_threshold")),
+            background=data.get("background", True),
+            mode=data.get("mode", "programmatic"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "policy": self.policy.value,
+            "smart_threshold": self.smart_threshold.to_dict(),
+            "background": self.background,
+            "mode": self.mode,
+        }
+
+
+@dataclass
+class JudgeConfig:
+    policy: JudgePolicy = JudgePolicy.MANUAL
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> JudgeConfig:
+        if not data:
+            return cls()
+        return cls(policy=JudgePolicy(data.get("policy", "manual")))
+
+    def to_dict(self) -> dict[str, str]:
+        return {"policy": self.policy.value}
+
+
+@dataclass
+class FeedbackConfig:
+    session_retro: SessionRetroConfig = field(default_factory=SessionRetroConfig)
+    judge: JudgeConfig = field(default_factory=JudgeConfig)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> FeedbackConfig:
+        if not data:
+            return cls()
+        return cls(
+            session_retro=SessionRetroConfig.from_dict(data.get("session_retro")),
+            judge=JudgeConfig.from_dict(data.get("judge")),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "session_retro": self.session_retro.to_dict(),
+            "judge": self.judge.to_dict(),
+        }
+
+    @property
+    def is_default(self) -> bool:
+        return self == FeedbackConfig()
+
+
 @dataclass
 class ProfileConfig:
-    """profile.json — active role tracking."""
+    """profile.json — active role tracking + feedback config."""
 
     active_role: str = ""
     provider: str = ""
+    feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
 
     @classmethod
     def load(cls, path: Path) -> ProfileConfig:
@@ -349,13 +446,20 @@ class ProfileConfig:
         return cls(
             active_role=data.get("active_role", ""),
             provider=data.get("provider", ""),
+            feedback=FeedbackConfig.from_dict(data.get("feedback")),
         )
 
     def save(self, path: Path) -> None:
         import json
 
+        out: dict[str, Any] = {
+            "active_role": self.active_role,
+            "provider": self.provider,
+        }
+        if not self.feedback.is_default:
+            out["feedback"] = self.feedback.to_dict()
         with open(path, "w") as f:
-            json.dump({"active_role": self.active_role, "provider": self.provider}, f, indent=2)
+            json.dump(out, f, indent=2)
 
 
 @dataclass
