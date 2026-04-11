@@ -15,25 +15,27 @@ Orchestrate task lifecycle using YAML task cards in `.agent/backlog/tasks/`.
 
 **All backlog operations MUST use the `ai-hats task` CLI. Never create task directories or YAML files manually.**
 
+> **Note:** Task ID prefix is project-specific (e.g. `PROX-`, `INFRA-`). Examples below use `PROJ-` as a placeholder.
+
 ```bash
 # Create task (ID auto-generated if omitted)
-ai-hats task create "Title" -d "Description" -p medium --tag dx --tag cleanup --id HATS-042
+ai-hats task create "Title" -d "Description" -p medium --tag dx --tag cleanup --id PROJ-042
 
 # Show task
-ai-hats task show HATS-042
+ai-hats task show PROJ-042
 
 # Transition state
-ai-hats task transition HATS-042 plan
-ai-hats task transition HATS-042 execute
-ai-hats task transition HATS-042 done
+ai-hats task transition PROJ-042 plan
+ai-hats task transition PROJ-042 execute
+ai-hats task transition PROJ-042 done
 
 # Update task fields
-ai-hats task update HATS-042 -p high
-ai-hats task update HATS-042 --description "New description" --resolution "Closed: duplicate"
-ai-hats task update HATS-042 --add-tag refactor --remove-tag wip
+ai-hats task update PROJ-042 -p high
+ai-hats task update PROJ-042 --description "New description" --resolution "Closed: duplicate"
+ai-hats task update PROJ-042 --add-tag refactor --remove-tag wip
 
 # Log work progress
-ai-hats task log HATS-042 "Implemented X, tests green"
+ai-hats task log PROJ-042 "Implemented X, tests green"
 
 # List open tasks (done/failed hidden by default)
 ai-hats task list
@@ -46,7 +48,7 @@ ai-hats task list --state brainstorm --priority high
 
 # Search by regex across id, title, description, tags, parent_task
 ai-hats task list --search epic              # find epics
-ai-hats task list --search HATS-092          # epic + children (via parent_task)
+ai-hats task list --search PROJ-092          # epic + children (via parent_task)
 ai-hats task list --search "judge|retro"     # regex OR
 
 # Sync STATE.md and backlog.md
@@ -61,12 +63,12 @@ The CLI is the **sole interface** to the backlog. Direct filesystem access to `.
 
 | ❌ NEVER | ✅ ALWAYS |
 |----------|----------|
-| `Read .agent/backlog/tasks/HATS-018/task.yaml` | `ai-hats task show HATS-018` |
+| `Read .agent/backlog/tasks/PROJ-018/task.yaml` | `ai-hats task show PROJ-018` |
 | `Glob .agent/backlog/tasks/**/*` | `ai-hats task list` or `ai-hats task list --search <regex>` |
 | `Grep` / `Bash(ls)` over `.agent/backlog/tasks/` | `ai-hats task list --search <regex>` |
-| `mkdir -p .agent/backlog/tasks/HATS-038/` + `Write task.yaml` | `ai-hats task create "Title" -d "Description"` |
+| `mkdir -p .agent/backlog/tasks/PROJ-038/` + `Write task.yaml` | `ai-hats task create "Title" -d "Description"` |
 | `Edit task.yaml` to change state/priority/tags | `ai-hats task update` / `ai-hats task transition` |
-| `Edit task.yaml` to add work log entry | `ai-hats task log HATS-042 "message"` |
+| `Edit task.yaml` to add work log entry | `ai-hats task log PROJ-042 "message"` |
 | `Edit STATE.md` or `Edit backlog.md` manually | `ai-hats task sync` |
 
 This applies to **all tools**: Read, Write, Edit, Glob, Grep, Bash.
@@ -134,7 +136,7 @@ Two equivalent flows — pick one, do not mix:
 2. `cd <printed-worktree-path>`
 
 **B. Custom branch name (manual worktree first):**
-1. `ai-hats wt create type/TICKET-ID` (e.g. `feat/HATS-004`) → **worktree-isolation**
+1. `ai-hats wt create type/TICKET-ID` (e.g. `feat/PROJ-004`) → **worktree-isolation**
 2. `cd <printed-worktree-path>`
 3. `ai-hats task transition <ID> execute` — adopts the worktree you just `cd`'d into (no nesting)
 

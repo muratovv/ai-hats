@@ -10,7 +10,7 @@ Isolated development using git worktrees. Each task gets its own working copy â€
 
 1. **Start task** â†’ create worktree:
    ```
-   ai-hats wt create feat/HATS-004
+   ai-hats wt create feat/PROJ-004
    cd <worktree-path>
    ```
 
@@ -71,7 +71,7 @@ cd $WT
 
 ## Conventions
 
-- Branch naming: `type/TICKET-ID` (e.g., `feat/HATS-004`, `fix/HATS-012`)
+- Branch naming: `type/TICKET-ID` (e.g., `feat/PROJ-004`, `fix/PROJ-012`)
 - One active worktree at a time (per project)
 - Always `cd` back to project dir before merge/discard
 - Commit your work in the worktree before merging

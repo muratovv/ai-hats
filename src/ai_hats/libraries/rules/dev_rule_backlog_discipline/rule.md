@@ -12,13 +12,13 @@
 
    Bad:
    ```
-   Read .agent/backlog/tasks/HATS-074/task.yaml
+   Read .agent/backlog/tasks/PROJ-074/task.yaml
    Edit task.yaml → state: done
    ```
    Good:
    ```
-   Bash: ai-hats task show HATS-074
-   Bash: ai-hats task transition HATS-074 done
+   Bash: ai-hats task show PROJ-074
+   Bash: ai-hats task transition PROJ-074 done
    ```
 2. **Work Log Cadence**: Log after every significant action: approach changes,
    file deletions, branch operations, milestone completions.
