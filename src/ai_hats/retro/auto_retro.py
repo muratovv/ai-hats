@@ -85,8 +85,17 @@ def main() -> None:
 
     # action == "run"
     config = ProfileConfig.load(profile_path)
-    mode = config.feedback.session_retro.mode
+    sr = config.feedback.session_retro
+    mode = sr.mode
+    background = sr.background
 
+    if background:
+        _run_background(project_dir, session_id, mode)
+    else:
+        _run_foreground(project_dir, session_id, mode)
+
+
+def _run_foreground(project_dir: Path, session_id: str, mode: str) -> None:
     from .builder import BuilderMode, SessionRetroBuilder
     from .llm_caller import SubprocessLLMCaller
 
@@ -101,5 +110,35 @@ def main() -> None:
         print(f"[auto-retro] failed: {exc}", file=sys.stderr)
 
 
+def _run_background(project_dir: Path, session_id: str, mode: str) -> None:
+    import subprocess as sp
+
+    log_dir = project_dir / ".gitlog" / f"session_{session_id}"
+    log_file = log_dir / "retro.log"
+    print(
+        f"[auto-retro] spawning {mode} retro for {session_id} in background "
+        f"(log: {log_file})",
+        file=sys.stderr,
+    )
+    with open(log_file, "w") as f:
+        sp.Popen(
+            [
+                sys.executable, "-m", "ai_hats.retro.auto_retro",
+                "--foreground", session_id,
+            ],
+            cwd=str(project_dir),
+            stdout=f,
+            stderr=f,
+            start_new_session=True,
+        )
+
+
 if __name__ == "__main__":
-    main()
+    # --foreground <session_id>: called by background Popen, runs in-process
+    if len(sys.argv) == 3 and sys.argv[1] == "--foreground":
+        sid = sys.argv[2]
+        project_dir = Path.cwd()
+        config = ProfileConfig.load(project_dir / "profile.json")
+        _run_foreground(project_dir, sid, config.feedback.session_retro.mode)
+    else:
+        main()
