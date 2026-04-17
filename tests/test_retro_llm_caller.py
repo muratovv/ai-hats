@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -144,3 +145,33 @@ def test_both_callers_satisfy_protocol(tmp_path: Path) -> None:
     sa: LLMCaller = SubAgentLLMCaller(tmp_path)
     assert callable(sub)
     assert callable(sa)
+
+
+# --- Regression: HATS-131 / audit #12 ---
+
+
+def test_llm_caller_does_not_import_anthropic() -> None:
+    """Regression: --mode llm uses subprocess CLI, not the Anthropic SDK.
+
+    Importing the llm_caller module must not pull `anthropic` into the
+    interpreter — `anthropic` is in the optional `[costs]` extra and a
+    silent hard dependency would break installs without that extra.
+
+    Run in a fresh subprocess so prior tests' import side-effects don't
+    pollute the assertion.
+    """
+    code = (
+        "import sys\n"
+        "import ai_hats.retro.llm_caller  # noqa: F401\n"
+        "assert 'anthropic' not in sys.modules, "
+        "'retro.llm_caller must not import anthropic SDK'\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, (
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
