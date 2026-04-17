@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.composer import Composer
-from ai_hats.costs import analyze_composition, count_tokens_approx
+from ai_hats.costs import analyze_composition, count_tokens_approx, count_tokens_sdk
 from ai_hats.library import LibraryResolver
 
 
@@ -123,3 +123,21 @@ def test_count_tokens_approx():
 
 def test_count_tokens_approx_empty():
     assert count_tokens_approx("") == 0
+
+
+# --- Regression: HATS-131 / audit #12 ---
+
+
+def test_count_tokens_sdk_returns_none_when_anthropic_missing(monkeypatch):
+    """Regression: graceful fallback when the optional `anthropic` SDK is absent.
+
+    `anthropic` lives in the `[costs]` extra. Projects without it should
+    transparently fall back to the `len // 4` approximation rather than
+    crash. Setting `sys.modules['anthropic'] = None` makes any subsequent
+    `import anthropic` raise ImportError, simulating an uninstalled SDK
+    even when it's actually present in the dev environment.
+    """
+    import sys
+
+    monkeypatch.setitem(sys.modules, "anthropic", None)
+    assert count_tokens_sdk(["hello"]) is None
