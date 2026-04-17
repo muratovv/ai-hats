@@ -248,7 +248,7 @@ def _finalize_session(
             logger.warning("session-end print failed", exc_info=True)
             try:
                 print(f"\n✨ Session {session.session_id} complete!")
-            except Exception:
+            except (BrokenPipeError, OSError):
                 pass
 
 
@@ -392,8 +392,8 @@ class WrapRunner:
                     gap_str = f"{gap_secs}s"
                 session.append_audit(f"🔄 CLI restarted — {gap_str} since previous session")
                 session.log_trace(TraceTag.SYS, f"CLI restart gap: {gap_str}")
-        except Exception:
-            pass
+        except (ValueError, IndexError, OSError):
+            logger.debug("CLI restart-gap detection failed", exc_info=True)
 
     def _pty_spawn(self, cmd: list[str], env: dict[str, str], tracer: SidecarTracer) -> int:
         """Spawn a process with PTY for interactive terminal passthrough + sidecar trace."""
@@ -410,7 +410,7 @@ class WrapRunner:
         except FileNotFoundError:
             print(f"Error: '{cmd[0]}' not found. Is it installed?", file=sys.stderr)
             return 127
-        except Exception as e:
+        except OSError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
