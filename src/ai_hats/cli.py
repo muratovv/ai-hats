@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
@@ -14,6 +15,7 @@ from rich.tree import Tree
 from . import __version__
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 
 def _project_dir() -> Path:
@@ -1326,6 +1328,9 @@ def session_show(session_id: str):
 )
 def retro_validate(paths: tuple[Path, ...]) -> None:
     """Validate one or more retro files (session-retro / bundle / judge-retro)."""
+    import yaml
+    from pydantic import ValidationError
+
     from .retro.loader import load
 
     failures = 0
@@ -1334,7 +1339,7 @@ def retro_validate(paths: tuple[Path, ...]) -> None:
             model, _ = load(path)
             family = type(model).__name__
             console.print(f"[green]OK[/] {path} [dim]({family})[/]")
-        except Exception as exc:
+        except (ValueError, yaml.YAMLError, OSError, ValidationError) as exc:
             failures += 1
             console.print(f"[red]FAIL[/] {path}")
             console.print(f"  [dim]{type(exc).__name__}: {exc}[/]")
@@ -1355,6 +1360,9 @@ def retro_migrate(paths: tuple[Path, ...], dry_run: bool) -> None:
     No-op for files already at the latest version. Validates the migrated
     output before writing back.
     """
+    import yaml
+    from pydantic import ValidationError
+
     from .retro.loader import SCHEMA_FAMILY_TO_MODEL, parse
     from .retro.migrations import family_of, migrate_to_latest
     from .retro.writer import dump
@@ -1382,7 +1390,7 @@ def retro_migrate(paths: tuple[Path, ...], dry_run: bool) -> None:
                 dump(model, path, body=body)
                 console.print(f"[green]MIGRATED[/] {path}: {before_version} → {after_version}")
                 changed += 1
-        except Exception as exc:
+        except (ValueError, yaml.YAMLError, OSError, ValidationError, KeyError) as exc:
             console.print(f"[red]FAIL[/] {path}: {type(exc).__name__}: {exc}")
             sys.exit(1)
 
@@ -1731,7 +1739,8 @@ def _get_changelog() -> str:
             text=True,
         )
         return log.stdout.strip() if log.returncode == 0 else ""
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
+        logger.debug("changelog fetch failed", exc_info=True)
         return ""
     finally:
         import shutil
@@ -1772,6 +1781,8 @@ def _format_component_diff(
 
 def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
     """Snapshot current role's rules and skills via composition."""
+    from .assembler import AssemblyError
+
     if not asm.project_config.active_role:
         return set(), set()
     try:
@@ -1780,7 +1791,8 @@ def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
             overlay=asm._get_overlay(asm.project_config.active_role),
         )
         return {r.name for r in result.rules}, {s.name for s in result.skills}
-    except Exception:
+    except (AssemblyError, ValueError, OSError, KeyError, AttributeError):
+        logger.debug("composition snapshot failed", exc_info=True)
         return set(), set()
 
 
@@ -1790,6 +1802,7 @@ def update():
     import subprocess
 
     from . import __version__ as old_version
+    from .assembler import AssemblyError
     from .models import ProjectConfig
 
     console.print(f"Current version: [bold]{old_version}[/]")
@@ -1868,7 +1881,7 @@ def update():
                 if bump_result.errors:
                     for err in bump_result.errors:
                         console.print(f"  [yellow]{err}[/]")
-        except Exception as e:
+        except (AssemblyError, ValueError, OSError) as e:
             console.print(f"  [red]Bump failed[/]: {e}")
 
 
