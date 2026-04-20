@@ -115,8 +115,26 @@ ai-hats task show <ID>
 ai-hats task sync
 
 # Обслуживание
-ai-hats update
+ai-hats update                             # pip-переустановка из GitHub (канонический путь)
 ai-hats migrate
+```
+
+### Как обновить ai-hats в проекте
+
+`ai-hats update` — единственный рекомендованный путь. Он делает
+`pip install --force-reinstall --no-deps --no-cache-dir ai-hats @ git+ssh://...`
+в текущем интерпретаторе, показывает diff версий и сравнивает композицию до/после.
+
+Не нужно вручную дёргать pip. Если venv проекта изолирован — запускай команду
+его `ai-hats` (например, `~/dotfiles/.venv/bin/ai-hats update`).
+
+После `update` прогони `ai-hats bump` — он пересоберёт prompt и managed-файлы
+(`.agent/*`, `.claude/skills/*`, `.gitignore` block) под новую версию.
+
+```bash
+cd ~/my-project
+ai-hats update      # подтянуть свежий ai-hats из GitHub
+ai-hats bump        # пересобрать роль + .gitignore
 ```
 
 ## Архитектура
