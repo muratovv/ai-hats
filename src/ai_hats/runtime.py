@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import signal
 import subprocess
 import sys
 import uuid
@@ -453,9 +452,6 @@ class SubAgentRunner:
         session.save_meta_prompt(meta_prompt)
         session.init_audit(role=role_name, provider=provider.name, model=model)
         session.log_trace(TraceTag.SUB, f"Sub-agent started: role={role_name}")
-
-        # Build system prompt
-        system_prompt = provider.build_system_prompt(result)
 
         # For now, execute via CLI subprocess (SDK integration is provider-specific)
         env = {
