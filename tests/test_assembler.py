@@ -482,3 +482,121 @@ def test_backup_survives_self_referential_symlinks_in_provider_skills(
         backup_dir / ".gemini" / "skills" / "subagent-analyzer" / "subagent-analyzer"
     )
     assert backup_symlink.is_symlink()
+
+
+# --------------------------------------------------------------------- #
+# HATS-141 — managed .gitignore block
+# --------------------------------------------------------------------- #
+
+
+def _read_block(project: Path) -> str:
+    """Return the content between AI-HATS markers in .gitignore (empty if absent)."""
+    from ai_hats.assembler import GITIGNORE_END, GITIGNORE_START
+
+    gi = (project / ".gitignore").read_text()
+    if GITIGNORE_START not in gi or GITIGNORE_END not in gi:
+        return ""
+    start = gi.index(GITIGNORE_START)
+    end = gi.index(GITIGNORE_END) + len(GITIGNORE_END)
+    return gi[start:end]
+
+
+def test_gitignore_block_created_on_fresh_repo(project_with_library):
+    """set_role writes .gitignore with managed block when file is absent."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role", provider_name="claude")
+
+    block = _read_block(project)
+    # Static entries always present
+    assert ".agent/.last_backup" in block
+    assert ".agent/hooks/" in block
+    assert ".agent/mcp/" in block
+    assert ".agent/skills/" in block
+    # Composed rule + skill tracked per-name
+    assert ".agent/rules/test_rule/" in block
+    assert ".agent/rules/.library_rules" in block
+    assert ".claude/skills/test_skill/" in block
+    assert ".claude/skills/.ai-hats-managed" in block
+    # Gemini side not installed for this role → not present
+    assert ".gemini/skills/" not in block
+
+
+def test_gitignore_preserves_user_content(project_with_library):
+    """User-authored .gitignore lines outside markers survive across runs."""
+    project, lib = project_with_library
+    (project / ".gitignore").write_text("# user header\n*.pyc\nbuild/\n")
+
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    content = (project / ".gitignore").read_text()
+    assert "# user header" in content
+    assert "*.pyc" in content
+    assert "build/" in content
+    assert ".agent/skills/" in content
+
+    # Re-run must keep user content and produce byte-identical file
+    before = content
+    asm.set_role("test-role")
+    after = (project / ".gitignore").read_text()
+    assert before == after
+
+
+def test_gitignore_block_self_heals_on_role_switch(project_with_library):
+    """Switching to a role without test_skill drops stale entries from the block."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role", provider_name="claude")
+    assert ".claude/skills/test_skill/" in _read_block(project)
+
+    asm.set_role("other-role", provider_name="claude")
+    block = _read_block(project)
+    assert ".claude/skills/test_skill/" not in block
+    assert ".agent/rules/test_rule/" not in block
+    # Static entries always remain
+    assert ".agent/skills/" in block
+
+
+def test_gitignore_does_not_list_user_local_rule(project_with_library):
+    """Project-local rules (not in .library_rules) stay out of the block."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    # Plant a user-local rule before first set_role — _clean preserves it.
+    local_rule = project / ".agent" / "rules" / "my_local"
+    local_rule.mkdir(parents=True)
+    (local_rule / "rule.md").write_text("# mine\n")
+
+    asm.set_role("test-role")
+    block = _read_block(project)
+    assert ".agent/rules/my_local/" not in block
+    # Sanity: library rule still listed.
+    assert ".agent/rules/test_rule/" in block
+
+
+def test_gitignore_opt_out_removes_block(project_with_library):
+    """manage_gitignore=false strips the block on next run; user lines untouched."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+    assert ".agent/skills/" in _read_block(project)
+
+    # Toggle flag and persist, then re-apply role.
+    asm.project_config.manage_gitignore = False
+    asm.project_config.save(asm.config_path)
+    (project / ".gitignore").write_text(
+        (project / ".gitignore").read_text() + "\n# user tail\n"
+    )
+
+    asm.set_role("test-role")
+    content = (project / ".gitignore").read_text()
+    from ai_hats.assembler import GITIGNORE_END, GITIGNORE_START
+    assert GITIGNORE_START not in content
+    assert GITIGNORE_END not in content
+    assert "# user tail" in content
