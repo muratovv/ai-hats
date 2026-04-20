@@ -218,7 +218,11 @@ class Assembler:
         if not self.agent_dir.exists():
             return None
         backup_dir = Path(tempfile.mkdtemp(prefix="ai-hats-backup-"))
-        shutil.copytree(self.agent_dir, backup_dir / AGENT_DIR)
+        # symlinks=True copies links as links instead of dereferencing them.
+        # Why: user-managed provider dirs (.gemini/skills, .claude/skills) can
+        # contain self-referential or circular symlinks; dereferencing loops
+        # until the OS raises ELOOP ("Too many levels of symbolic links").
+        shutil.copytree(self.agent_dir, backup_dir / AGENT_DIR, symlinks=True)
         # Also backup system prompt files
         for name in ("GEMINI.md", "CLAUDE.md"):
             src = self.project_dir / name
@@ -228,7 +232,7 @@ class Assembler:
         for provider_dir in (".claude/skills", ".gemini/skills"):
             src = self.project_dir / provider_dir
             if src.exists():
-                shutil.copytree(src, backup_dir / provider_dir)
+                shutil.copytree(src, backup_dir / provider_dir, symlinks=True)
         # Backup ai-hats.yaml
         if self.config_path.exists():
             shutil.copy2(self.config_path, backup_dir / PROJECT_CONFIG)
@@ -240,7 +244,7 @@ class Assembler:
         if agent_backup.exists():
             if self.agent_dir.exists():
                 shutil.rmtree(self.agent_dir)
-            shutil.copytree(agent_backup, self.agent_dir)
+            shutil.copytree(agent_backup, self.agent_dir, symlinks=True)
 
         for name in ("GEMINI.md", "CLAUDE.md"):
             src = backup_path / name
@@ -254,7 +258,7 @@ class Assembler:
             if src.exists():
                 if dest.exists():
                     shutil.rmtree(dest)
-                shutil.copytree(src, dest)
+                shutil.copytree(src, dest, symlinks=True)
 
         config_backup = backup_path / PROJECT_CONFIG
         if config_backup.exists():
