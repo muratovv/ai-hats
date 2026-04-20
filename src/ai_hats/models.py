@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -9,6 +10,8 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 class ComponentType(str, Enum):
@@ -455,7 +458,6 @@ def _migrate_v1_to_v2(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:
     YAML, and renames profile.json to profile.json.bak.
     """
     import json
-    import sys
 
     profile_path = yaml_path.parent / "profile.json"
     if profile_path.exists():
@@ -474,7 +476,7 @@ def _migrate_v1_to_v2(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:
     data["schema_version"] = 2
     with open(yaml_path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
-    print("[ai-hats] Migrated profile.json → ai-hats.yaml (schema v2)", file=sys.stderr)
+    logger.info("Migrated profile.json → ai-hats.yaml (schema v2)")
     return data
 
 

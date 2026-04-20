@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import signal
 import subprocess
 import sys
 import uuid
@@ -454,9 +453,6 @@ class SubAgentRunner:
         session.init_audit(role=role_name, provider=provider.name, model=model)
         session.log_trace(TraceTag.SUB, f"Sub-agent started: role={role_name}")
 
-        # Build system prompt
-        system_prompt = provider.build_system_prompt(result)
-
         # For now, execute via CLI subprocess (SDK integration is provider-specific)
         env = {
             **os.environ,
@@ -474,12 +470,7 @@ class SubAgentRunner:
         with WorktreeManager(self.project_dir, role_name, session.session_id, mode) as work_dir:
             session.log_trace(TraceTag.SUB, f"Working directory: {work_dir}")
             try:
-                if provider.name == "claude":
-                    full_cmd = cmd + ["--print", "-p", meta_prompt]
-                elif provider.name == "gemini":
-                    full_cmd = cmd + ["-p", meta_prompt]
-                else:
-                    full_cmd = cmd
+                full_cmd = provider.get_run_command(cmd, meta_prompt)
                 proc = subprocess.run(
                     full_cmd,
                     cwd=str(work_dir),
