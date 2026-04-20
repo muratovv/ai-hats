@@ -398,6 +398,7 @@ class ProjectConfig:
     library_paths: list[str] = field(default_factory=list)
     customizations: dict[str, OverlayConfig] = field(default_factory=dict)
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
+    manage_gitignore: bool = True
 
     @classmethod
     def from_yaml(cls, path: Path) -> ProjectConfig:
@@ -418,6 +419,7 @@ class ProjectConfig:
             library_paths=data.get("library_paths", []),
             customizations=customizations,
             feedback=FeedbackConfig.from_dict(data.get("feedback")),
+            manage_gitignore=data.get("manage_gitignore", True),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -436,6 +438,8 @@ class ProjectConfig:
             }
         if not self.feedback.is_default:
             d["feedback"] = self.feedback.to_dict()
+        if not self.manage_gitignore:
+            d["manage_gitignore"] = False
         return d
 
     def save(self, path: Path) -> None:

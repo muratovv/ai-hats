@@ -23,6 +23,11 @@ GITHOOKS_DISPATCHER_MARKER = "AI-HATS-DISPATCHER-MARKER"
 GITHOOKS_DISPATCHER_TEMPLATE = (
     Path(__file__).parent / "templates" / "githooks" / "dispatcher.sh"
 )
+GITIGNORE_FILE = ".gitignore"
+GITIGNORE_START = "# AI-HATS:START — managed by ai-hats, do not edit"
+GITIGNORE_END = "# AI-HATS:END"
+LIBRARY_RULES_MARKER = ".library_rules"
+MANAGED_SKILLS_MARKER = ".ai-hats-managed"
 
 
 class Assembler:
@@ -144,6 +149,9 @@ class Assembler:
 
             # 8. Save backup reference
             self._save_backup_ref(backup_path)
+
+            # 9. Update .gitignore managed block (HATS-141)
+            self._update_gitignore()
 
         except Exception:
             # Rollback on failure
@@ -619,6 +627,100 @@ class Assembler:
         )
         health["system_prompt"] = "OK" if prompt_ok else "Missing"
         return health
+
+    # ----- .gitignore management (HATS-141) -----
+
+    def _update_gitignore(self) -> None:
+        """Write or remove the AI-HATS managed block in .gitignore.
+
+        Managed paths are derived entirely from marker files written by other
+        steps (.library_rules, .ai-hats-managed, .ai-hats-manifest), so the
+        block self-heals across role switches — stale entries drop out when
+        a component leaves the composition.
+        """
+        gitignore = self.project_dir / GITIGNORE_FILE
+        if not self.project_config.manage_gitignore:
+            self._remove_gitignore_block(gitignore)
+            return
+        paths = self._collect_managed_paths()
+        self._write_gitignore_block(gitignore, paths)
+
+    def _collect_managed_paths(self) -> list[str]:
+        """Enumerate ai-hats-owned file paths, sorted for stable diffs."""
+        paths: set[str] = {
+            f"{AGENT_DIR}/.last_backup",
+            f"{AGENT_DIR}/hooks/",
+            f"{AGENT_DIR}/mcp/",
+            f"{AGENT_DIR}/skills/",
+        }
+
+        lib_rules = self.agent_dir / "rules" / LIBRARY_RULES_MARKER
+        if lib_rules.exists():
+            paths.add(f"{AGENT_DIR}/rules/{LIBRARY_RULES_MARKER}")
+            for name in lib_rules.read_text().splitlines():
+                name = name.strip()
+                if name:
+                    paths.add(f"{AGENT_DIR}/rules/{name}/")
+
+        for prov_dir in (".claude/skills", ".gemini/skills"):
+            marker = self.project_dir / prov_dir / MANAGED_SKILLS_MARKER
+            if marker.exists():
+                paths.add(f"{prov_dir}/{MANAGED_SKILLS_MARKER}")
+                for name in marker.read_text().splitlines():
+                    name = name.strip()
+                    if name:
+                        paths.add(f"{prov_dir}/{name}/")
+
+        manifest = self.project_dir / GITHOOKS_DIR / GITHOOKS_MANIFEST
+        if manifest.exists():
+            paths.add(f"{GITHOOKS_DIR}/{GITHOOKS_MANIFEST}")
+            for entry in manifest.read_text().splitlines():
+                entry = entry.strip()
+                if entry:
+                    paths.add(f"{GITHOOKS_DIR}/{entry}")
+
+        return sorted(paths)
+
+    @staticmethod
+    def _render_block(paths: list[str]) -> str:
+        body = "\n".join(paths)
+        return f"{GITIGNORE_START}\n{body}\n{GITIGNORE_END}\n"
+
+    def _write_gitignore_block(self, gitignore: Path, paths: list[str]) -> None:
+        """Create/update the managed block, preserving user-authored content."""
+        block = self._render_block(paths)
+        if not gitignore.exists():
+            gitignore.write_text(block)
+            return
+        existing = gitignore.read_text()
+        if GITIGNORE_START in existing and GITIGNORE_END in existing:
+            start = existing.index(GITIGNORE_START)
+            end = existing.index(GITIGNORE_END) + len(GITIGNORE_END)
+            # Consume trailing newline after the end marker so we don't
+            # accumulate blanks across re-runs.
+            if end < len(existing) and existing[end] == "\n":
+                end += 1
+            new_content = existing[:start] + block + existing[end:]
+            if new_content != existing:
+                gitignore.write_text(new_content)
+            return
+        # Markers absent → append with a separating blank line if needed.
+        sep = "" if existing.endswith("\n") else "\n"
+        gitignore.write_text(existing + sep + "\n" + block)
+
+    def _remove_gitignore_block(self, gitignore: Path) -> None:
+        """Strip the managed block if present. Leaves user content untouched."""
+        if not gitignore.exists():
+            return
+        existing = gitignore.read_text()
+        if GITIGNORE_START not in existing or GITIGNORE_END not in existing:
+            return
+        start = existing.index(GITIGNORE_START)
+        end = existing.index(GITIGNORE_END) + len(GITIGNORE_END)
+        if end < len(existing) and existing[end] == "\n":
+            end += 1
+        new_content = existing[:start] + existing[end:]
+        gitignore.write_text(new_content)
 
 
 class AssemblyError(Exception):
