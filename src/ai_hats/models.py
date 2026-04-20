@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -471,6 +471,34 @@ class TaskCard(_YamlModel):
     updated: str = ""
     completed_at: str = ""
     extras: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("work_log", mode="before")
+    @classmethod
+    def _coerce_work_log(cls, value: Any) -> Any:
+        """Older task cards wrote work_log as bare strings (``"date: msg"``).
+
+        Coerce those to WorkLogEntry shape so historical cards still load.
+        """
+        if not isinstance(value, list):
+            return value
+        return [
+            v if isinstance(v, (dict, WorkLogEntry)) else {"timestamp": "", "message": str(v)}
+            for v in value
+        ]
+
+    @field_validator("created", "updated", "completed_at", mode="before")
+    @classmethod
+    def _stringify_timestamp(cls, value: Any) -> Any:
+        """YAML literals like ``2026-04-06`` (no quotes) parse as ``datetime.date``.
+
+        Historical cards rely on this; keep the field type as ``str`` but
+        stringify non-str inputs on load.
+        """
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
     @model_validator(mode="before")
     @classmethod
