@@ -101,7 +101,9 @@ integration with an external tool, process, network call, sub-agent
 invocation, or filesystem writes outside `.agent/`.
 
 ```bash
-ai-hats task update <ID> --add-tag integration
+# Harness bash lacks an activated venv — resolve the binary first:
+AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
+"$AH" task update <ID> --add-tag integration
 ```
 
 ### Override

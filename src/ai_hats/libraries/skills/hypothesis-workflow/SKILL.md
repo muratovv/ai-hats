@@ -3,6 +3,13 @@
 Closed-loop improvement cycle for agent quality. Findings from judge
 retros become hypotheses tracked as backlog tasks, validated on new data.
 
+> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. Before running any `ai-hats` command, resolve the binary once:
+> ```bash
+> AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
+> "$AH" judge-aggregate --since 2025-01-01
+> ```
+> If neither works, the project's venv lives at `./.venv/bin/ai-hats`. Never call bare `ai-hats` blindly and fall back — it wastes a turn.
+
 ## When to Use
 
 After accumulating 3+ judge retros and noticing recurring patterns.
