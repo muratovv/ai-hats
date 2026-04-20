@@ -1,17 +1,21 @@
-"""Core data models for ai-hats components."""
+"""Core data models for ai-hats components (Pydantic v2)."""
 
 from __future__ import annotations
 
+import json
 import logging
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar
 
 import yaml
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 logger = logging.getLogger(__name__)
+
+
+# ----- Enums -----
 
 
 class ComponentType(str, Enum):
@@ -57,115 +61,94 @@ class LifecycleEvent(str, Enum):
     ERROR = "error"
 
 
-@dataclass
-class MCPServerConfig:
+class FeedbackPolicy(str, Enum):
+    OFF = "off"
+    ALWAYS = "always"
+    SMART = "smart"
+    HINT = "hint"
+
+
+class JudgePolicy(str, Enum):
+    OFF = "off"
+    MANUAL = "manual"
+
+
+# ----- Base -----
+
+
+class _YamlModel(BaseModel):
+    """Common base for YAML-round-trippable models.
+
+    Defaults to ``extra="ignore"`` (silently drop unknown keys). Subclasses
+    override when needed (e.g. TaskCard needs ``extras`` round-trip).
+    Serialization uses ``mode="json"`` via ``to_dict()`` to coerce enums/Paths
+    to primitives suitable for ``yaml.safe_dump``.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None):  # pragma: no cover - trivial
+        return cls.model_validate(data or {})
+
+
+# ----- Composition + components -----
+
+
+class MCPServerConfig(_YamlModel):
     name: str
-    config: str  # path to config file
+    config: str = ""  # path to config file
 
 
-@dataclass
-class HooksConfig:
-    session_start: list[str] = field(default_factory=list)
-    session_end: list[str] = field(default_factory=list)
-    task_start: list[str] = field(default_factory=list)
-    task_complete: list[str] = field(default_factory=list)
-    task_failed: list[str] = field(default_factory=list)
-    error: list[str] = field(default_factory=list)
+class HooksConfig(_YamlModel):
+    session_start: list[str] = Field(default_factory=list)
+    session_end: list[str] = Field(default_factory=list)
+    task_start: list[str] = Field(default_factory=list)
+    task_complete: list[str] = Field(default_factory=list)
+    task_failed: list[str] = Field(default_factory=list)
+    error: list[str] = Field(default_factory=list)
 
     def get_scripts(self, event: LifecycleEvent) -> list[str]:
         return getattr(self, event.value, [])
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> HooksConfig:
-        if not data:
-            return cls()
-        return cls(
-            session_start=data.get("session_start", []),
-            session_end=data.get("session_end", []),
-            task_start=data.get("task_start", []),
-            task_complete=data.get("task_complete", []),
-            task_failed=data.get("task_failed", []),
-            error=data.get("error", []),
-        )
+
+class Composition(_YamlModel):
+    traits: list[str] = Field(default_factory=list)
+    rules: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    hooks: HooksConfig = Field(default_factory=HooksConfig)
+    mcp: list[MCPServerConfig] = Field(default_factory=list)
 
 
-@dataclass
-class Composition:
-    traits: list[str] = field(default_factory=list)
-    rules: list[str] = field(default_factory=list)
-    skills: list[str] = field(default_factory=list)
-    hooks: HooksConfig = field(default_factory=HooksConfig)
-    mcp: list[MCPServerConfig] = field(default_factory=list)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> Composition:
-        if not data:
-            return cls()
-        mcp_list = []
-        for m in data.get("mcp", []):
-            if isinstance(m, dict):
-                mcp_list.append(MCPServerConfig(name=m["name"], config=m.get("config", "")))
-        return cls(
-            traits=data.get("traits", []),
-            rules=data.get("rules", []),
-            skills=data.get("skills", []),
-            hooks=HooksConfig.from_dict(data.get("hooks")),
-            mcp=mcp_list,
-        )
-
-
-@dataclass
-class ComponentConfig:
+class ComponentConfig(_YamlModel):
     """Parsed config.yaml for a trait or role."""
 
-    name: str
-    composition: Composition = field(default_factory=Composition)
+    name: str = ""
+    composition: Composition = Field(default_factory=Composition)
     injection: str = ""
-    priorities: list[str] = field(default_factory=list)
+    priorities: list[str] = Field(default_factory=list)
     source_path: Path | None = None
 
     @classmethod
     def from_yaml(cls, path: Path) -> ComponentConfig:
-        with open(path) as f:
-            data = yaml.safe_load(f) or {}
-        return cls(
-            name=data.get("name", path.parent.name),
-            composition=Composition.from_dict(data.get("composition")),
-            injection=data.get("injection", ""),
-            priorities=data.get("priorities", []),
-            source_path=path,
-        )
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], source_path: Path | None = None) -> ComponentConfig:
-        return cls(
-            name=data.get("name", ""),
-            composition=Composition.from_dict(data.get("composition")),
-            injection=data.get("injection", ""),
-            priorities=data.get("priorities", []),
-            source_path=source_path,
-        )
+        data = yaml.safe_load(path.read_text()) or {}
+        return cls.model_validate({**data, "source_path": path, "name": data.get("name") or path.parent.name})
 
 
-@dataclass
-class RuleMetadata:
+class RuleMetadata(_YamlModel):
     name: str = ""
     description: str = ""
     author: str = ""
-    tags: list[str] = field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
     @classmethod
     def from_yaml(cls, path: Path) -> RuleMetadata:
         if not path.exists():
             return cls()
-        with open(path) as f:
-            data = yaml.safe_load(f) or {}
-        return cls(
-            name=data.get("name", ""),
-            description=data.get("description", ""),
-            author=data.get("author", ""),
-            tags=data.get("tags", []),
-        )
+        return cls.model_validate(yaml.safe_load(path.read_text()) or {})
 
 
 # Git hook events recognized by the framework. Skills declare their hooks
@@ -181,8 +164,7 @@ GIT_HOOK_EVENTS: tuple[str, ...] = (
 )
 
 
-@dataclass
-class SkillMetadata:
+class SkillMetadata(_YamlModel):
     """Parsed metadata.yaml for a skill.
 
     `git_hooks` lets a skill declare scripts that should be installed into
@@ -194,56 +176,61 @@ class SkillMetadata:
     name: str = ""
     description: str = ""
     author: str = ""
-    tags: list[str] = field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
     pattern: str = ""
-    git_hooks: dict[str, list[str]] = field(default_factory=dict)
+    git_hooks: dict[str, list[str]] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_git_hooks(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("git_hooks") or {}
+        if not isinstance(raw, dict):
+            data["git_hooks"] = {}
+            return data
+        normalized: dict[str, list[str]] = {}
+        for ev, scripts in raw.items():
+            if not isinstance(scripts, list):
+                continue
+            key = str(ev).replace("_", "-")
+            if key in GIT_HOOK_EVENTS:
+                normalized[key] = [str(s) for s in scripts]
+            # Unknown events silently skipped — surfaces upstream via tests.
+        data["git_hooks"] = normalized
+        return data
 
     @classmethod
     def from_yaml(cls, path: Path) -> SkillMetadata:
         if not path.exists():
             return cls()
-        with open(path) as f:
-            data = yaml.safe_load(f) or {}
-        raw_hooks = data.get("git_hooks") or {}
-        # Normalize: accept either "pre-commit" or "pre_commit" in yaml.
-        git_hooks: dict[str, list[str]] = {}
-        if isinstance(raw_hooks, dict):
-            for ev, scripts in raw_hooks.items():
-                if not isinstance(scripts, list):
-                    continue
-                normalized = str(ev).replace("_", "-")
-                if normalized not in GIT_HOOK_EVENTS:
-                    # Unknown event — silently skip; surfaces upstream via tests.
-                    continue
-                git_hooks[normalized] = [str(s) for s in scripts]
-        return cls(
-            name=data.get("name", ""),
-            description=data.get("description", ""),
-            author=data.get("author", ""),
-            tags=data.get("tags", []),
-            pattern=data.get("pattern", ""),
-            git_hooks=git_hooks,
-        )
+        return cls.model_validate(yaml.safe_load(path.read_text()) or {})
 
 
-@dataclass
-class OverlayConfig:
-    """Per-role customization overlay (add/remove components)."""
+# ----- Overlays + feedback config -----
 
-    add_traits: list[str] = field(default_factory=list)
-    add_rules: list[str] = field(default_factory=list)
-    add_skills: list[str] = field(default_factory=list)
-    remove_traits: list[str] = field(default_factory=list)
-    remove_rules: list[str] = field(default_factory=list)
-    remove_skills: list[str] = field(default_factory=list)
+
+class OverlayConfig(_YamlModel):
+    """Per-role customization overlay (add/remove components).
+
+    Wire format nests add/remove sections (``add: {traits: [...], ...}``) while
+    the in-memory shape is flat. ``from_dict`` / ``to_dict`` bridge the two.
+    """
+
+    add_traits: list[str] = Field(default_factory=list)
+    add_rules: list[str] = Field(default_factory=list)
+    add_skills: list[str] = Field(default_factory=list)
+    remove_traits: list[str] = Field(default_factory=list)
+    remove_rules: list[str] = Field(default_factory=list)
+    remove_skills: list[str] = Field(default_factory=list)
     injection_append: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> OverlayConfig:
         if not data:
             return cls()
-        add = data.get("add", {})
-        remove = data.get("remove", {})
+        add = data.get("add") or {}
+        remove = data.get("remove") or {}
         return cls(
             add_traits=add.get("traits", []),
             add_rules=add.get("rules", []),
@@ -256,28 +243,25 @@ class OverlayConfig:
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {}
-        add: dict[str, list[str]] = {}
-        if self.add_traits:
-            add["traits"] = self.add_traits
-        if self.add_rules:
-            add["rules"] = self.add_rules
-        if self.add_skills:
-            add["skills"] = self.add_skills
+        add = {k: v for k, v in (
+            ("traits", self.add_traits),
+            ("rules", self.add_rules),
+            ("skills", self.add_skills),
+        ) if v}
         if add:
             d["add"] = add
-        remove: dict[str, list[str]] = {}
-        if self.remove_traits:
-            remove["traits"] = self.remove_traits
-        if self.remove_rules:
-            remove["rules"] = self.remove_rules
-        if self.remove_skills:
-            remove["skills"] = self.remove_skills
+        remove = {k: v for k, v in (
+            ("traits", self.remove_traits),
+            ("rules", self.remove_rules),
+            ("skills", self.remove_skills),
+        ) if v}
         if remove:
             d["remove"] = remove
         if self.injection_append:
             d["injection_append"] = self.injection_append
         return d
 
+    @computed_field
     @property
     def is_empty(self) -> bool:
         return not any([
@@ -287,104 +271,35 @@ class OverlayConfig:
         ])
 
 
-class FeedbackPolicy(str, Enum):
-    OFF = "off"
-    ALWAYS = "always"
-    SMART = "smart"
-    HINT = "hint"
-
-
-class JudgePolicy(str, Enum):
-    OFF = "off"
-    MANUAL = "manual"
-
-
-@dataclass
-class SmartThreshold:
+class SmartThreshold(_YamlModel):
     min_turns: int = 5
     min_tool_calls: int = 10
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> SmartThreshold:
-        if not data:
-            return cls()
-        return cls(
-            min_turns=data.get("min_turns", 5),
-            min_tool_calls=data.get("min_tool_calls", 10),
-        )
 
-    def to_dict(self) -> dict[str, int]:
-        return {"min_turns": self.min_turns, "min_tool_calls": self.min_tool_calls}
-
-
-@dataclass
-class SessionRetroConfig:
+class SessionRetroConfig(_YamlModel):
     policy: FeedbackPolicy = FeedbackPolicy.SMART
-    smart_threshold: SmartThreshold = field(default_factory=SmartThreshold)
+    smart_threshold: SmartThreshold = Field(default_factory=SmartThreshold)
     background: bool = True
     mode: str = "programmatic"
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> SessionRetroConfig:
-        if not data:
-            return cls()
-        return cls(
-            policy=FeedbackPolicy(data.get("policy", "smart")),
-            smart_threshold=SmartThreshold.from_dict(data.get("smart_threshold")),
-            background=data.get("background", True),
-            mode=data.get("mode", "programmatic"),
-        )
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "policy": self.policy.value,
-            "smart_threshold": self.smart_threshold.to_dict(),
-            "background": self.background,
-            "mode": self.mode,
-        }
-
-
-@dataclass
-class JudgeConfig:
+class JudgeConfig(_YamlModel):
     policy: JudgePolicy = JudgePolicy.MANUAL
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> JudgeConfig:
-        if not data:
-            return cls()
-        return cls(policy=JudgePolicy(data.get("policy", "manual")))
 
-    def to_dict(self) -> dict[str, str]:
-        return {"policy": self.policy.value}
-
-
-@dataclass
-class FeedbackConfig:
-    session_retro: SessionRetroConfig = field(default_factory=SessionRetroConfig)
-    judge: JudgeConfig = field(default_factory=JudgeConfig)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> FeedbackConfig:
-        if not data:
-            return cls()
-        return cls(
-            session_retro=SessionRetroConfig.from_dict(data.get("session_retro")),
-            judge=JudgeConfig.from_dict(data.get("judge")),
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "session_retro": self.session_retro.to_dict(),
-            "judge": self.judge.to_dict(),
-        }
+class FeedbackConfig(_YamlModel):
+    session_retro: SessionRetroConfig = Field(default_factory=SessionRetroConfig)
+    judge: JudgeConfig = Field(default_factory=JudgeConfig)
 
     @property
     def is_default(self) -> bool:
         return self == FeedbackConfig()
 
 
-@dataclass
-class ProjectConfig:
+# ----- ProjectConfig -----
+
+
+class ProjectConfig(_YamlModel):
     """ai-hats.yaml — unified project configuration.
 
     Sections:
@@ -398,32 +313,30 @@ class ProjectConfig:
     default_role: str = ""
     active_role: str = ""
     schema_version: int = 2
-    library_paths: list[str] = field(default_factory=list)
-    customizations: dict[str, OverlayConfig] = field(default_factory=dict)
-    feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
+    library_paths: list[str] = Field(default_factory=list)
+    customizations: dict[str, OverlayConfig] = Field(default_factory=dict)
+    feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
     manage_gitignore: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_customizations(cls, data: Any) -> Any:
+        """Customizations arrive as nested dicts; route each through OverlayConfig.from_dict."""
+        if isinstance(data, dict) and data.get("customizations"):
+            data["customizations"] = {
+                role: OverlayConfig.from_dict(overlay) if isinstance(overlay, dict) else overlay
+                for role, overlay in data["customizations"].items()
+            }
+        return data
 
     @classmethod
     def from_yaml(cls, path: Path) -> ProjectConfig:
         if not path.exists():
             return cls()
-        with open(path) as f:
-            data = yaml.safe_load(f) or {}
+        data = yaml.safe_load(path.read_text()) or {}
         if data.get("schema_version", 1) < 2:
             data = _migrate_v1_to_v2(path, data)
-        customizations: dict[str, OverlayConfig] = {}
-        for role_name, overlay_data in data.get("customizations", {}).items():
-            customizations[role_name] = OverlayConfig.from_dict(overlay_data)
-        return cls(
-            provider=data.get("provider", "gemini"),
-            default_role=data.get("default_role", ""),
-            active_role=data.get("active_role", ""),
-            schema_version=data.get("schema_version", 2),
-            library_paths=data.get("library_paths", []),
-            customizations=customizations,
-            feedback=FeedbackConfig.from_dict(data.get("feedback")),
-            manage_gitignore=data.get("manage_gitignore", True),
-        )
+        return cls.model_validate(data)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -433,12 +346,13 @@ class ProjectConfig:
             "active_role": self.active_role,
             "default_role": self.default_role,
         }
-        if self.customizations:
-            d["customizations"] = {
-                name: overlay.to_dict()
-                for name, overlay in self.customizations.items()
-                if not overlay.is_empty
-            }
+        live_customs = {
+            name: overlay.to_dict()
+            for name, overlay in self.customizations.items()
+            if not overlay.is_empty
+        }
+        if live_customs:
+            d["customizations"] = live_customs
         if not self.feedback.is_default:
             d["feedback"] = self.feedback.to_dict()
         if not self.manage_gitignore:
@@ -457,13 +371,10 @@ def _migrate_v1_to_v2(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:
     and feedback from adjacent profile.json (if present), writes the unified
     YAML, and renames profile.json to profile.json.bak.
     """
-    import json
-
     profile_path = yaml_path.parent / "profile.json"
     if profile_path.exists():
         try:
-            with open(profile_path) as f:
-                profile = json.load(f)
+            profile = json.loads(profile_path.read_text())
             if profile.get("provider"):
                 data["provider"] = profile["provider"]
             data["active_role"] = profile.get("active_role", "")
@@ -480,8 +391,7 @@ def _migrate_v1_to_v2(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-@dataclass
-class ProfileConfig:
+class ProfileConfig(_YamlModel):
     """Deprecated: shim that reads/writes through ai-hats.yaml.
 
     Use ProjectConfig directly instead. This exists for backward compat
@@ -490,34 +400,19 @@ class ProfileConfig:
 
     active_role: str = ""
     provider: str = ""
-    feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
+    feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
 
     @classmethod
     def load(cls, path: Path) -> ProfileConfig:
-        # Try ai-hats.yaml first (unified config)
         yaml_path = path.parent / "ai-hats.yaml"
         if yaml_path.exists():
             cfg = ProjectConfig.from_yaml(yaml_path)
-            return cls(
-                active_role=cfg.active_role,
-                provider=cfg.provider,
-                feedback=cfg.feedback,
-            )
-        # Fallback: read legacy profile.json (tests, external tools)
+            return cls(active_role=cfg.active_role, provider=cfg.provider, feedback=cfg.feedback)
         if not path.exists():
             return cls()
-        import json
-
-        with open(path) as f:
-            data = json.load(f)
-        return cls(
-            active_role=data.get("active_role", ""),
-            provider=data.get("provider", ""),
-            feedback=FeedbackConfig.from_dict(data.get("feedback")),
-        )
+        return cls.model_validate(json.loads(path.read_text()))
 
     def save(self, path: Path) -> None:
-        # Write through to ai-hats.yaml
         yaml_path = path.parent / "ai-hats.yaml"
         if yaml_path.exists():
             cfg = ProjectConfig.from_yaml(yaml_path)
@@ -526,36 +421,23 @@ class ProfileConfig:
             cfg.feedback = self.feedback
             cfg.save(yaml_path)
             return
-        # Fallback: write legacy JSON
-        import json
-
-        out: dict[str, Any] = {
-            "active_role": self.active_role,
-            "provider": self.provider,
-        }
+        out: dict[str, Any] = {"active_role": self.active_role, "provider": self.provider}
         if not self.feedback.is_default:
             out["feedback"] = self.feedback.to_dict()
-        with open(path, "w") as f:
-            json.dump(out, f, indent=2)
+        path.write_text(json.dumps(out, indent=2))
 
 
-@dataclass
-class WorkLogEntry:
+# ----- Task cards -----
+
+
+class WorkLogEntry(_YamlModel):
     """Single work log entry with timestamp and session tracking."""
 
-    timestamp: str
-    message: str
-
-    def to_dict(self) -> dict[str, str]:
-        return {"timestamp": self.timestamp, "message": self.message}
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> WorkLogEntry:
-        return cls(timestamp=data.get("timestamp", ""), message=data.get("message", ""))
+    timestamp: str = ""
+    message: str = ""
 
 
-@dataclass
-class TaskCard:
+class TaskCard(_YamlModel):
     """YAML task card for state machine.
 
     Unknown YAML keys are captured into ``extras`` and round-tripped verbatim
@@ -580,15 +462,29 @@ class TaskCard:
     reviewer: str = "user"
     role: str = ""
     parent_task: str = ""
-    subtasks: list[str] = field(default_factory=list)
-    tags: list[str] = field(default_factory=list)
-    work_log: list[WorkLogEntry] = field(default_factory=list)
+    subtasks: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    work_log: list[WorkLogEntry] = Field(default_factory=list)
     final_state: str = ""
     resolution: str = ""
     created: str = ""
     updated: str = ""
     completed_at: str = ""
-    extras: dict[str, Any] = field(default_factory=dict)
+    extras: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _capture_extras(cls, data: Any) -> Any:
+        """Move non-schema keys into ``extras`` before field parsing."""
+        if not isinstance(data, dict):
+            return data
+        captured = {k: v for k, v in data.items() if k not in cls._KNOWN_FIELDS and k != "extras"}
+        if captured:
+            # Merge with any explicit extras passed in (explicit wins).
+            merged = {**captured, **(data.get("extras") or {})}
+            data = {k: v for k, v in data.items() if k in cls._KNOWN_FIELDS or k == "extras"}
+            data["extras"] = merged
+        return data
 
     def transition_to(self, new_state: TaskState) -> None:
         if not self.state.can_transition_to(new_state):
@@ -630,45 +526,16 @@ class TaskCard:
             d["completed_at"] = self.completed_at
         # Round-trip unknown fields verbatim. Known fields take precedence in
         # case of accidental collision (extras should never contain known keys
-        # since from_dict filters them out, but we defend against direct mutation).
+        # since _capture_extras filters them out, but we defend against direct
+        # mutation of task.extras).
         for k, v in self.extras.items():
             if k not in self._KNOWN_FIELDS:
                 d[k] = v
         return d
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> TaskCard:
-        work_log = [
-            WorkLogEntry.from_dict(e) if isinstance(e, dict) else WorkLogEntry(timestamp="", message=str(e))
-            for e in data.get("work_log", [])
-        ]
-        extras = {k: v for k, v in data.items() if k not in cls._KNOWN_FIELDS}
-        return cls(
-            id=data["id"],
-            title=data["title"],
-            state=TaskState(data.get("state", "brainstorm")),
-            description=data.get("description", ""),
-            priority=data.get("priority", "medium"),
-            assignee=data.get("assignee", ""),
-            reviewer=data.get("reviewer", "user"),
-            role=data.get("role", ""),
-            parent_task=data.get("parent_task", ""),
-            subtasks=data.get("subtasks", []),
-            tags=data.get("tags", []),
-            work_log=work_log,
-            final_state=data.get("final_state", ""),
-            resolution=data.get("resolution", ""),
-            created=data.get("created", ""),
-            updated=data.get("updated", ""),
-            completed_at=data.get("completed_at", ""),
-            extras=extras,
-        )
-
-    @classmethod
     def from_yaml(cls, path: Path) -> TaskCard:
-        with open(path) as f:
-            data = yaml.safe_load(f) or {}
-        return cls.from_dict(data)
+        return cls.model_validate(yaml.safe_load(path.read_text()) or {})
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
