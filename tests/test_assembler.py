@@ -447,3 +447,38 @@ def test_gemini_build_override_creates_rules_dir(project_with_library):
 
     # Cleanup
     shutil.rmtree(rules_dir)
+
+
+def test_backup_survives_self_referential_symlinks_in_provider_skills(
+    project_with_library,
+):
+    """Regression: a self-referential symlink under .gemini/skills or
+    .claude/skills must not cause _backup() to loop until ELOOP.
+
+    Repro: user had `.gemini/skills/foo/foo -> .gemini/skills/foo` in a
+    pre-existing project. shutil.copytree(..., symlinks=False) followed the
+    link and recursed until the OS raised errno 62 ("Too many levels of
+    symbolic links"), aborting `ai-hats init` mid-flight.
+    """
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    # Plant a self-referential symlink under .gemini/skills, mirroring the
+    # real-world shape from the bug report.
+    gemini_skills = project / ".gemini" / "skills" / "subagent-analyzer"
+    gemini_skills.mkdir(parents=True)
+    (gemini_skills / "SKILL.md").write_text("# stub\n")
+    (gemini_skills / "subagent-analyzer").symlink_to(gemini_skills)
+
+    # set_role invokes _backup(); must not raise shutil.Error/OSError.
+    asm.set_role("test-role")
+
+    # After set_role, a backup exists. Verify the self-symlink survived as a
+    # link (not dereferenced, not traversed).
+    ref_path = project / ".agent" / ".last_backup"
+    backup_dir = Path(ref_path.read_text().strip())
+    backup_symlink = (
+        backup_dir / ".gemini" / "skills" / "subagent-analyzer" / "subagent-analyzer"
+    )
+    assert backup_symlink.is_symlink()
