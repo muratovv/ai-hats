@@ -6,6 +6,13 @@ description: Convert project retrospective findings into framework-level improve
 
 Convert project-level retrospective findings into framework-level improvements.
 
+> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. When running `ai-hats bump` (step 5), resolve the binary once:
+> ```bash
+> AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
+> "$AH" bump
+> ```
+> If neither works, the project's venv lives at `./.venv/bin/ai-hats`. Never call bare `ai-hats` blindly and fall back — it wastes a turn.
+
 ## When to Use
 - After a retrospective identifies problems that are NOT project-specific
 - When CLAUDE.md band-aids accumulate (>3 per-project rules that could be generic)
