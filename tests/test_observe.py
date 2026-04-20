@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from ai_hats.observe import Session, SidecarTracer, TraceTag
+from ai_hats.observe import Session, SidecarTracer
 
 
 def make_test_session(tmp_path) -> Session:

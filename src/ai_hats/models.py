@@ -391,42 +391,6 @@ def _migrate_v1_to_v2(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-class ProfileConfig(_YamlModel):
-    """Deprecated: shim that reads/writes through ai-hats.yaml.
-
-    Use ProjectConfig directly instead. This exists for backward compat
-    during the transition period.
-    """
-
-    active_role: str = ""
-    provider: str = ""
-    feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
-
-    @classmethod
-    def load(cls, path: Path) -> ProfileConfig:
-        yaml_path = path.parent / "ai-hats.yaml"
-        if yaml_path.exists():
-            cfg = ProjectConfig.from_yaml(yaml_path)
-            return cls(active_role=cfg.active_role, provider=cfg.provider, feedback=cfg.feedback)
-        if not path.exists():
-            return cls()
-        return cls.model_validate(json.loads(path.read_text()))
-
-    def save(self, path: Path) -> None:
-        yaml_path = path.parent / "ai-hats.yaml"
-        if yaml_path.exists():
-            cfg = ProjectConfig.from_yaml(yaml_path)
-            cfg.active_role = self.active_role
-            cfg.provider = self.provider
-            cfg.feedback = self.feedback
-            cfg.save(yaml_path)
-            return
-        out: dict[str, Any] = {"active_role": self.active_role, "provider": self.provider}
-        if not self.feedback.is_default:
-            out["feedback"] = self.feedback.to_dict()
-        path.write_text(json.dumps(out, indent=2))
-
-
 # ----- Task cards -----
 
 

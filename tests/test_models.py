@@ -11,7 +11,6 @@ from ai_hats.models import (
     JudgeConfig,
     JudgePolicy,
     OverlayConfig,
-    ProfileConfig,
     ProjectConfig,
     SessionRetroConfig,
     SmartThreshold,
@@ -507,47 +506,3 @@ def test_migration_idempotent(tmp_path):
     assert loaded.active_role == "sre"
 
 
-# -- ProfileConfig shim --
-
-
-def test_profile_shim_reads_from_yaml(tmp_path):
-    """ProfileConfig.load() reads from ai-hats.yaml when it exists."""
-    config = ProjectConfig(
-        provider="claude",
-        active_role="assistant",
-        feedback=FeedbackConfig(
-            session_retro=SessionRetroConfig(policy=FeedbackPolicy.HINT),
-        ),
-    )
-    (tmp_path / "ai-hats.yaml").write_text("")
-    config.save(tmp_path / "ai-hats.yaml")
-
-    profile = ProfileConfig.load(tmp_path / "profile.json")
-    assert profile.active_role == "assistant"
-    assert profile.feedback.session_retro.policy == FeedbackPolicy.HINT
-
-
-def test_profile_shim_writes_to_yaml(tmp_path):
-    """ProfileConfig.save() writes through to ai-hats.yaml."""
-    import yaml as _yaml
-
-    config = ProjectConfig(provider="gemini", active_role="sre")
-    config.save(tmp_path / "ai-hats.yaml")
-
-    profile = ProfileConfig(active_role="assistant", provider="claude")
-    profile.save(tmp_path / "profile.json")
-
-    data = _yaml.safe_load((tmp_path / "ai-hats.yaml").read_text())
-    assert data["active_role"] == "assistant"
-    assert data["provider"] == "claude"
-
-
-def test_profile_shim_fallback_to_json(tmp_path):
-    """ProfileConfig.load() falls back to JSON when no ai-hats.yaml."""
-    import json
-
-    path = tmp_path / "profile.json"
-    path.write_text(json.dumps({"active_role": "test", "provider": "claude"}))
-
-    profile = ProfileConfig.load(path)
-    assert profile.active_role == "test"

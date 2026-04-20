@@ -192,7 +192,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
     from pathlib import Path
 
     from ai_hats.assembler import Assembler
-    from ai_hats.models import ProfileConfig
+    from ai_hats.models import ProjectConfig
     from ai_hats.providers import ClaudeProvider
 
     project, runner = cli_project
@@ -200,7 +200,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
     # Init + set base role
     runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
     original_claude = (project / "CLAUDE.md").read_text()
-    original_profile = ProfileConfig.load(project / "profile.json")
+    original_profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert original_profile.active_role == "assistant"
 
     # Build override for a different role (simulate what WrapRunner.run does)
@@ -218,7 +218,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
 
     # Project files NOT modified
     assert (project / "CLAUDE.md").read_text() == original_claude
-    after_profile = ProfileConfig.load(project / "profile.json")
+    after_profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert after_profile.active_role == "assistant"
 
     override_path.unlink()
