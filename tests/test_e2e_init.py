@@ -316,7 +316,7 @@ def test_gemini_override_creates_session_rules_dir(cli_project):
 
 def test_update_command_uses_force_reinstall():
     """Update command must use --force-reinstall to bypass pip cache."""
-    from ai_hats.cli import _build_update_cmd
+    from ai_hats.cli.maintenance import _build_update_cmd
 
     cmd = _build_update_cmd()
     assert "--force-reinstall" in cmd, "pip caches git installs; --force-reinstall is required"

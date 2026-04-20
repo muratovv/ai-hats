@@ -273,7 +273,7 @@ def active_worktree(git_project: Path, monkeypatch):
 class TestWtExec:
     def _patch_subprocess(self, monkeypatch, fake_run):
         """Patch subprocess.run and prevent is_inside_linked_worktree from using it."""
-        monkeypatch.setattr("ai_hats.cli.subprocess.run", fake_run)
+        monkeypatch.setattr("ai_hats.cli.worktree.subprocess.run", fake_run)
         monkeypatch.setattr(WorktreeManager, "is_inside_linked_worktree", staticmethod(lambda _: False))
 
     def test_runs_in_worktree_cwd_with_pythonpath(self, active_worktree, monkeypatch) -> None:
@@ -339,7 +339,7 @@ class TestWtExec:
             def fake_run(cmd, cwd=None, env=None, **kwargs):
                 raise FileNotFoundError(2, "not found", "missing-binary")
 
-            with patch("ai_hats.cli.subprocess.run", fake_run):
+            with patch("ai_hats.cli.worktree.subprocess.run", fake_run):
                 runner = CliRunner()
                 result = runner.invoke(main, ["wt", "exec", "--", "missing-binary"])
             assert result.exit_code == 127
