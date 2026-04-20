@@ -16,7 +16,6 @@ from ai_hats.retro.common import (
     Severity,
 )
 from ai_hats.retro.frequency import (
-    FindingCluster,
     FindingWithSource,
     compute_frequencies,
 )

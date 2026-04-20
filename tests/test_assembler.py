@@ -123,7 +123,7 @@ def test_set_role_with_claude(project_with_library):
     asm = Assembler(project, library_paths=[lib])
     asm.init()
 
-    result = asm.set_role("test-role", provider_name="claude")
+    asm.set_role("test-role", provider_name="claude")
     assert (project / "CLAUDE.md").exists()
     assert "Role injection" in (project / "CLAUDE.md").read_text()
 
@@ -213,8 +213,8 @@ def test_set_role_then_switch_provider(project_with_library):
     assert "Role injection" in (project / "CLAUDE.md").read_text()
 
     # Profile must track the new provider
-    from ai_hats.models import ProfileConfig
-    profile = ProfileConfig.load(project / "profile.json")
+    from ai_hats.models import ProjectConfig
+    profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile.provider == "claude"
     assert profile.active_role == "test-role"
 
@@ -231,8 +231,8 @@ def test_wrap_reassembles_on_provider_mismatch(project_with_library):
     asm.set_role("test-role")  # provider=gemini
 
     # Simulate what WrapRunner.run() does on provider mismatch
-    from ai_hats.models import ProfileConfig
-    profile = ProfileConfig.load(project / "profile.json")
+    from ai_hats.models import ProjectConfig
+    profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile.provider == "gemini"
 
     target_provider = "claude"
@@ -245,7 +245,7 @@ def test_wrap_reassembles_on_provider_mismatch(project_with_library):
     assert "Role injection" in prompt
 
     # Profile updated
-    profile = ProfileConfig.load(project / "profile.json")
+    profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile.provider == "claude"
 
 
@@ -262,8 +262,8 @@ def test_wrap_uses_default_role_when_no_active_role(project_with_library):
     asm.init()
     # Don't call set_role — simulate fresh project with only default_role
 
-    from ai_hats.models import ProfileConfig
-    profile = ProfileConfig.load(project / "profile.json")
+    from ai_hats.models import ProjectConfig
+    profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile.active_role == ""  # No role set yet
 
     # Simulate what WrapRunner does: pick default_role
@@ -297,7 +297,7 @@ def test_preserve_local_rules(project_with_library):
 
 def test_rollback_restores_previous_role(project_with_library):
     """After set_role(B), rollback() restores role A's prompt and profile."""
-    from ai_hats.models import ProfileConfig
+    from ai_hats.models import ProjectConfig
 
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
@@ -307,14 +307,14 @@ def test_rollback_restores_previous_role(project_with_library):
     asm.set_role("test-role", provider_name="claude")
     prompt_a = (project / "CLAUDE.md").read_text()
     assert "Role injection" in prompt_a
-    profile_a = ProfileConfig.load(project / "profile.json")
+    profile_a = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile_a.active_role == "test-role"
 
     # Set role B (override)
     asm.set_role("other-role", provider_name="claude")
     prompt_b = (project / "CLAUDE.md").read_text()
     assert "Other role injection" in prompt_b
-    profile_b = ProfileConfig.load(project / "profile.json")
+    profile_b = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile_b.active_role == "other-role"
 
     # Rollback → should restore role A
@@ -322,7 +322,7 @@ def test_rollback_restores_previous_role(project_with_library):
     prompt_restored = (project / "CLAUDE.md").read_text()
     assert "Role injection" in prompt_restored
     assert "Other role injection" not in prompt_restored
-    profile_restored = ProfileConfig.load(project / "profile.json")
+    profile_restored = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile_restored.active_role == "test-role"
 
 

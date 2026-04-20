@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .models import ComponentConfig, ComponentType, RuleMetadata, resolve_namespace
+from .models import ComponentConfig, ComponentType, resolve_namespace
 
 
 class LibraryResolver:

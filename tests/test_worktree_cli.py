@@ -100,7 +100,7 @@ class TestStatePersistence:
     def test_load_active_compat_shim(self, git_project: Path) -> None:
         """Deprecated load_active still works via list_active."""
         mgr = WorktreeManager(git_project, branch_name="feat/compat")
-        wt = mgr.create()
+        mgr.create()
         mgr.save_state()
 
         loaded = WorktreeManager.load_active(git_project)

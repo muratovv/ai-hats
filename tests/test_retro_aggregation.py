@@ -13,12 +13,8 @@ from ai_hats.retro.aggregation import (
     FindingRef,
 )
 from ai_hats.retro.common import (
-    Category,
-    FixTarget,
     FixTargetKind,
     FixType,
-    ProposedFix,
-    Severity,
 )
 
 
