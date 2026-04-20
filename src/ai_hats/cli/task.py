@@ -1,0 +1,282 @@
+"""`ai-hats task` — manage task cards and the brainstorm→done state machine."""
+
+from __future__ import annotations
+
+import sys
+
+import click
+
+from ._helpers import _project_dir, console
+
+
+@click.group()
+def task():
+    """Manage task cards and state machine."""
+    pass
+
+
+@task.command("create")
+@click.argument("title")
+@click.option("--id", "task_id", default=None, help="Task ID (auto-generated if omitted)")
+@click.option("--description", "-d", default="", help="Task description")
+@click.option("--priority", "-p", default="medium", help="Priority (low/medium/high)")
+@click.option("--role", default="", help="Assigned role")
+@click.option("--reviewer", default="user", help="Reviewer (user or agent)")
+@click.option("--tag", multiple=True, help="Tags")
+def task_create(
+    task_id: str | None,
+    title: str,
+    description: str,
+    priority: str,
+    role: str,
+    reviewer: str,
+    tag: tuple,
+):
+    """Create a new task card. ID is auto-generated if omitted."""
+    from ..state import TaskManager
+
+    mgr = TaskManager(_project_dir())
+    if task_id is None:
+        task_id = mgr.next_id()
+    t = mgr.create_task(
+        task_id,
+        title,
+        description=description,
+        priority=priority,
+        role=role,
+        reviewer=reviewer,
+        tags=list(tag),
+    )
+    console.print(f"[green]Created[/]: {t.id} — {t.title} [{t.state.value}] ({t.priority})")
+
+
+@task.command("transition")
+@click.argument("task_id")
+@click.argument("new_state")
+@click.option(
+    "--final-state", default=None, help="Final accomplished state (for review transition)"
+)
+def task_transition(task_id: str, new_state: str, final_state: str | None):
+    """Transition a task to a new state."""
+    from ..models import TaskState
+    from ..state import TaskManager
+
+    mgr = TaskManager(_project_dir())
+    try:
+        state = TaskState(new_state)
+    except ValueError:
+        console.print(f"[red]Invalid state[/]: {new_state}")
+        console.print(f"Valid states: {[s.value for s in TaskState]}")
+        sys.exit(1)
+    try:
+        if final_state and state == TaskState.REVIEW:
+            mgr.set_final_state(task_id, final_state)
+        t = mgr.transition(task_id, state)
+        console.print(f"[green]Transitioned[/]: {t.id} → {t.state.value}")
+        if state == TaskState.PLAN:
+            plan_path = mgr.tasks_dir / task_id / "plan.md"
+            if plan_path.exists():
+                console.print(f"  Plan scaffold: {plan_path}")
+        elif state == TaskState.EXECUTE:
+            from ..worktree import WorktreeManager
+
+            project_dir = _project_dir()
+            active = WorktreeManager.load_for_task(project_dir, task_id)
+            if active and active.worktree_path:
+                console.print(f"  Worktree: {active.worktree_path}")
+                console.print(f"  Branch: {active.branch_name}")
+                console.print(f"  [dim]cd {active.worktree_path}[/]")
+            elif WorktreeManager.is_inside_linked_worktree(project_dir):
+                # HATS-060: adopted the caller's linked worktree.
+                console.print(f"  Worktree: {project_dir} [dim](adopted — already cwd)[/]")
+        elif state == TaskState.DONE:
+            console.print("  Worktree merged")
+        elif state == TaskState.FAILED:
+            console.print("  Worktree discarded")
+    except ValueError as e:
+        console.print(f"[red]Error[/]: {e}")
+        sys.exit(1)
+
+
+@task.command("update")
+@click.argument("task_id")
+@click.option("--title", default=None, help="New title")
+@click.option("--description", "-d", default=None, help="New description")
+@click.option(
+    "--priority", "-p", default=None, type=click.Choice(["low", "medium", "high"]), help="Priority"
+)
+@click.option("--resolution", default=None, help="Resolution note (why closed)")
+@click.option("--role", default=None, help="Assigned role")
+@click.option("--reviewer", default=None, help="Reviewer")
+@click.option("--add-tag", multiple=True, help="Add tag")
+@click.option("--remove-tag", multiple=True, help="Remove tag")
+def task_update(
+    task_id: str,
+    title: str | None,
+    description: str | None,
+    priority: str | None,
+    resolution: str | None,
+    role: str | None,
+    reviewer: str | None,
+    add_tag: tuple,
+    remove_tag: tuple,
+):
+    """Update task card fields."""
+    from ..state import TaskManager
+
+    mgr = TaskManager(_project_dir())
+
+    has_changes = any(
+        [title, description, priority, resolution, role, reviewer, add_tag, remove_tag]
+    )
+    if not has_changes:
+        console.print(
+            "[yellow]No changes specified[/]. Use --title, --priority, --description, etc."
+        )
+        return
+
+    try:
+        t = mgr.update_task(
+            task_id,
+            title=title,
+            description=description,
+            priority=priority,
+            resolution=resolution,
+            role=role,
+            reviewer=reviewer,
+            add_tags=list(add_tag) if add_tag else None,
+            remove_tags=list(remove_tag) if remove_tag else None,
+        )
+        console.print(f"[green]Updated[/]: {t.id} — {t.title} [{t.priority}]")
+    except ValueError as e:
+        console.print(f"[red]Error[/]: {e}")
+        sys.exit(1)
+
+
+@task.command("log")
+@click.argument("task_id")
+@click.argument("message")
+@click.option("--session", default=None, help="Session ID (defaults to AI_HATS_SESSION_ID)")
+def task_log(task_id: str, message: str, session: str | None):
+    """Log work progress on a task."""
+    from ..state import TaskManager
+
+    mgr = TaskManager(_project_dir())
+    try:
+        t = mgr.log_work(task_id, message, session_id=session or "")
+        console.print(f"[green]Logged[/]: {t.id} — {message}")
+    except ValueError as e:
+        console.print(f"[red]Error[/]: {e}")
+        sys.exit(1)
+
+
+@task.command("list")
+@click.option("--state", default=None, help="Filter by state")
+@click.option("--priority", default=None, help="Filter by priority (low/medium/high)")
+@click.option("--all", "-a", "show_all", is_flag=True, help="Include done/failed tasks")
+@click.option("--search", "-s", default=None, help="Regex search across id, title, description, tags, parent_task")
+def task_list(state: str | None, priority: str | None, show_all: bool, search: str | None):
+    """List all task cards."""
+    import re as _re
+
+    from rich.table import Table
+
+    from ..models import TaskState
+    from ..state import TaskManager
+
+    STATE_ORDER = {
+        TaskState.EXECUTE: 0,
+        TaskState.DOCUMENT: 1,
+        TaskState.REVIEW: 2,
+        TaskState.PLAN: 3,
+        TaskState.BRAINSTORM: 4,
+        TaskState.BLOCKED: 5,
+        TaskState.DONE: 6,
+        TaskState.FAILED: 7,
+    }
+    PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+    mgr = TaskManager(_project_dir())
+    filter_state = TaskState(state) if state else None
+    tasks = mgr.list_tasks(state=filter_state, priority=priority)
+
+    if not show_all and filter_state is None:
+        tasks = [t for t in tasks if t.state not in (TaskState.DONE, TaskState.FAILED)]
+
+    if search:
+        try:
+            pattern = _re.compile(search, _re.IGNORECASE)
+        except _re.error as e:
+            console.print(f"[red]Bad regex[/]: {e}")
+            sys.exit(1)
+        tasks = [
+            t for t in tasks
+            if pattern.search(
+                "\n".join([t.id, t.title, t.description, t.parent_task, *t.tags])
+            )
+        ]
+
+    if not tasks:
+        console.print("[dim]No tasks[/]")
+        return
+
+    tasks.sort(key=lambda t: (STATE_ORDER.get(t.state, 99), PRIORITY_ORDER.get(t.priority, 99)))
+
+    table = Table(show_header=True, header_style="bold", padding=(0, 1))
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("State", no_wrap=True)
+    table.add_column("Pri", no_wrap=True)
+    table.add_column("Title")
+    table.add_column("Parent", style="dim")
+
+    state_styles = {
+        TaskState.EXECUTE: "bold green",
+        TaskState.PLAN: "yellow",
+        TaskState.BRAINSTORM: "dim",
+        TaskState.BLOCKED: "bold red",
+        TaskState.DONE: "dim green",
+        TaskState.FAILED: "dim red",
+    }
+
+    for t in tasks:
+        style = state_styles.get(t.state, "")
+        table.add_row(
+            t.id,
+            f"[{style}]{t.state.value}[/{style}]" if style else t.state.value,
+            t.priority,
+            t.title,
+            t.parent_task or "",
+        )
+
+    console.print(table)
+
+
+@task.command("show")
+@click.argument("task_id")
+def task_show(task_id: str):
+    """Show task card details."""
+    from ..state import TaskManager
+
+    mgr = TaskManager(_project_dir())
+    t = mgr.get_task(task_id)
+    if t is None:
+        console.print(f"[red]Task not found[/]: {task_id}")
+        sys.exit(1)
+    for k, v in t.to_dict().items():
+        if v:
+            console.print(f"  {k}: {v}")
+    # Show work log nicely
+    if t.work_log:
+        console.print("\n  [bold]Work Log:[/]")
+        for entry in t.work_log:
+            console.print(f"    {entry.timestamp} — {entry.message}")
+
+
+@task.command("sync")
+def task_sync():
+    """Synchronize backlog.md and STATE.md with task cards."""
+    from ..state import TaskManager
+
+    mgr = TaskManager(_project_dir())
+    count = mgr.sync()
+    console.print(f"[green]Synced[/]: {count} tasks")
