@@ -69,6 +69,14 @@ class Provider(abc.ABC):
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         """Get the CLI command to launch this provider."""
 
+    def get_run_command(self, cmd: list[str], meta_prompt: str) -> list[str]:
+        """Build a non-interactive command that runs ``meta_prompt`` through this provider.
+
+        Default: return ``cmd`` unchanged. Subclasses tailor the invocation
+        to their CLI (e.g. Claude needs ``--print -p``, Gemini needs ``-p``).
+        """
+        return cmd
+
     @abc.abstractmethod
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         """Get environment variables needed for the provider."""
@@ -238,6 +246,9 @@ class GeminiProvider(Provider):
             cmd.extend(args)
         return cmd
 
+    def get_run_command(self, cmd: list[str], meta_prompt: str) -> list[str]:
+        return cmd + ["-p", meta_prompt]
+
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         return {
             "GEMINI_CLI_PROJECT_RULES_PATH": str(self.rules_dir(session_dir)),
@@ -334,6 +345,9 @@ class ClaudeProvider(Provider):
         if args:
             cmd.extend(args)
         return cmd
+
+    def get_run_command(self, cmd: list[str], meta_prompt: str) -> list[str]:
+        return cmd + ["--print", "-p", meta_prompt]
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         return {}

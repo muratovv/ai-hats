@@ -470,12 +470,7 @@ class SubAgentRunner:
         with WorktreeManager(self.project_dir, role_name, session.session_id, mode) as work_dir:
             session.log_trace(TraceTag.SUB, f"Working directory: {work_dir}")
             try:
-                if provider.name == "claude":
-                    full_cmd = cmd + ["--print", "-p", meta_prompt]
-                elif provider.name == "gemini":
-                    full_cmd = cmd + ["-p", meta_prompt]
-                else:
-                    full_cmd = cmd
+                full_cmd = provider.get_run_command(cmd, meta_prompt)
                 proc = subprocess.run(
                     full_cmd,
                     cwd=str(work_dir),
