@@ -15,6 +15,13 @@ Orchestrate task lifecycle using YAML task cards in `.agent/backlog/tasks/`.
 
 **All backlog operations MUST use the `ai-hats task` CLI. Never create task directories or YAML files manually.**
 
+> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. Before running any `ai-hats` command, resolve the binary once:
+> ```bash
+> AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
+> "$AH" task list
+> ```
+> If neither works, the project's venv lives at `./.venv/bin/ai-hats`. Never call bare `ai-hats` blindly and fall back — it wastes a turn.
+
 > **Note:** Task ID prefix is project-specific (e.g. `PROX-`, `INFRA-`). Examples below use `PROJ-` as a placeholder.
 
 ```bash
