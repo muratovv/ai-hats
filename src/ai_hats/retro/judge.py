@@ -25,7 +25,6 @@ from .bundle import BundleV1
 from .bundles import BundleManager
 from .judge_retro import JudgeRetroV1
 from .loader import parse
-from .migrations import migrate_to_latest
 from .writer import dump
 
 if TYPE_CHECKING:
@@ -240,8 +239,7 @@ class JudgeRunner:
             md = self._extract_markdown(transcript)
             try:
                 raw, body = parse(md)
-                migrated = migrate_to_latest(raw)
-                model = JudgeRetroV1.model_validate(migrated)
+                model = JudgeRetroV1.model_validate(raw)
                 # Schema-level checks pass. Now run semantic integrity checks
                 # against the bundle the judge was actually asked to analyze.
                 # Catches LLM hallucinations that the regex-only schema can't.

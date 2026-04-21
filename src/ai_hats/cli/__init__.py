@@ -144,7 +144,6 @@ main.add_command(judge.judge_aggregate)
 # Retro
 main.add_command(retro.retro)
 main.add_command(retro.retro_validate)
-main.add_command(retro.retro_migrate)
 
 # Bundles
 main.add_command(bundle.bundle)

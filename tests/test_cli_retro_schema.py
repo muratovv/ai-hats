@@ -65,22 +65,3 @@ def test_retro_validate_fails_on_missing_required_field(
     assert "FAIL" in result.output
 
 
-# --- retro-migrate ---
-
-
-def test_retro_migrate_dry_run_noop_on_latest_version(
-    tmp_path: Path, runner: CliRunner
-) -> None:
-    """Already-latest file should report 'already' and exit 0."""
-    bundle = _write(
-        tmp_path / "bundle.yaml",
-        "schema: hats-bundle/v1\n"
-        "bundle_id: BUNDLE-2026-04-17-001\n"
-        "project: ai-hats\n"
-        "created: 2026-04-17T12:00:00Z\n"
-        "session_ids:\n"
-        "  - 20260417-120000-abc\n",
-    )
-    result = runner.invoke(main, ["retro-migrate", "--dry-run", str(bundle)])
-    assert result.exit_code == 0, result.output
-    assert "already" in result.output
