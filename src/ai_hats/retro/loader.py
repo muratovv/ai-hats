@@ -34,7 +34,6 @@ from pydantic import BaseModel
 from .aggregation import AggregationV1
 from .bundle import BundleV1
 from .judge_retro import JudgeRetroV1
-from .migrations import family_of, migrate_to_latest
 from .session_retro import SessionRetroV1
 
 #: dispatch table — schema family → pydantic model class for the LATEST version
@@ -85,15 +84,20 @@ def parse(text: str) -> tuple[dict, str]:
 
 
 def load(path: Path) -> tuple[RetroArtifact, str]:
-    """Load and validate a retro file. Auto-migrates to the latest schema.
+    """Load and validate a retro file against its schema family's latest model.
 
     Returns (model_instance, body). For BundleV1 (pure YAML), body is "".
+    The ``schema`` field is a Pydantic ``Literal["family/v1"]`` on each model,
+    so wrong-version files fail with a clear validation error — no migration
+    layer is interposed.
     """
     raw, body = parse(path.read_text())
-    migrated = migrate_to_latest(raw)
-    family = family_of(migrated["schema"])
+    schema = raw.get("schema")
+    if not isinstance(schema, str) or "/" not in schema:
+        raise ValueError(f"Invalid or missing schema in {path}: {schema!r}")
+    family = schema.rsplit("/", 1)[0]
     model_cls = SCHEMA_FAMILY_TO_MODEL.get(family)
     if model_cls is None:
-        # migrate_to_latest already rejected unknown families, but be defensive
-        raise ValueError(f"No model class registered for family {family!r}")
-    return model_cls.model_validate(migrated), body
+        known = ", ".join(sorted(SCHEMA_FAMILY_TO_MODEL))
+        raise ValueError(f"Unknown schema family {family!r}. Known: {known}")
+    return model_cls.model_validate(raw), body
