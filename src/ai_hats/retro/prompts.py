@@ -8,10 +8,11 @@ below, produce:
 
 1. A one-paragraph narrative summary (2-4 sentences) describing what the agent was
    asked to do, what it did, and whether it succeeded. Plain prose, no bullets.
-2. Between 0 and 6 short factual observations (one line each) about concrete events
-   in the session. No prescriptions, no opinions, no "could have done X" — just
-   factual notes like "used Grep instead of Glob to find files" or "retried edit
-   after Read-before-Edit error".
+2. Between 0 and 6 short factual observations (one line each, each under 140
+   characters — split or shorten if you exceed) about concrete events in the
+   session. No prescriptions, no opinions, no "could have done X" — just factual
+   notes like "used Grep instead of Glob to find files" or "retried edit after
+   Read-before-Edit error".
 
 Output format (strict):
 SUMMARY: <single paragraph>
