@@ -215,3 +215,72 @@ def test_finalize_session_prints_summary_when_finalize_audit_fails(
 
     out = capsys.readouterr().out
     assert "Session test complete!" in out
+
+
+# ---------------------------------------------------------------------------
+# HATS-158 — retro line in session-end banner + persistent retro.log
+# ---------------------------------------------------------------------------
+
+
+def test_print_session_end_without_retro(tmp_path, capsys):
+    """Legacy call (retro=None) → no retro line in banner."""
+    from ai_hats.runtime import _print_session_end
+
+    session = make_session(tmp_path)
+    _print_session_end(session, trace_stats={"trace_size": 0, "req_count": 0}, retro=None)
+
+    out = capsys.readouterr().out
+    assert "Session test complete!" in out
+    assert "📝 Retro" not in out
+
+
+@pytest.mark.parametrize("action,expected_fragment", [
+    ("run", "generating"),
+    ("skip", "skipped"),
+    ("hint", "hint — ai-hats retro"),
+])
+def test_print_session_end_with_retro(tmp_path, capsys, action, expected_fragment):
+    """Each action yields a dedicated retro line with the right phrasing."""
+    from ai_hats.runtime import _print_session_end
+
+    session = make_session(tmp_path)
+    decision = {
+        "action": action,
+        "reason": "threshold met (turns=9, tool_calls=155)" if action != "skip"
+        else "below threshold (turns=0<1, tool_calls=0<1)",
+        "mode": "llm",
+        "background": True,
+        "retro_path": str(tmp_path / "retros" / "llm" / "test.md"),
+        "log_path": str(tmp_path / ".gitlog" / "session_test" / "retro.log"),
+    }
+    _print_session_end(session, trace_stats={"trace_size": 0, "req_count": 0}, retro=decision)
+
+    out = capsys.readouterr().out
+    assert "📝 Retro:" in out
+    assert expected_fragment in out
+
+
+def test_finalize_session_writes_runtime_decision_line(finalize_kwargs, tmp_path, monkeypatch):
+    """_finalize_session must write a 'runtime decision' line to retro.log
+    BEFORE the hook fires — so even a hook crash leaves a trace."""
+    # Write a minimal ai-hats.yaml so should_run reads it.
+    import yaml
+    (tmp_path / "ai-hats.yaml").write_text(yaml.dump({
+        "schema_version": 2,
+        "provider": "claude",
+        "active_role": "primary",
+        "feedback": {"session_retro": {"policy": "smart",
+                     "smart_threshold": {"min_turns": 1, "min_tool_calls": 1},
+                     "mode": "programmatic", "background": True}},
+    }))
+    # Force the hook to blow up after runtime writes its decision line.
+    finalize_kwargs["hooks_runner"] = _StubHooksRunner(exc=RuntimeError("hook boom"))
+
+    _finalize_session(**finalize_kwargs)
+
+    log = tmp_path / ".gitlog" / "session_test" / "retro.log"
+    assert log.exists(), "retro.log must be created by runtime before hooks fire"
+    content = log.read_text()
+    assert "runtime\tdecision" in content
+    # Short session (no metrics → turns=0) → skip with threshold reason.
+    assert "skip" in content
