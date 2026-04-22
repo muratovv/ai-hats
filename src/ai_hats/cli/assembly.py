@@ -18,7 +18,11 @@ def init(provider: str | None, role: str | None):
     already = (project_dir / "ai-hats.yaml").exists()
 
     asm = _assembler(project_dir)
-    asm.init(provider=provider, role=role)
+    try:
+        asm.init(provider=provider, role=role)
+    except ValueError as err:
+        console.print(f"[red]Error[/]: {err}")
+        raise SystemExit(1)
 
     label = "Re-initialized" if already else "Initialized"
     console.print(f"[green]{label}[/] ai-hats in {project_dir}")
@@ -42,15 +46,31 @@ def set_role(provider: str | None, role: str | None):
 
     # Auto-init if project not yet initialized
     if not (project_dir / "ai-hats.yaml").exists():
-        asm.init(provider=provider)
+        try:
+            asm.init(provider=provider)
+        except ValueError as err:
+            console.print(f"[red]Error[/]: {err}")
+            raise SystemExit(1)
         console.print(f"[green]Initialized[/] ai-hats in {project_dir}")
     elif provider and not role:
-        # Provider-only update
+        # Provider-only update — validate before persisting, so unknown
+        # providers do not get silently written to ai-hats.yaml.
+        from ..providers import get_provider
+
+        try:
+            get_provider(provider)
+        except ValueError as err:
+            console.print(f"[red]Error[/]: {err}")
+            raise SystemExit(1)
         asm.project_config.provider = provider
         asm.project_config.save(asm.config_path)
 
     if role:
-        result = asm.set_role(role, provider_name=provider)
+        try:
+            result = asm.set_role(role, provider_name=provider)
+        except ValueError as err:
+            console.print(f"[red]Error[/]: {err}")
+            raise SystemExit(1)
         if result.errors:
             for err in result.errors:
                 console.print(f"  [yellow]Warning[/]: {err}")

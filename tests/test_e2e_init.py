@@ -88,6 +88,71 @@ def test_bump_after_set(cli_project):
     assert prompt_before == prompt_after
 
 
+def test_init_unknown_role_fails_loud(cli_project):
+    """ai-hats init -r <unknown> exits non-zero and leaves no artifacts on disk."""
+    project, runner = cli_project
+
+    result = runner.invoke(main, ["init", "-p", "claude", "-r", "nonexistent-role"])
+
+    assert result.exit_code != 0, result.output
+    assert "nonexistent-role" in result.output
+    assert "Available roles" in result.output
+    assert "Initialized" not in result.output
+    # No filesystem artifacts should have been created.
+    assert not (project / "ai-hats.yaml").exists()
+    assert not (project / ".agent").exists()
+    assert not (project / "CLAUDE.md").exists()
+
+
+def test_init_unknown_provider_fails_loud(cli_project):
+    """ai-hats init -p <unknown> exits non-zero without creating artifacts."""
+    project, runner = cli_project
+
+    result = runner.invoke(main, ["init", "-p", "bogus-provider"])
+
+    assert result.exit_code != 0, result.output
+    assert "bogus-provider" in result.output
+    assert "Initialized" not in result.output
+    assert not (project / "ai-hats.yaml").exists()
+    assert not (project / ".agent").exists()
+
+
+def test_set_unknown_role_fails_loud(cli_project):
+    """ai-hats set -r <unknown> exits non-zero even when project is already initialized."""
+    project, runner = cli_project
+
+    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+    claude_before = (project / "CLAUDE.md").read_text()
+
+    result = runner.invoke(main, ["set", "-r", "nonexistent-role"])
+
+    assert result.exit_code != 0, result.output
+    assert "nonexistent-role" in result.output
+    assert "Role set" not in result.output
+    # Existing composition must remain intact.
+    assert (project / "CLAUDE.md").read_text() == claude_before
+
+
+def test_set_unknown_provider_only_fails_loud(cli_project):
+    """ai-hats set -p <unknown> (provider-only, project already initialized) fails loud."""
+    project, runner = cli_project
+
+    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+
+    from ai_hats.models import ProjectConfig
+
+    cfg_before = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    assert cfg_before.provider == "claude"
+
+    result = runner.invoke(main, ["set", "-p", "bogus-provider"])
+
+    assert result.exit_code != 0, result.output
+    assert "bogus-provider" in result.output
+    # Provider in ai-hats.yaml must not have been overwritten.
+    cfg_after = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    assert cfg_after.provider == "claude"
+
+
 def test_set_idempotent_via_cli(cli_project):
     """Repeated set does not break existing state."""
     project, runner = cli_project
