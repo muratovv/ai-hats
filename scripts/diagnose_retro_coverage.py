@@ -40,8 +40,15 @@ def classify(project_dir: Path, session_dir: Path) -> tuple[str, int, int]:
     if not metrics_path.exists():
         return "missing_metrics", 0, 0
 
-    action, reason = should_run(project_dir / "ai-hats.yaml", metrics_path)
+    # Match the shell hook's fast-guard: these roles always skip auto-retro
+    # (.agent/hooks/session_end_auto-retro.sh). Without this check we would
+    # mis-classify a correctly-excluded session as a silent failure.
     turns, tool_calls = _read_metrics(metrics_path)
+    role = _read_role(metrics_path)
+    if role in ("judge", "test-agent", "", None):
+        return f"would_skip(role={role or 'none'})", turns, tool_calls
+
+    action, reason = should_run(project_dir / "ai-hats.yaml", metrics_path)
 
     if action == "skip":
         # Normalize threshold reasons to one bucket for aggregation.
@@ -66,6 +73,15 @@ def _read_metrics(path: Path) -> tuple[int, int]:
     except (json.JSONDecodeError, OSError):
         return 0, 0
     return int(m.get("turns", 0) or 0), int(m.get("tool_calls", 0) or 0)
+
+
+def _read_role(path: Path) -> str | None:
+    try:
+        m = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    role = m.get("role")
+    return role if isinstance(role, str) else None
 
 
 def main() -> None:
