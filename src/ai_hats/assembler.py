@@ -9,8 +9,8 @@ from pathlib import Path
 
 from .composer import Composer, CompositionResult
 from .library import LibraryResolver
-from .models import ProjectConfig, SkillMetadata
-from .providers import Provider, get_provider
+from .models import ComponentType, ProjectConfig, SkillMetadata
+from .providers import PROVIDERS, Provider, get_provider
 
 
 AGENT_DIR = ".agent"
@@ -76,7 +76,19 @@ class Assembler:
         return paths
 
     def init(self, role: str | None = None, provider: str | None = None) -> None:
-        """Initialize project structure. Idempotent."""
+        """Initialize project structure. Idempotent.
+
+        Validates `role` and `provider` before touching disk — unknown values
+        raise ValueError with a list of available options, and no files/dirs
+        are created. This avoids a partially-applied project state where
+        `ai-hats.yaml` exists but composition never happened.
+        """
+        # Validate inputs BEFORE creating any filesystem artifacts.
+        if provider is not None:
+            self._validate_provider(provider)
+        if role is not None:
+            self._validate_role(role)
+
         # Create .agent/ subdirectories
         for subdir in ("rules", "skills", "hooks", "mcp", "backlog/tasks"):
             (self.agent_dir / subdir).mkdir(parents=True, exist_ok=True)
@@ -111,12 +123,23 @@ class Assembler:
         return overlay
 
     def set_role(self, role_name: str, provider_name: str | None = None) -> CompositionResult:
-        """Apply a role to the project. Full assembly cycle."""
+        """Apply a role to the project. Full assembly cycle.
+
+        Fails loudly on unknown role/provider: the project must not end up in
+        a half-applied state where the config is saved but no components are
+        materialized.
+        """
+        # Validate before doing any work so we fail fast with a clear message.
+        self._validate_role(role_name)
+        if provider_name is not None:
+            self._validate_provider(provider_name)
+
         provider = get_provider(provider_name or self.project_config.provider)
         result = self.composer.compose(role_name, overlay=self._get_overlay(role_name))
 
         if result.errors:
-            # Still proceed with what we have, but report errors
+            # Non-fatal errors (e.g. missing optional rule) are still surfaced
+            # to the caller via result.errors and do not abort assembly.
             pass
 
         # 1. Backup
@@ -220,6 +243,23 @@ class Assembler:
         }
 
     # -- Internal methods --
+
+    def _validate_role(self, role_name: str) -> None:
+        """Raise ValueError if `role_name` is not resolvable in library paths."""
+        if self.resolver.resolve_role_config(role_name) is not None:
+            return
+        available = self.resolver.list_components(ComponentType.ROLE)
+        hint = ", ".join(available) if available else "(none found in library paths)"
+        raise ValueError(f"Role '{role_name}' not found. Available roles: {hint}")
+
+    @staticmethod
+    def _validate_provider(provider_name: str) -> None:
+        """Raise ValueError if `provider_name` is not a registered provider."""
+        if provider_name in PROVIDERS:
+            return
+        raise ValueError(
+            f"Unknown provider: {provider_name}. Available: {sorted(PROVIDERS.keys())}"
+        )
 
     def _backup(self) -> Path | None:
         """Backup .agent/ to $TMPDIR."""
