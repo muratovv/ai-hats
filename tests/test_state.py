@@ -37,6 +37,26 @@ def test_auto_id_empty(mgr):
     assert mgr.next_id() == "HATS-001"
 
 
+def test_auto_id_respects_custom_prefix(tmp_path):
+    project = tmp_path / "project"
+    (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
+    mgr = TaskManager(project, prefix="ACME")
+    assert mgr.next_id() == "ACME-001"
+    mgr.create_task("ACME-001", "First")
+    assert mgr.next_id() == "ACME-002"
+
+
+def test_auto_id_ignores_foreign_prefix(tmp_path):
+    """next_id for prefix X ignores tasks authored under prefix Y."""
+    project = tmp_path / "project"
+    (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
+    legacy = TaskManager(project, prefix="HATS")
+    legacy.create_task("HATS-010", "Legacy")
+
+    fresh = TaskManager(project, prefix="TASK")
+    assert fresh.next_id() == "TASK-001"
+
+
 def test_work_log(mgr):
     mgr.create_task("T-1", "Task with logs")
     t = mgr.log_work("T-1", "Started implementation", session_id="sess-001")

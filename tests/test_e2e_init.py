@@ -478,7 +478,7 @@ def test_update_shows_version_transition(cli_project, monkeypatch):
 
 
 def test_task_create_auto_id(cli_project):
-    """ai-hats task create TITLE works without --id."""
+    """ai-hats task create TITLE works without --id and defaults to TASK- prefix."""
     project, runner = cli_project
     runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
 
@@ -486,6 +486,53 @@ def test_task_create_auto_id(cli_project):
     assert result.exit_code == 0, result.output
     assert "Created" in result.output
     assert "My test task" in result.output
+    assert "TASK-001" in result.output
+    assert (project / ".agent" / "backlog" / "tasks" / "TASK-001" / "task.yaml").exists()
+
+
+def test_task_prefix_honored_from_yaml(cli_project):
+    """Explicit task_prefix in ai-hats.yaml overrides the TASK- default."""
+    import yaml
+
+    project, runner = cli_project
+    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+
+    cfg_path = project / "ai-hats.yaml"
+    raw = yaml.safe_load(cfg_path.read_text()) or {}
+    raw["task_prefix"] = "ACME"
+    cfg_path.write_text(yaml.dump(raw))
+
+    result = runner.invoke(main, ["task", "create", "Custom prefix"])
+    assert result.exit_code == 0, result.output
+    assert "ACME-001" in result.output
+    assert (project / ".agent" / "backlog" / "tasks" / "ACME-001").exists()
+
+
+def test_task_prefix_auto_detected_from_legacy_tasks(cli_project):
+    """A project with pre-existing HATS-* tasks (and no task_prefix in yaml)
+    keeps using HATS instead of resetting to TASK."""
+    import yaml
+
+    project, runner = cli_project
+    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+
+    # Simulate a legacy tasks dir and strip any task_prefix from the yaml.
+    legacy_id = "HATS-042"
+    (project / ".agent" / "backlog" / "tasks" / legacy_id).mkdir(parents=True)
+    (project / ".agent" / "backlog" / "tasks" / legacy_id / "task.yaml").write_text(
+        "id: HATS-042\ntitle: Legacy\nstate: done\npriority: low\ncreated: 2025-01-01T00:00:00Z\nupdated: 2025-01-01T00:00:00Z\n"
+    )
+    cfg_path = project / "ai-hats.yaml"
+    raw = yaml.safe_load(cfg_path.read_text()) or {}
+    raw.pop("task_prefix", None)
+    cfg_path.write_text(yaml.dump(raw))
+
+    result = runner.invoke(main, ["task", "create", "Next legacy"])
+    assert result.exit_code == 0, result.output
+    assert "HATS-043" in result.output
+    # Auto-detected prefix must be persisted to yaml for subsequent runs.
+    raw_after = yaml.safe_load(cfg_path.read_text())
+    assert raw_after.get("task_prefix") == "HATS"
 
 
 def test_task_create_explicit_id(cli_project):
@@ -511,7 +558,7 @@ def test_task_list_table_filters(cli_project):
 
     # Transition third task to done (brainstorm → plan → execute → document → review → done)
     for state in ["plan", "execute", "document", "review", "done"]:
-        runner.invoke(main, ["task", "transition", "HATS-003", state])
+        runner.invoke(main, ["task", "transition", "TASK-003", state])
 
     # Default: done is hidden
     result = runner.invoke(main, ["task", "list"])

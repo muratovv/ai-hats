@@ -6,7 +6,7 @@ import sys
 
 import click
 
-from ._helpers import _project_dir, console
+from ._helpers import _project_dir, _task_manager, console
 
 
 @click.group()
@@ -33,9 +33,8 @@ def task_create(
     tag: tuple,
 ):
     """Create a new task card. ID is auto-generated if omitted."""
-    from ..state import TaskManager
 
-    mgr = TaskManager(_project_dir())
+    mgr = _task_manager(_project_dir())
     if task_id is None:
         task_id = mgr.next_id()
     t = mgr.create_task(
@@ -59,9 +58,8 @@ def task_create(
 def task_transition(task_id: str, new_state: str, final_state: str | None):
     """Transition a task to a new state."""
     from ..models import TaskState
-    from ..state import TaskManager
 
-    mgr = TaskManager(_project_dir())
+    mgr = _task_manager(_project_dir())
     try:
         state = TaskState(new_state)
     except ValueError:
@@ -122,9 +120,8 @@ def task_update(
     remove_tag: tuple,
 ):
     """Update task card fields."""
-    from ..state import TaskManager
 
-    mgr = TaskManager(_project_dir())
+    mgr = _task_manager(_project_dir())
 
     has_changes = any(
         [title, description, priority, resolution, role, reviewer, add_tag, remove_tag]
@@ -159,9 +156,8 @@ def task_update(
 @click.option("--session", default=None, help="Session ID (defaults to AI_HATS_SESSION_ID)")
 def task_log(task_id: str, message: str, session: str | None):
     """Log work progress on a task."""
-    from ..state import TaskManager
 
-    mgr = TaskManager(_project_dir())
+    mgr = _task_manager(_project_dir())
     try:
         t = mgr.log_work(task_id, message, session_id=session or "")
         console.print(f"[green]Logged[/]: {t.id} — {message}")
@@ -182,7 +178,6 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
     from rich.table import Table
 
     from ..models import TaskState
-    from ..state import TaskManager
 
     STATE_ORDER = {
         TaskState.EXECUTE: 0,
@@ -196,7 +191,7 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
     }
     PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
-    mgr = TaskManager(_project_dir())
+    mgr = _task_manager(_project_dir())
     filter_state = TaskState(state) if state else None
     tasks = mgr.list_tasks(state=filter_state, priority=priority)
 
@@ -255,9 +250,8 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
 @click.argument("task_id")
 def task_show(task_id: str):
     """Show task card details."""
-    from ..state import TaskManager
 
-    mgr = TaskManager(_project_dir())
+    mgr = _task_manager(_project_dir())
     t = mgr.get_task(task_id)
     if t is None:
         console.print(f"[red]Task not found[/]: {task_id}")
@@ -275,8 +269,7 @@ def task_show(task_id: str):
 @task.command("sync")
 def task_sync():
     """Synchronize backlog.md and STATE.md with task cards."""
-    from ..state import TaskManager
 
-    mgr = TaskManager(_project_dir())
+    mgr = _task_manager(_project_dir())
     count = mgr.sync()
     console.print(f"[green]Synced[/]: {count} tasks")
