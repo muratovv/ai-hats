@@ -98,6 +98,15 @@ class TestWorktreeCreate:
         finally:
             mgr.cleanup()
 
+    def test_create_raises_on_unborn_head(self, tmp_path: Path) -> None:
+        """HATS-143: fresh `git init` without commits must raise a readable error."""
+        project = tmp_path / "empty"
+        project.mkdir()
+        _git(project, "init")
+        mgr = WorktreeManager(project, "tester", "sess-unborn")
+        with pytest.raises(RuntimeError, match="at least one commit"):
+            mgr.create()
+
 
 class TestWorktreeIsolation:
     def test_changes_not_visible_in_main(self, git_project: Path) -> None:

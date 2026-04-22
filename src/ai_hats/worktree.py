@@ -140,6 +140,14 @@ class WorktreeManager:
         if not self._check_is_git():
             return self.project_dir
 
+        if not self._has_commits():
+            raise RuntimeError(
+                "Worktree creation requires at least one commit on HEAD, "
+                "but the repository has none yet.\n"
+                "  Make an initial commit first, e.g.:\n"
+                "    git commit --allow-empty -m 'init'"
+            )
+
         self._is_git = True
         self._original_branch = self._get_current_branch()
 
@@ -452,6 +460,13 @@ class WorktreeManager:
             return False
         try:
             self._git("rev-parse", "--is-inside-work-tree")
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
+
+    def _has_commits(self) -> bool:
+        try:
+            self._git("rev-parse", "--verify", "HEAD")
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
