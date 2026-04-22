@@ -317,6 +317,7 @@ class ProjectConfig(_YamlModel):
     customizations: dict[str, OverlayConfig] = Field(default_factory=dict)
     feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
     manage_gitignore: bool = True
+    task_prefix: str = "TASK"
 
     @model_validator(mode="before")
     @classmethod
@@ -357,11 +358,60 @@ class ProjectConfig(_YamlModel):
             d["feedback"] = self.feedback.to_dict()
         if not self.manage_gitignore:
             d["manage_gitignore"] = False
+        if self.task_prefix != "TASK":
+            d["task_prefix"] = self.task_prefix
         return d
 
     def save(self, path: Path) -> None:
         with open(path, "w") as f:
             yaml.dump(self.to_dict(), f, default_flow_style=False, allow_unicode=True)
+
+    @classmethod
+    def resolve_task_prefix(cls, project_dir: Path, config_path: Path) -> str:
+        """Return the task-id prefix for `project_dir`, persisting an auto-detected
+        value for legacy projects so we only pay the detection cost once.
+
+        Precedence:
+          1. Explicit `task_prefix` in ai-hats.yaml.
+          2. Auto-detect from existing `.agent/backlog/tasks/<PREFIX>-NNN/` dirs —
+             persisted to yaml if yaml exists, so subsequent runs are O(1).
+          3. Default "TASK" for greenfield projects.
+        """
+        raw: dict[str, Any] = {}
+        if config_path.exists():
+            raw = yaml.safe_load(config_path.read_text()) or {}
+            if isinstance(raw.get("task_prefix"), str) and raw["task_prefix"].strip():
+                return raw["task_prefix"].strip()
+
+        detected = cls._detect_prefix_from_tasks(project_dir)
+        if detected and config_path.exists():
+            # Persist the detected prefix so legacy repos don't re-detect every call.
+            raw["task_prefix"] = detected
+            with open(config_path, "w") as f:
+                yaml.dump(raw, f, default_flow_style=False, allow_unicode=True)
+            return detected
+        if detected:
+            return detected
+        return "TASK"
+
+    @staticmethod
+    def _detect_prefix_from_tasks(project_dir: Path) -> str | None:
+        """Return the common prefix of existing task dirs, or None if ambiguous/empty."""
+        import re as _re
+
+        tasks_dir = project_dir / ".agent" / "backlog" / "tasks"
+        if not tasks_dir.is_dir():
+            return None
+        prefixes: set[str] = set()
+        for d in tasks_dir.iterdir():
+            if not d.is_dir():
+                continue
+            m = _re.match(r"^([A-Z][A-Z0-9]*)-\d+$", d.name)
+            if m:
+                prefixes.add(m.group(1))
+        if len(prefixes) == 1:
+            return prefixes.pop()
+        return None
 
 
 def _migrate_v1_to_v2(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:

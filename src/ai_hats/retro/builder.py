@@ -229,12 +229,15 @@ class SessionRetroBuilder:
         if not tasks_dir.exists():
             return []
         try:
-            from ..models import TaskState
+            from ..models import ProjectConfig, TaskState
             from ..state import TaskManager
         except ImportError:
             return []
         try:
-            tm = TaskManager(self.project_dir)
+            prefix = ProjectConfig.resolve_task_prefix(
+                self.project_dir, self.project_dir / "ai-hats.yaml",
+            )
+            tm = TaskManager(self.project_dir, prefix=prefix)
             done_tasks = tm.list_tasks(state=TaskState.DONE)
         except Exception:
             return []
