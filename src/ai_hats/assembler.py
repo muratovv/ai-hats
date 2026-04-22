@@ -322,18 +322,23 @@ class Assembler:
         return self.agent_dir / ".last_backup"
 
     def _clean(self, *, preserve_local: bool = False) -> None:
-        """Clean active directories."""
-        for subdir in ("rules", "skills", "hooks", "mcp"):
-            target = self.agent_dir / subdir
-            if not target.exists():
-                continue
+        """Clean active directories.
 
-            if preserve_local and subdir == "rules":
-                # Keep project-local rules (not from library)
-                self._clean_non_local(target)
+        Each subdir keeps a manifest of ai-hats-managed entries so that
+        user-authored files placed alongside survive re-assembly.
+        """
+        rules_dir = self.agent_dir / "rules"
+        if rules_dir.exists():
+            if preserve_local:
+                self._clean_non_local(rules_dir)
             else:
-                shutil.rmtree(target)
-                target.mkdir(parents=True, exist_ok=True)
+                shutil.rmtree(rules_dir)
+                rules_dir.mkdir(parents=True, exist_ok=True)
+
+        for subdir in ("skills", "hooks", "mcp"):
+            target = self.agent_dir / subdir
+            if target.exists():
+                self._clean_managed_entries(target)
 
     def _clean_non_local(self, rules_dir: Path) -> None:
         """Remove only library-sourced rules, keep project-local ones."""
@@ -345,6 +350,25 @@ class Assembler:
                 if rule_path.exists():
                     shutil.rmtree(rule_path)
             marker_file.unlink()
+
+    @staticmethod
+    def _clean_managed_entries(target: Path) -> None:
+        """Remove only entries listed in the target's `.ai-hats-managed` manifest.
+
+        Without a manifest the directory is assumed to hold only user content,
+        so we leave it alone.
+        """
+        marker = target / MANAGED_SKILLS_MARKER
+        if not marker.exists():
+            return
+        managed = {n for n in marker.read_text().splitlines() if n.strip()}
+        for name in managed:
+            entry = target / name
+            if entry.is_dir():
+                shutil.rmtree(entry)
+            elif entry.exists():
+                entry.unlink()
+        marker.unlink()
 
     def _copy_components(self, result: CompositionResult) -> None:
         """Copy resolved components into .agent/."""
@@ -366,15 +390,19 @@ class Assembler:
         # Copy skills
         skills_dir = self.agent_dir / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
+        managed_skills: list[str] = []
         for skill in result.skills:
             dest = skills_dir / skill.name
             if dest.exists():
                 shutil.rmtree(dest)
             shutil.copytree(skill.source_path, dest)
+            managed_skills.append(skill.name)
+        self._write_managed_manifest(skills_dir, managed_skills)
 
         # Copy hook scripts
         hooks_dir = self.agent_dir / "hooks"
         hooks_dir.mkdir(parents=True, exist_ok=True)
+        managed_hooks: list[str] = []
         for event_name in (
             "session_start", "session_end", "task_start",
             "task_complete", "task_failed", "error",
@@ -385,14 +413,30 @@ class Assembler:
                 if src and src.exists():
                     dest = hooks_dir / src.name
                     shutil.copy2(src, dest)
+                    if src.name not in managed_hooks:
+                        managed_hooks.append(src.name)
+        self._write_managed_manifest(hooks_dir, managed_hooks)
 
         # Copy MCP configs
         mcp_dir = self.agent_dir / "mcp"
         mcp_dir.mkdir(parents=True, exist_ok=True)
+        managed_mcp: list[str] = []
         for mcp_config in result.mcp:
             src = self._find_mcp_config(mcp_config.config)
             if src and src.exists():
                 shutil.copy2(src, mcp_dir / src.name)
+                if src.name not in managed_mcp:
+                    managed_mcp.append(src.name)
+        self._write_managed_manifest(mcp_dir, managed_mcp)
+
+    @staticmethod
+    def _write_managed_manifest(target: Path, names: list[str]) -> None:
+        """Write/remove `.ai-hats-managed` listing entries ai-hats owns in `target`."""
+        marker = target / MANAGED_SKILLS_MARKER
+        if names:
+            marker.write_text("\n".join(names) + "\n")
+        elif marker.exists():
+            marker.unlink()
 
     def _find_hook_script(self, script_ref: str) -> Path | None:
         """Find a hook script across library paths."""
@@ -687,12 +731,7 @@ class Assembler:
 
     def _collect_managed_paths(self) -> list[str]:
         """Enumerate ai-hats-owned file paths, sorted for stable diffs."""
-        paths: set[str] = {
-            f"{AGENT_DIR}/.last_backup",
-            f"{AGENT_DIR}/hooks/",
-            f"{AGENT_DIR}/mcp/",
-            f"{AGENT_DIR}/skills/",
-        }
+        paths: set[str] = {f"{AGENT_DIR}/.last_backup"}
 
         lib_rules = self.agent_dir / "rules" / LIBRARY_RULES_MARKER
         if lib_rules.exists():
@@ -701,6 +740,19 @@ class Assembler:
                 name = name.strip()
                 if name:
                     paths.add(f"{AGENT_DIR}/rules/{name}/")
+
+        # .agent/skills — subdirs per managed skill
+        self._collect_from_manifest(
+            self.agent_dir / "skills", f"{AGENT_DIR}/skills", paths, as_dir=True,
+        )
+        # .agent/hooks — flat script files
+        self._collect_from_manifest(
+            self.agent_dir / "hooks", f"{AGENT_DIR}/hooks", paths, as_dir=False,
+        )
+        # .agent/mcp — flat config files
+        self._collect_from_manifest(
+            self.agent_dir / "mcp", f"{AGENT_DIR}/mcp", paths, as_dir=False,
+        )
 
         for prov_dir in (".claude/skills", ".gemini/skills"):
             marker = self.project_dir / prov_dir / MANAGED_SKILLS_MARKER
@@ -720,6 +772,21 @@ class Assembler:
                     paths.add(f"{GITHOOKS_DIR}/{entry}")
 
         return sorted(paths)
+
+    @staticmethod
+    def _collect_from_manifest(
+        dir_path: Path, rel_prefix: str, paths: set[str], *, as_dir: bool,
+    ) -> None:
+        """Add the manifest file and its listed entries to `paths`."""
+        marker = dir_path / MANAGED_SKILLS_MARKER
+        if not marker.exists():
+            return
+        paths.add(f"{rel_prefix}/{MANAGED_SKILLS_MARKER}")
+        suffix = "/" if as_dir else ""
+        for name in marker.read_text().splitlines():
+            name = name.strip()
+            if name:
+                paths.add(f"{rel_prefix}/{name}{suffix}")
 
     @staticmethod
     def _render_block(paths: list[str]) -> str:

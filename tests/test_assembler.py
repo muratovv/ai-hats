@@ -511,14 +511,20 @@ def test_gitignore_block_created_on_fresh_repo(project_with_library):
     block = _read_block(project)
     # Static entries always present
     assert ".agent/.last_backup" in block
-    assert ".agent/hooks/" in block
-    assert ".agent/mcp/" in block
-    assert ".agent/skills/" in block
-    # Composed rule + skill tracked per-name
+    # Composed rule + skill tracked per-name (no blanket directory ignores)
     assert ".agent/rules/test_rule/" in block
     assert ".agent/rules/.library_rules" in block
+    assert ".agent/skills/test_skill/" in block
+    assert ".agent/skills/.ai-hats-managed" in block
     assert ".claude/skills/test_skill/" in block
     assert ".claude/skills/.ai-hats-managed" in block
+    # No blanket directory-level ignores for .agent/{hooks,mcp,skills}/
+    assert "\n.agent/hooks/\n" not in block
+    assert "\n.agent/mcp/\n" not in block
+    assert "\n.agent/skills/\n" not in block
+    # test-role declares no hooks/mcp → no manifest entries for those dirs
+    assert ".agent/hooks/.ai-hats-managed" not in block
+    assert ".agent/mcp/.ai-hats-managed" not in block
     # Gemini side not installed for this role → not present
     assert ".gemini/skills/" not in block
 
@@ -536,7 +542,7 @@ def test_gitignore_preserves_user_content(project_with_library):
     assert "# user header" in content
     assert "*.pyc" in content
     assert "build/" in content
-    assert ".agent/skills/" in content
+    assert ".agent/skills/test_skill/" in content
 
     # Re-run must keep user content and produce byte-identical file
     before = content
@@ -557,8 +563,11 @@ def test_gitignore_block_self_heals_on_role_switch(project_with_library):
     block = _read_block(project)
     assert ".claude/skills/test_skill/" not in block
     assert ".agent/rules/test_rule/" not in block
-    # Static entries always remain
-    assert ".agent/skills/" in block
+    assert ".agent/skills/test_skill/" not in block
+    # Manifest entries drop entirely when the target dir has no managed files.
+    assert ".agent/skills/.ai-hats-managed" not in block
+    # Baseline static entry stays.
+    assert ".agent/.last_backup" in block
 
 
 def test_gitignore_does_not_list_user_local_rule(project_with_library):
@@ -585,7 +594,7 @@ def test_gitignore_opt_out_removes_block(project_with_library):
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role")
-    assert ".agent/skills/" in _read_block(project)
+    assert ".agent/skills/test_skill/" in _read_block(project)
 
     # Toggle flag and persist, then re-apply role.
     asm.project_config.manage_gitignore = False
@@ -600,3 +609,65 @@ def test_gitignore_opt_out_removes_block(project_with_library):
     assert GITIGNORE_START not in content
     assert GITIGNORE_END not in content
     assert "# user tail" in content
+
+
+# --------------------------------------------------------------------- #
+# HATS-155 — manifest-driven .agent/{hooks,mcp,skills}/ management
+# --------------------------------------------------------------------- #
+
+
+def test_managed_manifest_written_for_skills(project_with_library):
+    """set_role drops a .ai-hats-managed manifest listing managed skills."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    manifest = project / ".agent" / "skills" / ".ai-hats-managed"
+    assert manifest.exists(), "Expected .ai-hats-managed manifest in .agent/skills"
+    assert manifest.read_text().splitlines() == ["test_skill"]
+
+
+def test_managed_manifest_absent_when_no_entries(project_with_library):
+    """Composition without hooks/mcp leaves those dirs without a manifest."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    assert not (project / ".agent" / "hooks" / ".ai-hats-managed").exists()
+    assert not (project / ".agent" / "mcp" / ".ai-hats-managed").exists()
+
+
+def test_user_hook_survives_bump(project_with_library):
+    """User-authored file in .agent/hooks/ must not be wiped by re-assembly."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    user_hook = project / ".agent" / "hooks" / "my-custom.sh"
+    user_hook.write_text("#!/usr/bin/env bash\necho custom\n")
+
+    asm.bump()
+
+    assert user_hook.exists(), "User hook must survive re-assembly"
+    assert user_hook.read_text() == "#!/usr/bin/env bash\necho custom\n"
+
+
+def test_user_skill_dir_survives_bump(project_with_library):
+    """User-authored subdir in .agent/skills/ must not be wiped by re-assembly."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    user_skill = project / ".agent" / "skills" / "my_local_skill"
+    user_skill.mkdir()
+    (user_skill / "SKILL.md").write_text("# local\n")
+
+    asm.bump()
+
+    assert (user_skill / "SKILL.md").exists()
+    # Library-sourced skill re-installed alongside.
+    assert (project / ".agent" / "skills" / "test_skill" / "SKILL.md").exists()
