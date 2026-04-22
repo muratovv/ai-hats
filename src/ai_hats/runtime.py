@@ -132,7 +132,11 @@ def _format_tokens(session: "Session") -> str:
     return f"🪙 📥 {tin:,} in   📤 {tout:,} out   •   ♻️  {cread:,} hit   ✨ {cnew:,} new"
 
 
-def _print_session_end(session: "Session", trace_stats: dict | None = None) -> None:
+def _print_session_end(
+    session: "Session",
+    trace_stats: dict | None = None,
+    retro: dict | None = None,
+) -> None:
     if trace_stats is None:
         trace_stats = _collect_trace_stats(session)
 
@@ -153,6 +157,13 @@ def _print_session_end(session: "Session", trace_stats: dict | None = None) -> N
     print("━" * 52)
     print(f"  ⏱  {duration}   💬 {req_count} turns")
     print(f"  📄 Audit: {audit_info}   📊 Trace: {trace_info}")
+    if retro is not None:
+        try:
+            from .retro.auto_retro import describe_decision
+
+            print(f"  📝 Retro: {describe_decision(retro)}")
+        except Exception:
+            logger.warning("retro banner line failed", exc_info=True)
     print(f"  {_format_tokens(session)}")
     print(f"  📂 {session.session_dir}")
     print("━" * 52 + "\n")
@@ -181,6 +192,7 @@ def _finalize_session(
     user never loses the id.
     """
     trace_stats: dict | None = None
+    retro_decision: dict | None = None
 
     try:
         try:
@@ -228,6 +240,22 @@ def _finalize_session(
         except (Exception, KeyboardInterrupt):
             pass
 
+        # Pre-compute retro decision synchronously BEFORE hooks fire.
+        # Why: runtime must surface the outcome (path or skip reason) in
+        # the banner even if the hook crashes or the harness is SIGKILLed.
+        # The hook re-evaluates the same pure function independently.
+        try:
+            from .retro.auto_retro import make_decision, write_retro_log
+
+            retro_decision = make_decision(project_dir, session.session_id)
+            write_retro_log(
+                project_dir, session.session_id,
+                "runtime", "decision",
+                f"{retro_decision['action']}: {retro_decision['reason']}",
+            )
+        except (Exception, KeyboardInterrupt):
+            logger.warning("retro decision/log failed", exc_info=True)
+
         # Run session_end hooks AFTER metrics.json and enriched audit
         # are written, so hooks (e.g. auto-retro) can read them.
         try:
@@ -242,7 +270,7 @@ def _finalize_session(
         # to the user. It MUST run, even on second SIGINT, even if every
         # step above failed.
         try:
-            _print_session_end(session, trace_stats=trace_stats)
+            _print_session_end(session, trace_stats=trace_stats, retro=retro_decision)
         except (Exception, KeyboardInterrupt):
             logger.warning("session-end print failed", exc_info=True)
             try:

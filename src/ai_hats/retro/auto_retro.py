@@ -3,8 +3,14 @@
 Called from the session_end shell hook via:
     python3 -m ai_hats.retro.auto_retro
 
-Reads FeedbackConfig from profile.json and metrics from the session
+Reads FeedbackConfig from ai-hats.yaml and metrics from the session
 directory to decide whether to generate a retro automatically.
+
+Every decision and execution step appends one tab-separated line to
+`.gitlog/session_<id>/retro.log` so skip/hint/run outcomes are
+diagnosable post-hoc. Runtime also writes a `runtime decision` line
+before hooks fire — so even when the hook never runs (harness crash,
+SIGKILL), there is still a persistent trace.
 """
 
 from __future__ import annotations
@@ -12,9 +18,13 @@ from __future__ import annotations
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..models import FeedbackPolicy, ProjectConfig
+
+
+RETRO_LOG_FILENAME = "retro.log"
 
 
 def should_run(
@@ -63,6 +73,124 @@ def should_run(
     return "run", f"threshold met (turns={turns}, tool_calls={tool_calls})"
 
 
+def make_decision(
+    project_dir: Path,
+    session_id: str,
+) -> dict:
+    """Run policy decision and return a dict rich enough to drive UI + log.
+
+    Never raises — any exception is captured into action="skip" so the
+    caller can surface "skipped (internal error: ...)" without crashing.
+    """
+    config_path = project_dir / "ai-hats.yaml"
+    metrics_path = project_dir / ".gitlog" / f"session_{session_id}" / "metrics.json"
+    try:
+        action, reason = should_run(config_path, metrics_path)
+        config = ProjectConfig.from_yaml(config_path)
+        sr = config.feedback.session_retro
+        mode = sr.mode
+        background = sr.background
+    except Exception as exc:
+        return {
+            "action": "skip",
+            "reason": f"internal error: {exc!r}",
+            "mode": None,
+            "background": None,
+            "retro_path": None,
+            "log_path": str(_retro_log_path(project_dir, session_id)),
+        }
+
+    retro_path = (
+        project_dir
+        / ".agent"
+        / "retrospectives"
+        / "sessions"
+        / mode
+        / f"{session_id}.md"
+    )
+    return {
+        "action": action,
+        "reason": reason,
+        "mode": mode,
+        "background": background,
+        "retro_path": str(retro_path),
+        "log_path": str(_retro_log_path(project_dir, session_id)),
+    }
+
+
+def describe_decision(decision: dict) -> str:
+    """Human-readable one-liner for the session-end banner.
+
+    Example outputs:
+      "generating (llm, bg) → .agent/retrospectives/sessions/llm/<id>.md"
+      "skipped (below threshold: turns=0<1, tool_calls=0<1)"
+      "hint — ai-hats retro <id>  (threshold met: ...)"
+    """
+    action = decision.get("action", "skip")
+    reason = decision.get("reason", "")
+    mode = decision.get("mode") or "?"
+    background = decision.get("background")
+    retro_path = decision.get("retro_path")
+
+    if action == "run":
+        bg = "bg" if background else "fg"
+        if retro_path:
+            return f"generating ({mode}, {bg}) → {retro_path}"
+        return f"generating ({mode}, {bg})"
+    if action == "hint":
+        # Reason contains the threshold detail; prefix with CLI call so the
+        # user can copy-paste to trigger it manually.
+        sid = Path(retro_path).stem if retro_path else ""
+        return f"hint — ai-hats retro {sid}  ({_parens_safe(reason)})"
+    # skip
+    return f"skipped ({_parens_safe(reason)})"
+
+
+def _parens_safe(reason: str) -> str:
+    """Strip outer redundant parens from a reason string for cleaner banner output.
+
+    `should_run` returns things like `below threshold (turns=0<5, ...)` which
+    would render as `skipped (below threshold (turns=0<5, ...))` — noisy. We
+    drop one level of parenthesization when it's at the end.
+    """
+    s = reason.strip()
+    if s.endswith(")") and "(" in s:
+        head, _, tail = s.partition("(")
+        # Only collapse if head is non-trivial and tail is single-paren nest.
+        if tail.count("(") == 0 and tail.endswith(")"):
+            return f"{head.strip()}: {tail[:-1].strip()}"
+    return s
+
+
+def _retro_log_path(project_dir: Path, session_id: str) -> Path:
+    return project_dir / ".gitlog" / f"session_{session_id}" / RETRO_LOG_FILENAME
+
+
+def write_retro_log(
+    project_dir: Path,
+    session_id: str,
+    source: str,
+    action: str,
+    detail: str,
+) -> None:
+    """Append one tab-separated line to `.gitlog/session_<id>/retro.log`.
+
+    Format: `<ISO-8601 UTC>\\t<source>\\t<action>\\t<detail>\\n`
+    Creates the session dir and file if they don't yet exist. Swallows
+    I/O errors — observability must never break the caller.
+    """
+    try:
+        log_path = _retro_log_path(project_dir, session_id)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        # Strip tabs/newlines from detail so the line stays one-per-event.
+        safe_detail = detail.replace("\t", " ").replace("\n", " ")
+        with open(log_path, "a") as f:
+            f.write(f"{ts}\t{source}\t{action}\t{safe_detail}\n")
+    except OSError:
+        pass
+
+
 def main() -> None:
     """Entrypoint for the shell hook."""
     session_id = os.environ.get("AI_HATS_SESSION_ID", "")
@@ -76,11 +204,11 @@ def main() -> None:
     action, reason = should_run(config_path, metrics_path)
 
     if action == "skip":
-        print(f"[auto-retro] skip: {reason}", file=sys.stderr)
+        write_retro_log(project_dir, session_id, "hook", "skip", reason)
         return
 
     if action == "hint":
-        print(f"[auto-retro] hint: ai-hats retro {session_id}  ({reason})", file=sys.stderr)
+        write_retro_log(project_dir, session_id, "hook", "hint", reason)
         return
 
     # action == "run"
@@ -102,26 +230,22 @@ def _run_foreground(project_dir: Path, session_id: str, mode: str) -> None:
     builder_mode = BuilderMode(mode)
     llm_caller = SubprocessLLMCaller(project_dir) if builder_mode == BuilderMode.LLM else None
     builder = SessionRetroBuilder(project_dir, llm_caller=llm_caller)
-    print(f"[auto-retro] generating {mode} retro for {session_id}...", file=sys.stderr)
+    write_retro_log(project_dir, session_id, "builder", "start", f"mode={mode}")
     try:
         path = builder.build_and_save(session_id, mode=builder_mode)
-        print(f"[auto-retro] saved: {path}", file=sys.stderr)
+        write_retro_log(project_dir, session_id, "builder", "saved", str(path))
     except Exception as exc:
-        print(f"[auto-retro] failed: {exc}", file=sys.stderr)
+        write_retro_log(project_dir, session_id, "builder", "failed", repr(exc))
 
 
 def _run_background(project_dir: Path, session_id: str, mode: str) -> None:
     import subprocess as sp
 
-    log_dir = project_dir / ".gitlog" / f"session_{session_id}"
-    log_file = log_dir / "retro.log"
-    print(
-        f"[auto-retro] spawning {mode} retro for {session_id} in background "
-        f"(log: {log_file})",
-        file=sys.stderr,
-    )
-    with open(log_file, "w") as f:
-        sp.Popen(
+    log_path = _retro_log_path(project_dir, session_id)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    # Append mode so runtime "decision" line written earlier is preserved.
+    with open(log_path, "a") as f:
+        proc = sp.Popen(
             [
                 sys.executable, "-m", "ai_hats.retro.auto_retro",
                 "--foreground", session_id,
@@ -131,6 +255,9 @@ def _run_background(project_dir: Path, session_id: str, mode: str) -> None:
             stderr=f,
             start_new_session=True,
         )
+    write_retro_log(
+        project_dir, session_id, "hook", "spawn", f"pid={proc.pid} mode={mode} bg",
+    )
 
 
 if __name__ == "__main__":
