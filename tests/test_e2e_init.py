@@ -490,6 +490,54 @@ def test_task_create_auto_id(cli_project):
     assert (project / ".agent" / "backlog" / "tasks" / "TASK-001" / "task.yaml").exists()
 
 
+def test_init_task_prefix_flag(cli_project):
+    """ai-hats init --task-prefix ACME persists prefix and drives task create."""
+    import yaml
+
+    project, runner = cli_project
+
+    result = runner.invoke(main, ["init", "-p", "claude", "--task-prefix", "ACME"])
+    assert result.exit_code == 0, result.output
+    assert "Task prefix" in result.output
+    assert "ACME" in result.output
+
+    raw = yaml.safe_load((project / "ai-hats.yaml").read_text())
+    assert raw["task_prefix"] == "ACME"
+
+    r = runner.invoke(main, ["task", "create", "First"])
+    assert r.exit_code == 0, r.output
+    assert "ACME-001" in r.output
+
+
+def test_init_task_prefix_rejects_bad_format(cli_project):
+    """ai-hats init --task-prefix with invalid chars fails loud and does nothing."""
+    project, runner = cli_project
+
+    result = runner.invoke(main, ["init", "-p", "claude", "--task-prefix", "bad prefix"])
+    assert result.exit_code != 0, result.output
+    assert "task_prefix" in result.output.lower() or "Invalid" in result.output
+    assert not (project / "ai-hats.yaml").exists()
+    assert not (project / ".agent").exists()
+
+
+def test_init_task_prefix_reinit_conflict(cli_project):
+    """Re-running init with a different --task-prefix fails, yaml untouched."""
+    import yaml
+
+    project, runner = cli_project
+
+    runner.invoke(main, ["init", "-p", "claude", "--task-prefix", "ACME"])
+    result = runner.invoke(main, ["init", "-p", "claude", "--task-prefix", "BETA"])
+    assert result.exit_code != 0, result.output
+    assert "conflict" in result.output.lower() or "ACME" in result.output
+
+    raw = yaml.safe_load((project / "ai-hats.yaml").read_text())
+    assert raw["task_prefix"] == "ACME"
+    # Re-running with the SAME prefix is a no-op.
+    r = runner.invoke(main, ["init", "-p", "claude", "--task-prefix", "ACME"])
+    assert r.exit_code == 0, r.output
+
+
 def test_task_prefix_honored_from_yaml(cli_project):
     """Explicit task_prefix in ai-hats.yaml overrides the TASK- default."""
     import yaml

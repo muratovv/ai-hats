@@ -366,6 +366,21 @@ class ProjectConfig(_YamlModel):
         with open(path, "w") as f:
             yaml.dump(self.to_dict(), f, default_flow_style=False, allow_unicode=True)
 
+    @staticmethod
+    def validate_task_prefix(prefix: str) -> str:
+        """Normalize and validate a task-id prefix. Raises ValueError if invalid."""
+        import re as _re
+
+        if not isinstance(prefix, str):
+            raise ValueError("task_prefix must be a string")
+        cleaned = prefix.strip()
+        if not _re.fullmatch(r"[A-Z][A-Z0-9]*", cleaned):
+            raise ValueError(
+                f"Invalid task_prefix: {prefix!r}. "
+                "Must match [A-Z][A-Z0-9]* (uppercase letter/digit, starts with letter)."
+            )
+        return cleaned
+
     @classmethod
     def resolve_task_prefix(cls, project_dir: Path, config_path: Path) -> str:
         """Return the task-id prefix for `project_dir`, persisting an auto-detected

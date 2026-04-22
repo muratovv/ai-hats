@@ -12,14 +12,19 @@ from ._helpers import _assembler, _project_dir, console
 @click.command()
 @click.option("--provider", "-p", default=None, help="Provider (gemini/claude)")
 @click.option("--role", "-r", default=None, help="Role to apply after init")
-def init(provider: str | None, role: str | None):
+@click.option(
+    "--task-prefix", "task_prefix", default=None,
+    help="Task-id prefix for `ai-hats task create` (e.g. ACME). "
+    "Default: TASK for new projects; auto-detected for legacy repos.",
+)
+def init(provider: str | None, role: str | None, task_prefix: str | None):
     """Initialize ai-hats in the current directory."""
     project_dir = _project_dir()
     already = (project_dir / "ai-hats.yaml").exists()
 
     asm = _assembler(project_dir)
     try:
-        asm.init(provider=provider, role=role)
+        asm.init(provider=provider, role=role, task_prefix=task_prefix)
     except ValueError as err:
         console.print(f"[red]Error[/]: {err}")
         raise SystemExit(1)
@@ -30,6 +35,8 @@ def init(provider: str | None, role: str | None):
     if role:
         console.print(f"  Role: [bold]{role}[/]")
     console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
+    if task_prefix:
+        console.print(f"  Task prefix: [bold]{asm.project_config.task_prefix}[/]")
 
 
 @click.command("set")

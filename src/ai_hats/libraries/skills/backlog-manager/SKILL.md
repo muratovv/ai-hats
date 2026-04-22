@@ -24,6 +24,27 @@ Orchestrate task lifecycle using YAML task cards in `.agent/backlog/tasks/`.
 
 > **Note:** Task ID prefix is project-specific (e.g. `PROX-`, `INFRA-`). Examples below use `PROJ-` as a placeholder.
 
+### Task ID prefix
+
+The default prefix is `TASK-` for new projects. Legacy projects with existing
+`HATS-*`/`FOO-*` folders get their prefix auto-detected on the first
+`ai-hats task create` and persisted to `ai-hats.yaml`.
+
+**Set a custom prefix** when the project tracks work under a specific key
+(corporate tag, Jira/Linear project id, etc.):
+
+```bash
+# At init time — preferred
+ai-hats init -p claude --task-prefix ACME
+
+# Or edit ai-hats.yaml directly
+#   task_prefix: ACME
+```
+
+Prefix must match `^[A-Z][A-Z0-9]*$` (uppercase, starts with a letter).
+Re-running `ai-hats init --task-prefix X` against a project with a different
+prefix already in the yaml fails loud rather than silently reassigning ids.
+
 ```bash
 # Create task (ID auto-generated if omitted)
 ai-hats task create "Title" -d "Description" -p medium --tag dx --tag cleanup --id PROJ-042

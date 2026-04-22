@@ -75,19 +75,33 @@ class Assembler:
 
         return paths
 
-    def init(self, role: str | None = None, provider: str | None = None) -> None:
+    def init(
+        self,
+        role: str | None = None,
+        provider: str | None = None,
+        task_prefix: str | None = None,
+    ) -> None:
         """Initialize project structure. Idempotent.
 
-        Validates `role` and `provider` before touching disk — unknown values
-        raise ValueError with a list of available options, and no files/dirs
-        are created. This avoids a partially-applied project state where
-        `ai-hats.yaml` exists but composition never happened.
+        Validates `role`, `provider`, and `task_prefix` before touching disk —
+        unknown values raise ValueError with a helpful message, and no
+        files/dirs are created. Re-running init with a `task_prefix` that
+        conflicts with the value already in `ai-hats.yaml` is rejected.
         """
         # Validate inputs BEFORE creating any filesystem artifacts.
         if provider is not None:
             self._validate_provider(provider)
         if role is not None:
             self._validate_role(role)
+        if task_prefix is not None:
+            task_prefix = ProjectConfig.validate_task_prefix(task_prefix)
+            existing = self.project_config.task_prefix
+            if self.config_path.exists() and existing and existing != task_prefix:
+                raise ValueError(
+                    f"task_prefix conflict: ai-hats.yaml has {existing!r}, "
+                    f"init called with {task_prefix!r}. Edit the yaml manually "
+                    f"if you really want to change it."
+                )
 
         # Create .agent/ subdirectories
         for subdir in ("rules", "skills", "hooks", "mcp", "backlog/tasks"):
@@ -97,13 +111,19 @@ class Assembler:
         self.gitlog_dir.mkdir(parents=True, exist_ok=True)
 
         # Create/update ai-hats.yaml
+        save_config = False
         if not self.config_path.exists():
             self.project_config.provider = provider or "gemini"
             if role:
                 self.project_config.default_role = role
-            self.project_config.save(self.config_path)
+            save_config = True
         elif provider:
             self.project_config.provider = provider
+            save_config = True
+        if task_prefix is not None:
+            self.project_config.task_prefix = task_prefix
+            save_config = True
+        if save_config:
             self.project_config.save(self.config_path)
 
         # Create STATE.md
