@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # ai-hats bootstrap — one-command project setup
 #
-# Quick start:
-#   git clone --depth 1 git@github.com:muratovv/ai-hats.git /tmp/ai-hats && \
-#     bash /tmp/ai-hats/scripts/bootstrap.sh -r assistant -p claude && \
-#     rm -rf /tmp/ai-hats
+# Idempotent by design: safe to re-run in an already-initialized project.
+# `ai-hats init` preserves existing config/customizations.
+#
+# Quick start (fresh tmp each run, auto-cleanup):
+#   TMP=$(mktemp -d) && git clone --depth 1 git@github.com:muratovv/ai-hats.git "$TMP" && \
+#     bash "$TMP/scripts/bootstrap.sh" -r assistant -p claude; rm -rf "$TMP"
 #
 # From local clone:
 #   bash scripts/bootstrap.sh -r go-dev -p claude
@@ -33,7 +35,6 @@ ROLE=""
 PROVIDER=""
 REPO_URL="git+ssh://git@github.com/muratovv/ai-hats.git"
 LOCAL_ROOT=""
-FORCE=false
 
 usage() {
     cat <<EOF
@@ -44,14 +45,16 @@ ${BOLD}Options:${RESET}
   -p, --provider <name>    Provider (claude or gemini)
   --repo <git-url>         Custom git install URL
   --local <path>           Install from local clone instead of GitHub
-  --force                  Overwrite existing files without prompting
   -h, --help               Show this help
 
+${BOLD}Notes:${RESET}
+  Idempotent — safe to re-run in an already-initialized project.
+  Existing ai-hats.yaml / .agent/ are preserved by \`ai-hats init\`.
+
 ${BOLD}Examples:${RESET}
-  ${DIM}# Quick start (private repo via SSH)${RESET}
-  git clone --depth 1 git@github.com:muratovv/ai-hats.git /tmp/ai-hats && \\
-    bash /tmp/ai-hats/scripts/bootstrap.sh -r assistant -p claude && \\
-    rm -rf /tmp/ai-hats
+  ${DIM}# Quick start — fresh tmp each run, auto-cleanup${RESET}
+  TMP=\$(mktemp -d) && git clone --depth 1 git@github.com:muratovv/ai-hats.git "\$TMP" && \\
+    bash "\$TMP/scripts/bootstrap.sh" -r assistant -p claude; rm -rf "\$TMP"
 
   ${DIM}# From local clone${RESET}
   bash scripts/bootstrap.sh -r go-dev -p claude
@@ -67,7 +70,7 @@ while [[ $# -gt 0 ]]; do
         -p|--provider) PROVIDER="$2";  shift 2 ;;
         --repo)        REPO_URL="$2";  shift 2 ;;
         --local)       LOCAL_ROOT="$2"; shift 2 ;;
-        --force)       FORCE=true;     shift ;;
+        --force)       shift ;;  # deprecated: kept for backward compat, no-op (idempotent by default)
         -h|--help)     usage ;;
         *)  err "unknown" "$1"; usage ;;
     esac
@@ -137,23 +140,10 @@ fi
 INSTALLED_VERSION=$(ai-hats --version 2>&1 | head -1)
 ok "version" "${INSTALLED_VERSION}"
 
-# -- 5. Pre-flight checks --
+# -- 5. Detect re-run --
 
-CONFLICTS=()
-[[ -f "ai-hats.yaml" ]]  && CONFLICTS+=("ai-hats.yaml")
-[[ -d ".agent" ]]        && CONFLICTS+=(".agent/")
-
-if [[ ${#CONFLICTS[@]} -gt 0 && "$FORCE" != true ]]; then
-    err "conflict" "existing files will be overwritten:"
-    for f in "${CONFLICTS[@]}"; do
-        printf "               %s\n" "$f" >&2
-    done
-    printf "\n  Continue? [y/N] "
-    read -r answer </dev/tty || { echo "  Cannot prompt — run with --force to skip."; exit 1; }
-    if [[ ! "$answer" =~ ^[Yy]$ ]]; then
-        echo "  Aborted."
-        exit 1
-    fi
+if [[ -f "ai-hats.yaml" || -d ".agent" ]]; then
+    info "re-run" "existing project detected — re-initializing (customizations preserved)"
 fi
 
 # -- 6. Initialize project --

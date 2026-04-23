@@ -20,23 +20,11 @@ roles/assistant ── trait-base + trait-agent + dev::python
 ```bash
 cd ~/dev/my-project
 
-# Из локального клона ai-hats
-bash ~/dev/ai-hats/scripts/bootstrap.sh --role go-dev --provider claude
-
-# Или склонировать и установить за один шаг
-git clone git@github.com:muratovv/ai-hats.git /tmp/ai-hats && \
-  bash /tmp/ai-hats/scripts/bootstrap.sh --role go-dev --provider claude
+TMP=$(mktemp -d) && git clone --depth 1 git@github.com:muratovv/ai-hats.git "$TMP" && \
+  bash "$TMP/scripts/bootstrap.sh" -r go-dev -p claude; rm -rf "$TMP"
 ```
 
 Скрипт создаст `.venv`, установит ai-hats через pip, сгенерирует `ai-hats.yaml` и `CLAUDE.md`.
-
-### Ручная установка (если ai-hats уже установлен)
-
-```bash
-cd ~/dev/my-project
-source .venv/bin/activate
-ai-hats set -r go-dev -p claude
-```
 
 ### После установки
 
@@ -49,6 +37,27 @@ ai-hats set -r <role>       # сменить роль
 ai-hats set -p gemini       # сменить провайдер
 ai-hats bump                # обновить prompt после изменений в библиотеке
 ```
+
+### Альтернативные способы установки
+
+<details>
+<summary>Из локального клона ai-hats</summary>
+
+```bash
+cd ~/dev/my-project
+bash ~/dev/ai-hats/scripts/bootstrap.sh -r go-dev -p claude
+```
+</details>
+
+<details>
+<summary>Ручная установка (если ai-hats уже в venv)</summary>
+
+```bash
+cd ~/dev/my-project
+source .venv/bin/activate
+ai-hats set -r go-dev -p claude
+```
+</details>
 
 ### Разработка ai-hats
 
@@ -442,4 +451,3 @@ injection: |
   # ROLE: PRIMARY AUTOMATION ASSISTANT
   ...
 ```
-
