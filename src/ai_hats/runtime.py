@@ -18,6 +18,53 @@ from .worktree import IsolationMode, WorktreeManager
 
 logger = logging.getLogger(__name__)
 
+# Sub-agent subprocess wall-clock limit. Exceeding this raises TimeoutExpired,
+# which is handled by graceful finalize (partial transcript + exit_code=124).
+SUBAGENT_SUBPROCESS_TIMEOUT_S = 600
+
+# Exit code conventions for early termination. 124 matches GNU coreutils `timeout`.
+SUBAGENT_EXIT_TIMEOUT = 124
+SUBAGENT_EXIT_ERROR = 1
+
+
+def _finalize_sub_agent(
+    session: Session,
+    *,
+    role: str,
+    model: str,
+    isolation_mode: str,
+    exit_code: int,
+    stdout: str = "",
+    stderr: str = "",
+    timed_out: bool = False,
+    error: str | None = None,
+) -> None:
+    """Save transcripts and finalize audit with structured metrics.
+
+    Called from every sub-agent terminal path (success, timeout, error) so
+    session_dir is always consistently closed: transcript.txt + reasoning.log
+    written if we have any output, metrics.json written with exit_code and
+    optional timed_out/error fields. Provider-agnostic — behaves identically
+    for claude and gemini.
+    """
+    if stdout:
+        (session.session_dir / "transcript.txt").write_text(stdout)
+    if stderr:
+        (session.session_dir / "reasoning.log").write_text(stderr)
+
+    metrics: dict = {
+        "exit_code": exit_code,
+        "role": role,
+        "model": model,
+        "isolation_mode": isolation_mode,
+    }
+    if timed_out:
+        metrics["timed_out"] = True
+    if error is not None:
+        metrics["error"] = error
+
+    session.finalize_audit(metrics)
+
 
 class HooksRunner:
     """Executes lifecycle hook scripts."""
@@ -505,31 +552,44 @@ class SubAgentRunner:
                     env=env,
                     capture_output=True,
                     text=True,
-                    timeout=600,
+                    timeout=SUBAGENT_SUBPROCESS_TIMEOUT_S,
                 )
                 session.log_trace(TraceTag.RES, f"Exit code: {proc.returncode}")
+                _finalize_sub_agent(
+                    session,
+                    role=role_name,
+                    model=model,
+                    isolation_mode=mode.value,
+                    exit_code=proc.returncode,
+                    stdout=proc.stdout or "",
+                    stderr=proc.stderr or "",
+                )
 
-                # Save transcript
-                transcript_path = session.session_dir / "transcript.txt"
-                transcript_path.write_text(proc.stdout)
-
-                if proc.stderr:
-                    reasoning_path = session.session_dir / "reasoning.log"
-                    reasoning_path.write_text(proc.stderr)
-
-                session.finalize_audit({
-                    "exit_code": proc.returncode,
-                    "role": role_name,
-                    "model": model,
-                    "isolation_mode": mode.value,
-                })
-
-            except subprocess.TimeoutExpired:
-                session.log_trace(TraceTag.SYS, "Sub-agent timed out")
-                session.append_audit("TIMEOUT")
+            except subprocess.TimeoutExpired as exc:
+                session.log_trace(
+                    TraceTag.SYS,
+                    f"Sub-agent timed out after {SUBAGENT_SUBPROCESS_TIMEOUT_S}s",
+                )
+                _finalize_sub_agent(
+                    session,
+                    role=role_name,
+                    model=model,
+                    isolation_mode=mode.value,
+                    exit_code=SUBAGENT_EXIT_TIMEOUT,
+                    stdout=exc.stdout or "",
+                    stderr=exc.stderr or "",
+                    timed_out=True,
+                )
             except Exception as e:
                 session.log_trace(TraceTag.SYS, f"Sub-agent error: {e}")
-                session.append_audit(f"ERROR: {e}")
+                _finalize_sub_agent(
+                    session,
+                    role=role_name,
+                    model=model,
+                    isolation_mode=mode.value,
+                    exit_code=SUBAGENT_EXIT_ERROR,
+                    error=str(e),
+                )
 
         return session
 
