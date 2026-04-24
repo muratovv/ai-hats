@@ -37,6 +37,8 @@ from ._helpers import _project_dir, console
               help="With --backfill: comma-separated list of session ids to process")
 @click.option("--force", is_flag=True,
               help="With --backfill: regenerate retros even if a file already exists")
+@click.option("--parallel", default=1, type=click.IntRange(min=1),
+              help="With --backfill: process N candidates concurrently (default 1 = sequential)")
 def retro(
     session_id: str | None,
     use_last: bool,
@@ -48,6 +50,7 @@ def retro(
     min_turns: int,
     only: str | None,
     force: bool,
+    parallel: int,
 ):
     """Generate a structured session retrospective (HATS-051 schema)."""
     project_dir = _project_dir()
@@ -61,7 +64,7 @@ def retro(
             mode=mode, timeout=timeout, dry_run=dry_run,
             since=since, min_turns=min_turns,
             only=[s.strip() for s in only.split(",")] if only else None,
-            force=force,
+            force=force, parallel=parallel,
         )
         return
 
@@ -115,6 +118,7 @@ def _run_backfill_cli(
     min_turns: int,
     only: list[str] | None,
     force: bool,
+    parallel: int = 1,
 ) -> None:
     from ..retro.backfill import run_backfill
     from ..retro.builder import BuilderMode
@@ -124,7 +128,7 @@ def _run_backfill_cli(
         project_dir,
         mode=builder_mode,
         since=since, min_turns=min_turns, only=only, force=force,
-        dry_run=dry_run, timeout=timeout,
+        dry_run=dry_run, timeout=timeout, parallel=parallel,
         printer=console.print,
     )
 

@@ -218,6 +218,89 @@ def test_run_backfill_summary(tmp_path, monkeypatch):
     assert all("saved" in line for line in printed)
 
 
+def test_run_backfill_parallel_processes_all_candidates(tmp_path, monkeypatch):
+    """With parallel=N>1, every candidate is processed; completion order may
+    differ from candidate order but all results are captured."""
+    for sid in ("SID1", "SID2", "SID3", "SID4"):
+        _make_session(tmp_path, sid)
+
+    out = tmp_path / "out.md"
+    monkeypatch.setattr(
+        "ai_hats.retro.backfill.SessionRetroBuilder", _stub_builder_class(out),
+    )
+    printed: list[str] = []
+    summary = run_backfill(tmp_path, parallel=3, printer=printed.append)
+
+    assert summary.total_candidates == 4
+    assert summary.saved == 4
+    assert summary.failed == 0
+    assert len(printed) == 4
+    # Every candidate appears in exactly one line.
+    sids_in_output = {line.split()[1] for line in printed}
+    assert sids_in_output == {"SID1", "SID2", "SID3", "SID4"}
+
+
+def test_run_backfill_parallel_1_matches_sequential(tmp_path, monkeypatch):
+    """Regression guard: parallel=1 is exactly the legacy sequential path.
+    Output order stays in-candidate-order, results identical."""
+    for sid in ("SID_a", "SID_b", "SID_c"):
+        _make_session(tmp_path, sid)
+
+    out = tmp_path / "out.md"
+    monkeypatch.setattr(
+        "ai_hats.retro.backfill.SessionRetroBuilder", _stub_builder_class(out),
+    )
+    seq_printed: list[str] = []
+    seq_summary = run_backfill(tmp_path, parallel=1, printer=seq_printed.append)
+
+    assert seq_summary.saved == 3
+    assert seq_summary.failed == 0
+    # Sequential path preserves candidate order in output.
+    assert [line.split()[1] for line in seq_printed] == ["SID_a", "SID_b", "SID_c"]
+
+
+def test_run_backfill_parallel_mixed_success_and_failure(tmp_path, monkeypatch):
+    """Failures in some candidates don't prevent others from completing."""
+    for sid in ("SID_ok1", "SID_fail1", "SID_ok2", "SID_fail2"):
+        _make_session(tmp_path, sid)
+
+    class _Selective:
+        def __init__(self, *a, **kw): pass
+        def build_and_save(self, sid, mode=None):
+            if "fail" in sid:
+                raise RuntimeError(f"boom for {sid}")
+            out = tmp_path / f"{sid}.md"
+            out.write_text("ok")
+            return out
+
+    monkeypatch.setattr("ai_hats.retro.backfill.SessionRetroBuilder", _Selective)
+    summary = run_backfill(tmp_path, parallel=4, printer=lambda _: None)
+
+    assert summary.saved == 2
+    assert summary.failed == 2
+    ok_sids = {r.session_id for r in summary.results if r.status == "saved"}
+    fail_sids = {r.session_id for r in summary.results if r.status == "failed"}
+    assert ok_sids == {"SID_ok1", "SID_ok2"}
+    assert fail_sids == {"SID_fail1", "SID_fail2"}
+
+
+def test_run_backfill_parallel_dry_run_skips_builder(tmp_path, monkeypatch):
+    """--dry-run path in parallel mode doesn't invoke the builder at all."""
+    for sid in ("SID1", "SID2"):
+        _make_session(tmp_path, sid)
+
+    class _Forbidden:
+        def __init__(self, *a, **kw):
+            raise AssertionError("builder must not run in --dry-run")
+
+    monkeypatch.setattr("ai_hats.retro.backfill.SessionRetroBuilder", _Forbidden)
+    summary = run_backfill(tmp_path, parallel=2, dry_run=True, printer=lambda _: None)
+
+    assert summary.dry_run == 2
+    assert summary.saved == 0
+    assert summary.failed == 0
+
+
 def test_run_backfill_mixed_success_and_failure(tmp_path, monkeypatch):
     _make_session(tmp_path, "SID_ok")
     _make_session(tmp_path, "SID_fail")
@@ -306,6 +389,38 @@ def test_cli_backfill_partial_failure_exits_1(cli_project, monkeypatch):
     assert r.exit_code == 1
     assert "saved=1" in r.output
     assert "failed=1" in r.output
+
+
+def test_cli_backfill_parallel_flag_passes_through(cli_project, monkeypatch):
+    """`--parallel N` is accepted and forwarded into run_backfill."""
+    project, runner = cli_project
+    _make_session(project, "SID1")
+    _make_session(project, "SID2")
+    _make_session(project, "SID3")
+    out = project / "r.md"
+
+    captured: dict = {}
+
+    class _Builder:
+        def __init__(self, *a, **kw): pass
+        def build_and_save(self, sid, mode=None):
+            captured.setdefault("sids", []).append(sid)
+            out.write_text("ok")
+            return out
+
+    monkeypatch.setattr("ai_hats.retro.backfill.SessionRetroBuilder", _Builder)
+
+    r = runner.invoke(main, ["retro", "--backfill", "--parallel", "3"])
+    assert r.exit_code == 0, r.output
+    # All three candidates got processed regardless of completion order.
+    assert sorted(captured["sids"]) == ["SID1", "SID2", "SID3"]
+
+
+def test_cli_backfill_parallel_rejects_zero(cli_project):
+    """click.IntRange(min=1) rejects 0 and negative — usage error."""
+    project, runner = cli_project
+    r = runner.invoke(main, ["retro", "--backfill", "--parallel", "0"])
+    assert r.exit_code == 2
 
 
 def test_cli_backfill_only_filter(cli_project, monkeypatch):

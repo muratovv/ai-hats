@@ -191,12 +191,19 @@ def run_backfill(
     force: bool = False,
     dry_run: bool = False,
     timeout: int = 600,
+    parallel: int = 1,
     printer: Callable[[str], None] = print,
 ) -> BackfillSummary:
     """Top-level orchestrator.
 
     `printer` receives per-session progress lines so the CLI can format
     them with colours while tests capture plain strings.
+
+    With ``parallel > 1``, candidates are processed concurrently via a
+    ThreadPoolExecutor (HATS-167). Order of progress lines is completion
+    order, not candidate order — each line carries its own ``[idx/N]``
+    prefix (the original position) so the reader can reconstruct.
+    Keyboard interrupt cancels pending futures and returns partial results.
     """
     candidates, pre_skipped = find_candidates(
         project_dir,
@@ -211,25 +218,60 @@ def run_backfill(
         return summary
 
     start_all = time.monotonic()
-    try:
-        for idx, cand in enumerate(candidates, start=1):
-            prefix = f"[{idx}/{len(candidates)}] {cand.session_id}"
-            meta = f"turns={cand.turns} tool_calls={cand.tool_calls}"
-            res = backfill_one(
-                project_dir, cand, mode=mode, timeout=timeout, dry_run=dry_run,
-            )
-            summary.results.append(res)
-            if res.status == "saved":
-                summary.saved += 1
-                printer(f"{prefix}  {meta}  → saved in {res.duration_s:.1f}s")
-            elif res.status == "failed":
-                summary.failed += 1
-                printer(f"{prefix}  {meta}  → FAILED ({res.detail})")
-            else:  # dry_run
-                summary.dry_run += 1
-                printer(f"{prefix}  {meta}  → dry-run (mode={mode.value})")
-    except KeyboardInterrupt:
-        summary.interrupted = True
+    total = len(candidates)
+
+    def _record(res: BackfillResult, idx: int, cand: Candidate) -> None:
+        prefix = f"[{idx}/{total}] {cand.session_id}"
+        meta = f"turns={cand.turns} tool_calls={cand.tool_calls}"
+        summary.results.append(res)
+        if res.status == "saved":
+            summary.saved += 1
+            printer(f"{prefix}  {meta}  → saved in {res.duration_s:.1f}s")
+        elif res.status == "failed":
+            summary.failed += 1
+            printer(f"{prefix}  {meta}  → FAILED ({res.detail})")
+        else:  # dry_run
+            summary.dry_run += 1
+            printer(f"{prefix}  {meta}  → dry-run (mode={mode.value})")
+
+    if parallel <= 1:
+        try:
+            for idx, cand in enumerate(candidates, start=1):
+                res = backfill_one(
+                    project_dir, cand, mode=mode, timeout=timeout, dry_run=dry_run,
+                )
+                _record(res, idx, cand)
+        except KeyboardInterrupt:
+            summary.interrupted = True
+    else:
+        import concurrent.futures as cf
+
+        with cf.ThreadPoolExecutor(max_workers=parallel) as ex:
+            futures: dict[cf.Future, tuple[int, Candidate]] = {
+                ex.submit(
+                    backfill_one, project_dir, cand,
+                    mode=mode, timeout=timeout, dry_run=dry_run,
+                ): (idx, cand)
+                for idx, cand in enumerate(candidates, start=1)
+            }
+            try:
+                for fut in cf.as_completed(futures):
+                    idx, cand = futures[fut]
+                    # backfill_one catches exceptions internally and returns
+                    # a failed BackfillResult; .result() should not raise.
+                    # Guard anyway so a rogue exception in the future's own
+                    # machinery doesn't take down the whole batch.
+                    try:
+                        res = fut.result()
+                    except Exception as exc:  # pragma: no cover — defensive
+                        res = BackfillResult(
+                            session_id=cand.session_id,
+                            status="failed", detail=repr(exc),
+                        )
+                    _record(res, idx, cand)
+            except KeyboardInterrupt:
+                summary.interrupted = True
+                ex.shutdown(wait=False, cancel_futures=True)
 
     summary.total_duration_s = time.monotonic() - start_all
     return summary
