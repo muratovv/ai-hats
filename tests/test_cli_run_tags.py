@@ -17,9 +17,16 @@ from ai_hats.cli import main
 
 class _StubSession:
     def __init__(self, tmp_path: Path) -> None:
+        import json
+
         self.session_id = "stub-session"
         self.session_dir = tmp_path / "session_stub"
         self.session_dir.mkdir(parents=True, exist_ok=True)
+        # Emulate a finalized session so CLI's exit-code propagation finds 0.
+        self.metrics_path = self.session_dir / "metrics.json"
+        self.metrics_path.write_text(
+            json.dumps({"exit_code": 0, "role": "primary"})
+        )
 
 
 class _StubRunner:

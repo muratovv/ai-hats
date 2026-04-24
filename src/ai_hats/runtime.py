@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -39,14 +40,15 @@ def _finalize_sub_agent(
     timed_out: bool = False,
     error: str | None = None,
     tags: dict[str, str] | None = None,
+    duration_s: float | None = None,
 ) -> None:
     """Save transcripts and finalize audit with structured metrics.
 
     Called from every sub-agent terminal path (success, timeout, error) so
     session_dir is always consistently closed: transcript.txt + reasoning.log
     written if we have any output, metrics.json written with exit_code and
-    optional timed_out/error/tags fields. Provider-agnostic — behaves
-    identically for claude and gemini.
+    optional timed_out/error/tags/duration_s fields. Provider-agnostic —
+    behaves identically for claude and gemini.
     """
     if stdout:
         (session.session_dir / "transcript.txt").write_text(stdout)
@@ -65,6 +67,8 @@ def _finalize_sub_agent(
         metrics["error"] = error
     if tags:
         metrics["tags"] = tags
+    if duration_s is not None:
+        metrics["duration_s"] = round(duration_s, 3)
 
     session.finalize_audit(metrics)
 
@@ -554,6 +558,7 @@ class SubAgentRunner:
 
         with WorktreeManager(self.project_dir, role_name, session.session_id, mode) as work_dir:
             session.log_trace(TraceTag.SUB, f"Working directory: {work_dir}")
+            t0 = time.monotonic()
             try:
                 full_cmd = provider.get_run_command(cmd, meta_prompt)
                 proc = subprocess.run(
@@ -574,6 +579,7 @@ class SubAgentRunner:
                     stdout=proc.stdout or "",
                     stderr=proc.stderr or "",
                     tags=tags,
+                    duration_s=time.monotonic() - t0,
                 )
 
             except subprocess.TimeoutExpired as exc:
@@ -591,6 +597,7 @@ class SubAgentRunner:
                     stderr=exc.stderr or "",
                     timed_out=True,
                     tags=tags,
+                    duration_s=time.monotonic() - t0,
                 )
             except Exception as e:
                 session.log_trace(TraceTag.SYS, f"Sub-agent error: {e}")
@@ -602,6 +609,7 @@ class SubAgentRunner:
                     exit_code=SUBAGENT_EXIT_ERROR,
                     error=str(e),
                     tags=tags,
+                    duration_s=time.monotonic() - t0,
                 )
 
         return session

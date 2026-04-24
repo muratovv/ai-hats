@@ -99,7 +99,7 @@ ai-hats clean                              # очистить .agent/
 ai-hats whoami                             # диагностика
 
 # Суб-агенты
-ai-hats run <role> [--ticket <ID>] [--model <name>] [--task <desc>] [--tag k=v ...]
+ai-hats run <role> [--ticket <ID>] [--model <name>] [--task <desc>] [--tag k=v ...] [--json]
 
 # Наблюдаемость и feedback loop
 ai-hats session list [--last N] [--min-turns N] [--productive] [--all] [--tag k=v ...] [--role <r>] [--since YYYY-MM-DD] [--json]
@@ -198,6 +198,45 @@ ai-hats run sre-diagnoser --tag alert_fp="$fp" --task "..."
 
 Атомарность check-and-spawn (race между двумя параллельными вебхуками) — на
 стороне оркестратора: filelock/redis/что удобнее.
+
+## Machine-readable run + exit codes
+
+Для fan-out через `parallel`/`xargs`/CI:
+
+```bash
+ai-hats run <role> --task "..." --json
+# → stdout: {"session_id":"...","exit_code":0,"role":"...","duration_s":12.3,"tags":{...},...}
+```
+
+Форма совпадает с элементом `session list --json` — один и тот же парсинг на
+стороне оркестратора. `--json` режим **полностью подавляет** rich-summary в
+stdout; человекочитаемый режим (без `--json`) оставлен как был.
+
+**Exit codes** (стабильный контракт, пробрасываются из sub-agent):
+
+| Код | Значение |
+|---|---|
+| 0 | успех (sub-agent завершился 0) |
+| 1 | agent/runtime error (subprocess exit 1, generic exception в runtime) |
+| 2 | CLI usage error (неверные флаги — default click) |
+| 124 | timeout (sub-agent превысил wall-clock limit) — convention GNU coreutils |
+| другой non-zero | форвардится от провайдера (claude/gemini exit code) |
+
+Пример fan-out:
+
+```bash
+# N параллельных вызовов, собрать все результаты, отфильтровать успешные
+cat tasks.jsonl | jq -r '.task' | parallel -j 3 \
+    'ai-hats run diagnoser --task {} --json' \
+  | jq -s 'map(select(.exit_code == 0))'
+```
+
+Если надо узнать код завершения одной сессии, не парся stdout — хватит `$?`:
+
+```bash
+ai-hats run diagnoser --task "..." --json > result.json
+echo "exit=$?"   # совпадает с .exit_code в result.json
+```
 
 ## Архитектура
 

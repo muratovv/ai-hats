@@ -109,6 +109,47 @@ def test_sub_agent_tags_preserved_on_timeout(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# duration_s — HATS-166
+# ---------------------------------------------------------------------------
+
+
+def test_duration_s_lands_in_metrics_when_provided(tmp_path):
+    session = _make_session(tmp_path)
+
+    _finalize_sub_agent(
+        session,
+        role="primary",
+        model="",
+        isolation_mode="discard",
+        exit_code=0,
+        duration_s=42.12345,
+    )
+
+    m = json.loads(session.metrics_path.read_text())
+    # Rounded to 3 decimal places — enough for a second-level consumer, not
+    # noisy like raw float.
+    assert m["duration_s"] == 42.123
+
+
+def test_duration_s_omitted_when_none(tmp_path):
+    """Legacy callers without duration instrumentation still produce valid
+    metrics.json — the key simply doesn't appear."""
+    session = _make_session(tmp_path)
+
+    _finalize_sub_agent(
+        session,
+        role="primary",
+        model="",
+        isolation_mode="discard",
+        exit_code=0,
+        duration_s=None,
+    )
+
+    m = json.loads(session.metrics_path.read_text())
+    assert "duration_s" not in m
+
+
+# ---------------------------------------------------------------------------
 # AuditWriter regression — tags survive enrichment
 # ---------------------------------------------------------------------------
 
