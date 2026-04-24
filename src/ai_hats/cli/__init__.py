@@ -58,21 +58,37 @@ class _PassthroughGroup(click.Group):
 @click.version_option(version=__version__)
 @click.option("--provider", "-p", default=None, help="Provider override (gemini/claude)")
 @click.option("--role", "-r", default=None, help="Role override")
+@click.option(
+    "--tag",
+    "tags_raw",
+    multiple=True,
+    help="Custom tag k=v for this session (repeatable, max 20). "
+         "Stored in metrics.json under 'tags' for later query.",
+)
 @click.pass_context
-def main(ctx, provider: str | None, role: str | None):
+def main(ctx, provider: str | None, role: str | None, tags_raw: tuple[str, ...]):
     """ai-hats — AI agent role composition framework.
 
     Without a subcommand, launches a wrapped provider CLI session.
     Unknown flags are passed through to the provider.
     """
     if ctx.invoked_subcommand is None:
-        _launch_session(provider=provider, role=role, extra_args=ctx.args)
+        from ..tags import TagValidationError, parse_tags
+        try:
+            tags = parse_tags(tags_raw)
+        except TagValidationError as e:
+            raise click.BadParameter(str(e), param_hint="--tag") from e
+        _launch_session(
+            provider=provider, role=role, extra_args=ctx.args,
+            tags=tags or None,
+        )
 
 
 def _launch_session(
     provider: str | None = None,
     role: str | None = None,
     extra_args: list[str] | None = None,
+    tags: dict[str, str] | None = None,
 ):
     """Launch a wrapped provider CLI session."""
     from ..models import ProjectConfig
@@ -91,6 +107,7 @@ def _launch_session(
         effective_provider,
         role_override=role,
         extra_args=extra_args or None,
+        tags=tags,
     )
     sys.exit(exit_code)
 

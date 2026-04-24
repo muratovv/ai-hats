@@ -38,14 +38,15 @@ def _finalize_sub_agent(
     stderr: str = "",
     timed_out: bool = False,
     error: str | None = None,
+    tags: dict[str, str] | None = None,
 ) -> None:
     """Save transcripts and finalize audit with structured metrics.
 
     Called from every sub-agent terminal path (success, timeout, error) so
     session_dir is always consistently closed: transcript.txt + reasoning.log
     written if we have any output, metrics.json written with exit_code and
-    optional timed_out/error fields. Provider-agnostic — behaves identically
-    for claude and gemini.
+    optional timed_out/error/tags fields. Provider-agnostic — behaves
+    identically for claude and gemini.
     """
     if stdout:
         (session.session_dir / "transcript.txt").write_text(stdout)
@@ -62,6 +63,8 @@ def _finalize_sub_agent(
         metrics["timed_out"] = True
     if error is not None:
         metrics["error"] = error
+    if tags:
+        metrics["tags"] = tags
 
     session.finalize_audit(metrics)
 
@@ -227,6 +230,7 @@ def _finalize_session(
     env: dict[str, str],
     hooks_runner: "HooksRunner",
     tracer: "SidecarTracer",
+    tags: dict[str, str] | None = None,
 ) -> None:
     """Run all post-pty cleanup steps with per-step isolation. ALWAYS
     calls _print_session_end at the end, even when individual steps fail
@@ -256,11 +260,14 @@ def _finalize_session(
         # Finalize metrics and build enriched audit BEFORE hooks, so
         # session_end hooks can read metrics.json (e.g. auto-retro).
         try:
-            session.finalize_audit({
+            metrics: dict = {
                 "exit_code": exit_code,
                 "role": active_role,
                 "provider": provider_name,
-            })
+            }
+            if tags:
+                metrics["tags"] = tags
+            session.finalize_audit(metrics)
         except (Exception, KeyboardInterrupt):
             logger.warning("audit finalization failed", exc_info=True)
 
@@ -339,6 +346,7 @@ class WrapRunner:
         provider_name: str,
         role_override: str | None = None,
         extra_args: list[str] | None = None,
+        tags: dict[str, str] | None = None,
     ) -> int:
         """Launch a wrapped CLI session with PTY proxying."""
         # Resolve provider
@@ -441,6 +449,7 @@ class WrapRunner:
                 env=env,
                 hooks_runner=hooks_runner,
                 tracer=tracer,
+                tags=tags,
             )
 
         return exit_code
@@ -505,6 +514,7 @@ class SubAgentRunner:
         model: str = "",
         parent_session: str | None = None,
         isolation_mode: str = "discard",
+        tags: dict[str, str] | None = None,
     ) -> Session:
         """Execute a sub-agent in isolation."""
         # Create sub-session
@@ -563,6 +573,7 @@ class SubAgentRunner:
                     exit_code=proc.returncode,
                     stdout=proc.stdout or "",
                     stderr=proc.stderr or "",
+                    tags=tags,
                 )
 
             except subprocess.TimeoutExpired as exc:
@@ -579,6 +590,7 @@ class SubAgentRunner:
                     stdout=exc.stdout or "",
                     stderr=exc.stderr or "",
                     timed_out=True,
+                    tags=tags,
                 )
             except Exception as e:
                 session.log_trace(TraceTag.SYS, f"Sub-agent error: {e}")
@@ -589,6 +601,7 @@ class SubAgentRunner:
                     isolation_mode=mode.value,
                     exit_code=SUBAGENT_EXIT_ERROR,
                     error=str(e),
+                    tags=tags,
                 )
 
         return session

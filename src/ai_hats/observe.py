@@ -54,26 +54,76 @@ class SessionManager:
         return Session(session_id=session_id, session_dir=session_dir)
 
     def list_sessions(
-        self, last_n: int | None = None, productive_only: bool = False,
+        self,
+        last_n: int | None = None,
+        productive_only: bool = False,
+        *,
+        role_eq: str | None = None,
+        tag_filters: dict[str, str] | None = None,
+        since_date: str | None = None,
     ) -> list[Session]:
-        """List sessions, optionally the last N.
+        """List sessions, optionally filtered.
 
-        If productive_only=True, skip sessions with 0 turns or 0 tool_calls
-        (empty sub-agent sessions, crashed sessions, etc.).
+        Filters (AND-combined):
+
+        - ``productive_only`` — skip sessions with 0 turns or 0 tool_calls.
+        - ``role_eq`` — exact match on ``metrics["role"]``.
+        - ``tag_filters`` — all k=v pairs must match ``metrics["tags"]``.
+        - ``since_date`` — ``YYYY-MM-DD``; session-id prefix (first 8 chars)
+          must be ``>=`` the given date (same comparison as
+          ``retro --backfill --since``).
+
+        Sessions without a readable ``metrics.json`` are skipped whenever any
+        metric-dependent filter is active (role/tag/productive_only), so
+        crashed sessions never produce phantom query hits.
         """
         sessions = []
         if not self.gitlog_dir.exists():
             return sessions
+
+        since_prefix = since_date.replace("-", "") if since_date else None
+        metric_filters_active = (
+            productive_only or role_eq is not None or tag_filters
+        )
+
         for d in sorted(self.gitlog_dir.iterdir()):
-            if d.is_dir() and d.name.startswith("session_"):
-                sid = d.name[len("session_"):]
-                s = Session(session_id=sid, session_dir=d)
+            if not (d.is_dir() and d.name.startswith("session_")):
+                continue
+            sid = d.name[len("session_"):]
+
+            if since_prefix is not None and sid[:8] < since_prefix:
+                continue
+
+            s = Session(session_id=sid, session_dir=d)
+
+            if metric_filters_active:
+                metrics = _load_metrics_safe(s)
+                if metrics is None:
+                    continue
                 if productive_only and not s.is_productive():
                     continue
-                sessions.append(s)
+                if role_eq is not None and metrics.get("role") != role_eq:
+                    continue
+                if tag_filters:
+                    session_tags = metrics.get("tags") or {}
+                    if any(session_tags.get(k) != v for k, v in tag_filters.items()):
+                        continue
+
+            sessions.append(s)
+
         if last_n:
             sessions = sessions[-last_n:]
         return sessions
+
+
+def _load_metrics_safe(session: "Session") -> dict | None:
+    """Return parsed metrics.json, or None if missing/corrupt."""
+    if not session.metrics_path.exists():
+        return None
+    try:
+        return json.loads(session.metrics_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 class Session:

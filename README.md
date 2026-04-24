@@ -81,6 +81,7 @@ ai-hats                                    # текущие настройки
 ai-hats --resume                           # флаги передаются провайдеру
 ai-hats -p claude -r architect             # override провайдера и роли
 ai-hats "fix the bug"                      # промпт передаётся провайдеру
+ai-hats --tag client=acme --tag project=X  # custom теги в metrics.json (см. ниже)
 
 # Конфигурация
 ai-hats set -r <role> -p <provider>        # настроить роль и/или провайдер
@@ -98,10 +99,10 @@ ai-hats clean                              # очистить .agent/
 ai-hats whoami                             # диагностика
 
 # Суб-агенты
-ai-hats run <role> [--ticket <ID>] [--model <name>] [--task <desc>]
+ai-hats run <role> [--ticket <ID>] [--model <name>] [--task <desc>] [--tag k=v ...]
 
 # Наблюдаемость и feedback loop
-ai-hats session list [--last N] [--min-turns N] [--productive] [--all] # список сессий с метриками
+ai-hats session list [--last N] [--min-turns N] [--productive] [--all] [--tag k=v ...] [--role <r>] [--since YYYY-MM-DD] [--json]
 ai-hats session show <session_id>                                      # детали конкретной сессии
 ai-hats audit [--session <ID>]                                         # показать audit.md сессии
 ai-hats retro <session_id> [--last] [--mode programmatic|llm]         # session-retro snapshot
@@ -145,6 +146,58 @@ cd ~/my-project
 ai-hats update      # подтянуть свежий ai-hats из GitHub
 ai-hats bump        # пересобрать роль + .gitignore
 ```
+
+## Session tags и queryable history
+
+Кастомные `k=v` метаданные на сессиях — для оркестраторов (autosre, CI, batch),
+cost attribution, pipeline tracking, A/B экспериментов. Теги попадают в
+`metrics.json` под ключ `tags` и индексируются через `session list`.
+
+```bash
+# Запись — теги при запуске (повторяемый флаг, до 20 на сессию)
+ai-hats run sre-diagnoser --task "..." \
+    --tag alert_fp=abc123 \
+    --tag alertname=ImmichContainerDown \
+    --tag client=home-lab
+
+# То же для интерактивной сессии
+ai-hats --tag client=acme --tag project=migration-v2
+
+# Запрос — фильтры + machine-readable JSON для pipe в jq/parallel
+ai-hats session list --tag alert_fp=abc123 --json | jq .
+ai-hats session list --role sre-diagnoser --since 2026-04-20 --json
+ai-hats session list --tag client=acme --tag project=X --all --json
+```
+
+**Валидация (строгая, raise при нарушении):**
+- Ключ: `^[a-zA-Z_][a-zA-Z0-9_.\-]*$`, max 64 chars.
+- Значение: max 256 chars, непустое.
+- Max 20 тегов на сессию.
+- Reserved keys (shadow запрещён): `role`, `provider`, `exit_code`, `model`,
+  `timed_out`, `error`, `isolation_mode`, `turns`, `tokens`, `models`,
+  `tool_calls`, `session_id`, `session_dir`, `started_at`.
+
+**JSON output** — `--json` выдаёт plain список словарей. Форма каждого
+элемента — все поля `metrics.json` плюс computed `session_id`, `session_dir`,
+`started_at` (ISO-8601). Consumers выбирают нужное через `jq`.
+
+**Рецепт dedup в оркестраторе** (заменяет собой идею `--idempotency-key`):
+
+```bash
+# Перед запуском нового диагноза — проверить, есть ли уже сессия с этим fp
+fp="$1"
+existing=$(ai-hats session list --tag alert_fp="$fp" --since "$(date -u +%Y-%m-%d)" --all --json \
+            | jq -r '.[] | select(.exit_code == 0) | .session_id' | head -n1)
+
+if [ -n "$existing" ]; then
+    echo "Already diagnosed in session $existing — skipping"
+    exit 0
+fi
+ai-hats run sre-diagnoser --tag alert_fp="$fp" --task "..."
+```
+
+Атомарность check-and-spawn (race между двумя параллельными вебхуками) — на
+стороне оркестратора: filelock/redis/что удобнее.
 
 ## Архитектура
 

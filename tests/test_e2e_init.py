@@ -180,8 +180,12 @@ def _capture_launch(monkeypatch):
 
     calls: list[dict] = []
 
-    def _record(provider=None, role=None, extra_args=None):
-        calls.append({"provider": provider, "role": role, "extra_args": list(extra_args or [])})
+    def _record(provider=None, role=None, extra_args=None, tags=None):
+        calls.append({
+            "provider": provider, "role": role,
+            "extra_args": list(extra_args or []),
+            "tags": tags,
+        })
 
     monkeypatch.setattr(cli, "_launch_session", _record)
     return calls
