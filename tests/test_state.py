@@ -384,6 +384,113 @@ def test_no_worktree_in_non_git_project(mgr):
     assert active is None
 
 
+# -- Cancelled / wont-fix terminal state (HATS-168) --
+
+
+def test_cancel_from_brainstorm_is_terminal(mgr):
+    """Fresh card → cancelled with resolution recorded; completed_at stamped."""
+    mgr.create_task("T-1", "Drop this")
+    t = mgr.transition("T-1", TaskState.CANCELLED, resolution="duplicate of T-99")
+
+    assert t.state == TaskState.CANCELLED
+    assert t.resolution == "duplicate of T-99"
+    assert t.completed_at != ""
+
+    # Reload from disk — resolution and state must persist.
+    reloaded = mgr.get_task("T-1")
+    assert reloaded.state == TaskState.CANCELLED
+    assert reloaded.resolution == "duplicate of T-99"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        [TaskState.PLAN],
+        [TaskState.PLAN, TaskState.BLOCKED],
+        [TaskState.PLAN, TaskState.EXECUTE],
+        [TaskState.PLAN, TaskState.EXECUTE, TaskState.DOCUMENT],
+        [TaskState.PLAN, TaskState.EXECUTE, TaskState.DOCUMENT, TaskState.REVIEW],
+        [TaskState.PLAN, TaskState.EXECUTE, TaskState.FAILED],
+    ],
+    ids=["plan", "blocked", "execute", "document", "review", "failed"],
+)
+def test_cancel_reachable_from_every_non_terminal_state(mgr, path):
+    """Cancel exit is the whole point of the feature — must work from anywhere."""
+    mgr.create_task("T-1", "Walk before cancel")
+    for state in path:
+        mgr.transition("T-1", state)
+
+    t = mgr.transition("T-1", TaskState.CANCELLED, resolution="obsolete")
+    assert t.state == TaskState.CANCELLED
+    assert t.resolution == "obsolete"
+    assert t.completed_at != ""
+
+
+def test_cancelled_is_terminal(mgr):
+    """Once cancelled, no further transitions are valid."""
+    mgr.create_task("T-1", "Terminal check")
+    mgr.transition("T-1", TaskState.CANCELLED, resolution="closed")
+
+    for target in TaskState:
+        if target == TaskState.CANCELLED:
+            continue
+        with pytest.raises(ValueError, match="Invalid transition"):
+            mgr.transition("T-1", target)
+
+
+def test_cancel_resolution_optional_at_manager_level(mgr):
+    """TaskManager itself doesn't enforce --resolution — that's CLI policy.
+
+    Keeps the manager API permissive (single source of truth for validation
+    sits at the user-facing edge, not duplicated in two places).
+    """
+    mgr.create_task("T-1", "No resolution here")
+    t = mgr.transition("T-1", TaskState.CANCELLED)  # no resolution kwarg
+    assert t.state == TaskState.CANCELLED
+    assert t.resolution == ""
+
+
+def test_cancel_appears_in_state_md(mgr):
+    mgr.create_task("T-1", "Show me in STATE.md")
+    mgr.transition("T-1", TaskState.CANCELLED, resolution="dup")
+
+    content = mgr.state_md_path.read_text()
+    assert "## CANCELLED" in content
+    assert "T-1" in content
+
+
+def test_cancel_discards_worktree(git_mgr):
+    """plan→execute→cancelled: worktree torn down, changes NOT merged into main."""
+    git_mgr.create_task("T-1", "Work then drop")
+    git_mgr.transition("T-1", TaskState.PLAN)
+    git_mgr.transition("T-1", TaskState.EXECUTE)
+
+    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    assert active is not None
+    wt_path = active.worktree_path
+
+    # Make + commit a change inside the worktree to prove it's discarded.
+    (wt_path / "junk.txt").write_text("should not survive")
+    subprocess.run(["git", "add", "."], cwd=str(wt_path), capture_output=True, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "wip junk"], cwd=str(wt_path), capture_output=True, check=True
+    )
+
+    git_mgr.transition("T-1", TaskState.CANCELLED, resolution="wont-fix per review")
+
+    # Worktree dir gone, state slot cleared.
+    assert WorktreeManager.load_for_task(git_mgr.project_dir, "T-1") is None
+    assert not wt_path.exists()
+    # Change NOT merged into main (cancelled is not done).
+    assert not (git_mgr.project_dir / "junk.txt").exists()
+
+    # Card finalized correctly.
+    t = git_mgr.get_task("T-1")
+    assert t.state == TaskState.CANCELLED
+    assert t.resolution == "wont-fix per review"
+    assert t.completed_at != ""
+
+
 def test_execute_inside_linked_worktree_does_not_nest(tmp_path):
     """HATS-060: `task transition execute` from inside a manually-created
     linked worktree must NOT create a second nested worktree.

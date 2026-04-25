@@ -94,8 +94,20 @@ class TaskManager:
             return None
         return TaskCard.from_yaml(task_file)
 
-    def transition(self, task_id: str, new_state: TaskState) -> TaskCard:
-        """Transition a task to a new state with file-lock protection."""
+    def transition(
+        self,
+        task_id: str,
+        new_state: TaskState,
+        resolution: str | None = None,
+    ) -> TaskCard:
+        """Transition a task to a new state with file-lock protection.
+
+        ``resolution`` is written atomically alongside the state change so
+        cancellations record their reason in the same lock window. The CLI
+        enforces that ``resolution`` is provided when ``new_state`` is
+        CANCELLED; the manager itself is permissive (policy stays at the
+        edge, not duplicated here).
+        """
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -106,6 +118,8 @@ class TaskManager:
 
             task.transition_to(new_state)
             task.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            if resolution is not None:
+                task.resolution = resolution
 
             # State-specific side effects
             if new_state == TaskState.PLAN:
@@ -116,6 +130,11 @@ class TaskManager:
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 self._teardown_worktree(task, merge=True)
             elif new_state == TaskState.FAILED:
+                self._teardown_worktree(task, merge=False)
+            elif new_state == TaskState.CANCELLED:
+                # Administrative close: stamp completion time and discard any
+                # in-flight worktree (work isn't being kept).
+                task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 self._teardown_worktree(task, merge=False)
 
             self._save_task(task)
@@ -308,7 +327,7 @@ class TaskManager:
         for task in tasks:
             by_state.setdefault(task.state.value, []).append(task)
 
-        state_order = ["execute", "document", "plan", "brainstorm", "review", "blocked", "failed", "done"]
+        state_order = ["execute", "document", "plan", "brainstorm", "review", "blocked", "failed", "done", "cancelled"]
         for state_name in state_order:
             state_tasks = by_state.get(state_name, [])
             if state_tasks:

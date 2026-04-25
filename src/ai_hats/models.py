@@ -34,18 +34,23 @@ class TaskState(str, Enum):
     DONE = "done"
     BLOCKED = "blocked"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
     @staticmethod
     def valid_transitions() -> dict[TaskState, list[TaskState]]:
+        # CANCELLED is reachable from every non-terminal state — it's the
+        # administrative-close exit (won't-fix / duplicate / obsolete) so the
+        # task doesn't have to walk the full lifecycle just to be closed.
         return {
-            TaskState.BRAINSTORM: [TaskState.PLAN, TaskState.BLOCKED],
-            TaskState.PLAN: [TaskState.EXECUTE, TaskState.BLOCKED],
-            TaskState.EXECUTE: [TaskState.DOCUMENT, TaskState.BLOCKED, TaskState.FAILED],
-            TaskState.DOCUMENT: [TaskState.REVIEW, TaskState.BLOCKED],
-            TaskState.REVIEW: [TaskState.DONE, TaskState.FAILED],
-            TaskState.BLOCKED: [TaskState.BRAINSTORM, TaskState.PLAN, TaskState.EXECUTE, TaskState.DOCUMENT],
-            TaskState.FAILED: [TaskState.BRAINSTORM],
+            TaskState.BRAINSTORM: [TaskState.PLAN, TaskState.BLOCKED, TaskState.CANCELLED],
+            TaskState.PLAN: [TaskState.EXECUTE, TaskState.BLOCKED, TaskState.CANCELLED],
+            TaskState.EXECUTE: [TaskState.DOCUMENT, TaskState.BLOCKED, TaskState.FAILED, TaskState.CANCELLED],
+            TaskState.DOCUMENT: [TaskState.REVIEW, TaskState.BLOCKED, TaskState.CANCELLED],
+            TaskState.REVIEW: [TaskState.DONE, TaskState.FAILED, TaskState.CANCELLED],
+            TaskState.BLOCKED: [TaskState.BRAINSTORM, TaskState.PLAN, TaskState.EXECUTE, TaskState.DOCUMENT, TaskState.CANCELLED],
+            TaskState.FAILED: [TaskState.BRAINSTORM, TaskState.CANCELLED],
             TaskState.DONE: [],
+            TaskState.CANCELLED: [],
         }
 
     def can_transition_to(self, target: TaskState) -> bool:

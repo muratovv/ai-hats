@@ -55,7 +55,17 @@ def task_create(
 @click.option(
     "--final-state", default=None, help="Final accomplished state (for review transition)"
 )
-def task_transition(task_id: str, new_state: str, final_state: str | None):
+@click.option(
+    "--resolution",
+    default=None,
+    help="Resolution note (required for cancelled — why the task is being closed)",
+)
+def task_transition(
+    task_id: str,
+    new_state: str,
+    final_state: str | None,
+    resolution: str | None,
+):
     """Transition a task to a new state."""
     from ..models import TaskState
 
@@ -66,10 +76,18 @@ def task_transition(task_id: str, new_state: str, final_state: str | None):
         console.print(f"[red]Invalid state[/]: {new_state}")
         console.print(f"Valid states: {[s.value for s in TaskState]}")
         sys.exit(1)
+
+    if state == TaskState.CANCELLED and not (resolution and resolution.strip()):
+        console.print(
+            "[red]Error[/]: --resolution is required when transitioning to cancelled "
+            "(record why: duplicate, won't-fix, obsolete, etc.)"
+        )
+        sys.exit(1)
+
     try:
         if final_state and state == TaskState.REVIEW:
             mgr.set_final_state(task_id, final_state)
-        t = mgr.transition(task_id, state)
+        t = mgr.transition(task_id, state, resolution=resolution)
         console.print(f"[green]Transitioned[/]: {t.id} → {t.state.value}")
         if state == TaskState.PLAN:
             plan_path = mgr.tasks_dir / task_id / "plan.md"
@@ -90,6 +108,9 @@ def task_transition(task_id: str, new_state: str, final_state: str | None):
         elif state == TaskState.DONE:
             console.print("  Worktree merged")
         elif state == TaskState.FAILED:
+            console.print("  Worktree discarded")
+        elif state == TaskState.CANCELLED:
+            console.print(f"  Resolution: {t.resolution}")
             console.print("  Worktree discarded")
     except ValueError as e:
         console.print(f"[red]Error[/]: {e}")
@@ -188,6 +209,7 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
         TaskState.BLOCKED: 5,
         TaskState.DONE: 6,
         TaskState.FAILED: 7,
+        TaskState.CANCELLED: 8,
     }
     PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
@@ -196,7 +218,7 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
     tasks = mgr.list_tasks(state=filter_state, priority=priority)
 
     if not show_all and filter_state is None:
-        tasks = [t for t in tasks if t.state not in (TaskState.DONE, TaskState.FAILED)]
+        tasks = [t for t in tasks if t.state not in (TaskState.DONE, TaskState.FAILED, TaskState.CANCELLED)]
 
     if search:
         try:
@@ -231,6 +253,7 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
         TaskState.BLOCKED: "bold red",
         TaskState.DONE: "dim green",
         TaskState.FAILED: "dim red",
+        TaskState.CANCELLED: "dim yellow",
     }
 
     for t in tasks:

@@ -57,6 +57,10 @@ ai-hats task transition PROJ-042 plan
 ai-hats task transition PROJ-042 execute
 ai-hats task transition PROJ-042 done
 
+# Cancel — terminal admin-close from any non-terminal state (won't-fix / duplicate / obsolete).
+# --resolution is required: it's the audit trail for why the task was dropped.
+ai-hats task transition PROJ-042 cancelled --resolution "duplicate of PROJ-040"
+
 # Update task fields
 ai-hats task update PROJ-042 -p high
 ai-hats task update PROJ-042 --description "New description" --resolution "Closed: duplicate"
@@ -95,7 +99,13 @@ Each task gets a directory: `.agent/backlog/tasks/<ID>/task.yaml` + artifacts.
 brainstorm → plan → execute → document → review → done
                ↕       ↕         ↕          ↕
             blocked  blocked   blocked    failed → brainstorm
+
+           any non-terminal state ──────────────→ cancelled  (terminal)
 ```
+
+`done` and `cancelled` are both terminal. `done` = work completed. `cancelled` =
+administratively closed (won't-fix, duplicate, obsolete). Keep them separate so
+"closed in sprint" reports don't conflate completed work with discarded work.
 
 ---
 
@@ -216,6 +226,23 @@ Task is blocked by external dependency from any active state.
 - `ai-hats task log <ID> "blocked: <reason>"`
 - `ai-hats task transition <ID> blocked`
 - Transition back to previous state when unblocked
+
+### cancelled
+
+Terminal state for tasks that are **not going to be done** — won't-fix after
+review, duplicate of another ticket, obsolete (feature shipped via different
+path or dropped from product scope). Reachable from any non-terminal state, so
+admin closures don't have to walk the full plan→execute→done cycle.
+
+- **Mandatory**: `--resolution "<why>"` — without it the CLI rejects the
+  transition. The resolution is the audit trail.
+- Worktree (if any) is discarded — work is not preserved.
+- `ai-hats task transition <ID> cancelled --resolution "won't-fix per HATS-NNN review"`
+- vs `done`: `done` = completed; `cancelled` = dropped. Keep them distinct so
+  velocity / completion metrics aren't polluted by admin closures.
+- vs `blocked`: `blocked` is recoverable ("can't right now"); `cancelled` is
+  terminal ("not doing this"). If you want to revisit a cancelled idea, open a
+  new ticket — there is no reopen.
 
 ## Session Scoping
 
