@@ -1,0 +1,5 @@
+name: trust-boundary-mapping
+description: Map trust boundaries and guardrails for AI-augmented systems (Tool Boundary, Defense-in-Depth, Kill Switch, Decision Trail)
+author: ai-hats
+tags: [architecture, security, agentic, guardrails]
+pattern: checklist

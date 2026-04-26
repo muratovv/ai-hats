@@ -16,6 +16,9 @@ composition:
     - distributed-systems-checklist
     - requirements-interview
     - api-evolution-checklist
+    - clean-architecture-guide
+    - agentic-topology-design
+    - trust-boundary-mapping
   hooks:
     session_start: []
     session_end: []
