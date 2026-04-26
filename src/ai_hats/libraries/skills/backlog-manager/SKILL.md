@@ -116,7 +116,9 @@ administratively closed (won't-fix, duplicate, obsolete). Keep them separate so
 Create or refine the task card. Clarify requirements.
 
 - Create task: `ai-hats task create "Title" -d "Description" -p <priority>`
-- If requirements are unclear → **request-supervisor**: ask supervisor for context
+- If the request is short or you're making >2 independent assumptions about user intent
+  → **requirements-interview**: walk through the structured Q&A before transitioning to plan
+- If requirements remain unclear after the interview → **request-supervisor**: ask supervisor for context
 - **Integration tagging:** decide whether the task involves integration with an
   external tool, process, network call, sub-agent, or filesystem writes outside
   `.agent/`. If yes → `ai-hats task update <ID> --add-tag integration`. This

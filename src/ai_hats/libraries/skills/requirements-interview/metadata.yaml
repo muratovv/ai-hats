@@ -1,0 +1,5 @@
+name: requirements-interview
+description: Structured Q&A to extract clear requirements before transitioning brainstorm → plan
+author: ai-hats
+tags: [agent-protocol, brainstorm, requirements]
+pattern: checklist
