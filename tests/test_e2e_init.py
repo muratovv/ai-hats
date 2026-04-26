@@ -542,6 +542,43 @@ def test_init_task_prefix_reinit_conflict(cli_project):
     assert r.exit_code == 0, r.output
 
 
+def test_init_imprints_session_retro_mode_llm(cli_project):
+    """Fresh init writes feedback.session_retro.mode=llm to ai-hats.yaml."""
+    import yaml
+
+    project, runner = cli_project
+
+    result = runner.invoke(main, ["init", "-p", "claude"])
+    assert result.exit_code == 0, result.output
+
+    raw = yaml.safe_load((project / "ai-hats.yaml").read_text())
+    assert raw["feedback"]["session_retro"]["mode"] == "llm"
+
+
+def test_init_does_not_overwrite_existing_mode(cli_project):
+    """Re-init on an existing yaml is idempotent — does not flip user-set mode."""
+    project, runner = cli_project
+
+    # First init imprints llm.
+    runner.invoke(main, ["init", "-p", "claude"])
+
+    # User flips to a non-default config (hybrid mode + custom threshold so the
+    # feedback block stays serialized in yaml — pure programmatic+smart equals
+    # the framework default and would be elided by to_dict).
+    runner.invoke(main, ["config", "feedback", "session-retro", "smart",
+                         "--mode", "hybrid", "--threshold", "turns=99,tool_calls=99"])
+
+    yaml_before = (project / "ai-hats.yaml").read_text()
+    assert "hybrid" in yaml_before
+
+    # Re-init must not silently flip mode back to llm.
+    r = runner.invoke(main, ["init", "-p", "claude"])
+    assert r.exit_code == 0, r.output
+
+    yaml_after = (project / "ai-hats.yaml").read_text()
+    assert yaml_before == yaml_after, "re-init should not modify an existing yaml"
+
+
 def test_task_prefix_honored_from_yaml(cli_project):
     """Explicit task_prefix in ai-hats.yaml overrides the TASK- default."""
     import yaml
