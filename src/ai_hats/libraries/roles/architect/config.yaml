@@ -6,6 +6,7 @@ priorities:
 composition:
   traits:
     - trait-base
+    - trait-agent
     - trait-se-mindset
   rules: []
   skills:
@@ -13,6 +14,7 @@ composition:
     - adr-manager
     - domain-reviewer
     - distributed-systems-checklist
+    - requirements-interview
   hooks:
     session_start: []
     session_end: []
