@@ -205,22 +205,34 @@ def main() -> None:
 
     if action == "skip":
         write_retro_log(project_dir, session_id, "hook", "skip", reason)
-        return
-
-    if action == "hint":
+    elif action == "hint":
         write_retro_log(project_dir, session_id, "hook", "hint", reason)
-        return
-
-    # action == "run"
-    config = ProjectConfig.from_yaml(config_path)
-    sr = config.feedback.session_retro
-    mode = sr.mode
-    background = sr.background
-
-    if background:
-        _run_background(project_dir, session_id, mode)
     else:
-        _run_foreground(project_dir, session_id, mode)
+        # action == "run"
+        config = ProjectConfig.from_yaml(config_path)
+        sr = config.feedback.session_retro
+        if sr.background:
+            _run_background(project_dir, session_id, sr.mode)
+        else:
+            _run_foreground(project_dir, session_id, sr.mode)
+
+    _maybe_print_reminder(project_dir, session_id, config_path)
+
+
+def _maybe_print_reminder(project_dir: Path, session_id: str, config_path: Path) -> None:
+    """Evaluate stale-retro reminder and print to stderr if it fires."""
+    from . import reminder
+    try:
+        sr = ProjectConfig.from_yaml(config_path).feedback.session_retro
+    except Exception:
+        # Observability must never break the caller — suppress any config
+        # parsing failure (FileNotFoundError, YAMLError, ValidationError).
+        return
+    text, log_reason = reminder.evaluate(project_dir, sr)
+    write_retro_log(project_dir, session_id, "reminder",
+                    "fired" if text else "skipped", log_reason)
+    if text:
+        print(text, file=sys.stderr)
 
 
 def _run_foreground(project_dir: Path, session_id: str, mode: str) -> None:
