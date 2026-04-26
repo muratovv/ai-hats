@@ -23,12 +23,12 @@ Protocol for deciding whether to request help from supervisor (user or parent-ag
 
 ## Pre-Flight Check — Before Suggesting Commands to User
 
-**Never suggest a CLI command without verifying it first.**
+**Verify CLI commands before suggesting them.** Skip verification only for well-established standard tools (`ls`, `cat`, `grep`, `git`, etc.) — for any project-specific or less common tool, check first.
 
 1. **Command exists?** Run `<tool> --help` or `which <tool>` before recommending.
 2. **Subcommand exists?** Run `<tool> <subcommand> --help` to confirm.
 3. **Can I run it myself?** If yes — run it, don't ask the user to run it for you.
-4. **If it fails** — read the error, debug the root cause. Do NOT retry blindly or suggest reinstall as first fix.
+4. **If it fails** — read the error, debug the root cause. Do not retry blindly or suggest reinstall as first fix.
 
 ## Valid Reasons to Request
 - Authentication or authorization you cannot perform

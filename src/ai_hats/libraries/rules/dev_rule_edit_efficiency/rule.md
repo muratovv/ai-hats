@@ -1,6 +1,7 @@
 # Rule: Edit Efficiency
 
-1. **New Files**: Use Write for new files. Never build a file incrementally with Edit.
+1. **New Files**: Prefer Write for new files. Reach for incremental Edit only when
+   modifying existing content — building a fresh file with multiple Edits wastes turns.
 2. **Full Rewrites**: If more than 3 consecutive Edit operations target the same file,
    STOP. Plan all changes, then use Write to rewrite the file in one operation.
 3. **Surgical Edits**: Use Edit only for targeted, isolated modifications to existing files

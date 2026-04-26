@@ -43,7 +43,7 @@ Include a brief "Internal Review" section in your response noting the three pers
 ## Bundled Rules
 
 ### Edit Efficiency
-1. **New Files**: Use Write for new files. Never build incrementally with Edit.
+1. **New Files**: Prefer Write for new files. Edit is for modifying existing content — building fresh files via multiple Edits wastes turns.
 2. **Full Rewrites**: If >3 consecutive Edits target the same file — STOP, use Write.
 3. **Surgical Edits**: Use Edit only for targeted, isolated modifications.
 4. **Plan Before Editing**: Read the file, plan all modifications, execute in fewest operations.

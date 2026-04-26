@@ -20,7 +20,7 @@ Orchestrate task lifecycle using YAML task cards in `.agent/backlog/tasks/`.
 > AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
 > "$AH" task list
 > ```
-> If neither works, the project's venv lives at `./.venv/bin/ai-hats`. Never call bare `ai-hats` blindly and fall back — it wastes a turn.
+> If neither works, the project's venv lives at `./.venv/bin/ai-hats`. Resolve the binary path explicitly — falling back blindly between `ai-hats` and the venv path wastes a turn.
 
 > **Note:** Task ID prefix is project-specific (e.g. `PROX-`, `INFRA-`). Examples below use `PROJ-` as a placeholder.
 
