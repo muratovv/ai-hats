@@ -281,11 +281,18 @@ class SmartThreshold(_YamlModel):
     min_tool_calls: int = 10
 
 
+class ReminderConfig(_YamlModel):
+    enabled: bool = True
+    max_skipped: int = 5
+    window_days: int = 14
+
+
 class SessionRetroConfig(_YamlModel):
     policy: FeedbackPolicy = FeedbackPolicy.SMART
     smart_threshold: SmartThreshold = Field(default_factory=SmartThreshold)
     background: bool = True
     mode: str = "programmatic"
+    reminder: ReminderConfig = Field(default_factory=ReminderConfig)
 
 
 class JudgeConfig(_YamlModel):
