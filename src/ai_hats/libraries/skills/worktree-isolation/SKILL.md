@@ -11,7 +11,7 @@ Isolated development using git worktrees. Each task gets its own working copy �
 > AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
 > "$AH" wt list
 > ```
-> If neither works, the project's venv lives at `./.venv/bin/ai-hats`. Never call bare `ai-hats` blindly and fall back — it wastes a turn.
+> If neither works, the project's venv lives at `./.venv/bin/ai-hats`. Resolve the binary path explicitly — falling back blindly between `ai-hats` and the venv path wastes a turn.
 
 ## Workflow
 

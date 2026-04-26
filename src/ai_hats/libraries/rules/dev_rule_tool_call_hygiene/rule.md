@@ -1,8 +1,8 @@
 # Rule: Tool-Call Hygiene
 
 1. **Parallel by default**: If multiple tool calls don't depend on each other's output,
-   invoke them in a single parallel batch. Never chain independent Reads, Greps, or Globs
-   sequentially.
+   invoke them in a single parallel batch. Avoid chaining independent Reads, Greps, or
+   Globs sequentially when they could run together.
 2. **Combine shell checks**: Merge related shell commands into one Bash call with `&&`
    (e.g., `git status && git log --oneline -5` instead of two separate calls).
 3. **5-call threshold**: If you notice 5+ similar sequential tool calls — STOP. Rethink
