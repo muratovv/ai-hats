@@ -21,6 +21,7 @@ composition:
     - reliability-checklist
     - network-documentation
     - network-change-verification
+    - distributed-systems-checklist
   hooks:
     session_start: []
     session_end: []
