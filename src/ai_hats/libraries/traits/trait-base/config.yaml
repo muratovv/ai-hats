@@ -5,7 +5,9 @@ composition:
     - global_rule_resource_hygiene
     - global_rule_destructive_actions
   skills: []
-  hooks: {}
+  hooks:
+    session_end:
+      - skills/hypothesis-workflow/hooks/session_end_auto-retro.sh
   mcp: []
 injection: |
   ## BASE BEHAVIOR
