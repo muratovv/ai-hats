@@ -12,6 +12,7 @@ composition:
     - system-design-verifier
     - adr-manager
     - domain-reviewer
+    - distributed-systems-checklist
   hooks:
     session_start: []
     session_end: []
