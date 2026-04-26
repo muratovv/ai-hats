@@ -8,6 +8,7 @@ composition:
   skills:
     - backlog-manager
     - request-supervisor
+    - requirements-interview
     - scope-guard
     - self-retrospective
     - git-mastery
