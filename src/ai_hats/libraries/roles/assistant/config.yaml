@@ -15,8 +15,7 @@ composition:
   skills: []
   hooks:
     session_start: []
-    session_end:
-      - skills/hypothesis-workflow/hooks/session_end_auto-retro.sh
+    session_end: []
     task_complete:
       - git status
       - git diff --stat
