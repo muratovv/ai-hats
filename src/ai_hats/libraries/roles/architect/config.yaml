@@ -19,6 +19,7 @@ composition:
     - clean-architecture-guide
     - agentic-topology-design
     - trust-boundary-mapping
+    - drift-detection
   hooks:
     session_start: []
     session_end: []
