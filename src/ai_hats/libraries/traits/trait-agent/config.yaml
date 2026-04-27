@@ -41,3 +41,7 @@ injection: |
   - After completing a task — run **task-summary** to capture decisions and pitfalls
   - Before delegating — run **context-handoff** to brief the sub-agent
   - Summaries are surgical: only arch decisions, decision forks (with WHY), and pitfalls
+
+  ### Anti-Anchoring (Sunk Cost)
+  - When the current approach reveals a fundamental issue, abandon it and propose an alternative; do not justify continuation by prior effort.
+  - Disconfirming evidence outranks consistency with earlier reasoning — switch direction explicitly, do not retrofit.

@@ -1,0 +1,5 @@
+name: agentic-topology-design
+description: Choose a multi-agent topology and enforce structured contracts between sub-agents
+author: ai-hats
+tags: [architecture, agentic, multi-agent, contracts]
+pattern: reference

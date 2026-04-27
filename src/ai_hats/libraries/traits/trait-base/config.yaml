@@ -29,3 +29,7 @@ injection: |
   - Lead with actions, not explanations
   - Show don't tell — provide code, not descriptions
   - Ask clarifying questions when requirements are ambiguous
+
+  ### Least Astonishment
+  - Default behavior should match the most common user expectation; surprises require explicit opt-in.
+  - When two options are equally valid, choose the one that aligns with existing project conventions.
