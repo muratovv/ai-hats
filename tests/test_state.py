@@ -128,16 +128,16 @@ def test_final_state(mgr):
     assert t.final_state == "Implemented feature X with full test coverage"
 
 
-def test_backlog_md_generated(mgr):
+def test_state_md_lists_all_tasks(mgr):
     mgr.create_task("T-1", "First task", priority="high")
     mgr.create_task("T-2", "Second task")
 
-    assert mgr.backlog_md_path.exists()
-    content = mgr.backlog_md_path.read_text()
+    assert mgr.state_md_path.exists()
+    content = mgr.state_md_path.read_text()
     assert "T-1" in content
     assert "T-2" in content
-    assert "high" in content
-    assert "| ID |" in content  # Table header
+    assert "[high]" in content
+    assert "BRAINSTORM" in content
 
 
 def test_state_md_shows_priority(mgr):
@@ -151,13 +151,23 @@ def test_sync(mgr):
     mgr.create_task("T-1", "Task 1")
     mgr.create_task("T-2", "Task 2")
 
-    # Manually delete backlog.md to test sync
-    mgr.backlog_md_path.unlink()
-    assert not mgr.backlog_md_path.exists()
+    mgr.state_md_path.unlink()
+    assert not mgr.state_md_path.exists()
 
     count = mgr.sync()
     assert count == 2
-    assert mgr.backlog_md_path.exists()
+    assert mgr.state_md_path.exists()
+
+
+def test_sync_removes_legacy_backlog_md(mgr):
+    """Migration: stale backlog.md from prior versions is cleaned up on sync."""
+    mgr.create_task("T-1", "Task 1")
+    legacy = mgr.project_dir / ".agent" / "backlog.md"
+    legacy.write_text("# stale content from old version\n")
+    assert legacy.exists()
+
+    mgr.sync()
+    assert not legacy.exists()
 
 
 def test_tags_on_task(mgr):

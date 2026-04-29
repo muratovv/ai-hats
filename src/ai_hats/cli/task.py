@@ -364,7 +364,7 @@ def task_show(task_id: str):
 
 @task.command("sync")
 def task_sync():
-    """Synchronize backlog.md and STATE.md with task cards."""
+    """Synchronize STATE.md with task cards."""
 
     mgr = _task_manager(_project_dir())
     count = mgr.sync()

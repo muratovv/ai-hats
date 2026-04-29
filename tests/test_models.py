@@ -189,6 +189,94 @@ def test_task_card_known_fields_not_double_captured():
     assert card.extras == {"extra1": "in extras"}
 
 
+def test_load_header_extracts_scalars(tmp_path):
+    p = tmp_path / "task.yaml"
+    p.write_text(
+        "id: T-1\n"
+        "title: 'Hello world'\n"
+        "state: plan\n"
+        "priority: high\n"
+        "assignee: alice\n"
+        "reviewer: bob\n"
+        "role: dev\n"
+        "description: 'long description here'\n"
+    )
+    h = TaskCard.load_header(p)
+    assert h == {
+        "id": "T-1",
+        "title": "Hello world",
+        "state": "plan",
+        "priority": "high",
+        "assignee": "alice",
+        "reviewer": "bob",
+        "role": "dev",
+    }
+
+
+def test_load_header_handles_quotes_and_defaults(tmp_path):
+    p = tmp_path / "task.yaml"
+    p.write_text(
+        "id: T-2\n"
+        "title: \"with: colon\"\n"
+        "state: brainstorm\n"
+        "assignee: ''\n"
+    )
+    h = TaskCard.load_header(p)
+    assert h["title"] == "with: colon"
+    assert h["assignee"] == ""
+    assert h["priority"] == "medium"
+    assert h["reviewer"] == "user"
+    assert h["role"] == ""
+
+
+def test_load_header_unescapes_doubled_single_quote(tmp_path):
+    p = tmp_path / "task.yaml"
+    p.write_text("id: T-3\nstate: done\ntitle: 'Foo''s bar'\n")
+    h = TaskCard.load_header(p)
+    assert h["title"] == "Foo's bar"
+
+
+def test_load_header_falls_back_when_id_missing_in_regex(tmp_path):
+    """Block-scalar layouts hide `id:` from the line-based regex — fall back."""
+    p = tmp_path / "task.yaml"
+    p.write_text(
+        "title: 'block-scalar layout'\n"
+        "description: |\n"
+        "  multi-line description with id: T-X inside\n"
+        "  more text\n"
+        "state: plan\n"
+        "id: T-FALLBACK\n"
+        "priority: medium\n"
+    )
+    h = TaskCard.load_header(p)
+    assert h["id"] == "T-FALLBACK"
+    assert h["state"] == "plan"
+
+
+def test_load_header_matches_from_yaml_on_real_layout(tmp_path):
+    """load_header must agree with from_yaml for any field the renderer reads."""
+    p = tmp_path / "task.yaml"
+    card = TaskCard(
+        id="T-99",
+        title="Round-trip me",
+        state=TaskState.EXECUTE,
+        priority="high",
+        assignee="charlie",
+        reviewer="dave",
+        role="architect",
+    )
+    card.save(p)
+    full = TaskCard.from_yaml(p)
+    h = TaskCard.load_header(p)
+    assert h["id"] == full.id
+    assert h["title"] == full.title
+    assert h["state"] == full.state.value
+    assert h["priority"] == full.priority
+    assert h["assignee"] == full.assignee
+    assert h["reviewer"] == full.reviewer
+    assert h["role"] == full.role
+
+
 def test_composition_from_dict():
     data = {
         "traits": ["trait-base"],

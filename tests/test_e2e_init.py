@@ -383,6 +383,30 @@ def test_gemini_override_creates_session_rules_dir(cli_project):
 # -- Update command tests --
 
 
+def test_migrate_cleanup_removes_legacy_backlog_md(tmp_path):
+    """Idempotent cleanup: stale backlog.md is removed; second call is a no-op."""
+    from ai_hats.cli.maintenance import _cleanup_obsolete_files
+
+    legacy = tmp_path / ".agent" / "backlog.md"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("# stale content from old version\n")
+
+    actions = _cleanup_obsolete_files(tmp_path)
+    assert legacy.exists() is False
+    assert any("backlog.md" in a for a in actions)
+
+    # Idempotent — second call finds nothing.
+    assert _cleanup_obsolete_files(tmp_path) == []
+
+
+def test_migrate_cleanup_skips_when_already_clean(tmp_path):
+    """Project without legacy files yields no cleanup actions."""
+    from ai_hats.cli.maintenance import _cleanup_obsolete_files
+
+    (tmp_path / ".agent").mkdir()
+    assert _cleanup_obsolete_files(tmp_path) == []
+
+
 def test_update_command_uses_force_reinstall():
     """Update command must use --force-reinstall to bypass pip cache."""
     from ai_hats.cli.maintenance import _build_update_cmd

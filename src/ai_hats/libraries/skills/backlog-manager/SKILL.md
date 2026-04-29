@@ -83,7 +83,7 @@ ai-hats task list --search epic              # find epics
 ai-hats task list --search PROJ-092          # epic + children + anything that depends on PROJ-092
 ai-hats task list --search "judge|retro"     # regex OR
 
-# Sync STATE.md and backlog.md
+# Sync STATE.md
 ai-hats task sync
 ```
 

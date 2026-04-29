@@ -8,7 +8,7 @@
    - `ai-hats task transition <ID> <state>` to change state
    - `ai-hats task log <ID>` to add work log entries
    - `ai-hats task update <ID>` to modify fields
-   - `ai-hats task sync` to reconcile STATE.md and backlog.md
+   - `ai-hats task sync` to reconcile STATE.md
 
    Bad:
    ```

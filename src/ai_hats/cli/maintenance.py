@@ -242,9 +242,32 @@ def migrate():
     #     current_version = 2
     #     migrations_applied += 1
 
+    # Idempotent cleanup of files retired in the current release.
+    cleanup_actions = _cleanup_obsolete_files(project_dir)
+    for msg in cleanup_actions:
+        console.print(f"  [green]✓[/] {msg}")
+
     if migrations_applied > 0:
         config.schema_version = current_version
         config.save(config_path)
         console.print(f"[green]Migrated[/] to schema version {current_version}")
-    else:
+    elif not cleanup_actions:
         console.print(f"[dim]Already at latest schema version ({current_version})[/]")
+
+
+def _cleanup_obsolete_files(project_dir: Path) -> list[str]:
+    """Delete files retired by the current release. Idempotent.
+
+    Each entry: (relative path, human reason). Add new lines here when a
+    release retires a generated file or directory.
+    """
+    obsolete = [
+        (".agent/backlog.md", "removed legacy backlog.md (unified into STATE.md)"),
+    ]
+    actions: list[str] = []
+    for rel, reason in obsolete:
+        target = project_dir / rel
+        if target.exists():
+            target.unlink()
+            actions.append(reason)
+    return actions
