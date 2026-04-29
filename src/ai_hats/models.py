@@ -490,6 +490,7 @@ class TaskCard(_YamlModel):
     _KNOWN_FIELDS: ClassVar[frozenset[str]] = frozenset({
         "id", "title", "state", "description", "priority",
         "assignee", "reviewer", "role", "parent_task", "subtasks",
+        "depends_on",
         "tags", "work_log", "final_state", "resolution",
         "created", "updated", "completed_at",
     })
@@ -504,6 +505,7 @@ class TaskCard(_YamlModel):
     role: str = ""
     parent_task: str = ""
     subtasks: list[str] = Field(default_factory=list)
+    depends_on: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     work_log: list[WorkLogEntry] = Field(default_factory=list)
     final_state: str = ""
@@ -582,6 +584,7 @@ class TaskCard(_YamlModel):
             "role": self.role,
             "parent_task": self.parent_task,
             "subtasks": self.subtasks,
+            "depends_on": self.depends_on,
             "tags": self.tags,
             "work_log": [e.to_dict() for e in self.work_log],
             "created": self.created,

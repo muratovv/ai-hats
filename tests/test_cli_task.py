@@ -101,3 +101,130 @@ def test_task_list_hides_cancelled_by_default(cli, project_dir):
     result_all = cli.invoke(main, ["task", "list", "--all"])
     assert "T-1" in result_all.output
     assert "T-2" in result_all.output
+
+
+# -- HATS-198: parent / depends_on flags --
+
+
+def test_create_with_parent_and_depends_flags(cli, project_dir):
+    """`task create --parent-task X --depends-on Y --depends-on Z` wires both fields."""
+    mgr = TaskManager(project_dir, prefix="T")
+    mgr.create_task("T-0", "Epic")
+    mgr.create_task("T-9", "Blocker A")
+    mgr.create_task("T-8", "Blocker B")
+
+    result = cli.invoke(main, [
+        "task", "create", "Child",
+        "--id", "T-1",
+        "--parent-task", "T-0",
+        "--depends-on", "T-9",
+        "--depends-on", "T-8",
+    ])
+    assert result.exit_code == 0, result.output
+
+    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    assert t.parent_task == "T-0"
+    assert t.depends_on == ["T-9", "T-8"]
+
+
+def test_create_warns_on_missing_refs(cli, project_dir):
+    """Unknown refs MUST warn on stdout but MUST NOT abort the create."""
+    result = cli.invoke(main, [
+        "task", "create", "Forward ref",
+        "--id", "T-1",
+        "--parent-task", "T-NOPE",
+        "--depends-on", "T-99",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "warning" in result.output.lower()
+    assert "T-NOPE" in result.output
+    assert "T-99" in result.output
+
+    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    assert t is not None
+    assert t.parent_task == "T-NOPE"
+    assert t.depends_on == ["T-99"]
+
+
+def test_create_self_reference_rejected(cli, project_dir):
+    result = cli.invoke(main, [
+        "task", "create", "Self parent",
+        "--id", "T-1",
+        "--parent-task", "T-1",
+    ])
+    assert result.exit_code == 1, result.output
+    assert "own parent" in result.output.lower()
+    assert TaskManager(project_dir, prefix="T").get_task("T-1") is None
+
+
+def test_update_set_and_clear_parent(cli, project_dir):
+    mgr = TaskManager(project_dir, prefix="T")
+    mgr.create_task("T-0", "Epic")
+    mgr.create_task("T-1", "Child")
+
+    r1 = cli.invoke(main, ["task", "update", "T-1", "--parent-task", "T-0"])
+    assert r1.exit_code == 0, r1.output
+    assert TaskManager(project_dir, prefix="T").get_task("T-1").parent_task == "T-0"
+
+    r2 = cli.invoke(main, ["task", "update", "T-1", "--clear-parent"])
+    assert r2.exit_code == 0, r2.output
+    assert TaskManager(project_dir, prefix="T").get_task("T-1").parent_task == ""
+
+
+def test_update_parent_and_clear_parent_mutually_exclusive(cli, project_dir):
+    TaskManager(project_dir, prefix="T").create_task("T-1", "Sample")
+    result = cli.invoke(main, [
+        "task", "update", "T-1",
+        "--parent-task", "T-0",
+        "--clear-parent",
+    ])
+    assert result.exit_code == 1, result.output
+    assert "mutually exclusive" in result.output.lower()
+
+
+def test_update_add_remove_depends(cli, project_dir):
+    mgr = TaskManager(project_dir, prefix="T")
+    mgr.create_task("T-9", "Dep A")
+    mgr.create_task("T-8", "Dep B")
+    mgr.create_task("T-7", "Dep C")
+    mgr.create_task("T-1", "Blocked", depends_on=["T-9", "T-8"])
+
+    result = cli.invoke(main, [
+        "task", "update", "T-1",
+        "--add-depends", "T-7",
+        "--remove-depends", "T-9",
+    ])
+    assert result.exit_code == 0, result.output
+
+    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    assert "T-7" in t.depends_on
+    assert "T-9" not in t.depends_on
+    assert "T-8" in t.depends_on
+
+
+def test_show_displays_blocked_by_section(cli, project_dir):
+    mgr = TaskManager(project_dir, prefix="T")
+    mgr.create_task("T-9", "Blocker title")
+    mgr.create_task("T-1", "Blocked", depends_on=["T-9"])
+
+    result = cli.invoke(main, ["task", "show", "T-1"])
+    assert result.exit_code == 0, result.output
+    assert "Blocked by" in result.output
+    assert "T-9" in result.output
+    assert "Blocker title" in result.output
+    # The blocker's state must render — guards against rich-markup eating
+    # bracketed identifiers like `[brainstorm]`.
+    assert "brainstorm" in result.output
+
+
+def test_list_search_matches_depends(cli, project_dir):
+    mgr = TaskManager(project_dir, prefix="T")
+    mgr.create_task("T-9", "Some blocker")
+    mgr.create_task("T-1", "First", depends_on=["T-9"])
+    mgr.create_task("T-2", "Unrelated")
+
+    result = cli.invoke(main, ["task", "list", "--search", "T-9"])
+    assert result.exit_code == 0, result.output
+    # T-9 itself matches by id; T-1 must match via depends_on; T-2 must NOT.
+    assert "T-1" in result.output
+    assert "T-2" not in result.output
