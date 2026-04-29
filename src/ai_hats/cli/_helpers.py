@@ -12,7 +12,33 @@ logger = logging.getLogger(__name__)
 
 
 def _project_dir() -> Path:
-    return Path.cwd()
+    """Resolve the project root by walking up from CWD.
+
+    Order of preference:
+      1. Nearest ancestor (incl. CWD itself) that contains `.agent/` —
+         that ancestor IS the project root for this backlog.
+      2. Nearest ancestor that contains `.git` (file or dir) — standard
+         git-root semantics, used when the project hasn't been onboarded
+         to ai-hats yet but the user is initializing it.
+      3. Fallback: CWD (projects without VCS or pre-init scenarios).
+
+    `.agent/` takes precedence over `.git/` so linked git worktrees that
+    don't carry their own `.agent/` resolve up to the main project root,
+    matching the user expectation that the backlog lives in one place per
+    repo.
+    """
+    cwd = Path.cwd()
+    candidates = [cwd, *cwd.parents]
+
+    for d in candidates:
+        if (d / ".agent").is_dir():
+            return d
+
+    for d in candidates:
+        if (d / ".git").exists():
+            return d
+
+    return cwd
 
 
 def _assembler(project_dir: Path | None = None):

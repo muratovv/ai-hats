@@ -42,7 +42,10 @@ class TaskManager:
         self.state_md_path = project_dir / ".agent" / "STATE.md"
         self.backlog_md_path = project_dir / ".agent" / "backlog.md"
         self.prefix = prefix
-        self.tasks_dir.mkdir(parents=True, exist_ok=True)
+        # Note: `.agent/backlog/tasks/` is created lazily on first write
+        # (create_task / transition / log_work / update_task).
+        # Eager mkdir here historically materialized stray DBs whenever a
+        # caller resolved project_dir from the wrong directory — see HATS-197.
 
     def next_id(self) -> str:
         """Generate the next sequential task ID."""
@@ -345,6 +348,7 @@ class TaskManager:
         if not tasks:
             lines.append("\nNo active tasks.\n")
 
+        self.state_md_path.parent.mkdir(parents=True, exist_ok=True)
         self.state_md_path.write_text("\n".join(lines) + "\n")
 
     def _update_backlog_md(self) -> None:
