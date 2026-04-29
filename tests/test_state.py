@@ -316,6 +316,27 @@ def test_depends_round_trip_through_yaml(mgr):
     assert reloaded.depends_on == ["T-9"]
 
 
+def test_empty_depends_does_not_appear_in_yaml(mgr):
+    """Cards without blockers must NOT grow a `depends_on: []` line on save —
+    keeps pre-HATS-198 backlogs byte-clean and avoids cosmetic diff churn."""
+    mgr.create_task("T-1", "No deps")
+    yaml_text = (mgr.tasks_dir / "T-1" / "task.yaml").read_text()
+    assert "depends_on" not in yaml_text
+
+    mgr.update_task("T-1", priority="high")
+    yaml_text = (mgr.tasks_dir / "T-1" / "task.yaml").read_text()
+    assert "depends_on" not in yaml_text
+
+
+def test_non_empty_depends_appears_in_yaml(mgr):
+    """Symmetric guard: when depends_on is set, it MUST serialize."""
+    mgr.create_task("T-9", "Blocker")
+    mgr.create_task("T-1", "Blocked", depends_on=["T-9"])
+    yaml_text = (mgr.tasks_dir / "T-1" / "task.yaml").read_text()
+    assert "depends_on" in yaml_text
+    assert "T-9" in yaml_text
+
+
 def test_legacy_yaml_without_depends_loads(mgr, tmp_path):
     """Cards written before HATS-198 don't have a `depends_on:` key.
     They must load with depends_on == [] (default), not crash."""

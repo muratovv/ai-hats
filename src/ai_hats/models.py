@@ -584,7 +584,6 @@ class TaskCard(_YamlModel):
             "role": self.role,
             "parent_task": self.parent_task,
             "subtasks": self.subtasks,
-            "depends_on": self.depends_on,
             "tags": self.tags,
             "work_log": [e.to_dict() for e in self.work_log],
             "created": self.created,
@@ -596,6 +595,11 @@ class TaskCard(_YamlModel):
             d["resolution"] = self.resolution
         if self.completed_at:
             d["completed_at"] = self.completed_at
+        # Only emit depends_on when non-empty: keeps existing pre-HATS-198
+        # YAML files byte-clean on first save (no spurious `depends_on: []`
+        # noise in diffs). Cards with real blockers still serialize as expected.
+        if self.depends_on:
+            d["depends_on"] = self.depends_on
         # Round-trip unknown fields verbatim. Known fields take precedence in
         # case of accidental collision (extras should never contain known keys
         # since _capture_extras filters them out, but we defend against direct
