@@ -233,6 +233,114 @@ def test_update_nonexistent_task(mgr):
         mgr.update_task("NOPE", priority="high")
 
 
+# -- Relationships: parent_task / depends_on (HATS-198) --
+
+
+def test_create_with_parent_and_depends(mgr):
+    mgr.create_task("T-0", "Epic")
+    mgr.create_task("T-9", "Blocker")
+    t = mgr.create_task("T-1", "Child", parent_task="T-0", depends_on=["T-9"])
+    assert t.parent_task == "T-0"
+    assert t.depends_on == ["T-9"]
+    # Persists
+    reloaded = mgr.get_task("T-1")
+    assert reloaded.parent_task == "T-0"
+    assert reloaded.depends_on == ["T-9"]
+
+
+def test_update_set_and_clear_parent(mgr):
+    mgr.create_task("T-0", "Epic")
+    mgr.create_task("T-1", "Child")
+    t = mgr.update_task("T-1", parent_task="T-0")
+    assert t.parent_task == "T-0"
+    t = mgr.update_task("T-1", parent_task="")
+    assert t.parent_task == ""
+
+
+def test_update_add_and_remove_depends(mgr):
+    mgr.create_task("T-9", "Blocker A")
+    mgr.create_task("T-8", "Blocker B")
+    mgr.create_task("T-7", "Blocker C")
+    mgr.create_task("T-1", "Blocked", depends_on=["T-9", "T-8"])
+    t = mgr.update_task("T-1", add_depends=["T-7"], remove_depends=["T-9"])
+    assert "T-7" in t.depends_on
+    assert "T-9" not in t.depends_on
+    assert "T-8" in t.depends_on
+
+
+def test_self_reference_rejected_in_create(mgr):
+    with pytest.raises(ValueError, match="own parent"):
+        mgr.create_task("T-1", "Self-parent", parent_task="T-1")
+    with pytest.raises(ValueError, match="depend on itself"):
+        mgr.create_task("T-2", "Self-depends", depends_on=["T-2"])
+
+
+def test_self_reference_rejected_in_update(mgr):
+    mgr.create_task("T-1", "Sample")
+    with pytest.raises(ValueError, match="own parent"):
+        mgr.update_task("T-1", parent_task="T-1")
+    with pytest.raises(ValueError, match="depend on itself"):
+        mgr.update_task("T-1", add_depends=["T-1"])
+
+
+def test_simple_cycle_rejected(mgr):
+    """A.depends_on=[B] is fine. Then B.depends_on=[A] must reject."""
+    mgr.create_task("T-A", "A")
+    mgr.create_task("T-B", "B", depends_on=["T-A"])
+    with pytest.raises(ValueError, match="Cycle"):
+        mgr.update_task("T-A", add_depends=["T-B"])
+
+
+def test_missing_refs_returns_unknown_ids(mgr):
+    """Manager-level missing_refs is a pure read — no warnings, just diagnostics."""
+    mgr.create_task("T-1", "Real")
+    assert mgr.missing_refs(["T-1", "T-99", "T-42"]) == ["T-99", "T-42"]
+    assert mgr.missing_refs([]) == []
+    assert mgr.missing_refs(["T-1"]) == []
+
+
+def test_create_does_not_block_on_missing_refs(mgr):
+    """Forward-references and typos must NOT block writes — just be reported."""
+    t = mgr.create_task("T-1", "Forward ref", parent_task="T-NOT-YET", depends_on=["T-99"])
+    assert t.parent_task == "T-NOT-YET"
+    assert t.depends_on == ["T-99"]
+    # And missing_refs reports them so the CLI can warn.
+    assert set(mgr.missing_refs(["T-NOT-YET", "T-99"])) == {"T-NOT-YET", "T-99"}
+
+
+def test_depends_round_trip_through_yaml(mgr):
+    mgr.create_task("T-9", "Dep")
+    mgr.create_task("T-1", "Has deps", parent_task="", depends_on=["T-9"])
+    # Force reload from disk to catch serialization regressions.
+    reloaded = mgr.get_task("T-1")
+    assert reloaded.depends_on == ["T-9"]
+
+
+def test_legacy_yaml_without_depends_loads(mgr, tmp_path):
+    """Cards written before HATS-198 don't have a `depends_on:` key.
+    They must load with depends_on == [] (default), not crash."""
+    legacy = mgr.tasks_dir / "T-OLD"
+    legacy.mkdir(parents=True)
+    (legacy / "task.yaml").write_text(
+        "id: T-OLD\n"
+        "title: Pre-HATS-198 card\n"
+        "state: brainstorm\n"
+        "priority: medium\n"
+        "parent_task: ''\n"
+        "tags: []\n"
+        "created: '2026-01-01T00:00:00Z'\n"
+        "updated: '2026-01-01T00:00:00Z'\n"
+    )
+    t = mgr.get_task("T-OLD")
+    assert t is not None
+    assert t.depends_on == []
+    # And the round trip still doesn't lose anything.
+    mgr.update_task("T-OLD", priority="high")
+    t2 = mgr.get_task("T-OLD")
+    assert t2.depends_on == []
+    assert t2.priority == "high"
+
+
 # -- Worktree integration tests --
 
 

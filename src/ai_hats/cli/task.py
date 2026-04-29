@@ -23,6 +23,14 @@ def task():
 @click.option("--role", default="", help="Assigned role")
 @click.option("--reviewer", default="user", help="Reviewer (user or agent)")
 @click.option("--tag", multiple=True, help="Tags")
+@click.option(
+    "--parent-task", "parent_task", default="",
+    help="Parent task ID (composition / epic→child relationship)",
+)
+@click.option(
+    "--depends-on", "depends_on", multiple=True,
+    help="Blocker task IDs (this task is blocked until each is done). Repeatable.",
+)
 def task_create(
     task_id: str | None,
     title: str,
@@ -31,22 +39,44 @@ def task_create(
     role: str,
     reviewer: str,
     tag: tuple,
+    parent_task: str,
+    depends_on: tuple,
 ):
     """Create a new task card. ID is auto-generated if omitted."""
 
     mgr = _task_manager(_project_dir())
     if task_id is None:
         task_id = mgr.next_id()
-    t = mgr.create_task(
-        task_id,
-        title,
-        description=description,
-        priority=priority,
-        role=role,
-        reviewer=reviewer,
-        tags=list(tag),
-    )
+    try:
+        t = mgr.create_task(
+            task_id,
+            title,
+            description=description,
+            priority=priority,
+            role=role,
+            reviewer=reviewer,
+            parent_task=parent_task,
+            depends_on=list(depends_on),
+            tags=list(tag),
+        )
+    except ValueError as e:
+        console.print(f"[red]Error[/]: {e}")
+        sys.exit(1)
+    _warn_missing_refs(mgr, parent_task, list(depends_on))
     console.print(f"[green]Created[/]: {t.id} — {t.title} [{t.state.value}] ({t.priority})")
+
+
+def _warn_missing_refs(mgr, parent: str, depends: list[str]) -> None:
+    """Print a yellow warning for refs that point at non-existent tasks.
+
+    Non-fatal — typos and forward-references happen, the user can fix
+    them later via `task update`. Surfacing here at the CLI edge keeps
+    the manager API pure (no print side effects).
+    """
+    refs = ([parent] if parent else []) + depends
+    missing = mgr.missing_refs(refs)
+    if missing:
+        console.print(f"[yellow]Warning[/]: unknown ref(s): {', '.join(missing)}")
 
 
 @task.command("transition")
@@ -129,6 +159,22 @@ def task_transition(
 @click.option("--reviewer", default=None, help="Reviewer")
 @click.option("--add-tag", multiple=True, help="Add tag")
 @click.option("--remove-tag", multiple=True, help="Remove tag")
+@click.option(
+    "--parent-task", "parent_task", default=None,
+    help="Set parent task ID (composition / epic→child relationship)",
+)
+@click.option(
+    "--clear-parent", is_flag=True,
+    help="Clear the parent task reference",
+)
+@click.option(
+    "--add-depends", multiple=True,
+    help="Add a blocker task ID (this task is blocked until that one is done)",
+)
+@click.option(
+    "--remove-depends", multiple=True,
+    help="Remove a blocker task ID",
+)
 def task_update(
     task_id: str,
     title: str | None,
@@ -139,13 +185,23 @@ def task_update(
     reviewer: str | None,
     add_tag: tuple,
     remove_tag: tuple,
+    parent_task: str | None,
+    clear_parent: bool,
+    add_depends: tuple,
+    remove_depends: tuple,
 ):
     """Update task card fields."""
 
     mgr = _task_manager(_project_dir())
 
+    if clear_parent and parent_task is not None:
+        console.print("[red]Error[/]: --clear-parent and --parent-task are mutually exclusive")
+        sys.exit(1)
+    parent_arg = "" if clear_parent else parent_task
+
     has_changes = any(
-        [title, description, priority, resolution, role, reviewer, add_tag, remove_tag]
+        [title, description, priority, resolution, role, reviewer,
+         add_tag, remove_tag, parent_arg is not None, add_depends, remove_depends]
     )
     if not has_changes:
         console.print(
@@ -164,11 +220,15 @@ def task_update(
             reviewer=reviewer,
             add_tags=list(add_tag) if add_tag else None,
             remove_tags=list(remove_tag) if remove_tag else None,
+            parent_task=parent_arg,
+            add_depends=list(add_depends) if add_depends else None,
+            remove_depends=list(remove_depends) if remove_depends else None,
         )
-        console.print(f"[green]Updated[/]: {t.id} — {t.title} [{t.priority}]")
     except ValueError as e:
         console.print(f"[red]Error[/]: {e}")
         sys.exit(1)
+    _warn_missing_refs(mgr, parent_arg or "", list(add_depends))
+    console.print(f"[green]Updated[/]: {t.id} — {t.title} [{t.priority}]")
 
 
 @task.command("log")
@@ -191,7 +251,7 @@ def task_log(task_id: str, message: str, session: str | None):
 @click.option("--state", default=None, help="Filter by state")
 @click.option("--priority", default=None, help="Filter by priority (low/medium/high)")
 @click.option("--all", "-a", "show_all", is_flag=True, help="Include done/failed tasks")
-@click.option("--search", "-s", default=None, help="Regex search across id, title, description, tags, parent_task")
+@click.option("--search", "-s", default=None, help="Regex search across id, title, description, tags, parent_task, depends_on")
 def task_list(state: str | None, priority: str | None, show_all: bool, search: str | None):
     """List all task cards."""
     import re as _re
@@ -229,7 +289,7 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
         tasks = [
             t for t in tasks
             if pattern.search(
-                "\n".join([t.id, t.title, t.description, t.parent_task, *t.tags])
+                "\n".join([t.id, t.title, t.description, t.parent_task, *t.tags, *t.depends_on])
             )
         ]
 
@@ -282,6 +342,19 @@ def task_show(task_id: str):
     for k, v in t.to_dict().items():
         if v:
             console.print(f"  {k}: {v}")
+    # Resolve depends_on into "Blocked by:" with each blocker's current state.
+    # The raw `depends_on: [PROJ-X, PROJ-Y]` line above is opaque on its own —
+    # this section answers "is this task actually unblocked yet?".
+    if t.depends_on:
+        console.print("\n  [bold]Blocked by:[/]")
+        for dep_id in t.depends_on:
+            dep = mgr.get_task(dep_id)
+            if dep is None:
+                console.print(f"    {dep_id} [red](missing)[/]")
+            else:
+                # Use parens around state — rich interprets `[brainstorm]` as a
+                # malformed markup tag and silently drops it.
+                console.print(f"    {dep_id} ({dep.state.value}) — {dep.title}")
     # Show work log nicely
     if t.work_log:
         console.print("\n  [bold]Work Log:[/]")

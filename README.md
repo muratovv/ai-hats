@@ -117,11 +117,16 @@ ai-hats retro-validate <path>                                         # пров
 ai-hats retro-migrate <path> [--dry-run]                              # миграция к latest схеме
 
 # Задачи
-ai-hats task create <title> [--id ID] [-d <desc>] [-p high|medium|low]
+ai-hats task create <title> [--id ID] [-d <desc>] [-p high|medium|low] \
+                            [--parent-task ID] [--depends-on ID ...]
+ai-hats task update <ID> [--title ...] [--description ...] [--priority ...] \
+                         [--parent-task ID | --clear-parent] \
+                         [--add-depends ID ...] [--remove-depends ID ...] \
+                         [--add-tag T ...] [--remove-tag T ...]
 ai-hats task transition <ID> <state>
 ai-hats task log <ID> <message>
 ai-hats task list [--state <state>] [--priority <p>] [--search <regex>] [--all]
-ai-hats task show <ID>
+ai-hats task show <ID>     # depends_on рендерится как «Blocked by:» со state-ами
 ai-hats task sync
 
 # Обслуживание
@@ -313,11 +318,11 @@ brainstorm → plan → execute → document → review → done
 
 #### Поиск задач
 
-`--search` принимает regex (case-insensitive) и ищет по id, title, description, tags, parent_task:
+`--search` принимает regex (case-insensitive) и ищет по id, title, description, tags, parent_task, depends_on:
 
 ```bash
 ai-hats task list --search epic              # все эпики (по тегу или title)
-ai-hats task list --search HATS-092          # эпик + все его дети (по parent_task)
+ai-hats task list --search HATS-092          # эпик + дети (parent_task) + блокируемые им (depends_on)
 ai-hats task list --search judge             # всё связанное с judge
 ai-hats task list --search "HATS-09[2-3]"   # regex: два эпика сразу
 ai-hats task list --search worktree --all    # включая done/failed

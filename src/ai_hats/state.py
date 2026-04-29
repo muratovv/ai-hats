@@ -67,9 +67,18 @@ class TaskManager:
         role: str = "",
         reviewer: str = "user",
         parent_task: str = "",
+        depends_on: list[str] | None = None,
         tags: list[str] | None = None,
     ) -> TaskCard:
-        """Create a new task card."""
+        """Create a new task card.
+
+        ``parent_task`` and ``depends_on`` are validated for self-reference
+        and (for depends_on) immediate A↔B cycles. Missing references are
+        accepted silently at the manager level — surface warnings at the
+        CLI edge via :meth:`missing_refs` so write paths remain pure.
+        """
+        depends = list(depends_on or [])
+        self._reject_self_or_cycle(task_id, parent_task, depends)
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         task = TaskCard(
             id=task_id,
@@ -80,6 +89,7 @@ class TaskManager:
             role=role,
             reviewer=reviewer,
             parent_task=parent_task,
+            depends_on=depends,
             tags=tags or [],
             created=now,
             updated=now,
@@ -89,6 +99,38 @@ class TaskManager:
         self._save_task(task)
         self._update_indexes()
         return task
+
+    def missing_refs(self, ids: list[str]) -> list[str]:
+        """Return the subset of ``ids`` that do not exist as task cards.
+
+        Pure read — never raises. CLI uses this to print yellow warnings
+        without blocking the write (typos and forward-references are common
+        and should not be fatal).
+        """
+        return [i for i in ids if not (self.tasks_dir / i / "task.yaml").exists()]
+
+    def _reject_self_or_cycle(
+        self,
+        task_id: str,
+        parent: str,
+        depends: list[str],
+    ) -> None:
+        """Block self-references and immediate A↔B depends cycles.
+
+        Deeper transitive cycles (A→B→C→A) are out of scope — solving them
+        properly needs a graph traversal that's a larger feature.
+        """
+        if parent == task_id:
+            raise ValueError(f"Task '{task_id}' cannot be its own parent")
+        if task_id in depends:
+            raise ValueError(f"Task '{task_id}' cannot depend on itself")
+        for dep_id in depends:
+            dep = self.get_task(dep_id)
+            if dep is not None and task_id in dep.depends_on:
+                raise ValueError(
+                    f"Cycle: '{task_id}' depends on '{dep_id}', but "
+                    f"'{dep_id}' already depends on '{task_id}'"
+                )
 
     def get_task(self, task_id: str) -> TaskCard | None:
         """Load a task card by ID."""
@@ -176,8 +218,16 @@ class TaskManager:
         reviewer: str | None = None,
         add_tags: list[str] | None = None,
         remove_tags: list[str] | None = None,
+        parent_task: str | None = None,
+        add_depends: list[str] | None = None,
+        remove_depends: list[str] | None = None,
     ) -> TaskCard:
-        """Update task card fields."""
+        """Update task card fields.
+
+        ``parent_task=""`` clears the parent. Pass ``None`` to leave it
+        untouched. ``add_depends`` / ``remove_depends`` mutate the list
+        the same way ``add_tags`` / ``remove_tags`` do.
+        """
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -204,6 +254,17 @@ class TaskManager:
                         task.tags.append(tag)
             if remove_tags:
                 task.tags = [t for t in task.tags if t not in remove_tags]
+            if parent_task is not None:
+                task.parent_task = parent_task
+            if add_depends:
+                for dep in add_depends:
+                    if dep not in task.depends_on:
+                        task.depends_on.append(dep)
+            if remove_depends:
+                task.depends_on = [d for d in task.depends_on if d not in remove_depends]
+
+            # Validate AFTER mutation so add+remove in the same call resolves first.
+            self._reject_self_or_cycle(task_id, task.parent_task, task.depends_on)
 
             task.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             self._save_task(task)
