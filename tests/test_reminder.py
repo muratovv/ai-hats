@@ -38,15 +38,15 @@ def _config(*, enabled: bool = True, max_skipped: int = 5,
 
 class TestDisabled:
     def test_returns_none_with_log_reason(self, tmp_path):
-        text, why = reminder.evaluate(tmp_path, _config(enabled=False))
-        assert text is None
+        info, why = reminder.evaluate(tmp_path, _config(enabled=False))
+        assert info is None
         assert why == "disabled"
 
 
 class TestEmptyProject:
     def test_no_gitlog_at_all(self, tmp_path):
-        text, why = reminder.evaluate(tmp_path, _config())
-        assert text is None
+        info, why = reminder.evaluate(tmp_path, _config())
+        assert info is None
         assert "under threshold" in why
 
 
@@ -56,8 +56,8 @@ class TestUnderThreshold:
         today = date.today()
         for i in range(3):
             _make_session(tmp_path, _sid_with_date(today - timedelta(days=i), f"s{i}"))
-        text, why = reminder.evaluate(tmp_path, _config(max_skipped=5))
-        assert text is None
+        info, why = reminder.evaluate(tmp_path, _config(max_skipped=5))
+        assert info is None
         assert "3<5" in why
 
 
@@ -66,10 +66,14 @@ class TestThresholdFires:
         today = date.today()
         for i in range(5):
             _make_session(tmp_path, _sid_with_date(today - timedelta(days=i), f"s{i}"))
-        text, why = reminder.evaluate(tmp_path, _config(max_skipped=5, window_days=14))
-        assert text is not None
-        assert "5 sessions without retro" in text
-        assert "ai-hats retro --backfill --since" in text
+        info, why = reminder.evaluate(tmp_path, _config(max_skipped=5, window_days=14))
+        assert info is not None
+        assert info["count"] == 5
+        assert info["window_days"] == 14
+        assert info["parallel"] == 4  # min(count, 4)
+        assert info["since"]  # ISO date string set
+        assert info["command"].startswith("ai-hats retro --backfill --since ")
+        assert info["command"].endswith(" --parallel 4")
         assert "fired" in why
         assert "5>=5" in why
 
@@ -80,8 +84,8 @@ class TestThresholdFires:
             _make_session(
                 tmp_path, _sid_with_date(today - timedelta(days=30 + i), f"old{i}"),
             )
-        text, why = reminder.evaluate(tmp_path, _config(max_skipped=5, window_days=7))
-        assert text is None
+        info, why = reminder.evaluate(tmp_path, _config(max_skipped=5, window_days=7))
+        assert info is None
         assert "0<5" in why
 
 
@@ -97,8 +101,8 @@ class TestExistingRetroSkipsCount:
         for i in range(2):
             sid = _sid_with_date(today - timedelta(days=i), f"s{i}")
             (retro_dir / f"{sid}.md").write_text("# retro")
-        text, why = reminder.evaluate(tmp_path, _config(max_skipped=5))
-        assert text is None
+        info, why = reminder.evaluate(tmp_path, _config(max_skipped=5))
+        assert info is None
         assert "3<5" in why
 
 
@@ -110,6 +114,6 @@ class TestExcludedRoles:
                 tmp_path, _sid_with_date(today - timedelta(days=i), f"j{i}"),
                 role="judge",
             )
-        text, why = reminder.evaluate(tmp_path, _config(max_skipped=5))
-        assert text is None
+        info, why = reminder.evaluate(tmp_path, _config(max_skipped=5))
+        assert info is None
         assert "0<5" in why

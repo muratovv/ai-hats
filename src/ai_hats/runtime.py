@@ -218,6 +218,15 @@ def _print_session_end(
             print(f"  📝 Retro: {describe_decision(retro)}")
         except Exception:
             logger.warning("retro banner line failed", exc_info=True)
+
+        rem = retro.get("reminder")
+        if rem:
+            # Yellow ⚠ row + cyan command — visually distinct from the green ✨ banner.
+            print(
+                f"\033[33m  ⚠  {rem['count']} sessions without retro "
+                f"in {rem['window_days']}d window\033[0m"
+            )
+            print(f"     → \033[36m{rem['command']}\033[0m")
     print(f"  {_format_tokens(session)}")
     print(f"  📂 {session.session_dir}")
     print("━" * 52 + "\n")

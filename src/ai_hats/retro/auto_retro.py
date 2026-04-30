@@ -98,6 +98,7 @@ def make_decision(
             "background": None,
             "retro_path": None,
             "log_path": str(_retro_log_path(project_dir, session_id)),
+            "reminder": None,
         }
 
     retro_path = (
@@ -108,6 +109,17 @@ def make_decision(
         / mode
         / f"{session_id}.md"
     )
+
+    # Evaluate stale-retro reminder so the runtime banner can surface it.
+    # Pure side-effect-free: any error collapses to None.
+    reminder_info = None
+    try:
+        from . import reminder as reminder_mod
+
+        reminder_info, _ = reminder_mod.evaluate(project_dir, sr)
+    except Exception:
+        reminder_info = None
+
     return {
         "action": action,
         "reason": reason,
@@ -115,6 +127,7 @@ def make_decision(
         "background": background,
         "retro_path": str(retro_path),
         "log_path": str(_retro_log_path(project_dir, session_id)),
+        "reminder": reminder_info,
     }
 
 
@@ -220,7 +233,13 @@ def main() -> None:
 
 
 def _maybe_print_reminder(project_dir: Path, session_id: str, config_path: Path) -> None:
-    """Evaluate stale-retro reminder and print to stderr if it fires."""
+    """Evaluate stale-retro reminder and write the outcome to retro.log.
+
+    The user-facing reminder is rendered by the runtime banner (runtime.py
+    `_print_session_end`) from the dict returned by `make_decision`. This
+    hook path only persists the audit line so retro.log keeps a record even
+    when no banner runs (e.g. ad-hoc invocation of the hook).
+    """
     from . import reminder
     try:
         sr = ProjectConfig.from_yaml(config_path).feedback.session_retro
@@ -228,11 +247,9 @@ def _maybe_print_reminder(project_dir: Path, session_id: str, config_path: Path)
         # Observability must never break the caller — suppress any config
         # parsing failure (FileNotFoundError, YAMLError, ValidationError).
         return
-    text, log_reason = reminder.evaluate(project_dir, sr)
+    info, log_reason = reminder.evaluate(project_dir, sr)
     write_retro_log(project_dir, session_id, "reminder",
-                    "fired" if text else "skipped", log_reason)
-    if text:
-        print(text, file=sys.stderr)
+                    "fired" if info else "skipped", log_reason)
 
 
 def _run_foreground(project_dir: Path, session_id: str, mode: str) -> None:

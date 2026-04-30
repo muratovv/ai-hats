@@ -229,6 +229,41 @@ class TestMakeDecision:
         assert d["action"] == "skip"
         assert "internal error" in d["reason"]
         assert "boom" in d["reason"]
+        assert d["reminder"] is None
+
+    def test_reminder_present_when_threshold_fires(self, tmp_path):
+        """make_decision must include the structured reminder dict so the
+        runtime banner can render it. HATS-200."""
+        from datetime import date, timedelta
+
+        from ai_hats.retro.auto_retro import make_decision
+
+        # Bootstrap a project where reminder threshold is exceeded.
+        _setup_project(tmp_path, policy="off")  # session-retro off, but reminder still fires
+        today = date.today()
+        for i in range(5):
+            sid = f"{(today - timedelta(days=i)).strftime('%Y%m%d')}_b{i}"
+            sd = tmp_path / ".gitlog" / f"session_{sid}"
+            sd.mkdir(parents=True, exist_ok=True)
+            (sd / "metrics.json").write_text(
+                json.dumps({"turns": 8, "tool_calls": 15, "role": "assistant", "exit_code": 0}),
+            )
+
+        d = make_decision(tmp_path, "SID")
+        assert d["reminder"] is not None
+        rem = d["reminder"]
+        assert rem["count"] >= 5
+        assert rem["window_days"] == 14
+        assert rem["command"].startswith("ai-hats retro --backfill --since ")
+
+    def test_reminder_none_when_under_threshold(self, tmp_path):
+        from ai_hats.retro.auto_retro import make_decision
+
+        metrics = _setup_project(tmp_path, min_turns=5, min_tool_calls=10)
+        metrics.write_text(json.dumps({"turns": 0, "tool_calls": 0}))
+
+        d = make_decision(tmp_path, "SID")
+        assert d["reminder"] is None
 
 
 class TestDescribeDecision:
