@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from ._helpers import _project_dir, console
+from ._helpers import _project_dir, console, exec_claude_with_retro
 
 
 @click.command()
@@ -39,6 +39,8 @@ from ._helpers import _project_dir, console
               help="With --backfill: regenerate retros even if a file already exists")
 @click.option("--parallel", default=1, type=click.IntRange(min=1),
               help="With --backfill: process N candidates concurrently (default 1 = sequential)")
+@click.option("--interactive", is_flag=True,
+              help="After generating, hand off to a live `claude` session preloaded with the retro file")
 def retro(
     session_id: str | None,
     use_last: bool,
@@ -51,9 +53,14 @@ def retro(
     only: str | None,
     force: bool,
     parallel: int,
+    interactive: bool,
 ):
     """Generate a structured session retrospective (HATS-051 schema)."""
     project_dir = _project_dir()
+
+    if interactive and backfill:
+        console.print("[red]--interactive is mutually exclusive with --backfill[/]")
+        sys.exit(2)
 
     if backfill:
         if session_id or use_last:
@@ -106,6 +113,9 @@ def retro(
         console.print("[dim]Tip: try --timeout 600 or fall back to --mode programmatic[/]")
         sys.exit(1)
     console.print(f"[green]Session retro[/]: {path}")
+
+    if interactive:
+        exec_claude_with_retro(path, kind="session")
 
 
 def _run_backfill_cli(
