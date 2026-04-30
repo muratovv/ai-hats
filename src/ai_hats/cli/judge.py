@@ -6,7 +6,7 @@ import sys
 
 import click
 
-from ._helpers import _project_dir, console
+from ._helpers import _project_dir, console, exec_claude_with_retro
 
 
 @click.command()
@@ -16,11 +16,14 @@ from ._helpers import _project_dir, console
     "--last", "last_n", default=None, type=int, help="Judge last N sessions (auto-bundle)"
 )
 @click.option("--focus", default=None, help="Focus lens for the judge")
+@click.option("--interactive", is_flag=True,
+              help="After judging, hand off to a live `claude` session preloaded with the judge retro")
 def judge(
     bundle_id: str | None,
     sessions: str | None,
     last_n: int | None,
     focus: str | None,
+    interactive: bool,
 ):
     """Spawn judge sub-agent over a bundle and validate its output."""
     project_dir = _project_dir()
@@ -54,6 +57,9 @@ def judge(
         console.print(f"[red]Judge output failed validation[/]:\n{exc}")
         sys.exit(2)
     console.print(f"[green]Judge retro[/]: {path}")
+
+    if interactive:
+        exec_claude_with_retro(path, kind="judge")
 
 
 def _print_judge_context(

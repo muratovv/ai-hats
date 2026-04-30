@@ -345,6 +345,47 @@ def test_cli_backfill_and_session_id_mutually_exclusive(cli_project):
     assert "mutually exclusive" in r.output
 
 
+def test_cli_interactive_and_backfill_mutually_exclusive(cli_project):
+    """HATS-199: --interactive cannot run with --backfill (batch vs single-session handoff)."""
+    project, runner = cli_project
+    r = runner.invoke(main, ["retro", "--backfill", "--interactive"])
+    assert r.exit_code == 2
+    assert "--interactive" in r.output
+    assert "mutually exclusive" in r.output
+
+
+def test_cli_interactive_handoff_invokes_exec(cli_project, monkeypatch):
+    """HATS-199: after a successful single-session retro, --interactive must
+    hand off via exec_claude_with_retro."""
+    project, runner = cli_project
+    _make_session(project, "SID_INTER", turns=5, tool_calls=10)
+
+    captured: dict[str, object] = {}
+
+    def fake_exec(path, kind="session"):
+        captured["path"] = path
+        captured["kind"] = kind
+
+    # Stub the actual exec to keep pytest alive.
+    monkeypatch.setattr("ai_hats.cli.retro.exec_claude_with_retro", fake_exec)
+
+    # Stub the builder so the test doesn't go anywhere near an LLM.
+    class _Builder:
+        def __init__(self, *a, **kw): pass
+        def build_and_save(self, sid, mode=None):
+            out = project / ".agent/retrospectives/sessions/programmatic" / f"{sid}.md"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text("# retro")
+            return out
+
+    monkeypatch.setattr("ai_hats.retro.builder.SessionRetroBuilder", _Builder)
+
+    r = runner.invoke(main, ["retro", "SID_INTER", "--interactive"])
+    assert r.exit_code == 0, r.output
+    assert captured.get("kind") == "session"
+    assert str(captured["path"]).endswith("/SID_INTER.md")
+
+
 def test_cli_backfill_no_candidates(cli_project):
     project, runner = cli_project
     r = runner.invoke(main, ["retro", "--backfill"])
