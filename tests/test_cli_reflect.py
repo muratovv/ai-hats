@@ -48,6 +48,7 @@ def _patch_pipeline(
     bundle_id: str = "BUNDLE-2026-05-01-001",
     judge_path: Path | None = None,
     judge_raises: Exception | None = None,
+    judge_raises_for: dict[str, Exception] | None = None,
     aggregate_path: Path | None = None,
     aggregate_raises: Exception | None = None,
 ):
@@ -60,7 +61,8 @@ def _patch_pipeline(
     sessions = sessions or []
     reviewed = reviewed or set()
 
-    def fake_run_backfill(_pdir, *, mode, since, min_turns, force, dry_run, parallel, printer):
+    def fake_run_backfill(_pdir, *, mode, since, until, min_turns, force,
+                          dry_run, parallel, printer):
         return summary
 
     monkeypatch.setattr("ai_hats.retro.backfill.run_backfill", fake_run_backfill)
@@ -73,14 +75,19 @@ def _patch_pipeline(
     monkeypatch.setattr("ai_hats.observe.SessionManager", FakeSessionManager)
 
     created_bundles: list[tuple[list[str], str | None]] = []
+    counter = {"n": 0}
 
     class FakeBundleManager:
         def __init__(self, _pdir): pass
         def reviewed_session_ids(self):
             return reviewed
         def create(self, session_ids, *, notes=None):
+            counter["n"] += 1
             created_bundles.append((list(session_ids), notes))
-            return SimpleNamespace(bundle_id=bundle_id, session_ids=list(session_ids))
+            return SimpleNamespace(
+                bundle_id=f"{bundle_id}-c{counter['n']}",
+                session_ids=list(session_ids),
+            )
 
     monkeypatch.setattr("ai_hats.retro.bundles.BundleManager", FakeBundleManager)
 
@@ -90,9 +97,11 @@ def _patch_pipeline(
         def __init__(self, _pdir): pass
         def judge(self, *, bundle_id, focus=None):
             judge_calls.append({"bundle_id": bundle_id, "focus": focus})
+            if judge_raises_for and bundle_id in judge_raises_for:
+                raise judge_raises_for[bundle_id]
             if judge_raises is not None:
                 raise judge_raises
-            return judge_path or Path("/tmp/judge-fake.md")
+            return judge_path or Path(f"/tmp/judge-{bundle_id}.md")
 
     monkeypatch.setattr("ai_hats.retro.judge.JudgeRunner", FakeJudgeRunner)
 
@@ -127,8 +136,8 @@ class TestReflectHelp:
         result = CliRunner().invoke(main, ["reflect", "--help"])
         assert result.exit_code == 0, result.output
         for flag in (
-            "--since", "--min-turns", "--parallel", "--mode",
-            "--focus", "--min-severity", "--interactive", "--dry-run",
+            "--since", "--until", "--min-turns", "--parallel", "--chunk",
+            "--mode", "--focus", "--min-severity", "--interactive", "--dry-run",
         ):
             assert flag in result.output
 
@@ -153,11 +162,11 @@ class TestReflectFullPipeline:
         assert len(spy.created_bundles) == 1
         assert spy.created_bundles[0][0] == ["20260501-100000-1", "20260501-110000-2"]
         assert spy.judge_calls == [
-            {"bundle_id": "BUNDLE-2026-05-01-007", "focus": None}
+            {"bundle_id": "BUNDLE-2026-05-01-007-c1", "focus": None}
         ]
         assert len(spy.aggregate_calls) == 1
         assert "Reflect summary" in result.output
-        assert "BUNDLE-2026-05-01-007" in result.output
+        assert "BUNDLE-2026-05-01-007-c1" in result.output
 
     def test_passes_focus_and_min_severity(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -234,7 +243,7 @@ class TestReflectDryRun:
 
 
 class TestReflectJudgeFailure:
-    def test_judge_failure_exits_non_zero_and_skips_aggregate(
+    def test_judge_failure_exits_non_zero_and_still_aggregates(
             self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".agent").mkdir()
@@ -247,11 +256,125 @@ class TestReflectJudgeFailure:
         result = CliRunner().invoke(main, ["reflect"])
 
         assert result.exit_code == 1, result.output
-        assert "judge step failed" in result.output
+        assert "failed" in result.output
         assert "judge sub-agent crashed" in result.output
         # Aggregate should still have been attempted on previous judge retros
         # so the user gets value from past runs even when *this* judge fails.
         assert len(spy.aggregate_calls) == 1
+
+
+# --------------------------------------------------------------------------
+# reflect — --chunk / --until
+# --------------------------------------------------------------------------
+
+
+class TestReflectChunking:
+    def test_chunk_size_2_over_5_sessions_creates_3_bundles(
+            self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".agent").mkdir()
+        sessions = [_FakeSession(f"20260501-1000{i:02d}-1") for i in range(5)]
+        spy = _patch_pipeline(
+            monkeypatch,
+            sessions=sessions,
+            bundle_id="BUNDLE-CHUNK",
+        )
+
+        result = CliRunner().invoke(main, ["reflect", "--chunk", "2"])
+
+        assert result.exit_code == 0, result.output
+        # 5 sessions, chunk=2 → batches of [2, 2, 1]
+        assert len(spy.created_bundles) == 3
+        assert [len(b[0]) for b in spy.created_bundles] == [2, 2, 1]
+        assert len(spy.judge_calls) == 3
+        # Judge sees each chunk's bundle_id (with our fake's c1/c2/c3 suffix).
+        assert [c["bundle_id"] for c in spy.judge_calls] == [
+            "BUNDLE-CHUNK-c1", "BUNDLE-CHUNK-c2", "BUNDLE-CHUNK-c3",
+        ]
+        assert len(spy.aggregate_calls) == 1
+        assert "3 chunk(s)" in result.output
+
+    def test_oldest_first_ordering(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".agent").mkdir()
+        # Intentionally give sessions out of chronological order.
+        sessions = [
+            _FakeSession("20260510-100000-1"),
+            _FakeSession("20260501-100000-1"),
+            _FakeSession("20260505-100000-1"),
+        ]
+        spy = _patch_pipeline(monkeypatch, sessions=sessions)
+
+        result = CliRunner().invoke(main, ["reflect", "--chunk", "1"])
+
+        assert result.exit_code == 0, result.output
+        # First chunk must be the OLDEST session.
+        assert spy.created_bundles[0][0] == ["20260501-100000-1"]
+        assert spy.created_bundles[1][0] == ["20260505-100000-1"]
+        assert spy.created_bundles[2][0] == ["20260510-100000-1"]
+
+    def test_chunk_failure_doesnt_stop_later_chunks(
+            self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".agent").mkdir()
+        sessions = [_FakeSession(f"20260501-1000{i:02d}-1") for i in range(3)]
+        spy = _patch_pipeline(
+            monkeypatch,
+            sessions=sessions,
+            bundle_id="BUNDLE",
+            # Fail on the SECOND chunk only — first and third should still run.
+            judge_raises_for={"BUNDLE-c2": RuntimeError("middle chunk boom")},
+        )
+
+        result = CliRunner().invoke(main, ["reflect", "--chunk", "1"])
+
+        assert result.exit_code == 1, result.output
+        # All three judge attempts were made; aggregation still attempted.
+        assert len(spy.judge_calls) == 3
+        assert len(spy.aggregate_calls) == 1
+        assert "middle chunk boom" in result.output
+        assert "1 failed" in result.output
+
+
+class TestReflectUntil:
+    def test_until_excludes_newer_sessions_from_bundle(
+            self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".agent").mkdir()
+        sessions = [
+            _FakeSession("20260401-100000-1"),  # before --until: kept
+            _FakeSession("20260415-100000-1"),  # equal to --until: kept (inclusive)
+            _FakeSession("20260420-100000-1"),  # after --until: dropped
+        ]
+        spy = _patch_pipeline(monkeypatch, sessions=sessions)
+
+        result = CliRunner().invoke(main, ["reflect", "--until", "2026-04-15"])
+
+        assert result.exit_code == 0, result.output
+        assert len(spy.created_bundles) == 1
+        assert sorted(spy.created_bundles[0][0]) == [
+            "20260401-100000-1", "20260415-100000-1",
+        ]
+
+    def test_since_and_until_window(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".agent").mkdir()
+        sessions = [
+            _FakeSession("20260401-100000-1"),
+            _FakeSession("20260410-100000-1"),
+            _FakeSession("20260420-100000-1"),
+            _FakeSession("20260430-100000-1"),
+        ]
+        spy = _patch_pipeline(monkeypatch, sessions=sessions)
+
+        result = CliRunner().invoke(
+            main, ["reflect", "--since", "2026-04-10", "--until", "2026-04-20"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert sorted(spy.created_bundles[0][0]) == [
+            "20260410-100000-1", "20260420-100000-1",
+        ]
 
 
 # --------------------------------------------------------------------------

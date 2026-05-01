@@ -66,6 +66,7 @@ def find_candidates(
     project_dir: Path,
     *,
     since: str | None = None,
+    until: str | None = None,
     min_turns: int = 1,
     only: list[str] | None = None,
     force: bool = False,
@@ -76,6 +77,9 @@ def find_candidates(
     `candidates` is what will be processed (in chronological order).
     `skipped` records sessions filtered out with the reason, so the CLI
     can summarise "why nothing matched".
+
+    `since` and `until` are inclusive YYYY-MM-DD bounds on the session date
+    parsed from the first 8 chars of the session id.
     """
     gitlog = project_dir / ".gitlog"
     if not gitlog.is_dir():
@@ -100,6 +104,10 @@ def find_candidates(
 
         if since and sid[:8] < since.replace("-", ""):
             skipped.append(SkippedSession(sid, f"before --since {since}"))
+            continue
+
+        if until and sid[:8] > until.replace("-", ""):
+            skipped.append(SkippedSession(sid, f"after --until {until}"))
             continue
 
         if not force:
@@ -186,6 +194,7 @@ def run_backfill(
     *,
     mode: BuilderMode = BuilderMode.PROGRAMMATIC,
     since: str | None = None,
+    until: str | None = None,
     min_turns: int = 1,
     only: list[str] | None = None,
     force: bool = False,
@@ -207,7 +216,8 @@ def run_backfill(
     """
     candidates, pre_skipped = find_candidates(
         project_dir,
-        since=since, min_turns=min_turns, only=only, force=force, mode=mode,
+        since=since, until=until, min_turns=min_turns,
+        only=only, force=force, mode=mode,
     )
     summary = BackfillSummary(
         total_candidates=len(candidates),
