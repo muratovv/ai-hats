@@ -78,8 +78,11 @@ def find_candidates(
     `skipped` records sessions filtered out with the reason, so the CLI
     can summarise "why nothing matched".
 
-    `since` and `until` are inclusive YYYY-MM-DD bounds on the session date
-    parsed from the first 8 chars of the session id.
+    `since` is inclusive, `until` is exclusive — together they form the
+    half-open window ``[since, until)`` over session dates parsed from the
+    first 8 chars of the session id. This makes consecutive runs
+    ``--until X`` then ``--since X --until Y`` cover disjoint adjacent
+    intervals without overlap or gap.
     """
     gitlog = project_dir / ".gitlog"
     if not gitlog.is_dir():
@@ -106,8 +109,8 @@ def find_candidates(
             skipped.append(SkippedSession(sid, f"before --since {since}"))
             continue
 
-        if until and sid[:8] > until.replace("-", ""):
-            skipped.append(SkippedSession(sid, f"after --until {until}"))
+        if until and sid[:8] >= until.replace("-", ""):
+            skipped.append(SkippedSession(sid, f"on or after --until {until}"))
             continue
 
         if not force:

@@ -337,13 +337,12 @@ class TestReflectChunking:
 
 
 class TestReflectUntil:
-    def test_until_excludes_newer_sessions_from_bundle(
-            self, tmp_path, monkeypatch):
+    def test_until_is_exclusive(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".agent").mkdir()
         sessions = [
             _FakeSession("20260401-100000-1"),  # before --until: kept
-            _FakeSession("20260415-100000-1"),  # equal to --until: kept (inclusive)
+            _FakeSession("20260415-100000-1"),  # equal to --until: DROPPED (exclusive)
             _FakeSession("20260420-100000-1"),  # after --until: dropped
         ]
         spy = _patch_pipeline(monkeypatch, sessions=sessions)
@@ -352,11 +351,9 @@ class TestReflectUntil:
 
         assert result.exit_code == 0, result.output
         assert len(spy.created_bundles) == 1
-        assert sorted(spy.created_bundles[0][0]) == [
-            "20260401-100000-1", "20260415-100000-1",
-        ]
+        assert sorted(spy.created_bundles[0][0]) == ["20260401-100000-1"]
 
-    def test_since_and_until_window(self, tmp_path, monkeypatch):
+    def test_since_and_until_half_open_window(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".agent").mkdir()
         sessions = [
@@ -367,14 +364,13 @@ class TestReflectUntil:
         ]
         spy = _patch_pipeline(monkeypatch, sessions=sessions)
 
+        # [since=2026-04-10, until=2026-04-20) → only 2026-04-10 fits.
         result = CliRunner().invoke(
             main, ["reflect", "--since", "2026-04-10", "--until", "2026-04-20"],
         )
 
         assert result.exit_code == 0, result.output
-        assert sorted(spy.created_bundles[0][0]) == [
-            "20260410-100000-1", "20260420-100000-1",
-        ]
+        assert sorted(spy.created_bundles[0][0]) == ["20260410-100000-1"]
 
 
 # --------------------------------------------------------------------------
