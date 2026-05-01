@@ -105,7 +105,11 @@ def _print_judge_context(
     default=None,
     help="Exclude findings below this severity",
 )
-def judge_aggregate(strategy: str, since: str | None, min_severity: str | None):
+@click.option("--interactive", is_flag=True,
+              help="After aggregating, hand off to a live `claude` session "
+                   "preloaded with the aggregation report")
+def judge_aggregate(strategy: str, since: str | None, min_severity: str | None,
+                    interactive: bool):
     """Aggregate judge retros to surface recurring patterns."""
     from datetime import date as date_cls
 
@@ -127,3 +131,6 @@ def judge_aggregate(strategy: str, since: str | None, min_severity: str | None):
     model, body = load(path)
     console.print(f"[green]Aggregation saved[/]: {path}")
     console.print(body)
+
+    if interactive:
+        exec_claude_with_retro(path, kind="aggregate")

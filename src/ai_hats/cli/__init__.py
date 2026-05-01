@@ -124,6 +124,7 @@ from . import (  # noqa: E402
     judge,
     list_cmd,
     maintenance,
+    reflect as reflect_mod,
     retro,
     run as run_mod,
     session,
@@ -161,6 +162,9 @@ main.add_command(judge.judge_aggregate)
 # Retro
 main.add_command(retro.retro)
 main.add_command(retro.retro_validate)
+
+# Reflect (orchestration of retro → bundle → judge → aggregate)
+main.add_command(reflect_mod.reflect)
 
 # Bundles
 main.add_command(bundle.bundle)

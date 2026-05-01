@@ -23,7 +23,8 @@ def exec_claude_with_retro(retro_path: Path, kind: str = "session") -> None:
     `ai-hats retro` and `ai-hats judge`.
 
     `kind` shapes the prompt — "session" for a session retro, "judge" for a
-    forensic judge retro, "bundle" for an aggregated bundle retro.
+    forensic judge retro, "bundle" for an aggregated bundle retro, "aggregate"
+    for a cross-retro frequency aggregation report.
     """
     claude_bin = shutil.which("claude")
     if not claude_bin:
@@ -33,7 +34,11 @@ def exec_claude_with_retro(retro_path: Path, kind: str = "session") -> None:
         )
         sys.exit(1)
 
-    label = {"judge": "judge retro", "bundle": "bundle retro"}.get(kind, "session retro")
+    label = {
+        "judge": "judge retro",
+        "bundle": "bundle retro",
+        "aggregate": "aggregated judge retro",
+    }.get(kind, "session retro")
     rel = retro_path
     try:
         rel = retro_path.relative_to(Path.cwd())

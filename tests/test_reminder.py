@@ -70,10 +70,9 @@ class TestThresholdFires:
         assert info is not None
         assert info["count"] == 5
         assert info["window_days"] == 14
-        assert info["parallel"] == 4  # min(count, 4)
         assert info["since"]  # ISO date string set
-        assert info["command"].startswith("ai-hats retro --backfill --since ")
-        assert info["command"].endswith(" --parallel 4")
+        assert info["command"].startswith("ai-hats reflect --since ")
+        assert info["command"].endswith(" --interactive")
         assert "fired" in why
         assert "5>=5" in why
 

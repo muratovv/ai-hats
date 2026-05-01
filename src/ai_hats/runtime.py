@@ -221,12 +221,11 @@ def _print_session_end(
 
         rem = retro.get("reminder")
         if rem:
-            # Yellow ⚠ row + cyan command — visually distinct from the green ✨ banner.
+            # Yellow lead-line + cyan command — visually distinct from the green ✨ banner.
             print(
-                f"\033[33m  ⚠  {rem['count']} sessions without retro "
-                f"in {rem['window_days']}d window\033[0m"
+                f"\033[33m  Reflect the project through {rem['count']} sessions:\033[0m"
             )
-            print(f"     → \033[36m{rem['command']}\033[0m")
+            print(f"     \033[36m{rem['command']}\033[0m")
     print(f"  {_format_tokens(session)}")
     print(f"  📂 {session.session_dir}")
     print("━" * 52 + "\n")

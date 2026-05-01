@@ -254,7 +254,8 @@ class TestMakeDecision:
         rem = d["reminder"]
         assert rem["count"] >= 5
         assert rem["window_days"] == 14
-        assert rem["command"].startswith("ai-hats retro --backfill --since ")
+        assert rem["command"].startswith("ai-hats reflect --since ")
+        assert rem["command"].endswith(" --interactive")
 
     def test_reminder_none_when_under_threshold(self, tmp_path):
         from ai_hats.retro.auto_retro import make_decision
