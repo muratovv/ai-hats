@@ -223,8 +223,8 @@ def _print_session_end(
         if rem:
             # Yellow ⚠ row + cyan command — visually distinct from the green ✨ banner.
             print(
-                f"\033[33m  ⚠  {rem['count']} sessions without retro "
-                f"in {rem['window_days']}d window\033[0m"
+                f"\033[33m  ⚠  {rem['count']} sessions piled up "
+                f"in {rem['window_days']}d — let Judge turn them into a review\033[0m"
             )
             print(f"     → \033[36m{rem['command']}\033[0m")
     print(f"  {_format_tokens(session)}")

@@ -21,7 +21,6 @@ class ReminderInfo(TypedDict):
     count: int
     since: str
     window_days: int
-    parallel: int
     command: str
 
 
@@ -30,6 +29,10 @@ def evaluate(project_dir: Path, sr: SessionRetroConfig) -> tuple[ReminderInfo | 
 
     `reminder_info` is None when no reminder should fire. `log_reason` is a
     short string suitable for retro.log so we can audit the decision.
+
+    The suggested command points at `ai-hats reflect` — a single orchestration
+    step (backfill → bundle → judge → judge-aggregate) that turns the pile of
+    skipped sessions into one systemic review report. HATS-201.
     """
     if not sr.reminder.enabled:
         return None, "disabled"
@@ -42,12 +45,10 @@ def evaluate(project_dir: Path, sr: SessionRetroConfig) -> tuple[ReminderInfo | 
     if count < threshold:
         return None, f"under threshold ({count}<{threshold} in {sr.reminder.window_days}d)"
 
-    parallel = max(1, min(count, 4))
     info: ReminderInfo = {
         "count": count,
         "since": since,
         "window_days": sr.reminder.window_days,
-        "parallel": parallel,
-        "command": f"ai-hats retro --backfill --since {since} --parallel {parallel}",
+        "command": f"ai-hats reflect --since {since} --interactive",
     }
     return info, f"fired ({count}>={threshold} in {sr.reminder.window_days}d)"
