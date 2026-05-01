@@ -40,7 +40,9 @@ class _ChunkResult:
 @click.option("--since", default=None,
               help="Only include sessions / judge retros on or after YYYY-MM-DD")
 @click.option("--until", default=None,
-              help="Only include sessions on or before YYYY-MM-DD (inclusive)")
+              help="Only include sessions strictly before YYYY-MM-DD (exclusive). "
+                   "Combined with --since gives the half-open window [since, until), "
+                   "so consecutive runs cover adjacent disjoint intervals.")
 @click.option("--min-turns", "min_turns", default=1, type=int,
               help="Skip sessions below this turn count (default 1)")
 @click.option("--parallel", default=2, type=click.IntRange(min=1),
@@ -206,7 +208,7 @@ def _stage_bundle(project_dir: Path, *, since, until, min_turns,
             ts = None
         if since_date is not None and (ts is None or ts < since_date):
             continue
-        if until_date is not None and (ts is None or ts > until_date):
+        if until_date is not None and (ts is None or ts >= until_date):
             continue
         if min_turns > 0 and s.metrics_path.exists():
             try:

@@ -114,17 +114,15 @@ class TestFindCandidates:
         cs, _ = find_candidates(tmp_path, since="2026-04-10")
         assert [c.session_id for c in cs] == ["20260422-100000-1"]
 
-    def test_until_filter_inclusive(self, tmp_path):
+    def test_until_filter_exclusive(self, tmp_path):
         _make_session(tmp_path, "20260401-100000-1")
         _make_session(tmp_path, "20260415-100000-1")
         _make_session(tmp_path, "20260422-100000-1")
         cs, _ = find_candidates(tmp_path, until="2026-04-15")
-        # 04-15 is the boundary day → kept (inclusive); 04-22 is dropped.
-        assert [c.session_id for c in cs] == [
-            "20260401-100000-1", "20260415-100000-1",
-        ]
+        # 04-15 is the boundary day → DROPPED (exclusive); only 04-01 remains.
+        assert [c.session_id for c in cs] == ["20260401-100000-1"]
 
-    def test_since_until_window(self, tmp_path):
+    def test_since_until_half_open_window(self, tmp_path):
         _make_session(tmp_path, "20260401-100000-1")
         _make_session(tmp_path, "20260410-100000-1")
         _make_session(tmp_path, "20260420-100000-1")
@@ -132,12 +130,24 @@ class TestFindCandidates:
         cs, skipped = find_candidates(
             tmp_path, since="2026-04-10", until="2026-04-20",
         )
-        assert [c.session_id for c in cs] == [
-            "20260410-100000-1", "20260420-100000-1",
-        ]
+        # [since=10, until=20) → 10 in, 20 out.
+        assert [c.session_id for c in cs] == ["20260410-100000-1"]
         reasons = " ".join(s.reason for s in skipped)
         assert "before --since" in reasons
-        assert "after --until" in reasons
+        assert "on or after --until" in reasons
+
+    def test_adjacent_windows_are_disjoint(self, tmp_path):
+        """Half-open semantics → consecutive runs partition the timeline."""
+        _make_session(tmp_path, "20260410-100000-1")
+        _make_session(tmp_path, "20260415-100000-1")
+        _make_session(tmp_path, "20260420-100000-1")
+        first, _ = find_candidates(tmp_path, since="2026-04-10", until="2026-04-15")
+        second, _ = find_candidates(tmp_path, since="2026-04-15", until="2026-04-21")
+        sids_first = [c.session_id for c in first]
+        sids_second = [c.session_id for c in second]
+        assert sids_first == ["20260410-100000-1"]
+        assert sids_second == ["20260415-100000-1", "20260420-100000-1"]
+        assert set(sids_first) & set(sids_second) == set()
 
     def test_only_filter(self, tmp_path):
         _make_session(tmp_path, "SID1")
