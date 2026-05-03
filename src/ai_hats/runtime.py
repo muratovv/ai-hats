@@ -509,8 +509,13 @@ class WrapRunner:
         for k, v in env.items():
             os.environ[k] = v
 
+        # NOTE: os.get_terminal_size() returns (columns, lines), NOT (rows, cols).
+        # ptyprocess expects dimensions=(rows, cols). Unpacking blindly would
+        # transpose the window — claude TUI then renders into the wrong shape
+        # (often a narrow strip) and fails to draw the input box / alt-screen.
         try:
-            rows, cols = os.get_terminal_size()
+            term_size = os.get_terminal_size()
+            rows, cols = term_size.lines, term_size.columns
         except OSError:
             rows, cols = 24, 80
 
@@ -534,8 +539,8 @@ class WrapRunner:
 
         def _on_winch(_sig, _frm):
             try:
-                r, c = os.get_terminal_size()
-                proc.setwinsize(r, c)
+                size = os.get_terminal_size()
+                proc.setwinsize(size.lines, size.columns)
             except OSError:
                 pass
 
