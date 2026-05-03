@@ -27,6 +27,17 @@ SUBAGENT_SUBPROCESS_TIMEOUT_S = 600
 SUBAGENT_EXIT_TIMEOUT = 124
 SUBAGENT_EXIT_ERROR = 1
 
+# HATS-215: emitted on stdout before each PTY child spawn to neutralise
+# DEC private modes that a prior TUI session may have leaked. Each sequence
+# is idempotent on a clean terminal.
+#   \x1b[<u       — pop kitty-keyboard enhancement stack (root cause of
+#                   "Enter inserts newline" between consecutive sessions
+#                   under ghostty + kitty-keyboard protocol)
+#   \x1b[?2004l   — disable bracketed paste
+#   \x1b[?1l      — exit application cursor mode (DECCKM off)
+#   \x1b[?25h     — show cursor (in case prior TUI hid it and crashed)
+_TERM_RESET_PRELUDE = "\x1b[<u\x1b[?2004l\x1b[?1l\x1b[?25h"
+
 
 def _finalize_sub_agent(
     session: Session,
@@ -508,6 +519,15 @@ class WrapRunner:
 
         for k, v in env.items():
             os.environ[k] = v
+
+        # HATS-215: defensive reset of DEC private modes that the previous
+        # session may have leaked. Without this, leftover state (notably the
+        # kitty-keyboard stack push left by an Ink-based TUI on ungraceful
+        # exit) makes Enter encode as `\x1b[13u` in the next session — Claude
+        # then treats Enter as Shift+Enter and inserts a newline instead of
+        # submitting. Idempotent on a clean terminal.
+        sys.stdout.write(_TERM_RESET_PRELUDE)
+        sys.stdout.flush()
 
         # NOTE: os.get_terminal_size() returns (columns, lines), NOT (rows, cols).
         # ptyprocess expects dimensions=(rows, cols). Unpacking blindly would
