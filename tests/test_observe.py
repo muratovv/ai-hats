@@ -187,3 +187,25 @@ def test_wrap_runner_pty_spawn_writes_trace(tmp_path):
     assert "[RES]" in trace
     assert "hello wrap" in trace
 
+
+@pytest.mark.integration
+def test_wrap_runner_pty_spawn_emits_term_reset_prelude(tmp_path, capsys):
+    """HATS-215: each session emits DEC-mode reset prelude before child spawn.
+
+    Without this prelude, kitty-keyboard stack pushed by a previous Claude
+    session leaks across runs in the same tmux pane and Enter starts inserting
+    newlines instead of submitting messages.
+    """
+    from ai_hats.runtime import _TERM_RESET_PRELUDE, WrapRunner
+
+    session_dir = tmp_path / "s"
+    session_dir.mkdir()
+    session = Session(session_id="t", session_dir=session_dir)
+    tracer = SidecarTracer(session)
+
+    runner = object.__new__(WrapRunner)
+    runner._pty_spawn(["true"], {}, tracer)
+
+    captured = capsys.readouterr().out
+    assert _TERM_RESET_PRELUDE in captured
+
