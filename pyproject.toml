@@ -13,6 +13,7 @@ dependencies = [
     "pydantic>=2.0",
     "rich>=13.0",
     "filelock>=3.12",
+    "ptyprocess>=0.7",
 ]
 
 [project.optional-dependencies]
@@ -48,9 +49,9 @@ line-length = 100
 testpaths = ["tests"]
 filterwarnings = [
     # Python 3.14 deprecates forkpty() in multi-threaded processes.
-    # Our PTY tests (test_observe.py) use pty.spawn() which calls forkpty()
-    # internally — there is no alternative API in stdlib. Safe to suppress
-    # until pty.spawn is updated upstream.
+    # ptyprocess (used by WrapRunner._pty_spawn and exercised in test_observe.py)
+    # ultimately calls pty.fork() → os.forkpty(). Safe to suppress until
+    # ptyprocess switches to the os.fork() + openpty() fallback path.
     "ignore:.*use of forkpty.*:DeprecationWarning",
 ]
 markers = [

@@ -187,21 +187,3 @@ def test_wrap_runner_pty_spawn_writes_trace(tmp_path):
     assert "[RES]" in trace
     assert "hello wrap" in trace
 
-
-@pytest.mark.integration
-def test_sidecar_pty_integration(tmp_path):
-    """Real pty.spawn with echo — verifies callbacks are invoked end-to-end."""
-    import pty
-
-    session = make_test_session(tmp_path)
-    tracer = SidecarTracer(session)
-
-    pty.spawn(
-        ["echo", "trace me"],
-        tracer.make_master_read(),
-        tracer.make_stdin_read(),
-    )
-
-    trace = session.trace_path.read_text()
-    assert "[RES]" in trace
-    assert "trace me" in trace

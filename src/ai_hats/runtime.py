@@ -491,23 +491,126 @@ class WrapRunner:
             logger.debug("CLI restart-gap detection failed", exc_info=True)
 
     def _pty_spawn(self, cmd: list[str], env: dict[str, str], tracer: SidecarTracer) -> int:
-        """Spawn a process with PTY for interactive terminal passthrough + sidecar trace."""
-        import pty
+        """Spawn a process with PTY for interactive terminal passthrough + sidecar trace.
+
+        Uses ptyprocess so the slave-pty becomes the controlling-tty of the child
+        session (TIOCSCTTY in child after setsid). This is required for nested
+        programs (e.g. claude → $EDITOR via Ctrl-G) whose pgrp transfer relies on
+        kernel-side tcsetpgrp/setpgid against a real ctty. stdlib pty.spawn does
+        not call TIOCSCTTY, which broke that path. See HATS-207.
+        """
+        import select
+        import signal
+        import termios
+        import tty
+
+        from ptyprocess import PtyProcess
 
         for k, v in env.items():
             os.environ[k] = v
 
         try:
-            exit_status = pty.spawn(cmd, tracer.make_master_read(), tracer.make_stdin_read())
-            if isinstance(exit_status, int):
-                return os.waitstatus_to_exitcode(exit_status) if exit_status > 255 else exit_status
-            return 0
+            rows, cols = os.get_terminal_size()
+        except OSError:
+            rows, cols = 24, 80
+
+        try:
+            proc = PtyProcess.spawn(cmd, dimensions=(rows, cols))
         except FileNotFoundError:
             print(f"Error: '{cmd[0]}' not found. Is it installed?", file=sys.stderr)
             return 127
         except OSError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
+
+        # Use raw fd constants (not sys.stdin/stdout.fileno()) so test harnesses
+        # that wrap sys.stdin/stdout still pass through to the real terminal —
+        # mirrors stdlib pty.spawn behaviour.
+        master_fd = proc.fd
+        stdin_fd = 0
+        stdout_fd = 1
+        master_read = tracer.make_master_read()
+        stdin_read = tracer.make_stdin_read()
+
+        def _on_winch(_sig, _frm):
+            try:
+                r, c = os.get_terminal_size()
+                proc.setwinsize(r, c)
+            except OSError:
+                pass
+
+        prev_winch = signal.signal(signal.SIGWINCH, _on_winch)
+
+        restore_attrs = False
+        old_attrs = None
+        try:
+            old_attrs = termios.tcgetattr(stdin_fd)
+            tty.setraw(stdin_fd)
+            restore_attrs = True
+        except termios.error:
+            pass
+
+        # Drop stdin_fd from the read-set on EOF (pytest harness, redirected
+        # input) without breaking the loop — child may still be producing
+        # output that we need to drain until master EOF.
+        read_fds = [master_fd, stdin_fd]
+        try:
+            while True:
+                try:
+                    rlist, _, _ = select.select(read_fds, [], [])
+                except (OSError, select.error):
+                    break
+
+                if master_fd in rlist:
+                    try:
+                        data = master_read(master_fd)
+                    except OSError:
+                        break
+                    if not data:
+                        break
+                    try:
+                        os.write(stdout_fd, data)
+                    except OSError:
+                        break
+
+                if stdin_fd in rlist:
+                    try:
+                        data = stdin_read(stdin_fd)
+                    except OSError:
+                        read_fds = [master_fd]
+                        continue
+                    if not data:
+                        read_fds = [master_fd]
+                        continue
+                    try:
+                        os.write(master_fd, data)
+                    except OSError:
+                        break
+        finally:
+            if restore_attrs and old_attrs is not None:
+                try:
+                    termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_attrs)
+                except termios.error:
+                    pass
+            try:
+                signal.signal(signal.SIGWINCH, prev_winch)
+            except (ValueError, OSError):
+                pass
+            if proc.isalive():
+                try:
+                    proc.terminate(force=True)
+                except Exception:
+                    pass
+            try:
+                proc.wait()
+            except Exception:
+                pass
+
+        if proc.exitstatus is not None:
+            return int(proc.exitstatus)
+        if proc.signalstatus is not None:
+            return 128 + int(proc.signalstatus)
+        return 0
 
 
 class SubAgentRunner:
