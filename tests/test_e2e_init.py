@@ -414,7 +414,10 @@ def test_update_command_uses_force_reinstall():
     cmd = _build_update_cmd()
     assert "--force-reinstall" in cmd, "pip caches git installs; --force-reinstall is required"
     assert "--no-cache-dir" in cmd, "pip caches wheels; --no-cache-dir forces fresh git clone"
-    assert "--no-deps" in cmd, "--no-deps avoids re-downloading all dependencies"
+    assert "--no-deps" not in cmd, (
+        "must NOT pass --no-deps: new deps in pyproject.toml (e.g. ptyprocess in HATS-207) "
+        "would otherwise be skipped on update and crash at runtime"
+    )
     assert any("git+ssh://" in arg for arg in cmd), "must install from git"
     assert cmd[0] == sys.executable, "must use current Python interpreter"
     assert "pip" in cmd, "must use pip"
@@ -447,7 +450,7 @@ def test_update_command_runs_via_cli(cli_project, monkeypatch):
     pip_cmds = [c for c in captured_cmds if "--force-reinstall" in c]
     assert len(pip_cmds) == 1, f"Expected 1 pip install call, got {len(pip_cmds)}"
     pip_cmd = pip_cmds[0]
-    assert "--no-deps" in pip_cmd
+    assert "--no-deps" not in pip_cmd
     assert any("git+ssh://git@github.com/muratovv/ai-hats.git" in arg for arg in pip_cmd)
 
 

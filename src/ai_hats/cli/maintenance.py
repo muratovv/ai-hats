@@ -14,14 +14,19 @@ GIT_INSTALL_URL = "git+ssh://git@github.com/muratovv/ai-hats.git"
 
 
 def _build_update_cmd() -> list[str]:
-    """Build the pip command for updating ai-hats from GitHub."""
+    """Build the pip command for updating ai-hats from GitHub.
+
+    NOTE: we intentionally do NOT pass --no-deps. Dropping it means new
+    dependencies declared in pyproject.toml (e.g. ptyprocess added in
+    HATS-207) get pulled in on update; otherwise users hit
+    ModuleNotFoundError at runtime after an update.
+    """
     return [
         sys.executable,
         "-m",
         "pip",
         "install",
         "--force-reinstall",
-        "--no-deps",
         "--no-cache-dir",
         f"ai-hats @ {GIT_INSTALL_URL}",
     ]
