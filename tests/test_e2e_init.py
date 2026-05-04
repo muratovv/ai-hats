@@ -700,6 +700,123 @@ def test_task_list_table_filters(cli_project):
     assert "Active task" in result.output
 
 
+# ---- HATS-213 stage-2 verify + activation banner ----
+
+
+def _make_mock_run_factory(*, version: str = "0.3.0", verify_rc: int = 0,
+                           pip_list_before: str = "[]", pip_list_after: str = "[]"):
+    """Build a subprocess.run mock that distinguishes the calls update() makes."""
+    import subprocess
+
+    state = {"pip_list_calls": 0}
+
+    def mock_run(cmd, **kwargs):
+        cmd_str = " ".join(str(c) for c in cmd) if isinstance(cmd, list) else str(cmd)
+        if "ai_hats._bootstrap" in cmd_str and "verify" in cmd_str:
+            return subprocess.CompletedProcess(
+                cmd, verify_rc,
+                stdout="",
+                stderr="" if verify_rc == 0 else "missing X",
+            )
+        if "pip" in cmd_str and "list" in cmd_str:
+            state["pip_list_calls"] += 1
+            payload = pip_list_before if state["pip_list_calls"] == 1 else pip_list_after
+            return subprocess.CompletedProcess(cmd, 0, stdout=payload, stderr="")
+        if "__version__" in cmd_str:
+            return subprocess.CompletedProcess(cmd, 0, stdout=f"{version}\n", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    return mock_run
+
+
+def test_t10_update_invokes_stage2_verify(cli_project, monkeypatch):
+    """update() runs `python -m ai_hats._bootstrap verify` after pip install."""
+    import subprocess
+
+    project, runner = cli_project
+    runner.invoke(main, ["set", "-p", "claude"])
+
+    captured: list[list[str]] = []
+
+    def mock_run(cmd, **kwargs):
+        captured.append(list(cmd) if isinstance(cmd, list) else [str(cmd)])
+        cmd_str = " ".join(str(c) for c in cmd) if isinstance(cmd, list) else str(cmd)
+        if "__version__" in cmd_str:
+            return subprocess.CompletedProcess(cmd, 0, stdout="0.3.0\n", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    result = runner.invoke(main, ["update"])
+    assert result.exit_code == 0, result.output
+
+    verify_calls = [
+        c for c in captured
+        if any("ai_hats._bootstrap" in str(arg) for arg in c)
+        and any(arg == "verify" for arg in c)
+    ]
+    assert len(verify_calls) == 1, f"expected one stage-2 verify call, got {verify_calls}"
+
+
+def test_t11_update_warns_on_stage2_failure_does_not_crash(cli_project, monkeypatch):
+    """Stage-2 verify failure surfaces as a yellow warning, update keeps going."""
+    import subprocess
+
+    project, runner = cli_project
+    runner.invoke(main, ["set", "-p", "claude"])
+
+    monkeypatch.setattr(subprocess, "run", _make_mock_run_factory(verify_rc=1))
+
+    result = runner.invoke(main, ["update"])
+    assert result.exit_code == 0, result.output
+    assert "Post-install verify warned" in result.output
+
+
+def test_t12_update_prints_activation_banner_on_dep_change(cli_project, monkeypatch):
+    """New dependency in pip list → activation banner shows it."""
+    import subprocess
+
+    project, runner = cli_project
+    runner.invoke(main, ["set", "-p", "claude"])
+
+    before = '[{"name": "click", "version": "8.1.0"}]'
+    after = (
+        '[{"name": "click", "version": "8.1.0"},'
+        ' {"name": "ptyprocess", "version": "0.7.0"}]'
+    )
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        _make_mock_run_factory(pip_list_before=before, pip_list_after=after),
+    )
+
+    result = runner.invoke(main, ["update"])
+    assert result.exit_code == 0, result.output
+    assert "Dependency activation" in result.output
+    assert "ptyprocess" in result.output
+    assert "self-heal" in result.output
+
+
+def test_t13_update_no_banner_when_deps_unchanged(cli_project, monkeypatch):
+    """Identical pip list snapshots → no activation banner."""
+    import subprocess
+
+    project, runner = cli_project
+    runner.invoke(main, ["set", "-p", "claude"])
+
+    same = '[{"name": "click", "version": "8.1.0"}]'
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        _make_mock_run_factory(pip_list_before=same, pip_list_after=same),
+    )
+
+    result = runner.invoke(main, ["update"])
+    assert result.exit_code == 0, result.output
+    assert "Dependency activation" not in result.output
+
+
 def test_update_shows_already_up_to_date(cli_project, monkeypatch):
     """ai-hats update shows 'already up to date' when versions match."""
     import subprocess

@@ -72,6 +72,12 @@ def main(ctx, provider: str | None, role: str | None, tags_raw: tuple[str, ...])
     Without a subcommand, launches a wrapped provider CLI session.
     Unknown flags are passed through to the provider.
     """
+    # HATS-213: heal a half-finished self-update (missing runtime dep) before
+    # touching anything else. On success this re-execs the same command in a
+    # fresh interpreter; on failure it sys.exit(1)s with a rescue command.
+    from .._bootstrap import bootstrap_or_die
+    bootstrap_or_die()
+
     if ctx.invoked_subcommand is None:
         from ..tags import TagValidationError, parse_tags
         try:

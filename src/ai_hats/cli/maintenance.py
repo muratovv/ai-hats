@@ -86,6 +86,34 @@ def _get_changelog() -> str:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _snapshot_dep_versions() -> dict[str, str]:
+    """Snapshot ``{distribution_name: version}`` via a fresh ``pip list`` subprocess.
+
+    Fresh subprocess avoids importlib cache divergence between pre- and
+    post-update — important for HATS-213 activation banner.
+    """
+    import json
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "list", "--format=json"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (subprocess.SubprocessError, OSError):
+        logger.debug("pip list snapshot failed", exc_info=True)
+        return {}
+    if result.returncode != 0:
+        return {}
+    try:
+        items = json.loads(result.stdout or "[]")
+    except (ValueError, TypeError):
+        return {}
+    return {item["name"].lower(): item.get("version", "") for item in items if "name" in item}
+
+
 def _snapshot_library() -> dict[str, set[str]]:
     """Snapshot available component names from built-in + global library paths."""
     from ..library import LibraryResolver
@@ -148,6 +176,7 @@ def update():
 
     # 1. Snapshot before update
     before_lib = _snapshot_library()
+    before_deps = _snapshot_dep_versions()
     project_dir = _project_dir()
     config_path = project_dir / "ai-hats.yaml"
     active_role = None
@@ -169,6 +198,19 @@ def update():
         console.print(f"[red]Update failed[/]: {result.stderr}")
         return
 
+    # 2b. HATS-213 stage-2 verify: run a fresh interpreter against the
+    # just-installed on-disk code, so any new declared runtime dep that
+    # somehow didn't land gets healed before the user's next invocation.
+    # Failures are non-fatal — layer A in cli.main() catches the rest.
+    verify = subprocess.run(
+        [sys.executable, "-m", "ai_hats._bootstrap", "verify"],
+        capture_output=True,
+        text=True,
+    )
+    if verify.returncode != 0:
+        warning = (verify.stderr or verify.stdout or "").strip() or "see logs"
+        console.print(f"[yellow]Post-install verify warned[/]: {warning}")
+
     # 3. Version diff
     new_version = _get_installed_version()
     if new_version == old_version:
@@ -181,6 +223,30 @@ def update():
             console.print("\n[bold]Recent changes:[/]")
             for line in changelog.splitlines()[:7]:
                 console.print(f"  {line}")
+
+    # 3b. Dep activation banner — flag the chicken-and-egg cycle: new in-
+    # memory code is still the OLD one, so any changed dep won't be wired
+    # until the next ai-hats invocation. (HATS-213)
+    after_deps = _snapshot_dep_versions()
+    dep_changes: list[str] = []
+    for name, ver in after_deps.items():
+        old = before_deps.get(name)
+        if old is None:
+            dep_changes.append(f"  [green]+[/] {name} {ver}")
+        elif old != ver:
+            dep_changes.append(f"  [cyan]~[/] {name} {old} → {ver}")
+    for name in before_deps.keys() - after_deps.keys():
+        dep_changes.append(f"  [red]-[/] {name}")
+    if dep_changes:
+        console.print("\n[bold]Dependency activation:[/]")
+        for line in dep_changes:
+            console.print(line, highlight=False)
+        console.print(
+            "  Restart your shell or run any 'ai-hats' command to activate new deps."
+        )
+        console.print(
+            "  If anything misbehaves, run: ai-hats   (it will self-heal)"
+        )
 
     # 4. Library diff
     after_lib = _snapshot_library()
