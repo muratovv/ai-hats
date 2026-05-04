@@ -266,6 +266,43 @@ def _run_foreground(project_dir: Path, session_id: str, mode: str) -> None:
     except Exception as exc:
         write_retro_log(project_dir, session_id, "builder", "failed", repr(exc))
 
+    # HATS-210: spawn reflect-session in background after LLM-mode builder
+    if builder_mode == BuilderMode.LLM:
+        _spawn_reflect_session_background(project_dir, session_id)
+
+
+def _spawn_reflect_session_background(project_dir: Path, session_id: str) -> None:
+    """Detach reflect-session sub-process; never blocks caller.
+
+    Gates: only invoked when builder ran in LLM mode (caller checks).
+    Failures here are observability-only — never propagate.
+    """
+    import subprocess as sp
+
+    log_path = _retro_log_path(project_dir, session_id)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(log_path, "a") as f:
+            proc = sp.Popen(
+                [
+                    sys.executable,
+                    "-m", "ai_hats.cli.reflect_session_main",
+                    session_id, "1",
+                ],
+                cwd=str(project_dir),
+                stdout=f,
+                stderr=f,
+                start_new_session=True,
+            )
+        write_retro_log(
+            project_dir, session_id, "reflect-session", "spawn",
+            f"pid={proc.pid} bg",
+        )
+    except Exception as exc:
+        write_retro_log(
+            project_dir, session_id, "reflect-session", "spawn-failed", repr(exc),
+        )
+
 
 def _run_background(project_dir: Path, session_id: str, mode: str) -> None:
     import subprocess as sp

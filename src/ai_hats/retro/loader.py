@@ -34,6 +34,7 @@ from pydantic import BaseModel
 from .aggregation import AggregationV1
 from .bundle import BundleV1
 from .judge_retro import JudgeRetroV1
+from .reflect_session_schema import ReflectSessionV1
 from .session_retro import SessionRetroV1
 
 #: dispatch table — schema family → pydantic model class for the LATEST version
@@ -42,10 +43,13 @@ SCHEMA_FAMILY_TO_MODEL: dict[str, type[BaseModel]] = {
     "hats-bundle": BundleV1,
     "hats-judge-retro": JudgeRetroV1,
     "hats-aggregation": AggregationV1,
+    "hats-reflect-session": ReflectSessionV1,
 }
 
 #: union type for any retro artifact
-RetroArtifact = Union[SessionRetroV1, BundleV1, JudgeRetroV1, AggregationV1]
+RetroArtifact = Union[
+    SessionRetroV1, BundleV1, JudgeRetroV1, AggregationV1, ReflectSessionV1
+]
 
 
 def parse(text: str) -> tuple[dict, str]:
