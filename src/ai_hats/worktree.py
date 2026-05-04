@@ -97,6 +97,13 @@ class IsolationMode(str, Enum):
     DISCARD = "discard"
     SQUASH = "squash"
     BRANCH = "branch"
+    #: Run sub-agent in project_dir directly — no git worktree.
+    #: Use only for trusted roles whose only writes go through ai-hats CLIs
+    #: (e.g. reflect-session reaching `.agent/` via `ai-hats hyp / proposal`).
+    #: Trade-off: no source-tree isolation; the role is trusted to honor its
+    #: scope guardrails. Required because `.agent/` is gitignored and is
+    #: invisible inside a git worktree.
+    NONE = "none"
 
 
 class WorktreeManager:
@@ -136,7 +143,12 @@ class WorktreeManager:
         self._original_branch: str | None = None
 
     def create(self) -> Path:
-        """Create an isolated worktree. Returns project_dir if not a git repo."""
+        """Create an isolated worktree. Returns project_dir if not a git repo
+        or if isolation_mode is NONE (no worktree, runs in project_dir)."""
+        if self.isolation_mode == IsolationMode.NONE:
+            # No worktree: sub-agent runs directly in project_dir.
+            # worktree_path stays None so cleanup() is a no-op.
+            return self.project_dir
         if not self._check_is_git():
             return self.project_dir
 
