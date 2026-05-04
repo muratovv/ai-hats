@@ -12,8 +12,10 @@ during a single-session reflect run. One verdict per active HYP — no skipping.
 
 You are running as the **reflect-session** role. Your output is a
 `hats-reflect-session/v1` document; the `hypothesis_verdicts` array MUST
-contain one entry per active HYP. The runner also writes the verdict to the
-HYP file via CLI (see Step 3).
+contain one entry per active HYP. For verdicts that carry signal
+(`confirmed`/`refuted`/`inconclusive`) you also persist to the HYP ledger
+via CLI; `n/a` verdicts are recorded in the retro frontmatter only (see
+Step 3).
 
 ## Procedure
 
@@ -58,7 +60,8 @@ Recommendation enum:
 | `keep` | Continue observing. |
 | `extend_window` | Window expired without enough evidence. |
 
-After choosing, persist via CLI (atomic, filelock-protected):
+After choosing, persist via CLI (atomic, filelock-protected) — **but only
+for verdicts that carry signal**: `confirmed`, `refuted`, `inconclusive`.
 
 ```bash
 "$AH" hyp append-verdict \
@@ -67,7 +70,14 @@ After choosing, persist via CLI (atomic, filelock-protected):
   --recommendation keep
 ```
 
-Then mirror the verdict in your `hypothesis_verdicts` frontmatter array.
+**Do NOT call `append-verdict` for `n/a` verdicts.** `n/a` means the session
+physically cannot test the hypothesis — there is no observation to record,
+and persisting it would only add noise to the validation log without
+contributing to the observation window. Mirror the `n/a` verdict in the
+`hypothesis_verdicts` frontmatter array (so the retro stays complete) but
+skip the CLI call.
+
+Then mirror every verdict in your `hypothesis_verdicts` frontmatter array.
 
 ### Step 4 — When `n/a` is allowed
 
