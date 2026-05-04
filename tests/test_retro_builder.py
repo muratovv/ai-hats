@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -123,6 +124,133 @@ def test_programmatic_parses_git_artifacts(tmp_path: Path) -> None:
     retro = builder.build(session_id)
     assert "hello.txt" in retro.artifacts.files_changed
     assert any("test commit" in c for c in retro.artifacts.commits)
+
+
+def _git_init(repo: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "t@t.t"], cwd=repo, check=True
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "test"], cwd=repo, check=True
+    )
+
+
+def _commit_at(repo: Path, filename: str, iso_ts: str) -> None:
+    """Create a commit with both author-date and commit-date pinned to iso_ts."""
+    (repo / filename).write_text("x")
+    subprocess.run(["git", "add", filename], cwd=repo, check=True)
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_DATE": iso_ts,
+        "GIT_COMMITTER_DATE": iso_ts,
+    }
+    subprocess.run(
+        ["git", "commit", "-q", "-m", f"add {filename}"],
+        cwd=repo,
+        check=True,
+        env=env,
+    )
+
+
+def test_session_window_filters_files_outside_window(tmp_path: Path) -> None:
+    """HATS-212: only commits inside [start, end] window appear in artifacts."""
+    _git_init(tmp_path)
+    session_id = "20260101-120000-1"  # start = 2026-01-01 12:00:00 UTC
+    _make_project_with_session(
+        tmp_path,
+        session_id,
+        audit_text="# Session Audit\n",
+        metrics={
+            "role": "test",
+            "turns": 1,
+            "tool_calls": 0,
+            "exit_code": 0,
+            "duration_s": 60,  # end = 12:01:00 UTC
+        },
+    )
+
+    _commit_at(tmp_path, "inside.txt", "2026-01-01T12:00:30+00:00")
+    _commit_at(tmp_path, "after.txt", "2026-01-01T12:05:00+00:00")
+
+    builder = SessionRetroBuilder(tmp_path)
+    retro = builder.build(session_id)
+
+    assert "inside.txt" in retro.artifacts.files_changed
+    assert "after.txt" not in retro.artifacts.files_changed
+    assert any("inside.txt" in c for c in retro.artifacts.commits)
+    assert not any("after.txt" in c for c in retro.artifacts.commits)
+
+
+def test_session_with_zero_in_window_commits(tmp_path: Path) -> None:
+    """HATS-212: 0-commit session must produce empty files_changed/commits."""
+    _git_init(tmp_path)
+    session_id = "20260101-120000-1"
+    _make_project_with_session(
+        tmp_path,
+        session_id,
+        audit_text="# Session Audit\n",
+        metrics={
+            "role": "test",
+            "turns": 1,
+            "tool_calls": 0,
+            "exit_code": 0,
+            "duration_s": 30,  # end = 12:00:30 UTC
+        },
+    )
+
+    _commit_at(tmp_path, "before.txt", "2026-01-01T11:59:00+00:00")
+    _commit_at(tmp_path, "after.txt", "2026-01-01T12:05:00+00:00")
+
+    builder = SessionRetroBuilder(tmp_path)
+    retro = builder.build(session_id)
+
+    assert retro.artifacts.files_changed == []
+    assert retro.artifacts.commits == []
+
+
+def test_tasks_closed_filtered_by_window(tmp_path: Path) -> None:
+    """HATS-212: only tasks with `updated` inside [start, end] are reported."""
+    _git_init(tmp_path)
+    session_id = "20260101-120000-1"
+    _make_project_with_session(
+        tmp_path,
+        session_id,
+        audit_text="# Session Audit\n",
+        metrics={
+            "role": "test",
+            "turns": 1,
+            "tool_calls": 0,
+            "exit_code": 0,
+            "duration_s": 600,  # end = 12:10:00 UTC
+        },
+    )
+
+    # Minimal ai-hats.yaml so resolve_task_prefix has a writable target.
+    (tmp_path / "ai-hats.yaml").write_text("task_prefix: TST\n")
+
+    tasks_dir = tmp_path / ".agent" / "backlog" / "tasks"
+    inside_dir = tasks_dir / "TST-001"
+    after_dir = tasks_dir / "TST-002"
+    inside_dir.mkdir(parents=True)
+    after_dir.mkdir(parents=True)
+    (inside_dir / "task.yaml").write_text(
+        "id: TST-001\n"
+        "title: inside\n"
+        "state: done\n"
+        "updated: '2026-01-01T12:05:00Z'\n"
+    )
+    (after_dir / "task.yaml").write_text(
+        "id: TST-002\n"
+        "title: after\n"
+        "state: done\n"
+        "updated: '2026-01-01T13:00:00Z'\n"
+    )
+
+    builder = SessionRetroBuilder(tmp_path)
+    retro = builder.build(session_id)
+
+    assert retro.artifacts.tasks_closed == ["TST-001"]
 
 
 def test_build_and_save_writes_to_mode_subdir(project: Path) -> None:

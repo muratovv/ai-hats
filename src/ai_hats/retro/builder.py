@@ -11,10 +11,11 @@ so the two modes do not overwrite each other.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 
@@ -24,6 +25,8 @@ from .loader import load
 from .session_retro import SCHEMA_VERSION as SESSION_RETRO_VERSION
 from .session_retro import SessionRetroV1
 from .writer import dump
+
+logger = logging.getLogger(__name__)
 
 SESSION_PREFIX = "session_"
 
@@ -63,7 +66,8 @@ class SessionRetroBuilder:
 
         metrics = self._parse_metrics(session_dir)
         session_start = self._parse_session_start(sid)
-        artifacts = self._parse_artifacts(session_start)
+        session_end = self._compute_session_end(session_start, session_dir, sid)
+        artifacts = self._parse_artifacts(session_start, session_end)
         role = self._parse_role(session_dir)
         session_date = session_start.date()
 
@@ -185,12 +189,38 @@ class SessionRetroBuilder:
                     return m.group(1)
         return "unknown"
 
-    def _parse_artifacts(self, session_start: datetime) -> SessionArtifacts:
+    def _parse_artifacts(
+        self, session_start: datetime, session_end: datetime
+    ) -> SessionArtifacts:
         return SessionArtifacts(
-            files_changed=self._files_changed(session_start),
-            commits=self._commits_since(session_start),
-            tasks_closed=self._tasks_closed_since(session_start),
+            files_changed=self._files_changed(session_start, session_end),
+            commits=self._commits_since(session_start, session_end),
+            tasks_closed=self._tasks_closed_in_window(session_start, session_end),
         )
+
+    def _compute_session_end(
+        self, session_start: datetime, session_dir: Path, session_id: str
+    ) -> datetime:
+        """Derive session end_ts from metrics.json:duration_s; fallback to now(UTC).
+
+        The window upper bound is critical: without it, files_changed and
+        tasks_closed leak into repo-wide history (HATS-212).
+        """
+        metrics_path = session_dir / "metrics.json"
+        if metrics_path.exists():
+            try:
+                data = json.loads(metrics_path.read_text())
+                duration_s = data.get("duration_s")
+                if duration_s is not None and float(duration_s) > 0:
+                    return session_start + timedelta(seconds=float(duration_s))
+            except (json.JSONDecodeError, ValueError, TypeError):
+                pass
+        logger.info(
+            "session window upper bound: duration_s missing for %s, "
+            "falling back to now(UTC)",
+            session_id,
+        )
+        return datetime.now(timezone.utc)
 
     def _git(self, args: list[str]) -> str:
         try:
@@ -206,25 +236,29 @@ class SessionRetroBuilder:
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return ""
 
-    def _files_changed(self, since: datetime) -> list[str]:
+    def _files_changed(self, since: datetime, until: datetime) -> list[str]:
         out = self._git([
             "log",
             f"--since={since.isoformat()}",
+            f"--until={until.isoformat()}",
             "--name-only",
             "--pretty=format:",
         ])
         files = sorted({line for line in out.splitlines() if line.strip()})
         return files
 
-    def _commits_since(self, since: datetime) -> list[str]:
+    def _commits_since(self, since: datetime, until: datetime) -> list[str]:
         out = self._git([
             "log",
             f"--since={since.isoformat()}",
+            f"--until={until.isoformat()}",
             "--pretty=format:%h %s",
         ])
         return [line for line in out.splitlines() if line.strip()]
 
-    def _tasks_closed_since(self, since: datetime) -> list[str]:
+    def _tasks_closed_in_window(
+        self, since: datetime, until: datetime
+    ) -> list[str]:
         tasks_dir = self.project_dir / ".agent" / "backlog" / "tasks"
         if not tasks_dir.exists():
             return []
@@ -244,7 +278,7 @@ class SessionRetroBuilder:
         closed: list[str] = []
         for task in done_tasks:
             updated = self._parse_task_timestamp(task.updated)
-            if updated and updated >= since:
+            if updated and since <= updated <= until:
                 closed.append(task.id)
         return sorted(closed)
 
