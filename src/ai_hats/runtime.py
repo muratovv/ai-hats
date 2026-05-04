@@ -619,6 +619,29 @@ class WrapRunner:
                         break
 
                 if stdin_fd in rlist:
+                    # HATS-220: self-heal termios drift on parent stdin.
+                    # Production session 175557 captured two consecutive Enter
+                    # presses in the same Claude session: first arrived as \r
+                    # (working), second as \n (broken submit). Mechanism: the
+                    # tmux-pane slave PTY had ICRNL re-enabled by something
+                    # mid-session, and the kernel translated the real \r into
+                    # \n before our read(). Claude TUI then treated \n as
+                    # newline-in-input instead of submit. Restoring raw mode
+                    # before each stdin read costs ~2 syscalls and is
+                    # idempotent when termios is already raw. Verified via
+                    # /tmp/test_icrnl_fix.py: ICRNL=on yields \n; with this
+                    # self-heal the same keypress yields \r.
+                    if restore_attrs:
+                        try:
+                            cur = termios.tcgetattr(stdin_fd)
+                            if cur[0] & (termios.ICRNL | termios.INLCR | termios.IGNCR):
+                                tty.setraw(stdin_fd)
+                                tracer.session.log_trace(
+                                    TraceTag.SYS,
+                                    f"HATS-220 termios drift on stdin (iflag={cur[0]:#x}) — restored raw",
+                                )
+                        except termios.error:
+                            pass
                     try:
                         data = stdin_read(stdin_fd)
                     except OSError:
