@@ -210,13 +210,14 @@ def test_wrap_runner_pty_spawn_emits_term_reset_prelude(tmp_path, capsys):
     assert _TERM_RESET_PRELUDE in captured
 
 
-def test_master_read_dumps_raw_bytes_pre_strip(tmp_path):
+def test_master_read_dumps_raw_bytes_pre_strip(tmp_path, monkeypatch):
     """HATS-220: pty_raw.log preserves CSI escapes that strip_ansi erases.
 
     Required for diagnosing the recurring Enter-as-newline regression — we need
     to see kitty-keyboard pushes/pops and other DEC modes that the existing
-    trace.log throws away.
+    trace.log throws away. Opt-in via AI_HATS_PTY_RAW_DUMP=1.
     """
+    monkeypatch.setenv("AI_HATS_PTY_RAW_DUMP", "1")
     session = make_test_session(tmp_path)
     tracer = SidecarTracer(session)
     fd = pipe_with(b"\x1b[>1u\x1b[?2004hhello\x1b[<u")
@@ -233,8 +234,9 @@ def test_master_read_dumps_raw_bytes_pre_strip(tmp_path):
     assert "\x1b" not in trace
 
 
-def test_stdin_read_dumps_raw_bytes_with_direction(tmp_path):
+def test_stdin_read_dumps_raw_bytes_with_direction(tmp_path, monkeypatch):
     """HATS-220: stdin path dumps with `>>` marker so direction is unambiguous."""
+    monkeypatch.setenv("AI_HATS_PTY_RAW_DUMP", "1")
     session = make_test_session(tmp_path)
     tracer = SidecarTracer(session)
     fd = pipe_with(b"\x1b[13u")  # raw "Enter" in kitty-keyboard form
@@ -244,4 +246,15 @@ def test_stdin_read_dumps_raw_bytes_with_direction(tmp_path):
     raw = session.pty_raw_path.read_bytes()
     assert b">>" in raw
     assert b"\x1b[13u" in raw
+
+
+def test_raw_dump_disabled_by_default(tmp_path):
+    """HATS-220: pty_raw.log is opt-in — must NOT be created without env flag."""
+    session = make_test_session(tmp_path)
+    tracer = SidecarTracer(session)
+    fd = pipe_with(b"\x1b[>1u hello\x1b[<u")
+
+    tracer.make_master_read()(fd)
+
+    assert not session.pty_raw_path.exists()
 

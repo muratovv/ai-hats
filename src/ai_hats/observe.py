@@ -215,22 +215,29 @@ class SidecarTracer:
         self.session = session
         self._req_buf = bytearray()
         self._res_buf: list[str] = []
-        self._raw_fp = None  # lazily opened on first dump
+        # Raw byte dump is opt-in: tens of MB per long session and may capture
+        # sensitive content. Set AI_HATS_PTY_RAW_DUMP=1 to enable when
+        # diagnosing PTY/terminal issues like HATS-220.
+        self._raw_dump_enabled = os.environ.get("AI_HATS_PTY_RAW_DUMP") == "1"
+        self._raw_fp = None  # lazily opened on first dump when enabled
 
     def _raw_dump(self, direction: bytes, data: bytes) -> None:
-        """HATS-220: append raw bytes to pty_raw.log with direction header.
+        """HATS-220 diagnostic: append raw bytes to pty_raw.log.
 
+        Disabled by default. Enable via env: ``AI_HATS_PTY_RAW_DUMP=1``.
         Format: ``\\n[HH:MM:SS.mmm <direction>]<raw bytes>``. Records are
         delimited by the leading ``\\n[`` pattern; raw bytes are preserved
         verbatim so CSI escapes survive. Use ``grep -aE`` to search.
         """
+        if not self._raw_dump_enabled or not data:
+            return
         if self._raw_fp is None:
             try:
                 self._raw_fp = open(self.session.pty_raw_path, "ab", buffering=0)
             except OSError:
                 self._raw_fp = False  # sentinel — give up; don't retry
                 return
-        if self._raw_fp is False or not data:
+        if self._raw_fp is False:
             return
         ts = datetime.now(timezone.utc).strftime("%H:%M:%S.%f")[:-3].encode()
         try:
