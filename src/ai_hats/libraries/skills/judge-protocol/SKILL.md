@@ -93,6 +93,12 @@ Downstream project config is almost always a symptom; framework components
 
 ### Output template (print this to stdout)
 
+> **Schema by run mode**: bundle-judge runs (`ai-hats judge`) emit
+> `hats-judge-retro/v1` (shown below). Per-session reflect-session runs
+> (`ai-hats reflect-session`) emit `hats-reflect-session/v1` instead —
+> see `hypothesis-validation` and `proposal-management` skills for that
+> output contract. The investigative protocol below applies in both modes.
+
 ```
 BEGIN_JUDGE_RETRO
 ---
@@ -100,7 +106,7 @@ schema: hats-judge-retro/v1
 judge_run_id: judge-YYYY-MM-DD-NNN
 project: <project-name>
 date: YYYY-MM-DD
-bundle_id: BUNDLE-YYYY-MM-DD-NNN   # references the analyzed bundle
+bundle_id: BUNDLE-YYYY-MM-DD-NNN   # references the analyzed bundle (bundle-judge only)
 findings:                           # min 1 required
   - id: F1
     title: ...

@@ -1,0 +1,105 @@
+"""Tests for `ai-hats reflect-all` pre-flight + commit."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+import yaml
+from click.testing import CliRunner
+
+from ai_hats.cli.reflect_all import reflect_all
+
+
+@pytest.fixture
+def project_dir(tmp_path: Path, monkeypatch) -> Path:
+    pd = tmp_path / "proj"
+    (pd / ".agent" / "hypotheses").mkdir(parents=True)
+    (pd / ".agent" / "backlog" / "proposals").mkdir(parents=True)
+    monkeypatch.chdir(pd)
+    return pd
+
+
+def _make_hyp(pd: Path, hyp_id: str, status="active"):
+    body = {
+        "id": hyp_id, "title": f"hyp-{hyp_id}",
+        "status": status, "created": "2026-01-01",
+        "source_task": "HATS-001", "hypothesis": "h",
+        "validation_log": [],
+        "success_criterion": "x",
+        "observation_window": "5 sessions",
+    }
+    (pd / ".agent" / "hypotheses" / f"{hyp_id}.yaml").write_text(
+        yaml.safe_dump(body)
+    )
+
+
+def _make_prop(pd: Path, pid: str, status="open"):
+    body = {
+        "id": pid,
+        "created": datetime(2026, 5, 4, tzinfo=timezone.utc).isoformat(),
+        "title": f"title-{pid}", "category": "rule", "target": "x",
+        "description": "d", "rationale": "r",
+        "votes": [], "status": status,
+    }
+    (pd / ".agent" / "backlog" / "proposals" / f"{pid}.yaml").write_text(
+        yaml.safe_dump(body)
+    )
+
+
+def test_dry_run_builds_handoff(project_dir: Path):
+    _make_hyp(project_dir, "HYP-001")
+    _make_prop(project_dir, "PROP-001")
+    res = CliRunner().invoke(reflect_all, ["--dry-run"])
+    assert res.exit_code == 0, res.output
+    out_dir = project_dir / ".agent" / "retrospectives" / "reflect-all"
+    files = list(out_dir.glob("*-handoff.md"))
+    assert len(files) == 1
+    text = files[0].read_text()
+    assert "HYP-001" in text
+    assert "PROP-001" in text
+
+
+def test_dry_run_handles_empty_inbox(project_dir: Path):
+    res = CliRunner().invoke(reflect_all, ["--dry-run"])
+    assert res.exit_code == 0
+    out_dir = project_dir / ".agent" / "retrospectives" / "reflect-all"
+    text = list(out_dir.glob("*-handoff.md"))[0].read_text()
+    assert "no active hypotheses" in text
+    assert "inbox empty" in text
+
+
+def test_commit_changes_status(project_dir: Path):
+    _make_prop(project_dir, "PROP-001")
+    _make_prop(project_dir, "PROP-002")
+    _make_prop(project_dir, "PROP-003")
+    res = CliRunner().invoke(
+        reflect_all,
+        [
+            "commit",
+            "--accept", "PROP-001",
+            "--reject", "PROP-002",
+            "--defer", "PROP-003",
+        ],
+    )
+    assert res.exit_code == 0, res.output
+
+    p1 = yaml.safe_load(
+        (project_dir / ".agent" / "backlog" / "proposals" / "PROP-001.yaml").read_text()
+    )
+    p2 = yaml.safe_load(
+        (project_dir / ".agent" / "backlog" / "proposals" / "PROP-002.yaml").read_text()
+    )
+    p3 = yaml.safe_load(
+        (project_dir / ".agent" / "backlog" / "proposals" / "PROP-003.yaml").read_text()
+    )
+    assert p1["status"] == "accepted"
+    assert p2["status"] == "rejected"
+    assert p3["status"] == "deferred"
+
+
+def test_commit_with_no_changes(project_dir: Path):
+    res = CliRunner().invoke(reflect_all, ["commit"])
+    assert res.exit_code == 0
+    assert "0 change(s)" in res.output
