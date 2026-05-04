@@ -223,7 +223,11 @@ class ReflectSessionRunner:
             session = runner.run(
                 role_name="reflect-session",
                 task=current_prompt,
-                isolation_mode="discard",
+                # NONE: sub-agent needs access to real .agent/ (gitignored,
+                # invisible inside a git worktree) so its CLI calls land in
+                # the project's hypothesis backlog, not a throwaway dir.
+                # Trust model: role injection forbids non-CLI mutations.
+                isolation_mode="none",
             )
             transcript_path = session.session_dir / "transcript.txt"
             transcript = (

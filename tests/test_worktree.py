@@ -47,15 +47,59 @@ class TestIsolationMode:
         assert IsolationMode.DISCARD == "discard"
         assert IsolationMode.SQUASH == "squash"
         assert IsolationMode.BRANCH == "branch"
+        assert IsolationMode.NONE == "none"
 
     def test_from_string(self) -> None:
         assert IsolationMode("discard") is IsolationMode.DISCARD
         assert IsolationMode("squash") is IsolationMode.SQUASH
         assert IsolationMode("branch") is IsolationMode.BRANCH
+        assert IsolationMode("none") is IsolationMode.NONE
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):
             IsolationMode("unknown")
+
+
+class TestIsolationModeNone:
+    """NONE mode skips git worktree creation — sub-agent runs in project_dir."""
+
+    def test_create_returns_project_dir(self, git_project: Path) -> None:
+        mgr = WorktreeManager(
+            git_project, "tester", "sess-none-001", IsolationMode.NONE,
+        )
+        wt = mgr.create()
+        assert wt.resolve() == git_project.resolve()
+        assert mgr.worktree_path is None
+
+    def test_context_manager_no_op_cleanup(self, git_project: Path) -> None:
+        mgr = WorktreeManager(
+            git_project, "tester", "sess-none-002", IsolationMode.NONE,
+        )
+        with mgr as wt:
+            assert wt.resolve() == git_project.resolve()
+        # No exception, no worktree created, no cleanup needed
+        assert mgr.worktree_path is None
+
+    def test_no_branch_created(self, git_project: Path) -> None:
+        """Verify no `agent/...` branch is created in NONE mode."""
+        mgr = WorktreeManager(
+            git_project, "tester", "sess-none-003", IsolationMode.NONE,
+        )
+        with mgr:
+            pass
+        result = _git(git_project, "branch", "--list", "agent/tester/sess-none-003")
+        assert result.stdout.strip() == "", \
+            "NONE mode must not create a branch"
+
+    def test_works_in_non_git_dir(self, tmp_path: Path) -> None:
+        """NONE mode must work even outside a git repo (no _check_is_git call)."""
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        mgr = WorktreeManager(
+            proj, "tester", "sess-none-004", IsolationMode.NONE,
+        )
+        with mgr as wt:
+            assert wt.resolve() == proj.resolve()
 
 
 # ---------------------------------------------------------------------------
