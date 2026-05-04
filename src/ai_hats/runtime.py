@@ -27,16 +27,36 @@ SUBAGENT_SUBPROCESS_TIMEOUT_S = 600
 SUBAGENT_EXIT_TIMEOUT = 124
 SUBAGENT_EXIT_ERROR = 1
 
-# HATS-215: emitted on stdout before each PTY child spawn to neutralise
-# DEC private modes that a prior TUI session may have leaked. Each sequence
-# is idempotent on a clean terminal.
-#   \x1b[<u       — pop kitty-keyboard enhancement stack (root cause of
-#                   "Enter inserts newline" between consecutive sessions
-#                   under ghostty + kitty-keyboard protocol)
+# HATS-215 / HATS-220: emitted on stdout before each PTY child spawn to
+# neutralise terminal-emulator state that a prior TUI session may have leaked.
+# All sequences are idempotent on a clean terminal.
+#
+# HATS-220 evidence: Ghostty emitted `\n` for plain Enter in a session that
+# had modifyOtherKeys=2 active (verified: Ctrl+J came through as the xterm
+# extended-key form `\x1b[27;5;106~`). The original HATS-215 prelude did NOT
+# reset modifyOtherKeys, so this state survived across sessions in one pane.
+#
+#   \x1b[=0;1u    — kitty-keyboard ABSOLUTE set: flags=0, mode=1 (replace).
+#                   Replaces the relative `\x1b[<u` pop, which was unreliable
+#                   because the stack could already be at depth 0 or below.
+#   \x1b[>4;0m    — modifyOtherKeys=0 (reset to default). Was the leaking
+#                   mode in HATS-220 — leaves Enter→\r encoding intact.
+#   \x1b[20l      — LNM off (DEC ANSI mode 20). Defensive; some terminals
+#                   leak it from prior `\x1b[20h`.
+#   \x1b>         — DECKPNM (numeric keypad mode); ensures keypad Enter
+#                   sends \r, not \x1bOM (DECKPAM application form).
 #   \x1b[?2004l   — disable bracketed paste
 #   \x1b[?1l      — exit application cursor mode (DECCKM off)
 #   \x1b[?25h     — show cursor (in case prior TUI hid it and crashed)
-_TERM_RESET_PRELUDE = "\x1b[<u\x1b[?2004l\x1b[?1l\x1b[?25h"
+_TERM_RESET_PRELUDE = (
+    "\x1b[=0;1u"
+    "\x1b[>4;0m"
+    "\x1b[20l"
+    "\x1b>"
+    "\x1b[?2004l"
+    "\x1b[?1l"
+    "\x1b[?25h"
+)
 
 
 def _finalize_sub_agent(

@@ -209,3 +209,39 @@ def test_wrap_runner_pty_spawn_emits_term_reset_prelude(tmp_path, capsys):
     captured = capsys.readouterr().out
     assert _TERM_RESET_PRELUDE in captured
 
+
+def test_master_read_dumps_raw_bytes_pre_strip(tmp_path):
+    """HATS-220: pty_raw.log preserves CSI escapes that strip_ansi erases.
+
+    Required for diagnosing the recurring Enter-as-newline regression — we need
+    to see kitty-keyboard pushes/pops and other DEC modes that the existing
+    trace.log throws away.
+    """
+    session = make_test_session(tmp_path)
+    tracer = SidecarTracer(session)
+    fd = pipe_with(b"\x1b[>1u\x1b[?2004hhello\x1b[<u")
+
+    tracer.make_master_read()(fd)
+
+    raw = session.pty_raw_path.read_bytes()
+    assert b"<<" in raw
+    assert b"\x1b[>1u" in raw  # kitty-keyboard push survived
+    assert b"\x1b[?2004h" in raw  # bracketed paste enable survived
+    assert b"\x1b[<u" in raw  # kitty-keyboard pop survived
+    # And trace.log still has these stripped
+    trace = session.trace_path.read_text()
+    assert "\x1b" not in trace
+
+
+def test_stdin_read_dumps_raw_bytes_with_direction(tmp_path):
+    """HATS-220: stdin path dumps with `>>` marker so direction is unambiguous."""
+    session = make_test_session(tmp_path)
+    tracer = SidecarTracer(session)
+    fd = pipe_with(b"\x1b[13u")  # raw "Enter" in kitty-keyboard form
+
+    tracer.make_stdin_read()(fd)
+
+    raw = session.pty_raw_path.read_bytes()
+    assert b">>" in raw
+    assert b"\x1b[13u" in raw
+

@@ -137,6 +137,11 @@ class Session:
         self.reasoning_path = session_dir / "reasoning.log"
         self.metrics_path = session_dir / "metrics.json"
         self.meta_prompt_path = session_dir / "meta_prompt.txt"
+        # HATS-220: pre-strip raw byte dump from PTY (master + stdin). Captures
+        # CSI escapes (kitty-keyboard push/pop, DEC modes) that strip_ansi
+        # erases from trace.log — needed to diagnose terminal-mode regressions
+        # like the Enter-as-newline bug. Created lazily on first write.
+        self.pty_raw_path = session_dir / "pty_raw.log"
 
     def is_productive(self) -> bool:
         """Return True if this session had meaningful work (turns > 0 and tool_calls > 0)."""
@@ -210,6 +215,28 @@ class SidecarTracer:
         self.session = session
         self._req_buf = bytearray()
         self._res_buf: list[str] = []
+        self._raw_fp = None  # lazily opened on first dump
+
+    def _raw_dump(self, direction: bytes, data: bytes) -> None:
+        """HATS-220: append raw bytes to pty_raw.log with direction header.
+
+        Format: ``\\n[HH:MM:SS.mmm <direction>]<raw bytes>``. Records are
+        delimited by the leading ``\\n[`` pattern; raw bytes are preserved
+        verbatim so CSI escapes survive. Use ``grep -aE`` to search.
+        """
+        if self._raw_fp is None:
+            try:
+                self._raw_fp = open(self.session.pty_raw_path, "ab", buffering=0)
+            except OSError:
+                self._raw_fp = False  # sentinel — give up; don't retry
+                return
+        if self._raw_fp is False or not data:
+            return
+        ts = datetime.now(timezone.utc).strftime("%H:%M:%S.%f")[:-3].encode()
+        try:
+            self._raw_fp.write(b"\n[" + ts + b" " + direction + b"]" + data)
+        except OSError:
+            pass
 
     def strip_ansi(self, data: bytes) -> bytes:
         return self.ANSI_ESCAPE.sub(b"", data)
@@ -230,6 +257,7 @@ class SidecarTracer:
         """Returns master_read callback for pty.spawn — logs CLI output as [RES]."""
         def master_read(fd: int) -> bytes:
             data = os.read(fd, 1024)
+            self._raw_dump(b"<<", data)
             cleaned = self.strip_ansi(data).strip()
             if cleaned:
                 text = cleaned.decode("utf-8", errors="replace")
@@ -248,6 +276,7 @@ class SidecarTracer:
         """Returns stdin_read callback for pty.spawn — logs user input as [REQ] on newline."""
         def stdin_read(fd: int) -> bytes:
             data = os.read(fd, 1024)
+            self._raw_dump(b">>", data)
             self._req_buf.extend(data)
             if b"\n" in self._req_buf or b"\r" in self._req_buf:
                 line = self.strip_noise(self.strip_ansi(bytes(self._req_buf))).strip()
