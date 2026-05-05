@@ -2,7 +2,7 @@
 
 Hypotheses live in `.agent/hypotheses/HYP-NNN.yaml`. Schema is intentionally
 permissive on extras (legacy entries pre-HATS-210 carry custom keys we want
-to preserve). New entries written via `ai-hats hyp append-verdict` follow
+to preserve). New entries written via `ai-hats task hyp append-verdict` follow
 the strict ValidationLogEntry shape.
 """
 
@@ -46,7 +46,7 @@ class ValidationLogEntry(BaseModel):
     """One verdict entry written by reflect-session via CLI.
 
     Allows extras to preserve legacy free-form entries (sweep_report, sample,
-    bundle, etc.) — new entries from `ai-hats hyp append-verdict` populate
+    bundle, etc.) — new entries from `ai-hats task hyp append-verdict` populate
     only the typed fields below.
     """
 

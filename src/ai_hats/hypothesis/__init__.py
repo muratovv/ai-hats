@@ -1,6 +1,6 @@
 """Hypothesis backlog: pydantic models, atomic IO for HYP and PROP files.
 
-Used by reflect-session role and ai-hats hyp/proposal CLIs (HATS-210).
+Used by reflect-session role and ai-hats task hyp/proposal CLIs (HATS-210).
 """
 
 from .model import (

@@ -32,7 +32,7 @@
 | `inconclusive` | данные есть, но мешанина / недостаточно       |
 | `n/a`          | сессия физически не может проверить гипотезу  |
 
-Вердикт пишется в HYP-файл атомарно через `ai-hats hyp append-verdict` (filelock-protected). `n/a` мирорится только во frontmatter ретро, в HYP-файл не пишется (чтобы не засорять observation window).
+Вердикт пишется в HYP-файл атомарно через `ai-hats task hyp append-verdict` (filelock-protected). `n/a` мирорится только во frontmatter ретро, в HYP-файл не пишется (чтобы не засорять observation window).
 
 ---
 
@@ -73,7 +73,7 @@ feedback:
     background: true
 ```
 
-После правки — `ai-hats bump`.
+После правки — `ai-hats self bump`.
 
 ### Модель для feedback-loop (HATS-232)
 
@@ -109,7 +109,7 @@ feedback:
     reflect_model: claude-sonnet-4-6   # judge = Sonnet, качество вердиктов
 ```
 
-После правки — `ai-hats bump`.
+После правки — `ai-hats self bump`.
 
 ---
 
@@ -133,11 +133,11 @@ session_end
                 ├─ читает .agent/backlog/proposals/*.yaml (status=open)
                 ├─ читает .gitlog/session_<id>/ (audit, metrics, retro)
                 ├─ для КАЖДОЙ active HYP выносит вердикт:
-                │     "$AH" hyp append-verdict --hyp HYP-NNN --session $SID \
+                │     "$AH" task hyp append-verdict --hyp HYP-NNN --session $SID \
                 │            --verdict <kind> --evidence "<...>" \
                 │            --recommendation <kind>
                 ├─ при self-problem заводит PROP:
-                │     "$AH" proposal create --category process --target reflect-session ...
+                │     "$AH" task proposal create --category process --target reflect-session ...
                 └─ пишет ReflectSessionV1
                    → .agent/retrospectives/reflect-session/<id>.md
              3) runtime safety net: пост-валидация артефакта
@@ -149,8 +149,8 @@ session_end
 
 - `hypothesis_verdicts[]` содержит **ровно по одной записи на каждую active HYP** — пропуски запрещены.
 - Если гипотезу физически нельзя проверить из этой сессии — `verdict: n/a`, и **не зовём** `append-verdict` (только мирор во frontmatter).
-- Самопроблема (агент не понял HYP, не нашёл данных) → `proposal create` + `inconclusive` + ссылка в `self_problems[]`.
-- При `confirmed/refuted/inconclusive` — обязан вызвать `ai-hats hyp append-verdict`.
+- Самопроблема (агент не понял HYP, не нашёл данных) → `task proposal create` + `inconclusive` + ссылка в `self_problems[]`.
+- При `confirmed/refuted/inconclusive` — обязан вызвать `ai-hats task hyp append-verdict`.
 
 Вся эта логика — в скилле `hypothesis-validation` (`libraries/skills/hypothesis-validation/SKILL.md`), который автоматически подключён к роли `reflect-session`.
 
@@ -190,14 +190,14 @@ ai-hats reflect session --session <id> --background   # как в авто
    │   handoff содержит указатели на:
    │     - HYP-NNN (с краткой выжимкой validation_log)
    │     - PROP-NNN (с rationale)
-   │     - подсказки по командам ai-hats hyp/proposal
+   │     - подсказки по командам ai-hats task hyp/proposal
    └─ os.execvp claude <pointer-prompt>
         ↓ переходишь в интерактивный чат
         в чате используешь:
-          ai-hats hyp show HYP-NNN
-          ai-hats hyp append-verdict ...
-          ai-hats proposal show PROP-NNN
-          ai-hats proposal status PROP-NNN <accepted|rejected|deferred|duplicate>
+          ai-hats task hyp show HYP-NNN
+          ai-hats task hyp append-verdict ...
+          ai-hats task proposal show PROP-NNN
+          ai-hats task proposal status PROP-NNN <accepted|rejected|deferred|duplicate>
           ai-hats task create ...   # если нужно завести задачу
 2. Когда чат закончен — bulk-flip:
    ai-hats reflect commit \
@@ -246,7 +246,7 @@ ai-hats reflect all --dry-run
 
 2. Накопление вердиктов:
    каждая сессия → reflect-session →
-     ai-hats hyp append-verdict --hyp HYP-042 --verdict ... --recommendation ...
+     ai-hats task hyp append-verdict --hyp HYP-042 --verdict ... --recommendation ...
    validation_log растёт.
 
 3. Триаж в reflect-all:
@@ -254,7 +254,7 @@ ai-hats reflect all --dry-run
    (например, "8 confirmed, 1 inconclusive, 0 refuted").
    Сравниваешь с exit_criteria.confirm.
    В чате — закрываешь:
-     ai-hats hyp ... # перевод status=confirmed/refuted (см. ai-hats hyp --help)
+     ai-hats task hyp ... # перевод status=confirmed/refuted (см. ai-hats task hyp --help)
    ИЛИ продлеваешь (recommendation=extend_window).
 
 4. Закрытие:

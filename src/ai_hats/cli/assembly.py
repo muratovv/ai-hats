@@ -117,7 +117,7 @@ def customize(
     project_dir = _project_dir()
     config_path = project_dir / "ai-hats.yaml"
     if not config_path.exists():
-        console.print("[red]No ai-hats.yaml found[/]. Run: ai-hats set -r <role> -p <provider>")
+        console.print("[red]No ai-hats.yaml found[/]. Run: ai-hats config set -r <role> -p <provider>")
         raise SystemExit(1)
 
     config = ProjectConfig.from_yaml(config_path)

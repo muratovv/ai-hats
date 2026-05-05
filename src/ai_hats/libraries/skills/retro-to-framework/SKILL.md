@@ -6,10 +6,10 @@ description: Convert project retrospective findings into framework-level improve
 
 Convert project-level retrospective findings into framework-level improvements.
 
-> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. When running `ai-hats bump` (step 5), resolve the binary once:
+> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. When running `ai-hats self bump` (step 5), resolve the binary once:
 > ```bash
 > AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
-> "$AH" bump
+> "$AH" self bump
 > ```
 > If neither works, the project's venv lives at `./.venv/bin/ai-hats`. Resolve the binary path explicitly — falling back blindly between `ai-hats` and the venv path wastes a turn.
 
@@ -43,7 +43,7 @@ Convert project-level retrospective findings into framework-level improvements.
    Update trait config.yaml. Run composer validation for all affected roles.
 
 5. **Propagate to projects:**
-   In each project using the affected role: `ai-hats bump`.
+   In each project using the affected role: `ai-hats self bump`.
    Remove corresponding band-aids from project CLAUDE.md.
    Verify the framework version appears in the generated prompt.
 

@@ -1,4 +1,4 @@
-"""`ai-hats proposal` — manage proposal backlog (.agent/backlog/proposals/).
+"""`ai-hats task proposal` — manage proposal backlog (.agent/backlog/proposals/).
 
 Subcommands:
   list, show, create, vote, status

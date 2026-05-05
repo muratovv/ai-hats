@@ -237,7 +237,7 @@ def _build_handoff(project_dir: Path) -> Path:
     parts.append(
         "1. **Close out HYP verdicts**. For each active HYP, decide based on "
         "validation_log entries whether to confirm/refute/keep/extend. Use:\n"
-        "   - `ai-hats hyp show HYP-NNN` — full content\n"
+        "   - `ai-hats task hyp show HYP-NNN` — full content\n"
         "   - Outside this run, status changes are still manual: edit the file\n"
         "     or via a follow-up tooling step (HATS-NNN).\n\n"
         "2. **Triage proposals**. For each open PROP, decide accept/reject/"

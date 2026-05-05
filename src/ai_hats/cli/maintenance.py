@@ -1,4 +1,4 @@
-"""`ai-hats update` / `ai-hats migrate` — self-maintenance of the tool."""
+"""`ai-hats self update` / `ai-hats self migrate` — self-maintenance of the tool."""
 
 from __future__ import annotations
 

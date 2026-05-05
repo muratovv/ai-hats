@@ -99,7 +99,7 @@ class IsolationMode(str, Enum):
     BRANCH = "branch"
     #: Run sub-agent in project_dir directly — no git worktree.
     #: Use only for trusted roles whose only writes go through ai-hats CLIs
-    #: (e.g. reflect-session reaching `.agent/` via `ai-hats hyp / proposal`).
+    #: (e.g. reflect-session reaching `.agent/` via `ai-hats task hyp / proposal`).
     #: Trade-off: no source-tree isolation; the role is trusted to honor its
     #: scope guardrails. Required because `.agent/` is gitignored and is
     #: invisible inside a git worktree.

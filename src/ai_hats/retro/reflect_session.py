@@ -3,7 +3,7 @@
 Two-layer no-silent-failure protection:
 
   1. **LLM-driven** (in-prompt + skill text): on meta-problems the judge
-     creates a proposal via `ai-hats proposal create` and references it
+     creates a proposal via `ai-hats task proposal create` and references it
      in `self_problems`.
   2. **Runtime-driven** (this module): after the sub-agent exits, parent
      reads the output file and validates it against ReflectSessionV1.
@@ -120,12 +120,12 @@ class ReflectSessionRunner:
             "      prop_id: PROP-NNN\n"
             "  self_problems: [PROP-NNN, ...]\n\n"
             "Before listing a proposal action, USE THE CLI to materialize it:\n"
-            "  ai-hats proposal create --title ... --category ... --target ... "
+            "  ai-hats task proposal create --title ... --category ... --target ... "
             "--description ... --rationale ... --session " + session_id + "\n"
-            "  ai-hats proposal vote --prop PROP-NNN --session " + session_id + " "
+            "  ai-hats task proposal vote --prop PROP-NNN --session " + session_id + " "
             "--reasoning ...\n"
             "If you cannot follow the format or hit a meta-problem, file:\n"
-            "  ai-hats proposal create --category process --target "
+            "  ai-hats task proposal create --category process --target "
             "reflect-session \\\n"
             "    --title <short> --description <what failed> --rationale <why> "
             "--session " + session_id + "\n"
@@ -156,7 +156,7 @@ class ReflectSessionRunner:
         if not open_props:
             return (
                 "## Open proposals\n\n(inbox empty — create new ones with "
-                "`ai-hats proposal create` if you spot improvements)"
+                "`ai-hats task proposal create` if you spot improvements)"
             )
         lines = [
             "## Open proposals (vote on similar; create only if novel)"

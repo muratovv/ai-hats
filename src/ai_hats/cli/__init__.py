@@ -105,7 +105,7 @@ def _launch_session(
 
     effective_provider = provider or config.provider
     if not effective_provider:
-        console.print("[red]No provider configured[/]. Run: ai-hats set -p <provider>")
+        console.print("[red]No provider configured[/]. Run: ai-hats config set -p <provider>")
         sys.exit(1)
 
     runner = WrapRunner(project_dir)
@@ -139,15 +139,29 @@ from . import (  # noqa: E402
 
 # Assembly commands
 main.add_command(assembly.init)
-main.add_command(assembly.set_role)
-main.add_command(assembly.customize)
 main.add_command(assembly.status)
-main.add_command(assembly.bump)
-main.add_command(assembly.rollback)
 main.add_command(assembly.clean)
 
-# Config
+# Config — set + customize nest under it (HATS-241).
+# All three write to ai-hats.yaml; group expresses intent.
+config_mod.config.add_command(assembly.set_role)
+config_mod.config.add_command(assembly.customize)
 main.add_command(config_mod.config)
+
+
+# 'self' — framework lifecycle (HATS-241). Convention: rustup self update,
+# gh extension self ... — instantly signals 'operations on the tool itself,
+# not on your project'.
+@click.group("self")
+def self_group():
+    """Manage the ai-hats installation itself (bump, update, migrate, rollback)."""
+
+
+self_group.add_command(assembly.bump)
+self_group.add_command(assembly.rollback)
+self_group.add_command(maintenance.update)
+self_group.add_command(maintenance.migrate)
+main.add_command(self_group)
 
 # List
 main.add_command(list_cmd.list_cmd)
@@ -161,14 +175,14 @@ main.add_command(worktree.wt)
 # Session (observability + retro generation)
 main.add_command(session.session)
 
-# Task management
+# Task management — hyp + proposal nest under it (HATS-241).
+# All three are backlog artifacts, so they live as siblings:
+#   ai-hats task list / create / ...
+#   ai-hats task hyp ...
+#   ai-hats task proposal ...
+task.task.add_command(hyp_mod.hyp)
+task.task.add_command(proposal_mod.proposal)
 main.add_command(task.task)
 
-# Maintenance
-main.add_command(maintenance.update)
-main.add_command(maintenance.migrate)
-
-# Hypothesis backlog (HATS-210)
-main.add_command(hyp_mod.hyp)
-main.add_command(proposal_mod.proposal)
+# Reflect (post-session retro)
 main.add_command(reflect_mod.reflect)

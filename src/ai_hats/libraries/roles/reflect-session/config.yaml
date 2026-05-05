@@ -39,16 +39,16 @@ injection: |
 
   1. For each active HYP — emit a verdict ∈ {confirmed, refuted, inconclusive, n/a}
      with one-line evidence cite from `.gitlog/session_<id>/audit.md` or
-     `metrics.json`. Persist via `ai-hats hyp append-verdict`.
+     `metrics.json`. Persist via `ai-hats task hyp append-verdict`.
      See **hypothesis-validation** skill for verdict semantics and `n/a` rules.
 
   2. For each improvement idea — read open proposals first; **vote** on similar
-     existing PROP via `ai-hats proposal vote`; **create** a new PROP only if
+     existing PROP via `ai-hats task proposal vote`; **create** a new PROP only if
      novel. See **proposal-management** skill for similar-detection and CLI usage.
 
   3. If you cannot follow this format or hit a meta-problem (ambiguous instruction,
      unparseable inbox, conflicting signal) — file a meta-proposal:
-       ai-hats proposal create --category process --target reflect-session \
+       ai-hats task proposal create --category process --target reflect-session \
          --title "<short>" --description "<what failed>" --rationale "<why>" \
          --session "$SID"
      Reference its PROP-NNN in `self_problems`. NEVER silently drop entries.
@@ -58,5 +58,5 @@ injection: |
   ## Scope (read-only)
 
   You DO NOT mutate `.agent/backlog/tasks/*` or other project state directly.
-  All side effects go through `ai-hats hyp append-verdict` / `ai-hats proposal *`
+  All side effects go through `ai-hats task hyp append-verdict` / `ai-hats task proposal *`
   CLIs.

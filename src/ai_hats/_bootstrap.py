@@ -1,11 +1,11 @@
 """Startup self-heal for missing runtime dependencies (HATS-213).
 
 Closes the bootstrap chicken-and-egg that survived HATS-207: a user upgrading
-from a pre-HATS-207 wheel runs `ai-hats update` from the OLD in-memory code
+from a pre-HATS-207 wheel runs `ai-hats self update` from the OLD in-memory code
 (which still passes ``--no-deps``); pip installs the new wheel without the
 new declared deps; the next `ai-hats` invocation crashes with
 ``ModuleNotFoundError``. This module detects that state on every CLI startup
-and on every ``ai-hats update`` and self-heals it.
+and on every ``ai-hats self update`` and self-heals it.
 
 Stdlib-only on purpose — must not import anything from the project, since
 the project itself is what may be missing dependencies.
@@ -157,7 +157,7 @@ def bootstrap_or_die() -> None:
 
 
 def verify_after_install() -> int:
-    """Stage-2 verify after `ai-hats update`. No re-exec; returns exit code.
+    """Stage-2 verify after `ai-hats self update`. No re-exec; returns exit code.
 
     Designed to be run via ``python -m ai_hats._bootstrap verify`` in a
     fresh subprocess from :func:`ai_hats.cli.maintenance.update`. Because

@@ -1,4 +1,4 @@
-"""Tests for `ai-hats hyp` CLI."""
+"""Tests for `ai-hats task hyp` CLI."""
 
 from __future__ import annotations
 
