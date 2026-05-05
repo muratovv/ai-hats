@@ -1,4 +1,4 @@
-"""CLI integration tests for `ai-hats run --json` + exit-code propagation (HATS-166).
+"""CLI integration tests for `ai-hats agent --json` + exit-code propagation (HATS-166).
 
 Mirrors test_cli_run_tags.py patterns: stub SubAgentRunner, drive CLI via
 CliRunner, assert stdout is parseable JSON and process exit code matches
@@ -73,7 +73,7 @@ def test_json_output_is_single_parseable_object(cli, monkeypatch, project_dir):
         "duration_s": 12.345,
     })
 
-    result = cli.invoke(main, ["run", "primary", "--task", "t", "--json"])
+    result = cli.invoke(main, ["agent", "primary", "--task", "t", "--json"])
     assert result.exit_code == 0, result.output
 
     payload = json.loads(result.output)
@@ -93,7 +93,7 @@ def test_json_includes_tags_if_present(cli, monkeypatch, project_dir):
     })
 
     result = cli.invoke(main, [
-        "run", "primary", "--task", "t", "--json",
+        "agent", "primary", "--task", "t", "--json",
         "--tag", "alert_fp=abc", "--tag", "client=home",
     ])
     assert result.exit_code == 0, result.output
@@ -106,7 +106,7 @@ def test_json_mode_suppresses_human_output(cli, monkeypatch, project_dir):
     """Stdout must be valid JSON only — no rich decorations."""
     _install_stub_runner(monkeypatch, project_dir, {"exit_code": 0})
 
-    result = cli.invoke(main, ["run", "primary", "--task", "t", "--json"])
+    result = cli.invoke(main, ["agent", "primary", "--task", "t", "--json"])
     # Parseable as-is, without pre-processing.
     json.loads(result.output)
     # The human summary line must not leak into stdout.
@@ -126,7 +126,7 @@ def test_exit_code_propagates_in_json_mode(
         "exit_code": metrics_exit_code, "role": "primary",
     })
 
-    result = cli.invoke(main, ["run", "primary", "--task", "t", "--json"])
+    result = cli.invoke(main, ["agent", "primary", "--task", "t", "--json"])
     assert result.exit_code == metrics_exit_code
 
 
@@ -138,7 +138,7 @@ def test_exit_code_propagates_in_human_mode(
         "exit_code": metrics_exit_code, "role": "primary",
     })
 
-    result = cli.invoke(main, ["run", "primary", "--task", "t"])
+    result = cli.invoke(main, ["agent", "primary", "--task", "t"])
     assert result.exit_code == metrics_exit_code
 
 
@@ -164,7 +164,7 @@ def test_missing_metrics_defaults_to_exit_1(cli, monkeypatch, project_dir):
     import ai_hats.runtime as runtime_mod
     monkeypatch.setattr(runtime_mod, "SubAgentRunner", _Runner)
 
-    result = cli.invoke(main, ["run", "primary", "--task", "t", "--json"])
+    result = cli.invoke(main, ["agent", "primary", "--task", "t", "--json"])
     assert result.exit_code == 1
     payload = json.loads(result.output)
     assert payload["session_id"] == "bare"
@@ -181,7 +181,7 @@ def test_human_mode_prints_summary(cli, monkeypatch, project_dir):
         "exit_code": 0, "role": "primary",
     })
 
-    result = cli.invoke(main, ["run", "primary", "--task", "t"])
+    result = cli.invoke(main, ["agent", "primary", "--task", "t"])
     assert result.exit_code == 0
     assert "Sub-agent completed" in result.output
     assert "stub-session" in result.output

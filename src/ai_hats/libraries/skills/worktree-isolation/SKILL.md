@@ -74,7 +74,7 @@ cd $WT
 - Starting any non-trivial task (execute state)
 - Parallel work on multiple tasks
 - Risky changes you might want to discard
-- Sub-agent delegation (automatic via `ai-hats run --isolation`)
+- Sub-agent delegation (automatic via `ai-hats agent --isolation`)
 
 ## Conventions
 

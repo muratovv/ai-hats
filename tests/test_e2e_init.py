@@ -61,12 +61,12 @@ def test_set_all_roles(cli_project, role):
 
 
 def test_status_after_set(cli_project):
-    """ai-hats status shows role and components after set."""
+    """ai-hats config status shows role and components after set."""
     project, runner = cli_project
 
     runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
 
-    r = runner.invoke(main, ["status"])
+    r = runner.invoke(main, ["config", "status"])
     assert r.exit_code == 0, r.output
     assert ALL_ROLES[0] in r.output
 
@@ -89,10 +89,10 @@ def test_bump_after_set(cli_project):
 
 
 def test_init_unknown_role_fails_loud(cli_project):
-    """ai-hats init -r <unknown> exits non-zero and leaves no artifacts on disk."""
+    """ai-hats self init-r <unknown> exits non-zero and leaves no artifacts on disk."""
     project, runner = cli_project
 
-    result = runner.invoke(main, ["init", "-p", "claude", "-r", "nonexistent-role"])
+    result = runner.invoke(main, ["self", "init", "-p", "claude", "-r", "nonexistent-role"])
 
     assert result.exit_code != 0, result.output
     assert "nonexistent-role" in result.output
@@ -105,10 +105,10 @@ def test_init_unknown_role_fails_loud(cli_project):
 
 
 def test_init_unknown_provider_fails_loud(cli_project):
-    """ai-hats init -p <unknown> exits non-zero without creating artifacts."""
+    """ai-hats self init-p <unknown> exits non-zero without creating artifacts."""
     project, runner = cli_project
 
-    result = runner.invoke(main, ["init", "-p", "bogus-provider"])
+    result = runner.invoke(main, ["self", "init", "-p", "bogus-provider"])
 
     assert result.exit_code != 0, result.output
     assert "bogus-provider" in result.output
@@ -230,13 +230,13 @@ def test_passthrough_no_args_still_launches_session(cli_project, monkeypatch):
 
 
 def test_passthrough_known_subcommand_still_dispatches(cli_project, monkeypatch):
-    """`ai-hats status` still routes via click subcommand dispatcher, not _launch_session."""
+    """`ai-hats config status` still routes via click subcommand dispatcher, not _launch_session."""
     project, runner = cli_project
     calls = _capture_launch(monkeypatch)  # should NOT be called
 
     # Use `status` (a no-side-effect read-only command); `task list` would also
     # work but requires .agent/ to be initialized.
-    result = runner.invoke(main, ["status"])
+    result = runner.invoke(main, ["config", "status"])
 
     # Subcommand may exit non-zero on uninitialized project — that's fine,
     # the point is _launch_session was NOT invoked.
@@ -251,7 +251,7 @@ def test_subcommands_work_with_passthrough_context(cli_project):
     r = runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
     assert r.exit_code == 0, r.output
 
-    r = runner.invoke(main, ["status"])
+    r = runner.invoke(main, ["config", "status"])
     assert r.exit_code == 0, r.output
     assert ALL_ROLES[0] in r.output
 
@@ -522,12 +522,12 @@ def test_task_create_auto_id(cli_project):
 
 
 def test_init_task_prefix_flag(cli_project):
-    """ai-hats init --task-prefix ACME persists prefix and drives task create."""
+    """ai-hats self init--task-prefix ACME persists prefix and drives task create."""
     import yaml
 
     project, runner = cli_project
 
-    result = runner.invoke(main, ["init", "-p", "claude", "--task-prefix", "ACME"])
+    result = runner.invoke(main, ["self", "init", "-p", "claude", "--task-prefix", "ACME"])
     assert result.exit_code == 0, result.output
     assert "Task prefix" in result.output
     assert "ACME" in result.output
@@ -541,10 +541,10 @@ def test_init_task_prefix_flag(cli_project):
 
 
 def test_init_task_prefix_rejects_bad_format(cli_project):
-    """ai-hats init --task-prefix with invalid chars fails loud and does nothing."""
+    """ai-hats self init--task-prefix with invalid chars fails loud and does nothing."""
     project, runner = cli_project
 
-    result = runner.invoke(main, ["init", "-p", "claude", "--task-prefix", "bad prefix"])
+    result = runner.invoke(main, ["self", "init", "-p", "claude", "--task-prefix", "bad prefix"])
     assert result.exit_code != 0, result.output
     assert "task_prefix" in result.output.lower() or "Invalid" in result.output
     assert not (project / "ai-hats.yaml").exists()
@@ -557,15 +557,15 @@ def test_init_task_prefix_reinit_conflict(cli_project):
 
     project, runner = cli_project
 
-    runner.invoke(main, ["init", "-p", "claude", "--task-prefix", "ACME"])
-    result = runner.invoke(main, ["init", "-p", "claude", "--task-prefix", "BETA"])
+    runner.invoke(main, ["self", "init", "-p", "claude", "--task-prefix", "ACME"])
+    result = runner.invoke(main, ["self", "init", "-p", "claude", "--task-prefix", "BETA"])
     assert result.exit_code != 0, result.output
     assert "conflict" in result.output.lower() or "ACME" in result.output
 
     raw = yaml.safe_load((project / "ai-hats.yaml").read_text())
     assert raw["task_prefix"] == "ACME"
     # Re-running with the SAME prefix is a no-op.
-    r = runner.invoke(main, ["init", "-p", "claude", "--task-prefix", "ACME"])
+    r = runner.invoke(main, ["self", "init", "-p", "claude", "--task-prefix", "ACME"])
     assert r.exit_code == 0, r.output
 
 
@@ -573,7 +573,7 @@ def test_init_idempotent_on_existing_yaml(cli_project):
     """Re-init on an existing yaml is idempotent — does not modify user config."""
     project, runner = cli_project
 
-    runner.invoke(main, ["init", "-p", "claude"])
+    runner.invoke(main, ["self", "init", "-p", "claude"])
 
     # User customizes threshold so the feedback block is serialized in yaml.
     runner.invoke(main, ["config", "feedback", "session-retro", "smart",
@@ -583,7 +583,7 @@ def test_init_idempotent_on_existing_yaml(cli_project):
     assert "99" in yaml_before
 
     # Re-init must not modify an already-existing yaml.
-    r = runner.invoke(main, ["init", "-p", "claude"])
+    r = runner.invoke(main, ["self", "init", "-p", "claude"])
     assert r.exit_code == 0, r.output
 
     yaml_after = (project / "ai-hats.yaml").read_text()

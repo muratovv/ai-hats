@@ -447,7 +447,7 @@ def test_backup_survives_self_referential_symlinks_in_provider_skills(
     Repro: user had `.gemini/skills/foo/foo -> .gemini/skills/foo` in a
     pre-existing project. shutil.copytree(..., symlinks=False) followed the
     link and recursed until the OS raised errno 62 ("Too many levels of
-    symbolic links"), aborting `ai-hats init` mid-flight.
+    symbolic links"), aborting `ai-hats self init` mid-flight.
     """
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
