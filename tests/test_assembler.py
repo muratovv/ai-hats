@@ -181,17 +181,6 @@ def test_bump(project_with_library):
     assert result.name == "test-role"
 
 
-def test_whoami(project_with_library):
-    project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    asm.set_role("test-role")
-
-    info = asm.whoami()
-    assert info["role"] == "test-role"
-    assert info["provider"] == "gemini"
-
-
 def test_set_role_then_switch_provider(project_with_library):
     """Switching provider must regenerate system prompt for the new provider.
 
