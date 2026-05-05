@@ -144,20 +144,21 @@ ai-hats task proposal list | show | create | vote | status        # proposal bac
 
 ### Как обновить ai-hats в проекте
 
-`ai-hats update` — единственный рекомендованный путь. Он делает
-`pip install --force-reinstall --no-deps --no-cache-dir ai-hats @ git+ssh://...`
+`ai-hats self update` — единственный рекомендованный путь. Он делает
+`pip install --force-reinstall --no-cache-dir ai-hats @ git+ssh://...`
 в текущем интерпретаторе, показывает diff версий и сравнивает композицию до/после.
 
 Не нужно вручную дёргать pip. Если venv проекта изолирован — запускай команду
-его `ai-hats` (например, `~/dotfiles/.venv/bin/ai-hats update`).
+его `ai-hats` (например, `~/dotfiles/.venv/bin/ai-hats self update`).
 
-После `update` прогони `ai-hats bump` — он пересоберёт prompt и managed-файлы
-(`.agent/*`, `.claude/skills/*`, `.gitignore` block) под новую версию.
+После `self update` прогони `ai-hats self bump` — он пересоберёт prompt
+и managed-файлы (`.agent/*`, `.claude/skills/*`, `.gitignore` block) под
+новую версию.
 
 ```bash
 cd ~/my-project
-ai-hats update      # подтянуть свежий ai-hats из GitHub
-ai-hats bump        # пересобрать роль + .gitignore
+ai-hats self update   # подтянуть свежий ai-hats из GitHub
+ai-hats self bump     # пересобрать роль + .gitignore
 ```
 
 ## Session tags и queryable history
@@ -168,7 +169,7 @@ cost attribution, pipeline tracking, A/B экспериментов. Теги п
 
 ```bash
 # Запись — теги при запуске (повторяемый флаг, до 20 на сессию)
-ai-hats run sre-diagnoser --task "..." \
+ai-hats agent sre-diagnoser --task "..." \
     --tag alert_fp=abc123 \
     --tag alertname=ImmichContainerDown \
     --tag client=home-lab
@@ -206,7 +207,7 @@ if [ -n "$existing" ]; then
     echo "Already diagnosed in session $existing — skipping"
     exit 0
 fi
-ai-hats run sre-diagnoser --tag alert_fp="$fp" --task "..."
+ai-hats agent sre-diagnoser --tag alert_fp="$fp" --task "..."
 ```
 
 Атомарность check-and-spawn (race между двумя параллельными вебхуками) — на
@@ -217,7 +218,7 @@ ai-hats run sre-diagnoser --tag alert_fp="$fp" --task "..."
 Для fan-out через `parallel`/`xargs`/CI:
 
 ```bash
-ai-hats run <role> --task "..." --json
+ai-hats agent <role> --task "..." --json
 # → stdout: {"session_id":"...","exit_code":0,"role":"...","duration_s":12.3,"tags":{...},...}
 ```
 
@@ -240,14 +241,14 @@ stdout; человекочитаемый режим (без `--json`) остав
 ```bash
 # N параллельных вызовов, собрать все результаты, отфильтровать успешные
 cat tasks.jsonl | jq -r '.task' | parallel -j 3 \
-    'ai-hats run diagnoser --task {} --json' \
+    'ai-hats agent diagnoser --task {} --json' \
   | jq -s 'map(select(.exit_code == 0))'
 ```
 
 Если надо узнать код завершения одной сессии, не парся stdout — хватит `$?`:
 
 ```bash
-ai-hats run diagnoser --task "..." --json > result.json
+ai-hats agent diagnoser --task "..." --json > result.json
 echo "exit=$?"   # совпадает с .exit_code в result.json
 ```
 
@@ -264,25 +265,25 @@ echo "exit=$?"   # совпадает с .exit_code в result.json
 
 ### Кастомизация ролей
 
-Можно добавлять/убирать трейты, правила и скиллы из библиотечной роли без модификации исходного конфига. Кастомизации хранятся в `ai-hats.yaml` и переживают `ai-hats update` и `ai-hats bump`.
+Можно добавлять/убирать трейты, правила и скиллы из библиотечной роли без модификации исходного конфига. Кастомизации хранятся в `ai-hats.yaml` и переживают `ai-hats self update` и `ai-hats self bump`.
 
 > Подборка типовых сценариев с готовыми примерами `ai-hats.yaml` — см. [docs/how-to.md](docs/how-to.md).
 
 ```bash
 # Добавить трейт к роли sre
-ai-hats customize sre --add-trait dev::python
+ai-hats config customize sre --add-trait dev::python
 
 # Убрать ненужный скилл
-ai-hats customize sre --remove-skill network-documentation
+ai-hats config customize sre --remove-skill network-documentation
 
 # Добавить инжекцию
-ai-hats customize sre --injection-append "Always use k9s for K8s."
+ai-hats config customize sre --injection-append "Always use k9s for K8s."
 
 # Посмотреть кастомизации
-ai-hats customize sre --show
+ai-hats config customize sre --show
 
 # Применить
-ai-hats bump
+ai-hats self bump
 ```
 
 Формат в `ai-hats.yaml`:
@@ -299,7 +300,7 @@ customizations:
       Always use k9s for K8s.
 ```
 
-Кастомизации применяются при каждом `set`, `bump` и `--role` override. Если `remove` ссылается на компонент, которого нет в базовой роли — выводится warning, ошибки не будет.
+Кастомизации применяются при каждом `config set`, `self bump` и `--role` override. Если `remove` ссылается на компонент, которого нет в базовой роли — выводится warning, ошибки не будет.
 
 ### Композиция
 
@@ -314,7 +315,7 @@ customizations:
 - **Gemini** — `GEMINI.md` + `GEMINI_CLI_PROJECT_RULES_PATH`
 - **Claude** — `CLAUDE.md`
 
-Переключение между провайдерами: `ai-hats set -p claude`. При запуске сессии prompt автоматически пересобирается если провайдер изменился.
+Переключение между провайдерами: `ai-hats config set -p claude`. При запуске сессии prompt автоматически пересобирается если провайдер изменился.
 
 ### Task State Machine
 
