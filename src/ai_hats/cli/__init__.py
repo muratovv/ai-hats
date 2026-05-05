@@ -139,7 +139,6 @@ from . import (  # noqa: E402
 
 # Assembly commands
 main.add_command(assembly.init)
-main.add_command(assembly.clean)
 
 # Config — set + customize + status nest under it (HATS-241, HATS-242).
 # All four touch ai-hats.yaml composition; status is the readout.
@@ -159,6 +158,7 @@ def self_group():
 
 self_group.add_command(assembly.bump)
 self_group.add_command(assembly.rollback)
+self_group.add_command(assembly.clean)
 self_group.add_command(maintenance.update)
 self_group.add_command(maintenance.migrate)
 main.add_command(self_group)
