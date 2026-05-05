@@ -230,6 +230,121 @@ def task_plan_sync(task_id: str, from_file: Path | None):
     console.print(f"[green]Synced[/]: {src} → {dst}")
 
 
+@task.command("plan-extract")
+@click.argument("task_id")
+@click.option("--auto", is_flag=True, help="Skip prompts; create all candidates.")
+@click.option("--dry-run", is_flag=True, help="Print candidates without mutating.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON; implies --dry-run.")
+def task_plan_extract(task_id: str, auto: bool, dry_run: bool, as_json: bool):
+    """Parse plan.md and create child task cards from its structured sections.
+
+    Looks for `## Subtasks` bullets, `## Steps` checklist items, or numbered
+    level-3 headings (in that priority order). Marks each processed line in
+    plan.md with `<!-- HATS-NNN -->` so re-runs are idempotent.
+    """
+    import json
+
+    from ..plan_extract import Candidate, extract_candidates, mark_extracted
+
+    mgr = _task_manager(_project_dir())
+    task = mgr.get_task(task_id)
+    if task is None:
+        console.print(f"[red]Error[/]: task {task_id} not found")
+        sys.exit(1)
+
+    plan_path = mgr.tasks_dir / task_id / "plan.md"
+    if not plan_path.exists():
+        console.print(f"[red]Error[/]: plan.md not found at {plan_path}")
+        sys.exit(1)
+    if mgr._is_empty_scaffold(task):
+        console.print(
+            f"[red]Plan is empty scaffold[/] — nothing to extract from {plan_path}"
+        )
+        sys.exit(2)
+
+    plan_text = plan_path.read_text()
+    candidates = extract_candidates(plan_text)
+    if not candidates:
+        console.print(
+            "No candidates found (looked for `## Subtasks`, `## Steps`, "
+            "numbered `### N. …` / `### Phase N: …` headings)."
+        )
+        sys.exit(0)
+
+    if as_json:
+        click.echo(
+            json.dumps(
+                [
+                    {
+                        "line_no": c.line_no,
+                        "title": c.title,
+                        "kind": c.kind,
+                        "raw_line": c.raw_line,
+                    }
+                    for c in candidates
+                ]
+            )
+        )
+        sys.exit(0)
+
+    if dry_run:
+        console.print(f"[dim]Found {len(candidates)} candidate(s):[/]")
+        for c in candidates:
+            console.print(f"  [{c.kind}] line {c.line_no}: {c.title}")
+        sys.exit(0)
+
+    selected: list[tuple[Candidate, str]] = []  # (candidate, final_title)
+    for c in candidates:
+        if auto:
+            selected.append((c, c.title))
+            continue
+        console.print(f"\n[{c.kind}] line {c.line_no}: [bold]{c.title}[/]")
+        choice = click.prompt(
+            "  [y]es / [n]o / [e]dit / [q]uit",
+            default="n",
+            show_default=False,
+        ).strip().lower()
+        if choice in ("q", "quit"):
+            break
+        if choice in ("n", "no", ""):
+            continue
+        if choice in ("e", "edit"):
+            new_title = click.prompt("  Title", default=c.title).strip()
+            if not new_title:
+                continue
+            selected.append((c, new_title))
+        else:  # any "y"/"yes" path
+            selected.append((c, c.title))
+
+    if not selected:
+        console.print("Nothing extracted.")
+        sys.exit(0)
+
+    text = plan_text
+    created: list[str] = []
+    for cand, title in selected:
+        try:
+            child_id = mgr.next_id()
+            mgr.create_task(
+                task_id=child_id,
+                title=title,
+                priority="medium",
+                tags=["extracted-from-plan"],
+                parent_task=task_id,
+            )
+        except Exception as exc:  # pragma: no cover — defensive only
+            console.print(f"[red]Failed to create task for[/] {title!r}: {exc}")
+            continue
+        text = mark_extracted(text, cand.line_no, child_id)
+        created.append(f"{child_id}: {title}")
+
+    if created:
+        plan_path.write_text(text)
+        console.print(f"\n[green]Created {len(created)} subtask(s):[/]")
+        for line in created:
+            console.print(f"  {line}")
+
+
 @task.command("update")
 @click.argument("task_id")
 @click.option("--title", default=None, help="New title")

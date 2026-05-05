@@ -34,3 +34,8 @@
    location). For ambiguous matches or unconventional paths use
    `ai-hats task plan-sync <ID> [--from-file <path>]`. `transition <ID> execute`
    is blocked until `plan.md` is no longer the empty scaffold.
+6. **Plan → subtasks**: once the plan has `## Subtasks`, `## Steps`, or
+   numbered `### N. …` / `### Phase N: …` headings, run
+   `ai-hats task plan-extract <ID>` to surface candidates and create child
+   tasks in one pass (interactive y/n/edit, or `--auto` / `--dry-run` /
+   `--json`). Marker `<!-- <prefix>-NNN -->` makes re-runs idempotent.
