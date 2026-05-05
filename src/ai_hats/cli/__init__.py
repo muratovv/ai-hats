@@ -125,14 +125,11 @@ def _launch_session(
 
 from . import (  # noqa: E402
     assembly,
-    bundle,
     config as config_mod,
     hyp as hyp_mod,
-    judge,
     list_cmd,
     maintenance,
     proposal as proposal_mod,
-    reflect as reflect_mod,
     reflect_session as reflect_session_mod,
     reflect_all as reflect_all_mod,
     retro,
@@ -165,19 +162,9 @@ main.add_command(run_mod.run_subagent)
 # Worktree
 main.add_command(worktree.wt)
 
-# Judge
-main.add_command(judge.judge)
-main.add_command(judge.judge_aggregate)
-
 # Retro
 main.add_command(retro.retro)
 main.add_command(retro.retro_validate)
-
-# Reflect (orchestration of retro → bundle → judge → aggregate)
-main.add_command(reflect_mod.reflect)
-
-# Bundles
-main.add_command(bundle.bundle)
 
 # Session + audit (observability)
 main.add_command(session.audit)

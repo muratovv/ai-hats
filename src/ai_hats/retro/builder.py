@@ -1,11 +1,6 @@
-"""SessionRetroBuilder — build SessionRetroV1 from raw session artifacts.
+"""SessionRetroBuilder — build SessionRetroV1 from raw session artifacts via LLM.
 
-Two modes:
-- programmatic: pure parser, no LLM calls (default for hook flow)
-- llm: LLM call for narrative summary + factual observations
-
-Output is written to `.agent/retrospectives/sessions/<mode>/<session_id>.md`
-so the two modes do not overwrite each other.
+Output is written to `.agent/retrospectives/sessions/<session_id>.md`.
 """
 
 from __future__ import annotations
@@ -16,7 +11,6 @@ import os
 import re
 import subprocess
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
 
 from .common import SessionArtifacts, SessionLinks, SessionMetrics
@@ -31,19 +25,14 @@ logger = logging.getLogger(__name__)
 SESSION_PREFIX = "session_"
 
 
-class BuilderMode(str, Enum):
-    PROGRAMMATIC = "programmatic"
-    LLM = "llm"
-
-
 class SessionRetroBuilder:
-    """Build a SessionRetroV1 from a session directory under .gitlog/."""
+    """Build a SessionRetroV1 from a session directory under .gitlog/ via LLM call."""
 
     def __init__(
         self,
         project_dir: Path,
         *,
-        llm_caller: LLMCaller | None = None,
+        llm_caller: LLMCaller,
     ) -> None:
         self.project_dir = project_dir
         self.gitlog_dir = project_dir / ".gitlog"
@@ -52,13 +41,8 @@ class SessionRetroBuilder:
 
     # --- public API ---
 
-    def build(
-        self,
-        session_id: str,
-        *,
-        mode: BuilderMode = BuilderMode.PROGRAMMATIC,
-    ) -> SessionRetroV1:
-        """Build a SessionRetroV1 in the given mode."""
+    def build(self, session_id: str) -> SessionRetroV1:
+        """Build a SessionRetroV1 by calling the LLM for narrative summary."""
         sid = self._normalize(session_id)
         session_dir = self._session_dir(sid)
         if not session_dir.exists():
@@ -71,19 +55,13 @@ class SessionRetroBuilder:
         role = self._parse_role(session_dir)
         session_date = session_start.date()
 
-        if mode == BuilderMode.PROGRAMMATIC:
-            summary = self._programmatic_summary(metrics, artifacts)
-            observations: list[str] = []
-        elif mode == BuilderMode.LLM:
-            summary, observations = self._llm_summary_and_observations(session_dir, metrics)
-        else:
-            raise ValueError(f"Unknown mode: {mode}")
+        summary, observations = self._llm_summary_and_observations(session_dir, metrics)
 
-        # Paths in links are relative to sessions/<mode>/<id>.md → up 4 levels.
+        # Paths in links are relative to sessions/<id>.md → up 3 levels.
         links = SessionLinks(
-            audit=f"../../../../.gitlog/{SESSION_PREFIX}{sid}/audit.md",
+            audit=f"../../../.gitlog/{SESSION_PREFIX}{sid}/audit.md",
             metrics=(
-                f"../../../../.gitlog/{SESSION_PREFIX}{sid}/metrics.json"
+                f"../../../.gitlog/{SESSION_PREFIX}{sid}/metrics.json"
                 if (session_dir / "metrics.json").exists()
                 else None
             ),
@@ -102,21 +80,11 @@ class SessionRetroBuilder:
             links=links,
         )
 
-    def build_and_save(
-        self,
-        session_id: str,
-        *,
-        mode: BuilderMode = BuilderMode.PROGRAMMATIC,
-    ) -> Path:
-        """Build, save to sessions/<mode>/<id>.md, validate via loader.
-
-        Each mode writes to its own subdirectory so the two artifact streams
-        do not overwrite each other.
-        """
-        retro = self.build(session_id, mode=mode)
-        out_dir = self.retros_dir / mode.value
-        out_dir.mkdir(parents=True, exist_ok=True)
-        path = out_dir / f"{retro.session_id}.md"
+    def build_and_save(self, session_id: str) -> Path:
+        """Build, save to sessions/<id>.md, validate via loader."""
+        retro = self.build(session_id)
+        self.retros_dir.mkdir(parents=True, exist_ok=True)
+        path = self.retros_dir / f"{retro.session_id}.md"
         body = self._render_body(retro)
         dump(retro, path, body=body)
         # roundtrip validation
@@ -248,46 +216,10 @@ class SessionRetroBuilder:
 
         return tasks_closed_in_window(self.project_dir, since, until)
 
-    @staticmethod
-    def _parse_task_timestamp(value: str) -> datetime | None:
-        from .window import parse_task_timestamp
-
-        return parse_task_timestamp(value)
-
-    def _programmatic_summary(
-        self, metrics: SessionMetrics, artifacts: SessionArtifacts
-    ) -> str:
-        parts: list[str] = []
-        parts.append(
-            f"Session of {metrics.turns} turn(s), {metrics.tool_calls} tool call(s)"
-        )
-        if metrics.exit_code != 0:
-            parts.append(f"exit code {metrics.exit_code}")
-        if artifacts.files_changed:
-            preview = ", ".join(artifacts.files_changed[:5])
-            more = (
-                f" (+{len(artifacts.files_changed) - 5} more)"
-                if len(artifacts.files_changed) > 5
-                else ""
-            )
-            parts.append(f"touched files: {preview}{more}")
-        if artifacts.commits:
-            parts.append(f"{len(artifacts.commits)} commit(s)")
-        if artifacts.tasks_closed:
-            parts.append(f"closed tasks: {', '.join(artifacts.tasks_closed)}")
-        return ". ".join(parts) + "."
-
-    # --- LLM-mode helpers (Step 5) ---
-
     def _llm_summary_and_observations(
         self, session_dir: Path, metrics: SessionMetrics
     ) -> tuple[str, list[str]]:
-        """Call the LLM caller with SUMMARY_PROMPT and parse the response.
-
-        Implemented in Step 5; raises NotImplementedError until then.
-        """
-        if self._llm_caller is None:
-            raise RuntimeError("llm/hybrid modes require an llm_caller")
+        """Call the LLM caller with SUMMARY_PROMPT and parse the response."""
         from .prompts import SUMMARY_PROMPT, parse_summary_response
 
         audit_text = ""

@@ -98,7 +98,7 @@ def test_exec_claude_with_retro_calls_execvp(monkeypatch, tmp_path: Path) -> Non
     os.execvp so the test process isn't actually replaced."""
     from ai_hats.cli import _helpers
 
-    retro = tmp_path / ".agent/retrospectives/sessions/llm/SID.md"
+    retro = tmp_path / ".agent/retrospectives/sessions/SID.md"
     retro.parent.mkdir(parents=True)
     retro.write_text("# retro")
 
@@ -121,27 +121,7 @@ def test_exec_claude_with_retro_calls_execvp(monkeypatch, tmp_path: Path) -> Non
     prompt = args[1]
     assert "session retro" in prompt
     # Prompt should embed the relative path (not absolute) when possible
-    assert ".agent/retrospectives/sessions/llm/SID.md" in prompt
-
-
-def test_exec_claude_with_retro_judge_label(monkeypatch, tmp_path: Path) -> None:
-    """kind='judge' must change the prompt label so the chat opens with judge framing."""
-    from ai_hats.cli import _helpers
-
-    retro = tmp_path / "judge.md"
-    retro.write_text("# judge")
-
-    captured: dict[str, object] = {}
-
-    monkeypatch.setattr(_helpers.shutil, "which", lambda _: "/bin/claude")
-    monkeypatch.setattr(
-        _helpers.os, "execvp",
-        lambda path, args: captured.update({"path": path, "args": args}),
-    )
-
-    _helpers.exec_claude_with_retro(retro, kind="judge")
-
-    assert "judge retro" in captured["args"][1]
+    assert ".agent/retrospectives/sessions/SID.md" in prompt
 
 
 def test_exec_claude_with_retro_missing_binary(monkeypatch, tmp_path: Path) -> None:

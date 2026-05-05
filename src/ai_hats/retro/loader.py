@@ -1,23 +1,15 @@
-"""Read retro files: parse frontmatter, auto-migrate, dispatch to model.
+"""Read retro files: parse frontmatter, dispatch to model.
 
-Two file formats are supported:
+Files are stored as YAML frontmatter + markdown body:
 
-1. **Frontmatter + body** (session retros, judge retros)
-   ```
-   ---
-   schema: hats-session-retro/v1
-   ...
-   ---
+```
+---
+schema: hats-session-retro/v1
+...
+---
 
-   markdown body here
-   ```
-
-2. **Pure YAML** (bundles)
-   ```
-   schema: hats-bundle/v1
-   bundle_id: BUNDLE-...
-   ...
-   ```
+markdown body here
+```
 
 The dispatch from `schema` field to model class is centralized in
 `SCHEMA_FAMILY_TO_MODEL` so adding a new family is one line.
@@ -31,25 +23,17 @@ from typing import Union
 import yaml
 from pydantic import BaseModel
 
-from .aggregation import AggregationV1
-from .bundle import BundleV1
-from .judge_retro import JudgeRetroV1
 from .reflect_session_schema import ReflectSessionV1
 from .session_retro import SessionRetroV1
 
 #: dispatch table — schema family → pydantic model class for the LATEST version
 SCHEMA_FAMILY_TO_MODEL: dict[str, type[BaseModel]] = {
     "hats-session-retro": SessionRetroV1,
-    "hats-bundle": BundleV1,
-    "hats-judge-retro": JudgeRetroV1,
-    "hats-aggregation": AggregationV1,
     "hats-reflect-session": ReflectSessionV1,
 }
 
 #: union type for any retro artifact
-RetroArtifact = Union[
-    SessionRetroV1, BundleV1, JudgeRetroV1, AggregationV1, ReflectSessionV1
-]
+RetroArtifact = Union[SessionRetroV1, ReflectSessionV1]
 
 
 def parse(text: str) -> tuple[dict, str]:
@@ -90,7 +74,7 @@ def parse(text: str) -> tuple[dict, str]:
 def load(path: Path) -> tuple[RetroArtifact, str]:
     """Load and validate a retro file against its schema family's latest model.
 
-    Returns (model_instance, body). For BundleV1 (pure YAML), body is "".
+    Returns (model_instance, body).
     The ``schema`` field is a Pydantic ``Literal["family/v1"]`` on each model,
     so wrong-version files fail with a clear validation error — no migration
     layer is interposed.

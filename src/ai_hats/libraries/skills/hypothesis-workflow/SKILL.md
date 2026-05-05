@@ -1,94 +1,66 @@
 # Hypothesis Workflow
 
-Closed-loop improvement cycle for agent quality. Findings from judge
-retros become hypotheses tracked as backlog tasks, validated on new data.
-
-> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. Before running any `ai-hats` command, resolve the binary once:
-> ```bash
-> AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
-> "$AH" judge-aggregate --since 2025-01-01
-> ```
-> If neither works, the project's venv lives at `./.venv/bin/ai-hats`. Resolve the binary path explicitly — falling back blindly between `ai-hats` and the venv path wastes a turn.
+Closed-loop improvement cycle for agent quality. Hypotheses (HYP-NNN) are
+proposed changes with measurable expectations; verdicts come from
+`reflect-session` runs on session retros.
 
 ## When to Use
 
-After accumulating 3+ judge retros and noticing recurring patterns.
+After spotting a recurring pattern across session retros (≥3 sessions where
+the same friction shows up), or after a fix lands and you want to validate it.
 
-## Flow 1: Discover Patterns and Create Hypothesis
+## Flow 1: Discover Pattern → Create Hypothesis
 
-### Step 1: Aggregate findings
+### Step 1: Spot the pattern
 
-```bash
-ai-hats judge-aggregate [--since YYYY-MM-DD] [--min-severity medium]
-```
+Skim recent session retros under `.agent/retrospectives/sessions/` and
+recent reflect-session outputs under `.agent/retrospectives/reflect-session/`.
+Look for the same friction surfacing across multiple sessions.
 
-Review the aggregation report. Look for clusters with frequency > 1
-and rate > 30% — these are recurring patterns worth addressing.
-
-### Step 2: Discuss with judge
+### Step 2: Create the hypothesis
 
 ```bash
-ai-hats judge --last N --interactive
+ai-hats hyp create "<short statement of expected improvement>" \
+  --baseline "<measurable starting state>" \
+  --target   "<measurable target after change>" \
+  --window   "N sessions"
 ```
 
-Or re-run judge with a focus on the aggregated pattern:
+The hypothesis goes to `.agent/hypotheses/HYP-NNN-<slug>.yaml` with
+`status: active`. Each subsequent reflect-session run is required to emit
+one verdict per active HYP — that is how validation accumulates.
 
-```bash
-ai-hats judge --last N --focus "tool-call batching" --interactive
-```
+### Step 3: Implement the change
 
-In the interactive session:
-- Discuss root causes of recurring findings
-- Evaluate proposed fixes from the aggregation report
-- Decide which patterns to address first (severity x frequency)
-
-### Step 3: Create hypothesis task
-
-A hypothesis is a regular backlog task with tag `hypothesis`.
-
-```bash
-ai-hats task create "hypothesis: <description of expected improvement>" \
-  -p medium --tag hypothesis \
-  -d "Baseline: <pattern> appears in X% of retros. \
-      Change: <what we will change>. \
-      Expected: <pattern> drops to Y% after N retros. \
-      Observation window: N judge retros."
-```
-
-### Step 4: Implement the change
-
-Apply the improvement (rule update, skill change, etc.) and transition
-the hypothesis task to `execute`.
+Apply the improvement (rule, skill, code) on a task branch. The hypothesis
+itself does not block the change — it just defines what success looks like.
 
 ## Flow 2: Validate Hypothesis
 
-### Step 1: Accumulate new data
+Each session-end (when `feedback.session_retro.policy=run`) auto-spawns a
+`reflect-session` run that votes on every active HYP. Verdicts append to
+`HYP-NNN.yaml` under `validation_log`.
 
-After the observation window (N judge retros post-change), re-aggregate:
+### Manual verdict (optional)
 
-```bash
-ai-hats judge-aggregate --since <date-of-change>
-```
-
-### Step 2: Compare with baseline
-
-Check if the target pattern still appears in the new aggregation.
-Compare rate before vs after.
-
-### Step 3: Discuss results
+If you want a verdict on a specific session without waiting for auto-runs:
 
 ```bash
-ai-hats judge --last N --focus "<hypothesis pattern>" --interactive
+ai-hats reflect-session --session <SID>
 ```
 
-### Step 4: Close the hypothesis
+### Close the hypothesis
 
-- **Validated**: pattern frequency dropped to target or below.
-  Transition task to `done` with work_log noting the result.
-- **Ineffective**: pattern persists at similar frequency.
-  Log the result, consider alternative approaches, create a new hypothesis
-  or reject the approach.
-- **Inconclusive**: not enough data yet. Extend the observation window.
+After enough verdicts accumulate (the window declared on creation):
+
+```bash
+ai-hats hyp close HYP-NNN --verdict {validated|refuted|inconclusive} \
+  --note "<one-line summary>"
+```
+
+- **validated**: target reached, the change worked. Document lessons.
+- **refuted**: pattern persists or worsened. Roll back or pivot.
+- **inconclusive**: not enough signal in the window. Extend window or close.
 
 ## Cross-project hypotheses
 
@@ -100,20 +72,9 @@ retirement clock for lack of evidence, **ASK the user**:
 
 Do NOT auto-survey other directories without confirmation.
 
-Many hypotheses (cross-project prefix correctness, downstream skill usage,
-framework-attribution claims) become trivial to validate once the user points
-at the relevant repos. Default agent scope is the current CWD's `.gitlog/` plus
-the hypothesis's declared baseline source — that scope is too narrow for
-hypotheses about framework behavior across projects.
-
-**Worked example.** HYP-005 was about to be parked as "untestable from this
-repo, requires external evidence" with a 30-day retirement clock. Asking
-surfaced `~/dev/proxmox` (120 sessions) where the test became trivial.
-Near-miss avoided — wrong scope decision would have retired a valid hypothesis.
-
 ## Anti-Patterns
 
 - Applying changes without creating a hypothesis task — no way to track effect
-- Skipping the aggregation step — acting on single findings instead of patterns
-- Closing hypotheses before the observation window completes
+- Closing hypotheses before the validation window completes
 - Changing multiple things at once — can't attribute improvement to a specific change
+- Treating reflect-session verdicts as ground truth without reading the cited evidence

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -248,7 +247,7 @@ def test_schema_validation_failure_creates_meta_proposal(tmp_path: Path):
     p = _project(tmp_path)
     _make_session(p, "s1")
     _make_hyp(p, "HYP-001")
-    bad = _wrap(f"""---
+    bad = _wrap("""---
 schema: hats-reflect-session/v1
 session_id: s1
 timestamp: '2026-05-04T12:00:00+00:00'
@@ -345,7 +344,7 @@ def test_self_problems_field_pass_through(tmp_path: Path):
     (p / ".agent" / "backlog" / "proposals" / "PROP-001.yaml").write_text(
         yaml.safe_dump(meta)
     )
-    out = _wrap(f"""---
+    out = _wrap("""---
 schema: hats-reflect-session/v1
 session_id: s1
 timestamp: '2026-05-04T12:00:00+00:00'

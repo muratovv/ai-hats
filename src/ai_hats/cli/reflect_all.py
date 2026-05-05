@@ -13,8 +13,6 @@ Two phases:
 
   3. **`reflect-all commit`**: post-session subcommand to flip statuses
      in bulk (idempotent, used to "clear inbox" when chat is done).
-
-Legacy `ai-hats reflect` is untouched; cleanup ships in a follow-up task.
 """
 
 from __future__ import annotations

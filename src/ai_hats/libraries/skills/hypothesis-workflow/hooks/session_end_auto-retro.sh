@@ -7,7 +7,7 @@ set -euo pipefail
 # Fast guards (no Python needed)
 ROLE="${AI_HATS_ROLE:-}"
 case "$ROLE" in
-    judge|test-agent|"") exit 0 ;;
+    test-agent|"") exit 0 ;;
 esac
 [ -n "${AI_HATS_SESSION_ID:-}" ] || exit 0
 

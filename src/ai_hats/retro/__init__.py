@@ -1,35 +1,9 @@
-"""Retro schemas: structured representation of session, bundle, and judge artifacts."""
+"""Retro schemas: structured representation of session and reflect-session artifacts."""
 
-from .common import (
-    Category,
-    Evidence,
-    EvidenceSource,
-    ExpectedImpact,
-    Finding,
-    FindingStatus,
-    FixTarget,
-    FixTargetKind,
-    FixType,
-    ProposedFix,
-    SessionArtifacts,
-    SessionLinks,
-    SessionMetrics,
-    Severity,
-)
+from .common import SessionArtifacts, SessionLinks, SessionMetrics
 
 __all__ = [
-    "Category",
-    "Evidence",
-    "EvidenceSource",
-    "ExpectedImpact",
-    "Finding",
-    "FindingStatus",
-    "FixTarget",
-    "FixTargetKind",
-    "FixType",
-    "ProposedFix",
     "SessionArtifacts",
     "SessionLinks",
     "SessionMetrics",
-    "Severity",
 ]

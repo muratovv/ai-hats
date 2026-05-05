@@ -1,39 +1,32 @@
 # Reflect pipeline
 
-Three commands cover the retrospective lifecycle. Two are new in HATS-210
-(`reflect-session`, `reflect-all`). The legacy `reflect` (bundle/judge/aggregate)
-is still available — its removal is a follow-up task.
+Two commands cover the retrospective lifecycle: `reflect-session` (per-session
+judge run) and `reflect-all` (interactive triage of the accumulated backlog).
 
 ## Pipeline overview
 
 ```
 session_end (runtime → auto_retro.make_decision)
-  ├─ if decision=run AND mode=LLM:
-  │     builder LLM → SessionRetroV1 (.agent/retrospectives/sessions/llm/<id>.md)
-  │     reflect-session  ← NEW (HATS-210), spawned background detached
-  │       reads .agent/hypotheses/*.yaml (status=active)
-  │            + .agent/backlog/proposals/*.yaml (status=open)
-  │       writes ReflectSessionV1 (.agent/retrospectives/reflect-session/<id>.md)
-  │       side-effects:
-  │         - ai-hats hyp append-verdict ...     (HYP validation_log)
-  │         - ai-hats proposal create | vote ... (inbox grow / co-sign)
-  │       runtime safety net: post-validate output; if absent or invalid →
-  │         programmatic meta-proposal w/ failed_session_id=<sid>
-  │
-  └─ if decision=run AND mode=PROGRAMMATIC:
-        builder programmatic → SessionRetroV1   (no reflect-session spawned)
+  └─ if decision=run:
+       SessionRetroBuilder (LLM) → SessionRetroV1
+         .agent/retrospectives/sessions/<id>.md
+       reflect-session  ← spawned background detached
+         reads .agent/hypotheses/*.yaml (status=active)
+              + .agent/backlog/proposals/*.yaml (status=open)
+         writes ReflectSessionV1 (.agent/retrospectives/reflect-session/<id>.md)
+         side-effects:
+           - ai-hats hyp append-verdict ...     (HYP validation_log)
+           - ai-hats proposal create | vote ... (inbox grow / co-sign)
+         runtime safety net: post-validate output; if absent or invalid →
+           programmatic meta-proposal w/ failed_session_id=<sid>
 
-ai-hats reflect-session [--session ID] [--background]   ← NEW
+ai-hats reflect-session [--session ID] [--background]
   Manual single-session run of the same role.
 
-ai-hats reflect-all [--dry-run]                          ← NEW
+ai-hats reflect-all [--dry-run]
   Pre-flight (Python): collect active HYP + open PROP into a handoff.md
   Interactive: os.execvp claude with pointer to the handoff.
   reflect-all commit: bulk-update PROP statuses (accept/reject/defer/duplicate).
-
-ai-hats reflect [legacy bundle flow]                     ← UNCHANGED
-  backfill → bundle → judge per chunk → aggregate → interactive
-  TBD removal (HATS-NNN follow-up).
 ```
 
 ## `ai-hats reflect-session`
@@ -42,8 +35,7 @@ Per-session judge run. Spawns the **reflect-session** role on a single
 `.gitlog/session_<id>/`. Output is `hats-reflect-session/v1` markdown.
 
 Triggers:
-- **Auto** on session-end (when `feedback.session_retro.policy=run` AND
-  `feedback.session_retro.mode=llm`); detached background.
+- **Auto** on session-end (when `feedback.session_retro.policy=run`); detached background.
 - **Manual** via `ai-hats reflect-session --session <id>` (foreground).
 
 Validation contract:
@@ -75,14 +67,12 @@ Manual triage of accumulated backlog. Two stages:
     HYP-NNN-<slug>.yaml             # validation_log appended via CLI
   backlog/
     tasks/                           # untouched
-    proposals/                       # NEW (HATS-210)
+    proposals/
       PROP-NNN.yaml                  # status: open|accepted|rejected|deferred|duplicate
   retrospectives/
-    sessions/<mode>/<id>.md          # SessionRetroV1 (builder)
-    reflect-session/<id>.md          # ReflectSessionV1 (HATS-210)
-    reflect-all/<ts>-handoff.md      # pre-flight pointer (HATS-210)
-    judge/<ts>-judge-NNN.md          # JudgeRetroV1 (legacy)
-    aggregated/<ts>-AGG-NNN.md       # AggregationV1 (legacy)
+    sessions/<id>.md                 # SessionRetroV1 (builder, LLM)
+    reflect-session/<id>.md          # ReflectSessionV1
+    reflect-all/<ts>-handoff.md      # pre-flight pointer
 ```
 
 ## Schema dispatch
@@ -92,18 +82,4 @@ Manual triage of accumulated backlog. Two stages:
 | Family | Model | Producer |
 |---|---|---|
 | `hats-session-retro/v1` | `SessionRetroV1` | builder |
-| `hats-bundle/v1` | `BundleV1` | bundle manager (legacy) |
-| `hats-judge-retro/v1` | `JudgeRetroV1` | bundle judge (legacy) |
-| `hats-aggregation/v1` | `AggregationV1` | aggregator (legacy) |
-| `hats-reflect-session/v1` | `ReflectSessionV1` | reflect-session (HATS-210) |
-
-## Follow-up tasks (HATS-218 children)
-
-- **legacy reflect cleanup**: rm `bundles.py`, `aggregator.py`, `frequency.py`,
-  `judge_retro.py`, legacy `cli/reflect.py`, `--chunk` flag, AggregationV1,
-  JudgeRetroV1, role `judge`, `BuilderMode.PROGRAMMATIC`. Update docs.
-- **`ai-hats reflect-all --interactive`** for single-session focus mode.
-- **backfill-style retry mechanism** for failed reflect-session runs:
-  enumerate open meta-proposals (`category=process`, `target=reflect-session`,
-  `failed_session_id` set) and re-queue.
-- **HATS-217**: `ai-hats hyp verdict` deterministic CLI.
+| `hats-reflect-session/v1` | `ReflectSessionV1` | reflect-session |

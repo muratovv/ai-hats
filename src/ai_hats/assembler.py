@@ -116,11 +116,6 @@ class Assembler:
             self.project_config.provider = provider or "gemini"
             if role:
                 self.project_config.default_role = role
-            # Imprint feedback defaults so new projects get LLM-narrative retros
-            # automatically. Existing projects without a feedback block stay on
-            # programmatic — flipping the global default would surprise them
-            # with unexpected LLM token spend.
-            self.project_config.feedback.session_retro.mode = "llm"
             save_config = True
         elif provider:
             self.project_config.provider = provider

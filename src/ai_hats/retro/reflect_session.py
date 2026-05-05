@@ -197,10 +197,9 @@ class ReflectSessionRunner:
 
     def _find_session_retro(self, session_id: str) -> Path | None:
         base = self.project_dir / ".agent" / "retrospectives" / "sessions"
-        for mode in ("llm", "programmatic"):
-            p = base / mode / f"{session_id}.md"
-            if p.exists():
-                return p
+        p = base / f"{session_id}.md"
+        if p.exists():
+            return p
         return None
 
     # ---- run + validate ----

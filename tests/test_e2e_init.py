@@ -275,7 +275,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
     # Build override for a different role (simulate what WrapRunner.run does)
     asm = Assembler(project)
     provider = ClaudeProvider()
-    result = asm.composer.compose("judge")
+    result = asm.composer.compose("sre")
     args, env = provider.build_override(project, result, None)
 
     # Shadow prompt created
@@ -283,7 +283,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
     override_path = Path(args[1])
     assert override_path.exists()
     override_content = override_path.read_text()
-    assert "judge" in override_content.lower() or "SESSION" in override_content
+    assert "sre" in override_content.lower() or "RELIABILITY" in override_content.upper()
 
     # Project files NOT modified
     assert (project / "CLAUDE.md").read_text() == original_claude
@@ -308,7 +308,7 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
 
     # Simulate 3 parallel override sessions for different roles
     overrides = {}
-    for role in ("judge", "go-dev", "architect"):
+    for role in ("sre", "go-dev", "architect"):
         result = asm.composer.compose(role)
         args, _ = provider.build_override(project, result, None)
         override_path = Path(args[1])
@@ -326,7 +326,7 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
     assert len(set(paths)) == 3, "Override files must be distinct"
 
     # Each contains its own role content, not another role's
-    assert "judge" in overrides["judge"]["content"].lower() or "SESSION" in overrides["judge"]["content"]
+    assert "sre" in overrides["sre"]["content"].lower() or "RELIABILITY" in overrides["sre"]["content"].upper()
     assert "GO DEVELOPER" in overrides["go-dev"]["content"]
     assert "architect" in overrides["architect"]["content"].lower() or "ARCHITECT" in overrides["architect"]["content"]
 
@@ -569,36 +569,20 @@ def test_init_task_prefix_reinit_conflict(cli_project):
     assert r.exit_code == 0, r.output
 
 
-def test_init_imprints_session_retro_mode_llm(cli_project):
-    """Fresh init writes feedback.session_retro.mode=llm to ai-hats.yaml."""
-    import yaml
-
+def test_init_idempotent_on_existing_yaml(cli_project):
+    """Re-init on an existing yaml is idempotent — does not modify user config."""
     project, runner = cli_project
 
-    result = runner.invoke(main, ["init", "-p", "claude"])
-    assert result.exit_code == 0, result.output
-
-    raw = yaml.safe_load((project / "ai-hats.yaml").read_text())
-    assert raw["feedback"]["session_retro"]["mode"] == "llm"
-
-
-def test_init_does_not_overwrite_existing_mode(cli_project):
-    """Re-init on an existing yaml is idempotent — does not flip user-set mode."""
-    project, runner = cli_project
-
-    # First init imprints llm.
     runner.invoke(main, ["init", "-p", "claude"])
 
-    # User flips to a non-default config (hybrid mode + custom threshold so the
-    # feedback block stays serialized in yaml — pure programmatic+smart equals
-    # the framework default and would be elided by to_dict).
+    # User customizes threshold so the feedback block is serialized in yaml.
     runner.invoke(main, ["config", "feedback", "session-retro", "smart",
-                         "--mode", "hybrid", "--threshold", "turns=99,tool_calls=99"])
+                         "--threshold", "turns=99,tool_calls=99"])
 
     yaml_before = (project / "ai-hats.yaml").read_text()
-    assert "hybrid" in yaml_before
+    assert "99" in yaml_before
 
-    # Re-init must not silently flip mode back to llm.
+    # Re-init must not modify an already-existing yaml.
     r = runner.invoke(main, ["init", "-p", "claude"])
     assert r.exit_code == 0, r.output
 

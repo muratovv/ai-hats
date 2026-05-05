@@ -17,7 +17,7 @@
 | **Сессия**              | `.gitlog/session_<id>/` (audit, metrics, retro)     | runtime                          |
 | **HYP** (гипотеза)      | `.agent/hypotheses/HYP-NNN.yaml`                    | человек или агент                |
 | **PROP** (предложение)  | `.agent/backlog/proposals/PROP-NNN.yaml`            | reflect-session при self-problem |
-| **SessionRetro**        | `.agent/retrospectives/sessions/<mode>/<id>.md`     | builder                          |
+| **SessionRetro**        | `.agent/retrospectives/sessions/<id>.md`            | builder (LLM)                    |
 | **ReflectSession**      | `.agent/retrospectives/reflect-session/<id>.md`     | роль `reflect-session`           |
 | **Reflect-all handoff** | `.agent/retrospectives/reflect-all/<ts>-handoff.md` | `ai-hats reflect-all`            |
 
@@ -44,17 +44,10 @@
 feedback:
   session_retro:
     policy: smart           # off | always | smart | hint
-    mode: llm               # programmatic | llm
     background: true        # true → запуск в detached background
     smart_threshold:
       min_turns: 5          # порог по числу ходов
       min_tool_calls: 10    # ИЛИ по числу tool-вызовов
-    reminder:
-      enabled: true
-      max_skipped: 5        # после стольких пропущенных — баннер на старте
-      window_days: 14
-  judge:
-    policy: manual          # off | manual
 ```
 
 ### Политики `session_retro.policy`
@@ -68,44 +61,16 @@ feedback:
 
 Условие smart-порога — **OR**, а не AND: достаточно перешагнуть один из лимитов.
 
-### Режимы `session_retro.mode`
+Builder всегда работает в LLM-режиме: сразу после SessionRetroV1 спавнится
+роль `reflect-session` для голосования по активным гипотезам.
 
-| Значение       | Что делает builder                                                             | reflect-session спавнится? |
-| -------------- | ------------------------------------------------------------------------------ | -------------------------- |
-| `programmatic` | детерминированный сборщик пишет SessionRetroV1 из метрик                       | **нет**                    |
-| `llm`          | LLM-builder пишет SessionRetroV1, **затем** запускается роль `reflect-session` | **да**                     |
-
-То есть гипотезы голосуются автоматически только при `mode: llm` (см. флоу 1). При `programmatic` reflect-session запускают руками.
-
-### Минимальная безопасная конфигурация для нового проекта
+### Минимальная конфигурация для нового проекта
 
 ```yaml
 feedback:
   session_retro:
     policy: smart
-    mode: programmatic    # сначала без LLM-расходов
     background: true
-  judge:
-    policy: manual
-```
-
-### Конфигурация «с гипотезами и авто-голосованием»
-
-```yaml
-feedback:
-  session_retro:
-    policy: smart
-    mode: llm             # активирует reflect-session pipeline
-    background: true
-    smart_threshold:
-      min_turns: 5
-      min_tool_calls: 10
-    reminder:
-      enabled: true
-      max_skipped: 5
-      window_days: 14
-  judge:
-    policy: manual
 ```
 
 После правки — `ai-hats bump`.
@@ -120,14 +85,13 @@ feedback:
 feedback:
   session_retro:
     policy: smart
-    mode: llm
     model: claude-haiku-4-5            # для LLM-builder (SessionRetroV1)
     reflect_model: claude-sonnet-4-6   # для роли reflect-session (голосование по HYP)
 ```
 
 | Поле           | На что влияет                                                | Точка прокидки                                  |
 | -------------- | ------------------------------------------------------------ | ----------------------------------------------- |
-| `model`        | LLM-builder, который пишет SessionRetroV1 в `mode: llm`      | `claude --model <m> --print -p ...`             |
+| `model`        | LLM-builder, который пишет SessionRetroV1                    | `claude --model <m> --print -p ...`             |
 | `reflect_model`| sub-agent роли `reflect-session` (голосует по HYP, заводит PROP) | `claude --model <m> --print -p <meta-prompt>` |
 
 Поведение:
@@ -141,7 +105,6 @@ feedback:
 ```yaml
 feedback:
   session_retro:
-    mode: llm
     model: claude-haiku-4-5            # builder = Haiku, дёшево
     reflect_model: claude-sonnet-4-6   # judge = Sonnet, качество вердиктов
 ```
@@ -152,7 +115,7 @@ feedback:
 
 ## Флоу 1: сессия → reflect-session
 
-Авто-цикл, который срабатывает на завершении сессии при `policy ∈ {smart, always}` и `mode: llm`.
+Авто-цикл, который срабатывает на завершении сессии при `policy ∈ {smart, always}`.
 
 ### Что происходит
 
@@ -162,9 +125,9 @@ session_end
        │
        ├─ action=skip   → ничего
        ├─ action=hint   → баннер пользователю
-       └─ action=run AND mode=llm:
+       └─ action=run:
              1) builder LLM пишет SessionRetroV1
-                → .agent/retrospectives/sessions/llm/<id>.md
+                → .agent/retrospectives/sessions/<id>.md
              2) спавнится роль reflect-session (detached background, claude)
                 ├─ читает .agent/hypotheses/*.yaml (status=active)
                 ├─ читает .agent/backlog/proposals/*.yaml (status=open)
@@ -275,14 +238,14 @@ ai-hats reflect-all --dry-run
 Сводный путь от создания до `confirmed`/`refuted`:
 
 ```
-1. Создание (вручную или из judge-aggregate):
+1. Создание (вручную или после reflect-session):
    .agent/hypotheses/HYP-042.yaml  status: active
        success_criterion: "..."
        observation_window: "10 sessions"
        exit_criteria.confirm / refute / stalled
 
 2. Накопление вердиктов:
-   каждая сессия (mode=llm) → reflect-session →
+   каждая сессия → reflect-session →
      ai-hats hyp append-verdict --hyp HYP-042 --verdict ... --recommendation ...
    validation_log растёт.
 
@@ -306,8 +269,8 @@ ai-hats reflect-all --dry-run
 
 | Симптом                                   | Куда смотреть                                                                                                                                                             |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| reflect-session не запускается            | `feedback.session_retro.policy` ≠ `off`, `mode: llm`, порог `smart_threshold` достигнут                                                                                   |
-| validation_log пустой после сессии        | session_retro отработал в `programmatic`, не `llm`. Поменяй `mode: llm` и `ai-hats bump`                                                                                  |
+| reflect-session не запускается            | `feedback.session_retro.policy` ≠ `off` и порог `smart_threshold` достигнут                                                                                                |
+| validation_log пустой после сессии        | проверь `ai-hats reflect-session --session <id>` foreground — увидишь stack-trace, а meta-PROP всплывает в reflect-all                                                    |
 | meta-PROP `failed_session_id=...`         | runtime safety net поймал битый артефакт. Открой `.agent/retrospectives/reflect-session/<id>.md`, прогони `ai-hats reflect-session --session <id>` foreground для повтора |
 | reflect-all падает с «claude not in PATH» | установи Claude Code или используй `--dry-run` и работай с handoff в редакторе                                                                                            |
 | `Overlay: cannot remove ...`              | не относится к feedback loop — см. [how-to.md](how-to.md)                                                                                                                 |
@@ -318,5 +281,5 @@ ai-hats reflect-all --dry-run
 
 - [`docs/reflect.md`](reflect.md) — архитектура pipeline, schema-таблица, follow-up tasks.
 - [`docs/how-to.md`](how-to.md) — общие how-to по `ai-hats.yaml` (роли, оверлеи, библиотеки).
-- `libraries/skills/hypothesis-workflow/SKILL.md` — как заводить новые HYP из judge-агрегаций.
+- `libraries/skills/hypothesis-workflow/SKILL.md` — как заводить новые HYP по итогам reflect-session.
 - `libraries/skills/hypothesis-validation/SKILL.md` — контракт reflect-session при голосовании.

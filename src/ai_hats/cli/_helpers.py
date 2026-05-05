@@ -19,12 +19,8 @@ def exec_claude_with_retro(retro_path: Path, kind: str = "session") -> None:
 
     Builds an opening prompt that references the retro path and invites the
     user to discuss findings, then `os.execvp`s into the `claude` binary so
-    the live chat takes over the terminal. Used by `--interactive` flags on
-    `ai-hats retro` and `ai-hats judge`.
-
-    `kind` shapes the prompt — "session" for a session retro, "judge" for a
-    forensic judge retro, "bundle" for an aggregated bundle retro, "aggregate"
-    for a cross-retro frequency aggregation report.
+    the live chat takes over the terminal. Used by `--interactive` flag on
+    `ai-hats retro`.
     """
     claude_bin = shutil.which("claude")
     if not claude_bin:
@@ -34,11 +30,7 @@ def exec_claude_with_retro(retro_path: Path, kind: str = "session") -> None:
         )
         sys.exit(1)
 
-    label = {
-        "judge": "judge retro",
-        "bundle": "bundle retro",
-        "aggregate": "aggregated judge retro",
-    }.get(kind, "session retro")
+    label = "session retro"
     rel = retro_path
     try:
         rel = retro_path.relative_to(Path.cwd())

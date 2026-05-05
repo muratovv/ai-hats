@@ -9,7 +9,7 @@ import yaml
 from ai_hats.retro.auto_retro import should_run
 
 
-def _write_config(path, *, policy="smart", min_turns=5, min_tool_calls=10, mode="programmatic"):
+def _write_config(path, *, policy="smart", min_turns=5, min_tool_calls=10):
     data = {
         "schema_version": 2,
         "provider": "claude",
@@ -24,9 +24,7 @@ def _write_config(path, *, policy="smart", min_turns=5, min_tool_calls=10, mode=
                     "min_tool_calls": min_tool_calls,
                 },
                 "background": True,
-                "mode": mode,
             },
-            "judge": {"policy": "manual"},
         },
     }
     with open(path, "w") as f:
@@ -203,19 +201,18 @@ class TestMakeDecision:
         d = make_decision(tmp_path, "SID")
         assert d["action"] == "skip"
         assert "below threshold" in d["reason"]
-        assert d["retro_path"].endswith(".agent/retrospectives/sessions/programmatic/SID.md")
+        assert d["retro_path"].endswith(".agent/retrospectives/sessions/SID.md")
 
     def test_run_threshold_met(self, tmp_path):
         from ai_hats.retro.auto_retro import make_decision
 
-        metrics = _setup_project(tmp_path, min_turns=5, min_tool_calls=10, mode="llm")
+        metrics = _setup_project(tmp_path, min_turns=5, min_tool_calls=10)
         metrics.write_text(json.dumps({"turns": 20, "tool_calls": 50}))
 
         d = make_decision(tmp_path, "SID")
         assert d["action"] == "run"
-        assert d["mode"] == "llm"
         assert d["background"] is True
-        assert d["retro_path"].endswith("/llm/SID.md")
+        assert d["retro_path"].endswith("/sessions/SID.md")
 
     def test_internal_error_returns_skip(self, tmp_path, monkeypatch):
         """make_decision must not raise; errors collapse into skip."""
@@ -229,53 +226,18 @@ class TestMakeDecision:
         assert d["action"] == "skip"
         assert "internal error" in d["reason"]
         assert "boom" in d["reason"]
-        assert d["reminder"] is None
-
-    def test_reminder_present_when_threshold_fires(self, tmp_path):
-        """make_decision must include the structured reminder dict so the
-        runtime banner can render it. HATS-200."""
-        from datetime import date, timedelta
-
-        from ai_hats.retro.auto_retro import make_decision
-
-        # Bootstrap a project where reminder threshold is exceeded.
-        _setup_project(tmp_path, policy="off")  # session-retro off, but reminder still fires
-        today = date.today()
-        for i in range(5):
-            sid = f"{(today - timedelta(days=i)).strftime('%Y%m%d')}_b{i}"
-            sd = tmp_path / ".gitlog" / f"session_{sid}"
-            sd.mkdir(parents=True, exist_ok=True)
-            (sd / "metrics.json").write_text(
-                json.dumps({"turns": 8, "tool_calls": 15, "role": "assistant", "exit_code": 0}),
-            )
-
-        d = make_decision(tmp_path, "SID")
-        assert d["reminder"] is not None
-        rem = d["reminder"]
-        assert rem["count"] >= 5
-        assert rem["window_days"] == 14
-        assert rem["command"].startswith("ai-hats reflect --since ")
-        assert rem["command"].endswith(" --interactive")
-
-    def test_reminder_none_when_under_threshold(self, tmp_path):
-        from ai_hats.retro.auto_retro import make_decision
-
-        metrics = _setup_project(tmp_path, min_turns=5, min_tool_calls=10)
-        metrics.write_text(json.dumps({"turns": 0, "tool_calls": 0}))
-
-        d = make_decision(tmp_path, "SID")
-        assert d["reminder"] is None
+        assert d["wrap_up"] is None
 
 
 class TestDescribeDecision:
-    def test_run_bg_llm(self):
+    def test_run_bg(self):
         from ai_hats.retro.auto_retro import describe_decision
 
         s = describe_decision({
-            "action": "run", "reason": "threshold met", "mode": "llm",
-            "background": True, "retro_path": "/x/llm/SID.md",
+            "action": "run", "reason": "threshold met",
+            "background": True, "retro_path": "/x/SID.md",
         })
-        assert "generating" in s and "llm" in s and "bg" in s and "/x/llm/SID.md" in s
+        assert "generating" in s and "bg" in s and "/x/SID.md" in s
 
     def test_skip_with_reason(self):
         from ai_hats.retro.auto_retro import describe_decision
@@ -283,7 +245,7 @@ class TestDescribeDecision:
         s = describe_decision({
             "action": "skip",
             "reason": "below threshold (turns=0<1, tool_calls=0<1)",
-            "mode": None, "background": None, "retro_path": None,
+            "background": None, "retro_path": None,
         })
         assert s.startswith("skipped")
         assert "below threshold" in s
@@ -293,8 +255,8 @@ class TestDescribeDecision:
 
         s = describe_decision({
             "action": "hint", "reason": "threshold met",
-            "mode": "llm", "background": False,
-            "retro_path": "/a/llm/20260422-071234-1.md",
+            "background": False,
+            "retro_path": "/a/20260422-071234-1.md",
         })
         assert "ai-hats retro" in s
         assert "20260422-071234-1" in s
@@ -337,21 +299,23 @@ class TestMainHookWritesLog:
         """Foreground mode writes start + saved/failed via write_retro_log."""
         from ai_hats.retro import auto_retro
 
-        metrics = _setup_project(
-            tmp_path, policy="always", mode="programmatic",
-        )
+        metrics = _setup_project(tmp_path, policy="always")
         metrics.write_text(json.dumps({"turns": 10, "tool_calls": 20, "exit_code": 0}))
 
         # Force synchronous (foreground) path regardless of config default.
         class _Builder:
             def __init__(self, *a, **kw): pass
-            def build_and_save(self, sid, mode=None):
+            def build_and_save(self, sid):
                 return tmp_path / f"retro-{sid}.md"
 
         monkeypatch.setattr(
             "ai_hats.retro.builder.SessionRetroBuilder", _Builder,
         )
-        auto_retro._run_foreground(tmp_path, "SID", "programmatic")
+        # Suppress reflect-session detached spawn so the test stays hermetic.
+        monkeypatch.setattr(
+            auto_retro, "_spawn_reflect_session_background", lambda *a, **kw: None,
+        )
+        auto_retro._run_foreground(tmp_path, "SID")
 
         log = tmp_path / ".gitlog" / "session_SID" / "retro.log"
         content = log.read_text()

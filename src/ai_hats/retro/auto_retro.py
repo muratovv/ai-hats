@@ -88,17 +88,14 @@ def make_decision(
         action, reason = should_run(config_path, metrics_path)
         config = ProjectConfig.from_yaml(config_path)
         sr = config.feedback.session_retro
-        mode = sr.mode
         background = sr.background
     except Exception as exc:
         return {
             "action": "skip",
             "reason": f"internal error: {exc!r}",
-            "mode": None,
             "background": None,
             "retro_path": None,
             "log_path": str(_retro_log_path(project_dir, session_id)),
-            "reminder": None,
             "wrap_up": None,
         }
 
@@ -107,20 +104,11 @@ def make_decision(
         / ".agent"
         / "retrospectives"
         / "sessions"
-        / mode
         / f"{session_id}.md"
     )
 
-    # Evaluate stale-retro reminder + wrap-up nudge so the runtime banner can
-    # surface them. Pure side-effect-free: any error collapses to None.
-    reminder_info = None
+    # Wrap-up nudge (HATS-214) — pure side-effect-free; any error collapses to None.
     wrap_up_info = None
-    try:
-        from . import reminder as reminder_mod
-
-        reminder_info, _ = reminder_mod.evaluate(project_dir, sr)
-    except Exception:
-        reminder_info = None
     try:
         from . import reminder as reminder_mod
 
@@ -131,11 +119,9 @@ def make_decision(
     return {
         "action": action,
         "reason": reason,
-        "mode": mode,
         "background": background,
         "retro_path": str(retro_path),
         "log_path": str(_retro_log_path(project_dir, session_id)),
-        "reminder": reminder_info,
         "wrap_up": wrap_up_info,
     }
 
@@ -144,21 +130,20 @@ def describe_decision(decision: dict) -> str:
     """Human-readable one-liner for the session-end banner.
 
     Example outputs:
-      "generating (llm, bg) → .agent/retrospectives/sessions/llm/<id>.md"
+      "generating (bg) → .agent/retrospectives/sessions/<id>.md"
       "skipped (below threshold: turns=0<1, tool_calls=0<1)"
       "hint — ai-hats retro <id>  (threshold met: ...)"
     """
     action = decision.get("action", "skip")
     reason = decision.get("reason", "")
-    mode = decision.get("mode") or "?"
     background = decision.get("background")
     retro_path = decision.get("retro_path")
 
     if action == "run":
         bg = "bg" if background else "fg"
         if retro_path:
-            return f"generating ({mode}, {bg}) → {retro_path}"
-        return f"generating ({mode}, {bg})"
+            return f"generating ({bg}) → {retro_path}"
+        return f"generating ({bg})"
     if action == "hint":
         # Reason contains the threshold detail; prefix with CLI call so the
         # user can copy-paste to trigger it manually.
@@ -234,56 +219,32 @@ def main() -> None:
         config = ProjectConfig.from_yaml(config_path)
         sr = config.feedback.session_retro
         if sr.background:
-            _run_background(project_dir, session_id, sr.mode)
+            _run_background(project_dir, session_id)
         else:
-            _run_foreground(project_dir, session_id, sr.mode)
-
-    _maybe_print_reminder(project_dir, session_id, config_path)
+            _run_foreground(project_dir, session_id)
 
 
-def _maybe_print_reminder(project_dir: Path, session_id: str, config_path: Path) -> None:
-    """Evaluate stale-retro reminder and write the outcome to retro.log.
-
-    The user-facing reminder is rendered by the runtime banner (runtime.py
-    `_print_session_end`) from the dict returned by `make_decision`. This
-    hook path only persists the audit line so retro.log keeps a record even
-    when no banner runs (e.g. ad-hoc invocation of the hook).
-    """
-    from . import reminder
-    try:
-        sr = ProjectConfig.from_yaml(config_path).feedback.session_retro
-    except Exception:
-        # Observability must never break the caller — suppress any config
-        # parsing failure (FileNotFoundError, YAMLError, ValidationError).
-        return
-    info, log_reason = reminder.evaluate(project_dir, sr)
-    write_retro_log(project_dir, session_id, "reminder",
-                    "fired" if info else "skipped", log_reason)
-
-
-def _run_foreground(project_dir: Path, session_id: str, mode: str) -> None:
-    from .builder import BuilderMode, SessionRetroBuilder
+def _run_foreground(project_dir: Path, session_id: str) -> None:
+    from .builder import SessionRetroBuilder
     from .llm_caller import SubprocessLLMCaller
 
-    builder_mode = BuilderMode(mode)
-    llm_caller = SubprocessLLMCaller(project_dir) if builder_mode == BuilderMode.LLM else None
+    llm_caller = SubprocessLLMCaller(project_dir)
     builder = SessionRetroBuilder(project_dir, llm_caller=llm_caller)
-    write_retro_log(project_dir, session_id, "builder", "start", f"mode={mode}")
+    write_retro_log(project_dir, session_id, "builder", "start", "mode=llm")
     try:
-        path = builder.build_and_save(session_id, mode=builder_mode)
+        path = builder.build_and_save(session_id)
         write_retro_log(project_dir, session_id, "builder", "saved", str(path))
     except Exception as exc:
         write_retro_log(project_dir, session_id, "builder", "failed", repr(exc))
+        return
 
-    # HATS-210: spawn reflect-session in background after LLM-mode builder
-    if builder_mode == BuilderMode.LLM:
-        _spawn_reflect_session_background(project_dir, session_id)
+    # HATS-210: spawn reflect-session in background after retro saved.
+    _spawn_reflect_session_background(project_dir, session_id)
 
 
 def _spawn_reflect_session_background(project_dir: Path, session_id: str) -> None:
     """Detach reflect-session sub-process; never blocks caller.
 
-    Gates: only invoked when builder ran in LLM mode (caller checks).
     Failures here are observability-only — never propagate.
     """
     import subprocess as sp
@@ -313,7 +274,7 @@ def _spawn_reflect_session_background(project_dir: Path, session_id: str) -> Non
         )
 
 
-def _run_background(project_dir: Path, session_id: str, mode: str) -> None:
+def _run_background(project_dir: Path, session_id: str) -> None:
     import subprocess as sp
 
     log_path = _retro_log_path(project_dir, session_id)
@@ -331,7 +292,7 @@ def _run_background(project_dir: Path, session_id: str, mode: str) -> None:
             start_new_session=True,
         )
     write_retro_log(
-        project_dir, session_id, "hook", "spawn", f"pid={proc.pid} mode={mode} bg",
+        project_dir, session_id, "hook", "spawn", f"pid={proc.pid} bg",
     )
 
 
@@ -340,7 +301,6 @@ if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == "--foreground":
         sid = sys.argv[2]
         project_dir = Path.cwd()
-        config = ProjectConfig.from_yaml(project_dir / "ai-hats.yaml")
-        _run_foreground(project_dir, sid, config.feedback.session_retro.mode)
+        _run_foreground(project_dir, sid)
     else:
         main()
