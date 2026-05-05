@@ -30,12 +30,12 @@ TMP=$(mktemp -d) && git clone --depth 1 git@github.com:muratovv/ai-hats.git "$TM
 
 ```bash
 source .venv/bin/activate
-ai-hats                     # запустить сессию с текущими настройками
-ai-hats --resume            # флаги передаются провайдеру (claude/gemini)
-ai-hats status              # проверить состояние
-ai-hats set -r <role>       # сменить роль
-ai-hats set -p gemini       # сменить провайдер
-ai-hats bump                # обновить prompt после изменений в библиотеке
+ai-hats                       # запустить сессию с текущими настройками
+ai-hats --resume              # флаги передаются провайдеру (claude/gemini)
+ai-hats config status         # проверить состояние
+ai-hats config set -r <role>  # сменить роль
+ai-hats config set -p gemini  # сменить провайдер
+ai-hats self bump             # обновить prompt после изменений в библиотеке
 ```
 
 ### Альтернативные способы установки
@@ -55,7 +55,7 @@ bash ~/dev/ai-hats/scripts/bootstrap.sh -r go-dev -p claude
 ```bash
 cd ~/dev/my-project
 source .venv/bin/activate
-ai-hats set -r go-dev -p claude
+ai-hats config set -r go-dev -p claude
 ```
 </details>
 
