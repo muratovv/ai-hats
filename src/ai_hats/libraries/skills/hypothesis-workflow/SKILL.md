@@ -90,6 +90,27 @@ ai-hats judge --last N --focus "<hypothesis pattern>" --interactive
   or reject the approach.
 - **Inconclusive**: not enough data yet. Extend the observation window.
 
+## Cross-project hypotheses
+
+Before parking a hypothesis as **"untestable from this repo"** or starting a
+retirement clock for lack of evidence, **ASK the user**:
+
+> *"Are there sibling projects where this hypothesis is testable?
+> If so, please share paths."*
+
+Do NOT auto-survey other directories without confirmation.
+
+Many hypotheses (cross-project prefix correctness, downstream skill usage,
+framework-attribution claims) become trivial to validate once the user points
+at the relevant repos. Default agent scope is the current CWD's `.gitlog/` plus
+the hypothesis's declared baseline source — that scope is too narrow for
+hypotheses about framework behavior across projects.
+
+**Worked example.** HYP-005 was about to be parked as "untestable from this
+repo, requires external evidence" with a 30-day retirement clock. Asking
+surfaced `~/dev/proxmox` (120 sessions) where the test became trivial.
+Near-miss avoided — wrong scope decision would have retired a valid hypothesis.
+
 ## Anti-Patterns
 
 - Applying changes without creating a hypothesis task — no way to track effect
