@@ -75,6 +75,9 @@ pytest tests/ -v
 
 ## CLI
 
+Топ-уровневые группы: `agent`, `config`, `list`, `reflect`, `self`, `session`,
+`task`, `wt`. Подробности по любой — `ai-hats <group> --help`.
+
 ```bash
 # Сессия — ai-hats без subcommand запускает провайдер
 ai-hats                                    # текущие настройки
@@ -83,40 +86,46 @@ ai-hats -p claude -r architect             # override провайдера и р
 ai-hats "fix the bug"                      # промпт передаётся провайдеру
 ai-hats --tag client=acme --tag project=X  # custom теги в metrics.json (см. ниже)
 
-# Конфигурация
-ai-hats set -r <role> -p <provider>        # настроить роль и/или провайдер
-ai-hats config feedback show               # текущая конфигурация feedback loop
-ai-hats config feedback session-retro <policy> [--threshold turns=N,tool_calls=N] [--mode ...] [--background/--no-background]
-ai-hats config feedback judge <off|manual>  # политика запуска judge
-ai-hats customize <role> --add-trait X     # добавить трейт к роли
-ai-hats customize <role> --remove-skill Y  # убрать скилл из роли
-ai-hats customize <role> --show            # показать кастомизации
-ai-hats customize <role> --reset           # сбросить кастомизации
-ai-hats status                             # текущая роль, дерево, health
-ai-hats bump                               # пересобрать prompt
-ai-hats rollback                           # откатить к предыдущему состоянию
-ai-hats clean                              # очистить .agent/
-ai-hats whoami                             # диагностика
+# Конфигурация (всё, что пишет в ai-hats.yaml)
+ai-hats config set -r <role> -p <provider>     # настроить роль и/или провайдер
+ai-hats config status                          # текущая роль, дерево, health
+ai-hats config customize <role> --add-trait X  # добавить трейт к роли
+ai-hats config customize <role> --remove-skill Y
+ai-hats config customize <role> --show         # показать кастомизации
+ai-hats config customize <role> --reset        # сбросить кастомизации
+ai-hats config feedback show                   # текущая конфигурация feedback loop
+ai-hats config feedback session-retro <policy> [--threshold turns=N,tool_calls=N] [--background/--no-background]
 
-# Суб-агенты
-ai-hats run <role> [--ticket <ID>] [--model <name>] [--task <desc>] [--tag k=v ...] [--json]
+# Жизненный цикл инструмента в проекте
+ai-hats self init -r <role> -p <provider>  # инициализировать ai-hats в текущем dir
+ai-hats self bump                          # пересобрать prompt из библиотеки
+ai-hats self clean                         # очистить .agent/
+ai-hats self rollback                      # откатить к предыдущему состоянию
+ai-hats self update                        # pip-переустановка из GitHub
+ai-hats self migrate                       # миграция конфига к новой версии
 
-# Наблюдаемость и feedback loop
+# Sub-агенты — запуск роли в изолированном worktree
+ai-hats agent <role> [--ticket <ID>] [--model <name>] [--task <desc>] [--tag k=v ...] [--json]
+
+# Discovery — что доступно в композиции
+ai-hats list roles | skills | rules | traits | providers | tokens
+
+# Worktrees — изолированная работа
+ai-hats wt create | list | status | env | exec -- <cmd> | merge | discard
+
+# Наблюдаемость
 ai-hats session list [--last N] [--min-turns N] [--productive] [--all] [--tag k=v ...] [--role <r>] [--since YYYY-MM-DD] [--json]
-ai-hats session show <session_id>                                      # детали конкретной сессии
-ai-hats audit [--session <ID>]                                         # показать audit.md сессии
-ai-hats retro <session_id> [--last] [--mode programmatic|llm]         # session-retro snapshot
-ai-hats bundle create --sessions s1,s2 [--notes "..."]                # сгруппировать сессии для анализа
-ai-hats bundle create --last N | --since YYYY-MM-DD
-ai-hats bundle list | show <bundle_id>
-ai-hats judge --bundle <id> [--focus "..."]                           # forensic analysis от judge-агента
-ai-hats judge --last N [--focus "..."] [--interactive]                # auto-bundle + judge + обсуждение
-ai-hats judge --retro <path>                                          # обсудить существующий retro
-ai-hats judge-aggregate [--since ...] [--min-severity ...]            # паттерны из judge retros
-ai-hats retro-validate <path>                                         # проверить файл по HATS-051 schema
-ai-hats retro-migrate <path> [--dry-run]                              # миграция к latest схеме
+ai-hats session show <session_id>                              # детали сессии
+ai-hats session audit [--session <ID>]                         # audit.md сессии
+ai-hats session retro <session_id> [--last] [--mode programmatic|llm]  # SessionRetroV1 snapshot
+ai-hats session retro-validate <path>                          # проверить retro по схеме
 
-# Задачи
+# Feedback loop — per-session vote + bulk-triage
+ai-hats reflect session [--session <ID>] [--background]        # ручной запуск reflect-session судьи
+ai-hats reflect all [--dry-run]                                # ручной триаж накопленных HYP/PROP
+ai-hats reflect commit --accept PROP-X --reject PROP-Y ...     # bulk-flip статусов после триажа
+
+# Задачи + гипотезы + предложения (всё под task — backlog artifacts)
 ai-hats task create <title> [--id ID] [-d <desc>] [-p high|medium|low] \
                             [--parent-task ID] [--depends-on ID ...]
 ai-hats task update <ID> [--title ...] [--description ...] [--priority ...] \
@@ -126,12 +135,11 @@ ai-hats task update <ID> [--title ...] [--description ...] [--priority ...] \
 ai-hats task transition <ID> <state>
 ai-hats task log <ID> <message>
 ai-hats task list [--state <state>] [--priority <p>] [--search <regex>] [--all]
-ai-hats task show <ID>     # depends_on рендерится как «Blocked by:» со state-ами
+ai-hats task show <ID>      # depends_on рендерится как «Blocked by:» со state-ами
 ai-hats task sync
 
-# Обслуживание
-ai-hats update                             # pip-переустановка из GitHub (канонический путь)
-ai-hats migrate
+ai-hats task hyp list | show | append-verdict | migrate           # hypothesis backlog (HYP-NNN.yaml)
+ai-hats task proposal list | show | create | vote | status        # proposal backlog (PROP-NNN.yaml)
 ```
 
 ### Как обновить ai-hats в проекте
