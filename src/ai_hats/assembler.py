@@ -253,15 +253,6 @@ class Assembler:
             return None
         return self.set_role(self.project_config.active_role, self.project_config.provider or None)
 
-    def whoami(self) -> dict:
-        """Diagnostic info about current session."""
-        return {
-            "role": self.project_config.active_role,
-            "provider": self.project_config.provider,
-            "project_dir": str(self.project_dir),
-            "schema_version": self.project_config.schema_version,
-        }
-
     # -- Internal methods --
 
     def _validate_role(self, role_name: str) -> None:

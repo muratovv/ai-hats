@@ -1,5 +1,4 @@
-"""Role-assembly commands: init, set, customize, status, bump, rollback,
-clean, whoami."""
+"""Role-assembly commands: init, set, customize, status, bump, rollback, clean."""
 
 from __future__ import annotations
 
@@ -269,14 +268,5 @@ def clean():
     asm = _assembler()
     asm.clean()
     console.print("[green]Cleaned[/] .agent/ directories")
-
-
-@click.command()
-def whoami():
-    """Show diagnostic session info."""
-    asm = _assembler()
-    info = asm.whoami()
-    for k, v in info.items():
-        console.print(f"  {k}: [bold]{v}[/]")
 
 

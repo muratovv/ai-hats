@@ -145,7 +145,6 @@ main.add_command(assembly.status)
 main.add_command(assembly.bump)
 main.add_command(assembly.rollback)
 main.add_command(assembly.clean)
-main.add_command(assembly.whoami)
 
 # Config
 main.add_command(config_mod.config)
