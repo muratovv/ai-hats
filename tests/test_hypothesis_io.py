@@ -9,7 +9,6 @@ from pathlib import Path
 import yaml
 
 from ai_hats.hypothesis import (
-    Hypothesis,
     HypothesisStore,
     Proposal,
     ProposalStore,

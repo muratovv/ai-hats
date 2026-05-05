@@ -74,11 +74,6 @@ class FeedbackPolicy(str, Enum):
     HINT = "hint"
 
 
-class JudgePolicy(str, Enum):
-    OFF = "off"
-    MANUAL = "manual"
-
-
 # ----- Base -----
 
 
@@ -282,18 +277,10 @@ class SmartThreshold(_YamlModel):
     min_tool_calls: int = 10
 
 
-class ReminderConfig(_YamlModel):
-    enabled: bool = True
-    max_skipped: int = 5
-    window_days: int = 14
-
-
 class SessionRetroConfig(_YamlModel):
     policy: FeedbackPolicy = FeedbackPolicy.SMART
     smart_threshold: SmartThreshold = Field(default_factory=SmartThreshold)
     background: bool = True
-    mode: str = "programmatic"
-    reminder: ReminderConfig = Field(default_factory=ReminderConfig)
     # Optional model overrides for the feedback loop. When None, the provider
     # CLI's default model is used (current behaviour, back-compat).
     # `model` controls SubprocessLLMCaller (the LLM-builder behind SessionRetroV1);
@@ -302,13 +289,8 @@ class SessionRetroConfig(_YamlModel):
     reflect_model: str | None = None
 
 
-class JudgeConfig(_YamlModel):
-    policy: JudgePolicy = JudgePolicy.MANUAL
-
-
 class FeedbackConfig(_YamlModel):
     session_retro: SessionRetroConfig = Field(default_factory=SessionRetroConfig)
-    judge: JudgeConfig = Field(default_factory=JudgeConfig)
 
     @property
     def is_default(self) -> bool:
@@ -324,7 +306,7 @@ class ProjectConfig(_YamlModel):
     Sections:
       - Project: provider, library_paths
       - Role: active_role, default_role, customizations
-      - Feedback: session_retro, judge
+      - Feedback: session_retro
       - Meta: schema_version (2 = current)
     """
 

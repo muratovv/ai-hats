@@ -70,8 +70,7 @@ class SessionManager:
         - ``role_eq`` — exact match on ``metrics["role"]``.
         - ``tag_filters`` — all k=v pairs must match ``metrics["tags"]``.
         - ``since_date`` — ``YYYY-MM-DD``; session-id prefix (first 8 chars)
-          must be ``>=`` the given date (same comparison as
-          ``retro --backfill --since``).
+          must be ``>=`` the given date.
 
         Sessions without a readable ``metrics.json`` are skipped whenever any
         metric-dependent filter is active (role/tag/productive_only), so

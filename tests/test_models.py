@@ -8,8 +8,6 @@ from ai_hats.models import (
     FeedbackConfig,
     FeedbackPolicy,
     HooksConfig,
-    JudgeConfig,
-    JudgePolicy,
     OverlayConfig,
     ProjectConfig,
     SessionRetroConfig,
@@ -444,7 +442,6 @@ def test_session_retro_config_defaults():
     c = SessionRetroConfig()
     assert c.policy == FeedbackPolicy.SMART
     assert c.background is True
-    assert c.mode == "programmatic"
     # HATS-232: explicit model overrides default to None (use CLI default).
     assert c.model is None
     assert c.reflect_model is None
@@ -455,7 +452,6 @@ def test_session_retro_config_roundtrip():
         policy=FeedbackPolicy.HINT,
         smart_threshold=SmartThreshold(min_turns=10, min_tool_calls=5),
         background=False,
-        mode="llm",
         model="claude-haiku-4-5",
         reflect_model="claude-sonnet-4-6",
     )
@@ -465,29 +461,22 @@ def test_session_retro_config_roundtrip():
     assert restored.reflect_model == "claude-sonnet-4-6"
 
 
-def test_session_retro_config_loads_legacy_yaml_without_model_fields():
-    """Old ai-hats.yaml without model/reflect_model must still parse cleanly."""
+def test_session_retro_config_loads_legacy_yaml_silently_drops_unknown():
+    """Old ai-hats.yaml with removed `mode` field must still parse (extra=ignore)."""
     legacy = {
         "policy": "smart",
         "background": True,
-        "mode": "llm",
+        "mode": "llm",  # silently ignored after HATS-235
     }
     c = SessionRetroConfig.from_dict(legacy)
+    assert c.policy == FeedbackPolicy.SMART
+    assert c.background is True
     assert c.model is None
-    assert c.reflect_model is None
-    assert c.mode == "llm"
-
-
-def test_judge_config_roundtrip():
-    c = JudgeConfig(policy=JudgePolicy.OFF)
-    restored = JudgeConfig.from_dict(c.to_dict())
-    assert restored == c
 
 
 def test_feedback_config_defaults():
     fc = FeedbackConfig()
     assert fc.session_retro.policy == FeedbackPolicy.SMART
-    assert fc.judge.policy == JudgePolicy.MANUAL
     assert fc.is_default
 
 
@@ -499,10 +488,7 @@ def test_feedback_config_is_default_false_after_change():
 
 def test_feedback_config_roundtrip():
     fc = FeedbackConfig(
-        session_retro=SessionRetroConfig(
-            policy=FeedbackPolicy.ALWAYS, mode="hybrid",
-        ),
-        judge=JudgeConfig(policy=JudgePolicy.OFF),
+        session_retro=SessionRetroConfig(policy=FeedbackPolicy.ALWAYS),
     )
     restored = FeedbackConfig.from_dict(fc.to_dict())
     assert restored == fc
@@ -521,7 +507,7 @@ def test_project_config_v2_roundtrip(tmp_path):
         provider="claude",
         active_role="assistant",
         feedback=FeedbackConfig(
-            session_retro=SessionRetroConfig(policy=FeedbackPolicy.HINT, mode="llm"),
+            session_retro=SessionRetroConfig(policy=FeedbackPolicy.HINT),
         ),
     )
     path = tmp_path / "ai-hats.yaml"
@@ -531,7 +517,6 @@ def test_project_config_v2_roundtrip(tmp_path):
     assert loaded.active_role == "assistant"
     assert loaded.provider == "claude"
     assert loaded.feedback.session_retro.policy == FeedbackPolicy.HINT
-    assert loaded.feedback.session_retro.mode == "llm"
     assert loaded.schema_version == 2
 
 

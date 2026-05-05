@@ -43,7 +43,6 @@ def session():
 @click.option("--all", "show_all", is_flag=True, help="Show all sessions")
 @click.option("--min-turns", default=0, type=int, help="Only sessions with >= N turns")
 @click.option("--productive", is_flag=True, help="Only productive sessions (turns>0, tools>0)")
-@click.option("--unreviewed", is_flag=True, help="Only sessions not yet in any bundle")
 @click.option(
     "--tag", "tag_filters_raw", multiple=True,
     help="Filter by tag k=v (repeatable, AND-combined).",
@@ -62,7 +61,7 @@ def session():
          "Pipe to jq/parallel; filter values come from metrics.json.",
 )
 def session_list(
-    last_n: int, show_all: bool, min_turns: int, productive: bool, unreviewed: bool,
+    last_n: int, show_all: bool, min_turns: int, productive: bool,
     tag_filters_raw: tuple[str, ...], role_filter: str | None,
     since_date: str | None, as_json: bool,
 ):
@@ -84,11 +83,6 @@ def session_list(
         tag_filters=tag_filters or None,
         since_date=since_date,
     )
-
-    if unreviewed:
-        from ..retro.bundles import BundleManager
-        reviewed = BundleManager(_project_dir()).reviewed_session_ids()
-        sessions = [s for s in sessions if s.session_id not in reviewed]
 
     if min_turns > 0:
         filtered = []

@@ -8,8 +8,6 @@ import pytest
 from pydantic import ValidationError
 
 from ai_hats.retro.reflect_session_schema import (
-    HypothesisVerdict,
-    ProposalAction,
     ReflectSessionV1,
 )
 

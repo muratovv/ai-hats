@@ -39,10 +39,8 @@ Analyze completed or failed work to identify systemic improvements.
 6. **Archive:** Save report to `.agent/retrospectives/YYYY-MM-DD-retro-<title>.md`.
 
    Self-retros are personal agent reflections — free-form markdown is fine.
-   They are NOT part of the automated feedback loop (judge-protocol handles that).
-   If you want a self-retro to feed into the longitudinal cycle, optionally
-   use the `hats-judge-retro/v1` schema (see `judge-protocol` skill) — that
-   makes it consumable by `ai-hats retro-validate` and downstream aggregators.
+   They are NOT part of the automated feedback loop (reflect-session handles
+   that via `hats-reflect-session/v1`).
 
 7. **Backlog:** For deferred improvements, create task cards via backlog-manager.
    Every identified improvement must either be fixed now or tracked.
@@ -51,13 +49,6 @@ Analyze completed or failed work to identify systemic improvements.
 - Retrospective report saved to `.agent/retrospectives/`
 - Every improvement either applied or tracked as a task card
 - Quantified impact (wasted iterations, failed attempts)
-
-## Relation to judge-protocol
-- **self-retrospective:** agent's own reflection during/after their session.
-  At-will, free-form, personal note. Not consumed by feedback automation.
-- **judge-protocol:** structured forensic analysis by a separate judge agent
-  over a bundle of sessions. Always uses `hats-judge-retro/v1` schema.
-  Consumed by L2 aggregator and L3 longitudinal validation cycle.
 
 ## Anti-Patterns
 - Vague findings ("things could be better") — be specific with numbers and examples

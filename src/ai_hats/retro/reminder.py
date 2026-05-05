@@ -1,4 +1,4 @@
-"""Session-end nudges: stale-retro reminder + wrap-up banner.
+"""Session-end wrap-up nudge.
 
 Called from ``auto_retro.make_decision()`` so results are folded into the
 session-end banner.
@@ -7,26 +7,14 @@ session-end banner.
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
 from pathlib import Path
 from typing import TypedDict
 
-from ..models import SessionRetroConfig
-from .backfill import find_candidates
 from .window import (
     compute_session_end,
     parse_session_start,
     tasks_closed_in_window,
 )
-
-
-class ReminderInfo(TypedDict):
-    """Structured stale-retro reminder data, surfaced in the session-end banner."""
-
-    count: int
-    since: str
-    window_days: int
-    command: str
 
 
 class WrapUpInfo(TypedDict):
@@ -39,36 +27,6 @@ class WrapUpInfo(TypedDict):
 
 _WRAP_TASKS_THRESHOLD = 2
 _WRAP_DURATION_MIN = 60
-
-
-def evaluate(project_dir: Path, sr: SessionRetroConfig) -> tuple[ReminderInfo | None, str]:
-    """Return (reminder_info, log_reason).
-
-    `reminder_info` is None when no reminder should fire. `log_reason` is a
-    short string suitable for retro.log so we can audit the decision.
-
-    The suggested command points at `ai-hats reflect` — a single orchestration
-    step (backfill → bundle → judge → judge-aggregate) that turns the pile of
-    skipped sessions into one systemic review report. HATS-201.
-    """
-    if not sr.reminder.enabled:
-        return None, "disabled"
-
-    since = (date.today() - timedelta(days=sr.reminder.window_days)).isoformat()
-    candidates, _ = find_candidates(project_dir, since=since)
-    count = len(candidates)
-    threshold = sr.reminder.max_skipped
-
-    if count < threshold:
-        return None, f"under threshold ({count}<{threshold} in {sr.reminder.window_days}d)"
-
-    info: ReminderInfo = {
-        "count": count,
-        "since": since,
-        "window_days": sr.reminder.window_days,
-        "command": f"ai-hats reflect --since {since} --interactive",
-    }
-    return info, f"fired ({count}>={threshold} in {sr.reminder.window_days}d)"
 
 
 def evaluate_wrap_up(

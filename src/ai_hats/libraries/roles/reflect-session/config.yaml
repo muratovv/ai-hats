@@ -8,7 +8,6 @@ composition:
     - trait-base
   rules: []
   skills:
-    - judge-protocol
     - hypothesis-validation
     - proposal-management
     - hypothesis-workflow
