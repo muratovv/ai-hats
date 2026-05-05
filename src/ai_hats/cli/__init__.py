@@ -146,7 +146,6 @@ main.add_command(assembly.bump)
 main.add_command(assembly.rollback)
 main.add_command(assembly.clean)
 main.add_command(assembly.whoami)
-main.add_command(assembly.token_stats)
 
 # Config
 main.add_command(config_mod.config)
