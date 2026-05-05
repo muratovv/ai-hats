@@ -47,8 +47,8 @@ is_allowlisted() {
 staged="$(git diff --cached --name-only --diff-filter=ACM)"
 [[ -z "$staged" ]] && exit 0
 
-declare -a hard_hits
-declare -a soft_hits
+hard_hits=()
+soft_hits=()
 
 # Patterns (extended regex; assume Linux/BSD compatibility).
 PAT_HOME='/(Users|home)/[A-Za-z0-9_.-]+/'

@@ -130,9 +130,7 @@ from . import (  # noqa: E402
     list_cmd,
     maintenance,
     proposal as proposal_mod,
-    reflect_session as reflect_session_mod,
-    reflect_all as reflect_all_mod,
-    retro,
+    reflect as reflect_mod,
     run as run_mod,
     session,
     task,
@@ -162,12 +160,7 @@ main.add_command(run_mod.run_subagent)
 # Worktree
 main.add_command(worktree.wt)
 
-# Retro
-main.add_command(retro.retro)
-main.add_command(retro.retro_validate)
-
-# Session + audit (observability)
-main.add_command(session.audit)
+# Session (observability + retro generation)
 main.add_command(session.session)
 
 # Task management
@@ -180,5 +173,4 @@ main.add_command(maintenance.migrate)
 # Hypothesis backlog (HATS-210)
 main.add_command(hyp_mod.hyp)
 main.add_command(proposal_mod.proposal)
-main.add_command(reflect_session_mod.reflect_session)
-main.add_command(reflect_all_mod.reflect_all)
+main.add_command(reflect_mod.reflect)

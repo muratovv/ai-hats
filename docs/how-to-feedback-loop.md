@@ -4,7 +4,7 @@
 
 - **0. Настройка политик** — что писать в `ai-hats.yaml`, когда какая политика срабатывает.
 - **1. Сессия → reflect-session agent** — авто-ретро после конкретной сессии.
-- **2. `ai-hats reflect-all`** — ручной триаж накопленного бэклога гипотез и предложений.
+- **2. `ai-hats reflect all`** — ручной триаж накопленного бэклога гипотез и предложений.
 
 > Команды называются `reflect-session` и `reflect-all` (не `review-*`). Полная архитектурная справка — в [`docs/reflect.md`](reflect.md). Здесь — практические рецепты.
 
@@ -19,7 +19,7 @@
 | **PROP** (предложение)  | `.agent/backlog/proposals/PROP-NNN.yaml`            | reflect-session при self-problem |
 | **SessionRetro**        | `.agent/retrospectives/sessions/<id>.md`            | builder (LLM)                    |
 | **ReflectSession**      | `.agent/retrospectives/reflect-session/<id>.md`     | роль `reflect-session`           |
-| **Reflect-all handoff** | `.agent/retrospectives/reflect-all/<ts>-handoff.md` | `ai-hats reflect-all`            |
+| **Reflect-all handoff** | `.agent/retrospectives/reflect-all/<ts>-handoff.md` | `ai-hats reflect all`            |
 
 **Гипотеза** — YAML с `success_criterion`, `observation_window`, `exit_criteria`, `freshness_rule`. Она живёт со статусом `active` до тех пор, пока не накопит достаточно вердиктов в `validation_log` для перехода в `confirmed` / `refuted` / `stalled`.
 
@@ -164,8 +164,8 @@ session_end
 ### Запуск вручную (foreground, для отладки)
 
 ```bash
-ai-hats reflect-session --session <id>            # foreground
-ai-hats reflect-session --session <id> --background   # как в авто
+ai-hats reflect session --session <id>            # foreground
+ai-hats reflect session --session <id> --background   # как в авто
 ```
 
 Полезно когда:
@@ -176,14 +176,14 @@ ai-hats reflect-session --session <id> --background   # как в авто
 
 ---
 
-## Флоу 2: `ai-hats reflect-all` — ручной триаж бэклога
+## Флоу 2: `ai-hats reflect all` — ручной триаж бэклога
 
 Когда HYP'ов и PROP'ов накопилось много — пора руками пройтись по бэклогу и закрыть/принять/отклонить пачкой.
 
 ### Жизненный цикл команды
 
 ```
-1. ai-hats reflect-all
+1. ai-hats reflect all
    ├─ Pre-flight (Python):
    │   собирает active HYP + open PROP
    │   пишет .agent/retrospectives/reflect-all/<ts>-handoff.md
@@ -200,7 +200,7 @@ ai-hats reflect-session --session <id> --background   # как в авто
           ai-hats proposal status PROP-NNN <accepted|rejected|deferred|duplicate>
           ai-hats task create ...   # если нужно завести задачу
 2. Когда чат закончен — bulk-flip:
-   ai-hats reflect-all commit \
+   ai-hats reflect commit \
      --accept PROP-3 --accept PROP-7 \
      --reject PROP-12 \
      --defer PROP-15 \
@@ -210,7 +210,7 @@ ai-hats reflect-session --session <id> --background   # как в авто
 ### `--dry-run`
 
 ```bash
-ai-hats reflect-all --dry-run
+ai-hats reflect all --dry-run
 ```
 
 Только собирает handoff, не зовёт claude. Удобно:
@@ -270,8 +270,8 @@ ai-hats reflect-all --dry-run
 | Симптом                                   | Куда смотреть                                                                                                                                                             |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | reflect-session не запускается            | `feedback.session_retro.policy` ≠ `off` и порог `smart_threshold` достигнут                                                                                                |
-| validation_log пустой после сессии        | проверь `ai-hats reflect-session --session <id>` foreground — увидишь stack-trace, а meta-PROP всплывает в reflect-all                                                    |
-| meta-PROP `failed_session_id=...`         | runtime safety net поймал битый артефакт. Открой `.agent/retrospectives/reflect-session/<id>.md`, прогони `ai-hats reflect-session --session <id>` foreground для повтора |
+| validation_log пустой после сессии        | проверь `ai-hats reflect session --session <id>` foreground — увидишь stack-trace, а meta-PROP всплывает в reflect-all                                                    |
+| meta-PROP `failed_session_id=...`         | runtime safety net поймал битый артефакт. Открой `.agent/retrospectives/reflect-session/<id>.md`, прогони `ai-hats reflect session --session <id>` foreground для повтора |
 | reflect-all падает с «claude not in PATH» | установи Claude Code или используй `--dry-run` и работай с handoff в редакторе                                                                                            |
 | `Overlay: cannot remove ...`              | не относится к feedback loop — см. [how-to.md](how-to.md)                                                                                                                 |
 

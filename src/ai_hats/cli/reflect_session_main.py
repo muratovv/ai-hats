@@ -1,4 +1,4 @@
-"""Background-spawn entry point for `ai-hats reflect-session --background`.
+"""Background-spawn entry point for `ai-hats reflect session --background`.
 
 Invoked as: `python -m ai_hats.cli.reflect_session_main <session_id> <max_retries>`
 Runs the in-process foreground path so subprocess Popen captures all output.
