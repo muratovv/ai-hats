@@ -211,10 +211,28 @@ class ReflectSessionRunner:
         from ..runtime import SubAgentRunner
         return SubAgentRunner(self.project_dir)
 
+    def _reflect_model(self) -> str:
+        """Read `feedback.session_retro.reflect_model` from ai-hats.yaml.
+
+        Returns empty string when unset or config missing — SubAgentRunner
+        treats falsy as "no override" and the provider CLI's default applies.
+        """
+        from ..models import ProjectConfig
+
+        cfg_path = self.project_dir / "ai-hats.yaml"
+        if not cfg_path.exists():
+            return ""
+        try:
+            cfg = ProjectConfig.from_yaml(cfg_path)
+        except Exception:
+            return ""
+        return cfg.feedback.session_retro.reflect_model or ""
+
     def _run_and_validate(
         self, prompt: str, session_id: str, max_retries: int,
     ) -> tuple[ReflectSessionV1, str]:
         runner = self._get_runner()
+        reflect_model = self._reflect_model()
         attempt = 0
         current_prompt = prompt
         last_error: Exception | None = None
@@ -223,6 +241,7 @@ class ReflectSessionRunner:
             session = runner.run(
                 role_name="reflect-session",
                 task=current_prompt,
+                model=reflect_model,
                 # NONE: sub-agent needs access to real .agent/ (gitignored,
                 # invisible inside a git worktree) so its CLI calls land in
                 # the project's hypothesis backlog, not a throwaway dir.

@@ -38,7 +38,8 @@ class SubprocessLLMCaller:
 
         cfg = ProjectConfig.from_yaml(self.project_dir / "ai-hats.yaml")
         provider_name = cfg.provider or "claude"
-        cmd = self._build_cmd(provider_name, prompt)
+        model = cfg.feedback.session_retro.model
+        cmd = self._build_cmd(provider_name, prompt, model=model)
         try:
             proc = subprocess.run(
                 cmd,
@@ -61,14 +62,21 @@ class SubprocessLLMCaller:
         return proc.stdout
 
     @staticmethod
-    def _build_cmd(provider_name: str, prompt: str) -> list[str]:
-        """Build the non-interactive CLI invocation for the given provider."""
+    def _build_cmd(
+        provider_name: str, prompt: str, *, model: str | None = None,
+    ) -> list[str]:
+        """Build the non-interactive CLI invocation for the given provider.
+
+        ``model`` is an optional explicit model name (passed as ``--model
+        <name>``); when None, the provider CLI's default applies.
+        """
+        extra = ["--model", model] if model else []
         if provider_name == "claude":
-            return ["claude", "--print", "-p", prompt]
+            return ["claude", *extra, "--print", "-p", prompt]
         if provider_name == "gemini":
-            return ["gemini", "-p", prompt]
+            return ["gemini", *extra, "-p", prompt]
         # Generic fallback — assume `-p`/`--prompt` is supported
-        return [provider_name, "-p", prompt]
+        return [provider_name, *extra, "-p", prompt]
 
 
 class SubAgentLLMCaller:

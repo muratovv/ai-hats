@@ -330,6 +330,8 @@ ai-hats task list --search worktree --all    # включая done/failed
 
 ### Feedback loop
 
+> Модель для feedback-loop пинится отдельно от интерактивной сессии — `feedback.session_retro.model` (LLM-builder) и `feedback.session_retro.reflect_model` (reflect-session sub-agent). Если поля не заданы — используется дефолт CLI провайдера.
+
 ai-hats строит feedback из реальных сессий через три слоя артефактов (схемы зафиксированы в HATS-051, runtime — в HATS-001):
 
 ```

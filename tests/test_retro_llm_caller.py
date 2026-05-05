@@ -63,6 +63,61 @@ def test_subprocess_caller_uses_provider_from_config(monkeypatch, tmp_path: Path
     assert captured["cmd"] == ["gemini", "-p", "x"]
 
 
+def test_subprocess_caller_passes_model_when_configured(monkeypatch, tmp_path: Path) -> None:
+    """feedback.session_retro.model → --model on the provider CLI."""
+    (tmp_path / "ai-hats.yaml").write_text(
+        "provider: claude\n"
+        "schema_version: 2\n"
+        "feedback:\n"
+        "  session_retro:\n"
+        "    model: claude-haiku-4-5\n"
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return _FakeProc(stdout="ok")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    SubprocessLLMCaller(tmp_path)("x")
+    assert captured["cmd"] == [
+        "claude", "--model", "claude-haiku-4-5", "--print", "-p", "x",
+    ]
+
+
+def test_subprocess_caller_omits_model_when_unset(monkeypatch, tmp_path: Path) -> None:
+    """No model field → no --model flag (back-compat with default CLI model)."""
+    project = _make_project(tmp_path, provider="claude")
+    captured: dict[str, Any] = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return _FakeProc(stdout="ok")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    SubprocessLLMCaller(project)("x")
+    assert "--model" not in captured["cmd"]
+
+
+def test_build_cmd_with_model_for_each_provider() -> None:
+    """`_build_cmd` injects --model for claude/gemini/generic; omits when unset."""
+    assert SubprocessLLMCaller._build_cmd("claude", "p", model="claude-haiku-4-5") == [
+        "claude", "--model", "claude-haiku-4-5", "--print", "-p", "p",
+    ]
+    assert SubprocessLLMCaller._build_cmd("gemini", "p", model="gemini-2.0-flash") == [
+        "gemini", "--model", "gemini-2.0-flash", "-p", "p",
+    ]
+    assert SubprocessLLMCaller._build_cmd("custom", "p", model="m1") == [
+        "custom", "--model", "m1", "-p", "p",
+    ]
+    assert SubprocessLLMCaller._build_cmd("claude", "p") == [
+        "claude", "--print", "-p", "p",
+    ]
+    assert SubprocessLLMCaller._build_cmd("claude", "p", model=None) == [
+        "claude", "--print", "-p", "p",
+    ]
+
+
 def test_subprocess_caller_raises_on_nonzero(monkeypatch, tmp_path: Path) -> None:
     project = _make_project(tmp_path)
     monkeypatch.setattr(
