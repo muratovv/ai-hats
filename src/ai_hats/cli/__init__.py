@@ -137,9 +137,6 @@ from . import (  # noqa: E402
     worktree,
 )
 
-# Assembly commands
-main.add_command(assembly.init)
-
 # Config — set + customize + status nest under it (HATS-241, HATS-242).
 # All four touch ai-hats.yaml composition; status is the readout.
 config_mod.config.add_command(assembly.set_role)
@@ -153,9 +150,10 @@ main.add_command(config_mod.config)
 # not on your project'.
 @click.group("self")
 def self_group():
-    """Manage the ai-hats installation itself (bump, update, migrate, rollback)."""
+    """Manage the ai-hats installation itself (init, bump, clean, update, migrate, rollback)."""
 
 
+self_group.add_command(assembly.init)
 self_group.add_command(assembly.bump)
 self_group.add_command(assembly.rollback)
 self_group.add_command(assembly.clean)

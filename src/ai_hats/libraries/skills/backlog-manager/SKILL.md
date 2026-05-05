@@ -35,14 +35,14 @@ The default prefix is `TASK-` for new projects. Legacy projects with existing
 
 ```bash
 # At init time — preferred
-ai-hats init -p claude --task-prefix ACME
+ai-hats self init -p claude --task-prefix ACME
 
 # Or edit ai-hats.yaml directly
 #   task_prefix: ACME
 ```
 
 Prefix must match `^[A-Z][A-Z0-9]*$` (uppercase, starts with a letter).
-Re-running `ai-hats init --task-prefix X` against a project with a different
+Re-running `ai-hats self init --task-prefix X` against a project with a different
 prefix already in the yaml fails loud rather than silently reassigning ids.
 
 ```bash
