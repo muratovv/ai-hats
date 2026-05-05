@@ -258,6 +258,8 @@ echo "exit=$?"   # совпадает с .exit_code в result.json
 
 Можно добавлять/убирать трейты, правила и скиллы из библиотечной роли без модификации исходного конфига. Кастомизации хранятся в `ai-hats.yaml` и переживают `ai-hats update` и `ai-hats bump`.
 
+> Подборка типовых сценариев с готовыми примерами `ai-hats.yaml` — см. [docs/how-to.md](docs/how-to.md).
+
 ```bash
 # Добавить трейт к роли sre
 ai-hats customize sre --add-trait dev::python
@@ -329,6 +331,8 @@ ai-hats task list --search worktree --all    # включая done/failed
 ```
 
 ### Feedback loop
+
+> Пошаговый гайд по настройке и использованию (политики, reflect-session, reflect-all, гипотезы) — см. [docs/how-to-feedback-loop.md](docs/how-to-feedback-loop.md).
 
 ai-hats строит feedback из реальных сессий через три слоя артефактов (схемы зафиксированы в HATS-051, runtime — в HATS-001):
 
