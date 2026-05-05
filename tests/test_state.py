@@ -16,7 +16,7 @@ def mgr(tmp_path):
     project.mkdir()
     (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
     (project / ".agent" / "STATE.md").write_text("")
-    return TaskManager(project)
+    return TaskManager(project, strict_plan_check=False)
 
 
 def test_create_task_with_priority(mgr):
@@ -393,7 +393,7 @@ def git_mgr(tmp_path):
     _init_git(project)
     (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
     (project / ".agent" / "STATE.md").write_text("")
-    return TaskManager(project)
+    return TaskManager(project, strict_plan_check=False)
 
 
 def test_execute_creates_worktree(git_mgr):
@@ -646,7 +646,7 @@ def test_execute_inside_linked_worktree_does_not_nest(tmp_path):
     wt.save_state()
 
     # Step 2: from inside the linked worktree, create and plan the task.
-    wt_mgr = TaskManager(wt_path)
+    wt_mgr = TaskManager(wt_path, strict_plan_check=False)
     wt_mgr.create_task("T-1", "Created from inside worktree")
     wt_mgr.transition("T-1", TaskState.PLAN)
 

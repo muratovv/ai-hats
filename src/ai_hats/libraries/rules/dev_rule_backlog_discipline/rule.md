@@ -28,3 +28,9 @@
    Do not leave stale states.
 4. **Completion Gate**: A task is not done until: state is `done`, work_log has
    a final entry, and STATE.md is synced.
+5. **Plan flow**: write plans to `<project>/.claude/plans/<NN>-<slug>.md` (or
+   `<prefix-lower>-<NN>-<slug>.md`). On `transition <ID> plan` the CLI moves
+   the matching file into `.agent/backlog/tasks/<ID>/plan.md` (the canonical
+   location). For ambiguous matches or unconventional paths use
+   `ai-hats task plan-sync <ID> [--from-file <path>]`. `transition <ID> execute`
+   is blocked until `plan.md` is no longer the empty scaffold.

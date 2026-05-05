@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import click
 
+from ..state import EmptyPlanError, PlanSyncAmbiguousError
 from ._helpers import _project_dir, _task_manager, console
 
 
@@ -123,6 +125,10 @@ def task_transition(
             plan_path = mgr.tasks_dir / task_id / "plan.md"
             if plan_path.exists():
                 console.print(f"  Plan scaffold: {plan_path}")
+                if not mgr._is_empty_scaffold(t):
+                    console.print(
+                        f"  [green]Plan synced[/] from .claude/plans/ → {plan_path}"
+                    )
         elif state == TaskState.EXECUTE:
             from ..worktree import WorktreeManager
 
@@ -142,9 +148,86 @@ def task_transition(
         elif state == TaskState.CANCELLED:
             console.print(f"  Resolution: {t.resolution}")
             console.print("  Worktree discarded")
+    except PlanSyncAmbiguousError as e:
+        console.print(
+            f"[red]Plan sync ambiguous[/] for {e.task_id}: multiple candidates "
+            f"in .claude/plans/"
+        )
+        for p in e.matches:
+            console.print(f"  {p}")
+        console.print(
+            "Re-run with: [cyan]ai-hats task plan-sync "
+            f"{e.task_id} --from-file <path>[/]"
+        )
+        sys.exit(2)
+    except EmptyPlanError as e:
+        console.print(
+            f"[red]Plan is empty[/] — cannot transition {e.task_id} to execute."
+        )
+        console.print(f"  Plan path: {e.plan_path}")
+        console.print(
+            "  Either fill in the plan, or run "
+            f"[cyan]ai-hats task plan-sync {e.task_id}[/] "
+            "to import from .claude/plans/."
+        )
+        sys.exit(2)
     except ValueError as e:
         console.print(f"[red]Error[/]: {e}")
         sys.exit(1)
+
+
+@task.command("plan-sync")
+@click.argument("task_id")
+@click.option(
+    "--from-file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Explicit plan source (overrides .claude/plans/ auto-detection)",
+)
+def task_plan_sync(task_id: str, from_file: Path | None):
+    """Move .claude/plans/<NN>-*.md into .agent/backlog/tasks/<id>/plan.md.
+
+    Imports a Plan-mode artifact into the canonical task tree location.
+    Refuses to overwrite a plan.md that already contains non-scaffold content.
+    """
+    import shutil
+
+    mgr = _task_manager(_project_dir())
+    task = mgr.get_task(task_id)
+    if task is None:
+        console.print(f"[red]Error[/]: task {task_id} not found")
+        sys.exit(1)
+
+    if from_file is not None:
+        src = from_file
+    else:
+        matches = mgr.find_claude_plan_for_task(task_id)
+        if len(matches) == 0:
+            console.print(
+                f"No plan candidate in .claude/plans/ for {task_id} "
+                "(searched <NN>-*.md and <prefix>-<NN>-*.md)."
+            )
+            sys.exit(0)
+        if len(matches) > 1:
+            console.print(
+                f"[red]Multiple matches[/] for {task_id} in .claude/plans/:"
+            )
+            for p in matches:
+                console.print(f"  {p}")
+            console.print("Re-run with --from-file <path> to disambiguate.")
+            sys.exit(2)
+        src = matches[0]
+
+    dst = mgr.tasks_dir / task_id / "plan.md"
+    if dst.exists() and not mgr._is_empty_scaffold(task):
+        console.print(
+            f"[red]Refusing to overwrite[/] non-scaffold plan: {dst}"
+        )
+        console.print("  Move or remove the existing file manually first.")
+        sys.exit(2)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), str(dst))
+    console.print(f"[green]Synced[/]: {src} → {dst}")
 
 
 @task.command("update")

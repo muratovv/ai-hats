@@ -673,7 +673,11 @@ def test_task_list_table_filters(cli_project):
     runner.invoke(main, ["task", "create", "Done task", "-p", "medium"])
 
     # Transition third task to done (brainstorm → plan → execute → document → review → done)
-    for state in ["plan", "execute", "document", "review", "done"]:
+    runner.invoke(main, ["task", "transition", "TASK-003", "plan"])
+    # Fill the scaffold so plan→execute guard passes (HATS-230).
+    plan_path = project / ".agent" / "backlog" / "tasks" / "TASK-003" / "plan.md"
+    plan_path.write_text("# Plan\nfilled in for the test\n")
+    for state in ["execute", "document", "review", "done"]:
         runner.invoke(main, ["task", "transition", "TASK-003", state])
 
     # Default: done is hidden

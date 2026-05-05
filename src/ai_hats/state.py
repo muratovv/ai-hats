@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -33,13 +34,38 @@ PLAN_SCAFFOLD = """\
 """
 
 
+class PlanSyncAmbiguousError(Exception):
+    """Multiple .claude/plans/ candidates matched the same task ID."""
+
+    def __init__(self, task_id: str, matches: list[Path]) -> None:
+        super().__init__(f"Multiple plan candidates for {task_id}")
+        self.task_id = task_id
+        self.matches = matches
+
+
+class EmptyPlanError(Exception):
+    """transition → execute is blocked because plan.md is the empty scaffold."""
+
+    def __init__(self, task_id: str, plan_path: Path) -> None:
+        super().__init__(f"Plan is empty scaffold for {task_id}")
+        self.task_id = task_id
+        self.plan_path = plan_path
+
+
 class TaskManager:
     """Manages task cards and state transitions with file-lock protection."""
 
-    def __init__(self, project_dir: Path, prefix: str = "HATS") -> None:
+    def __init__(
+        self,
+        project_dir: Path,
+        prefix: str = "HATS",
+        *,
+        strict_plan_check: bool = True,
+    ) -> None:
         self.project_dir = project_dir
         self.tasks_dir = project_dir / ".agent" / "backlog" / "tasks"
         self.state_md_path = project_dir / ".agent" / "STATE.md"
+        self.strict_plan_check = strict_plan_check
         # Legacy index — removed after unification on STATE.md. Path retained
         # only to clean up stale files left from prior versions on first sync.
         self._legacy_backlog_md_path = project_dir / ".agent" / "backlog.md"
@@ -171,7 +197,11 @@ class TaskManager:
             # State-specific side effects
             if new_state == TaskState.PLAN:
                 self._create_plan_scaffold(task)
+                self._sync_plan_from_claude_plans(task)
             elif new_state == TaskState.EXECUTE:
+                if self.strict_plan_check and self._is_empty_scaffold(task):
+                    plan_path = self.tasks_dir / task.id / "plan.md"
+                    raise EmptyPlanError(task.id, plan_path)
                 self._setup_worktree(task)
             elif new_state == TaskState.DONE:
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -381,6 +411,63 @@ class TaskManager:
             plan_path.write_text(
                 PLAN_SCAFFOLD.format(task_id=task.id, title=task.title)
             )
+
+    def find_claude_plan_for_task(self, task_id: str) -> list[Path]:
+        """Glob `<project>/.claude/plans/` for files matching the task ID.
+
+        Matches both bare-number (`230-*.md`) and prefixed (`hats-230-*.md`)
+        conventions, case-insensitive on the prefix.
+        """
+        plans_dir = self.project_dir / ".claude" / "plans"
+        if not plans_dir.is_dir():
+            return []
+        m = re.search(r"(\d+)$", task_id)
+        if not m:
+            return []
+        nn = m.group(1)
+        prefix = task_id[: -len(nn)].rstrip("-_").lower()
+        seen: set[Path] = set()
+        candidates: list[Path] = []
+        for pat in [f"{nn}-*.md", f"{prefix}-{nn}-*.md"] if prefix else [f"{nn}-*.md"]:
+            for p in plans_dir.glob(pat):
+                if p.is_file() and p not in seen:
+                    seen.add(p)
+                    candidates.append(p)
+        return sorted(candidates)
+
+    def is_empty_scaffold_for_id(self, task_id: str) -> bool:
+        """Public-friendly variant: load card and delegate to _is_empty_scaffold."""
+        task = self.get_task(task_id)
+        if task is None:
+            return False
+        return self._is_empty_scaffold(task)
+
+    def _is_empty_scaffold(self, task: TaskCard) -> bool:
+        plan_path = self.tasks_dir / task.id / "plan.md"
+        if not plan_path.exists():
+            return True
+        expected = PLAN_SCAFFOLD.format(task_id=task.id, title=task.title)
+        try:
+            return plan_path.read_text() == expected
+        except OSError:
+            return False
+
+    def _sync_plan_from_claude_plans(self, task: TaskCard) -> Path | None:
+        """At transition→plan: move .claude/plans/<NN>-*.md into task tree.
+
+        - 0 matches: leave the freshly created scaffold in place.
+        - 1 match: shutil.move() over the scaffold.
+        - >1 matches: raise PlanSyncAmbiguousError; CLI prints the list.
+        """
+        matches = self.find_claude_plan_for_task(task.id)
+        if not matches:
+            return None
+        if len(matches) > 1:
+            raise PlanSyncAmbiguousError(task.id, matches)
+        src = matches[0]
+        dst = self.tasks_dir / task.id / "plan.md"
+        shutil.move(str(src), str(dst))
+        return src
 
     def _iter_headers(self) -> list[dict[str, str]]:
         """Lightweight scan for index rendering — bypasses full YAML parse.
