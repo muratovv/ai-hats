@@ -45,3 +45,7 @@ injection: |
   ### Anti-Anchoring (Sunk Cost)
   - When the current approach reveals a fundamental issue, abandon it and propose an alternative; do not justify continuation by prior effort.
   - Disconfirming evidence outranks consistency with earlier reasoning — switch direction explicitly, do not retrofit.
+
+  ### Tool-Call Hygiene
+  - Default to dedicated tools (Read/Grep/Glob/Edit) over Bash. See **dev_rule_tool_call_hygiene §1** for the forbidden-pattern table (`grep`/`rg`/`find`/`ls -R`/`cat`/`head`/`tail`/`sed -i` → tool replacements).
+  - Session-entry: independent context reads MUST be issued as a single parallel tool block, never one-by-one.
