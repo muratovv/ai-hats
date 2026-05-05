@@ -105,7 +105,7 @@ def _launch_session(
 
     effective_provider = provider or config.provider
     if not effective_provider:
-        console.print("[red]No provider configured[/]. Run: ai-hats set -p <provider>")
+        console.print("[red]No provider configured[/]. Run: ai-hats config set -p <provider>")
         sys.exit(1)
 
     runner = WrapRunner(project_dir)
@@ -139,14 +139,15 @@ from . import (  # noqa: E402
 
 # Assembly commands
 main.add_command(assembly.init)
-main.add_command(assembly.set_role)
-main.add_command(assembly.customize)
 main.add_command(assembly.status)
 main.add_command(assembly.bump)
 main.add_command(assembly.rollback)
 main.add_command(assembly.clean)
 
-# Config
+# Config — set + customize nest under it (HATS-241).
+# All three write to ai-hats.yaml; group expresses intent.
+config_mod.config.add_command(assembly.set_role)
+config_mod.config.add_command(assembly.customize)
 main.add_command(config_mod.config)
 
 # List

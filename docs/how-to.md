@@ -5,7 +5,7 @@
 > Все изменения в `ai-hats.yaml` применяются командой `ai-hats bump` (пересобирает `CLAUDE.md` / `GEMINI.md` и `.claude/*` по конфигу). Базовые роли в `libraries/roles/` **не редактируем** — вместо этого используем `customizations` (overlay).
 >
 > Любую правку оверлея можно сделать двумя способами:
-> 1. **CLI:** `ai-hats customize <role> --add-skill <name> | --remove-skill <name> | --add-trait <name> | --injection-append "<text>"`. Команда сама пишет в `ai-hats.yaml`.
+> 1. **CLI:** `ai-hats config customize <role> --add-skill <name> | --remove-skill <name> | --add-trait <name> | --injection-append "<text>"`. Команда сама пишет в `ai-hats.yaml`.
 > 2. **Руками:** редактируешь `customizations:` в `ai-hats.yaml` (примеры ниже).
 >
 > Оба способа эквивалентны. Ниже — итоговый YAML, чтобы было видно, что получится.
@@ -33,7 +33,7 @@ customizations:
 Эквивалент через CLI:
 
 ```bash
-ai-hats customize sre --add-skill kubernetes-ops
+ai-hats config customize sre --add-skill kubernetes-ops
 ai-hats bump
 ```
 
@@ -163,7 +163,7 @@ feedback:
 ## 7. Сменить провайдера без потери настроек
 
 ```bash
-ai-hats set -p gemini   # переключиться на Gemini
+ai-hats config set -p gemini   # переключиться на Gemini
 ai-hats bump            # пересобрать GEMINI.md
 ```
 

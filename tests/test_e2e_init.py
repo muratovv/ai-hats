@@ -34,10 +34,10 @@ def cli_project(tmp_path, monkeypatch):
 
 
 def test_set_creates_project(cli_project):
-    """ai-hats set -r <role> -p claude auto-inits and creates all artifacts."""
+    """ai-hats config set -r <role> -p claude auto-inits and creates all artifacts."""
     project, runner = cli_project
 
-    result = runner.invoke(main, ["set", "-r", ALL_ROLES[0], "-p", "claude"])
+    result = runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
 
     assert result.exit_code == 0, result.output
     assert (project / "ai-hats.yaml").exists()
@@ -53,7 +53,7 @@ def test_set_all_roles(cli_project, role):
     """Every built-in role assembles without errors via CLI."""
     project, runner = cli_project
 
-    r = runner.invoke(main, ["set", "-r", role, "-p", "claude"])
+    r = runner.invoke(main, ["config", "set", "-r", role, "-p", "claude"])
     assert r.exit_code == 0, r.output
     assert "Warning" not in r.output
     assert (project / "CLAUDE.md").exists()
@@ -64,7 +64,7 @@ def test_status_after_set(cli_project):
     """ai-hats status shows role and components after set."""
     project, runner = cli_project
 
-    runner.invoke(main, ["set", "-r", ALL_ROLES[0], "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
 
     r = runner.invoke(main, ["status"])
     assert r.exit_code == 0, r.output
@@ -75,7 +75,7 @@ def test_bump_after_set(cli_project):
     """ai-hats bump re-assembles without errors."""
     project, runner = cli_project
 
-    runner.invoke(main, ["set", "-r", ALL_ROLES[0], "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
 
     prompt_before = (project / "CLAUDE.md").read_text()
 
@@ -118,13 +118,13 @@ def test_init_unknown_provider_fails_loud(cli_project):
 
 
 def test_set_unknown_role_fails_loud(cli_project):
-    """ai-hats set -r <unknown> exits non-zero even when project is already initialized."""
+    """ai-hats config set -r <unknown> exits non-zero even when project is already initialized."""
     project, runner = cli_project
 
-    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
     claude_before = (project / "CLAUDE.md").read_text()
 
-    result = runner.invoke(main, ["set", "-r", "nonexistent-role"])
+    result = runner.invoke(main, ["config", "set", "-r", "nonexistent-role"])
 
     assert result.exit_code != 0, result.output
     assert "nonexistent-role" in result.output
@@ -134,17 +134,17 @@ def test_set_unknown_role_fails_loud(cli_project):
 
 
 def test_set_unknown_provider_only_fails_loud(cli_project):
-    """ai-hats set -p <unknown> (provider-only, project already initialized) fails loud."""
+    """ai-hats config set -p <unknown> (provider-only, project already initialized) fails loud."""
     project, runner = cli_project
 
-    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
     from ai_hats.models import ProjectConfig
 
     cfg_before = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert cfg_before.provider == "claude"
 
-    result = runner.invoke(main, ["set", "-p", "bogus-provider"])
+    result = runner.invoke(main, ["config", "set", "-p", "bogus-provider"])
 
     assert result.exit_code != 0, result.output
     assert "bogus-provider" in result.output
@@ -157,10 +157,10 @@ def test_set_idempotent_via_cli(cli_project):
     """Repeated set does not break existing state."""
     project, runner = cli_project
 
-    runner.invoke(main, ["set", "-r", ALL_ROLES[0], "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
     prompt_first = (project / "CLAUDE.md").read_text()
 
-    r = runner.invoke(main, ["set", "-r", ALL_ROLES[0], "-p", "claude"])
+    r = runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
     assert r.exit_code == 0, r.output
 
     prompt_second = (project / "CLAUDE.md").read_text()
@@ -248,7 +248,7 @@ def test_subcommands_work_with_passthrough_context(cli_project):
     """Subcommands like set/status still work despite ignore_unknown_options."""
     project, runner = cli_project
 
-    r = runner.invoke(main, ["set", "-r", ALL_ROLES[0], "-p", "claude"])
+    r = runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
     assert r.exit_code == 0, r.output
 
     r = runner.invoke(main, ["status"])
@@ -267,7 +267,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
     project, runner = cli_project
 
     # Init + set base role
-    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
     original_claude = (project / "CLAUDE.md").read_text()
     original_profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert original_profile.active_role == "assistant"
@@ -301,7 +301,7 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
     from ai_hats.providers import ClaudeProvider
 
     project, runner = cli_project
-    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
     asm = Assembler(project)
     provider = ClaudeProvider()
@@ -348,7 +348,7 @@ def test_gemini_override_creates_session_rules_dir(cli_project):
     from ai_hats.providers import GeminiProvider
 
     project, runner = cli_project
-    runner.invoke(main, ["set", "-r", "assistant", "-p", "gemini"])
+    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "gemini"])
 
     asm = Assembler(project)
     provider = GeminiProvider()
@@ -430,7 +430,7 @@ def test_update_command_runs_via_cli(cli_project, monkeypatch):
     project, runner = cli_project
 
     # Init project so migrate doesn't fail
-    runner.invoke(main, ["set", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-p", "claude"])
 
     captured_cmds = []
 
@@ -459,7 +459,7 @@ def test_update_command_reports_failure(cli_project, monkeypatch):
     import subprocess
 
     project, runner = cli_project
-    runner.invoke(main, ["set", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-p", "claude"])
 
     def mock_run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="Connection refused")
@@ -476,7 +476,7 @@ def test_update_shows_version_transition(cli_project, monkeypatch):
     import subprocess
 
     project, runner = cli_project
-    runner.invoke(main, ["set", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-p", "claude"])
 
     def mock_run(cmd, **kwargs):
         # Version check returns new version
@@ -511,7 +511,7 @@ def test_update_shows_version_transition(cli_project, monkeypatch):
 def test_task_create_auto_id(cli_project):
     """ai-hats task create TITLE works without --id and defaults to TASK- prefix."""
     project, runner = cli_project
-    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
     result = runner.invoke(main, ["task", "create", "My test task", "-d", "desc"])
     assert result.exit_code == 0, result.output
@@ -595,7 +595,7 @@ def test_task_prefix_honored_from_yaml(cli_project):
     import yaml
 
     project, runner = cli_project
-    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
     cfg_path = project / "ai-hats.yaml"
     raw = yaml.safe_load(cfg_path.read_text()) or {}
@@ -614,7 +614,7 @@ def test_task_prefix_auto_detected_from_legacy_tasks(cli_project):
     import yaml
 
     project, runner = cli_project
-    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
     # Simulate a legacy tasks dir and strip any task_prefix from the yaml.
     legacy_id = "HATS-042"
@@ -638,7 +638,7 @@ def test_task_prefix_auto_detected_from_legacy_tasks(cli_project):
 def test_task_create_explicit_id(cli_project):
     """ai-hats task create TITLE --id ID uses the given ID."""
     project, runner = cli_project
-    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
     result = runner.invoke(main, ["task", "create", "Explicit ID task", "--id", "CUSTOM-001"])
     assert result.exit_code == 0, result.output
@@ -649,7 +649,7 @@ def test_task_create_explicit_id(cli_project):
 def test_task_list_table_filters(cli_project):
     """ai-hats task list shows table, hides done, supports filters."""
     project, runner = cli_project
-    runner.invoke(main, ["set", "-r", "assistant", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
     # Create tasks with different states and priorities
     runner.invoke(main, ["task", "create", "Active task", "-p", "high"])
@@ -722,7 +722,7 @@ def test_t10_update_invokes_stage2_verify(cli_project, monkeypatch):
     import subprocess
 
     project, runner = cli_project
-    runner.invoke(main, ["set", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-p", "claude"])
 
     captured: list[list[str]] = []
 
@@ -751,7 +751,7 @@ def test_t11_update_warns_on_stage2_failure_does_not_crash(cli_project, monkeypa
     import subprocess
 
     project, runner = cli_project
-    runner.invoke(main, ["set", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-p", "claude"])
 
     monkeypatch.setattr(subprocess, "run", _make_mock_run_factory(verify_rc=1))
 
@@ -765,7 +765,7 @@ def test_t12_update_prints_activation_banner_on_dep_change(cli_project, monkeypa
     import subprocess
 
     project, runner = cli_project
-    runner.invoke(main, ["set", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-p", "claude"])
 
     before = '[{"name": "click", "version": "8.1.0"}]'
     after = (
@@ -791,7 +791,7 @@ def test_t13_update_no_banner_when_deps_unchanged(cli_project, monkeypatch):
     import subprocess
 
     project, runner = cli_project
-    runner.invoke(main, ["set", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-p", "claude"])
 
     same = '[{"name": "click", "version": "8.1.0"}]'
     monkeypatch.setattr(
@@ -812,7 +812,7 @@ def test_update_shows_already_up_to_date(cli_project, monkeypatch):
     from ai_hats import __version__
 
     project, runner = cli_project
-    runner.invoke(main, ["set", "-p", "claude"])
+    runner.invoke(main, ["config", "set", "-p", "claude"])
 
     def mock_run(cmd, **kwargs):
         if "__version__" in str(cmd):
