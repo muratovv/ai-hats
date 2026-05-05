@@ -46,7 +46,7 @@ def test_retro_validate_ok_on_valid_session_retro(tmp_path: Path, runner: CliRun
         "---\n\n"
         "# body\n",
     )
-    result = runner.invoke(main, ["retro-validate", str(retro)])
+    result = runner.invoke(main, ["session", "retro-validate", str(retro)])
     assert result.exit_code == 0, result.output
     assert "OK" in result.output
     assert "SessionRetroV1" in result.output
@@ -58,7 +58,7 @@ def test_retro_validate_fails_on_malformed_yaml(tmp_path: Path, runner: CliRunne
         tmp_path / "bad.md",
         "---\nschema: hats-session-retro/v1\nsession_id: [unterminated\n---\n\n",
     )
-    result = runner.invoke(main, ["retro-validate", str(bad)])
+    result = runner.invoke(main, ["session", "retro-validate", str(bad)])
     assert result.exit_code == 1
     assert "FAIL" in result.output
 
@@ -71,6 +71,6 @@ def test_retro_validate_fails_on_missing_required_field(
         tmp_path / "incomplete.md",
         "---\nschema: hats-session-retro/v1\nsession_id: x\n---\n\n",
     )
-    result = runner.invoke(main, ["retro-validate", str(incomplete)])
+    result = runner.invoke(main, ["session", "retro-validate", str(incomplete)])
     assert result.exit_code == 1
     assert "FAIL" in result.output

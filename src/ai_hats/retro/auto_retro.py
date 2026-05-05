@@ -132,7 +132,7 @@ def describe_decision(decision: dict) -> str:
     Example outputs:
       "generating (bg) → .agent/retrospectives/sessions/<id>.md"
       "skipped (below threshold: turns=0<1, tool_calls=0<1)"
-      "hint — ai-hats retro <id>  (threshold met: ...)"
+      "hint — ai-hats session retro <id>  (threshold met: ...)"
     """
     action = decision.get("action", "skip")
     reason = decision.get("reason", "")
@@ -148,7 +148,7 @@ def describe_decision(decision: dict) -> str:
         # Reason contains the threshold detail; prefix with CLI call so the
         # user can copy-paste to trigger it manually.
         sid = Path(retro_path).stem if retro_path else ""
-        return f"hint — ai-hats retro {sid}  ({_parens_safe(reason)})"
+        return f"hint — ai-hats session retro {sid}  ({_parens_safe(reason)})"
     # skip
     return f"skipped ({_parens_safe(reason)})"
 
