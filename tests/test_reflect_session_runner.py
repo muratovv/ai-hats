@@ -63,7 +63,7 @@ class FakeSubAgentRunner:
         self, role_name: str, task: str = "", ticket_id: str = "",
         model: str = "", parent_session=None, isolation_mode: str = "discard",
     ) -> _FakeSession:
-        self.calls.append({"role": role_name, "task": task[:100]})
+        self.calls.append({"role": role_name, "task": task[:100], "model": model})
         self._counter += 1
         sdir = self.project_dir / ".gitlog" / f"session_fake_{self._counter}"
         sdir.mkdir(parents=True, exist_ok=True)
@@ -114,6 +114,43 @@ def test_run_saves_retro(tmp_path: Path):
     # No meta-proposal on success
     proposals = list((p / ".agent" / "backlog" / "proposals").glob("PROP-*.yaml"))
     assert proposals == []
+
+
+def test_run_passes_reflect_model_to_runner(tmp_path: Path):
+    """HATS-232: feedback.session_retro.reflect_model is propagated to SubAgentRunner.run(model=...)."""
+    p = _project(tmp_path)
+    (p / "ai-hats.yaml").write_text(
+        "provider: claude\n"
+        "schema_version: 2\n"
+        "feedback:\n"
+        "  session_retro:\n"
+        "    reflect_model: claude-haiku-4-5\n"
+    )
+    _make_session(p, "s-mdl")
+    _make_hyp(p, "HYP-001")
+    transcript = _wrap(_valid_reflect_retro("s-mdl", ["HYP-001"]))
+    fake = FakeSubAgentRunner(p, [transcript])
+    runner = ReflectSessionRunner(p, subagent_runner=fake)
+
+    runner.run("s-mdl")
+    assert fake.calls, "sub-agent runner was not invoked"
+    assert fake.calls[0]["model"] == "claude-haiku-4-5"
+
+
+def test_run_omits_model_when_reflect_model_unset(tmp_path: Path):
+    """No reflect_model in config → runner.run receives empty string (CLI default applies)."""
+    p = _project(tmp_path)
+    (p / "ai-hats.yaml").write_text(
+        "provider: claude\nschema_version: 2\n"
+    )
+    _make_session(p, "s-no-mdl")
+    _make_hyp(p, "HYP-001")
+    transcript = _wrap(_valid_reflect_retro("s-no-mdl", ["HYP-001"]))
+    fake = FakeSubAgentRunner(p, [transcript])
+    runner = ReflectSessionRunner(p, subagent_runner=fake)
+
+    runner.run("s-no-mdl")
+    assert fake.calls[0]["model"] == ""
 
 
 def test_run_includes_active_hypotheses_in_prompt(tmp_path: Path):

@@ -294,6 +294,12 @@ class SessionRetroConfig(_YamlModel):
     background: bool = True
     mode: str = "programmatic"
     reminder: ReminderConfig = Field(default_factory=ReminderConfig)
+    # Optional model overrides for the feedback loop. When None, the provider
+    # CLI's default model is used (current behaviour, back-compat).
+    # `model` controls SubprocessLLMCaller (the LLM-builder behind SessionRetroV1);
+    # `reflect_model` controls the reflect-session sub-agent spawned afterwards.
+    model: str | None = None
+    reflect_model: str | None = None
 
 
 class JudgeConfig(_YamlModel):

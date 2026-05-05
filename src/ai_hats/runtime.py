@@ -739,7 +739,9 @@ class SubAgentRunner:
             session.log_trace(TraceTag.SUB, f"Working directory: {work_dir}")
             t0 = time.monotonic()
             try:
-                full_cmd = provider.get_run_command(cmd, meta_prompt)
+                full_cmd = provider.get_run_command(
+                    cmd, meta_prompt, model=model or None,
+                )
                 proc = subprocess.run(
                     full_cmd,
                     cwd=str(work_dir),

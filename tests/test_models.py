@@ -445,6 +445,9 @@ def test_session_retro_config_defaults():
     assert c.policy == FeedbackPolicy.SMART
     assert c.background is True
     assert c.mode == "programmatic"
+    # HATS-232: explicit model overrides default to None (use CLI default).
+    assert c.model is None
+    assert c.reflect_model is None
 
 
 def test_session_retro_config_roundtrip():
@@ -453,9 +456,26 @@ def test_session_retro_config_roundtrip():
         smart_threshold=SmartThreshold(min_turns=10, min_tool_calls=5),
         background=False,
         mode="llm",
+        model="claude-haiku-4-5",
+        reflect_model="claude-sonnet-4-6",
     )
     restored = SessionRetroConfig.from_dict(c.to_dict())
     assert restored == c
+    assert restored.model == "claude-haiku-4-5"
+    assert restored.reflect_model == "claude-sonnet-4-6"
+
+
+def test_session_retro_config_loads_legacy_yaml_without_model_fields():
+    """Old ai-hats.yaml without model/reflect_model must still parse cleanly."""
+    legacy = {
+        "policy": "smart",
+        "background": True,
+        "mode": "llm",
+    }
+    c = SessionRetroConfig.from_dict(legacy)
+    assert c.model is None
+    assert c.reflect_model is None
+    assert c.mode == "llm"
 
 
 def test_judge_config_roundtrip():

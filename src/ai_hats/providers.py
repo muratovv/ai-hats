@@ -69,11 +69,15 @@ class Provider(abc.ABC):
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         """Get the CLI command to launch this provider."""
 
-    def get_run_command(self, cmd: list[str], meta_prompt: str) -> list[str]:
+    def get_run_command(
+        self, cmd: list[str], meta_prompt: str, *, model: str | None = None,
+    ) -> list[str]:
         """Build a non-interactive command that runs ``meta_prompt`` through this provider.
 
         Default: return ``cmd`` unchanged. Subclasses tailor the invocation
         to their CLI (e.g. Claude needs ``--print -p``, Gemini needs ``-p``).
+        ``model`` is an optional explicit model name; when None, the provider
+        CLI's default applies (back-compat).
         """
         return cmd
 
@@ -246,8 +250,11 @@ class GeminiProvider(Provider):
             cmd.extend(args)
         return cmd
 
-    def get_run_command(self, cmd: list[str], meta_prompt: str) -> list[str]:
-        return cmd + ["-p", meta_prompt]
+    def get_run_command(
+        self, cmd: list[str], meta_prompt: str, *, model: str | None = None,
+    ) -> list[str]:
+        extra = ["--model", model] if model else []
+        return cmd + extra + ["-p", meta_prompt]
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         return {
@@ -346,8 +353,11 @@ class ClaudeProvider(Provider):
             cmd.extend(args)
         return cmd
 
-    def get_run_command(self, cmd: list[str], meta_prompt: str) -> list[str]:
-        return cmd + ["--print", "-p", meta_prompt]
+    def get_run_command(
+        self, cmd: list[str], meta_prompt: str, *, model: str | None = None,
+    ) -> list[str]:
+        extra = ["--model", model] if model else []
+        return cmd + extra + ["--print", "-p", meta_prompt]
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         return {}
