@@ -1,4 +1,4 @@
-"""`ai-hats hyp` — manage hypothesis backlog (.agent/hypotheses/HYP-*.yaml).
+"""`ai-hats task hyp` — manage hypothesis backlog (.agent/hypotheses/HYP-*.yaml).
 
 Subcommands:
   list, show           — read-only views

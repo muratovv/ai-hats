@@ -16,8 +16,8 @@ session_end (runtime → auto_retro.make_decision)
               + .agent/backlog/proposals/*.yaml (status=open)
          writes ReflectSessionV1 (.agent/retrospectives/reflect-session/<id>.md)
          side-effects:
-           - ai-hats hyp append-verdict ...     (HYP validation_log)
-           - ai-hats proposal create | vote ... (inbox grow / co-sign)
+           - ai-hats task hyp append-verdict ...     (HYP validation_log)
+           - ai-hats task proposal create | vote ... (inbox grow / co-sign)
          runtime safety net: post-validate output; if absent or invalid →
            programmatic meta-proposal w/ failed_session_id=<sid>
 

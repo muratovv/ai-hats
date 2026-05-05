@@ -22,13 +22,13 @@ Step 3).
 ### Step 1 — Enumerate active hypotheses
 
 ```bash
-"$AH" hyp list --status active --json
+"$AH" task hyp list --status active --json
 ```
 
 For each `HYP-NNN`, read its file:
 
 ```bash
-"$AH" hyp show HYP-008
+"$AH" task hyp show HYP-008
 ```
 
 Pay attention to `success_criterion`, `observation_window`, `exit_criteria`,
@@ -64,7 +64,7 @@ After choosing, persist via CLI (atomic, filelock-protected) — **but only
 for verdicts that carry signal**: `confirmed`, `refuted`, `inconclusive`.
 
 ```bash
-"$AH" hyp append-verdict \
+"$AH" task hyp append-verdict \
   --hyp HYP-008 --session "$SID" \
   --verdict inconclusive --evidence "audit.md:Turn 3 — no Bash anti-pattern usage observed" \
   --recommendation keep
@@ -105,7 +105,7 @@ hypothesis means. Filing `n/a` "to be safe" — this hides a knowledge gap.
 **Correct response**: file a meta-proposal:
 
 ```bash
-"$AH" proposal create \
+"$AH" task proposal create \
   --category process --target reflect-session \
   --title "HYP-005 phrasing ambiguous to judge" \
   --description "..." --rationale "..." \

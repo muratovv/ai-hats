@@ -161,14 +161,18 @@ main.add_command(worktree.wt)
 # Session (observability + retro generation)
 main.add_command(session.session)
 
-# Task management
+# Task management — hyp + proposal nest under it (HATS-241).
+# All three are backlog artifacts, so they live as siblings:
+#   ai-hats task list / create / ...
+#   ai-hats task hyp ...
+#   ai-hats task proposal ...
+task.task.add_command(hyp_mod.hyp)
+task.task.add_command(proposal_mod.proposal)
 main.add_command(task.task)
 
 # Maintenance
 main.add_command(maintenance.update)
 main.add_command(maintenance.migrate)
 
-# Hypothesis backlog (HATS-210)
-main.add_command(hyp_mod.hyp)
-main.add_command(proposal_mod.proposal)
+# Reflect (post-session retro)
 main.add_command(reflect_mod.reflect)

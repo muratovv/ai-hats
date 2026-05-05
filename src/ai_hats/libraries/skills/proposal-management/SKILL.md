@@ -18,7 +18,7 @@ opportunity (rule wording, skill update, code bug, process gap, doc fix).
 ### Step 1 — Read the inbox first
 
 ```bash
-"$AH" proposal list --status open
+"$AH" task proposal list --status open
 ```
 
 A proposal is "similar" if a duplicate (`category` + `target`) covers the
@@ -27,7 +27,7 @@ same change. Vote rather than create whenever in doubt.
 ### Step 2a — Vote (preferred path)
 
 ```bash
-"$AH" proposal vote --prop PROP-NNN \
+"$AH" task proposal vote --prop PROP-NNN \
   --session "$SID" --reasoning "saw same gap in turn 3 — agree with target"
 ```
 
@@ -41,7 +41,7 @@ proposal_actions:
 ### Step 2b — Create only if novel
 
 ```bash
-"$AH" proposal create \
+"$AH" task proposal create \
   --title "Explicit Bash anti-pattern enumeration in dev_rule_tool_call_hygiene" \
   --category rule \
   --target dev_rule_tool_call_hygiene \
@@ -64,7 +64,7 @@ If you cannot follow the format, the inbox is unparseable, or instructions
 conflict — **do not silently drop the entry**. File a meta-proposal:
 
 ```bash
-"$AH" proposal create \
+"$AH" task proposal create \
   --category process --target reflect-session \
   --title "Output format ambiguous for HYP-005 with no session retro" \
   --description "Skill says cite session retro path, but session has no retro yet — fallback unclear." \

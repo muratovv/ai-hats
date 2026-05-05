@@ -20,7 +20,7 @@ Look for the same friction surfacing across multiple sessions.
 ### Step 2: Create the hypothesis
 
 ```bash
-ai-hats hyp create "<short statement of expected improvement>" \
+ai-hats task hyp create "<short statement of expected improvement>" \
   --baseline "<measurable starting state>" \
   --target   "<measurable target after change>" \
   --window   "N sessions"
@@ -54,7 +54,7 @@ ai-hats reflect session --session <SID>
 After enough verdicts accumulate (the window declared on creation):
 
 ```bash
-ai-hats hyp close HYP-NNN --verdict {validated|refuted|inconclusive} \
+ai-hats task hyp close HYP-NNN --verdict {validated|refuted|inconclusive} \
   --note "<one-line summary>"
 ```
 
