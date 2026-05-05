@@ -99,6 +99,7 @@ def make_decision(
             "retro_path": None,
             "log_path": str(_retro_log_path(project_dir, session_id)),
             "reminder": None,
+            "wrap_up": None,
         }
 
     retro_path = (
@@ -110,15 +111,22 @@ def make_decision(
         / f"{session_id}.md"
     )
 
-    # Evaluate stale-retro reminder so the runtime banner can surface it.
-    # Pure side-effect-free: any error collapses to None.
+    # Evaluate stale-retro reminder + wrap-up nudge so the runtime banner can
+    # surface them. Pure side-effect-free: any error collapses to None.
     reminder_info = None
+    wrap_up_info = None
     try:
         from . import reminder as reminder_mod
 
         reminder_info, _ = reminder_mod.evaluate(project_dir, sr)
     except Exception:
         reminder_info = None
+    try:
+        from . import reminder as reminder_mod
+
+        wrap_up_info = reminder_mod.evaluate_wrap_up(project_dir, session_id)
+    except Exception:
+        wrap_up_info = None
 
     return {
         "action": action,
@@ -128,6 +136,7 @@ def make_decision(
         "retro_path": str(retro_path),
         "log_path": str(_retro_log_path(project_dir, session_id)),
         "reminder": reminder_info,
+        "wrap_up": wrap_up_info,
     }
 
 
