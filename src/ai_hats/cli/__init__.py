@@ -124,6 +124,7 @@ def _launch_session(
 # ordering is explicit and a single place to add/remove commands.
 
 from . import (  # noqa: E402
+    agent as agent_mod,
     assembly,
     config as config_mod,
     hyp as hyp_mod,
@@ -131,7 +132,6 @@ from . import (  # noqa: E402
     maintenance,
     proposal as proposal_mod,
     reflect as reflect_mod,
-    run as run_mod,
     session,
     task,
     worktree,
@@ -164,8 +164,8 @@ main.add_command(self_group)
 # List
 main.add_command(list_cmd.list_cmd)
 
-# Run (sub-agent launcher)
-main.add_command(run_mod.run_subagent)
+# Agent — sub-agent launcher (HATS-242, was 'run').
+main.add_command(agent_mod.run_subagent)
 
 # Worktree
 main.add_command(worktree.wt)

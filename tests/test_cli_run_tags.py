@@ -1,4 +1,4 @@
-"""CLI integration tests for `ai-hats run --tag` (HATS-163).
+"""CLI integration tests for `ai-hats agent --tag` (HATS-163).
 
 Verifies the wiring CLI flag → parse_tags → SubAgentRunner.run(tags=...) without
 spinning up a real claude/gemini subprocess. A stub SubAgentRunner captures the
@@ -68,14 +68,14 @@ def stub_runner(monkeypatch, project_dir):
 
 
 def test_run_without_tags_passes_none(stub_runner):
-    result = CliRunner().invoke(main, ["run", "primary", "--task", "t"])
+    result = CliRunner().invoke(main, ["agent", "primary", "--task", "t"])
     assert result.exit_code == 0, result.output
     assert stub_runner.last_kwargs["tags"] is None
 
 
 def test_run_single_tag(stub_runner):
     result = CliRunner().invoke(
-        main, ["run", "primary", "--task", "t", "--tag", "alert_fp=abc123"],
+        main, ["agent", "primary", "--task", "t", "--tag", "alert_fp=abc123"],
     )
     assert result.exit_code == 0, result.output
     assert stub_runner.last_kwargs["tags"] == {"alert_fp": "abc123"}
@@ -83,7 +83,7 @@ def test_run_single_tag(stub_runner):
 
 def test_run_multiple_tags(stub_runner):
     result = CliRunner().invoke(main, [
-        "run", "primary", "--task", "t",
+        "agent", "primary", "--task", "t",
         "--tag", "alert_fp=abc", "--tag", "client=home-lab",
     ])
     assert result.exit_code == 0, result.output
@@ -98,7 +98,7 @@ def test_run_multiple_tags(stub_runner):
 
 
 def test_run_tag_missing_equals_fails(stub_runner):
-    result = CliRunner().invoke(main, ["run", "primary", "--tag", "broken"])
+    result = CliRunner().invoke(main, ["agent", "primary", "--tag", "broken"])
     assert result.exit_code == 2
     assert "missing '=' separator" in result.output
     # Runner never called.
@@ -107,7 +107,7 @@ def test_run_tag_missing_equals_fails(stub_runner):
 
 def test_run_tag_reserved_key_fails(stub_runner):
     result = CliRunner().invoke(
-        main, ["run", "primary", "--tag", "role=hacker"],
+        main, ["agent", "primary", "--tag", "role=hacker"],
     )
     assert result.exit_code == 2
     assert "is reserved" in result.output
@@ -116,7 +116,7 @@ def test_run_tag_reserved_key_fails(stub_runner):
 
 def test_run_tag_invalid_key_format_fails(stub_runner):
     result = CliRunner().invoke(
-        main, ["run", "primary", "--tag", "1bad=v"],
+        main, ["agent", "primary", "--tag", "1bad=v"],
     )
     assert result.exit_code == 2
     assert "must match" in result.output

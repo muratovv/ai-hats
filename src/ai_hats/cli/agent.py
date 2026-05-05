@@ -1,4 +1,4 @@
-"""`ai-hats run` — launch a sub-agent session with an isolated worktree."""
+"""`ai-hats agent` — launch a sub-agent session with an isolated worktree."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import click
 from ._helpers import _project_dir, console
 
 
-@click.command("run")
+@click.command("agent")
 @click.argument("role")
 @click.option("--ticket", default=None, help="Ticket/task ID for context")
 @click.option("--model", default=None, help="Model override")
