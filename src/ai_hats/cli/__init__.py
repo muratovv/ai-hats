@@ -140,8 +140,6 @@ from . import (  # noqa: E402
 # Assembly commands
 main.add_command(assembly.init)
 main.add_command(assembly.status)
-main.add_command(assembly.bump)
-main.add_command(assembly.rollback)
 main.add_command(assembly.clean)
 
 # Config — set + customize nest under it (HATS-241).
@@ -149,6 +147,21 @@ main.add_command(assembly.clean)
 config_mod.config.add_command(assembly.set_role)
 config_mod.config.add_command(assembly.customize)
 main.add_command(config_mod.config)
+
+
+# 'self' — framework lifecycle (HATS-241). Convention: rustup self update,
+# gh extension self ... — instantly signals 'operations on the tool itself,
+# not on your project'.
+@click.group("self")
+def self_group():
+    """Manage the ai-hats installation itself (bump, update, migrate, rollback)."""
+
+
+self_group.add_command(assembly.bump)
+self_group.add_command(assembly.rollback)
+self_group.add_command(maintenance.update)
+self_group.add_command(maintenance.migrate)
+main.add_command(self_group)
 
 # List
 main.add_command(list_cmd.list_cmd)
@@ -170,10 +183,6 @@ main.add_command(session.session)
 task.task.add_command(hyp_mod.hyp)
 task.task.add_command(proposal_mod.proposal)
 main.add_command(task.task)
-
-# Maintenance
-main.add_command(maintenance.update)
-main.add_command(maintenance.migrate)
 
 # Reflect (post-session retro)
 main.add_command(reflect_mod.reflect)

@@ -73,7 +73,7 @@ feedback:
     background: true
 ```
 
-После правки — `ai-hats bump`.
+После правки — `ai-hats self bump`.
 
 ### Модель для feedback-loop (HATS-232)
 
@@ -109,7 +109,7 @@ feedback:
     reflect_model: claude-sonnet-4-6   # judge = Sonnet, качество вердиктов
 ```
 
-После правки — `ai-hats bump`.
+После правки — `ai-hats self bump`.
 
 ---
 

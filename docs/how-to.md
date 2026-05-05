@@ -2,7 +2,7 @@
 
 Подборка типовых задач, с которыми сталкиваешься при подключении ai-hats к проекту: расширить роль скиллом, убрать ненужный компонент, подложить свой локальный скилл, сменить провайдера. Каждый пример — самодостаточный фрагмент `ai-hats.yaml` + команды для применения.
 
-> Все изменения в `ai-hats.yaml` применяются командой `ai-hats bump` (пересобирает `CLAUDE.md` / `GEMINI.md` и `.claude/*` по конфигу). Базовые роли в `libraries/roles/` **не редактируем** — вместо этого используем `customizations` (overlay).
+> Все изменения в `ai-hats.yaml` применяются командой `ai-hats self bump` (пересобирает `CLAUDE.md` / `GEMINI.md` и `.claude/*` по конфигу). Базовые роли в `libraries/roles/` **не редактируем** — вместо этого используем `customizations` (overlay).
 >
 > Любую правку оверлея можно сделать двумя способами:
 > 1. **CLI:** `ai-hats config customize <role> --add-skill <name> | --remove-skill <name> | --add-trait <name> | --injection-append "<text>"`. Команда сама пишет в `ai-hats.yaml`.
@@ -34,10 +34,10 @@ customizations:
 
 ```bash
 ai-hats config customize sre --add-skill kubernetes-ops
-ai-hats bump
+ai-hats self bump
 ```
 
-Проверка: после `ai-hats bump` скилл появится в секции `## AVAILABLE SKILLS` сгенерированного `CLAUDE.md`.
+Проверка: после `ai-hats self bump` скилл появится в секции `## AVAILABLE SKILLS` сгенерированного `CLAUDE.md`.
 
 ---
 
@@ -164,7 +164,7 @@ feedback:
 
 ```bash
 ai-hats config set -p gemini   # переключиться на Gemini
-ai-hats bump            # пересобрать GEMINI.md
+ai-hats self bump            # пересобрать GEMINI.md
 ```
 
 В `ai-hats.yaml` поменяется только `provider: gemini`. Композиция роли остаётся той же — оба провайдера читают одни и те же библиотеки.
@@ -176,7 +176,7 @@ ai-hats bump            # пересобрать GEMINI.md
 После любой правки `ai-hats.yaml`:
 
 ```bash
-ai-hats bump          # пересобрать промпт
+ai-hats self bump          # пересобрать промпт
 ai-hats status        # убедиться, что всё подхватилось
 ```
 

@@ -72,14 +72,14 @@ def test_status_after_set(cli_project):
 
 
 def test_bump_after_set(cli_project):
-    """ai-hats bump re-assembles without errors."""
+    """ai-hats self bumpre-assembles without errors."""
     project, runner = cli_project
 
     runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
 
     prompt_before = (project / "CLAUDE.md").read_text()
 
-    r = runner.invoke(main, ["bump"])
+    r = runner.invoke(main, ["self", "bump"])
     assert r.exit_code == 0, r.output
     assert "Bumped" in r.output
 
@@ -424,7 +424,7 @@ def test_update_command_uses_force_reinstall():
 
 
 def test_update_command_runs_via_cli(cli_project, monkeypatch):
-    """ai-hats update invokes pip with correct flags (mocked subprocess)."""
+    """ai-hats self updateinvokes pip with correct flags (mocked subprocess)."""
     import subprocess
 
     project, runner = cli_project
@@ -442,7 +442,7 @@ def test_update_command_runs_via_cli(cli_project, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", mock_run)
 
-    result = runner.invoke(main, ["update"])
+    result = runner.invoke(main, ["self", "update"])
     assert result.exit_code == 0, result.output
     assert "Updating from GitHub" in result.output
 
@@ -455,7 +455,7 @@ def test_update_command_runs_via_cli(cli_project, monkeypatch):
 
 
 def test_update_command_reports_failure(cli_project, monkeypatch):
-    """ai-hats update shows error when pip fails."""
+    """ai-hats self updateshows error when pip fails."""
     import subprocess
 
     project, runner = cli_project
@@ -466,13 +466,13 @@ def test_update_command_reports_failure(cli_project, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", mock_run)
 
-    result = runner.invoke(main, ["update"])
+    result = runner.invoke(main, ["self", "update"])
     assert "Update failed" in result.output
     assert "Connection refused" in result.output
 
 
 def test_update_shows_version_transition(cli_project, monkeypatch):
-    """ai-hats update shows old → new version when version changes."""
+    """ai-hats self updateshows old → new version when version changes."""
     import subprocess
 
     project, runner = cli_project
@@ -496,7 +496,7 @@ def test_update_shows_version_transition(cli_project, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", mock_run)
 
-    result = runner.invoke(main, ["update"])
+    result = runner.invoke(main, ["self", "update"])
     assert result.exit_code == 0, result.output
     # Shows version transition
     assert "0.5.0" in result.output
@@ -735,7 +735,7 @@ def test_t10_update_invokes_stage2_verify(cli_project, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", mock_run)
 
-    result = runner.invoke(main, ["update"])
+    result = runner.invoke(main, ["self", "update"])
     assert result.exit_code == 0, result.output
 
     verify_calls = [
@@ -755,7 +755,7 @@ def test_t11_update_warns_on_stage2_failure_does_not_crash(cli_project, monkeypa
 
     monkeypatch.setattr(subprocess, "run", _make_mock_run_factory(verify_rc=1))
 
-    result = runner.invoke(main, ["update"])
+    result = runner.invoke(main, ["self", "update"])
     assert result.exit_code == 0, result.output
     assert "Post-install verify warned" in result.output
 
@@ -779,7 +779,7 @@ def test_t12_update_prints_activation_banner_on_dep_change(cli_project, monkeypa
         _make_mock_run_factory(pip_list_before=before, pip_list_after=after),
     )
 
-    result = runner.invoke(main, ["update"])
+    result = runner.invoke(main, ["self", "update"])
     assert result.exit_code == 0, result.output
     assert "Dependency activation" in result.output
     assert "ptyprocess" in result.output
@@ -800,13 +800,13 @@ def test_t13_update_no_banner_when_deps_unchanged(cli_project, monkeypatch):
         _make_mock_run_factory(pip_list_before=same, pip_list_after=same),
     )
 
-    result = runner.invoke(main, ["update"])
+    result = runner.invoke(main, ["self", "update"])
     assert result.exit_code == 0, result.output
     assert "Dependency activation" not in result.output
 
 
 def test_update_shows_already_up_to_date(cli_project, monkeypatch):
-    """ai-hats update shows 'already up to date' when versions match."""
+    """ai-hats self updateshows 'already up to date' when versions match."""
     import subprocess
 
     from ai_hats import __version__
@@ -821,6 +821,6 @@ def test_update_shows_already_up_to_date(cli_project, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", mock_run)
 
-    result = runner.invoke(main, ["update"])
+    result = runner.invoke(main, ["self", "update"])
     assert result.exit_code == 0, result.output
     assert "Already up to date" in result.output
