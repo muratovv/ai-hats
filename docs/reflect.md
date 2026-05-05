@@ -1,7 +1,8 @@
 # Reflect pipeline
 
-Two commands cover the retrospective lifecycle: `reflect-session` (per-session
-judge run) and `reflect-all` (interactive triage of the accumulated backlog).
+Two subcommands of `ai-hats reflect` cover the retrospective lifecycle:
+`reflect session` (per-session judge run) and `reflect all`
+(interactive triage of the accumulated backlog).
 
 ## Pipeline overview
 
@@ -20,23 +21,23 @@ session_end (runtime → auto_retro.make_decision)
          runtime safety net: post-validate output; if absent or invalid →
            programmatic meta-proposal w/ failed_session_id=<sid>
 
-ai-hats reflect-session [--session ID] [--background]
+ai-hats reflect session [--session ID] [--background]
   Manual single-session run of the same role.
 
-ai-hats reflect-all [--dry-run]
+ai-hats reflect all [--dry-run]
   Pre-flight (Python): collect active HYP + open PROP into a handoff.md
   Interactive: os.execvp claude with pointer to the handoff.
-  reflect-all commit: bulk-update PROP statuses (accept/reject/defer/duplicate).
+  reflect commit: bulk-update PROP statuses (accept/reject/defer/duplicate).
 ```
 
-## `ai-hats reflect-session`
+## `ai-hats reflect session`
 
 Per-session judge run. Spawns the **reflect-session** role on a single
 `.gitlog/session_<id>/`. Output is `hats-reflect-session/v1` markdown.
 
 Triggers:
 - **Auto** on session-end (when `feedback.session_retro.policy=run`); detached background.
-- **Manual** via `ai-hats reflect-session --session <id>` (foreground).
+- **Manual** via `ai-hats reflect session --session <id>` (foreground).
 
 Validation contract:
 - One `hypothesis_verdicts[]` entry per active HYP (no skipping).
@@ -47,14 +48,14 @@ Validation contract:
 - Two-layer no-silent-failure: LLM-driven (in-skill) + runtime-driven
   (programmatic post-validation always files a meta-proposal on failure).
 
-## `ai-hats reflect-all`
+## `ai-hats reflect all`
 
 Manual triage of accumulated backlog. Two stages:
 
 1. Pre-flight builds `.agent/retrospectives/reflect-all/<ts>-handoff.md`
    listing all active HYP and open PROP.
 2. `os.execvp` to `claude` with a pointer prompt.
-3. After chat: `ai-hats reflect-all commit --accept PROP-X --reject PROP-Y ...`
+3. After chat: `ai-hats reflect commit --accept PROP-X --reject PROP-Y ...`
    flips statuses in bulk.
 
 `--dry-run` builds the handoff but skips the exec — useful for inspection.

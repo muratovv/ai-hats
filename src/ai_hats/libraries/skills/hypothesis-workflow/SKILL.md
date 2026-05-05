@@ -46,7 +46,7 @@ Each session-end (when `feedback.session_retro.policy=run`) auto-spawns a
 If you want a verdict on a specific session without waiting for auto-runs:
 
 ```bash
-ai-hats reflect-session --session <SID>
+ai-hats reflect session --session <SID>
 ```
 
 ### Close the hypothesis
