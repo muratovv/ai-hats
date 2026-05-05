@@ -237,7 +237,7 @@ def test_print_session_end_without_retro(tmp_path, capsys):
 @pytest.mark.parametrize("action,expected_fragment", [
     ("run", "generating"),
     ("skip", "skipped"),
-    ("hint", "hint — ai-hats retro"),
+    ("hint", "hint — ai-hats session retro"),
 ])
 def test_print_session_end_with_retro(tmp_path, capsys, action, expected_fragment):
     """Each action yields a dedicated retro line with the right phrasing."""

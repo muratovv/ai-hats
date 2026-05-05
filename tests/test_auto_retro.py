@@ -258,7 +258,7 @@ class TestDescribeDecision:
             "background": False,
             "retro_path": "/a/20260422-071234-1.md",
         })
-        assert "ai-hats retro" in s
+        assert "ai-hats session retro" in s
         assert "20260422-071234-1" in s
 
 

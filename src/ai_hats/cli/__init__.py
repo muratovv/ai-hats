@@ -131,7 +131,6 @@ from . import (  # noqa: E402
     maintenance,
     proposal as proposal_mod,
     reflect as reflect_mod,
-    retro,
     run as run_mod,
     session,
     task,
@@ -161,12 +160,7 @@ main.add_command(run_mod.run_subagent)
 # Worktree
 main.add_command(worktree.wt)
 
-# Retro
-main.add_command(retro.retro)
-main.add_command(retro.retro_validate)
-
-# Session + audit (observability)
-main.add_command(session.audit)
+# Session (observability + retro generation)
 main.add_command(session.session)
 
 # Task management

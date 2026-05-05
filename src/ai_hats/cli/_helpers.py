@@ -20,7 +20,7 @@ def exec_claude_with_retro(retro_path: Path, kind: str = "session") -> None:
     Builds an opening prompt that references the retro path and invites the
     user to discuss findings, then `os.execvp`s into the `claude` binary so
     the live chat takes over the terminal. Used by `--interactive` flag on
-    `ai-hats retro`.
+    `ai-hats session retro`.
     """
     claude_bin = shutil.which("claude")
     if not claude_bin:
