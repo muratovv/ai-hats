@@ -1,4 +1,4 @@
-"""Tests for `ai-hats reflect-all` pre-flight + commit."""
+"""Tests for `ai-hats reflect all` pre-flight + `reflect commit`."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from ai_hats.cli.reflect_all import reflect_all
+from ai_hats.cli.reflect import reflect
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ def _make_prop(pd: Path, pid: str, status="open"):
 def test_dry_run_builds_handoff(project_dir: Path):
     _make_hyp(project_dir, "HYP-001")
     _make_prop(project_dir, "PROP-001")
-    res = CliRunner().invoke(reflect_all, ["--dry-run"])
+    res = CliRunner().invoke(reflect, ["all", "--dry-run"])
     assert res.exit_code == 0, res.output
     out_dir = project_dir / ".agent" / "retrospectives" / "reflect-all"
     files = list(out_dir.glob("*-handoff.md"))
@@ -62,7 +62,7 @@ def test_dry_run_builds_handoff(project_dir: Path):
 
 
 def test_dry_run_handles_empty_inbox(project_dir: Path):
-    res = CliRunner().invoke(reflect_all, ["--dry-run"])
+    res = CliRunner().invoke(reflect, ["all", "--dry-run"])
     assert res.exit_code == 0
     out_dir = project_dir / ".agent" / "retrospectives" / "reflect-all"
     text = list(out_dir.glob("*-handoff.md"))[0].read_text()
@@ -75,7 +75,7 @@ def test_commit_changes_status(project_dir: Path):
     _make_prop(project_dir, "PROP-002")
     _make_prop(project_dir, "PROP-003")
     res = CliRunner().invoke(
-        reflect_all,
+        reflect,
         [
             "commit",
             "--accept", "PROP-001",
@@ -100,6 +100,6 @@ def test_commit_changes_status(project_dir: Path):
 
 
 def test_commit_with_no_changes(project_dir: Path):
-    res = CliRunner().invoke(reflect_all, ["commit"])
+    res = CliRunner().invoke(reflect, ["commit"])
     assert res.exit_code == 0
     assert "0 change(s)" in res.output

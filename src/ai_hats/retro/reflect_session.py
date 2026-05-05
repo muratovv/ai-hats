@@ -342,7 +342,7 @@ class ReflectSessionRunner:
             target="reflect-session",
             description=(
                 f"Reflect-session run failed with: {error_msg[:400]}. "
-                "Re-run with `ai-hats reflect-session --session "
+                "Re-run with `ai-hats reflect session --session "
                 f"{session_id}` after addressing the cause."
             ),
             rationale=(

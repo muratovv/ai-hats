@@ -1,18 +1,18 @@
-"""`ai-hats reflect-all` — interactive HYP closure + proposal triage.
+"""`ai-hats reflect` — group command for the per-session and bulk-triage flows.
 
-Two phases:
+Subcommands:
 
-  1. **Pre-flight (Python)**: collect active hypotheses + open proposals,
-     build a handoff markdown file under
-     `.agent/retrospectives/reflect-all/<ts>-handoff.md`.
+- `reflect session [--session ID] [--background]`
+    Run the reflect-session role on one session. Auto-trigger from
+    session-end uses --background to detach from the caller.
 
-  2. **Interactive (live claude)**: `os.execvp` to claude with a pointer
-     prompt — user walks the backlog, decides which HYP to close (via
-     `ai-hats hyp ...`), which PROPs to accept/reject/defer
-     (via `ai-hats proposal status ...`), and which tasks to spawn.
+- `reflect all [--dry-run]`
+    Pre-flight (Python) builds a handoff under
+    `.agent/retrospectives/reflect-all/<ts>-handoff.md`, then `os.execvp`
+    to claude for an interactive triage.
 
-  3. **`reflect-all commit`**: post-session subcommand to flip statuses
-     in bulk (idempotent, used to "clear inbox" when chat is done).
+- `reflect commit ...`
+    Bulk-update proposal statuses (called at end of interactive chat).
 """
 
 from __future__ import annotations
@@ -26,19 +26,90 @@ from pathlib import Path
 import click
 
 from ..hypothesis import HypothesisStore, ProposalStore
+from ..retro.reflect_session import ReflectSessionError, ReflectSessionRunner
 from ._helpers import _project_dir, console
 
 
-@click.group("reflect-all", invoke_without_command=True)
+@click.group("reflect")
+def reflect():
+    """Per-session and bulk-triage flows for hypotheses + proposals."""
+
+
+# ---- reflect session ----
+
+
+@reflect.command("session")
+@click.option(
+    "--session", "session_id", required=True,
+    help="Session id (YYYYMMDD-HHMMSS-N) to reflect on",
+)
+@click.option(
+    "--background", is_flag=True,
+    help="Run as detached background process (used by auto-trigger).",
+)
+@click.option(
+    "--max-retries", type=int, default=1, show_default=True,
+)
+def reflect_session_cmd(session_id: str, background: bool, max_retries: int):
+    """Run reflect-session role on one session and validate output.
+
+    On any failure a meta-proposal is filed programmatically — the command
+    still exits non-zero so the caller can react, but the proposal serves
+    as the durable audit record.
+    """
+    if background:
+        _spawn_detached(session_id, max_retries)
+        return
+
+    project_dir = _project_dir()
+    runner = ReflectSessionRunner(project_dir)
+    try:
+        path = runner.run(session_id, max_retries=max_retries)
+    except ReflectSessionError as exc:
+        console.print(
+            f"[yellow]reflect session failed for {session_id}:[/yellow] {exc}\n"
+            "Meta-proposal filed in .agent/backlog/proposals/."
+        )
+        sys.exit(2)
+    else:
+        console.print(f"[green]✓[/green] reflect session saved to {path}")
+
+
+def _spawn_detached(session_id: str, max_retries: int) -> None:
+    """Re-invoke ourselves in a new process group, return immediately."""
+    import subprocess
+
+    project_dir = _project_dir()
+    log_path = (
+        project_dir / ".gitlog" / f"session_{session_id}" / "retro.log"
+    )
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "a") as f:
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                "-m", "ai_hats.cli.reflect_session_main",
+                session_id,
+                str(max_retries),
+            ],
+            cwd=str(project_dir),
+            stdout=f,
+            stderr=f,
+            start_new_session=True,
+        )
+    console.print(f"[dim]reflect session spawned (pid={proc.pid}, bg)[/dim]")
+
+
+# ---- reflect all ----
+
+
+@reflect.command("all")
 @click.option(
     "--dry-run", is_flag=True,
     help="Build pre-flight handoff but do not exec claude.",
 )
-@click.pass_context
-def reflect_all(ctx, dry_run: bool):
+def reflect_all_cmd(dry_run: bool):
     """Interactive HYP closure + proposal triage."""
-    if ctx.invoked_subcommand is not None:
-        return
     project_dir = _project_dir()
     handoff_path = _build_handoff(project_dir)
     console.print(f"[green]✓[/green] Handoff written: {handoff_path}")
@@ -47,7 +118,7 @@ def reflect_all(ctx, dry_run: bool):
     claude_bin = shutil.which("claude")
     if not claude_bin:
         console.print(
-            "[red]reflect-all: 'claude' binary not found in PATH.[/] "
+            "[red]reflect all: 'claude' binary not found in PATH.[/] "
             "Install Claude Code or open the handoff in your editor."
         )
         sys.exit(1)
@@ -59,7 +130,10 @@ def reflect_all(ctx, dry_run: bool):
     os.execvp(claude_bin, [claude_bin, prompt])
 
 
-@reflect_all.command("commit")
+# ---- reflect commit ----
+
+
+@reflect.command("commit")
 @click.option(
     "--accept", multiple=True, help="PROP-NNN to mark accepted (repeatable)",
 )
@@ -72,7 +146,7 @@ def reflect_all(ctx, dry_run: bool):
 @click.option(
     "--duplicate", multiple=True, help="PROP-NNN to mark duplicate (repeatable)",
 )
-def reflect_all_commit(accept, reject, defer, duplicate):
+def reflect_commit_cmd(accept, reject, defer, duplicate):
     """Bulk-update proposal statuses (called at end of interactive chat)."""
     project_dir = _project_dir()
     store = ProposalStore(project_dir / ".agent" / "backlog" / "proposals")
@@ -93,10 +167,10 @@ def reflect_all_commit(accept, reject, defer, duplicate):
         store.set_status(pid, "duplicate")
         console.print(f"  {pid} → duplicate")
         changes += 1
-    console.print(f"[green]✓[/green] reflect-all commit: {changes} change(s)")
+    console.print(f"[green]✓[/green] reflect commit: {changes} change(s)")
 
 
-# --- pre-flight handoff ---
+# ---- pre-flight handoff (used by `reflect all`) ----
 
 
 def _handoff_dir(project_dir: Path) -> Path:
@@ -168,7 +242,7 @@ def _build_handoff(project_dir: Path) -> Path:
         "     or via a follow-up tooling step (HATS-NNN).\n\n"
         "2. **Triage proposals**. For each open PROP, decide accept/reject/"
         "defer/duplicate. Apply with:\n"
-        "   - `ai-hats reflect-all commit --accept PROP-X --reject PROP-Y --defer PROP-Z`\n\n"
+        "   - `ai-hats reflect commit --accept PROP-X --reject PROP-Y --defer PROP-Z`\n\n"
         "3. **Spawn tasks for accepted PROPs** via `ai-hats task create ...`.\n"
     )
 
@@ -182,6 +256,6 @@ def _build_handoff_prompt(handoff_path: Path) -> str:
         "It lists active hypotheses and the open proposal inbox.\n\n"
         "Walk the active hypotheses first: discuss verdicts, decide which to "
         "close. Then walk the proposals and decide accept/reject/defer/duplicate. "
-        "When ready, run `ai-hats reflect-all commit ...` to flip statuses in bulk, "
+        "When ready, run `ai-hats reflect commit ...` to flip statuses in bulk, "
         "and `ai-hats task create ...` for accepted proposals you want to track."
     )
