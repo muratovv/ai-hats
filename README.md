@@ -30,12 +30,12 @@ TMP=$(mktemp -d) && git clone --depth 1 git@github.com:muratovv/ai-hats.git "$TM
 
 ```bash
 source .venv/bin/activate
-ai-hats                     # запустить сессию с текущими настройками
-ai-hats --resume            # флаги передаются провайдеру (claude/gemini)
-ai-hats status              # проверить состояние
-ai-hats set -r <role>       # сменить роль
-ai-hats set -p gemini       # сменить провайдер
-ai-hats bump                # обновить prompt после изменений в библиотеке
+ai-hats                       # запустить сессию с текущими настройками
+ai-hats --resume              # флаги передаются провайдеру (claude/gemini)
+ai-hats config status         # проверить состояние
+ai-hats config set -r <role>  # сменить роль
+ai-hats config set -p gemini  # сменить провайдер
+ai-hats self bump             # обновить prompt после изменений в библиотеке
 ```
 
 ### Альтернативные способы установки
@@ -55,7 +55,7 @@ bash ~/dev/ai-hats/scripts/bootstrap.sh -r go-dev -p claude
 ```bash
 cd ~/dev/my-project
 source .venv/bin/activate
-ai-hats set -r go-dev -p claude
+ai-hats config set -r go-dev -p claude
 ```
 </details>
 
@@ -75,6 +75,9 @@ pytest tests/ -v
 
 ## CLI
 
+Топ-уровневые группы: `agent`, `config`, `list`, `reflect`, `self`, `session`,
+`task`, `wt`. Подробности по любой — `ai-hats <group> --help`.
+
 ```bash
 # Сессия — ai-hats без subcommand запускает провайдер
 ai-hats                                    # текущие настройки
@@ -83,40 +86,46 @@ ai-hats -p claude -r architect             # override провайдера и р
 ai-hats "fix the bug"                      # промпт передаётся провайдеру
 ai-hats --tag client=acme --tag project=X  # custom теги в metrics.json (см. ниже)
 
-# Конфигурация
-ai-hats set -r <role> -p <provider>        # настроить роль и/или провайдер
-ai-hats config feedback show               # текущая конфигурация feedback loop
-ai-hats config feedback session-retro <policy> [--threshold turns=N,tool_calls=N] [--mode ...] [--background/--no-background]
-ai-hats config feedback judge <off|manual>  # политика запуска judge
-ai-hats customize <role> --add-trait X     # добавить трейт к роли
-ai-hats customize <role> --remove-skill Y  # убрать скилл из роли
-ai-hats customize <role> --show            # показать кастомизации
-ai-hats customize <role> --reset           # сбросить кастомизации
-ai-hats status                             # текущая роль, дерево, health
-ai-hats bump                               # пересобрать prompt
-ai-hats rollback                           # откатить к предыдущему состоянию
-ai-hats clean                              # очистить .agent/
-ai-hats whoami                             # диагностика
+# Конфигурация (всё, что пишет в ai-hats.yaml)
+ai-hats config set -r <role> -p <provider>     # настроить роль и/или провайдер
+ai-hats config status                          # текущая роль, дерево, health
+ai-hats config customize <role> --add-trait X  # добавить трейт к роли
+ai-hats config customize <role> --remove-skill Y
+ai-hats config customize <role> --show         # показать кастомизации
+ai-hats config customize <role> --reset        # сбросить кастомизации
+ai-hats config feedback show                   # текущая конфигурация feedback loop
+ai-hats config feedback session-retro <policy> [--threshold turns=N,tool_calls=N] [--background/--no-background]
 
-# Суб-агенты
-ai-hats run <role> [--ticket <ID>] [--model <name>] [--task <desc>] [--tag k=v ...] [--json]
+# Жизненный цикл инструмента в проекте
+ai-hats self init -r <role> -p <provider>  # инициализировать ai-hats в текущем dir
+ai-hats self bump                          # пересобрать prompt из библиотеки
+ai-hats self clean                         # очистить .agent/
+ai-hats self rollback                      # откатить к предыдущему состоянию
+ai-hats self update                        # pip-переустановка из GitHub
+ai-hats self migrate                       # миграция конфига к новой версии
 
-# Наблюдаемость и feedback loop
+# Sub-агенты — запуск роли в изолированном worktree
+ai-hats agent <role> [--ticket <ID>] [--model <name>] [--task <desc>] [--tag k=v ...] [--json]
+
+# Discovery — что доступно в композиции
+ai-hats list roles | skills | rules | traits | providers | tokens
+
+# Worktrees — изолированная работа
+ai-hats wt create | list | status | env | exec -- <cmd> | merge | discard
+
+# Наблюдаемость
 ai-hats session list [--last N] [--min-turns N] [--productive] [--all] [--tag k=v ...] [--role <r>] [--since YYYY-MM-DD] [--json]
-ai-hats session show <session_id>                                      # детали конкретной сессии
-ai-hats audit [--session <ID>]                                         # показать audit.md сессии
-ai-hats retro <session_id> [--last] [--mode programmatic|llm]         # session-retro snapshot
-ai-hats bundle create --sessions s1,s2 [--notes "..."]                # сгруппировать сессии для анализа
-ai-hats bundle create --last N | --since YYYY-MM-DD
-ai-hats bundle list | show <bundle_id>
-ai-hats judge --bundle <id> [--focus "..."]                           # forensic analysis от judge-агента
-ai-hats judge --last N [--focus "..."] [--interactive]                # auto-bundle + judge + обсуждение
-ai-hats judge --retro <path>                                          # обсудить существующий retro
-ai-hats judge-aggregate [--since ...] [--min-severity ...]            # паттерны из judge retros
-ai-hats retro-validate <path>                                         # проверить файл по HATS-051 schema
-ai-hats retro-migrate <path> [--dry-run]                              # миграция к latest схеме
+ai-hats session show <session_id>                              # детали сессии
+ai-hats session audit [--session <ID>]                         # audit.md сессии
+ai-hats session retro <session_id> [--last] [--mode programmatic|llm]  # SessionRetroV1 snapshot
+ai-hats session retro-validate <path>                          # проверить retro по схеме
 
-# Задачи
+# Feedback loop — per-session vote + bulk-triage
+ai-hats reflect session [--session <ID>] [--background]        # ручной запуск reflect-session судьи
+ai-hats reflect all [--dry-run]                                # ручной триаж накопленных HYP/PROP
+ai-hats reflect commit --accept PROP-X --reject PROP-Y ...     # bulk-flip статусов после триажа
+
+# Задачи + гипотезы + предложения (всё под task — backlog artifacts)
 ai-hats task create <title> [--id ID] [-d <desc>] [-p high|medium|low] \
                             [--parent-task ID] [--depends-on ID ...]
 ai-hats task update <ID> [--title ...] [--description ...] [--priority ...] \
@@ -126,30 +135,30 @@ ai-hats task update <ID> [--title ...] [--description ...] [--priority ...] \
 ai-hats task transition <ID> <state>
 ai-hats task log <ID> <message>
 ai-hats task list [--state <state>] [--priority <p>] [--search <regex>] [--all]
-ai-hats task show <ID>     # depends_on рендерится как «Blocked by:» со state-ами
+ai-hats task show <ID>      # depends_on рендерится как «Blocked by:» со state-ами
 ai-hats task sync
 
-# Обслуживание
-ai-hats update                             # pip-переустановка из GitHub (канонический путь)
-ai-hats migrate
+ai-hats task hyp list | show | append-verdict | migrate           # hypothesis backlog (HYP-NNN.yaml)
+ai-hats task proposal list | show | create | vote | status        # proposal backlog (PROP-NNN.yaml)
 ```
 
 ### Как обновить ai-hats в проекте
 
-`ai-hats update` — единственный рекомендованный путь. Он делает
-`pip install --force-reinstall --no-deps --no-cache-dir ai-hats @ git+ssh://...`
+`ai-hats self update` — единственный рекомендованный путь. Он делает
+`pip install --force-reinstall --no-cache-dir ai-hats @ git+ssh://...`
 в текущем интерпретаторе, показывает diff версий и сравнивает композицию до/после.
 
 Не нужно вручную дёргать pip. Если venv проекта изолирован — запускай команду
-его `ai-hats` (например, `~/dotfiles/.venv/bin/ai-hats update`).
+его `ai-hats` (например, `~/dotfiles/.venv/bin/ai-hats self update`).
 
-После `update` прогони `ai-hats bump` — он пересоберёт prompt и managed-файлы
-(`.agent/*`, `.claude/skills/*`, `.gitignore` block) под новую версию.
+После `self update` прогони `ai-hats self bump` — он пересоберёт prompt
+и managed-файлы (`.agent/*`, `.claude/skills/*`, `.gitignore` block) под
+новую версию.
 
 ```bash
 cd ~/my-project
-ai-hats update      # подтянуть свежий ai-hats из GitHub
-ai-hats bump        # пересобрать роль + .gitignore
+ai-hats self update   # подтянуть свежий ai-hats из GitHub
+ai-hats self bump     # пересобрать роль + .gitignore
 ```
 
 ## Session tags и queryable history
@@ -160,7 +169,7 @@ cost attribution, pipeline tracking, A/B экспериментов. Теги п
 
 ```bash
 # Запись — теги при запуске (повторяемый флаг, до 20 на сессию)
-ai-hats run sre-diagnoser --task "..." \
+ai-hats agent sre-diagnoser --task "..." \
     --tag alert_fp=abc123 \
     --tag alertname=ImmichContainerDown \
     --tag client=home-lab
@@ -198,7 +207,7 @@ if [ -n "$existing" ]; then
     echo "Already diagnosed in session $existing — skipping"
     exit 0
 fi
-ai-hats run sre-diagnoser --tag alert_fp="$fp" --task "..."
+ai-hats agent sre-diagnoser --tag alert_fp="$fp" --task "..."
 ```
 
 Атомарность check-and-spawn (race между двумя параллельными вебхуками) — на
@@ -209,7 +218,7 @@ ai-hats run sre-diagnoser --tag alert_fp="$fp" --task "..."
 Для fan-out через `parallel`/`xargs`/CI:
 
 ```bash
-ai-hats run <role> --task "..." --json
+ai-hats agent <role> --task "..." --json
 # → stdout: {"session_id":"...","exit_code":0,"role":"...","duration_s":12.3,"tags":{...},...}
 ```
 
@@ -232,14 +241,14 @@ stdout; человекочитаемый режим (без `--json`) остав
 ```bash
 # N параллельных вызовов, собрать все результаты, отфильтровать успешные
 cat tasks.jsonl | jq -r '.task' | parallel -j 3 \
-    'ai-hats run diagnoser --task {} --json' \
+    'ai-hats agent diagnoser --task {} --json' \
   | jq -s 'map(select(.exit_code == 0))'
 ```
 
 Если надо узнать код завершения одной сессии, не парся stdout — хватит `$?`:
 
 ```bash
-ai-hats run diagnoser --task "..." --json > result.json
+ai-hats agent diagnoser --task "..." --json > result.json
 echo "exit=$?"   # совпадает с .exit_code в result.json
 ```
 
@@ -256,25 +265,25 @@ echo "exit=$?"   # совпадает с .exit_code в result.json
 
 ### Кастомизация ролей
 
-Можно добавлять/убирать трейты, правила и скиллы из библиотечной роли без модификации исходного конфига. Кастомизации хранятся в `ai-hats.yaml` и переживают `ai-hats update` и `ai-hats bump`.
+Можно добавлять/убирать трейты, правила и скиллы из библиотечной роли без модификации исходного конфига. Кастомизации хранятся в `ai-hats.yaml` и переживают `ai-hats self update` и `ai-hats self bump`.
 
 > Подборка типовых сценариев с готовыми примерами `ai-hats.yaml` — см. [docs/how-to.md](docs/how-to.md).
 
 ```bash
 # Добавить трейт к роли sre
-ai-hats customize sre --add-trait dev::python
+ai-hats config customize sre --add-trait dev::python
 
 # Убрать ненужный скилл
-ai-hats customize sre --remove-skill network-documentation
+ai-hats config customize sre --remove-skill network-documentation
 
 # Добавить инжекцию
-ai-hats customize sre --injection-append "Always use k9s for K8s."
+ai-hats config customize sre --injection-append "Always use k9s for K8s."
 
 # Посмотреть кастомизации
-ai-hats customize sre --show
+ai-hats config customize sre --show
 
 # Применить
-ai-hats bump
+ai-hats self bump
 ```
 
 Формат в `ai-hats.yaml`:
@@ -291,7 +300,7 @@ customizations:
       Always use k9s for K8s.
 ```
 
-Кастомизации применяются при каждом `set`, `bump` и `--role` override. Если `remove` ссылается на компонент, которого нет в базовой роли — выводится warning, ошибки не будет.
+Кастомизации применяются при каждом `config set`, `self bump` и `--role` override. Если `remove` ссылается на компонент, которого нет в базовой роли — выводится warning, ошибки не будет.
 
 ### Композиция
 
@@ -306,7 +315,7 @@ customizations:
 - **Gemini** — `GEMINI.md` + `GEMINI_CLI_PROJECT_RULES_PATH`
 - **Claude** — `CLAUDE.md`
 
-Переключение между провайдерами: `ai-hats set -p claude`. При запуске сессии prompt автоматически пересобирается если провайдер изменился.
+Переключение между провайдерами: `ai-hats config set -p claude`. При запуске сессии prompt автоматически пересобирается если провайдер изменился.
 
 ### Task State Machine
 
@@ -334,41 +343,42 @@ ai-hats task list --search worktree --all    # включая done/failed
 
 > Пошаговый гайд по настройке и использованию (политики, reflect-session, reflect-all, гипотезы) — см. [docs/how-to-feedback-loop.md](docs/how-to-feedback-loop.md).
 >
-> Модель для feedback-loop пинится отдельно от интерактивной сессии — `feedback.session_retro.model` (LLM-builder) и `feedback.session_retro.reflect_model` (reflect-session sub-agent). Если поля не заданы — используется дефолт CLI провайдера.
+> Модель для feedback-loop пинится отдельно от интерактивной сессии — `feedback.session_retro.model` (LLM-builder для SessionRetroV1) и `feedback.session_retro.reflect_model` (reflect-session sub-agent). Если поля не заданы — используется дефолт CLI провайдера.
 
-ai-hats строит feedback из реальных сессий через три слоя артефактов (схемы зафиксированы в HATS-051, runtime — в HATS-001):
+ai-hats замыкает feedback из реальных сессий в четыре слоя:
 
 ```
-.gitlog/session_<id>/                       layer 0: raw телеметрия
-  ├── audit.md                              после ⟶
+.gitlog/session_<id>/                                  layer 0: raw телеметрия
+  ├── audit.md
   ├── metrics.json
   └── transcript.txt
 
-.agent/retrospectives/sessions/<mode>/<id>.md   layer 1: SessionRetroV1 (factual snapshot)
-  ├── programmatic/                             ← быстрый, из парсера, для хука
-  └── llm/                                      ← narrative summary через LLM, для глубокого ревью
+.agent/retrospectives/sessions/<id>.md                 layer 1: SessionRetroV1
+                                                          ↓ LLM-builder, факты + narrative
 
-.agent/retrospectives/bundles/BUNDLE-...yaml    layer 2: bundle (lens-agnostic pointer)
-.agent/retrospectives/judge/<date>-judge-NNN.md layer 3: JudgeRetroV1 (analytical findings)
+.agent/retrospectives/reflect-session/<id>.md          layer 2: ReflectSessionV1
+                                                          ↑ per-session sub-agent судит
+                                                            активные HYP, голосует за PROP
+.agent/hypotheses/HYP-NNN.yaml                            ← side effect: append-verdict
+.agent/backlog/proposals/PROP-NNN.yaml                    ← side effect: create / vote
+
+manual triage:                                          layer 3: bulk-triage
+  ai-hats reflect all     → handoff с накопленным
+  ai-hats reflect commit  → bulk-flip PROP статусов
 ```
 
-**Layer 1 — Session retro.** Снимок одной сессии: метрики, изменённые файлы, коммиты, закрытые задачи. Два режима:
-- `programmatic` (default) — быстро, без LLM, для авто-генерации хуком
-- `llm` — narrative summary + observations через провайдер; занимает 30+ секунд
+**Layer 1 — Session retro.** Снимок одной сессии: метрики, изменённые файлы, коммиты, закрытые задачи + LLM-narrative. Это всегда LLM-режим (~30+ секунд через провайдер).
 
 ```bash
-ai-hats retro 20260406-050419-1                  # programmatic, мгновенно
-ai-hats retro 20260406-050419-1 --mode llm       # narrative от LLM
-ai-hats retro --last                             # для последней сессии
+ai-hats session retro 20260406-050419-1   # явный session_id
+ai-hats session retro --last              # для последней сессии
 ```
 
-Каждый mode пишет в свою подпапку — два режима не затирают друг друга.
-
-**Auto session-retro.** После завершения сессии хук `session_end_auto-retro.sh` автоматически решает, нужно ли генерировать retro. Поведение настраивается через `ai-hats.yaml` → `feedback.session_retro`:
+**Auto session-retro.** После завершения сессии хук `session_end_auto-retro.sh` автоматически решает, нужно ли генерировать retro и сразу спавнить reflect-session судью. Поведение — через `ai-hats.yaml` → `feedback.session_retro`:
 
 ```bash
 # Настройка через CLI
-ai-hats config feedback session-retro smart --threshold turns=3 --mode llm --background
+ai-hats config feedback session-retro smart --threshold turns=3,tool_calls=10 --background
 ai-hats config feedback session-retro off          # отключить
 ai-hats config feedback session-retro hint         # только подсказка
 ai-hats config feedback show                       # текущие настройки
@@ -379,8 +389,9 @@ ai-hats config feedback show                       # текущие настро
 | `policy` | `off`, `always`, `smart`, `hint` | `smart` | Когда генерировать retro |
 | `smart_threshold.min_turns` | int | 5 | Порог по числу ходов |
 | `smart_threshold.min_tool_calls` | int | 10 | Порог по числу tool calls |
-| `mode` | `programmatic`, `hybrid`, `llm` | `programmatic` | Режим генерации |
 | `background` | bool | `true` | Запускать в фоне (не блокирует терминал) |
+| `model` | str \| null | null | LLM для SessionRetroV1 (null → провайдер default) |
+| `reflect_model` | str \| null | null | LLM для reflect-session sub-agent |
 
 Политики:
 - **off** — никогда не генерировать автоматически
@@ -388,58 +399,47 @@ ai-hats config feedback show                       # текущие настро
 - **smart** — генерировать если `turns >= min_turns` ИЛИ `tool_calls >= min_tool_calls`
 - **hint** — как smart, но вместо генерации печатает подсказку с командой
 
-**Layer 2 — Bundle.** Группа сессий для совместного судейского анализа. Bundles **lens-agnostic**: один и тот же набор сессий можно судить много раз с разными `--focus` линзами. Идемпотентны по `sorted(session_ids)` — повторный create с теми же сессиями вернёт тот же bundle.
+**Layer 2 — Reflect-session.** Сразу после SessionRetroV1 спавнится sub-agent роли `reflect-session`: читает все active HYP и open PROP, для каждой active HYP выносит вердикт (`confirmed` / `refuted` / `inconclusive` / `n/a`), цитирует evidence из audit/metrics, голосует за похожие PROP или создаёт новые. Side effects идут только через CLI:
 
 ```bash
-ai-hats bundle create --sessions 20260406-050419-1,20260408-111835-1 --notes "training run"
-ai-hats bundle create --last 5
-ai-hats bundle create --since 2026-04-01
-ai-hats bundle list
-ai-hats bundle show BUNDLE-2026-04-08-001
+# Что reflect-session делает за тебя (этот sub-agent работает автоматически):
+ai-hats task hyp append-verdict --hyp HYP-008 --session $SID \
+    --verdict confirmed --evidence "metrics.json:bash_anti_count=0" \
+    --recommendation keep
+ai-hats task proposal vote --prop PROP-042 --session $SID --reasoning "..."
+ai-hats task proposal create --category rule --target dev_rule_X --title ... \
+    --description ... --rationale ... --session $SID
 ```
 
-**Layer 3 — Judge retro.** Forensic анализ bundle через спавн `judge` роли как sub-agent. Judge печатает результат в stdout между `BEGIN_JUDGE_RETRO`/`END_JUDGE_RETRO` маркерами; родительский CLI извлекает, валидирует через HATS-051 loader, делает один retry с correction prompt при ошибке схемы, сохраняет на диск.
+Ручной запуск (для отладки или если auto-режим выключен):
 
 ```bash
-# Существующий bundle с дефолтным анализом
-ai-hats judge --bundle BUNDLE-2026-04-08-001
-
-# Тот же bundle с разной линзой → разные findings
-ai-hats judge --bundle BUNDLE-2026-04-08-001 --focus "tool-call efficiency and retry loops"
-ai-hats judge --bundle BUNDLE-2026-04-08-001 --focus "git workflow — commit granularity"
-
-# Auto-bundle из последних N сессий (создаёт bundle и сразу судит)
-ai-hats judge --last 3 --focus "decision-making patterns"
-
-# Auto-bundle из конкретных сессий
-ai-hats judge --sessions s1,s2,s3 --focus "..."
+ai-hats reflect session --session <id>              # foreground
+ai-hats reflect session --session <id> --background # как в авто
 ```
 
-Judge sub-session запускается в worktree (`discard` mode), может занять минуты — CLI показывает spinner. Перед запуском показывает какие сессии и фокус будет анализировать. Timeout по умолчанию 600s.
-
-Output JudgeRetroV1 содержит findings (с обязательным evidence + session_id), patterns_to_keep, опциональный meta_critique. Каждая finding классифицирована по category/severity, может содержать proposed_fix с expected_impact для longitudinal validation.
-
-**Interactive mode.** `--interactive` / `-i` после сохранения judge retro открывает полноценную ai-hats сессию с ролью `judge`. Агент видит findings, имеет доступ к бэклогу, может создавать задачи-гипотезы. Для обсуждения существующего retro без пересоздания — `--retro <path>`.
+**Layer 3 — Manual triage.** Когда HYP/PROP накопилось — пройтись по бэклогу руками:
 
 ```bash
-# Полный цикл: judge + обсуждение
-ai-hats judge --last 5 --focus "tool-call efficiency" --interactive
+ai-hats reflect all                                # pre-flight handoff + интерактив
+ai-hats reflect all --dry-run                      # только собрать handoff
 
-# Обсудить существующий retro
-ai-hats judge --retro .agent/retrospectives/judge/2026-04-10-judge-001.md
+# После обсуждения с агентом — bulk-flip статусов:
+ai-hats reflect commit \
+    --accept PROP-3 --accept PROP-7 \
+    --reject PROP-12 --defer PROP-15 --duplicate PROP-9
 ```
 
-**Layer 4 — Aggregation.** Кластеризация findings из нескольких judge retros для выявления повторяющихся паттернов. Группирует по (category, target), fuzzy-matching root_cause, вычисляет частоту появления.
+Внутри интерактивной сессии полезно:
 
 ```bash
-ai-hats judge-aggregate                              # все judge retros
-ai-hats judge-aggregate --since 2026-04-01           # только свежие
-ai-hats judge-aggregate --min-severity medium         # только medium+
+ai-hats task hyp show HYP-NNN
+ai-hats task proposal show PROP-NNN
+ai-hats task proposal status PROP-NNN <accepted|rejected|deferred|duplicate>
+ai-hats task create ...                            # завести задачу из принятого PROP
 ```
 
-Output: `.agent/retrospectives/aggregated/AGG-YYYY-MM-DD-NNN.md` — AggregationV1 schema с кластерами. Каждый кластер содержит frequency, rate (% retros), source findings, proposed fix.
-
-**Просмотр сессий.** Для выбора интересных сессий перед созданием бандла:
+**Просмотр сессий** — отбор интересного перед reflect-all или ручным retro:
 
 ```bash
 ai-hats session list --min-turns 10              # только сессии с ≥10 ходами
@@ -447,20 +447,18 @@ ai-hats session list --productive                # только продукти
 ai-hats session show 20260408-192417-1           # детальные метрики
 ```
 
-**Hypothesis workflow.** Замкнутый цикл улучшений через задачи-гипотезы (см. `hypothesis-workflow` skill):
+**Hypothesis workflow.** Замкнутый цикл улучшений (см. `hypothesis-workflow` skill):
 
-1. `ai-hats judge-aggregate` — найти повторяющиеся паттерны
-2. `ai-hats judge --last N --interactive` — обсудить findings с judge
-3. `ai-hats task create "hypothesis: ..." --tag hypothesis` — зафиксировать гипотезу
-4. Реализовать изменение, накопить N новых сессий
-5. `ai-hats judge-aggregate --since <date>` — проверить, снизилась ли частота
-6. Закрыть задачу-гипотезу с результатом
+1. Заметил повторяющийся паттерн в reflect-session ретро (≥3 сессии).
+2. `ai-hats task hyp create "<статус ожидаемого улучшения>" --baseline ... --target ... --window "N sessions"` — зафиксировать гипотезу с измеримым success_criterion.
+3. Применить изменение (rule/skill/code) на task-ветке.
+4. Каждая сессия → reflect-session автоматически добавляет verdict в `validation_log` гипотезы.
+5. По истечении window — `ai-hats task hyp ... close` (см. `task hyp --help`) с verdict `validated/refuted/inconclusive`.
 
-**Валидация артефактов.** Любой retro-файл (session / bundle / judge / aggregation) можно проверить против схемы:
+**Валидация артефактов.** Retro-файл можно проверить против схемы:
 
 ```bash
-ai-hats retro-validate .agent/retrospectives/judge/2026-04-08-judge-001.md
-ai-hats retro-migrate <path> [--dry-run]
+ai-hats session retro-validate .agent/retrospectives/sessions/20260406-050419-1.md
 ```
 
 ## Структура проекта
@@ -471,16 +469,14 @@ ai-hats retro-migrate <path> [--dry-run]
   skills/                              # Физические копии навыков
   hooks/                               # Hook-скрипты
   backlog/
-    tasks/<ID>/                        # Task card + plan.md + retro.md
+    tasks/<ID>/                        # Task card + plan.md + retrospective.md
+    proposals/PROP-NNN.yaml            # Improvement proposals (см. task proposal)
   backlog.md                           # Табличный индекс
   STATE.md                             # Текущее состояние задач
-  retrospectives/                      # Feedback loop (HATS-001 / HATS-051 / HATS-052)
-    sessions/
-      programmatic/<id>.md             # SessionRetroV1, factual snapshot
-      llm/<id>.md                      # SessionRetroV1, narrative summary
-    bundles/BUNDLE-YYYY-MM-DD-NNN.yaml # BundleV1, lens-agnostic pointer
-    judge/YYYY-MM-DD-judge-NNN.md      # JudgeRetroV1, forensic analysis
-    aggregated/AGG-YYYY-MM-DD-NNN.md   # AggregationV1, cross-session patterns
+  hypotheses/HYP-NNN.yaml              # Hypothesis backlog (см. task hyp)
+  retrospectives/
+    sessions/<id>.md                   # SessionRetroV1 (LLM-narrative + facts)
+    reflect-session/<id>.md            # ReflectSessionV1 (per-session sub-agent verdicts)
 .gitlog/
   session_<ID>/                        # trace.log, audit.md, metrics.json, transcript.txt
 ai-hats.yaml                           # Конфиг проекта + роль + feedback
