@@ -1,18 +1,23 @@
-"""Stale-retro reminder: nudge the user when skipped sessions accumulate.
+"""Session-end nudges: stale-retro reminder + wrap-up banner.
 
-Called from auto_retro.make_decision() so the result is folded into the
-session-end banner. Reuses backfill.find_candidates() to count sessions in
-a rolling window that don't yet have a retro file.
+Called from ``auto_retro.make_decision()`` so results are folded into the
+session-end banner.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 from pathlib import Path
 from typing import TypedDict
 
 from ..models import SessionRetroConfig
 from .backfill import find_candidates
+from .window import (
+    compute_session_end,
+    parse_session_start,
+    tasks_closed_in_window,
+)
 
 
 class ReminderInfo(TypedDict):
@@ -22,6 +27,18 @@ class ReminderInfo(TypedDict):
     since: str
     window_days: int
     command: str
+
+
+class WrapUpInfo(TypedDict):
+    """Wrap-up nudge data, surfaced in the session-end banner (HATS-214)."""
+
+    tasks_closed: int
+    duration_min: int
+    cache_read_mb: int
+
+
+_WRAP_TASKS_THRESHOLD = 2
+_WRAP_DURATION_MIN = 60
 
 
 def evaluate(project_dir: Path, sr: SessionRetroConfig) -> tuple[ReminderInfo | None, str]:
@@ -52,3 +69,53 @@ def evaluate(project_dir: Path, sr: SessionRetroConfig) -> tuple[ReminderInfo | 
         "command": f"ai-hats reflect --since {since} --interactive",
     }
     return info, f"fired ({count}>={threshold} in {sr.reminder.window_days}d)"
+
+
+def evaluate_wrap_up(
+    project_dir: Path, session_id: str
+) -> WrapUpInfo | None:
+    """Wrap-up nudge: fire when tasks_closed_in_window >= 2 AND duration > 60min.
+
+    HATS-214. Source data:
+      - duration_s from .gitlog/session_<id>/metrics.json
+      - tasks_closed via window.tasks_closed_in_window (HATS-212 scope)
+      - cache_read from metrics.json tokens block, rounded to MB
+    Returns None when triggers not met or data unavailable. Never raises.
+    """
+    sdir = project_dir / ".gitlog" / f"session_{session_id}"
+    metrics_path = sdir / "metrics.json"
+    if not metrics_path.exists():
+        return None
+    try:
+        data = json.loads(metrics_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    duration_s_raw = data.get("duration_s") or 0
+    try:
+        duration_min = int(float(duration_s_raw) / 60)
+    except (TypeError, ValueError):
+        return None
+    if duration_min <= _WRAP_DURATION_MIN:
+        return None
+
+    try:
+        start = parse_session_start(session_id)
+    except ValueError:
+        return None
+    end = compute_session_end(start, sdir, session_id)
+    closed = tasks_closed_in_window(project_dir, start, end)
+    if len(closed) < _WRAP_TASKS_THRESHOLD:
+        return None
+
+    cache_read = (data.get("tokens") or {}).get("cache_read") or 0
+    try:
+        cache_read_mb = int(int(cache_read) // 1_000_000)
+    except (TypeError, ValueError):
+        cache_read_mb = 0
+
+    return WrapUpInfo(
+        tasks_closed=len(closed),
+        duration_min=duration_min,
+        cache_read_mb=cache_read_mb,
+    )

@@ -257,6 +257,17 @@ def _print_session_end(
                 f"\033[33m  Reflect the project through {rem['count']} sessions:\033[0m"
             )
             print(f"     \033[36m{rem['command']}\033[0m")
+
+        wrap = retro.get("wrap_up")
+        if wrap:
+            # Wrap-up nudge (HATS-214): long multi-task sessions risk masking
+            # mistakes under green metrics — Goodhart guardrail.
+            print(
+                f"\033[33m  Wrap up before next task — "
+                f"{wrap['tasks_closed']} tasks closed in "
+                f"{wrap['duration_min']}min, cache {wrap['cache_read_mb']}MB\033[0m"
+            )
+            print("     \033[36m/clear\033[0m before starting fresh work")
     print(f"  {_format_tokens(session)}")
     print(f"  📂 {session.session_dir}")
     print("━" * 52 + "\n")

@@ -15,7 +15,7 @@ import logging
 import os
 import re
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
@@ -141,12 +141,9 @@ class SessionRetroBuilder:
     @staticmethod
     def _parse_session_start(session_id: str) -> datetime:
         """Parse session_id YYYYMMDD-HHMMSS-N → datetime (UTC)."""
-        try:
-            return datetime.strptime(session_id[:15], "%Y%m%d-%H%M%S").replace(
-                tzinfo=timezone.utc
-            )
-        except ValueError as e:
-            raise ValueError(f"Cannot parse session start from {session_id!r}") from e
+        from .window import parse_session_start
+
+        return parse_session_start(session_id)
 
     def _parse_metrics(self, session_dir: Path) -> SessionMetrics:
         metrics_path = session_dir / "metrics.json"
@@ -206,21 +203,9 @@ class SessionRetroBuilder:
         The window upper bound is critical: without it, files_changed and
         tasks_closed leak into repo-wide history (HATS-212).
         """
-        metrics_path = session_dir / "metrics.json"
-        if metrics_path.exists():
-            try:
-                data = json.loads(metrics_path.read_text())
-                duration_s = data.get("duration_s")
-                if duration_s is not None and float(duration_s) > 0:
-                    return session_start + timedelta(seconds=float(duration_s))
-            except (json.JSONDecodeError, ValueError, TypeError):
-                pass
-        logger.info(
-            "session window upper bound: duration_s missing for %s, "
-            "falling back to now(UTC)",
-            session_id,
-        )
-        return datetime.now(timezone.utc)
+        from .window import compute_session_end
+
+        return compute_session_end(session_start, session_dir, session_id)
 
     def _git(self, args: list[str]) -> str:
         try:
@@ -259,47 +244,15 @@ class SessionRetroBuilder:
     def _tasks_closed_in_window(
         self, since: datetime, until: datetime
     ) -> list[str]:
-        tasks_dir = self.project_dir / ".agent" / "backlog" / "tasks"
-        if not tasks_dir.exists():
-            return []
-        try:
-            from ..models import ProjectConfig, TaskState
-            from ..state import TaskManager
-        except ImportError:
-            return []
-        try:
-            prefix = ProjectConfig.resolve_task_prefix(
-                self.project_dir, self.project_dir / "ai-hats.yaml",
-            )
-            tm = TaskManager(self.project_dir, prefix=prefix)
-            done_tasks = tm.list_tasks(state=TaskState.DONE)
-        except Exception:
-            return []
-        closed: list[str] = []
-        for task in done_tasks:
-            updated = self._parse_task_timestamp(task.updated)
-            if updated and since <= updated <= until:
-                closed.append(task.id)
-        return sorted(closed)
+        from .window import tasks_closed_in_window
+
+        return tasks_closed_in_window(self.project_dir, since, until)
 
     @staticmethod
     def _parse_task_timestamp(value: str) -> datetime | None:
-        if not value:
-            return None
-        # Accept ISO with or without trailing Z
-        try:
-            cleaned = value.replace("Z", "+00:00")
-            dt = datetime.fromisoformat(cleaned)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
-        except ValueError:
-            pass
-        # Accept date-only (e.g. "2026-04-08")
-        try:
-            return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        except ValueError:
-            return None
+        from .window import parse_task_timestamp
+
+        return parse_task_timestamp(value)
 
     def _programmatic_summary(
         self, metrics: SessionMetrics, artifacts: SessionArtifacts
