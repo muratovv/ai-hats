@@ -61,12 +61,12 @@ def test_set_all_roles(cli_project, role):
 
 
 def test_status_after_set(cli_project):
-    """ai-hats status shows role and components after set."""
+    """ai-hats config status shows role and components after set."""
     project, runner = cli_project
 
     runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
 
-    r = runner.invoke(main, ["status"])
+    r = runner.invoke(main, ["config", "status"])
     assert r.exit_code == 0, r.output
     assert ALL_ROLES[0] in r.output
 
@@ -230,13 +230,13 @@ def test_passthrough_no_args_still_launches_session(cli_project, monkeypatch):
 
 
 def test_passthrough_known_subcommand_still_dispatches(cli_project, monkeypatch):
-    """`ai-hats status` still routes via click subcommand dispatcher, not _launch_session."""
+    """`ai-hats config status` still routes via click subcommand dispatcher, not _launch_session."""
     project, runner = cli_project
     calls = _capture_launch(monkeypatch)  # should NOT be called
 
     # Use `status` (a no-side-effect read-only command); `task list` would also
     # work but requires .agent/ to be initialized.
-    result = runner.invoke(main, ["status"])
+    result = runner.invoke(main, ["config", "status"])
 
     # Subcommand may exit non-zero on uninitialized project — that's fine,
     # the point is _launch_session was NOT invoked.
@@ -251,7 +251,7 @@ def test_subcommands_work_with_passthrough_context(cli_project):
     r = runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
     assert r.exit_code == 0, r.output
 
-    r = runner.invoke(main, ["status"])
+    r = runner.invoke(main, ["config", "status"])
     assert r.exit_code == 0, r.output
     assert ALL_ROLES[0] in r.output
 

@@ -177,7 +177,7 @@ ai-hats self bump            # пересобрать GEMINI.md
 
 ```bash
 ai-hats self bump          # пересобрать промпт
-ai-hats status        # убедиться, что всё подхватилось
+ai-hats config status # убедиться, что всё подхватилось
 ```
 
 Если правил много, и ты хочешь увидеть только diff:

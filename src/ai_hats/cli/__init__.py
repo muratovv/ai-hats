@@ -139,13 +139,13 @@ from . import (  # noqa: E402
 
 # Assembly commands
 main.add_command(assembly.init)
-main.add_command(assembly.status)
 main.add_command(assembly.clean)
 
-# Config — set + customize nest under it (HATS-241).
-# All three write to ai-hats.yaml; group expresses intent.
+# Config — set + customize + status nest under it (HATS-241, HATS-242).
+# All four touch ai-hats.yaml composition; status is the readout.
 config_mod.config.add_command(assembly.set_role)
 config_mod.config.add_command(assembly.customize)
+config_mod.config.add_command(assembly.status)
 main.add_command(config_mod.config)
 
 
