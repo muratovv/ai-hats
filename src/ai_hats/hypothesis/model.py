@@ -57,7 +57,6 @@ class ValidationLogEntry(BaseModel):
     evidence: str = Field(..., min_length=1)
     recommendation: RecommendationKind = "keep"
     session_id: str | None = None
-    judge_session_id: str | None = None
     timestamp: datetime | None = None
 
 
