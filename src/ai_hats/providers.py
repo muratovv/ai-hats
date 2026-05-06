@@ -22,6 +22,7 @@ ALWAYS_ON_RULES = {
     "global_rule_destructive_actions",
     "global_rule_resource_hygiene",
     "dev_rule_secure_coding",
+    "dev_rule_tool_call_hygiene",
 }
 
 
