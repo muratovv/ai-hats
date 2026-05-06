@@ -106,7 +106,7 @@ feedback:
 feedback:
   session_retro:
     model: claude-haiku-4-5            # builder = Haiku, дёшево
-    reflect_model: claude-sonnet-4-6   # judge = Sonnet, качество вердиктов
+    reflect_model: claude-sonnet-4-6   # reflect-session = Sonnet, качество вердиктов
 ```
 
 После правки — `ai-hats self bump`.

@@ -342,7 +342,7 @@ brainstorm → plan → execute → document → review → done
 ```bash
 ai-hats task list --search epic              # все эпики (по тегу или title)
 ai-hats task list --search HATS-092          # эпик + дети (parent_task) + блокируемые им (depends_on)
-ai-hats task list --search judge             # всё связанное с judge
+ai-hats task list --search docs              # всё с упоминанием docs (id/title/desc/tags)
 ai-hats task list --search "HATS-09[2-3]"   # regex: два эпика сразу
 ai-hats task list --search worktree --all    # включая done/failed
 ```

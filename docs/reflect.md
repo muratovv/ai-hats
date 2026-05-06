@@ -1,7 +1,7 @@
 # Reflect pipeline
 
 Two subcommands of `ai-hats reflect` cover the retrospective lifecycle:
-`reflect session` (per-session judge run) and `reflect all`
+`reflect session` (per-session reflect-session run) and `reflect all`
 (interactive triage of the accumulated backlog).
 
 ## Pipeline overview
@@ -43,8 +43,8 @@ Validation contract:
 - One `hypothesis_verdicts[]` entry per active HYP (no skipping).
 - Verdict ∈ `{confirmed, refuted, inconclusive, n/a}`.
 - `n/a` only when the session physically cannot test the HYP.
-- Self-problems ⇒ judge files a meta-proposal via CLI and lists the
-  resulting PROP-NNN in `self_problems[]`.
+- Self-problems ⇒ reflect-session files a meta-proposal via CLI and
+  lists the resulting PROP-NNN in `self_problems[]`.
 - Two-layer no-silent-failure: LLM-driven (in-skill) + runtime-driven
   (programmatic post-validation always files a meta-proposal on failure).
 

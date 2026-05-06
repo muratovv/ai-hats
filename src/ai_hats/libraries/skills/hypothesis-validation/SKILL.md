@@ -107,12 +107,12 @@ hypothesis means. Filing `n/a` "to be safe" — this hides a knowledge gap.
 ```bash
 "$AH" task proposal create \
   --category process --target reflect-session \
-  --title "HYP-005 phrasing ambiguous to judge" \
+  --title "HYP-005 phrasing ambiguous to reflect-session" \
   --description "..." --rationale "..." \
   --session "$SID"
 ```
 
-Then write `inconclusive` for HYP-005, citing `evidence: "see PROP-NNN — judge could not interpret success_criterion"`, and add the PROP id to `self_problems`.
+Then write `inconclusive` for HYP-005, citing `evidence: "see PROP-NNN — reflect-session could not interpret success_criterion"`, and add the PROP id to `self_problems`.
 
 ### ✗ Bad: missing verdict
 

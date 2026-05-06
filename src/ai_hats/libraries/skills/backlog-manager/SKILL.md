@@ -81,7 +81,7 @@ ai-hats task list --state brainstorm --priority high
 # Search by regex across id, title, description, tags, parent_task, depends_on
 ai-hats task list --search epic              # find epics
 ai-hats task list --search PROJ-092          # epic + children + anything that depends on PROJ-092
-ai-hats task list --search "judge|retro"     # regex OR
+ai-hats task list --search "docs|retro"      # regex OR
 
 # Sync STATE.md
 ai-hats task sync
