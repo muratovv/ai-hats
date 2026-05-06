@@ -76,7 +76,9 @@ pytest tests/ -v
 ## CLI
 
 Топ-уровневые группы: `agent`, `config`, `list`, `reflect`, `self`, `session`,
-`task`, `wt`. Подробности по любой — `ai-hats <group> --help`.
+`task`, `wt`. Подробности по любой — `ai-hats <group> --help`. Полное дерево
+команд с описаниями и опциями — `ai-hats --tree` (работает и как
+`ai-hats --help --tree`).
 
 ```bash
 # Сессия — ai-hats без subcommand запускает провайдер

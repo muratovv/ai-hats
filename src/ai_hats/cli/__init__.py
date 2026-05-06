@@ -1,8 +1,9 @@
 """CLI interface — Click-based command-line tool.
 
-`main` is the console-script entry point exported via `pyproject.toml`.
-Subcommands are defined in sibling modules (assembly, task, worktree, …)
-and mounted onto `main` at the bottom of this file.
+`main_entry` is the console-script entry point exported via `pyproject.toml`.
+It thin-wraps `main` (the click group) to make `--tree` order-independent
+relative to `--help`. Subcommands are defined in sibling modules (assembly,
+task, worktree, …) and mounted onto `main` at the bottom of this file.
 """
 
 from __future__ import annotations
@@ -46,6 +47,15 @@ class _PassthroughGroup(click.Group):
         return result
 
 
+def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> None:
+    """Render the full command tree and exit. Eager — fires before group body."""
+    if not value or ctx.resilient_parsing:
+        return
+    from ._tree import print_full_tree
+    print_full_tree(ctx.find_root().command, console)
+    ctx.exit()
+
+
 @click.group(
     cls=_PassthroughGroup,
     invoke_without_command=True,
@@ -64,6 +74,11 @@ class _PassthroughGroup(click.Group):
     multiple=True,
     help="Custom tag k=v for this session (repeatable, max 20). "
          "Stored in metrics.json under 'tags' for later query.",
+)
+@click.option(
+    "--tree", is_flag=True, is_eager=True, expose_value=False,
+    callback=_tree_callback,
+    help="Print the full command tree (man-style) and exit.",
 )
 @click.pass_context
 def main(ctx, provider: str | None, role: str | None, tags_raw: tuple[str, ...]):
@@ -184,3 +199,16 @@ main.add_command(task.task)
 
 # Reflect (post-session retro)
 main.add_command(reflect_mod.reflect)
+
+
+def main_entry() -> None:
+    """Console-script entry point.
+
+    Pre-strips ``--help`` when ``--tree`` is also present so the two flags
+    are order-independent. Click processes eager flags in argv order, so
+    without this shim ``--help --tree`` would print the standard help and
+    exit before ``--tree`` could fire.
+    """
+    if "--tree" in sys.argv[1:]:
+        sys.argv = [a for a in sys.argv if a != "--help"]
+    main()
