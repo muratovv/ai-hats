@@ -161,9 +161,6 @@ def test_run_includes_active_hypotheses_in_prompt(tmp_path: Path):
     fake = FakeSubAgentRunner(p, [transcript])
     runner = ReflectSessionRunner(p, subagent_runner=fake)
     runner.run("s1")
-    # Prompt must contain only active HYP-001
-    prompt = fake.calls[0]["task"]
-    # we truncated to 100 chars; verify role is correct
     assert fake.calls[0]["role"] == "reflect-session"
 
 

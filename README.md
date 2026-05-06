@@ -68,7 +68,7 @@ pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
-Доступные роли: `go-dev`, `go-dev-full`, `assistant`, `architect`, `sre`, `test-agent`, `reflect-session`.
+Доступные роли: `go-dev`, `go-dev-full`, `assistant`, `architect`, `sre`, `test-agent`.
 
 `go-dev` — лёгкий профиль (core Go skills + testing-extended + ci, ~28 скиллов).
 `go-dev-full` — все 11 `dev::go-*` traits сразу (database, grpc, cli, observability, performance, security, di, samber ecosystem, …, ~44 скилла). Используй для полидоменных Go-проектов; для узких задач подключай applied-traits через `customize`.
@@ -111,13 +111,19 @@ ai-hats agent <role> [--ticket <ID>] [--model <name>] [--task <desc>] [--tag k=v
 ai-hats list roles | skills | rules | traits | providers | tokens
 
 # Worktrees — изолированная работа
-ai-hats wt create | list | status | env | exec -- <cmd> | merge | discard
+ai-hats wt create <branch>                                     # создать worktree на новой ветке
+ai-hats wt list                                                # все git worktrees
+ai-hats wt status                                              # tracked для текущего проекта
+ai-hats wt exec -- <cmd>                                       # запустить команду в активном wt
+ai-hats wt env                                                 # eval-friendly shell exports (WT, PYTHONPATH)
+ai-hats wt merge [<branch>] [--squash] [--force]               # влить worktree обратно и удалить
+ai-hats wt discard [<branch>] [--force]                        # выкинуть изменения worktree
 
 # Наблюдаемость
 ai-hats session list [--last N] [--min-turns N] [--productive] [--all] [--tag k=v ...] [--role <r>] [--since YYYY-MM-DD] [--json]
 ai-hats session show <session_id>                              # детали сессии
 ai-hats session audit [--session <ID>]                         # audit.md сессии
-ai-hats session retro <session_id> [--last] [--mode programmatic|llm]  # SessionRetroV1 snapshot
+ai-hats session retro <session_id> [--last] [--timeout SEC] [--interactive]  # SessionRetroV1 (LLM)
 ai-hats session retro-validate <path>                          # проверить retro по схеме
 
 # Feedback loop — per-session vote + bulk-triage
@@ -137,6 +143,8 @@ ai-hats task log <ID> <message>
 ai-hats task list [--state <state>] [--priority <p>] [--search <regex>] [--all]
 ai-hats task show <ID>      # depends_on рендерится как «Blocked by:» со state-ами
 ai-hats task sync
+ai-hats task plan-sync <ID> [--from-file PATH]            # импорт .claude/plans/<NN>-*.md → plan.md
+ai-hats task plan-extract <ID> [--auto] [--dry-run]       # из plan.md создать дочерние task cards
 
 ai-hats task hyp list | show | append-verdict | migrate           # hypothesis backlog (HYP-NNN.yaml)
 ai-hats task proposal list | show | create | vote | status        # proposal backlog (PROP-NNN.yaml)
@@ -450,10 +458,10 @@ ai-hats session show 20260408-192417-1           # детальные метри
 **Hypothesis workflow.** Замкнутый цикл улучшений (см. `hypothesis-workflow` skill):
 
 1. Заметил повторяющийся паттерн в reflect-session ретро (≥3 сессии).
-2. `ai-hats task hyp create "<статус ожидаемого улучшения>" --baseline ... --target ... --window "N sessions"` — зафиксировать гипотезу с измеримым success_criterion.
+2. Завести гипотезу как `.agent/hypotheses/HYP-NNN-<slug>.yaml` (см. `_schema.yaml` рядом — поля `statement`, `baseline`, `target`, `window`, `success_criterion`).
 3. Применить изменение (rule/skill/code) на task-ветке.
-4. Каждая сессия → reflect-session автоматически добавляет verdict в `validation_log` гипотезы.
-5. По истечении window — `ai-hats task hyp ... close` (см. `task hyp --help`) с verdict `validated/refuted/inconclusive`.
+4. Каждая сессия → reflect-session добавляет verdict в `validation_log` через `ai-hats task hyp append-verdict --hyp HYP-NNN --session ... --verdict ... --evidence ...`.
+5. По истечении window — финальный `append-verdict` с `--recommendation close_confirmed` или `close_refuted` закрывает гипотезу.
 
 **Валидация артефактов.** Retro-файл можно проверить против схемы:
 
@@ -471,8 +479,7 @@ ai-hats session retro-validate .agent/retrospectives/sessions/20260406-050419-1.
   backlog/
     tasks/<ID>/                        # Task card + plan.md + retrospective.md
     proposals/PROP-NNN.yaml            # Improvement proposals (см. task proposal)
-  backlog.md                           # Табличный индекс
-  STATE.md                             # Текущее состояние задач
+  STATE.md                             # Табличный индекс + текущее состояние задач
   hypotheses/HYP-NNN.yaml              # Hypothesis backlog (см. task hyp)
   retrospectives/
     sessions/<id>.md                   # SessionRetroV1 (LLM-narrative + facts)
@@ -490,7 +497,7 @@ src/ai_hats/libraries/
   rules/          global_rule_*, dev_rule_*, env_rule_*
   skills/         62 скилла (29 нативных + 33 vendored golang-* из samber/cc-skills-golang)
   traits/         trait-base, trait-agent, trait-se-mindset, skill-engineer, dev::go-*, dev::python, dev::shell, env::*
-  roles/          assistant, test-agent, architect, sre, judge, go-dev, go-dev-full
+  roles/          assistant, test-agent, architect, sre, reflect-session, go-dev, go-dev-full
 ```
 
 Vendored golang-* skills хранят upstream commit SHA, LICENSE и atribution в `metadata.yaml.upstream.*` — фундамент для будущей плагинной системы (см. HATS-050).

@@ -138,16 +138,15 @@ def proposal_create(
 @proposal.command("vote")
 @click.option("--prop", "prop_id", required=True)
 @click.option("--session", "session_id", required=True)
-@click.option("--judge-session", "judge_session_id", default=None)
 @click.option("--reasoning", required=True, help="One-line reasoning")
-def proposal_vote(prop_id, session_id, judge_session_id, reasoning):
+def proposal_vote(prop_id, session_id, reasoning):
     """+1 vote on existing proposal."""
     store = _store()
     if not store.path(prop_id).exists():
         raise click.ClickException(f"{prop_id} not found")
     v = Vote(
         session_id=session_id,
-        judge_session_id=judge_session_id,
+        judge_session_id=None,
         timestamp=datetime.now(tz=timezone.utc),
         reasoning=reasoning,
     )
