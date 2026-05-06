@@ -29,8 +29,7 @@ def config_feedback_show():
     console.print(f"  session_retro.policy:               {sr.policy.value}")
     console.print(f"  session_retro.threshold:            turns={sr.smart_threshold.min_turns}, tool_calls={sr.smart_threshold.min_tool_calls}")
     console.print(f"  session_retro.background:           {sr.background}")
-    console.print(f"  session_retro.model:                {sr.model or '(provider default)'}")
-    console.print(f"  session_retro.reflect_model:        {sr.reflect_model or '(provider default)'}")
+    console.print(f"  session_retro.review_model:         {sr.review_model or '(provider default)'}")
 
 
 @config_feedback.command("session-retro")

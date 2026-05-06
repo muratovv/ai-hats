@@ -75,39 +75,28 @@ feedback:
 
 После правки — `ai-hats self bump`.
 
-### Модель для feedback-loop (HATS-232)
+### Модель для feedback-loop (HATS-232 → HATS-252)
 
-По умолчанию ai-hats не передаёт `--model` в провайдер CLI — feedback-loop наследует ту же модель, что выбрана в Claude Code / Gemini CLI глобально. Если у тебя интерактив на Opus, ретро тоже идёт на Opus, и дешёвая телеметрия превращается в дорогую.
+По умолчанию ai-hats не передаёт `--model` в провайдер CLI — feedback-loop наследует ту же модель, что выбрана в Claude Code / Gemini CLI глобально. Если у тебя интерактив на Opus, ревью тоже идёт на Opus, и дешёвая телеметрия превращается в дорогую.
 
-Два независимых поля позволяют пинить модель отдельно:
+После HATS-252 пост-сессионная рефлексия делает **один LLM-вызов** через роль `session-reviewer`. Соответственно осталось одно поле:
 
 ```yaml
 feedback:
   session_retro:
     policy: smart
-    model: claude-haiku-4-5            # для LLM-builder (SessionRetroV1)
-    reflect_model: claude-sonnet-4-6   # для роли reflect-session (голосование по HYP)
+    review_model: claude-sonnet-4-6   # для роли session-reviewer
 ```
 
 | Поле           | На что влияет                                                | Точка прокидки                                  |
 | -------------- | ------------------------------------------------------------ | ----------------------------------------------- |
-| `model`        | LLM-builder, который пишет SessionRetroV1                    | `claude --model <m> --print -p ...`             |
-| `reflect_model`| sub-agent роли `reflect-session` (голосует по HYP, заводит PROP) | `claude --model <m> --print -p <meta-prompt>` |
+| `review_model` | sub-agent роли `session-reviewer` (summary + observations + verdicts + proposals) | `claude --model <m> --print -p <meta-prompt>` |
 
 Поведение:
 
-- Если поле **не задано (`null`)** — флаг `--model` не передаётся, работает дефолтная модель CLI (бэк-совм с прежним поведением).
-- Поля независимы: можно гонять builder на Haiku (быстро/дёшево), а reflect-session — на Sonnet (там выше требования к рассуждению и валидации).
+- Если поле **не задано (`null`)** — флаг `--model` не передаётся, работает дефолтная модель CLI.
+- Старое поле `reflect_model` принимается как deprecated alias (с `DeprecationWarning`); поле `model` (бывший LLM-builder) больше не используется и игнорируется.
 - Поддерживается и для `provider: claude`, и для `provider: gemini` (флаг `--model` стандартный для обоих CLI).
-
-Рекомендуемый дефолт для экономии без потери качества:
-
-```yaml
-feedback:
-  session_retro:
-    model: claude-haiku-4-5            # builder = Haiku, дёшево
-    reflect_model: claude-sonnet-4-6   # reflect-session = Sonnet, качество вердиктов
-```
 
 После правки — `ai-hats self bump`.
 

@@ -281,12 +281,26 @@ class SessionRetroConfig(_YamlModel):
     policy: FeedbackPolicy = FeedbackPolicy.SMART
     smart_threshold: SmartThreshold = Field(default_factory=SmartThreshold)
     background: bool = True
-    # Optional model overrides for the feedback loop. When None, the provider
-    # CLI's default model is used (current behaviour, back-compat).
-    # `model` controls SubprocessLLMCaller (the LLM-builder behind SessionRetroV1);
-    # `reflect_model` controls the reflect-session sub-agent spawned afterwards.
-    model: str | None = None
+    # Optional model override for the single session-reviewer LLM call (HATS-252).
+    # When None, the provider CLI's default model is used.
+    review_model: str | None = None
+    # Deprecated alias retained for back-compat with pre-HATS-252 ai-hats.yaml
+    # files (`reflect_model:`). When `review_model` is unset and this field is
+    # present, the validator copies it across and emits a DeprecationWarning.
     reflect_model: str | None = None
+
+    @model_validator(mode="after")
+    def _alias_reflect_model(self) -> "SessionRetroConfig":
+        if self.review_model is None and self.reflect_model is not None:
+            import warnings
+            warnings.warn(
+                "feedback.session_retro.reflect_model is deprecated; "
+                "rename to review_model.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.review_model = self.reflect_model
+        return self
 
 
 class FeedbackConfig(_YamlModel):

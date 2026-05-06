@@ -199,12 +199,24 @@ def write_retro_log(
 
 
 def main() -> None:
-    """Entrypoint for the shell hook."""
+    """Entrypoint for the shell hook.
+
+    Recursion guard (HATS-252): when ``HATS_SKIP_RETRO=1`` is set in the env we
+    are running inside the session-reviewer's own sub-Claude process. Returning
+    early breaks the otherwise unbounded spawn loop.
+    """
     session_id = os.environ.get("AI_HATS_SESSION_ID", "")
     if not session_id:
         return
 
     project_dir = Path.cwd()
+
+    if os.environ.get("HATS_SKIP_RETRO") == "1":
+        write_retro_log(
+            project_dir, session_id, "auto_retro", "skip", "recursion-guard",
+        )
+        return
+
     config_path = project_dir / "ai-hats.yaml"
     metrics_path = project_dir / ".gitlog" / f"session_{session_id}" / "metrics.json"
 
@@ -225,25 +237,22 @@ def main() -> None:
 
 
 def _run_foreground(project_dir: Path, session_id: str) -> None:
-    from .builder import SessionRetroBuilder
-    from .llm_caller import SubprocessLLMCaller
+    """Detach the single session-reviewer sub-process.
 
-    llm_caller = SubprocessLLMCaller(project_dir)
-    builder = SessionRetroBuilder(project_dir, llm_caller=llm_caller)
-    write_retro_log(project_dir, session_id, "builder", "start", "mode=llm")
-    try:
-        path = builder.build_and_save(session_id)
-        write_retro_log(project_dir, session_id, "builder", "saved", str(path))
-    except Exception as exc:
-        write_retro_log(project_dir, session_id, "builder", "failed", repr(exc))
-        return
-
-    # HATS-210: spawn reflect-session in background after retro saved.
-    _spawn_reflect_session_background(project_dir, session_id)
+    Replaces the prior two-step flow (SessionRetroBuilder → reflect-session) —
+    pure-Python facts + one LLM call now happen inside the reviewer runner.
+    """
+    _spawn_session_reviewer_background(project_dir, session_id)
 
 
-def _spawn_reflect_session_background(project_dir: Path, session_id: str) -> None:
-    """Detach reflect-session sub-process; never blocks caller.
+def _spawn_session_reviewer_background(
+    project_dir: Path, session_id: str,
+) -> None:
+    """Detach session-reviewer sub-process; never blocks caller.
+
+    Sets ``HATS_SKIP_RETRO=1`` in the child env so the sub-Claude session
+    spawned inside the runner does not re-trigger this hook
+    (:class:`SubAgentRunner` inherits ``os.environ``).
 
     Failures here are observability-only — never propagate.
     """
@@ -251,6 +260,7 @@ def _spawn_reflect_session_background(project_dir: Path, session_id: str) -> Non
 
     log_path = _retro_log_path(project_dir, session_id)
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "HATS_SKIP_RETRO": "1"}
     try:
         with open(log_path, "a") as f:
             proc = sp.Popen(
@@ -263,14 +273,16 @@ def _spawn_reflect_session_background(project_dir: Path, session_id: str) -> Non
                 stdout=f,
                 stderr=f,
                 start_new_session=True,
+                env=env,
             )
         write_retro_log(
-            project_dir, session_id, "reflect-session", "spawn",
+            project_dir, session_id, "session-reviewer", "spawn",
             f"pid={proc.pid} bg",
         )
     except Exception as exc:
         write_retro_log(
-            project_dir, session_id, "reflect-session", "spawn-failed", repr(exc),
+            project_dir, session_id, "session-reviewer", "spawn-failed",
+            repr(exc),
         )
 
 

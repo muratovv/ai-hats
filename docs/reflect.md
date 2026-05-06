@@ -1,30 +1,46 @@
 # Reflect pipeline
 
 Two subcommands of `ai-hats reflect` cover the retrospective lifecycle:
-`reflect session` (per-session reflect-session run) and `reflect all`
+`reflect session` (per-session `session-reviewer` run) and `reflect all`
 (interactive triage of the accumulated backlog).
 
 > Full CLI reference (signatures + flags) — `ai-hats --tree`.
 
-## Pipeline overview
+## Pipeline overview (HATS-252)
+
+Pre-HATS-252 the post-session flow made two LLM calls
+(`SessionRetroBuilder` + `reflect-session`). It is now a single LLM call
+under the `session-reviewer` role; factual fields (metrics, files_changed,
+commits, tasks_closed, links, role, project, date) are computed by pure
+Python before the call.
 
 ```
-session_end (runtime → auto_retro.make_decision)
+session_end (hook → auto_retro)
   └─ if decision=run:
-       SessionRetroBuilder (LLM) → SessionRetroV1
-         .agent/retrospectives/sessions/<id>.md
-       reflect-session  ← spawned background detached
-         reads .agent/hypotheses/*.yaml (status=active)
-              + .agent/backlog/proposals/*.yaml (status=open)
-         writes ReflectSessionV1 (.agent/retrospectives/reflect-session/<id>.md)
-         side-effects:
-           - ai-hats task hyp append-verdict ...     (HYP validation_log)
-           - ai-hats task proposal create | vote ... (inbox grow / co-sign)
-         runtime safety net: post-validate output; if absent or invalid →
-           programmatic meta-proposal w/ failed_session_id=<sid>
+       _spawn_session_reviewer_background (Popen, env: HATS_SKIP_RETRO=1)
+         python -m ai_hats.cli.reflect_session_main <sid>
+           ├─ SessionReviewRunner.run(sid)
+           │    1. compute_facts(project_dir, sid)         # pure-Python
+           │    2. SubAgentRunner → role=session-reviewer  # one LLM call
+           │    3. merge facts + analysis → SessionReviewV1
+           │    4. write .agent/retrospectives/sessions/<id>.md
+           │       (schema: hats-session-review/v1)
+           └─ harness_check (pure-Python)
+                missing/empty/incomplete → file ONE meta-proposal
+                  (category=process, target=session-reviewer,
+                   failed_session_id=<sid>; deduped per session)
+
+  Side effects during the LLM call (via CLI from inside the sub-Claude):
+    - ai-hats task hyp append-verdict ...      (HYP validation_log)
+    - ai-hats task proposal create | vote ...  (inbox grow / co-sign)
+
+  Recursion guard:
+    HATS_SKIP_RETRO=1 propagates to the sub-Claude session via
+    SubAgentRunner; both the shell hook and auto_retro main() honour it
+    and write a `recursion-guard` breadcrumb to retro.log.
 
 ai-hats reflect session [--session ID] [--background]
-  Manual single-session run of the same role.
+  Manual single-session run of session-reviewer.
 
 ai-hats reflect all [--dry-run]
   Pre-flight (Python): collect active HYP + open PROP into a handoff.md
@@ -34,21 +50,22 @@ ai-hats reflect all [--dry-run]
 
 ## `ai-hats reflect session`
 
-Per-session reflect-session run. Spawns the **reflect-session** role on a single
-`.gitlog/session_<id>/`. Output is `hats-reflect-session/v1` markdown.
+Per-session `session-reviewer` run. Output is `hats-session-review/v1`
+markdown at `.agent/retrospectives/sessions/<id>.md`.
 
 Triggers:
 - **Auto** on session-end (when `feedback.session_retro.policy=run`); detached background.
-- **Manual** via `ai-hats reflect session --session <id>` (foreground).
+- **Manual** via `ai-hats reflect session --session <id>` (foreground; harness check skipped).
 
 Validation contract:
 - One `hypothesis_verdicts[]` entry per active HYP (no skipping).
 - Verdict ∈ `{confirmed, refuted, inconclusive, n/a}`.
 - `n/a` only when the session physically cannot test the HYP.
-- Self-problems ⇒ reflect-session files a meta-proposal via CLI and
-  lists the resulting PROP-NNN in `self_problems[]`.
-- Two-layer no-silent-failure: LLM-driven (in-skill) + runtime-driven
-  (programmatic post-validation always files a meta-proposal on failure).
+- `summary` is non-empty.
+- Self-problems ⇒ reviewer files a meta-proposal via CLI and lists the
+  resulting PROP-NNN in `self_problems[]`.
+- Single safety net: harness check (pure-Python) at the CLI layer is the
+  sole owner of the failure-proposal — no double-fire from the runner.
 
 ## `ai-hats reflect all`
 
@@ -73,9 +90,9 @@ Manual triage of accumulated backlog. Two stages:
     proposals/
       PROP-NNN.yaml                  # status: open|accepted|rejected|deferred|duplicate
   retrospectives/
-    sessions/<id>.md                 # SessionRetroV1 (builder, LLM)
-    reflect-session/<id>.md          # ReflectSessionV1
+    sessions/<id>.md                 # SessionReviewV1 (single LLM call)
     reflect-all/<ts>-handoff.md      # pre-flight pointer
+    reflect-session/<id>.md          # historical only — pre-HATS-252 ReflectSessionV1
 ```
 
 ## Schema dispatch
@@ -84,5 +101,5 @@ Manual triage of accumulated backlog. Two stages:
 
 | Family | Model | Producer |
 |---|---|---|
-| `hats-session-retro/v1` | `SessionRetroV1` | builder |
-| `hats-reflect-session/v1` | `ReflectSessionV1` | reflect-session |
+| `hats-session-review/v1`  | `SessionReviewV1`  | session-reviewer (current) |
+| `hats-reflect-session/v1` | `ReflectSessionV1` | historical (pre-HATS-252) — read-only |

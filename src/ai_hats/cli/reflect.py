@@ -26,7 +26,7 @@ from pathlib import Path
 import click
 
 from ..hypothesis import HypothesisStore, ProposalStore
-from ..retro.reflect_session import ReflectSessionError, ReflectSessionRunner
+from ..retro.session_review_runner import SessionReviewError, SessionReviewRunner
 from ._helpers import _project_dir, console
 
 
@@ -51,28 +51,29 @@ def reflect():
     "--max-retries", type=int, default=1, show_default=True,
 )
 def reflect_session_cmd(session_id: str, background: bool, max_retries: int):
-    """Run reflect-session role on one session and validate output.
+    """Run session-reviewer on one session and validate output.
 
-    On any failure a meta-proposal is filed programmatically — the command
-    still exits non-zero so the caller can react, but the proposal serves
-    as the durable audit record.
+    On any failure the harness layer files a meta-proposal — the command still
+    exits non-zero so the caller can react, but the proposal serves as the
+    durable audit record.
     """
     if background:
         _spawn_detached(session_id, max_retries)
         return
 
     project_dir = _project_dir()
-    runner = ReflectSessionRunner(project_dir)
+    runner = SessionReviewRunner(project_dir)
     try:
         path = runner.run(session_id, max_retries=max_retries)
-    except ReflectSessionError as exc:
+    except SessionReviewError as exc:
         console.print(
-            f"[yellow]reflect session failed for {session_id}:[/yellow] {exc}\n"
-            "Meta-proposal filed in .agent/backlog/proposals/."
+            f"[yellow]session-reviewer failed for {session_id}:[/yellow] {exc}\n"
+            "Run via `--background` to also engage the harness check; or re-run "
+            "after addressing the cause."
         )
         sys.exit(2)
     else:
-        console.print(f"[green]✓[/green] reflect session saved to {path}")
+        console.print(f"[green]✓[/green] session review saved to {path}")
 
 
 def _spawn_detached(session_id: str, max_retries: int) -> None:
