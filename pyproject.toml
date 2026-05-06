@@ -30,7 +30,7 @@ aggregation = [
 ]
 
 [project.scripts]
-ai-hats = "ai_hats.cli:main"
+ai-hats = "ai_hats.cli:main_entry"
 
 [tool.setuptools_scm]
 version_file = "src/ai_hats/_version.py"
