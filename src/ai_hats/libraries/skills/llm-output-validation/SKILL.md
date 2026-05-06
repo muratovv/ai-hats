@@ -75,8 +75,8 @@ acting on garbage.
 
 ## Case Study: HATS-066
 
-The judge LLM in the retrospective pipeline was asked to evaluate
-`bundle_id="001"`. It returned a schema-valid `JudgeResult` with
+An LLM in the (then-current) retrospective pipeline was asked to evaluate
+`bundle_id="001"`. It returned a schema-valid result object with
 `bundle_id="002"` — a hallucinated identifier. Pydantic didn't notice because
 `bundle_id` was typed as `str`, not constrained to the input. The fix: a
 three-line integrity check after parse that verified `result.bundle_id ==

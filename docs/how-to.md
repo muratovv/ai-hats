@@ -152,8 +152,6 @@ library_paths: []
 feedback:
   session_retro:
     policy: smart
-  judge:
-    policy: manual
 ```
 
 Это эквивалент того, что генерирует `bootstrap.sh` при первой установке.
