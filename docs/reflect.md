@@ -4,6 +4,8 @@ Two subcommands of `ai-hats reflect` cover the retrospective lifecycle:
 `reflect session` (per-session reflect-session run) and `reflect all`
 (interactive triage of the accumulated backlog).
 
+> Full CLI reference (signatures + flags) — `ai-hats --tree`.
+
 ## Pipeline overview
 
 ```
@@ -32,7 +34,7 @@ ai-hats reflect all [--dry-run]
 
 ## `ai-hats reflect session`
 
-Per-session judge run. Spawns the **reflect-session** role on a single
+Per-session reflect-session run. Spawns the **reflect-session** role on a single
 `.gitlog/session_<id>/`. Output is `hats-reflect-session/v1` markdown.
 
 Triggers:

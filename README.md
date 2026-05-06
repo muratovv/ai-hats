@@ -75,82 +75,60 @@ pytest tests/ -v
 
 ## CLI
 
-Топ-уровневые группы: `agent`, `config`, `list`, `reflect`, `self`, `session`,
-`task`, `wt`. Подробности по любой — `ai-hats <group> --help`. Полное дерево
-команд с описаниями и опциями — `ai-hats --tree` (работает и как
-`ai-hats --help --tree`).
+> **Полный справочник команд с описаниями и опциями — `ai-hats --tree`**
+> (работает также как `ai-hats --help --tree`). Дерево рендерится из живого
+> click-графа, поэтому всегда соответствует установленной версии.
+
+Восемь top-level групп:
+
+| Группа     | Что делает                                                              |
+| ---------- | ----------------------------------------------------------------------- |
+| `agent`    | Запуск роли как sub-агента в изолированном worktree                     |
+| `config`   | Чтение/правка `ai-hats.yaml` (provider, role, customizations, feedback) |
+| `list`     | Discovery: roles / skills / rules / traits / providers / tokens         |
+| `reflect`  | Feedback loop — per-session vote и bulk-triage HYP/PROP                 |
+| `self`     | Жизненный цикл инструмента: init / bump / update / clean / rollback     |
+| `session`  | Наблюдаемость: list / show / audit / retro по сессиям                   |
+| `task`     | Backlog: task / hyp / proposal cards со state-машиной                   |
+| `wt`       | git worktrees: create / merge / discard / exec / env                    |
+
+Quickstart:
 
 ```bash
-# Сессия — ai-hats без subcommand запускает провайдер
+# Интерактивная сессия (без subcommand → провайдерский CLI с инжектом роли)
 ai-hats                                    # текущие настройки
-ai-hats --resume                           # флаги передаются провайдеру
 ai-hats -p claude -r architect             # override провайдера и роли
 ai-hats "fix the bug"                      # промпт передаётся провайдеру
-ai-hats --tag client=acme --tag project=X  # custom теги в metrics.json (см. ниже)
+ai-hats --tag client=acme                  # custom теги в metrics.json
 
-# Конфигурация (всё, что пишет в ai-hats.yaml)
-ai-hats config set -r <role> -p <provider>     # настроить роль и/или провайдер
-ai-hats config status                          # текущая роль, дерево, health
-ai-hats config customize <role> --add-trait X  # добавить трейт к роли
-ai-hats config customize <role> --remove-skill Y
-ai-hats config customize <role> --show         # показать кастомизации
-ai-hats config customize <role> --reset        # сбросить кастомизации
-ai-hats config feedback show                   # текущая конфигурация feedback loop
-ai-hats config feedback session-retro <policy> [--threshold turns=N,tool_calls=N] [--background/--no-background]
+# Sub-агент в изолированном worktree
+ai-hats agent sre --task "investigate alert XYZ"
 
-# Жизненный цикл инструмента в проекте
-ai-hats self init -r <role> -p <provider>  # инициализировать ai-hats в текущем dir
-ai-hats self bump                          # пересобрать prompt из библиотеки
-ai-hats self clean                         # очистить .agent/
-ai-hats self rollback                      # откатить к предыдущему состоянию
-ai-hats self update                        # pip-переустановка из GitHub
-ai-hats self migrate                       # миграция конфига к новой версии
+# Конфигурация и жизненный цикл
+ai-hats config set -r <role> -p <provider>
+ai-hats config status                      # health-check композиции
+ai-hats self init -r <role> -p <provider>  # bootstrap в новом проекте
+ai-hats self update && ai-hats self bump   # обновить ai-hats и пересобрать prompt
 
-# Sub-агенты — запуск роли в изолированном worktree
-ai-hats agent <role> [--ticket <ID>] [--model <name>] [--task <desc>] [--tag k=v ...] [--json]
-
-# Discovery — что доступно в композиции
-ai-hats list roles | skills | rules | traits | providers | tokens
-
-# Worktrees — изолированная работа
-ai-hats wt create <branch>                                     # создать worktree на новой ветке
-ai-hats wt list                                                # все git worktrees
-ai-hats wt status                                              # tracked для текущего проекта
-ai-hats wt exec -- <cmd>                                       # запустить команду в активном wt
-ai-hats wt env                                                 # eval-friendly shell exports (WT, PYTHONPATH)
-ai-hats wt merge [<branch>] [--squash] [--force]               # влить worktree обратно и удалить
-ai-hats wt discard [<branch>] [--force]                        # выкинуть изменения worktree
+# Worktrees — изолированная работа на ветке
+ai-hats wt create feat/new-thing
+ai-hats wt merge
 
 # Наблюдаемость
-ai-hats session list [--last N] [--min-turns N] [--productive] [--all] [--tag k=v ...] [--role <r>] [--since YYYY-MM-DD] [--json]
-ai-hats session show <session_id>                              # детали сессии
-ai-hats session audit [--session <ID>]                         # audit.md сессии
-ai-hats session retro <session_id> [--last] [--timeout SEC] [--interactive]  # SessionRetroV1 (LLM)
-ai-hats session retro-validate <path>                          # проверить retro по схеме
+ai-hats session list --productive --last 10
+ai-hats session retro <session_id>          # ручной retro
 
-# Feedback loop — per-session vote + bulk-triage
-ai-hats reflect session [--session <ID>] [--background]        # ручной запуск reflect-session судьи
-ai-hats reflect all [--dry-run]                                # ручной триаж накопленных HYP/PROP
-ai-hats reflect commit --accept PROP-X --reject PROP-Y ...     # bulk-flip статусов после триажа
+# Feedback loop
+ai-hats reflect session --session <id>      # ручной reflect-session
+ai-hats reflect all --dry-run               # триаж накопленного бэклога
 
-# Задачи + гипотезы + предложения (всё под task — backlog artifacts)
-ai-hats task create <title> [--id ID] [-d <desc>] [-p high|medium|low] \
-                            [--parent-task ID] [--depends-on ID ...]
-ai-hats task update <ID> [--title ...] [--description ...] [--priority ...] \
-                         [--parent-task ID | --clear-parent] \
-                         [--add-depends ID ...] [--remove-depends ID ...] \
-                         [--add-tag T ...] [--remove-tag T ...]
-ai-hats task transition <ID> <state>
-ai-hats task log <ID> <message>
-ai-hats task list [--state <state>] [--priority <p>] [--search <regex>] [--all]
-ai-hats task show <ID>      # depends_on рендерится как «Blocked by:» со state-ами
-ai-hats task sync
-ai-hats task plan-sync <ID> [--from-file PATH]            # импорт .claude/plans/<NN>-*.md → plan.md
-ai-hats task plan-extract <ID> [--auto] [--dry-run]       # из plan.md создать дочерние task cards
-
-ai-hats task hyp list | show | append-verdict | migrate           # hypothesis backlog (HYP-NNN.yaml)
-ai-hats task proposal list | show | create | vote | status        # proposal backlog (PROP-NNN.yaml)
+# Backlog
+ai-hats task create "<title>" -p high
+ai-hats task transition <ID> execute
+ai-hats task list --state execute --all
 ```
+
+Все команды и флаги — `ai-hats --tree`.
 
 ### Как обновить ai-hats в проекте
 
