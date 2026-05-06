@@ -68,7 +68,7 @@ pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
-Доступные роли: `go-dev`, `go-dev-full`, `assistant`, `architect`, `sre`, `judge`, `test-agent`.
+Доступные роли: `go-dev`, `go-dev-full`, `assistant`, `architect`, `sre`, `test-agent`, `reflect-session`.
 
 `go-dev` — лёгкий профиль (core Go skills + testing-extended + ci, ~28 скиллов).
 `go-dev-full` — все 11 `dev::go-*` traits сразу (database, grpc, cli, observability, performance, security, di, samber ecosystem, …, ~44 скилла). Используй для полидоменных Go-проектов; для узких задач подключай applied-traits через `customize`.

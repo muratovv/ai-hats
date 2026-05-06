@@ -114,6 +114,6 @@ fragmentation, reflect-all triage gets harder. → vote on PROP-003 instead.
 
 ### ✗ Bad: meta-proposal as blame
 
-Bad: `--title "judge sub-agent is broken"`, no actionable description.
-Good: `--title "judge prompt missing pointer to bundle scope"`,
+Bad: `--title "reflect-session is broken"`, no actionable description.
+Good: `--title "reflect-session skill missing pointer to inbox-first rule"`,
 description names the missing line, rationale points at audit/Turn evidence.
