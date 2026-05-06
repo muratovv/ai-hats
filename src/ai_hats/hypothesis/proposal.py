@@ -21,7 +21,6 @@ class Vote(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: str = Field(..., min_length=1)
-    judge_session_id: str | None = None
     timestamp: datetime
     reasoning: str = Field(..., min_length=1)
 

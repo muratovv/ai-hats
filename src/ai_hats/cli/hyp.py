@@ -129,7 +129,6 @@ def hyp_append_verdict(
         evidence=evidence,
         recommendation=recommendation,  # type: ignore[arg-type]
         session_id=session_id,
-        judge_session_id=None,
         timestamp=datetime.now(tz=timezone.utc),
     )
     h = store.append_verdict(hyp_id, entry)

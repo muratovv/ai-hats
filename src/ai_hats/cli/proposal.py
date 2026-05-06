@@ -146,7 +146,6 @@ def proposal_vote(prop_id, session_id, reasoning):
         raise click.ClickException(f"{prop_id} not found")
     v = Vote(
         session_id=session_id,
-        judge_session_id=None,
         timestamp=datetime.now(tz=timezone.utc),
         reasoning=reasoning,
     )
