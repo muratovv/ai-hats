@@ -19,16 +19,22 @@ Look for the same friction surfacing across multiple sessions.
 
 ### Step 2: Create the hypothesis
 
-```bash
-ai-hats task hyp create "<short statement of expected improvement>" \
-  --baseline "<measurable starting state>" \
-  --target   "<measurable target after change>" \
-  --window   "N sessions"
+Create the YAML file directly under `.agent/hypotheses/HYP-NNN-<slug>.yaml`
+(see `_schema.yaml` in the same directory for required fields). Use the next
+free `HYP-NNN` id from `ai-hats task hyp list`. Minimum fields:
+
+```yaml
+id: HYP-NNN
+status: active
+statement: "<short statement of expected improvement>"
+baseline: "<measurable starting state>"
+target: "<measurable target after change>"
+window: "N sessions"
+success_criterion: "<how a verdict is decided>"
 ```
 
-The hypothesis goes to `.agent/hypotheses/HYP-NNN-<slug>.yaml` with
-`status: active`. Each subsequent reflect-session run is required to emit
-one verdict per active HYP — that is how validation accumulates.
+Each subsequent reflect-session run is required to emit one verdict per
+active HYP — that is how validation accumulates.
 
 ### Step 3: Implement the change
 
@@ -51,16 +57,24 @@ ai-hats reflect session --session <SID>
 
 ### Close the hypothesis
 
-After enough verdicts accumulate (the window declared on creation):
+After enough verdicts accumulate (the window declared on creation), the
+final `append-verdict` carries a terminal `--recommendation`:
 
 ```bash
-ai-hats task hyp close HYP-NNN --verdict {validated|refuted|inconclusive} \
-  --note "<one-line summary>"
+ai-hats task hyp append-verdict --hyp HYP-NNN --session <SID> \
+  --verdict {confirmed|refuted|inconclusive} \
+  --recommendation {close_confirmed|close_refuted} \
+  --evidence "<one-line citation>"
 ```
 
-- **validated**: target reached, the change worked. Document lessons.
-- **refuted**: pattern persists or worsened. Roll back or pivot.
-- **inconclusive**: not enough signal in the window. Extend window or close.
+- **close_confirmed**: target reached, the change worked. Document lessons.
+- **close_refuted**: pattern persists or worsened. Roll back or pivot.
+- For inconclusive cases use `--recommendation extend_window` and revisit
+  later, or close with `close_refuted` if the signal is exhausted.
+
+After the closing verdict, edit the YAML directly to flip
+`status: active` → `status: confirmed | refuted | inconclusive` (the CLI
+appends to `validation_log` only, status is not auto-flipped).
 
 ## Cross-project hypotheses
 

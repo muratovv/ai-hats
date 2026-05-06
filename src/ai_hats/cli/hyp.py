@@ -91,12 +91,6 @@ def hyp_show(hyp_id: str):
 @click.option("--hyp", "hyp_id", required=True, help="Target hypothesis (HYP-NNN)")
 @click.option("--session", "session_id", required=True, help="Source session id")
 @click.option(
-    "--judge-session",
-    "judge_session_id",
-    default=None,
-    help="reflect-session run id",
-)
-@click.option(
     "--verdict",
     type=click.Choice(["confirmed", "refuted", "inconclusive", "n/a"]),
     required=True,
@@ -116,7 +110,6 @@ def hyp_show(hyp_id: str):
 def hyp_append_verdict(
     hyp_id: str,
     session_id: str,
-    judge_session_id: str | None,
     verdict: str,
     evidence: str,
     recommendation: str,
@@ -136,7 +129,7 @@ def hyp_append_verdict(
         evidence=evidence,
         recommendation=recommendation,  # type: ignore[arg-type]
         session_id=session_id,
-        judge_session_id=judge_session_id,
+        judge_session_id=None,
         timestamp=datetime.now(tz=timezone.utc),
     )
     h = store.append_verdict(hyp_id, entry)
