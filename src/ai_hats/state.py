@@ -385,7 +385,7 @@ class TaskManager:
 
     def _teardown_worktree(self, task: TaskCard, *, merge: bool = True) -> None:
         """Merge or discard the worktree for a specific task (HATS-061)."""
-        from .worktree import WorktreeManager
+        from .worktree import OriginalBranchMissingError, WorktreeManager
 
         active = WorktreeManager.load_for_task(self.project_dir, task.id)
         if active is None:
@@ -396,6 +396,8 @@ class TaskManager:
                 active.merge()
             else:
                 active.discard(force=True)  # failed → intentional discard
+        except OriginalBranchMissingError as exc:
+            logger.warning("Worktree merge skipped: %s", exc)
         except Exception:
             logger.warning(
                 "Worktree %s failed, branch '%s' preserved",

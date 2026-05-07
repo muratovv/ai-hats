@@ -7,7 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.worktree import IsolationMode, WorktreeManager
+from ai_hats.worktree import (
+    IsolationMode,
+    OriginalBranchMissingError,
+    WorktreeManager,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +252,41 @@ class TestContextManager:
         assert not wt_path.exists()
         # Changes should NOT have been merged (forced discard)
         assert not (git_project / "crash.txt").exists()
+
+
+# ---------------------------------------------------------------------------
+# Original branch missing (HATS-253)
+# ---------------------------------------------------------------------------
+
+class TestOriginalBranchMissing:
+    def test_merge_raises_when_original_branch_deleted(self, git_project: Path) -> None:
+        """If the original branch was deleted while worktree was active,
+        merge() must raise OriginalBranchMissingError, remove the worktree
+        directory, but preserve the worktree branch for manual recovery."""
+        # Create another branch and switch to it so we can delete the
+        # branch the worktree was created from.
+        _git(git_project, "checkout", "-b", "doomed")
+        mgr = WorktreeManager(git_project, "tester", "sess-253", IsolationMode.SQUASH)
+        wt = mgr.create()
+        (wt / "feature.txt").write_text("wip")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "wip")
+        # Move main repo off the doomed branch and delete it
+        _git(git_project, "checkout", "-")  # back to master/main
+        _git(git_project, "branch", "-D", "doomed")
+
+        with pytest.raises(OriginalBranchMissingError):
+            mgr.merge()
+
+        # Worktree dir gone, but worktree branch preserved
+        assert not wt.exists()
+        result = subprocess.run(
+            ["git", "branch", "--list", mgr.branch_name],
+            cwd=str(git_project),
+            capture_output=True,
+            text=True,
+        )
+        assert result.stdout.strip() != "", "worktree branch should be preserved"
 
 
 # ---------------------------------------------------------------------------

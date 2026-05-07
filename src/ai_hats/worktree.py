@@ -93,6 +93,15 @@ class WorktreeLockError(Exception):
     """Raised when acquiring a worktree state lock times out (HATS-121)."""
 
 
+class OriginalBranchMissingError(Exception):
+    """Raised when worktree merge target (original branch) no longer exists.
+
+    Worktree directory is removed on raise, but the worktree branch is
+    preserved so the user can rebase + merge manually onto the current
+    default branch.
+    """
+
+
 class IsolationMode(str, Enum):
     DISCARD = "discard"
     SQUASH = "squash"
@@ -176,11 +185,23 @@ class WorktreeManager:
 
         Raises WorktreeDirtyError if the worktree has uncommitted changes
         unless force=True (HATS-062).
+
+        Raises OriginalBranchMissingError if the original branch was deleted
+        while the worktree was active. Worktree dir is removed but the
+        worktree branch is preserved for manual rebase + merge (HATS-253).
         """
         if not self._is_git or self.worktree_path is None:
             return
         if not force:
             self._check_clean()
+        if self._original_branch and not self._branch_exists(self._original_branch):
+            self._remove_worktree()
+            self._clear_state()
+            raise OriginalBranchMissingError(
+                f"Original branch '{self._original_branch}' no longer exists. "
+                f"Worktree branch '{self.branch_name}' preserved — rebase onto "
+                f"the current default branch and merge manually."
+            )
         try:
             if squash:
                 self._squash_merge()
@@ -486,6 +507,13 @@ class WorktreeManager:
     def _get_current_branch(self) -> str:
         result = self._git("rev-parse", "--abbrev-ref", "HEAD")
         return result.stdout.strip()
+
+    def _branch_exists(self, name: str) -> bool:
+        try:
+            self._git("rev-parse", "--verify", "--quiet", name)
+            return True
+        except subprocess.CalledProcessError:
+            return False
 
     def _squash_merge(self) -> None:
         """Squash-merge worktree branch into original branch."""
