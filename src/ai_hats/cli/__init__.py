@@ -13,7 +13,7 @@ import sys
 import click
 
 from .. import __version__
-from ._helpers import _project_dir, console
+from ._helpers import console
 
 
 class _PassthroughGroup(click.Group):
@@ -111,26 +111,24 @@ def _launch_session(
     extra_args: list[str] | None = None,
     tags: dict[str, str] | None = None,
 ):
-    """Launch a wrapped provider CLI session."""
-    from ..models import ProjectConfig
-    from ..runtime import WrapRunner
+    """Launch a wrapped provider CLI session.
 
-    project_dir = _project_dir()
-    config = ProjectConfig.from_yaml(project_dir / "ai-hats.yaml")
+    Thin wrapper over the unified `ai-hats execute` primitive — kept as a
+    function so bare `ai-hats` (no subcommand) and any in-process callers
+    have a stable Python entry point. Internal callers that need a return
+    value (instead of sys.exit) should use `execute._do_execute` directly.
+    """
+    from .execute import _do_execute
 
-    effective_provider = provider or config.provider
-    if not effective_provider:
-        console.print("[red]No provider configured[/]. Run: ai-hats config set -p <provider>")
-        sys.exit(1)
-
-    runner = WrapRunner(project_dir)
-    exit_code = runner.run(
-        effective_provider,
-        role_override=role,
-        extra_args=extra_args or None,
+    rc = _do_execute(
+        role=role,
+        provider=provider,
+        interactive=True,
+        prompt=None,
         tags=tags,
+        extra_args=list(extra_args or []),
     )
-    sys.exit(exit_code)
+    sys.exit(int(rc))
 
 
 # ----- Command registration -----
@@ -142,6 +140,7 @@ from . import (  # noqa: E402
     agent as agent_mod,
     assembly,
     config as config_mod,
+    execute as execute_mod,
     hyp as hyp_mod,
     list_cmd,
     maintenance,
@@ -179,7 +178,10 @@ main.add_command(self_group)
 # List
 main.add_command(list_cmd.list_cmd)
 
-# Agent — sub-agent launcher (HATS-242, was 'run').
+# Execute — unified launch primitive (HATS-260). Wraps WrapRunner / SubAgentRunner.
+main.add_command(execute_mod.execute_cmd)
+
+# Agent — sub-agent launcher (HATS-242, was 'run'). Now a thin wrapper over execute.
 main.add_command(agent_mod.run_subagent)
 
 # Worktree
