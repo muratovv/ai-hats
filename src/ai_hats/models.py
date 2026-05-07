@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, computed_field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -314,6 +314,10 @@ class FeedbackConfig(_YamlModel):
 # ----- ProjectConfig -----
 
 
+class ProjectConfigError(ValueError):
+    """Raised when ai-hats.yaml fails schema validation."""
+
+
 class ProjectConfig(_YamlModel):
     """ai-hats.yaml — unified project configuration.
 
@@ -323,6 +327,9 @@ class ProjectConfig(_YamlModel):
       - Feedback: session_retro
       - Meta: schema_version (2 = current)
     """
+
+    # Reject unknown keys so typos in ai-hats.yaml fail loudly instead of silently dropping.
+    model_config = ConfigDict(extra="forbid")
 
     provider: str = "gemini"
     default_role: str = ""
@@ -345,6 +352,17 @@ class ProjectConfig(_YamlModel):
             }
         return data
 
+    @field_validator("provider")
+    @classmethod
+    def _validate_provider(cls, value: str) -> str:
+        # Lazy import to avoid models <-> providers cycle (providers -> composer -> models).
+        from .providers import PROVIDERS
+
+        if value not in PROVIDERS:
+            allowed = ", ".join(sorted(PROVIDERS))
+            raise ValueError(f"unknown provider {value!r} — allowed: {allowed}")
+        return value
+
     @classmethod
     def from_yaml(cls, path: Path) -> ProjectConfig:
         if not path.exists():
@@ -352,7 +370,10 @@ class ProjectConfig(_YamlModel):
         data = yaml.safe_load(path.read_text()) or {}
         if data.get("schema_version", 1) < 2:
             data = _migrate_v1_to_v2(path, data)
-        return cls.model_validate(data)
+        try:
+            return cls.model_validate(data)
+        except ValidationError as e:
+            raise ProjectConfigError(_format_project_config_error(path, e)) from e
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -442,6 +463,22 @@ class ProjectConfig(_YamlModel):
         if len(prefixes) == 1:
             return prefixes.pop()
         return None
+
+
+def _format_project_config_error(path: Path, err: ValidationError) -> str:
+    """Render a Pydantic ValidationError as a concise, actionable message.
+
+    One issue per line, prefixed with the offending key path. Keeps the file
+    path up-front so users know which ai-hats.yaml is broken.
+    """
+    lines = [f"Invalid {path}:"]
+    for issue in err.errors():
+        loc = ".".join(str(p) for p in issue["loc"]) or "<root>"
+        if issue["type"] == "extra_forbidden":
+            lines.append(f"  - unknown key {loc!r}")
+        else:
+            lines.append(f"  - {loc}: {issue['msg']}")
+    return "\n".join(lines)
 
 
 def _migrate_v1_to_v2(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:

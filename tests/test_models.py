@@ -10,6 +10,7 @@ from ai_hats.models import (
     HooksConfig,
     OverlayConfig,
     ProjectConfig,
+    ProjectConfigError,
     SessionRetroConfig,
     SmartThreshold,
     TaskCard,
@@ -416,6 +417,43 @@ def test_project_config_empty_customizations_not_serialized(tmp_path):
 
     content = path.read_text()
     assert "customizations" not in content
+
+
+# -- ProjectConfig schema validation (HATS-126) --
+
+
+def test_project_config_rejects_unknown_top_level_key(tmp_path):
+    path = tmp_path / "ai-hats.yaml"
+    path.write_text("provider: claude\nschema_version: 2\nmystery_flag: true\n")
+
+    with pytest.raises(ProjectConfigError) as exc:
+        ProjectConfig.from_yaml(path)
+    msg = str(exc.value)
+    assert str(path) in msg
+    assert "mystery_flag" in msg
+
+
+def test_project_config_rejects_unknown_provider(tmp_path):
+    path = tmp_path / "ai-hats.yaml"
+    path.write_text("provider: gemini-2.5\nschema_version: 2\n")
+
+    with pytest.raises(ProjectConfigError) as exc:
+        ProjectConfig.from_yaml(path)
+    msg = str(exc.value)
+    assert "gemini-2.5" in msg
+    # allowed list must be visible so the user can self-correct
+    assert "gemini" in msg
+    assert "claude" in msg
+
+
+def test_project_config_valid_load_still_works(tmp_path):
+    """Regression: a clean ai-hats.yaml continues to load without error."""
+    path = tmp_path / "ai-hats.yaml"
+    path.write_text("provider: claude\nactive_role: assistant\nschema_version: 2\n")
+
+    config = ProjectConfig.from_yaml(path)
+    assert config.provider == "claude"
+    assert config.active_role == "assistant"
 
 
 # -- FeedbackConfig tests --
