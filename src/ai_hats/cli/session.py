@@ -52,23 +52,20 @@ def session_audit(session_id: str | None):
 @click.argument("session_id", required=False)
 @click.option("--last", "use_last", is_flag=True, help="Use the most recent session")
 @click.option(
-    "--timeout",
-    default=600,
-    type=int,
-    help="LLM call timeout in seconds (default 600)",
+    "--max-retries", type=int, default=1, show_default=True,
+    help="LLM retries on validation failure",
 )
 @click.option("--interactive", is_flag=True,
               help="After generating, hand off to a live `claude` session preloaded with the retro file")
 def session_retro(
     session_id: str | None,
     use_last: bool,
-    timeout: int,
+    max_retries: int,
     interactive: bool,
 ):
-    """Generate a structured session retrospective (HATS-051 schema, LLM mode)."""
+    """Generate a structured session review (hats-session-review/v1, single LLM call)."""
     from ..observe import SessionManager
-    from ..retro.builder import SessionRetroBuilder
-    from ..retro.llm_caller import SubprocessLLMCaller
+    from ..retro.session_review_runner import SessionReviewError, SessionReviewRunner
 
     project_dir = _project_dir()
 
@@ -79,24 +76,21 @@ def session_retro(
             sys.exit(1)
         session_id = sessions[0].session_id
 
-    llm_caller = SubprocessLLMCaller(project_dir, timeout=timeout)
-    builder = SessionRetroBuilder(project_dir, llm_caller=llm_caller)
+    runner = SessionReviewRunner(project_dir)
 
     try:
         with console.status(
-            f"[cyan]Generating retrospective for {session_id} "
-            f"(timeout={timeout}s, calling LLM)...[/]",
+            f"[cyan]Generating session review for {session_id} (single LLM call)...[/]",
             spinner="dots",
         ):
-            path = builder.build_and_save(session_id)
+            path = runner.run(session_id, max_retries=max_retries)
     except FileNotFoundError as exc:
         console.print(f"[red]Error[/]: {exc}")
         sys.exit(1)
-    except RuntimeError as exc:
-        console.print(f"[red]LLM call failed[/]: {exc}")
-        console.print("[dim]Tip: try --timeout 600[/]")
+    except SessionReviewError as exc:
+        console.print(f"[red]session-reviewer failed[/]: {exc}")
         sys.exit(1)
-    console.print(f"[green]Session retro[/]: {path}")
+    console.print(f"[green]Session review[/]: {path}")
 
     if interactive:
         exec_claude_with_retro(path, kind="session")

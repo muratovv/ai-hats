@@ -442,9 +442,8 @@ def test_session_retro_config_defaults():
     c = SessionRetroConfig()
     assert c.policy == FeedbackPolicy.SMART
     assert c.background is True
-    # HATS-232: explicit model overrides default to None (use CLI default).
-    assert c.model is None
-    assert c.reflect_model is None
+    # HATS-252: single LLM call → only review_model remains.
+    assert c.review_model is None
 
 
 def test_session_retro_config_roundtrip():
@@ -452,26 +451,55 @@ def test_session_retro_config_roundtrip():
         policy=FeedbackPolicy.HINT,
         smart_threshold=SmartThreshold(min_turns=10, min_tool_calls=5),
         background=False,
-        model="claude-haiku-4-5",
-        reflect_model="claude-sonnet-4-6",
+        review_model="claude-sonnet-4-6",
     )
     restored = SessionRetroConfig.from_dict(c.to_dict())
-    assert restored == c
-    assert restored.model == "claude-haiku-4-5"
-    assert restored.reflect_model == "claude-sonnet-4-6"
+    assert restored.review_model == "claude-sonnet-4-6"
+    assert restored.policy == FeedbackPolicy.HINT
 
 
 def test_session_retro_config_loads_legacy_yaml_silently_drops_unknown():
-    """Old ai-hats.yaml with removed `mode` field must still parse (extra=ignore)."""
+    """Old ai-hats.yaml with removed `mode`/`model` fields must still parse."""
     legacy = {
         "policy": "smart",
         "background": True,
-        "mode": "llm",  # silently ignored after HATS-235
+        "mode": "llm",   # silently ignored after HATS-235
+        "model": "claude-haiku-4-5",  # silently ignored after HATS-252
     }
     c = SessionRetroConfig.from_dict(legacy)
     assert c.policy == FeedbackPolicy.SMART
     assert c.background is True
-    assert c.model is None
+    assert c.review_model is None
+
+
+def test_session_retro_config_reflect_model_alias_emits_warning():
+    """Pre-HATS-252 `reflect_model:` is copied into review_model with a warning."""
+    import warnings
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        c = SessionRetroConfig.from_dict({"reflect_model": "claude-sonnet-4-6"})
+    assert c.review_model == "claude-sonnet-4-6"
+    assert any(
+        issubclass(w.category, DeprecationWarning) and "reflect_model" in str(w.message)
+        for w in caught
+    )
+
+
+def test_session_retro_config_explicit_review_model_wins_over_alias():
+    """When both fields are present, review_model wins; no warning fires."""
+    import warnings
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        c = SessionRetroConfig.from_dict({
+            "review_model": "claude-opus-4-7",
+            "reflect_model": "claude-sonnet-4-6",
+        })
+    assert c.review_model == "claude-opus-4-7"
+    assert not any(
+        issubclass(w.category, DeprecationWarning) for w in caught
+    )
 
 
 def test_feedback_config_defaults():

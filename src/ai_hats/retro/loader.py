@@ -4,7 +4,7 @@ Files are stored as YAML frontmatter + markdown body:
 
 ```
 ---
-schema: hats-session-retro/v1
+schema: hats-session-review/v1
 ...
 ---
 
@@ -24,16 +24,19 @@ import yaml
 from pydantic import BaseModel
 
 from .reflect_session_schema import ReflectSessionV1
-from .session_retro import SessionRetroV1
+from .session_review_schema import SessionReviewV1
 
-#: dispatch table — schema family → pydantic model class for the LATEST version
+#: dispatch table — schema family → pydantic model class for the LATEST version.
+#: ``hats-session-retro`` (legacy SessionRetroV1) was retired in HATS-252; old
+#: files on disk become unreadable through this loader and should be migrated
+#: or treated as historical artefacts.
 SCHEMA_FAMILY_TO_MODEL: dict[str, type[BaseModel]] = {
-    "hats-session-retro": SessionRetroV1,
+    "hats-session-review": SessionReviewV1,
     "hats-reflect-session": ReflectSessionV1,
 }
 
 #: union type for any retro artifact
-RetroArtifact = Union[SessionRetroV1, ReflectSessionV1]
+RetroArtifact = Union[SessionReviewV1, ReflectSessionV1]
 
 
 def parse(text: str) -> tuple[dict, str]:

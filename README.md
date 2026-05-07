@@ -329,11 +329,11 @@ ai-hats task list --search worktree --all    # включая done/failed
 
 ### Feedback loop
 
-> Пошаговый гайд по настройке и использованию (политики, reflect-session, reflect-all, гипотезы) — см. [docs/how-to-feedback-loop.md](docs/how-to-feedback-loop.md).
+> Пошаговый гайд по настройке и использованию (политики, session-reviewer, reflect-all, гипотезы) — см. [docs/how-to-feedback-loop.md](docs/how-to-feedback-loop.md).
 >
-> Модель для feedback-loop пинится отдельно от интерактивной сессии — `feedback.session_retro.model` (LLM-builder для SessionRetroV1) и `feedback.session_retro.reflect_model` (reflect-session sub-agent). Если поля не заданы — используется дефолт CLI провайдера.
+> Модель для feedback-loop пинится отдельно от интерактивной сессии — `feedback.session_retro.review_model` (session-reviewer sub-agent). Если поле не задано — используется дефолт CLI провайдера.
 
-ai-hats замыкает feedback из реальных сессий в четыре слоя:
+ai-hats замыкает feedback из реальных сессий в три слоя (HATS-252 объединил бывшие layer 1+2 в один):
 
 ```
 .gitlog/session_<id>/                                  layer 0: raw телеметрия
@@ -341,28 +341,27 @@ ai-hats замыкает feedback из реальных сессий в четы
   ├── metrics.json
   └── transcript.txt
 
-.agent/retrospectives/sessions/<id>.md                 layer 1: SessionRetroV1
-                                                          ↓ LLM-builder, факты + narrative
-
-.agent/retrospectives/reflect-session/<id>.md          layer 2: ReflectSessionV1
-                                                          ↑ per-session sub-agent судит
-                                                            активные HYP, голосует за PROP
+.agent/retrospectives/sessions/<id>.md                 layer 1: SessionReviewV1
+                                                          ↑ один LLM-вызов: factual layer
+                                                            (pure-Python) + summary +
+                                                            observations + HYP verdicts +
+                                                            proposal actions
 .agent/hypotheses/HYP-NNN.yaml                            ← side effect: append-verdict
 .agent/backlog/proposals/PROP-NNN.yaml                    ← side effect: create / vote
 
-manual triage:                                          layer 3: bulk-triage
+manual triage:                                          layer 2: bulk-triage
   ai-hats reflect all     → handoff с накопленным
   ai-hats reflect commit  → bulk-flip PROP статусов
 ```
 
-**Layer 1 — Session retro.** Снимок одной сессии: метрики, изменённые файлы, коммиты, закрытые задачи + LLM-narrative. Это всегда LLM-режим (~30+ секунд через провайдер).
+**Layer 1 — Session review.** Один LLM-вызов через роль `session-reviewer`. Pure-Python считает факты (метрики, изменённые файлы, коммиты, закрытые задачи), LLM добавляет narrative + observations + verdicts по активным HYP + proposal actions.
 
 ```bash
 ai-hats session retro 20260406-050419-1   # явный session_id
 ai-hats session retro --last              # для последней сессии
 ```
 
-**Auto session-retro.** После завершения сессии хук `session_end_auto-retro.sh` автоматически решает, нужно ли генерировать retro и сразу спавнить reflect-session судью. Поведение — через `ai-hats.yaml` → `feedback.session_retro`:
+**Auto session-review.** После завершения сессии хук `session_end_auto-retro.sh` автоматически решает, нужно ли генерировать review и спавнит `session-reviewer`. Поведение — через `ai-hats.yaml` → `feedback.session_retro`:
 
 ```bash
 # Настройка через CLI
@@ -378,8 +377,7 @@ ai-hats config feedback show                       # текущие настро
 | `smart_threshold.min_turns` | int | 5 | Порог по числу ходов |
 | `smart_threshold.min_tool_calls` | int | 10 | Порог по числу tool calls |
 | `background` | bool | `true` | Запускать в фоне (не блокирует терминал) |
-| `model` | str \| null | null | LLM для SessionRetroV1 (null → провайдер default) |
-| `reflect_model` | str \| null | null | LLM для reflect-session sub-agent |
+| `review_model` | str \| null | null | LLM для session-reviewer sub-agent (null → провайдер default) |
 
 Политики:
 - **off** — никогда не генерировать автоматически
@@ -387,10 +385,10 @@ ai-hats config feedback show                       # текущие настро
 - **smart** — генерировать если `turns >= min_turns` ИЛИ `tool_calls >= min_tool_calls`
 - **hint** — как smart, но вместо генерации печатает подсказку с командой
 
-**Layer 2 — Reflect-session.** Сразу после SessionRetroV1 спавнится sub-agent роли `reflect-session`: читает все active HYP и open PROP, для каждой active HYP выносит вердикт (`confirmed` / `refuted` / `inconclusive` / `n/a`), цитирует evidence из audit/metrics, голосует за похожие PROP или создаёт новые. Side effects идут только через CLI:
+Внутри `session-reviewer` (один LLM-вызов): читает все active HYP и open PROP, для каждой active HYP выносит вердикт (`confirmed` / `refuted` / `inconclusive` / `n/a`), цитирует evidence из audit/metrics, голосует за похожие PROP или создаёт новые. Side effects идут только через CLI:
 
 ```bash
-# Что reflect-session делает за тебя (этот sub-agent работает автоматически):
+# Что session-reviewer делает за тебя (этот sub-agent работает автоматически):
 ai-hats task hyp append-verdict --hyp HYP-008 --session $SID \
     --verdict confirmed --evidence "metrics.json:bash_anti_count=0" \
     --recommendation keep
@@ -403,10 +401,10 @@ ai-hats task proposal create --category rule --target dev_rule_X --title ... \
 
 ```bash
 ai-hats reflect session --session <id>              # foreground
-ai-hats reflect session --session <id> --background # как в авто
+ai-hats reflect session --session <id> --background # как в авто, с harness check
 ```
 
-**Layer 3 — Manual triage.** Когда HYP/PROP накопилось — пройтись по бэклогу руками:
+**Layer 2 — Manual triage.** Когда HYP/PROP накопилось — пройтись по бэклогу руками:
 
 ```bash
 ai-hats reflect all                                # pre-flight handoff + интерактив
@@ -462,8 +460,7 @@ ai-hats session retro-validate .agent/retrospectives/sessions/20260406-050419-1.
   STATE.md                             # Табличный индекс + текущее состояние задач
   hypotheses/HYP-NNN.yaml              # Hypothesis backlog (см. task hyp)
   retrospectives/
-    sessions/<id>.md                   # SessionRetroV1 (LLM-narrative + facts)
-    reflect-session/<id>.md            # ReflectSessionV1 (per-session sub-agent verdicts)
+    sessions/<id>.md                   # SessionReviewV1 (facts + narrative + HYP verdicts + PROP actions)
 .gitlog/
   session_<ID>/                        # trace.log, audit.md, metrics.json, transcript.txt
 ai-hats.yaml                           # Конфиг проекта + роль + feedback
@@ -477,7 +474,7 @@ src/ai_hats/libraries/
   rules/          global_rule_*, dev_rule_*, env_rule_*
   skills/         62 скилла (29 нативных + 33 vendored golang-* из samber/cc-skills-golang)
   traits/         trait-base, trait-agent, trait-se-mindset, skill-engineer, dev::go-*, dev::python, dev::shell, env::*
-  roles/          assistant, test-agent, architect, sre, reflect-session, go-dev, go-dev-full
+  roles/          assistant, test-agent, architect, sre, session-reviewer, go-dev, go-dev-full
 ```
 
 Vendored golang-* skills хранят upstream commit SHA, LICENSE и atribution в `metadata.yaml.upstream.*` — фундамент для будущей плагинной системы (см. HATS-050).

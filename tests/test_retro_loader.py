@@ -7,24 +7,29 @@ from pathlib import Path
 import pytest
 
 from ai_hats.retro.loader import load, parse
-from ai_hats.retro.session_retro import SCHEMA_VERSION as SESSION_RETRO_VERSION
-from ai_hats.retro.session_retro import SessionRetroV1
+from ai_hats.retro.session_review_schema import SCHEMA_VERSION as REVIEW_VERSION
+from ai_hats.retro.session_review_schema import SessionReviewV1
 from ai_hats.retro.writer import dump
 
 
 # --- helpers ---
 
 
-def _make_session_retro() -> SessionRetroV1:
-    return SessionRetroV1.model_validate({
-        "schema": SESSION_RETRO_VERSION,
+def _make_session_review() -> SessionReviewV1:
+    return SessionReviewV1.model_validate({
+        "schema": REVIEW_VERSION,
         "session_id": "session_test",
         "project": "test",
         "role": "go-dev",
         "date": "2026-04-08",
+        "timestamp": "2026-04-08T12:00:00Z",
         "metrics": {"exit_code": 0, "turns": 5, "tool_calls": 12},
-        "summary": "Test session",
         "links": {"audit": "a.md"},
+        "summary": "Test session",
+        "observations": [],
+        "hypothesis_verdicts": [],
+        "proposal_actions": [],
+        "self_problems": [],
     })
 
 
@@ -61,12 +66,12 @@ def test_parse_rejects_non_mapping_frontmatter() -> None:
 # --- round-trip ---
 
 
-def test_session_retro_round_trip(tmp_path: Path) -> None:
-    sr = _make_session_retro()
+def test_session_review_round_trip(tmp_path: Path) -> None:
+    sr = _make_session_review()
     p = tmp_path / "s.md"
     dump(sr, p, body="# Test\nbody\n")
     loaded, body = load(p)
-    assert isinstance(loaded, SessionRetroV1)
+    assert isinstance(loaded, SessionReviewV1)
     assert loaded.session_id == sr.session_id
     assert "# Test" in body
 
@@ -74,11 +79,11 @@ def test_session_retro_round_trip(tmp_path: Path) -> None:
 # --- dispatch by family ---
 
 
-def test_load_session_retro_dispatches_correct_class(tmp_path: Path) -> None:
+def test_load_session_review_dispatches_correct_class(tmp_path: Path) -> None:
     p = tmp_path / "s.md"
-    dump(_make_session_retro(), p)
+    dump(_make_session_review(), p)
     loaded, _ = load(p)
-    assert type(loaded).__name__ == "SessionRetroV1"
+    assert type(loaded).__name__ == "SessionReviewV1"
 
 
 def test_load_unknown_family_raises(tmp_path: Path) -> None:

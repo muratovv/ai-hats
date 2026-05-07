@@ -1,4 +1,4 @@
-"""Shared types for retro schemas: session-level snapshots used by SessionRetroV1."""
+"""Shared types for retro schemas: session-level snapshots used by SessionReviewV1."""
 
 from __future__ import annotations
 

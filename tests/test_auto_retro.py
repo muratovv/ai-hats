@@ -295,29 +295,63 @@ class TestMainHookWritesLog:
         assert "hint" in content
         assert "threshold met" in content
 
-    def test_run_foreground_writes_builder_lines(self, tmp_path, monkeypatch):
-        """Foreground mode writes start + saved/failed via write_retro_log."""
+    def test_run_foreground_spawns_session_reviewer(self, tmp_path, monkeypatch):
+        """Foreground mode delegates to a single session-reviewer spawn."""
         from ai_hats.retro import auto_retro
 
-        metrics = _setup_project(tmp_path, policy="always")
-        metrics.write_text(json.dumps({"turns": 10, "tool_calls": 20, "exit_code": 0}))
-
-        # Force synchronous (foreground) path regardless of config default.
-        class _Builder:
-            def __init__(self, *a, **kw): pass
-            def build_and_save(self, sid):
-                return tmp_path / f"retro-{sid}.md"
-
+        spawned: list[tuple] = []
         monkeypatch.setattr(
-            "ai_hats.retro.builder.SessionRetroBuilder", _Builder,
-        )
-        # Suppress reflect-session detached spawn so the test stays hermetic.
-        monkeypatch.setattr(
-            auto_retro, "_spawn_reflect_session_background", lambda *a, **kw: None,
+            auto_retro, "_spawn_session_reviewer_background",
+            lambda pd, sid: spawned.append((pd, sid)),
         )
         auto_retro._run_foreground(tmp_path, "SID")
+        assert spawned == [(tmp_path, "SID")]
 
+
+class TestRecursionGuard:
+    def test_main_returns_early_with_breadcrumb(self, tmp_path, monkeypatch):
+        """HATS_SKIP_RETRO=1 → main() exits early and logs `recursion-guard`."""
+        from ai_hats.retro import auto_retro
+
+        # No config / metrics — the guard fires before policy logic runs.
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("AI_HATS_SESSION_ID", "SID")
+        monkeypatch.setenv("HATS_SKIP_RETRO", "1")
+
+        # Sentinel — should_run must NOT be reached.
+        called: list[bool] = []
+        monkeypatch.setattr(
+            auto_retro, "should_run",
+            lambda *a, **kw: called.append(True) or ("run", ""),
+        )
+
+        auto_retro.main()
+
+        assert called == []
         log = tmp_path / ".gitlog" / "session_SID" / "retro.log"
         content = log.read_text()
-        assert "builder\tstart" in content
-        assert "builder\tsaved" in content
+        assert "auto_retro\tskip\trecursion-guard" in content
+
+    def test_spawn_session_reviewer_sets_env(self, tmp_path, monkeypatch):
+        """Popen child env carries HATS_SKIP_RETRO=1 to break the loop."""
+        from ai_hats.retro import auto_retro
+
+        captured: dict = {}
+
+        class _FakeProc:
+            pid = 4242
+
+        def fake_popen(cmd, **kw):  # noqa: ANN001 — test stub
+            captured["cmd"] = cmd
+            captured["env"] = kw.get("env")
+            return _FakeProc()
+
+        monkeypatch.setattr("subprocess.Popen", fake_popen)
+        auto_retro._spawn_session_reviewer_background(tmp_path, "SID")
+
+        assert captured["env"]["HATS_SKIP_RETRO"] == "1"
+        # ai_hats.cli.reflect_session_main is the harness entry-point.
+        assert "ai_hats.cli.reflect_session_main" in captured["cmd"]
+        assert "SID" in captured["cmd"]
+        log = tmp_path / ".gitlog" / "session_SID" / "retro.log"
+        assert "session-reviewer\tspawn" in log.read_text()
