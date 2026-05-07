@@ -11,6 +11,7 @@ composition:
     - skill-engineer
     - dev::python
     - dev::shell
+    - trait-researcher-mindset
   rules: []
   skills: []
   hooks:

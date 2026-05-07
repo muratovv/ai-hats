@@ -1,0 +1,5 @@
+name: tool-evaluation-protocol
+description: Time-bounded protocol for evaluating new tools, libraries, or methodologies before adoption
+author: ai-hats
+tags: [research, methodology, decision-making]
+pattern: protocol
