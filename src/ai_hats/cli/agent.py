@@ -7,7 +7,7 @@ import sys
 
 import click
 
-from ._helpers import _project_dir, console
+from ._helpers import console
 
 
 @click.command("agent")
@@ -56,21 +56,22 @@ def run_subagent(
     - 124 — timeout (sub-agent exceeded wall-clock limit)
     - other non-zero — forwarded verbatim from provider CLI
     """
-    from ..runtime import SubAgentRunner
     from ..tags import TagValidationError, parse_tags
+    from .execute import _do_execute
 
     try:
         tags = parse_tags(tags_raw)
     except TagValidationError as e:
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
-    runner = SubAgentRunner(_project_dir())
-    session = runner.run(
-        role_name=role,
-        task=task or "",
-        ticket_id=ticket or "",
+    session = _do_execute(
+        role=role,
+        provider=None,
+        interactive=False,
+        prompt=task or None,
         model=model or "",
-        isolation_mode=isolation,
+        isolation=isolation,
+        ticket=ticket or "",
         tags=tags or None,
     )
 

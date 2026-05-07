@@ -8,8 +8,10 @@ Subcommands:
 
 - `reflect all [--dry-run]`
     Pre-flight (Python) builds a handoff under
-    `.agent/retrospectives/reflect-all/<ts>-handoff.md`, then `os.execvp`
-    to claude for an interactive triage.
+    `.agent/retrospectives/reflect-all/<ts>-handoff.md`, then forwards to
+    `ai-hats execute --role judge --interactive` with a combined prompt
+    (initial-injections preamble + handoff). The triage protocol itself
+    lives in the `judge-protocol` skill, not in this command.
 
 - `reflect commit ...`
     Bulk-update proposal statuses (called at end of interactive chat).
@@ -17,8 +19,6 @@ Subcommands:
 
 from __future__ import annotations
 
-import os
-import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -110,25 +110,31 @@ def _spawn_detached(session_id: str, max_retries: int) -> None:
     help="Build pre-flight handoff but do not exec claude.",
 )
 def reflect_all_cmd(dry_run: bool):
-    """Interactive HYP closure + proposal triage."""
+    """Interactive HYP closure + proposal triage via the `judge` role."""
+    from .execute import _do_execute, _initial_injections_dir
+
     project_dir = _project_dir()
     handoff_path = _build_handoff(project_dir)
     console.print(f"[green]✓[/green] Handoff written: {handoff_path}")
     if dry_run:
         return
-    claude_bin = shutil.which("claude")
-    if not claude_bin:
-        console.print(
-            "[red]reflect all: 'claude' binary not found in PATH.[/] "
-            "Install Claude Code or open the handoff in your editor."
-        )
-        sys.exit(1)
-    prompt = _build_handoff_prompt(handoff_path)
+
+    preamble = (_initial_injections_dir() / "reflect-all.md").read_text()
+    handoff_text = handoff_path.read_text()
+    combined = f"{preamble}\n\n---\n\n{handoff_text}"
+
     console.print(
-        f"[cyan]→ Handing off to claude with reflect-all backlog: "
-        f"{handoff_path}[/]"
+        f"[cyan]→ Launching judge for reflect-all triage: {handoff_path}[/]"
     )
-    os.execvp(claude_bin, [claude_bin, prompt])
+    rc = _do_execute(
+        role="judge",
+        provider=None,
+        interactive=True,
+        prompt=combined,
+        tags=None,
+        extra_args=[],
+    )
+    sys.exit(int(rc))
 
 
 # ---- reflect commit ----
@@ -234,29 +240,5 @@ def _build_handoff(project_dir: Path) -> Path:
     else:
         parts.append("(inbox empty)\n")
 
-    parts.append("## Your job (in order)\n")
-    parts.append(
-        "1. **Close out HYP verdicts**. For each active HYP, decide based on "
-        "validation_log entries whether to confirm/refute/keep/extend. Use:\n"
-        "   - `ai-hats task hyp show HYP-NNN` — full content\n"
-        "   - Outside this run, status changes are still manual: edit the file\n"
-        "     or via a follow-up tooling step (HATS-NNN).\n\n"
-        "2. **Triage proposals**. For each open PROP, decide accept/reject/"
-        "defer/duplicate. Apply with:\n"
-        "   - `ai-hats reflect commit --accept PROP-X --reject PROP-Y --defer PROP-Z`\n\n"
-        "3. **Spawn tasks for accepted PROPs** via `ai-hats task create ...`.\n"
-    )
-
     path.write_text("\n".join(parts))
     return path
-
-
-def _build_handoff_prompt(handoff_path: Path) -> str:
-    return (
-        f"Read {handoff_path} — this is a reflect-all handoff I just generated.\n"
-        "It lists active hypotheses and the open proposal inbox.\n\n"
-        "Walk the active hypotheses first: discuss verdicts, decide which to "
-        "close. Then walk the proposals and decide accept/reject/defer/duplicate. "
-        "When ready, run `ai-hats reflect commit ...` to flip statuses in bulk, "
-        "and `ai-hats task create ...` for accepted proposals you want to track."
-    )
