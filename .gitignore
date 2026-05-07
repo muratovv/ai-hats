@@ -28,6 +28,9 @@ profile.json.bak
 GEMINI.md
 CLAUDE.md
 .claude/skills/
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+.envrc
 .gemini/
 
 # AI-HATS:START — managed by ai-hats, do not edit
