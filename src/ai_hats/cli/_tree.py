@@ -6,6 +6,8 @@ options. Groups recurse into subcommands. Hidden commands are skipped.
 
 from __future__ import annotations
 
+import sys
+
 import click
 from rich.console import Console
 from rich.tree import Tree
@@ -125,19 +127,35 @@ def _attach(node: Tree, cmd: click.Command, ctx: click.Context) -> None:
             _attach(branch, sub, sub_ctx)
 
 
-def print_full_tree(root: click.Command, console: Console) -> None:
-    """Render the entire command tree under `root` to `console`."""
-    name = "ai-hats"
-    ctx = click.Context(root, info_name=name)
-    body = _full_help(root)
+def _root_signature(cmd: click.Command, ctx: click.Context, name: str) -> str:
+    """`name <ARG>`-style header for a tree's top node (no `[OPTIONS]`,
+    since options are rendered as child rows below)."""
+    parts = [name]
+    for p in cmd.params:
+        if isinstance(p, click.Argument):
+            metavar = _make_metavar(p, ctx).strip("[] ")
+            metavar = metavar or (p.name or "").upper()
+            if not metavar:
+                continue
+            parts.append(metavar if p.required else f"[{metavar}]")
+    return " ".join(parts)
+
+
+def _render_as_root(cmd: click.Command, display_name: str, console: Console) -> None:
+    """Render `cmd` as if it were the top of the tree, labeled `display_name`."""
+    ctx = click.Context(cmd, info_name=display_name)
+    body = _full_help(cmd)
     headline = _first_line(body)
-    # Avoid `ai-hats — ai-hats — ...` when the docstring already opens with
-    # the program name.
-    if headline.lower().startswith(f"{name} — "):
-        headline = headline[len(name) + 3:].lstrip()
-    elif headline.lower().startswith(name):
-        headline = headline[len(name):].lstrip(" —-")
-    label = f"[bold]{name}[/bold]"
+    # Avoid duplicating the program name when the docstring already opens
+    # with it (e.g. `ai-hats — AI agent ...`).
+    lname = display_name.lower()
+    if headline.lower().startswith(f"{lname} — "):
+        headline = headline[len(display_name) + 3:].lstrip()
+    elif headline.lower().startswith(lname):
+        headline = headline[len(display_name):].lstrip(" —-")
+
+    sig = _root_signature(cmd, ctx, display_name)
+    label = f"[bold]{sig}[/bold]"
     if headline:
         label = f"{label} — [italic]{headline}[/italic]"
     tree = Tree(label)
@@ -145,11 +163,45 @@ def print_full_tree(root: click.Command, console: Console) -> None:
     for line in _body_after_first_line(body):
         tree.add(line)
 
-    for line in _option_lines(root, ctx):
+    for line in _option_lines(cmd, ctx):
         tree.add(line)
 
-    if isinstance(root, click.Group):
-        for name in sorted(root.commands):
-            _attach(tree, root.commands[name], ctx)
+    if isinstance(cmd, click.Group):
+        for child_name in sorted(cmd.commands):
+            _attach(tree, cmd.commands[child_name], ctx)
 
     console.print(tree)
+
+
+def print_full_tree(root: click.Command, console: Console) -> None:
+    """Render the entire command tree under `root` to `console`."""
+    _render_as_root(root, "ai-hats", console)
+
+
+def print_subtree(root: click.Command, path: list[str], console: Console) -> None:
+    """Render the subtree rooted at `path` (sequence of command names).
+
+    Empty `path` is equivalent to `print_full_tree`. If a token cannot be
+    resolved, prints an error to `console` and exits with code 2.
+    """
+    if not path:
+        print_full_tree(root, console)
+        return
+
+    cmd: click.Command = root
+    walked: list[str] = []
+    for token in path:
+        is_group = isinstance(cmd, click.Group)
+        available = sorted(cmd.commands) if is_group else []
+        if not is_group or token not in available:
+            scope = " ".join(walked) if walked else "ai-hats"
+            msg = f"[red]ai-hats --tree:[/red] unknown subcommand '{token}' under '{scope}'."
+            if available:
+                msg += f"\n  Available: {', '.join(available)}"
+            console.print(msg)
+            sys.exit(2)
+        cmd = cmd.commands[token]  # type: ignore[union-attr]
+        walked.append(token)
+
+    display_name = "ai-hats " + " ".join(walked)
+    _render_as_root(cmd, display_name, console)

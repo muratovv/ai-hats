@@ -6,7 +6,7 @@
 - **1. Сессия → reflect-session agent** — авто-ретро после конкретной сессии.
 - **2. `ai-hats reflect all`** — ручной триаж накопленного бэклога гипотез и предложений.
 
-> Команды называются `reflect-session` и `reflect-all` (не `review-*`). Полная архитектурная справка — в [`docs/reflect.md`](reflect.md). Полный справочник CLI с флагами — `ai-hats --tree`. Здесь — практические рецепты.
+> Команды называются `reflect-session` и `reflect-all` (не `review-*`). Полная архитектурная справка — в [`docs/reflect.md`](reflect.md). Полный справочник CLI с флагами — `ai-hats --tree` (поддерево: `ai-hats --tree reflect`). Здесь — практические рецепты.
 
 ---
 
