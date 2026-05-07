@@ -201,14 +201,60 @@ main.add_command(task.task)
 main.add_command(reflect_mod.reflect)
 
 
+# Root-level options that consume the next argv token as their value.
+# Used by `_extract_tree_path` to skip option values when collecting path
+# tokens after `--tree`.
+_ROOT_VALUE_OPTS = {"--provider", "-p", "--role", "-r", "--tag"}
+
+
+def _extract_tree_path(argv: list[str]) -> list[str]:
+    """Pull the subtree path out of `argv` — tokens **after** `--tree` only.
+
+    Supported form: ``ai-hats --tree <group> [<sub> ...]``. Reverse order
+    (``ai-hats <group> --tree``) is intentionally not supported — tokens
+    before ``--tree`` are ignored. Empty result means «render full tree».
+    """
+    try:
+        start = argv.index("--tree")
+    except ValueError:
+        return []
+    path: list[str] = []
+    j = start + 1
+    while j < len(argv):
+        a = argv[j]
+        if a == "--help":
+            j += 1
+            continue
+        if a in _ROOT_VALUE_OPTS:
+            j += 2  # skip option and its value
+            continue
+        if any(a.startswith(opt + "=") for opt in _ROOT_VALUE_OPTS):
+            j += 1
+            continue
+        if a.startswith("-"):
+            j += 1  # bare flag (e.g. --json, --version)
+            continue
+        path.append(a)
+        j += 1
+    return path
+
+
 def main_entry() -> None:
     """Console-script entry point.
 
-    Pre-strips ``--help`` when ``--tree`` is also present so the two flags
-    are order-independent. Click processes eager flags in argv order, so
-    without this shim ``--help --tree`` would print the standard help and
-    exit before ``--tree`` could fire.
+    Intercepts ``--tree`` before click parses, so:
+      - ``ai-hats --tree`` renders the full tree;
+      - ``ai-hats --tree <group> [<sub>...]`` renders that subtree;
+      - ``ai-hats --help --tree [<path>]`` works (``--help`` ignored when
+        ``--tree`` is present, regardless of order).
+
+    Without this shim, click's eager-flag ordering would short-circuit
+    ``--help --tree`` to the default help, and click has no native way
+    to attach an optional positional path to a top-level flag.
     """
     if "--tree" in sys.argv[1:]:
-        sys.argv = [a for a in sys.argv if a != "--help"]
+        from ._tree import print_subtree
+        path = _extract_tree_path(sys.argv[1:])
+        print_subtree(main, path, console)
+        sys.exit(0)
     main()

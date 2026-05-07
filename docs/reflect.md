@@ -4,7 +4,7 @@ Two subcommands of `ai-hats reflect` cover the retrospective lifecycle:
 `reflect session` (per-session reflect-session run) and `reflect all`
 (interactive triage of the accumulated backlog).
 
-> Full CLI reference (signatures + flags) — `ai-hats --tree`.
+> Full CLI reference (signatures + flags) — `ai-hats --tree` (subtree: `ai-hats --tree reflect`).
 
 ## Pipeline overview
 
