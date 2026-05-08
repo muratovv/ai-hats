@@ -1,41 +1,8 @@
 # Rule: Backlog Discipline
 
-1. **CLI Only**: All backlog operations go through `ai-hats task` CLI.
-   Never read or edit task YAML files directly. Use:
-   - `ai-hats task show <ID>` to inspect a task
-   - `ai-hats task list` to browse (supports `--state`, `--priority` filters)
-   - `ai-hats task create` to create tasks
-   - `ai-hats task transition <ID> <state>` to change state
-   - `ai-hats task log <ID>` to add work log entries
-   - `ai-hats task update <ID>` to modify fields
-   - `ai-hats task sync` to reconcile STATE.md
+1. **CLI-only.** All backlog operations via `ai-hats task` CLI. Never read or edit `.agent/backlog/tasks/<ID>/task.yaml` directly.
+2. **Work log cadence.** Log after every significant action: approach changes, file deletions, branch operations, milestone completions.
+3. **State transitions immediate.** Transition state when work changes phase — no stale states.
+4. **Completion gate.** Task is `done` only when: state is `done`, work_log has a final entry, STATE.md is synced.
 
-   Bad:
-   ```
-   Read .agent/backlog/tasks/PROJ-074/task.yaml
-   Edit task.yaml → state: done
-   ```
-   Good:
-   ```
-   Bash: ai-hats task show PROJ-074
-   Bash: ai-hats task transition PROJ-074 done
-   ```
-2. **Work Log Cadence**: Log after every significant action: approach changes,
-   file deletions, branch operations, milestone completions.
-   If an action changes the task's direction or state, log it.
-3. **State Transitions**: When work changes phase (approach dropped, task completed,
-   blocked on external), transition the state immediately.
-   Do not leave stale states.
-4. **Completion Gate**: A task is not done until: state is `done`, work_log has
-   a final entry, and STATE.md is synced.
-5. **Plan flow**: write plans to `<project>/.claude/plans/<NN>-<slug>.md` (or
-   `<prefix-lower>-<NN>-<slug>.md`). On `transition <ID> plan` the CLI moves
-   the matching file into `.agent/backlog/tasks/<ID>/plan.md` (the canonical
-   location). For ambiguous matches or unconventional paths use
-   `ai-hats task plan-sync <ID> [--from-file <path>]`. `transition <ID> execute`
-   is blocked until `plan.md` is no longer the empty scaffold.
-6. **Plan → subtasks**: once the plan has `## Subtasks`, `## Steps`, or
-   numbered `### N. …` / `### Phase N: …` headings, run
-   `ai-hats task plan-extract <ID>` to surface candidates and create child
-   tasks in one pass (interactive y/n/edit, or `--auto` / `--dry-run` /
-   `--json`). Marker `<!-- <prefix>-NNN -->` makes re-runs idempotent.
+For CLI commands, lifecycle, and plan-flow procedures → skill **backlog-manager**.
