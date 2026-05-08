@@ -194,7 +194,17 @@ Draft an implementation plan. Attach to task directory as `plan.md`.
   If rejected, document the specific reason.
 - Break large tasks into subtasks with delegation recommendations
 - Before delegating → **context-handoff**: summarize context for sub-agent
-- Output: `.agent/backlog/tasks/<ID>/plan.md`
+- **Plan file location:** write plans to `<project>/.claude/plans/<NN>-<slug>.md`
+  (or `<prefix-lower>-<NN>-<slug>.md`). On `transition <ID> plan` the CLI moves
+  the matching file into `.agent/backlog/tasks/<ID>/plan.md` (the canonical
+  location). For ambiguous matches or unconventional paths use
+  `ai-hats task plan-sync <ID> [--from-file <path>]`. `transition <ID> execute`
+  is blocked until `plan.md` is no longer the empty scaffold.
+- **Plan → subtasks:** once the plan has `## Subtasks`, `## Steps`, or numbered
+  `### N. …` / `### Phase N: …` headings, run
+  `ai-hats task plan-extract <ID>` to surface candidates and create child
+  tasks in one pass (interactive y/n/edit, or `--auto` / `--dry-run` /
+  `--json`). Marker `<!-- <prefix>-NNN -->` makes re-runs idempotent.
 - Transition: `ai-hats task transition <ID> execute` when plan is ready AND all approaches are addressed
 
 ### plan → execute
