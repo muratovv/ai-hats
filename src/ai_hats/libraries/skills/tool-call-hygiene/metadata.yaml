@@ -1,0 +1,5 @@
+name: tool-call-hygiene
+description: Choose Bash vs dedicated Claude Code tools (Grep/Glob/Read/Edit); batch and parallelize independent calls
+author: ai-hats
+tags: [development, efficiency, tools, batching]
+pattern: reference
