@@ -1,7 +1,8 @@
-"""Unit tests for PipelineHarness (HATS-269)."""
+"""Unit tests for PipelineHarness (HATS-269 base + HATS-274 trace wiring)."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from ai_hats.pipeline.harness import PipelineHarness
@@ -64,3 +65,87 @@ def test_run_loads_yaml_and_executes(tmp_path: Path):
 def test_namespace_path_layout(tmp_path: Path):
     h = PipelineHarness("my-name", tmp_path)
     assert h.namespace == tmp_path / ".gitlog" / "pipeline_runs" / "my-name"
+
+
+# ---- HATS-274: trace-mode env wiring -------------------------------
+
+
+def test_harness_no_trace_when_env_unset(tmp_path: Path, monkeypatch):
+    """Default: env not set → on_step is None, trace_path is None."""
+    monkeypatch.delenv("AI_HATS_PIPELINE_TRACE", raising=False)
+    monkeypatch.delenv("AI_HATS_PIPELINE_TRACE_VALUES", raising=False)
+    h = PipelineHarness("execute", tmp_path)
+    assert h._on_step is None
+    assert h.trace_path is None
+    assert h._trace_values is False
+
+
+def test_harness_enables_trace_via_explicit_path(tmp_path: Path, monkeypatch):
+    """AI_HATS_PIPELINE_TRACE=<path>.jsonl → uses that file."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    explicit = tmp_path / "my-trace.jsonl"
+    monkeypatch.setenv("AI_HATS_PIPELINE_TRACE", str(explicit))
+    h = PipelineHarness("execute", tmp_path)
+    assert h.trace_path == explicit
+    assert h._on_step is not None
+
+
+def test_harness_enables_trace_in_default_location(tmp_path: Path, monkeypatch):
+    """Truthy non-.jsonl value → auto path under <traces_dir>."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setenv("AI_HATS_PIPELINE_TRACE", "1")
+    h = PipelineHarness("bare", tmp_path)
+    assert h.trace_path is not None
+    # Auto-named: lives under .agent/ai-hats/traces/, named for pipeline.
+    expected_dir = tmp_path / ".agent" / "ai-hats" / "traces"
+    assert h.trace_path.parent == expected_dir
+    assert h.trace_path.name.startswith("bare-")
+    assert h.trace_path.suffix == ".jsonl"
+
+
+def test_harness_respects_ai_hats_dir_override(tmp_path: Path, monkeypatch):
+    """AI_HATS_DIR cascades into traces_dir resolution."""
+    custom = tmp_path / "custom-runtime"
+    monkeypatch.setenv("AI_HATS_DIR", str(custom))
+    monkeypatch.setenv("AI_HATS_PIPELINE_TRACE", "auto")
+    h = PipelineHarness("reflect-all", tmp_path)
+    assert h.trace_path is not None
+    assert h.trace_path.parent == custom / "traces"
+
+
+def test_harness_trace_values_env_var(tmp_path: Path, monkeypatch):
+    """AI_HATS_PIPELINE_TRACE_VALUES=1 → events carry value reprs."""
+    monkeypatch.setenv("AI_HATS_PIPELINE_TRACE_VALUES", "1")
+    h = PipelineHarness("execute", tmp_path)
+    assert h._trace_values is True
+
+
+def test_harness_trace_values_off_for_falsy_strings(tmp_path: Path, monkeypatch):
+    """``0``/``false`` are NOT truthy."""
+    for val in ("", "0", "false", "False"):
+        monkeypatch.setenv("AI_HATS_PIPELINE_TRACE_VALUES", val)
+        h = PipelineHarness("execute", tmp_path)
+        assert h._trace_values is False, f"value={val!r} should be falsy"
+
+
+def test_harness_writes_trace_file_on_run(tmp_path: Path, monkeypatch):
+    """End-to-end smoke: env set + harness.run → JSONL file populated."""
+    from unittest.mock import patch
+
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    trace_path = tmp_path / "trace.jsonl"
+    monkeypatch.setenv("AI_HATS_PIPELINE_TRACE", str(trace_path))
+
+    fake_path = tmp_path / "review.md"
+    with patch(
+        "ai_hats.retro.session_review_runner.SessionReviewRunner",
+    ) as MockRunner:
+        MockRunner.return_value.run.return_value = fake_path
+        with PipelineHarness("reflect-session", tmp_path) as h:
+            h.run({"session_id": "x-1", "project_dir": tmp_path})
+
+    assert trace_path.exists()
+    lines = trace_path.read_text().splitlines()
+    assert len(lines) >= 1
+    parsed = [json.loads(line) for line in lines]
+    assert any(e["step"] == "run_session_review" for e in parsed)
