@@ -3,8 +3,6 @@ steps:
   - id: compose_role
   - id: resolve_prompt
     params: {default_text: ""}
-  - id: pre_log
-    params: {keys: [role]}
   - id: launch_provider
   - id: extract_marker
     params: {start: BEGIN_JUDGE, end: END_JUDGE, out_key: judge_report}
@@ -12,5 +10,3 @@ steps:
     params:
       key: judge_report
       out_path_template: ".agent/retrospectives/judge/{ts}-report.md"
-  - id: post_log
-    params: {keys: [session_id, exit_code, saved_path]}

@@ -1,8 +1,4 @@
 name: human
 steps:
   - id: compose_role
-  - id: pre_log
-    params: {keys: []}
   - id: launch_provider
-  - id: post_log
-    params: {keys: [session_id, exit_code]}

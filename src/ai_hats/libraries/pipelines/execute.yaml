@@ -3,8 +3,4 @@ steps:
   - id: compose_role
   - id: resolve_prompt
     params: {default_text: ""}
-  - id: pre_log
-    params: {keys: [role]}
   - id: launch_provider
-  - id: post_log
-    params: {keys: [session_id, exit_code]}
