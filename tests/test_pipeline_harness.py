@@ -1,11 +1,17 @@
-"""Unit tests for PipelineHarness (HATS-269 base + HATS-274 trace wiring)."""
+"""Unit tests for PipelineHarness (HATS-269 base + HATS-274 trace
+wiring + HATS-275 user-step loading)."""
 
 from __future__ import annotations
 
 import json
+import textwrap
 from pathlib import Path
 
+import pytest
+
+from ai_hats.pipeline import registry
 from ai_hats.pipeline.harness import PipelineHarness
+from ai_hats.pipeline.user_steps import _reset_loader_cache
 
 
 def test_namespace_idempotent_cleanup(tmp_path: Path):
@@ -149,3 +155,99 @@ def test_harness_writes_trace_file_on_run(tmp_path: Path, monkeypatch):
     assert len(lines) >= 1
     parsed = [json.loads(line) for line in lines]
     assert any(e["step"] == "run_session_review" for e in parsed)
+
+
+# ---- HATS-275: user-step loading on harness entry ------------------
+
+
+@pytest.fixture
+def _restore_registry():
+    """Snapshot/restore registry around tests that mutate it."""
+    _reset_loader_cache()
+    snapshot = dict(registry._REGISTRY)
+    yield
+    registry._REGISTRY.clear()
+    registry._REGISTRY.update(snapshot)
+
+
+def _write_step(steps_dir: Path, name: str, body: str) -> Path:
+    steps_dir.mkdir(parents=True, exist_ok=True)
+    path = steps_dir / f"{name}.py"
+    path.write_text(textwrap.dedent(body).lstrip())
+    return path
+
+
+def test_harness_loads_user_steps_on_enter(
+    tmp_path: Path, monkeypatch, _restore_registry,
+):
+    """__enter__ → user step is registered and discoverable."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
+    _write_step(steps_dir, "ping", """
+        from ai_hats.pipeline.registry import register
+        from ai_hats.pipeline.step import Step, StepIO
+
+
+        class PingStep(Step):
+            failure_policy = "halt"
+
+            def __init__(self, params=None):
+                del params
+
+            @property
+            def io(self) -> StepIO:
+                return StepIO(name="ping", produces=frozenset({"pong"}))
+
+            def run(self, **_):
+                return {"pong": True}
+
+
+        register("ping", PingStep)
+    """)
+
+    assert "ping" not in registry.names()  # not loaded yet
+    with PipelineHarness("any-name", tmp_path):
+        assert "ping" in registry.names()
+
+
+def test_harness_user_step_collision_aborts_before_namespace_setup(
+    tmp_path: Path, monkeypatch, _restore_registry,
+):
+    """A user step trying to override a built-in raises BEFORE the
+    namespace gets re-created. This guarantees a broken step-dir
+    can't half-start the pipeline."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
+    _write_step(steps_dir, "evil", """
+        from ai_hats.pipeline.registry import register
+        from ai_hats.pipeline.step import Step, StepIO
+
+
+        class Hijack(Step):
+            failure_policy = "halt"
+
+            def __init__(self, params=None):
+                del params
+
+            @property
+            def io(self) -> StepIO:
+                return StepIO(name="compose_role")
+
+            def run(self, **_):
+                return {}
+
+
+        register("compose_role", Hijack)
+    """)
+
+    h = PipelineHarness("any-name", tmp_path)
+    # Pre-create namespace with a sentinel; failed __enter__ must NOT
+    # rmtree it (because rmtree happens AFTER load_user_steps).
+    h.namespace.mkdir(parents=True)
+    (h.namespace / "sentinel.txt").write_text("preserved")
+
+    with pytest.raises(registry.StepRegistryError):
+        h.__enter__()
+
+    # Sentinel survived → we never reached namespace cleanup.
+    assert (h.namespace / "sentinel.txt").read_text() == "preserved"

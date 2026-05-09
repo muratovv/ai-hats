@@ -1,9 +1,9 @@
-"""Tests for ai-hats path conventions (HATS-274)."""
+"""Tests for ai-hats path conventions (HATS-274, HATS-275)."""
 
 from __future__ import annotations
 
 
-from ai_hats.paths import ai_hats_dir, traces_dir
+from ai_hats.paths import ai_hats_dir, pipeline_steps_dir, traces_dir
 
 
 def test_ai_hats_dir_default(tmp_path, monkeypatch):
@@ -56,3 +56,20 @@ def test_traces_dir_respects_env_override(tmp_path, monkeypatch):
     td = traces_dir(tmp_path / "project")
     assert td == custom / "traces"
     assert td.is_dir()
+
+
+def test_pipeline_steps_dir_under_ai_hats(tmp_path, monkeypatch):
+    """pipeline_steps_dir is <ai_hats_dir>/pipeline_steps/."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    psd = pipeline_steps_dir(tmp_path)
+    assert psd == tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
+    assert psd.is_dir()
+
+
+def test_pipeline_steps_dir_respects_env_override(tmp_path, monkeypatch):
+    """AI_HATS_DIR cascades into pipeline_steps_dir resolution too."""
+    custom = tmp_path / "custom"
+    monkeypatch.setenv("AI_HATS_DIR", str(custom))
+    psd = pipeline_steps_dir(tmp_path / "project")
+    assert psd == custom / "pipeline_steps"
+    assert psd.is_dir()
