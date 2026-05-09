@@ -1,0 +1,3 @@
+# Test files commonly trigger false positives on @pytest.* decorators.
+# Tests don't contain real secrets — they use tmp_path / fake values.
+tests/test_*.py

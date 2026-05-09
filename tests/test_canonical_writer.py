@@ -406,3 +406,106 @@ def test_imports_aggregator_in_manifest(project_with_library: Path) -> None:
         project_with_library / AGENT_DIR / CANONICAL_DIR / CANONICAL_MANIFEST
     )
     assert "imports.md" in manifest
+
+
+# -- HATS-290: configurable outer-section order --
+
+
+def _imports_body(project: Path) -> str:
+    return (project / AGENT_DIR / CANONICAL_DIR / "imports.md").read_text()
+
+
+def _section_positions(body: str) -> dict[str, int]:
+    """Map known section anchors to their position in imports.md body."""
+    return {
+        "priorities": body.index("@./priorities.md"),
+        "trait": body.index("@./traits/trait-alpha.md"),
+        "role": body.index("@./role.md"),
+        "rule": body.index("@./rules/rule_a.md"),
+        "skills": body.index("@./skills_index.md"),
+    }
+
+
+def test_imports_order_default_preset_matches_none(project_with_library: Path) -> None:
+    """Explicit 'default' preset is byte-for-byte identical to the implicit None."""
+    asm = Assembler(project_with_library)
+    asm.write_canonical(asm.composer.compose("test-role"))
+    body_none = _imports_body(project_with_library)
+
+    # Switch config to explicit preset and rewrite.
+    asm.project_config.imports_order = "default"
+    asm.write_canonical(asm.composer.compose("test-role"))
+    body_default = _imports_body(project_with_library)
+
+    assert body_default == body_none
+
+
+def test_imports_order_role_first_preset(project_with_library: Path) -> None:
+    asm = Assembler(project_with_library)
+    asm.project_config.imports_order = "role-first"
+    asm.write_canonical(asm.composer.compose("test-role"))
+
+    pos = _section_positions(_imports_body(project_with_library))
+    # role → priorities → traits → rules → skills_index
+    assert pos["role"] < pos["priorities"] < pos["trait"] < pos["rule"] < pos["skills"]
+
+
+def test_imports_order_constraints_first_preset(project_with_library: Path) -> None:
+    asm = Assembler(project_with_library)
+    asm.project_config.imports_order = "constraints-first"
+    asm.write_canonical(asm.composer.compose("test-role"))
+
+    pos = _section_positions(_imports_body(project_with_library))
+    # rules → priorities → role → traits → skills_index
+    assert pos["rule"] < pos["priorities"] < pos["role"] < pos["trait"] < pos["skills"]
+
+
+def test_imports_order_anthropic_preset(project_with_library: Path) -> None:
+    asm = Assembler(project_with_library)
+    asm.project_config.imports_order = "anthropic"
+    asm.write_canonical(asm.composer.compose("test-role"))
+
+    pos = _section_positions(_imports_body(project_with_library))
+    # role → traits → priorities → rules → skills_index
+    assert pos["role"] < pos["trait"] < pos["priorities"] < pos["rule"] < pos["skills"]
+
+
+def test_imports_order_custom_list(project_with_library: Path) -> None:
+    asm = Assembler(project_with_library)
+    asm.project_config.imports_order = [
+        "skills_index",
+        "rules",
+        "user-rules",
+        "role",
+        "traits",
+        "priorities",
+    ]
+    asm.write_canonical(asm.composer.compose("test-role"))
+
+    pos = _section_positions(_imports_body(project_with_library))
+    assert pos["skills"] < pos["rule"] < pos["role"] < pos["trait"] < pos["priorities"]
+
+
+def test_imports_order_user_rules_position_respected(project_with_library: Path) -> None:
+    """user-rules section appears wherever the order list places it (not always after rules)."""
+    canonical = project_with_library / AGENT_DIR / CANONICAL_DIR
+    canonical.mkdir(parents=True, exist_ok=True)
+    (canonical / USER_RULES_SUBDIR).mkdir(exist_ok=True)
+    (canonical / USER_RULES_SUBDIR / "ext.md").write_text("# project rule\n")
+
+    asm = Assembler(project_with_library)
+    # Place user-rules before priorities — unusual but valid permutation.
+    asm.project_config.imports_order = [
+        "user-rules",
+        "priorities",
+        "traits",
+        "role",
+        "rules",
+        "skills_index",
+    ]
+    asm.write_canonical(asm.composer.compose("test-role"))
+
+    body = _imports_body(project_with_library)
+    pos_user = body.index(f"@./{USER_RULES_SUBDIR}/ext.md")
+    pos_priorities = body.index("@./priorities.md")
+    assert pos_user < pos_priorities

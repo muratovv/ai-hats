@@ -353,6 +353,61 @@ class ProjectConfigError(ValueError):
     """Raised when ai-hats.yaml fails schema validation."""
 
 
+# HATS-290 — outer section ordering of `.agent/ai-hats/imports.md`.
+# Names match the canonical file/dir prefix the renderer uses to bucket paths.
+IMPORTS_SECTION_NAMES: tuple[str, ...] = (
+    "priorities",
+    "traits",
+    "role",
+    "rules",
+    "user-rules",
+    "skills_index",
+)
+
+# Named outer-order presets. Authors can pick a preset string or supply a full
+# permutation list under `imports_order:` in ai-hats.yaml. `None` (the default)
+# means "use the `default` preset" — kept as an explicit alias so omitting the
+# field never carries semantic weight beyond "no opinion".
+IMPORTS_ORDER_PRESETS: dict[str, list[str]] = {
+    # Identity → constraints → references. Today's hardcoded behaviour.
+    "default": [
+        "priorities",
+        "traits",
+        "role",
+        "rules",
+        "user-rules",
+        "skills_index",
+    ],
+    # Role-first: identity-driven. "Who am I → goals → behaviour → constraints".
+    "role-first": [
+        "role",
+        "priorities",
+        "traits",
+        "rules",
+        "user-rules",
+        "skills_index",
+    ],
+    # Constraints-first: safety-driven. Loads rules even if context truncates.
+    "constraints-first": [
+        "rules",
+        "user-rules",
+        "priorities",
+        "role",
+        "traits",
+        "skills_index",
+    ],
+    # Anthropic-style: persona → behaviour → goals → constraints → tools.
+    "anthropic": [
+        "role",
+        "traits",
+        "priorities",
+        "rules",
+        "user-rules",
+        "skills_index",
+    ],
+}
+
+
 class ProjectConfig(_YamlModel):
     """ai-hats.yaml — unified project configuration.
 
@@ -360,6 +415,7 @@ class ProjectConfig(_YamlModel):
       - Project: provider, library_paths
       - Role: active_role, default_role, customizations
       - Feedback: session_retro
+      - Composition: imports_order
       - Meta: schema_version (2 = current)
     """
 
@@ -375,6 +431,10 @@ class ProjectConfig(_YamlModel):
     feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
     manage_gitignore: bool = True
     task_prefix: str = "TASK"
+    # HATS-290: outer section order of imports.md.
+    # None → use the "default" preset. str → preset name. list[str] → custom
+    # permutation of IMPORTS_SECTION_NAMES.
+    imports_order: str | list[str] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -397,6 +457,43 @@ class ProjectConfig(_YamlModel):
             allowed = ", ".join(sorted(PROVIDERS))
             raise ValueError(f"unknown provider {value!r} — allowed: {allowed}")
         return value
+
+    @field_validator("imports_order")
+    @classmethod
+    def _validate_imports_order(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            if value not in IMPORTS_ORDER_PRESETS:
+                allowed = ", ".join(sorted(IMPORTS_ORDER_PRESETS))
+                raise ValueError(
+                    f"unknown imports_order preset {value!r} — allowed: {allowed}"
+                )
+            return value
+        if isinstance(value, list):
+            if not all(isinstance(item, str) for item in value):
+                raise ValueError("imports_order list entries must be strings")
+            allowed_set = set(IMPORTS_SECTION_NAMES)
+            seen: set[str] = set()
+            for item in value:
+                if item not in allowed_set:
+                    raise ValueError(
+                        f"unknown imports_order section {item!r} — "
+                        f"allowed: {', '.join(IMPORTS_SECTION_NAMES)}"
+                    )
+                if item in seen:
+                    raise ValueError(f"duplicate imports_order section {item!r}")
+                seen.add(item)
+            missing = allowed_set - seen
+            if missing:
+                raise ValueError(
+                    f"imports_order list missing sections: "
+                    f"{', '.join(sorted(missing))}"
+                )
+            return value
+        raise ValueError(
+            "imports_order must be null, a preset name, or a list of section names"
+        )
 
     @classmethod
     def from_yaml(cls, path: Path) -> ProjectConfig:
@@ -433,6 +530,8 @@ class ProjectConfig(_YamlModel):
             d["manage_gitignore"] = False
         if self.task_prefix != "TASK":
             d["task_prefix"] = self.task_prefix
+        if self.imports_order is not None:
+            d["imports_order"] = self.imports_order
         return d
 
     def save(self, path: Path) -> None:

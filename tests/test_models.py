@@ -670,3 +670,79 @@ def test_migration_idempotent(tmp_path):
     loaded = ProjectConfig.from_yaml(path)
     assert loaded.schema_version == 3
     assert loaded.active_role == "sre"
+
+
+# -- HATS-290: imports_order configurability --
+
+
+def test_imports_order_defaults_to_none():
+    config = ProjectConfig()
+    assert config.imports_order is None
+    # Default omitted from serialization.
+    assert "imports_order" not in config.to_dict()
+
+
+@pytest.mark.parametrize(
+    "preset",
+    ["default", "role-first", "constraints-first", "anthropic"],
+)
+def test_imports_order_accepts_known_preset(preset):
+    config = ProjectConfig(imports_order=preset)
+    assert config.imports_order == preset
+    assert config.to_dict()["imports_order"] == preset
+
+
+def test_imports_order_rejects_unknown_preset():
+    with pytest.raises(ValueError, match="unknown imports_order preset"):
+        ProjectConfig(imports_order="weird-mode")
+
+
+def test_imports_order_accepts_full_permutation_list():
+    custom = ["role", "rules", "user-rules", "priorities", "traits", "skills_index"]
+    config = ProjectConfig(imports_order=custom)
+    assert config.imports_order == custom
+    assert config.to_dict()["imports_order"] == custom
+
+
+def test_imports_order_rejects_list_with_unknown_section():
+    bad = ["role", "rules", "user-rules", "priorities", "traits", "GHOST"]
+    with pytest.raises(ValueError, match="unknown imports_order section"):
+        ProjectConfig(imports_order=bad)
+
+
+def test_imports_order_rejects_list_with_duplicate_section():
+    bad = ["role", "role", "user-rules", "priorities", "traits", "skills_index"]
+    with pytest.raises(ValueError, match="duplicate imports_order section"):
+        ProjectConfig(imports_order=bad)
+
+
+def test_imports_order_rejects_list_missing_sections():
+    bad = ["role", "priorities", "traits", "skills_index"]  # missing rules + user-rules
+    with pytest.raises(ValueError, match="missing sections"):
+        ProjectConfig(imports_order=bad)
+
+
+def test_imports_order_rejects_wrong_type():
+    # Pydantic's union typing rejects non-str/list/None values before our
+    # field_validator runs; either layer surfacing the rejection is fine.
+    with pytest.raises(ValueError, match=r"imports_order"):
+        ProjectConfig(imports_order=42)
+
+
+def test_imports_order_round_trip_via_yaml(tmp_path):
+    src = tmp_path / "ai-hats.yaml"
+    config = ProjectConfig(provider="claude", imports_order="role-first")
+    config.save(src)
+
+    loaded = ProjectConfig.from_yaml(src)
+    assert loaded.imports_order == "role-first"
+
+
+def test_imports_order_custom_list_round_trip_via_yaml(tmp_path):
+    src = tmp_path / "ai-hats.yaml"
+    custom = ["rules", "user-rules", "role", "priorities", "traits", "skills_index"]
+    config = ProjectConfig(provider="claude", imports_order=custom)
+    config.save(src)
+
+    loaded = ProjectConfig.from_yaml(src)
+    assert loaded.imports_order == custom
