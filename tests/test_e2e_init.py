@@ -47,9 +47,9 @@ def test_set_creates_project(cli_project):
     # HATS-284: ./CLAUDE.md is now a thin scaffold (~65 bytes); the aggregator
     # at .claude/CLAUDE.md carries the framework injection.
     assert (project / "CLAUDE.md").exists()
-    assert "@./.claude/CLAUDE.md" in (project / "CLAUDE.md").read_text()
-    assert (project / ".claude" / "CLAUDE.md").exists()
-    assert len((project / ".claude" / "CLAUDE.md").read_text()) > 100
+    assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
+    assert (project / ".agent" / "ai-hats" / "imports.md").exists()
+    assert len((project / ".agent" / "ai-hats" / "imports.md").read_text()) > 100
 
 
 @pytest.mark.parametrize("role", ALL_ROLES, ids=ALL_ROLES)
@@ -61,9 +61,9 @@ def test_set_all_roles(cli_project, role):
     assert r.exit_code == 0, r.output
     assert "Warning" not in r.output
     assert (project / "CLAUDE.md").exists()
-    assert "@./.claude/CLAUDE.md" in (project / "CLAUDE.md").read_text()
-    assert (project / ".claude" / "CLAUDE.md").exists()
-    assert len((project / ".claude" / "CLAUDE.md").read_text()) > 100
+    assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
+    assert (project / ".agent" / "ai-hats" / "imports.md").exists()
+    assert len((project / ".agent" / "ai-hats" / "imports.md").read_text()) > 100
 
 
 def test_status_after_set(cli_project):
@@ -84,7 +84,7 @@ def test_bump_after_set(cli_project):
     runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
 
     prompt_before = (project / "CLAUDE.md").read_text()
-    aggregator_before = (project / ".claude" / "CLAUDE.md").read_text()
+    aggregator_before = (project / ".agent" / "ai-hats" / "imports.md").read_text()
 
     r = runner.invoke(main, ["self", "bump"])
     assert r.exit_code == 0, r.output
@@ -93,7 +93,7 @@ def test_bump_after_set(cli_project):
     # ./CLAUDE.md (scaffold) is byte-stable; .claude/CLAUDE.md (aggregator)
     # carries content and is also stable for the same role.
     prompt_after = (project / "CLAUDE.md").read_text()
-    aggregator_after = (project / ".claude" / "CLAUDE.md").read_text()
+    aggregator_after = (project / ".agent" / "ai-hats" / "imports.md").read_text()
     assert prompt_before == prompt_after
     assert aggregator_before == aggregator_after
     assert len(aggregator_after) > 100
@@ -355,8 +355,8 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
     # Project CLAUDE.md is a scaffold pointing at the aggregator; aggregator
     # carries the active role's content.
     claude_scaffold = (project / "CLAUDE.md").read_text()
-    assert "@./.claude/CLAUDE.md" in claude_scaffold
-    aggregator_content = (project / ".claude" / "CLAUDE.md").read_text()
+    assert "@./.agent/ai-hats/imports.md" in claude_scaffold
+    aggregator_content = (project / ".agent" / "ai-hats" / "imports.md").read_text()
     assert "@./role.md" in aggregator_content
 
     # Cleanup

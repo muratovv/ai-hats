@@ -127,7 +127,7 @@ def test_set_role_with_claude(project_with_library):
     # HATS-284/285: ./CLAUDE.md is now a thin scaffold; role content lives
     # in .claude/CLAUDE.md aggregator + .agent/ai-hats/role.md.
     assert (project / "CLAUDE.md").exists()
-    assert "@./.claude/CLAUDE.md" in (project / "CLAUDE.md").read_text()
+    assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
     assert "Role injection" in (project / ".agent" / "ai-hats" / "role.md").read_text()
 
 
@@ -203,7 +203,7 @@ def test_set_role_then_switch_provider(project_with_library):
     # the role content (HATS-284/285).
     asm.set_role("test-role", provider_name="claude")
     assert (project / "CLAUDE.md").exists()
-    assert "@./.claude/CLAUDE.md" in (project / "CLAUDE.md").read_text()
+    assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
     assert "Role injection" in (project / ".agent" / "ai-hats" / "role.md").read_text()
 
     # Profile must track the new provider
@@ -238,7 +238,7 @@ def test_wrap_reassembles_on_provider_mismatch(project_with_library):
     # CLAUDE.md is the scaffold; role content is in .agent/ai-hats/role.md
     # and surfaced via the .claude/CLAUDE.md aggregator (HATS-284/285).
     assert (project / "CLAUDE.md").exists()
-    assert "@./.claude/CLAUDE.md" in (project / "CLAUDE.md").read_text()
+    assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
     assert "Role injection" in (project / ".agent" / "ai-hats" / "role.md").read_text()
 
     # Profile updated
@@ -272,7 +272,7 @@ def test_wrap_uses_default_role_when_no_active_role(project_with_library):
     # Apply it (as WrapRunner would)
     asm.set_role(effective_role, provider_name="claude")
     assert (project / "CLAUDE.md").exists()
-    assert "@./.claude/CLAUDE.md" in (project / "CLAUDE.md").read_text()
+    assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
     assert "Role injection" in (project / ".agent" / "ai-hats" / "role.md").read_text()
 
 

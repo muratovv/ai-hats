@@ -17,11 +17,12 @@ if TYPE_CHECKING:
 INJECTION_START = "<!-- AI-HATS:START -->"
 INJECTION_END = "<!-- AI-HATS:END -->"
 
-# HATS-283 — provider publish (canonical → derived)
+# HATS-284: lowercase scaffold markers — used in `./CLAUDE.md` to delimit the
+# user-owned ai-hats block. PUBLISH_AGGREGATOR_* names kept for backwards
+# compatibility of imports across the codebase; functionally these are the
+# scaffold markers.
 PUBLISH_AGGREGATOR_START = "<!-- ai-hats:start -->"
 PUBLISH_AGGREGATOR_END = "<!-- ai-hats:end -->"
-PUBLISH_MANIFEST = ".ai-hats-managed"  # at .claude/ root; distinct from skills/.ai-hats-managed
-CANONICAL_MANIFEST_NAME = "MANAGED"  # mirrors assembler.CANONICAL_MANIFEST
 
 # Always-on rules that stay in prompt (safety-critical)
 ALWAYS_ON_RULES = {
@@ -148,15 +149,6 @@ class Provider(abc.ABC):
             if skill_path.exists():
                 shutil.rmtree(skill_path)
         marker.unlink()
-
-    def publish(self, canonical_dir: Path, project_dir: Path) -> None:
-        """Publish canonical layered output to provider-discoverable namespace.
-
-        Default: no-op. Subclasses (Claude) override to materialize an
-        aggregator + per-file mirror. Gemini's env-var override path remains
-        unchanged (non-goal of HATS-276).
-        """
-        return
 
     def scaffold_template_relpath(self) -> str | None:
         """Library-relative path to the provider's prompt-file scaffold template.
@@ -430,149 +422,6 @@ class ClaudeProvider(Provider):
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         return {}
-
-    # ----- HATS-283: canonical → .claude/ publish -----
-
-    def publish(self, canonical_dir: Path, project_dir: Path) -> None:
-        """Mirror `.agent/ai-hats/` into `.claude/` and write the aggregator.
-
-        - `.claude/<path>` mirrors each file listed in canonical MANAGED.
-        - `.agent/ai-hats/user-rules/*.md` are copied to `.claude/rules/`
-          alongside framework rules (user wins on name collision).
-        - `.claude/CLAUDE.md` aggregator @-imports the mirrored files in
-          deterministic order.
-        - `.claude/.ai-hats-managed` tracks every file we own; cleanup
-          removes paths absent from the new run.
-        - `.claude/skills/` is managed separately (export_skills) and is
-          never touched by publish.
-        """
-        target_dir = project_dir / ".claude"
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        canonical_paths = self._read_canonical_manifest(canonical_dir / CANONICAL_MANIFEST_NAME)
-        if not canonical_paths:
-            # Empty / missing canonical → nothing to publish, but still cleanup
-            # if a previous publish left files behind.
-            self._cleanup_publish(target_dir, new_paths=set())
-            return
-
-        targets: dict[str, bytes] = {}
-
-        # Mirror canonical files (skip user-rules/ — handled separately so
-        # they land in .claude/rules/ not .claude/user-rules/).
-        for relpath in canonical_paths:
-            if relpath.startswith("user-rules/"):
-                continue
-            src = canonical_dir / relpath
-            if src.is_file():
-                targets[relpath] = src.read_bytes()
-
-        # User-rules → .claude/rules/<name>.md (last-write wins on name collision).
-        user_rules_dir = canonical_dir / "user-rules"
-        if user_rules_dir.is_dir():
-            for md in sorted(user_rules_dir.glob("*.md")):
-                targets[f"rules/{md.name}"] = md.read_bytes()
-
-        # Aggregator on top of mirrored files.
-        targets["CLAUDE.md"] = self._render_aggregator(targets).encode()
-
-        # Idempotent write.
-        for relpath, content in targets.items():
-            self._atomic_write_if_changed(target_dir / relpath, content)
-
-        # Stale cleanup.
-        self._cleanup_publish(target_dir, new_paths=set(targets.keys()))
-
-        # Write new manifest.
-        self._write_publish_manifest(target_dir / PUBLISH_MANIFEST, sorted(targets))
-
-    @staticmethod
-    def _render_aggregator(targets: dict[str, bytes]) -> str:
-        """Build `.claude/CLAUDE.md` body with @import directives.
-
-        Order: priorities → traits → role → rules → skills_index. Within each
-        bucket, paths are sorted alphabetically so diffs stay deterministic.
-        Aggregator is dormant until T5 wires `./CLAUDE.md` to @-import it.
-        """
-        lines = [
-            PUBLISH_AGGREGATOR_START,
-            "# ai-hats canonical view (auto-generated; do not edit)",
-        ]
-
-        def _section(predicate) -> None:
-            paths = sorted(p for p in targets if predicate(p))
-            if not paths:
-                return
-            lines.append("")
-            for p in paths:
-                lines.append(f"@./{p}")
-
-        _section(lambda p: p == "priorities.md")
-        _section(lambda p: p.startswith("traits/"))
-        _section(lambda p: p == "role.md")
-        _section(lambda p: p.startswith("rules/"))
-        _section(lambda p: p == "skills_index.md")
-
-        lines.append(PUBLISH_AGGREGATOR_END)
-        return "\n".join(lines) + "\n"
-
-    @staticmethod
-    def _read_canonical_manifest(path: Path) -> list[str]:
-        if not path.exists():
-            return []
-        out: list[str] = []
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                out.append(line)
-        return out
-
-    @staticmethod
-    def _atomic_write_if_changed(path: Path, content: bytes) -> bool:
-        if path.exists() and path.read_bytes() == content:
-            return False
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_bytes(content)
-        tmp.replace(path)
-        return True
-
-    @staticmethod
-    def _read_publish_manifest(path: Path) -> set[str]:
-        if not path.exists():
-            return set()
-        out: set[str] = set()
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                out.add(line)
-        return out
-
-    @staticmethod
-    def _write_publish_manifest(path: Path, names: list[str]) -> None:
-        body = "# ai-hats published files manifest. Do not edit.\n"
-        body += "\n".join(names) + "\n"
-        ClaudeProvider._atomic_write_if_changed(path, body.encode())
-
-    def _cleanup_publish(self, target_dir: Path, *, new_paths: set[str]) -> None:
-        """Remove paths from previous manifest that are absent from new_paths.
-
-        `skills/**` is excluded (managed separately by export_skills).
-        """
-        previous = self._read_publish_manifest(target_dir / PUBLISH_MANIFEST)
-        for stale in previous - new_paths:
-            if stale.startswith("skills/"):
-                continue
-            target = target_dir / stale
-            target.unlink(missing_ok=True)
-            # Best-effort empty-dir cleanup, stopping at .claude/.
-            parent = target.parent
-            while parent != target_dir and parent.is_dir():
-                try:
-                    parent.rmdir()
-                except OSError:
-                    break
-                parent = parent.parent
 
 
 PROVIDERS: dict[str, type[Provider]] = {

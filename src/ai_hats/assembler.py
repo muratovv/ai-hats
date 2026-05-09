@@ -118,13 +118,21 @@ class Assembler:
         prompt_path.write_bytes(template.read_bytes())
 
     def _migrate_claude_md_to_v3(self, provider: Provider) -> None:
-        """Strip the legacy uppercase AI-HATS block from `./CLAUDE.md` (HATS-285).
+        """Bring `./CLAUDE.md` to the current v3 scaffold layout (HATS-285/289).
 
-        Idempotent: a file already on the v3 layout (lowercase scaffold
-        markers present) is left untouched. Files without legacy uppercase
-        markers get the scaffold prepended so the T3 aggregator becomes
-        active. Provider must declare a scaffold template (Gemini is a
-        no-op via that contract).
+        Three idempotent fix-ups, applied in order:
+
+        1. Strip the legacy uppercase AI-HATS block (HATS-285) and replace
+           it with the lowercase scaffold from the library template.
+        2. If the scaffold's import line still points at the deprecated
+           `.claude/CLAUDE.md` aggregator (HATS-283), rewrite it to the
+           canonical `imports.md` (HATS-289).
+        3. Delete legacy publish artefacts under `.claude/` (HATS-289)
+           that the canonical aggregator now replaces — keeps `skills/`
+           since that one is auto-discovered by Claude Code.
+
+        Provider must declare a scaffold template (Gemini is a no-op via
+        that contract).
         """
         rel = provider.scaffold_template_relpath()
         if rel is None:
@@ -132,21 +140,23 @@ class Assembler:
         prompt_path = provider.system_prompt_path(self.project_dir)
         if not prompt_path.exists():
             self._ensure_scaffold(provider)
+            self._cleanup_legacy_claude_publish()
             return
 
         existing = prompt_path.read_text()
-        # Already on v3 layout — nothing to do.
-        if PUBLISH_AGGREGATOR_START in existing and PUBLISH_AGGREGATOR_END in existing:
-            return
-
         template = self._resolve_scaffold_template(rel)
-        if template is None:
-            return
-        scaffold_body = template.read_text()
+        scaffold_body = template.read_text() if template is not None else None
 
-        if INJECTION_START in existing and INJECTION_END in existing:
-            before = existing[: existing.index(INJECTION_START)].rstrip("\n")
-            after = existing[existing.index(INJECTION_END) + len(INJECTION_END) :]
+        new_content = existing
+        # 1. Already-on-v3-scaffold OR legacy-uppercase-block path.
+        if PUBLISH_AGGREGATOR_START in new_content and PUBLISH_AGGREGATOR_END in new_content:
+            pass  # scaffold already present
+        elif scaffold_body is None:
+            # Cannot compose without a template. Skip silently.
+            return
+        elif INJECTION_START in new_content and INJECTION_END in new_content:
+            before = new_content[: new_content.index(INJECTION_START)].rstrip("\n")
+            after = new_content[new_content.index(INJECTION_END) + len(INJECTION_END) :]
             after = after.lstrip("\n")
             parts = []
             if before:
@@ -157,11 +167,66 @@ class Assembler:
             new_content = "\n\n".join(parts) + "\n"
         else:
             # No markers at all — user-owned file. Prepend scaffold so the
-            # T3 aggregator gets imported; preserve user content below.
-            new_content = scaffold_body.rstrip("\n") + "\n\n" + existing.lstrip("\n")
+            # canonical aggregator gets imported; preserve user content below.
+            new_content = scaffold_body.rstrip("\n") + "\n\n" + new_content.lstrip("\n")
+
+        # 2. Rewrite deprecated import line to the canonical aggregator.
+        new_content = new_content.replace(
+            "@./.claude/CLAUDE.md",
+            "@./.agent/ai-hats/imports.md",
+        )
 
         if new_content != existing:
             prompt_path.write_text(new_content)
+
+        # 3. Drop legacy `.claude/` publish artefacts.
+        self._cleanup_legacy_claude_publish()
+
+    def _cleanup_legacy_claude_publish(self) -> None:
+        """Remove `.claude/` publish artefacts replaced by the canonical aggregator (HATS-289).
+
+        Idempotent. `.claude/skills/` and any user-authored files are left
+        alone — only the previously-managed publish set is targeted via
+        the legacy `.claude/.ai-hats-managed` manifest. As a safety net
+        we also remove the well-known publish-only files (CLAUDE.md,
+        priorities/role/skills_index, traits/, rules/).
+        """
+        claude_dir = self.project_dir / ".claude"
+        if not claude_dir.is_dir():
+            return
+
+        manifest = claude_dir / ".ai-hats-managed"
+        managed: set[str] = set()
+        if manifest.exists():
+            for line in manifest.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    managed.add(line)
+
+        # Manifest-listed files (excluding skills/, never managed by publish).
+        for rel in managed:
+            if rel.startswith("skills/"):
+                continue
+            target = claude_dir / rel
+            target.unlink(missing_ok=True)
+
+        # Well-known publish artefacts as belt-and-suspenders.
+        for rel in ("CLAUDE.md", "priorities.md", "role.md", "skills_index.md"):
+            (claude_dir / rel).unlink(missing_ok=True)
+        for sub in ("traits", "rules"):
+            sub_dir = claude_dir / sub
+            if sub_dir.is_dir():
+                shutil.rmtree(sub_dir, ignore_errors=True)
+
+        manifest.unlink(missing_ok=True)
+
+        # Best-effort empty-dir cleanup of `.claude/` itself if `skills/`
+        # is also absent — but never delete `.claude/skills/` content.
+        try:
+            if not any(claude_dir.iterdir()):
+                claude_dir.rmdir()
+        except OSError:
+            pass
 
     @staticmethod
     def _cleanup_obsolete_files(project_dir: Path) -> list[str]:
@@ -305,17 +370,13 @@ class Assembler:
             # 4. Export skills to provider-native directory
             provider.export_skills(self.project_dir, result.skills)
 
-            # 5. Update system prompt — legacy inline block path. HATS-286
-            # makes this explicit: providers that declare a scaffold template
-            # own ./CLAUDE.md via the canonical→publish flow (HATS-282/283/284),
-            # so the inline update is skipped for them. Gemini still uses the
-            # inline path because Gemini scaffold is a non-goal of HATS-276.
+            # 5. Update system prompt — legacy inline block path. Providers
+            # that declare a scaffold template (Claude — HATS-284) own
+            # ./CLAUDE.md via canonical+aggregator (HATS-282/289); Gemini
+            # still uses the inline path (non-goal of HATS-276).
             if provider.scaffold_template_relpath() is None:
                 prompt_content = provider.build_system_prompt(result)
                 provider.update_system_prompt(self.project_dir, prompt_content)
-
-            # 5b. Publish canonical to provider namespace (HATS-283)
-            provider.publish(self._canonical_dir, self.project_dir)
 
             # 6. Verify
             self._verify(result, provider)
@@ -386,12 +447,14 @@ class Assembler:
     def bump(self) -> CompositionResult | None:
         """Re-apply current role (update to latest).
 
-        HATS-285: also runs migration cleanup of obsolete files retired by
-        previous releases. Migration of `./CLAUDE.md` itself happens inside
-        `set_role` so a no-op bump (no active role) still picks it up via
-        the next `set_role` invocation.
+        HATS-285: cleanup obsolete files. HATS-289: also run scaffold/cleanup
+        migration even when there's no active role, so legacy projects with
+        a populated `./CLAUDE.md` but no `active_role` still get fixed up by
+        a plain `ai-hats self bump`.
         """
         self._cleanup_obsolete_files(self.project_dir)
+        provider = get_provider(self.project_config.provider)
+        self._migrate_claude_md_to_v3(provider)
         if not self.project_config.active_role:
             return None
         return self.set_role(self.project_config.active_role, self.project_config.provider or None)
@@ -430,9 +493,11 @@ class Assembler:
             src = self.project_dir / name
             if src.exists():
                 shutil.copy2(src, backup_dir / name)
-        # Backup provider-native dirs (.claude entirely — skills + canonical
-        # publish; .gemini/skills only since Gemini publish is non-goal).
-        for provider_dir in (".claude", ".gemini/skills"):
+        # Backup provider-native skills dirs only. HATS-289 collapsed the
+        # canonical publish into `.agent/ai-hats/` (which is included via
+        # the AGENT_DIR copytree above), so `.claude/` outside `skills/` is
+        # no longer ai-hats-managed.
+        for provider_dir in (".claude/skills", ".gemini/skills"):
             src = self.project_dir / provider_dir
             if src.exists():
                 shutil.copytree(src, backup_dir / provider_dir, symlinks=True)
@@ -454,8 +519,8 @@ class Assembler:
             if src.exists():
                 shutil.copy2(src, self.project_dir / name)
 
-        # Restore provider-native dirs (.claude entirely; .gemini/skills only).
-        for provider_dir in (".claude", ".gemini/skills"):
+        # Restore provider-native skills dirs only (HATS-289).
+        for provider_dir in (".claude/skills", ".gemini/skills"):
             src = backup_path / provider_dir
             dest = self.project_dir / provider_dir
             if src.exists():
@@ -912,6 +977,15 @@ class Assembler:
         if skills_index is not None:
             targets["skills_index.md"] = skills_index.encode()
 
+        # HATS-289: aggregator-in-canonical. Imports every other file in
+        # deterministic order so `./CLAUDE.md` can `@import` a single stable
+        # entry-point. Computed before write so the aggregator can include
+        # user-rules/ files (which are NOT in `targets` — they live outside
+        # the manifest by design).
+        targets["imports.md"] = self._render_canonical_aggregator(
+            canonical, set(targets.keys())
+        ).encode()
+
         # Idempotent write
         for relpath, content in targets.items():
             self._atomic_write_if_changed(canonical / relpath, content)
@@ -949,6 +1023,44 @@ class Assembler:
         if not parts:
             return None
         return Assembler._ensure_trailing_newline("\n\n".join(parts))
+
+    @staticmethod
+    def _render_canonical_aggregator(canonical_dir: Path, framework_paths: set[str]) -> str:
+        """Build the `imports.md` aggregator in canonical (HATS-289).
+
+        Pure `@import` list, no markers, no headings. Order:
+        priorities → traits → role → framework rules → user-rules → skills_index.
+        Within each section, paths are sorted alphabetically.
+
+        `framework_paths` is the set of relpaths the canonical writer will own;
+        `user-rules/*.md` is enumerated separately because user-rules live
+        outside the manifest (composer never writes them).
+        """
+        sections: list[list[str]] = []
+
+        def _bucket(predicate) -> None:
+            picked = sorted(p for p in framework_paths if predicate(p))
+            if picked:
+                sections.append([f"@./{p}" for p in picked])
+
+        _bucket(lambda p: p == "priorities.md")
+        _bucket(lambda p: p.startswith("traits/"))
+        _bucket(lambda p: p == "role.md")
+        _bucket(lambda p: p.startswith("rules/"))
+
+        # User-rules — last in the rule-like sections so user wins on overlap.
+        user_rules_dir = canonical_dir / USER_RULES_SUBDIR
+        if user_rules_dir.is_dir():
+            user_paths = sorted(
+                f"@./{USER_RULES_SUBDIR}/{md.name}" for md in user_rules_dir.glob("*.md")
+            )
+            if user_paths:
+                sections.append(user_paths)
+
+        _bucket(lambda p: p == "skills_index.md")
+
+        body = "\n\n".join("\n".join(lines) for lines in sections)
+        return body + ("\n" if body else "")
 
     @staticmethod
     def _render_skills_index(skills: list[ResolvedComponent]) -> str | None:
@@ -1064,16 +1176,7 @@ class Assembler:
                 if entry:
                     paths.add(f"{GITHOOKS_DIR}/{entry}")
 
-        # .claude/ canonical publish (HATS-283) — flat manifest at root.
-        publish_manifest = self.project_dir / ".claude" / ".ai-hats-managed"
-        if publish_manifest.exists():
-            paths.add(".claude/.ai-hats-managed")
-            for entry in publish_manifest.read_text().splitlines():
-                entry = entry.strip()
-                if entry and not entry.startswith("#"):
-                    paths.add(f".claude/{entry}")
-
-        # .agent/ai-hats — canonical layered layer (HATS-282).
+        # .agent/ai-hats — canonical layered layer (HATS-282/289).
         # user-rules/ is user-owned and excluded by being absent from MANAGED.
         canonical_manifest = self._canonical_dir / CANONICAL_MANIFEST
         if canonical_manifest.exists():
