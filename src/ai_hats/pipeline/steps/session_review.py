@@ -26,14 +26,23 @@ class RunSessionReview(Step):
         return StepIO(
             name="run_session_review",
             requires=frozenset({"session_id", "project_dir"}),
+            optional=frozenset({"max_retries"}),
             produces=frozenset({"review_path"}),
         )
 
     def run(
-        self, *, session_id: str, project_dir: Path, **_: Any,
+        self,
+        *,
+        session_id: str,
+        project_dir: Path,
+        max_retries: int | None = None,
+        **_: Any,
     ) -> dict[str, Any]:
         from ...retro.session_review_runner import SessionReviewRunner
 
+        # State override > YAML param default. Lets harness propagate
+        # CLI flags (--max-retries) without YAML-level reconfiguration.
+        retries = max_retries if max_retries is not None else self.max_retries
         runner = SessionReviewRunner(project_dir)
-        review_path = runner.run(session_id, max_retries=self.max_retries)
+        review_path = runner.run(session_id, max_retries=retries)
         return {"review_path": review_path}

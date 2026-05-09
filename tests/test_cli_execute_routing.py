@@ -222,10 +222,10 @@ def test_reflect_session_uses_session_review_runner(
             captured["max_retries"] = max_retries
             return project_dir / ".agent" / "retrospectives" / "fake.md"
 
-    import ai_hats.cli.reflect as reflect_mod
-    monkeypatch.setattr(
-        reflect_mod, "SessionReviewRunner", _StubSessionReviewRunner,
-    )
+    # reflect session now goes through PipelineHarness → run_session_review
+    # step which lazy-imports from the retro module — patch at the source.
+    import ai_hats.retro.session_review_runner as srr
+    monkeypatch.setattr(srr, "SessionReviewRunner", _StubSessionReviewRunner)
 
     sid = "20260507-120000-1"
     res = CliRunner().invoke(main, ["reflect", "session", "--session", sid])

@@ -61,10 +61,16 @@ def reflect_session_cmd(session_id: str, background: bool, max_retries: int):
         _spawn_detached(session_id, max_retries)
         return
 
+    from ..pipeline.harness import PipelineHarness
+
     project_dir = _project_dir()
-    runner = SessionReviewRunner(project_dir)
     try:
-        path = runner.run(session_id, max_retries=max_retries)
+        with PipelineHarness("reflect-session", project_dir) as h:
+            final = h.run({
+                "session_id": session_id,
+                "project_dir": project_dir,
+                "max_retries": max_retries,
+            })
     except SessionReviewError as exc:
         console.print(
             f"[yellow]session-reviewer failed for {session_id}:[/yellow] {exc}\n"
@@ -73,7 +79,9 @@ def reflect_session_cmd(session_id: str, background: bool, max_retries: int):
         )
         sys.exit(2)
     else:
-        console.print(f"[green]✓[/green] session review saved to {path}")
+        console.print(
+            f"[green]✓[/green] session review saved to {final['review_path']}"
+        )
 
 
 def _spawn_detached(session_id: str, max_retries: int) -> None:

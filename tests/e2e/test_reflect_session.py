@@ -33,8 +33,11 @@ def test_reflect_session_foreground_failure(
         def run(self, sid, max_retries=1):
             raise SessionReviewError("synthetic fail")
 
-    import ai_hats.cli.reflect as reflect_mod
-    monkeypatch.setattr(reflect_mod, "SessionReviewRunner", _FailingRunner)
+    # Patch at the source — the run_session_review pipeline step does a
+    # lazy `from ...retro.session_review_runner import SessionReviewRunner`
+    # so the source-module attribute is what matters.
+    import ai_hats.retro.session_review_runner as srr
+    monkeypatch.setattr(srr, "SessionReviewRunner", _FailingRunner)
 
     res = CliRunner().invoke(
         main, ["reflect", "session", "--session", "x-1"],
