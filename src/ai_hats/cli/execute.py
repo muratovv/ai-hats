@@ -166,7 +166,9 @@ def execute_cmd(
     extra_args: tuple[str, ...],
 ):
     """Launch a provider session with a composed role + optional initial prompt."""
+    from ..pipeline.harness import PipelineHarness
     from ..tags import TagValidationError, parse_tags
+    from ._helpers import _project_dir
 
     try:
         tags = parse_tags(tags_raw)
@@ -174,45 +176,50 @@ def execute_cmd(
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
     prompt_text = _resolve_prompt(prompt_arg)
+    project_dir = _project_dir()
+
+    with PipelineHarness("execute", project_dir) as h:
+        # Interactive mode: provider CLI receives prompt as the first
+        # positional arg in extra_args. The pipeline's resolve_prompt
+        # step reads prompt_path → prompt_text and launch_provider then
+        # prepends prompt_text to extra_args. We materialize the prompt
+        # here so the harness contract (Path-only inputs) is preserved.
+        final = h.run({
+            "role": role,
+            "interactive": interactive,
+            "project_dir": project_dir,
+            "prompt_path": h.materialize_prompt(prompt_text),
+            "provider": provider,
+            "model": model,
+            "isolation": isolation,
+            "ticket": ticket,
+            "tags": tags or None,
+            "extra_args": list(extra_args),
+        })
 
     if interactive:
-        rc = _do_execute(
-            role=role,
-            provider=provider,
-            interactive=True,
-            prompt=prompt_text,
-            tags=tags or None,
-            extra_args=list(extra_args),
-        )
-        sys.exit(int(rc))
+        sys.exit(int(final.get("exit_code", 1)))
 
-    session = _do_execute(
-        role=role,
-        provider=provider,
-        interactive=False,
-        prompt=prompt_text,
-        model=model,
-        isolation=isolation,
-        ticket=ticket,
-        tags=tags or None,
-    )
-
+    # Batch mode: read metrics for --json output, print summary, exit.
+    session_id = final["session_id"]
+    session_dir = final["session_dir"]
+    metrics_path = session_dir / "metrics.json"
     metrics: dict = {}
-    if session.metrics_path.exists():
+    if metrics_path.exists():
         try:
-            metrics = json.loads(session.metrics_path.read_text())
+            metrics = json.loads(metrics_path.read_text())
         except (json.JSONDecodeError, OSError):
             metrics = {}
 
     if as_json:
         payload = {
             **metrics,
-            "session_id": session.session_id,
-            "session_dir": str(session.session_dir),
+            "session_id": session_id,
+            "session_dir": str(session_dir),
         }
         click.echo(json.dumps(payload, sort_keys=True))
     else:
-        console.print(f"[green]Sub-agent completed[/]: {session.session_id}")
-        console.print(f"  Session dir: {session.session_dir}")
+        console.print(f"[green]Sub-agent completed[/]: {session_id}")
+        console.print(f"  Session dir: {session_dir}")
 
-    sys.exit(int(metrics.get("exit_code", 1)))
+    sys.exit(int(final.get("exit_code", metrics.get("exit_code", 1))))
