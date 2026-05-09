@@ -26,7 +26,7 @@ from pathlib import Path
 import click
 
 from ..hypothesis import HypothesisStore, ProposalStore
-from ..retro.session_review_runner import SessionReviewError, SessionReviewRunner
+from ..retro.session_review_runner import SessionReviewError
 from ._helpers import _project_dir, console
 
 
@@ -61,10 +61,16 @@ def reflect_session_cmd(session_id: str, background: bool, max_retries: int):
         _spawn_detached(session_id, max_retries)
         return
 
+    from ..pipeline.harness import PipelineHarness
+
     project_dir = _project_dir()
-    runner = SessionReviewRunner(project_dir)
     try:
-        path = runner.run(session_id, max_retries=max_retries)
+        with PipelineHarness("reflect-session", project_dir) as h:
+            final = h.run({
+                "session_id": session_id,
+                "project_dir": project_dir,
+                "max_retries": max_retries,
+            })
     except SessionReviewError as exc:
         console.print(
             f"[yellow]session-reviewer failed for {session_id}:[/yellow] {exc}\n"
@@ -73,7 +79,9 @@ def reflect_session_cmd(session_id: str, background: bool, max_retries: int):
         )
         sys.exit(2)
     else:
-        console.print(f"[green]✓[/green] session review saved to {path}")
+        console.print(
+            f"[green]✓[/green] session review saved to {final['review_path']}"
+        )
 
 
 def _spawn_detached(session_id: str, max_retries: int) -> None:
@@ -111,7 +119,8 @@ def _spawn_detached(session_id: str, max_retries: int) -> None:
 )
 def reflect_all_cmd(dry_run: bool):
     """Interactive HYP closure + proposal triage via the `judge` role."""
-    from .execute import _do_execute, _initial_injections_dir
+    from ..pipeline.harness import PipelineHarness
+    from .execute import _initial_injections_dir
 
     project_dir = _project_dir()
     handoff_path = _build_handoff(project_dir)
@@ -126,15 +135,15 @@ def reflect_all_cmd(dry_run: bool):
     console.print(
         f"[cyan]→ Launching judge for reflect-all triage: {handoff_path}[/]"
     )
-    rc = _do_execute(
-        role="judge",
-        provider=None,
-        interactive=True,
-        prompt=combined,
-        tags=None,
-        extra_args=[],
-    )
-    sys.exit(int(rc))
+    with PipelineHarness("reflect-all", project_dir) as h:
+        final = h.run({
+            "role": "judge",
+            "interactive": True,
+            "project_dir": project_dir,
+            "prompt_path": h.materialize_prompt(combined),
+            "extra_args": [],
+        })
+    sys.exit(int(final.get("exit_code", 1)))
 
 
 # ---- reflect commit ----

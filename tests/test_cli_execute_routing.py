@@ -133,10 +133,17 @@ def test_reflect_all_routes_to_wraprunner_with_judge(
         def run(self, provider, **kwargs):
             captured["role_override"] = kwargs.get("role_override")
             captured["extra_args"] = kwargs.get("extra_args")
-            return 0, object()
+            return 0, _StubSession(
+                project_dir / ".gitlog" / "session_judge",
+                {"exit_code": 0},
+            )
 
     import ai_hats.runtime as runtime_mod
     monkeypatch.setattr(runtime_mod, "WrapRunner", _WrapRunner)
+    # spawn_session_review fires after launch_provider — stub Popen.
+    import subprocess
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: MagicMock(pid=1))
 
     res = CliRunner().invoke(main, ["reflect", "all"])
     assert res.exit_code == 0, res.output
@@ -163,6 +170,8 @@ class _StubSession:
         self.session_id = session_dir.name.removeprefix("session_")
         self.session_dir = session_dir
         session_dir.mkdir(parents=True, exist_ok=True)
+        self.trace_path = session_dir / "trace.log"
+        self.trace_path.write_text("(stub)")
         self.metrics_path = session_dir / "metrics.json"
         self.metrics_path.write_text(json.dumps(metrics))
 
@@ -213,10 +222,10 @@ def test_reflect_session_uses_session_review_runner(
             captured["max_retries"] = max_retries
             return project_dir / ".agent" / "retrospectives" / "fake.md"
 
-    import ai_hats.cli.reflect as reflect_mod
-    monkeypatch.setattr(
-        reflect_mod, "SessionReviewRunner", _StubSessionReviewRunner,
-    )
+    # reflect session now goes through PipelineHarness → run_session_review
+    # step which lazy-imports from the retro module — patch at the source.
+    import ai_hats.retro.session_review_runner as srr
+    monkeypatch.setattr(srr, "SessionReviewRunner", _StubSessionReviewRunner)
 
     sid = "20260507-120000-1"
     res = CliRunner().invoke(main, ["reflect", "session", "--session", sid])

@@ -56,43 +56,47 @@ def run_subagent(
     - 124 — timeout (sub-agent exceeded wall-clock limit)
     - other non-zero — forwarded verbatim from provider CLI
     """
+    from ..pipeline.harness import PipelineHarness
     from ..tags import TagValidationError, parse_tags
-    from .execute import _do_execute
+    from ._helpers import _project_dir
 
     try:
         tags = parse_tags(tags_raw)
     except TagValidationError as e:
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
-    session = _do_execute(
-        role=role,
-        provider=None,
-        interactive=False,
-        prompt=task or None,
-        model=model or "",
-        isolation=isolation,
-        ticket=ticket or "",
-        tags=tags or None,
-    )
+    project_dir = _project_dir()
+    with PipelineHarness("execute", project_dir) as h:
+        final = h.run({
+            "role": role,
+            "interactive": False,
+            "project_dir": project_dir,
+            "prompt_path": h.materialize_prompt(task),
+            "model": model or "",
+            "isolation": isolation,
+            "ticket": ticket or "",
+            "tags": tags or None,
+        })
 
+    session_id = final["session_id"]
+    session_dir = final["session_dir"]
+    metrics_path = session_dir / "metrics.json"
     metrics: dict = {}
-    if session.metrics_path.exists():
+    if metrics_path.exists():
         try:
-            metrics = json.loads(session.metrics_path.read_text())
+            metrics = json.loads(metrics_path.read_text())
         except (json.JSONDecodeError, OSError):
             metrics = {}
 
     if as_json:
-        # Shape matches `session list --json` item: metrics fields plus
-        # computed session_id / session_dir. Consumers pick what they need.
         payload = {
             **metrics,
-            "session_id": session.session_id,
-            "session_dir": str(session.session_dir),
+            "session_id": session_id,
+            "session_dir": str(session_dir),
         }
         click.echo(json.dumps(payload, sort_keys=True))
     else:
-        console.print(f"[green]Sub-agent completed[/]: {session.session_id}")
-        console.print(f"  Session dir: {session.session_dir}")
+        console.print(f"[green]Sub-agent completed[/]: {session_id}")
+        console.print(f"  Session dir: {session_dir}")
 
-    sys.exit(int(metrics.get("exit_code", 1)))
+    sys.exit(int(final.get("exit_code", metrics.get("exit_code", 1))))

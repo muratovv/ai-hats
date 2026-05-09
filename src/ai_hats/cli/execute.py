@@ -11,8 +11,8 @@ The ``--prompt`` flag resolves either to a file under
 ``libraries/initial_injections/<name>.md`` (by short name) or to a filesystem
 path. The resolved content becomes the first user-visible message.
 
-Existing entry-points (`ai-hats` bare, `ai-hats agent`, `ai-hats reflect all`)
-delegate to ``_do_execute`` rather than duplicating launcher logic.
+All entry-points (bare ``ai-hats``, ``ai-hats agent``, ``ai-hats reflect *``)
+go through ``PipelineHarness`` over a built-in YAML pipeline (HATS-269).
 """
 
 from __future__ import annotations
@@ -54,60 +54,6 @@ def _resolve_prompt(arg: str | None) -> str | None:
         f"--prompt {arg!r}: not a known initial-injection name and not a "
         f"readable file. Tried {name_path} and {fs_path.resolve()}.",
         param_hint="--prompt",
-    )
-
-
-def _do_execute(
-    *,
-    role: str | None,
-    provider: str | None,
-    interactive: bool,
-    prompt: str | None,
-    model: str = "",
-    isolation: str = "discard",
-    ticket: str = "",
-    tags: dict[str, str] | None = None,
-    extra_args: list[str] | None = None,
-):
-    """Backend dispatch — used by execute_cmd, _launch_session, agent, reflect.
-
-    Returns:
-        - interactive: int exit code (from WrapRunner)
-        - batch: ``Session`` from SubAgentRunner
-    """
-    from ..models import ProjectConfig
-    from ..runtime import SubAgentRunner, WrapRunner
-
-    project_dir = _project_dir()
-    if interactive:
-        cfg = ProjectConfig.from_yaml(project_dir / "ai-hats.yaml")
-        eff_provider = provider or cfg.provider
-        if not eff_provider:
-            console.print(
-                "[red]No provider configured[/]. "
-                "Run: ai-hats config set -p <provider>"
-            )
-            return 1
-        eff_extra = list(extra_args or [])
-        if prompt:
-            # Prepend as first positional → provider CLI treats as user message
-            eff_extra = [prompt, *eff_extra]
-        runner = WrapRunner(project_dir)
-        exit_code, _session = runner.run(
-            eff_provider,
-            role_override=role,
-            extra_args=eff_extra,
-            tags=tags,
-        )
-        return exit_code
-    runner = SubAgentRunner(project_dir)
-    return runner.run(
-        role_name=role or "",
-        task=prompt or "",
-        ticket_id=ticket,
-        model=model,
-        isolation_mode=isolation,
-        tags=tags,
     )
 
 
@@ -166,6 +112,7 @@ def execute_cmd(
     extra_args: tuple[str, ...],
 ):
     """Launch a provider session with a composed role + optional initial prompt."""
+    from ..pipeline.harness import PipelineHarness
     from ..tags import TagValidationError, parse_tags
 
     try:
@@ -174,45 +121,50 @@ def execute_cmd(
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
     prompt_text = _resolve_prompt(prompt_arg)
+    project_dir = _project_dir()
+
+    with PipelineHarness("execute", project_dir) as h:
+        # Interactive mode: provider CLI receives prompt as the first
+        # positional arg in extra_args. The pipeline's resolve_prompt
+        # step reads prompt_path → prompt_text and launch_provider then
+        # prepends prompt_text to extra_args. We materialize the prompt
+        # here so the harness contract (Path-only inputs) is preserved.
+        final = h.run({
+            "role": role,
+            "interactive": interactive,
+            "project_dir": project_dir,
+            "prompt_path": h.materialize_prompt(prompt_text),
+            "provider": provider,
+            "model": model,
+            "isolation": isolation,
+            "ticket": ticket,
+            "tags": tags or None,
+            "extra_args": list(extra_args),
+        })
 
     if interactive:
-        rc = _do_execute(
-            role=role,
-            provider=provider,
-            interactive=True,
-            prompt=prompt_text,
-            tags=tags or None,
-            extra_args=list(extra_args),
-        )
-        sys.exit(int(rc))
+        sys.exit(int(final.get("exit_code", 1)))
 
-    session = _do_execute(
-        role=role,
-        provider=provider,
-        interactive=False,
-        prompt=prompt_text,
-        model=model,
-        isolation=isolation,
-        ticket=ticket,
-        tags=tags or None,
-    )
-
+    # Batch mode: read metrics for --json output, print summary, exit.
+    session_id = final["session_id"]
+    session_dir = final["session_dir"]
+    metrics_path = session_dir / "metrics.json"
     metrics: dict = {}
-    if session.metrics_path.exists():
+    if metrics_path.exists():
         try:
-            metrics = json.loads(session.metrics_path.read_text())
+            metrics = json.loads(metrics_path.read_text())
         except (json.JSONDecodeError, OSError):
             metrics = {}
 
     if as_json:
         payload = {
             **metrics,
-            "session_id": session.session_id,
-            "session_dir": str(session.session_dir),
+            "session_id": session_id,
+            "session_dir": str(session_dir),
         }
         click.echo(json.dumps(payload, sort_keys=True))
     else:
-        console.print(f"[green]Sub-agent completed[/]: {session.session_id}")
-        console.print(f"  Session dir: {session.session_dir}")
+        console.print(f"[green]Sub-agent completed[/]: {session_id}")
+        console.print(f"  Session dir: {session_dir}")
 
-    sys.exit(int(metrics.get("exit_code", 1)))
+    sys.exit(int(final.get("exit_code", metrics.get("exit_code", 1))))

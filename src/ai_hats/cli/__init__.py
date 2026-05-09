@@ -111,32 +111,20 @@ def _launch_session(
     extra_args: list[str] | None = None,
     tags: dict[str, str] | None = None,
 ):
-    """Launch a wrapped provider CLI session via the ``bare`` pipeline.
-
-    HATS-267: bare ``ai-hats`` now routes through the pipeline subsystem
-    using ``libraries/pipelines/bare.yaml``. Other CLI commands
-    (``execute``, ``reflect *``) still go through the direct
-    ``_do_execute`` / ``SessionReviewRunner`` paths until HATS-269.
-    """
-    from importlib.resources import as_file, files
-
-    from ..pipeline.loader import load_pipeline
-    from ..pipeline.pipeline import run as run_pipeline
+    """Launch a wrapped provider CLI session via the ``bare`` pipeline."""
+    from ..pipeline.harness import PipelineHarness
     from ._helpers import _project_dir
 
     project_dir = _project_dir()
-    yaml_resource = files("ai_hats.libraries.pipelines") / "bare.yaml"
-    with as_file(yaml_resource) as yaml_path:
-        pipeline = load_pipeline(yaml_path)
-
-    final = run_pipeline(pipeline, {
-        "role": role,
-        "interactive": True,
-        "project_dir": project_dir,
-        "provider": provider,
-        "extra_args": list(extra_args or []),
-        "tags": tags,
-    })
+    with PipelineHarness("bare", project_dir) as h:
+        final = h.run({
+            "role": role,
+            "interactive": True,
+            "project_dir": project_dir,
+            "provider": provider,
+            "extra_args": list(extra_args or []),
+            "tags": tags,
+        })
     sys.exit(int(final.get("exit_code", 1)))
 
 
