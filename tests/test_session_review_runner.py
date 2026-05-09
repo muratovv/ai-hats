@@ -7,6 +7,7 @@ SubAgentRunner.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -145,22 +146,55 @@ def test_save_round_trips_through_loader(tmp_path: Path) -> None:
 
 
 class _FakeSubAgentSession:
-    def __init__(self, transcript_text: str, session_dir: Path) -> None:
+    def __init__(
+        self,
+        transcript_text: str,
+        session_dir: Path,
+        *,
+        session_id: str = "20260101-000000-2",
+        write_transcript: bool = True,
+        metrics: dict | None = None,
+        reasoning: str | None = None,
+    ) -> None:
         self.session_dir = session_dir
-        (session_dir / "transcript.txt").write_text(transcript_text)
+        self.session_id = session_id
+        self.metrics_path = session_dir / "metrics.json"
+        if write_transcript:
+            (session_dir / "transcript.txt").write_text(transcript_text)
+        if metrics is not None:
+            self.metrics_path.write_text(json.dumps(metrics))
+        if reasoning is not None:
+            (session_dir / "reasoning.log").write_text(reasoning)
 
 
 class _FakeSubAgentRunner:
     """Minimal stub matching SubAgentRunner.run signature."""
 
-    def __init__(self, transcript_text: str, scratch: Path) -> None:
+    def __init__(
+        self,
+        transcript_text: str,
+        scratch: Path,
+        *,
+        write_transcript: bool = True,
+        metrics: dict | None = None,
+        reasoning: str | None = None,
+    ) -> None:
         self._transcript = transcript_text
         self._scratch = scratch
+        self._write_transcript = write_transcript
+        self._metrics = metrics
+        self._reasoning = reasoning
 
     def run(self, **_kw):  # noqa: ANN003 — test stub matches keyword API
         sdir = self._scratch / "sub-session"
         sdir.mkdir(exist_ok=True)
-        return _FakeSubAgentSession(self._transcript, sdir)
+        return _FakeSubAgentSession(
+            self._transcript,
+            sdir,
+            write_transcript=self._write_transcript,
+            metrics=self._metrics,
+            reasoning=self._reasoning,
+        )
 
 
 def _stub_facts(monkeypatch, project_dir: Path) -> None:
@@ -207,3 +241,55 @@ def test_run_raises_session_review_error_on_invalid_llm_output(
     runner = SessionReviewRunner(tmp_path, subagent_runner=fake_runner)
     with pytest.raises(SessionReviewError):
         runner.run(SID, max_retries=0)
+
+
+# ---- HATS-271: empty sub-agent transcript surfaces real diagnostics ----
+
+
+def test_run_surfaces_subagent_failure_when_transcript_missing(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """Sub-agent crashed before writing transcript.txt → must NOT loop on
+    'Empty frontmatter'; must surface exit_code/error from metrics.json so
+    the harness records a meaningful cause in retro.log."""
+    _stub_facts(monkeypatch, tmp_path)
+    fake_runner = _FakeSubAgentRunner(
+        "", tmp_path,
+        write_transcript=False,
+        metrics={"exit_code": 124, "timed_out": True},
+        reasoning="claude: request timed out\n",
+    )
+    runner = SessionReviewRunner(tmp_path, subagent_runner=fake_runner)
+    with pytest.raises(SessionReviewError) as excinfo:
+        runner.run(SID, max_retries=2)
+
+    msg = str(excinfo.value)
+    assert "sub-agent produced no output" in msg
+    assert "exit_code=124" in msg
+    assert "timed_out=True" in msg
+    assert "request timed out" in msg
+    # Critically, the misleading "Empty frontmatter" wording from the
+    # validator path must NOT be the surface error here.
+    assert "Empty frontmatter" not in msg
+
+
+def test_run_surfaces_subagent_failure_when_transcript_blank(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """transcript.txt exists but contains only whitespace — same failure
+    mode as missing file: do not retry, surface diagnostics."""
+    _stub_facts(monkeypatch, tmp_path)
+    fake_runner = _FakeSubAgentRunner(
+        "   \n\n",  # whitespace-only
+        tmp_path,
+        write_transcript=True,
+        metrics={"exit_code": 1},
+    )
+    runner = SessionReviewRunner(tmp_path, subagent_runner=fake_runner)
+    with pytest.raises(SessionReviewError) as excinfo:
+        runner.run(SID, max_retries=3)
+
+    msg = str(excinfo.value)
+    assert "sub-agent produced no output" in msg
+    assert "exit_code=1" in msg
+    assert "Empty frontmatter" not in msg
