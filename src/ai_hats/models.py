@@ -11,7 +11,15 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, computed_field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +53,21 @@ class TaskState(str, Enum):
         return {
             TaskState.BRAINSTORM: [TaskState.PLAN, TaskState.BLOCKED, TaskState.CANCELLED],
             TaskState.PLAN: [TaskState.EXECUTE, TaskState.BLOCKED, TaskState.CANCELLED],
-            TaskState.EXECUTE: [TaskState.DOCUMENT, TaskState.BLOCKED, TaskState.FAILED, TaskState.CANCELLED],
+            TaskState.EXECUTE: [
+                TaskState.DOCUMENT,
+                TaskState.BLOCKED,
+                TaskState.FAILED,
+                TaskState.CANCELLED,
+            ],
             TaskState.DOCUMENT: [TaskState.REVIEW, TaskState.BLOCKED, TaskState.CANCELLED],
             TaskState.REVIEW: [TaskState.DONE, TaskState.FAILED, TaskState.CANCELLED],
-            TaskState.BLOCKED: [TaskState.BRAINSTORM, TaskState.PLAN, TaskState.EXECUTE, TaskState.DOCUMENT, TaskState.CANCELLED],
+            TaskState.BLOCKED: [
+                TaskState.BRAINSTORM,
+                TaskState.PLAN,
+                TaskState.EXECUTE,
+                TaskState.DOCUMENT,
+                TaskState.CANCELLED,
+            ],
             TaskState.FAILED: [TaskState.BRAINSTORM, TaskState.CANCELLED],
             TaskState.DONE: [],
             TaskState.CANCELLED: [],
@@ -136,7 +155,9 @@ class ComponentConfig(_YamlModel):
     @classmethod
     def from_yaml(cls, path: Path) -> ComponentConfig:
         data = yaml.safe_load(path.read_text()) or {}
-        return cls.model_validate({**data, "source_path": path, "name": data.get("name") or path.parent.name})
+        return cls.model_validate(
+            {**data, "source_path": path, "name": data.get("name") or path.parent.name}
+        )
 
 
 class RuleMetadata(_YamlModel):
@@ -244,18 +265,26 @@ class OverlayConfig(_YamlModel):
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {}
-        add = {k: v for k, v in (
-            ("traits", self.add_traits),
-            ("rules", self.add_rules),
-            ("skills", self.add_skills),
-        ) if v}
+        add = {
+            k: v
+            for k, v in (
+                ("traits", self.add_traits),
+                ("rules", self.add_rules),
+                ("skills", self.add_skills),
+            )
+            if v
+        }
         if add:
             d["add"] = add
-        remove = {k: v for k, v in (
-            ("traits", self.remove_traits),
-            ("rules", self.remove_rules),
-            ("skills", self.remove_skills),
-        ) if v}
+        remove = {
+            k: v
+            for k, v in (
+                ("traits", self.remove_traits),
+                ("rules", self.remove_rules),
+                ("skills", self.remove_skills),
+            )
+            if v
+        }
         if remove:
             d["remove"] = remove
         if self.injection_append:
@@ -265,11 +294,17 @@ class OverlayConfig(_YamlModel):
     @computed_field
     @property
     def is_empty(self) -> bool:
-        return not any([
-            self.add_traits, self.add_rules, self.add_skills,
-            self.remove_traits, self.remove_rules, self.remove_skills,
-            self.injection_append,
-        ])
+        return not any(
+            [
+                self.add_traits,
+                self.add_rules,
+                self.add_skills,
+                self.remove_traits,
+                self.remove_rules,
+                self.remove_skills,
+                self.injection_append,
+            ]
+        )
 
 
 class SmartThreshold(_YamlModel):
@@ -293,9 +328,9 @@ class SessionRetroConfig(_YamlModel):
     def _alias_reflect_model(self) -> "SessionRetroConfig":
         if self.review_model is None and self.reflect_model is not None:
             import warnings
+
             warnings.warn(
-                "feedback.session_retro.reflect_model is deprecated; "
-                "rename to review_model.",
+                "feedback.session_retro.reflect_model is deprecated; rename to review_model.",
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -334,7 +369,7 @@ class ProjectConfig(_YamlModel):
     provider: str = "gemini"
     default_role: str = ""
     active_role: str = ""
-    schema_version: int = 2
+    schema_version: int = 3
     library_paths: list[str] = Field(default_factory=list)
     customizations: dict[str, OverlayConfig] = Field(default_factory=dict)
     feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
@@ -370,6 +405,8 @@ class ProjectConfig(_YamlModel):
         data = yaml.safe_load(path.read_text()) or {}
         if data.get("schema_version", 1) < 2:
             data = _migrate_v1_to_v2(path, data)
+        if data.get("schema_version", 1) < 3:
+            data = _migrate_v2_to_v3(data)
         try:
             return cls.model_validate(data)
         except ValidationError as e:
@@ -377,7 +414,7 @@ class ProjectConfig(_YamlModel):
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
-            "schema_version": 2,
+            "schema_version": 3,
             "provider": self.provider,
             "library_paths": self.library_paths,
             "active_role": self.active_role,
@@ -508,6 +545,19 @@ def _migrate_v1_to_v2(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def _migrate_v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
+    """Auto-migrate schema v2 → v3 (HATS-285).
+
+    v3 introduces the layered canonical layout (.agent/ai-hats/) and the
+    `./CLAUDE.md` scaffold-as-asset. The yaml itself only needs a version
+    bump — the filesystem cleanup (stripping the legacy uppercase block
+    from `./CLAUDE.md`) lives in `Assembler._migrate_claude_md_to_v3`,
+    which runs at the start of `init`/`set_role`/`bump`.
+    """
+    data["schema_version"] = 3
+    return data
+
+
 # ----- Task cards -----
 
 
@@ -527,13 +577,28 @@ class TaskCard(_YamlModel):
     """
 
     #: typed fields recognized by from_dict / to_dict; everything else → extras
-    _KNOWN_FIELDS: ClassVar[frozenset[str]] = frozenset({
-        "id", "title", "state", "description", "priority",
-        "assignee", "reviewer", "role", "parent_task", "subtasks",
-        "depends_on",
-        "tags", "work_log", "final_state", "resolution",
-        "created", "updated", "completed_at",
-    })
+    _KNOWN_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "id",
+            "title",
+            "state",
+            "description",
+            "priority",
+            "assignee",
+            "reviewer",
+            "role",
+            "parent_task",
+            "subtasks",
+            "depends_on",
+            "tags",
+            "work_log",
+            "final_state",
+            "resolution",
+            "created",
+            "updated",
+            "completed_at",
+        }
+    )
 
     id: str
     title: str
@@ -691,7 +756,9 @@ class TaskCard(_YamlModel):
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
-            yaml.dump(self.to_dict(), f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+            yaml.dump(
+                self.to_dict(), f, default_flow_style=False, allow_unicode=True, sort_keys=False
+            )
 
 
 _TASK_HEADER_RE = re.compile(

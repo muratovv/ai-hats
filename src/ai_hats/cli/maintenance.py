@@ -1,4 +1,4 @@
-"""`ai-hats self update` / `ai-hats self migrate` — self-maintenance of the tool."""
+"""`ai-hats self update` — self-maintenance of the tool."""
 
 from __future__ import annotations
 
@@ -241,12 +241,8 @@ def update():
         console.print("\n[bold]Dependency activation:[/]")
         for line in dep_changes:
             console.print(line, highlight=False)
-        console.print(
-            "  Restart your shell or run any 'ai-hats' command to activate new deps."
-        )
-        console.print(
-            "  If anything misbehaves, run: ai-hats   (it will self-heal)"
-        )
+        console.print("  Restart your shell or run any 'ai-hats' command to activate new deps.")
+        console.print("  If anything misbehaves, run: ai-hats   (it will self-heal)")
 
     # 4. Library diff
     after_lib = _snapshot_library()
@@ -254,11 +250,8 @@ def update():
     if not _format_component_diff(before_lib, after_lib):
         console.print("  [dim]No changes[/]")
 
-    # 5. Auto-migrate
-    console.print("\n[bold]Migration:[/]")
-    migrate.invoke(click.Context(migrate))
-
-    # 6. Auto-bump if role active
+    # 5. Auto-bump if role active (HATS-285: migration runs inside bump now;
+    # standalone `ai-hats self migrate` was removed).
     if active_role:
         console.print(f"\n[bold]Re-assembling:[/] {active_role}")
         try:
@@ -290,55 +283,6 @@ def update():
             console.print(f"  [red]Bump failed[/]: {e}")
 
 
-@click.command()
-def migrate():
-    """Run migrations for ai-hats updates."""
-    from ..models import ProjectConfig
-
-    project_dir = _project_dir()
-    config_path = project_dir / "ai-hats.yaml"
-
-    if not config_path.exists():
-        console.print("[yellow]No ai-hats.yaml found — nothing to migrate[/]")
-        return
-
-    config = ProjectConfig.from_yaml(config_path)
-    current_version = config.schema_version
-
-    # Run migrations in order
-    migrations_applied = 0
-    # Future: add migration functions here as schema evolves
-    # if current_version < 2:
-    #     _migrate_v1_to_v2(project_dir)
-    #     current_version = 2
-    #     migrations_applied += 1
-
-    # Idempotent cleanup of files retired in the current release.
-    cleanup_actions = _cleanup_obsolete_files(project_dir)
-    for msg in cleanup_actions:
-        console.print(f"  [green]✓[/] {msg}")
-
-    if migrations_applied > 0:
-        config.schema_version = current_version
-        config.save(config_path)
-        console.print(f"[green]Migrated[/] to schema version {current_version}")
-    elif not cleanup_actions:
-        console.print(f"[dim]Already at latest schema version ({current_version})[/]")
-
-
-def _cleanup_obsolete_files(project_dir: Path) -> list[str]:
-    """Delete files retired by the current release. Idempotent.
-
-    Each entry: (relative path, human reason). Add new lines here when a
-    release retires a generated file or directory.
-    """
-    obsolete = [
-        (".agent/backlog.md", "removed legacy backlog.md (unified into STATE.md)"),
-    ]
-    actions: list[str] = []
-    for rel, reason in obsolete:
-        target = project_dir / rel
-        if target.exists():
-            target.unlink()
-            actions.append(reason)
-    return actions
+# HATS-285: `ai-hats self migrate` removed. Migration is transparent inside
+# `Assembler.set_role` / `Assembler.bump` (filesystem) and `ProjectConfig
+# .from_yaml` (yaml). Cleanup of obsolete files lives in `Assembler.bump`.

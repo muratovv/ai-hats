@@ -371,11 +371,22 @@ class ClaudeProvider(Provider):
         """
         prompt_content = self.build_system_prompt(result)
 
-        # Build full file content preserving project-local sections
+        # Build full file content preserving project-local sections.
+        # HATS-285: handle both legacy uppercase markers and the new lowercase
+        # scaffold (which contains an @-import line that we replace with inline
+        # override content for the duration of the session).
         existing_path = self.system_prompt_path(project_dir)
         if existing_path.exists():
             existing = existing_path.read_text()
-            if INJECTION_START in existing and INJECTION_END in existing:
+            if PUBLISH_AGGREGATOR_START in existing and PUBLISH_AGGREGATOR_END in existing:
+                before = existing[: existing.index(PUBLISH_AGGREGATOR_START)]
+                after = existing[
+                    existing.index(PUBLISH_AGGREGATOR_END) + len(PUBLISH_AGGREGATOR_END) :
+                ]
+                full_content = (
+                    f"{before}{INJECTION_START}\n{prompt_content}\n{INJECTION_END}{after}"
+                )
+            elif INJECTION_START in existing and INJECTION_END in existing:
                 before = existing[: existing.index(INJECTION_START)]
                 after = existing[existing.index(INJECTION_END) + len(INJECTION_END) :]
                 full_content = (
