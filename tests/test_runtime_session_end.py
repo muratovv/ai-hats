@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import calendar
 import json
+import os
+from pathlib import Path
 
 import pytest
 
 from ai_hats import runtime as runtime_module
 from ai_hats.models import LifecycleEvent
 from ai_hats.observe import Session
-from ai_hats.runtime import _finalize_session, _format_tokens
+from ai_hats.runtime import (
+    _discover_claude_jsonl,
+    _finalize_session,
+    _format_tokens,
+)
 
 
 def make_session(tmp_path) -> Session:
@@ -284,3 +291,111 @@ def test_finalize_session_writes_runtime_decision_line(finalize_kwargs, tmp_path
     assert "runtime\tdecision" in content
     # Short session (no metrics → turns=0) → skip with threshold reason.
     assert "skip" in content
+
+
+# ---------------------------------------------------------------------------
+# HATS-272 — JSONL discovery fallback for resume mode
+# ---------------------------------------------------------------------------
+
+
+def _claude_dir_for(home: Path, project_dir: Path) -> Path:
+    project_key = str(project_dir).replace("/", "-")
+    d = home / ".claude" / "projects" / project_key
+    d.mkdir(parents=True)
+    return d
+
+
+def _set_mtime(path: Path, ts: float) -> None:
+    os.utime(path, (ts, ts))
+
+
+def test_discover_claude_jsonl_picks_most_recent_after_session_start(
+    tmp_path, monkeypatch,
+):
+    """In resume mode our generated UUID never reaches Claude, so the
+    JSONL ends up under Claude's own uuid. The discoverer must locate
+    it via mtime ≥ session start."""
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
+
+    session_id = "20260507-154102-1"
+    # Stale JSONL pre-dating session — must be ignored.
+    stale = claude_dir / "stale.jsonl"
+    stale.write_text("{}")
+    _set_mtime(stale, calendar.timegm((2026, 5, 7, 14, 0, 0, 0, 0, 0)))
+
+    # Active JSONL written during session — must win.
+    active = claude_dir / "active.jsonl"
+    active.write_text("{}")
+    _set_mtime(active, calendar.timegm((2026, 5, 7, 16, 0, 0, 0, 0, 0)))
+
+    found = _discover_claude_jsonl(project_dir, session_id)
+    assert found is not None
+    assert found.name == "active.jsonl"
+
+
+def test_discover_claude_jsonl_returns_none_when_no_match(tmp_path, monkeypatch):
+    """All JSONLs predate the session → fallback fails gracefully."""
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
+
+    old = claude_dir / "old.jsonl"
+    old.write_text("{}")
+    _set_mtime(old, calendar.timegm((2026, 5, 7, 10, 0, 0, 0, 0, 0)))
+
+    found = _discover_claude_jsonl(project_dir, "20260507-154102-1")
+    assert found is None
+
+
+def test_discover_claude_jsonl_returns_none_when_dir_missing(tmp_path, monkeypatch):
+    """No Claude project dir at all → None, not crash."""
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+
+    found = _discover_claude_jsonl(project_dir, "20260507-154102-1")
+    assert found is None
+
+
+def test_finalize_session_uses_discovered_jsonl_when_configured_path_missing(
+    finalize_kwargs, tmp_path, monkeypatch,
+):
+    """Resume mode regression: configured ``--session-id`` path doesn't exist
+    on disk (because Claude used its own uuid). The finalize fallback must
+    discover the real JSONL and pass it to ``AuditWriter.build`` so token
+    metrics get populated instead of staying zero."""
+    # Use a real session_id with a parseable timestamp prefix so the
+    # discoverer's datetime parsing succeeds.
+    session = finalize_kwargs["session"]
+    session.session_id = "20260507-154102-1"
+
+    # Fake ~/.claude project dir with one JSONL whose mtime sits inside
+    # the session lifetime — discoverer should pick it up.
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    project_dir = finalize_kwargs["project_dir"]
+    claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
+    real_jsonl = claude_dir / "real-claude-uuid.jsonl"
+    real_jsonl.write_text("{}")
+    _set_mtime(real_jsonl, calendar.timegm((2026, 5, 7, 16, 0, 0, 0, 0, 0)))
+
+    captured: dict = {}
+
+    class _CapturingAuditWriter:
+        def build(self, session, jsonl_path=None, keep_raw=False):
+            captured["jsonl_path"] = jsonl_path
+
+    monkeypatch.setattr(runtime_module, "AuditWriter", _CapturingAuditWriter)
+
+    # claude_session_id = our generated uuid that NEVER reached Claude.
+    finalize_kwargs["claude_session_id"] = "dead-uuid-never-passed-to-claude"
+
+    _finalize_session(**finalize_kwargs)
+
+    assert captured["jsonl_path"] == real_jsonl, (
+        "Expected discovered JSONL to be passed to AuditWriter "
+        "(HATS-272 — resume-mode fallback)."
+    )

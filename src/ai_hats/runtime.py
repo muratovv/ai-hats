@@ -167,6 +167,47 @@ def _claude_jsonl_path(project_dir: Path, claude_session_id: str) -> Path | None
     return Path.home() / ".claude" / "projects" / project_key / f"{claude_session_id}.jsonl"
 
 
+def _discover_claude_jsonl(project_dir: Path, session_id: str) -> Path | None:
+    """Best-effort JSONL discovery when ``--session-id`` was not injected.
+
+    HATS-272: in ``--resume``/``--continue`` mode the wrapper skips
+    ``--session-id`` to avoid Claude CLI rejecting it. Our generated uuid
+    therefore never reaches Claude, and the JSONL lives under Claude's
+    own (different) uuid. Without this fallback ``AuditWriter`` walks
+    the trace branch and emits zero-token metrics.
+
+    Strategy: pick the most-recently-modified ``*.jsonl`` in the project's
+    Claude dir whose mtime is at or after our session start. Single
+    interactive session per project is the common case — heuristic is
+    safe there. Concurrent wraps in the same project may misattribute;
+    accepted limitation, single-session case is the fix target.
+    """
+    from datetime import datetime, timezone
+
+    project_key = str(project_dir).replace("/", "-")
+    jsonl_dir = Path.home() / ".claude" / "projects" / project_key
+    if not jsonl_dir.is_dir():
+        return None
+    try:
+        start_ts = datetime.strptime(session_id[:15], "%Y%m%d-%H%M%S").replace(
+            tzinfo=timezone.utc,
+        ).timestamp()
+    except (ValueError, IndexError):
+        return None
+
+    best: tuple[float, Path] | None = None
+    for f in jsonl_dir.glob("*.jsonl"):
+        try:
+            mtime = f.stat().st_mtime
+        except OSError:
+            continue
+        if mtime < start_ts:
+            continue
+        if best is None or mtime > best[0]:
+            best = (mtime, f)
+    return best[1] if best else None
+
+
 def _print_session_start(role: str, provider: str, session_id: str) -> None:
     role_info = f"\033[1;36m{role or 'none'}\033[0m"
     provider_info = f"\033[1;35m{provider}\033[0m"
@@ -333,6 +374,14 @@ def _finalize_session(
 
         try:
             jsonl_path = _claude_jsonl_path(project_dir, claude_session_id)
+            if jsonl_path is None or not jsonl_path.exists():
+                discovered = _discover_claude_jsonl(project_dir, session.session_id)
+                if discovered is not None:
+                    session.log_trace(
+                        TraceTag.SYS,
+                        f"JSONL discovered via mtime fallback: {discovered.name}",
+                    )
+                    jsonl_path = discovered
             AuditWriter().build(session, jsonl_path=jsonl_path)
         except (Exception, KeyboardInterrupt):
             logger.warning("audit writer failed", exc_info=True)
