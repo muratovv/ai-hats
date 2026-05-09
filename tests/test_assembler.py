@@ -124,8 +124,11 @@ def test_set_role_with_claude(project_with_library):
     asm.init()
 
     asm.set_role("test-role", provider_name="claude")
+    # HATS-284/285: ./CLAUDE.md is now a thin scaffold; role content lives
+    # in .claude/CLAUDE.md aggregator + .agent/ai-hats/role.md.
     assert (project / "CLAUDE.md").exists()
-    assert "Role injection" in (project / "CLAUDE.md").read_text()
+    assert "@./.claude/CLAUDE.md" in (project / "CLAUDE.md").read_text()
+    assert "Role injection" in (project / ".agent" / "ai-hats" / "role.md").read_text()
 
 
 def test_rollback(project_with_library):
@@ -196,13 +199,16 @@ def test_set_role_then_switch_provider(project_with_library):
     assert (project / "GEMINI.md").exists()
     assert "Role injection" in (project / "GEMINI.md").read_text()
 
-    # Now switch to claude — must create CLAUDE.md with the same content
+    # Now switch to claude — scaffold + .claude/CLAUDE.md aggregator carry
+    # the role content (HATS-284/285).
     asm.set_role("test-role", provider_name="claude")
     assert (project / "CLAUDE.md").exists()
-    assert "Role injection" in (project / "CLAUDE.md").read_text()
+    assert "@./.claude/CLAUDE.md" in (project / "CLAUDE.md").read_text()
+    assert "Role injection" in (project / ".agent" / "ai-hats" / "role.md").read_text()
 
     # Profile must track the new provider
     from ai_hats.models import ProjectConfig
+
     profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile.provider == "claude"
     assert profile.active_role == "test-role"
@@ -221,6 +227,7 @@ def test_wrap_reassembles_on_provider_mismatch(project_with_library):
 
     # Simulate what WrapRunner.run() does on provider mismatch
     from ai_hats.models import ProjectConfig
+
     profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile.provider == "gemini"
 
@@ -228,10 +235,11 @@ def test_wrap_reassembles_on_provider_mismatch(project_with_library):
     if profile.active_role and profile.provider != target_provider:
         asm.set_role(profile.active_role, provider_name=target_provider)
 
-    # CLAUDE.md must now exist with correct content
+    # CLAUDE.md is the scaffold; role content is in .agent/ai-hats/role.md
+    # and surfaced via the .claude/CLAUDE.md aggregator (HATS-284/285).
     assert (project / "CLAUDE.md").exists()
-    prompt = (project / "CLAUDE.md").read_text()
-    assert "Role injection" in prompt
+    assert "@./.claude/CLAUDE.md" in (project / "CLAUDE.md").read_text()
+    assert "Role injection" in (project / ".agent" / "ai-hats" / "role.md").read_text()
 
     # Profile updated
     profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
@@ -243,6 +251,7 @@ def test_wrap_uses_default_role_when_no_active_role(project_with_library):
     project, lib = project_with_library
     # Set default_role in config
     from ai_hats.models import ProjectConfig
+
     config = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     config.default_role = "test-role"
     config.save(project / "ai-hats.yaml")
@@ -252,6 +261,7 @@ def test_wrap_uses_default_role_when_no_active_role(project_with_library):
     # Don't call set_role — simulate fresh project with only default_role
 
     from ai_hats.models import ProjectConfig
+
     profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile.active_role == ""  # No role set yet
 
@@ -262,7 +272,8 @@ def test_wrap_uses_default_role_when_no_active_role(project_with_library):
     # Apply it (as WrapRunner would)
     asm.set_role(effective_role, provider_name="claude")
     assert (project / "CLAUDE.md").exists()
-    assert "Role injection" in (project / "CLAUDE.md").read_text()
+    assert "@./.claude/CLAUDE.md" in (project / "CLAUDE.md").read_text()
+    assert "Role injection" in (project / ".agent" / "ai-hats" / "role.md").read_text()
 
 
 def test_preserve_local_rules(project_with_library):
@@ -292,23 +303,24 @@ def test_rollback_restores_previous_role(project_with_library):
     asm = Assembler(project, library_paths=[lib])
     asm.init()
 
-    # Set role A
+    # Set role A — content lives in canonical role.md (HATS-282).
     asm.set_role("test-role", provider_name="claude")
-    prompt_a = (project / "CLAUDE.md").read_text()
+    role_md = project / ".agent" / "ai-hats" / "role.md"
+    prompt_a = role_md.read_text()
     assert "Role injection" in prompt_a
     profile_a = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile_a.active_role == "test-role"
 
     # Set role B (override)
     asm.set_role("other-role", provider_name="claude")
-    prompt_b = (project / "CLAUDE.md").read_text()
+    prompt_b = role_md.read_text()
     assert "Other role injection" in prompt_b
     profile_b = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile_b.active_role == "other-role"
 
     # Rollback → should restore role A
     assert asm.rollback()
-    prompt_restored = (project / "CLAUDE.md").read_text()
+    prompt_restored = role_md.read_text()
     assert "Role injection" in prompt_restored
     assert "Other role injection" not in prompt_restored
     profile_restored = ProjectConfig.from_yaml(project / "ai-hats.yaml")
@@ -467,9 +479,7 @@ def test_backup_survives_self_referential_symlinks_in_provider_skills(
     # link (not dereferenced, not traversed).
     ref_path = project / ".agent" / ".last_backup"
     backup_dir = Path(ref_path.read_text().strip())
-    backup_symlink = (
-        backup_dir / ".gemini" / "skills" / "subagent-analyzer" / "subagent-analyzer"
-    )
+    backup_symlink = backup_dir / ".gemini" / "skills" / "subagent-analyzer" / "subagent-analyzer"
     assert backup_symlink.is_symlink()
 
 
@@ -588,13 +598,12 @@ def test_gitignore_opt_out_removes_block(project_with_library):
     # Toggle flag and persist, then re-apply role.
     asm.project_config.manage_gitignore = False
     asm.project_config.save(asm.config_path)
-    (project / ".gitignore").write_text(
-        (project / ".gitignore").read_text() + "\n# user tail\n"
-    )
+    (project / ".gitignore").write_text((project / ".gitignore").read_text() + "\n# user tail\n")
 
     asm.set_role("test-role")
     content = (project / ".gitignore").read_text()
     from ai_hats.assembler import GITIGNORE_END, GITIGNORE_START
+
     assert GITIGNORE_START not in content
     assert GITIGNORE_END not in content
     assert "# user tail" in content

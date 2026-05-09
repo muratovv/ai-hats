@@ -84,13 +84,23 @@ def test_init_writes_claude_scaffold(tmp_path: Path) -> None:
 
 
 def test_init_preserves_existing_claude_md(tmp_path: Path) -> None:
+    """Pre-existing user content survives init.
+
+    HATS-285 migration prepends the scaffold to a no-markers user file (so the
+    aggregator activates) but the original content is preserved verbatim
+    below it.
+    """
     project = tmp_path / "proj"
     project.mkdir()
     pre_existing = "# my project\n\nNotes.\n"
     (project / "CLAUDE.md").write_text(pre_existing)
 
     Assembler(project).init(provider="claude")
-    assert (project / "CLAUDE.md").read_text() == pre_existing
+    body = (project / "CLAUDE.md").read_text()
+    assert "# my project" in body
+    assert "Notes." in body
+    assert PUBLISH_AGGREGATOR_START in body
+    assert body.index(PUBLISH_AGGREGATOR_END) < body.index("# my project")
 
 
 def test_init_gemini_no_scaffold(tmp_path: Path) -> None:
@@ -160,12 +170,15 @@ def test_init_then_set_role_no_double_blocks(tmp_path: Path) -> None:
     assert "@./role.md" in aggregator.read_text()
 
 
-def test_set_role_on_legacy_project_unchanged(tmp_path: Path) -> None:
-    """Project with only uppercase markers continues legacy update flow."""
+def test_set_role_on_legacy_project_migrates_to_v3(tmp_path: Path) -> None:
+    """Legacy project (uppercase markers) is migrated to v3 layout on set_role.
+
+    HATS-285: was previously expected to preserve uppercase block; now T5 strips
+    the legacy block and writes the lowercase scaffold instead.
+    """
     project = tmp_path / "proj"
     project.mkdir()
 
-    # Pre-existing legacy CLAUDE.md (uppercase markers, no lowercase).
     legacy = f"{INJECTION_START}\nold inline content\n{INJECTION_END}\n"
     (project / "CLAUDE.md").write_text(legacy)
 
@@ -181,12 +194,12 @@ def test_set_role_on_legacy_project_unchanged(tmp_path: Path) -> None:
     asm.set_role("r1", provider_name="claude")
 
     body = (project / "CLAUDE.md").read_text()
-    assert INJECTION_START in body
-    assert INJECTION_END in body
-    assert "Role X." in body  # uppercase block updated
+    assert INJECTION_START not in body
     assert "old inline content" not in body
-    # No lowercase scaffold introduced — that's T5 migration's job.
-    assert PUBLISH_AGGREGATOR_START not in body
+    assert PUBLISH_AGGREGATOR_START in body
+    assert "@./.claude/CLAUDE.md" in body
+    # Role content lives in the canonical layer + aggregator.
+    assert "Role X." in (project / ".agent" / "ai-hats" / "role.md").read_text()
 
 
 @pytest.mark.parametrize("idem_calls", [1, 2, 3])

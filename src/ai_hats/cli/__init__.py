@@ -52,6 +52,7 @@ def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> 
     if not value or ctx.resilient_parsing:
         return
     from ._tree import print_full_tree
+
     print_full_tree(ctx.find_root().command, console)
     ctx.exit()
 
@@ -73,10 +74,13 @@ def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> 
     "tags_raw",
     multiple=True,
     help="Custom tag k=v for this session (repeatable, max 20). "
-         "Stored in metrics.json under 'tags' for later query.",
+    "Stored in metrics.json under 'tags' for later query.",
 )
 @click.option(
-    "--tree", is_flag=True, is_eager=True, expose_value=False,
+    "--tree",
+    is_flag=True,
+    is_eager=True,
+    expose_value=False,
     callback=_tree_callback,
     help="Print the full command tree (man-style) and exit.",
 )
@@ -91,16 +95,20 @@ def main(ctx, provider: str | None, role: str | None, tags_raw: tuple[str, ...])
     # touching anything else. On success this re-execs the same command in a
     # fresh interpreter; on failure it sys.exit(1)s with a rescue command.
     from .._bootstrap import bootstrap_or_die
+
     bootstrap_or_die()
 
     if ctx.invoked_subcommand is None:
         from ..tags import TagValidationError, parse_tags
+
         try:
             tags = parse_tags(tags_raw)
         except TagValidationError as e:
             raise click.BadParameter(str(e), param_hint="--tag") from e
         _launch_session(
-            provider=provider, role=role, extra_args=ctx.args,
+            provider=provider,
+            role=role,
+            extra_args=ctx.args,
             tags=tags or None,
         )
 
@@ -123,14 +131,16 @@ def _launch_session(
     # to pre-migration.
 
     with PipelineHarness("human", project_dir) as h:
-        final = h.run({
-            "role": role,
-            "interactive": True,
-            "project_dir": project_dir,
-            "provider": provider,
-            "extra_args": list(extra_args or []),
-            "tags": tags,
-        })
+        final = h.run(
+            {
+                "role": role,
+                "interactive": True,
+                "project_dir": project_dir,
+                "provider": provider,
+                "extra_args": list(extra_args or []),
+                "tags": tags,
+            }
+        )
     sys.exit(int(final.get("exit_code", 1)))
 
 
@@ -167,7 +177,7 @@ main.add_command(config_mod.config)
 # not on your project'.
 @click.group("self")
 def self_group():
-    """Manage the ai-hats installation itself (init, bump, clean, update, migrate, rollback)."""
+    """Manage the ai-hats installation itself (init, bump, clean, update, rollback)."""
 
 
 self_group.add_command(assembly.init)
@@ -175,7 +185,6 @@ self_group.add_command(assembly.bump)
 self_group.add_command(assembly.rollback)
 self_group.add_command(assembly.clean)
 self_group.add_command(maintenance.update)
-self_group.add_command(maintenance.migrate)
 main.add_command(self_group)
 
 # List
@@ -259,6 +268,7 @@ def main_entry() -> None:
     """
     if "--tree" in sys.argv[1:]:
         from ._tree import print_subtree
+
         path = _extract_tree_path(sys.argv[1:])
         print_subtree(main, path, console)
         sys.exit(0)

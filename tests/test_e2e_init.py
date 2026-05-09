@@ -411,27 +411,30 @@ def test_gemini_override_creates_session_rules_dir(cli_project):
 
 
 def test_migrate_cleanup_removes_legacy_backlog_md(tmp_path):
-    """Idempotent cleanup: stale backlog.md is removed; second call is a no-op."""
-    from ai_hats.cli.maintenance import _cleanup_obsolete_files
+    """Idempotent cleanup: stale backlog.md is removed; second call is a no-op.
+
+    HATS-285: cleanup helper moved from cli/maintenance.py to Assembler.
+    """
+    from ai_hats.assembler import Assembler
 
     legacy = tmp_path / ".agent" / "backlog.md"
     legacy.parent.mkdir(parents=True)
     legacy.write_text("# stale content from old version\n")
 
-    actions = _cleanup_obsolete_files(tmp_path)
+    actions = Assembler._cleanup_obsolete_files(tmp_path)
     assert legacy.exists() is False
     assert any("backlog.md" in a for a in actions)
 
     # Idempotent — second call finds nothing.
-    assert _cleanup_obsolete_files(tmp_path) == []
+    assert Assembler._cleanup_obsolete_files(tmp_path) == []
 
 
 def test_migrate_cleanup_skips_when_already_clean(tmp_path):
     """Project without legacy files yields no cleanup actions."""
-    from ai_hats.cli.maintenance import _cleanup_obsolete_files
+    from ai_hats.assembler import Assembler
 
     (tmp_path / ".agent").mkdir()
-    assert _cleanup_obsolete_files(tmp_path) == []
+    assert Assembler._cleanup_obsolete_files(tmp_path) == []
 
 
 def test_update_command_uses_force_reinstall():

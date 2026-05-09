@@ -10,7 +10,16 @@ from pathlib import Path
 from .composer import Composer, CompositionResult, ResolvedComponent
 from .library import LibraryResolver
 from .models import ComponentType, ProjectConfig, SkillMetadata
-from .providers import PROVIDERS, Provider, _extract_frontmatter_description, get_provider
+from .providers import (
+    INJECTION_END,
+    INJECTION_START,
+    PROVIDERS,
+    PUBLISH_AGGREGATOR_END,
+    PUBLISH_AGGREGATOR_START,
+    Provider,
+    _extract_frontmatter_description,
+    get_provider,
+)
 
 
 AGENT_DIR = ".agent"
@@ -108,6 +117,74 @@ class Assembler:
         prompt_path.parent.mkdir(parents=True, exist_ok=True)
         prompt_path.write_bytes(template.read_bytes())
 
+    def _migrate_claude_md_to_v3(self, provider: Provider) -> None:
+        """Strip the legacy uppercase AI-HATS block from `./CLAUDE.md` (HATS-285).
+
+        Idempotent: a file already on the v3 layout (lowercase scaffold
+        markers present) is left untouched. Files without legacy uppercase
+        markers get the scaffold prepended so the T3 aggregator becomes
+        active. Provider must declare a scaffold template (Gemini is a
+        no-op via that contract).
+        """
+        rel = provider.scaffold_template_relpath()
+        if rel is None:
+            return
+        prompt_path = provider.system_prompt_path(self.project_dir)
+        if not prompt_path.exists():
+            self._ensure_scaffold(provider)
+            return
+
+        existing = prompt_path.read_text()
+        # Already on v3 layout — nothing to do.
+        if PUBLISH_AGGREGATOR_START in existing and PUBLISH_AGGREGATOR_END in existing:
+            return
+
+        template = self._resolve_scaffold_template(rel)
+        if template is None:
+            return
+        scaffold_body = template.read_text()
+
+        if INJECTION_START in existing and INJECTION_END in existing:
+            before = existing[: existing.index(INJECTION_START)].rstrip("\n")
+            after = existing[existing.index(INJECTION_END) + len(INJECTION_END) :]
+            after = after.lstrip("\n")
+            parts = []
+            if before:
+                parts.append(before)
+            parts.append(scaffold_body.rstrip("\n"))
+            if after:
+                parts.append(after.rstrip("\n"))
+            new_content = "\n\n".join(parts) + "\n"
+        else:
+            # No markers at all — user-owned file. Prepend scaffold so the
+            # T3 aggregator gets imported; preserve user content below.
+            new_content = scaffold_body.rstrip("\n") + "\n\n" + existing.lstrip("\n")
+
+        if new_content != existing:
+            prompt_path.write_text(new_content)
+
+    @staticmethod
+    def _cleanup_obsolete_files(project_dir: Path) -> list[str]:
+        """Delete files retired by previous releases (HATS-285 — moved from CLI).
+
+        Each entry: (relative path, human reason). Idempotent — missing
+        files are skipped silently.
+        """
+        obsolete = [
+            (".agent/backlog.md", "removed legacy backlog.md (unified into STATE.md)"),
+        ]
+        actions: list[str] = []
+        for rel, reason in obsolete:
+            target = project_dir / rel
+            if not target.exists():
+                continue
+            if target.is_dir():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+            actions.append(reason)
+        return actions
+
     def init(
         self,
         role: str | None = None,
@@ -167,7 +244,12 @@ class Assembler:
         # Write provider scaffold (./CLAUDE.md etc.) if missing — HATS-284.
         # Must run before set_role so update_system_prompt sees the lowercase
         # scaffold markers and skips writing the legacy uppercase block.
-        self._ensure_scaffold(get_provider(self.project_config.provider))
+        active_provider = get_provider(self.project_config.provider)
+        self._ensure_scaffold(active_provider)
+
+        # HATS-285: strip legacy uppercase AI-HATS block from existing
+        # ./CLAUDE.md so old projects upgrade in place.
+        self._migrate_claude_md_to_v3(active_provider)
 
         # Apply role if specified
         if role:
@@ -199,6 +281,10 @@ class Assembler:
             # Non-fatal errors (e.g. missing optional rule) are still surfaced
             # to the caller via result.errors and do not abort assembly.
             pass
+
+        # 0. HATS-285: legacy ./CLAUDE.md migration runs before backup.
+        # No rollback needed if it fails — backup hasn't happened yet.
+        self._migrate_claude_md_to_v3(provider)
 
         # 1. Backup
         backup_path = self._backup()
@@ -293,7 +379,14 @@ class Assembler:
         return status
 
     def bump(self) -> CompositionResult | None:
-        """Re-apply current role (update to latest)."""
+        """Re-apply current role (update to latest).
+
+        HATS-285: also runs migration cleanup of obsolete files retired by
+        previous releases. Migration of `./CLAUDE.md` itself happens inside
+        `set_role` so a no-op bump (no active role) still picks it up via
+        the next `set_role` invocation.
+        """
+        self._cleanup_obsolete_files(self.project_dir)
         if not self.project_config.active_role:
             return None
         return self.set_role(self.project_config.active_role, self.project_config.provider or None)

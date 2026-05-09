@@ -119,13 +119,17 @@ def test_task_card_extras_survive_full_yaml_round_trip(tmp_path):
     import yaml
 
     src = tmp_path / "task.yaml"
-    src.write_text(yaml.safe_dump({
-        "id": "T-1",
-        "title": "Test",
-        "state": "plan",
-        "acceptance_criteria": ["a", "b", "c"],
-        "weird_field": [1, 2, {"k": "v"}],
-    }))
+    src.write_text(
+        yaml.safe_dump(
+            {
+                "id": "T-1",
+                "title": "Test",
+                "state": "plan",
+                "acceptance_criteria": ["a", "b", "c"],
+                "weird_field": [1, 2, {"k": "v"}],
+            }
+        )
+    )
 
     card = TaskCard.from_yaml(src)
     card.transition_to(TaskState.EXECUTE)
@@ -214,12 +218,7 @@ def test_load_header_extracts_scalars(tmp_path):
 
 def test_load_header_handles_quotes_and_defaults(tmp_path):
     p = tmp_path / "task.yaml"
-    p.write_text(
-        "id: T-2\n"
-        "title: \"with: colon\"\n"
-        "state: brainstorm\n"
-        "assignee: ''\n"
-    )
+    p.write_text("id: T-2\ntitle: \"with: colon\"\nstate: brainstorm\nassignee: ''\n")
     h = TaskCard.load_header(p)
     assert h["title"] == "with: colon"
     assert h["assignee"] == ""
@@ -302,6 +301,7 @@ def test_composition_from_empty():
 def test_hooks_config_get_scripts():
     hooks = HooksConfig(session_start=["a.sh", "b.sh"])
     from ai_hats.models import LifecycleEvent
+
     assert hooks.get_scripts(LifecycleEvent.SESSION_START) == ["a.sh", "b.sh"]
     assert hooks.get_scripts(LifecycleEvent.SESSION_END) == []
 
@@ -356,7 +356,9 @@ def test_overlay_config_from_empty():
 
 def test_overlay_config_roundtrip():
     original = OverlayConfig(
-        add_traits=["t1"], remove_skills=["s1"], injection_append="text",
+        add_traits=["t1"],
+        remove_skills=["s1"],
+        injection_append="text",
     )
     d = original.to_dict()
     restored = OverlayConfig.from_dict(d)
@@ -501,7 +503,7 @@ def test_session_retro_config_loads_legacy_yaml_silently_drops_unknown():
     legacy = {
         "policy": "smart",
         "background": True,
-        "mode": "llm",   # silently ignored after HATS-235
+        "mode": "llm",  # silently ignored after HATS-235
         "model": "claude-haiku-4-5",  # silently ignored after HATS-252
     }
     c = SessionRetroConfig.from_dict(legacy)
@@ -530,14 +532,14 @@ def test_session_retro_config_explicit_review_model_wins_over_alias():
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        c = SessionRetroConfig.from_dict({
-            "review_model": "claude-opus-4-7",
-            "reflect_model": "claude-sonnet-4-6",
-        })
+        c = SessionRetroConfig.from_dict(
+            {
+                "review_model": "claude-opus-4-7",
+                "reflect_model": "claude-sonnet-4-6",
+            }
+        )
     assert c.review_model == "claude-opus-4-7"
-    assert not any(
-        issubclass(w.category, DeprecationWarning) for w in caught
-    )
+    assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
 
 
 def test_feedback_config_defaults():
@@ -583,7 +585,7 @@ def test_project_config_v2_roundtrip(tmp_path):
     assert loaded.active_role == "assistant"
     assert loaded.provider == "claude"
     assert loaded.feedback.session_retro.policy == FeedbackPolicy.HINT
-    assert loaded.schema_version == 2
+    assert loaded.schema_version == 3
 
 
 def test_project_config_v2_default_feedback_not_serialized(tmp_path):
@@ -606,6 +608,7 @@ def test_project_config_v2_non_default_feedback_serialized(tmp_path):
     config.save(path)
 
     import yaml as _yaml
+
     data = _yaml.safe_load(path.read_text())
     assert "feedback" in data
     assert data["feedback"]["session_retro"]["policy"] == "off"
@@ -622,17 +625,21 @@ def test_migration_v1_to_v2_merges_profile(tmp_path):
     yaml_path.write_text("provider: gemini\ndefault_role: sre\nschema_version: 1\n")
 
     profile_path = tmp_path / "profile.json"
-    profile_path.write_text(json.dumps({
-        "active_role": "assistant",
-        "provider": "claude",
-        "feedback": {
-            "session_retro": {"policy": "hint", "mode": "llm"},
-            "judge": {"policy": "manual"},
-        },
-    }))
+    profile_path.write_text(
+        json.dumps(
+            {
+                "active_role": "assistant",
+                "provider": "claude",
+                "feedback": {
+                    "session_retro": {"policy": "hint", "mode": "llm"},
+                    "judge": {"policy": "manual"},
+                },
+            }
+        )
+    )
 
     config = ProjectConfig.from_yaml(yaml_path)
-    assert config.schema_version == 2
+    assert config.schema_version == 3
     assert config.active_role == "assistant"
     assert config.provider == "claude"  # profile wins
     assert config.default_role == "sre"  # preserved from yaml
@@ -648,7 +655,7 @@ def test_migration_v1_without_profile(tmp_path):
     yaml_path.write_text("provider: claude\ndefault_role: go-dev\nschema_version: 1\n")
 
     config = ProjectConfig.from_yaml(yaml_path)
-    assert config.schema_version == 2
+    assert config.schema_version == 3
     assert config.provider == "claude"
     assert config.active_role == ""
     assert config.feedback.is_default
@@ -661,7 +668,5 @@ def test_migration_idempotent(tmp_path):
     config.save(path)
 
     loaded = ProjectConfig.from_yaml(path)
-    assert loaded.schema_version == 2
+    assert loaded.schema_version == 3
     assert loaded.active_role == "sre"
-
-
