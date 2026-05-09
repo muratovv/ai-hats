@@ -78,6 +78,36 @@ class Assembler:
 
         return paths
 
+    # ----- Scaffold-as-asset (HATS-284) -----
+
+    def _resolve_scaffold_template(self, relpath: str) -> Path | None:
+        """Find a scaffold template asset across `library_paths` (last-wins)."""
+        result: Path | None = None
+        for lib in self.library_paths:
+            candidate = lib / relpath
+            if candidate.is_file():
+                result = candidate
+        return result
+
+    def _ensure_scaffold(self, provider: Provider) -> None:
+        """Write the provider's prompt-file scaffold from a library template.
+
+        - No-op if the provider declares no scaffold (e.g. Gemini).
+        - No-op if the prompt file already exists (user owns).
+        - Soft no-op if the template asset is missing from library paths.
+        """
+        rel = provider.scaffold_template_relpath()
+        if rel is None:
+            return
+        prompt_path = provider.system_prompt_path(self.project_dir)
+        if prompt_path.exists():
+            return
+        template = self._resolve_scaffold_template(rel)
+        if template is None:
+            return
+        prompt_path.parent.mkdir(parents=True, exist_ok=True)
+        prompt_path.write_bytes(template.read_bytes())
+
     def init(
         self,
         role: str | None = None,
@@ -133,6 +163,11 @@ class Assembler:
         state_md = self.agent_dir / "STATE.md"
         if not state_md.exists():
             state_md.write_text("# Task State\n\nNo active tasks.\n")
+
+        # Write provider scaffold (./CLAUDE.md etc.) if missing — HATS-284.
+        # Must run before set_role so update_system_prompt sees the lowercase
+        # scaffold markers and skips writing the legacy uppercase block.
+        self._ensure_scaffold(get_provider(self.project_config.provider))
 
         # Apply role if specified
         if role:

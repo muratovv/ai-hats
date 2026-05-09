@@ -44,8 +44,12 @@ def test_set_creates_project(cli_project):
     assert (project / ".agent" / "rules").is_dir()
     assert (project / ".agent" / "skills").is_dir()
     assert (project / ".agent" / "backlog" / "tasks").is_dir()
+    # HATS-284: ./CLAUDE.md is now a thin scaffold (~65 bytes); the aggregator
+    # at .claude/CLAUDE.md carries the framework injection.
     assert (project / "CLAUDE.md").exists()
-    assert len((project / "CLAUDE.md").read_text()) > 100
+    assert "@./.claude/CLAUDE.md" in (project / "CLAUDE.md").read_text()
+    assert (project / ".claude" / "CLAUDE.md").exists()
+    assert len((project / ".claude" / "CLAUDE.md").read_text()) > 100
 
 
 @pytest.mark.parametrize("role", ALL_ROLES, ids=ALL_ROLES)
@@ -57,7 +61,9 @@ def test_set_all_roles(cli_project, role):
     assert r.exit_code == 0, r.output
     assert "Warning" not in r.output
     assert (project / "CLAUDE.md").exists()
-    assert len((project / "CLAUDE.md").read_text()) > 100
+    assert "@./.claude/CLAUDE.md" in (project / "CLAUDE.md").read_text()
+    assert (project / ".claude" / "CLAUDE.md").exists()
+    assert len((project / ".claude" / "CLAUDE.md").read_text()) > 100
 
 
 def test_status_after_set(cli_project):
@@ -78,14 +84,19 @@ def test_bump_after_set(cli_project):
     runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
 
     prompt_before = (project / "CLAUDE.md").read_text()
+    aggregator_before = (project / ".claude" / "CLAUDE.md").read_text()
 
     r = runner.invoke(main, ["self", "bump"])
     assert r.exit_code == 0, r.output
     assert "Bumped" in r.output
 
+    # ./CLAUDE.md (scaffold) is byte-stable; .claude/CLAUDE.md (aggregator)
+    # carries content and is also stable for the same role.
     prompt_after = (project / "CLAUDE.md").read_text()
-    assert len(prompt_after) > 100
+    aggregator_after = (project / ".claude" / "CLAUDE.md").read_text()
     assert prompt_before == prompt_after
+    assert aggregator_before == aggregator_after
+    assert len(aggregator_after) > 100
 
 
 def test_init_unknown_role_fails_loud(cli_project):
@@ -181,11 +192,14 @@ def _capture_launch(monkeypatch):
     calls: list[dict] = []
 
     def _record(provider=None, role=None, extra_args=None, tags=None):
-        calls.append({
-            "provider": provider, "role": role,
-            "extra_args": list(extra_args or []),
-            "tags": tags,
-        })
+        calls.append(
+            {
+                "provider": provider,
+                "role": role,
+                "extra_args": list(extra_args or []),
+                "tags": tags,
+            }
+        )
 
     monkeypatch.setattr(cli, "_launch_session", _record)
     return calls
@@ -201,7 +215,9 @@ def test_passthrough_resume_flag_forwarded_to_launch(cli_project, monkeypatch):
 
     assert "No such command" not in (result.output or "")
     assert "No such option" not in (result.output or "")
-    assert len(calls) == 1, f"_launch_session was called {len(calls)} times, output: {result.output!r}"
+    assert len(calls) == 1, (
+        f"_launch_session was called {len(calls)} times, output: {result.output!r}"
+    )
     assert calls[0]["extra_args"] == ["--resume", "abc123"]
 
 
@@ -326,13 +342,22 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
     assert len(set(paths)) == 3, "Override files must be distinct"
 
     # Each contains its own role content, not another role's
-    assert "sre" in overrides["sre"]["content"].lower() or "RELIABILITY" in overrides["sre"]["content"].upper()
+    assert (
+        "sre" in overrides["sre"]["content"].lower()
+        or "RELIABILITY" in overrides["sre"]["content"].upper()
+    )
     assert "GO DEVELOPER" in overrides["go-dev"]["content"]
-    assert "architect" in overrides["architect"]["content"].lower() or "ARCHITECT" in overrides["architect"]["content"]
+    assert (
+        "architect" in overrides["architect"]["content"].lower()
+        or "ARCHITECT" in overrides["architect"]["content"]
+    )
 
-    # Project CLAUDE.md unchanged through all this
-    claude_content = (project / "CLAUDE.md").read_text()
-    assert "assistant" in claude_content.lower() or "PRIMARY" in claude_content
+    # Project CLAUDE.md is a scaffold pointing at the aggregator; aggregator
+    # carries the active role's content.
+    claude_scaffold = (project / "CLAUDE.md").read_text()
+    assert "@./.claude/CLAUDE.md" in claude_scaffold
+    aggregator_content = (project / ".claude" / "CLAUDE.md").read_text()
+    assert "@./role.md" in aggregator_content
 
     # Cleanup
     for info in overrides.values():
@@ -370,7 +395,9 @@ def test_gemini_override_creates_session_rules_dir(cli_project):
     # Each has its own mandatory role file
     assert (dir_a / "00_MANDATORY_ROLE.md").exists()
     assert (dir_b / "00_MANDATORY_ROLE.md").exists()
-    assert (dir_a / "00_MANDATORY_ROLE.md").read_text() != (dir_b / "00_MANDATORY_ROLE.md").read_text()
+    assert (dir_a / "00_MANDATORY_ROLE.md").read_text() != (
+        dir_b / "00_MANDATORY_ROLE.md"
+    ).read_text()
 
     # GEMINI.md untouched
     gemini_content = (project / "GEMINI.md").read_text()
@@ -488,7 +515,8 @@ def test_update_shows_version_transition(cli_project, monkeypatch):
         # git log for changelog
         if "git" in cmd and "log" in cmd:
             return subprocess.CompletedProcess(
-                cmd, 0,
+                cmd,
+                0,
                 stdout="abc1234 feat: new feature\ndef5678 fix: bug fix\n",
                 stderr="",
             )
@@ -576,8 +604,10 @@ def test_init_idempotent_on_existing_yaml(cli_project):
     runner.invoke(main, ["self", "init", "-p", "claude"])
 
     # User customizes threshold so the feedback block is serialized in yaml.
-    runner.invoke(main, ["config", "feedback", "session-retro", "smart",
-                         "--threshold", "turns=99,tool_calls=99"])
+    runner.invoke(
+        main,
+        ["config", "feedback", "session-retro", "smart", "--threshold", "turns=99,tool_calls=99"],
+    )
 
     yaml_before = (project / "ai-hats.yaml").read_text()
     assert "99" in yaml_before
@@ -691,8 +721,13 @@ def test_task_list_table_filters(cli_project):
 # ---- HATS-213 stage-2 verify + activation banner ----
 
 
-def _make_mock_run_factory(*, version: str = "0.3.0", verify_rc: int = 0,
-                           pip_list_before: str = "[]", pip_list_after: str = "[]"):
+def _make_mock_run_factory(
+    *,
+    version: str = "0.3.0",
+    verify_rc: int = 0,
+    pip_list_before: str = "[]",
+    pip_list_after: str = "[]",
+):
     """Build a subprocess.run mock that distinguishes the calls update() makes."""
     import subprocess
 
@@ -702,7 +737,8 @@ def _make_mock_run_factory(*, version: str = "0.3.0", verify_rc: int = 0,
         cmd_str = " ".join(str(c) for c in cmd) if isinstance(cmd, list) else str(cmd)
         if "ai_hats._bootstrap" in cmd_str and "verify" in cmd_str:
             return subprocess.CompletedProcess(
-                cmd, verify_rc,
+                cmd,
+                verify_rc,
                 stdout="",
                 stderr="" if verify_rc == 0 else "missing X",
             )
@@ -739,9 +775,9 @@ def test_t10_update_invokes_stage2_verify(cli_project, monkeypatch):
     assert result.exit_code == 0, result.output
 
     verify_calls = [
-        c for c in captured
-        if any("ai_hats._bootstrap" in str(arg) for arg in c)
-        and any(arg == "verify" for arg in c)
+        c
+        for c in captured
+        if any("ai_hats._bootstrap" in str(arg) for arg in c) and any(arg == "verify" for arg in c)
     ]
     assert len(verify_calls) == 1, f"expected one stage-2 verify call, got {verify_calls}"
 
@@ -768,10 +804,7 @@ def test_t12_update_prints_activation_banner_on_dep_change(cli_project, monkeypa
     runner.invoke(main, ["config", "set", "-p", "claude"])
 
     before = '[{"name": "click", "version": "8.1.0"}]'
-    after = (
-        '[{"name": "click", "version": "8.1.0"},'
-        ' {"name": "ptyprocess", "version": "0.7.0"}]'
-    )
+    after = '[{"name": "click", "version": "8.1.0"}, {"name": "ptyprocess", "version": "0.7.0"}]'
 
     monkeypatch.setattr(
         subprocess,

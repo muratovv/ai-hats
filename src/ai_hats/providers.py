@@ -158,6 +158,15 @@ class Provider(abc.ABC):
         """
         return
 
+    def scaffold_template_relpath(self) -> str | None:
+        """Library-relative path to the provider's prompt-file scaffold template.
+
+        Default: None — provider has no scaffold (e.g. Gemini per HATS-276).
+        Subclasses point at a markdown asset under
+        `libraries/templates/<provider>/...`.
+        """
+        return None
+
     def update_system_prompt(self, project_dir: Path, content: str) -> None:
         """Write or update system prompt between markers in the prompt file."""
         prompt_path = self.system_prompt_path(project_dir)
@@ -165,6 +174,11 @@ class Provider(abc.ABC):
 
         if prompt_path.exists():
             existing = prompt_path.read_text()
+            # HATS-284: lowercase scaffold markers signal the project is on
+            # the canonical-publish layout — `./CLAUDE.md` is user-owned and
+            # the framework injection lives in `.claude/CLAUDE.md`.
+            if PUBLISH_AGGREGATOR_START in existing and PUBLISH_AGGREGATOR_END in existing:
+                return
             if INJECTION_START in existing and INJECTION_END in existing:
                 # Update between markers, preserve everything outside
                 before = existing[: existing.index(INJECTION_START)]
@@ -297,6 +311,9 @@ class ClaudeProvider(Provider):
 
     def skills_export_dir(self, project_dir: Path) -> Path:
         return project_dir / ".claude" / "skills"
+
+    def scaffold_template_relpath(self) -> str | None:
+        return "templates/claude/CLAUDE.md.template"
 
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"
