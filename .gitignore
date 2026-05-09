@@ -39,7 +39,6 @@ CLAUDE.md
 .agent/ai-hats/imports.md
 .agent/ai-hats/priorities.md
 .agent/ai-hats/role.md
-.agent/ai-hats/routing.md
 .agent/ai-hats/rules/dev_rule_backlog_discipline.md
 .agent/ai-hats/rules/dev_rule_edit_efficiency.md
 .agent/ai-hats/rules/dev_rule_secure_coding.md
@@ -82,7 +81,6 @@ CLAUDE.md
 .agent/skills/tool-call-hygiene/
 .agent/skills/tool-evaluation-protocol/
 .agent/skills/worktree-isolation/
-.claude/routing.md
 .claude/skills/.ai-hats-managed
 .claude/skills/audit-reviewer/
 .claude/skills/backlog-manager/

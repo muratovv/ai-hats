@@ -380,8 +380,12 @@ class Assembler:
             # 4. Export skills to provider-native directory
             provider.export_skills(self.project_dir, result.skills)
 
-            # 4b. Mirror lazy-loaded routing.md to provider dir (HATS-264).
-            provider.export_routing(self.project_dir, self._canonical_dir)
+            # 4b. HATS-291 legacy cleanup — remove stale routing.md mirrors
+            # left by HATS-264's lazy-publish path (now collapsed into
+            # skills_index.md). Idempotent; can drop once everyone has
+            # bumped past HATS-291.
+            for prov_root in (".claude", ".gemini"):
+                (self.project_dir / prov_root / "routing.md").unlink(missing_ok=True)
 
             # 5. Update system prompt — legacy inline block path. Providers
             # that declare a scaffold template (Claude — HATS-284) own
@@ -433,7 +437,6 @@ class Assembler:
         pname = provider_name or self.project_config.provider
         provider = get_provider(pname)
         provider.cleanup_skills(self.project_dir)
-        provider.cleanup_routing(self.project_dir)
 
     def status(self) -> dict:
         """Get current status: role, dependency tree, health."""
@@ -987,18 +990,12 @@ class Assembler:
                 rule.injection
             ).encode()
 
-        # HATS-264: routing.md — generated trigger→skill table from each
-        # skill's metadata.yaml. Lazy-loaded by design: written to canonical
-        # and tracked in MANAGED, but deliberately NOT referenced by
-        # imports.md (no `@./routing.md` line). The agent reads it on demand
-        # when uncertain which skill applies.
-        routing = self._render_routing(result.skills)
-        if routing is not None:
-            targets["routing.md"] = routing.encode()
-
-        skills_index = self._render_skills_index(
-            result.skills, has_routing=routing is not None
-        )
+        # HATS-264 + HATS-291: skills_index.md is the single always-on file
+        # for skill discovery. It now embeds the trigger→skill routing table
+        # (and optional skip table) generated from each skill's
+        # metadata.yaml — so trigger phrases are visible to the agent in the
+        # imports.md aggregator without a separate lazy-loaded artefact.
+        skills_index = self._render_skills_index(result.skills)
         if skills_index is not None:
             targets["skills_index.md"] = skills_index.encode()
 
@@ -1127,9 +1124,21 @@ class Assembler:
         return body + ("\n" if body else "")
 
     @staticmethod
-    def _render_skills_index(
-        skills: list[ResolvedComponent], *, has_routing: bool = False
-    ) -> str | None:
+    def _render_skills_index(skills: list[ResolvedComponent]) -> str | None:
+        """Render `skills_index.md` — the single always-on skill-discovery file.
+
+        Top section: one-liner per skill (name + frontmatter description).
+        Bottom sections (HATS-264 + HATS-291): a `## Routing` table mapping
+        trigger phrases to skills, and an optional `## Skip` table — both
+        sourced from each skill's `metadata.yaml` (`triggers:` / `skip:`).
+        Skills with empty triggers are absent from the routing table but
+        still appear in the top index.
+
+        The routing tables live here (rather than in a separate lazy file)
+        so the agent sees activation hints directly in the always-on
+        imports.md aggregator — closing the chicken-and-egg gap that an
+        on-demand routing.md left open.
+        """
         if not skills:
             return None
         lines = ["# Skills Index", ""]
@@ -1140,60 +1149,30 @@ class Assembler:
                 lines.append(f"- **{skill.name}**")
             else:
                 lines.append(f"- **{skill.name}** — {desc}")
-        if has_routing:
-            lines.append("")
-            lines.append("> Trigger→skill mapping in routing.md (lazy — read on demand).")
-        return "\n".join(lines) + "\n"
 
-    @staticmethod
-    def _render_routing(skills: list[ResolvedComponent]) -> str | None:
-        """Render the canonical `routing.md` (HATS-264).
-
-        Builds a trigger→skill table from each skill's `metadata.yaml`
-        (`triggers:` field). An optional skip-table follows when any skill
-        declares `skip:`. Returns None when no skill carries triggers — in
-        that case the writer omits routing.md entirely and skills_index.md
-        skips its routing pointer.
-
-        Lazy-loaded by design: this file is NOT referenced from imports.md;
-        the agent reads it on demand when uncertain which skill applies.
-        """
-        if not skills:
-            return None
-
-        rows: list[tuple[str, str]] = []  # (trigger, skill_name)
+        trigger_rows: list[tuple[str, str]] = []  # (trigger, skill_name)
         skip_rows: list[tuple[str, str]] = []  # (skill_name, skip_phrase)
         for skill in skills:
-            metadata_path = skill.source_path / "metadata.yaml"
-            metadata = SkillMetadata.from_yaml(metadata_path)
+            metadata = SkillMetadata.from_yaml(skill.source_path / "metadata.yaml")
             for trigger in metadata.triggers:
                 phrase = str(trigger).strip()
                 if phrase:
-                    rows.append((phrase, skill.name))
+                    trigger_rows.append((phrase, skill.name))
             for skip in metadata.skip:
                 phrase = str(skip).strip()
                 if phrase:
                     skip_rows.append((skill.name, phrase))
 
-        if not rows and not skip_rows:
-            return None
-
-        lines = [
-            "# Skill Routing",
-            "",
-            "Trigger → skill mapping. Read on demand when uncertain which skill applies.",
-            "",
-        ]
-        if rows:
-            lines.append("## Triggers")
+        if trigger_rows:
+            lines.append("")
+            lines.append("## Routing")
             lines.append("")
             lines.append("| Trigger | Skill |")
             lines.append("|---------|-------|")
-            for trigger, skill_name in rows:
+            for trigger, skill_name in trigger_rows:
                 lines.append(f"| {_md_table_escape(trigger)} | {skill_name} |")
         if skip_rows:
-            if rows:
-                lines.append("")
+            lines.append("")
             lines.append("## Skip")
             lines.append("")
             lines.append("| Skill | Skip when |")
@@ -1293,11 +1272,6 @@ class Assembler:
                     name = name.strip()
                     if name:
                         paths.add(f"{prov_dir}/{name}/")
-
-        # HATS-264: lazy-loaded routing.md published next to provider skills/.
-        for prov_root in (".claude", ".gemini"):
-            if (self.project_dir / prov_root / "routing.md").exists():
-                paths.add(f"{prov_root}/routing.md")
 
         manifest = self.project_dir / GITHOOKS_DIR / GITHOOKS_MANIFEST
         if manifest.exists():

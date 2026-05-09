@@ -408,7 +408,7 @@ def test_imports_aggregator_in_manifest(project_with_library: Path) -> None:
     assert "imports.md" in manifest
 
 
-# -- HATS-264: routing.md (lazy-loaded trigger→skill table) --
+# -- HATS-264 + HATS-291: triggers / skip embedded in skills_index.md --
 
 
 def _project_with_routing_skill(
@@ -449,69 +449,52 @@ def _project_with_routing_skill(
     return project
 
 
-def test_routing_md_generated_when_triggers_present(tmp_path: Path) -> None:
+def test_routing_table_embedded_in_skills_index(tmp_path: Path) -> None:
     project = _project_with_routing_skill(
         tmp_path, triggers=["user asks to debug a bug", "failing test before fix"]
     )
     asm = Assembler(project)
     asm.write_canonical(asm.composer.compose("router-role"))
 
-    routing = project / AGENT_DIR / CANONICAL_DIR / "routing.md"
-    assert routing.exists()
-    body = routing.read_text()
-    assert "# Skill Routing" in body
-    assert "## Triggers" in body
+    canonical = project / AGENT_DIR / CANONICAL_DIR
+    body = (canonical / "skills_index.md").read_text()
+    assert "# Skills Index" in body
+    assert "**router_skill**" in body
+    assert "## Routing" in body
     assert "| user asks to debug a bug | router_skill |" in body
     assert "| failing test before fix | router_skill |" in body
 
 
-def test_routing_md_omitted_when_no_triggers(tmp_path: Path) -> None:
+def test_skills_index_omits_routing_section_when_no_triggers(tmp_path: Path) -> None:
     project = _project_with_routing_skill(tmp_path)  # no triggers/skip
     asm = Assembler(project)
     asm.write_canonical(asm.composer.compose("router-role"))
 
     canonical = project / AGENT_DIR / CANONICAL_DIR
+    body = (canonical / "skills_index.md").read_text()
+    assert "## Routing" not in body
+    assert "## Skip" not in body
+    # And no separate routing.md is emitted.
     assert not (canonical / "routing.md").exists()
-    skills_index = (canonical / "skills_index.md").read_text()
-    assert "routing.md" not in skills_index
     manifest = asm._read_canonical_manifest(canonical / CANONICAL_MANIFEST)
     assert "routing.md" not in manifest
 
 
-def test_routing_md_not_referenced_by_imports(tmp_path: Path) -> None:
-    """routing.md is lazy — it MUST NOT appear as an @import in imports.md."""
+def test_routing_no_separate_file_or_import(tmp_path: Path) -> None:
+    """HATS-291: triggers live inside skills_index.md — no standalone routing.md."""
     project = _project_with_routing_skill(tmp_path, triggers=["debug the bug"])
     asm = Assembler(project)
     asm.write_canonical(asm.composer.compose("router-role"))
 
     canonical = project / AGENT_DIR / CANONICAL_DIR
-    assert (canonical / "routing.md").exists()  # written
+    assert not (canonical / "routing.md").exists()
     body = (canonical / "imports.md").read_text()
-    assert "@./routing.md" not in body  # but not aggregated
+    assert "@./routing.md" not in body
+    # Always-on skills_index.md still imported as before.
+    assert "@./skills_index.md" in body
 
 
-def test_routing_md_in_manifest(tmp_path: Path) -> None:
-    project = _project_with_routing_skill(tmp_path, triggers=["some intent"])
-    asm = Assembler(project)
-    asm.write_canonical(asm.composer.compose("router-role"))
-
-    manifest = asm._read_canonical_manifest(
-        project / AGENT_DIR / CANONICAL_DIR / CANONICAL_MANIFEST
-    )
-    assert "routing.md" in manifest
-
-
-def test_routing_md_skills_index_pointer_added(tmp_path: Path) -> None:
-    project = _project_with_routing_skill(tmp_path, triggers=["x"])
-    asm = Assembler(project)
-    asm.write_canonical(asm.composer.compose("router-role"))
-
-    skills_index = (project / AGENT_DIR / CANONICAL_DIR / "skills_index.md").read_text()
-    assert "routing.md" in skills_index
-    assert "lazy" in skills_index.lower()
-
-
-def test_routing_md_skip_section(tmp_path: Path) -> None:
+def test_skills_index_skip_section(tmp_path: Path) -> None:
     project = _project_with_routing_skill(
         tmp_path,
         triggers=["bug fix protocol"],
@@ -520,29 +503,29 @@ def test_routing_md_skip_section(tmp_path: Path) -> None:
     asm = Assembler(project)
     asm.write_canonical(asm.composer.compose("router-role"))
 
-    body = (project / AGENT_DIR / CANONICAL_DIR / "routing.md").read_text()
+    body = (project / AGENT_DIR / CANONICAL_DIR / "skills_index.md").read_text()
     assert "## Skip" in body
     assert "| router_skill | trivial typo fix |" in body
 
 
-def test_routing_md_stale_cleanup(tmp_path: Path) -> None:
-    """Drop triggers from skill metadata → routing.md disappears on next write."""
+def test_skills_index_stale_cleanup_on_dropped_triggers(tmp_path: Path) -> None:
+    """Drop triggers → Routing section disappears from skills_index.md."""
     project = _project_with_routing_skill(tmp_path, triggers=["initial trigger"])
     asm = Assembler(project)
     asm.write_canonical(asm.composer.compose("router-role"))
 
     canonical = project / AGENT_DIR / CANONICAL_DIR
-    assert (canonical / "routing.md").exists()
+    assert "## Routing" in (canonical / "skills_index.md").read_text()
 
     # Mutate metadata to drop triggers, recompose, rewrite.
-    metadata = (
-        project / "libraries" / "skills" / "router_skill" / "metadata.yaml"
-    )
+    metadata = project / "libraries" / "skills" / "router_skill" / "metadata.yaml"
     metadata.write_text("name: router_skill\ndescription: Tests the routing path\n")
 
     asm2 = Assembler(project)
     asm2.write_canonical(asm2.composer.compose("router-role"))
-    assert not (canonical / "routing.md").exists()
+    body = (canonical / "skills_index.md").read_text()
+    assert "## Routing" not in body
+    assert "**router_skill**" in body  # but the bullet remains
 
 
 # -- HATS-290: configurable outer-section order --
