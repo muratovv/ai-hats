@@ -4,6 +4,5 @@ steps:
   - id: pre_log
     params: {keys: []}
   - id: launch_provider
-  - id: spawn_session_review
   - id: post_log
-    params: {keys: [session_id, exit_code, review_pid]}
+    params: {keys: [session_id, exit_code]}

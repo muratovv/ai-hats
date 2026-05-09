@@ -25,10 +25,9 @@ def test_human_no_role(project_dir: Path, mock_runners):
     assert call["role_override"] is None
     assert call["provider"] == "claude"
     assert call["extra_args"] == []
-    # Session-review spawn fired
-    assert len(mock_runners["popen_calls"]) >= 1
-    spawn = mock_runners["popen_calls"][0]
-    assert "ai_hats.cli.reflect_session_main" in spawn["args"]
+    # NB: session-review spawn is NOT done by the pipeline anymore — the
+    # session_end auto-retro hook + auto_retro.py policy decide whether
+    # to spawn (single source of truth, threshold-aware).
 
 
 def test_human_with_role(project_dir: Path, mock_runners):

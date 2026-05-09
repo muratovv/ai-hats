@@ -12,6 +12,5 @@ steps:
     params:
       key: judge_report
       out_path_template: ".agent/retrospectives/judge/{ts}-report.md"
-  - id: spawn_session_review
   - id: post_log
-    params: {keys: [session_id, exit_code, review_pid, saved_path]}
+    params: {keys: [session_id, exit_code, saved_path]}
