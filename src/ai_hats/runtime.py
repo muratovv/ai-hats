@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import uuid
+from dataclasses import replace
 from pathlib import Path
 
 from .assembler import Assembler
@@ -401,8 +402,19 @@ class WrapRunner:
         role_override: str | None = None,
         extra_args: list[str] | None = None,
         tags: dict[str, str] | None = None,
-    ) -> int:
-        """Launch a wrapped CLI session with PTY proxying."""
+        system_prompt_override: str | None = None,
+    ) -> tuple[int, Session]:
+        """Launch a wrapped CLI session with PTY proxying.
+
+        Returns (exit_code, session) so callers that need the session
+        artefacts (transcript_path, audit, etc.) get them directly. The
+        legacy ``int``-only contract is preserved by ``_do_execute`` which
+        still returns only the exit code to its CLI callers.
+
+        ``system_prompt_override`` (HATS-267): when supplied, replaces the
+        merged injection used for shadow override while keeping structural
+        composition data so provider build_override keeps working.
+        """
         # Resolve provider
         provider = get_provider(provider_name)
 
@@ -420,6 +432,8 @@ class WrapRunner:
             result = self.assembler.composer.compose(
                 effective_role, overlay=self.assembler._get_overlay(effective_role),
             )
+            if system_prompt_override is not None:
+                result = replace(result, injections=[system_prompt_override])
             override_args, override_env = provider.build_override(
                 self.project_dir, result, self.session_mgr,
             )
@@ -506,7 +520,7 @@ class WrapRunner:
                 tags=tags,
             )
 
-        return exit_code
+        return exit_code, session
 
     def _log_restart_gap(self, session: Session) -> None:
         """If there's a recent previous session, log the gap as a CLI restart event."""
@@ -709,8 +723,14 @@ class SubAgentRunner:
         parent_session: str | None = None,
         isolation_mode: str = "discard",
         tags: dict[str, str] | None = None,
+        system_prompt_override: str | None = None,
     ) -> Session:
-        """Execute a sub-agent in isolation."""
+        """Execute a sub-agent in isolation.
+
+        ``system_prompt_override`` (HATS-267): when supplied, replaces the
+        merged injection in the meta-prompt build while keeping structural
+        composition data intact for provider-specific overrides.
+        """
         # Create sub-session
         session = self.session_mgr.create_session(parent_session=parent_session)
 
@@ -718,6 +738,8 @@ class SubAgentRunner:
         result = self.assembler.composer.compose(
             role_name, overlay=self.assembler._get_overlay(role_name),
         )
+        if system_prompt_override is not None:
+            result = replace(result, injections=[system_prompt_override])
         provider_name = self.assembler.project_config.provider
         provider = get_provider(provider_name)
 

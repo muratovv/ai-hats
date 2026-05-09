@@ -1,0 +1,4 @@
+name: reflect-session
+steps:
+  - id: run_session_review
+    params: {max_retries: 1}

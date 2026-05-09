@@ -1,0 +1,11 @@
+name: execute
+steps:
+  - id: compose_role
+  - id: resolve_prompt
+    params: {default_text: ""}
+  - id: pre_log
+    params: {keys: [role, system_prompt, prompt_text]}
+  - id: launch_provider
+  - id: spawn_session_review
+  - id: post_log
+    params: {keys: [session_id, exit_code, review_pid]}

@@ -1,8 +1,9 @@
-"""End-to-end tests for ``execute_pipeline`` preset (Phase 1).
+"""End-to-end tests for ``execute_pipeline`` preset (HATS-267 shape).
 
-Asserts bit-equivalence with calling ``_do_execute`` directly: the preset
-funnels its inputs into ``_do_execute`` and lifts ``session``/``exit_code``
-back into pipeline state without altering the call.
+The preset is now [ComposeRole, ResolvePrompt, PreLog, LaunchProvider,
+SpawnSessionReview, PostLog] — same shape as ``execute.yaml``. Tests
+mock at the runner level (WrapRunner/SubAgentRunner) so we exercise
+the real LaunchProvider step.
 """
 
 from __future__ import annotations
@@ -10,130 +11,129 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from ai_hats.pipeline import run
 from ai_hats.pipeline.presets import execute_pipeline
 
 
-def test_execute_preset_interactive_threads_exit_code(monkeypatch) -> None:
-    captured: dict = {}
+def _fake_session(tmp_path: Path) -> MagicMock:
+    sess = MagicMock()
+    sess.session_id = "sid-test"
+    sess.session_dir = tmp_path / "sd"
+    sess.session_dir.mkdir(parents=True, exist_ok=True)
+    sess.trace_path = sess.session_dir / "trace.log"
+    sess.trace_path.write_text("(empty)")
+    sess.metrics_path = sess.session_dir / "metrics.json"
+    return sess
 
-    def fake_do_execute(**kwargs: Any) -> int:
-        captured.update(kwargs)
-        return 0
 
-    monkeypatch.setattr("ai_hats.cli.execute._do_execute", fake_do_execute)
+def test_execute_preset_interactive_threads_flat_keys(tmp_path: Path):
+    sess = _fake_session(tmp_path)
+    runner = MagicMock()
+    runner.run.return_value = (0, sess)
 
-    state = run(
-        execute_pipeline,
-        {
+    with patch(
+        "ai_hats.runtime.WrapRunner", return_value=runner,
+    ), patch(
+        "ai_hats.models.ProjectConfig.from_yaml",
+        return_value=SimpleNamespace(provider="claude"),
+    ), patch("subprocess.Popen", return_value=MagicMock(pid=1)):
+        state = run(execute_pipeline, {
             "interactive": True,
-            "role": "assistant",
-            "prompt_text": None,
+            "role": None,
+            "project_dir": tmp_path,
             "extra_args": [],
-        },
-    )
+        })
+
     assert state["exit_code"] == 0
-    assert state["session"] is None
-    # _do_execute received the projected kwargs — confirms LaunchProvider
-    # forwards optional state correctly.
-    assert captured["interactive"] is True
-    assert captured["role"] == "assistant"
-    assert captured["prompt"] is None
-    assert captured["extra_args"] == []
+    assert state["session_id"] == "sid-test"
+    assert state["session_dir"] == sess.session_dir
+    assert state["transcript_path"] == sess.trace_path
+    assert state["review_pid"] == 1
+    assert state["system_prompt"] == ""
+    assert state["prompt_text"] == ""
 
 
-def test_execute_preset_batch_threads_session(
-    monkeypatch, tmp_path: Path
-) -> None:
-    metrics_path = tmp_path / "metrics.json"
-    metrics_path.write_text(json.dumps({"exit_code": 0}))
-    fake_session = SimpleNamespace(metrics_path=metrics_path)
+def test_execute_preset_batch_reads_metrics(tmp_path: Path):
+    sess = _fake_session(tmp_path)
+    sess.metrics_path.write_text(json.dumps({"exit_code": 7}))
+    runner = MagicMock()
+    runner.run.return_value = sess
 
-    def fake_do_execute(**_: Any) -> Any:
-        return fake_session
-
-    monkeypatch.setattr("ai_hats.cli.execute._do_execute", fake_do_execute)
-
-    state = run(
-        execute_pipeline,
-        {
+    with patch(
+        "ai_hats.runtime.SubAgentRunner", return_value=runner,
+    ), patch("subprocess.Popen", return_value=MagicMock(pid=2)):
+        state = run(execute_pipeline, {
             "interactive": False,
-            "role": "assistant",
-            "prompt_text": "ping",
-            "ticket": "HATS-265",
-        },
-    )
-    assert state["exit_code"] == 0
-    assert state["session"] is fake_session
+            "role": None,
+            "project_dir": tmp_path,
+            "ticket": "HATS-267",
+        })
+
+    assert state["exit_code"] == 7
+    assert state["session_id"] == "sid-test"
 
 
-def test_execute_preset_batch_handles_missing_metrics(
-    monkeypatch, tmp_path: Path
-) -> None:
-    fake_session = SimpleNamespace(metrics_path=tmp_path / "absent.json")
+def test_execute_preset_batch_missing_metrics_defaults_to_one(tmp_path: Path):
+    sess = _fake_session(tmp_path)
+    runner = MagicMock()
+    runner.run.return_value = sess
 
-    def fake_do_execute(**_: Any) -> Any:
-        return fake_session
+    with patch(
+        "ai_hats.runtime.SubAgentRunner", return_value=runner,
+    ), patch("subprocess.Popen", return_value=MagicMock(pid=3)):
+        state = run(execute_pipeline, {
+            "interactive": False,
+            "role": None,
+            "project_dir": tmp_path,
+        })
 
-    monkeypatch.setattr("ai_hats.cli.execute._do_execute", fake_do_execute)
-
-    state = run(execute_pipeline, {"interactive": False, "role": "assistant"})
-    assert state["session"] is fake_session
-    assert state["exit_code"] == 1  # default when metrics absent
+    assert state["exit_code"] == 1
 
 
-def test_execute_pipeline_io_shape() -> None:
-    """Lock the public contract of the preset for downstream callers."""
+def test_execute_pipeline_io_shape():
     io = execute_pipeline.io
-    assert io.requires == frozenset({"interactive"})
-    assert io.produces == frozenset({"session", "exit_code"})
-    assert "role" in io.optional
-    assert "prompt_text" in io.optional
+    assert io.name == "execute"
+    # external requires after compose_role made `role` optional
+    assert "interactive" in io.requires
+    assert "project_dir" in io.requires
+    # produces flat keys per ADR-0002 §Step inventory
+    for k in ("session_id", "session_dir", "transcript_path", "exit_code"):
+        assert k in io.produces
 
 
-@pytest.mark.parametrize("interactive,expected_session", [(True, None)])
-def test_execute_preset_session_is_none_for_interactive(
-    monkeypatch, interactive: bool, expected_session: Any
-) -> None:
-    monkeypatch.setattr(
-        "ai_hats.cli.execute._do_execute", lambda **_: 0
-    )
-    state = run(execute_pipeline, {"interactive": interactive})
-    assert state["session"] is expected_session
-
-
-# ---------- shape lock-in ----------
-
-
-def test_execute_pipeline_canonical_skeleton() -> None:
-    """``execute_pipeline`` is ``[PreLogStub, LaunchProvider, PostLogStub]``.
-
-    Phase 2/3 will replace the log-stubs with real pre/post chains — the
-    middle step (LaunchProvider) will then shrink to spawn+wait.
-    """
+def test_execute_pipeline_skeleton():
     assert execute_pipeline.pipeline_name == "execute"
-    assert len(execute_pipeline.steps) == 3
-    assert execute_pipeline.steps[0].io.name == "pre_log_stub"
-    assert execute_pipeline.steps[1].io.name == "launch_provider"
-    assert execute_pipeline.steps[2].io.name == "post_log_stub"
+    names = [s.io.name for s in execute_pipeline.steps]
+    assert names == [
+        "compose_role",
+        "resolve_prompt",
+        "pre_log",
+        "launch_provider",
+        "spawn_session_review",
+        "post_log",
+    ]
 
 
-def test_execute_preset_log_stubs_print_to_stderr(monkeypatch, capsys) -> None:
-    """Smoke: PreLogStub/PostLogStub print on a live execute_pipeline run."""
-    monkeypatch.setattr("ai_hats.cli.execute._do_execute", lambda **_: 0)
+def test_execute_preset_log_steps_print(tmp_path: Path, capsys):
+    sess = _fake_session(tmp_path)
+    runner = MagicMock()
+    runner.run.return_value = (0, sess)
 
-    run(execute_pipeline, {
-        "interactive": True,
-        "role": "assistant",
-        "prompt_text": "ping",
-    })
+    with patch(
+        "ai_hats.runtime.WrapRunner", return_value=runner,
+    ), patch(
+        "ai_hats.models.ProjectConfig.from_yaml",
+        return_value=SimpleNamespace(provider="claude"),
+    ), patch("subprocess.Popen", return_value=MagicMock(pid=1)):
+        run(execute_pipeline, {
+            "interactive": True,
+            "role": None,
+            "project_dir": tmp_path,
+        })
 
     err = capsys.readouterr().err
-    assert "pre_log_stub  fires" in err
-    assert "post_log_stub fires" in err
-    assert "in.role = 'assistant'" in err
-    assert "in.exit_code = 0" in err
+    assert "pre_log fires" in err
+    assert "post_log fires" in err
+    assert "exit_code" in err

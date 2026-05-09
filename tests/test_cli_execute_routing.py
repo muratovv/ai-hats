@@ -44,16 +44,26 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
 def test_bare_ai_hats_routes_to_wraprunner(
     project_dir: Path, monkeypatch
 ) -> None:
+    """HATS-267: bare ai-hats now goes through bare.yaml pipeline, but the
+    underlying runner dispatch must still land on WrapRunner with the same
+    arguments."""
     captured: dict = {}
+
+    class _StubSession:
+        session_id = "20260101-000000-1"
+        session_dir = project_dir / ".gitlog" / "session_x"
+        trace_path = session_dir / "trace.log"
 
     class _WrapRunner:
         def __init__(self, _pd): pass
 
-        def run(self, provider, *, role_override, extra_args, tags):
+        def run(self, provider, **kwargs):
             captured["provider"] = provider
-            captured["role_override"] = role_override
-            captured["extra_args"] = extra_args
-            return 0
+            captured.update(kwargs)
+            (project_dir / ".gitlog").mkdir(parents=True, exist_ok=True)
+            _StubSession.session_dir.mkdir(parents=True, exist_ok=True)
+            _StubSession.trace_path.write_text("")
+            return 0, _StubSession
 
     class _SubAgentRunner:  # must NOT be called
         def __init__(self, _pd):
@@ -68,6 +78,10 @@ def test_bare_ai_hats_routes_to_wraprunner(
     # bootstrap_or_die touches stuff; stub it
     import ai_hats._bootstrap as boot
     monkeypatch.setattr(boot, "bootstrap_or_die", lambda: None)
+    # spawn_session_review uses subprocess.Popen — stub it
+    import subprocess
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: MagicMock(pid=99))
 
     res = CliRunner().invoke(main, [])
     assert res.exit_code == 0, res.output
@@ -116,10 +130,10 @@ def test_reflect_all_routes_to_wraprunner_with_judge(
     class _WrapRunner:
         def __init__(self, _pd): pass
 
-        def run(self, provider, *, role_override, extra_args, tags):
-            captured["role_override"] = role_override
-            captured["extra_args"] = extra_args
-            return 0
+        def run(self, provider, **kwargs):
+            captured["role_override"] = kwargs.get("role_override")
+            captured["extra_args"] = kwargs.get("extra_args")
+            return 0, object()
 
     import ai_hats.runtime as runtime_mod
     monkeypatch.setattr(runtime_mod, "WrapRunner", _WrapRunner)

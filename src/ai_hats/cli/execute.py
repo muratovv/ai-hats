@@ -93,12 +93,13 @@ def _do_execute(
             # Prepend as first positional → provider CLI treats as user message
             eff_extra = [prompt, *eff_extra]
         runner = WrapRunner(project_dir)
-        return runner.run(
+        exit_code, _session = runner.run(
             eff_provider,
             role_override=role,
             extra_args=eff_extra,
             tags=tags,
         )
+        return exit_code
     runner = SubAgentRunner(project_dir)
     return runner.run(
         role_name=role or "",

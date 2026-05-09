@@ -1,0 +1,121 @@
+"""YAML pipeline loader — instantiates steps via the open registry.
+
+YAML schema:
+
+    name: <str>
+    steps:
+      - id: <step_name>          # FQN from registry
+        params: {<key>: <val>}   # optional, step-specific
+
+The loader resolves each ``id`` against ``pipeline.registry``, builds the
+Step with its declared ``params``, and assembles a ``Pipeline``. Build-
+time consistency (every step's ``requires`` is producible) is then
+re-checked at ``pipeline.run`` against the actual initial state.
+
+Run as a module for dry-run inspection:
+
+    python -m ai_hats.pipeline.loader path/to/pipeline.yaml
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from . import registry, steps  # noqa: F401  — import registers built-ins
+from .pipeline import Pipeline, build
+
+
+class PipelineYamlError(ValueError):
+    """Malformed pipeline YAML or unresolvable step reference."""
+
+
+def load_pipeline(yaml_path: Path) -> Pipeline:
+    raw = Path(yaml_path).read_text()
+    try:
+        data: Any = yaml.safe_load(raw)
+    except yaml.YAMLError as e:
+        raise PipelineYamlError(f"{yaml_path}: invalid YAML: {e}") from e
+
+    if not isinstance(data, dict):
+        raise PipelineYamlError(
+            f"{yaml_path}: top-level must be a mapping, got {type(data).__name__}"
+        )
+
+    name = data.get("name")
+    if not isinstance(name, str) or not name:
+        raise PipelineYamlError(f"{yaml_path}: 'name' must be a non-empty string")
+
+    raw_steps = data.get("steps")
+    if not isinstance(raw_steps, list) or not raw_steps:
+        raise PipelineYamlError(f"{yaml_path}: 'steps' must be a non-empty list")
+
+    instances = []
+    for i, item in enumerate(raw_steps):
+        if not isinstance(item, dict):
+            raise PipelineYamlError(
+                f"{yaml_path}: steps[{i}] must be a mapping"
+            )
+        step_id = item.get("id")
+        if not isinstance(step_id, str) or not step_id:
+            raise PipelineYamlError(
+                f"{yaml_path}: steps[{i}].id must be a non-empty string"
+            )
+        params = item.get("params") or {}
+        if not isinstance(params, dict):
+            raise PipelineYamlError(
+                f"{yaml_path}: steps[{i}].params must be a mapping (got "
+                f"{type(params).__name__})"
+            )
+        try:
+            factory = registry.get(step_id)
+        except registry.StepRegistryError as e:
+            raise PipelineYamlError(
+                f"{yaml_path}: steps[{i}] {e}"
+            ) from e
+        try:
+            instance = factory(params)
+        except (TypeError, ValueError) as e:
+            raise PipelineYamlError(
+                f"{yaml_path}: steps[{i}] ({step_id}): {e}"
+            ) from e
+        instances.append(instance)
+
+    return build(*instances, name=name)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Dry-run inspector — validate YAML and print the resolved IO graph."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="python -m ai_hats.pipeline.loader",
+        description="Inspect a pipeline YAML — validate registry resolution "
+                    "and print the IO graph. No execution.",
+    )
+    parser.add_argument("yaml_path", type=Path, help="Path to pipeline YAML")
+    args = parser.parse_args(argv)
+
+    p = load_pipeline(args.yaml_path)
+    print(f"Pipeline: {p.io.name}")
+    print(f"  external requires: {sorted(p.io.requires)}")
+    print(f"  external optional: {sorted(p.io.optional)}")
+    print(f"  produces:          {sorted(p.io.produces)}")
+    print()
+    print("Steps:")
+    for i, s in enumerate(p.steps, 1):
+        io = s.io
+        print(
+            f"  {i}. {io.name:<22} "
+            f"requires={sorted(io.requires)} "
+            f"optional={sorted(io.optional)} "
+            f"produces={sorted(io.produces)}"
+        )
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    import sys
+    sys.exit(main())
