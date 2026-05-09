@@ -1,10 +1,15 @@
-"""Path conventions for ai-hats runtime artefacts.
+"""Path conventions for ai-hats runtime + user config.
 
 Single source of truth for "where does ai-hats keep its files?". The base
 namespace is ``<project>/.agent/ai-hats/`` (overridable via ``AI_HATS_DIR``
-env var). On HATS-274 this only houses pipeline traces; future refactors
-may relocate sessions/audits/hooks here as well — `paths.py` is the
-extension point.
+env var) and houses both:
+
+  - runtime output (``traces/``  — HATS-274)
+  - user-authored extension code (``pipeline_steps/`` — HATS-275)
+  - future user-authored YAML pipelines (``pipelines/`` — HATS-268)
+
+The ``AI_HATS_DIR`` override applies to all of them, so a team can
+share a step-library by pointing ``AI_HATS_DIR`` at a common location.
 
 `.agent/` is already gitignored, so the new namespace inherits that.
 """
@@ -35,5 +40,17 @@ def ai_hats_dir(project_dir: Path) -> Path:
 def traces_dir(project_dir: Path) -> Path:
     """Pipeline trace JSONL directory: ``<ai_hats_dir>/traces/``."""
     d = ai_hats_dir(project_dir) / "traces"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def pipeline_steps_dir(project_dir: Path) -> Path:
+    """User-authored pipeline-step modules: ``<ai_hats_dir>/pipeline_steps/``.
+
+    Created (mkdir -p) so callers never have to guard. Modules placed
+    here are auto-imported by ``PipelineHarness`` on entry; see
+    ``pipeline.user_steps.load_user_steps``.
+    """
+    d = ai_hats_dir(project_dir) / "pipeline_steps"
     d.mkdir(parents=True, exist_ok=True)
     return d

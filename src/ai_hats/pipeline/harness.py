@@ -43,6 +43,7 @@ from ..paths import traces_dir
 from .loader import load_pipeline
 from .pipeline import run as run_pipeline
 from .trace import JsonlTraceWriter, TraceHook
+from .user_steps import load_user_steps
 
 
 def _resolve_trace_path(value: str, project_dir: Path, name: str) -> Path:
@@ -92,6 +93,11 @@ class PipelineHarness:
         ).strip() not in ("", "0", "false", "False")
 
     def __enter__(self) -> "PipelineHarness":
+        # HATS-275: import user-authored step modules BEFORE any YAML
+        # is loaded — so user step IDs are resolvable from YAML the
+        # same way as built-ins. Errors propagate (fail-fast on a
+        # broken step-dir, don't half-start the pipeline).
+        load_user_steps(self.project_dir)
         if self.namespace.exists():
             shutil.rmtree(self.namespace)
         self.namespace.mkdir(parents=True)
@@ -120,6 +126,25 @@ class PipelineHarness:
         res = files("ai_hats.libraries.pipelines") / f"{self.name}.yaml"
         with as_file(res) as yaml_path:
             pipeline = load_pipeline(yaml_path)
+        return run_pipeline(
+            pipeline,
+            dict(initial),
+            on_step=self._on_step,
+            trace_values=self._trace_values,
+        )
+
+    def run_yaml(
+        self, yaml_path: Path, initial: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Load a pipeline from an arbitrary path and run it.
+
+        Same trace/values wiring as :meth:`run`, but bypasses the
+        built-in name lookup. Useful for project-local YAMLs (e.g.
+        ``.agent/ai-hats/pipelines/<name>.yaml``) until HATS-268
+        surfaces a uniform CLI for both. Tests and the
+        custom-pipeline-steps how-to also rely on this entry point.
+        """
+        pipeline = load_pipeline(yaml_path)
         return run_pipeline(
             pipeline,
             dict(initial),
