@@ -11,8 +11,8 @@ The ``--prompt`` flag resolves either to a file under
 ``libraries/initial_injections/<name>.md`` (by short name) or to a filesystem
 path. The resolved content becomes the first user-visible message.
 
-Existing entry-points (`ai-hats` bare, `ai-hats agent`, `ai-hats reflect all`)
-delegate to ``_do_execute`` rather than duplicating launcher logic.
+All entry-points (bare ``ai-hats``, ``ai-hats agent``, ``ai-hats reflect *``)
+go through ``PipelineHarness`` over a built-in YAML pipeline (HATS-269).
 """
 
 from __future__ import annotations
@@ -54,60 +54,6 @@ def _resolve_prompt(arg: str | None) -> str | None:
         f"--prompt {arg!r}: not a known initial-injection name and not a "
         f"readable file. Tried {name_path} and {fs_path.resolve()}.",
         param_hint="--prompt",
-    )
-
-
-def _do_execute(
-    *,
-    role: str | None,
-    provider: str | None,
-    interactive: bool,
-    prompt: str | None,
-    model: str = "",
-    isolation: str = "discard",
-    ticket: str = "",
-    tags: dict[str, str] | None = None,
-    extra_args: list[str] | None = None,
-):
-    """Backend dispatch — used by execute_cmd, _launch_session, agent, reflect.
-
-    Returns:
-        - interactive: int exit code (from WrapRunner)
-        - batch: ``Session`` from SubAgentRunner
-    """
-    from ..models import ProjectConfig
-    from ..runtime import SubAgentRunner, WrapRunner
-
-    project_dir = _project_dir()
-    if interactive:
-        cfg = ProjectConfig.from_yaml(project_dir / "ai-hats.yaml")
-        eff_provider = provider or cfg.provider
-        if not eff_provider:
-            console.print(
-                "[red]No provider configured[/]. "
-                "Run: ai-hats config set -p <provider>"
-            )
-            return 1
-        eff_extra = list(extra_args or [])
-        if prompt:
-            # Prepend as first positional → provider CLI treats as user message
-            eff_extra = [prompt, *eff_extra]
-        runner = WrapRunner(project_dir)
-        exit_code, _session = runner.run(
-            eff_provider,
-            role_override=role,
-            extra_args=eff_extra,
-            tags=tags,
-        )
-        return exit_code
-    runner = SubAgentRunner(project_dir)
-    return runner.run(
-        role_name=role or "",
-        task=prompt or "",
-        ticket_id=ticket,
-        model=model,
-        isolation_mode=isolation,
-        tags=tags,
     )
 
 
@@ -168,7 +114,6 @@ def execute_cmd(
     """Launch a provider session with a composed role + optional initial prompt."""
     from ..pipeline.harness import PipelineHarness
     from ..tags import TagValidationError, parse_tags
-    from ._helpers import _project_dir
 
     try:
         tags = parse_tags(tags_raw)

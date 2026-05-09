@@ -26,7 +26,7 @@ from pathlib import Path
 import click
 
 from ..hypothesis import HypothesisStore, ProposalStore
-from ..retro.session_review_runner import SessionReviewError, SessionReviewRunner
+from ..retro.session_review_runner import SessionReviewError
 from ._helpers import _project_dir, console
 
 
