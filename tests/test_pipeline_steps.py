@@ -104,6 +104,19 @@ def test_log_keys_must_be_str_list():
         PreLog({"keys": "not-a-list"})
 
 
+def test_log_truncates_huge_values(capsys):
+    """Generalized safety net: long state values get cut + marker."""
+    huge = "x" * 5000
+    PreLog({"keys": ["big"]}).run(big=huge)
+    err = capsys.readouterr().err
+    # Original 5000 chars NOT in output verbatim
+    assert huge not in err
+    # Truncation marker present
+    assert "more chars]" in err
+    # Some prefix is preserved
+    assert "'xxxx" in err
+
+
 def test_log_failure_policy_continue():
     assert PreLog().failure_policy == "continue"
     assert PostLog().failure_policy == "continue"

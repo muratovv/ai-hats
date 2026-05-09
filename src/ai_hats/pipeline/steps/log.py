@@ -4,6 +4,12 @@ Both share the same body — only the step name and YAML-position differ.
 ``params.keys`` declares which state keys to print; each becomes ``optional``
 in the IO contract so missing keys are silently skipped.
 
+Values longer than ``_MAX_VALUE_REPR`` chars are truncated with a
+``[+N more chars]`` marker. This is a generalized safety net against
+accidentally dumping multi-KB state values (system_prompt, prompt_text,
+transcripts) into stderr — fixed twice (HATS-267 system_prompt,
+HATS-269 prompt_text) before being made systemic here.
+
 failure_policy=continue — logging must never abort the surrounding flow.
 """
 
@@ -13,6 +19,16 @@ import sys
 from typing import Any, Mapping
 
 from ..step import Step, StepIO
+
+
+_MAX_VALUE_REPR = 120
+
+
+def _safe_repr(value: Any) -> str:
+    s = repr(value)
+    if len(s) <= _MAX_VALUE_REPR:
+        return s
+    return s[:_MAX_VALUE_REPR] + f"... [+{len(s) - _MAX_VALUE_REPR} more chars]"
 
 
 class _LogStep(Step):
@@ -34,7 +50,7 @@ class _LogStep(Step):
         print(f"[pipeline] {self._NAME} fires", file=sys.stderr)
         for k in self.keys:
             if k in inputs:
-                print(f"  {k} = {inputs[k]!r}", file=sys.stderr)
+                print(f"  {k} = {_safe_repr(inputs[k])}", file=sys.stderr)
         return {}
 
 
