@@ -4,7 +4,7 @@ steps:
   - id: resolve_prompt
     params: {default_text: ""}
   - id: pre_log
-    params: {keys: [role, system_prompt, prompt_text]}
+    params: {keys: [role, prompt_text]}
   - id: launch_provider
   - id: spawn_session_review
   - id: post_log

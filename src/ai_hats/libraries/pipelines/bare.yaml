@@ -2,7 +2,7 @@ name: bare
 steps:
   - id: compose_role
   - id: pre_log
-    params: {keys: [role, system_prompt]}
+    params: {keys: [role]}
   - id: launch_provider
   - id: spawn_session_review
   - id: post_log
