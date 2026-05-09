@@ -3,3 +3,11 @@ description: Time-bounded protocol for evaluating new tools, libraries, or metho
 author: ai-hats
 tags: [research, methodology, decision-making]
 pattern: protocol
+
+triggers:
+  - "user proposes adopting a new library, tool, or framework"
+  - "considering replacing an existing methodology"
+  - "evaluating a hyped or unfamiliar dependency"
+  - "deciding whether a viral pattern actually solves the problem"
+skip:
+  - "well-established time-tested tools (use directly)"

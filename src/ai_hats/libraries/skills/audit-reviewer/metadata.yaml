@@ -3,3 +3,12 @@ description: Triple-perspective code review (architect, security, quality)
 author: ai-hats
 tags: [review, quality, security]
 pattern: protocol
+
+triggers:
+  - "user requests a code review"
+  - "before merging a non-trivial PR"
+  - "pre-merge security or quality checkpoint"
+  - "user asks for a second opinion on architecture"
+skip:
+  - "trivial typo or single-line change"
+  - "WIP code with no clear surface yet"

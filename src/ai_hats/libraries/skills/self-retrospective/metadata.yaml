@@ -3,3 +3,11 @@ description: Post-work analysis to identify systemic improvements (5 Whys, class
 author: ai-hats
 tags: [process, agent-protocol, improvement]
 pattern: protocol
+
+triggers:
+  - "task completed and ready for retrospective"
+  - "recurring failure modes need root-cause analysis"
+  - "user asks to reflect, improve, or extract lessons"
+  - "applying 5-Whys to a session-level issue"
+skip:
+  - "trivial bugfixes with no learning value"

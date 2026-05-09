@@ -3,3 +3,10 @@ description: Canonical template and validation guide for creating ai-hats skills
 author: ai-hats
 tags: [library, meta, authoring]
 pattern: reference
+
+triggers:
+  - "creating a new skill"
+  - "validating an existing skill against canonical structure"
+  - "user asks how to author a skill or what files are needed"
+skip:
+  - "edits to an existing skill that don't change its structure"

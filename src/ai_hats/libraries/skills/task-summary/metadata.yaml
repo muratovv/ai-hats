@@ -3,3 +3,11 @@ description: Focused post-task summary — architectural decisions, decision for
 author: ai-hats
 tags: [agent-protocol, memory, context-management]
 pattern: protocol
+
+triggers:
+  - "task completed and ready for documentation"
+  - "capturing architectural decisions and pitfalls before context loss"
+  - "transitioning a task to the document state"
+  - "condensing a long execution thread into a focused summary"
+skip:
+  - "in-progress work — use a plan or task card instead"

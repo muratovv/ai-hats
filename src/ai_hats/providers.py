@@ -139,6 +139,30 @@ class Provider(abc.ABC):
         target_dir = self.skills_export_dir(project_dir)
         self._clean_managed_skills(target_dir)
 
+    def routing_export_path(self, project_dir: Path) -> Path:
+        """Path where the lazy-loaded `routing.md` is published (HATS-264)."""
+        return self.skills_export_dir(project_dir).parent / "routing.md"
+
+    def export_routing(self, project_dir: Path, canonical_dir: Path) -> None:
+        """Mirror canonical `routing.md` into the provider directory.
+
+        Lazy-loaded artefact (HATS-264): published next to `skills/` so a
+        provider-native agent can read it on demand. When the canonical
+        source is absent (no skill carries `triggers:`), the target file is
+        removed to keep state consistent.
+        """
+        target = self.routing_export_path(project_dir)
+        source = canonical_dir / "routing.md"
+        if source.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        else:
+            target.unlink(missing_ok=True)
+
+    def cleanup_routing(self, project_dir: Path) -> None:
+        """Remove the published `routing.md`, if present."""
+        self.routing_export_path(project_dir).unlink(missing_ok=True)
+
     def _clean_managed_skills(self, target_dir: Path) -> None:
         """Remove skills tracked by the managed marker."""
         marker = target_dir / self._MANAGED_MARKER

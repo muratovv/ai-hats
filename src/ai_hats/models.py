@@ -193,6 +193,13 @@ class SkillMetadata(_YamlModel):
     the project's `.githooks/<event>.d/` during composition. Keys are git
     hook event names (see GIT_HOOK_EVENTS); values are lists of script
     paths relative to the skill directory.
+
+    `triggers` / `skip` (HATS-264): activation hints used to render the
+    canonical `routing.md` trigger→skill table. Each item is a short phrase
+    describing user intent or a context where this skill applies (or, for
+    `skip`, where it should be passed over). Both are optional; skills with
+    empty `triggers` are omitted from routing.md but still appear in
+    `skills_index.md`.
     """
 
     name: str = ""
@@ -201,6 +208,8 @@ class SkillMetadata(_YamlModel):
     tags: list[str] = Field(default_factory=list)
     pattern: str = ""
     git_hooks: dict[str, list[str]] = Field(default_factory=dict)
+    triggers: list[str] = Field(default_factory=list)
+    skip: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod

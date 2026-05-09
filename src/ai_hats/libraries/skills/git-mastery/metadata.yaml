@@ -10,3 +10,11 @@ git_hooks:
   pre-commit:
     - git_hooks/pre-commit-privacy.sh
     - git_hooks/pre-commit-smoke.sh
+
+triggers:
+  - "managing feature branches with conventional commits"
+  - "user mentions rebase, cherry-pick, worktree, squash, or history rewrite"
+  - "resolving complex git situations (detached HEAD, lost commits, conflicts)"
+  - "choosing branch strategy for a non-trivial change"
+skip:
+  - "one-shot commit on master without complications"

@@ -3,3 +3,11 @@ description: Choose Bash vs dedicated Claude Code tools (Grep/Glob/Read/Edit); b
 author: ai-hats
 tags: [development, efficiency, tools, batching]
 pattern: reference
+
+triggers:
+  - "intent to grep, find, cat, head, tail, sed, awk, rg, ls -R"
+  - "five or more similar sequential tool calls"
+  - "session-start context restore"
+  - "broad codebase discovery or exploration"
+skip:
+  - "git commands, build commands, multi-stage pipes with no dedicated alternative"
