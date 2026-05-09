@@ -9,7 +9,12 @@ from pathlib import Path
 
 from .composer import Composer, CompositionResult, ResolvedComponent
 from .library import LibraryResolver
-from .models import ComponentType, ProjectConfig, SkillMetadata
+from .models import (
+    IMPORTS_ORDER_PRESETS,
+    ComponentType,
+    ProjectConfig,
+    SkillMetadata,
+)
 from .providers import (
     INJECTION_END,
     INJECTION_START,
@@ -1006,7 +1011,9 @@ class Assembler:
         # composer) so the aggregator preserves general-to-specific ordering
         # rather than re-sorting alphabetically.
         targets["imports.md"] = self._render_canonical_aggregator(
-            canonical, list(targets.keys())
+            canonical,
+            list(targets.keys()),
+            order=self._resolve_imports_order(self.project_config.imports_order),
         ).encode()
 
         # Idempotent write
@@ -1047,12 +1054,46 @@ class Assembler:
             return None
         return Assembler._ensure_trailing_newline("\n\n".join(parts))
 
-    @staticmethod
-    def _render_canonical_aggregator(canonical_dir: Path, framework_paths: list[str]) -> str:
-        """Build the `imports.md` aggregator in canonical (HATS-289).
+    # HATS-290: outer-section bucket predicates for imports.md.
+    # Maps each canonical section name to a path-predicate; user-rules is
+    # handled separately because its files live outside the manifest.
+    _SECTION_BUCKETS: dict[str, "callable[[str], bool]"] = {
+        "priorities":   lambda p: p == "priorities.md",
+        "traits":       lambda p: p.startswith("traits/"),
+        "role":         lambda p: p == "role.md",
+        "rules":        lambda p: p.startswith("rules/"),
+        "skills_index": lambda p: p == "skills_index.md",
+    }
 
-        Pure `@import` list, no markers, no headings. Outer order:
-        priorities → traits → role → framework rules → user-rules → skills_index.
+    @staticmethod
+    def _resolve_imports_order(
+        config_value: str | list[str] | None,
+    ) -> list[str]:
+        """Resolve `imports_order` config to a concrete section ordering.
+
+        None / "default" → the default preset. A preset name → the preset's list.
+        A list[str] → returned as-is (already validated to be a permutation of
+        IMPORTS_SECTION_NAMES at config-load time).
+        """
+        if config_value is None:
+            return list(IMPORTS_ORDER_PRESETS["default"])
+        if isinstance(config_value, str):
+            return list(IMPORTS_ORDER_PRESETS[config_value])
+        return list(config_value)
+
+    @staticmethod
+    def _render_canonical_aggregator(
+        canonical_dir: Path,
+        framework_paths: list[str],
+        order: list[str] | None = None,
+    ) -> str:
+        """Build the `imports.md` aggregator in canonical (HATS-289 + HATS-290).
+
+        Pure `@import` list, no markers, no headings. Outer order is driven by
+        `order` — a list of section names from IMPORTS_SECTION_NAMES. When
+        `order` is None, the "default" preset is used (preserves the original
+        priorities → traits → role → rules → user-rules → skills_index).
+
         Within each section, paths preserve their **insertion order** in
         `framework_paths` (= composition / resolution order from the composer
         — general traits before specific ones, depth-first across the
@@ -1062,28 +1103,25 @@ class Assembler:
         will own; `user-rules/*.md` is enumerated separately because user-rules
         live outside the manifest (composer never writes them).
         """
-        sections: list[list[str]] = []
+        if order is None:
+            order = list(IMPORTS_ORDER_PRESETS["default"])
 
-        def _bucket(predicate) -> None:
+        sections: list[list[str]] = []
+        for name in order:
+            if name == "user-rules":
+                user_rules_dir = canonical_dir / USER_RULES_SUBDIR
+                if user_rules_dir.is_dir():
+                    user_paths = sorted(
+                        f"@./{USER_RULES_SUBDIR}/{md.name}"
+                        for md in user_rules_dir.glob("*.md")
+                    )
+                    if user_paths:
+                        sections.append(user_paths)
+                continue
+            predicate = Assembler._SECTION_BUCKETS[name]
             picked = [p for p in framework_paths if predicate(p)]
             if picked:
                 sections.append([f"@./{p}" for p in picked])
-
-        _bucket(lambda p: p == "priorities.md")
-        _bucket(lambda p: p.startswith("traits/"))
-        _bucket(lambda p: p == "role.md")
-        _bucket(lambda p: p.startswith("rules/"))
-
-        # User-rules — last in the rule-like sections so user wins on overlap.
-        user_rules_dir = canonical_dir / USER_RULES_SUBDIR
-        if user_rules_dir.is_dir():
-            user_paths = sorted(
-                f"@./{USER_RULES_SUBDIR}/{md.name}" for md in user_rules_dir.glob("*.md")
-            )
-            if user_paths:
-                sections.append(user_paths)
-
-        _bucket(lambda p: p == "skills_index.md")
 
         body = "\n\n".join("\n".join(lines) for lines in sections)
         return body + ("\n" if body else "")
