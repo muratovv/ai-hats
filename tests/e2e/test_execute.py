@@ -69,13 +69,27 @@ def test_execute_batch_json_output(project_dir: Path, mock_runners):
     assert payload["exit_code"] == 0
 
 
-def test_execute_unknown_short_prompt_fails_fast(project_dir: Path, mock_runners):
+def test_execute_path_shape_prompt_fails_fast(project_dir: Path, mock_runners):
+    """Path-shaped --prompt that doesn't resolve to a real file → fail fast."""
     res = CliRunner().invoke(
         main,
-        ["execute", "--role", "judge", "--batch", "--prompt", "no-such-name"],
+        ["execute", "--role", "test-agent", "--batch", "--prompt", "./missing.md"],
     )
     assert res.exit_code != 0
-    assert "no such" in res.output.lower() or "not a known" in res.output.lower()
+    assert (
+        "looks like a path" in res.output.lower()
+        or "no such" in res.output.lower()
+    )
     # Pipeline / runner not reached
     assert mock_runners["sub_calls"] == []
     assert mock_runners["wrap_calls"] == []
+
+
+def test_execute_raw_text_prompt(project_dir: Path, mock_runners):
+    """``--prompt "ping"`` (plain text) is accepted as raw prompt."""
+    res = CliRunner().invoke(
+        main, ["execute", "--role", "test-agent", "--prompt", "ping"],
+    )
+    assert res.exit_code == 0, res.output
+    call = mock_runners["wrap_calls"][0]
+    assert call["extra_args"][0] == "ping"

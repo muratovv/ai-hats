@@ -32,7 +32,7 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
     (pd / ".agent" / "hypotheses").mkdir(parents=True)
     (pd / ".agent" / "backlog" / "proposals").mkdir(parents=True)
     (pd / "ai-hats.yaml").write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: primary\n"
+        "schema_version: 2\nprovider: claude\nactive_role: test-agent\n"
     )
     monkeypatch.chdir(pd)
     return pd
@@ -44,7 +44,7 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
 def test_bare_ai_hats_routes_to_wraprunner(
     project_dir: Path, monkeypatch
 ) -> None:
-    """HATS-267: bare ai-hats now goes through bare.yaml pipeline, but the
+    """HATS-267: bare ai-hats now goes through human.yaml pipeline, but the
     underlying runner dispatch must still land on WrapRunner with the same
     arguments."""
     captured: dict = {}

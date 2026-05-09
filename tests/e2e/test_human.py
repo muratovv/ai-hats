@@ -1,6 +1,6 @@
 """E2E baseline for `ai-hats` (bare) — regression catcher for HATS-269.
 
-Bare already migrated in HATS-267 (goes through bare.yaml). These tests
+Bare already migrated in HATS-267 (goes through human.yaml). These tests
 lock the public behaviour so the post-migration code in HATS-269 (which
 refactors _launch_session to use PipelineHarness) doesn't drift.
 """
@@ -15,7 +15,7 @@ from ai_hats.cli import main
 
 
 
-def test_bare_no_role(project_dir: Path, mock_runners):
+def test_human_no_role(project_dir: Path, mock_runners):
     res = CliRunner().invoke(main, [])
 
     assert res.exit_code == 0, res.output
@@ -31,7 +31,7 @@ def test_bare_no_role(project_dir: Path, mock_runners):
     assert "ai_hats.cli.reflect_session_main" in spawn["args"]
 
 
-def test_bare_with_role(project_dir: Path, mock_runners):
+def test_human_with_role(project_dir: Path, mock_runners):
     res = CliRunner().invoke(main, ["--role", "assistant"])
 
     assert res.exit_code == 0, res.output
@@ -42,14 +42,14 @@ def test_bare_with_role(project_dir: Path, mock_runners):
     assert sp is not None and len(sp) > 0
 
 
-def test_bare_pipeline_log_marker(project_dir: Path, mock_runners):
+def test_human_pipeline_log_marker(project_dir: Path, mock_runners):
     """Observable: pipeline-routing visible via [pipeline] marker."""
     res = CliRunner().invoke(main, [])
     assert res.exit_code == 0
     assert "[pipeline] pre_log fires" in res.output or "pre_log fires" in res.output
 
 
-def test_bare_creates_session_artifacts(project_dir: Path, mock_runners):
+def test_human_creates_session_artifacts(project_dir: Path, mock_runners):
     """Side-effect: session_dir + trace + metrics created."""
     res = CliRunner().invoke(main, [])
     assert res.exit_code == 0

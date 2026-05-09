@@ -1,4 +1,4 @@
-"""End-to-end test: ``bare.yaml`` runs through loader and produces the
+"""End-to-end test: ``human.yaml`` runs through loader and produces the
 same flat-key state that downstream consumers expect.
 
 Provider spawn is mocked at the runner level — we assert the pipeline
@@ -18,7 +18,7 @@ from ai_hats.pipeline.pipeline import run as run_pipeline
 
 _BUILTIN = (
     Path(__file__).parent.parent
-    / "src/ai_hats/libraries/pipelines/bare.yaml"
+    / "src/ai_hats/libraries/pipelines/human.yaml"
 )
 
 
@@ -33,7 +33,7 @@ def _fake_session(tmp_path: Path) -> MagicMock:
     return sess
 
 
-def test_bare_pipeline_e2e(tmp_path: Path):
+def test_human_pipeline_e2e(tmp_path: Path):
     pipeline = load_pipeline(_BUILTIN)
 
     fake_session = _fake_session(tmp_path)
@@ -77,7 +77,7 @@ def test_bare_pipeline_e2e(tmp_path: Path):
     assert call_kwargs["system_prompt_override"] == "ROLE PROMPT"
 
 
-def test_bare_pipeline_e2e_no_role(tmp_path: Path):
+def test_human_pipeline_e2e_no_role(tmp_path: Path):
     """role=None falls through compose_role to empty system_prompt."""
     pipeline = load_pipeline(_BUILTIN)
 

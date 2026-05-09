@@ -42,7 +42,7 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
     (pd / ".agent" / "hypotheses").mkdir(parents=True)
     (pd / ".agent" / "backlog" / "proposals").mkdir(parents=True)
     (pd / "ai-hats.yaml").write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: primary\n"
+        "schema_version: 2\nprovider: claude\nactive_role: test-agent\n"
     )
     monkeypatch.chdir(pd)
     return pd

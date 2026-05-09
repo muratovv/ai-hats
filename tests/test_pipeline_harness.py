@@ -19,7 +19,7 @@ def test_namespace_idempotent_cleanup(tmp_path: Path):
 
 
 def test_namespace_per_pipeline_isolated(tmp_path: Path):
-    bare = PipelineHarness("bare", tmp_path)
+    bare = PipelineHarness("human", tmp_path)
     execute = PipelineHarness("execute", tmp_path)
     with bare, execute:
         assert bare.namespace != execute.namespace

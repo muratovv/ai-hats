@@ -17,7 +17,7 @@ _BUILTIN_DIR = (
 
 
 @pytest.mark.parametrize(
-    "name", ["bare", "execute", "reflect-all", "reflect-session"]
+    "name", ["human", "execute", "reflect-all", "reflect-session"]
 )
 def test_load_each_builtin(name: str):
     p = load_pipeline(_BUILTIN_DIR / f"{name}.yaml")
@@ -83,7 +83,7 @@ def test_load_top_level_not_mapping(tmp_path: Path):
 
 
 @pytest.mark.parametrize(
-    "name", ["bare", "execute", "reflect-all", "reflect-session"]
+    "name", ["human", "execute", "reflect-all", "reflect-session"]
 )
 def test_loader_main_inspects_each_builtin(name: str):
     proc = subprocess.run(

@@ -111,12 +111,18 @@ def _launch_session(
     extra_args: list[str] | None = None,
     tags: dict[str, str] | None = None,
 ):
-    """Launch a wrapped provider CLI session via the ``bare`` pipeline."""
+    """Launch a wrapped provider CLI session via the ``human`` pipeline."""
     from ..pipeline.harness import PipelineHarness
     from ._helpers import _project_dir
 
     project_dir = _project_dir()
-    with PipelineHarness("bare", project_dir) as h:
+    # NB: role=None is intentional when --role is omitted. WrapRunner
+    # internally resolves to cfg.active_role / cfg.default_role through the
+    # permanent-assembly path. Resolving here would force the shadow-
+    # override path with redundant compose work — keep behaviour identical
+    # to pre-migration.
+
+    with PipelineHarness("human", project_dir) as h:
         final = h.run({
             "role": role,
             "interactive": True,
