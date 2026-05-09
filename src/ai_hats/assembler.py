@@ -982,8 +982,11 @@ class Assembler:
         # entry-point. Computed before write so the aggregator can include
         # user-rules/ files (which are NOT in `targets` — they live outside
         # the manifest by design).
+        # Pass the ordered keys (insertion order = composition order from the
+        # composer) so the aggregator preserves general-to-specific ordering
+        # rather than re-sorting alphabetically.
         targets["imports.md"] = self._render_canonical_aggregator(
-            canonical, set(targets.keys())
+            canonical, list(targets.keys())
         ).encode()
 
         # Idempotent write
@@ -1025,21 +1028,24 @@ class Assembler:
         return Assembler._ensure_trailing_newline("\n\n".join(parts))
 
     @staticmethod
-    def _render_canonical_aggregator(canonical_dir: Path, framework_paths: set[str]) -> str:
+    def _render_canonical_aggregator(canonical_dir: Path, framework_paths: list[str]) -> str:
         """Build the `imports.md` aggregator in canonical (HATS-289).
 
-        Pure `@import` list, no markers, no headings. Order:
+        Pure `@import` list, no markers, no headings. Outer order:
         priorities → traits → role → framework rules → user-rules → skills_index.
-        Within each section, paths are sorted alphabetically.
+        Within each section, paths preserve their **insertion order** in
+        `framework_paths` (= composition / resolution order from the composer
+        — general traits before specific ones, depth-first across the
+        dependency tree). Alphabetical sort would scramble that.
 
-        `framework_paths` is the set of relpaths the canonical writer will own;
-        `user-rules/*.md` is enumerated separately because user-rules live
-        outside the manifest (composer never writes them).
+        `framework_paths` is the ordered list of relpaths the canonical writer
+        will own; `user-rules/*.md` is enumerated separately because user-rules
+        live outside the manifest (composer never writes them).
         """
         sections: list[list[str]] = []
 
         def _bucket(predicate) -> None:
-            picked = sorted(p for p in framework_paths if predicate(p))
+            picked = [p for p in framework_paths if predicate(p)]
             if picked:
                 sections.append([f"@./{p}" for p in picked])
 

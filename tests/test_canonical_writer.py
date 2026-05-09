@@ -334,6 +334,43 @@ def test_imports_aggregator_section_order(project_with_library: Path) -> None:
     assert pos_priorities < pos_trait < pos_role < pos_rule < pos_skills
 
 
+def test_imports_aggregator_within_section_uses_composition_order(tmp_path: Path) -> None:
+    """Traits appear in declaration order, NOT alphabetical (general → specific)."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    lib = project / "libraries"
+
+    # Names chosen so alphabetical and composition order disagree:
+    # composition: zebra-base → alpha-mode → middle-thing
+    # alphabetical would be: alpha-mode → middle-thing → zebra-base
+    for name in ("zebra-base", "alpha-mode", "middle-thing"):
+        d = lib / "traits" / name
+        d.mkdir(parents=True)
+        (d / "config.yaml").write_text(f"name: {name}\ninjection: |\n  {name} body.\n")
+
+    role_dir = lib / "roles" / "ordered"
+    role_dir.mkdir(parents=True)
+    (role_dir / "config.yaml").write_text(
+        "name: ordered\n"
+        "composition:\n"
+        "  traits:\n"
+        "    - zebra-base\n"
+        "    - alpha-mode\n"
+        "    - middle-thing\n"
+    )
+    (project / "ai-hats.yaml").write_text("schema_version: 3\nprovider: claude\n")
+
+    asm = Assembler(project)
+    asm.write_canonical(asm.composer.compose("ordered"))
+
+    body = (project / AGENT_DIR / CANONICAL_DIR / "imports.md").read_text()
+    pos_zebra = body.index("@./traits/zebra-base.md")
+    pos_alpha = body.index("@./traits/alpha-mode.md")
+    pos_middle = body.index("@./traits/middle-thing.md")
+    # Composition order, NOT alphabetical.
+    assert pos_zebra < pos_alpha < pos_middle
+
+
 def test_imports_aggregator_includes_user_rules(project_with_library: Path) -> None:
     """User-rules appear after framework rules so user wins on overlap."""
     asm, result = _composer_result(project_with_library)

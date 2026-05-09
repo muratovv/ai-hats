@@ -35,6 +35,24 @@ CLAUDE.md
 
 # AI-HATS:START — managed by ai-hats, do not edit
 .agent/.last_backup
+.agent/ai-hats/MANAGED
+.agent/ai-hats/imports.md
+.agent/ai-hats/priorities.md
+.agent/ai-hats/role.md
+.agent/ai-hats/rules/dev_rule_backlog_discipline.md
+.agent/ai-hats/rules/dev_rule_edit_efficiency.md
+.agent/ai-hats/rules/dev_rule_secure_coding.md
+.agent/ai-hats/rules/dev_rule_tool_call_hygiene.md
+.agent/ai-hats/rules/global_rule_destructive_actions.md
+.agent/ai-hats/rules/global_rule_resource_hygiene.md
+.agent/ai-hats/skills_index.md
+.agent/ai-hats/traits/dev::python.md
+.agent/ai-hats/traits/dev::shell.md
+.agent/ai-hats/traits/skill-engineer.md
+.agent/ai-hats/traits/trait-agent.md
+.agent/ai-hats/traits/trait-base.md
+.agent/ai-hats/traits/trait-researcher-mindset.md
+.agent/ai-hats/traits/trait-se-mindset.md
 .agent/hooks/.ai-hats-managed
 .agent/hooks/session_end_auto-retro.sh
 .agent/rules/.library_rules
@@ -60,6 +78,8 @@ CLAUDE.md
 .agent/skills/skill-template/
 .agent/skills/systematic-debugging/
 .agent/skills/task-summary/
+.agent/skills/tool-call-hygiene/
+.agent/skills/tool-evaluation-protocol/
 .agent/skills/worktree-isolation/
 .claude/skills/.ai-hats-managed
 .claude/skills/audit-reviewer/
@@ -77,6 +97,8 @@ CLAUDE.md
 .claude/skills/skill-template/
 .claude/skills/systematic-debugging/
 .claude/skills/task-summary/
+.claude/skills/tool-call-hygiene/
+.claude/skills/tool-evaluation-protocol/
 .claude/skills/worktree-isolation/
 .githooks/.ai-hats-manifest
 .githooks/pre-commit
