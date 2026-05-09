@@ -168,7 +168,16 @@ class Provider(abc.ABC):
         return None
 
     def update_system_prompt(self, project_dir: Path, content: str) -> None:
-        """Write or update system prompt between markers in the prompt file."""
+        """Write or update the inline system prompt block.
+
+        Used by providers without a scaffold (e.g. Gemini) to maintain the
+        AI-HATS-managed section of `./GEMINI.md` between `INJECTION_START` /
+        `INJECTION_END` markers. For providers that declare a scaffold
+        (Claude — HATS-284), this method is dormant: `Assembler.set_role`
+        skips the call entirely (HATS-286), and the lowercase-marker early
+        return below provides a defense-in-depth no-op if it is invoked
+        anyway.
+        """
         prompt_path = self.system_prompt_path(project_dir)
         prompt_path.parent.mkdir(parents=True, exist_ok=True)
 
