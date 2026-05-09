@@ -188,6 +188,9 @@ class Assembler:
             prompt_content = provider.build_system_prompt(result)
             provider.update_system_prompt(self.project_dir, prompt_content)
 
+            # 5b. Publish canonical to provider namespace (HATS-283)
+            provider.publish(self._canonical_dir, self.project_dir)
+
             # 6. Verify
             self._verify(result, provider)
 
@@ -294,8 +297,9 @@ class Assembler:
             src = self.project_dir / name
             if src.exists():
                 shutil.copy2(src, backup_dir / name)
-        # Backup provider-native skills
-        for provider_dir in (".claude/skills", ".gemini/skills"):
+        # Backup provider-native dirs (.claude entirely — skills + canonical
+        # publish; .gemini/skills only since Gemini publish is non-goal).
+        for provider_dir in (".claude", ".gemini/skills"):
             src = self.project_dir / provider_dir
             if src.exists():
                 shutil.copytree(src, backup_dir / provider_dir, symlinks=True)
@@ -317,8 +321,8 @@ class Assembler:
             if src.exists():
                 shutil.copy2(src, self.project_dir / name)
 
-        # Restore provider-native skills
-        for provider_dir in (".claude/skills", ".gemini/skills"):
+        # Restore provider-native dirs (.claude entirely; .gemini/skills only).
+        for provider_dir in (".claude", ".gemini/skills"):
             src = backup_path / provider_dir
             dest = self.project_dir / provider_dir
             if src.exists():
@@ -926,6 +930,15 @@ class Assembler:
                 entry = entry.strip()
                 if entry:
                     paths.add(f"{GITHOOKS_DIR}/{entry}")
+
+        # .claude/ canonical publish (HATS-283) — flat manifest at root.
+        publish_manifest = self.project_dir / ".claude" / ".ai-hats-managed"
+        if publish_manifest.exists():
+            paths.add(".claude/.ai-hats-managed")
+            for entry in publish_manifest.read_text().splitlines():
+                entry = entry.strip()
+                if entry and not entry.startswith("#"):
+                    paths.add(f".claude/{entry}")
 
         # .agent/ai-hats — canonical layered layer (HATS-282).
         # user-rules/ is user-owned and excluded by being absent from MANAGED.
