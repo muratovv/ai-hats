@@ -3,3 +3,11 @@ description: Decision protocol for when to act autonomously vs escalate to super
 author: ai-hats
 tags: [agent-protocol, communication]
 pattern: checklist
+
+triggers:
+  - "user request is ambiguous about authority or scope"
+  - "agent uncertain whether to ask or proceed"
+  - "irreversible or destructive action without prior authorization"
+  - "scope ambiguous between local fix and broader refactor"
+skip:
+  - "user has explicitly authorized autonomous mode this session"

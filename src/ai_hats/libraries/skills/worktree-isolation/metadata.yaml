@@ -3,3 +3,11 @@ description: Isolated development using git worktrees — main branch stays clea
 author: ai-hats
 tags: [development, git, isolation]
 pattern: template
+
+triggers:
+  - "starting a sub-agent task that needs filesystem isolation"
+  - "user explicitly says worktree"
+  - "long-running work where master must stay clean"
+  - "parallel branches needing separate working directories"
+skip:
+  - "single quick edit that finishes within minutes"

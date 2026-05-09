@@ -3,3 +3,11 @@ description: 4-phase bug-fix protocol (evidence, pattern, hypothesis, verify)
 author: ai-hats
 tags: [development, debugging]
 pattern: protocol
+
+triggers:
+  - "user reports a bug or unexpected behavior"
+  - "test failure with non-obvious cause"
+  - "before forming a fix hypothesis (evidence-first)"
+  - "regression suite is red after a change"
+skip:
+  - "trivial typo or one-line fix with an obvious cause"

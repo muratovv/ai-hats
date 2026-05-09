@@ -3,3 +3,11 @@ description: Audit and refactor library components to eliminate redundancy and s
 author: ai-hats
 tags: [library, meta, maintenance]
 pattern: protocol
+
+triggers:
+  - "user wants to audit skills, rules, or traits for redundancy or staleness"
+  - "library has grown large and overlap is suspected"
+  - "removing or merging duplicate components"
+  - "planning a sweep of obsolete library entries"
+skip:
+  - "single-component edit with no library-wide impact"

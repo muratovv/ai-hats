@@ -3,3 +3,10 @@ description: Summarize critical context (decisions, forks, pitfalls) into a hand
 author: ai-hats
 tags: [agent-protocol, memory, context-management]
 pattern: protocol
+
+triggers:
+  - "before delegating a task to a sub-agent"
+  - "preparing a briefing for the next agent in a chain"
+  - "capturing decisions and pitfalls before context handover"
+skip:
+  - "in-session tracking — use TaskCreate or end-of-task summary"

@@ -3,3 +3,11 @@ description: Shell scripting, Makefile conventions, and modern CLI tooling
 author: ai-hats
 tags: [development, shell, scripting]
 pattern: reference
+
+triggers:
+  - "writing a Bash script or Makefile"
+  - "user asks about set -euo pipefail, shell idioms, or POSIX vs bash"
+  - "choosing between rg/fd/jq/yq/bat/eza for a CLI task"
+  - "hardening shell scripts for idempotency"
+skip:
+  - "one-off ad-hoc commands"

@@ -12,6 +12,7 @@ from ai_hats.models import (
     ProjectConfig,
     ProjectConfigError,
     SessionRetroConfig,
+    SkillMetadata,
     SmartThreshold,
     TaskCard,
     TaskState,
@@ -670,3 +671,34 @@ def test_migration_idempotent(tmp_path):
     loaded = ProjectConfig.from_yaml(path)
     assert loaded.schema_version == 3
     assert loaded.active_role == "sre"
+
+
+# -- HATS-264: SkillMetadata triggers / skip --
+
+
+def test_skill_metadata_defaults_have_empty_triggers_and_skip():
+    meta = SkillMetadata()
+    assert meta.triggers == []
+    assert meta.skip == []
+
+
+def test_skill_metadata_loads_triggers_and_skip(tmp_path):
+    path = tmp_path / "metadata.yaml"
+    path.write_text(
+        "name: foo\n"
+        "description: foo skill\n"
+        "triggers:\n"
+        "  - user asks to debug\n"
+        "  - failing test before fix\n"
+        "skip:\n"
+        "  - trivial typo fix\n"
+    )
+    meta = SkillMetadata.from_yaml(path)
+    assert meta.triggers == ["user asks to debug", "failing test before fix"]
+    assert meta.skip == ["trivial typo fix"]
+
+
+def test_skill_metadata_missing_yaml_returns_empty_lists(tmp_path):
+    meta = SkillMetadata.from_yaml(tmp_path / "absent.yaml")
+    assert meta.triggers == []
+    assert meta.skip == []

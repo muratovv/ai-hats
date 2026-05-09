@@ -3,3 +3,11 @@ description: Structured Q&A to extract clear requirements before transitioning b
 author: ai-hats
 tags: [agent-protocol, brainstorm, requirements]
 pattern: checklist
+
+triggers:
+  - "task is in brainstorm state and ready to move to plan"
+  - "user asks for a plan but requirements are vague"
+  - "before writing an implementation plan or design doc"
+  - "acceptance criteria are missing or ambiguous"
+skip:
+  - "requirements already nailed down in the request"

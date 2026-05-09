@@ -3,3 +3,11 @@ description: Task lifecycle orchestration via YAML cards (brainstorm→plan→ex
 author: ai-hats
 tags: [agent-protocol, task-management, orchestration]
 pattern: orchestrator
+
+triggers:
+  - "creating, updating, or transitioning a task card"
+  - "user mentions task ID or state machine (brainstorm/plan/execute/document/review/done)"
+  - "syncing STATE.md after task changes"
+  - "logging work progress on an existing task"
+skip:
+  - "in-session todo lists (use TaskCreate instead)"
