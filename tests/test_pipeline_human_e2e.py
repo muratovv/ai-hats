@@ -67,8 +67,11 @@ def test_human_pipeline_e2e(tmp_path: Path):
     assert final["session_dir"] == fake_session.session_dir
     assert final["transcript_path"] == fake_session.trace_path
     assert final["exit_code"] == 0
-    assert final["review_pid"] == 42
     assert final["system_prompt"] == "ROLE PROMPT"
+    # spawn_session_review removed from human.yaml — session-review is now
+    # decided by the session_end auto-retro hook (threshold-aware), not
+    # forced by the pipeline.
+    assert "review_pid" not in final
 
     fake_assembler.composer.compose.assert_called_once_with("assistant")
     fake_runner.run.assert_called_once()
