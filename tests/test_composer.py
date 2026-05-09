@@ -327,7 +327,9 @@ def test_overlay_injection_append(overlay_composer):
 
 
 def test_overlay_remove_nonexistent_warns(overlay_composer):
-    overlay = OverlayConfig(remove_traits=["nonexistent-trait"], remove_skills=["nonexistent-skill"])
+    overlay = OverlayConfig(
+        remove_traits=["nonexistent-trait"], remove_skills=["nonexistent-skill"]
+    )
     result = overlay_composer.compose("base-role", overlay=overlay)
     warnings = [e for e in result.errors if "Overlay" in e]
     assert len(warnings) == 2
@@ -349,3 +351,108 @@ def test_overlay_empty_is_noop(overlay_composer):
     result_base = overlay_composer.compose("base-role")
     result_overlay = overlay_composer.compose("base-role", overlay=overlay)
     assert result_base.merged_injection == result_overlay.merged_injection
+
+
+# -- Per-trait granularity tests (HATS-281) --
+
+
+def test_compose_exposes_trait_injections(composer):
+    """trait_injections maps trait name -> injection text in declaration order."""
+    result = composer.compose("test-role")
+    assert list(result.trait_injections.keys()) == ["trait-base", "trait-composite"]
+    assert "Base injection" in result.trait_injections["trait-base"]
+    assert "Composite injection" in result.trait_injections["trait-composite"]
+
+
+def test_compose_role_injection_separated(composer):
+    """role_injection holds the root role's own text, no trait content."""
+    result = composer.compose("test-role")
+    assert "Role injection" in result.role_injection
+    assert "Base injection" not in result.role_injection
+    assert "Composite injection" not in result.role_injection
+    # Appears exactly once in merged_injection
+    assert result.merged_injection.count(result.role_injection) == 1
+
+
+def test_compose_overlay_injection_separated(overlay_composer):
+    """overlay_injection holds the appended text and lands after role_injection in merged."""
+    overlay = OverlayConfig(injection_append="Custom user injection.")
+    result = overlay_composer.compose("base-role", overlay=overlay)
+    assert result.overlay_injection == "Custom user injection."
+    merged = result.merged_injection
+    assert merged.index(result.role_injection) < merged.index(result.overlay_injection)
+
+
+def test_compose_trait_injections_dedup_by_text(tmp_path):
+    """Two traits with identical injection text — only the first appears in trait_injections."""
+    lib = tmp_path / "lib"
+
+    for name in ("trait-a", "trait-b"):
+        d = lib / "traits" / name
+        d.mkdir(parents=True)
+        (d / "config.yaml").write_text(f"name: {name}\ninjection: Same text.\n")
+
+    role_dir = lib / "roles" / "dup-role"
+    role_dir.mkdir(parents=True)
+    (role_dir / "config.yaml").write_text("""
+name: dup-role
+composition:
+  traits:
+    - trait-a
+    - trait-b
+""")
+
+    result = Composer(LibraryResolver([lib])).compose("dup-role")
+
+    assert "trait-a" in result.trait_injections
+    assert "trait-b" not in result.trait_injections
+    assert result.injections.count("Same text.") == 1
+
+
+def test_compose_trait_with_empty_injection_excluded(tmp_path):
+    """Trait with empty injection is absent from trait_injections; deps still resolved."""
+    lib = tmp_path / "lib"
+
+    rule_dir = lib / "rules" / "r1"
+    rule_dir.mkdir(parents=True)
+    (rule_dir / "rule.md").write_text("# r1")
+    (rule_dir / "metadata.yaml").write_text("name: r1\n")
+
+    trait_dir = lib / "traits" / "trait-empty"
+    trait_dir.mkdir(parents=True)
+    (trait_dir / "config.yaml").write_text("""
+name: trait-empty
+composition:
+  rules:
+    - r1
+injection: ""
+""")
+
+    role_dir = lib / "roles" / "empty-role"
+    role_dir.mkdir(parents=True)
+    (role_dir / "config.yaml").write_text("""
+name: empty-role
+composition:
+  traits:
+    - trait-empty
+""")
+
+    result = Composer(LibraryResolver([lib])).compose("empty-role")
+
+    assert "trait-empty" not in result.trait_injections
+    assert any(r.name == "r1" for r in result.rules)
+
+
+def test_compose_merged_injection_byte_identical_baseline(composer):
+    """Regression guard: merged_injection wire format must not drift after T1 changes."""
+    result = composer.compose("test-role")
+    expected = "Base injection text.\n\nComposite injection text.\n\nRole injection text."
+    assert result.merged_injection == expected
+
+
+def test_compose_missing_role_has_empty_structured_fields(composer):
+    """The error-branch result still carries the new fields with safe defaults."""
+    result = composer.compose("nonexistent")
+    assert result.trait_injections == {}
+    assert result.role_injection == ""
+    assert result.overlay_injection == ""

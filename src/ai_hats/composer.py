@@ -21,7 +21,23 @@ class ResolvedComponent:
 
 @dataclass
 class CompositionResult:
-    """The flattened result of composing a role."""
+    """The flattened result of composing a role.
+
+    `injections` is the legacy flat view (trait/role/overlay text, deduped by
+    content). The structured fields below carry the same data with provenance
+    for layered writers (HATS-282 canonical writer):
+
+    - `trait_injections` — `{trait_name: text}`, deduped by text (mirror of
+      `injections` dedup): a trait whose text is empty or already recorded by
+      another trait/role is absent from the map.
+    - `role_injection` — root role's own injection text (independent of dedup;
+      always recorded if non-empty).
+    - `overlay_injection` — overlay's appended text (independent of dedup;
+      always recorded if non-empty).
+
+    Rules and skills already carry provenance via `rules`/`skills` lists
+    (deduped by name), so no separate maps are needed for them.
+    """
 
     name: str
     priorities: list[str]
@@ -31,6 +47,9 @@ class CompositionResult:
     mcp: list[MCPServerConfig]
     injections: list[str]  # ordered injection texts
     errors: list[str] = field(default_factory=list)
+    trait_injections: dict[str, str] = field(default_factory=dict)
+    role_injection: str = ""
+    overlay_injection: str = ""
 
     @property
     def merged_injection(self) -> str:
@@ -71,6 +90,9 @@ class Composer:
         rules: list[ResolvedComponent] = []
         skills: list[ResolvedComponent] = []
         injections: list[str] = []
+        trait_injections: dict[str, str] = {}
+        role_injection_text = ""
+        overlay_injection_text = ""
         hooks = HooksConfig()
         mcp: list[MCPServerConfig] = []
 
@@ -87,6 +109,7 @@ class Composer:
             rules=rules,
             skills=skills,
             injections=injections,
+            trait_injections=trait_injections,
             hooks=hooks,
             mcp=mcp,
             errors=errors,
@@ -115,17 +138,22 @@ class Composer:
         # Merge role's own MCP
         mcp.extend(config.composition.mcp)
 
-        # Add role's own injection last (highest priority)
-        if config.injection.strip() and config.injection.strip() not in seen_injections:
-            injections.append(config.injection.strip())
-            seen_injections.add(config.injection.strip())
+        # Add role's own injection last (highest priority).
+        # role_injection is recorded independently of dedup so the layered
+        # writer can emit role.md even when text duplicates a trait's.
+        role_injection_text = config.injection.strip()
+        if role_injection_text and role_injection_text not in seen_injections:
+            injections.append(role_injection_text)
+            seen_injections.add(role_injection_text)
 
-        # Append overlay injection after role's own
+        # Append overlay injection after role's own.
+        # overlay_injection is recorded independently of dedup for the same
+        # reason as role_injection.
         if overlay and overlay.injection_append.strip():
-            inj = overlay.injection_append.strip()
-            if inj not in seen_injections:
-                injections.append(inj)
-                seen_injections.add(inj)
+            overlay_injection_text = overlay.injection_append.strip()
+            if overlay_injection_text not in seen_injections:
+                injections.append(overlay_injection_text)
+                seen_injections.add(overlay_injection_text)
 
         return CompositionResult(
             name=config.name,
@@ -136,11 +164,16 @@ class Composer:
             mcp=mcp,
             injections=injections,
             errors=errors,
+            trait_injections=trait_injections,
+            role_injection=role_injection_text,
+            overlay_injection=overlay_injection_text,
         )
 
     @staticmethod
     def _apply_overlay(
-        config: ComponentConfig, overlay: OverlayConfig, errors: list[str],
+        config: ComponentConfig,
+        overlay: OverlayConfig,
+        errors: list[str],
     ) -> None:
         """Mutate config composition lists according to overlay add/remove."""
         comp = config.composition
@@ -175,6 +208,7 @@ class Composer:
         rules: list[ResolvedComponent],
         skills: list[ResolvedComponent],
         injections: list[str],
+        trait_injections: dict[str, str],
         hooks: HooksConfig,
         mcp: list[MCPServerConfig],
         errors: list[str],
@@ -220,10 +254,14 @@ class Composer:
             # Merge trait MCP
             mcp.extend(config.composition.mcp)
 
-            # Add trait injection (deduped)
-            if config.injection.strip() and config.injection.strip() not in seen_injections:
-                injections.append(config.injection.strip())
-                seen_injections.add(config.injection.strip())
+            # Add trait injection (deduped by text).
+            # trait_injections mirrors the dedup: a trait whose text is empty
+            # or already recorded is absent from the map.
+            inj = config.injection.strip()
+            if inj and inj not in seen_injections:
+                injections.append(inj)
+                seen_injections.add(inj)
+                trait_injections[trait_name] = inj
 
     def _resolve_rules(
         self,
@@ -244,12 +282,14 @@ class Composer:
                 continue
 
             content = self.resolver.rule_content(rule_name)
-            rules.append(ResolvedComponent(
-                name=rule_name,
-                component_type=ComponentType.RULE,
-                source_path=rule_dir,
-                injection=content or "",
-            ))
+            rules.append(
+                ResolvedComponent(
+                    name=rule_name,
+                    component_type=ComponentType.RULE,
+                    source_path=rule_dir,
+                    injection=content or "",
+                )
+            )
 
     def _resolve_skills(
         self,
@@ -271,19 +311,25 @@ class Composer:
 
             skill_md = skill_dir / "SKILL.md"
             injection = skill_md.read_text() if skill_md.exists() else ""
-            skills.append(ResolvedComponent(
-                name=skill_name,
-                component_type=ComponentType.SKILL,
-                source_path=skill_dir,
-                injection=injection,
-            ))
+            skills.append(
+                ResolvedComponent(
+                    name=skill_name,
+                    component_type=ComponentType.SKILL,
+                    source_path=skill_dir,
+                    injection=injection,
+                )
+            )
 
     @staticmethod
     def _merge_hooks(target: HooksConfig, source: HooksConfig) -> None:
         """Merge source hooks into target (appending scripts)."""
         for event_name in (
-            "session_start", "session_end", "task_start",
-            "task_complete", "task_failed", "error",
+            "session_start",
+            "session_end",
+            "task_start",
+            "task_complete",
+            "task_failed",
+            "error",
         ):
             target_list = getattr(target, event_name)
             source_list = getattr(source, event_name)
