@@ -13,7 +13,7 @@ previous run that crashed before its own cleanup.
 NB: parallel runs of the *same* pipeline name will race the namespace.
 This is the same constraint the pre-pipeline ``_do_execute`` had —
 ai-hats does not support parallel invocations of one command in one
-project. Different pipelines (``bare`` vs ``reflect-all``) are safe
+project. Different pipelines (``human`` vs ``reflect-all``) are safe
 in parallel because they have disjoint namespaces.
 """
 

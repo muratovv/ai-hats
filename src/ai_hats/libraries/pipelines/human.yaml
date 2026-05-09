@@ -1,8 +1,8 @@
-name: bare
+name: human
 steps:
   - id: compose_role
   - id: pre_log
-    params: {keys: [role]}
+    params: {keys: []}
   - id: launch_provider
   - id: spawn_session_review
   - id: post_log

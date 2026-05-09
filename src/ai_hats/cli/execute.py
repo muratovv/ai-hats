@@ -39,8 +39,11 @@ def _resolve_prompt(arg: str | None) -> str | None:
       1. ``arg is None`` → return ``None``.
       2. ``libraries/initial_injections/<arg>.md`` (short name).
       3. ``arg`` as a filesystem path (absolute or cwd-relative).
+      4. Fallback: treat ``arg`` as raw prompt text.
 
-    Raises ``click.BadParameter`` if neither resolves to a readable file.
+    A path-shaped arg (contains ``/`` or ends with ``.md`` / ``.txt``) that
+    does not resolve to an existing file fails fast — likely a typo, not
+    intentional raw text.
     """
     if arg is None:
         return None
@@ -50,11 +53,14 @@ def _resolve_prompt(arg: str | None) -> str | None:
     fs_path = Path(arg)
     if fs_path.is_file():
         return fs_path.read_text()
-    raise click.BadParameter(
-        f"--prompt {arg!r}: not a known initial-injection name and not a "
-        f"readable file. Tried {name_path} and {fs_path.resolve()}.",
-        param_hint="--prompt",
-    )
+    # Path-shaped strings must point to a real file — anything else is text.
+    if "/" in arg or arg.endswith((".md", ".txt")):
+        raise click.BadParameter(
+            f"--prompt {arg!r}: looks like a path but no such file. "
+            f"Tried {name_path} and {fs_path.resolve()}.",
+            param_hint="--prompt",
+        )
+    return arg
 
 
 @click.command(

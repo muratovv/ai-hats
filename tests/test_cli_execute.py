@@ -34,9 +34,19 @@ def test_resolve_prompt_filesystem_path(tmp_path: Path) -> None:
     assert text == "hello world"
 
 
-def test_resolve_prompt_fail_fast(tmp_path: Path) -> None:
+def test_resolve_prompt_fail_fast_on_path_shape(tmp_path: Path) -> None:
+    """Path-shaped arg with no file → fail fast (likely a typo)."""
     with pytest.raises(click.BadParameter):
-        _resolve_prompt("does-not-exist-anywhere")
+        _resolve_prompt("./does-not-exist.md")
+    with pytest.raises(click.BadParameter):
+        _resolve_prompt("/no/such/file.txt")
+
+
+def test_resolve_prompt_raw_text_fallback() -> None:
+    """Plain text (no path-shape) is returned verbatim — supports
+    ``--prompt 'ping'`` use case where user just wants to send a message."""
+    assert _resolve_prompt("ping") == "ping"
+    assert _resolve_prompt("hello world") == "hello world"
 
 
 def test_initial_injections_dir_points_to_package_libraries() -> None:
@@ -166,11 +176,13 @@ def test_execute_interactive_no_prompt_passes_empty_extra_args(
     assert captured["extra_args"] == []
 
 
-def test_execute_batch_fail_fast_on_unknown_prompt(
+def test_execute_batch_fail_fast_on_path_shape(
     project_dir: Path, monkeypatch
 ) -> None:
+    """Path-shaped --prompt that doesn't resolve to a file → fail fast."""
     res = CliRunner().invoke(
-        main, ["execute", "--role", "x", "--batch", "--prompt", "no-such-name"],
+        main,
+        ["execute", "--role", "x", "--batch", "--prompt", "./missing.md"],
     )
     assert res.exit_code != 0
-    assert "no such" in res.output.lower() or "not a known" in res.output.lower()
+    assert "looks like a path" in res.output.lower() or "no such" in res.output.lower()
