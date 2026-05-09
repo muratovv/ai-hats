@@ -1,11 +1,10 @@
 name: reflect-all
 steps:
-  - id: build_handoff
   - id: compose_role
   - id: resolve_prompt
     params: {default_text: ""}
   - id: pre_log
-    params: {keys: [handoff_path, prompt_text]}
+    params: {keys: [role, prompt_text]}
   - id: launch_provider
   - id: extract_marker
     params: {start: BEGIN_JUDGE, end: END_JUDGE, out_key: judge_report}

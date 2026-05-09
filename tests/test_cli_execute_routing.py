@@ -133,10 +133,17 @@ def test_reflect_all_routes_to_wraprunner_with_judge(
         def run(self, provider, **kwargs):
             captured["role_override"] = kwargs.get("role_override")
             captured["extra_args"] = kwargs.get("extra_args")
-            return 0, object()
+            return 0, _StubSession(
+                project_dir / ".gitlog" / "session_judge",
+                {"exit_code": 0},
+            )
 
     import ai_hats.runtime as runtime_mod
     monkeypatch.setattr(runtime_mod, "WrapRunner", _WrapRunner)
+    # spawn_session_review fires after launch_provider — stub Popen.
+    import subprocess
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: MagicMock(pid=1))
 
     res = CliRunner().invoke(main, ["reflect", "all"])
     assert res.exit_code == 0, res.output

@@ -111,7 +111,8 @@ def _spawn_detached(session_id: str, max_retries: int) -> None:
 )
 def reflect_all_cmd(dry_run: bool):
     """Interactive HYP closure + proposal triage via the `judge` role."""
-    from .execute import _do_execute, _initial_injections_dir
+    from ..pipeline.harness import PipelineHarness
+    from .execute import _initial_injections_dir
 
     project_dir = _project_dir()
     handoff_path = _build_handoff(project_dir)
@@ -126,15 +127,15 @@ def reflect_all_cmd(dry_run: bool):
     console.print(
         f"[cyan]→ Launching judge for reflect-all triage: {handoff_path}[/]"
     )
-    rc = _do_execute(
-        role="judge",
-        provider=None,
-        interactive=True,
-        prompt=combined,
-        tags=None,
-        extra_args=[],
-    )
-    sys.exit(int(rc))
+    with PipelineHarness("reflect-all", project_dir) as h:
+        final = h.run({
+            "role": "judge",
+            "interactive": True,
+            "project_dir": project_dir,
+            "prompt_path": h.materialize_prompt(combined),
+            "extra_args": [],
+        })
+    sys.exit(int(final.get("exit_code", 1)))
 
 
 # ---- reflect commit ----
