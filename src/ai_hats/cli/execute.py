@@ -174,27 +174,31 @@ def execute_cmd(
 
     prompt_text = _resolve_prompt(prompt_arg)
 
-    if interactive:
-        rc = _do_execute(
-            role=role,
-            provider=provider,
-            interactive=True,
-            prompt=prompt_text,
-            tags=tags or None,
-            extra_args=list(extra_args),
-        )
-        sys.exit(int(rc))
+    from ..pipeline import run as run_pipeline
+    from ..pipeline.presets import execute_pipeline
 
-    session = _do_execute(
-        role=role,
-        provider=provider,
-        interactive=False,
-        prompt=prompt_text,
-        model=model,
-        isolation=isolation,
-        ticket=ticket,
-        tags=tags or None,
-    )
+    if interactive:
+        state = run_pipeline(execute_pipeline, {
+            "interactive": True,
+            "role": role,
+            "provider": provider,
+            "prompt_text": prompt_text,
+            "tags": tags or None,
+            "extra_args": list(extra_args),
+        })
+        sys.exit(int(state["exit_code"]))
+
+    state = run_pipeline(execute_pipeline, {
+        "interactive": False,
+        "role": role,
+        "provider": provider,
+        "prompt_text": prompt_text,
+        "model": model,
+        "isolation": isolation,
+        "ticket": ticket,
+        "tags": tags or None,
+    })
+    session = state["session"]
 
     metrics: dict = {}
     if session.metrics_path.exists():
