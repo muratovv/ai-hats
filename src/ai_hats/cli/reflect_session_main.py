@@ -20,7 +20,8 @@ import yaml
 from pydantic import ValidationError
 
 from ..hypothesis import HypothesisStore, Proposal, ProposalStore, next_proposal_id
-from ..retro.session_review_runner import SessionReviewError, SessionReviewRunner
+from ..pipeline.harness import PipelineHarness
+from ..retro.session_review_runner import SessionReviewError
 
 
 def main() -> int:
@@ -34,12 +35,17 @@ def main() -> int:
     max_retries = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
     project_dir = Path.cwd()
-    runner = SessionReviewRunner(project_dir)
 
     runner_error: str | None = None
     saved_path: Path | None = None
     try:
-        saved_path = runner.run(session_id, max_retries=max_retries)
+        with PipelineHarness("reflect-session", project_dir) as h:
+            final = h.run({
+                "session_id": session_id,
+                "project_dir": project_dir,
+                "max_retries": max_retries,
+            })
+            saved_path = final.get("review_path")
     except SessionReviewError as exc:
         runner_error = str(exc)
         print(

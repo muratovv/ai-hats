@@ -43,7 +43,7 @@ def test_main_runner_error_files_proposal(
         def run(self, sid, max_retries=1):
             raise SessionReviewError("provider down")
 
-    monkeypatch.setattr(rsm, "SessionReviewRunner", _FailingRunner)
+    monkeypatch.setattr("ai_hats.retro.session_review_runner.SessionReviewRunner", _FailingRunner)
     monkeypatch.setattr("sys.argv", ["reflect_session_main", "x-1"])
 
     rc = rsm.main()
@@ -72,7 +72,7 @@ def test_main_incomplete_yaml_files_proposal(
             out.write_text("")  # empty
             return out
 
-    monkeypatch.setattr(rsm, "SessionReviewRunner", _BadRunner)
+    monkeypatch.setattr("ai_hats.retro.session_review_runner.SessionReviewRunner", _BadRunner)
     monkeypatch.setattr("sys.argv", ["reflect_session_main", "x-1"])
 
     rc = rsm.main()
@@ -92,7 +92,7 @@ def test_main_runner_error_dedups_proposal(
         def run(self, sid, max_retries=1):
             raise SessionReviewError("fail")
 
-    monkeypatch.setattr(rsm, "SessionReviewRunner", _FailingRunner)
+    monkeypatch.setattr("ai_hats.retro.session_review_runner.SessionReviewRunner", _FailingRunner)
     monkeypatch.setattr("sys.argv", ["reflect_session_main", "x-1"])
 
     rsm.main()

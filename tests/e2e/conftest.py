@@ -102,12 +102,6 @@ def mock_runners(monkeypatch, project_dir, captured):
     monkeypatch.setattr(rt, "WrapRunner", _WrapRunner)
     monkeypatch.setattr(rt, "SubAgentRunner", _SubAgentRunner)
     monkeypatch.setattr(srr, "SessionReviewRunner", _SessionReviewRunner)
-    # Also patch where reflect imports it (cli/reflect.py imports it directly)
-    import ai_hats.cli.reflect as reflect_mod
-    monkeypatch.setattr(reflect_mod, "SessionReviewRunner", _SessionReviewRunner)
-    # cli/reflect_session_main.py also imports the symbol module-locally
-    import ai_hats.cli.reflect_session_main as rsm
-    monkeypatch.setattr(rsm, "SessionReviewRunner", _SessionReviewRunner)
 
     def _popen_stub(*args, **kwargs):
         cap["popen_calls"].append({"args": args[0] if args else None,
