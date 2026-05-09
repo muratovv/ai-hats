@@ -305,9 +305,14 @@ class Assembler:
             # 4. Export skills to provider-native directory
             provider.export_skills(self.project_dir, result.skills)
 
-            # 5. Update system prompt
-            prompt_content = provider.build_system_prompt(result)
-            provider.update_system_prompt(self.project_dir, prompt_content)
+            # 5. Update system prompt — legacy inline block path. HATS-286
+            # makes this explicit: providers that declare a scaffold template
+            # own ./CLAUDE.md via the canonical→publish flow (HATS-282/283/284),
+            # so the inline update is skipped for them. Gemini still uses the
+            # inline path because Gemini scaffold is a non-goal of HATS-276.
+            if provider.scaffold_template_relpath() is None:
+                prompt_content = provider.build_system_prompt(result)
+                provider.update_system_prompt(self.project_dir, prompt_content)
 
             # 5b. Publish canonical to provider namespace (HATS-283)
             provider.publish(self._canonical_dir, self.project_dir)
