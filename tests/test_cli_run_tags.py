@@ -22,10 +22,13 @@ class _StubSession:
         self.session_id = "stub-session"
         self.session_dir = tmp_path / "session_stub"
         self.session_dir.mkdir(parents=True, exist_ok=True)
-        # Emulate a finalized session so CLI's exit-code propagation finds 0.
+        # Pipeline LaunchProvider step reads trace_path/metrics_path —
+        # provide both so post-pipeline flat state is well-formed.
+        self.trace_path = self.session_dir / "trace.log"
+        self.trace_path.write_text("(stub)")
         self.metrics_path = self.session_dir / "metrics.json"
         self.metrics_path.write_text(
-            json.dumps({"exit_code": 0, "role": "primary"})
+            json.dumps({"exit_code": 0, "role": "test-agent"})
         )
 
 
@@ -47,7 +50,7 @@ def project_dir(tmp_path: Path) -> Path:
     (tmp_path / ".gitlog").mkdir()
     # Minimal ai-hats.yaml so _project_dir() resolves here.
     (tmp_path / "ai-hats.yaml").write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: primary\n"
+        "schema_version: 2\nprovider: claude\nactive_role: test-agent\n"
     )
     return tmp_path
 
@@ -68,14 +71,14 @@ def stub_runner(monkeypatch, project_dir):
 
 
 def test_run_without_tags_passes_none(stub_runner):
-    result = CliRunner().invoke(main, ["agent", "primary", "--task", "t"])
+    result = CliRunner().invoke(main, ["agent", "test-agent", "--task", "t"])
     assert result.exit_code == 0, result.output
     assert stub_runner.last_kwargs["tags"] is None
 
 
 def test_run_single_tag(stub_runner):
     result = CliRunner().invoke(
-        main, ["agent", "primary", "--task", "t", "--tag", "alert_fp=abc123"],
+        main, ["agent", "test-agent", "--task", "t", "--tag", "alert_fp=abc123"],
     )
     assert result.exit_code == 0, result.output
     assert stub_runner.last_kwargs["tags"] == {"alert_fp": "abc123"}
@@ -83,7 +86,7 @@ def test_run_single_tag(stub_runner):
 
 def test_run_multiple_tags(stub_runner):
     result = CliRunner().invoke(main, [
-        "agent", "primary", "--task", "t",
+        "agent", "test-agent", "--task", "t",
         "--tag", "alert_fp=abc", "--tag", "client=home-lab",
     ])
     assert result.exit_code == 0, result.output
@@ -98,7 +101,7 @@ def test_run_multiple_tags(stub_runner):
 
 
 def test_run_tag_missing_equals_fails(stub_runner):
-    result = CliRunner().invoke(main, ["agent", "primary", "--tag", "broken"])
+    result = CliRunner().invoke(main, ["agent", "test-agent", "--tag", "broken"])
     assert result.exit_code == 2
     assert "missing '=' separator" in result.output
     # Runner never called.
@@ -107,7 +110,7 @@ def test_run_tag_missing_equals_fails(stub_runner):
 
 def test_run_tag_reserved_key_fails(stub_runner):
     result = CliRunner().invoke(
-        main, ["agent", "primary", "--tag", "role=hacker"],
+        main, ["agent", "test-agent", "--tag", "role=hacker"],
     )
     assert result.exit_code == 2
     assert "is reserved" in result.output
@@ -116,7 +119,7 @@ def test_run_tag_reserved_key_fails(stub_runner):
 
 def test_run_tag_invalid_key_format_fails(stub_runner):
     result = CliRunner().invoke(
-        main, ["agent", "primary", "--tag", "1bad=v"],
+        main, ["agent", "test-agent", "--tag", "1bad=v"],
     )
     assert result.exit_code == 2
     assert "must match" in result.output

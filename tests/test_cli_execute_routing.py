@@ -163,6 +163,8 @@ class _StubSession:
         self.session_id = session_dir.name.removeprefix("session_")
         self.session_dir = session_dir
         session_dir.mkdir(parents=True, exist_ok=True)
+        self.trace_path = session_dir / "trace.log"
+        self.trace_path.write_text("(stub)")
         self.metrics_path = session_dir / "metrics.json"
         self.metrics_path.write_text(json.dumps(metrics))
 

@@ -23,6 +23,8 @@ class _StubSession:
         self.session_id = session_dir.name.removeprefix("session_")
         self.session_dir = session_dir
         session_dir.mkdir(parents=True, exist_ok=True)
+        self.trace_path = session_dir / "trace.log"
+        self.trace_path.write_text("(stub)")
         self.metrics_path = session_dir / "metrics.json"
         self.metrics_path.write_text(json.dumps(metrics))
 
@@ -48,7 +50,7 @@ def _install_stub_runner(monkeypatch, project_dir: Path, metrics: dict):
 def project_dir(tmp_path: Path) -> Path:
     (tmp_path / ".gitlog").mkdir()
     (tmp_path / "ai-hats.yaml").write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: primary\n"
+        "schema_version: 2\nprovider: claude\nactive_role: test-agent\n"
     )
     return tmp_path
 
@@ -67,38 +69,38 @@ def cli(monkeypatch, project_dir):
 def test_json_output_is_single_parseable_object(cli, monkeypatch, project_dir):
     _install_stub_runner(monkeypatch, project_dir, {
         "exit_code": 0,
-        "role": "primary",
+        "role": "test-agent",
         "model": "sonnet",
         "isolation_mode": "discard",
         "duration_s": 12.345,
     })
 
-    result = cli.invoke(main, ["agent", "primary", "--task", "t", "--json"])
+    result = cli.invoke(main, ["agent", "test-agent", "--task", "t", "--json"])
     assert result.exit_code == 0, result.output
 
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["session_id"] == "stub-session"
     assert payload["session_dir"].endswith("/.gitlog/session_stub-session")
     # metrics pulled through
     assert payload["exit_code"] == 0
-    assert payload["role"] == "primary"
+    assert payload["role"] == "test-agent"
     assert payload["duration_s"] == 12.345
 
 
 def test_json_includes_tags_if_present(cli, monkeypatch, project_dir):
     _install_stub_runner(monkeypatch, project_dir, {
         "exit_code": 0,
-        "role": "primary",
+        "role": "test-agent",
         "tags": {"alert_fp": "abc", "client": "home"},
     })
 
     result = cli.invoke(main, [
-        "agent", "primary", "--task", "t", "--json",
+        "agent", "test-agent", "--task", "t", "--json",
         "--tag", "alert_fp=abc", "--tag", "client=home",
     ])
     assert result.exit_code == 0, result.output
 
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["tags"] == {"alert_fp": "abc", "client": "home"}
 
 
@@ -106,11 +108,11 @@ def test_json_mode_suppresses_human_output(cli, monkeypatch, project_dir):
     """Stdout must be valid JSON only — no rich decorations."""
     _install_stub_runner(monkeypatch, project_dir, {"exit_code": 0})
 
-    result = cli.invoke(main, ["agent", "primary", "--task", "t", "--json"])
+    result = cli.invoke(main, ["agent", "test-agent", "--task", "t", "--json"])
     # Parseable as-is, without pre-processing.
-    json.loads(result.output)
+    json.loads(result.stdout)
     # The human summary line must not leak into stdout.
-    assert "Sub-agent completed" not in result.output
+    assert "Sub-agent completed" not in result.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -123,10 +125,10 @@ def test_exit_code_propagates_in_json_mode(
     cli, monkeypatch, project_dir, metrics_exit_code,
 ):
     _install_stub_runner(monkeypatch, project_dir, {
-        "exit_code": metrics_exit_code, "role": "primary",
+        "exit_code": metrics_exit_code, "role": "test-agent",
     })
 
-    result = cli.invoke(main, ["agent", "primary", "--task", "t", "--json"])
+    result = cli.invoke(main, ["agent", "test-agent", "--task", "t", "--json"])
     assert result.exit_code == metrics_exit_code
 
 
@@ -135,10 +137,10 @@ def test_exit_code_propagates_in_human_mode(
     cli, monkeypatch, project_dir, metrics_exit_code,
 ):
     _install_stub_runner(monkeypatch, project_dir, {
-        "exit_code": metrics_exit_code, "role": "primary",
+        "exit_code": metrics_exit_code, "role": "test-agent",
     })
 
-    result = cli.invoke(main, ["agent", "primary", "--task", "t"])
+    result = cli.invoke(main, ["agent", "test-agent", "--task", "t"])
     assert result.exit_code == metrics_exit_code
 
 
@@ -152,6 +154,8 @@ def test_missing_metrics_defaults_to_exit_1(cli, monkeypatch, project_dir):
             self.session_id = "bare"
             self.session_dir = project_dir / ".gitlog" / "session_bare"
             self.session_dir.mkdir(parents=True, exist_ok=True)
+            self.trace_path = self.session_dir / "trace.log"
+            self.trace_path.write_text("(stub)")
             self.metrics_path = self.session_dir / "metrics.json"  # does not exist
 
     class _Runner:
@@ -164,9 +168,9 @@ def test_missing_metrics_defaults_to_exit_1(cli, monkeypatch, project_dir):
     import ai_hats.runtime as runtime_mod
     monkeypatch.setattr(runtime_mod, "SubAgentRunner", _Runner)
 
-    result = cli.invoke(main, ["agent", "primary", "--task", "t", "--json"])
+    result = cli.invoke(main, ["agent", "test-agent", "--task", "t", "--json"])
     assert result.exit_code == 1
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["session_id"] == "bare"
     assert "exit_code" not in payload  # metrics absent
 
@@ -178,10 +182,10 @@ def test_missing_metrics_defaults_to_exit_1(cli, monkeypatch, project_dir):
 
 def test_human_mode_prints_summary(cli, monkeypatch, project_dir):
     _install_stub_runner(monkeypatch, project_dir, {
-        "exit_code": 0, "role": "primary",
+        "exit_code": 0, "role": "test-agent",
     })
 
-    result = cli.invoke(main, ["agent", "primary", "--task", "t"])
+    result = cli.invoke(main, ["agent", "test-agent", "--task", "t"])
     assert result.exit_code == 0
-    assert "Sub-agent completed" in result.output
-    assert "stub-session" in result.output
+    assert "Sub-agent completed" in result.stdout
+    assert "stub-session" in result.stdout
