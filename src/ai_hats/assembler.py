@@ -7,10 +7,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .composer import Composer, CompositionResult
+from .composer import Composer, CompositionResult, ResolvedComponent
 from .library import LibraryResolver
 from .models import ComponentType, ProjectConfig, SkillMetadata
-from .providers import PROVIDERS, Provider, get_provider
+from .providers import PROVIDERS, Provider, _extract_frontmatter_description, get_provider
 
 
 AGENT_DIR = ".agent"
@@ -20,14 +20,17 @@ PROFILE_FILE = "profile.json"  # legacy, used only for backup compat
 GITHOOKS_DIR = ".githooks"
 GITHOOKS_MANIFEST = ".ai-hats-manifest"
 GITHOOKS_DISPATCHER_MARKER = "AI-HATS-DISPATCHER-MARKER"
-GITHOOKS_DISPATCHER_TEMPLATE = (
-    Path(__file__).parent / "templates" / "githooks" / "dispatcher.sh"
-)
+GITHOOKS_DISPATCHER_TEMPLATE = Path(__file__).parent / "templates" / "githooks" / "dispatcher.sh"
 GITIGNORE_FILE = ".gitignore"
 GITIGNORE_START = "# AI-HATS:START — managed by ai-hats, do not edit"
 GITIGNORE_END = "# AI-HATS:END"
 LIBRARY_RULES_MARKER = ".library_rules"
 MANAGED_SKILLS_MARKER = ".ai-hats-managed"
+
+# HATS-282 — canonical layered layer
+CANONICAL_DIR = "ai-hats"
+CANONICAL_MANIFEST = "MANAGED"
+USER_RULES_SUBDIR = "user-rules"
 
 
 class Assembler:
@@ -175,6 +178,9 @@ class Assembler:
             # 3b. Install skill-contributed git hooks (HATS-088)
             self._install_git_hooks(result)
 
+            # 3c. Write canonical layered layer (HATS-282)
+            self.write_canonical(result)
+
             # 4. Export skills to provider-native directory
             provider.export_skills(self.project_dir, result.skills)
 
@@ -239,7 +245,8 @@ class Assembler:
 
         if cfg.active_role:
             result = self.composer.compose(
-                cfg.active_role, overlay=self._get_overlay(cfg.active_role),
+                cfg.active_role,
+                overlay=self._get_overlay(cfg.active_role),
             )
             status["tree"] = self._build_tree(result)
             status["health"] = self._check_health(result)
@@ -415,8 +422,12 @@ class Assembler:
         hooks_dir.mkdir(parents=True, exist_ok=True)
         managed_hooks: list[str] = []
         for event_name in (
-            "session_start", "session_end", "task_start",
-            "task_complete", "task_failed", "error",
+            "session_start",
+            "session_end",
+            "task_start",
+            "task_complete",
+            "task_failed",
+            "error",
         ):
             scripts = getattr(result.hooks, event_name)
             for script in scripts:
@@ -548,7 +559,8 @@ class Assembler:
             print(f"[ai-hats] WARNING: {w}")
 
     def _collect_skill_git_hooks(
-        self, result: CompositionResult,
+        self,
+        result: CompositionResult,
     ) -> dict[str, list[tuple[str, str]]]:
         """Walk composed skills and collect their declared git hooks.
 
@@ -561,9 +573,7 @@ class Assembler:
             if not metadata.git_hooks:
                 continue
             for event, scripts in metadata.git_hooks.items():
-                collected.setdefault(event, []).extend(
-                    (skill.name, script) for script in scripts
-                )
+                collected.setdefault(event, []).extend((skill.name, script) for script in scripts)
         return collected
 
     @staticmethod
@@ -663,9 +673,7 @@ class Assembler:
                 check=True,
             )
         except subprocess.CalledProcessError as e:
-            warnings.append(
-                f"failed to set core.hooksPath: {e.stderr.strip() or e}"
-            )
+            warnings.append(f"failed to set core.hooksPath: {e.stderr.strip() or e}")
 
     def _verify(self, result: CompositionResult, provider: Provider) -> None:
         """Verify assembly correctness."""
@@ -698,8 +706,12 @@ class Assembler:
             "hooks": {
                 k: getattr(result.hooks, k)
                 for k in (
-                    "session_start", "session_end", "task_start",
-                    "task_complete", "task_failed", "error",
+                    "session_start",
+                    "session_end",
+                    "task_start",
+                    "task_complete",
+                    "task_failed",
+                    "error",
                 )
                 if getattr(result.hooks, k)
             },
@@ -716,12 +728,136 @@ class Assembler:
         for skill in result.skills:
             dest = self.agent_dir / "skills" / skill.name
             health[f"skill:{skill.name}"] = "OK" if dest.exists() else "Missing"
-        prompt_ok = any(
-            (self.project_dir / f).exists()
-            for f in ("GEMINI.md", "CLAUDE.md")
-        )
+        prompt_ok = any((self.project_dir / f).exists() for f in ("GEMINI.md", "CLAUDE.md"))
         health["system_prompt"] = "OK" if prompt_ok else "Missing"
         return health
+
+    # ----- Canonical layered layer (HATS-282) -----
+
+    @property
+    def _canonical_dir(self) -> Path:
+        return self.agent_dir / CANONICAL_DIR
+
+    def write_canonical(self, result: CompositionResult) -> None:
+        """Write the layered canonical view of `result` under .agent/ai-hats/.
+
+        Idempotent: per-file bytes-compare avoids spurious mtime updates.
+        Manifest-driven cleanup removes stale files from previous compositions
+        but never touches `user-rules/`.
+        """
+        canonical = self._canonical_dir
+        canonical.mkdir(parents=True, exist_ok=True)
+        (canonical / USER_RULES_SUBDIR).mkdir(exist_ok=True)
+
+        targets: dict[str, bytes] = {}
+
+        priorities = self._render_priorities(result.priorities)
+        if priorities is not None:
+            targets["priorities.md"] = priorities.encode()
+
+        role_doc = self._render_role(result.role_injection, result.overlay_injection)
+        if role_doc is not None:
+            targets["role.md"] = role_doc.encode()
+
+        for trait_name, text in result.trait_injections.items():
+            if not text:
+                continue
+            targets[f"traits/{trait_name}.md"] = self._ensure_trailing_newline(text).encode()
+
+        for rule in result.rules:
+            if not rule.injection:
+                continue
+            targets[f"rules/{rule.name}.md"] = self._ensure_trailing_newline(
+                rule.injection
+            ).encode()
+
+        skills_index = self._render_skills_index(result.skills)
+        if skills_index is not None:
+            targets["skills_index.md"] = skills_index.encode()
+
+        # Idempotent write
+        for relpath, content in targets.items():
+            self._atomic_write_if_changed(canonical / relpath, content)
+
+        # Stale cleanup: remove previous-managed files no longer present.
+        previous = self._read_canonical_manifest(canonical / CANONICAL_MANIFEST)
+        new_paths = set(targets.keys())
+        for stale in previous - new_paths:
+            if stale.startswith(f"{USER_RULES_SUBDIR}/") or stale == USER_RULES_SUBDIR:
+                continue  # never touch user-rules/
+            target = canonical / stale
+            target.unlink(missing_ok=True)
+            # Best-effort cleanup of empty parent dirs (stop at canonical root)
+            parent = target.parent
+            while parent != canonical and parent.is_dir():
+                try:
+                    parent.rmdir()
+                except OSError:
+                    break
+                parent = parent.parent
+
+        # Write the new manifest.
+        self._write_canonical_manifest(canonical / CANONICAL_MANIFEST, sorted(new_paths))
+
+    @staticmethod
+    def _render_priorities(priorities: list[str]) -> str | None:
+        if not priorities:
+            return None
+        body = "\n".join(f"{i}. {p}" for i, p in enumerate(priorities, start=1))
+        return f"# Priorities\n\n{body}\n"
+
+    @staticmethod
+    def _render_role(role_text: str, overlay_text: str) -> str | None:
+        parts = [t for t in (role_text, overlay_text) if t]
+        if not parts:
+            return None
+        return Assembler._ensure_trailing_newline("\n\n".join(parts))
+
+    @staticmethod
+    def _render_skills_index(skills: list[ResolvedComponent]) -> str | None:
+        if not skills:
+            return None
+        lines = ["# Skills Index", ""]
+        for skill in skills:
+            desc = _extract_frontmatter_description(skill)
+            # Fall back to empty when description equals the name (no frontmatter).
+            if desc == skill.name:
+                lines.append(f"- **{skill.name}**")
+            else:
+                lines.append(f"- **{skill.name}** — {desc}")
+        return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def _ensure_trailing_newline(text: str) -> str:
+        return text if text.endswith("\n") else text + "\n"
+
+    @staticmethod
+    def _atomic_write_if_changed(path: Path, content: bytes) -> bool:
+        """Write `content` to `path` only if it would change. Returns True on write."""
+        if path.exists() and path.read_bytes() == content:
+            return False
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_bytes(content)
+        tmp.replace(path)
+        return True
+
+    @staticmethod
+    def _read_canonical_manifest(path: Path) -> set[str]:
+        if not path.exists():
+            return set()
+        out: set[str] = set()
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                out.add(line)
+        return out
+
+    @staticmethod
+    def _write_canonical_manifest(path: Path, names: list[str]) -> None:
+        body = "# ai-hats canonical layer manifest. Do not edit.\n"
+        body += "\n".join(names) + "\n"
+        Assembler._atomic_write_if_changed(path, body.encode())
 
     # ----- .gitignore management (HATS-141) -----
 
@@ -754,15 +890,24 @@ class Assembler:
 
         # .agent/skills — subdirs per managed skill
         self._collect_from_manifest(
-            self.agent_dir / "skills", f"{AGENT_DIR}/skills", paths, as_dir=True,
+            self.agent_dir / "skills",
+            f"{AGENT_DIR}/skills",
+            paths,
+            as_dir=True,
         )
         # .agent/hooks — flat script files
         self._collect_from_manifest(
-            self.agent_dir / "hooks", f"{AGENT_DIR}/hooks", paths, as_dir=False,
+            self.agent_dir / "hooks",
+            f"{AGENT_DIR}/hooks",
+            paths,
+            as_dir=False,
         )
         # .agent/mcp — flat config files
         self._collect_from_manifest(
-            self.agent_dir / "mcp", f"{AGENT_DIR}/mcp", paths, as_dir=False,
+            self.agent_dir / "mcp",
+            f"{AGENT_DIR}/mcp",
+            paths,
+            as_dir=False,
         )
 
         for prov_dir in (".claude/skills", ".gemini/skills"):
@@ -782,11 +927,23 @@ class Assembler:
                 if entry:
                     paths.add(f"{GITHOOKS_DIR}/{entry}")
 
+        # .agent/ai-hats — canonical layered layer (HATS-282).
+        # user-rules/ is user-owned and excluded by being absent from MANAGED.
+        canonical_manifest = self._canonical_dir / CANONICAL_MANIFEST
+        if canonical_manifest.exists():
+            paths.add(f"{AGENT_DIR}/{CANONICAL_DIR}/{CANONICAL_MANIFEST}")
+            for entry in self._read_canonical_manifest(canonical_manifest):
+                paths.add(f"{AGENT_DIR}/{CANONICAL_DIR}/{entry}")
+
         return sorted(paths)
 
     @staticmethod
     def _collect_from_manifest(
-        dir_path: Path, rel_prefix: str, paths: set[str], *, as_dir: bool,
+        dir_path: Path,
+        rel_prefix: str,
+        paths: set[str],
+        *,
+        as_dir: bool,
     ) -> None:
         """Add the manifest file and its listed entries to `paths`."""
         marker = dir_path / MANAGED_SKILLS_MARKER
