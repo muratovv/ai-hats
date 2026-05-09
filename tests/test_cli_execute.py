@@ -120,12 +120,10 @@ def test_execute_interactive_routes_to_wraprunner(
         def __init__(self, _pd):
             captured["pd"] = _pd
 
-        def run(self, provider, *, role_override, extra_args, tags):
+        def run(self, provider, **kwargs):
             captured["provider"] = provider
-            captured["role_override"] = role_override
-            captured["extra_args"] = extra_args
-            captured["tags"] = tags
-            return 0
+            captured.update(kwargs)
+            return 0, object()
 
     import ai_hats.runtime as runtime_mod
     monkeypatch.setattr(runtime_mod, "WrapRunner", _WrapRunner)
@@ -150,9 +148,9 @@ def test_execute_interactive_no_prompt_passes_empty_extra_args(
     class _WrapRunner:
         def __init__(self, _pd): pass
 
-        def run(self, provider, *, role_override, extra_args, tags):
-            captured["extra_args"] = extra_args
-            return 0
+        def run(self, provider, **kwargs):
+            captured["extra_args"] = kwargs.get("extra_args")
+            return 0, object()
 
     import ai_hats.runtime as runtime_mod
     monkeypatch.setattr(runtime_mod, "WrapRunner", _WrapRunner)

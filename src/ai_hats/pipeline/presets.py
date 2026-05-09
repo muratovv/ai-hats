@@ -1,27 +1,27 @@
-"""Built-in pipeline presets.
+"""Built-in pipeline presets — Python-level reference compositions.
 
-Phase 1 ships exactly one preset — ``execute_pipeline`` — used by the
-``ai-hats execute`` CLI command. Its shape is
-``[PreLogStub, LaunchProvider, PostLogStub]`` so a developer running
-``ai-hats execute`` can see pre/post nodes fire on stderr. The silent
-``PreStub`` / ``PostStub`` classes remain in ``steps.stubs`` as the
-minimal reference contract for Phase 2/3 step authors.
-
-Other CLI commands (bare ``ai-hats``, ``agent``, ``reflect all``,
-``reflect session``) still use their original direct-call paths;
-pipeline-ising them is Phase 4 work.
+The 4 production-shape pipelines live as YAML in
+``ai_hats/libraries/pipelines/`` and are loaded via ``loader.load_pipeline``.
+``execute_pipeline`` here mirrors ``execute.yaml`` but built in Python —
+kept for tests that exercise the pipeline core without YAML parsing.
 """
 
 from __future__ import annotations
 
 from .pipeline import build
+from .steps.compose import ComposeRole
 from .steps.launch import LaunchProvider
-from .steps.stubs import PostLogStub, PreLogStub
+from .steps.log import PostLog, PreLog
+from .steps.prompt import ResolvePrompt
+from .steps.spawn_review import SpawnSessionReview
 
 
 execute_pipeline = build(
-    PreLogStub(),
+    ComposeRole(),
+    ResolvePrompt({"default_text": ""}),
+    PreLog({"keys": ["role", "system_prompt", "prompt_text"]}),
     LaunchProvider(),
-    PostLogStub(),
+    SpawnSessionReview({"max_retries": 1}),
+    PostLog({"keys": ["session_id", "exit_code", "review_pid"]}),
     name="execute",
 )

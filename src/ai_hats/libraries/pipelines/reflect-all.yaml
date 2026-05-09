@@ -1,0 +1,18 @@
+name: reflect-all
+steps:
+  - id: build_handoff
+  - id: compose_role
+  - id: resolve_prompt
+    params: {default_text: ""}
+  - id: pre_log
+    params: {keys: [system_prompt, handoff_path, prompt_text]}
+  - id: launch_provider
+  - id: extract_marker
+    params: {start: BEGIN_JUDGE, end: END_JUDGE, out_key: judge_report}
+  - id: save_artifact
+    params:
+      key: judge_report
+      out_path_template: ".agent/retrospectives/judge/{ts}-report.md"
+  - id: spawn_session_review
+  - id: post_log
+    params: {keys: [session_id, exit_code, review_pid, saved_path]}

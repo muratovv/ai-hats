@@ -111,24 +111,33 @@ def _launch_session(
     extra_args: list[str] | None = None,
     tags: dict[str, str] | None = None,
 ):
-    """Launch a wrapped provider CLI session.
+    """Launch a wrapped provider CLI session via the ``bare`` pipeline.
 
-    Thin wrapper over the unified `ai-hats execute` primitive — kept as a
-    function so bare `ai-hats` (no subcommand) and any in-process callers
-    have a stable Python entry point. Internal callers that need a return
-    value (instead of sys.exit) should use `execute._do_execute` directly.
+    HATS-267: bare ``ai-hats`` now routes through the pipeline subsystem
+    using ``libraries/pipelines/bare.yaml``. Other CLI commands
+    (``execute``, ``reflect *``) still go through the direct
+    ``_do_execute`` / ``SessionReviewRunner`` paths until HATS-269.
     """
-    from .execute import _do_execute
+    from importlib.resources import as_file, files
 
-    rc = _do_execute(
-        role=role,
-        provider=provider,
-        interactive=True,
-        prompt=None,
-        tags=tags,
-        extra_args=list(extra_args or []),
-    )
-    sys.exit(int(rc))
+    from ..pipeline.loader import load_pipeline
+    from ..pipeline.pipeline import run as run_pipeline
+    from ._helpers import _project_dir
+
+    project_dir = _project_dir()
+    yaml_resource = files("ai_hats.libraries.pipelines") / "bare.yaml"
+    with as_file(yaml_resource) as yaml_path:
+        pipeline = load_pipeline(yaml_path)
+
+    final = run_pipeline(pipeline, {
+        "role": role,
+        "interactive": True,
+        "project_dir": project_dir,
+        "provider": provider,
+        "extra_args": list(extra_args or []),
+        "tags": tags,
+    })
+    sys.exit(int(final.get("exit_code", 1)))
 
 
 # ----- Command registration -----
