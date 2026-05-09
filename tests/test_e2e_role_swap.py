@@ -60,7 +60,7 @@ def test_role_swap_aggregator_and_role_md_track_active_role(
     asm.init(provider="claude")
     asm.set_role("role-a", provider_name="claude")
 
-    aggregator = project_two_roles / ".claude" / "CLAUDE.md"
+    aggregator = project_two_roles / ".agent" / "ai-hats" / "imports.md"
     role_md = project_two_roles / ".agent" / "ai-hats" / "role.md"
 
     role_a_aggregator = aggregator.read_bytes()
@@ -83,7 +83,7 @@ def test_bump_after_role_swap_is_byte_stable(project_two_roles: Path) -> None:
 
     snapshot = {
         "claude_md": md5(project_two_roles / "CLAUDE.md"),
-        "aggregator": md5(project_two_roles / ".claude" / "CLAUDE.md"),
+        "aggregator": md5(project_two_roles / ".agent" / "ai-hats" / "imports.md"),
         "role_md": md5(project_two_roles / ".agent" / "ai-hats" / "role.md"),
         "priorities": md5(project_two_roles / ".agent" / "ai-hats" / "priorities.md"),
     }
@@ -91,7 +91,7 @@ def test_bump_after_role_swap_is_byte_stable(project_two_roles: Path) -> None:
     asm.bump()
 
     assert md5(project_two_roles / "CLAUDE.md") == snapshot["claude_md"]
-    assert md5(project_two_roles / ".claude" / "CLAUDE.md") == snapshot["aggregator"]
+    assert md5(project_two_roles / ".agent" / "ai-hats" / "imports.md") == snapshot["aggregator"]
     assert md5(project_two_roles / ".agent" / "ai-hats" / "role.md") == snapshot["role_md"]
     assert md5(project_two_roles / ".agent" / "ai-hats" / "priorities.md") == snapshot["priorities"]
 
@@ -124,4 +124,4 @@ def test_set_role_claude_skips_inline_update(project_two_roles: Path) -> None:
     # Scaffold only — no inline role content, no uppercase markers.
     assert "Role A injection." not in body
     assert "<!-- AI-HATS:START -->" not in body
-    assert "@./.claude/CLAUDE.md" in body
+    assert "@./.agent/ai-hats/imports.md" in body

@@ -298,3 +298,74 @@ def test_set_role_writes_canonical(project_with_library: Path) -> None:
     assert (canonical / "role.md").exists()
     assert (canonical / "traits" / "trait-alpha.md").exists()
     assert (canonical / CANONICAL_MANIFEST).exists()
+
+
+# -- HATS-289: aggregator-in-canonical (`imports.md`) --
+
+
+def test_imports_aggregator_exists_and_has_no_noise(project_with_library: Path) -> None:
+    """imports.md is pure @import list — no markers, no headings, no boilerplate."""
+    asm, result = _composer_result(project_with_library)
+    asm.write_canonical(result)
+
+    aggregator = project_with_library / AGENT_DIR / CANONICAL_DIR / "imports.md"
+    assert aggregator.exists()
+
+    body = aggregator.read_text()
+    assert "<!--" not in body
+    assert "# ai-hats" not in body  # no heading
+    # Every non-blank line is an @import.
+    for line in body.splitlines():
+        if line.strip():
+            assert line.startswith("@./"), f"unexpected non-import line: {line!r}"
+
+
+def test_imports_aggregator_section_order(project_with_library: Path) -> None:
+    """Order: priorities → traits → role → rules → skills_index."""
+    asm, result = _composer_result(project_with_library)
+    asm.write_canonical(result)
+
+    body = (project_with_library / AGENT_DIR / CANONICAL_DIR / "imports.md").read_text()
+    pos_priorities = body.index("@./priorities.md")
+    pos_trait = body.index("@./traits/trait-alpha.md")
+    pos_role = body.index("@./role.md")
+    pos_rule = body.index("@./rules/rule_a.md")
+    pos_skills = body.index("@./skills_index.md")
+    assert pos_priorities < pos_trait < pos_role < pos_rule < pos_skills
+
+
+def test_imports_aggregator_includes_user_rules(project_with_library: Path) -> None:
+    """User-rules appear after framework rules so user wins on overlap."""
+    asm, result = _composer_result(project_with_library)
+    asm.write_canonical(result)
+
+    canonical = project_with_library / AGENT_DIR / CANONICAL_DIR
+    user_rule = canonical / USER_RULES_SUBDIR / "my-conv.md"
+    user_rule.write_text("# user rule\n")
+
+    asm.write_canonical(result)  # second write picks up the new user-rule
+    body = (canonical / "imports.md").read_text()
+
+    assert f"@./{USER_RULES_SUBDIR}/my-conv.md" in body
+    assert body.index("@./rules/rule_a.md") < body.index(f"@./{USER_RULES_SUBDIR}/my-conv.md")
+
+
+def test_imports_aggregator_idempotent(project_with_library: Path) -> None:
+    asm, result = _composer_result(project_with_library)
+    asm.write_canonical(result)
+    aggregator = project_with_library / AGENT_DIR / CANONICAL_DIR / "imports.md"
+    first_mtime = aggregator.stat().st_mtime_ns
+
+    time.sleep(0.01)
+    asm.write_canonical(result)
+    assert aggregator.stat().st_mtime_ns == first_mtime
+
+
+def test_imports_aggregator_in_manifest(project_with_library: Path) -> None:
+    asm, result = _composer_result(project_with_library)
+    asm.write_canonical(result)
+
+    manifest = asm._read_canonical_manifest(
+        project_with_library / AGENT_DIR / CANONICAL_DIR / CANONICAL_MANIFEST
+    )
+    assert "imports.md" in manifest

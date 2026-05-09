@@ -33,7 +33,7 @@ def test_scaffold_template_asset_exists() -> None:
     body = template.read_text()
     assert PUBLISH_AGGREGATOR_START in body
     assert PUBLISH_AGGREGATOR_END in body
-    assert "@./.claude/CLAUDE.md" in body
+    assert "@./.agent/ai-hats/imports.md" in body
     # No legacy uppercase markers in target template.
     assert INJECTION_START not in body
     assert INJECTION_END not in body
@@ -59,7 +59,7 @@ def test_resolve_scaffold_template_project_override(tmp_path: Path) -> None:
 
     override = project / "libraries" / "templates" / "claude" / "CLAUDE.md.template"
     override.parent.mkdir(parents=True)
-    override.write_text("# project override\n@./.claude/CLAUDE.md\n")
+    override.write_text("# project override\n@./.agent/ai-hats/imports.md\n")
 
     asm = Assembler(project)
     resolved = asm._resolve_scaffold_template("templates/claude/CLAUDE.md.template")
@@ -77,7 +77,7 @@ def test_init_writes_claude_scaffold(tmp_path: Path) -> None:
     body = claude_md.read_text()
     assert PUBLISH_AGGREGATOR_START in body
     assert PUBLISH_AGGREGATOR_END in body
-    assert "@./.claude/CLAUDE.md" in body
+    assert "@./.agent/ai-hats/imports.md" in body
     # No legacy uppercase from update_system_prompt.
     assert INJECTION_START not in body
     assert INJECTION_END not in body
@@ -116,7 +116,7 @@ def test_init_gemini_no_scaffold(tmp_path: Path) -> None:
 def test_update_system_prompt_skips_on_lowercase_scaffold(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     project.mkdir()
-    scaffold = f"{PUBLISH_AGGREGATOR_START}\n@./.claude/CLAUDE.md\n{PUBLISH_AGGREGATOR_END}\n"
+    scaffold = f"{PUBLISH_AGGREGATOR_START}\n@./.agent/ai-hats/imports.md\n{PUBLISH_AGGREGATOR_END}\n"
     (project / "CLAUDE.md").write_text(scaffold)
 
     ClaudeProvider().update_system_prompt(project, "BIG INLINE BLOB")
@@ -160,12 +160,12 @@ def test_init_then_set_role_no_double_blocks(tmp_path: Path) -> None:
     body = (project / "CLAUDE.md").read_text()
     assert PUBLISH_AGGREGATOR_START in body
     assert PUBLISH_AGGREGATOR_END in body
-    assert "@./.claude/CLAUDE.md" in body
+    assert "@./.agent/ai-hats/imports.md" in body
     assert INJECTION_START not in body
     assert INJECTION_END not in body
 
     # T3 publish still runs.
-    aggregator = project / ".claude" / "CLAUDE.md"
+    aggregator = project / ".agent" / "ai-hats" / "imports.md"
     assert aggregator.exists()
     assert "@./role.md" in aggregator.read_text()
 
@@ -197,7 +197,7 @@ def test_set_role_on_legacy_project_migrates_to_v3(tmp_path: Path) -> None:
     assert INJECTION_START not in body
     assert "old inline content" not in body
     assert PUBLISH_AGGREGATOR_START in body
-    assert "@./.claude/CLAUDE.md" in body
+    assert "@./.agent/ai-hats/imports.md" in body
     # Role content lives in the canonical layer + aggregator.
     assert "Role X." in (project / ".agent" / "ai-hats" / "role.md").read_text()
 

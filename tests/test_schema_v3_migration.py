@@ -56,13 +56,15 @@ def test_migrate_claude_md_strips_legacy_block(tmp_path: Path) -> None:
     assert INJECTION_END not in body
     assert PUBLISH_AGGREGATOR_START in body
     assert PUBLISH_AGGREGATOR_END in body
-    assert "@./.claude/CLAUDE.md" in body
+    assert "@./.agent/ai-hats/imports.md" in body
 
 
 def test_migrate_claude_md_idempotent_on_lowercase(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     project.mkdir()
-    scaffold = f"{PUBLISH_AGGREGATOR_START}\n@./.claude/CLAUDE.md\n{PUBLISH_AGGREGATOR_END}\n"
+    scaffold = (
+        f"{PUBLISH_AGGREGATOR_START}\n@./.agent/ai-hats/imports.md\n{PUBLISH_AGGREGATOR_END}\n"
+    )
     (project / "CLAUDE.md").write_text(scaffold)
     (project / "ai-hats.yaml").write_text("schema_version: 2\nprovider: claude\n")
 
@@ -85,7 +87,7 @@ def test_migrate_claude_md_no_file_creates_scaffold(tmp_path: Path) -> None:
 
     body = (project / "CLAUDE.md").read_text()
     assert PUBLISH_AGGREGATOR_START in body
-    assert "@./.claude/CLAUDE.md" in body
+    assert "@./.agent/ai-hats/imports.md" in body
 
 
 def test_migrate_claude_md_preserves_user_content_around_markers(tmp_path: Path) -> None:
@@ -163,7 +165,7 @@ def test_set_role_on_legacy_project_migrates(tmp_path: Path) -> None:
     body = (project / "CLAUDE.md").read_text()
     assert INJECTION_START not in body
     assert PUBLISH_AGGREGATOR_START in body
-    aggregator = (project / ".claude" / "CLAUDE.md").read_text()
+    aggregator = (project / ".agent" / "ai-hats" / "imports.md").read_text()
     assert "@./role.md" in aggregator
 
 
@@ -186,7 +188,7 @@ def test_bump_migrates_then_assembles(tmp_path: Path) -> None:
     body = (project / "CLAUDE.md").read_text()
     assert INJECTION_START not in body
     assert PUBLISH_AGGREGATOR_START in body
-    assert "@./.claude/CLAUDE.md" in body
+    assert "@./.agent/ai-hats/imports.md" in body
 
 
 def test_obsolete_files_cleanup_in_bump(tmp_path: Path) -> None:
@@ -220,3 +222,76 @@ def test_to_dict_emits_v3(tmp_path: Path) -> None:
     cfg.save(yaml_path)
     raw = yaml.safe_load(yaml_path.read_text())
     assert raw["schema_version"] == 3
+
+
+# -- HATS-289: legacy `.claude/CLAUDE.md` import line + publish-dir cleanup --
+
+
+def test_migrate_rewrites_legacy_publish_import_line(tmp_path: Path) -> None:
+    """Existing scaffold pointing at `.claude/CLAUDE.md` is rewritten on bump."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    legacy_scaffold = (
+        f"{PUBLISH_AGGREGATOR_START}\n@./.claude/CLAUDE.md\n{PUBLISH_AGGREGATOR_END}\n"
+    )
+    (project / "CLAUDE.md").write_text(legacy_scaffold)
+    (project / "ai-hats.yaml").write_text("schema_version: 3\nprovider: claude\n")
+
+    Assembler(project).bump()
+
+    body = (project / "CLAUDE.md").read_text()
+    assert "@./.claude/CLAUDE.md" not in body
+    assert "@./.agent/ai-hats/imports.md" in body
+
+
+def test_migrate_cleans_legacy_claude_publish(tmp_path: Path) -> None:
+    """Legacy `.claude/CLAUDE.md` aggregator + mirror are deleted on bump.
+
+    `.claude/skills/` is preserved (auto-discovery namespace).
+    """
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "CLAUDE.md").write_text(
+        f"{PUBLISH_AGGREGATOR_START}\n@./.agent/ai-hats/imports.md\n{PUBLISH_AGGREGATOR_END}\n"
+    )
+    claude = project / ".claude"
+    (claude / "rules").mkdir(parents=True)
+    (claude / "traits").mkdir()
+    (claude / "skills" / "my_skill").mkdir(parents=True)
+    (claude / "CLAUDE.md").write_text("stale aggregator\n")
+    (claude / "rules" / "stale.md").write_text("stale\n")
+    (claude / "traits" / "stale.md").write_text("stale\n")
+    (claude / "priorities.md").write_text("stale\n")
+    (claude / "role.md").write_text("stale\n")
+    (claude / ".ai-hats-managed").write_text(
+        "# stale\nCLAUDE.md\nrules/stale.md\ntraits/stale.md\npriorities.md\nrole.md\n"
+    )
+    (claude / "skills" / "my_skill" / "SKILL.md").write_text("# user skill\n")
+    (project / "ai-hats.yaml").write_text("schema_version: 3\nprovider: claude\n")
+
+    Assembler(project).bump()
+
+    assert not (claude / "CLAUDE.md").exists()
+    assert not (claude / "rules").exists()
+    assert not (claude / "traits").exists()
+    assert not (claude / "priorities.md").exists()
+    assert not (claude / "role.md").exists()
+    assert not (claude / ".ai-hats-managed").exists()
+    # Skills survive (separate manifest/auto-discovery).
+    assert (claude / "skills" / "my_skill" / "SKILL.md").exists()
+
+
+def test_migrate_legacy_publish_cleanup_idempotent(tmp_path: Path) -> None:
+    """Running bump twice on already-clean v3+289 layout is safe."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "CLAUDE.md").write_text(
+        f"{PUBLISH_AGGREGATOR_START}\n@./.agent/ai-hats/imports.md\n{PUBLISH_AGGREGATOR_END}\n"
+    )
+    (project / "ai-hats.yaml").write_text("schema_version: 3\nprovider: claude\n")
+
+    Assembler(project).bump()
+    Assembler(project).bump()  # second run — no error, no diff
+
+    body = (project / "CLAUDE.md").read_text()
+    assert "@./.agent/ai-hats/imports.md" in body
