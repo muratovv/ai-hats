@@ -13,6 +13,15 @@ Subcommands:
     (initial-injections preamble + handoff). The triage protocol itself
     lives in the `judge-protocol` skill, not in this command.
 
+- `reflect role <name>` / `reflect roles`
+    Audit a target role for coherence against the user's project context
+    (./CLAUDE.md + .agent/ai-hats/user-rules/*.md). Pre-flight (Python)
+    composes the target role in-memory and assembles the full audit
+    prompt; the `reflect-role` pipeline then launches `role_reviewer`
+    interactively and persists the report under
+    `.agent/retrospectives/reflect/<target>-<ts>.md`. The audit protocol
+    lives in the `role-coherence-protocol` skill (HATS-263).
+
 - `reflect commit ...`
     Bulk-update proposal statuses (called at end of interactive chat).
 """
@@ -144,6 +153,93 @@ def reflect_all_cmd(dry_run: bool):
             "extra_args": [],
         })
     sys.exit(int(final.get("exit_code", 1)))
+
+
+# ---- reflect role / reflect roles ----
+
+
+@reflect.command("role")
+@click.argument("name")
+def reflect_role_cmd(name: str):
+    """Audit a single role against the project context for coherence."""
+    project_dir = _project_dir()
+    final = _run_role_audit(project_dir, name)
+    sys.exit(int(final.get("exit_code", 1)))
+
+
+@reflect.command("roles")
+def reflect_roles_cmd():
+    """Audit every role available to this project, one session per role."""
+    from ..assembler import Assembler
+    from ..models import ComponentType
+
+    project_dir = _project_dir()
+    resolver = Assembler(project_dir).resolver
+    names = resolver.list_components(ComponentType.ROLE)
+    if not names:
+        console.print("[yellow]No roles found in library.[/yellow]")
+        sys.exit(1)
+
+    console.print(
+        f"[cyan]→ {len(names)} role(s) to audit: {', '.join(names)}[/]"
+    )
+    worst_exit = 0
+    for n in names:
+        console.print(f"\n[bold cyan]── reflect role {n} ──[/]")
+        final = _run_role_audit(project_dir, n)
+        ec = int(final.get("exit_code", 1))
+        if ec != 0 and worst_exit == 0:
+            worst_exit = ec
+    sys.exit(worst_exit)
+
+
+def _run_role_audit(project_dir: Path, target_role: str) -> dict:
+    """Compose target role + project context, then run reflect-role pipeline."""
+    from ..assembler import Assembler
+    from ..pipeline.harness import PipelineHarness
+    from .execute import _initial_injections_dir
+
+    composer = Assembler(project_dir).composer
+    composition = composer.compose(target_role)
+    if composition.errors:
+        raise click.ClickException(
+            f"Cannot compose role {target_role!r}: {composition.errors}"
+        )
+
+    target_text = composition.merged_injection or "(empty composition)"
+    claude_md_path = project_dir / "CLAUDE.md"
+    claude_md = claude_md_path.read_text() if claude_md_path.exists() else ""
+    user_rules_dir = project_dir / ".agent" / "ai-hats" / "user-rules"
+    user_rules_parts: list[str] = []
+    if user_rules_dir.is_dir():
+        for f in sorted(user_rules_dir.glob("*.md")):
+            user_rules_parts.append(f"### {f.stem}\n\n{f.read_text()}")
+    user_rules_text = "\n\n".join(user_rules_parts)
+
+    preamble = (_initial_injections_dir() / "reflect-role.md").read_text()
+    combined = "\n\n---\n\n".join([
+        preamble,
+        f"## Target role: {target_role}\n\n{target_text}",
+        f"## Project CLAUDE.md\n\n{claude_md or '(none)'}",
+        f"## User rules overlay\n\n{user_rules_text or '(none)'}",
+    ])
+
+    console.print(
+        f"[cyan]→ Launching role_reviewer to audit: {target_role}[/]"
+    )
+    with PipelineHarness("reflect-role", project_dir) as h:
+        final = h.run({
+            "role": "role_reviewer",
+            "target_role": target_role,
+            "interactive": True,
+            "project_dir": project_dir,
+            "prompt_path": h.materialize_prompt(combined),
+            "extra_args": [],
+        })
+    saved = final.get("saved_path")
+    if saved:
+        console.print(f"[green]✓[/green] reflect saved to {saved}")
+    return final
 
 
 # ---- reflect commit ----

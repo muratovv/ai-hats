@@ -1,0 +1,12 @@
+name: reflect-role
+steps:
+  - id: compose_role
+  - id: resolve_prompt
+    params: {default_text: ""}
+  - id: launch_provider
+  - id: extract_marker
+    params: {start: BEGIN_REFLECT, end: END_REFLECT, out_key: reflect_report}
+  - id: save_artifact
+    params:
+      key: reflect_report
+      out_path_template: ".agent/retrospectives/reflect/{target_role}-{ts}.md"
