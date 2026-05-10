@@ -95,6 +95,22 @@ class HypothesisStore:
             _atomic_dump(p, data)
             return p
 
+    def create(self, hypothesis: Hypothesis) -> Path:
+        p = self.path(hypothesis.id)
+        with _lock_for(p):
+            if p.exists():
+                raise FileExistsError(f"{hypothesis.id} already exists at {p}")
+            _atomic_dump(p, hypothesis.model_dump(mode="json", exclude_none=True))
+            return p
+
+    def set_status(self, hyp_id: str, status: str) -> Hypothesis:
+        p = self.path(hyp_id)
+        with _lock_for(p):
+            raw = yaml.safe_load(p.read_text()) or {}
+            raw["status"] = status
+            _atomic_dump(p, raw)
+            return Hypothesis.model_validate(raw)
+
 
 class ProposalStore:
     """Read/write PROP-*.yaml under .agent/backlog/proposals/."""
@@ -176,6 +192,17 @@ def next_proposal_id(proposals_dir: Path) -> str:
             if m:
                 max_n = max(max_n, int(m.group(1)))
     return f"PROP-{max_n + 1:03d}"
+
+
+def next_hypothesis_id(hypotheses_dir: Path) -> str:
+    """Compute next HYP-NNN id by scanning existing files."""
+    max_n = 0
+    if hypotheses_dir.exists():
+        for p in hypotheses_dir.iterdir():
+            m = _HYP_FILE_RE.match(p.name)
+            if m:
+                max_n = max(max_n, int(m.group(1)))
+    return f"HYP-{max_n + 1:03d}"
 
 
 def utc_now() -> datetime:

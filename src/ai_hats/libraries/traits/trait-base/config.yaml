@@ -7,7 +7,7 @@ composition:
   skills: []
   hooks:
     session_end:
-      - skills/hypothesis-workflow/hooks/session_end_auto-retro.sh
+      - skills/backlog-manager/hooks/session_end_auto-retro.sh
   mcp: []
 injection: |
   ## BASE BEHAVIOR

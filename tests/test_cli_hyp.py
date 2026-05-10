@@ -62,16 +62,126 @@ def test_show_unknown_fails(project_dir: Path):
     assert "not found" in res.output
 
 
+def test_create_auto_id(project_dir: Path):
+    res = _invoke(
+        [
+            "create",
+            "--title",
+            "smoke",
+            "--hypothesis",
+            "x improves y",
+            "--source-task",
+            "HATS-001",
+        ]
+    )
+    assert res.exit_code == 0, res.output
+    assert "HYP-001" in res.output
+    p = project_dir / ".agent" / "hypotheses" / "HYP-001.yaml"
+    assert p.exists()
+    data = yaml.safe_load(p.read_text())
+    assert data["id"] == "HYP-001"
+    assert data["status"] == "active"
+    assert data["title"] == "smoke"
+    assert data["hypothesis"] == "x improves y"
+    assert data["source_task"] == "HATS-001"
+
+
+def test_create_increments_id(project_dir: Path):
+    _invoke(
+        [
+            "create",
+            "--title",
+            "first",
+            "--hypothesis",
+            "h1",
+            "--source-task",
+            "HATS-001",
+        ]
+    )
+    res = _invoke(
+        [
+            "create",
+            "--title",
+            "second",
+            "--hypothesis",
+            "h2",
+            "--source-task",
+            "HATS-002",
+        ]
+    )
+    assert res.exit_code == 0
+    assert "HYP-002" in res.output
+
+
+def test_create_with_optional_fields(project_dir: Path):
+    res = _invoke(
+        [
+            "create",
+            "--title",
+            "full",
+            "--hypothesis",
+            "h",
+            "--source-task",
+            "HATS-001",
+            "--baseline",
+            "current state X",
+            "--expected-outcome",
+            "metric A drops",
+            "--expected-outcome",
+            "metric B stable",
+            "--observation-window",
+            "4 sessions",
+            "--success-criterion",
+            "A < threshold",
+        ]
+    )
+    assert res.exit_code == 0
+    p = project_dir / ".agent" / "hypotheses" / "HYP-001.yaml"
+    data = yaml.safe_load(p.read_text())
+    assert data["expected_outcome"] == ["metric A drops", "metric B stable"]
+    assert data["observation_window"] == "4 sessions"
+
+
+def test_set_status_flips(project_dir: Path):
+    _write_hyp(project_dir, "HYP-001", status="active")
+    res = _invoke(["set-status", "--hyp", "HYP-001", "--status", "confirmed"])
+    assert res.exit_code == 0, res.output
+    p = project_dir / ".agent" / "hypotheses" / "HYP-001.yaml"
+    assert yaml.safe_load(p.read_text())["status"] == "confirmed"
+
+
+def test_set_status_unknown_fails(project_dir: Path):
+    res = _invoke(["set-status", "--hyp", "HYP-999", "--status", "stalled"])
+    assert res.exit_code != 0
+    assert "not found" in res.output
+
+
+def test_set_status_round_trip(project_dir: Path):
+    _write_hyp(project_dir, "HYP-001", status="active")
+    for s in ["confirmed", "active", "refuted", "stalled"]:
+        res = _invoke(["set-status", "--hyp", "HYP-001", "--status", s])
+        assert res.exit_code == 0, res.output
+    p = project_dir / ".agent" / "hypotheses" / "HYP-001.yaml"
+    assert yaml.safe_load(p.read_text())["status"] == "stalled"
+
+
 def test_append_verdict_adds_entry(project_dir: Path):
     p = _write_hyp(project_dir, "HYP-001")
-    res = _invoke([
-        "append-verdict",
-        "--hyp", "HYP-001",
-        "--session", "s1",
-        "--verdict", "confirmed",
-        "--evidence", "metric drop observed",
-        "--recommendation", "close_confirmed",
-    ])
+    res = _invoke(
+        [
+            "append-verdict",
+            "--hyp",
+            "HYP-001",
+            "--session",
+            "s1",
+            "--verdict",
+            "confirmed",
+            "--evidence",
+            "metric drop observed",
+            "--recommendation",
+            "close_confirmed",
+        ]
+    )
     assert res.exit_code == 0, res.output
     data = yaml.safe_load(p.read_text())
     assert len(data["validation_log"]) == 1
@@ -81,13 +191,19 @@ def test_append_verdict_adds_entry(project_dir: Path):
 
 
 def test_append_verdict_unknown_hyp_fails(project_dir: Path):
-    res = _invoke([
-        "append-verdict",
-        "--hyp", "HYP-999",
-        "--session", "s1",
-        "--verdict", "confirmed",
-        "--evidence", "x",
-    ])
+    res = _invoke(
+        [
+            "append-verdict",
+            "--hyp",
+            "HYP-999",
+            "--session",
+            "s1",
+            "--verdict",
+            "confirmed",
+            "--evidence",
+            "x",
+        ]
+    )
     assert res.exit_code != 0
 
 

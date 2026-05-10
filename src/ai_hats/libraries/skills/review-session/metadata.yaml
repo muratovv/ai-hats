@@ -1,0 +1,5 @@
+name: review-session
+description: Single-pass session reflection — emit hats-reflect-session/v1 document with verdicts and proposals
+author: ai-hats
+tags: [review, session, reflect, meta]
+pattern: protocol

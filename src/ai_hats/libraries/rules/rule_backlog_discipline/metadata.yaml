@@ -1,0 +1,4 @@
+name: rule_backlog_discipline
+description: CLI-only backlog discipline — task, hypothesis, and proposal lifecycles must go through ai-hats CLI
+author: ai-hats
+tags: [agent-protocol, discipline, backlog]

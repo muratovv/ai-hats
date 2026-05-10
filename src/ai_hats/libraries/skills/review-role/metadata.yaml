@@ -1,0 +1,5 @@
+name: review-role
+description: Audit a role composition for coherence — injection/skill/rule mismatches and composer gaps
+author: ai-hats
+tags: [review, role, coherence, meta]
+pattern: protocol

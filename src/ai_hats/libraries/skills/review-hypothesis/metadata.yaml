@@ -1,0 +1,5 @@
+name: review-hypothesis
+description: Vote on one active hypothesis — pick verdict + recommendation, persist via CLI
+author: ai-hats
+tags: [review, hypothesis, feedback-loop]
+pattern: protocol

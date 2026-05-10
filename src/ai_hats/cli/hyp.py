@@ -2,7 +2,9 @@
 
 Subcommands:
   list, show           — read-only views
+  create               — create a new HYP-NNN.yaml (auto-id)
   append-verdict       — atomic ValidationLogEntry append (used by reflect-session)
+  set-status           — flip status (active|confirmed|refuted|stalled)
   migrate              — one-shot normalize all HYP files under current schema
 """
 
@@ -19,6 +21,7 @@ from ..hypothesis import (
     Hypothesis,
     HypothesisStore,
     ValidationLogEntry,
+    next_hypothesis_id,
 )
 from ._helpers import _project_dir, console
 
@@ -52,27 +55,27 @@ def hyp_list(status: str | None, as_json: bool):
     if status:
         items = [h for h in items if h.status == status]
     if as_json:
-        click.echo(json.dumps(
-            [
-                {
-                    "id": h.id,
-                    "status": h.status,
-                    "title": h.title,
-                    "last_rule_revision_date": (
-                        h.last_rule_revision_date.isoformat()
-                        if h.last_rule_revision_date else None
-                    ),
-                }
-                for h in items
-            ],
-            indent=2,
-        ))
+        click.echo(
+            json.dumps(
+                [
+                    {
+                        "id": h.id,
+                        "status": h.status,
+                        "title": h.title,
+                        "last_rule_revision_date": (
+                            h.last_rule_revision_date.isoformat()
+                            if h.last_rule_revision_date
+                            else None
+                        ),
+                    }
+                    for h in items
+                ],
+                indent=2,
+            )
+        )
         return
     for h in items:
-        rev = (
-            h.last_rule_revision_date.isoformat()
-            if h.last_rule_revision_date else "—"
-        )
+        rev = h.last_rule_revision_date.isoformat() if h.last_rule_revision_date else "—"
         click.echo(f"{h.id}  [{h.status:11s}]  rev={rev}  {h.title}")
 
 
@@ -85,6 +88,71 @@ def hyp_show(hyp_id: str):
     if not p.exists():
         raise click.ClickException(f"{hyp_id} not found at {p}")
     click.echo(p.read_text())
+
+
+@hyp.command("create")
+@click.option("--title", required=True, help="Short title")
+@click.option("--hypothesis", "hypothesis_text", required=True, help="The hypothesis statement")
+@click.option("--source-task", required=True, help="Originating task id (HATS-NNN)")
+@click.option("--baseline", default=None, help="Pre-change observation (free text)")
+@click.option(
+    "--expected-outcome",
+    "expected_outcomes",
+    multiple=True,
+    help="Expected outcome bullet (repeatable)",
+)
+@click.option("--observation-window", default=None, help="e.g., '4 sessions' or '2 weeks'")
+@click.option("--success-criterion", default=None, help="How a verdict is decided")
+@click.option("--rollback-condition", default=None, help="When to revert")
+@click.option("--json", "as_json", is_flag=True)
+def hyp_create(
+    title: str,
+    hypothesis_text: str,
+    source_task: str,
+    baseline: str | None,
+    expected_outcomes: tuple[str, ...],
+    observation_window: str | None,
+    success_criterion: str | None,
+    rollback_condition: str | None,
+    as_json: bool,
+):
+    """Create a new HYP-NNN. Auto-id; status=active; created=today (UTC)."""
+    store = _store()
+    new_id = next_hypothesis_id(store.dir)
+    h = Hypothesis(
+        id=new_id,
+        title=title,
+        status="active",
+        created=datetime.now(tz=timezone.utc).date(),
+        source_task=source_task,
+        hypothesis=hypothesis_text,
+        baseline=baseline,
+        expected_outcome=list(expected_outcomes),
+        observation_window=observation_window,
+        success_criterion=success_criterion,
+        rollback_condition=rollback_condition,
+    )
+    store.create(h)
+    if as_json:
+        click.echo(json.dumps({"id": new_id}))
+    else:
+        console.print(f"[green]✓[/green] Created {new_id} (status=active)")
+
+
+@hyp.command("set-status")
+@click.option("--hyp", "hyp_id", required=True, help="Target hypothesis (HYP-NNN)")
+@click.option(
+    "--status",
+    type=click.Choice(["active", "confirmed", "refuted", "stalled"]),
+    required=True,
+)
+def hyp_set_status(hyp_id: str, status: str):
+    """Flip hypothesis status (atomic, filelock-protected)."""
+    store = _store()
+    if not store.path(hyp_id).exists():
+        raise click.ClickException(f"{hyp_id} not found")
+    h = store.set_status(hyp_id, status)
+    console.print(f"[green]✓[/green] {hyp_id}: status={h.status}")
 
 
 @hyp.command("append-verdict")
@@ -119,10 +187,7 @@ def hyp_append_verdict(
     store = _store()
     if not store.path(hyp_id).exists():
         raise click.ClickException(f"{hyp_id} not found at {store.path(hyp_id)}")
-    d = (
-        date.fromisoformat(entry_date)
-        if entry_date else datetime.now(tz=timezone.utc).date()
-    )
+    d = date.fromisoformat(entry_date) if entry_date else datetime.now(tz=timezone.utc).date()
     entry = ValidationLogEntry(
         date=d,
         verdict=verdict,  # type: ignore[arg-type]
@@ -231,9 +296,7 @@ def _normalize_log_entry(entry: dict) -> dict:
         )
         out["evidence"] = str(candidate)
     out.setdefault("recommendation", "keep")
-    if out["recommendation"] not in {
-        "close_confirmed", "close_refuted", "keep", "extend_window"
-    }:
+    if out["recommendation"] not in {"close_confirmed", "close_refuted", "keep", "extend_window"}:
         out["recommendation"] = "keep"
     if "date" not in out:
         out["date"] = date.today().isoformat()
