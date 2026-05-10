@@ -206,7 +206,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
             f"Cannot compose role {target_role!r}: {composition.errors}"
         )
 
-    target_text = composition.merged_injection or "(empty composition)"
+    audit_view = _render_role_audit_view(composition, target_role)
     claude_md_path = project_dir / "CLAUDE.md"
     claude_md = claude_md_path.read_text() if claude_md_path.exists() else ""
     user_rules_dir = project_dir / ".agent" / "ai-hats" / "user-rules"
@@ -219,7 +219,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
     preamble = (_initial_injections_dir() / "reflect-role.md").read_text()
     combined = "\n\n---\n\n".join([
         preamble,
-        f"## Target role: {target_role}\n\n{target_text}",
+        audit_view,
         f"## Project CLAUDE.md\n\n{claude_md or '(none)'}",
         f"## User rules overlay\n\n{user_rules_text or '(none)'}",
     ])
@@ -240,6 +240,74 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
     if saved:
         console.print(f"[green]✓[/green] reflect saved to {saved}")
     return final
+
+
+def _render_role_audit_view(composition, target_role: str) -> str:
+    """Render the layered audit view of a composed role.
+
+    Unlike ``CompositionResult.merged_injection`` (which only joins trait
+    + role injection texts), this view exposes every layer the reviewer
+    needs: priorities, composition manifest, per-trait injections, role
+    injection, bundled rule bodies, bundled skill bodies. Reviewer can
+    then trace each instruction to its source component.
+    """
+    parts: list[str] = [f"## Target role audit view: {target_role}"]
+
+    if composition.priorities:
+        parts.append("### Priorities")
+        parts.append(
+            "\n".join(
+                f"{i}. {p}" for i, p in enumerate(composition.priorities, 1)
+            )
+        )
+
+    parts.append("### Composition manifest")
+    trait_names = list(composition.trait_injections.keys())
+    parts.append(
+        f"- Traits: {', '.join(trait_names) if trait_names else '(none)'}\n"
+        f"- Rules: "
+        f"{', '.join(r.name for r in composition.rules) or '(none)'}\n"
+        f"- Skills: "
+        f"{', '.join(s.name for s in composition.skills) or '(none)'}"
+    )
+
+    if composition.trait_injections:
+        parts.append("### Trait injections")
+        for name, text in composition.trait_injections.items():
+            parts.append(f"#### trait: {name}\n\n{text}")
+
+    if composition.role_injection:
+        parts.append(
+            f"### Role injection: {target_role}\n\n{composition.role_injection}"
+        )
+
+    if composition.overlay_injection:
+        parts.append(
+            f"### Overlay injection\n\n{composition.overlay_injection}"
+        )
+
+    if composition.rules:
+        parts.append("### Bundled rules")
+        for r in composition.rules:
+            body = r.injection.strip() or "(empty rule body)"
+            parts.append(f"#### rule: {r.name}\n\n{body}")
+
+    if composition.skills:
+        parts.append("### Bundled skills")
+        for s in composition.skills:
+            body = s.injection.strip() or "(empty skill body)"
+            parts.append(f"#### skill: {s.name}\n\n{body}")
+
+    if not (
+        composition.priorities
+        or composition.trait_injections
+        or composition.role_injection
+        or composition.rules
+        or composition.skills
+    ):
+        parts.append("(empty composition — nothing to audit)")
+
+    return "\n\n".join(parts)
 
 
 # ---- reflect commit ----
