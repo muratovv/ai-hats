@@ -16,9 +16,12 @@ Subcommands:
 - `reflect role <name>` / `reflect roles`
     Audit a target role for coherence against the user's project context
     (./CLAUDE.md + .agent/ai-hats/user-rules/*.md). Pre-flight (Python)
-    composes the target role in-memory and assembles the full audit
-    prompt; the `reflect-role` pipeline then launches `role_reviewer`
-    interactively and persists the report under
+    composes the target role and materializes its layered breakdown
+    under the harness namespace (`<project>/.gitlog/pipeline_runs/
+    reflect-role/composed/<target_role>/`). The `reflect-role` pipeline
+    then launches `role_reviewer` interactively with a small prompt
+    that points at those files; the reviewer reads them via Read/Glob
+    tools as needed. The audit report is persisted under
     `.agent/retrospectives/reflect/<target>-<ts>.md`. The audit protocol
     lives in the `role-coherence-protocol` skill (HATS-263).
 
@@ -194,7 +197,12 @@ def reflect_roles_cmd():
 
 
 def _run_role_audit(project_dir: Path, target_role: str) -> dict:
-    """Compose target role + project context, then run reflect-role pipeline."""
+    """Materialize the target role's layered breakdown and run reflect-role.
+
+    The reviewer reads the composed files (and ./CLAUDE.md, user-rules)
+    through Read/Glob tools during the interactive session, instead of
+    receiving everything inlined in the prompt.
+    """
     from ..assembler import Assembler
     from ..pipeline.harness import PipelineHarness
     from .execute import _initial_injections_dir
@@ -206,34 +214,28 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
             f"Cannot compose role {target_role!r}: {composition.errors}"
         )
 
-    audit_view = _render_role_audit_view(composition, target_role)
-    claude_md_path = project_dir / "CLAUDE.md"
-    claude_md = claude_md_path.read_text() if claude_md_path.exists() else ""
-    user_rules_dir = project_dir / ".agent" / "ai-hats" / "user-rules"
-    user_rules_parts: list[str] = []
-    if user_rules_dir.is_dir():
-        for f in sorted(user_rules_dir.glob("*.md")):
-            user_rules_parts.append(f"### {f.stem}\n\n{f.read_text()}")
-    user_rules_text = "\n\n".join(user_rules_parts)
-
-    preamble = (_initial_injections_dir() / "reflect-role.md").read_text()
-    combined = "\n\n---\n\n".join([
-        preamble,
-        audit_view,
-        f"## Project CLAUDE.md\n\n{claude_md or '(none)'}",
-        f"## User rules overlay\n\n{user_rules_text or '(none)'}",
-    ])
+    preamble_template = (
+        _initial_injections_dir() / "reflect-role.md"
+    ).read_text()
 
     console.print(
         f"[cyan]→ Launching role_reviewer to audit: {target_role}[/]"
     )
     with PipelineHarness("reflect-role", project_dir) as h:
+        composed_dir = _materialize_target_composition(
+            h.namespace / "composed", composition, target_role,
+        )
+        preamble = preamble_template.format(
+            target_role=target_role,
+            composed_dir=composed_dir,
+            project_dir=project_dir,
+        )
         final = h.run({
             "role": "role_reviewer",
             "target_role": target_role,
             "interactive": True,
             "project_dir": project_dir,
-            "prompt_path": h.materialize_prompt(combined),
+            "prompt_path": h.materialize_prompt(preamble),
             "extra_args": [],
         })
     saved = final.get("saved_path")
@@ -242,72 +244,72 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
     return final
 
 
-def _render_role_audit_view(composition, target_role: str) -> str:
-    """Render the layered audit view of a composed role.
+def _materialize_target_composition(
+    base_dir: Path, composition, target_role: str,
+) -> Path:
+    """Write the composition's layered breakdown to ``base_dir/<role>/``.
 
-    Unlike ``CompositionResult.merged_injection`` (which only joins trait
-    + role injection texts), this view exposes every layer the reviewer
-    needs: priorities, composition manifest, per-trait injections, role
-    injection, bundled rule bodies, bundled skill bodies. Reviewer can
-    then trace each instruction to its source component.
+    Layout (everything the reviewer needs to trace findings to source):
+
+        manifest.yaml          # name, priorities, traits/rules/skills
+        role-injection.md      # role's own injection (if non-empty)
+        overlay-injection.md   # overlay text (if any)
+        traits/<name>.md       # per-trait injection texts
+        rules/<name>.md        # bundled rule bodies
+        skills/<name>.md       # bundled skill bodies
+
+    Returns the role-specific directory path.
     """
-    parts: list[str] = [f"## Target role audit view: {target_role}"]
+    import shutil
 
-    if composition.priorities:
-        parts.append("### Priorities")
-        parts.append(
-            "\n".join(
-                f"{i}. {p}" for i, p in enumerate(composition.priorities, 1)
-            )
-        )
+    import yaml
 
-    parts.append("### Composition manifest")
-    trait_names = list(composition.trait_injections.keys())
-    parts.append(
-        f"- Traits: {', '.join(trait_names) if trait_names else '(none)'}\n"
-        f"- Rules: "
-        f"{', '.join(r.name for r in composition.rules) or '(none)'}\n"
-        f"- Skills: "
-        f"{', '.join(s.name for s in composition.skills) or '(none)'}"
+    target_dir = base_dir / target_role
+    if target_dir.exists():
+        shutil.rmtree(target_dir)
+    target_dir.mkdir(parents=True)
+
+    manifest = {
+        "name": composition.name,
+        "priorities": list(composition.priorities),
+        "composition": {
+            "traits": list(composition.trait_injections.keys()),
+            "rules": [r.name for r in composition.rules],
+            "skills": [s.name for s in composition.skills],
+        },
+    }
+    (target_dir / "manifest.yaml").write_text(
+        yaml.safe_dump(manifest, sort_keys=False, allow_unicode=True)
     )
 
-    if composition.trait_injections:
-        parts.append("### Trait injections")
-        for name, text in composition.trait_injections.items():
-            parts.append(f"#### trait: {name}\n\n{text}")
-
     if composition.role_injection:
-        parts.append(
-            f"### Role injection: {target_role}\n\n{composition.role_injection}"
+        (target_dir / "role-injection.md").write_text(
+            composition.role_injection
+        )
+    if composition.overlay_injection:
+        (target_dir / "overlay-injection.md").write_text(
+            composition.overlay_injection
         )
 
-    if composition.overlay_injection:
-        parts.append(
-            f"### Overlay injection\n\n{composition.overlay_injection}"
-        )
+    if composition.trait_injections:
+        traits_dir = target_dir / "traits"
+        traits_dir.mkdir()
+        for name, text in composition.trait_injections.items():
+            (traits_dir / f"{name}.md").write_text(text)
 
     if composition.rules:
-        parts.append("### Bundled rules")
+        rules_dir = target_dir / "rules"
+        rules_dir.mkdir()
         for r in composition.rules:
-            body = r.injection.strip() or "(empty rule body)"
-            parts.append(f"#### rule: {r.name}\n\n{body}")
+            (rules_dir / f"{r.name}.md").write_text(r.injection or "")
 
     if composition.skills:
-        parts.append("### Bundled skills")
+        skills_dir = target_dir / "skills"
+        skills_dir.mkdir()
         for s in composition.skills:
-            body = s.injection.strip() or "(empty skill body)"
-            parts.append(f"#### skill: {s.name}\n\n{body}")
+            (skills_dir / f"{s.name}.md").write_text(s.injection or "")
 
-    if not (
-        composition.priorities
-        or composition.trait_injections
-        or composition.role_injection
-        or composition.rules
-        or composition.skills
-    ):
-        parts.append("(empty composition — nothing to audit)")
-
-    return "\n\n".join(parts)
+    return target_dir
 
 
 # ---- reflect commit ----
