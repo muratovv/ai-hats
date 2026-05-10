@@ -7,11 +7,9 @@ priorities:
 composition:
   traits:
     - trait-base
+    - trait-reflect-mode
   rules: []
-  skills:
-    - hypothesis-validation
-    - proposal-management
-    - hypothesis-workflow
+  skills: []
   hooks: {}
   mcp: []
 injection: |
@@ -26,8 +24,8 @@ injection: |
     - Open proposals  (`.agent/backlog/proposals/*.yaml` with status: open)
     - Session evidence: `audit.md` and `metrics.json`
 
-  Factual fields (project, role, date, metrics, artifacts, links) are computed
-  by the runner — DO NOT emit them in your output frontmatter.
+  Factual fields (project, role, date, metrics, artifacts, links) are
+  computed by the runner — DO NOT emit them in your output frontmatter.
 
   ## Output contract (STRICT)
 
@@ -54,31 +52,18 @@ injection: |
   No body is required. The runner merges your output with the factual fields
   before persisting; extras in your frontmatter are rejected.
 
-  ## Protocol (in order)
+  ## Protocol
 
-  1. Read `audit.md` + `metrics.json` (already inlined in this prompt) — write
-     `summary` (one paragraph) and `observations` (0–6 bullets).
-
-  2. For each active HYP — emit a verdict ∈ {confirmed, refuted, inconclusive,
-     n/a} with one-line evidence cite. Persist via
-       ai-hats task hyp append-verdict ...
-     See **hypothesis-validation** for verdict semantics.
-
-  3. For each improvement idea — read open proposals first, then **vote** on
-     similar PROP via `ai-hats task proposal vote`; **create** a new PROP only
-     if novel. See **proposal-management**.
-
-  4. If you cannot follow this format or hit a meta-problem (ambiguous
-     instruction, unparseable inbox, conflicting signal) — file a meta-proposal:
-       ai-hats task proposal create --category process --target session-reviewer \
-         --title "<short>" --description "<what failed>" --rationale "<why>" \
-         --session "$SID"
-     Reference its PROP-NNN in `self_problems`. NEVER silently drop entries.
-     Even if you fail to file the meta-proposal, the runner's harness check
-     will create one — the failure surfaces in the inbox either way.
+  Follow **review-session** end-to-end. It defines the four-step procedure
+  (read evidence → sweep HYPs → triage PROPs → self-meta) and composes the
+  per-item skills:
+  - **review-hypothesis** — pick verdict + recommendation + persist via
+    `ai-hats task hyp append-verdict`.
+  - **review-proposal** — read the open inbox first, vote on similar PROP,
+    or create a novel one.
 
   ## Scope (read-only direct mutations)
 
   You DO NOT mutate `.agent/backlog/tasks/*` or other project state directly.
   All side effects go through `ai-hats task hyp append-verdict` /
-  `ai-hats task proposal *` CLIs.
+  `ai-hats task proposal *` CLIs (per **rule_backlog_discipline**).

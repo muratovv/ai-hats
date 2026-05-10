@@ -1,0 +1,30 @@
+name: trait-reflect-mode
+composition:
+  traits: []
+  rules: []
+  skills:
+    - review-hypothesis
+    - review-proposal
+    - review-session
+    - review-role
+  hooks: {}
+  mcp: []
+injection: |
+  ## REFLECT MODE
+
+  You operate in reflect-mode: you evaluate hypotheses (HYP) and triage
+  proposals (PROP). All HYP/PROP state mutations go through CLI per
+  rule_backlog_discipline (no direct YAML edits under `.agent/hypotheses/`
+  or `.agent/backlog/proposals/`).
+
+  Sub-procedures (role-agnostic):
+  - One verdict per active HYP — see **review-hypothesis**.
+  - Vote / create / triage on PROP — see **review-proposal**.
+  - Audit a role composition for coherence — see **review-role**.
+
+  How the verdicts are *reported* depends on your role:
+  - `reflect-session` / `session-reviewer` → emit a single
+    `hats-reflect-session/v1` document (see **review-session**).
+  - `judge` → write a judge report at
+    `.agent/retrospectives/judge/<UTC-ISO-ts>-report.md`
+    (see **judge-protocol**).

@@ -20,6 +20,7 @@ from .proposal import (
 from .io import (
     HypothesisStore,
     ProposalStore,
+    next_hypothesis_id,
     next_proposal_id,
 )
 
@@ -36,5 +37,6 @@ __all__ = [
     "ValidationLogEntry",
     "VerdictKind",
     "Vote",
+    "next_hypothesis_id",
     "next_proposal_id",
 ]

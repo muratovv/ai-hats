@@ -1,15 +1,24 @@
 ---
 name: backlog-manager
-description: Task lifecycle orchestration via YAML cards (brainstorm→plan→execute→document→review→done)
+description: Backlog lifecycle orchestration for tasks, hypotheses, and proposals via the ai-hats CLI
 ---
 # Backlog Manager
 
-Orchestrate task lifecycle using YAML task cards in `.agent/backlog/tasks/`.
+Orchestrate the lifecycle of all three backlog item types via the `ai-hats task` CLI:
+
+| Type | ID prefix | YAML location | State machine |
+|---|---|---|---|
+| **Task** | `<PROJ>-NNN` (e.g. `HATS-NNN`) | `.agent/backlog/tasks/<ID>/task.yaml` | `brainstorm → plan → execute → document → review → done` (+ `blocked`, `failed`, `cancelled`) |
+| **Hypothesis** | `HYP-NNN` | `.agent/hypotheses/HYP-NNN.yaml` | `active → confirmed | refuted | stalled` |
+| **Proposal** | `PROP-NNN` | `.agent/backlog/proposals/PROP-NNN.yaml` | `open → accepted | rejected | deferred | duplicate` |
+
+CLI-only enforcement is owned by rule **rule_backlog_discipline**: never read or edit `.agent/backlog/**` or `.agent/hypotheses/**` directly — always through the verbs documented below.
 
 ## When to Use
-- Starting any new task or work item
-- Managing task state transitions (brainstorm → plan → execute → document → review → done)
+- Starting any new task, hypothesis, or proposal
+- Managing state transitions on any of the three types
 - Coordinating sub-agent delegation
+- Recording verdicts on hypotheses or votes on proposals
 
 ## CLI Interface
 
@@ -87,7 +96,86 @@ ai-hats task list --search "docs|retro"      # regex OR
 ai-hats task sync
 ```
 
-> **CLI-only enforcement** is owned by rule **dev_rule_backlog_discipline**. Never access `.agent/backlog/tasks/` directly — use the CLI commands above.
+> **CLI-only enforcement** is owned by rule **rule_backlog_discipline**. Never access `.agent/backlog/**` or `.agent/hypotheses/**` directly — use the CLI commands above.
+
+## Hypotheses (`ai-hats task hyp …`)
+
+Hypotheses (HYP-NNN) are proposed changes with measurable expectations. Verdicts come from `reflect-session` runs on session retros. Status flips manually via CLI after the validation window closes.
+
+```bash
+# Create a new hypothesis (auto-id, status=active)
+ai-hats task hyp create \
+  --title "Short title" \
+  --hypothesis "<expected improvement statement>" \
+  --source-task PROJ-042 \
+  --baseline "<measurable starting state>" \
+  --expected-outcome "<bullet 1>" --expected-outcome "<bullet 2>" \
+  --observation-window "4 sessions" \
+  --success-criterion "<how a verdict is decided>"
+
+# List
+ai-hats task hyp list                         # all
+ai-hats task hyp list --status active --json  # filter
+
+# Show
+ai-hats task hyp show HYP-001
+
+# Append a verdict (atomic, filelock-protected)
+ai-hats task hyp append-verdict \
+  --hyp HYP-001 --session <SID> \
+  --verdict {confirmed|refuted|inconclusive|n/a} \
+  --evidence "<one-line citation>" \
+  --recommendation {close_confirmed|close_refuted|keep|extend_window}
+
+# Flip status (after the validation window closes)
+ai-hats task hyp set-status --hyp HYP-001 --status confirmed
+ai-hats task hyp set-status --hyp HYP-001 --status refuted
+ai-hats task hyp set-status --hyp HYP-001 --status stalled
+
+# One-shot normalize all HYP-*.yaml under current schema (idempotent)
+ai-hats task hyp migrate [--dry-run]
+```
+
+**Discovery flow** — when to create:
+- After spotting a recurring pattern across session retros (≥3 sessions where the same friction shows up).
+- After a fix lands and you want to validate it.
+- Always pair with a `--source-task` so the change is traceable.
+
+**Closing flow** — when to flip status:
+- After the validation window declared on creation has filled (`--observation-window`).
+- Final `append-verdict` carries a terminal `--recommendation` (`close_confirmed` / `close_refuted`).
+- Then `hyp set-status` flips `active → confirmed | refuted | stalled` (the verdict CLI does NOT auto-flip status).
+
+**Cross-project hypotheses:** before parking a hypothesis as "untestable from this repo" or starting a retirement clock for lack of evidence, ASK the user whether sibling projects exist where the hypothesis is testable. Do NOT auto-survey other directories without confirmation.
+
+## Proposals (`ai-hats task proposal …`)
+
+Proposals (PROP-NNN) are improvement suggestions emitted by reflect-session or other reviewers. Status regulates visibility — accepted/rejected/deferred proposals stay on disk for traceability.
+
+```bash
+# Create
+ai-hats task proposal create \
+  --title "<title>" \
+  --category {rule|skill|code|process|doc} \
+  --target "<rule/skill/file/process name>" \
+  --description "<what>" \
+  --rationale "<why>" \
+  --related-hypotheses HYP-001,HYP-005 \
+  --session <SID>
+
+# List
+ai-hats task proposal list --status open --json
+ai-hats task proposal list --category rule
+
+# Show
+ai-hats task proposal show PROP-001
+
+# +1 vote
+ai-hats task proposal vote --prop PROP-001 --session <SID> --reasoning "agree"
+
+# Status
+ai-hats task proposal status --prop PROP-001 --status accepted
+```
 
 ## Relationships: parent_task vs depends_on
 

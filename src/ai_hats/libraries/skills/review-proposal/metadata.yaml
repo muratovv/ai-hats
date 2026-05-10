@@ -1,0 +1,5 @@
+name: review-proposal
+description: Triage one improvement opportunity — vote on existing PROP, create new, or flip status
+author: ai-hats
+tags: [review, proposal, feedback-loop]
+pattern: protocol

@@ -1,4 +1,0 @@
-name: dev_rule_backlog_discipline
-description: Enforce work_log updates and task state transitions at every significant action
-author: ai-hats
-tags: [agent-protocol, discipline, backlog]

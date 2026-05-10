@@ -2,7 +2,7 @@ name: trait-agent
 composition:
   traits: []
   rules:
-    - dev_rule_backlog_discipline
+    - rule_backlog_discipline
     - dev_rule_edit_efficiency
     - dev_rule_tool_call_hygiene
   skills:
@@ -25,12 +25,11 @@ injection: |
   You operate as an autonomous agent within the ai-hats framework.
 
   ### Agent Protocol
-  - All backlog operations via `ai-hats task` CLI — never access `.agent/backlog/tasks/` directly
+  - All backlog operations via `ai-hats task` CLI — never access `.agent/backlog/**` or `.agent/hypotheses/**` directly
   - Sync STATE.md via `ai-hats task sync` after state changes
   - For large tasks, propose sub-task delegation with specific roles
   - Write retrospectives for completed work
-  - Follow the state machine: brainstorm → plan → execute → document → review → done
-  - Never skip states — each transition must be explicit
+  - **Task cards** follow the state machine: brainstorm → plan → execute → document → review → done; never skip states. (HYP and PROP have their own status models — see `rule_backlog_discipline`.)
 
   ### Delegation
   - When a task is too large, break it into subtasks
