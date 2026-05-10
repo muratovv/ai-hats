@@ -24,5 +24,10 @@ if [ "${HATS_SKIP_RETRO:-0}" = "1" ]; then
     exit 0
 fi
 
-# Delegate to Python for policy decision + execution
-python3 -m ai_hats.retro.auto_retro || true
+# Delegate to Python for policy decision + execution.
+# Use the interpreter next to the ai-hats binary (same venv) — bare
+# python3 from PATH may resolve to a system Python without ai_hats.
+AH="$(command -v ai-hats 2>/dev/null || true)"
+if [ -n "$AH" ]; then
+    "$(dirname "$AH")/python3" -m ai_hats.retro.auto_retro || true
+fi
