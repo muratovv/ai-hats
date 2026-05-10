@@ -20,48 +20,63 @@ between the markers before exiting.
 
 ## Inputs
 
-The session opens with three named blocks in the first user message.
+The first user message points at three groups of files on disk. Read
+them via the **Read** / **Glob** tools — do not ask the user to paste
+content; the harness has already materialized everything.
 
-### 1. Target role audit view
+### 1. Target role composition (layered)
 
-Layered breakdown of the role being audited — exactly what
-`Composer.compose()` produces, expanded so each layer is independently
-visible:
+Path: `<composed_dir>/` — written by the `reflect role|roles` CLI
+under the harness namespace
+(`<project>/.gitlog/pipeline_runs/reflect-role/composed/<target_role>/`).
+Layout:
 
-- **Priorities** — ordered list driving role decisions.
-- **Composition manifest** — names of traits / rules / skills bundled.
-- **Trait injections** — per-trait text (deduped: a trait whose text
-  duplicates another's is omitted from this section but stays in the
-  manifest).
-- **Role injection** — the role's own injection text.
-- **Overlay injection** — project-overlay's appended text (if any).
-- **Bundled rules** — full body of each `rule.md`.
-- **Bundled skills** — full body of each `SKILL.md`.
+- `manifest.yaml` — start here. Contains `name`, `priorities`, and
+  the names of bundled `traits` / `rules` / `skills`.
+- `role-injection.md` — the role's own injection text (if non-empty).
+- `overlay-injection.md` — project-overlay's appended text (if any).
+- `traits/<name>.md` — per-trait injection text (deduped: a trait
+  whose text already appeared elsewhere is omitted but still listed
+  in the manifest).
+- `rules/<name>.md` — full body of each bundled `rule.md`.
+- `skills/<name>.md` — full body of each bundled `SKILL.md`.
 
-This is *more* than the user's session would see (the live runtime
-flattens these into a single system prompt). The breakdown lets you
-trace every instruction back to its source component when reporting
-findings.
+This breakdown is *richer* than what the user's session sees at
+runtime (which flattens everything into a single system prompt). It
+lets you trace every instruction back to its source component when
+reporting findings.
 
 ### 2. Project CLAUDE.md
 
-The project's user-owned root prompt (`./CLAUDE.md`). May be empty.
+Path: `<project_dir>/CLAUDE.md` — user-owned root prompt. May not
+exist on fresh projects.
 
 ### 3. User rules overlay
 
-Concatenated content of `.agent/ai-hats/user-rules/*.md`. May be empty.
+Path: `<project_dir>/.agent/ai-hats/user-rules/*.md` — project-specific
+overrides. Use `Glob` to enumerate. Directory may be empty or absent.
 
-If a block is empty, note it and continue (a missing user-rules layer
-is normal for fresh projects).
+If a group is empty / missing, note it and continue (a missing
+user-rules layer is normal for fresh projects).
 
 ## Procedure
 
-### Step 1 — Re-read inputs carefully
+### Step 1 — Read the manifest, then walk components
 
-The target role and user context are already in your message. Do not
-re-fetch them from disk. Skim once for shape, then re-read each block
-section by section, extracting concrete instructions / forbidden
-patterns / required behaviours.
+Read `<composed_dir>/manifest.yaml` first to get the structure
+(priorities + component names). Then:
+
+- Read `role-injection.md` (and `overlay-injection.md` if present) for
+  the role's intent.
+- For every name in `composition.traits`, read `traits/<name>.md`.
+- For every name in `composition.rules`, read `rules/<name>.md`.
+- For every name in `composition.skills`, read `skills/<name>.md`.
+- Read `<project_dir>/CLAUDE.md` if it exists.
+- `Glob` `<project_dir>/.agent/ai-hats/user-rules/*.md` and read each.
+
+Extract concrete instructions / forbidden patterns / required
+behaviours from each component. Track them by source name — you'll
+cite the source in every finding.
 
 ### Step 2 — Find conflicts
 
