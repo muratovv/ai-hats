@@ -198,6 +198,23 @@ def test_save_artifact_ts_only_regression(tmp_path: Path):
     assert out["saved_path"].read_text() == "x"
 
 
+def test_save_artifact_declares_template_keys_as_requires(tmp_path: Path):
+    """Placeholders in the template surface in ``io.requires`` so the
+    pipeline core projects them through to ``run`` (HATS-263)."""
+    template = str(tmp_path / "{target_role}-{ts}.md")
+    step = SaveArtifact({"key": "blob", "out_path_template": template})
+    assert "target_role" in step.io.requires
+    assert "blob" in step.io.requires
+    assert "ts" not in step.io.requires  # ts is generated inside run()
+
+
+def test_save_artifact_ts_only_no_extra_requires(tmp_path: Path):
+    """``{ts}``-only templates declare only the data key as required."""
+    template = str(tmp_path / "{ts}.txt")
+    step = SaveArtifact({"key": "blob", "out_path_template": template})
+    assert step.io.requires == frozenset({"blob"})
+
+
 # ---------------- spawn_session_review ----------------
 
 def test_spawn_session_review_returns_pid(tmp_path: Path):

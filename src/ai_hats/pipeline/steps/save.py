@@ -1,17 +1,28 @@
 """``save_artifact`` step — write a state value to a templated path.
 
-The path template is rendered with ``{ts}`` plus any state key passed
-into ``run`` (e.g. ``{target_role}``). Templates that use only ``{ts}``
-keep working — extra kwargs are ignored by ``str.format``.
+The path template supports ``{ts}`` plus any state key (e.g.
+``{target_role}``). Placeholder names found in the template (other
+than ``ts``) are declared as ``requires`` so the pipeline core
+projects them through to ``run``.
 """
 
 from __future__ import annotations
 
+import string
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
 from ..step import Step, StepIO
+
+
+def _parse_template_keys(template: str) -> frozenset[str]:
+    """Return named placeholders in ``template`` (excluding ``ts``)."""
+    return frozenset(
+        name
+        for _, name, _, _ in string.Formatter().parse(template)
+        if name and name != "ts"
+    )
 
 
 class SaveArtifact(Step):
@@ -23,12 +34,13 @@ class SaveArtifact(Step):
                 raise ValueError(f"save_artifact: missing param {required!r}")
         self.key: str = params["key"]
         self.out_path_template: str = params["out_path_template"]
+        self._template_keys = _parse_template_keys(self.out_path_template)
 
     @property
     def io(self) -> StepIO:
         return StepIO(
             name="save_artifact",
-            requires=frozenset({self.key}),
+            requires=frozenset({self.key}) | self._template_keys,
             produces=frozenset({"saved_path"}),
         )
 
