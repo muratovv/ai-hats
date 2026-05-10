@@ -1,8 +1,8 @@
 """``save_artifact`` step — write a state value to a templated path.
 
-MVP supports only the ``{ts}`` placeholder in the path template. If a
-future pipeline needs more (e.g. ``{session_id}``) extend to
-``template.format(**state)`` then.
+The path template is rendered with ``{ts}`` plus any state key passed
+into ``run`` (e.g. ``{target_role}``). Templates that use only ``{ts}``
+keep working — extra kwargs are ignored by ``str.format``.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class SaveArtifact(Step):
     def run(self, **inputs: Any) -> dict[str, Any]:
         content = inputs[self.key]
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
-        path = Path(self.out_path_template.format(ts=ts))
+        path = Path(self.out_path_template.format(ts=ts, **inputs))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content if isinstance(content, str) else str(content))
         return {"saved_path": path}

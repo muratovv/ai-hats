@@ -176,6 +176,28 @@ def test_save_artifact_validates_params():
         SaveArtifact({"key": "x"})
 
 
+def test_save_artifact_substitutes_state_keys(tmp_path: Path):
+    """Path template can reference any state key in addition to ``{ts}``.
+
+    Used by reflect-role pipeline (HATS-263) to embed ``{target_role}``
+    in the output path.
+    """
+    template = str(tmp_path / "out" / "{target_role}-{ts}.md")
+    step = SaveArtifact({"key": "blob", "out_path_template": template})
+    out = step.run(blob="report", target_role="judge")
+    assert out["saved_path"].exists()
+    assert out["saved_path"].name.startswith("judge-")
+    assert out["saved_path"].read_text() == "report"
+
+
+def test_save_artifact_ts_only_regression(tmp_path: Path):
+    """Templates with only ``{ts}`` keep working when extra state is passed."""
+    template = str(tmp_path / "{ts}.txt")
+    step = SaveArtifact({"key": "blob", "out_path_template": template})
+    out = step.run(blob="x", role="ignored", project_dir=tmp_path)
+    assert out["saved_path"].read_text() == "x"
+
+
 # ---------------- spawn_session_review ----------------
 
 def test_spawn_session_review_returns_pid(tmp_path: Path):
