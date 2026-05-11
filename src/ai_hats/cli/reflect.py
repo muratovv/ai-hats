@@ -19,7 +19,7 @@ Subcommands:
     composes the target role and materializes its layered breakdown
     under the harness namespace (`<project>/.gitlog/pipeline_runs/
     reflect-role/composed/<target_role>/`). The `reflect-role` pipeline
-    then launches `role_reviewer` interactively with a small prompt
+    then launches `auditor-for-role` interactively with a small prompt
     that points at those files; the reviewer reads them via Read/Glob
     tools as needed. The audit report is persisted under
     `.agent/retrospectives/reflect/<target>-<ts>.md`. The audit protocol
@@ -219,7 +219,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
     ).read_text()
 
     console.print(
-        f"[cyan]→ Launching role_reviewer to audit: {target_role}[/]"
+        f"[cyan]→ Launching auditor-for-role to audit: {target_role}[/]"
     )
     with PipelineHarness("reflect-role", project_dir) as h:
         composed_dir = _materialize_target_composition(
@@ -231,7 +231,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
             project_dir=project_dir,
         )
         final = h.run({
-            "role": "role_reviewer",
+            "role": "auditor-for-role",
             "target_role": target_role,
             "interactive": True,
             "project_dir": project_dir,

@@ -5,18 +5,25 @@ description: Audit a composed role against the user's project context for contra
 
 # Role Coherence Protocol
 
-Audit protocol for the **role_reviewer** role. Verifies that a target
+Audit method for any role-auditing role (`auditor-for-role`,
+`judge-for-role`, and future role-audit family). Verifies that a target
 role's composed instructions are internally consistent and do not
 interfere with the user's project files (`./CLAUDE.md`,
 `.agent/ai-hats/user-rules/*.md`). Run by `ai-hats reflect role <name>`
 and `ai-hats reflect roles`.
 
+The skill defines *what to audit and how to structure findings*.
+Mutation policy and dialogue contract are set by the composing role's
+base trait — `base-auditor` (no CLI / no dialogue) vs `base-judge`
+(CLI ops + HITL dialogue, governed by **judge-role-protocol**).
+
 ## When to Use
 
-You were launched as **role_reviewer**. The first user message contains
-the target role's composed text plus the project context that should be
-audited against it. Apply this protocol end-to-end and write the report
-between the markers before exiting.
+You were launched as a role-auditing role (`auditor-for-role`,
+`judge-for-role`, or sibling). The first user message contains the
+target role's composed text plus the project context that should be
+audited against it. Apply this protocol end-to-end and write the
+report between the markers before exiting.
 
 ## Inputs
 
@@ -145,7 +152,16 @@ nothing to conflict with").
 
 ## Scope
 
-You DO NOT mutate any files during the audit. The pipeline's
-`save_artifact` step persists your report — your only job is producing
-the markdown between the markers. Do not run `ai-hats` CLI commands;
-do not edit role/rule/skill source files even if you spot a typo.
+You DO NOT edit role / skill / rule / trait source files during the
+audit even if you spot a typo — fixes are the job of a subsequent
+agent (typically a task spawned from the report's findings).
+
+What you may otherwise do (run `ai-hats` CLI, dialogue with the
+supervisor, file tasks) is governed by your composing role's base
+trait:
+- `base-auditor` → no CLI ops, no dialogue, single report artifact.
+- `base-judge` → CLI inspections + `ai-hats task create` allowed;
+  see **judge-role-protocol** for the dialogue contract.
+
+The pipeline's `save_artifact` step persists your report — emitting
+clean markdown between the markers is your primary deliverable.
