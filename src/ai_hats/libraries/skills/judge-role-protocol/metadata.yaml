@@ -1,0 +1,5 @@
+name: judge-role-protocol
+description: HITL dialogue + CLI ops contract for judge-for-role — file-fix tasks instead of editing role/skill/rule sources
+author: ai-hats
+tags: [judge, role-audit, hitl, protocol]
+pattern: protocol
