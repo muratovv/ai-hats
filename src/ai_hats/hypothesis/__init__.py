@@ -23,13 +23,26 @@ from .io import (
     next_hypothesis_id,
     next_proposal_id,
 )
+from .intake import (
+    CreateAction,
+    IntakeDraft,
+    IntakeParseError,
+    IntakeResult,
+    MergeAction,
+    parse_intake_yaml,
+)
 
 __all__ = [
     "Baseline",
+    "CreateAction",
     "ExitCriteria",
     "Hypothesis",
     "HypothesisStatus",
     "HypothesisStore",
+    "IntakeDraft",
+    "IntakeParseError",
+    "IntakeResult",
+    "MergeAction",
     "Proposal",
     "ProposalCategory",
     "ProposalStatus",
@@ -39,4 +52,5 @@ __all__ = [
     "Vote",
     "next_hypothesis_id",
     "next_proposal_id",
+    "parse_intake_yaml",
 ]

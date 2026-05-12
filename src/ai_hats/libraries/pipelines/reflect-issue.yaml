@@ -1,0 +1,11 @@
+name: reflect-issue
+steps:
+  - id: compose_role
+  - id: resolve_prompt
+    params: {default_text: ""}
+  - id: launch_provider
+  - id: extract_marker
+    params:
+      start: BEGIN_INTAKE_RESULT
+      end: END_INTAKE_RESULT
+      out_key: intake_result

@@ -40,7 +40,10 @@ from pathlib import Path
 
 import click
 
-from ..hypothesis import HypothesisStore, ProposalStore
+from ..hypothesis import (
+    HypothesisStore,
+    ProposalStore,
+)
 from ..retro.session_review_runner import SessionReviewError
 from ._helpers import _project_dir, console
 
@@ -313,6 +316,252 @@ def _materialize_target_composition(
             (skills_dir / f"{s.name}.md").write_text(s.injection or "")
 
     return target_dir
+
+
+# ---- reflect issue ----
+
+
+SUPERVISOR_SOURCE_TASK = "supervisor-observation"
+INTAKE_MODEL = "haiku"
+
+
+def _build_intake_prompt(text: str, active_hyps: list) -> str:
+    """Compose the prompt fed to the `hypothesis-intake` role."""
+    import json as _json
+
+    payload = [
+        {"id": h.id, "title": h.title, "hypothesis": h.hypothesis}
+        for h in active_hyps
+    ]
+    return (
+        "OBSERVATION:\n"
+        f"{text.strip()}\n"
+        "\n---\n\n"
+        "ACTIVE_HYPOTHESES:\n"
+        f"{_json.dumps(payload, ensure_ascii=False, indent=2)}\n"
+    )
+
+
+def _run_intake_pipeline(
+    project_dir: Path, prompt_text: str,
+) -> tuple[str, int]:
+    """Invoke `reflect-issue` pipeline; return (intake_result_text, exit_code).
+
+    Empty ``intake_result_text`` means the marker block was missing in the
+    transcript. Caller treats that as a pipeline failure.
+    """
+    from ..pipeline.harness import PipelineHarness
+
+    with PipelineHarness("reflect-issue", project_dir) as h:
+        final = h.run({
+            "role": "hypothesis-intake",
+            "interactive": False,
+            "project_dir": project_dir,
+            "prompt_path": h.materialize_prompt(prompt_text),
+            "model": INTAKE_MODEL,
+        })
+    return (
+        final.get("intake_result", "") or "",
+        int(final.get("exit_code", 1)),
+    )
+
+
+def _minimal_create_action(text: str):
+    """Build a degraded CreateAction with only title+hypothesis populated.
+
+    Used when the LLM round-trip fails AND there are no active HYPs (so we
+    cannot deduplicate). The supervisor still gets a HYP file to edit; all
+    schema-optional fields are left empty for a later pass.
+    """
+    from ..hypothesis import CreateAction, IntakeDraft
+
+    title = text.strip().splitlines()[0][:60] or "supervisor observation"
+    return CreateAction(
+        action="create",
+        draft=IntakeDraft(title=title, hypothesis=text.strip()),
+    )
+
+
+def _format_preview(action) -> str:
+    """Pretty-print an IntakeResult for the interactive confirmation prompt."""
+    import yaml as _yaml
+
+    from ..hypothesis import CreateAction, MergeAction
+
+    if isinstance(action, MergeAction):
+        body = {
+            "action": "merge",
+            "target_id": action.target_id,
+            "evidence": action.evidence,
+        }
+    elif isinstance(action, CreateAction):
+        body = {
+            "action": "create",
+            "draft": action.draft.model_dump(exclude_none=True),
+        }
+    else:  # pragma: no cover — defensive
+        return str(action)
+    return _yaml.safe_dump(body, sort_keys=False, allow_unicode=True)
+
+
+def _write_intake(
+    project_dir: Path,
+    action,
+    *,
+    text: str,
+    session_id: str | None,
+    task_id: str | None,
+) -> str:
+    """Materialize the intake decision via HypothesisStore. Returns HYP id."""
+    from datetime import date, datetime, timezone
+
+    from ..hypothesis import (
+        CreateAction,
+        ExitCriteria,
+        Hypothesis,
+        MergeAction,
+        ValidationLogEntry,
+        next_hypothesis_id,
+    )
+
+    store = HypothesisStore(project_dir / ".agent" / "hypotheses")
+    store.dir.mkdir(parents=True, exist_ok=True)
+
+    if isinstance(action, MergeAction):
+        target_path = store.path(action.target_id)
+        if not target_path.exists():
+            raise click.ClickException(
+                f"intake returned merge target {action.target_id} "
+                "but the file does not exist; refusing to fabricate"
+            )
+        entry = ValidationLogEntry(
+            date=datetime.now(tz=timezone.utc).date(),
+            verdict="inconclusive",
+            evidence=action.evidence,
+            recommendation="keep",
+            session_id=session_id,
+            timestamp=datetime.now(tz=timezone.utc),
+        )
+        store.append_verdict(action.target_id, entry)
+        return action.target_id
+
+    if isinstance(action, CreateAction):
+        new_id = next_hypothesis_id(store.dir)
+        d = action.draft
+        ec = None
+        if d.exit_criteria:
+            ec = ExitCriteria(
+                confirm=list(d.exit_criteria.get("confirm") or []),
+                refute=list(d.exit_criteria.get("refute") or []),
+                stalled=list(d.exit_criteria.get("stalled") or []),
+            )
+        h = Hypothesis(
+            id=new_id,
+            title=d.title,
+            status="active",
+            created=date.today(),
+            source_task=task_id or SUPERVISOR_SOURCE_TASK,
+            hypothesis=d.hypothesis,
+            baseline=d.baseline,
+            expected_outcome=list(d.expected_outcome),
+            success_criterion=d.success_criterion,
+            exit_criteria=ec,
+        )
+        store.create(h)
+        return new_id
+
+    raise click.ClickException(  # pragma: no cover — defensive
+        f"unexpected intake action type: {type(action).__name__}"
+    )
+
+
+@reflect.command("issue")
+@click.argument("text")
+@click.option(
+    "--confirm", "--yes", "auto_confirm", is_flag=True,
+    help="Write without the interactive y/N prompt.",
+)
+@click.option(
+    "--session", "session_id", default=None,
+    help="Source session id (YYYYMMDD-HHMMSS-N) — recorded on merge.",
+)
+@click.option(
+    "--task", "task_id", default=None,
+    help="Originating task id (e.g., HATS-NNN); defaults to 'supervisor-observation'.",
+)
+def reflect_issue_cmd(
+    text: str,
+    auto_confirm: bool,
+    session_id: str | None,
+    task_id: str | None,
+) -> None:
+    """Log a supervisor observation as a hypothesis (create or merge).
+
+    Runs the `reflect-issue` pipeline: Haiku reads the observation +
+    the list of active HYPs, decides whether to draft a new HYP
+    (``action: create``) or append the observation as evidence to an
+    existing HYP (``action: merge``).
+    """
+    from ..hypothesis import IntakeParseError, parse_intake_yaml
+
+    project_dir = _project_dir()
+    store = HypothesisStore(project_dir / ".agent" / "hypotheses")
+    active = store.list_active()
+    prompt_text = _build_intake_prompt(text, active)
+
+    action = None
+    degraded = False
+    try:
+        intake_text, exit_code = _run_intake_pipeline(project_dir, prompt_text)
+        if exit_code != 0:
+            raise RuntimeError(
+                f"reflect-issue pipeline exited non-zero ({exit_code})"
+            )
+        if not intake_text:
+            raise RuntimeError(
+                "reflect-issue pipeline did not emit "
+                "BEGIN_INTAKE_RESULT/END_INTAKE_RESULT block"
+            )
+        action = parse_intake_yaml(intake_text)
+    except (RuntimeError, IntakeParseError) as exc:
+        if active:
+            raise click.ClickException(
+                f"intake failed and active hypotheses exist — refusing to "
+                f"create without dedup. Cause: {exc}"
+            ) from exc
+        click.echo(
+            f"⚠ intake LLM call failed ({exc}); falling back to minimal HYP",
+            err=True,
+        )
+        action = _minimal_create_action(text)
+        degraded = True
+
+    if isinstance(action, type(None)):  # pragma: no cover — defensive
+        raise click.ClickException("intake produced no action")
+
+    preview = _format_preview(action)
+    console.print("[bold]Intake draft:[/bold]")
+    click.echo(preview)
+    if degraded:
+        click.echo("(degraded — title/hypothesis only)", err=True)
+
+    if not auto_confirm:
+        if not click.confirm("Write this intake?", default=False):
+            console.print("[yellow]aborted; nothing written[/yellow]")
+            return
+
+    hyp_id = _write_intake(
+        project_dir, action,
+        text=text, session_id=session_id, task_id=task_id,
+    )
+    from ..hypothesis import MergeAction
+
+    if isinstance(action, MergeAction):
+        console.print(
+            f"[green]✓[/green] merged into {hyp_id} (validation_log +1)"
+        )
+    else:
+        console.print(f"[green]✓[/green] created {hyp_id} (status=active)")
 
 
 # ---- reflect commit ----
