@@ -33,6 +33,8 @@ The supervisor may ask you to:
 
 - ✅ `ai-hats task create` — file fix tasks based on findings.
 - ✅ `ai-hats list …` — read-only inspections of the library state.
+- ✅ **Write tool** to the report path declared in your role injection
+  (`.agent/retrospectives/role-coherence/<UTC-ISO-ts>-<target>.md`).
 - ❌ Direct edits of role / skill / rule / trait source files — that
   is the fix author's job (typically the task you just filed), not
   yours. Even if a fix is one line and obviously correct, file the
@@ -44,11 +46,17 @@ The supervisor may ask you to:
 
 ## Output contract
 
-When the supervisor signals "wrap up" / session exit, emit the
-findings report between `BEGIN_REFLECT` / `END_REFLECT` — same shape
-as `auditor-for-role` (see **role-coherence-protocol** Step 3). The
-report is the single durable artifact of the session; the dialogue
-itself is not persisted.
+When the supervisor signals "wrap up" / session exit, use the **Write**
+tool to save the findings report to the path declared in
+**judge-for-role** injection
+(`.agent/retrospectives/role-coherence/<UTC-ISO-ts>-<target>.md`).
+Filename example: `2026-05-12T14-30-00Z-judge.md`. Use the report
+template documented in **role-coherence-protocol** Step 3 (free-form
+`## Findings` + `## Notes`; no YAML frontmatter required).
+
+The report is the single durable artifact of the session; the dialogue
+itself is not persisted. Do NOT emit `BEGIN_REFLECT` / `END_REFLECT`
+markers — the pipeline for `judge-for-role` does not extract them.
 
 If the supervisor explicitly says "no report needed, we're just
 exploring", you may exit without one — but state this in the last

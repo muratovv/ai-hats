@@ -19,11 +19,14 @@ Subcommands:
     composes the target role and materializes its layered breakdown
     under the harness namespace (`<project>/.gitlog/pipeline_runs/
     reflect-role/composed/<target_role>/`). The `reflect-role` pipeline
-    then launches `auditor-for-role` interactively with a small prompt
-    that points at those files; the reviewer reads them via Read/Glob
-    tools as needed. The audit report is persisted under
-    `.agent/retrospectives/reflect/<target>-<ts>.md`. The audit protocol
-    lives in the `role-coherence-protocol` skill (HATS-263).
+    then launches `judge-for-role` interactively with a small prompt
+    that points at those files; the judge reads them via Read/Glob
+    tools as needed and writes the audit report directly via the
+    Write tool to
+    `.agent/retrospectives/role-coherence/<UTC-ts>-<target>.md`.
+    The audit protocol lives in the `role-coherence-protocol` skill
+    (HATS-263); the judge dialogue contract lives in
+    `judge-role-protocol` (HATS-296, HATS-297).
 
 - `reflect commit ...`
     Bulk-update proposal statuses (called at end of interactive chat).
@@ -219,7 +222,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
     ).read_text()
 
     console.print(
-        f"[cyan]→ Launching auditor-for-role to audit: {target_role}[/]"
+        f"[cyan]→ Launching judge-for-role to audit: {target_role}[/]"
     )
     with PipelineHarness("reflect-role", project_dir) as h:
         composed_dir = _materialize_target_composition(
@@ -231,7 +234,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
             project_dir=project_dir,
         )
         final = h.run({
-            "role": "auditor-for-role",
+            "role": "judge-for-role",
             "target_role": target_role,
             "interactive": True,
             "project_dir": project_dir,

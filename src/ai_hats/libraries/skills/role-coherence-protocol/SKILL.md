@@ -116,12 +116,9 @@ For each conflict capture:
 
 ### Step 3 — Write the report
 
-Before the session ends, emit the report between markers so the
-pipeline `extract_marker` step can capture it:
+Report template (used by both delivery paths below):
 
 ```
-BEGIN_REFLECT
-
 # Role coherence report — <target_role> · <UTC ts>
 
 ## Findings
@@ -131,13 +128,28 @@ BEGIN_REFLECT
 
 ## Notes
 <free-form observations, structural smell, anything outside finding scope>
-
-END_REFLECT
 ```
 
 Empty findings are valid — write `(none)` under `## Findings` and
 explain why in `## Notes` (e.g. "role contains only `trait-base`,
 nothing to conflict with").
+
+**Delivery** depends on which trait you compose:
+
+- **`base-auditor` (batch, no pipeline interaction)** — emit the
+  report between `BEGIN_REFLECT` / `END_REFLECT` markers in your
+  output. The pipeline's `extract_marker` + `save_artifact` steps
+  capture and persist it. Used by future batch QA gates; **no
+  current pipeline relies on this path**.
+
+- **`base-judge` (HITL pipeline / manual interactive)** — use the
+  **Write** tool to save the report directly to the path declared
+  in your role injection (typically
+  `.agent/retrospectives/role-coherence/<UTC-ISO-ts>-<target>.md`).
+  Do NOT emit `BEGIN_REFLECT` / `END_REFLECT` markers — the pipeline
+  does not extract them on this path. Used by `judge-for-role` via
+  `ai-hats reflect role` and manual `ai-hats execute --role
+  judge-for-role`.
 
 ## Edge Cases
 
