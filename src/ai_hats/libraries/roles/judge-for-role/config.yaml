@@ -25,9 +25,17 @@ injection: |
   via `ai-hats task create`. HITL contract and allowed CLI ops are
   governed by **judge-role-protocol**.
 
-  Final findings report — written on supervisor request or at session
-  exit — follows the same `BEGIN_REFLECT` / `END_REFLECT` shape as
-  `auditor-for-role`.
+  ## Output
+
+  Write the final findings report directly via the **Write** tool to:
+
+      .agent/retrospectives/role-coherence/<UTC-ISO-ts>-<target_role>.md
+
+  Filename example: `2026-05-12T14-30-00Z-judge.md`. Use the report
+  template documented in **role-coherence-protocol** Step 3. Write the
+  report on supervisor request ("wrap up", "write the report and exit")
+  or at session exit. This is the **only** allowed direct write under
+  `.agent/` for this role.
 
   Subject is **role coherence only**. For HYP/PROP triage redirect to
-  the `judge` role (HYP closure + PROP inbox).
+  the `judge` role.
