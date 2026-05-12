@@ -22,8 +22,9 @@ base trait — `base-auditor` (no CLI / no dialogue) vs `base-judge`
 You were launched as a role-auditing role (`auditor-for-role`,
 `judge-for-role`, or sibling). The first user message contains the
 target role's composed text plus the project context that should be
-audited against it. Apply this protocol end-to-end and write the
-report between the markers before exiting.
+audited against it. Apply this protocol end-to-end and deliver the
+report per §Step 3 — the delivery branch (markers vs Write tool) is
+chosen by your composing base trait.
 
 ## Inputs
 
@@ -116,7 +117,18 @@ For each conflict capture:
 
 ### Step 3 — Write the report
 
-Report template (used by both delivery paths below):
+**Delivery decision (read first, then template):**
+
+```
+Composed with `base-auditor`? → emit between BEGIN_REFLECT / END_REFLECT.
+Composed with `base-judge`?    → Write tool to declared report path. No markers.
+```
+
+Pick the branch matching your composition and follow only that branch
+below. The wrong branch ships markers the pipeline does not extract
+(or vice versa).
+
+Report template (used by both branches):
 
 ```
 # Role coherence report — <target_role> · <UTC ts>
@@ -131,25 +143,23 @@ Report template (used by both delivery paths below):
 ```
 
 Empty findings are valid — write `(none)` under `## Findings` and
-explain why in `## Notes` (e.g. "role contains only `trait-base`,
+explain why in `## Notes` (e.g. "role contains only `trait-analyst-base`,
 nothing to conflict with").
 
-**Delivery** depends on which trait you compose:
+**Branch A — `base-auditor` (batch, no pipeline interaction):**
+emit the report between `BEGIN_REFLECT` / `END_REFLECT` markers in your
+output. The pipeline's `extract_marker` + `save_artifact` steps capture
+and persist it. Used by future batch QA gates; **no current pipeline
+relies on this path**.
 
-- **`base-auditor` (batch, no pipeline interaction)** — emit the
-  report between `BEGIN_REFLECT` / `END_REFLECT` markers in your
-  output. The pipeline's `extract_marker` + `save_artifact` steps
-  capture and persist it. Used by future batch QA gates; **no
-  current pipeline relies on this path**.
-
-- **`base-judge` (HITL pipeline / manual interactive)** — use the
-  **Write** tool to save the report directly to the path declared
-  in your role injection (typically
-  `.agent/retrospectives/role-coherence/<UTC-ISO-ts>-<target>.md`).
-  Do NOT emit `BEGIN_REFLECT` / `END_REFLECT` markers — the pipeline
-  does not extract them on this path. Used by `judge-for-role` via
-  `ai-hats reflect role` and manual `ai-hats execute --role
-  judge-for-role`.
+**Branch B — `base-judge` (HITL pipeline / manual interactive):** use
+the **Write** tool to save the report directly to the path declared in
+your role injection (typically
+`.agent/retrospectives/role-coherence/<UTC-ISO-ts>-<target>.md`). Do
+NOT emit `BEGIN_REFLECT` / `END_REFLECT` markers — the pipeline does
+not extract them on this path. Used by `judge-for-role` via
+`ai-hats reflect role` and manual `ai-hats execute --role
+judge-for-role`.
 
 ## Edge Cases
 
@@ -164,16 +174,20 @@ nothing to conflict with").
 
 ## Scope
 
-You DO NOT edit role / skill / rule / trait source files during the
-audit even if you spot a typo — fixes are the job of a subsequent
-agent (typically a task spawned from the report's findings).
+Mutation policy is defined by your composing base trait, not by this
+skill. See the level declared there for what is allowed:
 
-What you may otherwise do (run `ai-hats` CLI, dialogue with the
-supervisor, file tasks) is governed by your composing role's base
-trait:
-- `base-auditor` → no CLI ops, no dialogue, single report artifact.
-- `base-judge` → CLI inspections + `ai-hats task create` allowed;
-  see **judge-role-protocol** for the dialogue contract.
+- `base-auditor` → **L0** (audit only): no CLI, no dialogue, single
+  report artifact. Source-file edits unavailable.
+- `base-judge` → **L1** (analysis + ack'd mutations): CLI verbs per
+  `judge-role-protocol` whitelist, HITL dialogue, file tasks via
+  `ai-hats task create`. Source-file edits gated by L2 activation
+  (supervisor-authorized; see `base-judge` §L2).
 
-The pipeline's `save_artifact` step persists your report — emitting
-clean markdown between the markers is your primary deliverable.
+This skill defines the audit method and report shape only. For default
+L0 / L1 behaviour, defer to the base trait. For L2 source-file edits,
+defer to `base-judge` §L2.
+
+The pipeline's `save_artifact` step persists your report (Branch A) or
+your direct Write lands it (Branch B) — emitting clean markdown is
+your primary deliverable.

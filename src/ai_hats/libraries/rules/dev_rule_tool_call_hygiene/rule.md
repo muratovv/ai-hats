@@ -9,7 +9,7 @@ Bash is appropriate for: `git`, build commands, multi-stage pipes, shell-only st
 
 **Discipline:**
 - Independent reads → single parallel block, never sequential.
-- Initial codebase exploration ≤5 calls; broader → `Agent(Explore)`.
+- Initial codebase exploration ≤3–5 calls; broader → `Agent(Explore)`.
 - 5+ similar sequential calls → STOP, batch or use a more targeted tool.
 
 For the full anti-pattern table and worked examples → skill **tool-call-hygiene**.

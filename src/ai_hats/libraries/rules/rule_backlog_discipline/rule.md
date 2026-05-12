@@ -7,4 +7,10 @@ Applies to all three backlog item types — **tasks** (`HATS-NNN`), **hypotheses
 3. **State transitions immediate.** Transition state when work changes phase — no stale states. Applies to task lifecycle (`brainstorm → … → done`), HYP status (`active → confirmed | refuted | stalled`), and PROP status (`open → accepted | rejected | deferred | duplicate`).
 4. **Completion gate.** A task is `done` only when: state is `done`, work_log has a final entry, STATE.md is synced.
 
+## Scope
+
+§1 applies to every role that touches the backlog (filing, lifecycle, or read).
+
+§§2–4 apply only to roles that **own a backlog item's lifecycle** — the fix author / lead / primary agent. Roles whose protocol skill whitelists only `task create` (e.g. L1 analyst roles like `judge-for-role`) follow §1 only; they never enter §§2–4 obligations because they never own a lifecycle.
+
 For CLI commands, lifecycle details, and plan-flow procedures → skill **backlog-manager**.
