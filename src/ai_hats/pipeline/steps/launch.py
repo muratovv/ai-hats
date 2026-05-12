@@ -101,9 +101,18 @@ class LaunchProvider(Step):
                 exit_code = int(metrics.get("exit_code", 1))
             except (OSError, ValueError):
                 exit_code = 1
+        # Non-interactive: sub-agent stdout lands in transcript.txt
+        # (written by _finalize_sub_agent). trace.log only carries
+        # SUB/RES system events, so extract_marker on it would miss
+        # the LLM output. Fall back to trace_path if transcript.txt
+        # was not produced (e.g. sub-agent terminated before stdout).
+        transcript_txt = session.session_dir / "transcript.txt"
+        transcript_path = (
+            transcript_txt if transcript_txt.exists() else session.trace_path
+        )
         return {
             "session_id": session.session_id,
             "session_dir": session.session_dir,
-            "transcript_path": session.trace_path,
+            "transcript_path": transcript_path,
             "exit_code": exit_code,
         }

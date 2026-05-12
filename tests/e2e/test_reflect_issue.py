@@ -32,7 +32,11 @@ def _install_subagent_trace(monkeypatch, project_dir: Path, body: str) -> dict:
             )
             self.session_dir.mkdir(parents=True, exist_ok=True)
             self.trace_path = self.session_dir / "trace.log"
-            self.trace_path.write_text(body)
+            self.trace_path.write_text("(sub-agent system events only)\n")
+            # _finalize_sub_agent writes LLM stdout to transcript.txt;
+            # launch_provider exposes that file as transcript_path for
+            # non-interactive runs.
+            (self.session_dir / "transcript.txt").write_text(body)
             self.metrics_path = self.session_dir / "metrics.json"
             self.metrics_path.write_text(
                 json.dumps({
