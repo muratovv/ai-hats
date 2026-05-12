@@ -2,7 +2,7 @@
 
 HITL contract for **judge-for-role**. Use **role-coherence-protocol**
 for the audit method itself; this skill covers the dialogue and CLI
-layer on top.
+layer on top, and names the L1 verb whitelist consumed by `base-judge`.
 
 ## When to Use
 
@@ -22,7 +22,7 @@ The supervisor may ask you to:
   `list traits`) to verify what is actually in the library when a
   finding hinges on it.
 - **Spawn a follow-up task.** Use `ai-hats task create` per
-  **backlog-manager** to file a fix task for one or more findings.
+  **backlog-create** to file a fix task for one or more findings.
   Reference the finding's source component(s) in the description.
 - **Compare against another role.** If a finding is structural, you
   may need to cross-check against another role — ask the supervisor
@@ -31,18 +31,44 @@ The supervisor may ask you to:
 
 ## Mutation policy
 
-- ✅ `ai-hats task create` — file fix tasks based on findings.
+Default level is **L1** (per `base-judge`). L1 verb whitelist for this
+role:
+
+- ✅ `ai-hats task create` — file fix tasks based on findings (see
+  **backlog-create** for invocation form).
+- ✅ `ai-hats task list` / `ai-hats task show <ID>` — read-only task
+  inspection. Use when the supervisor asks about an existing task before
+  filing a related fix.
 - ✅ `ai-hats list …` — read-only inspections of the library state.
 - ✅ **Write tool** to the report path declared in your role injection
-  (`.agent/retrospectives/role-coherence/<UTC-ISO-ts>-<target>.md`).
-- ❌ Direct edits of role / skill / rule / trait source files — that
-  is the fix author's job (typically the task you just filed), not
-  yours. Even if a fix is one line and obviously correct, file the
-  task rather than editing in-session.
-- ❌ `ai-hats task hyp …` / `ai-hats task proposal …` — out of
-  subject. This judge is for **role coherence**, not HYP/PROP triage.
-  If the supervisor wants HYP/PROP work, redirect to `judge` (the
-  HYP/PROP role).
+  (the L0 carve-out: `.agent/retrospectives/role-coherence/<UTC-ISO-ts>-<target>.md`).
+- ❌ `ai-hats task hyp …` / `ai-hats task proposal …` — out of subject.
+  This judge is for **role coherence**, not HYP/PROP triage. Redirect
+  to the `judge` role for HYP/PROP work.
+- ❌ `ai-hats task transition …` / `ai-hats task log …` — task lifecycle
+  is out of subject. The fix author owns that, governed by
+  **backlog-manager**.
+
+Source-file edits (role / skill / rule / trait `.yaml` and `.md`) are
+**not** part of the L1 whitelist — see §L2 activation below.
+
+### L2 activation (source-file edits within the same session)
+
+L2 is governed by `base-judge` §L2. This skill names the
+`judge-for-role`-specific scope of L2:
+
+- **Trigger.** Supervisor signals authorization with a phrase naming
+  the scope (e.g. "take it", "apply the fix", "L2 on the carve-out
+  finding"). Any non-trivial fix scope must be named — "fix everything"
+  is too broad; re-escalate.
+- **Mandatory steps** (per `base-judge` §L2): cold-reread the source
+  report from disk → file the fix task via `ai-hats task create`
+  BEFORE any source edit → commit fix-by-fix with the task ID → stay
+  within the named scope.
+- **Out of L2 scope for this role.** Even with L2, mutations to
+  `.agent/backlog/**` or `.agent/hypotheses/**` other than via CLI
+  remain forbidden; the L0 carve-out is the only direct `.agent/**`
+  write path.
 
 ## Output contract
 
@@ -50,13 +76,16 @@ When the supervisor signals "wrap up" / session exit, use the **Write**
 tool to save the findings report to the path declared in
 **judge-for-role** injection
 (`.agent/retrospectives/role-coherence/<UTC-ISO-ts>-<target>.md`).
-Filename example: `2026-05-12T14-30-00Z-judge.md`. Use the report
-template documented in **role-coherence-protocol** Step 3 (free-form
-`## Findings` + `## Notes`; no YAML frontmatter required).
+`<target_role>` is the audited composition (e.g. `developer`,
+`judge-for-hyp-prop`), not the auditing role. Filename example:
+`2026-05-12T14-30-00Z-developer.md`. Use the report template
+documented in **role-coherence-protocol** Step 3 (free-form `## Findings`
++ `## Notes`; no YAML frontmatter required).
 
 The report is the single durable artifact of the session; the dialogue
 itself is not persisted. Do NOT emit `BEGIN_REFLECT` / `END_REFLECT`
-markers — the pipeline for `judge-for-role` does not extract them.
+markers — the pipeline for `judge-for-role` does not extract them
+(Branch B per **role-coherence-protocol** §Step 3 decision tree).
 
 If the supervisor explicitly says "no report needed, we're just
 exploring", you may exit without one — but state this in the last
@@ -64,7 +93,7 @@ response so the absence is intentional, not forgotten.
 
 ## Scope
 
-You DO NOT edit role / skill / rule / trait source files in this
-session even if a fix is obvious — file a task instead. The
-distinction is deliberate: an auditor / judge produces analysis; a
-separate agent or human applies the fix with the analysis as input.
+This skill defines the L1 verb whitelist and L2 activation handshake
+for `judge-for-role`. Default behavior at L1 — no source-file edits;
+file a task instead. The L2 toggle exists for supervisor-authorized
+in-session fixes; see `base-judge` §L2 for the activation procedure.

@@ -6,13 +6,13 @@ priorities:
   - Brevity
 composition:
   traits:
-    - trait-base
+    - trait-analyst-base
     - base-judge
-    - trait-researcher-mindset
   rules: []
   skills:
     - role-coherence-protocol
     - judge-role-protocol
+    - backlog-create
   hooks: {}
   mcp: []
 injection: |
@@ -31,11 +31,10 @@ injection: |
 
       .agent/retrospectives/role-coherence/<UTC-ISO-ts>-<target_role>.md
 
-  Filename example: `2026-05-12T14-30-00Z-judge.md`. Use the report
-  template documented in **role-coherence-protocol** Step 3. Write the
-  report on supervisor request ("wrap up", "write the report and exit")
-  or at session exit. This is the **only** allowed direct write under
-  `.agent/` for this role.
-
-  Subject is **role coherence only**. For HYP/PROP triage redirect to
-  the `judge` role.
+  `<target_role>` is the audited composition (e.g. `developer`,
+  `judge-for-hyp-prop`), not the auditing role. Filename example:
+  `2026-05-12T14-30-00Z-developer.md`. Use the report template
+  documented in **role-coherence-protocol** Step 3 (Branch B).
+  Write the report on supervisor request ("wrap up", "write the report
+  and exit") or at session exit. This path is the L0 carve-out declared
+  for this role (per `base-judge` §Contract).
