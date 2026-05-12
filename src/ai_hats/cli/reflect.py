@@ -475,11 +475,59 @@ def _write_intake(
     )
 
 
+def _spawn_intake_detached(
+    text: str, session_id: str | None, task_id: str | None,
+) -> tuple[int, Path]:
+    """Re-invoke ``ai-hats reflect issue`` as a detached process.
+
+    Returns ``(pid, log_path)``.
+
+    The child runs in foreground default mode (no preview, no --bg) so it
+    writes the intake when the pipeline returns. Output is appended to a
+    timestamped log under ``.gitlog/reflect-issue/``.
+    """
+    import subprocess
+    from datetime import datetime, timezone
+
+    project_dir = _project_dir()
+    log_dir = project_dir / ".gitlog" / "reflect-issue"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    log_path = log_dir / f"{ts}-bg.log"
+
+    cmd = [
+        sys.executable, "-c",
+        "from ai_hats.cli import main_entry; main_entry()",
+        "reflect", "issue", text,
+    ]
+    if session_id:
+        cmd += ["--session", session_id]
+    if task_id:
+        cmd += ["--task", task_id]
+
+    with open(log_path, "a") as f:
+        f.write(f"--- reflect issue (bg) {ts} ---\n")
+        f.write(f"observation: {text}\n\n")
+        f.flush()
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(project_dir),
+            stdout=f,
+            stderr=f,
+            start_new_session=True,
+        )
+    return proc.pid, log_path
+
+
 @reflect.command("issue")
 @click.argument("text")
 @click.option(
-    "--confirm", "--yes", "auto_confirm", is_flag=True,
-    help="Write without the interactive y/N prompt.",
+    "--preview", "-n", "preview_mode", is_flag=True,
+    help="Show the intake draft and prompt before writing.",
+)
+@click.option(
+    "--bg", "--background", "background", is_flag=True,
+    help="Run detached; return immediately. Output goes to .gitlog/reflect-issue/.",
 )
 @click.option(
     "--session", "session_id", default=None,
@@ -491,7 +539,8 @@ def _write_intake(
 )
 def reflect_issue_cmd(
     text: str,
-    auto_confirm: bool,
+    preview_mode: bool,
+    background: bool,
     session_id: str | None,
     task_id: str | None,
 ) -> None:
@@ -501,8 +550,23 @@ def reflect_issue_cmd(
     the list of active HYPs, decides whether to draft a new HYP
     (``action: create``) or append the observation as evidence to an
     existing HYP (``action: merge``).
+
+    By default writes immediately on success. Use ``--preview`` to inspect
+    the draft and confirm interactively, or ``--bg`` to detach.
     """
     from ..hypothesis import IntakeParseError, parse_intake_yaml
+
+    if background and preview_mode:
+        raise click.ClickException(
+            "--bg and --preview are mutually exclusive"
+        )
+
+    if background:
+        pid, log_path = _spawn_intake_detached(text, session_id, task_id)
+        console.print(
+            f"[dim]reflect issue spawned (pid={pid}, bg) → {log_path}[/dim]"
+        )
+        return
 
     project_dir = _project_dir()
     store = HypothesisStore(project_dir / ".agent" / "hypotheses")
@@ -539,13 +603,12 @@ def reflect_issue_cmd(
     if isinstance(action, type(None)):  # pragma: no cover — defensive
         raise click.ClickException("intake produced no action")
 
-    preview = _format_preview(action)
-    console.print("[bold]Intake draft:[/bold]")
-    click.echo(preview)
-    if degraded:
-        click.echo("(degraded — title/hypothesis only)", err=True)
-
-    if not auto_confirm:
+    if preview_mode:
+        preview = _format_preview(action)
+        console.print("[bold]Intake draft:[/bold]")
+        click.echo(preview)
+        if degraded:
+            click.echo("(degraded — title/hypothesis only)", err=True)
         if not click.confirm("Write this intake?", default=False):
             console.print("[yellow]aborted; nothing written[/yellow]")
             return

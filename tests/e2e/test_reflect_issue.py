@@ -94,7 +94,7 @@ def test_reflect_issue_create_full_pipeline(
 
     res = CliRunner().invoke(
         main,
-        ["reflect", "issue", "agent uses f-strings in SQL", "--confirm"],
+        ["reflect", "issue", "agent uses f-strings in SQL"],
     )
     assert res.exit_code == 0, res.output
     assert "created HYP-001" in res.output
@@ -147,7 +147,7 @@ def test_reflect_issue_merge_full_pipeline(
         main,
         [
             "reflect", "issue", "saw it again in pipeline.py",
-            "--confirm", "--session", "20260512-120000-1",
+            "--session", "20260512-120000-1",
         ],
     )
     assert res.exit_code == 0, res.output
@@ -178,7 +178,7 @@ def test_reflect_issue_missing_markers_with_active_hyp_fails(
     _install_subagent_trace(monkeypatch, project_dir, "no markers here\n")
 
     res = CliRunner().invoke(
-        main, ["reflect", "issue", "obs", "--confirm"],
+        main, ["reflect", "issue", "obs"],
     )
     assert res.exit_code != 0
     # Either fail-loud about active hyps or about missing markers
