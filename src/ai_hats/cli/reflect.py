@@ -326,13 +326,27 @@ INTAKE_MODEL = "haiku"
 
 
 def _build_intake_prompt(text: str, active_hyps: list) -> str:
-    """Compose the prompt fed to the `hypothesis-intake` role."""
+    """Compose the prompt fed to the `hypothesis-intake` role.
+
+    Includes the most recent ``validation_log`` evidences per HYP so the
+    dedup judgment sees how the hypothesis has been used in practice, not
+    just its (potentially drifted) one-line statement.
+    """
     import json as _json
 
-    payload = [
-        {"id": h.id, "title": h.title, "hypothesis": h.hypothesis}
-        for h in active_hyps
-    ]
+    payload = []
+    for h in active_hyps:
+        item = {
+            "id": h.id,
+            "title": h.title,
+            "hypothesis": h.hypothesis,
+        }
+        recent = [
+            e.evidence for e in h.validation_log[-3:] if e.evidence
+        ]
+        if recent:
+            item["recent_evidence"] = recent
+        payload.append(item)
     return (
         "OBSERVATION:\n"
         f"{text.strip()}\n"

@@ -273,3 +273,66 @@ def test_bg_and_preview_are_mutually_exclusive(project_dir):
     )
     assert res.exit_code != 0
     assert "mutually exclusive" in res.output
+
+
+def test_build_intake_prompt_includes_recent_evidence(project_dir):
+    """The prompt fed to Haiku must expose validation_log evidences so dedup
+    can see a HYP's effective scope, not just its one-line statement."""
+    import json
+    from datetime import date
+
+    from ai_hats.cli.reflect import _build_intake_prompt
+    from ai_hats.hypothesis import Hypothesis, ValidationLogEntry
+
+    h = Hypothesis(
+        id="HYP-001",
+        title="t",
+        status="active",
+        created=date(2026, 5, 1),
+        source_task="HATS-001",
+        hypothesis="agents miss user feedback on plans",
+        validation_log=[
+            ValidationLogEntry(
+                date=date(2026, 5, 2),
+                verdict="inconclusive",
+                evidence="agent forgot to remove comments after addressing",
+            ),
+            ValidationLogEntry(
+                date=date(2026, 5, 3),
+                verdict="inconclusive",
+                evidence="agent skipped user feedback in plan.md iteration",
+            ),
+        ],
+    )
+    text = _build_intake_prompt("new observation", [h])
+    # Pull the JSON section out and validate structure
+    _, _, json_block = text.partition("ACTIVE_HYPOTHESES:\n")
+    payload = json.loads(json_block.strip())
+    assert payload[0]["id"] == "HYP-001"
+    assert payload[0]["recent_evidence"] == [
+        "agent forgot to remove comments after addressing",
+        "agent skipped user feedback in plan.md iteration",
+    ]
+
+
+def test_build_intake_prompt_omits_evidence_when_empty(project_dir):
+    """No validation_log entries → no `recent_evidence` key in payload."""
+    import json
+    from datetime import date
+
+    from ai_hats.cli.reflect import _build_intake_prompt
+    from ai_hats.hypothesis import Hypothesis
+
+    h = Hypothesis(
+        id="HYP-001",
+        title="t",
+        status="active",
+        created=date(2026, 5, 1),
+        source_task="HATS-001",
+        hypothesis="h",
+        validation_log=[],
+    )
+    text = _build_intake_prompt("obs", [h])
+    _, _, json_block = text.partition("ACTIVE_HYPOTHESES:\n")
+    payload = json.loads(json_block.strip())
+    assert "recent_evidence" not in payload[0]

@@ -23,8 +23,11 @@ injection: |
   The prompt contains TWO sections separated by `---`:
 
   1. `OBSERVATION:` — one line of free-form text from the supervisor.
-  2. `ACTIVE_HYPOTHESES:` — JSON array of `{id, title, hypothesis}` for
-     every active HYP. May be empty (`[]`).
+  2. `ACTIVE_HYPOTHESES:` — JSON array of `{id, title, hypothesis,
+     recent_evidence?}` for every active HYP. `recent_evidence`, when
+     present, lists up to 3 prior observations already classified under
+     that HYP — use it to see the hypothesis's **effective scope**, not
+     only its (potentially drifted) one-line statement. May be `[]`.
 
   ## Decision
 
@@ -32,8 +35,20 @@ injection: |
     instance of an existing active HYP → `action: merge`.
   - Otherwise → `action: create`.
 
-  Be conservative on merge: a vague topical overlap is NOT enough.
-  The hypothesis must describe the SAME underlying behavior pattern.
+  **Prefer merge** when the observation shares:
+  - the same **artifact** (e.g. plan.md, task.yaml, a specific file or
+    config) AND
+  - the same **actor + behaviour class** (e.g. "agent handles user
+    feedback during planning", "agent skips verification step")
+
+  — even if the phrasings differ or the new observation is a narrower
+  or broader symptom of the same pattern. Use `recent_evidence` to
+  judge scope: if a past evidence under a candidate HYP could itself
+  have been the new observation, that is a strong merge signal.
+
+  Only `create` when the observation describes a genuinely **different**
+  behaviour pattern — different artifact, different actor, or a phase
+  that no existing HYP touches.
 
   ## Output contract (STRICT)
 
