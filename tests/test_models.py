@@ -586,7 +586,7 @@ def test_project_config_v2_roundtrip(tmp_path):
     assert loaded.active_role == "assistant"
     assert loaded.provider == "claude"
     assert loaded.feedback.session_retro.policy == FeedbackPolicy.HINT
-    assert loaded.schema_version == 3
+    assert loaded.schema_version == 4
 
 
 def test_project_config_v2_default_feedback_not_serialized(tmp_path):
@@ -640,7 +640,7 @@ def test_migration_v1_to_v2_merges_profile(tmp_path):
     )
 
     config = ProjectConfig.from_yaml(yaml_path)
-    assert config.schema_version == 3
+    assert config.schema_version == 4
     assert config.active_role == "assistant"
     assert config.provider == "claude"  # profile wins
     assert config.default_role == "sre"  # preserved from yaml
@@ -656,7 +656,7 @@ def test_migration_v1_without_profile(tmp_path):
     yaml_path.write_text("provider: claude\ndefault_role: go-dev\nschema_version: 1\n")
 
     config = ProjectConfig.from_yaml(yaml_path)
-    assert config.schema_version == 3
+    assert config.schema_version == 4
     assert config.provider == "claude"
     assert config.active_role == ""
     assert config.feedback.is_default
@@ -669,7 +669,7 @@ def test_migration_idempotent(tmp_path):
     config.save(path)
 
     loaded = ProjectConfig.from_yaml(path)
-    assert loaded.schema_version == 3
+    assert loaded.schema_version == 4
     assert loaded.active_role == "sre"
 
 

@@ -421,11 +421,11 @@ class ProjectConfig(_YamlModel):
     """ai-hats.yaml — unified project configuration.
 
     Sections:
-      - Project: provider, library_paths
+      - Project: provider, library_paths, ai_hats_dir
       - Role: active_role, default_role, customizations
       - Feedback: session_retro
       - Composition: imports_order
-      - Meta: schema_version (2 = current)
+      - Meta: schema_version (4 = current)
     """
 
     # Reject unknown keys so typos in ai-hats.yaml fail loudly instead of silently dropping.
@@ -434,7 +434,13 @@ class ProjectConfig(_YamlModel):
     provider: str = "gemini"
     default_role: str = ""
     active_role: str = ""
-    schema_version: int = 3
+    schema_version: int = 4
+    # HATS-316: where ai-hats keeps its managed artefacts. Migration (v3→v4)
+    # and `ai-hats init` write this field to disk explicitly so users see it.
+    # The class-level default is a bootstrap safety net for `ProjectConfig()`
+    # calls without a yaml file (tests, scratch); `from_yaml` enforces that v4
+    # yaml on disk contains the field explicitly.
+    ai_hats_dir: str = ".agent/ai-hats"
     library_paths: list[str] = Field(default_factory=list)
     customizations: dict[str, OverlayConfig] = Field(default_factory=dict)
     feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
@@ -466,6 +472,13 @@ class ProjectConfig(_YamlModel):
             allowed = ", ".join(sorted(PROVIDERS))
             raise ValueError(f"unknown provider {value!r} — allowed: {allowed}")
         return value
+
+    @field_validator("ai_hats_dir")
+    @classmethod
+    def _validate_ai_hats_dir(cls, value: str) -> str:
+        from .paths import normalize_ai_hats_dir
+
+        return normalize_ai_hats_dir(value)
 
     @field_validator("imports_order")
     @classmethod
@@ -513,6 +526,16 @@ class ProjectConfig(_YamlModel):
             data = _migrate_v1_to_v2(path, data)
         if data.get("schema_version", 1) < 3:
             data = _migrate_v2_to_v3(data)
+        if data.get("schema_version", 1) < 4:
+            data = _migrate_v3_to_v4(path, data)
+        # HATS-316: v4 yaml must contain ai_hats_dir explicitly. The pydantic
+        # default is a bootstrap-only safety net for `ProjectConfig()` without
+        # a yaml; on-disk yaml is strict so the path stays visible to users.
+        if "ai_hats_dir" not in data:
+            raise ProjectConfigError(
+                f"Invalid {path}:\n  - ai_hats_dir: field required "
+                "(add 'ai_hats_dir: .agent/ai-hats' to ai-hats.yaml)"
+            )
         try:
             return cls.model_validate(data)
         except ValidationError as e:
@@ -520,8 +543,11 @@ class ProjectConfig(_YamlModel):
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
-            "schema_version": 3,
+            "schema_version": 4,
             "provider": self.provider,
+            # HATS-316: ai_hats_dir is unconditionally serialized so users
+            # see the configurable path in their ai-hats.yaml.
+            "ai_hats_dir": self.ai_hats_dir,
             "library_paths": self.library_paths,
             "active_role": self.active_role,
             "default_role": self.default_role,
@@ -663,6 +689,24 @@ def _migrate_v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
     which runs at the start of `init`/`set_role`/`bump`.
     """
     data["schema_version"] = 3
+    return data
+
+
+def _migrate_v3_to_v4(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:
+    """Auto-migrate schema v3 → v4 (HATS-316).
+
+    v4 introduces the unified `<ai_hats_dir>` layout: all framework-managed
+    artefacts (sessions/, tracker/, library/, STATE.md, ...) live under a
+    single configurable root. This migration writes the canonical default
+    `.agent/ai-hats` to disk explicitly so users see the configurable path
+    in their `ai-hats.yaml`. Actual file moves happen in HATS-312/313/314.
+    """
+    if "ai_hats_dir" not in data:
+        data["ai_hats_dir"] = ".agent/ai-hats"
+    data["schema_version"] = 4
+    with open(yaml_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+    logger.info("Migrated ai-hats.yaml to schema v4 (added ai_hats_dir)")
     return data
 
 
