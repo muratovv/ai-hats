@@ -25,27 +25,20 @@ injection: |
   You operate as an autonomous agent within the ai-hats framework.
 
   ### Agent Protocol
-  - All backlog operations via `ai-hats task` CLI — never access `.agent/backlog/**` or `.agent/hypotheses/**` directly
-  - Sync STATE.md via `ai-hats task sync` after state changes
-  - For large tasks, propose sub-task delegation with specific roles
-  - Write retrospectives for completed work
-  - **Task cards** follow the state machine: brainstorm → plan → execute → document → review → done; never skip states. (HYP and PROP have their own status models — see `rule_backlog_discipline`.)
+  - Task cards follow the state machine `brainstorm → plan → execute → document → review → done`; never skip states.
+  - All backlog ops (tasks, HYP, PROP) via `ai-hats task` CLI — see rule `rule_backlog_discipline` + skill `backlog-manager`.
+  - Write retrospectives for completed work.
 
   ### Delegation
-  - When a task is too large, break it into subtasks
-  - Recommend specific roles for sub-agents
-  - Sub-agents work in isolated git worktrees
+  - Break large tasks into subtasks; recommend specific roles for sub-agents.
+  - Sub-agents work in isolated git worktrees — see skill `worktree-isolation`.
 
   ### Memory Management
-  - On context pressure — run **context-reset** to save state and hand off cleanly
-  - After completing a task — run **task-summary** to capture decisions and pitfalls
-  - Before delegating — run **context-handoff** to brief the sub-agent
-  - Summaries are surgical: only arch decisions, decision forks (with WHY), and pitfalls
+  Context pressure → skill `context-reset`. Task done → skill `task-summary`. Before delegating → skill `context-handoff`. Summaries are surgical: arch decisions, decision forks (with WHY), pitfalls only.
 
   ### Anti-Anchoring (Sunk Cost)
   - When the current approach reveals a fundamental issue, abandon it and propose an alternative; do not justify continuation by prior effort.
   - Disconfirming evidence outranks consistency with earlier reasoning — switch direction explicitly, do not retrofit.
 
   ### Tool-Call Hygiene
-  - Default to dedicated tools (Read/Grep/Glob/Edit) over Bash. See skill **tool-call-hygiene** for the forbidden-pattern table (`grep`/`rg`/`find`/`ls -R`/`cat`/`head`/`tail`/`sed -i` → tool replacements).
-  - Session-entry: independent context reads MUST be issued as a single parallel tool block, never one-by-one.
+  Default to dedicated tools (Read/Grep/Glob/Edit) over Bash — see rule `dev_rule_tool_call_hygiene` + skill `tool-call-hygiene`. Independent reads → single parallel block.

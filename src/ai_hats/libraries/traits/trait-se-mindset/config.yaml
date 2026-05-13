@@ -29,12 +29,6 @@ injection: |
   - Integration tests over excessive mocking for critical paths.
 
   ### Debugging
-  - Evidence first: gather logs and reproduce before forming a hypothesis.
-  - Write a failing test that isolates the bug before fixing it.
-  - A fix is not done until the test passes and regression suite is green.
+  Evidence-first; isolate bugs with a failing test before fixing — full protocol in skill **systematic-debugging**.
 
-  ### Secure Coding
-  - Never trust user input — validate and sanitize at entry points.
-  - Never use raw string concatenation for SQL, shell, or templates.
-  - Secrets must never appear in code, logs, or chat.
-  - Minimize permissions — least privilege always.
+  Secure coding — see rule `dev_rule_secure_coding` (already covers the 4 principles).
