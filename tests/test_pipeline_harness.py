@@ -1,10 +1,12 @@
 """Unit tests for PipelineHarness (HATS-269 base + HATS-274 trace
-wiring + HATS-275 user-step loading)."""
+wiring + HATS-275 user-step loading + HATS-308 per-session namespace)."""
 
 from __future__ import annotations
 
 import json
+import os
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
@@ -14,15 +16,31 @@ from ai_hats.pipeline.harness import PipelineHarness
 from ai_hats.pipeline.user_steps import _reset_loader_cache
 
 
-def test_namespace_idempotent_cleanup(tmp_path: Path):
-    h = PipelineHarness("execute", tmp_path)
-    # leftover from a previous run
-    h.namespace.mkdir(parents=True)
-    (h.namespace / "leftover.txt").write_text("stale")
+def test_old_sessions_pruned(tmp_path: Path, monkeypatch):
+    """Keep-N retention prunes the oldest sibling session dirs."""
+    monkeypatch.setenv("AI_HATS_PIPELINE_KEEP_N", "3")
+    pipeline_root = tmp_path / ".gitlog" / "pipeline_runs" / "execute"
+    pipeline_root.mkdir(parents=True)
+    # Pre-create 5 old sibling sessions; force mtime order (oldest first).
+    for i in range(5):
+        (pipeline_root / f"old-{i:02d}").mkdir()
+    for i in range(5):
+        t = time.time() - (5 - i) * 60
+        os.utime(pipeline_root / f"old-{i:02d}", (t, t))
 
+    h = PipelineHarness("execute", tmp_path, session_id="new-sid")
     with h:
-        assert h.namespace.exists()
-        assert not (h.namespace / "leftover.txt").exists()
+        remaining = sorted(
+            p.name for p in pipeline_root.iterdir() if p.is_dir()
+        )
+    # keep_n=3 → 2 most recent siblings + this run's dir.
+    assert "new-sid" in remaining
+    # old-03 and old-04 are the 2 newest → kept.
+    assert "old-03" in remaining
+    assert "old-04" in remaining
+    # old-00, old-01, old-02 — pruned.
+    for stale in ("old-00", "old-01", "old-02"):
+        assert stale not in remaining
 
 
 def test_namespace_per_pipeline_isolated(tmp_path: Path):
@@ -30,7 +48,37 @@ def test_namespace_per_pipeline_isolated(tmp_path: Path):
     execute = PipelineHarness("execute", tmp_path)
     with bare, execute:
         assert bare.namespace != execute.namespace
-        assert bare.namespace.parent == execute.namespace.parent
+        # Different pipeline names → different parent dirs.
+        assert bare.namespace.parent != execute.namespace.parent
+        # But both under the same pipeline_runs root.
+        assert bare.namespace.parent.parent == execute.namespace.parent.parent
+
+
+def test_parallel_runs_disjoint(tmp_path: Path):
+    """Two harnesses of the SAME pipeline name get disjoint namespaces."""
+    h1 = PipelineHarness("p", tmp_path, session_id="sid1")
+    h2 = PipelineHarness("p", tmp_path, session_id="sid2")
+    with h1, h2:
+        (h1.namespace / "a.txt").write_text("from h1")
+        (h2.namespace / "b.txt").write_text("from h2")
+        assert (h1.namespace / "a.txt").read_text() == "from h1"
+        assert (h2.namespace / "b.txt").read_text() == "from h2"
+        assert h1.namespace != h2.namespace
+        assert h1.namespace.parent == h2.namespace.parent
+
+
+def test_explicit_session_id_passthrough(tmp_path: Path):
+    h = PipelineHarness("p", tmp_path, session_id="MYSID")
+    assert h.session_id == "MYSID"
+    assert h.namespace.name == "MYSID"
+
+
+def test_auto_session_id_format(tmp_path: Path):
+    h = PipelineHarness("p", tmp_path)
+    # Format: YYYYMMDDTHHMMSS-XXX (8+1+6+1+3 = 19 chars).
+    assert len(h.session_id) == 19
+    assert h.session_id[8] == "T"
+    assert h.session_id[15] == "-"
 
 
 def test_materialize_prompt_writes_file(tmp_path: Path):
@@ -69,8 +117,10 @@ def test_run_loads_yaml_and_executes(tmp_path: Path):
 
 
 def test_namespace_path_layout(tmp_path: Path):
-    h = PipelineHarness("my-name", tmp_path)
-    assert h.namespace == tmp_path / ".gitlog" / "pipeline_runs" / "my-name"
+    h = PipelineHarness("my-name", tmp_path, session_id="testsid-001")
+    assert h.namespace == (
+        tmp_path / ".gitlog" / "pipeline_runs" / "my-name" / "testsid-001"
+    )
 
 
 # ---- HATS-274: trace-mode env wiring -------------------------------
@@ -214,8 +264,7 @@ def test_harness_user_step_collision_aborts_before_namespace_setup(
     tmp_path: Path, monkeypatch, _restore_registry,
 ):
     """A user step trying to override a built-in raises BEFORE the
-    namespace gets re-created. This guarantees a broken step-dir
-    can't half-start the pipeline."""
+    per-session dir is created. Namespace must not appear on disk."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
     _write_step(steps_dir, "evil", """
@@ -240,14 +289,8 @@ def test_harness_user_step_collision_aborts_before_namespace_setup(
         register("compose_role", Hijack)
     """)
 
-    h = PipelineHarness("any-name", tmp_path)
-    # Pre-create namespace with a sentinel; failed __enter__ must NOT
-    # rmtree it (because rmtree happens AFTER load_user_steps).
-    h.namespace.mkdir(parents=True)
-    (h.namespace / "sentinel.txt").write_text("preserved")
-
+    h = PipelineHarness("any-name", tmp_path, session_id="ssid")
     with pytest.raises(registry.StepRegistryError):
         h.__enter__()
-
-    # Sentinel survived → we never reached namespace cleanup.
-    assert (h.namespace / "sentinel.txt").read_text() == "preserved"
+    # Per-session dir never created — namespace setup didn't reach mkdir.
+    assert not h.namespace.exists()

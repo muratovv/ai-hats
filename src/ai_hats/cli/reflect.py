@@ -17,8 +17,11 @@ Subcommands:
     Audit a target role for coherence against the user's project context
     (./CLAUDE.md + .agent/ai-hats/user-rules/*.md). Pre-flight (Python)
     composes the target role and materializes its layered breakdown
-    under the harness namespace (`<project>/.gitlog/pipeline_runs/
-    reflect-role/composed/<target_role>/`). The `reflect-role` pipeline
+    under the harness's per-session namespace
+    (`<project>/.gitlog/pipeline_runs/reflect-role/<session_id>/
+    composed/<target_role>/`; HATS-308 — each invocation owns its
+    own `<session_id>/` subdir, so parallel runs do not race). The
+    `reflect-role` pipeline
     then launches `judge-for-role` interactively with a small prompt
     that points at those files; the judge reads them via Read/Glob
     tools as needed and writes the audit report directly via the

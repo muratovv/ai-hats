@@ -34,9 +34,10 @@ content; the harness has already materialized everything.
 
 ### 1. Target role composition (layered)
 
-Path: `<composed_dir>/` — written by the `reflect role|roles` CLI
-under the harness namespace
-(`<project>/.gitlog/pipeline_runs/reflect-role/composed/<target_role>/`).
+Path: provided to you in the supervisor's first message via the
+`{composed_dir}` interpolation — use that path verbatim. Do not
+reconstruct it. Typical shape (per-session, HATS-308):
+`<project>/.gitlog/pipeline_runs/reflect-role/<session_id>/composed/<target_role>/`.
 Layout:
 
 - `manifest.yaml` — start here. Contains `name`, `priorities`, and
