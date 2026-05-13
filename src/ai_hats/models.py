@@ -69,7 +69,10 @@ class TaskState(str, Enum):
                 TaskState.CANCELLED,
             ],
             TaskState.FAILED: [TaskState.BRAINSTORM, TaskState.CANCELLED],
-            TaskState.DONE: [],
+            # DONE → EXECUTE: reopen path for epic close-out / forgotten scope
+            # (HATS-328). Side effects (clear completed_at, log reopen) live in
+            # state.StateManager.transition.
+            TaskState.DONE: [TaskState.EXECUTE],
             TaskState.CANCELLED: [],
         }
 
