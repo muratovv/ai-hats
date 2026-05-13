@@ -4,17 +4,16 @@ Per ADR-0002 §1 Harness contract: pipeline-core sees only ``Path`` and
 flat values. The harness turns CLI-style inputs (raw text, optional
 arguments) into a deterministic file-on-disk that pipeline steps read.
 
-Each pipeline gets its own namespace under
-``<project>/.gitlog/pipeline_runs/<pipeline_name>/`` for prompt files
-and other harness artefacts. The namespace is cleaned (rmtree+mkdir)
-on every ``__enter__`` — so a new run never sees leftovers from a
-previous run that crashed before its own cleanup.
+Per-session namespace (HATS-308): each ``PipelineHarness`` instance owns
+a unique ``<project>/.gitlog/pipeline_runs/<pipeline_name>/<session_id>/``
+subdir. Concurrent invocations of the same pipeline name are safe — they
+get disjoint namespaces.
 
-NB: parallel runs of the *same* pipeline name will race the namespace.
-This is the same constraint the pre-pipeline ``_do_execute`` had —
-ai-hats does not support parallel invocations of one command in one
-project. Different pipelines (``human`` vs ``reflect-all``) are safe
-in parallel because they have disjoint namespaces.
+Retention: at most N most-recent sessions per pipeline are kept on disk.
+Configurable via ``AI_HATS_PIPELINE_KEEP_N`` (default: 10). Older sibling
+sessions are ``rmtree``'d on next ``__enter__`` of any harness for the
+same pipeline name. ``ignore_errors=True`` makes concurrent GC of the
+same oldest dir benign.
 
 Trace-mode (HATS-274): when env ``AI_HATS_PIPELINE_TRACE`` is set, the
 harness wires a ``JsonlTraceWriter`` into ``pipeline.run`` so every
@@ -33,7 +32,9 @@ contents). ``AI_HATS_DIR`` overrides the runtime base namespace
 from __future__ import annotations
 
 import os
+import secrets
 import shutil
+import string
 from datetime import datetime, timezone
 from importlib.resources import as_file, files
 from pathlib import Path
@@ -59,6 +60,18 @@ def _resolve_trace_path(value: str, project_dir: Path, name: str) -> Path:
     return traces_dir(project_dir) / f"{name}-{ts}.jsonl"
 
 
+def _generate_session_id() -> str:
+    """Generate a per-session id: ``YYYYMMDDTHHMMSS-XXX`` (UTC + 3 chars).
+
+    Sortable lexically (= chronologically); the random suffix avoids
+    collisions for sub-second back-to-back runs.
+    """
+    ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%S")
+    alphabet = string.ascii_lowercase + string.digits
+    rand = "".join(secrets.choice(alphabet) for _ in range(3))
+    return f"{ts}-{rand}"
+
+
 class PipelineHarness:
     """Context-manager harness for CLI → pipeline dispatch.
 
@@ -71,12 +84,19 @@ class PipelineHarness:
             })
     """
 
-    def __init__(self, pipeline_name: str, project_dir: Path) -> None:
+    def __init__(
+        self,
+        pipeline_name: str,
+        project_dir: Path,
+        session_id: str | None = None,
+    ) -> None:
         self.name = pipeline_name
         self.project_dir = project_dir
-        self.namespace = (
+        self.session_id = session_id or _generate_session_id()
+        self._pipeline_root = (
             project_dir / ".gitlog" / "pipeline_runs" / pipeline_name
         )
+        self.namespace = self._pipeline_root / self.session_id
         # Trace wiring — opt-in via env. Path resolved eagerly so the
         # filename's timestamp reflects "harness construction" (= run
         # start) rather than "first event emitted".
@@ -98,14 +118,36 @@ class PipelineHarness:
         # same way as built-ins. Errors propagate (fail-fast on a
         # broken step-dir, don't half-start the pipeline).
         load_user_steps(self.project_dir)
-        if self.namespace.exists():
-            shutil.rmtree(self.namespace)
-        self.namespace.mkdir(parents=True)
+        self._gc_old_sessions()
+        self.namespace.mkdir(parents=True, exist_ok=True)
         return self
 
     def __exit__(self, *exc: Any) -> None:
         # Default: keep artefacts for inspection; cleanup happens at next run.
         return None
+
+    def _gc_old_sessions(self, keep_n: int | None = None) -> None:
+        """Prune sibling session dirs beyond the N most-recent.
+
+        ``ignore_errors=True`` is essential for concurrent-GC safety —
+        two harnesses GC'ing simultaneously may race on the same
+        oldest dir; failure to rmtree it is benign.
+        """
+        if keep_n is None:
+            keep_n = int(os.environ.get("AI_HATS_PIPELINE_KEEP_N", "10"))
+        if not self._pipeline_root.exists():
+            return
+        siblings = sorted(
+            (
+                p for p in self._pipeline_root.iterdir()
+                if p.is_dir() and p.name != self.session_id
+            ),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        # Keep the (N-1) most recent; this run creates the Nth.
+        for old in siblings[max(0, keep_n - 1):]:
+            shutil.rmtree(old, ignore_errors=True)
 
     def materialize_prompt(self, text: str | None) -> Path | None:
         """Write ``text`` to a file in the namespace; return its path.
