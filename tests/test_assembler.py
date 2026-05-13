@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import last_backup_path, runs_dir, state_md_path, tasks_dir
+from ai_hats.paths import hooks_dir, last_backup_path, mcp_dir, rules_dir, runs_dir, skills_dir, state_md_path, tasks_dir
 
 
 @pytest.fixture
@@ -78,9 +78,9 @@ def test_init_creates_structure(tmp_path):
     asm = Assembler(project)
     asm.init()
 
-    assert (project / ".agent" / "rules").is_dir()
-    assert (project / ".agent" / "skills").is_dir()
-    assert (project / ".agent" / "hooks").is_dir()
+    assert (rules_dir(project)).is_dir()
+    assert (skills_dir(project)).is_dir()
+    assert (hooks_dir(project)).is_dir()
     assert (tasks_dir(project)).is_dir()
     assert (runs_dir(project)).is_dir()
     assert (project / "ai-hats.yaml").exists()
@@ -96,7 +96,7 @@ def test_init_is_idempotent(tmp_path):
     asm.init()
     asm.init()  # Second call should not fail
 
-    assert (project / ".agent" / "rules").is_dir()
+    assert (rules_dir(project)).is_dir()
 
 
 def test_set_role(project_with_library):
@@ -108,15 +108,15 @@ def test_set_role(project_with_library):
 
     assert result.name == "test-role"
     assert len(result.errors) == 0
-    assert (project / ".agent" / "rules" / "test_rule" / "rule.md").exists()
-    assert (project / ".agent" / "skills" / "test_skill" / "SKILL.md").exists()
+    assert (rules_dir(project) / "test_rule" / "rule.md").exists()
+    assert (skills_dir(project) / "test_skill" / "SKILL.md").exists()
     assert (project / "GEMINI.md").exists()
 
     prompt = (project / "GEMINI.md").read_text()
     assert "Role injection" in prompt
     # Rules are copied to .agent/rules/ but only always-on rules appear in prompt
     # Context-specific rules load on demand via native provider skills
-    assert (project / ".agent" / "rules" / "test_rule" / "rule.md").exists()
+    assert (rules_dir(project) / "test_rule" / "rule.md").exists()
 
 
 def test_set_role_with_claude(project_with_library):
@@ -139,7 +139,7 @@ def test_rollback(project_with_library):
     asm.set_role("test-role")
 
     # Verify role is set
-    assert (project / ".agent" / "rules" / "test_rule").exists()
+    assert (rules_dir(project) / "test_rule").exists()
 
     # Now rollback
     assert asm.rollback()
@@ -156,7 +156,7 @@ def test_clean(project_with_library):
 
     asm.clean()
     # Rules dir should be empty (no files, just directory)
-    rules_contents = list((project / ".agent" / "rules").iterdir())
+    rules_contents = list((rules_dir(project)).iterdir())
     assert len(rules_contents) == 0
 
 
@@ -285,7 +285,7 @@ def test_preserve_local_rules(project_with_library):
     asm.set_role("test-role")
 
     # Add a project-local rule
-    local_rule = project / ".agent" / "rules" / "my_local_rule"
+    local_rule = rules_dir(project) / "my_local_rule"
     local_rule.mkdir(parents=True)
     (local_rule / "rule.md").write_text("# My Local Rule")
 
@@ -293,7 +293,7 @@ def test_preserve_local_rules(project_with_library):
     asm.set_role("test-role")
 
     # Local rule should still exist
-    assert (project / ".agent" / "rules" / "my_local_rule" / "rule.md").exists()
+    assert (rules_dir(project) / "my_local_rule" / "rule.md").exists()
 
 
 def test_rollback_restores_previous_role(project_with_library):
@@ -510,12 +510,12 @@ def test_gitignore_block_created_on_fresh_repo(project_with_library):
 
     block = _read_block(project)
     # Static entries always present
-    assert ".agent/.last_backup" in block
+    assert ".agent/ai-hats/.last_backup" in block
     # Composed rule + skill tracked per-name (no blanket directory ignores)
-    assert ".agent/rules/test_rule/" in block
-    assert ".agent/rules/.library_rules" in block
-    assert ".agent/skills/test_skill/" in block
-    assert ".agent/skills/.ai-hats-managed" in block
+    assert ".agent/ai-hats/library/rules/test_rule/" in block
+    assert ".agent/ai-hats/library/rules/.library_rules" in block
+    assert ".agent/ai-hats/library/skills/test_skill/" in block
+    assert ".agent/ai-hats/library/skills/.ai-hats-managed" in block
     assert ".claude/skills/test_skill/" in block
     assert ".claude/skills/.ai-hats-managed" in block
     # No blanket directory-level ignores for .agent/{hooks,mcp,skills}/
@@ -523,8 +523,8 @@ def test_gitignore_block_created_on_fresh_repo(project_with_library):
     assert "\n.agent/mcp/\n" not in block
     assert "\n.agent/skills/\n" not in block
     # test-role declares no hooks/mcp → no manifest entries for those dirs
-    assert ".agent/hooks/.ai-hats-managed" not in block
-    assert ".agent/mcp/.ai-hats-managed" not in block
+    assert ".agent/ai-hats/library/hooks/.ai-hats-managed" not in block
+    assert ".agent/ai-hats/library/mcp/.ai-hats-managed" not in block
     # Gemini side not installed for this role → not present
     assert ".gemini/skills/" not in block
 
@@ -542,7 +542,7 @@ def test_gitignore_preserves_user_content(project_with_library):
     assert "# user header" in content
     assert "*.pyc" in content
     assert "build/" in content
-    assert ".agent/skills/test_skill/" in content
+    assert ".agent/ai-hats/library/skills/test_skill/" in content
 
     # Re-run must keep user content and produce byte-identical file
     before = content
@@ -562,12 +562,12 @@ def test_gitignore_block_self_heals_on_role_switch(project_with_library):
     asm.set_role("other-role", provider_name="claude")
     block = _read_block(project)
     assert ".claude/skills/test_skill/" not in block
-    assert ".agent/rules/test_rule/" not in block
-    assert ".agent/skills/test_skill/" not in block
+    assert ".agent/ai-hats/library/rules/test_rule/" not in block
+    assert ".agent/ai-hats/library/skills/test_skill/" not in block
     # Manifest entries drop entirely when the target dir has no managed files.
-    assert ".agent/skills/.ai-hats-managed" not in block
+    assert ".agent/ai-hats/library/skills/.ai-hats-managed" not in block
     # Baseline static entry stays.
-    assert ".agent/.last_backup" in block
+    assert ".agent/ai-hats/.last_backup" in block
 
 
 def test_gitignore_does_not_list_user_local_rule(project_with_library):
@@ -577,15 +577,15 @@ def test_gitignore_does_not_list_user_local_rule(project_with_library):
     asm.init()
 
     # Plant a user-local rule before first set_role — _clean preserves it.
-    local_rule = project / ".agent" / "rules" / "my_local"
+    local_rule = rules_dir(project) / "my_local"
     local_rule.mkdir(parents=True)
     (local_rule / "rule.md").write_text("# mine\n")
 
     asm.set_role("test-role")
     block = _read_block(project)
-    assert ".agent/rules/my_local/" not in block
+    assert ".agent/ai-hats/library/rules/my_local/" not in block
     # Sanity: library rule still listed.
-    assert ".agent/rules/test_rule/" in block
+    assert ".agent/ai-hats/library/rules/test_rule/" in block
 
 
 def test_gitignore_opt_out_removes_block(project_with_library):
@@ -594,7 +594,7 @@ def test_gitignore_opt_out_removes_block(project_with_library):
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role")
-    assert ".agent/skills/test_skill/" in _read_block(project)
+    assert ".agent/ai-hats/library/skills/test_skill/" in _read_block(project)
 
     # Toggle flag and persist, then re-apply role.
     asm.project_config.manage_gitignore = False
@@ -622,7 +622,7 @@ def test_managed_manifest_written_for_skills(project_with_library):
     asm.init()
     asm.set_role("test-role")
 
-    manifest = project / ".agent" / "skills" / ".ai-hats-managed"
+    manifest = skills_dir(project) / ".ai-hats-managed"
     assert manifest.exists(), "Expected .ai-hats-managed manifest in .agent/skills"
     assert manifest.read_text().splitlines() == ["test_skill"]
 
@@ -634,8 +634,8 @@ def test_managed_manifest_absent_when_no_entries(project_with_library):
     asm.init()
     asm.set_role("test-role")
 
-    assert not (project / ".agent" / "hooks" / ".ai-hats-managed").exists()
-    assert not (project / ".agent" / "mcp" / ".ai-hats-managed").exists()
+    assert not (hooks_dir(project) / ".ai-hats-managed").exists()
+    assert not (mcp_dir(project) / ".ai-hats-managed").exists()
 
 
 def test_user_hook_survives_bump(project_with_library):
@@ -645,7 +645,7 @@ def test_user_hook_survives_bump(project_with_library):
     asm.init()
     asm.set_role("test-role")
 
-    user_hook = project / ".agent" / "hooks" / "my-custom.sh"
+    user_hook = hooks_dir(project) / "my-custom.sh"
     user_hook.write_text("#!/usr/bin/env bash\necho custom\n")
 
     asm.bump()
@@ -661,7 +661,7 @@ def test_user_skill_dir_survives_bump(project_with_library):
     asm.init()
     asm.set_role("test-role")
 
-    user_skill = project / ".agent" / "skills" / "my_local_skill"
+    user_skill = skills_dir(project) / "my_local_skill"
     user_skill.mkdir()
     (user_skill / "SKILL.md").write_text("# local\n")
 
@@ -669,7 +669,7 @@ def test_user_skill_dir_survives_bump(project_with_library):
 
     assert (user_skill / "SKILL.md").exists()
     # Library-sourced skill re-installed alongside.
-    assert (project / ".agent" / "skills" / "test_skill" / "SKILL.md").exists()
+    assert (skills_dir(project) / "test_skill" / "SKILL.md").exists()
 
 
 # --------------------------------------------------------------------- #

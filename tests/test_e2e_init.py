@@ -10,7 +10,7 @@ from click.testing import CliRunner
 from ai_hats.cli import main
 from ai_hats.library import LibraryResolver
 from ai_hats.models import ComponentType
-from ai_hats.paths import tasks_dir
+from ai_hats.paths import rules_dir, skills_dir, tasks_dir
 
 
 def _all_roles() -> list[str]:
@@ -42,8 +42,8 @@ def test_set_creates_project(cli_project):
 
     assert result.exit_code == 0, result.output
     assert (project / "ai-hats.yaml").exists()
-    assert (project / ".agent" / "rules").is_dir()
-    assert (project / ".agent" / "skills").is_dir()
+    assert (rules_dir(project)).is_dir()
+    assert (skills_dir(project)).is_dir()
     assert (tasks_dir(project)).is_dir()
     # HATS-284: ./CLAUDE.md is now a thin scaffold (~65 bytes); the aggregator
     # at .claude/CLAUDE.md carries the framework injection.
