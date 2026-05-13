@@ -22,7 +22,7 @@ from ai_hats.providers import (
 
 def test_schema_default_is_v3() -> None:
     cfg = ProjectConfig()
-    assert cfg.schema_version == 3
+    assert cfg.schema_version == 4
 
 
 def test_from_yaml_bumps_v2_to_v3(tmp_path: Path) -> None:
@@ -30,7 +30,7 @@ def test_from_yaml_bumps_v2_to_v3(tmp_path: Path) -> None:
     yaml_path.write_text("schema_version: 2\nprovider: claude\n")
 
     cfg = ProjectConfig.from_yaml(yaml_path)
-    assert cfg.schema_version == 3
+    assert cfg.schema_version == 4
 
 
 def test_from_yaml_v1_chained_through_v3(tmp_path: Path) -> None:
@@ -38,7 +38,7 @@ def test_from_yaml_v1_chained_through_v3(tmp_path: Path) -> None:
     yaml_path.write_text("schema_version: 1\nprovider: claude\n")
 
     cfg = ProjectConfig.from_yaml(yaml_path)
-    assert cfg.schema_version == 3
+    assert cfg.schema_version == 4
 
 
 def test_migrate_claude_md_strips_legacy_block(tmp_path: Path) -> None:
@@ -221,7 +221,7 @@ def test_to_dict_emits_v3(tmp_path: Path) -> None:
     yaml_path = tmp_path / "ai-hats.yaml"
     cfg.save(yaml_path)
     raw = yaml.safe_load(yaml_path.read_text())
-    assert raw["schema_version"] == 3
+    assert raw["schema_version"] == 4
 
 
 # -- HATS-289: legacy `.claude/CLAUDE.md` import line + publish-dir cleanup --
