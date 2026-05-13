@@ -213,6 +213,16 @@ def last_backup_path(project_dir: Path) -> Path:
     return ai_hats_dir(project_dir) / ".last_backup"
 
 
+def local_venv_path(project_dir: Path) -> Path:
+    """Opt-in local Python venv for ai-hats CLI: ``<ai_hats_dir>/.venv/``.
+
+    HATS-318. The path is purely a convention — existence of
+    ``<venv>/bin/python`` is what activates the wrapper re-exec in
+    :func:`ai_hats.cli.main_entry`.
+    """
+    return ai_hats_dir(project_dir) / ".venv"
+
+
 # ---------- Legacy migration helpers (consumed by HATS-312/313/314) ----------
 
 # Maps a legacy path (relative to project_dir) to (class, new path
