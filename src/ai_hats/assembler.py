@@ -287,14 +287,16 @@ class Assembler:
                     f"if you really want to change it."
                 )
 
-        # Create .agent/ subdirectories
-        for subdir in ("rules", "skills", "hooks", "mcp", "backlog/tasks"):
+        # Create .agent/ legacy mirror subdirectories. (HATS-314 will fold
+        # rules/skills/hooks/mcp into <ai_hats_dir>/library/.)
+        for subdir in ("rules", "skills", "hooks", "mcp"):
             (self.agent_dir / subdir).mkdir(parents=True, exist_ok=True)
 
-        # HATS-312: session-class root lives under <ai_hats_dir>/sessions/runs/.
-        from .paths import runs_dir
+        # HATS-312 / HATS-313: runtime + tracker roots live under <ai_hats_dir>/.
+        from .paths import runs_dir, tasks_dir
 
         runs_dir(self.project_dir).mkdir(parents=True, exist_ok=True)
+        tasks_dir(self.project_dir).mkdir(parents=True, exist_ok=True)
 
         # Create/update ai-hats.yaml
         save_config = False
@@ -313,7 +315,10 @@ class Assembler:
             self.project_config.save(self.config_path)
 
         # Create STATE.md
-        state_md = self.agent_dir / "STATE.md"
+        from .paths import state_md_path
+
+        state_md = state_md_path(self.project_dir)
+        state_md.parent.mkdir(parents=True, exist_ok=True)
         if not state_md.exists():
             state_md.write_text("# Task State\n\nNo active tasks.\n")
 
@@ -476,9 +481,22 @@ class Assembler:
         provider = get_provider(self.project_config.provider)
         self._migrate_claude_md_to_v3(provider)
         self._migrate_layout_v4_sessions()
+        self._migrate_layout_v4_tracker()
         if not self.project_config.active_role:
             return None
         return self.set_role(self.project_config.active_role, self.project_config.provider or None)
+
+    def _migrate_layout_v4_tracker(self) -> None:
+        """One-shot migration of tracker + root-class artefacts (HATS-313).
+
+        Moves backlog/, hypotheses/, decisions/, STATE.md, and .last_backup
+        from their legacy .agent/ locations to <ai_hats_dir>/tracker/* (and
+        the framework-root entries STATE.md / .last_backup directly under
+        <ai_hats_dir>/). Idempotent on a re-run after success.
+        """
+        for class_ in ("tracker", "root"):
+            for old_abs, new_abs in legacy_paths_by_class(self.project_dir, class_):
+                self._idempotent_move(old_abs, new_abs)
 
     def _migrate_layout_v4_sessions(self) -> None:
         """One-shot migration of session-class artefacts to <ai_hats_dir>/sessions/.
@@ -620,7 +638,9 @@ class Assembler:
         ref.write_text(str(backup_path) if backup_path else "")
 
     def _backup_ref_path(self) -> Path:
-        return self.agent_dir / ".last_backup"
+        from .paths import last_backup_path
+
+        return last_backup_path(self.project_dir)
 
     def _clean(self, *, preserve_local: bool = False) -> None:
         """Clean active directories.

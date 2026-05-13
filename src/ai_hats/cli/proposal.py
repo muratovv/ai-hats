@@ -1,4 +1,4 @@
-"""`ai-hats task proposal` — manage proposal backlog (.agent/backlog/proposals/).
+"""`ai-hats task proposal` — manage proposal backlog (<ai_hats_dir>/tracker/backlog/proposals/).
 
 Subcommands:
   list, show, create, vote, status
@@ -26,7 +26,9 @@ from ._helpers import _project_dir, console
 
 
 def _proposals_dir(project_dir: Path) -> Path:
-    return project_dir / ".agent" / "backlog" / "proposals"
+    from ..paths import proposals_dir
+
+    return proposals_dir(project_dir)
 
 
 def _store(project_dir: Path | None = None) -> ProposalStore:

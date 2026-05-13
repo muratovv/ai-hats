@@ -10,14 +10,14 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli.reflect import reflect
-from ai_hats.paths import retros_dir
+from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
 
 
 @pytest.fixture
 def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
-    (pd / ".agent" / "hypotheses").mkdir(parents=True)
-    (pd / ".agent" / "backlog" / "proposals").mkdir(parents=True)
+    (hypotheses_dir(pd)).mkdir(parents=True)
+    (proposals_dir(pd)).mkdir(parents=True)
     monkeypatch.chdir(pd)
     return pd
 
@@ -31,7 +31,7 @@ def _make_hyp(pd: Path, hyp_id: str, status="active"):
         "success_criterion": "x",
         "observation_window": "5 sessions",
     }
-    (pd / ".agent" / "hypotheses" / f"{hyp_id}.yaml").write_text(
+    (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(
         yaml.safe_dump(body)
     )
 
@@ -44,7 +44,7 @@ def _make_prop(pd: Path, pid: str, status="open"):
         "description": "d", "rationale": "r",
         "votes": [], "status": status,
     }
-    (pd / ".agent" / "backlog" / "proposals" / f"{pid}.yaml").write_text(
+    (proposals_dir(pd) / f"{pid}.yaml").write_text(
         yaml.safe_dump(body)
     )
 
@@ -87,13 +87,13 @@ def test_commit_changes_status(project_dir: Path):
     assert res.exit_code == 0, res.output
 
     p1 = yaml.safe_load(
-        (project_dir / ".agent" / "backlog" / "proposals" / "PROP-001.yaml").read_text()
+        (proposals_dir(project_dir) / "PROP-001.yaml").read_text()
     )
     p2 = yaml.safe_load(
-        (project_dir / ".agent" / "backlog" / "proposals" / "PROP-002.yaml").read_text()
+        (proposals_dir(project_dir) / "PROP-002.yaml").read_text()
     )
     p3 = yaml.safe_load(
-        (project_dir / ".agent" / "backlog" / "proposals" / "PROP-003.yaml").read_text()
+        (proposals_dir(project_dir) / "PROP-003.yaml").read_text()
     )
     assert p1["status"] == "accepted"
     assert p2["status"] == "rejected"

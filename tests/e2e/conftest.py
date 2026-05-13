@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ai_hats.paths import retros_dir, runs_dir
+from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir, runs_dir
 
 
 class _StubSession:
@@ -41,8 +41,8 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
     pd.mkdir()
     runs_dir(pd).mkdir(parents=True, exist_ok=True)
-    (pd / ".agent" / "hypotheses").mkdir(parents=True)
-    (pd / ".agent" / "backlog" / "proposals").mkdir(parents=True)
+    (hypotheses_dir(pd)).mkdir(parents=True)
+    (proposals_dir(pd)).mkdir(parents=True)
     (pd / "ai-hats.yaml").write_text(
         "schema_version: 2\nprovider: claude\nactive_role: test-agent\n"
     )

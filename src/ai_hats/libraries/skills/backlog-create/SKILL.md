@@ -17,7 +17,7 @@ For the full backlog lifecycle (state machine, hyp / proposal verbs,
 
 Your role's mutation policy permits filing new tasks but explicitly forbids
 state transitions, hypothesis / proposal mutations, or direct edits to
-`.agent/backlog/**`. You need to file a fix task or follow-up from a
+`<ai_hats_dir>/tracker/backlog/**`. You need to file a fix task or follow-up from a
 finding, and nothing more.
 
 ## CLI Interface

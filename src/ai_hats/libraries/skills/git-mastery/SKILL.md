@@ -84,7 +84,7 @@ A second pre-commit hook (`pre-commit-smoke.sh`) runs `pytest -m smoke`
 whenever the **active ai-hats task** carries the `integration` tag.
 
 ### How it works
-1. Hook reads `.agent/backlog/tasks/*/task.yaml` for any task in `execute` state.
+1. Hook reads `<ai_hats_dir>/tracker/backlog/tasks/*/task.yaml` for any task in `execute` state.
 2. If such a task has `- integration` in its `tags:`, the hook runs
    `pytest -m smoke -q --tb=line --no-header`.
 3. If all smoke tests pass → commit proceeds.

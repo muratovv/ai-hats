@@ -885,7 +885,9 @@ class SubAgentRunner:
         sections.append(f"# SYSTEM_ROLE\n{result.merged_injection}")
 
         # PROJECT_STATE
-        state_md = self.project_dir / ".agent" / "STATE.md"
+        from .paths import state_md_path
+
+        state_md = state_md_path(self.project_dir)
         if state_md.exists():
             sections.append(f"# PROJECT_STATE\n{state_md.read_text()}")
 
@@ -908,7 +910,9 @@ class SubAgentRunner:
 
     def _load_ticket(self, ticket_id: str) -> str:
         """Load ticket context from task card."""
-        task_file = self.project_dir / ".agent" / "backlog" / "tasks" / ticket_id / "task.yaml"
+        from .paths import tasks_dir
+
+        task_file = tasks_dir(self.project_dir) / ticket_id / "task.yaml"
         if task_file.exists():
             return task_file.read_text()
         return ""

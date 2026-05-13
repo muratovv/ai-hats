@@ -22,7 +22,7 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli import main
-from ai_hats.paths import retros_dir, runs_dir
+from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir, runs_dir
 
 
 @pytest.fixture
@@ -30,8 +30,8 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
     pd.mkdir()
     runs_dir(pd).mkdir(parents=True, exist_ok=True)
-    (pd / ".agent" / "hypotheses").mkdir(parents=True)
-    (pd / ".agent" / "backlog" / "proposals").mkdir(parents=True)
+    (hypotheses_dir(pd)).mkdir(parents=True)
+    (proposals_dir(pd)).mkdir(parents=True)
     (pd / "ai-hats.yaml").write_text(
         "schema_version: 2\nprovider: claude\nactive_role: test-agent\n"
     )
@@ -103,7 +103,7 @@ def _make_hyp(pd: Path, hyp_id: str):
         "success_criterion": "x",
         "observation_window": "5 sessions",
     }
-    (pd / ".agent" / "hypotheses" / f"{hyp_id}.yaml").write_text(
+    (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(
         yaml.safe_dump(body)
     )
 
@@ -116,7 +116,7 @@ def _make_prop(pd: Path, pid: str):
         "description": "d", "rationale": "r",
         "votes": [], "status": "open",
     }
-    (pd / ".agent" / "backlog" / "proposals" / f"{pid}.yaml").write_text(
+    (proposals_dir(pd) / f"{pid}.yaml").write_text(
         yaml.safe_dump(body)
     )
 

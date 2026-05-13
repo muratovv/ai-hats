@@ -20,7 +20,7 @@ Protocol for cleanly resetting agent context when the context window fills up or
 
 2. **Run context-handoff:**
    - Execute **context-handoff** to write a handoff file
-   - For active tasks: write to `.agent/backlog/tasks/<ID>/handoff.md`
+   - For active tasks: write to `<ai_hats_dir>/tracker/backlog/tasks/<ID>/handoff.md`
    - For general sessions: write to `<ai_hats_dir>/sessions/handoffs/YYYY-MM-DD-<title>.md`
 
 3. **Update task card** (if exists):

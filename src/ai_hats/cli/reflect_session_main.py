@@ -139,7 +139,9 @@ def _extract_frontmatter(text: str) -> str:
 
 
 def _load_active_hyp_ids(project_dir: Path) -> set[str]:
-    store = HypothesisStore(project_dir / ".agent" / "hypotheses")
+    from ..paths import hypotheses_dir
+
+    store = HypothesisStore(hypotheses_dir(project_dir))
     return {h.id for h in store.list_active()}
 
 
@@ -149,7 +151,9 @@ def _load_active_hyp_ids(project_dir: Path) -> set[str]:
 def _file_meta_proposal(
     project_dir: Path, session_id: str, issues: list[str],
 ) -> None:
-    proposals_dir = project_dir / ".agent" / "backlog" / "proposals"
+    from ..paths import proposals_dir as _proposals_dir
+
+    proposals_dir = _proposals_dir(project_dir)
     store = ProposalStore(proposals_dir)
 
     # De-dup: skip if a process/session-reviewer proposal already exists for

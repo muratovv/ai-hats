@@ -16,7 +16,7 @@ from ai_hats.cli.reflect_session_main import (
     _harness_check,
 )
 from ai_hats.hypothesis import ProposalStore
-from ai_hats.paths import retros_dir
+from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
 
 
 SID = "20260506-100000-1"
@@ -38,7 +38,7 @@ def _make_review_file(
 
 
 def _add_active_hyp(project_dir: Path, hyp_id: str = "HYP-001") -> None:
-    hyps_dir = project_dir / ".agent" / "hypotheses"
+    hyps_dir = hypotheses_dir(project_dir)
     hyps_dir.mkdir(parents=True, exist_ok=True)
     (hyps_dir / f"{hyp_id}.yaml").write_text(
         "id: " + hyp_id + "\n"
@@ -52,7 +52,7 @@ def _add_active_hyp(project_dir: Path, hyp_id: str = "HYP-001") -> None:
 
 
 def _proposals_count(project_dir: Path) -> int:
-    pdir = project_dir / ".agent" / "backlog" / "proposals"
+    pdir = proposals_dir(project_dir)
     if not pdir.exists():
         return 0
     return len([p for p in pdir.iterdir() if p.suffix == ".yaml"])
@@ -103,7 +103,7 @@ def test_harness_surfaces_runner_error_even_with_valid_file(tmp_path: Path) -> N
 def test_file_meta_proposal_creates_one(tmp_path: Path) -> None:
     _file_meta_proposal(tmp_path, SID, ["output file missing or empty"])
     assert _proposals_count(tmp_path) == 1
-    store = ProposalStore(tmp_path / ".agent" / "backlog" / "proposals")
+    store = ProposalStore(proposals_dir(tmp_path))
     [prop] = store.list_all()
     assert prop.category == "process"
     assert prop.target == "session-reviewer"

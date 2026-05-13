@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import runs_dir
+from ai_hats.paths import last_backup_path, runs_dir, state_md_path, tasks_dir
 
 
 @pytest.fixture
@@ -81,10 +81,10 @@ def test_init_creates_structure(tmp_path):
     assert (project / ".agent" / "rules").is_dir()
     assert (project / ".agent" / "skills").is_dir()
     assert (project / ".agent" / "hooks").is_dir()
-    assert (project / ".agent" / "backlog" / "tasks").is_dir()
+    assert (tasks_dir(project)).is_dir()
     assert (runs_dir(project)).is_dir()
     assert (project / "ai-hats.yaml").exists()
-    assert (project / ".agent" / "STATE.md").exists()
+    assert (state_md_path(project)).exists()
 
 
 def test_init_is_idempotent(tmp_path):
@@ -337,7 +337,7 @@ def test_rollback_cleans_up_backup_dir(project_with_library):
     asm.set_role("test-role")
 
     # .last_backup ref should exist after set_role
-    ref_path = project / ".agent" / ".last_backup"
+    ref_path = last_backup_path(project)
     assert ref_path.exists()
     backup_dir = Path(ref_path.read_text().strip())
     assert backup_dir.exists()
@@ -478,7 +478,7 @@ def test_backup_survives_self_referential_symlinks_in_provider_skills(
 
     # After set_role, a backup exists. Verify the self-symlink survived as a
     # link (not dereferenced, not traversed).
-    ref_path = project / ".agent" / ".last_backup"
+    ref_path = last_backup_path(project)
     backup_dir = Path(ref_path.read_text().strip())
     backup_symlink = backup_dir / ".gemini" / "skills" / "subagent-analyzer" / "subagent-analyzer"
     assert backup_symlink.is_symlink()

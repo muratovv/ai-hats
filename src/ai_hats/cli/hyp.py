@@ -1,4 +1,4 @@
-"""`ai-hats task hyp` — manage hypothesis backlog (.agent/hypotheses/HYP-*.yaml).
+"""`ai-hats task hyp` — manage hypothesis backlog (<ai_hats_dir>/tracker/hypotheses/HYP-*.yaml).
 
 Subcommands:
   list, show           — read-only views
@@ -27,7 +27,9 @@ from ._helpers import _project_dir, console
 
 
 def _hyp_dir(project_dir: Path) -> Path:
-    return project_dir / ".agent" / "hypotheses"
+    from ..paths import hypotheses_dir
+
+    return hypotheses_dir(project_dir)
 
 
 def _store(project_dir: Path | None = None) -> HypothesisStore:
@@ -230,7 +232,9 @@ def hyp_migrate(dry_run: bool):
             console.print(f"[green]✓[/green] {p.name}")
 
     # Ensure proposals dir + .gitkeep exists for downstream PROP CLI.
-    proposals = project_dir / ".agent" / "backlog" / "proposals"
+    from ..paths import proposals_dir
+
+    proposals = proposals_dir(project_dir)
     if not dry_run:
         proposals.mkdir(parents=True, exist_ok=True)
         gk = proposals / ".gitkeep"

@@ -62,15 +62,17 @@ class TaskManager:
         *,
         strict_plan_check: bool = True,
     ) -> None:
+        from .paths import state_md_path, tasks_dir
+
         self.project_dir = project_dir
-        self.tasks_dir = project_dir / ".agent" / "backlog" / "tasks"
-        self.state_md_path = project_dir / ".agent" / "STATE.md"
+        self.tasks_dir = tasks_dir(project_dir)
+        self.state_md_path = state_md_path(project_dir)
         self.strict_plan_check = strict_plan_check
         # Legacy index — removed after unification on STATE.md. Path retained
         # only to clean up stale files left from prior versions on first sync.
         self._legacy_backlog_md_path = project_dir / ".agent" / "backlog.md"
         self.prefix = prefix
-        # Note: `.agent/backlog/tasks/` is created lazily on first write
+        # Note: tasks_dir is created lazily on first write
         # (create_task / transition / log_work / update_task).
         # Eager mkdir here historically materialized stray DBs whenever a
         # caller resolved project_dir from the wrong directory — see HATS-197.
