@@ -161,6 +161,7 @@ from . import (  # noqa: E402
     reflect as reflect_mod,
     session,
     task,
+    venv as venv_mod,
     worktree,
 )
 
@@ -185,6 +186,8 @@ self_group.add_command(assembly.bump)
 self_group.add_command(assembly.rollback)
 self_group.add_command(assembly.clean)
 self_group.add_command(maintenance.update)
+self_group.add_command(venv_mod.use_local)
+self_group.add_command(venv_mod.use_global)
 main.add_command(self_group)
 
 # List
@@ -253,6 +256,31 @@ def _extract_tree_path(argv: list[str]) -> list[str]:
     return path
 
 
+def _maybe_reexec_into_local_venv() -> None:
+    """HATS-318: re-exec into ``<ai_hats_dir>/.venv/bin/python`` if present.
+
+    Activated by the existence of the venv interpreter at the conventional
+    path. Idempotent: child invocation has ``sys.executable`` already pointing
+    at the local python, so the realpath check short-circuits. Failures
+    (missing project, unreadable yaml) silently fall back to the global
+    interpreter — opt-in must not break the default flow.
+    """
+    import os
+    from pathlib import Path
+
+    try:
+        from .. import paths
+
+        venv_python = paths.local_venv_path(Path.cwd()) / "bin" / "python"
+    except (OSError, ValueError, ImportError):
+        return
+    if not venv_python.is_file():
+        return
+    if os.path.realpath(sys.executable) == os.path.realpath(venv_python):
+        return
+    os.execv(str(venv_python), [str(venv_python), "-m", "ai_hats", *sys.argv[1:]])
+
+
 def main_entry() -> None:
     """Console-script entry point.
 
@@ -265,7 +293,12 @@ def main_entry() -> None:
     Without this shim, click's eager-flag ordering would short-circuit
     ``--help --tree`` to the default help, and click has no native way
     to attach an optional positional path to a top-level flag.
+
+    HATS-318: re-exec into the opt-in local venv (if present) before any
+    further click parsing — this swaps ``sys.executable`` so downstream
+    subprocesses (`pip install` in `self update`, etc.) target the right env.
     """
+    _maybe_reexec_into_local_venv()
     if "--tree" in sys.argv[1:]:
         from ._tree import print_subtree
 

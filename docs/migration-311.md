@@ -179,13 +179,28 @@ The dynamic managed-block generator from prior releases is gone
 that lives inside `<ai_hats_dir>/` (e.g. project-pinned `role.md`),
 add an explicit `!.agent/ai-hats/role.md` entry yourself.
 
-## Local-venv (opt-in)
+## Local-venv (opt-in, HATS-318)
 
 `ai-hats` is normally installed via `pipx install ai-hats`. For CI and
 multi-machine teams that need version pinning, a local venv at
-`<ai_hats_dir>/.venv/` is supported as an opt-in alternative; see the
-HATS-315 research note for the decision matrix. Implementation will
-land in a follow-up (HATS-318).
+`<ai_hats_dir>/.venv/` is supported as an opt-in alternative.
+
+```bash
+ai-hats self use-local     # creates <ai_hats_dir>/.venv/ and installs ai-hats
+ai-hats self use-global    # removes the local venv (revert to global)
+```
+
+When the local venv is active, every subsequent `ai-hats` invocation
+re-execs through `<ai_hats_dir>/.venv/bin/python` — `ai-hats self update`
+updates that copy, while the global `pipx` install is left untouched.
+
+The local venv is detected purely by the presence of
+`<ai_hats_dir>/.venv/bin/python`; no marker file is needed. To check what
+the wrapper is using, look at `sys.executable` (printed at the top of
+`ai-hats self update`).
+
+Decision rationale and trade-offs:
+`<ai_hats_dir>/tracker/decisions/2026-05-13-hats-315-venv-research.md`.
 
 ## Cross-references
 

@@ -173,6 +173,11 @@ def update():
     from ..models import ProjectConfig
 
     console.print(f"Current version: [bold]{old_version}[/]")
+    # HATS-318: surface which interpreter we're updating. When the wrapper has
+    # already re-exec'd into <ai_hats_dir>/.venv, the install goes to that env
+    # by virtue of sys.executable; this banner makes the target unambiguous.
+    if "/.venv/bin/python" in sys.executable:
+        console.print(f"[dim]Target venv:[/] {sys.executable}")
 
     # 1. Snapshot before update
     before_lib = _snapshot_library()
