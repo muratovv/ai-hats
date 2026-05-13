@@ -260,10 +260,16 @@ def _maybe_reexec_into_local_venv() -> None:
     """HATS-318: re-exec into ``<ai_hats_dir>/.venv/bin/python`` if present.
 
     Activated by the existence of the venv interpreter at the conventional
-    path. Idempotent: child invocation has ``sys.executable`` already pointing
-    at the local python, so the realpath check short-circuits. Failures
-    (missing project, unreadable yaml) silently fall back to the global
-    interpreter — opt-in must not break the default flow.
+    path. Idempotent: when already running inside the local venv,
+    ``sys.prefix`` equals the venv root and the function short-circuits.
+    Failures (missing project, unreadable yaml) silently fall back to the
+    global interpreter — opt-in must not break the default flow.
+
+    Why ``sys.prefix`` and not ``sys.executable``: every venv's
+    ``bin/python`` is a symlink to the same underlying interpreter (e.g.
+    Homebrew python3.14), so comparing the executables via ``realpath``
+    would conflate two distinct venvs sharing one host interpreter.
+    ``sys.prefix`` is the venv root, which is unique per venv (HATS-329).
     """
     import os
     from pathlib import Path
@@ -271,12 +277,13 @@ def _maybe_reexec_into_local_venv() -> None:
     try:
         from .. import paths
 
-        venv_python = paths.local_venv_path(Path.cwd()) / "bin" / "python"
+        venv = paths.local_venv_path(Path.cwd())
     except (OSError, ValueError, ImportError):
         return
+    venv_python = venv / "bin" / "python"
     if not venv_python.is_file():
         return
-    if os.path.realpath(sys.executable) == os.path.realpath(venv_python):
+    if os.path.realpath(sys.prefix) == os.path.realpath(str(venv)):
         return
     os.execv(str(venv_python), [str(venv_python), "-m", "ai_hats", *sys.argv[1:]])
 

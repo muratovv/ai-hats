@@ -59,6 +59,23 @@ ai-hats config set -r go-dev -p claude
 ```
 </details>
 
+<details>
+<summary>Локальный venv для CI / пиннинга версии (HATS-318)</summary>
+
+Опционально — изолировать ai-hats в `<ai_hats_dir>/.venv/` внутри проекта:
+
+```bash
+ai-hats self use-local     # создаёт <ai_hats_dir>/.venv/, ставит ai-hats
+ai-hats self use-global    # удаляет локальный venv, возврат к global pipx
+```
+
+После `use-local` любой `ai-hats` запуск re-exec'ится через
+`<ai_hats_dir>/.venv/bin/python` — `ai-hats self update` обновляет именно
+эту копию. Глобальный pipx не трогается. Подробности и decision tree
+«когда использовать local vs global» — `docs/migration-311.md` секция
+«Local-venv (opt-in)».
+</details>
+
 ### Разработка ai-hats
 
 ```bash
@@ -90,7 +107,7 @@ pytest tests/ -v
 | `config`   | Чтение/правка `ai-hats.yaml` (provider, role, customizations, feedback) |
 | `list`     | Discovery: roles / skills / rules / traits / providers / tokens         |
 | `reflect`  | Feedback loop — per-session vote и bulk-triage HYP/PROP                 |
-| `self`     | Жизненный цикл инструмента: init / bump / update / clean / rollback     |
+| `self`     | Жизненный цикл инструмента: init / bump / update / clean / rollback / use-local / use-global |
 | `session`  | Наблюдаемость: list / show / audit / retro по сессиям                   |
 | `task`     | Backlog: task / hyp / proposal cards со state-машиной                   |
 | `wt`       | git worktrees: create / merge / discard / exec / env                    |
