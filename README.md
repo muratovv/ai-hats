@@ -339,18 +339,18 @@ ai-hats task list --search worktree --all    # включая done/failed
 ai-hats замыкает feedback из реальных сессий в три слоя (HATS-252 объединил бывшие layer 1+2 в один):
 
 ```
-.gitlog/session_<id>/                                  layer 0: raw телеметрия
+<ai_hats_dir>/sessions/runs/session_<id>/                                  layer 0: raw телеметрия
   ├── audit.md
   ├── metrics.json
   └── transcript.txt
 
-.agent/retrospectives/sessions/<id>.md                 layer 1: SessionReviewV1
+<ai_hats_dir>/sessions/retros/sessions/<id>.md                 layer 1: SessionReviewV1
                                                           ↑ один LLM-вызов: factual layer
                                                             (pure-Python) + summary +
                                                             observations + HYP verdicts +
                                                             proposal actions
-.agent/hypotheses/HYP-NNN.yaml                            ← side effect: append-verdict
-.agent/backlog/proposals/PROP-NNN.yaml                    ← side effect: create / vote
+<ai_hats_dir>/tracker/hypotheses/HYP-NNN.yaml                            ← side effect: append-verdict
+<ai_hats_dir>/tracker/backlog/proposals/PROP-NNN.yaml                    ← side effect: create / vote
 
 manual triage:                                          layer 2: bulk-triage
   ai-hats reflect all     → handoff с накопленным
@@ -439,7 +439,7 @@ ai-hats session show 20260408-192417-1           # детальные метри
 **Hypothesis workflow.** Замкнутый цикл улучшений (см. `hypothesis-workflow` skill):
 
 1. Заметил повторяющийся паттерн в reflect-session ретро (≥3 сессии).
-2. Завести гипотезу как `.agent/hypotheses/HYP-NNN-<slug>.yaml` (см. `_schema.yaml` рядом — поля `statement`, `baseline`, `target`, `window`, `success_criterion`).
+2. Завести гипотезу как `<ai_hats_dir>/tracker/hypotheses/HYP-NNN-<slug>.yaml` (см. `_schema.yaml` рядом — поля `statement`, `baseline`, `target`, `window`, `success_criterion`).
 3. Применить изменение (rule/skill/code) на task-ветке.
 4. Каждая сессия → reflect-session добавляет verdict в `validation_log` через `ai-hats task hyp append-verdict --hyp HYP-NNN --session ... --verdict ... --evidence ...`.
 5. По истечении window — финальный `append-verdict` с `--recommendation close_confirmed` или `close_refuted` закрывает гипотезу.
@@ -447,7 +447,7 @@ ai-hats session show 20260408-192417-1           # детальные метри
 **Валидация артефактов.** Retro-файл можно проверить против схемы:
 
 ```bash
-ai-hats session retro-validate .agent/retrospectives/sessions/20260406-050419-1.md
+ai-hats session retro-validate <ai_hats_dir>/sessions/retros/sessions/20260406-050419-1.md
 ```
 
 ## Структура проекта
@@ -464,7 +464,7 @@ ai-hats session retro-validate .agent/retrospectives/sessions/20260406-050419-1.
   hypotheses/HYP-NNN.yaml              # Hypothesis backlog (см. task hyp)
   retrospectives/
     sessions/<id>.md                   # SessionReviewV1 (facts + narrative + HYP verdicts + PROP actions)
-.gitlog/
+<ai_hats_dir>/sessions/runs/
   session_<ID>/                        # trace.log, audit.md, metrics.json, transcript.txt
 ai-hats.yaml                           # Конфиг проекта + роль + feedback
 GEMINI.md / CLAUDE.md                  # System prompt

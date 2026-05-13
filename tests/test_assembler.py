@@ -485,129 +485,70 @@ def test_backup_survives_self_referential_symlinks_in_provider_skills(
 
 
 # --------------------------------------------------------------------- #
-# HATS-141 — managed .gitignore block
+# HATS-317 — one-shot .gitignore entry (replaces dynamic managed block)
 # --------------------------------------------------------------------- #
 
 
-def _read_block(project: Path) -> str:
-    """Return the content between AI-HATS markers in .gitignore (empty if absent)."""
-    from ai_hats.assembler import GITIGNORE_END, GITIGNORE_START
-
-    gi = (project / ".gitignore").read_text()
-    if GITIGNORE_START not in gi or GITIGNORE_END not in gi:
-        return ""
-    start = gi.index(GITIGNORE_START)
-    end = gi.index(GITIGNORE_END) + len(GITIGNORE_END)
-    return gi[start:end]
-
-
-def test_gitignore_block_created_on_fresh_repo(project_with_library):
-    """set_role writes .gitignore with managed block when file is absent."""
+def test_gitignore_init_writes_single_line(project_with_library):
+    """`init` ensures `.agent/ai-hats/` is in .gitignore. No managed block."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.set_role("test-role", provider_name="claude")
 
-    block = _read_block(project)
-    # Static entries always present
-    assert ".agent/ai-hats/.last_backup" in block
-    # Composed rule + skill tracked per-name (no blanket directory ignores)
-    assert ".agent/ai-hats/library/rules/test_rule/" in block
-    assert ".agent/ai-hats/library/rules/.library_rules" in block
-    assert ".agent/ai-hats/library/skills/test_skill/" in block
-    assert ".agent/ai-hats/library/skills/.ai-hats-managed" in block
-    assert ".claude/skills/test_skill/" in block
-    assert ".claude/skills/.ai-hats-managed" in block
-    # No blanket directory-level ignores for .agent/{hooks,mcp,skills}/
-    assert "\n.agent/hooks/\n" not in block
-    assert "\n.agent/mcp/\n" not in block
-    assert "\n.agent/skills/\n" not in block
-    # test-role declares no hooks/mcp → no manifest entries for those dirs
-    assert ".agent/ai-hats/library/hooks/.ai-hats-managed" not in block
-    assert ".agent/ai-hats/library/mcp/.ai-hats-managed" not in block
-    # Gemini side not installed for this role → not present
-    assert ".gemini/skills/" not in block
+    content = (project / ".gitignore").read_text()
+    assert ".agent/ai-hats/" in content
+    assert "AI-HATS:START" not in content
+    assert "AI-HATS:END" not in content
 
 
-def test_gitignore_preserves_user_content(project_with_library):
-    """User-authored .gitignore lines outside markers survive across runs."""
+def test_gitignore_init_idempotent(project_with_library):
+    """Re-running `init` doesn't duplicate the .gitignore line."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    first = (project / ".gitignore").read_text()
+    asm.init()
+    second = (project / ".gitignore").read_text()
+    assert first == second
+    assert first.count(".agent/ai-hats/") == 1
+
+
+def test_gitignore_init_preserves_user_content(project_with_library):
+    """User lines remain; the ai-hats entry is appended without disturbing them."""
     project, lib = project_with_library
     (project / ".gitignore").write_text("# user header\n*.pyc\nbuild/\n")
 
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.set_role("test-role")
 
     content = (project / ".gitignore").read_text()
-    assert "# user header" in content
-    assert "*.pyc" in content
-    assert "build/" in content
-    assert ".agent/ai-hats/library/skills/test_skill/" in content
+    for fragment in ("# user header", "*.pyc", "build/", ".agent/ai-hats/"):
+        assert fragment in content
 
-    # Re-run must keep user content and produce byte-identical file
-    before = content
-    asm.set_role("test-role")
+
+def test_gitignore_set_role_does_not_touch_gitignore(project_with_library):
+    """`set_role` is a no-op on .gitignore (HATS-317 removed the dynamic block)."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    before = (project / ".gitignore").read_text()
+    asm.set_role("test-role", provider_name="claude")
     after = (project / ".gitignore").read_text()
     assert before == after
 
 
-def test_gitignore_block_self_heals_on_role_switch(project_with_library):
-    """Switching to a role without test_skill drops stale entries from the block."""
+def test_gitignore_opt_out_skips_write(project_with_library):
+    """`manage_gitignore=false` keeps init from writing any line."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    asm.set_role("test-role", provider_name="claude")
-    assert ".claude/skills/test_skill/" in _read_block(project)
-
-    asm.set_role("other-role", provider_name="claude")
-    block = _read_block(project)
-    assert ".claude/skills/test_skill/" not in block
-    assert ".agent/ai-hats/library/rules/test_rule/" not in block
-    assert ".agent/ai-hats/library/skills/test_skill/" not in block
-    # Manifest entries drop entirely when the target dir has no managed files.
-    assert ".agent/ai-hats/library/skills/.ai-hats-managed" not in block
-    # Baseline static entry stays.
-    assert ".agent/ai-hats/.last_backup" in block
-
-
-def test_gitignore_does_not_list_user_local_rule(project_with_library):
-    """Project-local rules (not in .library_rules) stay out of the block."""
-    project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-
-    # Plant a user-local rule before first set_role — _clean preserves it.
-    local_rule = rules_dir(project) / "my_local"
-    local_rule.mkdir(parents=True)
-    (local_rule / "rule.md").write_text("# mine\n")
-
-    asm.set_role("test-role")
-    block = _read_block(project)
-    assert ".agent/ai-hats/library/rules/my_local/" not in block
-    # Sanity: library rule still listed.
-    assert ".agent/ai-hats/library/rules/test_rule/" in block
-
-
-def test_gitignore_opt_out_removes_block(project_with_library):
-    """manage_gitignore=false strips the block on next run; user lines untouched."""
-    project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    asm.set_role("test-role")
-    assert ".agent/ai-hats/library/skills/test_skill/" in _read_block(project)
-
-    # Toggle flag and persist, then re-apply role.
     asm.project_config.manage_gitignore = False
-    asm.project_config.save(asm.config_path)
-    (project / ".gitignore").write_text((project / ".gitignore").read_text() + "\n# user tail\n")
-
-    asm.set_role("test-role")
-    content = (project / ".gitignore").read_text()
-    from ai_hats.assembler import GITIGNORE_END, GITIGNORE_START
-
-    assert GITIGNORE_START not in content
-    assert GITIGNORE_END not in content
-    assert "# user tail" in content
+    asm.init()
+    gi = project / ".gitignore"
+    if gi.exists():
+        assert ".agent/ai-hats/" not in gi.read_text()
+    else:
+        # No .gitignore created when opt-out is set on a clean project.
+        assert True
 
 
 # --------------------------------------------------------------------- #
