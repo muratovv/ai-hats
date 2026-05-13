@@ -42,8 +42,6 @@ GITHOOKS_MANIFEST = ".ai-hats-manifest"
 GITHOOKS_DISPATCHER_MARKER = "AI-HATS-DISPATCHER-MARKER"
 GITHOOKS_DISPATCHER_TEMPLATE = Path(__file__).parent / "templates" / "githooks" / "dispatcher.sh"
 GITIGNORE_FILE = ".gitignore"
-GITIGNORE_START = "# AI-HATS:START — managed by ai-hats, do not edit"
-GITIGNORE_END = "# AI-HATS:END"
 LIBRARY_RULES_MARKER = ".library_rules"
 MANAGED_SKILLS_MARKER = ".ai-hats-managed"
 
@@ -336,6 +334,10 @@ class Assembler:
         # ./CLAUDE.md so old projects upgrade in place.
         self._migrate_claude_md_to_v3(active_provider)
 
+        # HATS-317: one-shot .gitignore entry. Idempotent; no managed block.
+        if self.project_config.manage_gitignore:
+            self._ensure_gitignore_entry()
+
         # Apply role if specified
         if role:
             self.set_role(role)
@@ -416,8 +418,8 @@ class Assembler:
             # 8. Save backup reference
             self._save_backup_ref(backup_path)
 
-            # 9. Update .gitignore managed block (HATS-141)
-            self._update_gitignore()
+            # HATS-317: gitignore handling moved to one-shot init.
+            # set_role / bump never touch .gitignore.
 
         except Exception:
             # Rollback on failure
@@ -487,9 +489,42 @@ class Assembler:
         self._migrate_layout_v4_sessions()
         self._migrate_layout_v4_tracker()
         self._migrate_layout_v4_library()
+        self._note_empty_legacy_agent_dir()
         if not self.project_config.active_role:
             return None
         return self.set_role(self.project_config.active_role, self.project_config.provider or None)
+
+    def _note_empty_legacy_agent_dir(self) -> None:
+        """HATS-317: print a NOTE if `.agent/` only holds the managed `ai-hats/`.
+
+        After the v4 layout migration, every legacy artefact has moved under
+        `<ai_hats_dir>/`. The wrapper directory `.agent/` (which holds the
+        canonical layered context at `.agent/ai-hats/`) may otherwise be
+        empty for users running the default layout. The note tells the user
+        the legacy top-level dirs are gone and they can delete anything left
+        over manually — we never rm it automatically.
+        """
+        if not self.agent_dir.is_dir():
+            return
+        entries = {p.name for p in self.agent_dir.iterdir()}
+        # Only emit when `.agent/` is a pure ai-hats wrapper (i.e. nothing
+        # else lives there). In the default layout `ai-hats/` itself sits
+        # inside; with a custom ai_hats_dir outside .agent/, this branch
+        # detects a fully empty `.agent/`.
+        if entries and entries != {"ai-hats"}:
+            return
+        # Print on stderr so it doesn't pollute scripted JSON output. The
+        # message is informational — never an error.
+        import sys
+
+        print(
+            "NOTE: .agent/ holds only the managed ai-hats/ namespace; "
+            "legacy top-level artefacts (rules/, skills/, hooks/, backlog/, "
+            "STATE.md, ...) have migrated to <ai_hats_dir>/. If nothing "
+            "else of yours lives in .agent/, the wrapper is no longer "
+            "required — ai-hats will not remove it automatically.",
+            file=sys.stderr,
+        )
 
     def _migrate_layout_v4_library(self) -> None:
         """One-shot migration of library-mirror artefacts (HATS-314).
@@ -1312,143 +1347,32 @@ class Assembler:
         body += "\n".join(names) + "\n"
         Assembler._atomic_write_if_changed(path, body.encode())
 
-    # ----- .gitignore management (HATS-141) -----
+    # ----- .gitignore management (HATS-317) -----
 
-    def _update_gitignore(self) -> None:
-        """Write or remove the AI-HATS managed block in .gitignore.
+    def _ensure_gitignore_entry(self) -> None:
+        """One-shot: ensure `.agent/ai-hats/` (or current `<ai_hats_dir>/`) is in .gitignore.
 
-        Managed paths are derived entirely from marker files written by other
-        steps (.library_rules, .ai-hats-managed, .ai-hats-manifest), so the
-        block self-heals across role switches — stale entries drop out when
-        a component leaves the composition.
+        HATS-317 removed the dynamic managed-block generator. The new policy
+        is a single static line written once at ``init`` time. ``set_role``
+        and ``bump`` do not touch .gitignore — the user owns the file.
+        Idempotent: re-running ``init`` is a no-op if the line is present.
         """
+        from .paths import _read_ai_hats_dir_from_yaml
+
         gitignore = self.project_dir / GITIGNORE_FILE
-        if not self.project_config.manage_gitignore:
-            self._remove_gitignore_block(gitignore)
-            return
-        paths = self._collect_managed_paths()
-        self._write_gitignore_block(gitignore, paths)
+        ai_hats_rel = _read_ai_hats_dir_from_yaml(self.project_dir) or ".agent/ai-hats"
+        # Normalize: trailing slash so directories are matched explicitly.
+        line = ai_hats_rel.rstrip("/") + "/"
 
-    def _collect_managed_paths(self) -> list[str]:
-        """Enumerate ai-hats-owned file paths, sorted for stable diffs."""
-        from .paths import last_backup_path
-
-        # Project-relative paths for the .gitignore block.
-        backup_rel = last_backup_path(self.project_dir).relative_to(self.project_dir).as_posix()
-        rules_rel = _lib_rules_dir(self.project_dir).relative_to(self.project_dir).as_posix()
-        skills_rel = _lib_skills_dir(self.project_dir).relative_to(self.project_dir).as_posix()
-        hooks_rel = _lib_hooks_dir(self.project_dir).relative_to(self.project_dir).as_posix()
-        mcp_rel = _lib_mcp_dir(self.project_dir).relative_to(self.project_dir).as_posix()
-
-        paths: set[str] = {backup_rel}
-
-        lib_rules = _lib_rules_dir(self.project_dir) / LIBRARY_RULES_MARKER
-        if lib_rules.exists():
-            paths.add(f"{rules_rel}/{LIBRARY_RULES_MARKER}")
-            for name in lib_rules.read_text().splitlines():
-                name = name.strip()
-                if name:
-                    paths.add(f"{rules_rel}/{name}/")
-
-        # Library skills — subdirs per managed skill
-        self._collect_from_manifest(
-            _lib_skills_dir(self.project_dir), skills_rel, paths, as_dir=True,
-        )
-        # Library hooks — flat script files
-        self._collect_from_manifest(
-            _lib_hooks_dir(self.project_dir), hooks_rel, paths, as_dir=False,
-        )
-        # Library mcp — flat config files
-        self._collect_from_manifest(
-            _lib_mcp_dir(self.project_dir), mcp_rel, paths, as_dir=False,
-        )
-
-        for prov_dir in (".claude/skills", ".gemini/skills"):
-            marker = self.project_dir / prov_dir / MANAGED_SKILLS_MARKER
-            if marker.exists():
-                paths.add(f"{prov_dir}/{MANAGED_SKILLS_MARKER}")
-                for name in marker.read_text().splitlines():
-                    name = name.strip()
-                    if name:
-                        paths.add(f"{prov_dir}/{name}/")
-
-        manifest = self.project_dir / GITHOOKS_DIR / GITHOOKS_MANIFEST
-        if manifest.exists():
-            paths.add(f"{GITHOOKS_DIR}/{GITHOOKS_MANIFEST}")
-            for entry in manifest.read_text().splitlines():
-                entry = entry.strip()
-                if entry:
-                    paths.add(f"{GITHOOKS_DIR}/{entry}")
-
-        # .agent/ai-hats — canonical layered layer (HATS-282/289).
-        # user-rules/ is user-owned and excluded by being absent from MANAGED.
-        canonical_manifest = self._canonical_dir / CANONICAL_MANIFEST
-        if canonical_manifest.exists():
-            paths.add(f"{AGENT_DIR}/{CANONICAL_DIR}/{CANONICAL_MANIFEST}")
-            for entry in self._read_canonical_manifest(canonical_manifest):
-                paths.add(f"{AGENT_DIR}/{CANONICAL_DIR}/{entry}")
-
-        return sorted(paths)
-
-    @staticmethod
-    def _collect_from_manifest(
-        dir_path: Path,
-        rel_prefix: str,
-        paths: set[str],
-        *,
-        as_dir: bool,
-    ) -> None:
-        """Add the manifest file and its listed entries to `paths`."""
-        marker = dir_path / MANAGED_SKILLS_MARKER
-        if not marker.exists():
-            return
-        paths.add(f"{rel_prefix}/{MANAGED_SKILLS_MARKER}")
-        suffix = "/" if as_dir else ""
-        for name in marker.read_text().splitlines():
-            name = name.strip()
-            if name:
-                paths.add(f"{rel_prefix}/{name}{suffix}")
-
-    @staticmethod
-    def _render_block(paths: list[str]) -> str:
-        body = "\n".join(paths)
-        return f"{GITIGNORE_START}\n{body}\n{GITIGNORE_END}\n"
-
-    def _write_gitignore_block(self, gitignore: Path, paths: list[str]) -> None:
-        """Create/update the managed block, preserving user-authored content."""
-        block = self._render_block(paths)
         if not gitignore.exists():
-            gitignore.write_text(block)
+            gitignore.write_text(line + "\n")
             return
         existing = gitignore.read_text()
-        if GITIGNORE_START in existing and GITIGNORE_END in existing:
-            start = existing.index(GITIGNORE_START)
-            end = existing.index(GITIGNORE_END) + len(GITIGNORE_END)
-            # Consume trailing newline after the end marker so we don't
-            # accumulate blanks across re-runs.
-            if end < len(existing) and existing[end] == "\n":
-                end += 1
-            new_content = existing[:start] + block + existing[end:]
-            if new_content != existing:
-                gitignore.write_text(new_content)
+        existing_lines = {ln.strip() for ln in existing.splitlines()}
+        if line in existing_lines:
             return
-        # Markers absent → append with a separating blank line if needed.
         sep = "" if existing.endswith("\n") else "\n"
-        gitignore.write_text(existing + sep + "\n" + block)
-
-    def _remove_gitignore_block(self, gitignore: Path) -> None:
-        """Strip the managed block if present. Leaves user content untouched."""
-        if not gitignore.exists():
-            return
-        existing = gitignore.read_text()
-        if GITIGNORE_START not in existing or GITIGNORE_END not in existing:
-            return
-        start = existing.index(GITIGNORE_START)
-        end = existing.index(GITIGNORE_END) + len(GITIGNORE_END)
-        if end < len(existing) and existing[end] == "\n":
-            end += 1
-        new_content = existing[:start] + existing[end:]
-        gitignore.write_text(new_content)
+        gitignore.write_text(existing + sep + line + "\n")
 
 
 class AssemblyError(Exception):
