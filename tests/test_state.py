@@ -116,6 +116,45 @@ def test_completed_at_set_on_done(mgr):
     assert t.state == TaskState.DONE
 
 
+def _walk_to_done(mgr, task_id: str) -> None:
+    mgr.transition(task_id, TaskState.PLAN)
+    mgr.transition(task_id, TaskState.EXECUTE)
+    mgr.transition(task_id, TaskState.DOCUMENT)
+    mgr.transition(task_id, TaskState.REVIEW)
+    mgr.transition(task_id, TaskState.DONE)
+
+
+def test_reopen_done_to_execute(mgr):
+    """HATS-328: DONE → EXECUTE is a valid reopen path."""
+    mgr.create_task("T-1", "Reopen me")
+    _walk_to_done(mgr, "T-1")
+
+    t = mgr.transition("T-1", TaskState.EXECUTE)
+    assert t.state == TaskState.EXECUTE
+
+
+def test_reopen_clears_completed_at(mgr):
+    """Reopening from DONE clears the completion timestamp."""
+    mgr.create_task("T-1", "Reopen me")
+    _walk_to_done(mgr, "T-1")
+    assert mgr.get_task("T-1").completed_at != ""
+
+    mgr.transition("T-1", TaskState.EXECUTE)
+    assert mgr.get_task("T-1").completed_at == ""
+
+
+def test_reopen_logs_work_entry(mgr):
+    """Reopen automatically appends a work-log entry for audit."""
+    mgr.create_task("T-1", "Reopen me")
+    _walk_to_done(mgr, "T-1")
+    before = len(mgr.get_task("T-1").work_log)
+
+    mgr.transition("T-1", TaskState.EXECUTE)
+    entries = mgr.get_task("T-1").work_log
+    assert len(entries) == before + 1
+    assert "Reopened from done" in entries[-1].message
+
+
 def test_final_state(mgr):
     mgr.create_task("T-1", "Review me")
     mgr.transition("T-1", TaskState.PLAN)

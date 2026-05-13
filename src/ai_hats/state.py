@@ -191,6 +191,7 @@ class TaskManager:
             if task is None:
                 raise ValueError(f"Task '{task_id}' not found")
 
+            old_state = task.state
             task.transition_to(new_state)
             task.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             if resolution is not None:
@@ -201,7 +202,14 @@ class TaskManager:
                 self._create_plan_scaffold(task)
                 self._sync_plan_from_claude_plans(task)
             elif new_state == TaskState.EXECUTE:
-                if self.strict_plan_check and self._is_empty_scaffold(task):
+                # Reopen path (HATS-328): coming back from DONE — clear the
+                # completion timestamp and record the reopen in work_log so the
+                # lifecycle stays auditable. Skip the empty-plan strict-check:
+                # the plan already passed it once on the original execute.
+                if old_state == TaskState.DONE:
+                    task.completed_at = ""
+                    task.log_work("Reopened from done")
+                elif self.strict_plan_check and self._is_empty_scaffold(task):
                     plan_path = self.tasks_dir / task.id / "plan.md"
                     raise EmptyPlanError(task.id, plan_path)
                 self._setup_worktree(task)
