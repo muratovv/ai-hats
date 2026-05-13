@@ -269,7 +269,9 @@ class GeminiProvider(Provider):
         rules_dir = Path(tempfile.mkdtemp(prefix="ai-hats-override-rules-"))
 
         # Copy existing project rules
-        project_rules = project_dir / ".agent" / "rules"
+        from .paths import rules_dir as _project_rules_dir
+
+        project_rules = _project_rules_dir(project_dir)
         if project_rules.exists():
             for item in project_rules.iterdir():
                 if item.is_dir():

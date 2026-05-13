@@ -15,7 +15,13 @@ from .models import (
     ProjectConfig,
     SkillMetadata,
 )
-from .paths import legacy_paths_by_class
+from .paths import (
+    hooks_dir as _lib_hooks_dir,
+    legacy_paths_by_class,
+    mcp_dir as _lib_mcp_dir,
+    rules_dir as _lib_rules_dir,
+    skills_dir as _lib_skills_dir,
+)
 from .providers import (
     INJECTION_END,
     INJECTION_START,
@@ -287,16 +293,14 @@ class Assembler:
                     f"if you really want to change it."
                 )
 
-        # Create .agent/ legacy mirror subdirectories. (HATS-314 will fold
-        # rules/skills/hooks/mcp into <ai_hats_dir>/library/.)
-        for subdir in ("rules", "skills", "hooks", "mcp"):
-            (self.agent_dir / subdir).mkdir(parents=True, exist_ok=True)
-
-        # HATS-312 / HATS-313: runtime + tracker roots live under <ai_hats_dir>/.
+        # HATS-312 / HATS-313 / HATS-314: all framework roots live under
+        # <ai_hats_dir>/. .agent/ itself is no longer populated by ai-hats.
         from .paths import runs_dir, tasks_dir
 
         runs_dir(self.project_dir).mkdir(parents=True, exist_ok=True)
         tasks_dir(self.project_dir).mkdir(parents=True, exist_ok=True)
+        for subdir_fn in (_lib_rules_dir, _lib_skills_dir, _lib_hooks_dir, _lib_mcp_dir):
+            subdir_fn(self.project_dir).mkdir(parents=True, exist_ok=True)
 
         # Create/update ai-hats.yaml
         save_config = False
@@ -482,9 +486,20 @@ class Assembler:
         self._migrate_claude_md_to_v3(provider)
         self._migrate_layout_v4_sessions()
         self._migrate_layout_v4_tracker()
+        self._migrate_layout_v4_library()
         if not self.project_config.active_role:
             return None
         return self.set_role(self.project_config.active_role, self.project_config.provider or None)
+
+    def _migrate_layout_v4_library(self) -> None:
+        """One-shot migration of library-mirror artefacts (HATS-314).
+
+        Moves `.agent/{rules,skills,hooks,mcp}/` → `<ai_hats_dir>/library/...`.
+        `.claude/skills/` and `.githooks/` are NOT touched — they stay as
+        copy-publish targets owned by external tooling.
+        """
+        for old_abs, new_abs in legacy_paths_by_class(self.project_dir, "library"):
+            self._idempotent_move(old_abs, new_abs)
 
     def _migrate_layout_v4_tracker(self) -> None:
         """One-shot migration of tracker + root-class artefacts (HATS-313).
@@ -648,7 +663,7 @@ class Assembler:
         Each subdir keeps a manifest of ai-hats-managed entries so that
         user-authored files placed alongside survive re-assembly.
         """
-        rules_dir = self.agent_dir / "rules"
+        rules_dir = _lib_rules_dir(self.project_dir)
         if rules_dir.exists():
             if preserve_local:
                 self._clean_non_local(rules_dir)
@@ -694,7 +709,7 @@ class Assembler:
     def _copy_components(self, result: CompositionResult) -> None:
         """Copy resolved components into .agent/."""
         # Copy rules
-        rules_dir = self.agent_dir / "rules"
+        rules_dir = _lib_rules_dir(self.project_dir)
         rules_dir.mkdir(parents=True, exist_ok=True)
         library_rule_names = []
         for rule in result.rules:
@@ -709,7 +724,7 @@ class Assembler:
         marker.write_text("\n".join(library_rule_names))
 
         # Copy skills
-        skills_dir = self.agent_dir / "skills"
+        skills_dir = _lib_skills_dir(self.project_dir)
         skills_dir.mkdir(parents=True, exist_ok=True)
         managed_skills: list[str] = []
         for skill in result.skills:
@@ -721,7 +736,7 @@ class Assembler:
         self._write_managed_manifest(skills_dir, managed_skills)
 
         # Copy hook scripts
-        hooks_dir = self.agent_dir / "hooks"
+        hooks_dir = _lib_hooks_dir(self.project_dir)
         hooks_dir.mkdir(parents=True, exist_ok=True)
         managed_hooks: list[str] = []
         for event_name in (
@@ -743,7 +758,7 @@ class Assembler:
         self._write_managed_manifest(hooks_dir, managed_hooks)
 
         # Copy MCP configs
-        mcp_dir = self.agent_dir / "mcp"
+        mcp_dir = _lib_mcp_dir(self.project_dir)
         mcp_dir.mkdir(parents=True, exist_ok=True)
         managed_mcp: list[str] = []
         for mcp_config in result.mcp:
@@ -982,13 +997,13 @@ class Assembler:
         """Verify assembly correctness."""
         # Check all rules copied
         for rule in result.rules:
-            dest = self.agent_dir / "rules" / rule.name
+            dest = _lib_rules_dir(self.project_dir) / rule.name
             if not dest.exists():
                 raise AssemblyError(f"Rule '{rule.name}' not copied to {dest}")
 
         # Check all skills copied
         for skill in result.skills:
-            dest = self.agent_dir / "skills" / skill.name
+            dest = _lib_skills_dir(self.project_dir) / skill.name
             if not dest.exists():
                 raise AssemblyError(f"Skill '{skill.name}' not copied to {dest}")
 
@@ -1026,10 +1041,10 @@ class Assembler:
         """Check health of all components."""
         health: dict[str, str] = {}
         for rule in result.rules:
-            dest = self.agent_dir / "rules" / rule.name
+            dest = _lib_rules_dir(self.project_dir) / rule.name
             health[f"rule:{rule.name}"] = "OK" if dest.exists() else "Missing"
         for skill in result.skills:
-            dest = self.agent_dir / "skills" / skill.name
+            dest = _lib_skills_dir(self.project_dir) / skill.name
             health[f"skill:{skill.name}"] = "OK" if dest.exists() else "Missing"
         prompt_ok = any((self.project_dir / f).exists() for f in ("GEMINI.md", "CLAUDE.md"))
         health["system_prompt"] = "OK" if prompt_ok else "Missing"
@@ -1316,36 +1331,36 @@ class Assembler:
 
     def _collect_managed_paths(self) -> list[str]:
         """Enumerate ai-hats-owned file paths, sorted for stable diffs."""
-        paths: set[str] = {f"{AGENT_DIR}/.last_backup"}
+        from .paths import last_backup_path
 
-        lib_rules = self.agent_dir / "rules" / LIBRARY_RULES_MARKER
+        # Project-relative paths for the .gitignore block.
+        backup_rel = last_backup_path(self.project_dir).relative_to(self.project_dir).as_posix()
+        rules_rel = _lib_rules_dir(self.project_dir).relative_to(self.project_dir).as_posix()
+        skills_rel = _lib_skills_dir(self.project_dir).relative_to(self.project_dir).as_posix()
+        hooks_rel = _lib_hooks_dir(self.project_dir).relative_to(self.project_dir).as_posix()
+        mcp_rel = _lib_mcp_dir(self.project_dir).relative_to(self.project_dir).as_posix()
+
+        paths: set[str] = {backup_rel}
+
+        lib_rules = _lib_rules_dir(self.project_dir) / LIBRARY_RULES_MARKER
         if lib_rules.exists():
-            paths.add(f"{AGENT_DIR}/rules/{LIBRARY_RULES_MARKER}")
+            paths.add(f"{rules_rel}/{LIBRARY_RULES_MARKER}")
             for name in lib_rules.read_text().splitlines():
                 name = name.strip()
                 if name:
-                    paths.add(f"{AGENT_DIR}/rules/{name}/")
+                    paths.add(f"{rules_rel}/{name}/")
 
-        # .agent/skills — subdirs per managed skill
+        # Library skills — subdirs per managed skill
         self._collect_from_manifest(
-            self.agent_dir / "skills",
-            f"{AGENT_DIR}/skills",
-            paths,
-            as_dir=True,
+            _lib_skills_dir(self.project_dir), skills_rel, paths, as_dir=True,
         )
-        # .agent/hooks — flat script files
+        # Library hooks — flat script files
         self._collect_from_manifest(
-            self.agent_dir / "hooks",
-            f"{AGENT_DIR}/hooks",
-            paths,
-            as_dir=False,
+            _lib_hooks_dir(self.project_dir), hooks_rel, paths, as_dir=False,
         )
-        # .agent/mcp — flat config files
+        # Library mcp — flat config files
         self._collect_from_manifest(
-            self.agent_dir / "mcp",
-            f"{AGENT_DIR}/mcp",
-            paths,
-            as_dir=False,
+            _lib_mcp_dir(self.project_dir), mcp_rel, paths, as_dir=False,
         )
 
         for prov_dir in (".claude/skills", ".gemini/skills"):
