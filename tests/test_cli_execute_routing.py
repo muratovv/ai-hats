@@ -22,13 +22,14 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli import main
+from ai_hats.paths import retros_dir, runs_dir
 
 
 @pytest.fixture
 def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
     pd.mkdir()
-    (pd / ".gitlog").mkdir()
+    runs_dir(pd).mkdir(parents=True, exist_ok=True)
     (pd / ".agent" / "hypotheses").mkdir(parents=True)
     (pd / ".agent" / "backlog" / "proposals").mkdir(parents=True)
     (pd / "ai-hats.yaml").write_text(
@@ -51,7 +52,7 @@ def test_bare_ai_hats_routes_to_wraprunner(
 
     class _StubSession:
         session_id = "20260101-000000-1"
-        session_dir = project_dir / ".gitlog" / "session_x"
+        session_dir = runs_dir(project_dir) / "session_x"
         trace_path = session_dir / "trace.log"
 
     class _WrapRunner:
@@ -60,7 +61,7 @@ def test_bare_ai_hats_routes_to_wraprunner(
         def run(self, provider, **kwargs):
             captured["provider"] = provider
             captured.update(kwargs)
-            (project_dir / ".gitlog").mkdir(parents=True, exist_ok=True)
+            (runs_dir(project_dir)).mkdir(parents=True, exist_ok=True)
             _StubSession.session_dir.mkdir(parents=True, exist_ok=True)
             _StubSession.trace_path.write_text("")
             return 0, _StubSession
@@ -134,7 +135,7 @@ def test_reflect_all_routes_to_wraprunner_with_judge(
             captured["role_override"] = kwargs.get("role_override")
             captured["extra_args"] = kwargs.get("extra_args")
             return 0, _StubSession(
-                project_dir / ".gitlog" / "session_judge",
+                runs_dir(project_dir) / "session_judge",
                 {"exit_code": 0},
             )
 
@@ -155,7 +156,7 @@ def test_reflect_all_routes_to_wraprunner_with_judge(
     assert "PROP-001" in first_arg                      # handoff content
     # Handoff file also written to disk (existing behavior)
     handoff_files = list(
-        (project_dir / ".agent" / "retrospectives" / "reflect-all").glob(
+        (retros_dir(project_dir) / "reflect-all").glob(
             "*-handoff.md"
         )
     )
@@ -187,7 +188,7 @@ def test_agent_routes_to_subagent_runner(
         def run(self, **kwargs):
             captured.update(kwargs)
             return _StubSession(
-                project_dir / ".gitlog" / "session_x", {"exit_code": 0},
+                runs_dir(project_dir) / "session_x", {"exit_code": 0},
             )
 
     import ai_hats.runtime as runtime_mod
@@ -220,7 +221,7 @@ def test_reflect_session_uses_session_review_runner(
         def run(self, session_id, max_retries=1):
             captured["session_id"] = session_id
             captured["max_retries"] = max_retries
-            return project_dir / ".agent" / "retrospectives" / "fake.md"
+            return retros_dir(project_dir) / "fake.md"
 
     # reflect session now goes through PipelineHarness → run_session_review
     # step which lazy-imports from the retro module — patch at the source.

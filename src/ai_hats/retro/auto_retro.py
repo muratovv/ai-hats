@@ -82,8 +82,10 @@ def make_decision(
     Never raises — any exception is captured into action="skip" so the
     caller can surface "skipped (internal error: ...)" without crashing.
     """
+    from ..paths import retros_dir, runs_dir
+
     config_path = project_dir / "ai-hats.yaml"
-    metrics_path = project_dir / ".gitlog" / f"session_{session_id}" / "metrics.json"
+    metrics_path = runs_dir(project_dir) / f"session_{session_id}" / "metrics.json"
     try:
         action, reason = should_run(config_path, metrics_path)
         config = ProjectConfig.from_yaml(config_path)
@@ -99,13 +101,7 @@ def make_decision(
             "wrap_up": None,
         }
 
-    retro_path = (
-        project_dir
-        / ".agent"
-        / "retrospectives"
-        / "sessions"
-        / f"{session_id}.md"
-    )
+    retro_path = retros_dir(project_dir) / "sessions" / f"{session_id}.md"
 
     # Wrap-up nudge (HATS-214) — pure side-effect-free; any error collapses to None.
     wrap_up_info = None
@@ -130,7 +126,7 @@ def describe_decision(decision: dict) -> str:
     """Human-readable one-liner for the session-end banner.
 
     Example outputs:
-      "generating (bg) → .agent/retrospectives/sessions/<id>.md"
+      "generating (bg) → <ai_hats_dir>/sessions/retros/sessions/<id>.md"
       "skipped (below threshold: turns=0<1, tool_calls=0<1)"
       "hint — ai-hats session retro <id>  (threshold met: ...)"
     """
@@ -170,7 +166,9 @@ def _parens_safe(reason: str) -> str:
 
 
 def _retro_log_path(project_dir: Path, session_id: str) -> Path:
-    return project_dir / ".gitlog" / f"session_{session_id}" / RETRO_LOG_FILENAME
+    from ..paths import runs_dir
+
+    return runs_dir(project_dir) / f"session_{session_id}" / RETRO_LOG_FILENAME
 
 
 def write_retro_log(
@@ -217,8 +215,10 @@ def main() -> None:
         )
         return
 
+    from ..paths import runs_dir
+
     config_path = project_dir / "ai-hats.yaml"
-    metrics_path = project_dir / ".gitlog" / f"session_{session_id}" / "metrics.json"
+    metrics_path = runs_dir(project_dir) / f"session_{session_id}" / "metrics.json"
 
     action, reason = should_run(config_path, metrics_path)
 

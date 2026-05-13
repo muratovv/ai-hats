@@ -29,7 +29,7 @@ Pay attention to `success_criterion`, `observation_window`, `exit_criteria`,
 
 ### Step 2 — Gather session evidence
 
-The session's audit and metrics live in `.gitlog/session_<session_id>/`.
+The session's audit and metrics live in `<ai_hats_dir>/sessions/runs/session_<session_id>/`.
 Cite specific lines or metric values; verdicts without traceable evidence
 are noise.
 
@@ -91,7 +91,7 @@ How the verdict is *reported* depends on the calling role:
   `hypothesis_verdicts` array of the role's session document
   (`hats-reflect-session/v1`); see **review-session**.
 - **Running as `judge`** — verdicts feed into the judge report at
-  `.agent/retrospectives/judge/<UTC-ISO-ts>-report.md` per **judge-protocol**.
+  `<ai_hats_dir>/sessions/retros/judge/<UTC-ISO-ts>-report.md` per **judge-protocol**.
 
 In both cases the persistence (`append-verdict`, `set-status`) is the same — only
 the wrapper artifact differs.

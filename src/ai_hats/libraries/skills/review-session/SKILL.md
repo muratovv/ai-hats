@@ -1,6 +1,6 @@
 # Review Session
 
-Single-pass review of one `.gitlog/session_<sid>/` — produces a
+Single-pass review of one `<ai_hats_dir>/sessions/runs/session_<sid>/` — produces a
 `hats-reflect-session/v1` document. Composes **review-hypothesis** (one
 verdict per active HYP) + **review-proposal** (vote/create on improvement
 opportunities) + a free-form summary and observations.

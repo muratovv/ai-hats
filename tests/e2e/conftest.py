@@ -14,6 +14,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ai_hats.paths import retros_dir, runs_dir
+
 
 class _StubSession:
     def __init__(
@@ -23,7 +25,7 @@ class _StubSession:
         exit_code: int = 0,
     ) -> None:
         self.session_id = session_id
-        self.session_dir = project_dir / ".gitlog" / f"session_{session_id}"
+        self.session_dir = runs_dir(project_dir) / f"session_{session_id}"
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self.trace_path = self.session_dir / "trace.log"
         self.trace_path.write_text("(trace)")
@@ -38,7 +40,7 @@ class _StubSession:
 def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
     pd.mkdir()
-    (pd / ".gitlog").mkdir()
+    runs_dir(pd).mkdir(parents=True, exist_ok=True)
     (pd / ".agent" / "hypotheses").mkdir(parents=True)
     (pd / ".agent" / "backlog" / "proposals").mkdir(parents=True)
     (pd / "ai-hats.yaml").write_text(
@@ -86,7 +88,7 @@ def mock_runners(monkeypatch, project_dir, captured):
 
         def run(self, sid, max_retries=1):
             cap["session_review_calls"].append((sid, max_retries))
-            out = pd / ".agent" / "retrospectives" / "sessions" / f"{sid}.md"
+            out = retros_dir(pd) / "sessions" / f"{sid}.md"
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(
                 "---\n"

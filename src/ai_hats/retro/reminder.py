@@ -35,12 +35,14 @@ def evaluate_wrap_up(
     """Wrap-up nudge: fire when tasks_closed_in_window >= 2 AND duration > 60min.
 
     HATS-214. Source data:
-      - duration_s from .gitlog/session_<id>/metrics.json
+      - duration_s from <runs_dir>/session_<id>/metrics.json
       - tasks_closed via window.tasks_closed_in_window (HATS-212 scope)
       - cache_read from metrics.json tokens block, rounded to MB
     Returns None when triggers not met or data unavailable. Never raises.
     """
-    sdir = project_dir / ".gitlog" / f"session_{session_id}"
+    from ..paths import runs_dir
+
+    sdir = runs_dir(project_dir) / f"session_{session_id}"
     metrics_path = sdir / "metrics.json"
     if not metrics_path.exists():
         return None

@@ -41,7 +41,7 @@ Output a single concise progress trail; the report is the artifact.
 ### Step 1 — Read the previous judge report
 
 Use the **Glob** tool with pattern
-`.agent/retrospectives/judge/*-report.md`, then **Read** the
+`<ai_hats_dir>/sessions/retros/judge/*-report.md`, then **Read** the
 lexicographically last entry (filenames sort by ISO-8601 UTC timestamp,
 so the last one is the most recent). If the directory is empty (first
 run ever), skip this step.
@@ -94,7 +94,7 @@ For each accepted PROP, spawn a follow-up task via **backlog-manager**:
 **Before exiting the session** write a markdown report to:
 
 ```
-.agent/retrospectives/judge/<UTC-ISO-ts>-report.md
+<ai_hats_dir>/sessions/retros/judge/<UTC-ISO-ts>-report.md
 ```
 
 Use the `Write` tool (not Bash). Filename example:
@@ -174,6 +174,6 @@ Sequencing rules:
 ## Scope
 
 The only allowed direct write under `.agent/` is the judge report at
-`.agent/retrospectives/judge/<UTC-ISO-ts>-report.md` (Step 4). All other
+`<ai_hats_dir>/sessions/retros/judge/<UTC-ISO-ts>-report.md` (Step 4). All other
 side effects — task creation, HYP verdicts/status, PROP votes/status —
 go through `ai-hats task ...` CLI. See **rule_backlog_discipline**.

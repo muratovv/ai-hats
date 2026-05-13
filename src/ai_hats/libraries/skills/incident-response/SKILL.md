@@ -16,12 +16,12 @@ Structured procedure for investigating and resolving production incidents.
 2. **Diagnose**: Verify Network → Process → Logs → Gateway. Follow the dependency chain.
 3. **Mitigate**: Apply the fastest safe fix to restore service. Permanent fix can follow.
 4. **Communicate**: Keep stakeholders informed of status and ETA.
-5. **Document**: Record timeline, root cause, and fix in `.agent/retrospectives/`. Include what worked and what didn't.
+5. **Document**: Record timeline, root cause, and fix in `<ai_hats_dir>/sessions/retros/`. Include what worked and what didn't.
 6. **Follow up**: Create tasks for permanent fix, monitoring gaps, and process improvements.
 
 ## Completion
 - Service restored and verified via health checks
-- Incident report written in `.agent/retrospectives/`
+- Incident report written in `<ai_hats_dir>/sessions/retros/`
 - Follow-up tasks created in backlog
 
 ## Anti-Patterns

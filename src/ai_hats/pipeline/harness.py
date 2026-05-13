@@ -5,7 +5,7 @@ flat values. The harness turns CLI-style inputs (raw text, optional
 arguments) into a deterministic file-on-disk that pipeline steps read.
 
 Per-session namespace (HATS-308): each ``PipelineHarness`` instance owns
-a unique ``<project>/.gitlog/pipeline_runs/<pipeline_name>/<session_id>/``
+a unique ``<ai_hats_dir>/sessions/runs/pipeline_runs/<pipeline_name>/<session_id>/``
 subdir. Concurrent invocations of the same pipeline name are safe — they
 get disjoint namespaces.
 
@@ -40,7 +40,7 @@ from importlib.resources import as_file, files
 from pathlib import Path
 from typing import Any, Mapping
 
-from ..paths import traces_dir
+from ..paths import runs_dir, traces_dir
 from .loader import load_pipeline
 from .pipeline import run as run_pipeline
 from .trace import JsonlTraceWriter, TraceHook
@@ -93,9 +93,7 @@ class PipelineHarness:
         self.name = pipeline_name
         self.project_dir = project_dir
         self.session_id = session_id or _generate_session_id()
-        self._pipeline_root = (
-            project_dir / ".gitlog" / "pipeline_runs" / pipeline_name
-        )
+        self._pipeline_root = runs_dir(project_dir) / "pipeline_runs" / pipeline_name
         self.namespace = self._pipeline_root / self.session_id
         # Trace wiring — opt-in via env. Path resolved eagerly so the
         # filename's timestamp reflects "harness construction" (= run

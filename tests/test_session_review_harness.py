@@ -16,6 +16,7 @@ from ai_hats.cli.reflect_session_main import (
     _harness_check,
 )
 from ai_hats.hypothesis import ProposalStore
+from ai_hats.paths import retros_dir
 
 
 SID = "20260506-100000-1"
@@ -24,7 +25,7 @@ SID = "20260506-100000-1"
 def _make_review_file(
     project_dir: Path, *, summary: str = "ok", verdicts=None,
 ) -> Path:
-    out = project_dir / ".agent" / "retrospectives" / "sessions" / f"{SID}.md"
+    out = retros_dir(project_dir) / "sessions" / f"{SID}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     fm = {
         "schema": "hats-session-review/v1",

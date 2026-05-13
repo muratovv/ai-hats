@@ -16,7 +16,11 @@ esac
 # re-fire this hook and re-spawn another reviewer ad infinitum. Leave a
 # breadcrumb so the loop is debuggable if it ever fires from the wrong place.
 if [ "${HATS_SKIP_RETRO:-0}" = "1" ]; then
-    log_dir=".gitlog/session_${AI_HATS_SESSION_ID}"
+    # HATS-312: session traces live under <ai_hats_dir>/sessions/runs/.
+    # Default ai_hats_dir is .agent/ai-hats; this breadcrumb uses the default
+    # because reading yaml from bash is fragile. Env AI_HATS_DIR overrides.
+    base="${AI_HATS_DIR:-.agent/ai-hats}"
+    log_dir="${base}/sessions/runs/session_${AI_HATS_SESSION_ID}"
     mkdir -p "$log_dir" 2>/dev/null || true
     ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf '%s\thook\tskip\trecursion-guard\n' "$ts" \

@@ -29,7 +29,7 @@ injection: |
 
   Write the final findings report directly via the **Write** tool to:
 
-      .agent/retrospectives/role-coherence/<UTC-ISO-ts>-<target_role>.md
+      <ai_hats_dir>/sessions/retros/role-coherence/<UTC-ISO-ts>-<target_role>.md
 
   `<target_role>` is the audited composition (e.g. `developer`,
   `judge-for-hyp-prop`), not the auditing role. Filename example:

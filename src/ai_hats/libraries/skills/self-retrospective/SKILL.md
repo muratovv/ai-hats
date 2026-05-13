@@ -74,7 +74,7 @@ Analyze completed or failed work to identify systemic improvements.
 5. **Quantify:** "7 iterations wasted", "3 failed attempts before pivot" —
    numbers make the impact visible.
 
-6. **Archive:** Save report to `.agent/retrospectives/YYYY-MM-DD-retro-<title>.md`.
+6. **Archive:** Save report to `<ai_hats_dir>/sessions/retros/YYYY-MM-DD-retro-<title>.md`.
 
    Self-retros are personal agent reflections — free-form markdown is fine.
    They are NOT part of the automated feedback loop (reflect-session handles
@@ -84,7 +84,7 @@ Analyze completed or failed work to identify systemic improvements.
    Every identified improvement must either be fixed now or tracked.
 
 ## Completion
-- Retrospective report saved to `.agent/retrospectives/`
+- Retrospective report saved to `<ai_hats_dir>/sessions/retros/`
 - Every improvement either applied or tracked as a task card
 - Quantified impact (wasted iterations, failed attempts)
 

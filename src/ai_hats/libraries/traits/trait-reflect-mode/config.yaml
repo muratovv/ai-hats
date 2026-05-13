@@ -26,5 +26,5 @@ injection: |
   - `reflect-session` / `session-reviewer` → emit a single
     `hats-reflect-session/v1` document (see **review-session**).
   - `judge` → write a judge report at
-    `.agent/retrospectives/judge/<UTC-ISO-ts>-report.md`
+    `<ai_hats_dir>/sessions/retros/judge/<UTC-ISO-ts>-report.md`
     (see **judge-protocol**).

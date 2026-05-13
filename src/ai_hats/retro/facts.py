@@ -43,12 +43,14 @@ class SessionFacts:
 
 
 def compute_facts(project_dir: Path, session_id: str) -> SessionFacts:
-    """Compute SessionFacts from .gitlog/<session> + git log + backlog.
+    """Compute SessionFacts from <runs_dir>/<session> + git log + backlog.
 
     Raises FileNotFoundError if the session directory does not exist.
     """
+    from ..paths import runs_dir
+
     sid = _normalize(session_id)
-    session_dir = project_dir / ".gitlog" / f"{SESSION_PREFIX}{sid}"
+    session_dir = runs_dir(project_dir) / f"{SESSION_PREFIX}{sid}"
     if not session_dir.exists():
         raise FileNotFoundError(f"Session not found: {sid}")
 
@@ -64,10 +66,13 @@ def compute_facts(project_dir: Path, session_id: str) -> SessionFacts:
         tasks_closed=tasks_closed_in_window(project_dir, session_start, session_end),
     )
 
+    # Retros live at <ai_hats_dir>/sessions/retros/<...>.md and runs at
+    # <ai_hats_dir>/sessions/runs/session_<sid>/ — one ".." up gets us
+    # back to the sessions/ root.
     links = SessionLinks(
-        audit=f"../../../.gitlog/{SESSION_PREFIX}{sid}/audit.md",
+        audit=f"../runs/{SESSION_PREFIX}{sid}/audit.md",
         metrics=(
-            f"../../../.gitlog/{SESSION_PREFIX}{sid}/metrics.json"
+            f"../runs/{SESSION_PREFIX}{sid}/metrics.json"
             if (session_dir / "metrics.json").exists()
             else None
         ),

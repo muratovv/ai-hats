@@ -15,6 +15,7 @@ import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli import main
+from ai_hats.paths import runs_dir
 
 
 def _make_session(
@@ -23,14 +24,14 @@ def _make_session(
     *,
     metrics: dict,
 ) -> None:
-    sdir = project_dir / ".gitlog" / f"session_{session_id}"
+    sdir = runs_dir(project_dir) / f"session_{session_id}"
     sdir.mkdir(parents=True)
     (sdir / "metrics.json").write_text(json.dumps(metrics))
 
 
 @pytest.fixture
 def project_dir(tmp_path: Path) -> Path:
-    (tmp_path / ".gitlog").mkdir()
+    runs_dir(tmp_path).mkdir(parents=True, exist_ok=True)
     (tmp_path / "ai-hats.yaml").write_text(
         "schema_version: 2\nprovider: claude\nactive_role: primary\n"
     )

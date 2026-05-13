@@ -19,6 +19,7 @@ from ai_hats.pipeline.steps.prompt import ResolvePrompt
 from ai_hats.pipeline.steps.save import SaveArtifact
 from ai_hats.pipeline.steps.session_review import RunSessionReview
 from ai_hats.pipeline.steps.spawn_review import SpawnSessionReview
+from ai_hats.paths import runs_dir
 
 
 # ---------------- compose_role ----------------
@@ -228,7 +229,7 @@ def test_spawn_session_review_returns_pid(tmp_path: Path):
     assert "ai_hats.cli.reflect_session_main" in cmd
     assert "2" in cmd  # max_retries
     log_path = (
-        tmp_path / ".gitlog" / "session_20260101-010101-1" / "retro.log"
+        runs_dir(tmp_path) / "session_20260101-010101-1" / "retro.log"
     )
     assert log_path.parent.exists()
 

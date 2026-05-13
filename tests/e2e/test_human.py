@@ -12,6 +12,7 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from ai_hats.cli import main
+from ai_hats.paths import runs_dir
 
 
 
@@ -46,7 +47,7 @@ def test_human_creates_session_artifacts(project_dir: Path, mock_runners):
     res = CliRunner().invoke(main, [])
     assert res.exit_code == 0
 
-    session_dirs = list((project_dir / ".gitlog").glob("session_*"))
+    session_dirs = list(runs_dir(project_dir).glob("session_*"))
     assert len(session_dirs) == 1
     sd = session_dirs[0]
     assert (sd / "trace.log").exists()

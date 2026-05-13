@@ -14,7 +14,7 @@ Audit and refactor library components (rules, skills, traits) to eliminate redun
 
 ## Procedure
 
-1. **Audit:** Review `.agent/retrospectives/` for recurring issues.
+1. **Audit:** Review `<ai_hats_dir>/sessions/retros/` for recurring issues.
    List all active rules and skills in the current role composition.
 
 2. **Identify Debt:**

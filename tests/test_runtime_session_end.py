@@ -12,6 +12,7 @@ import pytest
 from ai_hats import runtime as runtime_module
 from ai_hats.models import LifecycleEvent
 from ai_hats.observe import Session
+from ai_hats.paths import runs_dir
 from ai_hats.runtime import (
     _discover_claude_jsonl,
     _finalize_session,
@@ -258,7 +259,7 @@ def test_print_session_end_with_retro(tmp_path, capsys, action, expected_fragmen
         "mode": "llm",
         "background": True,
         "retro_path": str(tmp_path / "retros" / "llm" / "test.md"),
-        "log_path": str(tmp_path / ".gitlog" / "session_test" / "retro.log"),
+        "log_path": str(runs_dir(tmp_path) / "session_test" / "retro.log"),
     }
     _print_session_end(session, trace_stats={"trace_size": 0, "req_count": 0}, retro=decision)
 
@@ -285,7 +286,7 @@ def test_finalize_session_writes_runtime_decision_line(finalize_kwargs, tmp_path
 
     _finalize_session(**finalize_kwargs)
 
-    log = tmp_path / ".gitlog" / "session_test" / "retro.log"
+    log = runs_dir(tmp_path) / "session_test" / "retro.log"
     assert log.exists(), "retro.log must be created by runtime before hooks fire"
     content = log.read_text()
     assert "runtime\tdecision" in content

@@ -2,11 +2,12 @@
 
 Concurrency (HATS-121)
 ----------------------
-State files in ``.agent/worktrees/<key>.json`` are guarded by per-key
-``filelock.FileLock`` locks (``<state_path>.lock``). The legacy
-singleton ``.agent/worktree.json`` is locked on its own path during
-migration. Locks are OS-level (``fcntl.flock``) — kernel auto-releases
-on process death, so no stale-lock cleanup is required.
+State files in ``<ai_hats_dir>/sessions/worktrees/<key>.json`` are
+guarded by per-key ``filelock.FileLock`` locks (``<state_path>.lock``).
+The legacy singleton ``<ai_hats_dir>/sessions/worktree.json`` is locked
+on its own path during migration. Locks are OS-level (``fcntl.flock``) —
+kernel auto-releases on process death, so no stale-lock cleanup is
+required.
 
 ``save_state`` writes atomically (``tmp + os.replace``) so a SIGKILL
 mid-write never produces a truncated JSON.
@@ -32,10 +33,10 @@ from typing import Any, Iterator
 
 import filelock
 
+from .paths import worktree_state_path, worktrees_dir
+
 logger = logging.getLogger(__name__)
 
-STATE_FILE = ".agent/worktree.json"  # legacy singleton, see _migrate_singleton
-STATES_DIR = ".agent/worktrees"
 LOCK_TIMEOUT = 10.0  # seconds — see module docstring
 
 
@@ -266,9 +267,9 @@ class WorktreeManager:
     # ------------------------------------------------------------------
 
     def save_state(self, *, key: str | None = None) -> Path:
-        """Persist worktree state to .agent/worktrees/<key>.json (locked, atomic)."""
+        """Persist worktree state to <ai_hats_dir>/sessions/worktrees/<key>.json (locked, atomic)."""
         k = key or _state_key(self.branch_name)
-        state_dir = self.project_dir / STATES_DIR
+        state_dir = worktrees_dir(self.project_dir)
         state_dir.mkdir(parents=True, exist_ok=True)
         state_path = state_dir / f"{k}.json"
         state: dict[str, Any] = {
@@ -283,7 +284,7 @@ class WorktreeManager:
 
     def _clear_state(self, *, key: str | None = None) -> None:
         k = key or getattr(self, "_state_key_cached", None) or _state_key(self.branch_name)
-        state_path = self.project_dir / STATES_DIR / f"{k}.json"
+        state_path = worktrees_dir(self.project_dir) / f"{k}.json"
         with _acquire(state_path):
             try:
                 state_path.unlink()
@@ -308,7 +309,7 @@ class WorktreeManager:
 
     @classmethod
     def _load_by_key(cls, project_dir: Path, key: str) -> WorktreeManager | None:
-        state_path = project_dir / STATES_DIR / f"{key}.json"
+        state_path = worktrees_dir(project_dir) / f"{key}.json"
         with _acquire(state_path):
             try:
                 raw = state_path.read_text()
@@ -341,7 +342,7 @@ class WorktreeManager:
     @classmethod
     def list_active(cls, project_dir: Path) -> list[WorktreeManager]:
         """Load all active worktree states. Prunes stale entries."""
-        states_dir = project_dir / STATES_DIR
+        states_dir = worktrees_dir(project_dir)
         if not states_dir.exists():
             return []
         result = []
@@ -357,7 +358,7 @@ class WorktreeManager:
         """DEPRECATED compat shim. Returns first active worktree or None.
 
         Migrate callers to load_for_task / load_for_branch / list_active.
-        Auto-migrates singleton .agent/worktree.json if present.
+        Auto-migrates singleton worktree.json under <ai_hats_dir>/sessions/ if present.
         """
         cls._migrate_singleton(project_dir)
         active = cls.list_active(project_dir)
@@ -365,13 +366,16 @@ class WorktreeManager:
 
     @classmethod
     def _migrate_singleton(cls, project_dir: Path) -> None:
-        """One-shot migration: .agent/worktree.json → .agent/worktrees/<key>.json.
+        """One-shot migration: singleton worktree.json → per-key worktrees/<key>.json.
 
         Locked + idempotent: concurrent callers will serialize on the
         legacy file's lock; the second one finds the source already
-        unlinked and exits cleanly.
+        unlinked and exits cleanly. After HATS-312 the singleton lives at
+        ``<ai_hats_dir>/sessions/worktree.json`` and per-key files under
+        ``<ai_hats_dir>/sessions/worktrees/`` — the filesystem move from
+        ``.agent/`` is handled separately by ``Assembler._migrate_layout_v4_sessions``.
         """
-        old = project_dir / ".agent" / "worktree.json"
+        old = worktree_state_path(project_dir)
         with _acquire(old):
             try:
                 raw = old.read_text()
@@ -384,7 +388,7 @@ class WorktreeManager:
                 return
             branch = data.get("branch", "")
             key = _state_key(branch)
-            new_dir = project_dir / STATES_DIR
+            new_dir = worktrees_dir(project_dir)
             new_dir.mkdir(parents=True, exist_ok=True)
             new_path = new_dir / f"{key}.json"
             with _acquire(new_path):

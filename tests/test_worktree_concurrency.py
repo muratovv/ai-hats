@@ -23,8 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats.paths import worktrees_dir
 from ai_hats.worktree import (
-    STATES_DIR,
     WorktreeLockError,
     WorktreeManager,
     _acquire,
@@ -123,7 +123,7 @@ def test_save_state_write_write_race(git_project: Path) -> None:
     assert p1.exitcode == 0, "writer alpha failed"
     assert p2.exitcode == 0, "writer beta failed"
 
-    state_path = git_project / STATES_DIR / f"{_state_key(branch)}.json"
+    state_path = worktrees_dir(git_project) / f"{_state_key(branch)}.json"
     assert state_path.exists()
     data = json.loads(state_path.read_text())  # never raises
     assert data["branch"] == branch
@@ -162,7 +162,7 @@ def test_acquire_timeout_raises_worktree_lock_error(
     git_project: Path, tmp_path: Path
 ) -> None:
     """TC-3: a stuck lock holder triggers WorktreeLockError on second acquire."""
-    state_path = git_project / STATES_DIR / "task-hats-121-tc3.json"
+    state_path = worktrees_dir(git_project) / "task-hats-121-tc3.json"
     state_path.parent.mkdir(parents=True, exist_ok=True)
     ready = tmp_path / "ready.flag"
 

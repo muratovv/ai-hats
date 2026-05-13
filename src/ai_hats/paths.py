@@ -101,7 +101,11 @@ def sessions_dir(project_dir: Path) -> Path:
 
 
 def runs_dir(project_dir: Path) -> Path:
-    """Pipeline-run artefacts: ``<ai_hats_dir>/sessions/runs/``."""
+    """Pipeline/session-trace runtime artefacts: ``<ai_hats_dir>/sessions/runs/``.
+
+    Holds both ``pipeline_runs/<pipeline>/<session_id>/`` subtrees and
+    flat ``session_<id>/`` trace dirs (legacy ``.gitlog/`` content).
+    """
     return sessions_dir(project_dir) / "runs"
 
 
@@ -216,8 +220,9 @@ def last_backup_path(project_dir: Path) -> Path:
 # their slice; the relative new path is joined with ai_hats_dir at call
 # time so env/yaml overrides apply.
 LEGACY_PATH_MAP: dict[str, tuple[LegacyClass, str]] = {
-    # Sessions
-    ".gitlog/pipeline_runs":  ("sessions", "sessions/runs"),
+    # Sessions — `.gitlog/` holds both pipeline_runs/ and session_<id>/
+    # subdirs; the whole tree moves to sessions/runs/ in one shot.
+    ".gitlog":                ("sessions", "sessions/runs"),
     ".agent/retrospectives":  ("sessions", "sessions/retros"),
     ".agent/audits":          ("sessions", "sessions/audits"),
     ".agent/handoffs":        ("sessions", "sessions/handoffs"),

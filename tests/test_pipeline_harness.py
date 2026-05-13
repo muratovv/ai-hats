@@ -14,12 +14,13 @@ import pytest
 from ai_hats.pipeline import registry
 from ai_hats.pipeline.harness import PipelineHarness
 from ai_hats.pipeline.user_steps import _reset_loader_cache
+from ai_hats.paths import runs_dir
 
 
 def test_old_sessions_pruned(tmp_path: Path, monkeypatch):
     """Keep-N retention prunes the oldest sibling session dirs."""
     monkeypatch.setenv("AI_HATS_PIPELINE_KEEP_N", "3")
-    pipeline_root = tmp_path / ".gitlog" / "pipeline_runs" / "execute"
+    pipeline_root = runs_dir(tmp_path) / "pipeline_runs" / "execute"
     pipeline_root.mkdir(parents=True)
     # Pre-create 5 old sibling sessions; force mtime order (oldest first).
     for i in range(5):
@@ -119,7 +120,7 @@ def test_run_loads_yaml_and_executes(tmp_path: Path):
 def test_namespace_path_layout(tmp_path: Path):
     h = PipelineHarness("my-name", tmp_path, session_id="testsid-001")
     assert h.namespace == (
-        tmp_path / ".gitlog" / "pipeline_runs" / "my-name" / "testsid-001"
+        runs_dir(tmp_path) / "pipeline_runs" / "my-name" / "testsid-001"
     )
 
 

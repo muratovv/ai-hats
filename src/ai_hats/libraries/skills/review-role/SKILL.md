@@ -33,7 +33,7 @@ Triggered by `ai-hats reflect role <role-name>` or invoked manually.
    proposal. Group by sharpness (locally fixable vs requires composer
    change vs requires trait restructuring).
 5. **Persist** the report at
-   `.agent/retrospectives/role-coherence/<UTC-ISO-ts>-<role>.md`.
+   `<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ISO-ts>-<role>.md`.
 
 ## Output handoff
 

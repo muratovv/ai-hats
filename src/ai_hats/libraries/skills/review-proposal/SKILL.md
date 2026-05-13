@@ -86,7 +86,7 @@ How the action is *reported* depends on the calling role:
 - **Running as `reflect-session` / `session-reviewer`** — mirror in the
   `proposal_actions` array of the session document; see **review-session**.
 - **Running as `judge`** — list each create/vote/status flip in the judge
-  report (`.agent/retrospectives/judge/<UTC-ISO-ts>-report.md`).
+  report (`<ai_hats_dir>/sessions/retros/judge/<UTC-ISO-ts>-report.md`).
 
 ## Field reference
 

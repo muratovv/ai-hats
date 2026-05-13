@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .paths import runs_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,7 +29,10 @@ class SessionManager:
     """Manages session lifecycle and directories."""
 
     def __init__(self, project_dir: Path) -> None:
-        self.gitlog_dir = project_dir / ".gitlog"
+        # HATS-312: session trace dirs live under <ai_hats_dir>/sessions/runs/.
+        # The `gitlog_dir` attribute name is preserved for backwards source
+        # compatibility; semantically it's the runs root now.
+        self.gitlog_dir = runs_dir(project_dir)
         self.gitlog_dir.mkdir(parents=True, exist_ok=True)
         self._counter = 0
 

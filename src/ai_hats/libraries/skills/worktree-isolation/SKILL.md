@@ -106,6 +106,6 @@ This re-copies all skills to `.claude/skills/` and `.agent/skills/`.
 git worktree list                 # audit
 git worktree remove <path>        # remove a stray linked worktree
 git worktree prune                # clean stale metadata
-rm .agent/worktree.json           # if ai-hats state is stale
+rm <ai_hats_dir>/sessions/worktree.json           # if ai-hats state is stale
 ```
-Rule of thumb: one task, one worktree, one `.agent/worktree.json` (in the main repo).
+Rule of thumb: one task, one worktree, one `<ai_hats_dir>/sessions/worktree.json` (in the main repo).
