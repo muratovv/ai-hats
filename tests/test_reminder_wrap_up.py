@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ai_hats.retro.reminder import evaluate_wrap_up
 from ai_hats.state import TaskManager
-from ai_hats.paths import runs_dir
+from ai_hats.paths import runs_dir, state_md_path, tasks_dir
 
 
 SESSION_ID = "20260101-120000-1"
@@ -18,8 +18,8 @@ SESSION_START = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 def _setup_project(tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
-    (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
-    (project / ".agent" / "STATE.md").write_text("")
+    (tasks_dir(project)).mkdir(parents=True)
+    (state_md_path(project)).write_text("")
     (project / "ai-hats.yaml").write_text("task_prefix: TST\n")
     sdir = runs_dir(project) / f"session_{SESSION_ID}"
     sdir.mkdir(parents=True)
@@ -48,7 +48,7 @@ def _create_done_task(
     # Mark as done by writing the yaml directly with the desired updated/state.
     # Going through transition() would require plan content, which the wrap-up
     # logic is independent of.
-    task_path = project / ".agent" / "backlog" / "tasks" / task_id / "task.yaml"
+    task_path = tasks_dir(project) / task_id / "task.yaml"
     yaml_text = task_path.read_text()
     yaml_text = yaml_text.replace(
         "state: brainstorm", "state: done"

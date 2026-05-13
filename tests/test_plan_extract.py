@@ -13,6 +13,7 @@ from ai_hats.cli import main
 from ai_hats.models import TaskState
 from ai_hats.plan_extract import extract_candidates, mark_extracted
 from ai_hats.state import TaskManager
+from ai_hats.paths import state_md_path, tasks_dir
 
 
 # ----------------------------- parser --------------------------------------
@@ -120,8 +121,8 @@ def _setup_project(tmp_path: Path) -> Path:
         cwd=project,
         check=True,
     )
-    (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
-    (project / ".agent" / "STATE.md").write_text("")
+    (tasks_dir(project)).mkdir(parents=True)
+    (state_md_path(project)).write_text("")
     (project / "ai-hats.yaml").write_text("task_prefix: TST\n")
     return project
 
@@ -130,7 +131,7 @@ def _seed_task_with_plan(project: Path, task_id: str, plan_body: str) -> Path:
     mgr = TaskManager(project, prefix="TST", strict_plan_check=False)
     mgr.create_task(task_id, "parent task")
     mgr.transition(task_id, TaskState.PLAN)
-    plan = project / ".agent" / "backlog" / "tasks" / task_id / "plan.md"
+    plan = tasks_dir(project) / task_id / "plan.md"
     plan.write_text(plan_body)
     return plan
 

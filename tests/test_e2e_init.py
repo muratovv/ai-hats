@@ -10,6 +10,7 @@ from click.testing import CliRunner
 from ai_hats.cli import main
 from ai_hats.library import LibraryResolver
 from ai_hats.models import ComponentType
+from ai_hats.paths import tasks_dir
 
 
 def _all_roles() -> list[str]:
@@ -43,7 +44,7 @@ def test_set_creates_project(cli_project):
     assert (project / "ai-hats.yaml").exists()
     assert (project / ".agent" / "rules").is_dir()
     assert (project / ".agent" / "skills").is_dir()
-    assert (project / ".agent" / "backlog" / "tasks").is_dir()
+    assert (tasks_dir(project)).is_dir()
     # HATS-284: ./CLAUDE.md is now a thin scaffold (~65 bytes); the aggregator
     # at .claude/CLAUDE.md carries the framework injection.
     assert (project / "CLAUDE.md").exists()
@@ -549,7 +550,7 @@ def test_task_create_auto_id(cli_project):
     assert "Created" in result.output
     assert "My test task" in result.output
     assert "TASK-001" in result.output
-    assert (project / ".agent" / "backlog" / "tasks" / "TASK-001" / "task.yaml").exists()
+    assert (tasks_dir(project) / "TASK-001" / "task.yaml").exists()
 
 
 def test_init_task_prefix_flag(cli_project):
@@ -638,7 +639,7 @@ def test_task_prefix_honored_from_yaml(cli_project):
     result = runner.invoke(main, ["task", "create", "Custom prefix"])
     assert result.exit_code == 0, result.output
     assert "ACME-001" in result.output
-    assert (project / ".agent" / "backlog" / "tasks" / "ACME-001").exists()
+    assert (tasks_dir(project) / "ACME-001").exists()
 
 
 def test_task_prefix_auto_detected_from_legacy_tasks(cli_project):
@@ -651,8 +652,8 @@ def test_task_prefix_auto_detected_from_legacy_tasks(cli_project):
 
     # Simulate a legacy tasks dir and strip any task_prefix from the yaml.
     legacy_id = "HATS-042"
-    (project / ".agent" / "backlog" / "tasks" / legacy_id).mkdir(parents=True)
-    (project / ".agent" / "backlog" / "tasks" / legacy_id / "task.yaml").write_text(
+    (tasks_dir(project) / legacy_id).mkdir(parents=True)
+    (tasks_dir(project) / legacy_id / "task.yaml").write_text(
         "id: HATS-042\ntitle: Legacy\nstate: done\npriority: low\ncreated: 2025-01-01T00:00:00Z\nupdated: 2025-01-01T00:00:00Z\n"
     )
     cfg_path = project / "ai-hats.yaml"
@@ -676,7 +677,7 @@ def test_task_create_explicit_id(cli_project):
     result = runner.invoke(main, ["task", "create", "Explicit ID task", "--id", "CUSTOM-001"])
     assert result.exit_code == 0, result.output
     assert "CUSTOM-001" in result.output
-    assert (project / ".agent" / "backlog" / "tasks" / "CUSTOM-001" / "task.yaml").exists()
+    assert (tasks_dir(project) / "CUSTOM-001" / "task.yaml").exists()
 
 
 def test_task_list_table_filters(cli_project):
@@ -692,7 +693,7 @@ def test_task_list_table_filters(cli_project):
     # Transition third task to done (brainstorm → plan → execute → document → review → done)
     runner.invoke(main, ["task", "transition", "TASK-003", "plan"])
     # Fill the scaffold so plan→execute guard passes (HATS-230).
-    plan_path = project / ".agent" / "backlog" / "tasks" / "TASK-003" / "plan.md"
+    plan_path = tasks_dir(project) / "TASK-003" / "plan.md"
     plan_path.write_text("# Plan\nfilled in for the test\n")
     for state in ["execute", "document", "review", "done"]:
         runner.invoke(main, ["task", "transition", "TASK-003", state])

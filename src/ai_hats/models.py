@@ -621,7 +621,9 @@ class ProjectConfig(_YamlModel):
         """Return the common prefix of existing task dirs, or None if ambiguous/empty."""
         import re as _re
 
-        tasks_dir = project_dir / ".agent" / "backlog" / "tasks"
+        from .paths import tasks_dir as _tasks_dir
+
+        tasks_dir = _tasks_dir(project_dir)
         if not tasks_dir.is_dir():
             return None
         prefixes: set[str] = set()

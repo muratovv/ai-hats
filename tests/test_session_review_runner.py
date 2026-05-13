@@ -22,6 +22,7 @@ from ai_hats.retro.session_review_runner import (
 from ai_hats.retro.session_review_schema import SessionReviewV1
 from ai_hats.retro.common import SessionArtifacts, SessionLinks, SessionMetrics
 from ai_hats.retro.loader import load
+from ai_hats.paths import hypotheses_dir
 
 
 SID = "20260506-100000-1"
@@ -48,7 +49,7 @@ def _facts(sid: str = SID) -> SessionFacts:
 
 
 def _add_active_hyp(project_dir: Path, hyp_id: str = "HYP-001") -> None:
-    hyps_dir = project_dir / ".agent" / "hypotheses"
+    hyps_dir = hypotheses_dir(project_dir)
     hyps_dir.mkdir(parents=True, exist_ok=True)
     (hyps_dir / f"{hyp_id}.yaml").write_text(
         "id: " + hyp_id + "\n"

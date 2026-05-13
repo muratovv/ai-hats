@@ -47,6 +47,7 @@ from ..hypothesis import (
     HypothesisStore,
     ProposalStore,
 )
+from ..paths import hypotheses_dir, proposals_dir
 from ..retro.session_review_runner import SessionReviewError
 from ._helpers import _project_dir, console
 
@@ -441,7 +442,7 @@ def _write_intake(
         next_hypothesis_id,
     )
 
-    store = HypothesisStore(project_dir / ".agent" / "hypotheses")
+    store = HypothesisStore(hypotheses_dir(project_dir))
     store.dir.mkdir(parents=True, exist_ok=True)
 
     if isinstance(action, MergeAction):
@@ -588,7 +589,7 @@ def reflect_issue_cmd(
         return
 
     project_dir = _project_dir()
-    store = HypothesisStore(project_dir / ".agent" / "hypotheses")
+    store = HypothesisStore(hypotheses_dir(project_dir))
     active = store.list_active()
     prompt_text = _build_intake_prompt(text, active)
 
@@ -665,7 +666,7 @@ def reflect_issue_cmd(
 def reflect_commit_cmd(accept, reject, defer, duplicate):
     """Bulk-update proposal statuses (called at end of interactive chat)."""
     project_dir = _project_dir()
-    store = ProposalStore(project_dir / ".agent" / "backlog" / "proposals")
+    store = ProposalStore(proposals_dir(project_dir))
     changes = 0
     for pid in accept:
         store.set_status(pid, "accepted")
@@ -697,8 +698,8 @@ def _handoff_dir(project_dir: Path) -> Path:
 
 def _build_handoff(project_dir: Path) -> Path:
     """Collect active HYP + open PROP into a single markdown handoff file."""
-    hstore = HypothesisStore(project_dir / ".agent" / "hypotheses")
-    pstore = ProposalStore(project_dir / ".agent" / "backlog" / "proposals")
+    hstore = HypothesisStore(hypotheses_dir(project_dir))
+    pstore = ProposalStore(proposals_dir(project_dir))
     active = hstore.list_active()
     open_props = pstore.filter(status="open")
 

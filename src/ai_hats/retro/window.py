@@ -55,7 +55,9 @@ def tasks_closed_in_window(
     project_dir: Path, since: datetime, until: datetime
 ) -> list[str]:
     """Return IDs of tasks whose `updated` falls in [since, until], state=done."""
-    tasks_dir = project_dir / ".agent" / "backlog" / "tasks"
+    from ..paths import tasks_dir as _tasks_dir
+
+    tasks_dir = _tasks_dir(project_dir)
     if not tasks_dir.exists():
         return []
     try:

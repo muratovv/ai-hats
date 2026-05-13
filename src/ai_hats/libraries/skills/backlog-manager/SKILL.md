@@ -8,11 +8,11 @@ Orchestrate the lifecycle of all three backlog item types via the `ai-hats task`
 
 | Type | ID prefix | YAML location | State machine |
 |---|---|---|---|
-| **Task** | `<PROJ>-NNN` (e.g. `HATS-NNN`) | `.agent/backlog/tasks/<ID>/task.yaml` | `brainstorm → plan → execute → document → review → done` (+ `blocked`, `failed`, `cancelled`) |
-| **Hypothesis** | `HYP-NNN` | `.agent/hypotheses/HYP-NNN.yaml` | `active → confirmed | refuted | stalled` |
-| **Proposal** | `PROP-NNN` | `.agent/backlog/proposals/PROP-NNN.yaml` | `open → accepted | rejected | deferred | duplicate` |
+| **Task** | `<PROJ>-NNN` (e.g. `HATS-NNN`) | `<ai_hats_dir>/tracker/backlog/tasks/<ID>/task.yaml` | `brainstorm → plan → execute → document → review → done` (+ `blocked`, `failed`, `cancelled`) |
+| **Hypothesis** | `HYP-NNN` | `<ai_hats_dir>/tracker/hypotheses/HYP-NNN.yaml` | `active → confirmed | refuted | stalled` |
+| **Proposal** | `PROP-NNN` | `<ai_hats_dir>/tracker/backlog/proposals/PROP-NNN.yaml` | `open → accepted | rejected | deferred | duplicate` |
 
-CLI-only enforcement is owned by rule **rule_backlog_discipline**: never read or edit `.agent/backlog/**` or `.agent/hypotheses/**` directly — always through the verbs documented below.
+CLI-only enforcement is owned by rule **rule_backlog_discipline**: never read or edit `<ai_hats_dir>/tracker/backlog/**` or `<ai_hats_dir>/tracker/hypotheses/**` directly — always through the verbs documented below.
 
 ## When to Use
 - Starting any new task, hypothesis, or proposal
@@ -96,7 +96,7 @@ ai-hats task list --search "docs|retro"      # regex OR
 ai-hats task sync
 ```
 
-> **CLI-only enforcement** is owned by rule **rule_backlog_discipline**. Never access `.agent/backlog/**` or `.agent/hypotheses/**` directly — use the CLI commands above.
+> **CLI-only enforcement** is owned by rule **rule_backlog_discipline**. Never access `<ai_hats_dir>/tracker/backlog/**` or `<ai_hats_dir>/tracker/hypotheses/**` directly — use the CLI commands above.
 
 ## Hypotheses (`ai-hats task hyp …`)
 
@@ -226,7 +226,7 @@ ai-hats task list --search PROJ-105
 
 ## Task Card
 
-Each task gets a directory: `.agent/backlog/tasks/<ID>/task.yaml` + artifacts.
+Each task gets a directory: `<ai_hats_dir>/tracker/backlog/tasks/<ID>/task.yaml` + artifacts.
 
 ## State Machine
 
@@ -284,7 +284,7 @@ Draft an implementation plan. Attach to task directory as `plan.md`.
 - Before delegating → **context-handoff**: summarize context for sub-agent
 - **Plan file location:** write plans to `<project>/.claude/plans/<NN>-<slug>.md`
   (or `<prefix-lower>-<NN>-<slug>.md`). On `transition <ID> plan` the CLI moves
-  the matching file into `.agent/backlog/tasks/<ID>/plan.md` (the canonical
+  the matching file into `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md` (the canonical
   location). For ambiguous matches or unconventional paths use
   `ai-hats task plan-sync <ID> [--from-file <path>]`. `transition <ID> execute`
   is blocked until `plan.md` is no longer the empty scaffold.

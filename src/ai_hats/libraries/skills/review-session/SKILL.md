@@ -15,8 +15,8 @@ opportunities) + a free-form summary and observations.
 You are running as `reflect-session` or `session-reviewer`, with a
 specific session id (`$SID`) and inputs already inlined in the prompt:
 
-- Active hypotheses (`.agent/hypotheses/*.yaml` with `status: active`)
-- Open proposals (`.agent/backlog/proposals/*.yaml` with `status: open`)
+- Active hypotheses (`<ai_hats_dir>/tracker/hypotheses/*.yaml` with `status: active`)
+- Open proposals (`<ai_hats_dir>/tracker/backlog/proposals/*.yaml` with `status: open`)
 - Session evidence: `audit.md` and `metrics.json`
 
 Factual fields (project, role, date, metrics, artifacts, links) are
@@ -71,7 +71,7 @@ fields before persisting; extras in the frontmatter are rejected.
 
 ## Scope
 
-You DO NOT mutate `.agent/backlog/tasks/*` or other project state directly.
+You DO NOT mutate `<ai_hats_dir>/tracker/backlog/tasks/*` or other project state directly.
 All side effects go through `ai-hats task hyp append-verdict` /
 `ai-hats task proposal *` CLIs (per **rule_backlog_discipline**).
 

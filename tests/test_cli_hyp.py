@@ -10,12 +10,13 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli.hyp import hyp
+from ai_hats.paths import hypotheses_dir, proposals_dir
 
 
 @pytest.fixture
 def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
-    (pd / ".agent" / "hypotheses").mkdir(parents=True)
+    (hypotheses_dir(pd)).mkdir(parents=True)
     monkeypatch.chdir(pd)
     return pd
 
@@ -31,7 +32,7 @@ def _write_hyp(pd: Path, hyp_id: str, **extras) -> Path:
         "validation_log": [],
     }
     body.update(extras)
-    p = pd / ".agent" / "hypotheses" / f"{hyp_id}.yaml"
+    p = hypotheses_dir(pd) / f"{hyp_id}.yaml"
     p.write_text(yaml.safe_dump(body))
     return p
 
@@ -76,7 +77,7 @@ def test_create_auto_id(project_dir: Path):
     )
     assert res.exit_code == 0, res.output
     assert "HYP-001" in res.output
-    p = project_dir / ".agent" / "hypotheses" / "HYP-001.yaml"
+    p = hypotheses_dir(project_dir) / "HYP-001.yaml"
     assert p.exists()
     data = yaml.safe_load(p.read_text())
     assert data["id"] == "HYP-001"
@@ -136,7 +137,7 @@ def test_create_with_optional_fields(project_dir: Path):
         ]
     )
     assert res.exit_code == 0
-    p = project_dir / ".agent" / "hypotheses" / "HYP-001.yaml"
+    p = hypotheses_dir(project_dir) / "HYP-001.yaml"
     data = yaml.safe_load(p.read_text())
     assert data["expected_outcome"] == ["metric A drops", "metric B stable"]
     assert data["observation_window"] == "4 sessions"
@@ -146,7 +147,7 @@ def test_set_status_flips(project_dir: Path):
     _write_hyp(project_dir, "HYP-001", status="active")
     res = _invoke(["set-status", "--hyp", "HYP-001", "--status", "confirmed"])
     assert res.exit_code == 0, res.output
-    p = project_dir / ".agent" / "hypotheses" / "HYP-001.yaml"
+    p = hypotheses_dir(project_dir) / "HYP-001.yaml"
     assert yaml.safe_load(p.read_text())["status"] == "confirmed"
 
 
@@ -161,7 +162,7 @@ def test_set_status_round_trip(project_dir: Path):
     for s in ["confirmed", "active", "refuted", "stalled"]:
         res = _invoke(["set-status", "--hyp", "HYP-001", "--status", s])
         assert res.exit_code == 0, res.output
-    p = project_dir / ".agent" / "hypotheses" / "HYP-001.yaml"
+    p = hypotheses_dir(project_dir) / "HYP-001.yaml"
     assert yaml.safe_load(p.read_text())["status"] == "stalled"
 
 
@@ -225,7 +226,7 @@ def test_migrate_idempotent(project_dir: Path):
         ],
         "legacy_field": "preserve",
     }
-    p = project_dir / ".agent" / "hypotheses" / "HYP-001.yaml"
+    p = hypotheses_dir(project_dir) / "HYP-001.yaml"
     p.write_text(yaml.safe_dump(body))
 
     res1 = _invoke(["migrate"])
@@ -236,7 +237,7 @@ def test_migrate_idempotent(project_dir: Path):
     assert after1["validation_log"][0]["verdict"] == "refuted"
     assert after1["validation_log"][0]["evidence"] == "/tmp/foo.md"
     assert after1["legacy_field"] == "preserve"
-    assert (project_dir / ".agent" / "backlog" / "proposals").exists()
+    assert (proposals_dir(project_dir)).exists()
 
     res2 = _invoke(["migrate"])
     assert res2.exit_code == 0

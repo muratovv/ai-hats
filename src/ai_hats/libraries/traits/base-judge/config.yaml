@@ -52,7 +52,7 @@ injection: |
     interpretation.
 
   ### Boundaries
-  - **Direct edits of `.agent/backlog/**` or `.agent/hypotheses/**` are
+  - **Direct edits of `<ai_hats_dir>/tracker/backlog/**` or `<ai_hats_dir>/tracker/hypotheses/**` are
     forbidden at L1.** Use the CLI (per `rule_backlog_discipline`). The
     only direct write under `.agent/**` is the declared report path
     (see Contract above).

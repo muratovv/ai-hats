@@ -13,7 +13,7 @@ Produce a focused summary of a completed task, capturing only decision-critical 
 
 ## Procedure
 
-1. **Identify the task:** Locate the task card in `.agent/backlog/tasks/<ID>/`.
+1. **Identify the task:** Locate the task card in `<ai_hats_dir>/tracker/backlog/tasks/<ID>/`.
 
 2. **Extract decision-critical information:**
    - **Architectural decisions** — what structural choices were made and WHY
@@ -22,7 +22,7 @@ Produce a focused summary of a completed task, capturing only decision-critical 
    - **Pitfalls discovered** — non-obvious traps that cost time or could bite again
    - **Deviations from plan** — where did execution diverge from the original plan and why
 
-3. **Write the summary** to `.agent/backlog/tasks/<ID>/summary.md`:
+3. **Write the summary** to `<ai_hats_dir>/tracker/backlog/tasks/<ID>/summary.md`:
 
 ```markdown
 # Summary: <task title>

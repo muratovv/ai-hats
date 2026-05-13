@@ -66,7 +66,7 @@ L2 is governed by `base-judge` §L2. This skill names the
   BEFORE any source edit → commit fix-by-fix with the task ID → stay
   within the named scope.
 - **Out of L2 scope for this role.** Even with L2, mutations to
-  `.agent/backlog/**` or `.agent/hypotheses/**` other than via CLI
+  `<ai_hats_dir>/tracker/backlog/**` or `<ai_hats_dir>/tracker/hypotheses/**` other than via CLI
   remain forbidden; the L0 carve-out is the only direct `.agent/**`
   write path.
 

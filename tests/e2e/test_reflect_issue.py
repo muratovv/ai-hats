@@ -15,6 +15,7 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli import main
+from ai_hats.paths import hypotheses_dir
 
 
 def _install_subagent_trace(monkeypatch, project_dir: Path, body: str) -> dict:
@@ -107,7 +108,7 @@ def test_reflect_issue_create_full_pipeline(
 
     # HYP file on disk with parsed draft fields
     saved = yaml.safe_load(
-        (project_dir / ".agent" / "hypotheses" / "HYP-001.yaml").read_text()
+        (hypotheses_dir(project_dir) / "HYP-001.yaml").read_text()
     )
     assert saved["status"] == "active"
     assert saved["source_task"] == "supervisor-observation"
@@ -130,7 +131,7 @@ def test_reflect_issue_merge_full_pipeline(
         "hypothesis": "agent uses f-strings in SQL queries",
         "validation_log": [],
     }
-    (project_dir / ".agent" / "hypotheses" / "HYP-001.yaml").write_text(
+    (hypotheses_dir(project_dir) / "HYP-001.yaml").write_text(
         yaml.safe_dump(seed)
     )
 
@@ -153,7 +154,7 @@ def test_reflect_issue_merge_full_pipeline(
     assert res.exit_code == 0, res.output
     assert "merged into HYP-001" in res.output
 
-    files = list((project_dir / ".agent" / "hypotheses").glob("HYP-*.yaml"))
+    files = list((hypotheses_dir(project_dir)).glob("HYP-*.yaml"))
     assert len(files) == 1
     saved = yaml.safe_load(files[0].read_text())
     assert len(saved["validation_log"]) == 1
@@ -168,7 +169,7 @@ def test_reflect_issue_missing_markers_with_active_hyp_fails(
 ) -> None:
     """LLM produced output without the marker block — must fail-loud."""
     _bootstrap_silenced(monkeypatch)
-    (project_dir / ".agent" / "hypotheses" / "HYP-001.yaml").write_text(
+    (hypotheses_dir(project_dir) / "HYP-001.yaml").write_text(
         yaml.safe_dump({
             "id": "HYP-001", "title": "t", "status": "active",
             "created": "2026-05-01", "source_task": "HATS-100",

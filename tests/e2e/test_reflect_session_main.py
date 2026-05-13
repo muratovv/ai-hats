@@ -14,12 +14,13 @@ import yaml
 
 from ai_hats.cli import reflect_session_main as rsm
 from ai_hats.retro.session_review_runner import SessionReviewError
+from ai_hats.paths import proposals_dir
 
 
 
 def _read_proposals(pd: Path) -> list[dict]:
     out: list[dict] = []
-    for f in (pd / ".agent" / "backlog" / "proposals").glob("*.yaml"):
+    for f in (proposals_dir(pd)).glob("*.yaml"):
         out.append(yaml.safe_load(f.read_text()))
     return out
 

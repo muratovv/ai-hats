@@ -9,13 +9,13 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli.reflect import reflect
-from ai_hats.paths import runs_dir
+from ai_hats.paths import hypotheses_dir, runs_dir
 
 
 @pytest.fixture
 def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
-    (pd / ".agent" / "hypotheses").mkdir(parents=True)
+    (hypotheses_dir(pd)).mkdir(parents=True)
     monkeypatch.chdir(pd)
     return pd
 
@@ -31,7 +31,7 @@ def _write_active_hyp(pd: Path, hyp_id: str, **extras) -> Path:
         "validation_log": [],
     }
     body.update(extras)
-    p = pd / ".agent" / "hypotheses" / f"{hyp_id}.yaml"
+    p = hypotheses_dir(pd) / f"{hyp_id}.yaml"
     p.write_text(yaml.safe_dump(body))
     return p
 
@@ -80,7 +80,7 @@ def test_default_mode_writes_without_prompt(project_dir, monkeypatch):
     # No interactive prompt in default mode
     assert "Write this intake?" not in res.output
     saved = yaml.safe_load(
-        (project_dir / ".agent" / "hypotheses" / "HYP-001.yaml").read_text()
+        (hypotheses_dir(project_dir) / "HYP-001.yaml").read_text()
     )
     assert saved["status"] == "active"
     assert saved["source_task"] == "supervisor-observation"
@@ -109,7 +109,7 @@ def test_merge_appends_validation_log_no_new_file(project_dir, monkeypatch):
     )
     assert res.exit_code == 0, res.output
     assert "merged into HYP-001" in res.output
-    files = list((project_dir / ".agent" / "hypotheses").glob("HYP-*.yaml"))
+    files = list((hypotheses_dir(project_dir)).glob("HYP-*.yaml"))
     assert len(files) == 1
     saved = yaml.safe_load(files[0].read_text())
     assert len(saved["validation_log"]) == 1
@@ -126,7 +126,7 @@ def test_pipeline_failure_with_active_hyps_fails_loud(project_dir, monkeypatch):
     res = CliRunner().invoke(reflect, ["issue", "some observation"])
     assert res.exit_code != 0
     assert "active hypotheses exist" in res.output
-    files = list((project_dir / ".agent" / "hypotheses").glob("HYP-*.yaml"))
+    files = list((hypotheses_dir(project_dir)).glob("HYP-*.yaml"))
     assert len(files) == 1
 
 
@@ -136,7 +136,7 @@ def test_pipeline_failure_no_active_hyps_graceful_degrade(project_dir, monkeypat
     res = CliRunner().invoke(reflect, ["issue", "an observation worth keeping"])
     assert res.exit_code == 0, res.output
     saved = yaml.safe_load(
-        (project_dir / ".agent" / "hypotheses" / "HYP-001.yaml").read_text()
+        (hypotheses_dir(project_dir) / "HYP-001.yaml").read_text()
     )
     assert saved["hypothesis"] == "an observation worth keeping"
     assert len(saved["title"]) <= 60
@@ -167,7 +167,7 @@ def test_preview_mode_shows_draft_and_can_abort(project_dir, monkeypatch):
     assert res.exit_code == 0
     assert "Intake draft:" in res.output
     assert "aborted" in res.output
-    files = list((project_dir / ".agent" / "hypotheses").glob("HYP-*.yaml"))
+    files = list((hypotheses_dir(project_dir)).glob("HYP-*.yaml"))
     assert files == []
 
 
@@ -215,7 +215,7 @@ def test_task_id_overrides_source_task(project_dir, monkeypatch):
     res = CliRunner().invoke(reflect, ["issue", "obs", "--task", "HATS-304"])
     assert res.exit_code == 0, res.output
     saved = yaml.safe_load(
-        (project_dir / ".agent" / "hypotheses" / "HYP-001.yaml").read_text()
+        (hypotheses_dir(project_dir) / "HYP-001.yaml").read_text()
     )
     assert saved["source_task"] == "HATS-304"
 

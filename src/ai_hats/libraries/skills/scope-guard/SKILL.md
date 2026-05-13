@@ -37,7 +37,7 @@ Enforce user-defined task boundaries. Prevent scope creep and over-implementatio
    STOP after 5 and checkpoint. Do not continue silently.
 8. **Plan revision: prefer Write over many Edits.** When revising a plan file
    after a rejected `ExitPlanMode` (in `~/.claude/plans/*.md` or
-   `.agent/backlog/tasks/*/plan.md`): if more than 2 distinct sections of the
+   `<ai_hats_dir>/tracker/backlog/tasks/*/plan.md`): if more than 2 distinct sections of the
    plan need to change, use a single `Write` to rewrite the whole file rather
    than 3+ sequential `Edit` calls. Plan files are short enough that a full
    rewrite costs the same as the diffs but avoids per-edit permission and

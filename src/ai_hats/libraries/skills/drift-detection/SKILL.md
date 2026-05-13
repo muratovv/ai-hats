@@ -14,7 +14,7 @@ Verify that what was implemented matches what was asked. Surfaces silent scope c
 
 ## Procedure
 
-1. **Extract requirements.** Acceptance Criteria from `task.yaml`, linked ADRs in `.agent/decisions/`, GitHub Issue body, and any updates logged via `ai-hats task log`.
+1. **Extract requirements.** Acceptance Criteria from `task.yaml`, linked ADRs in `<ai_hats_dir>/tracker/decisions/`, GitHub Issue body, and any updates logged via `ai-hats task log`.
 2. **Extract changes.** `git diff --stat <base>...HEAD` — categorize files (source / test / config / doc) and note added vs modified vs deleted.
 3. **Semantic matching.** For each AC, locate the implementing artifact (function, file, test, doc paragraph) and cite it by `path:line`. "The diff has it somewhere" is not acceptance.
 4. **Drift report.** Classify findings: **missing** (AC without artifact), **extra** (artifact without AC), **mismatch** (partial / differing semantics), **out-of-scope** (unrelated module touched).

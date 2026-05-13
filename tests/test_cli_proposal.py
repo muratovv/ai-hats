@@ -10,12 +10,13 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli.proposal import proposal
+from ai_hats.paths import proposals_dir
 
 
 @pytest.fixture
 def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
-    (pd / ".agent" / "backlog" / "proposals").mkdir(parents=True)
+    (proposals_dir(pd)).mkdir(parents=True)
     monkeypatch.chdir(pd)
     return pd
 
@@ -40,7 +41,7 @@ def test_create_auto_id(project_dir: Path):
     res = _create()
     assert res.exit_code == 0, res.output
     assert "PROP-001" in res.output
-    assert (project_dir / ".agent" / "backlog" / "proposals" / "PROP-001.yaml").exists()
+    assert (proposals_dir(project_dir) / "PROP-001.yaml").exists()
 
 
 def test_create_increments_id(project_dir: Path):
@@ -62,7 +63,7 @@ def test_create_meta_proposal_with_failed_session(project_dir: Path):
         "--failed-session-id", "20260504-120000-1",
     ])
     assert res.exit_code == 0
-    p = project_dir / ".agent" / "backlog" / "proposals" / "PROP-001.yaml"
+    p = proposals_dir(project_dir) / "PROP-001.yaml"
     data = yaml.safe_load(p.read_text())
     assert data["failed_session_id"] == "20260504-120000-1"
     assert data["category"] == "process"
@@ -84,7 +85,7 @@ def test_vote_increments(project_dir: Path):
         "--reasoning", "yes",
     ])
     assert res2.exit_code == 0
-    p = project_dir / ".agent" / "backlog" / "proposals" / "PROP-001.yaml"
+    p = proposals_dir(project_dir) / "PROP-001.yaml"
     data = yaml.safe_load(p.read_text())
     assert len(data["votes"]) == 2
 
@@ -103,7 +104,7 @@ def test_status_change(project_dir: Path):
     _create()
     res = _invoke(["status", "--prop", "PROP-001", "--status", "accepted"])
     assert res.exit_code == 0
-    p = project_dir / ".agent" / "backlog" / "proposals" / "PROP-001.yaml"
+    p = proposals_dir(project_dir) / "PROP-001.yaml"
     assert yaml.safe_load(p.read_text())["status"] == "accepted"
 
 
