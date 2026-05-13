@@ -123,8 +123,14 @@ def test_reexec_skipped_when_no_venv(project, monkeypatch):
 
 
 def test_reexec_skipped_when_already_in_venv(project, monkeypatch):
-    """sys.executable already equals local venv python → no re-exec."""
-    venv_py = paths.local_venv_path(project) / "bin" / "python"
+    """sys.prefix already equals local venv root → no re-exec.
+
+    HATS-329: comparison is on sys.prefix (venv root), not sys.executable
+    (which symlinks to the host interpreter and would conflate two venvs
+    sharing one Homebrew python3.14).
+    """
+    venv = paths.local_venv_path(project)
+    venv_py = venv / "bin" / "python"
     venv_py.parent.mkdir(parents=True)
     venv_py.touch()
 
@@ -134,15 +140,16 @@ def test_reexec_skipped_when_already_in_venv(project, monkeypatch):
         nonlocal invoked
         invoked = True
 
-    monkeypatch.setattr(sys, "executable", str(venv_py))
+    monkeypatch.setattr(sys, "prefix", str(venv))
     monkeypatch.setattr(os, "execv", fake_execv)
     _maybe_reexec_into_local_venv()
     assert invoked is False
 
 
 def test_reexec_invokes_execv_when_local_venv_present(project, monkeypatch):
-    """Local venv exists + sys.executable != local → execv is called once."""
-    venv_py = paths.local_venv_path(project) / "bin" / "python"
+    """Local venv exists + sys.prefix != local → execv is called once."""
+    venv = paths.local_venv_path(project)
+    venv_py = venv / "bin" / "python"
     venv_py.parent.mkdir(parents=True)
     venv_py.touch()
 
@@ -152,7 +159,7 @@ def test_reexec_invokes_execv_when_local_venv_present(project, monkeypatch):
         captured["path"] = path
         captured["argv"] = list(argv)
 
-    monkeypatch.setattr(sys, "executable", "/usr/bin/python")
+    monkeypatch.setattr(sys, "prefix", "/usr")
     monkeypatch.setattr(sys, "argv", ["ai-hats", "task", "list"])
     monkeypatch.setattr(os, "execv", fake_execv)
     _maybe_reexec_into_local_venv()
