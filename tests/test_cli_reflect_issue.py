@@ -9,6 +9,7 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli.reflect import reflect
+from ai_hats.paths import runs_dir
 
 
 @pytest.fixture
@@ -264,7 +265,7 @@ def test_background_spawns_detached_subprocess_and_returns(
     assert "--bg" not in cmd and "--background" not in cmd
 
     # Log directory was created
-    assert (project_dir / ".gitlog" / "reflect-issue").exists()
+    assert (runs_dir(project_dir) / "reflect-issue").exists()
 
 
 def test_bg_and_preview_are_mutually_exclusive(project_dir):

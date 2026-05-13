@@ -4,7 +4,7 @@ Invoked as:
     python -m ai_hats.cli.reflect_session_main <session_id> [max_retries]
 
 Runs :class:`SessionReviewRunner` in-process so the parent's Popen captures
-all output (.gitlog/session_<id>/retro.log). After the runner returns or
+all output (<ai_hats_dir>/sessions/runs/session_<id>/retro.log). After the runner returns or
 raises, runs a pure-Python harness check that files a single meta-proposal
 when the persisted artifact is missing/incomplete — single ownership of the
 failure-proposal lives here (not in the runner) to avoid double-fire.
@@ -69,11 +69,10 @@ def _harness_check(
     project_dir: Path, session_id: str, runner_error: str | None,
 ) -> list[str]:
     """Return a list of issue strings; empty means pass."""
+    from ..paths import retros_dir
+
     issues: list[str] = []
-    out_path = (
-        project_dir / ".agent" / "retrospectives" / "sessions"
-        / f"{session_id}.md"
-    )
+    out_path = retros_dir(project_dir) / "sessions" / f"{session_id}.md"
     if not out_path.exists() or out_path.stat().st_size == 0:
         msg = "output file missing or empty"
         if runner_error:

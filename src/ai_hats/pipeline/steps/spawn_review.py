@@ -28,9 +28,9 @@ class SpawnSessionReview(Step):
     def run(
         self, *, session_id: str, project_dir: Path, **_: Any,
     ) -> dict[str, Any]:
-        log_path = (
-            project_dir / ".gitlog" / f"session_{session_id}" / "retro.log"
-        )
+        from ...paths import runs_dir
+
+        log_path = runs_dir(project_dir) / f"session_{session_id}" / "retro.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "a") as f:
             proc = subprocess.Popen(

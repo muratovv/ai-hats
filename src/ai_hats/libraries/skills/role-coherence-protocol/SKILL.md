@@ -37,7 +37,7 @@ content; the harness has already materialized everything.
 Path: provided to you in the supervisor's first message via the
 `{composed_dir}` interpolation — use that path verbatim. Do not
 reconstruct it. Typical shape (per-session, HATS-308):
-`<project>/.gitlog/pipeline_runs/reflect-role/<session_id>/composed/<target_role>/`.
+`<project>/<ai_hats_dir>/sessions/runs/pipeline_runs/reflect-role/<session_id>/composed/<target_role>/`.
 Layout:
 
 - `manifest.yaml` — start here. Contains `name`, `priorities`, and
@@ -156,7 +156,7 @@ relies on this path**.
 **Branch B — `base-judge` (HITL pipeline / manual interactive):** use
 the **Write** tool to save the report directly to the path declared in
 your role injection (typically
-`.agent/retrospectives/role-coherence/<UTC-ISO-ts>-<target>.md`). Do
+`<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ISO-ts>-<target>.md`). Do
 NOT emit `BEGIN_REFLECT` / `END_REFLECT` markers — the pipeline does
 not extract them on this path. Used by `judge-for-role` via
 `ai-hats reflect role` and manual `ai-hats execute --role

@@ -109,10 +109,10 @@ def _spawn_detached(session_id: str, max_retries: int) -> None:
     """Re-invoke ourselves in a new process group, return immediately."""
     import subprocess
 
+    from ..paths import runs_dir
+
     project_dir = _project_dir()
-    log_path = (
-        project_dir / ".gitlog" / f"session_{session_id}" / "retro.log"
-    )
+    log_path = runs_dir(project_dir) / f"session_{session_id}" / "retro.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with open(log_path, "a") as f:
         proc = subprocess.Popen(
@@ -501,13 +501,15 @@ def _spawn_intake_detached(
 
     The child runs in foreground default mode (no preview, no --bg) so it
     writes the intake when the pipeline returns. Output is appended to a
-    timestamped log under ``.gitlog/reflect-issue/``.
+    timestamped log under ``<ai_hats_dir>/sessions/runs/reflect-issue/``.
     """
     import subprocess
     from datetime import datetime, timezone
 
+    from ..paths import runs_dir
+
     project_dir = _project_dir()
-    log_dir = project_dir / ".gitlog" / "reflect-issue"
+    log_dir = runs_dir(project_dir) / "reflect-issue"
     log_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     log_path = log_dir / f"{ts}-bg.log"
@@ -688,7 +690,9 @@ def reflect_commit_cmd(accept, reject, defer, duplicate):
 
 
 def _handoff_dir(project_dir: Path) -> Path:
-    return project_dir / ".agent" / "retrospectives" / "reflect-all"
+    from ..paths import retros_dir
+
+    return retros_dir(project_dir) / "reflect-all"
 
 
 def _build_handoff(project_dir: Path) -> Path:

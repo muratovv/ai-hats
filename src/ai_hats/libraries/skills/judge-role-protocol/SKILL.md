@@ -41,7 +41,7 @@ role:
   filing a related fix.
 - ✅ `ai-hats list …` — read-only inspections of the library state.
 - ✅ **Write tool** to the report path declared in your role injection
-  (the L0 carve-out: `.agent/retrospectives/role-coherence/<UTC-ISO-ts>-<target>.md`).
+  (the L0 carve-out: `<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ISO-ts>-<target>.md`).
 - ❌ `ai-hats task hyp …` / `ai-hats task proposal …` — out of subject.
   This judge is for **role coherence**, not HYP/PROP triage. Redirect
   to the `judge` role for HYP/PROP work.
@@ -75,7 +75,7 @@ L2 is governed by `base-judge` §L2. This skill names the
 When the supervisor signals "wrap up" / session exit, use the **Write**
 tool to save the findings report to the path declared in
 **judge-for-role** injection
-(`.agent/retrospectives/role-coherence/<UTC-ISO-ts>-<target>.md`).
+(`<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ISO-ts>-<target>.md`).
 `<target_role>` is the audited composition (e.g. `developer`,
 `judge-for-hyp-prop`), not the auditing role. Filename example:
 `2026-05-12T14-30-00Z-developer.md`. Use the report template

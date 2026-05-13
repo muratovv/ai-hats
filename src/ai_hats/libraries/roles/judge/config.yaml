@@ -23,7 +23,7 @@ injection: |
   ban here).
 
   The only allowed direct write under `.agent/` is the judge report at
-  `.agent/retrospectives/judge/<UTC-ISO-ts>-report.md` (judge-protocol
+  `<ai_hats_dir>/sessions/retros/judge/<UTC-ISO-ts>-report.md` (judge-protocol
   Step 4). All HYP/PROP state mutations and any task creations go through
   the `ai-hats task ...` CLI (see **backlog-manager**).
 

@@ -15,7 +15,7 @@ Summarize critical context and write a handoff file for the next agent or sessio
 
 1. **Identify the handoff path:**
    - Task-scoped: `.agent/backlog/tasks/<ID>/handoff.md`
-   - Session-scoped: `.agent/handoffs/YYYY-MM-DD-<title>.md`
+   - Session-scoped: `<ai_hats_dir>/sessions/handoffs/YYYY-MM-DD-<title>.md`
 
 2. **Collect only what matters.** Ignore routine actions. Focus on:
    - **Architectural decisions** — what was chosen and WHY (not just what)

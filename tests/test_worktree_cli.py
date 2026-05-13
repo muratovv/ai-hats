@@ -11,6 +11,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.worktree import WorktreeManager
+from ai_hats.paths import worktree_state_path, worktrees_dir
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -115,7 +116,7 @@ class TestStatePersistence:
 
     def test_load_active_returns_none_when_stale(self, git_project: Path) -> None:
         """If worktree dir was deleted externally, load cleans up."""
-        states_dir = git_project / ".agent" / "worktrees"
+        states_dir = worktrees_dir(git_project)
         states_dir.mkdir(parents=True, exist_ok=True)
         state_path = states_dir / "feat-stale.json"
         state_path.write_text(
@@ -153,7 +154,7 @@ class TestPersistentMerge:
 
         assert (git_project / "result.txt").read_text() == "done"
         # State file is gone
-        assert not (git_project / ".agent" / "worktrees" / "feat-agent-task.json").exists()
+        assert not (worktrees_dir(git_project) / "feat-agent-task.json").exists()
         assert not wt.exists()
 
     def test_create_save_load_discard(self, git_project: Path) -> None:
@@ -172,7 +173,7 @@ class TestPersistentMerge:
 
         assert not (git_project / "junk.txt").exists()
         assert not wt.exists()
-        assert not (git_project / ".agent" / "worktrees" / "feat-bad-idea.json").exists()
+        assert not (worktrees_dir(git_project) / "feat-bad-idea.json").exists()
 
     def test_merge_no_squash(self, git_project: Path) -> None:
         """Regular merge (not squash)."""
@@ -425,7 +426,8 @@ class TestPerTaskRegistry:
         mgr = WorktreeManager(git_project, branch_name="task/old")
         wt = mgr.create()
         # Write old-style singleton
-        old_path = git_project / ".agent" / "worktree.json"
+        old_path = worktree_state_path(git_project)
+        old_path.parent.mkdir(parents=True, exist_ok=True)
         old_path.write_text(
             json.dumps(
                 {
@@ -443,7 +445,7 @@ class TestPerTaskRegistry:
             # Old file deleted
             assert not old_path.exists()
             # New file exists
-            assert (git_project / ".agent" / "worktrees" / "task-old.json").exists()
+            assert (worktrees_dir(git_project) / "task-old.json").exists()
         finally:
             mgr.cleanup()
 
@@ -451,7 +453,8 @@ class TestPerTaskRegistry:
         """Calling migration twice doesn't error."""
         mgr = WorktreeManager(git_project, branch_name="task/idem")
         wt = mgr.create()
-        old_path = git_project / ".agent" / "worktree.json"
+        old_path = worktree_state_path(git_project)
+        old_path.parent.mkdir(parents=True, exist_ok=True)
         old_path.write_text(
             json.dumps(
                 {

@@ -10,6 +10,7 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli.reflect import reflect
+from ai_hats.paths import retros_dir
 
 
 @pytest.fixture
@@ -53,7 +54,7 @@ def test_dry_run_builds_handoff(project_dir: Path):
     _make_prop(project_dir, "PROP-001")
     res = CliRunner().invoke(reflect, ["all", "--dry-run"])
     assert res.exit_code == 0, res.output
-    out_dir = project_dir / ".agent" / "retrospectives" / "reflect-all"
+    out_dir = retros_dir(project_dir) / "reflect-all"
     files = list(out_dir.glob("*-handoff.md"))
     assert len(files) == 1
     text = files[0].read_text()
@@ -64,7 +65,7 @@ def test_dry_run_builds_handoff(project_dir: Path):
 def test_dry_run_handles_empty_inbox(project_dir: Path):
     res = CliRunner().invoke(reflect, ["all", "--dry-run"])
     assert res.exit_code == 0
-    out_dir = project_dir / ".agent" / "retrospectives" / "reflect-all"
+    out_dir = retros_dir(project_dir) / "reflect-all"
     text = list(out_dir.glob("*-handoff.md"))[0].read_text()
     assert "no active hypotheses" in text
     assert "inbox empty" in text

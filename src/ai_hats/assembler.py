@@ -15,6 +15,7 @@ from .models import (
     ProjectConfig,
     SkillMetadata,
 )
+from .paths import legacy_paths_by_class
 from .providers import (
     INJECTION_END,
     INJECTION_START,
@@ -28,7 +29,6 @@ from .providers import (
 
 
 AGENT_DIR = ".agent"
-GITLOG_DIR = ".gitlog"
 PROJECT_CONFIG = "ai-hats.yaml"
 PROFILE_FILE = "profile.json"  # legacy, used only for backup compat
 GITHOOKS_DIR = ".githooks"
@@ -58,7 +58,6 @@ class Assembler:
     def __init__(self, project_dir: Path, library_paths: list[Path] | None = None) -> None:
         self.project_dir = project_dir
         self.agent_dir = project_dir / AGENT_DIR
-        self.gitlog_dir = project_dir / GITLOG_DIR
         self.config_path = project_dir / PROJECT_CONFIG
         self.project_config = ProjectConfig.from_yaml(self.config_path)
 
@@ -292,8 +291,10 @@ class Assembler:
         for subdir in ("rules", "skills", "hooks", "mcp", "backlog/tasks"):
             (self.agent_dir / subdir).mkdir(parents=True, exist_ok=True)
 
-        # Create .gitlog/
-        self.gitlog_dir.mkdir(parents=True, exist_ok=True)
+        # HATS-312: session-class root lives under <ai_hats_dir>/sessions/runs/.
+        from .paths import runs_dir
+
+        runs_dir(self.project_dir).mkdir(parents=True, exist_ok=True)
 
         # Create/update ai-hats.yaml
         save_config = False
@@ -467,14 +468,77 @@ class Assembler:
         HATS-285: cleanup obsolete files. HATS-289: also run scaffold/cleanup
         migration even when there's no active role, so legacy projects with
         a populated `./CLAUDE.md` but no `active_role` still get fixed up by
-        a plain `ai-hats self bump`.
+        a plain `ai-hats self bump`. HATS-312: also runs the v4 sessions-class
+        layout migration so legacy paths (`.gitlog/pipeline_runs/`,
+        `.agent/retrospectives/`, etc.) land under `<ai_hats_dir>/sessions/`.
         """
         self._cleanup_obsolete_files(self.project_dir)
         provider = get_provider(self.project_config.provider)
         self._migrate_claude_md_to_v3(provider)
+        self._migrate_layout_v4_sessions()
         if not self.project_config.active_role:
             return None
         return self.set_role(self.project_config.active_role, self.project_config.provider or None)
+
+    def _migrate_layout_v4_sessions(self) -> None:
+        """One-shot migration of session-class artefacts to <ai_hats_dir>/sessions/.
+
+        Moves seven legacy locations (pipeline_runs, retrospectives, audits,
+        handoffs, experiments, worktrees, worktree.json) plus an orphan
+        handoff file. Idempotent: a no-op once every legacy path is gone.
+        See ADR `2026-05-13-hats-316-ai-hats-dir-layout.md`.
+        """
+        for old_abs, new_abs in legacy_paths_by_class(self.project_dir, "sessions"):
+            self._idempotent_move(old_abs, new_abs)
+        # Pick up the orphan handoff file lingering at .agent/ root.
+        orphan = self.project_dir / AGENT_DIR / "handoff-2026-04-09-hats-061.md"
+        if orphan.exists():
+            from .paths import handoffs_dir
+
+            dest_dir = handoffs_dir(self.project_dir)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest = dest_dir / orphan.name
+            if not dest.exists():
+                shutil.move(str(orphan), str(dest))
+            else:
+                try:
+                    orphan.unlink()
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _idempotent_move(old_abs: Path, new_abs: Path) -> None:
+        """Move `old_abs` to `new_abs`, merging into existing dirs when needed.
+
+        - new_abs missing → simple shutil.move (parent created).
+        - new_abs is a dir → copy items missing on the new side, then drop old.
+        - new_abs is a file → assume already migrated; remove the stale source.
+        """
+        if not old_abs.exists():
+            return
+        new_abs.parent.mkdir(parents=True, exist_ok=True)
+        if not new_abs.exists():
+            shutil.move(str(old_abs), str(new_abs))
+            return
+        if old_abs.is_dir() and new_abs.is_dir():
+            for entry in old_abs.iterdir():
+                target = new_abs / entry.name
+                if target.exists():
+                    continue
+                shutil.move(str(entry), str(target))
+            # New side wins on collisions: drop the rest of old to keep the
+            # migration deterministic. rmtree is best-effort so a concurrent
+            # cleanup or read-only entry is benign.
+            shutil.rmtree(old_abs, ignore_errors=True)
+            return
+        # File-vs-file or type mismatch: trust new, drop old.
+        try:
+            if old_abs.is_dir():
+                shutil.rmtree(old_abs)
+            else:
+                old_abs.unlink()
+        except OSError:
+            pass
 
     # -- Internal methods --
 

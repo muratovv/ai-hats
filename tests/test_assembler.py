@@ -5,6 +5,7 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
+from ai_hats.paths import runs_dir
 
 
 @pytest.fixture
@@ -81,7 +82,7 @@ def test_init_creates_structure(tmp_path):
     assert (project / ".agent" / "skills").is_dir()
     assert (project / ".agent" / "hooks").is_dir()
     assert (project / ".agent" / "backlog" / "tasks").is_dir()
-    assert (project / ".gitlog").is_dir()
+    assert (runs_dir(project)).is_dir()
     assert (project / "ai-hats.yaml").exists()
     assert (project / ".agent" / "STATE.md").exists()
 

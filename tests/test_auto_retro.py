@@ -7,6 +7,7 @@ import json
 import yaml
 
 from ai_hats.retro.auto_retro import should_run
+from ai_hats.paths import runs_dir
 
 
 def _write_config(path, *, policy="smart", min_turns=5, min_tool_calls=10):
@@ -147,7 +148,7 @@ class TestEdgeCases:
 def _setup_project(tmp_path, session_id="SID", **config_kwargs):
     """Create project dir with ai-hats.yaml + metrics.json for make_decision tests."""
     _write_config(tmp_path / "ai-hats.yaml", **config_kwargs)
-    metrics = tmp_path / ".gitlog" / f"session_{session_id}" / "metrics.json"
+    metrics = runs_dir(tmp_path) / f"session_{session_id}" / "metrics.json"
     metrics.parent.mkdir(parents=True)
     return metrics
 
@@ -158,7 +159,7 @@ class TestWriteRetroLog:
 
         write_retro_log(tmp_path, "SID", "runtime", "decision", "skip: below threshold")
 
-        log = tmp_path / ".gitlog" / "session_SID" / "retro.log"
+        log = runs_dir(tmp_path) / "session_SID" / "retro.log"
         assert log.exists()
         line = log.read_text().rstrip("\n")
         parts = line.split("\t")
@@ -174,7 +175,7 @@ class TestWriteRetroLog:
         write_retro_log(tmp_path, "SID", "hook", "spawn", "pid=1234")
         write_retro_log(tmp_path, "SID", "builder", "saved", "/path/to/retro.md")
 
-        log = tmp_path / ".gitlog" / "session_SID" / "retro.log"
+        log = runs_dir(tmp_path) / "session_SID" / "retro.log"
         lines = log.read_text().strip().split("\n")
         assert len(lines) == 3
         assert "decision" in lines[0] and "runtime" in lines[0]
@@ -185,7 +186,7 @@ class TestWriteRetroLog:
         from ai_hats.retro.auto_retro import write_retro_log
 
         write_retro_log(tmp_path, "SID", "hook", "skip", "a\tb\nc")
-        line = (tmp_path / ".gitlog" / "session_SID" / "retro.log").read_text().rstrip("\n")
+        line = (runs_dir(tmp_path) / "session_SID" / "retro.log").read_text().rstrip("\n")
         # Split on the SEPARATOR tabs (4 parts), then check the last field.
         parts = line.split("\t")
         assert parts[3] == "a b c"
@@ -201,7 +202,7 @@ class TestMakeDecision:
         d = make_decision(tmp_path, "SID")
         assert d["action"] == "skip"
         assert "below threshold" in d["reason"]
-        assert d["retro_path"].endswith(".agent/retrospectives/sessions/SID.md")
+        assert d["retro_path"].endswith("sessions/retros/sessions/SID.md")
 
     def test_run_threshold_met(self, tmp_path):
         from ai_hats.retro.auto_retro import make_decision
@@ -273,7 +274,7 @@ class TestMainHookWritesLog:
         monkeypatch.setenv("AI_HATS_SESSION_ID", "SID")
         auto_retro.main()
 
-        log = tmp_path / ".gitlog" / "session_SID" / "retro.log"
+        log = runs_dir(tmp_path) / "session_SID" / "retro.log"
         assert log.exists()
         content = log.read_text()
         assert "hook" in content
@@ -290,7 +291,7 @@ class TestMainHookWritesLog:
         monkeypatch.setenv("AI_HATS_SESSION_ID", "SID")
         auto_retro.main()
 
-        log = tmp_path / ".gitlog" / "session_SID" / "retro.log"
+        log = runs_dir(tmp_path) / "session_SID" / "retro.log"
         content = log.read_text()
         assert "hint" in content
         assert "threshold met" in content
@@ -328,7 +329,7 @@ class TestRecursionGuard:
         auto_retro.main()
 
         assert called == []
-        log = tmp_path / ".gitlog" / "session_SID" / "retro.log"
+        log = runs_dir(tmp_path) / "session_SID" / "retro.log"
         content = log.read_text()
         assert "auto_retro\tskip\trecursion-guard" in content
 
@@ -353,5 +354,5 @@ class TestRecursionGuard:
         # ai_hats.cli.reflect_session_main is the harness entry-point.
         assert "ai_hats.cli.reflect_session_main" in captured["cmd"]
         assert "SID" in captured["cmd"]
-        log = tmp_path / ".gitlog" / "session_SID" / "retro.log"
+        log = runs_dir(tmp_path) / "session_SID" / "retro.log"
         assert "session-reviewer\tspawn" in log.read_text()

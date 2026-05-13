@@ -9,6 +9,7 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli import main
+from ai_hats.paths import retros_dir
 
 
 
@@ -50,7 +51,7 @@ def test_reflect_all_dry_run_writes_handoff_no_pipeline(
 
     # Handoff written
     handoff_files = list(
-        (project_dir / ".agent" / "retrospectives" / "reflect-all").glob(
+        (retros_dir(project_dir) / "reflect-all").glob(
             "*-handoff.md"
         )
     )
@@ -72,7 +73,7 @@ def test_reflect_all_full_routes_to_judge(
 
     # Handoff + judge launch
     handoff_files = list(
-        (project_dir / ".agent" / "retrospectives" / "reflect-all").glob(
+        (retros_dir(project_dir) / "reflect-all").glob(
             "*-handoff.md"
         )
     )

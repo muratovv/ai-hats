@@ -15,7 +15,7 @@ composition:
 injection: |
   # ROLE: SESSION REVIEWER (post-session, single LLM pass)
 
-  Single-pass post-session review over ONE `.gitlog/session_<session_id>/`.
+  Single-pass post-session review over ONE `<ai_hats_dir>/sessions/runs/session_<session_id>/`.
   Replaces the prior two-call flow (SessionRetroBuilder + reflect-session)
   with one consolidated call.
 

@@ -9,4 +9,4 @@ steps:
   - id: save_artifact
     params:
       key: judge_report
-      out_path_template: ".agent/retrospectives/judge/{ts}-report.md"
+      out_path_template: "<ai_hats_dir>/sessions/retros/judge/{ts}-report.md"

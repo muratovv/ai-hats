@@ -59,9 +59,13 @@ class SessionReviewRunner:
         *,
         subagent_runner: "SubAgentRunner | None" = None,
     ) -> None:
+        from ..paths import retros_dir, runs_dir
+
         self.project_dir = project_dir
-        self.out_dir = project_dir / ".agent" / "retrospectives" / "sessions"
-        self.gitlog_dir = project_dir / ".gitlog"
+        self.out_dir = retros_dir(project_dir) / "sessions"
+        self.gitlog_dir = runs_dir(project_dir)
+        # NOTE: hypotheses/proposals are tracker-class (HATS-313) — still using
+        # legacy paths until that migration lands.
         self.hypotheses = HypothesisStore(project_dir / ".agent" / "hypotheses")
         self.proposals = ProposalStore(
             project_dir / ".agent" / "backlog" / "proposals"
