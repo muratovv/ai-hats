@@ -202,6 +202,37 @@ the wrapper is using, look at `sys.executable` (printed at the top of
 Decision rationale and trade-offs:
 `<ai_hats_dir>/tracker/decisions/2026-05-13-hats-315-venv-research.md`.
 
+## Compatibility: mixed installs (HATS-330 / HATS-331)
+
+If you have **two** ai-hats installs targeting one project — a global
+`pipx` *and* a project-local `<project>/.venv/bin/ai-hats` (Poetry, uv,
+manual pip) — keep their versions in lock-step.
+
+`ai-hats self bump` rewrites `ai-hats.yaml` in the schema understood by
+the *bumping* interpreter. A stale local install will then crash on the
+next invocation with `pydantic_core.ValidationError: extra_forbidden`
+on an unknown top-level field (e.g. `ai_hats_dir` after v3 → v4).
+
+**Gate (HATS-330):** since v4, `ai-hats self bump` detects a local
+`<project>/.venv/bin/ai-hats` and refuses to start when its version
+differs from the bumping interpreter. The error message includes the
+exact `pip install -U` command to fix the local install. Override
+(NOT recommended): `--force-allow-mismatch`.
+
+Recovery if you hit this before the gate landed:
+
+```bash
+<project>/.venv/bin/pip install -U --force-reinstall \
+    "ai-hats @ git+ssh://git@github.com/muratovv/ai-hats.git"
+```
+
+Then `ai-hats self bump` once more to confirm both installs see the
+same yaml.
+
+The HATS-318 opt-in venv at `<ai_hats_dir>/.venv/` is *not* affected:
+the wrapper re-exec keeps the bumping interpreter and the local-venv
+interpreter identical by construction.
+
 ## Cross-references
 
 - ADR: `<ai_hats_dir>/tracker/decisions/2026-05-13-hats-316-ai-hats-dir-layout.md`
