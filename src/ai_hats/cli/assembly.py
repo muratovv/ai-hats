@@ -242,10 +242,26 @@ def status():
 
 
 @click.command()
-def bump():
+@click.option(
+    "--force-allow-mismatch",
+    is_flag=True,
+    default=False,
+    help="Skip the local-venv version compatibility gate (HATS-330). "
+    "Bump will proceed even if a project-local ai-hats install is on a "
+    "different version. NOT recommended.",
+)
+def bump(force_allow_mismatch: bool):
     """Update to latest component versions (re-assemble)."""
+    import sys
+
+    from ..assembler import BumpAbortError
+
     asm = _assembler()
-    result = asm.bump()
+    try:
+        result = asm.bump(force_allow_mismatch=force_allow_mismatch)
+    except BumpAbortError as exc:
+        console.print(f"[red]Bump aborted[/]:\n{exc}")
+        sys.exit(2)
     if result is None:
         console.print("[yellow]No role active to bump[/]")
         return

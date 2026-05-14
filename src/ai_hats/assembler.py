@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
+from . import __version__
 from .composer import Composer, CompositionResult, ResolvedComponent
 from .library import LibraryResolver
 from .models import (
@@ -54,6 +56,108 @@ USER_RULES_SUBDIR = "user-rules"
 def _md_table_escape(text: str) -> str:
     """Escape pipe characters and collapse newlines for a single markdown table cell."""
     return text.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
+
+
+# ---------- HATS-330: pre-bump local-install compatibility gate ----------
+
+
+class BumpAbortError(RuntimeError):
+    """Raised when a pre-flight check refuses to start the bump.
+
+    Distinct from generic AssemblyError so the CLI layer can give a focused,
+    non-traceback recovery message and exit with a dedicated non-zero code.
+    """
+
+
+def _detect_local_ai_hats(project_dir: Path) -> Path | None:
+    """Return ``<project>/.venv/bin/ai-hats`` (or ``venv/`` variant), or None.
+
+    Scans only the project's own venv conventions (Poetry/uv/manual). HATS-318's
+    opt-in venv at ``<ai_hats_dir>/.venv/`` is intentionally NOT detected here:
+    that venv is fully managed by ai-hats itself and re-execs are version-
+    consistent by construction.
+    """
+    for venv_name in (".venv", "venv"):
+        candidate = project_dir / venv_name / "bin" / "ai-hats"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _local_ai_hats_version(local_bin: Path) -> str | None:
+    """Return the version string of a local ai-hats binary, or None if unknown.
+
+    None is a soft signal — corrupted local install shouldn't deadlock the
+    global bump, only an outright version mismatch should.
+    """
+    try:
+        result = subprocess.run(
+            [str(local_bin), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    out = (result.stdout or "").strip()
+    # Click ``--version`` output: ``ai-hats, version X.Y.Z``
+    parts = out.rsplit(maxsplit=1)
+    return parts[-1] if parts else None
+
+
+def _check_local_install_compatibility(
+    project_dir: Path,
+    *,
+    force_allow_mismatch: bool = False,
+) -> None:
+    """HATS-330: abort if a local-venv ai-hats install is on a different version.
+
+    Background: pipx-installed (global, new) ``ai-hats self bump`` can rewrite
+    ``ai-hats.yaml`` in a schema-v4 format that an older pip-installed local
+    venv can't parse — the next ``ai-hats`` invocation from inside that venv
+    crashes on ``pydantic_core.ValidationError: extra_forbidden``. Reproduced
+    on /path/to/project during HATS-311 close-out.
+
+    Strategy: detect the local install, compare its version with this
+    interpreter's. On strict mismatch — abort with a recovery hint. Soft-fail
+    (warn + continue) when the version can't be determined.
+    """
+    if force_allow_mismatch:
+        return
+    local = _detect_local_ai_hats(project_dir)
+    if local is None:
+        return
+    local_version = _local_ai_hats_version(local)
+    if local_version is None:
+        print(
+            f"WARNING: detected local ai-hats at {local} but could not query "
+            f"its version. Proceeding with bump — local install may need a "
+            f"manual update afterwards.",
+            file=sys.stderr,
+        )
+        return
+    if local_version == __version__:
+        return
+    pip_path = local.parent / "pip"
+    raise BumpAbortError(
+        f"Local ai-hats install at {local} is on version {local_version!r}, "
+        f"but this CLI is on {__version__!r}.\n"
+        f"\n"
+        f"Continuing would rewrite ai-hats.yaml in a schema the local install "
+        f"may not understand, leaving the project broken for any tool that "
+        f"resolves `ai-hats` through that venv.\n"
+        f"\n"
+        f"Recovery — upgrade the local install first:\n"
+        f"  {pip_path} install -U --force-reinstall \\\n"
+        f"      \"ai-hats @ git+ssh://git@github.com/muratovv/ai-hats.git\"\n"
+        f"\n"
+        f"Then re-run `ai-hats self bump`.\n"
+        f"\n"
+        f"Override (NOT recommended, may leave the project inconsistent): "
+        f"pass --force-allow-mismatch."
+    )
 
 
 class Assembler:
@@ -473,7 +577,7 @@ class Assembler:
 
         return status
 
-    def bump(self) -> CompositionResult | None:
+    def bump(self, *, force_allow_mismatch: bool = False) -> CompositionResult | None:
         """Re-apply current role (update to latest).
 
         HATS-285: cleanup obsolete files. HATS-289: also run scaffold/cleanup
@@ -482,7 +586,14 @@ class Assembler:
         a plain `ai-hats self bump`. HATS-312: also runs the v4 sessions-class
         layout migration so legacy paths (`.gitlog/pipeline_runs/`,
         `.agent/retrospectives/`, etc.) land under `<ai_hats_dir>/sessions/`.
+
+        HATS-330: pre-flight gate refuses to start when a local-venv ai-hats
+        install in the project is on a different version (would crash on the
+        new yaml after bump). ``force_allow_mismatch`` overrides the gate.
         """
+        _check_local_install_compatibility(
+            self.project_dir, force_allow_mismatch=force_allow_mismatch
+        )
         self._cleanup_obsolete_files(self.project_dir)
         provider = get_provider(self.project_config.provider)
         self._migrate_claude_md_to_v3(provider)
