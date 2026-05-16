@@ -1,0 +1,34 @@
+vars: @./_palette
+
+direction: down
+
+role: Role config
+overlay_pre: Overlay:\nadd / remove? {shape: diamond}
+augment: Augmented\nrole config
+resolve_t: Resolve traits\ndepth-first, pre-order
+resolve_r: Resolve role's own\nrules + skills
+dedup: Collect rules + skills +\ninjections, dedup by name
+inject: Append role injection\nhighest priority
+overlay_post: Overlay:\ninjection_append? {shape: diamond}
+final: Final composition
+mat: Materialize {shape: diamond}
+disk: CLAUDE.md / GEMINI.md\non disk {shape: cylinder}
+inline: --system-prompt-file\nsub-agent / override {shape: page}
+cli: Provider CLI
+
+role -> overlay_pre
+overlay_pre -> augment: patch lists
+overlay_pre -> augment: none
+augment -> resolve_t
+augment -> resolve_r
+resolve_t -> dedup
+resolve_r -> dedup
+dedup -> inject
+inject -> overlay_post
+overlay_post -> final: append text
+overlay_post -> final: none
+final -> mat
+mat -> disk: persistent
+mat -> inline: ephemeral
+disk -> cli: read on launch {style.stroke-dash: 4}
+inline -> cli: passed as flag {style.stroke-dash: 4}

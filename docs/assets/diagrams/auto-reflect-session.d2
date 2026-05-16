@@ -1,0 +1,28 @@
+vars: @./_palette
+
+direction: down
+
+entry: from Session lifecycle:\nauto retro decided to run {shape: parallelogram}
+facts: Compute facts\npure-Python
+reviewer: Session-reviewer LLM\none call
+verdicts: One verdict per\nactive HYP
+selfprob: Self-problem? {shape: diamond}
+newprop: Create PROP
+review: Session review\nartifact {shape: page}
+check: Harness check {shape: diamond}
+metaprop: Meta-PROP:\nfailed_session_id
+hyplog: HYP validation_log {shape: cylinder}
+inbox: PROP inbox {shape: cylinder}
+
+entry -> facts
+facts -> reviewer
+reviewer -> verdicts
+reviewer -> selfprob
+reviewer -> review
+verdicts -> hyplog
+selfprob -> newprop: yes
+selfprob -> review: no
+newprop -> inbox
+review -> check
+check -> metaprop: invalid / missing
+metaprop -> inbox

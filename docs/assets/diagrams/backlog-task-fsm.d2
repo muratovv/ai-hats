@@ -1,0 +1,35 @@
+vars: @./_palette
+
+direction: right
+
+brainstorm
+plan
+execute
+document
+review
+done {shape: oval}
+
+blocked
+failed
+cancelled: |md
+  any state ->\
+  cancelled
+| {shape: callout}
+
+brainstorm -> plan
+plan -> execute
+execute -> document
+document -> review
+review -> done
+
+brainstorm -> blocked
+plan -> blocked
+execute -> blocked
+document -> blocked
+blocked -> plan: resume
+blocked -> execute: resume
+
+execute -> failed
+review -> failed
+failed -> brainstorm: retry
+done -> execute: reopen
