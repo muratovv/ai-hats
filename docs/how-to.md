@@ -209,7 +209,65 @@ customizations:
 
 ---
 
+## 9. Configurable venv_path
+
+По умолчанию ai-hats живёт в **dedicated** venv по пути `<ai_hats_dir>/.venv/` (default `.agent/ai-hats/.venv/`). Venv создаётся автоматически через `ai-hats self update` или `bash bootstrap.sh`. Bash launcher (`~/.local/bin/ai-hats`) определяет venv по precedence:
+
+1. `AI_HATS_VENV` env var (absolute path, для тестов / sandbox)
+2. `venv_path` поле в `ai-hats.yaml` (relative или absolute)
+3. Default `<ai_hats_dir>/.venv`
+
+### Use case: shared system venv
+
+```yaml
+# ai-hats.yaml
+venv_path: /opt/shared/ai-hats-venv
+```
+
+```bash
+# One-time setup (user-owned!)
+python3 -m venv /opt/shared/ai-hats-venv
+/opt/shared/ai-hats-venv/bin/pip install "ai-hats @ git+ssh://git@github.com/muratovv/ai-hats.git"
+
+# Дальше launcher автоматически использует override
+cd ~/dev/my-project
+ai-hats config status   # uses /opt/shared/ai-hats-venv
+```
+
+### Use case: проектный venv (re-use existing)
+
+```yaml
+# ai-hats.yaml
+venv_path: .venv          # уже существующий venv проекта в корне
+```
+
+⚠️ В этом случае ai-hats и зависимости проекта живут в одном venv — конфликты версий зависимостей возможны. Это **осознанный** trade-off (override = user-owned).
+
+### Ownership invariant
+
+- **Default venv** (`<ai_hats_dir>/.venv/`) — managed фреймворком. `ai-hats self update` может пересоздавать целиком (например, после системного python upgrade).
+- **Override venv** (`venv_path:` в yaml) — user-owned. Ai-hats никогда не удаляет / не пересоздаёт автоматически; только `pip install -U` внутрь.
+
+---
+
+## 10. Recovery scenarios
+
+| Симптом | Команда |
+|---|---|
+| `ai-hats: command not found` (свежий хост) | `curl -sSL https://github.com/muratovv/ai-hats/raw/main/scripts/install-launcher.sh \| bash` |
+| `ai-hats: venv missing at ...` (нет venv) | `ai-hats self update` |
+| `ai-hats: venv exists but ai-hats binary is missing` | `ai-hats self update` |
+| Системный python upgrade (proxmox case) | `ai-hats self update` — launcher auto-recreates default venv |
+| Import error / corrupted site-packages | `rm -rf .agent/ai-hats/.venv && ai-hats self update` |
+| Override venv сломан | `python3 -m venv <override-path> && <override-path>/bin/pip install 'ai-hats @ git+ssh://...'` (user-managed) |
+| Полный wipe project (потеря data!) | `rm -rf .agent/ai-hats/ && ai-hats self update && ai-hats init -r <role> -p <provider>` |
+
+Подробный migration guide для проектов с pipx → launcher: `docs/migration-333.md`.
+
+---
+
 ## См. также
 
 - [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — настройка и использование цикла reflect-session / reflect-all (политики, гипотезы, валидация харнесом).
+- [`docs/migration-333.md`](migration-333.md) — migration guide на venv-first launcher.
 - [`docs/reflect.md`](reflect.md) — архитектура retrospective pipeline.
