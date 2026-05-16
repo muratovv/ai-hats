@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import abc
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -400,9 +401,13 @@ class ClaudeProvider(Provider):
         else:
             full_content = f"{INJECTION_START}\n{prompt_content}\n{INJECTION_END}\n"
 
-        # Write to temp file (survives sigkill — just orphaned, no harm)
-        override_file = Path(tempfile.mktemp(prefix="ai-hats-override-", suffix=".md"))
-        override_file.write_text(full_content)
+        # Write to temp file (survives sigkill — just orphaned, no harm).
+        # mkstemp atomically creates the file with mode 0600, avoiding TOCTOU
+        # race condition that bandit B306/CWE-377 flags on tempfile.mktemp.
+        fd, override_path = tempfile.mkstemp(prefix="ai-hats-override-", suffix=".md")
+        with os.fdopen(fd, "w") as f:
+            f.write(full_content)
+        override_file = Path(override_path)
 
         return ["--system-prompt-file", str(override_file)], {}
 

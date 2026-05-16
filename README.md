@@ -14,6 +14,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/muratovv/ai-hats/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/muratovv/ai-hats/actions/workflows/ci.yml/badge.svg?branch=master"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green.svg"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue.svg">
   <img alt="Status: Beta" src="https://img.shields.io/badge/status-beta-orange.svg">
