@@ -122,7 +122,7 @@ ai-hats self update          # launcher detects broken symlinks → auto-recreat
 | `ai-hats: override venv ... is missing or broken` | `python3 -m venv <path> && <path>/bin/pip install 'ai-hats @ ...'` |
 | Что-то сломалось в недрах (import error) | `rm -rf .agent/ai-hats/.venv && ai-hats self update` |
 | Хочу полный wipe (без data) | `rm -rf .agent/ai-hats/.venv && ai-hats self update` |
-| Хочу полный wipe (С data) | `rm -rf .agent/ai-hats/ && ai-hats self update && ai-hats init -r <role> -p <provider>` |
+| Хочу полный wipe (С data) | `rm -rf .agent/ai-hats/ && ai-hats self update && ai-hats self init -r <role> -p <provider>` |
 
 ## Что осталось от старого мира
 

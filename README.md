@@ -30,7 +30,7 @@ curl -sSL https://github.com/muratovv/ai-hats/raw/main/scripts/install-launcher.
 ```bash
 cd ~/dev/my-project
 ai-hats self update                       # создаёт venv в .agent/ai-hats/.venv + installs ai-hats
-ai-hats init -r go-dev -p claude          # генерирует ai-hats.yaml + CLAUDE.md
+ai-hats self init -r go-dev -p claude          # генерирует ai-hats.yaml + CLAUDE.md
 ```
 
 ### 3. Использование
@@ -54,7 +54,7 @@ TMP=$(mktemp -d) && git clone --depth 1 git@github.com:muratovv/ai-hats.git "$TM
   bash "$TMP/scripts/bootstrap.sh" -r go-dev -p claude; rm -rf "$TMP"
 ```
 
-Bootstrap.sh = installer launcher → `ai-hats self update` → `ai-hats init` в одной команде. Полезен для CI / pre-PR setup.
+Bootstrap.sh = installer launcher → `ai-hats self update` → `ai-hats self init` в одной команде. Полезен для CI / pre-PR setup.
 
 ### Override venv (advanced)
 

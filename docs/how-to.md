@@ -260,7 +260,7 @@ venv_path: .venv          # уже существующий venv проекта 
 | Системный python upgrade (proxmox case) | `ai-hats self update` — launcher auto-recreates default venv |
 | Import error / corrupted site-packages | `rm -rf .agent/ai-hats/.venv && ai-hats self update` |
 | Override venv сломан | `python3 -m venv <override-path> && <override-path>/bin/pip install 'ai-hats @ git+ssh://...'` (user-managed) |
-| Полный wipe project (потеря data!) | `rm -rf .agent/ai-hats/ && ai-hats self update && ai-hats init -r <role> -p <provider>` |
+| Полный wipe project (потеря data!) | `rm -rf .agent/ai-hats/ && ai-hats self update && ai-hats self init -r <role> -p <provider>` |
 
 Подробный migration guide для проектов с pipx → launcher: `docs/migration-333.md`.
 

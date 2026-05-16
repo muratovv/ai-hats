@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ai-hats bootstrap — convenience wrapper for first-time setup (HATS-333/336).
 #
-# Pipeline: install-launcher.sh → `ai-hats self update` → `ai-hats init`.
+# Pipeline: install-launcher.sh → `ai-hats self update` → `ai-hats self init`.
 # Idempotent — safe to re-run; launcher's self update handles existing venv.
 #
 # Quick start (fresh tmp each run, auto-cleanup):
@@ -41,7 +41,7 @@ ${BOLD}Options:${RESET}
 ${BOLD}Pipeline:${RESET}
   1. install-launcher.sh  → ~/.local/bin/ai-hats (one-time per host).
   2. ai-hats self update  → create venv + install ai-hats.
-  3. ai-hats init -r ... -p ...  (if -r/-p given; else printed as next step).
+  3. ai-hats self init -r ... -p ...  (if -r/-p given; else printed as next step).
 
 ${BOLD}Notes:${RESET}
   Idempotent — safe to re-run. Existing ai-hats.yaml is preserved by init.
@@ -145,7 +145,8 @@ fi
 
 # -- 6. Initialize project (only if -r/-p given) --
 if [[ -n "$ROLE" || -n "$PROVIDER" ]]; then
-    INIT_ARGS=(init)
+    # HATS-242: `init` is nested under `self`.
+    INIT_ARGS=(self init)
     [[ -n "$ROLE" ]]     && INIT_ARGS+=(--role "$ROLE")
     [[ -n "$PROVIDER" ]] && INIT_ARGS+=(--provider "$PROVIDER")
     info "init" "ai-hats ${INIT_ARGS[*]}"
@@ -163,7 +164,7 @@ printf "  ${GREEN}${BOLD}ready${RESET}\n"
 echo ""
 if [[ -z "$ROLE" && -z "$PROVIDER" ]]; then
     printf "  Next:\n"
-    printf "    ${CYAN}ai-hats init -r <role> -p <provider>${RESET}\n"
+    printf "    ${CYAN}ai-hats self init -r <role> -p <provider>${RESET}\n"
 else
     printf "    ${CYAN}ai-hats status${RESET}\n"
 fi

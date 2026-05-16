@@ -109,7 +109,7 @@ def test_bootstrap_propagates_role_provider_to_init(tmp_path):
     assert res.returncode == 0, res.stderr
     log_text = log.read_text()
     assert "ARGS=self update" in log_text
-    assert "ARGS=init --role go-dev --provider claude" in log_text
+    assert "ARGS=self init --role go-dev --provider claude" in log_text
 
 
 def test_bootstrap_local_repo_path_becomes_repo_url(tmp_path):
@@ -158,7 +158,7 @@ def test_bootstrap_without_role_skips_init_and_prints_hint(tmp_path):
     res = _run_bootstrap(bootstrap, cwd=project, launcher_dest=dest)
 
     assert res.returncode == 0, res.stderr
-    assert "ai-hats init -r" in res.stdout
+    assert "ai-hats self init -r" in res.stdout
     log_text = log.read_text()
     # Only self update was invoked; no init.
     assert log_text.count("ARGS=") == 1
