@@ -2,10 +2,80 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import sys
+from pathlib import Path
+
 import click
 from rich.tree import Tree
 
+from ..providers import PROVIDERS
 from ._helpers import _assembler, _project_dir, console
+
+
+def _stdin_is_tty() -> bool:
+    """Indirection over ``sys.stdin.isatty()`` so tests can monkeypatch it."""
+    return sys.stdin.isatty()
+
+
+def _detect_provider_default() -> str | None:
+    """Smart default for provider — based on existence of ~/.<provider>.
+
+    Returns the first provider whose home-config directory exists. Order
+    matches PROVIDERS dict iteration (deterministic via insertion order).
+    Returns ``None`` if no provider home directory is present.
+    """
+    home = Path.home()
+    for name in PROVIDERS:
+        if (home / f".{name}").is_dir():
+            return name
+    return None
+
+
+def _wizard_provider_prompt(default: str | None) -> str:
+    """Interactive numbered menu for provider selection."""
+    names = list(PROVIDERS.keys())
+    console.print("[bold]Choose provider:[/]")
+    for idx, name in enumerate(names, start=1):
+        marker = f" [dim](recommended — found ~/.{name})[/]" if name == default else ""
+        console.print(f"  {idx}) {name}{marker}")
+    default_idx = names.index(default) + 1 if default else None
+    while True:
+        raw = click.prompt(
+            f"Provider [1-{len(names)}]",
+            default=str(default_idx) if default_idx else None,
+            show_default=bool(default_idx),
+        )
+        if raw in names:
+            return raw
+        try:
+            idx = int(raw)
+            if 1 <= idx <= len(names):
+                return names[idx - 1]
+        except ValueError:
+            pass
+        console.print(f"[red]Invalid choice[/]: {raw!r}. Enter 1..{len(names)} or a provider name.")
+
+
+def _launch_wizard_session() -> None:
+    """Replace the current process with `ai-hats execute --role initial-wizard`.
+
+    Uses ``os.execvp`` so the interactive provider CLI takes over the
+    terminal cleanly — same handoff pattern as ``exec_claude_with_retro``.
+    """
+    ai_hats_bin = shutil.which("ai-hats")
+    if not ai_hats_bin:
+        console.print(
+            "[yellow]ai-hats binary not in PATH — cannot auto-launch wizard.[/]\n"
+            "Run manually:  ai-hats execute --role initial-wizard --prompt initial-wizard",
+        )
+        return
+    console.print("[cyan]→ Launching initial-wizard session …[/]")
+    os.execvp(
+        ai_hats_bin,
+        [ai_hats_bin, "execute", "--role", "initial-wizard", "--prompt", "initial-wizard"],
+    )
 
 
 @click.command()
@@ -16,10 +86,47 @@ from ._helpers import _assembler, _project_dir, console
     help="Task-id prefix for `ai-hats task create` (e.g. ACME). "
     "Default: TASK for new projects; auto-detected for legacy repos.",
 )
-def init(provider: str | None, role: str | None, task_prefix: str | None):
-    """Initialize ai-hats in the current directory."""
+@click.option(
+    "--no-wizard",
+    is_flag=True,
+    default=False,
+    help="Skip the interactive wizard (CI / scripted mode).",
+)
+def init(provider: str | None, role: str | None, task_prefix: str | None, no_wizard: bool):
+    """Initialize ai-hats in the current directory.
+
+    Default (TTY, no -p/-r flags) → launches an interactive wizard:
+    asks for provider (smart default by ~/.<provider> presence), writes a
+    minimal ai-hats.yaml, then hands off to the `initial-wizard` role
+    session for stack-detection, role selection, customization and
+    feedback-policy setup.
+
+    Flag-only path (both --provider and --role provided, or --no-wizard,
+    or non-TTY stdin) preserves the original non-interactive behavior
+    for CI and scripted invocations.
+    """
     project_dir = _project_dir()
     already = (project_dir / "ai-hats.yaml").exists()
+
+    # Wizard runs only when stdin is a TTY and the user did NOT supply
+    # both -p and -r (which we treat as a fully-scripted invocation).
+    use_wizard = (
+        not no_wizard
+        and _stdin_is_tty()
+        and not (provider and role)
+    )
+
+    if not use_wizard and provider is None and role is None and not no_wizard:
+        console.print(
+            "[red]No TTY and no flags[/]: cannot run interactive wizard.\n"
+            "Pass --provider/-p (and optionally --role/-r), or run with "
+            "--no-wizard to bootstrap a minimal config.",
+        )
+        raise SystemExit(2)
+
+    if use_wizard and provider is None:
+        default = _detect_provider_default()
+        provider = _wizard_provider_prompt(default)
 
     asm = _assembler(project_dir)
     try:
@@ -36,6 +143,12 @@ def init(provider: str | None, role: str | None, task_prefix: str | None):
     console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
     if task_prefix:
         console.print(f"  Task prefix: [bold]{asm.project_config.task_prefix}[/]")
+
+    # Hand off to the wizard role for the remaining configuration steps
+    # (stack detection, role selection, customization, feedback policy).
+    # Skipped when -r was given (role already chosen), --no-wizard, or non-TTY.
+    if use_wizard and not role:
+        _launch_wizard_session()
 
 
 @click.command("set")
