@@ -1,0 +1,43 @@
+# Synthetic example of a Hypothesis backlog entry. Same shape as production
+# .agent/ai-hats/tracker/hypotheses/HYP-NNN.yaml files; only the ID and
+# content are fabricated. Used in docs for "this is how a HYP looks".
+id: HYP-001
+title: filter regressions correlate with sub-agent refactors
+status: active
+created: 2026-03-12
+source_task: HATS-029
+
+hypothesis: |
+  Every regression in observability filters (is_productive, has_tools,
+  is_short) over the past 4 weeks has been introduced by a sub-agent
+  refactor that touched SidecarTracer without updating the corresponding
+  filter. Adding sub-agent-aware unit tests on filter helpers should
+  catch the next one before it ships.
+
+baseline: 3 filter regressions / 4 weeks (pre-test gate)
+
+expected_outcome:
+  - 0 filter regressions for the next 4 weeks once filter helpers have
+    explicit sub-agent unit tests
+  - regression-failing sessions get caught by pytest, not by user reports
+
+observation_window: 4 weeks (16 sessions baseline)
+success_criterion: zero new filter regressions in the window
+rollback_condition: still seeing regressions despite the new tests
+
+validation_log:
+  - session_id: "20260331-211200-1"
+    date: 2026-03-31
+    verdict: confirmed
+    evidence: filter test caught the productive_only edge case before merge
+    recommendation: keep_open
+  - session_id: "20260406-034154-1"
+    date: 2026-04-06
+    verdict: confirmed
+    evidence: this session's fix in observe.py was caught by the new test gate
+    recommendation: close
+
+exit_criteria:
+  confirm: 3+ confirmed verdicts inside the observation window
+  refute: 2+ refuted verdicts (filter regression slipped through anyway)
+  stalled: window expires with < 2 verdicts of any kind

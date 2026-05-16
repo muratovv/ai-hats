@@ -1,0 +1,33 @@
+# Synthetic example of a Proposal backlog entry. Same shape as production
+# .agent/ai-hats/tracker/backlog/proposals/PROP-NNN.yaml files; only the ID
+# and content are fabricated. Used in docs for "this is how a PROP looks".
+id: PROP-001
+created: 2026-04-02T14:11:08Z
+title: pre-commit gate should run filter-specific tests on observe.py changes
+category: process
+target: pre-commit
+status: open
+
+description: |
+  Today the pre-commit privacy hook runs all -m smoke tests, which
+  averages 7s. Filter regressions in observe.py only get caught by the
+  full suite (2-3 minutes) or by post-merge reports. A targeted gate
+  on observe.py edits — run tests/test_observe.py specifically —
+  would close the loop in under a second.
+
+rationale: |
+  Reflect-session for 20260331-211200-1 flagged the same observability
+  filter blind spot that HYP-014 tracks. A cheap per-file pre-commit
+  gate matches the "fail fast, fail cheap" principle and complements
+  the existing smoke gate without slowing it down.
+
+related_hypotheses:
+  - HYP-001
+
+votes:
+  - session_id: "20260331-211200-1"
+    date: 2026-03-31
+    decision: cosign
+    reason: "concrete win, low cost, observe.py is high-traffic"
+
+failed_session_id: null  # not a meta-proposal
