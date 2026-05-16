@@ -222,10 +222,6 @@ def status():
             h_branch = tree.add("[dim]hooks[/]")
             for event, scripts in st["tree"]["hooks"].items():
                 h_branch.add(f"{event}: {scripts}")
-        if st["tree"]["mcp"]:
-            m_branch = tree.add("[dim]mcp[/]")
-            for m in st["tree"]["mcp"]:
-                m_branch.add(m)
         console.print(tree)
 
     # Health

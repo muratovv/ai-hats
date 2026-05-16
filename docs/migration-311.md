@@ -60,7 +60,6 @@ can be re-invoked safely.
 | `.agent/rules/<name>/` | `<ai_hats_dir>/library/rules/<name>/` |
 | `.agent/skills/<name>/` | `<ai_hats_dir>/library/skills/<name>/` |
 | `.agent/hooks/` | `<ai_hats_dir>/library/hooks/` |
-| `.agent/mcp/` | `<ai_hats_dir>/library/mcp/` |
 
 ### Not migrated (external publish targets)
 

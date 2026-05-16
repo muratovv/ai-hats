@@ -5,7 +5,6 @@ composition:
   skills:
     - golang-stretchr-testify
   hooks: {}
-  mcp: []
 injection: |
   ## GO TESTING (EXTENDED)
 

@@ -5,7 +5,6 @@ composition:
   skills:
     - bash-mastery
   hooks: {}
-  mcp: []
 injection: |
   ## SHELL DEVELOPMENT
 

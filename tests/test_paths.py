@@ -18,7 +18,6 @@ from ai_hats.paths import (
     last_backup_path,
     legacy_paths_by_class,
     library_dir,
-    mcp_dir,
     normalize_ai_hats_dir,
     normalize_venv_path,
     pipeline_steps_dir,
@@ -214,7 +213,6 @@ def test_tracker_resolvers_respect_yaml(tmp_path, monkeypatch):
         (rules_dir, "library/rules"),
         (skills_dir, "library/skills"),
         (hooks_dir, "library/hooks"),
-        (mcp_dir, "library/mcp"),
     ],
 )
 def test_library_class_resolvers(tmp_path, monkeypatch, fn, subpath):

@@ -1,11 +1,11 @@
-"""Library-class layout migration: `.agent/{rules,skills,hooks,mcp}` → `<dir>/library/...` (HATS-314)."""
+"""Library-class layout migration: `.agent/{rules,skills,hooks}` → `<dir>/library/...` (HATS-314)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from ai_hats.assembler import Assembler
-from ai_hats.paths import hooks_dir, mcp_dir, rules_dir, skills_dir
+from ai_hats.paths import hooks_dir, rules_dir, skills_dir
 
 
 def _seed_library_legacy(project_dir: Path) -> dict[str, Path]:
@@ -29,11 +29,6 @@ def _seed_library_legacy(project_dir: Path) -> dict[str, Path]:
     h.mkdir(parents=True)
     (h / "pre-commit.sh").write_text("#!/bin/sh\necho hi")
     seeds["hook"] = h / "pre-commit.sh"
-    # MCP: flat configs
-    m = project_dir / ".agent" / "mcp"
-    m.mkdir(parents=True)
-    (m / "server.json").write_text("{}")
-    seeds["mcp"] = m / "server.json"
     return seeds
 
 
@@ -47,9 +42,8 @@ def test_library_migration_moves_all_paths(tmp_path: Path) -> None:
     assert (rules_dir(tmp_path) / "my-rule" / "metadata.yaml").exists()
     assert (skills_dir(tmp_path) / "my-skill" / "SKILL.md").exists()
     assert (hooks_dir(tmp_path) / "pre-commit.sh").exists()
-    assert (mcp_dir(tmp_path) / "server.json").exists()
     # Legacy gone
-    for sub in ("rules", "skills", "hooks", "mcp"):
+    for sub in ("rules", "skills", "hooks"):
         assert not (tmp_path / ".agent" / sub).exists(), f".agent/{sub} still present"
 
 

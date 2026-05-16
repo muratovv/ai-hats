@@ -282,15 +282,12 @@ def test_composition_from_dict():
         "rules": ["dev_rule_git"],
         "skills": ["backlog-manager"],
         "hooks": {"session_start": ["scripts/start.sh"]},
-        "mcp": [{"name": "review-server", "config": "mcp/review.json"}],
     }
     comp = Composition.from_dict(data)
     assert comp.traits == ["trait-base"]
     assert comp.rules == ["dev_rule_git"]
     assert comp.skills == ["backlog-manager"]
     assert comp.hooks.session_start == ["scripts/start.sh"]
-    assert len(comp.mcp) == 1
-    assert comp.mcp[0].name == "review-server"
 
 
 def test_composition_from_empty():

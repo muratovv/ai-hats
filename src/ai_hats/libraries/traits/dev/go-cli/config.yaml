@@ -5,7 +5,6 @@ composition:
   skills:
     - golang-cli
   hooks: {}
-  mcp: []
 injection: |
   ## GO CLI
 

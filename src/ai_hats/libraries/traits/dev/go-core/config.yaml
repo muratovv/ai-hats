@@ -19,7 +19,6 @@ composition:
     - golang-dependency-management
     - golang-documentation
   hooks: {}
-  mcp: []
 injection: |
   ## GO DEVELOPMENT (CORE)
 

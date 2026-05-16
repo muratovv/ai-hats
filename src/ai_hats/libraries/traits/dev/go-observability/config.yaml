@@ -6,7 +6,6 @@ composition:
     - golang-observability
     - golang-samber-slog
   hooks: {}
-  mcp: []
 injection: |
   ## GO OBSERVABILITY
 

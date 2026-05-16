@@ -4,7 +4,6 @@ composition:
   rules: []
   skills: []
   hooks: {}
-  mcp: []
 injection: |
   ## PYTHON DEVELOPMENT
 

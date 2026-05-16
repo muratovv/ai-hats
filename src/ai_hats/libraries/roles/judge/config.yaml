@@ -13,7 +13,6 @@ composition:
   skills:
     - judge-protocol
   hooks: {}
-  mcp: []
 injection: |
   # ROLE: JUDGE (HYP closure + PROP triage)
 

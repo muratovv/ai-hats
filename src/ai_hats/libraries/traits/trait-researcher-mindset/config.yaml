@@ -5,7 +5,6 @@ composition:
   skills:
     - tool-evaluation-protocol
   hooks: {}
-  mcp: []
 injection: |
   ## RESEARCHER MINDSET
 

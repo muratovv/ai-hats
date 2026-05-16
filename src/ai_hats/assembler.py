@@ -19,7 +19,6 @@ from .models import (
 from .paths import (
     hooks_dir as _lib_hooks_dir,
     legacy_paths_by_class,
-    mcp_dir as _lib_mcp_dir,
     rules_dir as _lib_rules_dir,
     skills_dir as _lib_skills_dir,
 )
@@ -298,7 +297,7 @@ class Assembler:
 
         runs_dir(self.project_dir).mkdir(parents=True, exist_ok=True)
         tasks_dir(self.project_dir).mkdir(parents=True, exist_ok=True)
-        for subdir_fn in (_lib_rules_dir, _lib_skills_dir, _lib_hooks_dir, _lib_mcp_dir):
+        for subdir_fn in (_lib_rules_dir, _lib_skills_dir, _lib_hooks_dir):
             subdir_fn(self.project_dir).mkdir(parents=True, exist_ok=True)
 
         # Create/update ai-hats.yaml
@@ -533,7 +532,7 @@ class Assembler:
     def _migrate_layout_v4_library(self) -> None:
         """One-shot migration of library-mirror artefacts (HATS-314).
 
-        Moves `.agent/{rules,skills,hooks,mcp}/` → `<ai_hats_dir>/library/...`.
+        Moves `.agent/{rules,skills,hooks}/` → `<ai_hats_dir>/library/...`.
         `.claude/skills/` and `.githooks/` are NOT touched — they stay as
         copy-publish targets owned by external tooling.
         """
@@ -710,7 +709,7 @@ class Assembler:
                 shutil.rmtree(rules_dir)
                 rules_dir.mkdir(parents=True, exist_ok=True)
 
-        for subdir in ("skills", "hooks", "mcp"):
+        for subdir in ("skills", "hooks"):
             target = self.agent_dir / subdir
             if target.exists():
                 self._clean_managed_entries(target)
@@ -796,18 +795,6 @@ class Assembler:
                         managed_hooks.append(src.name)
         self._write_managed_manifest(hooks_dir, managed_hooks)
 
-        # Copy MCP configs
-        mcp_dir = _lib_mcp_dir(self.project_dir)
-        mcp_dir.mkdir(parents=True, exist_ok=True)
-        managed_mcp: list[str] = []
-        for mcp_config in result.mcp:
-            src = self._find_mcp_config(mcp_config.config)
-            if src and src.exists():
-                shutil.copy2(src, mcp_dir / src.name)
-                if src.name not in managed_mcp:
-                    managed_mcp.append(src.name)
-        self._write_managed_manifest(mcp_dir, managed_mcp)
-
     @staticmethod
     def _write_managed_manifest(target: Path, names: list[str]) -> None:
         """Write/remove `.ai-hats-managed` listing entries ai-hats owns in `target`."""
@@ -824,17 +811,6 @@ class Assembler:
             return script_path
         for lib_path in reversed(self.library_paths):
             candidate = lib_path / script_ref
-            if candidate.exists():
-                return candidate
-        return None
-
-    def _find_mcp_config(self, config_ref: str) -> Path | None:
-        """Find an MCP config file across library paths."""
-        config_path = Path(config_ref)
-        if config_path.is_absolute() and config_path.exists():
-            return config_path
-        for lib_path in reversed(self.library_paths):
-            candidate = lib_path / config_ref
             if candidate.exists():
                 return candidate
         return None
@@ -1072,7 +1048,6 @@ class Assembler:
                 )
                 if getattr(result.hooks, k)
             },
-            "mcp": [m.name for m in result.mcp],
             "injections_count": len(result.injections),
         }
 

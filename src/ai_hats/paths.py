@@ -9,7 +9,7 @@ framework-managed artefacts live under ``<ai_hats_dir>/`` — by default
   - ``tracker/``   — cards + records with lifecycle (backlog, hypotheses,
     decisions); plus ``STATE.md`` and ``.last_backup`` on the dir root.
   - ``library/``   — managed mirrors of the role composition (rules,
-    skills, hooks, mcp) for external consumers.
+    skills, hooks) for external consumers.
 
 Resolution of ``ai_hats_dir`` itself follows the precedence chain:
 
@@ -219,11 +219,6 @@ def hooks_dir(project_dir: Path) -> Path:
     return library_dir(project_dir) / "hooks"
 
 
-def mcp_dir(project_dir: Path) -> Path:
-    """MCP configs: ``<ai_hats_dir>/library/mcp/``."""
-    return library_dir(project_dir) / "mcp"
-
-
 # ---------- Framework-root artefacts ----------
 
 
@@ -280,7 +275,6 @@ LEGACY_PATH_MAP: dict[str, tuple[LegacyClass, str]] = {
     ".agent/rules":           ("library",  "library/rules"),
     ".agent/skills":          ("library",  "library/skills"),
     ".agent/hooks":           ("library",  "library/hooks"),
-    ".agent/mcp":             ("library",  "library/mcp"),
     # Framework root
     ".agent/.last_backup":    ("root",     ".last_backup"),
 }

@@ -8,7 +8,6 @@ composition:
   hooks:
     session_end:
       - skills/backlog-manager/hooks/session_end_auto-retro.sh
-  mcp: []
 injection: |
   ## BASE BEHAVIOR
 

@@ -7,7 +7,6 @@ composition:
     - systematic-debugging
     - audit-reviewer
   hooks: {}
-  mcp: []
 injection: |
   ## SE MINDSET
 
