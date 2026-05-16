@@ -125,3 +125,30 @@ Full reference — `ai-hats --tree`.
 ## Architecture
 
 Roles compose from traits + rules + skills, a flat model, a task state machine, multi-provider injection. The full tour of the internal model, directory layout, skill format, and a sample `config.yaml` — see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+
+<table>
+<tr>
+  <td align="center" width="33%">
+    <a href="docs/ARCHITECTURE.md#session-lifecycle"><img src="docs/assets/diagrams/session-lifecycle.svg" alt="Session lifecycle" height="160"></a><br>
+    <sub><a href="docs/ARCHITECTURE.md#session-lifecycle"><b>Session lifecycle</b></a><br>launch → trace → finalize → retro</sub>
+  </td>
+  <td align="center" width="33%">
+    <a href="docs/ARCHITECTURE.md#reflection-loop"><img src="docs/assets/diagrams/auto-reflect-session.svg" alt="Reflection loop" height="160"></a><br>
+    <sub><a href="docs/ARCHITECTURE.md#reflection-loop"><b>Reflection loop</b></a><br>verdicts on HYP, votes on PROP</sub>
+  </td>
+  <td align="center" width="33%">
+    <a href="docs/ARCHITECTURE.md#composition-flow"><img src="docs/assets/diagrams/composition-flow.svg" alt="Composition flow" height="160"></a><br>
+    <sub><a href="docs/ARCHITECTURE.md#composition-flow"><b>Composition flow</b></a><br>role → traits → materialize</sub>
+  </td>
+</tr>
+<tr>
+  <td align="center" colspan="2">
+    <a href="docs/ARCHITECTURE.md#backlog-state-machines"><img src="docs/assets/diagrams/backlog-task-fsm.svg" alt="Backlog state machines" height="120"></a><br>
+    <sub><a href="docs/ARCHITECTURE.md#backlog-state-machines"><b>Backlog state machines</b></a> · task / HYP / PROP lifecycles</sub>
+  </td>
+  <td align="center">
+    <a href="docs/ARCHITECTURE.md#reflection-loop"><img src="docs/assets/diagrams/manual-reflect-all.svg" alt="Manual reflect-all" height="160"></a><br>
+    <sub><a href="docs/ARCHITECTURE.md#reflection-loop"><b>Manual reflect-all</b></a><br>periodic backlog triage</sub>
+  </td>
+</tr>
+</table>
