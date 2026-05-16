@@ -1,22 +1,22 @@
-# How-To: примеры конфигураций ai-hats.yaml
+# How-To: ai-hats.yaml config examples
 
-Подборка типовых задач, с которыми сталкиваешься при подключении ai-hats к проекту: расширить роль скиллом, убрать ненужный компонент, подложить свой локальный скилл, сменить провайдера. Каждый пример — самодостаточный фрагмент `ai-hats.yaml` + команды для применения.
+A collection of common tasks you hit when wiring ai-hats into a project: extending a role with a skill, removing an unneeded component, dropping in your own local skill, switching providers. Each example is a self-contained `ai-hats.yaml` fragment plus the commands to apply it.
 
-> Полный справочник CLI с описаниями и опциями — `ai-hats --tree` (или поддерево: `ai-hats --tree config`, `ai-hats --tree task hyp`).
+> Full CLI reference with descriptions and options — `ai-hats --tree` (or a subtree: `ai-hats --tree config`, `ai-hats --tree task hyp`).
 
-> Все изменения в `ai-hats.yaml` применяются командой `ai-hats self bump` (пересобирает `CLAUDE.md` / `GEMINI.md` и `.claude/*` по конфигу). Базовые роли в `libraries/roles/` **не редактируем** — вместо этого используем `customizations` (overlay).
+> All changes to `ai-hats.yaml` are applied with `ai-hats self bump` (rebuilds `CLAUDE.md` / `GEMINI.md` and `.claude/*` from the config). Base roles in `libraries/roles/` should **not** be edited directly — use `customizations` (overlay) instead.
 >
-> Любую правку оверлея можно сделать двумя способами:
-> 1. **CLI:** `ai-hats config customize <role> --add-skill <name> | --remove-skill <name> | --add-trait <name> | --injection-append "<text>"`. Команда сама пишет в `ai-hats.yaml`.
-> 2. **Руками:** редактируешь `customizations:` в `ai-hats.yaml` (примеры ниже).
+> Any overlay edit can be done in two ways:
+> 1. **CLI:** `ai-hats config customize <role> --add-skill <name> | --remove-skill <name> | --add-trait <name> | --injection-append "<text>"`. The command writes into `ai-hats.yaml` itself.
+> 2. **By hand:** edit `customizations:` in `ai-hats.yaml` (examples below).
 >
-> Оба способа эквивалентны. Ниже — итоговый YAML, чтобы было видно, что получится.
+> Both ways are equivalent. Below — the resulting YAML, so you can see what you get.
 
 ---
 
-## 1. Добавить новый скилл к существующей роли
+## 1. Add a new skill to an existing role
 
-**Сценарий:** в проекте используется роль `sre`, но нужен дополнительный скилл (например, `kubernetes-ops`), которого нет в базовой композиции.
+**Scenario:** the project uses the `sre` role, but you want an extra skill (for example, `kubernetes-ops`) that's not in the base composition.
 
 ```yaml
 schema_version: 2
@@ -32,20 +32,20 @@ customizations:
         - kubernetes-ops
 ```
 
-Эквивалент через CLI:
+CLI equivalent:
 
 ```bash
 ai-hats config customize sre --add-skill kubernetes-ops
 ai-hats self bump
 ```
 
-Проверка: после `ai-hats self bump` скилл появится в секции `## AVAILABLE SKILLS` сгенерированного `CLAUDE.md`.
+Verification: after `ai-hats self bump` the skill appears in the `## AVAILABLE SKILLS` section of the generated `CLAUDE.md`.
 
 ---
 
-## 2. Убрать ненужный скилл из роли
+## 2. Remove an unneeded skill from a role
 
-**Сценарий:** базовая роль `sre` тянет `network-documentation`, но в этом проекте сети ведёт другая команда — лишний шум в промпте.
+**Scenario:** the base `sre` role pulls in `network-documentation`, but networking is owned by another team for this project — extra noise in the prompt.
 
 ```yaml
 customizations:
@@ -55,13 +55,13 @@ customizations:
         - network-documentation
 ```
 
-Если попытаешься убрать то, чего нет в базовой роли — получишь warning `Overlay: cannot remove skill 'X' — not in base role`, но сборка не упадёт.
+If you try to remove something that's not in the base role — you get a warning `Overlay: cannot remove skill 'X' — not in base role`, but the build does not fail.
 
 ---
 
-## 3. Комбинировать add + remove + проектные заметки
+## 3. Combine add + remove + project notes
 
-**Сценарий:** урезаем роль `sre` под конкретный проект и хотим зафиксировать инфраструктурные особенности прямо в инжекте.
+**Scenario:** trim down the `sre` role for a specific project and capture infrastructure specifics right in the injection.
 
 ```yaml
 customizations:
@@ -76,20 +76,20 @@ customizations:
         - network-documentation
     injection_append: |
       ## PROJECT NOTES
-      - Кластеры: prod-eu, prod-us, staging
-      - Все изменения в инфре — через ArgoCD PR
-      - Секреты — только в Vault, никаких .env в репо
+      - Clusters: prod-eu, prod-us, staging
+      - All infra changes go through ArgoCD PRs
+      - Secrets — only in Vault, no .env in the repo
 ```
 
-`injection_append` дописывается **после** инжекта базовой роли — удобно для проектных правил без форка роли.
+`injection_append` is appended **after** the base role's injection — handy for project rules without forking the role.
 
 ---
 
-## 4. Подключить локальный (свой) скилл из `.agent/library`
+## 4. Wire a local (custom) skill from `.agent/library`
 
-**Сценарий:** скилл специфичен для проекта и не имеет смысла в общей библиотеке ai-hats.
+**Scenario:** the skill is project-specific and doesn't belong in the shared ai-hats library.
 
-Структура файлов:
+File layout:
 
 ```
 my-project/
@@ -108,7 +108,7 @@ schema_version: 2
 provider: claude
 active_role: sre
 
-# Локальные библиотеки имеют приоритет над встроенными
+# Local libraries take precedence over the built-in ones
 library_paths:
   - .agent/library
 
@@ -119,13 +119,13 @@ customizations:
         - deploy-pipeline
 ```
 
-Имя скилла должно совпадать с именем директории внутри `library_paths/skills/`.
+The skill name must match the directory name under `library_paths/skills/`.
 
 ---
 
-## 5. Добавить trait целиком (например, dev::python)
+## 5. Add a whole trait (e.g. dev::python)
 
-**Сценарий:** в SRE-проекте появился Python-тулинг, и хочется получить весь Python-стек правил/скиллов одним движением.
+**Scenario:** Python tooling has appeared in an SRE project, and you want to pull the entire Python rules/skills stack in one move.
 
 ```yaml
 customizations:
@@ -135,13 +135,13 @@ customizations:
         - dev::python
 ```
 
-Синтаксис `<group>::<trait>` указывает на trait внутри подкаталога `libraries/traits/<group>/<trait>/`. Trait сам тащит свои rules + skills + injection.
+The `<group>::<trait>` syntax points to a trait inside `libraries/traits/<group>/<trait>/`. The trait pulls in its own rules + skills + injection.
 
 ---
 
-## 6. Минимальная конфигурация для нового проекта
+## 6. Minimal config for a new project
 
-**Сценарий:** свежий проект, без оверлеев — просто выбираем роль и провайдера.
+**Scenario:** a fresh project, no overlays — just pick a role and a provider.
 
 ```yaml
 schema_version: 2
@@ -156,31 +156,31 @@ feedback:
     policy: smart
 ```
 
-Это эквивалент того, что генерирует `bootstrap.sh` при первой установке.
+This is equivalent to what `bootstrap.sh` generates on first install.
 
 ---
 
-## 7. Сменить провайдера без потери настроек
+## 7. Switch provider without losing settings
 
 ```bash
-ai-hats config set -p gemini   # переключиться на Gemini
-ai-hats self bump            # пересобрать GEMINI.md
+ai-hats config set -p gemini   # switch to Gemini
+ai-hats self bump              # rebuild GEMINI.md
 ```
 
-В `ai-hats.yaml` поменяется только `provider: gemini`. Композиция роли остаётся той же — оба провайдера читают одни и те же библиотеки.
+In `ai-hats.yaml` only `provider: gemini` changes. The role composition stays the same — both providers read the same libraries.
 
 ---
 
-## 8. Применение изменений: чек-лист
+## 8. Applying changes: checklist
 
-После любой правки `ai-hats.yaml`:
+After any `ai-hats.yaml` edit:
 
 ```bash
-ai-hats self bump          # пересобрать промпт
-ai-hats config status # убедиться, что всё подхватилось
+ai-hats self bump          # rebuild the prompt
+ai-hats config status      # confirm everything was picked up
 ```
 
-Если правил много, и ты хочешь увидеть только diff:
+If there are many changes and you just want the diff:
 
 ```bash
 git diff CLAUDE.md ai-hats.yaml
@@ -188,33 +188,33 @@ git diff CLAUDE.md ai-hats.yaml
 
 ---
 
-## Структура overlay (справка)
+## Overlay structure (reference)
 
 ```yaml
 customizations:
   <role-name>:
     add:
-      traits: [...]    # добавить trait целиком
-      rules:  [...]    # добавить отдельные rules
-      skills: [...]    # добавить отдельные skills
+      traits: [...]    # add a whole trait
+      rules:  [...]    # add individual rules
+      skills: [...]    # add individual skills
     remove:
-      traits: [...]    # убрать trait из базовой композиции
+      traits: [...]    # remove a trait from the base composition
       rules:  [...]
       skills: [...]
     injection_append: |
-      ## ...           # текст, который дописывается ПОСЛЕ injection роли
+      ## ...           # text appended AFTER the role's injection
 ```
 
-Пустые секции можно опускать. Если `customizations.<role>` целиком пустой — overlay не применяется.
+Empty sections can be omitted. If `customizations.<role>` is fully empty — the overlay is not applied.
 
 ---
 
 ## 9. Configurable venv_path
 
-По умолчанию ai-hats живёт в **dedicated** venv по пути `<ai_hats_dir>/.venv/` (default `.agent/ai-hats/.venv/`). Venv создаётся автоматически через `ai-hats self update` или `bash bootstrap.sh`. Bash launcher (`~/.local/bin/ai-hats`) определяет venv по precedence:
+By default ai-hats lives in a **dedicated** venv at `<ai_hats_dir>/.venv/` (default `.agent/ai-hats/.venv/`). The venv is created automatically by `ai-hats self update` or `bash bootstrap.sh`. The bash launcher (`~/.local/bin/ai-hats`) resolves the venv by precedence:
 
-1. `AI_HATS_VENV` env var (absolute path, для тестов / sandbox)
-2. `venv_path` поле в `ai-hats.yaml` (relative или absolute)
+1. `AI_HATS_VENV` env var (absolute path, for tests / sandbox)
+2. `venv_path` field in `ai-hats.yaml` (relative or absolute)
 3. Default `<ai_hats_dir>/.venv`
 
 ### Use case: shared system venv
@@ -229,45 +229,45 @@ venv_path: /opt/shared/ai-hats-venv
 python3 -m venv /opt/shared/ai-hats-venv
 /opt/shared/ai-hats-venv/bin/pip install "ai-hats @ git+ssh://git@github.com/muratovv/ai-hats.git"
 
-# Дальше launcher автоматически использует override
+# After that the launcher uses the override automatically
 cd ~/dev/my-project
 ai-hats config status   # uses /opt/shared/ai-hats-venv
 ```
 
-### Use case: проектный venv (re-use existing)
+### Use case: project venv (re-use existing)
 
 ```yaml
 # ai-hats.yaml
-venv_path: .venv          # уже существующий venv проекта в корне
+venv_path: .venv          # an existing project venv at repo root
 ```
 
-⚠️ В этом случае ai-hats и зависимости проекта живут в одном venv — конфликты версий зависимостей возможны. Это **осознанный** trade-off (override = user-owned).
+⚠️ In this case ai-hats and the project's dependencies live in the same venv — version conflicts are possible. This is a **conscious** trade-off (override = user-owned).
 
 ### Ownership invariant
 
-- **Default venv** (`<ai_hats_dir>/.venv/`) — managed фреймворком. `ai-hats self update` может пересоздавать целиком (например, после системного python upgrade).
-- **Override venv** (`venv_path:` в yaml) — user-owned. Ai-hats никогда не удаляет / не пересоздаёт автоматически; только `pip install -U` внутрь.
+- **Default venv** (`<ai_hats_dir>/.venv/`) — framework-managed. `ai-hats self update` may recreate it wholesale (for example, after a system Python upgrade).
+- **Override venv** (`venv_path:` in yaml) — user-owned. ai-hats never deletes or recreates it automatically; only `pip install -U` into it.
 
 ---
 
 ## 10. Recovery scenarios
 
-| Симптом | Команда |
+| Symptom | Command |
 |---|---|
-| `ai-hats: command not found` (свежий хост) | `curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh \| bash` (репо приватный → клонируй и запусти `bash scripts/install-launcher.sh`) |
-| `ai-hats: venv missing at ...` (нет venv) | `ai-hats self update` |
+| `ai-hats: command not found` (fresh host) | `curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh \| bash` (if the repo is private — clone it and run `bash scripts/install-launcher.sh`) |
+| `ai-hats: venv missing at ...` (no venv) | `ai-hats self update` |
 | `ai-hats: venv exists but ai-hats binary is missing` | `ai-hats self update` |
-| Системный python upgrade (proxmox case) | `ai-hats self update` — launcher auto-recreates default venv |
+| System Python upgrade (the Proxmox case) | `ai-hats self update` — the launcher auto-recreates the default venv |
 | Import error / corrupted site-packages | `rm -rf .agent/ai-hats/.venv && ai-hats self update` |
-| Override venv сломан | `python3 -m venv <override-path> && <override-path>/bin/pip install 'ai-hats @ git+ssh://...'` (user-managed) |
-| Полный wipe project (потеря data!) | `rm -rf .agent/ai-hats/ && ai-hats self update && ai-hats self init -r <role> -p <provider>` |
+| Override venv broken | `python3 -m venv <override-path> && <override-path>/bin/pip install 'ai-hats @ git+ssh://...'` (user-managed) |
+| Full project wipe (data loss!) | `rm -rf .agent/ai-hats/ && ai-hats self update && ai-hats self init -r <role> -p <provider>` |
 
-Подробный migration guide для проектов с pipx → launcher: `docs/migration.md`.
+Detailed migration guide for projects moving from pipx → launcher: `docs/migration.md`.
 
 ---
 
-## См. также
+## See also
 
-- [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — настройка и использование цикла reflect-session / reflect-all (политики, гипотезы, валидация харнесом).
-- [`docs/migration.md`](migration.md) — migration guide на venv-first launcher.
-- [`docs/reflect.md`](reflect.md) — архитектура retrospective pipeline.
+- [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — setup and usage of the reflect-session / reflect-all cycle (policies, hypotheses, harness validation).
+- [`docs/migration.md`](migration.md) — migration guide to the venv-first launcher.
+- [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture.

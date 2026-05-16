@@ -1,70 +1,69 @@
-# How-To: цикл обратной связи (reflect-session + reflect-all)
+# How-To: feedback loop (reflect-session + reflect-all)
 
-Гайд по настройке и использованию пайплайна ретроспективы. Покрывает три флоу:
+Guide to setting up and using the retrospective pipeline. Covers three flows:
 
-- **0. Настройка политик** — что писать в `ai-hats.yaml`, когда какая политика срабатывает.
-- **1. Сессия → reflect-session agent** — авто-ретро после конкретной сессии.
-- **2. `ai-hats reflect all`** — ручной триаж накопленного бэклога гипотез и предложений.
+- **0. Policy setup** — what to put in `ai-hats.yaml`, when each policy fires.
+- **1. Session → reflect-session agent** — auto-retro after a specific session.
+- **2. `ai-hats reflect all`** — manual triage of accumulated hypothesis and proposal backlog.
 
-> Команды называются `reflect-session` и `reflect-all` (не `review-*`). Полная архитектурная справка — в [`docs/reflect.md`](reflect.md). Полный справочник CLI с флагами — `ai-hats --tree` (поддерево: `ai-hats --tree reflect`). Здесь — практические рецепты.
+> The commands are `reflect-session` and `reflect-all` (not `review-*`). Full architectural reference — see [`docs/reflect.md`](reflect.md). Full CLI reference with flags — `ai-hats --tree` (subtree: `ai-hats --tree reflect`). Here — practical recipes.
 
 ---
 
-## Понятийный минимум
+## Concept minimum
 
-| Сущность                | Где живёт                                           | Кто пишет                        |
+| Entity                  | Where it lives                                      | Who writes                       |
 | ----------------------- | --------------------------------------------------- | -------------------------------- |
-| **Сессия**              | `.gitlog/session_<id>/` (audit, metrics, retro)     | runtime                          |
-| **HYP** (гипотеза)      | `.agent/hypotheses/HYP-NNN.yaml`                    | человек или агент                |
-| **PROP** (предложение)  | `.agent/backlog/proposals/PROP-NNN.yaml`            | reflect-session при self-problem |
+| **Session**             | `.gitlog/session_<id>/` (audit, metrics, retro)     | runtime                          |
+| **HYP** (hypothesis)    | `.agent/hypotheses/HYP-NNN.yaml`                    | human or agent                   |
+| **PROP** (proposal)     | `.agent/backlog/proposals/PROP-NNN.yaml`            | reflect-session on self-problem  |
 | **SessionRetro**        | `.agent/retrospectives/sessions/<id>.md`            | builder (LLM)                    |
-| **ReflectSession**      | `.agent/retrospectives/reflect-session/<id>.md`     | роль `reflect-session`           |
+| **ReflectSession**      | `.agent/retrospectives/reflect-session/<id>.md`     | the `reflect-session` role       |
 | **Reflect-all handoff** | `.agent/retrospectives/reflect-all/<ts>-handoff.md` | `ai-hats reflect all`            |
 
-**Гипотеза** — YAML с `success_criterion`, `observation_window`, `exit_criteria`, `freshness_rule`. Она живёт со статусом `active` до тех пор, пока не накопит достаточно вердиктов в `validation_log` для перехода в `confirmed` / `refuted` / `stalled`.
+**Hypothesis** — a YAML with `success_criterion`, `observation_window`, `exit_criteria`, `freshness_rule`. It stays in status `active` until it accumulates enough verdicts in `validation_log` to transition to `confirmed` / `refuted` / `stalled`.
 
-**Вердикт** — одна запись в `validation_log` гипотезы:
+**Verdict** — one entry in a hypothesis's `validation_log`:
 
-| verdict        | смысл                                         |
-| -------------- | --------------------------------------------- |
-| `confirmed`    | сессия дала свидетельство, что гипотеза верна |
-| `refuted`      | свидетельство против гипотезы                 |
-| `inconclusive` | данные есть, но мешанина / недостаточно       |
-| `n/a`          | сессия физически не может проверить гипотезу  |
+| verdict        | meaning                                          |
+| -------------- | ------------------------------------------------ |
+| `confirmed`    | session produced evidence that the HYP holds     |
+| `refuted`      | evidence against the hypothesis                  |
+| `inconclusive` | data exists but is mixed / insufficient          |
+| `n/a`          | the session physically cannot test the HYP      |
 
-Вердикт пишется в HYP-файл атомарно через `ai-hats task hyp append-verdict` (filelock-protected). `n/a` мирорится только во frontmatter ретро, в HYP-файл не пишется (чтобы не засорять observation window).
+The verdict is written into the HYP file atomically via `ai-hats task hyp append-verdict` (filelock-protected). `n/a` is mirrored only into the retro frontmatter and is not written into the HYP file (to keep the observation window clean).
 
 ---
 
-## Флоу 0: настройка политик в `ai-hats.yaml`
+## Flow 0: policy setup in `ai-hats.yaml`
 
-Секция `feedback` управляет всем пайплайном:
+The `feedback` section controls the whole pipeline:
 
 ```yaml
 feedback:
   session_retro:
     policy: smart           # off | always | smart | hint
-    background: true        # true → запуск в detached background
+    background: true        # true → run detached in background
     smart_threshold:
-      min_turns: 5          # порог по числу ходов
-      min_tool_calls: 10    # ИЛИ по числу tool-вызовов
+      min_turns: 5          # threshold by turn count
+      min_tool_calls: 10    # OR by tool-call count
 ```
 
-### Политики `session_retro.policy`
+### Policies for `session_retro.policy`
 
-| Значение | Поведение на `session_end`                                                               |
+| Value    | Behavior on `session_end`                                                                |
 | -------- | ---------------------------------------------------------------------------------------- |
-| `off`    | ничего не происходит                                                                     |
-| `always` | всегда запускается ретро                                                                 |
-| `smart`  | ретро запускается, **только если** `turns ≥ min_turns` ИЛИ `tool_calls ≥ min_tool_calls` |
-| `hint`   | проверяет порог, но вместо запуска показывает баннер «стоит запустить ретро вручную»     |
+| `off`    | nothing happens                                                                          |
+| `always` | retro always runs                                                                        |
+| `smart`  | retro runs **only if** `turns ≥ min_turns` OR `tool_calls ≥ min_tool_calls`              |
+| `hint`   | checks the threshold but instead of running shows a banner "consider running retro manually" |
 
-Условие smart-порога — **OR**, а не AND: достаточно перешагнуть один из лимитов.
+The smart-threshold condition is **OR**, not AND: crossing either limit is enough.
 
-Builder всегда работает в LLM-режиме: сразу после SessionRetroV1 спавнится
-роль `reflect-session` для голосования по активным гипотезам.
+The builder always works in LLM mode: immediately after SessionRetroV1, the `reflect-session` role is spawned to vote on active hypotheses.
 
-### Минимальная конфигурация для нового проекта
+### Minimal config for a new project
 
 ```yaml
 feedback:
@@ -73,122 +72,122 @@ feedback:
     background: true
 ```
 
-После правки — `ai-hats self bump`.
+After editing — `ai-hats self bump`.
 
-### Модель для feedback-loop (HATS-232 → HATS-252)
+### Model for the feedback loop (HATS-232 → HATS-252)
 
-По умолчанию ai-hats не передаёт `--model` в провайдер CLI — feedback-loop наследует ту же модель, что выбрана в Claude Code / Gemini CLI глобально. Если у тебя интерактив на Opus, ревью тоже идёт на Opus, и дешёвая телеметрия превращается в дорогую.
+By default ai-hats does not pass `--model` to the provider CLI — the feedback loop inherits the model globally selected in Claude Code / Gemini CLI. If your interactive session runs on Opus, the review runs on Opus too, and cheap telemetry turns expensive.
 
-После HATS-252 пост-сессионная рефлексия делает **один LLM-вызов** через роль `session-reviewer`. Соответственно осталось одно поле:
+After HATS-252, post-session reflection makes **a single LLM call** via the `session-reviewer` role. Accordingly, only one field remains:
 
 ```yaml
 feedback:
   session_retro:
     policy: smart
-    review_model: claude-sonnet-4-6   # для роли session-reviewer
+    review_model: claude-sonnet-4-6   # for the session-reviewer role
 ```
 
-| Поле           | На что влияет                                                | Точка прокидки                                  |
-| -------------- | ------------------------------------------------------------ | ----------------------------------------------- |
-| `review_model` | sub-agent роли `session-reviewer` (summary + observations + verdicts + proposals) | `claude --model <m> --print -p <meta-prompt>` |
+| Field          | What it affects                                                                   | Where it's plumbed                              |
+| -------------- | --------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `review_model` | sub-agent for the `session-reviewer` role (summary + observations + verdicts + proposals) | `claude --model <m> --print -p <meta-prompt>` |
 
-Поведение:
+Behavior:
 
-- Если поле **не задано (`null`)** — флаг `--model` не передаётся, работает дефолтная модель CLI.
-- Старое поле `reflect_model` принимается как deprecated alias (с `DeprecationWarning`); поле `model` (бывший LLM-builder) больше не используется и игнорируется.
-- Поддерживается и для `provider: claude`, и для `provider: gemini` (флаг `--model` стандартный для обоих CLI).
+- If the field is **unset (`null`)** — the `--model` flag is not passed and the default CLI model is used.
+- The old `reflect_model` field is accepted as a deprecated alias (with `DeprecationWarning`); the `model` field (the former LLM-builder) is no longer used and is ignored.
+- Supported for both `provider: claude` and `provider: gemini` (the `--model` flag is standard for both CLIs).
 
-После правки — `ai-hats self bump`.
+After editing — `ai-hats self bump`.
 
 ---
 
-## Флоу 1: сессия → reflect-session
+## Flow 1: session → reflect-session
 
-Авто-цикл, который срабатывает на завершении сессии при `policy ∈ {smart, always}`.
+Auto cycle that fires on session end when `policy ∈ {smart, always}`.
 
-### Что происходит
+### What happens
 
 ```
 session_end
   └─ runtime → auto_retro.make_decision(policy, metrics)
        │
-       ├─ action=skip   → ничего
-       ├─ action=hint   → баннер пользователю
+       ├─ action=skip   → nothing
+       ├─ action=hint   → banner for the user
        └─ action=run:
-             1) builder LLM пишет SessionRetroV1
+             1) builder LLM writes SessionRetroV1
                 → .agent/retrospectives/sessions/<id>.md
-             2) спавнится роль reflect-session (detached background, claude)
-                ├─ читает .agent/hypotheses/*.yaml (status=active)
-                ├─ читает .agent/backlog/proposals/*.yaml (status=open)
-                ├─ читает .gitlog/session_<id>/ (audit, metrics, retro)
-                ├─ для КАЖДОЙ active HYP выносит вердикт:
+             2) reflect-session role is spawned (detached background, claude)
+                ├─ reads .agent/hypotheses/*.yaml (status=active)
+                ├─ reads .agent/backlog/proposals/*.yaml (status=open)
+                ├─ reads .gitlog/session_<id>/ (audit, metrics, retro)
+                ├─ for EACH active HYP it issues a verdict:
                 │     "$AH" task hyp append-verdict --hyp HYP-NNN --session $SID \
                 │            --verdict <kind> --evidence "<...>" \
                 │            --recommendation <kind>
-                ├─ при self-problem заводит PROP:
+                ├─ on self-problem files a PROP:
                 │     "$AH" task proposal create --category process --target reflect-session ...
-                └─ пишет ReflectSessionV1
+                └─ writes ReflectSessionV1
                    → .agent/retrospectives/reflect-session/<id>.md
-             3) runtime safety net: пост-валидация артефакта
-                если ReflectSessionV1 битый/отсутствует →
-                автоматически создаётся meta-PROP с failed_session_id=<id>
+             3) runtime safety net: post-validation of the artifact
+                if ReflectSessionV1 is broken / missing →
+                a meta-PROP is created automatically with failed_session_id=<id>
 ```
 
-### Контракт reflect-session (что обязан вернуть агент)
+### Reflect-session contract (what the agent must return)
 
-- `hypothesis_verdicts[]` содержит **ровно по одной записи на каждую active HYP** — пропуски запрещены.
-- Если гипотезу физически нельзя проверить из этой сессии — `verdict: n/a`, и **не зовём** `append-verdict` (только мирор во frontmatter).
-- Самопроблема (агент не понял HYP, не нашёл данных) → `task proposal create` + `inconclusive` + ссылка в `self_problems[]`.
-- При `confirmed/refuted/inconclusive` — обязан вызвать `ai-hats task hyp append-verdict`.
+- `hypothesis_verdicts[]` contains **exactly one entry per active HYP** — no skipping.
+- If a hypothesis physically cannot be tested from this session — `verdict: n/a`, and **do not call** `append-verdict` (only mirror into frontmatter).
+- Self-problem (the agent didn't understand the HYP, didn't find data) → `task proposal create` + `inconclusive` + a reference in `self_problems[]`.
+- On `confirmed/refuted/inconclusive` — the agent must call `ai-hats task hyp append-verdict`.
 
-Вся эта логика — в скилле `hypothesis-validation` (`libraries/skills/hypothesis-validation/SKILL.md`), который автоматически подключён к роли `reflect-session`.
+All of this logic lives in the `hypothesis-validation` skill (`libraries/skills/hypothesis-validation/SKILL.md`), which is automatically attached to the `reflect-session` role.
 
-### Как валидирует харнес
+### How the harness validates
 
-Два слоя «no-silent-failure»:
+Two layers of "no silent failure":
 
-1. **In-skill (LLM-driven):** скилл явно требует один verdict на каждую active HYP, описывает enum'ы и запрещает silent `n/a`.
-2. **Runtime (programmatic):** после завершения детач-процесса читает `.agent/retrospectives/reflect-session/<id>.md`, парсит как `hats-reflect-session/v1`. При любой из проблем (файл отсутствует, схема не парсится, не все active HYP покрыты) — пишет meta-PROP с `category=process`, `target=reflect-session`, `failed_session_id=<id>`. Эти PROP всплывают в reflect-all.
+1. **In-skill (LLM-driven):** the skill explicitly requires one verdict per active HYP, describes the enums, and forbids silent `n/a`.
+2. **Runtime (programmatic):** after the detached process finishes, it reads `.agent/retrospectives/reflect-session/<id>.md` and parses it as `hats-reflect-session/v1`. On any issue (missing file, schema fails to parse, not all active HYPs covered) — it writes a meta-PROP with `category=process`, `target=reflect-session`, `failed_session_id=<id>`. These PROPs surface in reflect-all.
 
-### Запуск вручную (foreground, для отладки)
+### Running manually (foreground, for debugging)
 
 ```bash
 ai-hats reflect session --session <id>            # foreground
-ai-hats reflect session --session <id> --background   # как в авто
+ai-hats reflect session --session <id> --background   # same as auto
 ```
 
-Полезно когда:
+Useful when:
 
-- авто-ретро упал, и хочется посмотреть стек интерактивно;
-- нужен ретро на сессию, которую не накрыло порогом `smart`;
-- LLM-режим только что включили, прогоняем «холодный» прогон на старой сессии.
+- auto-retro crashed and you want an interactive stack trace;
+- you need a retro for a session that didn't cross the `smart` threshold;
+- LLM mode was just enabled and you're doing a "cold" run on an older session.
 
 ---
 
-## Флоу 2: `ai-hats reflect all` — ручной триаж бэклога
+## Flow 2: `ai-hats reflect all` — manual backlog triage
 
-Когда HYP'ов и PROP'ов накопилось много — пора руками пройтись по бэклогу и закрыть/принять/отклонить пачкой.
+Once HYPs and PROPs pile up — time to walk the backlog by hand and close / accept / reject in a batch.
 
-### Жизненный цикл команды
+### Command lifecycle
 
 ```
 1. ai-hats reflect all
    ├─ Pre-flight (Python):
-   │   собирает active HYP + open PROP
-   │   пишет .agent/retrospectives/reflect-all/<ts>-handoff.md
-   │   handoff содержит указатели на:
-   │     - HYP-NNN (с краткой выжимкой validation_log)
-   │     - PROP-NNN (с rationale)
-   │     - подсказки по командам ai-hats task hyp/proposal
+   │   collects active HYP + open PROP
+   │   writes .agent/retrospectives/reflect-all/<ts>-handoff.md
+   │   the handoff contains pointers to:
+   │     - HYP-NNN (with a brief validation_log digest)
+   │     - PROP-NNN (with rationale)
+   │     - hints for ai-hats task hyp/proposal commands
    └─ os.execvp claude <pointer-prompt>
-        ↓ переходишь в интерактивный чат
-        в чате используешь:
+        ↓ you switch into the interactive chat
+        in the chat you use:
           ai-hats task hyp show HYP-NNN
           ai-hats task hyp append-verdict ...
           ai-hats task proposal show PROP-NNN
           ai-hats task proposal status PROP-NNN <accepted|rejected|deferred|duplicate>
-          ai-hats task create ...   # если нужно завести задачу
-2. Когда чат закончен — bulk-flip:
+          ai-hats task create ...   # if you need to spawn a task
+2. Once the chat is done — bulk-flip:
    ai-hats reflect commit \
      --accept PROP-3 --accept PROP-7 \
      --reject PROP-12 \
@@ -202,73 +201,73 @@ ai-hats reflect session --session <id> --background   # как в авто
 ai-hats reflect all --dry-run
 ```
 
-Только собирает handoff, не зовёт claude. Удобно:
+Only builds the handoff, does not invoke claude. Useful to:
 
-- посмотреть что вообще накопилось;
-- скопировать handoff в любой редактор / в другой инструмент;
-- проверить что pre-flight отрабатывает в CI.
+- see what has accumulated;
+- copy the handoff into any editor / another tool;
+- check that pre-flight works in CI.
 
-### Когда запускать reflect-all
+### When to run reflect-all
 
-- 5+ open PROP в `.agent/backlog/proposals/` → reflect-session начал генерить шум, надо разгрести.
-- Ретро-ремайндер на старте сессии: «X дней без reflect-all, Y скипов» — запускать.
-- Перед мержем большого изменения в роли/скилле — пройтись по active HYP и зафиксировать состояние.
-- Ручной приём «раз в неделю» — рутинная гигиена.
+- 5+ open PROPs in `.agent/backlog/proposals/` → reflect-session has started producing noise, time to clear it.
+- Retro reminder at session start: "X days without reflect-all, Y skips" — run it.
+- Before merging a large change to a role/skill — walk the active HYPs and snapshot their state.
+- Routine "once a week" hygiene pass.
 
-### Что не делает reflect-all
+### What reflect-all does NOT do
 
-- **Не голосует за гипотезы автоматически** — это работа reflect-session на конкретной сессии. reflect-all только показывает накопленное и помогает принять решения по PROP / закрыть HYP.
-- **Не создаёт новые HYP** — для этого см. `hypothesis-workflow` skill (отдельный флоу через `ai-hats task create --tag hypothesis`).
+- **Does not vote on hypotheses automatically** — that's the job of reflect-session on a specific session. Reflect-all only displays what has accumulated and helps you make decisions on PROPs / close HYPs.
+- **Does not create new HYPs** — for that, see the `hypothesis-workflow` skill (separate flow via `ai-hats task create --tag hypothesis`).
 
 ---
 
-## Как гипотеза доходит до закрытия
+## How a hypothesis reaches closure
 
-Сводный путь от создания до `confirmed`/`refuted`:
+The full path from creation to `confirmed`/`refuted`:
 
 ```
-1. Создание (вручную или после reflect-session):
+1. Creation (manually or after reflect-session):
    .agent/hypotheses/HYP-042.yaml  status: active
        success_criterion: "..."
        observation_window: "10 sessions"
        exit_criteria.confirm / refute / stalled
 
-2. Накопление вердиктов:
-   каждая сессия → reflect-session →
+2. Verdict accumulation:
+   each session → reflect-session →
      ai-hats task hyp append-verdict --hyp HYP-042 --verdict ... --recommendation ...
-   validation_log растёт.
+   validation_log grows.
 
-3. Триаж в reflect-all:
-   pre-flight handoff показывает счётчики
-   (например, "8 confirmed, 1 inconclusive, 0 refuted").
-   Сравниваешь с exit_criteria.confirm.
-   В чате — закрываешь:
-     ai-hats task hyp ... # перевод status=confirmed/refuted (см. ai-hats task hyp --help)
-   ИЛИ продлеваешь (recommendation=extend_window).
+3. Triage in reflect-all:
+   pre-flight handoff shows counters
+   (e.g. "8 confirmed, 1 inconclusive, 0 refuted").
+   You compare with exit_criteria.confirm.
+   In the chat — you close it:
+     ai-hats task hyp ... # flip status=confirmed/refuted (see ai-hats task hyp --help)
+   OR extend it (recommendation=extend_window).
 
-4. Закрытие:
+4. Closure:
    HYP-NNN.yaml: status: confirmed | refuted | stalled
                  closed: 2026-05-05
-   из active-списка пропадает, reflect-session перестаёт за неё голосовать.
+   drops out of the active list; reflect-session stops voting on it.
 ```
 
 ---
 
-## Чек-лист: «у меня сломалось»
+## Troubleshooting checklist
 
-| Симптом                                   | Куда смотреть                                                                                                                                                             |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| reflect-session не запускается            | `feedback.session_retro.policy` ≠ `off` и порог `smart_threshold` достигнут                                                                                                |
-| validation_log пустой после сессии        | проверь `ai-hats reflect session --session <id>` foreground — увидишь stack-trace, а meta-PROP всплывает в reflect-all                                                    |
-| meta-PROP `failed_session_id=...`         | runtime safety net поймал битый артефакт. Открой `.agent/retrospectives/reflect-session/<id>.md`, прогони `ai-hats reflect session --session <id>` foreground для повтора |
-| reflect-all падает с «claude not in PATH» | установи Claude Code или используй `--dry-run` и работай с handoff в редакторе                                                                                            |
-| `Overlay: cannot remove ...`              | не относится к feedback loop — см. [how-to.md](how-to.md)                                                                                                                 |
+| Symptom                                       | Where to look                                                                                                                                                              |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| reflect-session does not start                | `feedback.session_retro.policy` ≠ `off` and the `smart_threshold` is met                                                                                                   |
+| validation_log empty after a session          | check `ai-hats reflect session --session <id>` in foreground — you'll see the stack trace, and the meta-PROP surfaces in reflect-all                                       |
+| meta-PROP with `failed_session_id=...`        | runtime safety net caught a broken artifact. Open `.agent/retrospectives/reflect-session/<id>.md`, rerun `ai-hats reflect session --session <id>` in foreground to retry   |
+| reflect-all fails with "claude not in PATH"   | install Claude Code or use `--dry-run` and work with the handoff in an editor                                                                                              |
+| `Overlay: cannot remove ...`                  | unrelated to the feedback loop — see [how-to.md](how-to.md)                                                                                                                |
 
 ---
 
-## Связанные документы
+## Related docs
 
-- [`docs/reflect.md`](reflect.md) — архитектура pipeline, schema-таблица, follow-up tasks.
-- [`docs/how-to.md`](how-to.md) — общие how-to по `ai-hats.yaml` (роли, оверлеи, библиотеки).
-- `libraries/skills/hypothesis-workflow/SKILL.md` — как заводить новые HYP по итогам reflect-session.
-- `libraries/skills/hypothesis-validation/SKILL.md` — контракт reflect-session при голосовании.
+- [`docs/reflect.md`](reflect.md) — pipeline architecture, schema table, follow-up tasks.
+- [`docs/how-to.md`](how-to.md) — general how-to for `ai-hats.yaml` (roles, overlays, libraries).
+- `libraries/skills/hypothesis-workflow/SKILL.md` — how to file new HYPs from reflect-session findings.
+- `libraries/skills/hypothesis-validation/SKILL.md` — the reflect-session contract during voting.
