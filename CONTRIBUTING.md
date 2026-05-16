@@ -98,6 +98,14 @@ filter-repo procedure for purging the history.
 - Security issues: do **not** open a public issue. See
   [SECURITY.md](SECURITY.md).
 
+## Releases
+
+See [docs/RELEASING.md](docs/RELEASING.md) for the SemVer policy, the
+breaking-change protocol, and the manual release checklist. Short
+version: bump per SemVer, roll up `CHANGELOG.md`, push an annotated
+tag, create a GitHub Release with the matching CHANGELOG section as
+the body.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed
