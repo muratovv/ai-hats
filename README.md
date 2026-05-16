@@ -1,10 +1,33 @@
-# ai-hats
+<p align="center">
+  <img src="docs/assets/logo-256.png" alt="ai-hats" width="180" />
+</p>
 
-Фреймворк для создания, сборки и управления AI-агентами через композитные роли.
+<h1 align="center">ai-hats</h1>
+
+<p align="center">
+  <strong>Do. Reflect. Repeat.</strong>
+</p>
+
+<p align="center">
+  <em>Композирует AI-агентов из переиспользуемых traits + rules + skills и автоматически рефлексирует над каждой сессией.</em><br>
+  <em>Один набор ролей — Claude и Gemini.</em>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green.svg"></a>
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue.svg">
+  <img alt="Status: Beta" src="https://img.shields.io/badge/status-beta-orange.svg">
+  <a href="https://github.com/muratovv/ai-hats/commits/master"><img alt="Last commit" src="https://img.shields.io/github/last-commit/muratovv/ai-hats"></a>
+  <a href="https://github.com/muratovv/ai-hats/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/muratovv/ai-hats"></a>
+</p>
+
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="ai-hats — composition + real sessions + active hypotheses" width="900" />
+</p>
 
 ## Концепция
 
-ai-hats собирает роли из компонентов — **traits**, **rules**, **skills**, **hooks** — и инжектит их в system prompt выбранного провайдера (Gemini / Claude). Один набор ролей работает с любым провайдером.
+ai-hats собирает роли из компонентов — **traits**, **rules**, **skills**, **hooks** — и инжектит их в system prompt выбранного провайдера (Gemini / Claude). Один набор ролей работает с любым провайдером. После каждой сессии — автоматический structured retrospective с вердиктами по гипотезам и предложениями улучшений.
 
 ```
 roles/assistant ── trait-base + trait-agent + dev::python
