@@ -18,8 +18,10 @@ from ai_hats.paths import (
     last_backup_path,
     legacy_paths_by_class,
     library_dir,
+    local_venv_path,
     mcp_dir,
     normalize_ai_hats_dir,
+    normalize_venv_path,
     pipeline_steps_dir,
     proposals_dir,
     retros_dir,
@@ -31,6 +33,7 @@ from ai_hats.paths import (
     tasks_dir,
     tracker_dir,
     traces_dir,
+    venv_path,
     worktree_state_path,
     worktrees_dir,
 )
@@ -295,3 +298,101 @@ def test_normalize_ai_hats_dir_accepts(raw, expected):
 def test_normalize_ai_hats_dir_rejects(bad):
     with pytest.raises(ValueError):
         normalize_ai_hats_dir(bad)
+
+
+# ---------- HATS-334: venv_path resolver + validation ----------
+
+
+def test_venv_path_default(tmp_path, monkeypatch):
+    """No env, no yaml → <ai_hats_dir>/.venv."""
+    monkeypatch.delenv("AI_HATS_VENV", raising=False)
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    assert venv_path(tmp_path) == tmp_path / ".agent" / "ai-hats" / ".venv"
+
+
+def test_venv_path_yaml_relative(tmp_path, monkeypatch):
+    """yaml.venv_path relative → resolved against project_dir."""
+    monkeypatch.delenv("AI_HATS_VENV", raising=False)
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    (tmp_path / "ai-hats.yaml").write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
+        "venv_path: .venv\nprovider: claude\n"
+    )
+    assert venv_path(tmp_path) == tmp_path / ".venv"
+
+
+def test_venv_path_yaml_absolute(tmp_path, monkeypatch):
+    """yaml.venv_path absolute → returned as-is."""
+    monkeypatch.delenv("AI_HATS_VENV", raising=False)
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    abs_target = tmp_path / "shared-venv"
+    (tmp_path / "ai-hats.yaml").write_text(
+        f"schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
+        f"venv_path: {abs_target}\nprovider: claude\n"
+    )
+    assert venv_path(tmp_path) == abs_target
+
+
+def test_venv_path_env_overrides_yaml(tmp_path, monkeypatch):
+    """AI_HATS_VENV env beats yaml.venv_path."""
+    (tmp_path / "ai-hats.yaml").write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
+        "venv_path: .venv\nprovider: claude\n"
+    )
+    override = tmp_path / "env-override"
+    monkeypatch.setenv("AI_HATS_VENV", str(override))
+    assert venv_path(tmp_path) == override
+
+
+def test_venv_path_env_expands_user(tmp_path, monkeypatch):
+    """AI_HATS_VENV with ~ gets expanded."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("AI_HATS_VENV", "~/my-venv")
+    assert venv_path(tmp_path / "project") == tmp_path / "my-venv"
+
+
+def test_venv_path_handles_corrupt_yaml(tmp_path, monkeypatch):
+    """Malformed yaml → fall through to default (no crash)."""
+    monkeypatch.delenv("AI_HATS_VENV", raising=False)
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    (tmp_path / "ai-hats.yaml").write_text("not: valid: yaml: [\n")
+    assert venv_path(tmp_path) == tmp_path / ".agent" / "ai-hats" / ".venv"
+
+
+def test_local_venv_path_is_alias_for_venv_path(tmp_path, monkeypatch):
+    """HATS-334: local_venv_path is a thin alias; removed in HATS-337."""
+    monkeypatch.delenv("AI_HATS_VENV", raising=False)
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    assert local_venv_path(tmp_path) == venv_path(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (".venv", ".venv"),
+        ("custom/venv", "custom/venv"),
+        ("/opt/myvenv", "/opt/myvenv"),
+        ("/opt/myvenv/", "/opt/myvenv"),
+    ],
+)
+def test_normalize_venv_path_accepts(raw, expected):
+    """venv_path allows both relative and absolute (unlike ai_hats_dir)."""
+    assert normalize_venv_path(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["", ".", "/", "../escape", "a/../b"],
+)
+def test_normalize_venv_path_rejects(bad):
+    """venv_path rejects empty / dot / dotdot just like ai_hats_dir,
+    but absolute is OK."""
+    with pytest.raises(ValueError):
+        normalize_venv_path(bad)
+
+
+def test_normalize_venv_path_allows_absolute_unlike_ai_hats_dir():
+    """Pin the deliberate divergence from normalize_ai_hats_dir."""
+    assert normalize_venv_path("/opt/venv") == "/opt/venv"
+    with pytest.raises(ValueError):
+        normalize_ai_hats_dir("/opt/venv")

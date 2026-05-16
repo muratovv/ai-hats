@@ -57,6 +57,25 @@ def _read_ai_hats_dir_from_yaml(project_dir: Path) -> str | None:
     return val if isinstance(val, str) and val else None
 
 
+def _read_venv_path_from_yaml(project_dir: Path) -> str | None:
+    """Read raw ``venv_path`` field from ``ai-hats.yaml`` (HATS-334).
+
+    Low-level reader mirroring :func:`_read_ai_hats_dir_from_yaml`. Avoids
+    pydantic so the bash launcher (HATS-339) and any hot-path callers have a
+    consistent precedence spec to mirror. Returns ``None`` if file missing,
+    unreadable, or field absent/empty.
+    """
+    yaml_path = project_dir / "ai-hats.yaml"
+    if not yaml_path.exists():
+        return None
+    try:
+        data = yaml.safe_load(yaml_path.read_text()) or {}
+    except (yaml.YAMLError, OSError):
+        return None
+    val = data.get("venv_path")
+    return val if isinstance(val, str) and val else None
+
+
 def ai_hats_dir(project_dir: Path) -> Path:
     """Base dir for ai-hats managed artefacts.
 
@@ -213,14 +232,37 @@ def last_backup_path(project_dir: Path) -> Path:
     return ai_hats_dir(project_dir) / ".last_backup"
 
 
-def local_venv_path(project_dir: Path) -> Path:
-    """Opt-in local Python venv for ai-hats CLI: ``<ai_hats_dir>/.venv/``.
+def venv_path(project_dir: Path) -> Path:
+    """Resolve ai-hats venv location (HATS-334).
 
-    HATS-318. The path is purely a convention — existence of
-    ``<venv>/bin/python`` is what activates the wrapper re-exec in
-    :func:`ai_hats.cli.main_entry`.
+    Precedence chain:
+      1. ``AI_HATS_VENV`` env var — absolute path, runtime override (tests,
+         sandbox, CI shared cache). ``~`` is expanded.
+      2. yaml ``venv_path`` — relative (resolved against ``project_dir``)
+         or absolute. Validated by :func:`normalize_venv_path`.
+      3. Default ``<ai_hats_dir>/.venv``.
+
+    Returns the absolute path without ``mkdir`` — venv creation is owned
+    by ``bash bootstrap`` / ``self update`` (HATS-339), not by callers.
     """
+    raw_env = os.environ.get("AI_HATS_VENV")
+    if raw_env:
+        return Path(raw_env).expanduser()
+    raw_yaml = _read_venv_path_from_yaml(project_dir)
+    if raw_yaml:
+        p = Path(raw_yaml).expanduser()
+        return p if p.is_absolute() else (project_dir / p)
     return ai_hats_dir(project_dir) / ".venv"
+
+
+def local_venv_path(project_dir: Path) -> Path:
+    """Deprecated alias for :func:`venv_path` (HATS-318 → HATS-334).
+
+    Kept as 1-line wrapper for in-flight callers; removed in HATS-337
+    cleanup once the wrapper / use-local / use-global code paths are
+    deleted.
+    """
+    return venv_path(project_dir)
 
 
 # ---------- Legacy migration helpers (consumed by HATS-312/313/314) ----------
@@ -309,4 +351,28 @@ def normalize_ai_hats_dir(value: str) -> str:
     s = p.as_posix().rstrip("/")
     if s in {"", ".", "/"}:
         raise ValueError(f"ai_hats_dir is invalid: {value!r}")
+    return s
+
+
+def normalize_venv_path(value: str) -> str:
+    """Validate + normalize a ``venv_path`` config value (HATS-334).
+
+    Differs from :func:`normalize_ai_hats_dir` by ALLOWING absolute paths —
+    venv may legitimately live outside the project (CI shared cache,
+    system-wide ai-hats venv, user-owned override venv).
+
+    Raises ``ValueError`` on:
+      - empty string, ``"."``, ``"/"``
+      - ``..`` segments (relative escape; not meaningful for absolute either)
+
+    Normalization: POSIX-style separators, trailing slash stripped.
+    """
+    if not value:
+        raise ValueError("venv_path must not be empty")
+    p = PurePosixPath(value.replace("\\", "/"))
+    if ".." in p.parts:
+        raise ValueError("venv_path must not contain '..' segments")
+    s = p.as_posix().rstrip("/")
+    if s in {"", ".", "/"}:
+        raise ValueError(f"venv_path is invalid: {value!r}")
     return s

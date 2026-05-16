@@ -444,6 +444,11 @@ class ProjectConfig(_YamlModel):
     # calls without a yaml file (tests, scratch); `from_yaml` enforces that v4
     # yaml on disk contains the field explicitly.
     ai_hats_dir: str = ".agent/ai-hats"
+    # HATS-334: optional override for ai-hats venv location. None → default
+    # `<ai_hats_dir>/.venv` (managed by ai-hats). Set to a relative or
+    # absolute path to point ai-hats at a user-owned venv. Read by
+    # `paths.venv_path()` and by the bash launcher (HATS-339) via grep.
+    venv_path: str | None = None
     library_paths: list[str] = Field(default_factory=list)
     customizations: dict[str, OverlayConfig] = Field(default_factory=dict)
     feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
@@ -482,6 +487,15 @@ class ProjectConfig(_YamlModel):
         from .paths import normalize_ai_hats_dir
 
         return normalize_ai_hats_dir(value)
+
+    @field_validator("venv_path")
+    @classmethod
+    def _validate_venv_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from .paths import normalize_venv_path
+
+        return normalize_venv_path(value)
 
     @field_validator("imports_order")
     @classmethod
@@ -555,6 +569,11 @@ class ProjectConfig(_YamlModel):
             "active_role": self.active_role,
             "default_role": self.default_role,
         }
+        # HATS-334: venv_path is opt-in — omitted from yaml when None so
+        # existing files without the field stay clean and the field appears
+        # only when the user actually picks an override.
+        if self.venv_path is not None:
+            d["venv_path"] = self.venv_path
         live_customs = {
             name: overlay.to_dict()
             for name, overlay in self.customizations.items()
