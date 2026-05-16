@@ -1,0 +1,46 @@
+vars: {
+  d2-config: {
+    theme-id: 200
+    theme-overrides: {
+      N1: "#fbf1c7"
+      N2: "#ebdbb2"
+      N3: "#a89984"
+      N4: "#7c6f64"
+      N5: "#504945"
+      N6: "#3c3836"
+      N7: "#282828"
+      B1: "#fe8019"
+      B2: "#d65d0e"
+      B3: "#af3a03"
+      B4: "#7c2d04"
+      B5: "#5a2003"
+      B6: "#3a1502"
+      AA2: "#b8bb26"
+      AA4: "#d3869b"
+      AA5: "#fb4934"
+      AB4: "#83a598"
+      AB5: "#458588"
+    }
+  }
+}
+
+direction: down
+
+user: User {shape: person}
+launch: Launch
+interactive: Interactive\nsession
+trace: trace log {shape: cylinder}
+finalize: Finalize\nartifacts
+artifacts: audit\nmetrics\ntranscript {shape: cylinder}
+retro: Auto retro? {shape: diamond}
+done: end {shape: oval}
+bridge: Reflection\nloop {shape: parallelogram}
+
+user -> launch: ai-hats agent ROLE
+launch -> interactive: session_start
+interactive -> trace: every turn
+interactive -> finalize: on close
+finalize -> artifacts
+finalize -> retro: session_end
+retro -> done: off / below threshold
+retro -> bridge: run
