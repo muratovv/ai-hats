@@ -85,24 +85,55 @@ def test_init_no_tty_no_flags_fails_with_hint(fresh_project):
 def test_init_wizard_invokes_launch_after_provider_prompt(fresh_project, monkeypatch):
     """TTY + no flags → prompts for provider → minimal config → launches wizard."""
     runner = CliRunner()
-    # Force TTY behavior.
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
-    # Prompt accepts either index or name — use the name to stay
-    # independent of PROVIDERS dict insertion order.
-    with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
-        result = runner.invoke(main, ["self", "init"], input="claude\n")
+    with (
+        patch("ai_hats.cli.assembly._launch_wizard_session") as launch,
+        patch("ai_hats.cli.assembly._run_self_update") as upd,
+    ):
+        # --no-update keeps the test offline-safe; the update path is
+        # exercised separately below.
+        result = runner.invoke(main, ["self", "init", "--no-update"], input="claude\n")
     assert result.exit_code == 0, result.output
     assert (fresh_project / "ai-hats.yaml").exists()
     launch.assert_called_once()
+    upd.assert_not_called()
 
 
 def test_init_wizard_with_provider_flag_skips_provider_prompt(fresh_project, monkeypatch):
     """TTY + only -p (no -r) → no provider prompt, but wizard still launches."""
     runner = CliRunner()
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
-    with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
-        result = runner.invoke(main, ["self", "init", "-p", "gemini"])
+    with (
+        patch("ai_hats.cli.assembly._launch_wizard_session") as launch,
+        patch("ai_hats.cli.assembly._run_self_update"),
+    ):
+        result = runner.invoke(main, ["self", "init", "-p", "gemini", "--no-update"])
     assert result.exit_code == 0, result.output
-    # No prompt for provider — `gemini` came from flag.
     assert "Choose provider" not in result.output
     launch.assert_called_once()
+
+
+def test_init_wizard_runs_self_update_by_default(fresh_project, monkeypatch):
+    """Wizard path (TTY, no flags, no --no-update) calls _run_self_update once."""
+    runner = CliRunner()
+    monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
+    with (
+        patch("ai_hats.cli.assembly._launch_wizard_session"),
+        patch("ai_hats.cli.assembly._run_self_update", return_value=True) as upd,
+    ):
+        result = runner.invoke(main, ["self", "init"], input="claude\n")
+    assert result.exit_code == 0, result.output
+    upd.assert_called_once()
+
+
+def test_init_flag_only_path_does_not_self_update(fresh_project):
+    """Flag-only (CI) path must NOT trigger pip install."""
+    runner = CliRunner()
+    with (
+        patch("ai_hats.cli.assembly._launch_wizard_session") as launch,
+        patch("ai_hats.cli.assembly._run_self_update") as upd,
+    ):
+        result = runner.invoke(main, ["self", "init", "-p", "claude", "-r", "assistant"])
+    assert result.exit_code == 0, result.output
+    upd.assert_not_called()
+    launch.assert_not_called()
