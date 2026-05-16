@@ -18,6 +18,13 @@ venv/
 # uv.lock — local dev tool artifact, ai-hats is a library installed via pip
 uv.lock
 
+# Real-session fixtures — recorded from a developer's local Claude Code session,
+# contain absolute home paths, real sessionId/requestId, subscription metadata,
+# and unredacted user prompts. Tests that consume them auto-skip when absent.
+# Generate locally for debugging; never commit. See HATS-343.
+tests/fixtures/real_conversation.jsonl
+tests/fixtures/real_trace.log
+
 # ai-hats runtime (generated per-project)
 .agent/
 .githooks/
@@ -34,17 +41,45 @@ CLAUDE.md
 .gemini/
 
 # AI-HATS:START — managed by ai-hats, do not edit
-.agent/.last_backup
+.agent/ai-hats/.last_backup
 .agent/ai-hats/MANAGED
 .agent/ai-hats/imports.md
+.agent/ai-hats/library/hooks/.ai-hats-managed
+.agent/ai-hats/library/hooks/session_end_auto-retro.sh
+.agent/ai-hats/library/rules/.library_rules
+.agent/ai-hats/library/rules/dev_rule_edit_efficiency/
+.agent/ai-hats/library/rules/dev_rule_secure_coding/
+.agent/ai-hats/library/rules/dev_rule_tool_call_hygiene/
+.agent/ai-hats/library/rules/global_rule_destructive_actions/
+.agent/ai-hats/library/rules/global_rule_resource_hygiene/
+.agent/ai-hats/library/rules/rule_backlog_discipline/
+.agent/ai-hats/library/skills/.ai-hats-managed
+.agent/ai-hats/library/skills/audit-reviewer/
+.agent/ai-hats/library/skills/backlog-manager/
+.agent/ai-hats/library/skills/bash-mastery/
+.agent/ai-hats/library/skills/context-handoff/
+.agent/ai-hats/library/skills/context-reset/
+.agent/ai-hats/library/skills/git-mastery/
+.agent/ai-hats/library/skills/request-supervisor/
+.agent/ai-hats/library/skills/requirements-interview/
+.agent/ai-hats/library/skills/retro-to-framework/
+.agent/ai-hats/library/skills/scope-guard/
+.agent/ai-hats/library/skills/self-retrospective/
+.agent/ai-hats/library/skills/skill-optimization/
+.agent/ai-hats/library/skills/skill-template/
+.agent/ai-hats/library/skills/systematic-debugging/
+.agent/ai-hats/library/skills/task-summary/
+.agent/ai-hats/library/skills/tool-call-hygiene/
+.agent/ai-hats/library/skills/tool-evaluation-protocol/
+.agent/ai-hats/library/skills/worktree-isolation/
 .agent/ai-hats/priorities.md
 .agent/ai-hats/role.md
-.agent/ai-hats/rules/dev_rule_backlog_discipline.md
 .agent/ai-hats/rules/dev_rule_edit_efficiency.md
 .agent/ai-hats/rules/dev_rule_secure_coding.md
 .agent/ai-hats/rules/dev_rule_tool_call_hygiene.md
 .agent/ai-hats/rules/global_rule_destructive_actions.md
 .agent/ai-hats/rules/global_rule_resource_hygiene.md
+.agent/ai-hats/rules/rule_backlog_discipline.md
 .agent/ai-hats/skills_index.md
 .agent/ai-hats/traits/dev::python.md
 .agent/ai-hats/traits/dev::shell.md
@@ -53,34 +88,6 @@ CLAUDE.md
 .agent/ai-hats/traits/trait-base.md
 .agent/ai-hats/traits/trait-researcher-mindset.md
 .agent/ai-hats/traits/trait-se-mindset.md
-.agent/hooks/.ai-hats-managed
-.agent/hooks/session_end_auto-retro.sh
-.agent/rules/.library_rules
-.agent/rules/dev_rule_backlog_discipline/
-.agent/rules/dev_rule_edit_efficiency/
-.agent/rules/dev_rule_secure_coding/
-.agent/rules/dev_rule_tool_call_hygiene/
-.agent/rules/global_rule_destructive_actions/
-.agent/rules/global_rule_resource_hygiene/
-.agent/skills/.ai-hats-managed
-.agent/skills/audit-reviewer/
-.agent/skills/backlog-manager/
-.agent/skills/bash-mastery/
-.agent/skills/context-handoff/
-.agent/skills/context-reset/
-.agent/skills/git-mastery/
-.agent/skills/request-supervisor/
-.agent/skills/requirements-interview/
-.agent/skills/retro-to-framework/
-.agent/skills/scope-guard/
-.agent/skills/self-retrospective/
-.agent/skills/skill-optimization/
-.agent/skills/skill-template/
-.agent/skills/systematic-debugging/
-.agent/skills/task-summary/
-.agent/skills/tool-call-hygiene/
-.agent/skills/tool-evaluation-protocol/
-.agent/skills/worktree-isolation/
 .claude/skills/.ai-hats-managed
 .claude/skills/audit-reviewer/
 .claude/skills/backlog-manager/

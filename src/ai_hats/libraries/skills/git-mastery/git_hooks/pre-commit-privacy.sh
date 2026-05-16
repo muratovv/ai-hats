@@ -56,6 +56,10 @@ PAT_API_KEY='(sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{36}|AKIA[A-Z0-9]{16}|xox[bp]
 PAT_BEARER='[Aa]uthorization:[[:space:]]*[Bb]earer[[:space:]]+[A-Za-z0-9._-]{20,}'
 PAT_ENV='^[+][[:space:]]*[A-Z][A-Z0-9_]*_(KEY|TOKEN|SECRET|PASSWORD|PASSWD|API)='
 PAT_EMAIL='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+# Claude Code session markers — JSONL/trace fragments that almost always
+# carry sessionId, requestId, cwd, and unredacted user prompts.
+PAT_CLAUDE_SESSION='"(sessionId|requestId)":[[:space:]]*"[A-Za-z0-9_-]{8,}"'
+PAT_CLAUDE_CWD='"cwd":[[:space:]]*"/'
 
 while IFS= read -r file; do
     [[ -z "$file" ]] && continue
@@ -83,6 +87,8 @@ api key|$PAT_API_KEY
 bearer token|$PAT_BEARER
 env-style secret|$PAT_ENV
 email address|$PAT_EMAIL
+claude session id|$PAT_CLAUDE_SESSION
+claude session cwd|$PAT_CLAUDE_CWD
 EOF
 
     # Soft warning: large new file in tests/fixtures/
