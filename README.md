@@ -62,11 +62,20 @@ Drops a ~30-line bash launcher into `~/.local/bin/ai-hats`. If `~/.local/bin/` i
 
 ```bash
 cd ~/dev/my-project
-ai-hats self update                            # creates the venv at .agent/ai-hats/.venv + installs ai-hats
-ai-hats config set -r go-dev -p claude         # pick a role + provider (auto-initialises the project)
+ai-hats self init                              # interactive wizard (recommended)
 ```
 
-`config set` writes `ai-hats.yaml` and `CLAUDE.md` / `GEMINI.md` for the chosen composition.
+`ai-hats self init` is the human-friendly bootstrap. It:
+
+1. Pulls the latest ai-hats from GitHub.
+2. Asks for a provider (smart default by `~/.claude` / `~/.gemini` presence) and writes a minimal `ai-hats.yaml`.
+3. Hands off to the `initial-wizard` LLM session, which detects your stack, recommends a base role, helps with customizations, and configures the feedback (session-retro) policy — all via `ai-hats config …` commands.
+
+**Scripted / CI variant** — pass both flags to skip the wizard:
+
+```bash
+ai-hats self init -p claude -r go-dev --no-wizard   # writes ai-hats.yaml directly, no LLM session
+```
 
 ### 3. Use it
 
@@ -115,7 +124,8 @@ ai-hats --tag client=acme                  # custom tags in metrics.json
 ai-hats agent sre --task "investigate alert XYZ"
 
 # Lifecycle
-ai-hats config set -r <role> -p <provider> # pick role and provider (auto-init)
+ai-hats self init                          # interactive bootstrap (wizard) — new projects
+ai-hats config set -r <role> -p <provider> # change role / provider in an existing project
 ai-hats self update && ai-hats self bump   # update ai-hats and rebuild the prompt
 ai-hats config status                      # health-check the composition
 ```

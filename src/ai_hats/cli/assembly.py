@@ -58,6 +58,32 @@ def _wizard_provider_prompt(default: str | None) -> str:
         console.print(f"[red]Invalid choice[/]: {raw!r}. Enter 1..{len(names)} or a provider name.")
 
 
+def _run_self_update() -> bool:
+    """Run `pip install -U` for ai-hats inline. Returns True on success.
+
+    Used in the wizard bootstrap path to guarantee that newly-onboarded
+    users start with the latest framework version. Skipped in flag-only
+    (CI) mode and behind ``--no-update`` for tests / offline use.
+    """
+    import subprocess
+
+    from .maintenance import _build_update_cmd
+
+    console.print("[cyan]→ Updating ai-hats from GitHub …[/]")
+    cmd = _build_update_cmd()
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        # Don't abort init on update failure — surface and continue with
+        # the currently-installed version. Common cause: offline / no
+        # network access on first-time setup.
+        msg = (result.stderr or result.stdout or "").strip().splitlines()
+        tail = msg[-1] if msg else "see logs"
+        console.print(f"[yellow]Update skipped[/]: {tail}")
+        return False
+    console.print("[green]✓[/] ai-hats updated")
+    return True
+
+
 def _launch_wizard_session() -> None:
     """Replace the current process with `ai-hats execute --role initial-wizard`.
 
@@ -92,7 +118,19 @@ def _launch_wizard_session() -> None:
     default=False,
     help="Skip the interactive wizard (CI / scripted mode).",
 )
-def init(provider: str | None, role: str | None, task_prefix: str | None, no_wizard: bool):
+@click.option(
+    "--no-update",
+    is_flag=True,
+    default=False,
+    help="Skip the `self update` step that wizard-path init normally runs.",
+)
+def init(
+    provider: str | None,
+    role: str | None,
+    task_prefix: str | None,
+    no_wizard: bool,
+    no_update: bool,
+):
     """Initialize ai-hats in the current directory.
 
     Default (TTY, no -p/-r flags) → launches an interactive wizard:
@@ -123,6 +161,12 @@ def init(provider: str | None, role: str | None, task_prefix: str | None, no_wiz
             "--no-wizard to bootstrap a minimal config.",
         )
         raise SystemExit(2)
+
+    # Wizard path step 0: ensure the framework itself is up to date. The
+    # subsequent `_launch_wizard_session()` os.execvp's into the freshly
+    # installed binary, so the wizard session uses the new code.
+    if use_wizard and not no_update:
+        _run_self_update()
 
     if use_wizard and provider is None:
         default = _detect_provider_default()
