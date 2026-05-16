@@ -15,6 +15,9 @@ venv/
 .ruff_cache/
 .pytest_cache/
 
+# macOS finder metadata
+.DS_Store
+
 # uv.lock — local dev tool artifact, ai-hats is a library installed via pip
 uv.lock
 
