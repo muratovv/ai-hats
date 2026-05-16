@@ -198,10 +198,18 @@ def init(
 @click.command("set")
 @click.option("--provider", "-p", default=None, help="Provider (gemini/claude)")
 @click.option("--role", "-r", default=None, help="Role to apply")
-def set_role(provider: str | None, role: str | None):
-    """Configure project: set provider and/or role."""
-    if not provider and not role:
-        console.print("[red]Specify --role/-r and/or --provider/-p[/]")
+@click.option(
+    "--task-prefix",
+    "task_prefix",
+    default=None,
+    help="Task-id prefix for `ai-hats task create` (e.g. ACME). Overwrites existing.",
+)
+def set_role(provider: str | None, role: str | None, task_prefix: str | None):
+    """Configure project: set provider, role, and/or task prefix."""
+    from ..models import ProjectConfig
+
+    if not provider and not role and task_prefix is None:
+        console.print("[red]Specify --role/-r, --provider/-p, and/or --task-prefix[/]")
         raise SystemExit(1)
 
     project_dir = _project_dir()
@@ -210,7 +218,7 @@ def set_role(provider: str | None, role: str | None):
     # Auto-init if project not yet initialized
     if not (project_dir / "ai-hats.yaml").exists():
         try:
-            asm.init(provider=provider)
+            asm.init(provider=provider, task_prefix=task_prefix)
         except ValueError as err:
             console.print(f"[red]Error[/]: {err}")
             raise SystemExit(1)
@@ -227,6 +235,18 @@ def set_role(provider: str | None, role: str | None):
             raise SystemExit(1)
         asm.project_config.provider = provider
         asm.project_config.save(asm.config_path)
+
+    # task-prefix is set independently of role/provider, and overwrites
+    # any existing value (unlike `self init` which refuses conflicts).
+    if task_prefix is not None and (project_dir / "ai-hats.yaml").exists():
+        try:
+            validated = ProjectConfig.validate_task_prefix(task_prefix)
+        except ValueError as err:
+            console.print(f"[red]Error[/]: {err}")
+            raise SystemExit(1)
+        asm.project_config.task_prefix = validated
+        asm.project_config.save(asm.config_path)
+        console.print(f"[green]Task prefix set[/]: [bold]{validated}[/]")
 
     if role:
         try:
