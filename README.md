@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <em>Композирует AI-агентов из переиспользуемых traits + rules + skills и автоматически рефлексирует над каждой сессией.</em><br>
-  <em>Один набор ролей — Claude и Gemini.</em>
+  <em>Compose AI agents from reusable traits + rules + skills, then run an automatic retrospective after every session.</em><br>
+  <em>One role set works for both Claude and Gemini.</em>
 </p>
 
 <p align="center">
@@ -25,14 +25,18 @@
   <img src="docs/assets/demo.gif" alt="ai-hats — composition + real sessions + active hypotheses" width="900" />
 </p>
 
-## Концепция
+<p align="center">
+  <strong>English</strong> · <a href="docs/README.ru.md">Русский</a>
+</p>
 
-Бывало ли так — один и тот же AI-агент в разных проектах наступает на одни и те же грабли? Забывает соглашения, пропускает шаг плана, начинает с того же анти-паттерна. `CLAUDE.md` копи-паста не масштабируется: правки расползаются между проектами, а исправление в одном не доходит до других.
+## Why ai-hats?
 
-ai-hats решает это двумя вещами:
+Have you ever watched the same AI agent step on the same rakes across projects? Forgetting your conventions, skipping the planning step, falling back to the same anti-pattern. Copy-pasting `CLAUDE.md` doesn't scale: edits drift across projects, and a fix in one rarely makes it back to the others.
 
-- **Роли как композиция переиспользуемых компонентов** — `traits`, `rules`, `skills`, `hooks` собираются в роль один раз и инжектятся в system prompt любого провайдера (Gemini / Claude). Исправление компонента доходит до всех ролей, где он подключён, через `ai-hats self bump`.
-- **Глубокая рефлексия после каждой сессии** — structured retrospective с фактическим слоем (метрики, файлы, коммиты) и LLM-narrative с вердиктами по активным гипотезам и голосами за предложения улучшений. Закономерности из 3–5 сессий превращаются в новые правила и скиллы, и петля замыкается.
+ai-hats answers this with two things:
+
+- **Roles as compositions of reusable components** — `traits`, `rules`, `skills`, and `hooks` are assembled into a role once and injected into the system prompt of any provider (Gemini / Claude). A fix to one component reaches every role that includes it via `ai-hats self bump`.
+- **Deep reflection after every session** — a structured retrospective with a factual layer (metrics, files, commits) plus an LLM narrative that delivers verdicts on active hypotheses and votes on improvement proposals. Patterns observed across 3–5 sessions become new rules and skills, and the loop closes.
 
 ```
 roles/assistant ── trait-base + trait-agent + dev::python
@@ -41,86 +45,82 @@ roles/assistant ── trait-base + trait-agent + dev::python
                    └── injection → GEMINI.md / CLAUDE.md
 ```
 
-## Быстрый старт
+## Quick start
 
-Bash launcher в `~/.local/bin/ai-hats` (один раз на хост) → per-project venv в `<ai_hats_dir>/.venv/`. Подсказка по любой команде — `ai-hats --help`. Полное дерево CLI — `ai-hats --tree`.
+A bash launcher in `~/.local/bin/ai-hats` (one-time per host) plus a per-project venv in `<ai_hats_dir>/.venv/`. Get help for any command with `ai-hats --help`. View the full CLI tree with `ai-hats --tree`.
 
-### 1. Установить launcher (один раз на хост)
+### 1. Install the launcher (once per host)
 
 ```bash
 curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh | bash
 ```
 
-Ставит ~30-строчный bash launcher в `~/.local/bin/ai-hats`. Если `~/.local/bin/` не в `$PATH` — installer подскажет добавить.
+Drops a ~30-line bash launcher into `~/.local/bin/ai-hats`. If `~/.local/bin/` isn't on `$PATH`, the installer prompts you to add it.
 
-### 2. Подключить к проекту
+### 2. Wire ai-hats into a project
 
 ```bash
 cd ~/dev/my-project
-ai-hats self update                            # создаёт venv в .agent/ai-hats/.venv + installs ai-hats
-ai-hats config set -r go-dev -p claude         # выбрать роль и провайдера (auto-init проекта)
+ai-hats self update                            # creates the venv at .agent/ai-hats/.venv + installs ai-hats
+ai-hats config set -r go-dev -p claude         # pick a role + provider (auto-initialises the project)
 ```
 
-`config set` создаёт `ai-hats.yaml` + `CLAUDE.md`/`GEMINI.md` под выбранную композицию.
+`config set` writes `ai-hats.yaml` and `CLAUDE.md` / `GEMINI.md` for the chosen composition.
 
-### 3. Использование
+### 3. Use it
 
 ```bash
-ai-hats                       # запустить сессию с текущими настройками
-ai-hats --resume              # флаги передаются провайдеру (claude/gemini)
-ai-hats config status         # проверить состояние
-ai-hats self bump             # пересобрать prompt после изменений в библиотеке
-ai-hats self update           # обновить ai-hats + auto-bump
+ai-hats                       # start a session with current settings
+ai-hats --resume              # flags pass through to the provider (claude / gemini)
+ai-hats config status         # health-check the composition
+ai-hats self bump             # rebuild the prompt after library changes
+ai-hats self update           # update ai-hats and auto-bump
 ```
 
-`ai-hats self update` self-healing: если venv сломан после системного python upgrade — пересоздаётся автоматически (только default; override venv user-owned).
+`ai-hats self update` is self-healing: if a system Python upgrade breaks the venv, it is rebuilt automatically (default venvs only; override venvs are user-owned).
 
-Альтернативные сценарии установки (bootstrap из клона, override venv, миграция с pipx, разработка ai-hats) — см. **[docs/how-to.md](docs/how-to.md)** и **[docs/migration.md](docs/migration.md)**.
+Alternative install paths (bash bootstrap from a clone, override venv, migrating from pipx, developing ai-hats itself) live in **[docs/how-to.md](docs/how-to.md)** and **[docs/migration.md](docs/migration.md)**.
 
 ## CLI
 
-> **Полный справочник команд с описаниями и опциями — `ai-hats --tree`**
-> (работает также как `ai-hats --help --tree`).
+> **The full command reference with descriptions and options — `ai-hats --tree`**
+> (equivalent to `ai-hats --help --tree`).
 >
-> Поддеревья: `ai-hats --tree <group>` (например, `ai-hats --tree wt`)
-> или вглубь: `ai-hats --tree task hyp`.
+> Subtrees: `ai-hats --tree <group>` (e.g. `ai-hats --tree wt`)
+> or deeper: `ai-hats --tree task hyp`.
 
-Восемь top-level групп:
+Eight top-level groups:
 
-| Группа     | Что делает                                                              |
-| ---------- | ----------------------------------------------------------------------- |
-| `agent`    | Запуск роли как sub-агента в изолированном worktree                     |
-| `config`   | Чтение/правка `ai-hats.yaml` (provider, role, customizations, feedback) |
-| `list`     | Discovery: roles / skills / rules / traits / providers / tokens         |
-| `reflect`  | Feedback loop — per-session vote и bulk-triage HYP/PROP                 |
-| `self`     | Жизненный цикл инструмента: init / bump / update / clean / rollback |
-| `session`  | Наблюдаемость: list / show / audit / retro по сессиям                   |
-| `task`     | Backlog: task / hyp / proposal cards со state-машиной                   |
-| `wt`       | git worktrees: create / merge / discard / exec / env                    |
+| Group     | What it does                                                            |
+| --------- | ----------------------------------------------------------------------- |
+| `agent`   | Run a role as a sub-agent inside an isolated worktree                   |
+| `config`  | Read / edit `ai-hats.yaml` (provider, role, customizations, feedback)   |
+| `list`    | Discovery: roles / skills / rules / traits / providers / tokens         |
+| `reflect` | Feedback loop — per-session vote and bulk triage of HYP / PROP          |
+| `self`    | Tool lifecycle: init / bump / update / clean / rollback                 |
+| `session` | Observability: list / show / audit / retro for sessions                 |
+| `task`    | Backlog: task / hyp / proposal cards with a state machine               |
+| `wt`      | Git worktrees: create / merge / discard / exec / env                    |
 
-Часто используемые сценарии:
+Common scenarios:
 
 ```bash
-# Интерактивная сессия с инжектом роли
-ai-hats                                    # текущие настройки
-ai-hats -p claude -r architect             # override провайдера и роли
-ai-hats --tag client=acme                  # custom теги в metrics.json
+# Interactive session with role injection
+ai-hats                                    # current settings
+ai-hats -p claude -r architect             # override provider and role
+ai-hats --tag client=acme                  # custom tags in metrics.json
 
-# Sub-агент в изолированном worktree
+# Sub-agent in an isolated worktree
 ai-hats agent sre --task "investigate alert XYZ"
 
-# Жизненный цикл
-ai-hats self init -r <role> -p <provider>  # bootstrap в новом проекте
-ai-hats self update && ai-hats self bump   # обновить ai-hats и пересобрать prompt
-ai-hats config status                      # health-check композиции
+# Lifecycle
+ai-hats config set -r <role> -p <provider> # pick role and provider (auto-init)
+ai-hats self update && ai-hats self bump   # update ai-hats and rebuild the prompt
+ai-hats config status                      # health-check the composition
 ```
 
-Полный справочник — `ai-hats --tree`.
+Full reference — `ai-hats --tree`.
 
-## Orchestration (fan-out, JSON, exit codes)
+## Architecture
 
-When running ai-hats as part of a pipeline (parallel/xargs/CI/webhooks), use custom tags, `--json` output, and stable exit codes. См. **[docs/how-to-orchestration.md](docs/how-to-orchestration.md)**.
-
-## Архитектура
-
-Композиция ролей из traits + rules + skills, плоская модель, state-машина задач, multi-provider injection. Полный обзор внутреннего устройства, схемы директорий, формата скиллов и примера `config.yaml` — см. **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+Roles compose from traits + rules + skills, a flat model, a task state machine, multi-provider injection. The full tour of the internal model, directory layout, skill format, and a sample `config.yaml` — see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
