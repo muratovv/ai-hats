@@ -38,6 +38,8 @@ dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "ruff>=0.4",
+    "bandit>=1.7",
+    "pip-audit>=2.7",
 ]
 costs = [
     "anthropic>=0.40",
@@ -75,3 +77,20 @@ markers = [
     "integration: tests that spawn real subprocesses or use real PTY",
     "smoke: lightweight real-path tests run by the pre-commit smoke gate on integration tasks",
 ]
+
+[tool.coverage.run]
+source = ["ai_hats"]
+branch = false
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "build", "dist"]
