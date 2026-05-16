@@ -3,9 +3,10 @@
 #
 # Installed once per host at ~/.local/bin/ai-hats by scripts/install-launcher.sh.
 # Resolves the project venv (AI_HATS_VENV env > ai-hats.yaml venv_path >
-# default <pwd>/.agent/ai-hats/.venv) and:
-#   - intercepts `ai-hats self update` for self-healing install/update;
-#   - exec's every other command into <venv>/bin/ai-hats.
+# default <pwd>/.agent/ai-hats/.venv), heals the default venv if it's
+# missing/broken, then exec's into <venv>/bin/ai-hats. Self update flows
+# through the same path: heal-if-needed → delegate to python ai-hats
+# (which renders the rich diff + auto-bumps).
 set -euo pipefail
 
 PROJECT="$(pwd)"
@@ -36,21 +37,34 @@ fi
 
 is_default_venv() { [[ "$VENV" == "$DEFAULT_VENV" ]]; }
 
-# --- Self-healing `self update` (works even when venv broken) ---
-if [[ "${1:-}" == "self" && "${2:-}" == "update" ]]; then
-    if [[ ! -x "$VENV/bin/python" ]]; then
-        if is_default_venv; then
-            echo "  · ai-hats venv missing or broken — recreating $VENV" >&2
-            rm -rf "$VENV"
-            python3 -m venv "$VENV"
-        else
-            echo "ai-hats: override venv $VENV is missing or broken." >&2
-            echo "  Override venv is user-owned; ai-hats will not auto-recreate it." >&2
-            echo "  Fix manually:  python3 -m venv $VENV" >&2
-            exit 1
-        fi
+# --- Idempotent heal: no-op if healthy, recreate if default broken,
+#     refuse if override broken (user-owned). Called from `self update`
+#     before delegating, so the user only ever needs one command for
+#     install + heal + update. (HATS-337)
+heal_if_needed() {
+    if [[ -x "$VENV/bin/python" && -x "$VENV/bin/ai-hats" ]]; then
+        return 0
     fi
-    exec "$VENV/bin/pip" install --upgrade --quiet "ai-hats @ $REPO_URL"
+    if ! is_default_venv; then
+        echo "ai-hats: override venv $VENV is missing or broken." >&2
+        echo "  Override venv is user-owned; ai-hats will not auto-recreate it." >&2
+        echo "  Fix manually:  python3 -m venv $VENV && $VENV/bin/pip install 'ai-hats @ $REPO_URL'" >&2
+        exit 1
+    fi
+    echo "  · ai-hats venv missing or broken — recreating $VENV" >&2
+    rm -rf "$VENV"
+    python3 -m venv "$VENV"
+    # Bare install so the subsequent exec into <venv>/bin/ai-hats succeeds.
+    # The python self update (called next via delegate) will then re-install
+    # with --force-reinstall and render the rich diff + auto-bump.
+    "$VENV/bin/pip" install --quiet "ai-hats @ $REPO_URL"
+}
+
+# --- Self update: heal-then-delegate. Never bypass python self update —
+#     it owns snapshot/diff/auto-bump/changelog rendering (HATS-337). ---
+if [[ "${1:-}" == "self" && "${2:-}" == "update" ]]; then
+    heal_if_needed
+    # Fall through to default exec below — python rich self update runs there.
 fi
 
 # --- Default fall-through: exec into venv-installed ai-hats ---

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -10,7 +11,13 @@ import click
 from ._helpers import _assembler, _project_dir, console, logger
 
 
-GIT_INSTALL_URL = "git+ssh://git@github.com/muratovv/ai-hats.git"
+# HATS-337: AI_HATS_REPO_URL env overrides the default git URL, mirroring
+# the bash launcher (HATS-339) so a single env var pins the install source
+# end-to-end (CI, airgapped mirrors, custom forks).
+def _git_install_url() -> str:
+    return os.environ.get(
+        "AI_HATS_REPO_URL", "git+ssh://git@github.com/muratovv/ai-hats.git"
+    )
 
 
 def _build_update_cmd() -> list[str]:
@@ -28,7 +35,7 @@ def _build_update_cmd() -> list[str]:
         "install",
         "--force-reinstall",
         "--no-cache-dir",
-        f"ai-hats @ {GIT_INSTALL_URL}",
+        f"ai-hats @ {_git_install_url()}",
     ]
 
 
