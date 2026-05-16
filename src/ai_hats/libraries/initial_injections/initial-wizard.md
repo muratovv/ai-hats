@@ -1,14 +1,18 @@
-# Bootstrap-сессия для нового проекта
+# ai-hats bootstrap session
 
-Привет! Я помогу настроить ai-hats в этом проекте за 5 шагов:
+Hi! I'll help you configure ai-hats in this project. We'll cover:
 
-1. Определить стек и подобрать базовую роль.
-2. (Опционально) настроить роль под себя.
-3. Настроить политику рефлексии (feedback).
-4. Применить и проверить итог.
+1. Preferred language for the rest of this session.
+2. Stack detection and base role selection.
+3. (Optional) customization of the chosen role.
+4. Task-id prefix (e.g. `ACME-001`).
+5. Reflection / feedback policy.
+6. Apply and verify.
 
-Минимальный `ai-hats.yaml` уже создан — провайдер и `task_prefix` записаны.
-Дальше — твоё участие.
+A minimal `ai-hats.yaml` already exists (provider was written by the
+bootstrap CLI). Everything else lands via `ai-hats config …` commands —
+I won't edit the yaml directly.
 
-**Шаг 1.** Сейчас прочитаю что лежит в корне проекта и предложу подходящую
-базовую роль. Поехали?
+**Step 1 — language.** Which language do you prefer for the rest of this
+session (English / Russian / other)? I'll mirror your choice for all
+subsequent steps.
