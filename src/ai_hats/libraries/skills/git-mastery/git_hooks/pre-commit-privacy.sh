@@ -60,6 +60,9 @@ PAT_EMAIL='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
 # carry sessionId, requestId, cwd, and unredacted user prompts.
 PAT_CLAUDE_SESSION='"(sessionId|requestId)":[[:space:]]*"[A-Za-z0-9_-]{8,}"'
 PAT_CLAUDE_CWD='"cwd":[[:space:]]*"/'
+# Structural markers unique to Claude Code recordings — catches recordings
+# that were anonymized (sessionId stripped) but kept the JSONL skeleton.
+PAT_CLAUDE_SCHEMA='"(parentUuid|toolUseResult|sourceToolAssistantUUID)":'
 
 while IFS= read -r file; do
     [[ -z "$file" ]] && continue
@@ -89,13 +92,14 @@ env-style secret|$PAT_ENV
 email address|$PAT_EMAIL
 claude session id|$PAT_CLAUDE_SESSION
 claude session cwd|$PAT_CLAUDE_CWD
+claude jsonl schema|$PAT_CLAUDE_SCHEMA
 EOF
 
     # Soft warning: large new file in tests/fixtures/
     if [[ "$file" == tests/fixtures/* ]] && git diff --cached --diff-filter=A --name-only -- "$file" | grep -q .; then
         size_bytes=$(wc -c < "$file" 2>/dev/null || echo 0)
-        if (( size_bytes > 10240 )); then
-            soft_hits+=("$file: new fixture > 10KB ($size_bytes bytes) — verify it contains no real session content")
+        if (( size_bytes > 5120 )); then
+            soft_hits+=("$file: new fixture > 5KB ($size_bytes bytes) — synthetic fixtures are usually <1KB; verify it contains no real session content")
         fi
     fi
 done <<< "$staged"
