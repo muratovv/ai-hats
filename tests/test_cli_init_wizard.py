@@ -1,0 +1,108 @@
+"""Tests for `ai-hats self init` interactive wizard (HATS-347)."""
+
+from __future__ import annotations
+
+from unittest.mock import patch
+
+import pytest
+from click.testing import CliRunner
+
+from ai_hats.cli import main
+from ai_hats.cli.assembly import _detect_provider_default
+
+
+@pytest.fixture()
+def fresh_project(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    return project
+
+
+# ---------- _detect_provider_default ----------
+
+
+def test_detect_default_claude_when_dotclaude_exists(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    (fake_home / ".claude").mkdir()
+    monkeypatch.setattr("ai_hats.cli.assembly.Path.home", lambda: fake_home)
+    assert _detect_provider_default() == "claude"
+
+
+def test_detect_default_gemini_when_only_dotgemini_exists(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    (fake_home / ".gemini").mkdir()
+    monkeypatch.setattr("ai_hats.cli.assembly.Path.home", lambda: fake_home)
+    assert _detect_provider_default() == "gemini"
+
+
+def test_detect_default_none_when_neither(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr("ai_hats.cli.assembly.Path.home", lambda: fake_home)
+    assert _detect_provider_default() is None
+
+
+# ---------- init() flag-only paths (no wizard) ----------
+
+
+def test_init_with_both_flags_skips_wizard(fresh_project):
+    """When -p and -r are given, wizard must NOT auto-launch."""
+    runner = CliRunner()
+    with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
+        # stdin TTY behavior is irrelevant when both flags are present.
+        result = runner.invoke(
+            main, ["self", "init", "-p", "claude", "-r", "assistant"],
+        )
+    assert result.exit_code == 0, result.output
+    assert (fresh_project / "ai-hats.yaml").exists()
+    launch.assert_not_called()
+
+
+def test_init_no_wizard_flag_skips_wizard(fresh_project):
+    runner = CliRunner()
+    with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
+        result = runner.invoke(
+            main, ["self", "init", "-p", "claude", "--no-wizard"],
+        )
+    assert result.exit_code == 0, result.output
+    launch.assert_not_called()
+
+
+def test_init_no_tty_no_flags_fails_with_hint(fresh_project):
+    """No TTY + no flags = fail-fast with a helpful message."""
+    runner = CliRunner()  # CliRunner stdin is NOT a tty by default
+    result = runner.invoke(main, ["self", "init"])
+    assert result.exit_code == 2, result.output
+    assert "TTY" in result.output or "--no-wizard" in result.output
+
+
+# ---------- init() wizard path ----------
+
+
+def test_init_wizard_invokes_launch_after_provider_prompt(fresh_project, monkeypatch):
+    """TTY + no flags → prompts for provider → minimal config → launches wizard."""
+    runner = CliRunner()
+    # Force TTY behavior.
+    monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
+    # Prompt accepts either index or name — use the name to stay
+    # independent of PROVIDERS dict insertion order.
+    with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
+        result = runner.invoke(main, ["self", "init"], input="claude\n")
+    assert result.exit_code == 0, result.output
+    assert (fresh_project / "ai-hats.yaml").exists()
+    launch.assert_called_once()
+
+
+def test_init_wizard_with_provider_flag_skips_provider_prompt(fresh_project, monkeypatch):
+    """TTY + only -p (no -r) → no provider prompt, but wizard still launches."""
+    runner = CliRunner()
+    monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
+    with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
+        result = runner.invoke(main, ["self", "init", "-p", "gemini"])
+    assert result.exit_code == 0, result.output
+    # No prompt for provider — `gemini` came from flag.
+    assert "Choose provider" not in result.output
+    launch.assert_called_once()
