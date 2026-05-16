@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# ai-hats launcher — universal host-level entry-point (HATS-339).
+#
+# Installed once per host at ~/.local/bin/ai-hats by scripts/install-launcher.sh.
+# Resolves the project venv (AI_HATS_VENV env > ai-hats.yaml venv_path >
+# default <pwd>/.agent/ai-hats/.venv) and:
+#   - intercepts `ai-hats self update` for self-healing install/update;
+#   - exec's every other command into <venv>/bin/ai-hats.
+set -euo pipefail
+
+PROJECT="$(pwd)"
+REPO_URL="${AI_HATS_REPO_URL:-git+ssh://git@github.com/muratovv/ai-hats.git}"
+DEFAULT_VENV="$PROJECT/.agent/ai-hats/.venv"
+
+# --- Resolve venv (mirrors paths.venv_path precedence) ---
+VENV=""
+if [[ -n "${AI_HATS_VENV:-}" ]]; then
+    VENV="${AI_HATS_VENV/#\~/$HOME}"
+elif [[ -f "$PROJECT/ai-hats.yaml" ]]; then
+    # Single-line scalar grep: `venv_path: <value>` (no multi-line / no
+    # nested support — out of scope per HATS-339).
+    val=$(grep -E '^venv_path:[[:space:]]' "$PROJECT/ai-hats.yaml" 2>/dev/null \
+        | head -1 \
+        | sed -E 's/^venv_path:[[:space:]]+//; s/[[:space:]]+#.*//; s/^"//; s/"$//; s/^'\''//; s/'\''$//' \
+        || true)
+    if [[ -n "$val" ]]; then
+        val="${val/#\~/$HOME}"
+        if [[ "${val:0:1}" == "/" ]]; then
+            VENV="$val"
+        else
+            VENV="$PROJECT/$val"
+        fi
+    fi
+fi
+[[ -z "$VENV" ]] && VENV="$DEFAULT_VENV"
+
+is_default_venv() { [[ "$VENV" == "$DEFAULT_VENV" ]]; }
+
+# --- Self-healing `self update` (works even when venv broken) ---
+if [[ "${1:-}" == "self" && "${2:-}" == "update" ]]; then
+    if [[ ! -x "$VENV/bin/python" ]]; then
+        if is_default_venv; then
+            echo "  · ai-hats venv missing or broken — recreating $VENV" >&2
+            rm -rf "$VENV"
+            python3 -m venv "$VENV"
+        else
+            echo "ai-hats: override venv $VENV is missing or broken." >&2
+            echo "  Override venv is user-owned; ai-hats will not auto-recreate it." >&2
+            echo "  Fix manually:  python3 -m venv $VENV" >&2
+            exit 1
+        fi
+    fi
+    exec "$VENV/bin/pip" install --upgrade --quiet "ai-hats @ $REPO_URL"
+fi
+
+# --- Default fall-through: exec into venv-installed ai-hats ---
+if [[ ! -x "$VENV/bin/python" ]]; then
+    echo "ai-hats: venv missing at $VENV" >&2
+    echo "  Run: ai-hats self update" >&2
+    exit 1
+fi
+if [[ ! -x "$VENV/bin/ai-hats" ]]; then
+    echo "ai-hats: venv exists at $VENV but ai-hats binary is missing." >&2
+    echo "  Run: ai-hats self update" >&2
+    exit 1
+fi
+exec "$VENV/bin/ai-hats" "$@"
