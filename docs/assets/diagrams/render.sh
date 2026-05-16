@@ -66,6 +66,8 @@ render() {
 if [[ $# -eq 0 ]]; then
   for f in "$HERE"/*.d2; do
     stem="$(basename "$f" .d2)"
+    # Skip shared partials (underscore-prefixed, e.g. _palette.d2).
+    [[ "$stem" == _* ]] && continue
     render "$stem"
   done
 else

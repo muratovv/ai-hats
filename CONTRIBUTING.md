@@ -78,6 +78,118 @@ If you have committed something sensitive by accident, contact the
 maintainer (see [SECURITY.md](SECURITY.md)) — there is a documented
 filter-repo procedure for purging the history.
 
+## Diagrams
+
+Architecture diagrams live in `docs/assets/diagrams/` and are written
+in [d2](https://d2lang.com/) (`.d2` source) and rendered to `.svg`.
+The renderer is `docs/assets/diagrams/render.sh`.
+
+### Why d2 and not mermaid
+
+Mermaid renders inline on GitHub but produces wide, low-contrast
+output with no real control over typography. We switched to d2 + sketch
+mode for: hand-drawn aesthetic, brand-tinted palette, predictable
+width, and Source Code Pro everywhere.
+
+### Toolchain
+
+- **d2** — `brew install d2` (or any package manager / GitHub release).
+- **Source Code Pro variable TTFs** in `~/Library/Fonts/`. Grab the
+  two `[wght].ttf` files (regular + italic) from
+  [adobe-fonts/source-code-pro releases](https://github.com/adobe-fonts/source-code-pro/releases).
+- **Python 3** (system). `render.sh` provisions `fonttools` in a tmp
+  venv on first run to extract Medium/SemiBold/Medium-Italic static
+  weights from the variable font.
+
+### Render workflow
+
+```bash
+# Render everything in docs/assets/diagrams/
+bash docs/assets/diagrams/render.sh
+
+# Render one diagram by stem
+bash docs/assets/diagrams/render.sh session-lifecycle
+```
+
+`render.sh` calls `d2 --sketch --pad=20` with the three font slots
+wired to the extracted Source Code Pro weights. The `_palette.d2`
+partial is skipped automatically (underscore-prefixed files are shared
+imports, not standalone diagrams).
+
+### Palette
+
+The brand palette (`docs/assets/diagrams/_palette.d2`) is imported by
+every diagram:
+
+```d2
+vars: @./_palette
+```
+
+Slot mapping (16 colors, derived from the project logo's navy/orange/cream):
+
+| Slot | Hex | Used for |
+|---|---|---|
+| N7 | `#faf2e6` | Paper/canvas background |
+| N1 → N3 | navy shades | Bold text → italic edge labels |
+| B1 → B6 | navy spectrum | Box fills, arrow strokes |
+| AA4 | `#e8632b` | Brand orange — storage shapes (cylinders, ovals) |
+| AA2 / AA5 | orange shades | Subdued / dark variants |
+| AB4 / AB5 | cream/beige | Soft accent shapes (parallelograms) |
+
+See `docs/assets/diagrams/PALETTES.md` for the full preview of
+alternative palettes (dracula, tokyo-night, nord, gruvbox) on the same
+diagram, plus instructions for building your own.
+
+### Adding a new diagram
+
+1. Create `docs/assets/diagrams/<name>.d2`. First line is:
+   ```d2
+   vars: @./_palette
+   ```
+2. Pick `direction: down` for vertical flows (sessions, pipelines) or
+   `direction: right` for state machines with a left-to-right happy
+   path.
+3. Use the conventional shapes:
+   - `shape: cylinder` — storage / persistent data
+   - `shape: diamond` — decision / branch
+   - `shape: oval` — terminal states (FSM accepts), `end`
+   - `shape: document` — file artifact (with corner fold)
+   - `shape: parallelogram` — handoff / continuation to another flow
+   - `shape: person` — user actor
+   - `shape: callout` — sticky-note style annotation
+4. Run `bash docs/assets/diagrams/render.sh <name>`.
+5. Embed in the relevant markdown with an HTML `<img>` for width control:
+   ```html
+   <p align="center">
+     <img src="assets/diagrams/<name>.svg" alt="..." width="520">
+   </p>
+   ```
+   Width `420-640px` reads well on both desktop and mobile.
+6. Commit both `<name>.d2` (source of truth) and `<name>.svg`
+   (rendered artifact).
+
+### Multiline labels
+
+d2 quoted strings interpret `\n` and `\` for line wrap. Easiest path
+for callouts and multi-line node labels is the markdown literal:
+
+```d2
+note: |md
+  any state ->\
+  cancelled
+| {shape: callout}
+```
+
+### Don't
+
+- Don't commit `.png` exports — `.svg` is the GitHub-friendly source.
+  PNGs are large and don't scale.
+- Don't inline mermaid in a doc that already has d2 diagrams nearby —
+  mixed styles look inconsistent.
+- Don't rebuild `render.sh`'s font cache by hand. If it ever gets
+  stale (e.g. you upgrade Source Code Pro), delete
+  `$TMPDIR/ai-hats-fonts/` and rerun the script.
+
 ## Pull requests
 
 - Open the PR against `master`.

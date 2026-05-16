@@ -1,0 +1,22 @@
+vars: @./_palette
+
+direction: down
+
+user: User {shape: person}
+preflight: Pre-flight\ncollect active HYP +\nopen PROP
+hyplog: HYP validation_log {shape: cylinder}
+inbox: PROP inbox {shape: cylinder}
+handoff: Handoff doc {shape: document}
+chat: Interactive triage\nin claude
+tasks: New task {shape: cylinder}
+commit: reflect commit:\nbulk-flip PROP statuses
+
+user -> preflight: reflect all
+hyplog -> preflight: read
+inbox -> preflight: read
+preflight -> handoff
+handoff -> chat
+chat -> hyplog: close / extend
+chat -> tasks: spawn task
+chat -> commit
+commit -> inbox: write statuses
