@@ -9,7 +9,7 @@ re-exec.
 
 ```bash
 # 1. One-time per host: install launcher
-curl -sSL https://github.com/muratovv/ai-hats/raw/main/scripts/install-launcher.sh | bash
+curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh | bash
 
 # 2. Per project (existing project on pipx):
 cd ~/dev/my-project
@@ -39,7 +39,7 @@ pipx uninstall ai-hats
 
 ```bash
 # 1. Install launcher (does NOT touch pipx install)
-curl -sSL https://github.com/muratovv/ai-hats/raw/main/scripts/install-launcher.sh | bash
+curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh | bash
 
 # 2. Verify launcher in PATH (may need to add ~/.local/bin to PATH)
 which ai-hats   # → expect: /Users/<you>/.local/bin/ai-hats
@@ -61,7 +61,7 @@ Launcher проверит `~/.local/bin/ai-hats` приоритетнее `pipx`
 
 ```bash
 # 1. Install launcher
-curl -sSL https://github.com/muratovv/ai-hats/raw/main/scripts/install-launcher.sh | bash
+curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh | bash
 
 # 2. Launcher автоматически подхватит существующий venv
 cd ~/dev/my-project
@@ -96,7 +96,7 @@ ai-hats config status
 
 ```bash
 # Если ai-hats команда не находится:
-curl -sSL https://github.com/muratovv/ai-hats/raw/main/scripts/install-launcher.sh | bash
+curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh | bash
 ai-hats self update
 
 # Если launcher есть, но что-то прерывалось посередине:

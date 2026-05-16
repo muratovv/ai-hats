@@ -20,10 +20,12 @@ roles/assistant ── trait-base + trait-agent + dev::python
 ### 1. Установить launcher (один раз на хост)
 
 ```bash
-curl -sSL https://github.com/muratovv/ai-hats/raw/main/scripts/install-launcher.sh | bash
+curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh | bash
 ```
 
 Ставит ~30-строчный bash launcher в `~/.local/bin/ai-hats`. Если `~/.local/bin/` не в `$PATH` — installer подскажет добавить.
+
+> ⚠️ Пока репо приватный, anonymous `curl` получит HTML-страницу 404 — используй «Альтернатива: bash bootstrap из клона» ниже либо склонируй репо и запусти `bash scripts/install-launcher.sh` локально.
 
 ### 2. Подключить к проекту
 

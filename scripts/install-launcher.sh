@@ -4,17 +4,20 @@
 # Idempotent: safe to re-run. Target path overridable via
 # AI_HATS_LAUNCHER_DEST env var.
 #
-# Usage (from local clone):
+# Usage (from local clone — recommended while the repo is private):
 #   bash scripts/install-launcher.sh
 #
-# Usage (one-liner):
-#   curl -sSL https://github.com/muratovv/ai-hats/raw/main/scripts/install-launcher.sh | bash
+# Usage (one-liner — requires the repo to be public OR a pre-authenticated URL):
+#   curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh | bash
 #   (when piped, the script falls back to fetching the launcher itself
-#    from the same repo.)
+#    from the same repo. NOTE: the repo is currently private — anonymous
+#    curl will receive an HTML 404 page that bash chokes on. Use the
+#    local-clone path above, or override AI_HATS_LAUNCHER_URL with a URL
+#    that carries credentials, e.g. a gh-api raw URL.)
 set -euo pipefail
 
 DEST="${AI_HATS_LAUNCHER_DEST:-$HOME/.local/bin/ai-hats}"
-LAUNCHER_URL="${AI_HATS_LAUNCHER_URL:-https://github.com/muratovv/ai-hats/raw/main/scripts/ai-hats-launcher}"
+LAUNCHER_URL="${AI_HATS_LAUNCHER_URL:-https://github.com/muratovv/ai-hats/raw/master/scripts/ai-hats-launcher}"
 
 if [[ -t 1 ]]; then
     BOLD="\033[1m"; DIM="\033[2m"; GREEN="\033[32m"; YELLOW="\033[33m"; RED="\033[31m"; RESET="\033[0m"
@@ -61,7 +64,14 @@ else
     TMP="$(mktemp)"
     trap 'rm -f "$TMP"' EXIT
     if ! curl -fsSL "$LAUNCHER_URL" -o "$TMP"; then
-        err "fetch" "failed to download launcher"
+        err "fetch" "failed to download launcher from $LAUNCHER_URL"
+        err "hint"  "if the repo is private, clone it and run scripts/install-launcher.sh locally"
+        exit 1
+    fi
+    # Guard against HTML error pages (e.g. private-repo 404) leaking into $DEST
+    if head -c 256 "$TMP" | grep -qiE '<!doctype html|<html'; then
+        err "fetch" "received HTML instead of a script (likely private repo or wrong branch)"
+        err "hint"  "clone the repo and run scripts/install-launcher.sh from the working tree"
         exit 1
     fi
     if [[ -f "$DEST" ]] && cmp -s "$TMP" "$DEST"; then

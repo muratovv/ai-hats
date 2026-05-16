@@ -254,7 +254,7 @@ venv_path: .venv          # уже существующий venv проекта 
 
 | Симптом | Команда |
 |---|---|
-| `ai-hats: command not found` (свежий хост) | `curl -sSL https://github.com/muratovv/ai-hats/raw/main/scripts/install-launcher.sh \| bash` |
+| `ai-hats: command not found` (свежий хост) | `curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh \| bash` (репо приватный → клонируй и запусти `bash scripts/install-launcher.sh`) |
 | `ai-hats: venv missing at ...` (нет venv) | `ai-hats self update` |
 | `ai-hats: venv exists but ai-hats binary is missing` | `ai-hats self update` |
 | Системный python upgrade (proxmox case) | `ai-hats self update` — launcher auto-recreates default venv |
