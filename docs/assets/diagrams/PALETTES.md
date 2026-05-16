@@ -1,8 +1,8 @@
 # Custom palette preview (d2 + Source Code Pro + sketch)
 
-Шесть кастомных палеток на той же диаграмме [`session-lifecycle.d2`](session-lifecycle.d2). Все собраны через `vars.d2-config.theme-overrides` (16 цветовых слотов: N1-N7 нейтрали, B1-B6 primary, AA2/AA4/AA5 secondary, AB4/AB5 tertiary). Шрифт — Source Code Pro (variable TTF из `~/Library/Fonts`). Режим — `--sketch`.
+Six custom palettes on the same [`session-lifecycle.d2`](session-lifecycle.d2). All built through `vars.d2-config.theme-overrides` (16 color slots: N1-N7 neutrals, B1-B6 primary, AA2/AA4/AA5 secondary, AB4/AB5 tertiary). Font — Source Code Pro (variable TTF from `~/Library/Fonts`). Mode — `--sketch`.
 
-Команда:
+Command:
 ```bash
 d2 --sketch --pad=20 \
    --font-regular "$HOME/Library/Fonts/SourceCodePro[wght].ttf" \
@@ -30,24 +30,24 @@ d2 --sketch --pad=20 \
 
 ---
 
-## Что такое слоты
+## What the slots mean
 
-| Slot | Назначение | Где видно |
+| Slot | Purpose | Where it shows up |
 |---|---|---|
-| N7 → N5 | Backgrounds (dark → mid) | Холст диаграммы |
-| N4 → N3 | Borders / dividers | Контуры |
-| N2 → N1 | Foreground text | Подписи |
-| B1 → B6 | Primary accent (light → dark) | Большинство shape'ов |
+| N7 → N5 | Backgrounds (dark → mid) | Diagram canvas |
+| N4 → N3 | Borders / dividers | Outlines |
+| N2 → N1 | Foreground text | Labels |
+| B1 → B6 | Primary accent (light → dark) | Most shapes |
 | AA2, AA4, AA5 | Secondary accent | Highlighted nodes |
 | AB4, AB5 | Tertiary accent | Edges / hints |
 
-Логика наполнения brand-dark: N7 ≈ `#1c1810` (тёмный jam), B1 = `#e8632b` (brand orange), N1-N2 — cream `#faf2e6 / #e8d8b8`. То есть «обложка книги логотипа» = primary, «страницы книги» = neutrals, «шляпа» уходит как dark surface.
+How brand-dark is filled: N7 ≈ `#1c1810` (dark jam), B1 = `#e8632b` (brand orange), N1-N2 — cream `#faf2e6 / #e8d8b8`. Meaning: the "logo book cover" = primary, the "book pages" = neutrals, and the "hat" becomes the dark surface.
 
-## Как создать свою
+## How to build your own
 
-1. Берёшь любую палетку (например, [coolors.co](https://coolors.co/) или из брендбука) — нужны 5-7 нейтралей (от тёмного к светлому) и 1-3 акцента.
-2. Раскладываешь по слотам по таблице выше.
-3. Кладёшь в `vars.d2-config.theme-overrides` любого `.d2`-файла.
-4. Рендеришь.
+1. Take any palette (e.g. from [coolors.co](https://coolors.co/) or your brand book) — you need 5–7 neutrals (dark to light) and 1–3 accents.
+2. Map them to the slots per the table above.
+3. Drop them into `vars.d2-config.theme-overrides` of any `.d2` file.
+4. Render.
 
-`theme-id` (число рядом) — стартовая база; overrides переписывают то, что задал, остальное берётся из неё. Удобно стартовать с близкой по тону темы (200 для тёмных, 0 для светлых).
+`theme-id` (the number next to it) is a starter base; overrides rewrite what you set, the rest is inherited from it. It's convenient to start from a tonally close theme (200 for dark, 0 for light).
