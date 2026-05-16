@@ -5,7 +5,6 @@ composition:
   skills:
     - golang-database
   hooks: {}
-  mcp: []
 injection: |
   ## GO DATABASE
 

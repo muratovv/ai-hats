@@ -8,7 +8,6 @@ composition:
     - review-session
     - review-role
   hooks: {}
-  mcp: []
 injection: |
   ## REFLECT MODE
 

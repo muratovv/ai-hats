@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import hooks_dir, last_backup_path, mcp_dir, rules_dir, runs_dir, skills_dir, state_md_path, tasks_dir
+from ai_hats.paths import hooks_dir, last_backup_path, rules_dir, runs_dir, skills_dir, state_md_path, tasks_dir
 
 
 @pytest.fixture
@@ -552,7 +552,7 @@ def test_gitignore_opt_out_skips_write(project_with_library):
 
 
 # --------------------------------------------------------------------- #
-# HATS-155 — manifest-driven .agent/{hooks,mcp,skills}/ management
+# HATS-155 — manifest-driven .agent/{hooks,skills}/ management
 # --------------------------------------------------------------------- #
 
 
@@ -569,14 +569,13 @@ def test_managed_manifest_written_for_skills(project_with_library):
 
 
 def test_managed_manifest_absent_when_no_entries(project_with_library):
-    """Composition without hooks/mcp leaves those dirs without a manifest."""
+    """Composition without hooks leaves that dir without a manifest."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role")
 
     assert not (hooks_dir(project) / ".ai-hats-managed").exists()
-    assert not (mcp_dir(project) / ".ai-hats-managed").exists()
 
 
 def test_user_hook_survives_bump(project_with_library):
@@ -640,7 +639,6 @@ def test_tool_call_hygiene_is_always_on():
         rules=[rule],
         skills=[],
         hooks=HooksConfig(),
-        mcp=[],
         injections=[],
     )
     prompt = ClaudeProvider().build_system_prompt(result)

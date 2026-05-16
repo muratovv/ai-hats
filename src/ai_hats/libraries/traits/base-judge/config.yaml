@@ -14,7 +14,6 @@ composition:
     - tool-call-hygiene
     - request-supervisor
   hooks: {}
-  mcp: []
 injection: |
   ## JUDGE BEHAVIOR (L1 — analysis + ack'd mutations + HITL dialogue)
 

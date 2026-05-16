@@ -10,7 +10,6 @@ composition:
     - golang-samber-ro
     - golang-popular-libraries
   hooks: {}
-  mcp: []
 injection: |
   ## GO SAMBER ECOSYSTEM
 

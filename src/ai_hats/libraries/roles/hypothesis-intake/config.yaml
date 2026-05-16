@@ -9,7 +9,6 @@ composition:
   rules: []
   skills: []
   hooks: {}
-  mcp: []
 injection: |
   # ROLE: HYPOTHESIS INTAKE (non-interactive Haiku single-pass)
 

@@ -121,11 +121,6 @@ class _YamlModel(BaseModel):
 # ----- Composition + components -----
 
 
-class MCPServerConfig(_YamlModel):
-    name: str
-    config: str = ""  # path to config file
-
-
 class HooksConfig(_YamlModel):
     session_start: list[str] = Field(default_factory=list)
     session_end: list[str] = Field(default_factory=list)
@@ -143,7 +138,6 @@ class Composition(_YamlModel):
     rules: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
     hooks: HooksConfig = Field(default_factory=HooksConfig)
-    mcp: list[MCPServerConfig] = Field(default_factory=list)
 
 
 class ComponentConfig(_YamlModel):

@@ -6,7 +6,6 @@ composition:
     - golang-dependency-injection
     - golang-samber-do
   hooks: {}
-  mcp: []
 injection: |
   ## GO DEPENDENCY INJECTION
 

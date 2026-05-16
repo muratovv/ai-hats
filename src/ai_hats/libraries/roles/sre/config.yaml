@@ -28,7 +28,6 @@ composition:
     task_complete:
       - git status
       - git diff --stat
-  mcp: []
 injection: |
   # ROLE: SITE RELIABILITY ENGINEER
 

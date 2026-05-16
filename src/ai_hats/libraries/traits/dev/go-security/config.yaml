@@ -5,7 +5,6 @@ composition:
   skills:
     - golang-security
   hooks: {}
-  mcp: []
 injection: |
   ## GO SECURITY
 

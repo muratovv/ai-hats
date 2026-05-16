@@ -12,7 +12,6 @@ composition:
   skills:
     - role-coherence-protocol
   hooks: {}
-  mcp: []
 injection: |
   # ROLE: AUDITOR-FOR-ROLE (role coherence audit)
 

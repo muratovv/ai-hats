@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .library import LibraryResolver
-from .models import ComponentConfig, ComponentType, HooksConfig, MCPServerConfig, OverlayConfig
+from .models import ComponentConfig, ComponentType, HooksConfig, OverlayConfig
 
 
 @dataclass
@@ -44,7 +44,6 @@ class CompositionResult:
     rules: list[ResolvedComponent]
     skills: list[ResolvedComponent]
     hooks: HooksConfig
-    mcp: list[MCPServerConfig]
     injections: list[str]  # ordered injection texts
     errors: list[str] = field(default_factory=list)
     trait_injections: dict[str, str] = field(default_factory=dict)
@@ -78,7 +77,6 @@ class Composer:
                 rules=[],
                 skills=[],
                 hooks=HooksConfig(),
-                mcp=[],
                 injections=[],
                 errors=[f"Role '{role_name}' not found"],
             )
@@ -94,7 +92,6 @@ class Composer:
         role_injection_text = ""
         overlay_injection_text = ""
         hooks = HooksConfig()
-        mcp: list[MCPServerConfig] = []
 
         # Apply overlay (add/remove) before resolution
         if overlay:
@@ -111,7 +108,6 @@ class Composer:
             injections=injections,
             trait_injections=trait_injections,
             hooks=hooks,
-            mcp=mcp,
             errors=errors,
             visited=set(),
         )
@@ -134,9 +130,6 @@ class Composer:
 
         # Merge role's own hooks (role hooks override trait hooks for same event)
         self._merge_hooks(hooks, config.composition.hooks)
-
-        # Merge role's own MCP
-        mcp.extend(config.composition.mcp)
 
         # Add role's own injection last (highest priority).
         # role_injection is recorded independently of dedup so the layered
@@ -161,7 +154,6 @@ class Composer:
             rules=rules,
             skills=skills,
             hooks=hooks,
-            mcp=mcp,
             injections=injections,
             errors=errors,
             trait_injections=trait_injections,
@@ -210,7 +202,6 @@ class Composer:
         injections: list[str],
         trait_injections: dict[str, str],
         hooks: HooksConfig,
-        mcp: list[MCPServerConfig],
         errors: list[str],
         visited: set[str],
     ) -> None:
@@ -250,9 +241,6 @@ class Composer:
 
             # Merge trait hooks
             self._merge_hooks(hooks, config.composition.hooks)
-
-            # Merge trait MCP
-            mcp.extend(config.composition.mcp)
 
             # Add trait injection (deduped by text).
             # trait_injections mirrors the dedup: a trait whose text is empty

@@ -24,7 +24,6 @@ composition:
     session_start: []
     session_end: []
     task_complete: []
-  mcp: []
 injection: |
   # ROLE: SOFTWARE ARCHITECT
 

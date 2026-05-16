@@ -4,7 +4,6 @@ composition:
   rules: []  # Global hygiene/destructive rules live in base-judge (L2 commits + temp artifacts are realistic there); L0 audit has no write surface that would trigger them.
   skills: []
   hooks: {}
-  mcp: []
 injection: |
   ## ANALYST BASE BEHAVIOR
 

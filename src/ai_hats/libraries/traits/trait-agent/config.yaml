@@ -18,7 +18,6 @@ composition:
     - task-summary
     - tool-call-hygiene
   hooks: {}
-  mcp: []
 injection: |
   ## AGENT BEHAVIOR
 

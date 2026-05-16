@@ -7,7 +7,6 @@ composition:
     - skill-template
     - retro-to-framework
   hooks: {}
-  mcp: []
 injection: |
   ## SKILL ENGINEER
 

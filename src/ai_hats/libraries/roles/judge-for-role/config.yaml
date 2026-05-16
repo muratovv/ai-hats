@@ -14,7 +14,6 @@ composition:
     - judge-role-protocol
     - backlog-create
   hooks: {}
-  mcp: []
 injection: |
   # ROLE: JUDGE-FOR-ROLE (interactive role coherence)
 

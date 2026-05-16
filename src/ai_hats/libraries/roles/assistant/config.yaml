@@ -20,7 +20,6 @@ composition:
     task_complete:
       - git status
       - git diff --stat
-  mcp: []
 injection: |
   # ROLE: PRIMARY AUTOMATION ASSISTANT
 

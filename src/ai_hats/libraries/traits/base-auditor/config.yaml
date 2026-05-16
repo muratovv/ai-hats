@@ -6,7 +6,6 @@ composition:
   skills:
     - tool-call-hygiene
   hooks: {}
-  mcp: []
 injection: |
   ## AUDITOR BEHAVIOR (L0 — audit only)
 

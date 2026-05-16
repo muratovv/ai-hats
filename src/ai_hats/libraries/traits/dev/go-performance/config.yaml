@@ -6,7 +6,6 @@ composition:
     - golang-performance
     - golang-benchmark
   hooks: {}
-  mcp: []
 injection: |
   ## GO PERFORMANCE
 
