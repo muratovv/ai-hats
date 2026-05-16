@@ -15,74 +15,62 @@ roles/assistant ── trait-base + trait-agent + dev::python
 
 ## Быстрый старт
 
-### Подключение к новому проекту (bootstrap)
+Архитектура (HATS-333): bash launcher в `~/.local/bin/ai-hats` (one-time на хост) → per-project venv в `<ai_hats_dir>/.venv/`. **Одна команда `ai-hats self update`** делает install + heal + update.
+
+### 1. Установить launcher (один раз на хост)
+
+```bash
+curl -sSL https://github.com/muratovv/ai-hats/raw/main/scripts/install-launcher.sh | bash
+```
+
+Ставит ~30-строчный bash launcher в `~/.local/bin/ai-hats`. Если `~/.local/bin/` не в `$PATH` — installer подскажет добавить.
+
+### 2. Подключить к проекту
 
 ```bash
 cd ~/dev/my-project
-
-TMP=$(mktemp -d) && git clone --depth 1 git@github.com:muratovv/ai-hats.git "$TMP" && \
-  bash "$TMP/scripts/bootstrap.sh" -r go-dev -p claude; rm -rf "$TMP"
+ai-hats self update                       # создаёт venv в .agent/ai-hats/.venv + installs ai-hats
+ai-hats init -r go-dev -p claude          # генерирует ai-hats.yaml + CLAUDE.md
 ```
 
-Скрипт создаст `.venv`, установит ai-hats через pip, сгенерирует `ai-hats.yaml` и `CLAUDE.md`.
-
-### После установки
+### 3. Использование
 
 ```bash
-source .venv/bin/activate
 ai-hats                       # запустить сессию с текущими настройками
 ai-hats --resume              # флаги передаются провайдеру (claude/gemini)
 ai-hats config status         # проверить состояние
 ai-hats config set -r <role>  # сменить роль
 ai-hats config set -p gemini  # сменить провайдер
 ai-hats self bump             # обновить prompt после изменений в библиотеке
+ai-hats self update           # обновить ai-hats + auto-bump
 ```
 
-### Альтернативные способы установки
+`ai-hats self update` self-healing: если venv сломан после системного python upgrade — пересоздаётся автоматически (только default; override venv user-owned).
 
-<details>
-<summary>Из локального клона ai-hats</summary>
+### Альтернатива: bash bootstrap из клона
 
 ```bash
-cd ~/dev/my-project
-bash ~/dev/ai-hats/scripts/bootstrap.sh -r go-dev -p claude
-```
-</details>
-
-<details>
-<summary>Ручная установка (если ai-hats уже в venv)</summary>
-
-```bash
-cd ~/dev/my-project
-source .venv/bin/activate
-ai-hats config set -r go-dev -p claude
-```
-</details>
-
-<details>
-<summary>Локальный venv для CI / пиннинга версии (HATS-318)</summary>
-
-Опционально — изолировать ai-hats в `<ai_hats_dir>/.venv/` внутри проекта:
-
-```bash
-ai-hats self use-local     # создаёт <ai_hats_dir>/.venv/, ставит ai-hats
-ai-hats self use-global    # удаляет локальный venv, возврат к global pipx
+TMP=$(mktemp -d) && git clone --depth 1 git@github.com:muratovv/ai-hats.git "$TMP" && \
+  bash "$TMP/scripts/bootstrap.sh" -r go-dev -p claude; rm -rf "$TMP"
 ```
 
-После `use-local` любой `ai-hats` запуск re-exec'ится через
-`<ai_hats_dir>/.venv/bin/python` — `ai-hats self update` обновляет именно
-эту копию. Глобальный pipx не трогается. Подробности и decision tree
-«когда использовать local vs global» — `docs/migration-311.md` секция
-«Local-venv (opt-in)».
-</details>
+Bootstrap.sh = installer launcher → `ai-hats self update` → `ai-hats init` в одной команде. Полезен для CI / pre-PR setup.
 
-> ⚠️ **Mixed installs.** Если в проекте есть и global `pipx` ai-hats, и
-> локальный `<project>/.venv/bin/ai-hats` (Poetry / uv / manual pip) —
-> держи их версии синхронно. `ai-hats self bump` от старшей версии ломает
-> младшую (yaml-schema mismatch). С v0.3.1.dev349+ есть pre-bump gate
-> (HATS-330): bump откажется стартовать при mismatch и подскажет точную
-> команду для апгрейда локальной копии. Подробности —
-> `docs/migration-311.md` секция «Compatibility: mixed installs».
+### Override venv (advanced)
+
+Если хочешь поставить ai-hats в свой существующий venv (например, проектный) — добавь в `ai-hats.yaml`:
+
+```yaml
+venv_path: .venv      # relative от project root
+# или
+venv_path: /opt/shared/ai-hats-venv   # absolute (CI shared cache, system venv)
+```
+
+Launcher читает это поле через grep и использует указанный путь. Override-venv user-owned: ai-hats не пересоздаёт его при heal — сам делай `python -m venv <path>` и `<path>/bin/pip install ai-hats`. См. `docs/how-to.md#configurable-venv_path`.
+
+### Recovery после миграции с pipx
+
+Существующий проект на global `pipx install ai-hats` → см. `docs/migration-333.md`.
 
 ### Разработка ai-hats
 
@@ -115,7 +103,7 @@ pytest tests/ -v
 | `config`   | Чтение/правка `ai-hats.yaml` (provider, role, customizations, feedback) |
 | `list`     | Discovery: roles / skills / rules / traits / providers / tokens         |
 | `reflect`  | Feedback loop — per-session vote и bulk-triage HYP/PROP                 |
-| `self`     | Жизненный цикл инструмента: init / bump / update / clean / rollback / use-local / use-global |
+| `self`     | Жизненный цикл инструмента: init / bump / update / clean / rollback |
 | `session`  | Наблюдаемость: list / show / audit / retro по сессиям                   |
 | `task`     | Backlog: task / hyp / proposal cards со state-машиной                   |
 | `wt`       | git worktrees: create / merge / discard / exec / env                    |
