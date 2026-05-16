@@ -1,10 +1,10 @@
 # d2 theme & font preview
 
-Один и тот же исходник [`session-lifecycle.d2`](session-lifecycle.d2) во всех штатных темах d2, в двух режимах: **sketch** (hand-drawn) и **flat** (стандартная отрисовка). Используем для выбора финального стиля HATS-348.
+The same [`session-lifecycle.d2`](session-lifecycle.d2) source rendered in every built-in d2 theme, in two modes: **sketch** (hand-drawn) and **flat** (standard rendering). Used during HATS-348 to pick a base before custom palettes.
 
-Команда: `d2 [--sketch] --theme=<id> in.d2 out.svg`
+Command: `d2 [--sketch] --theme=<id> in.d2 out.svg`
 
-> Текущий выбор для `session-lifecycle.svg` — **200 Dark Mauve + sketch**.
+> Final pick for HATS-348 was a custom brand-light palette (see [`PALETTES.md`](PALETTES.md)) on top of `theme-id: 0`. The gallery below stays as a reference for future diagrams that want a different starting point.
 
 ---
 
@@ -36,7 +36,7 @@
 
 <table>
 <tr><th>Theme</th><th>Sketch</th><th>Flat</th></tr>
-<tr><td><b>200 — Dark Mauve</b> (current)</td><td><img src="themes-preview/t200-sketch.svg" width="280"></td><td><img src="themes-preview/t200-flat.svg" width="280"></td></tr>
+<tr><td><b>200 — Dark Mauve</b></td><td><img src="themes-preview/t200-sketch.svg" width="280"></td><td><img src="themes-preview/t200-flat.svg" width="280"></td></tr>
 <tr><td><b>201 — Dark Flagship Terrastruct</b></td><td><img src="themes-preview/t201-sketch.svg" width="280"></td><td><img src="themes-preview/t201-flat.svg" width="280"></td></tr>
 </table>
 
@@ -44,7 +44,7 @@
 
 ## Fonts
 
-d2 не имеет «именованных» fonts типа dracula — это либо встроенный sketch font (рукописный, при `--sketch`), либо системный sans-serif (без флага). Кастомизация — TTF-файлами:
+d2 has no named "font themes" like Dracula — what you get is either the built-in sketch font (hand-drawn, with `--sketch`) or a system sans-serif (without the flag). Customization is via TTF files:
 
 ```bash
 d2 --font-regular MyFont-Regular.ttf \
@@ -54,11 +54,11 @@ d2 --font-regular MyFont-Regular.ttf \
    in.d2 out.svg
 ```
 
-Полный список флагов: `d2 --help | grep font`. Шрифт можно зашить в SVG (default) или ссылаться внешне.
+Full flag list: `d2 --help | grep font`. The font can be embedded into the SVG (default) or linked externally.
 
 ## Online preview
 
-- **Playground (живая правка):** https://play.d2lang.com/
-- **Гид по темам:** https://d2lang.com/tour/themes
+- **Playground (live editing):** https://play.d2lang.com/
+- **Theme guide:** https://d2lang.com/tour/themes
 - **Sketch mode:** https://d2lang.com/tour/sketch
-- **Кастомные шрифты:** https://d2lang.com/tour/fonts
+- **Custom fonts:** https://d2lang.com/tour/fonts

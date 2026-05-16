@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <strong>English</strong> · <a href="docs/README.ru.md">Русский</a>
+  <sub>Reading in another language? Chrome / Edge / Safari Reader Mode translate this site cleanly — no separate translations are maintained.</sub>
 </p>
 
 ## Why ai-hats?

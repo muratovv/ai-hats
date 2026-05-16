@@ -1,27 +1,27 @@
-# Интеграция внешних сервисов через CLI-скиллы
+# Wiring external services via CLI skills
 
-Внешние сервисы (Google Workspace, GitHub, BigQuery, etc.) подключаются к роли как **обычный skill**, документирующий CLI-инструмент. ai-hats остаётся секрет-агностичным: auth, токены и ключи — забота CLI и пользователя.
+External services (Google Workspace, GitHub, BigQuery, etc.) attach to a role as **a regular skill** that documents a CLI tool. ai-hats stays secret-agnostic: auth, tokens, and keys are owned by the CLI and the user.
 
-## Принцип
+## Principle
 
 ```
-внешний сервис = CLI-инструмент в $PATH + skill, который его документирует
+external service = CLI tool on $PATH + a skill that documents it
 ```
 
-Агент вызывает CLI через `Bash`, как и любую другую команду. Никаких MCP-серверов, дополнительных протоколов или встроенной инфраструктуры в ai-hats не требуется.
+The agent invokes the CLI through `Bash`, the same as any other command. No MCP servers, no extra protocols, no in-tree infrastructure inside ai-hats.
 
-## Структура integration-skill-а
+## Layout of an integration skill
 
 `<library>/skills/<tool-name>-cli/SKILL.md`:
 
 ```markdown
 ---
 name: <tool-name>-cli
-description: <одна строка о том, какой сервис покрывает skill>
+description: <one line about the service this skill covers>
 triggers:
-  - "<когда агент должен загружать skill>"
+  - "<when the agent should load this skill>"
 skip:
-  - "<когда skill можно пропустить>"
+  - "<when the skill can be skipped>"
 tags: [cli, integration]
 ---
 
@@ -30,37 +30,37 @@ tags: [cli, integration]
 ## Installation
 
 ```bash
-brew install <tool>     # или npm/curl/pip
+brew install <tool>     # or npm/curl/pip
 ```
 
 ## Auth (one-time)
 
 ```bash
-<tool> auth login       # OAuth/токен setup, делается руками
+<tool> auth login       # OAuth / token setup, done by hand
 ```
 
-Auth state хранится в `~/.config/<tool>/` (или эквивалент). ai-hats этим не управляет.
+Auth state lives in `~/.config/<tool>/` (or equivalent). ai-hats does not manage it.
 
 ## Common operations
 
-- `<tool> <command> ...` — что делает + пример.
+- `<tool> <command> ...` — what it does + an example.
 - ...
 
 ## Notes
 
-- Permission allowlist: если хочется auto-approve — добавить `Bash(<tool>:*)` в `.claude/settings.json`.
-- Если CLI не установлен — Bash вернёт `command not found`, попросите пользователя установить.
+- Permission allowlist: to auto-approve invocations, add `Bash(<tool>:*)` to `.claude/settings.json`.
+- If the CLI is not installed — Bash returns `command not found`; ask the user to install it.
 ```
 
-## Что НЕ должно быть в skill-е
+## What must NOT be in the skill
 
-- **Секреты** в любом виде. Никаких токенов/ключей/паролей в `SKILL.md`, `metadata.yaml` или примерах.
-- **Привязка к конкретному пути** установки. CLI должен резолвиться через `$PATH`.
-- **Wrapper-скрипты с hardcoded путями**. Если для auth нужен wrapper (читает Keychain, например) — это user-side артефакт (живёт в `~/.local/bin/`), а не часть skill-а.
+- **Secrets** of any kind. No tokens / keys / passwords in `SKILL.md`, `metadata.yaml`, or examples.
+- **Hardcoded install paths.** The CLI must resolve via `$PATH`.
+- **Wrapper scripts with hardcoded paths.** If auth needs a wrapper (e.g. reading from Keychain) — that's a user-side artifact (lives in `~/.local/bin/`), not part of the skill.
 
-## Подключение к роли
+## Wiring into a role
 
-В `composition` trait/role:
+In a trait/role `composition`:
 
 ```yaml
 composition:
@@ -69,9 +69,9 @@ composition:
     - github-cli
 ```
 
-После `ai-hats bump` skill становится виден агенту через стандартный механизм skill-инжекции.
+After `ai-hats bump` the skill becomes visible to the agent through the standard skill-injection mechanism.
 
-## Примеры
+## Examples
 
-- `gworkspace-cli` — Google Workspace через https://github.com/googleworkspace/cli (см. эпик HATS-341).
-- Дополнительные CLI-интеграции добавляются как child-задачи под HATS-341.
+- `gworkspace-cli` — Google Workspace via https://github.com/googleworkspace/cli (see epic HATS-341).
+- Additional CLI integrations are added as child tasks under HATS-341.

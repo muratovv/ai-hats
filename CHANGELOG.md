@@ -10,6 +10,18 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Changed
+
+- All user-facing docs (`docs/ARCHITECTURE.md`, the `docs/how-to-*.md`
+  set, `docs/migration.md`, and the diagram-preview pages) are now
+  English-only. The README hints that browser auto-translate handles
+  other languages cleanly. (HATS-352)
+
+### Removed
+
+- `docs/README.ru.md`. Browser translation replaces the maintained
+  Russian mirror. (HATS-352)
+
 ## [0.4.0] - 2026-05-16
 
 First public release. The repository, its history, and its docs have
@@ -67,8 +79,8 @@ every PR.
 ### Removed
 
 - Internal-ticket references in user-facing prose (`HATS-NNN` tags in
-  README, the "пока репо приватный" warning).
-- The duplicated `### Как обновить ai-hats в проекте` block in README
+  README, the "repo is still private" warning).
+- The duplicated "how to update ai-hats in a project" block in README
   (already covered by the Quick-start step 3).
 
 ### Security
