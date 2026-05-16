@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <em>Compose AI agents from reusable traits + rules + skills, then run an automatic retrospective after every session.</em><br>
+  <em>Compose AI agents from reusable roles, then run an automatic retrospective after every session.</em><br>
   <em>One role set works for both Claude and Gemini.</em>
 </p>
 
