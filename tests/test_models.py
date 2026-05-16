@@ -459,6 +459,66 @@ def test_project_config_valid_load_still_works(tmp_path):
     assert config.active_role == "assistant"
 
 
+# -- HATS-334: ProjectConfig.venv_path round-trip + validation --
+
+
+def test_project_config_venv_path_relative_roundtrip(tmp_path):
+    config = ProjectConfig(provider="claude", venv_path=".venv")
+    path = tmp_path / "ai-hats.yaml"
+    config.save(path)
+
+    loaded = ProjectConfig.from_yaml(path)
+    assert loaded.venv_path == ".venv"
+
+
+def test_project_config_venv_path_absolute_roundtrip(tmp_path):
+    config = ProjectConfig(provider="claude", venv_path="/opt/myvenv")
+    path = tmp_path / "ai-hats.yaml"
+    config.save(path)
+
+    loaded = ProjectConfig.from_yaml(path)
+    assert loaded.venv_path == "/opt/myvenv"
+
+
+def test_project_config_venv_path_omitted_when_none(tmp_path):
+    """venv_path is opt-in — saved yaml stays clean when field unused."""
+    config = ProjectConfig(provider="claude")
+    path = tmp_path / "ai-hats.yaml"
+    config.save(path)
+
+    assert "venv_path" not in path.read_text()
+
+
+def test_project_config_backward_compat_yaml_without_venv_path(tmp_path):
+    """v4 yaml without venv_path field loads fine with venv_path=None."""
+    path = tmp_path / "ai-hats.yaml"
+    path.write_text(
+        "provider: claude\nschema_version: 4\nai_hats_dir: .agent/ai-hats\n"
+    )
+
+    config = ProjectConfig.from_yaml(path)
+    assert config.venv_path is None
+
+
+def test_project_config_rejects_invalid_venv_path(tmp_path):
+    """Invalid venv_path (dotdot escape) raises ProjectConfigError on load."""
+    path = tmp_path / "ai-hats.yaml"
+    path.write_text(
+        "provider: claude\nschema_version: 4\n"
+        "ai_hats_dir: .agent/ai-hats\nvenv_path: '../escape'\n"
+    )
+
+    with pytest.raises(ProjectConfigError) as exc:
+        ProjectConfig.from_yaml(path)
+    assert "venv_path" in str(exc.value)
+
+
+def test_project_config_venv_path_constructor_validates():
+    """ProjectConfig() constructor (not from_yaml) also rejects invalid value."""
+    with pytest.raises(Exception):  # pydantic ValidationError
+        ProjectConfig(provider="claude", venv_path="../bad")
+
+
 # -- FeedbackConfig tests --
 
 
