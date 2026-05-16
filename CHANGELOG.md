@@ -10,12 +10,22 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-16
+
+First public release. The repository, its history, and its docs have
+been audited for sensitive data; an English-first landing page has
+been added; the public surface (CLI, `ai-hats.yaml` schema, tracker
+format, skill format) is documented and SemVer-protected. CI gates
+every PR.
+
 ### Added
 
 - `LICENSE` — MIT license.
 - `SECURITY.md` — disclosure channel and supported-version policy.
 - `CONTRIBUTING.md` — dev setup, commit conventions, and a "what not to
   commit" section that complements the privacy pre-commit hook.
+- `docs/RELEASING.md` — SemVer policy, breaking-change protocol, and the
+  manual release checklist.
 - `docs/ARCHITECTURE.md` — internal model (components, composition,
   task state machine, project structure, library layout, skill format).
 - `docs/how-to-orchestration.md` — fan-out scenarios, session tags,
@@ -26,13 +36,23 @@ since the latest tag lives under **Unreleased** until the next release.
   pipeline (Gemini prompt, ImageMagick post-processing, vhs invocation).
 - `scripts/demo.tape` — vhs script that records the README hero demo
   from real ai-hats state (config status → session list → active hyps).
+- `.github/ISSUE_TEMPLATE/` (bug report + feature request) and
+  `.github/PULL_REQUEST_TEMPLATE.md`.
+- `.github/workflows/ci.yml` — GitHub Actions pipeline: ruff lint, test
+  matrix (Python 3.11 / 3.12 / 3.13) with a **78% coverage gate**,
+  bandit (`-ll`) + pip-audit security scan, install-smoke that runs
+  `scripts/install-launcher.sh` on a clean runner.
+- `.github/dependabot.yml` — weekly pip + github-actions update PRs.
 - `pyproject.toml`: `license = "MIT"`, `license-files`, `authors`,
   PyPI classifiers; `setuptools` build requirement bumped to ≥77 so the
-  PEP 639 `license-files` key resolves.
+  PEP 639 `license-files` key resolves; `[dev]` extras now include
+  `bandit>=1.7` and `pip-audit>=2.7`; `[tool.coverage.*]` +
+  `[tool.bandit]` configs.
 - Privacy hook: new patterns for Claude session markers
   (`sessionId` / `requestId`, `"cwd": "/...`, structural JSONL keys like
   `parentUuid` / `toolUseResult`) plus a lower size threshold for new
   fixtures under `tests/fixtures/`.
+- README CI status badge.
 
 ### Changed
 
@@ -53,6 +73,11 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Security
 
+- **Fix CWE-377 / bandit B306 in `providers.py`:** switched from
+  `tempfile.mktemp` (TOCTOU race — between `mktemp` returning the path
+  and `write_text` creating the file an attacker on the same host
+  could pre-create it) to `tempfile.mkstemp`, which atomically opens
+  an fd at mode 0600.
 - Purged `tests/fixtures/real_conversation.jsonl` from working tree and
   from the entire git history. The fixture carried a real Claude Code
   session: absolute `cwd`, `sessionId`, `requestId`, subscription tier,
@@ -89,5 +114,6 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/muratovv/ai-hats/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/muratovv/ai-hats/releases/tag/v0.3.0
