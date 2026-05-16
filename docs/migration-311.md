@@ -187,7 +187,7 @@ add an explicit `!.agent/ai-hats/role.md` entry yourself.
 > venv at `<ai_hats_dir>/.venv/`. Mixed installs are impossible by
 > construction.
 >
-> Migration guide: `docs/migration-333.md`.
+> Migration guide: `docs/migration.md`.
 
 ## Cross-references
 

@@ -27,7 +27,12 @@
 
 ## Концепция
 
-ai-hats собирает роли из компонентов — **traits**, **rules**, **skills**, **hooks** — и инжектит их в system prompt выбранного провайдера (Gemini / Claude). Один набор ролей работает с любым провайдером. После каждой сессии — автоматический structured retrospective с вердиктами по гипотезам и предложениями улучшений.
+Бывало ли так — один и тот же AI-агент в разных проектах наступает на одни и те же грабли? Забывает соглашения, пропускает шаг плана, начинает с того же анти-паттерна. `CLAUDE.md` копи-паста не масштабируется: правки расползаются между проектами, а исправление в одном не доходит до других.
+
+ai-hats решает это двумя вещами:
+
+- **Роли как композиция переиспользуемых компонентов** — `traits`, `rules`, `skills`, `hooks` собираются в роль один раз и инжектятся в system prompt любого провайдера (Gemini / Claude). Исправление компонента доходит до всех ролей, где он подключён, через `ai-hats self bump`.
+- **Глубокая рефлексия после каждой сессии** — structured retrospective с фактическим слоем (метрики, файлы, коммиты) и LLM-narrative с вердиктами по активным гипотезам и голосами за предложения улучшений. Закономерности из 3–5 сессий превращаются в новые правила и скиллы, и петля замыкается.
 
 ```
 roles/assistant ── trait-base + trait-agent + dev::python
@@ -38,7 +43,7 @@ roles/assistant ── trait-base + trait-agent + dev::python
 
 ## Быстрый старт
 
-Bash launcher в `~/.local/bin/ai-hats` (один раз на хост) → per-project venv в `<ai_hats_dir>/.venv/`. **Одна команда `ai-hats self update`** делает install + heal + update.
+Bash launcher в `~/.local/bin/ai-hats` (один раз на хост) → per-project venv в `<ai_hats_dir>/.venv/`. Подсказка по любой команде — `ai-hats --help`. Полное дерево CLI — `ai-hats --tree`.
 
 ### 1. Установить launcher (один раз на хост)
 
@@ -52,9 +57,11 @@ curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launche
 
 ```bash
 cd ~/dev/my-project
-ai-hats self update                       # создаёт venv в .agent/ai-hats/.venv + installs ai-hats
-ai-hats self init -r go-dev -p claude          # генерирует ai-hats.yaml + CLAUDE.md
+ai-hats self update                            # создаёт venv в .agent/ai-hats/.venv + installs ai-hats
+ai-hats config set -r go-dev -p claude         # выбрать роль и провайдера (auto-init проекта)
 ```
+
+`config set` создаёт `ai-hats.yaml` + `CLAUDE.md`/`GEMINI.md` под выбранную композицию.
 
 ### 3. Использование
 
@@ -62,21 +69,18 @@ ai-hats self init -r go-dev -p claude          # генерирует ai-hats.ya
 ai-hats                       # запустить сессию с текущими настройками
 ai-hats --resume              # флаги передаются провайдеру (claude/gemini)
 ai-hats config status         # проверить состояние
-ai-hats config set -r <role>  # сменить роль
-ai-hats config set -p gemini  # сменить провайдер
-ai-hats self bump             # обновить prompt после изменений в библиотеке
+ai-hats self bump             # пересобрать prompt после изменений в библиотеке
 ai-hats self update           # обновить ai-hats + auto-bump
 ```
 
 `ai-hats self update` self-healing: если venv сломан после системного python upgrade — пересоздаётся автоматически (только default; override venv user-owned).
 
-Альтернативные сценарии установки (bootstrap из клона, override venv, миграция с pipx, разработка ai-hats) — см. **[docs/how-to.md](docs/how-to.md)** и **[docs/migration-333.md](docs/migration-333.md)**.
+Альтернативные сценарии установки (bootstrap из клона, override venv, миграция с pipx, разработка ai-hats) — см. **[docs/how-to.md](docs/how-to.md)** и **[docs/migration.md](docs/migration.md)**.
 
 ## CLI
 
 > **Полный справочник команд с описаниями и опциями — `ai-hats --tree`**
-> (работает также как `ai-hats --help --tree`). Дерево рендерится из живого
-> click-графа, поэтому всегда соответствует установленной версии.
+> (работает также как `ai-hats --help --tree`).
 >
 > Поддеревья: `ai-hats --tree <group>` (например, `ai-hats --tree wt`)
 > или вглубь: `ai-hats --tree task hyp`.

@@ -262,12 +262,12 @@ venv_path: .venv          # уже существующий venv проекта 
 | Override venv сломан | `python3 -m venv <override-path> && <override-path>/bin/pip install 'ai-hats @ git+ssh://...'` (user-managed) |
 | Полный wipe project (потеря data!) | `rm -rf .agent/ai-hats/ && ai-hats self update && ai-hats self init -r <role> -p <provider>` |
 
-Подробный migration guide для проектов с pipx → launcher: `docs/migration-333.md`.
+Подробный migration guide для проектов с pipx → launcher: `docs/migration.md`.
 
 ---
 
 ## См. также
 
 - [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — настройка и использование цикла reflect-session / reflect-all (политики, гипотезы, валидация харнесом).
-- [`docs/migration-333.md`](migration-333.md) — migration guide на venv-first launcher.
+- [`docs/migration.md`](migration.md) — migration guide на venv-first launcher.
 - [`docs/reflect.md`](reflect.md) — архитектура retrospective pipeline.
