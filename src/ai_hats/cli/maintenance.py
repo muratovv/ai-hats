@@ -27,7 +27,13 @@ def _build_update_cmd() -> list[str]:
     dependencies declared in pyproject.toml (e.g. ptyprocess added in
     HATS-207) get pulled in on update; otherwise users hit
     ModuleNotFoundError at runtime after an update.
+
+    HATS-337/follow-up: PEP 508 `name @ url` requires a URL scheme. For
+    local-path AI_HATS_REPO_URL (e.g. `--local /path` in bootstrap.sh) we
+    pass the path directly — pip detects pyproject.toml and installs.
     """
+    url = _git_install_url()
+    target = f"ai-hats @ {url}" if "://" in url else url
     return [
         sys.executable,
         "-m",
@@ -35,7 +41,7 @@ def _build_update_cmd() -> list[str]:
         "install",
         "--force-reinstall",
         "--no-cache-dir",
-        f"ai-hats @ {_git_install_url()}",
+        target,
     ]
 
 

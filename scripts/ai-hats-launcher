@@ -13,6 +13,16 @@ PROJECT="$(pwd)"
 REPO_URL="${AI_HATS_REPO_URL:-git+ssh://git@github.com/muratovv/ai-hats.git}"
 DEFAULT_VENV="$PROJECT/.agent/ai-hats/.venv"
 
+# pip install target — PEP 508 `name @ url` requires a URL scheme. For local
+# directory paths we pass the path directly (pip detects pyproject.toml).
+# Detection: presence of `://` signals a URL; anything else is treated as a
+# local path or already a pip-acceptable spec.
+if [[ "$REPO_URL" == *"://"* ]]; then
+    PIP_TARGET="ai-hats @ $REPO_URL"
+else
+    PIP_TARGET="$REPO_URL"
+fi
+
 # --- Resolve venv (mirrors paths.venv_path precedence) ---
 VENV=""
 if [[ -n "${AI_HATS_VENV:-}" ]]; then
@@ -48,7 +58,7 @@ heal_if_needed() {
     if ! is_default_venv; then
         echo "ai-hats: override venv $VENV is missing or broken." >&2
         echo "  Override venv is user-owned; ai-hats will not auto-recreate it." >&2
-        echo "  Fix manually:  python3 -m venv $VENV && $VENV/bin/pip install 'ai-hats @ $REPO_URL'" >&2
+        echo "  Fix manually:  python3 -m venv $VENV && $VENV/bin/pip install '$PIP_TARGET'" >&2
         exit 1
     fi
     echo "  · ai-hats venv missing or broken — recreating $VENV" >&2
@@ -57,7 +67,7 @@ heal_if_needed() {
     # Bare install so the subsequent exec into <venv>/bin/ai-hats succeeds.
     # The python self update (called next via delegate) will then re-install
     # with --force-reinstall and render the rich diff + auto-bump.
-    "$VENV/bin/pip" install --quiet "ai-hats @ $REPO_URL"
+    "$VENV/bin/pip" install --quiet "$PIP_TARGET"
 }
 
 # --- Self update: heal-then-delegate. Never bypass python self update —
