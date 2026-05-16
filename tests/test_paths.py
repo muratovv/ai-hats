@@ -18,7 +18,6 @@ from ai_hats.paths import (
     last_backup_path,
     legacy_paths_by_class,
     library_dir,
-    local_venv_path,
     mcp_dir,
     normalize_ai_hats_dir,
     normalize_venv_path,
@@ -357,13 +356,6 @@ def test_venv_path_handles_corrupt_yaml(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     (tmp_path / "ai-hats.yaml").write_text("not: valid: yaml: [\n")
     assert venv_path(tmp_path) == tmp_path / ".agent" / "ai-hats" / ".venv"
-
-
-def test_local_venv_path_is_alias_for_venv_path(tmp_path, monkeypatch):
-    """HATS-334: local_venv_path is a thin alias; removed in HATS-337."""
-    monkeypatch.delenv("AI_HATS_VENV", raising=False)
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    assert local_venv_path(tmp_path) == venv_path(tmp_path)
 
 
 @pytest.mark.parametrize(

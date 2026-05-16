@@ -255,16 +255,6 @@ def venv_path(project_dir: Path) -> Path:
     return ai_hats_dir(project_dir) / ".venv"
 
 
-def local_venv_path(project_dir: Path) -> Path:
-    """Deprecated alias for :func:`venv_path` (HATS-318 → HATS-334).
-
-    Kept as 1-line wrapper for in-flight callers; removed in HATS-337
-    cleanup once the wrapper / use-local / use-global code paths are
-    deleted.
-    """
-    return venv_path(project_dir)
-
-
 # ---------- Legacy migration helpers (consumed by HATS-312/313/314) ----------
 
 # Maps a legacy path (relative to project_dir) to (class, new path

@@ -56,7 +56,11 @@ def _fake_python3_with_venv_creator(stub_dir: Path) -> Path:
     """Create a python3 stub that emulates `python3 -m venv <path>`.
 
     When called as `python3 -m venv <target>`, builds a minimal venv
-    layout at <target> (bin/python exits 0, bin/pip records args).
+    layout at <target>:
+      - bin/python: exit 0
+      - bin/pip: records args to <venv>/pip_called; on `install <…> ai-hats`
+        also drops bin/ai-hats stub so the launcher's downstream delegate
+        (HATS-337 heal-then-delegate) succeeds.
     Returns the directory to prepend to PATH.
     """
     stub_dir.mkdir(parents=True, exist_ok=True)
@@ -74,6 +78,17 @@ def _fake_python3_with_venv_creator(stub_dir: Path) -> Path:
         '    cat > "$target/bin/pip" <<\'PIP\'\n'
         '#!/usr/bin/env bash\n'
         'printf "%s\\n" "$@" > "$(dirname "$0")/../pip_called"\n'
+        'for arg in "$@"; do\n'
+        '    if [[ "$arg" == ai-hats* ]]; then\n'
+        '        cat > "$(dirname "$0")/ai-hats" <<AHATS\n'
+        '#!/usr/bin/env bash\n'
+        'echo "venv-ai-hats: \\$*"\n'
+        'exit 0\n'
+        'AHATS\n'
+        '        chmod +x "$(dirname "$0")/ai-hats"\n'
+        '        break\n'
+        '    fi\n'
+        'done\n'
         'exit 0\n'
         'PIP\n'
         '    chmod +x "$target/bin/pip"\n'
@@ -179,7 +194,8 @@ def test_env_overrides_yaml(tmp_path):
 
 
 def test_self_update_creates_default_when_missing(tmp_path):
-    """Default venv missing → launcher invokes python3 -m venv then pip."""
+    """Default venv missing → heal creates venv + bare-installs ai-hats,
+    then delegates to <venv>/bin/ai-hats for the rich python self update."""
     stub_dir = _fake_python3_with_venv_creator(tmp_path / "fake-bin")
     env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
     res = _run(["self", "update"], cwd=tmp_path, env=env)
@@ -187,16 +203,20 @@ def test_self_update_creates_default_when_missing(tmp_path):
 
     default_venv = tmp_path / ".agent" / "ai-hats" / ".venv"
     assert (default_venv / "bin" / "python").is_file()
+    # Heal phase: bare pip install (no --upgrade — that's python's job).
     pip_marker = default_venv / "pip_called"
     assert pip_marker.is_file()
     text = pip_marker.read_text()
     assert "install" in text
-    assert "--upgrade" in text
     assert "ai-hats @" in text
+    assert "--upgrade" not in text  # bare install only; python self update adds --force-reinstall
+    # Delegate phase: <venv>/bin/ai-hats called with original argv.
+    assert "venv-ai-hats: self update" in res.stdout
 
 
 def test_self_update_recreates_broken_default(tmp_path):
-    """Default venv dir exists but bin/python missing → recreates."""
+    """Default venv dir exists but bin/python missing → heal recreates +
+    bare-installs, then delegates to python self update."""
     venv = tmp_path / ".agent" / "ai-hats" / ".venv"
     (venv / "bin").mkdir(parents=True)
     (venv / "marker_old").write_text("pre-existing")
@@ -207,6 +227,7 @@ def test_self_update_recreates_broken_default(tmp_path):
     assert (venv / "bin" / "python").is_file()
     assert not (venv / "marker_old").exists(), "broken venv was not wiped"
     assert "recreating" in res.stderr
+    assert "venv-ai-hats: self update" in res.stdout
 
 
 def test_self_update_refuses_recreate_override(tmp_path):
@@ -224,18 +245,18 @@ def test_self_update_refuses_recreate_override(tmp_path):
     assert "user-owned" in res.stderr
 
 
-def test_self_update_in_healthy_venv_calls_pip(tmp_path):
-    """Healthy venv → skip create, exec pip install --upgrade ai-hats."""
+def test_self_update_in_healthy_venv_delegates_to_python(tmp_path):
+    """Healthy venv → heal is a no-op (no pip_called marker), launcher
+    delegates straight to <venv>/bin/ai-hats for the rich python self
+    update."""
     venv = tmp_path / ".agent" / "ai-hats" / ".venv"
-    _fake_venv(venv)
+    _fake_venv(venv, ai_hats_echo="healthy-ai-hats")
     res = _run(["self", "update"], cwd=tmp_path)
     assert res.returncode == 0, res.stderr
-    pip_marker = venv / "pip_called"
-    assert pip_marker.is_file()
-    text = pip_marker.read_text()
-    assert "install" in text
-    assert "--upgrade" in text
-    assert "ai-hats @" in text
+    # Heal must NOT have called pip — venv was already healthy.
+    assert not (venv / "pip_called").exists(), "heal should be a no-op on healthy venv"
+    # Delegation happened — python ai-hats receives original argv.
+    assert "healthy-ai-hats: self update" in res.stdout
 
 
 # ---------- exec fall-through edge cases ----------

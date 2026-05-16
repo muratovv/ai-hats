@@ -161,7 +161,6 @@ from . import (  # noqa: E402
     reflect as reflect_mod,
     session,
     task,
-    venv as venv_mod,
     worktree,
 )
 
@@ -186,8 +185,6 @@ self_group.add_command(assembly.bump)
 self_group.add_command(assembly.rollback)
 self_group.add_command(assembly.clean)
 self_group.add_command(maintenance.update)
-self_group.add_command(venv_mod.use_local)
-self_group.add_command(venv_mod.use_global)
 main.add_command(self_group)
 
 # List
@@ -256,38 +253,6 @@ def _extract_tree_path(argv: list[str]) -> list[str]:
     return path
 
 
-def _maybe_reexec_into_local_venv() -> None:
-    """HATS-318: re-exec into ``<ai_hats_dir>/.venv/bin/python`` if present.
-
-    Activated by the existence of the venv interpreter at the conventional
-    path. Idempotent: when already running inside the local venv,
-    ``sys.prefix`` equals the venv root and the function short-circuits.
-    Failures (missing project, unreadable yaml) silently fall back to the
-    global interpreter — opt-in must not break the default flow.
-
-    Why ``sys.prefix`` and not ``sys.executable``: every venv's
-    ``bin/python`` is a symlink to the same underlying interpreter (e.g.
-    Homebrew python3.14), so comparing the executables via ``realpath``
-    would conflate two distinct venvs sharing one host interpreter.
-    ``sys.prefix`` is the venv root, which is unique per venv (HATS-329).
-    """
-    import os
-    from pathlib import Path
-
-    try:
-        from .. import paths
-
-        venv = paths.local_venv_path(Path.cwd())
-    except (OSError, ValueError, ImportError):
-        return
-    venv_python = venv / "bin" / "python"
-    if not venv_python.is_file():
-        return
-    if os.path.realpath(sys.prefix) == os.path.realpath(str(venv)):
-        return
-    os.execv(str(venv_python), [str(venv_python), "-m", "ai_hats", *sys.argv[1:]])
-
-
 def main_entry() -> None:
     """Console-script entry point.
 
@@ -301,11 +266,10 @@ def main_entry() -> None:
     ``--help --tree`` to the default help, and click has no native way
     to attach an optional positional path to a top-level flag.
 
-    HATS-318: re-exec into the opt-in local venv (if present) before any
-    further click parsing — this swaps ``sys.executable`` so downstream
-    subprocesses (`pip install` in `self update`, etc.) target the right env.
+    HATS-337: the legacy ``_maybe_reexec_into_local_venv`` python wrapper
+    was removed — the bash launcher (HATS-339) is now the single
+    host-level entry-point and owns venv selection / re-exec.
     """
-    _maybe_reexec_into_local_venv()
     if "--tree" in sys.argv[1:]:
         from ._tree import print_subtree
 
