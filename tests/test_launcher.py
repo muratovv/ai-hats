@@ -78,17 +78,17 @@ def _fake_python3_with_venv_creator(stub_dir: Path) -> Path:
         '    cat > "$target/bin/pip" <<\'PIP\'\n'
         '#!/usr/bin/env bash\n'
         'printf "%s\\n" "$@" > "$(dirname "$0")/../pip_called"\n'
-        'for arg in "$@"; do\n'
-        '    if [[ "$arg" == ai-hats* ]]; then\n'
-        '        cat > "$(dirname "$0")/ai-hats" <<AHATS\n'
+        '# Treat any `pip install …` invocation as installing ai-hats so the\n'
+        '# launcher\'s downstream delegate (HATS-337) succeeds — covers both\n'
+        '# PEP 508 "ai-hats @ url" and bare local-path target forms.\n'
+        'if [[ "${1:-}" == "install" ]]; then\n'
+        '    cat > "$(dirname "$0")/ai-hats" <<AHATS\n'
         '#!/usr/bin/env bash\n'
         'echo "venv-ai-hats: \\$*"\n'
         'exit 0\n'
         'AHATS\n'
-        '        chmod +x "$(dirname "$0")/ai-hats"\n'
-        '        break\n'
-        '    fi\n'
-        'done\n'
+        '    chmod +x "$(dirname "$0")/ai-hats"\n'
+        'fi\n'
         'exit 0\n'
         'PIP\n'
         '    chmod +x "$target/bin/pip"\n'
@@ -243,6 +243,27 @@ def test_self_update_refuses_recreate_override(tmp_path):
     assert "override venv" in res.stderr
     assert str(override) in res.stderr
     assert "user-owned" in res.stderr
+
+
+def test_self_update_with_local_path_repo_url(tmp_path):
+    """AI_HATS_REPO_URL без `://` (local path) → pip gets bare path, not the
+    PEP 508 `ai-hats @ <path>` form (which requires a URL scheme and would
+    fail pip install)."""
+    stub_dir = _fake_python3_with_venv_creator(tmp_path / "fake-bin")
+    fake_repo = tmp_path / "local-repo"
+    fake_repo.mkdir()
+    env = {
+        "PATH": f"{stub_dir}:{os.environ['PATH']}",
+        "AI_HATS_REPO_URL": str(fake_repo),
+    }
+    res = _run(["self", "update"], cwd=tmp_path, env=env)
+    assert res.returncode == 0, res.stderr
+    pip_marker = tmp_path / ".agent" / "ai-hats" / ".venv" / "pip_called"
+    assert pip_marker.is_file()
+    text = pip_marker.read_text()
+    assert str(fake_repo) in text
+    # local path target — bare path, not the PEP 508 `name @ url` form.
+    assert "ai-hats @" not in text
 
 
 def test_self_update_in_healthy_venv_delegates_to_python(tmp_path):
