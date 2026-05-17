@@ -3,7 +3,7 @@
 import pytest
 
 from ai_hats.composer import Composer
-from ai_hats.library import LibraryResolver
+from ai_hats.resolver import LibraryResolver
 from ai_hats.models import OverlayConfig
 
 

@@ -178,13 +178,13 @@ Composed with `base-judge`?   → Write tool to declared report path. No markers
   - HATS-301 (carve-out lift — absorbed by §3)
   - HATS-302 (cleanup bundle — independent; finding #5 overlap)
   - HATS-299 / HATS-300 (post-migration Pass C deferred to those tickets)
-- **Touched components (post-ADR):**
-  - NEW `src/ai_hats/libraries/traits/trait-analyst-base/config.yaml`
-  - NEW `src/ai_hats/libraries/skills/backlog-create/SKILL.md` + `metadata.yaml`
-  - `src/ai_hats/libraries/traits/base-auditor/config.yaml`
-  - `src/ai_hats/libraries/traits/base-judge/config.yaml`
-  - `src/ai_hats/libraries/skills/role-coherence-protocol/SKILL.md`
-  - `src/ai_hats/libraries/skills/judge-role-protocol/SKILL.md`
-  - `src/ai_hats/libraries/roles/auditor-for-role/config.yaml`
-  - `src/ai_hats/libraries/roles/judge-for-role/config.yaml`
+- **Touched components (post-ADR; paths reflect post-HATS-363 layout):**
+  - NEW `library/core/traits/trait-analyst-base/config.yaml`
+  - NEW `library/core/skills/backlog-create/SKILL.md` + `metadata.yaml`
+  - `library/core/traits/base-auditor/config.yaml`
+  - `library/core/traits/base-judge/config.yaml`
+  - `library/core/skills/role-coherence-protocol/SKILL.md`
+  - `library/core/skills/judge-role-protocol/SKILL.md`
+  - `library/core/roles/auditor-for-role/config.yaml`
+  - `library/core/roles/judge-for-role/config.yaml`
 - **Source dialogue:** baseline finding #5 в `2026-05-12T07-42-39Z-judge-for-role.md` для carve-out asymmetry; baseline finding #1 в `2026-05-12T11-37-31Z-auditor-for-role.md` для rule_backlog_discipline mismatch.

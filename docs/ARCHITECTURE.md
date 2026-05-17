@@ -194,13 +194,26 @@ GEMINI.md / CLAUDE.md                  # System prompt
 
 ## Library layout
 
+The shipped library is split into two layers, both shipped inside the installed package (`ai_hats.library` sub-package, sourced from the repo-root `library/` directory):
+
 ```
-src/ai_hats/libraries/
-  rules/          global_rule_*, dev_rule_*, env_rule_*
-  skills/         62 skills (29 native + 33 vendored golang-* from samber/cc-skills-golang)
-  traits/         trait-base, trait-agent, trait-se-mindset, skill-engineer, dev::go-*, dev::python, dev::shell, env::*
-  roles/          assistant, test-agent, architect, sre, session-reviewer, go-dev, go-dev-full
+library/
+  core/                              # engine fundament — required at runtime
+    roles/          initial-wizard, session-reviewer, auditor-for-role, judge-for-role, hypothesis-intake, test-agent
+    traits/         trait-base, trait-agent, trait-analyst-base, base-judge, base-auditor, trait-reflect-mode
+    rules/          global_rule_*, rule_backlog_discipline, dev_rule_edit_efficiency, dev_rule_tool_call_hygiene
+    skills/         backlog-manager, backlog-create, context-*, review-*, judge-*, role-coherence-protocol, request-supervisor, ...
+    pipelines/      execute, human, reflect-{session,role,all,issue}
+    initial_injections/   initial-wizard, reflect-all, reflect-role
+    templates/      claude/CLAUDE.md.template (provider scaffold)
+  usage/                             # curated content catalog — opt-in
+    roles/          assistant, architect, judge, sre, go-dev, go-dev-full
+    traits/         trait-se-mindset, trait-researcher-mindset, skill-engineer, dev::python, dev::shell, dev::go-*, env::proxmox
+    rules/          dev_rule_secure_coding, env_rule_proxmox_infra
+    skills/         55+ skills (golang-*, terraform, ansible, observability, system-design, ...)
 ```
+
+The `core/` vs `usage/` split is informational; both are loaded by `Assembler._build_library_paths`. User overrides layer on top via `~/.ai-hats/`, `ai-hats.yaml: library_paths`, and `<project>/libraries/` — see [extending.md](extending.md).
 
 Vendored golang-* skills carry the upstream commit SHA, LICENSE, and attribution in `metadata.yaml.upstream.*` — the foundation for a future plugin system (see HATS-050).
 

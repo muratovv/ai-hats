@@ -18,7 +18,7 @@ from ai_hats.pipeline.pipeline import run as run_pipeline
 
 _BUILTIN = (
     Path(__file__).parent.parent
-    / "src/ai_hats/libraries/pipelines/human.yaml"
+    / "library/core/pipelines/human.yaml"
 )
 
 

@@ -49,6 +49,37 @@ A change is **not done** until:
 3. The privacy pre-commit hook (`.githooks/pre-commit`) lets the commit
    through (it ships configured automatically via `core.hooksPath`).
 
+## Library structure: core vs usage
+
+Built-in content (roles, traits, rules, skills, pipelines) lives at the repo
+root in `library/`, split into two layers shipped together inside the
+`ai_hats.library` Python sub-package:
+
+- **`library/core/`** — engine fundament. System roles (`session-reviewer`,
+  `auditor-for-role`, …), base traits (`trait-base`, `trait-agent`,
+  `trait-analyst-base`, `base-judge`, `base-auditor`,
+  `trait-reflect-mode`), global rules, foundational skills
+  (`backlog-manager`, `git-mastery`, `review-*`, `judge-*`, …), all
+  pipelines + initial injections, and the provider scaffold template.
+  Without these the engine cannot bootstrap or run reflect pipelines.
+- **`library/usage/`** — curated content catalog. Opinionated roles
+  (`assistant`, `architect`, `sre`, `go-dev`, …), domain traits
+  (`trait-se-mindset`, `dev::*`, `env::*`), opt-in skills (golang stack,
+  terraform, observability, system-design, …).
+
+**Where does a new component go?** Decide by:
+
+1. Is it referenced by name in `src/ai_hats/` code, or pulled in transitively
+   by a core trait (`trait-base`, `trait-agent`, `trait-analyst-base`,
+   `base-judge`, `base-auditor`, `trait-reflect-mode`)? → **core**.
+2. Does removing it break `ai-hats init` / `ai-hats self bump` / a reflect
+   pipeline? → **core**.
+3. Otherwise — **usage**.
+
+For end-user docs on extending the library (worked examples for roles /
+traits / rules / skills, override precedence, replacing a system role) see
+[docs/extending.md](docs/extending.md).
+
 ## What **not** to commit
 
 The privacy pre-commit hook blocks most of these automatically, but it is

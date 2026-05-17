@@ -85,7 +85,7 @@ cd $WT
 
 ## Syncing After Skill Edits
 
-After editing `src/ai_hats/libraries/skills/*/SKILL.md`, run:
+After editing `library/{core,usage}/skills/*/SKILL.md`, run:
 ```
 ai-hats self bump
 ```

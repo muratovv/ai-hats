@@ -129,12 +129,14 @@ def _snapshot_dep_versions() -> dict[str, str]:
 
 def _snapshot_library() -> dict[str, set[str]]:
     """Snapshot available component names from built-in + global library paths."""
-    from ..library import LibraryResolver
+    from ..assembler import _builtin_library_layers
+    from ..resolver import LibraryResolver
     from ..models import ComponentType
 
-    # __file__ lives in cli/; library lives in the parent package dir.
-    builtin = Path(__file__).resolve().parent.parent / "libraries"
-    paths = [p for p in [builtin, Path.home() / ".ai-hats"] if p.is_dir()]
+    paths = list(_builtin_library_layers())
+    global_lib = Path.home() / ".ai-hats"
+    if global_lib.is_dir():
+        paths.append(global_lib)
     resolver = LibraryResolver(paths)
     return {ct.value: set(resolver.list_components(ct)) for ct in ComponentType}
 

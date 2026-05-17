@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 from .composer import Composer, CompositionResult, ResolvedComponent
-from .library import LibraryResolver
+from .resolver import LibraryResolver
 from .models import (
     IMPORTS_ORDER_PRESETS,
     ComponentType,
@@ -56,6 +56,28 @@ def _md_table_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
 
 
+def _builtin_library_layers() -> list[Path]:
+    """Resolve built-in library layers via `importlib.resources`.
+
+    Returns `[core, usage]` in priority order (core first = lowest, usage on
+    top). Both layers ship inside the `ai_hats.library` sub-package. Falls
+    back to a relative path when the package is not installed (sdist
+    inspection in CI).
+    """
+    from importlib.resources import files
+
+    try:
+        root = files("ai_hats.library")
+    except (ModuleNotFoundError, FileNotFoundError):
+        return []
+    out: list[Path] = []
+    for layer in ("core", "usage"):
+        p = Path(str(root / layer))
+        if p.is_dir():
+            out.append(p)
+    return out
+
+
 class Assembler:
     """Manages the lifecycle of role assembly in a project directory."""
 
@@ -71,13 +93,18 @@ class Assembler:
         self.composer = Composer(self.resolver)
 
     def _build_library_paths(self, extra: list[Path]) -> list[Path]:
-        """Build ordered library paths (earlier = lower priority)."""
+        """Build ordered library paths (earlier = lower priority).
+
+        Built-in shipping: `library/core` (engine fundament) and
+        `library/usage` (curated content), both packaged under
+        `ai_hats.library`. Override points (user-global, project-config,
+        project-local) layer on top via last-wins.
+        """
         paths: list[Path] = []
 
-        # Built-in libraries (shipped with ai-hats package)
-        builtin = Path(__file__).parent / "libraries"
-        if builtin.is_dir():
-            paths.append(builtin)
+        # Built-in: core + usage (shipped with ai-hats package)
+        for layer in _builtin_library_layers():
+            paths.append(layer)
 
         # Global user libraries
         global_lib = Path.home() / ".ai-hats"
