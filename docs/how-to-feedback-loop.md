@@ -336,5 +336,3 @@ Worked example: the synthetic HYP fixture shows a hypothesis after two appended 
 [10]: ../src/ai_hats/libraries/skills/review-proposal/SKILL.md
 [11]: ARCHITECTURE.md#session-lifecycle
 [12]: how-to.md
-
-**CLI (always live, no static reference)** — `ai-hats --tree reflect`, `ai-hats --tree task hyp`, `ai-hats --tree task proposal`.
