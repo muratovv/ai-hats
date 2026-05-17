@@ -64,14 +64,21 @@ def _run_self_update() -> bool:
     Used in the wizard bootstrap path to guarantee that newly-onboarded
     users start with the latest framework version. Skipped in flag-only
     (CI) mode and behind ``--no-update`` for tests / offline use.
+
+    Wraps the pip subprocess in a Rich spinner so users on slow links
+    see continuous progress instead of a silent terminal.
     """
     import subprocess
 
     from .maintenance import _build_update_cmd
 
-    console.print("[cyan]→ Updating ai-hats from GitHub …[/]")
     cmd = _build_update_cmd()
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    with console.status(
+        "[cyan]Downloading ai-hats from GitHub …[/] "
+        "[dim](first run can take a minute on slow links)[/]",
+        spinner="dots",
+    ):
+        result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         # Don't abort init on update failure — surface and continue with
         # the currently-installed version. Common cause: offline / no
@@ -80,7 +87,7 @@ def _run_self_update() -> bool:
         tail = msg[-1] if msg else "see logs"
         console.print(f"[yellow]Update skipped[/]: {tail}")
         return False
-    console.print("[green]✓[/] ai-hats updated")
+    console.print("[green]✓[/] ai-hats updated from GitHub")
     return True
 
 
