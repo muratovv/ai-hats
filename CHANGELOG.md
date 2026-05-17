@@ -10,6 +10,19 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-17
+
+Bootstrap experience overhaul: `ai-hats self init` now opens an
+interactive wizard that walks first-run users from provider pick to a
+fully composed project, with advanced workspace setup (ai_hats_dir,
+venv ownership, gitignore management) handled in-session by the
+`initial-wizard` role. The built-in library splits into
+`library/core/` (engine) and `library/usage/` (content) to document the
+engine/content boundary. New narrative docs (`how-to-configure.md`,
+`how-to-extend.md`, `glossary.md`) plus five d2-rendered process
+diagrams replace ad-hoc references. Legacy Russian README and historical
+migration guides retired.
+
 ### Changed
 
 - Built-in library moved from `src/ai_hats/libraries/` to a root-level
@@ -25,6 +38,20 @@ since the latest tag lives under **Unreleased** until the next release.
   renamed to `ai_hats.resolver` to free up `ai_hats.library` as a
   data sub-package. Import updates: `from ai_hats.resolver import
   LibraryResolver`. (HATS-363)
+- Bootstrap wizard's advanced setup (project dir, venv ownership,
+  `.gitignore` management) moved from three hardcoded `click.prompt`s
+  into Step 2 of the in-session `initial-wizard` flow; the LLM
+  explains trade-offs and applies values via new `ai-hats config set`
+  flags: `--ai-hats-dir`, `--venv` / `--no-venv`,
+  `--manage-gitignore` / `--no-manage-gitignore`. The
+  `--ai-hats-dir` form invokes a new `Assembler.relocate()` path
+  that moves `library/`, `tracker/`, `sessions/`, `STATE.md`,
+  recreates the managed venv, and updates `ai-hats.yaml` +
+  `.gitignore` atomically (refuses on collisions, idempotent on
+  retry). Closes a footgun where manual yaml edits to `ai_hats_dir`
+  silently broke projects. The three `self init` flags
+  (`--ai-hats-dir`, `--venv`, `--no-manage-gitignore`) remain
+  unchanged for scripted use. (HATS-366)
 - All user-facing docs (`docs/ARCHITECTURE.md`, the `docs/how-to-*.md`
   set, and the diagram-preview pages) are now English-only. The
   README hints that browser auto-translate handles other languages
@@ -42,9 +69,35 @@ since the latest tag lives under **Unreleased** until the next release.
   `how-to-extend.md` on demand. Step 1 hardened against echo-questions.
   Advanced-setup CLI prompt no longer leaks raw `[dim]…[/]` markup.
   (HATS-355)
+- Documentation now uses `<ai_hats_dir>/*` instead of the legacy
+  `.agent/*` path notation, matching projects that override the
+  bootstrap directory. (HATS-362)
 
 ### Added
 
+- `ai-hats self init` defaults to an interactive bootstrap wizard:
+  CLI step picks a provider (smart-default by `~/.<provider>`) and
+  writes a minimal `ai-hats.yaml`, then an in-session
+  `initial-wizard` role takes over — detects the stack, asks for the
+  conversation language, recommends a base role, runs an in-session
+  `config customize` walk, sets the task prefix, and selects the
+  reflection policy. Backwards-compatible: `-p X -r Y`,
+  `--no-wizard`, or non-TTY stdin falls back to the flag-only
+  scripted path; non-TTY without flags fails fast with guidance.
+  The wizard path self-updates ai-hats from GitHub before starting
+  so first-run users land on the freshest framework version
+  (`--no-update` skips). Slow `pip install` invocations in both the
+  wizard self-update and `ai-hats self update` now show a
+  `console.status()` dots spinner. New `ai-hats config set
+  --task-prefix` overrides an existing prefix (unlike
+  `self init --task-prefix`, which errors on conflict). (HATS-347)
+- Five d2-rendered process diagrams in `docs/ARCHITECTURE.md`
+  covering session lifecycle, auto reflect-session, manual
+  reflect-all, backlog state machines (task / HYP / PROP), and the
+  composition flow. Brand-light palette finalized; `docs/diagrams-preview.md`
+  ships theme + sketch + custom-palette galleries, and the README
+  links architecture-page thumbnails for browse-friendly navigation.
+  (HATS-348)
 - `docs/how-to-extend.md` — new guide for authoring own roles / traits /
   rules / skills, override-precedence chain, and replacing system
   roles. (HATS-363)
@@ -173,6 +226,7 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/muratovv/ai-hats/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/muratovv/ai-hats/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/muratovv/ai-hats/releases/tag/v0.3.0
