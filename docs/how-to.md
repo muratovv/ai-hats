@@ -211,42 +211,7 @@ Empty sections can be omitted. If `customizations.<role>` is fully empty — the
 
 ## 9. Configurable venv_path
 
-By default ai-hats lives in a **dedicated** venv at `<ai_hats_dir>/.venv/` (default `.agent/ai-hats/.venv/`). The venv is created automatically by `ai-hats self update` or `bash bootstrap.sh`. The bash launcher (`~/.local/bin/ai-hats`) resolves the venv by precedence:
-
-1. `AI_HATS_VENV` env var (absolute path, for tests / sandbox)
-2. `venv_path` field in `ai-hats.yaml` (relative or absolute)
-3. Default `<ai_hats_dir>/.venv`
-
-### Use case: shared system venv
-
-```yaml
-# ai-hats.yaml
-venv_path: /opt/shared/ai-hats-venv
-```
-
-```bash
-# One-time setup (user-owned!)
-python3 -m venv /opt/shared/ai-hats-venv
-/opt/shared/ai-hats-venv/bin/pip install "ai-hats @ git+ssh://git@github.com/muratovv/ai-hats.git"
-
-# After that the launcher uses the override automatically
-cd ~/dev/my-project
-ai-hats config status   # uses /opt/shared/ai-hats-venv
-```
-
-### Use case: project venv (re-use existing)
-
-```yaml
-# ai-hats.yaml
-venv_path: .venv          # an existing project venv at repo root
-```
-
-⚠️ In this case ai-hats and the project's dependencies live in the same venv — version conflicts are possible. This is a **conscious** trade-off (override = user-owned).
-
-### Ownership invariant
-
-- **Default venv** (`<ai_hats_dir>/.venv/`) — framework-managed. `ai-hats self update` may recreate it wholesale (for example, after a system Python upgrade).
-- **Override venv** (`venv_path:` in yaml) — user-owned. ai-hats never deletes or recreates it automatically; only `pip install -U` into it.
+Moved to the narrative walkthrough — see [`docs/how-to-configure.md` §6](how-to-configure.md) for default vs override, ownership invariant, and the two scenarios (shared system venv, re-use a project venv).
 
 ---
 
@@ -268,6 +233,7 @@ Detailed migration guide for projects moving from pipx → launcher: `docs/migra
 
 ## See also
 
+- [`docs/how-to-configure.md`](how-to-configure.md) — narrative walkthrough for first-time setup (wizard, role pick, customization, feedback policy, venv).
 - [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — setup and usage of the reflect-session / reflect-all cycle (policies, hypotheses, harness validation).
-- [`docs/migration.md`](migration.md) — migration guide to the venv-first launcher.
+- [`docs/how-to-extend.md`](how-to-extend.md) — shipped library layout and recipes for your own roles / traits / rules / skills.
 - [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture.
