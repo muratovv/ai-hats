@@ -113,8 +113,11 @@ def _wizard_advanced_prompt() -> tuple[str | None, str | None, bool | None]:
         default=".agent/ai-hats",
     ).strip() or None
 
+    console.print(
+        "  [dim]'managed' = ai-hats creates the venv under the dir above[/]"
+    )
     raw_venv = click.prompt(
-        "  venv path ([dim]'managed' = ai-hats creates it under the dir above[/])",
+        "  venv path",
         default="managed",
     ).strip()
     venv_path = None if raw_venv in ("", "managed") else raw_venv
