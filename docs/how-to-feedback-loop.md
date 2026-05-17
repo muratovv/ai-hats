@@ -51,13 +51,13 @@ feedback:
 ai-hats self bump
 ```
 
-That's it. After every session that crosses the smart threshold (5 turns OR 10 tool calls by default — see [Policy setup](#flow-0-policy-setup-in-ai-hatsyaml) for tuning), the `session-reviewer` role runs in the background and writes `.agent/retrospectives/sessions/<id>.md`.
+That's it. After every session that crosses the smart threshold (5 turns OR 10 tool calls by default — see [Policy setup](#flow-0-policy-setup-in-ai-hatsyaml) for tuning), the `session-reviewer` role runs in the background and writes `<ai_hats_dir>/sessions/retros/sessions/<id>.md`.
 
 ### b) Read what came out of your last session
 
 ```bash
 ai-hats session list | head -3            # most recent sessions on top
-ls .agent/retrospectives/sessions/        # latest review markdowns
+ls <ai_hats_dir>/sessions/retros/sessions/   # latest review markdowns
 ```
 
 Open the latest `<id>.md` — `summary`, `observations`, `hypothesis_verdicts[]`, `proposal_actions[]`, `self_problems[]`. Each verdict is one line of evidence the agent gathered.
@@ -96,7 +96,7 @@ ai-hats task hyp create \
     --success-criterion "zero new filter regressions in the window"
 ```
 
-The card lands at `.agent/hypotheses/HYP-NNN.yaml` with `status: active`. From that moment, every subsequent `session-reviewer` run votes on it; you close it via `ai-hats reflect all` (Recipe c).
+The card lands at `<ai_hats_dir>/tracker/hypotheses/HYP-NNN.yaml` with `status: active`. From that moment, every subsequent `session-reviewer` run votes on it; you close it via `ai-hats reflect all` (Recipe c).
 
 Full CLI flags — `ai-hats task hyp create --help`.
 
@@ -165,7 +165,7 @@ In words:
 1. **`auto_retro.make_decision`** examines the just-finished session's metrics and the configured policy. The outcome is `skip` (do nothing), `hint` (banner to the user), or `run`.
 2. On `run`, **pure-Python `compute_facts`** assembles the factual layer — metrics, files changed, commits, tasks closed — without an LLM.
 3. The **session-reviewer LLM** is spawned (detached background by default). It reads the facts plus the audit and metrics from the session run dir, then for every active HYP issues a verdict via `ai-hats task hyp append-verdict`. On a self-problem it files a meta-proposal via `ai-hats task proposal create --category process --target session-reviewer`.
-4. The runner merges facts with the LLM's output and writes one SessionReviewV1 markdown at `.agent/retrospectives/sessions/<id>.md` (schema `hats-session-review/v1`).
+4. The runner merges facts with the LLM's output and writes one SessionReviewV1 markdown at `<ai_hats_dir>/sessions/retros/sessions/<id>.md` (schema `hats-session-review/v1`).
 5. A **pure-Python harness check** parses the artifact afterwards. If it is missing, unparseable, or doesn't cover every active HYP, a single meta-PROP (`target=session-reviewer`, `failed_session_id=<id>`) is filed and surfaces in `reflect all`.
 
 > Open the sample SessionReview side-by-side with the steps above to see how each frontmatter field maps to a step.
@@ -190,7 +190,7 @@ Role config: [7].
 Two layers of "no silent failure":
 
 1. **In-skill (LLM-driven):** the `review-session` orchestrator explicitly requires one verdict per active HYP, describes the verdict enum, and forbids silent `n/a`.
-2. **Runtime (programmatic):** after the detached process finishes, it reads `.agent/retrospectives/sessions/<id>.md` and parses it as `hats-session-review/v1`. On any issue (missing file, schema fails to parse, not all active HYPs covered) — it writes a meta-PROP with `category=process`, `target=session-reviewer`, `failed_session_id=<id>`. These PROPs surface in `reflect all`.
+2. **Runtime (programmatic):** after the detached process finishes, it reads `<ai_hats_dir>/sessions/retros/sessions/<id>.md` and parses it as `hats-session-review/v1`. On any issue (missing file, schema fails to parse, not all active HYPs covered) — it writes a meta-PROP with `category=process`, `target=session-reviewer`, `failed_session_id=<id>`. These PROPs surface in `reflect all`.
 
 ### Running manually (foreground, for debugging)
 
@@ -218,8 +218,8 @@ Once HYPs and PROPs pile up — time to walk the backlog by hand and close / acc
 ```bash
 # 1. Pre-flight + handoff to interactive chat
 ai-hats reflect all
-# - collects active HYPs + open PROPs from .agent/
-# - writes .agent/retrospectives/reflect-all/<ts>-handoff.md
+# - collects active HYPs + open PROPs from <ai_hats_dir>/tracker/
+# - writes <ai_hats_dir>/sessions/retros/reflect-all/<ts>-handoff.md
 # - then os.execvp's into claude with the `judge` role
 
 # 2. Inside the chat — the agent inspects items and uses these CLI handles
@@ -253,7 +253,7 @@ Only builds the handoff, does not invoke an interactive chat. Useful to:
 
 ### When to run `reflect all`
 
-- 5+ open PROPs in `.agent/backlog/proposals/` → the per-session loop has started producing noise, time to clear it.
+- 5+ open PROPs in `<ai_hats_dir>/tracker/backlog/proposals/` → the per-session loop has started producing noise, time to clear it.
 - Retro reminder at session start: "X days without reflect-all, Y skips" — run it.
 - Before merging a large change to a role/skill — walk the active HYPs and snapshot their state.
 - Routine "once a week" hygiene pass.
@@ -286,7 +286,7 @@ Worked example: the synthetic HYP fixture shows a hypothesis after two appended 
 | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | auto retro does not start                     | `feedback.session_retro.policy` ≠ `off` and the `smart_threshold` is met                                                                                                     |
 | validation_log empty after a session          | run `ai-hats reflect session --session <id>` in foreground — you'll see the stack trace, and the meta-PROP surfaces in `reflect all`                                         |
-| meta-PROP with `failed_session_id=...`        | runtime harness caught a broken SessionReview artifact. Open `.agent/retrospectives/sessions/<id>.md`, rerun `ai-hats reflect session --session <id>` in foreground to retry |
+| meta-PROP with `failed_session_id=...`        | runtime harness caught a broken SessionReview artifact. Open `<ai_hats_dir>/sessions/retros/sessions/<id>.md`, rerun `ai-hats reflect session --session <id>` in foreground to retry |
 | `reflect all` fails with "claude not in PATH" | install Claude Code or use `--dry-run` and work with the handoff in an editor                                                                                                |
 | `Overlay: cannot remove ...`                  | unrelated to the feedback loop — see [12]                                                                                                                                    |
 

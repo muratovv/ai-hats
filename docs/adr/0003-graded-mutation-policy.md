@@ -37,7 +37,7 @@ HATS-292 / HATS-302 диалог и две Pass A baseline-сессии (`ai-hat
 | Off-purpose components в compositions                            | auditor #2, #3; judge #1                           | Yes (§5)               |
 | Tool-call wording drift (≤5 vs ≤3–5)                             | auditor #6                                         | No (cosmetic — Phase 6 плана)    |
 
-**Подробный execution-blueprint:** `.agent/backlog/tasks/HATS-303/plan.md`.
+**Подробный execution-blueprint:** `<ai_hats_dir>/tracker/backlog/tasks/HATS-303/plan.md`.
 
 ## Decision
 
@@ -65,9 +65,9 @@ Reason: session boundary — proxy метрика. Real mechanism — context fr
 
 ### §3 Report-Write carve-out — на уровне base trait
 
-Carve-out `.agent/retrospectives/role-coherence/**` (и аналогичные пути для других analyst-ролей) поднимается из per-role injection в `base-judge` §Boundaries:
+Carve-out `<ai_hats_dir>/sessions/retros/role-coherence/**` (и аналогичные пути для других analyst-ролей) поднимается из per-role injection в `base-judge` §Boundaries:
 
-> Each judge variant may declare ONE additional `.agent/**` write path in its role injection (typically the retrospective output). This is the L0 baseline carve-out that every L1+ role inherits.
+> Each judge variant may declare ONE additional `<ai_hats_dir>/**` write path in its role injection (typically the retrospective output). This is the L0 baseline carve-out that every L1+ role inherits.
 
 Аналогично для `base-auditor`. Это закрывает HATS-301 поглощением — отдельная задача для lift'а carve-out больше не нужна.
 
@@ -144,7 +144,7 @@ Composed with `base-judge`?   → Write tool to declared report path. No markers
 
 ## Implementation roadmap
 
-Полный execution-blueprint: `.agent/backlog/tasks/HATS-303/plan.md`. Краткое отображение фаз → секции ADR:
+Полный execution-blueprint: `<ai_hats_dir>/tracker/backlog/tasks/HATS-303/plan.md`. Краткое отображение фаз → секции ADR:
 
 | Phase   | ADR sections covered             |
 |---------|----------------------------------|
@@ -170,9 +170,9 @@ Composed with `base-judge`?   → Write tool to declared report path. No markers
 ## References
 
 - **Pass A baselines (evidence base):**
-  - `.agent/retrospectives/role-coherence/2026-05-12T07-42-39Z-judge-for-role.md` (6 findings)
-  - `.agent/retrospectives/role-coherence/2026-05-12T11-37-31Z-auditor-for-role.md` (6 findings)
-- **Plan:** `.agent/backlog/tasks/HATS-303/plan.md` — file map, 9 phases, 17 steps
+  - `<ai_hats_dir>/sessions/retros/role-coherence/2026-05-12T07-42-39Z-judge-for-role.md` (6 findings)
+  - `<ai_hats_dir>/sessions/retros/role-coherence/2026-05-12T11-37-31Z-auditor-for-role.md` (6 findings)
+- **Plan:** `<ai_hats_dir>/tracker/backlog/tasks/HATS-303/plan.md` — file map, 9 phases, 17 steps
 - **Related tickets:**
   - HATS-298 (epic parent)
   - HATS-301 (carve-out lift — absorbed by §3)
