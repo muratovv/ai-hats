@@ -9,6 +9,8 @@ Filing a new HYP yourself while a symptom is fresh is a session-driven flow — 
 
 The session-end retrospective is **a single LLM call** under the `session-reviewer` role. Architectural reference — see [1]. Full CLI reference with flags — `ai-hats --tree reflect`. This doc — practical recipes.
 
+> Day-to-day CLI for tasks / HYPs / PROPs (create, walk, append-verdict, vote) — [14].
+
 > Visual map of the cycle: [2].
 
 ---
@@ -320,6 +322,8 @@ Worked example: the synthetic HYP fixture shows a hypothesis after two appended 
 
 **[13]** — [`docs/glossary.md`](glossary.md) — naming source-of-truth for ai-hats core terms.
 
+**[14]** — [`docs/how-to-backlog.md`](how-to-backlog.md) — day-to-day `ai-hats task` / `task hyp` / `task proposal` recipes.
+
 [1]: reflect.md
 [2]: ARCHITECTURE.md#reflection-loop
 [3]: ARCHITECTURE.md#backlog-state-machines
@@ -333,3 +337,4 @@ Worked example: the synthetic HYP fixture shows a hypothesis after two appended 
 [11]: ARCHITECTURE.md#session-lifecycle
 [12]: how-to.md
 [13]: glossary.md
+[14]: how-to-backlog.md

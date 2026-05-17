@@ -123,7 +123,7 @@ Eight top-level groups:
 | `reflect` | Feedback loop — per-session vote and bulk triage of HYP / PROP          |
 | `self`    | Tool lifecycle: init / bump / update / clean / rollback                 |
 | `session` | Observability: list / show / audit / retro for sessions                 |
-| `task`    | Backlog: task / hyp / proposal cards with a state machine               |
+| `task`    | Backlog: task / hyp / proposal cards with a state machine — recipes in **[docs/how-to-backlog.md](docs/how-to-backlog.md)** |
 | `wt`      | Git worktrees: create / merge / discard / exec / env                    |
 
 Common scenarios:

@@ -233,5 +233,6 @@ Moved to the narrative walkthrough — see [`docs/how-to-configure.md` §6](how-
 
 - [`docs/how-to-configure.md`](how-to-configure.md) — narrative walkthrough for first-time setup (wizard, role pick, customization, feedback policy, venv).
 - [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — setup and usage of the reflect-session / reflect-all cycle (policies, hypotheses, harness validation).
+- [`docs/how-to-backlog.md`](how-to-backlog.md) — day-to-day `ai-hats task` / `task hyp` / `task proposal` recipes.
 - [`docs/how-to-extend.md`](how-to-extend.md) — shipped library layout and recipes for your own roles / traits / rules / skills.
 - [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture.
