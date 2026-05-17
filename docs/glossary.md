@@ -20,22 +20,22 @@ Lifecycle diagram — see [2].
 
 ## Role
 
-A root composition that the agent wears during a session — bundles traits, rules, skills, and an injection block into one config. Catalog — `ai-hats list roles`; base configs live in `src/ai_hats/libraries/roles/` (e.g. [`assistant/config.yaml`](../src/ai_hats/libraries/roles/assistant/config.yaml) — a universal Python-leaning agent). Customization (add / remove / override) — see [6] (HATS-355, not yet written).
+A root composition that the agent wears during a session — bundles traits, rules, skills, and an injection block into one config. The shipped library splits into two layers: `library/core/roles/` (engine-internal: `initial-wizard`, `session-reviewer`, `judge`, `judge-for-role`, `auditor-for-role`, `hypothesis-intake`, `test-agent`) and `library/usage/roles/` (curated user-facing: `assistant`, `architect`, `sre`, `go-dev`, `go-dev-full`). Catalog — `ai-hats list roles`; layered structure and override precedence — see [9]. Example: [`library/usage/roles/assistant/config.yaml`](../library/usage/roles/assistant/config.yaml). Customization (add / remove / override) — see [6] (HATS-355, not yet written).
 
 ## Trait
 
-An ai-hats-native composition primitive: a reusable bundle (rules + skills + injection text) included by one or more roles. Traits are the unit of cross-role reuse — a fix in one trait reaches every role that pulls it in on the next `ai-hats self bump`. Flat model: a trait cannot include another trait. Format: `traits/<name>/config.yaml`. Catalog — `ai-hats list traits`. Composition rules — see [3].
+An ai-hats-native composition primitive: a reusable bundle (rules + skills + injection text) included by one or more roles. Traits are the unit of cross-role reuse — a fix in one trait reaches every role that pulls it in on the next `ai-hats self bump`. Flat model: a trait cannot include another trait. Format: `library/{core,usage}/traits/<name>/config.yaml`. Catalog — `ai-hats list traits`. Composition rules — see [3]; library layout — see [9].
 
 ## Rule, Skill
 
 The two component kinds that ai-hats injects into the **provider** prompt (`CLAUDE.md` / `GEMINI.md`). They apply at the provider layer — the LLM reads them and follows; ai-hats does not interpret their content.
 
-| Component | What it is                                                  | Format                                                                  |
+| Component | What it is                                                  | Format (under `library/{core,usage}/…`)                                 |
 | --------- | ----------------------------------------------------------- | ----------------------------------------------------------------------- |
 | **Rule**  | Behavioural constraint (do / don't). No decision logic.     | `rules/<name>/rule.md` + `metadata.yaml`                                |
 | **Skill** | Procedure, checklist, or protocol with steps and branching. | `skills/<name>/SKILL.md` (+ `metadata.yaml`, `scripts/`, `references/`) |
 
-Catalog — `ai-hats list {rules,skills}`. Formats — see [3].
+Catalog — `ai-hats list {rules,skills}`. Formats — see [3]; library layout and override precedence — see [9].
 
 ## Backlog
 
@@ -92,9 +92,12 @@ What ai-hats persists on disk during normal use.
 
 **[8]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture and schema dispatch.
 
+**[9]** — [`docs/extending.md`](extending.md) — shipped library layout (`library/core/` vs `library/usage/`), override precedence, recipes for adding your own roles / traits / rules / skills.
+
 [1]: ARCHITECTURE.md#providers
 [2]: ARCHITECTURE.md#session-lifecycle
 [3]: ARCHITECTURE.md#component-model
 [4]: ARCHITECTURE.md#backlog-state-machines
 [5]: how-to-feedback-loop.md
 [8]: reflect.md
+[9]: extending.md
