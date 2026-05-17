@@ -78,7 +78,7 @@ root in `library/`, split into two layers shipped together inside the
 
 For end-user docs on extending the library (worked examples for roles /
 traits / rules / skills, override precedence, replacing a system role) see
-[docs/extending.md](docs/extending.md).
+[docs/how-to-extend.md](docs/how-to-extend.md).
 
 ## What **not** to commit
 

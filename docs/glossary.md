@@ -92,7 +92,7 @@ What ai-hats persists on disk during normal use.
 
 **[8]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture and schema dispatch.
 
-**[9]** — [`docs/extending.md`](extending.md) — shipped library layout (`library/core/` vs `library/usage/`), override precedence, recipes for adding your own roles / traits / rules / skills.
+**[9]** — [`docs/how-to-extend.md`](how-to-extend.md) — shipped library layout (`library/core/` vs `library/usage/`), override precedence, recipes for adding your own roles / traits / rules / skills.
 
 [1]: ARCHITECTURE.md#providers
 [2]: ARCHITECTURE.md#session-lifecycle
@@ -100,4 +100,4 @@ What ai-hats persists on disk during normal use.
 [4]: ARCHITECTURE.md#backlog-state-machines
 [5]: how-to-feedback-loop.md
 [8]: reflect.md
-[9]: extending.md
+[9]: how-to-extend.md
