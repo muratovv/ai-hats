@@ -29,12 +29,35 @@ since the latest tag lives under **Unreleased** until the next release.
   set, and the diagram-preview pages) are now English-only. The
   README hints that browser auto-translate handles other languages
   cleanly. (HATS-352)
+- `docs/how-to-feedback-loop.md` synced with HATS-252 reality (role
+  names, schema versions, harness validation flow); the "Concept
+  minimum" section was thinned to point at `docs/glossary.md` for
+  core terms, retaining only loop-specific Verdict and Reflect-all
+  handoff definitions. (HATS-354, HATS-361)
+- `initial-wizard` role injection rewritten: session-opener template
+  moved into the system prompt to fix POV-confusion (the wizard
+  no longer fumbles single-word language replies); companion docs
+  catalog now baked in so the model can pull `docs/how-to-configure.md`
+  / `glossary.md` / `how-to.md` / `how-to-feedback-loop.md` /
+  `how-to-extend.md` on demand. Step 1 hardened against echo-questions.
+  Advanced-setup CLI prompt no longer leaks raw `[dim]…[/]` markup.
+  (HATS-355)
 
 ### Added
 
-- `docs/extending.md` — new guide for authoring own roles / traits /
+- `docs/how-to-extend.md` — new guide for authoring own roles / traits /
   rules / skills, override-precedence chain, and replacing system
   roles. (HATS-363)
+- `docs/how-to-configure.md` — single narrative walkthrough for
+  first-time project setup: `ai-hats.yaml` fields, wizard vs scripted
+  init (six wizard steps documented inline), role pick, customization,
+  feedback policy, venv ownership, verify and pitfalls. Becomes the
+  recommended entry-point after README. Also absorbs the venv-ownership
+  section formerly under `docs/how-to.md` §9. (HATS-355)
+- `docs/glossary.md` — naming source-of-truth for ai-hats core concepts
+  (Provider, Session, Role, Trait, Rule/Skill, Backlog, Reflect,
+  Worktree, Artifacts). Linked from README and CONTRIBUTING; new docs
+  reference it instead of redefining terms. (HATS-361)
 
 ### Removed
 
