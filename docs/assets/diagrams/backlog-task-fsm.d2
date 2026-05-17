@@ -11,17 +11,29 @@ done {shape: oval}
 
 blocked
 failed
+
 cancelled: |md
-  any state ->\
-  cancelled
+  any non-terminal\
+  → cancelled
 | {shape: callout}
 
+force: |md
+  any → any\
+  via --force
+| {shape: callout}
+
+# Happy path
 brainstorm -> plan
 plan -> execute
 execute -> document
 document -> review
 review -> done
 
+# Fast-close (HATS-371): brainstorm | plan -> done with --resolution
+brainstorm -> done: close
+plan -> done: close
+
+# Blocked sidetrack
 brainstorm -> blocked
 plan -> blocked
 execute -> blocked
@@ -29,7 +41,10 @@ document -> blocked
 blocked -> plan: resume
 blocked -> execute: resume
 
+# Failure & retry
 execute -> failed
 review -> failed
 failed -> brainstorm: retry
+
+# Reopen
 done -> execute: reopen

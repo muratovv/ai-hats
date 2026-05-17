@@ -92,11 +92,23 @@ def _warn_missing_refs(mgr, parent: str, depends: list[str]) -> None:
     default=None,
     help="Resolution note (required for cancelled — why the task is being closed)",
 )
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Bypass FSM guard for corrective overrides (requires --reason)",
+)
+@click.option(
+    "--reason",
+    default=None,
+    help="Reason for a --force transition (recorded in work_log)",
+)
 def task_transition(
     task_id: str,
     new_state: str,
     final_state: str | None,
     resolution: str | None,
+    force: bool,
+    reason: str | None,
 ):
     """Transition a task to a new state."""
     from ..models import TaskState
@@ -116,11 +128,23 @@ def task_transition(
         )
         sys.exit(1)
 
+    if force and not (reason and reason.strip()):
+        console.print(
+            "[red]Error[/]: --force requires --reason (the override is "
+            "recorded in work_log for audit)"
+        )
+        sys.exit(1)
+
     try:
         if final_state and state == TaskState.REVIEW:
             mgr.set_final_state(task_id, final_state)
-        t = mgr.transition(task_id, state, resolution=resolution)
-        console.print(f"[green]Transitioned[/]: {t.id} → {t.state.value}")
+        t = mgr.transition(
+            task_id, state, resolution=resolution, force=force, reason=reason
+        )
+        prefix = "[yellow]Forced[/]" if force else "[green]Transitioned[/]"
+        console.print(f"{prefix}: {t.id} → {t.state.value}")
+        if force:
+            console.print(f"  Reason: {reason}")
         if state == TaskState.PLAN:
             plan_path = mgr.tasks_dir / task_id / "plan.md"
             if plan_path.exists():
@@ -174,6 +198,81 @@ def task_transition(
     except ValueError as e:
         console.print(f"[red]Error[/]: {e}")
         sys.exit(1)
+
+
+@task.command("close")
+@click.argument("task_id")
+@click.option(
+    "--resolution",
+    required=True,
+    help="Why the task is being fast-closed (shipped on master, subsumed, etc.)",
+)
+def task_close(task_id: str, resolution: str):
+    """Fast-close a task from brainstorm/plan straight to done.
+
+    Use when the work has already shipped (e.g. direct commit on master)
+    and the full execute/document/review walk would just be bookkeeping.
+    """
+    mgr = _task_manager(_project_dir())
+    try:
+        t = mgr.close_task(task_id, resolution)
+    except ValueError as e:
+        console.print(f"[red]Error[/]: {e}")
+        sys.exit(1)
+    console.print(f"[green]Closed[/]: {t.id} → {t.state.value}")
+    console.print(f"  Resolution: {t.resolution}")
+
+
+@task.command("link")
+@click.argument("from_id")
+@click.argument("to_id")
+@click.option(
+    "--type",
+    "link_type",
+    type=click.Choice(["related", "see-also", "fold"]),
+    default="related",
+    help="Link kind (default: related)",
+)
+def task_link(from_id: str, to_id: str, link_type: str):
+    """Cross-reference two task cards.
+
+    \b
+    related   — symmetric "see also without blocking" (default)
+    see-also  — symmetric, lighter cross-reference
+    fold      — directional: FROM is folded into TO (FROM.folded_into = TO)
+    """
+    mgr = _task_manager(_project_dir())
+    try:
+        a, _ = mgr.add_link(from_id, to_id, link_type=link_type)
+    except ValueError as e:
+        console.print(f"[red]Error[/]: {e}")
+        sys.exit(1)
+    if link_type == "fold":
+        console.print(f"[green]Folded[/]: {a.id} → {to_id}")
+    else:
+        # Parens around link_type — rich would strip `[related]` as malformed markup.
+        console.print(f"[green]Linked[/] ({link_type}): {from_id} ↔ {to_id}")
+
+
+@task.command("unlink")
+@click.argument("from_id")
+@click.argument("to_id")
+@click.option(
+    "--type",
+    "link_type",
+    type=click.Choice(["related", "see-also", "fold"]),
+    default="related",
+    help="Link kind to remove (default: related)",
+)
+def task_unlink(from_id: str, to_id: str, link_type: str):
+    """Remove a cross-reference between two task cards. No-op if absent."""
+    mgr = _task_manager(_project_dir())
+    try:
+        mgr.remove_link(from_id, to_id, link_type=link_type)
+    except ValueError as e:
+        console.print(f"[red]Error[/]: {e}")
+        sys.exit(1)
+    console.print(f"[green]Unlinked[/] ({link_type}): {from_id} ⇎ {to_id}")
 
 
 @task.command("plan-sync")
@@ -487,7 +586,11 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
         tasks = [
             t for t in tasks
             if pattern.search(
-                "\n".join([t.id, t.title, t.description, t.parent_task, *t.tags, *t.depends_on])
+                "\n".join([
+                    t.id, t.title, t.description, t.parent_task,
+                    *t.tags, *t.depends_on, *t.related, *t.see_also,
+                    t.folded_into,
+                ])
             )
         ]
 
@@ -553,6 +656,38 @@ def task_show(task_id: str):
                 # Use parens around state — rich interprets `[brainstorm]` as a
                 # malformed markup tag and silently drops it.
                 console.print(f"    {dep_id} ({dep.state.value}) — {dep.title}")
+
+    # Link sections — render each outbound relation with the target's state
+    # so the cross-reference answers "is this still relevant?" at a glance.
+    def _render_links(label: str, ids: list[str]) -> None:
+        console.print(f"\n  [bold]{label}:[/]")
+        for ref_id in ids:
+            other = mgr.get_task(ref_id)
+            if other is None:
+                console.print(f"    {ref_id} [red](missing)[/]")
+            else:
+                console.print(
+                    f"    {ref_id} ({other.state.value}) — {other.title}"
+                )
+
+    if t.related:
+        _render_links("Related", t.related)
+    if t.see_also:
+        _render_links("See also", t.see_also)
+    if t.folded_into:
+        target = mgr.get_task(t.folded_into)
+        console.print("\n  [bold]Folded into:[/]")
+        if target is None:
+            console.print(f"    {t.folded_into} [red](missing)[/]")
+        else:
+            console.print(
+                f"    {t.folded_into} ({target.state.value}) — {target.title}"
+            )
+    # Inbound "Subsumed:" — scan all cards for folded_into pointing here.
+    subsumed = mgr.find_subsumed_by(task_id)
+    if subsumed:
+        _render_links("Subsumed", subsumed)
+
     # Show work log nicely
     if t.work_log:
         console.print("\n  [bold]Work Log:[/]")

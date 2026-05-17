@@ -228,3 +228,103 @@ def test_list_search_matches_depends(cli, project_dir):
     # T-9 itself matches by id; T-1 must match via depends_on; T-2 must NOT.
     assert "T-1" in result.output
     assert "T-2" not in result.output
+
+
+# -- HATS-371: close / link / force / show backlinks ----------------------
+
+
+def test_close_requires_resolution_option(cli, project_dir):
+    """click --required flag rejects missing --resolution."""
+    _seed_task(project_dir)
+    result = cli.invoke(main, ["task", "close", "T-1"])
+    assert result.exit_code != 0
+    # click renders "Missing option '--resolution'" — case may vary by version.
+    assert "resolution" in result.output.lower()
+
+
+def test_close_from_brainstorm(cli, project_dir):
+    _seed_task(project_dir)
+    result = cli.invoke(
+        main, ["task", "close", "T-1", "--resolution", "shipped in 6e7ddd5"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Closed" in result.output
+    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    assert t.state == TaskState.DONE
+    assert t.resolution == "shipped in 6e7ddd5"
+
+
+def test_force_transition_with_reason(cli, project_dir):
+    _seed_task(project_dir)
+    mgr = TaskManager(project_dir, prefix="T", strict_plan_check=False)
+    mgr.transition("T-1", TaskState.PLAN)
+
+    result = cli.invoke(
+        main,
+        [
+            "task", "transition", "T-1", "brainstorm",
+            "--force", "--reason", "plan started by mistake",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Forced" in result.output
+    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    assert t.state == TaskState.BRAINSTORM
+
+
+def test_force_without_reason_rejected(cli, project_dir):
+    _seed_task(project_dir)
+    mgr = TaskManager(project_dir, prefix="T", strict_plan_check=False)
+    mgr.transition("T-1", TaskState.PLAN)
+
+    result = cli.invoke(
+        main, ["task", "transition", "T-1", "brainstorm", "--force"]
+    )
+    assert result.exit_code == 1
+    assert "reason" in result.output.lower()
+
+
+def test_link_related_then_show_renders_both_sides(cli, project_dir):
+    mgr = TaskManager(project_dir, prefix="T")
+    mgr.create_task("T-1", "First")
+    mgr.create_task("T-2", "Second")
+
+    r = cli.invoke(main, ["task", "link", "T-1", "T-2", "--type", "related"])
+    assert r.exit_code == 0, r.output
+    assert "Linked" in r.output
+
+    show1 = cli.invoke(main, ["task", "show", "T-1"])
+    assert "Related" in show1.output
+    assert "T-2" in show1.output
+    show2 = cli.invoke(main, ["task", "show", "T-2"])
+    assert "Related" in show2.output
+    assert "T-1" in show2.output
+
+
+def test_link_fold_then_show_renders_subsumed_on_target(cli, project_dir):
+    mgr = TaskManager(project_dir, prefix="T")
+    mgr.create_task("T-1", "Folded")
+    mgr.create_task("T-2", "Keeper")
+
+    r = cli.invoke(main, ["task", "link", "T-1", "T-2", "--type", "fold"])
+    assert r.exit_code == 0, r.output
+    assert "Folded" in r.output
+
+    show1 = cli.invoke(main, ["task", "show", "T-1"])
+    assert "Folded into" in show1.output
+
+    show2 = cli.invoke(main, ["task", "show", "T-2"])
+    assert "Subsumed" in show2.output
+    assert "T-1" in show2.output
+
+
+def test_unlink_removes_relation(cli, project_dir):
+    mgr = TaskManager(project_dir, prefix="T")
+    mgr.create_task("T-1", "A")
+    mgr.create_task("T-2", "B")
+    mgr.add_link("T-1", "T-2", link_type="related")
+
+    r = cli.invoke(main, ["task", "unlink", "T-1", "T-2", "--type", "related"])
+    assert r.exit_code == 0, r.output
+    assert mgr.get_task("T-1").related == []
+    assert mgr.get_task("T-2").related == []
