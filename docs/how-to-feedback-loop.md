@@ -2,14 +2,14 @@
 
 Guide to setting up and using the retrospective pipeline. Two flows:
 
-- **`ai-hats reflect session`** — per-session retrospective (auto by default after every session, or runnable by hand). Votes on every active [hypothesis][3] it can test and, on self-problem, files a [proposal][3] for the maintainer.
-- **`ai-hats reflect all`** — manual triage of the accumulated [HYP][3] / [PROP][3] backlog.
+- **`ai-hats reflect session`** — per-session retrospective run by the `session-reviewer` role (automatic after every session, or runnable by hand). Votes on every active hypothesis it can test [3] and, on self-problem, files a proposal for the maintainer.
+- **`ai-hats reflect all`** — manual triage of the accumulated HYP / PROP backlog, driven by the `judge` role.
 
-Filing a new HYP yourself (a hunch you want the loop to track) is a third, **session-driven** flow — `ai-hats task hyp create` while the symptom is fresh in your audit. See [Quick start (d)](#d-file-a-new-hypothesis-from-a-session) below for a worked example.
+Filing a new HYP yourself while a symptom is fresh is a session-driven flow — see [Quick start (d)](#d-file-a-new-hypothesis-from-a-session).
 
 The session-end retrospective is **a single LLM call** under the `session-reviewer` role. Architectural reference — see [1]. Full CLI reference with flags — `ai-hats --tree reflect`. This doc — practical recipes.
 
-> Visual map of the cycle: [Reflection loop][2].
+> Visual map of the cycle: [2].
 
 ---
 
@@ -17,13 +17,13 @@ The session-end retrospective is **a single LLM call** under the `session-review
 
 | Entity                  | Where it lives                                      | Schema / role                                     | Who writes                                   |
 | ----------------------- | --------------------------------------------------- | ------------------------------------------------- | -------------------------------------------- |
-| **Session**             | `.gitlog/session_<id>/`                             | `audit.md` + `metrics.json` + `transcript.txt`    | runtime — see [Session lifecycle][11]        |
+| **Session**             | `.gitlog/session_<id>/`                             | `audit.md` + `metrics.json` + `transcript.txt`    | runtime — see [11]                           |
 | **HYP** (hypothesis)    | `.agent/hypotheses/HYP-NNN.yaml`                    | human-readable YAML                               | human or agent (via CLI)                     |
 | **PROP** (proposal)     | `.agent/backlog/proposals/PROP-NNN.yaml`            | human-readable YAML                               | `session-reviewer` on self-problem, or human |
 | **SessionReview**       | `.agent/retrospectives/sessions/<id>.md`            | `hats-session-review/v1` (one artifact, one call) | `session-reviewer` role                      |
 | **Reflect-all handoff** | `.agent/retrospectives/reflect-all/<ts>-handoff.md` | markdown pointer doc                              | `ai-hats reflect all` pre-flight             |
 
-> Sample artifacts (synthetic but realistic shape): [4], [5], [6]. The [Backlog state machines][3] diagram shows the lifecycle of all three.
+> Sample artifacts (synthetic but realistic shape): [4], [5], [6].
 
 **Hypothesis** — a YAML with `success_criterion`, `observation_window`, `exit_criteria`. It stays in status `active` until it accumulates enough verdicts in `validation_log` to transition to `confirmed` / `refuted` / `stalled`.
 
@@ -47,7 +47,6 @@ Four minimal recipes for the most common interactions.
 ### a) Turn the loop on in a fresh project
 
 ```yaml
-# ai-hats.yaml — see Flow 0 below for the full field reference
 feedback:
   session_retro:
     policy: smart
@@ -67,37 +66,45 @@ ai-hats session list | head -3            # most recent sessions on top
 ls .agent/retrospectives/sessions/        # latest review markdowns
 ```
 
-Open the latest `<id>.md` — `summary`, `observations`, `hypothesis_verdicts[]`, `proposal_actions[]`, `self_problems[]`. Each verdict is one line of evidence the agent gathered. See [4] for the exact shape.
+Open the latest `<id>.md` — `summary`, `observations`, `hypothesis_verdicts[]`, `proposal_actions[]`, `self_problems[]`. Each verdict is one line of evidence the agent gathered.
 
 ### c) Clear the backlog after a busy week
 
 ```bash
-ai-hats reflect all                       # interactive triage chat
-# …chat with ai-hats using the printed handoff…
-ai-hats reflect commit \                  # bulk-flip statuses
+ai-hats reflect all
+# drops you into an interactive chat with the `judge` role
+# the agent inspects each open PROP and active HYP, asks you for decisions,
+# and runs `ai-hats task hyp ...` / `ai-hats task proposal ...` per item
+```
+
+At the end of the chat, statuses are bulk-applied in one call (either the agent runs it as its last action, or you run it yourself):
+
+```bash
+ai-hats reflect commit \
     --accept PROP-3 --reject PROP-12 --defer PROP-15
 ```
 
-The first command builds a handoff doc and hands you off to a triage chat. The second flips PROP statuses in bulk after you've decided.
-
 ### d) File a new hypothesis from a session
 
-You noticed during a session that the agent keeps stepping on the same rake. You want the loop to **test the hunch** that fixing X will reduce the rake. File a HYP:
+You're in a session and notice a pattern worth tracking. Just ask the agent during the chat:
+
+> "File a hypothesis: the filters in `observe.py` break every time we refactor `SidecarTracer`. Observation window 4 sessions."
+
+The agent translates your description into a structured HYP and creates it under the hood:
 
 ```bash
 ai-hats task hyp create \
     --title "Filters break under sub-agent refactors" \
     --hypothesis "Every regression in observe.py filters in the past \
-                  month followed a SidecarTracer refactor. A targeted \
-                  test gate on observe.py edits should catch the next one." \
+                  month followed a SidecarTracer refactor." \
     --source-task HATS-029 \
     --observation-window "4 sessions" \
     --success-criterion "zero new filter regressions in the window"
 ```
 
-The card lands at `.agent/hypotheses/HYP-NNN.yaml` with `status: active`. From that moment, every subsequent `session-reviewer` run votes on it; you close it via `ai-hats reflect all` (Recipe c) once the window closes.
+The card lands at `.agent/hypotheses/HYP-NNN.yaml` with `status: active`. From that moment, every subsequent `session-reviewer` run votes on it; you close it via `ai-hats reflect all` (Recipe c).
 
-A complete example of what an active HYP looks like — including how its `validation_log` grows — is in [5]. Full CLI flags — `ai-hats --tree task hyp` or `ai-hats task hyp create --help`.
+Full CLI flags — `ai-hats task hyp create --help`.
 
 ---
 
@@ -117,14 +124,14 @@ feedback:
 
 ### Policies for `session_retro.policy`
 
-| Value    | Behavior on `session_end`                                                                    |
-| -------- | -------------------------------------------------------------------------------------------- |
-| `off`    | nothing happens                                                                              |
-| `always` | retro always runs                                                                            |
-| `smart`  | retro runs **only if** `turns ≥ min_turns` OR `tool_calls ≥ min_tool_calls`                  |
-| `hint`   | checks the threshold but instead of running shows a banner "consider running retro manually" |
+| Value    | Behavior on `session_end`                                                                            |
+| -------- | ---------------------------------------------------------------------------------------------------- |
+| `off`    | nothing happens                                                                                      |
+| `always` | retro always runs                                                                                    |
+| `smart`  | retro runs when `turns ≥ min_turns` **OR** `tool_calls ≥ min_tool_calls` (either trigger is enough)  |
+| `hint`   | checks the threshold but instead of running shows a banner "consider running retro manually"         |
 
-The smart-threshold condition is **OR**, not AND: crossing either limit is enough.
+The smart-threshold condition is **OR**, not AND — crossing either limit fires the retro.
 
 ### Model for the feedback loop
 
@@ -167,7 +174,7 @@ In words:
 4. The runner merges facts with the LLM's output and writes one SessionReviewV1 markdown at `.agent/retrospectives/sessions/<id>.md` (schema `hats-session-review/v1`).
 5. A **pure-Python harness check** parses the artifact afterwards. If it is missing, unparseable, or doesn't cover every active HYP, a single meta-PROP (`target=session-reviewer`, `failed_session_id=<id>`) is filed and surfaces in `reflect all`.
 
-> Side-by-side companion: open [4] next to the steps above to see how each frontmatter field maps to a step.
+> Open the sample SessionReview side-by-side with the steps above to see how each frontmatter field maps to a step.
 
 ### Session-reviewer contract (what the agent must return)
 
@@ -178,9 +185,9 @@ In words:
 
 The role is composed of:
 
-- **`review-session`** skill [8] — the orchestrator. Defines the four-step procedure (read evidence → sweep HYPs → triage PROPs → self-meta).
-- **`review-hypothesis`** skill [9] — pick verdict + recommendation + persist via `ai-hats task hyp append-verdict`.
-- **`review-proposal`** skill [10] — read the open inbox first, vote on similar PROP, or create a novel one.
+- `review-session` skill [8] — the orchestrator. Defines the four-step procedure (read evidence → sweep HYPs → triage PROPs → self-meta).
+- `review-hypothesis` skill [9] — pick verdict + recommendation + persist via `ai-hats task hyp append-verdict`.
+- `review-proposal` skill [10] — read the open inbox first, vote on similar PROP, or create a novel one.
 
 Role config: [7].
 
@@ -188,12 +195,12 @@ Role config: [7].
 
 Two layers of "no silent failure":
 
-1. **In-skill (LLM-driven):** the `review-session` orchestrator [8] explicitly requires one verdict per active HYP, describes the verdict enum, and forbids silent `n/a`.
+1. **In-skill (LLM-driven):** the `review-session` orchestrator explicitly requires one verdict per active HYP, describes the verdict enum, and forbids silent `n/a`.
 2. **Runtime (programmatic):** after the detached process finishes, it reads `.agent/retrospectives/sessions/<id>.md` and parses it as `hats-session-review/v1`. On any issue (missing file, schema fails to parse, not all active HYPs covered) — it writes a meta-PROP with `category=process`, `target=session-reviewer`, `failed_session_id=<id>`. These PROPs surface in `reflect all`.
 
 ### Running manually (foreground, for debugging)
 
-A "session" is one invocation of `ai-hats` or `ai-hats agent <role>` — its trace dir lives in `.gitlog/session_<id>/`. See [11] for what runtime writes during one and how `<id>` is generated.
+A "session" is one invocation of `ai-hats` or `ai-hats agent <role>` — its trace dir lives in `.gitlog/session_<id>/`. Full breakdown of what runtime writes during a session: ARCHITECTURE.md (Session lifecycle).
 
 ```bash
 ai-hats reflect session --session <id>                # foreground
@@ -210,7 +217,7 @@ Useful when:
 
 ## Flow 2: `ai-hats reflect all` — manual backlog triage
 
-Once HYPs and PROPs pile up — time to walk the backlog by hand and close / accept / reject in a batch.
+Once HYPs and PROPs pile up — time to walk the backlog by hand and close / accept / reject in a batch. This subcommand spawns the `judge` role (autopilot or interactive mode, set by `judge-protocol` Step 0).
 
 ### Command lifecycle
 
@@ -219,9 +226,9 @@ Once HYPs and PROPs pile up — time to walk the backlog by hand and close / acc
 ai-hats reflect all
 # - collects active HYPs + open PROPs from .agent/
 # - writes .agent/retrospectives/reflect-all/<ts>-handoff.md
-# - then os.execvp's into claude with a pointer prompt
+# - then os.execvp's into claude with the `judge` role
 
-# 2. Inside the chat — inspect and decide, with these CLI handles
+# 2. Inside the chat — the agent inspects items and uses these CLI handles
 ai-hats task hyp show HYP-NNN                                    # full validation_log
 ai-hats task hyp append-verdict --hyp HYP-NNN ...                # add evidence
 ai-hats task proposal show PROP-NNN                              # rationale + votes
@@ -229,6 +236,7 @@ ai-hats task proposal status PROP-NNN <accepted|rejected|deferred|duplicate>
 ai-hats task create ...                                          # spawn a task from a PROP
 
 # 3. Once the chat is done — bulk-flip PROP statuses in one command
+#    (either the agent runs this as its last action, or you run it after exiting)
 ai-hats reflect commit \
     --accept PROP-3 --accept PROP-7 \
     --reject PROP-12 \
@@ -259,7 +267,7 @@ Only builds the handoff, does not invoke an interactive chat. Useful to:
 ### What `reflect all` does NOT do
 
 - **Does not vote on hypotheses automatically** — that's the job of the per-session `session-reviewer`. `reflect all` only displays what has accumulated and helps you make decisions on PROPs / close HYPs.
-- **Does not create new HYPs** — for that, see [Quick start (d)](#d-file-a-new-hypothesis-from-a-session) above (use `ai-hats task hyp create` while a symptom is fresh).
+- **Does not create new HYPs** — for that, see Quick start (d) above (ask the agent during a session; under the hood it runs `ai-hats task hyp create`).
 
 ---
 
@@ -274,7 +282,7 @@ Only builds the handoff, does not invoke an interactive chat. Useful to:
 3. **Triage.** During `reflect all`, the pre-flight handoff shows counters per HYP (e.g. "8 confirmed, 1 inconclusive, 0 refuted"). You compare against the HYP's `exit_criteria` and either close it or extend the observation window.
 4. **Close.** Status flips to `confirmed` / `refuted` / `stalled`; `closed: YYYY-MM-DD` is set; the HYP drops out of the active list and `session-reviewer` stops voting on it.
 
-Worked example: [5] shows a hypothesis after two appended verdicts and the `exit_criteria` thresholds that govern its closure.
+Worked example: the synthetic HYP fixture shows a hypothesis after two appended verdicts and the `exit_criteria` thresholds that govern its closure.
 
 ---
 
@@ -292,17 +300,41 @@ Worked example: [5] shows a hypothesis after two appended verdicts and the `exit
 
 ## References
 
-[1] [`docs/reflect.md`](reflect.md) — pipeline architecture, schema dispatch, storage layout.
-[2] [`docs/ARCHITECTURE.md#reflection-loop`](ARCHITECTURE.md#reflection-loop) — visual map of the cycle.
-[3] [`docs/ARCHITECTURE.md#backlog-state-machines`](ARCHITECTURE.md#backlog-state-machines) — task / HYP / PROP lifecycles.
-[4] [`tests/fixtures/real_session/session-review.md`](../tests/fixtures/real_session/session-review.md) — synthetic `hats-session-review/v1` artifact.
-[5] [`tests/fixtures/real_backlog/HYP-001-sample.yaml`](../tests/fixtures/real_backlog/HYP-001-sample.yaml) — synthetic hypothesis with `validation_log`.
-[6] [`tests/fixtures/real_backlog/PROP-001-sample.yaml`](../tests/fixtures/real_backlog/PROP-001-sample.yaml) — synthetic proposal with `votes[]`.
-[7] `src/ai_hats/libraries/roles/session-reviewer/config.yaml` — role composition.
-[8] `src/ai_hats/libraries/skills/review-session/SKILL.md` — orchestrator: four-step session-review procedure.
-[9] `src/ai_hats/libraries/skills/review-hypothesis/SKILL.md` — verdict contract on the per-HYP pass.
-[10] `src/ai_hats/libraries/skills/review-proposal/SKILL.md` — inbox vote / novel-PROP contract.
-[11] [`docs/ARCHITECTURE.md#session-lifecycle`](ARCHITECTURE.md#session-lifecycle) — what runtime writes during a session, where `<id>` comes from.
-[12] [`docs/how-to.md`](how-to.md) — general `ai-hats.yaml` recipes.
+**[1]** — [`docs/reflect.md`](reflect.md) — pipeline architecture, schema dispatch, storage layout.
+
+**[2]** — [`docs/ARCHITECTURE.md#reflection-loop`](ARCHITECTURE.md#reflection-loop) — visual map of the cycle.
+
+**[3]** — [`docs/ARCHITECTURE.md#backlog-state-machines`](ARCHITECTURE.md#backlog-state-machines) — task / HYP / PROP lifecycles.
+
+**[4]** — [`tests/fixtures/real_session/session-review.md`](../tests/fixtures/real_session/session-review.md) — synthetic `hats-session-review/v1` artifact.
+
+**[5]** — [`tests/fixtures/real_backlog/HYP-001-sample.yaml`](../tests/fixtures/real_backlog/HYP-001-sample.yaml) — synthetic hypothesis with `validation_log`.
+
+**[6]** — [`tests/fixtures/real_backlog/PROP-001-sample.yaml`](../tests/fixtures/real_backlog/PROP-001-sample.yaml) — synthetic proposal with `votes[]`.
+
+**[7]** — `src/ai_hats/libraries/roles/session-reviewer/config.yaml` — role composition.
+
+**[8]** — `src/ai_hats/libraries/skills/review-session/SKILL.md` — orchestrator: four-step session-review procedure.
+
+**[9]** — `src/ai_hats/libraries/skills/review-hypothesis/SKILL.md` — verdict contract on the per-HYP pass.
+
+**[10]** — `src/ai_hats/libraries/skills/review-proposal/SKILL.md` — inbox vote / novel-PROP contract.
+
+**[11]** — [`docs/ARCHITECTURE.md#session-lifecycle`](ARCHITECTURE.md#session-lifecycle) — what runtime writes during a session, where `<id>` comes from.
+
+**[12]** — [`docs/how-to.md`](how-to.md) — general `ai-hats.yaml` recipes.
+
+[1]: reflect.md
+[2]: ARCHITECTURE.md#reflection-loop
+[3]: ARCHITECTURE.md#backlog-state-machines
+[4]: ../tests/fixtures/real_session/session-review.md
+[5]: ../tests/fixtures/real_backlog/HYP-001-sample.yaml
+[6]: ../tests/fixtures/real_backlog/PROP-001-sample.yaml
+[7]: ../src/ai_hats/libraries/roles/session-reviewer/config.yaml
+[8]: ../src/ai_hats/libraries/skills/review-session/SKILL.md
+[9]: ../src/ai_hats/libraries/skills/review-hypothesis/SKILL.md
+[10]: ../src/ai_hats/libraries/skills/review-proposal/SKILL.md
+[11]: ARCHITECTURE.md#session-lifecycle
+[12]: how-to.md
 
 **CLI (always live, no static reference)** — `ai-hats --tree reflect`, `ai-hats --tree task hyp`, `ai-hats --tree task proposal`.
