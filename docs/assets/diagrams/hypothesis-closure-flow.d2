@@ -1,0 +1,15 @@
+vars: @./_palette
+
+direction: down
+
+create: Create HYP-NNN\nstatus active {shape: document}
+accumulate: Accumulate verdicts\nvia session-reviewer
+triage: Triage in\nreflect all {shape: diamond}
+close: confirmed\nrefuted\nstalled {shape: oval}
+extend: extend_window\nstatus stays active
+
+create -> accumulate
+accumulate -> triage: validation_log\nthreshold met
+triage -> close: exit_criteria\nmet
+triage -> extend: more data\nneeded
+extend -> accumulate: keep voting
