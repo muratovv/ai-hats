@@ -323,18 +323,3 @@ Worked example: the synthetic HYP fixture shows a hypothesis after two appended 
 **[13]** — [`docs/glossary.md`](glossary.md) — naming source-of-truth for ai-hats core terms.
 
 **[14]** — [`docs/how-to-backlog.md`](how-to-backlog.md) — day-to-day `ai-hats task` / `task hyp` / `task proposal` recipes.
-
-[1]: reflect.md
-[2]: ARCHITECTURE.md#reflection-loop
-[3]: ARCHITECTURE.md#backlog-state-machines
-[4]: ../tests/fixtures/real_session/session-review.md
-[5]: ../tests/fixtures/real_backlog/HYP-001-sample.yaml
-[6]: ../tests/fixtures/real_backlog/PROP-001-sample.yaml
-[7]: ../library/core/roles/session-reviewer/config.yaml
-[8]: ../library/core/skills/review-session/SKILL.md
-[9]: ../library/core/skills/review-hypothesis/SKILL.md
-[10]: ../library/core/skills/review-proposal/SKILL.md
-[11]: ARCHITECTURE.md#session-lifecycle
-[12]: how-to.md
-[13]: glossary.md
-[14]: how-to-backlog.md

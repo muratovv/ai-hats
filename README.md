@@ -46,7 +46,7 @@ roles/assistant ── trait-base + trait-agent + dev::python
                    └── injection → GEMINI.md / CLAUDE.md
 ```
 
-> Names and core terms (role, session, reflect, backlog, …) — see [docs/glossary.md](docs/glossary.md).
+> Names and core terms (role, session, reflect, backlog, …) — see [1].
 
 ## Quick start
 
@@ -101,9 +101,9 @@ ai-hats self update           # update ai-hats and auto-bump
 
 `ai-hats self update` is self-healing: if a system Python upgrade breaks the venv, it is rebuilt automatically (default venvs only; override venvs are user-owned).
 
-Full configuration walkthrough (wizard, role pick, customization, feedback policy, venv) → **[docs/how-to-configure.md](docs/how-to-configure.md)**.
+Full configuration walkthrough (wizard, role pick, customization, feedback policy, venv) → [2].
 
-Alternative install paths (bash bootstrap from a clone, override venv, developing ai-hats itself) live in **[docs/how-to.md](docs/how-to.md)**.
+Alternative install paths (bash bootstrap from a clone, override venv, developing ai-hats itself) live in [3].
 
 ## CLI
 
@@ -123,8 +123,8 @@ Eight top-level groups:
 | `reflect` | Feedback loop — per-session vote and bulk triage of HYP / PROP          |
 | `self`    | Tool lifecycle: init / bump / update / clean / rollback                 |
 | `session` | Observability: list / show / audit / retro for sessions                 |
-| `task`    | Backlog: task / hyp / proposal cards with a state machine — recipes in **[docs/how-to-backlog.md](docs/how-to-backlog.md)** |
-| `wt`      | Git worktrees: create / merge / discard / exec / env — recipes in **[docs/how-to-advanced.md §2](docs/how-to-advanced.md#2-worktree-workflow)** |
+| `task`    | Backlog: task / hyp / proposal cards with a state machine — recipes in [4] |
+| `wt`      | Git worktrees: create / merge / discard / exec / env — recipes in [5] §2 |
 
 Common scenarios:
 
@@ -148,13 +148,13 @@ Full reference — `ai-hats --tree`.
 
 ## Customization
 
-The shipped library splits into `library/core/` (engine fundament) and `library/usage/` (curated content). To override a built-in role, add your own skill / rule / trait, or replace a system role like `session-reviewer` — see **[docs/how-to-extend.md](docs/how-to-extend.md)** for the override-precedence chain and worked examples.
+The shipped library splits into `library/core/` (engine fundament) and `library/usage/` (curated content). To override a built-in role, add your own skill / rule / trait, or replace a system role like `session-reviewer` — see [6] for the override-precedence chain and worked examples.
 
-Advanced flows — custom pipeline steps, isolated worktrees, parallel sub-agents — live in **[docs/how-to-advanced.md](docs/how-to-advanced.md)**.
+Advanced flows — custom pipeline steps, isolated worktrees, parallel sub-agents — live in [5].
 
 ## Architecture
 
-Roles compose from traits + rules + skills, a flat model, a task state machine, multi-provider injection. The full tour of the internal model, directory layout, skill format, and a sample `config.yaml` — see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+Roles compose from traits + rules + skills, a flat model, a task state machine, multi-provider injection. The full tour of the internal model, directory layout, skill format, and a sample `config.yaml` — see [7].
 
 <table>
 <tr>
@@ -182,3 +182,19 @@ Roles compose from traits + rules + skills, a flat model, a task state machine, 
   </td>
 </tr>
 </table>
+
+## References
+
+**[1]** — [`docs/glossary.md`](docs/glossary.md) — naming source-of-truth for ai-hats core terms (role, session, reflect, backlog, …).
+
+**[2]** — [`docs/how-to-configure.md`](docs/how-to-configure.md) — narrative walkthrough for first-time setup (wizard, role pick, customization, feedback policy, venv).
+
+**[3]** — [`docs/how-to.md`](docs/how-to.md) — `ai-hats.yaml` overlay recipes and alternative install paths.
+
+**[4]** — [`docs/how-to-backlog.md`](docs/how-to-backlog.md) — day-to-day `ai-hats task` / `task hyp` / `task proposal` recipes.
+
+**[5]** — [`docs/how-to-advanced.md`](docs/how-to-advanced.md) — advanced flows: custom pipeline steps (§1), worktree workflow (§2).
+
+**[6]** — [`docs/how-to-extend.md`](docs/how-to-extend.md) — shipped library layout, override precedence, recipes for your own roles / traits / rules / skills.
+
+**[7]** — [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — internal model, directory layout, skill format, sample `config.yaml`.
