@@ -20,7 +20,7 @@ Lifecycle diagram — see [2].
 
 ## Role
 
-A root composition that the agent wears during a session — bundles traits, rules, skills, and an injection block into one config. The shipped library splits into two layers: `library/core/roles/` (engine-internal: `initial-wizard`, `session-reviewer`, `judge`, `judge-for-role`, `auditor-for-role`, `hypothesis-intake`, `test-agent`) and `library/usage/roles/` (curated user-facing: `assistant`, `architect`, `sre`, `go-dev`, `go-dev-full`). Catalog — `ai-hats list roles`; layered structure and override precedence — see [9]. Example: [`library/usage/roles/assistant/config.yaml`](../library/usage/roles/assistant/config.yaml). Customization (add / remove / override) — see [6] (HATS-355, not yet written).
+A root composition that the agent wears during a session — bundles traits, rules, skills, and an injection block into one config. The shipped library splits into two layers: `library/core/roles/` (engine-internal: `initial-wizard`, `session-reviewer`, `judge`, `judge-for-role`, `auditor-for-role`, `hypothesis-intake`, `test-agent`) and `library/usage/roles/` (curated user-facing: `assistant`, `architect`, `sre`, `go-dev`, `go-dev-full`). Catalog — `ai-hats list roles`; layered structure and override precedence — see [9]. Example: [`library/usage/roles/assistant/config.yaml`](../library/usage/roles/assistant/config.yaml). Customization (add / remove / override) — see [6].
 
 ## Trait
 
@@ -67,7 +67,7 @@ An isolated git-worktree clone where an agent works without touching the mainlin
 
 What ai-hats persists on disk during normal use.
 
-- **`ai-hats.yaml`** — project config. Fields: `schema_version`, `provider`, `active_role`, `default_role`, `task_prefix`, `customizations`, `feedback`, `library_paths`, `venv_path`. Source of truth for composition. Apply changes with `ai-hats self bump`; verify with `ai-hats config status`. Full walkthrough — see [6] (HATS-355, not yet written).
+- **`ai-hats.yaml`** — project config. Fields: `schema_version`, `provider`, `active_role`, `default_role`, `task_prefix`, `customizations`, `feedback`, `library_paths`, `venv_path`. Source of truth for composition. Apply changes with `ai-hats self bump`; verify with `ai-hats config status`. Full walkthrough — see [6].
 - **SessionReview** — `<ai_hats_dir>/sessions/retros/sessions/<id>.md`. Output of `session-reviewer`: `summary`, `observations`, `hypothesis_verdicts`, `proposal_actions`. Schema `hats-session-review/v1`. Consumed by the next reflect cycle. Detail — see [5].
 - **JudgeReport** — `<ai_hats_dir>/sessions/retros/judge/<UTC-ts>-report.md`. Output of `ai-hats reflect all` — HYP closures plus PROP decisions for one triage session. Detail — see [5].
 - **RoleCoherenceReport** — `<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ts>-<target>.md`. Output of `ai-hats reflect role` — findings on internal contradictions in a role composition. Detail — see [8].
@@ -86,7 +86,7 @@ What ai-hats persists on disk during normal use.
 
 **[5]** — [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — reflect-session and reflect-all in practice; policy setup.
 
-**[6]** — `docs/how-to-configure.md` — full configuration walkthrough (provider, role, customizations, feedback policy, venv). *Not yet written — tracked under HATS-355.*
+**[6]** — [`docs/how-to-configure.md`](how-to-configure.md) — full configuration walkthrough (provider, role, customizations, feedback policy, venv).
 
 **[7]** — `docs/how-to-backlog.md` — task / HYP / PROP day-to-day workflow. *Not yet written — tracked under HATS-358.*
 
@@ -99,5 +99,6 @@ What ai-hats persists on disk during normal use.
 [3]: ARCHITECTURE.md#component-model
 [4]: ARCHITECTURE.md#backlog-state-machines
 [5]: how-to-feedback-loop.md
+[6]: how-to-configure.md
 [8]: reflect.md
 [9]: how-to-extend.md
