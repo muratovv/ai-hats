@@ -74,7 +74,17 @@ ai-hats self init                              # interactive wizard (recommended
 **Scripted / CI variant** — pass both flags to skip the wizard:
 
 ```bash
-ai-hats self init -p claude -r go-dev --no-wizard   # writes ai-hats.yaml directly, no LLM session
+ai-hats self init -p claude -r go-dev --no-wizard          # writes ai-hats.yaml directly
+```
+
+Bootstrap-time flags that are tedious to change later (the wizard also
+asks about these in an opt-in "advanced setup" branch):
+
+```bash
+ai-hats self init -p claude -r go-dev --no-wizard \
+  --ai-hats-dir .ai \                  # framework directory (default: .agent/ai-hats)
+  --venv ~/.venvs/myproj \             # point at an existing venv instead of the managed one
+  --no-manage-gitignore                # do not auto-add ai-hats entries to .gitignore
 ```
 
 ### 3. Use it

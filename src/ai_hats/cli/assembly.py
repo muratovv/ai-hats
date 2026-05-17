@@ -84,6 +84,44 @@ def _run_self_update() -> bool:
     return True
 
 
+def _wizard_advanced_prompt() -> tuple[str | None, str | None, bool | None]:
+    """Optional 'advanced setup' branch — paths and gitignore policy.
+
+    Single yes/no gate (default no). When accepted, three follow-up prompts
+    cover the bootstrap-time-only fields users typically don't want to
+    revisit: ai_hats_dir, venv_path, manage_gitignore.
+
+    Returns ``(ai_hats_dir, venv_path, manage_gitignore)`` — each may be
+    ``None`` meaning "leave default".
+    """
+    console.print(
+        "\n[bold]Advanced setup[/] (paths & workspace policy) — "
+        "[dim]most users skip[/]",
+    )
+    if not click.confirm("  Configure custom paths / gitignore?", default=False):
+        return None, None, None
+
+    ai_hats_dir = click.prompt(
+        "  ai-hats directory (relative to project root)",
+        default=".agent/ai-hats",
+    ).strip() or None
+
+    raw_venv = click.prompt(
+        "  venv path ([dim]'managed' = ai-hats creates it under the dir above[/])",
+        default="managed",
+    ).strip()
+    venv_path = None if raw_venv in ("", "managed") else raw_venv
+
+    manage_git = click.confirm(
+        "  auto-manage .gitignore (add ai-hats entries)?",
+        default=True,
+    )
+    # Only persist when the user opted out of the default.
+    manage_gitignore: bool | None = None if manage_git else False
+
+    return ai_hats_dir, venv_path, manage_gitignore
+
+
 def _launch_wizard_session() -> None:
     """Replace the current process with `ai-hats execute --role initial-wizard`.
 
@@ -113,6 +151,27 @@ def _launch_wizard_session() -> None:
     "Default: TASK for new projects; auto-detected for legacy repos.",
 )
 @click.option(
+    "--ai-hats-dir",
+    "ai_hats_dir",
+    default=None,
+    help="Custom framework directory (default: .agent/ai-hats). "
+    "Cannot be changed after first init without manual relocation.",
+)
+@click.option(
+    "--venv",
+    "venv_path",
+    default=None,
+    help="Point ai-hats at an existing venv instead of the managed "
+    "default <ai-hats-dir>/.venv. Path can be relative or absolute.",
+)
+@click.option(
+    "--no-manage-gitignore",
+    "no_manage_gitignore",
+    is_flag=True,
+    default=False,
+    help="Do not auto-add ai-hats entries to .gitignore.",
+)
+@click.option(
     "--no-wizard",
     is_flag=True,
     default=False,
@@ -128,6 +187,9 @@ def init(
     provider: str | None,
     role: str | None,
     task_prefix: str | None,
+    ai_hats_dir: str | None,
+    venv_path: str | None,
+    no_manage_gitignore: bool,
     no_wizard: bool,
     no_update: bool,
 ):
@@ -172,9 +234,28 @@ def init(
         default = _detect_provider_default()
         provider = _wizard_provider_prompt(default)
 
+    # Advanced setup gate — only on a truly fresh project (no existing
+    # yaml). Re-init must not surprise users with relocation prompts.
+    manage_gitignore: bool | None = False if no_manage_gitignore else None
+    if use_wizard and not already:
+        adv_dir, adv_venv, adv_git = _wizard_advanced_prompt()
+        if adv_dir is not None and ai_hats_dir is None:
+            ai_hats_dir = adv_dir if adv_dir != ".agent/ai-hats" else None
+        if adv_venv is not None and venv_path is None:
+            venv_path = adv_venv
+        if adv_git is not None and not no_manage_gitignore:
+            manage_gitignore = adv_git
+
     asm = _assembler(project_dir)
     try:
-        asm.init(provider=provider, role=role, task_prefix=task_prefix)
+        asm.init(
+            provider=provider,
+            role=role,
+            task_prefix=task_prefix,
+            ai_hats_dir=ai_hats_dir,
+            venv_path=venv_path,
+            manage_gitignore=manage_gitignore,
+        )
     except ValueError as err:
         console.print(f"[red]Error[/]: {err}")
         raise SystemExit(1)
@@ -187,6 +268,12 @@ def init(
     console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
     if task_prefix:
         console.print(f"  Task prefix: [bold]{asm.project_config.task_prefix}[/]")
+    if ai_hats_dir:
+        console.print(f"  ai-hats dir: [bold]{asm.project_config.ai_hats_dir}[/]")
+    if venv_path:
+        console.print(f"  Venv path: [bold]{asm.project_config.venv_path}[/]")
+    if manage_gitignore is False:
+        console.print("  manage_gitignore: [bold]disabled[/]")
 
     # Hand off to the wizard role for the remaining configuration steps
     # (stack detection, role selection, customization, feedback policy).
