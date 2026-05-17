@@ -23,7 +23,7 @@ session_end (hook → auto_retro)
            │    1. compute_facts(project_dir, sid)         # pure-Python
            │    2. SubAgentRunner → role=session-reviewer  # one LLM call
            │    3. merge facts + analysis → SessionReviewV1
-           │    4. write .agent/retrospectives/sessions/<id>.md
+           │    4. write <ai_hats_dir>/sessions/retros/sessions/<id>.md
            │       (schema: hats-session-review/v1)
            └─ harness_check (pure-Python)
                 missing/empty/incomplete → file ONE meta-proposal
@@ -51,7 +51,7 @@ ai-hats reflect all [--dry-run]
 ## `ai-hats reflect session`
 
 Per-session `session-reviewer` run. Output is `hats-session-review/v1`
-markdown at `.agent/retrospectives/sessions/<id>.md`.
+markdown at `<ai_hats_dir>/sessions/retros/sessions/<id>.md`.
 
 Triggers:
 - **Auto** on session-end (when `feedback.session_retro.policy=run`); detached background.
@@ -71,7 +71,7 @@ Validation contract:
 
 Manual triage of accumulated backlog. Two stages:
 
-1. Pre-flight builds `.agent/retrospectives/reflect-all/<ts>-handoff.md`
+1. Pre-flight builds `<ai_hats_dir>/sessions/retros/reflect-all/<ts>-handoff.md`
    listing all active HYP and open PROP.
 2. `os.execvp` to `claude` with a pointer prompt.
 3. After chat: `ai-hats reflect commit --accept PROP-X --reject PROP-Y ...`
