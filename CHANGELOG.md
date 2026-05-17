@@ -10,6 +10,30 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+
+- `ai-hats task close <id> --resolution "..."` — fast-close a task from
+  `brainstorm`/`plan` straight to `done` for work shipped on master,
+  without the worktree theatre. Subsumes the original "fast-close"
+  request from HATS-172. (HATS-371)
+- `ai-hats task link <FROM> <TO> [--type related|see-also|fold]` and
+  `ai-hats task unlink ...` — cross-reference task cards. `related` /
+  `see-also` are bidirectional; `fold` is directional and sets
+  `folded_into` on the source. `ai-hats task show` renders outbound
+  links plus inbound "Subsumed" backlinks. (HATS-371)
+- `ai-hats task transition --force --reason "..."` — bypass the FSM
+  guard for corrective overrides (e.g. undo an accidental
+  `brainstorm → plan`); records the override in `work_log`. (HATS-371)
+- `TaskCard` fields `related: []`, `see_also: []`, `folded_into: ""`.
+  Round-trip is byte-clean: empty fields are not serialized. (HATS-371)
+
+### Changed
+
+- Task FSM diagram (`docs/assets/diagrams/backlog-task-fsm.d2`) refreshed
+  to show the new `close` shortcuts and the `--force` override. (HATS-371)
+- `ai-hats task list --search` now also matches against `related`,
+  `see_also`, and `folded_into`. (HATS-371)
+
 ## [0.5.0] - 2026-05-17
 
 Bootstrap experience overhaul: `ai-hats self init` now opens an
