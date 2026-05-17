@@ -208,10 +208,15 @@ def update():
             asm = _assembler(project_dir)
             before_rules, before_skills = _snapshot_composition(asm)
 
-    # 2. Install
-    console.print("Updating from GitHub...")
+    # 2. Install — wrapped in a Rich spinner so the terminal isn't silent
+    # while pip downloads (can take 30s+ on slow links).
     cmd = _build_update_cmd()
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    with console.status(
+        "[cyan]Downloading ai-hats from GitHub …[/] "
+        "[dim](pip install — may take a minute)[/]",
+        spinner="dots",
+    ):
+        result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         console.print(f"[red]Update failed[/]: {result.stderr}")
         return
@@ -220,11 +225,12 @@ def update():
     # just-installed on-disk code, so any new declared runtime dep that
     # somehow didn't land gets healed before the user's next invocation.
     # Failures are non-fatal — layer A in cli.main() catches the rest.
-    verify = subprocess.run(
-        [sys.executable, "-m", "ai_hats._bootstrap", "verify"],
-        capture_output=True,
-        text=True,
-    )
+    with console.status("[cyan]Verifying install …[/]", spinner="dots"):
+        verify = subprocess.run(
+            [sys.executable, "-m", "ai_hats._bootstrap", "verify"],
+            capture_output=True,
+            text=True,
+        )
     if verify.returncode != 0:
         warning = (verify.stderr or verify.stdout or "").strip() or "see logs"
         console.print(f"[yellow]Post-install verify warned[/]: {warning}")

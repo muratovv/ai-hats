@@ -475,7 +475,12 @@ def test_update_command_runs_via_cli(cli_project, monkeypatch):
 
     result = runner.invoke(main, ["self", "update"])
     assert result.exit_code == 0, result.output
-    assert "Updating from GitHub" in result.output
+    # Rich's console.status() writes the spinner via ANSI directly to the
+    # terminal — it doesn't land in CliRunner's captured output. The
+    # post-install version banner + Library section are the stable
+    # markers that the flow completed successfully.
+    assert "Current version:" in result.output
+    assert "Library:" in result.output
 
     # Find the pip install command among all subprocess calls
     pip_cmds = [c for c in captured_cmds if "--force-reinstall" in c]
