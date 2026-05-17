@@ -15,7 +15,7 @@ Internal model of ai-hats: components, composition rules, project layout, librar
 
 You can add or remove traits, rules, and skills from a library role without modifying the source config. Customizations live in `ai-hats.yaml` and survive `ai-hats self update` and `ai-hats self bump`.
 
-> A collection of common scenarios with ready-to-use `ai-hats.yaml` examples — see [how-to.md](how-to.md).
+> A collection of common scenarios with ready-to-use `ai-hats.yaml` examples — see [1].
 
 ```bash
 # Add a trait to the sre role
@@ -94,10 +94,7 @@ When a user runs `ai-hats agent <role>`, the runtime opens an interactive provid
 
 The `Bridge` node — entry into auto reflect-session (see the next section). When `policy=off` or the threshold is not met, the session ends without an LLM call.
 
-**Sample artifacts** (synthetic, realistic shape):
-[`audit.md`](../tests/fixtures/real_session/audit.md) ·
-[`metrics.json`](../tests/fixtures/real_session/metrics.json) ·
-[`transcript.txt`](../tests/fixtures/real_session/transcript.txt) — everything a single session leaves on disk after `session_end`. Field reference — [`tests/fixtures/real_session/README.md`](../tests/fixtures/real_session/README.md).
+**Sample artifacts** (synthetic, realistic shape): the per-session disk layout after `session_end` — audit log [2], metrics [3], and transcript [4]. Field reference — [5].
 
 ## Backlog state machines
 
@@ -143,10 +140,7 @@ Every session becomes a structured retrospective: a pure-Python factual layer (m
 
 The cycle has two parts: **auto reflect-session** (per session) feeds the HYP log and PROP inbox; **manual reflect-all** (user-initiated) triages the accumulated backlog.
 
-**Sample artifacts** (synthetic, realistic shape):
-[`session-review.md`](../tests/fixtures/real_session/session-review.md) — `hats-session-review/v1` for a single session (`hypothesis_verdicts[]`, `proposal_actions[]`, `self_problems[]`) ·
-[`HYP-001-sample.yaml`](../tests/fixtures/real_backlog/HYP-001-sample.yaml) — a hypothesis with an append-only `validation_log` ·
-[`PROP-001-sample.yaml`](../tests/fixtures/real_backlog/PROP-001-sample.yaml) — a proposal with co-sign `votes[]`. Field reference — [`tests/fixtures/real_backlog/README.md`](../tests/fixtures/real_backlog/README.md).
+**Sample artifacts** (synthetic, realistic shape): one `hats-session-review/v1` markdown [6], one hypothesis with an append-only `validation_log` [7], and one proposal with co-sign `votes[]` [8]. Field reference for both fixture trees — [9].
 
 ### Auto reflect-session (per session)
 
@@ -170,7 +164,7 @@ When HYPs and PROPs have piled up — the user runs `ai-hats reflect all`. Pre-f
 <!-- Source: docs/assets/diagrams/manual-reflect-all.d2 -->
 
 
-Full guide (policies, session-reviewer, manual triage, hypothesis workflow) — see **[how-to-feedback-loop.md](how-to-feedback-loop.md)**.
+Full guide (policies, session-reviewer, manual triage, hypothesis workflow) — see [10].
 
 ## Project structure
 
@@ -213,7 +207,7 @@ library/
     skills/         55+ skills (golang-*, terraform, ansible, observability, system-design, ...)
 ```
 
-The `core/` vs `usage/` split is informational; both are loaded by `Assembler._build_library_paths`. User overrides layer on top via `~/.ai-hats/`, `ai-hats.yaml: library_paths`, and `<project>/libraries/` — see [how-to-extend.md](how-to-extend.md).
+The `core/` vs `usage/` split is informational; both are loaded by `Assembler._build_library_paths`. User overrides layer on top via `~/.ai-hats/`, `ai-hats.yaml: library_paths`, and `<project>/libraries/` — see [11].
 
 Vendored golang-* skills carry the upstream commit SHA, LICENSE, and attribution in `metadata.yaml.upstream.*` — the foundation for a future plugin system (see HATS-050).
 
@@ -272,3 +266,27 @@ injection: |
   # ROLE: PRIMARY AUTOMATION ASSISTANT
   ...
 ```
+
+## References
+
+**[1]** — [`docs/how-to.md`](how-to.md) — `ai-hats.yaml` overlay recipes (add a skill, change provider, customizations).
+
+**[2]** — [`tests/fixtures/real_session/audit.md`](../tests/fixtures/real_session/audit.md) — synthetic per-session audit log.
+
+**[3]** — [`tests/fixtures/real_session/metrics.json`](../tests/fixtures/real_session/metrics.json) — synthetic per-session metrics file.
+
+**[4]** — [`tests/fixtures/real_session/transcript.txt`](../tests/fixtures/real_session/transcript.txt) — synthetic per-session transcript.
+
+**[5]** — [`tests/fixtures/real_session/README.md`](../tests/fixtures/real_session/README.md) — field reference for the per-session fixture tree.
+
+**[6]** — [`tests/fixtures/real_session/session-review.md`](../tests/fixtures/real_session/session-review.md) — synthetic `hats-session-review/v1` artifact (`hypothesis_verdicts[]`, `proposal_actions[]`, `self_problems[]`).
+
+**[7]** — [`tests/fixtures/real_backlog/HYP-001-sample.yaml`](../tests/fixtures/real_backlog/HYP-001-sample.yaml) — synthetic hypothesis with `validation_log`.
+
+**[8]** — [`tests/fixtures/real_backlog/PROP-001-sample.yaml`](../tests/fixtures/real_backlog/PROP-001-sample.yaml) — synthetic proposal with co-sign `votes[]`.
+
+**[9]** — [`tests/fixtures/real_backlog/README.md`](../tests/fixtures/real_backlog/README.md) — field reference for the backlog fixture tree.
+
+**[10]** — [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — policies, session-reviewer, manual triage, hypothesis workflow.
+
+**[11]** — [`docs/how-to-extend.md`](how-to-extend.md) — library layout, override precedence, recipes for your own roles / traits / rules / skills.

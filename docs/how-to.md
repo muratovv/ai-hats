@@ -4,7 +4,7 @@ A collection of common tasks you hit when wiring ai-hats into a project: extendi
 
 > Full CLI reference with descriptions and options — `ai-hats --tree` (or a subtree: `ai-hats --tree config`, `ai-hats --tree task hyp`).
 
-> All changes to `ai-hats.yaml` are applied with `ai-hats self bump` (rebuilds `CLAUDE.md` / `GEMINI.md` and `.claude/*` from the config). Built-in roles (under `library/{core,usage}/roles/` inside the installed package) should **not** be edited directly — use `customizations` (overlay) instead. To author your own roles see [how-to-extend.md](how-to-extend.md).
+> All changes to `ai-hats.yaml` are applied with `ai-hats self bump` (rebuilds `CLAUDE.md` / `GEMINI.md` and `.claude/*` from the config). Built-in roles (under `library/{core,usage}/roles/` inside the installed package) should **not** be edited directly — use `customizations` (overlay) instead. To author your own roles see [1].
 >
 > Any overlay edit can be done in two ways:
 > 1. **CLI:** `ai-hats config customize <role> --add-skill <name> | --remove-skill <name> | --add-trait <name> | --injection-append "<text>"`. The command writes into `ai-hats.yaml` itself.
@@ -211,7 +211,7 @@ Empty sections can be omitted. If `customizations.<role>` is fully empty — the
 
 ## 9. Configurable venv_path
 
-Moved to the narrative walkthrough — see [`docs/how-to-configure.md` §6](how-to-configure.md) for default vs override, ownership invariant, and the two scenarios (shared system venv, re-use a project venv).
+Moved to the narrative walkthrough — see [2] §6 for default vs override, ownership invariant, and the two scenarios (shared system venv, re-use a project venv).
 
 ---
 
@@ -229,10 +229,16 @@ Moved to the narrative walkthrough — see [`docs/how-to-configure.md` §6](how-
 
 ---
 
-## See also
+For deeper dives — first-time setup walkthrough [2], the reflect-session / reflect-all cycle [3], day-to-day backlog CLI [4], and retrospective pipeline architecture [5].
 
-- [`docs/how-to-configure.md`](how-to-configure.md) — narrative walkthrough for first-time setup (wizard, role pick, customization, feedback policy, venv).
-- [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — setup and usage of the reflect-session / reflect-all cycle (policies, hypotheses, harness validation).
-- [`docs/how-to-backlog.md`](how-to-backlog.md) — day-to-day `ai-hats task` / `task hyp` / `task proposal` recipes.
-- [`docs/how-to-extend.md`](how-to-extend.md) — shipped library layout and recipes for your own roles / traits / rules / skills.
-- [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture.
+## References
+
+**[1]** — [`docs/how-to-extend.md`](how-to-extend.md) — shipped library layout and recipes for your own roles / traits / rules / skills.
+
+**[2]** — [`docs/how-to-configure.md`](how-to-configure.md) — narrative walkthrough for first-time setup (wizard, role pick, customization, feedback policy, venv).
+
+**[3]** — [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — setup and usage of the reflect-session / reflect-all cycle (policies, hypotheses, harness validation).
+
+**[4]** — [`docs/how-to-backlog.md`](how-to-backlog.md) — day-to-day `ai-hats task` / `task hyp` / `task proposal` recipes.
+
+**[5]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture.

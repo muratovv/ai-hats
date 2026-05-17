@@ -1,6 +1,6 @@
 # How to extend ai-hats with your own components
 
-Add your own roles, traits, rules, skills, and pipelines to ai-hats — without forking the package. For `ai-hats.yaml` overlay tweaks (add a skill to an existing role, change provider, etc.) see [how-to.md](how-to.md). For implementing a custom pipeline step in Python, see [how-to-advanced.md §1](how-to-advanced.md#1-custom-pipeline-steps).
+Add your own roles, traits, rules, skills, and pipelines to ai-hats — without forking the package. For `ai-hats.yaml` overlay tweaks (add a skill to an existing role, change provider, etc.) see [1]. For implementing a custom pipeline step in Python, see [2] §1.
 
 ## The shipped library: core vs usage
 
@@ -182,8 +182,7 @@ Available step IDs match the registry under `src/ai_hats/pipeline/steps/`.
 > custom pipelines are useful mainly as scaffolding for future engine work,
 > not as a day-to-day extension point.
 
-For the step contract (inputs, outputs, failure policy) see
-[ADR-0002 — Pipeline subsystem CLI](adr/0002-pipeline-subsystem-cli.md).
+For the step contract (inputs, outputs, failure policy) see [3].
 
 ## Replacing a system role (e.g. your own auditor)
 
@@ -241,3 +240,11 @@ After `ai-hats self bump`, the composed role is materialized into your project. 
 - **Add a project-specific rule that bans `git push --force`** — make `libraries/rules/no-force-push/rule.md` with the constraint, then `ai-hats config customize <role> --add-rule no-force-push`.
 - **Tweak the injection of a built-in trait** — copy `library/usage/traits/<name>/config.yaml` into your `libraries/traits/<name>/`, edit the `injection:` block, `ai-hats self bump`. Same last-wins rule applies to traits.
 - **Share a private skill across projects** — put it under `~/.ai-hats/skills/<name>/`. Every project on your machine sees it without further config.
+
+## References
+
+**[1]** — [`docs/how-to.md`](how-to.md) — `ai-hats.yaml` overlay recipes (add a skill, change provider, switch role, project-local libraries).
+
+**[2]** — [`docs/how-to-advanced.md`](how-to-advanced.md) — advanced flows: custom pipeline steps (§1), worktree workflow (§2).
+
+**[3]** — [`docs/adr/0002-pipeline-subsystem-cli.md`](adr/0002-pipeline-subsystem-cli.md) — ADR-0002, step contract: inputs, outputs, failure policy.

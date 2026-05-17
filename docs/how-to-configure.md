@@ -287,11 +287,3 @@ Rerun `self bump` after: yaml edits, `ai-hats self update`, or any change under 
 **[6]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture and schema dispatch.
 
 **[7]** — [`library/core/roles/initial-wizard/config.yaml`](../library/core/roles/initial-wizard/config.yaml) — wizard source. If §2 drifts from this file, this file is the ground truth.
-
-[1]: glossary.md
-[2]: how-to.md
-[3]: how-to-extend.md
-[4]: how-to-feedback-loop.md
-[5]: ARCHITECTURE.md#component-model
-[6]: reflect.md
-[7]: ../library/core/roles/initial-wizard/config.yaml
