@@ -39,17 +39,19 @@ library_paths:                 # extra component sources (last wins)
 # venv_path: /opt/shared/ai-hats-venv   # optional override (see §6)
 ```
 
-| Field            | Meaning                                                                                              |
-| ---------------- | ---------------------------------------------------------------------------------------------------- |
-| `schema_version` | Config schema version. Set by init; do not edit.                                                     |
-| `provider`       | Target LLM CLI — see [1].                                                                            |
-| `active_role`    | Role injected on the next `ai-hats` launch.                                                          |
-| `default_role`   | Role used when `--role` is omitted (usually identical to `active_role`).                             |
-| `task_prefix`    | Prefix for `ai-hats task create` IDs.                                                                |
-| `customizations` | Per-role overlays — see §4.                                                                          |
-| `feedback`       | Session-retro policy and threshold — see §5.                                                         |
-| `library_paths`  | Extra directories ai-hats walks for components — see [3] for full precedence.                        |
-| `venv_path`      | Override the framework-managed venv — see §6.                                                        |
+| Field               | Meaning                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `schema_version`    | Config schema version. Set by init; do not edit.                                                              |
+| `provider`          | Target LLM CLI — see [1].                                                                                     |
+| `active_role`       | Role injected on the next `ai-hats` launch.                                                                   |
+| `default_role`      | Role used when `--role` is omitted (usually identical to `active_role`).                                      |
+| `task_prefix`       | Prefix for `ai-hats task create` IDs.                                                                         |
+| `ai_hats_dir`       | Framework state directory (library, tracker, sessions, STATE.md). Default `.agent/ai-hats`. To relocate post-init: `ai-hats config set --ai-hats-dir <PATH>` — do **not** hand-edit (it leaves orphaned files). |
+| `customizations`    | Per-role overlays — see §4.                                                                                   |
+| `feedback`          | Session-retro policy and threshold — see §5.                                                                  |
+| `library_paths`     | Extra directories ai-hats walks for components — see [3] for full precedence.                                 |
+| `venv_path`         | Override the framework-managed venv — see §6.                                                                 |
+| `manage_gitignore`  | When `true` (default) ai-hats adds `<ai_hats_dir>/` to `.gitignore` once at init. Toggle via `ai-hats config set --no-manage-gitignore`. |
 
 ---
 
@@ -64,16 +66,17 @@ cd ~/dev/my-project
 ai-hats self init
 ```
 
-The CLI writes a minimal `ai-hats.yaml` (provider, `ai_hats_dir`, `schema_version`, `task_prefix=TASK`), runs `ai-hats self update` to provision the venv, then hands off to the `initial-wizard` LLM session for six steps:
+The CLI asks for the provider, writes a minimal `ai-hats.yaml` (provider, `ai_hats_dir`, `schema_version`, `task_prefix=TASK`), runs `ai-hats self update` to provision the venv, then hands off to the `initial-wizard` LLM session for seven steps:
 
 | Step | What the wizard does                                                                                                                                                                                                                            |
 | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1    | **Language.** Asks English / Russian / other; mirrors that for the rest of the session.                                                                                                                                                          |
-| 2    | **Stack detection + role recommendation.** Reads `go.mod`, `pyproject.toml`, `setup.py`, `package.json`, `Cargo.toml`, `Makefile`. Mapping: `go.mod` → `go-dev`, `pyproject.toml`/`setup.py` → `assistant`, others → `assistant` (safe default). |
-| 3    | **Customization (optional).** Shows the role's composition (`ai-hats config status`). Offers to add / remove traits, rules, skills via `ai-hats config customize …`.                                                                              |
-| 4    | **Task-id prefix.** Asks for 3–6 uppercase letters (e.g. `ACME`). Default is `TASK`.                                                                                                                                                              |
-| 5    | **Feedback policy.** Walks the four policies (`off` / `hint` / `smart` / `always`) — see §5. Recommends `smart`.                                                                                                                                  |
-| 6    | **Finalize.** Runs `ai-hats config status` and summarizes what's in the yaml.                                                                                                                                                                     |
+| 2    | **Workspace setup (optional).** Single y/N gate; on `y` walks through `ai_hats_dir`, `venv_path`, `manage_gitignore` with trade-off explanations and applies via `ai-hats config set --ai-hats-dir / --venv / --no-manage-gitignore`. Most users skip. |
+| 3    | **Stack detection + role recommendation.** Reads `go.mod`, `pyproject.toml`, `setup.py`, `package.json`, `Cargo.toml`, `Makefile`. Mapping: `go.mod` → `go-dev`, `pyproject.toml`/`setup.py` → `assistant`, others → `assistant` (safe default). |
+| 4    | **Customization (optional).** Shows the role's composition (`ai-hats config status`). Offers to add / remove traits, rules, skills via `ai-hats config customize …`.                                                                              |
+| 5    | **Task-id prefix.** Asks for 3–6 uppercase letters (e.g. `ACME`). Default is `TASK`.                                                                                                                                                              |
+| 6    | **Feedback policy.** Walks the four policies (`off` / `hint` / `smart` / `always`) — see §5. Recommends `smart`.                                                                                                                                  |
+| 7    | **Finalize.** Runs `ai-hats config status` and summarizes what's in the yaml.                                                                                                                                                                     |
 
 > Authoritative source for the steps above is [7]. If the wizard drifts from this doc, the wizard is right — open a PR to sync the doc.
 
@@ -195,6 +198,15 @@ By default ai-hats lives in a **dedicated** venv at `<ai_hats_dir>/.venv/` (defa
 1. `AI_HATS_VENV` env var (absolute path, for tests / sandbox).
 2. `venv_path:` field in `ai-hats.yaml` (relative or absolute).
 3. Default `<ai_hats_dir>/.venv`.
+
+To set or change `venv_path` post-init:
+
+```bash
+ai-hats config set --venv ~/.venvs/myproj   # point at a custom venv
+ai-hats config set --no-venv                # reset to managed default
+```
+
+The wizard's Step 2 (workspace setup) drives the same commands interactively.
 
 ### Use case A: shared system venv
 
