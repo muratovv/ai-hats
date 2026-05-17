@@ -2,21 +2,41 @@
 
 Practical walkthrough of the `ai-hats task` CLI: the three backlog item types, their lifecycles, and the everyday commands. Audience: a project author who has installed ai-hats and wants to drive the backlog from the shell instead of memorising `ai-hats --tree task`.
 
-> Full CLI reference with all flags — `ai-hats --tree task`. Concept definitions — [13]. State-machine diagrams — [3]. This doc — recipes.
+> Full CLI reference with all flags — `ai-hats --tree task`. Concept definitions — [1]. State-machine diagrams — [2]. This doc — recipes.
 
 ---
 
 ## The three item types
 
-| Type | ID prefix | On disk | Purpose |
-|---|---|---|---|
-| Task | `HATS-NNN` | `<ai_hats_dir>/tracker/backlog/tasks/HATS-NNN/` (with `task.yaml` + optional `plan.md`) | Scoped unit of work driven through a fixed lifecycle |
-| Hypothesis | `HYP-NNN` | `<ai_hats_dir>/tracker/hypotheses/HYP-NNN.yaml` | Claim under validation — accumulates verdicts session over session |
-| Proposal | `PROP-NNN` | `<ai_hats_dir>/tracker/backlog/proposals/PROP-NNN.yaml` | Improvement idea pending triage in `reflect all` |
+| Type       | ID prefix  | On disk                                                                                 | Purpose                                                            |
+| ---------- | ---------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Task       | `HATS-NNN` | `<ai_hats_dir>/tracker/backlog/tasks/HATS-NNN/` (with `task.yaml` + optional `plan.md`) | Scoped unit of work driven through a fixed lifecycle               |
+| Hypothesis | `HYP-NNN`  | `<ai_hats_dir>/tracker/hypotheses/HYP-NNN.yaml`                                         | Claim under validation — accumulates verdicts session over session |
+| Proposal   | `PROP-NNN` | `<ai_hats_dir>/tracker/backlog/proposals/PROP-NNN.yaml`                                 | Improvement idea pending triage in `reflect all`                   |
 
 > **One rule** — all three are managed exclusively through `ai-hats task ...`. Never hand-edit the YAML; a file lock guarantees atomic writes, and direct edits will race the reflect loop.
 
-Sample artifacts: [5], [6].
+Sample artifacts: [3], [4].
+
+---
+
+## In a session: the `backlog-manager` skill
+
+You rarely run these commands by hand. Any role composed with the `backlog-manager` skill [6] — `assistant`, `architect`, `sre`, every role that owns a lifecycle — drives the backlog on your behalf in natural language. The skill knows the verbs, the state machine, and the work-log cadence.
+
+Typical in-session prompts:
+
+> "Open a task for wiring the kubernetes-ops skill into the sre role, parent HATS-200."
+>
+> "Move HATS-358 to plan and draft a plan.md."
+>
+> "File a hypothesis: filter regressions correlate with sub-agent refactors. Observation window 4 sessions."
+>
+> "Fast-close HATS-150 — already shipped on master."
+
+The agent translates each into the right CLI invocation, logs progress, and syncs `STATE.md` when needed. The recipes below are the underlying contract: read them to know **what** the agent will do; the agent handles **when** and **how**.
+
+Skill source: [6]. Discipline rule (CLI-only, log cadence, completion gate): `rule_backlog_discipline`.
 
 ---
 
@@ -65,11 +85,11 @@ ai-hats task hyp create \
     --success-criterion "zero new filter regressions in the window"
 ```
 
-The card lands `active`. Every subsequent `session-reviewer` run appends a verdict — see [1] for the auto-flow.
+The card lands `active`. Every subsequent `session-reviewer` run appends a verdict — see [5] for the auto-flow.
 
 ### d) Where PROPs come from
 
-Most proposals are filed automatically by `session-reviewer` when it hits a self-problem. You triage them in batch with `ai-hats reflect all` (see [1]). The CLI for filing one by hand:
+Most proposals are filed automatically by `session-reviewer` when it hits a self-problem. You triage them in batch with `ai-hats reflect all` (see [5]). The CLI for filing one by hand:
 
 ```bash
 ai-hats task proposal create \
@@ -86,28 +106,28 @@ ai-hats task proposal create \
 
 ### Lifecycle
 
-Happy path: `brainstorm → plan → execute → document → review → done`. Side routes: `blocked` (returnable to `plan` or `execute`), `failed` (recoverable via `brainstorm`), `cancelled` (administrative close from any non-terminal state); from `done` a reopen path to `execute` is available for finishing epic scope. Full diagram — [3].
+Happy path: `brainstorm → plan → execute → document → review → done`. Side routes: `blocked` (returnable to `plan` or `execute`), `failed` (recoverable via `brainstorm`), `cancelled` (administrative close from any non-terminal state); from `done` a reopen path to `execute` is available for finishing epic scope. Full diagram — [2].
 
-| Command | When |
-|---|---|
-| `task transition <id> plan` | requirements clear, ready to design — creates `plan.md` scaffold |
-| `task transition <id> execute` | plan approved — opens an isolated worktree on `task/hats-NNN` |
-| `task transition <id> document` | code merged, ready to capture decisions / pitfalls |
-| `task transition <id> review` | docs done, ready for review (set `--final-state` if review accepts an earlier-stage close) |
-| `task transition <id> done` | reviewer approved |
-| `task transition <id> blocked` | external dependency holding work |
-| `task transition <id> cancelled --resolution "..."` | abandoning the work; resolution is mandatory |
+| Command                                             | When                                                                                       |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `task transition <id> plan`                         | requirements clear, ready to design — creates `plan.md` scaffold                           |
+| `task transition <id> execute`                      | plan approved — opens an isolated worktree on `task/hats-NNN`                              |
+| `task transition <id> document`                     | code merged, ready to capture decisions / pitfalls                                         |
+| `task transition <id> review`                       | docs done, ready for review (set `--final-state` if review accepts an earlier-stage close) |
+| `task transition <id> done`                         | reviewer approved                                                                          |
+| `task transition <id> blocked`                      | external dependency holding work                                                           |
+| `task transition <id> cancelled --resolution "..."` | abandoning the work; resolution is mandatory                                               |
 
 ### `task create` fields
 
-| Flag | Notes |
-|---|---|
-| `--priority {low,medium,high}` | default `medium` |
-| `--tag` (repeatable) | e.g. `--tag docs --tag milestone-1.0` |
-| `--parent-task HATS-NNN` | epic → child relationship |
+| Flag                                 | Notes                                                                |
+| ------------------------------------ | -------------------------------------------------------------------- |
+| `--priority {low,medium,high}`       | default `medium`                                                     |
+| `--tag` (repeatable)                 | e.g. `--tag docs --tag milestone-1.0`                                |
+| `--parent-task HATS-NNN`             | epic → child relationship                                            |
 | `--depends-on HATS-NNN` (repeatable) | blocker — card stays out of `execute` until each blocker hits `done` |
-| `--reviewer {user,agent}` | who closes the card |
-| `--role <name>` | suggested role for the executor |
+| `--reviewer {user,agent}`            | who closes the card                                                  |
+| `--role <name>`                      | suggested role for the executor                                      |
 
 ### `task log` — work log cadence
 
@@ -149,11 +169,11 @@ ai-hats task hyp create \
     --rollback-condition "still seeing regressions despite the new tests"
 ```
 
-Status starts at `active`. Sample shape — [5].
+Status starts at `active`. Sample shape — [3].
 
 ### Verdicts (`append-verdict`)
 
-Usually written by `session-reviewer` after each session — see [1] for the auto-flow. To add a verdict by hand (e.g. while debugging the loop):
+Usually written by `session-reviewer` after each session — see [5] for the auto-flow. To add a verdict by hand (e.g. while debugging the loop):
 
 ```bash
 ai-hats task hyp append-verdict \
@@ -172,7 +192,7 @@ Verdicts: `confirmed | refuted | inconclusive | n/a`. The `n/a` verdict means th
 ai-hats task hyp show HYP-NNN          # full validation_log + exit_criteria
 ai-hats task hyp list --status active  # backlog snapshot
 
-# Manual close — usually you do this through `reflect all` (see [1]).
+# Manual close — usually you do this through `reflect all` (see [5]).
 ai-hats task hyp set-status --hyp HYP-NNN --status confirmed
 ```
 
@@ -207,34 +227,24 @@ ai-hats task proposal list --status open
 ai-hats task proposal show PROP-NNN
 ```
 
-Sample shape — [6].
+Sample shape — [4].
 
 ### Triage
 
-`ai-hats task proposal status` exists, but the routine path is `ai-hats reflect all`, which walks every open PROP, takes your decisions, and bulk-flips statuses via `ai-hats reflect commit` — see [1]. Use `task proposal status` only for stray, off-cycle flips.
+`ai-hats task proposal status` exists, but the routine path is `ai-hats reflect all`, which walks every open PROP, takes your decisions, and bulk-flips statuses via `ai-hats reflect commit` — see [5]. Use `task proposal status` only for stray, off-cycle flips.
 
 ---
 
 ## References
 
-**[1]** — [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — `reflect session` + `reflect all` workflows.
+**[1]** — [`docs/glossary.md`](glossary.md) — naming source-of-truth for ai-hats core terms (task / HYP / PROP / session / reflect).
 
-**[2]** — [`docs/how-to-configure.md`](how-to-configure.md) — initial setup, role pick, feedback policy.
+**[2]** — [`docs/ARCHITECTURE.md#backlog-state-machines`](ARCHITECTURE.md#backlog-state-machines) — FSM diagrams for tasks / HYPs / PROPs.
 
-**[3]** — [`docs/ARCHITECTURE.md#backlog-state-machines`](ARCHITECTURE.md#backlog-state-machines) — FSM diagrams for tasks / HYPs / PROPs.
+**[3]** — [`tests/fixtures/real_backlog/HYP-001-sample.yaml`](../tests/fixtures/real_backlog/HYP-001-sample.yaml) — synthetic hypothesis with `validation_log`.
 
-**[4]** — [`docs/how-to.md`](how-to.md) — `ai-hats.yaml` recipes (overlay, providers, custom skills).
+**[4]** — [`tests/fixtures/real_backlog/PROP-001-sample.yaml`](../tests/fixtures/real_backlog/PROP-001-sample.yaml) — synthetic proposal with `votes[]`.
 
-**[5]** — [`tests/fixtures/real_backlog/HYP-001-sample.yaml`](../tests/fixtures/real_backlog/HYP-001-sample.yaml) — synthetic hypothesis with `validation_log`.
+**[5]** — [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — `reflect session` + `reflect all` workflows.
 
-**[6]** — [`tests/fixtures/real_backlog/PROP-001-sample.yaml`](../tests/fixtures/real_backlog/PROP-001-sample.yaml) — synthetic proposal with `votes[]`.
-
-**[13]** — [`docs/glossary.md`](glossary.md) — naming source-of-truth for ai-hats core terms (task / HYP / PROP / session / reflect).
-
-[1]: how-to-feedback-loop.md
-[2]: how-to-configure.md
-[3]: ARCHITECTURE.md#backlog-state-machines
-[4]: how-to.md
-[5]: ../tests/fixtures/real_backlog/HYP-001-sample.yaml
-[6]: ../tests/fixtures/real_backlog/PROP-001-sample.yaml
-[13]: glossary.md
+**[6]** — [`library/core/skills/backlog-manager/SKILL.md`](../library/core/skills/backlog-manager/SKILL.md) — in-session skill that drives this CLI on behalf of any role.
