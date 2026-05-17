@@ -706,3 +706,199 @@ def test_execute_inside_linked_worktree_does_not_nest(tmp_path):
     # Assertion 3: no stray state files inside the linked worktree.
     assert not (wt_path / ".agent" / "worktree.json").exists()
     assert not (wt_path / ".agent" / "worktrees").exists()
+
+
+# -- HATS-371: linking, fast-close, force-transition ----------------------
+
+
+def test_close_from_brainstorm_sets_done(mgr):
+    mgr.create_task("T-1", "Shipped on master")
+    t = mgr.close_task("T-1", "shipped in 6e7ddd5")
+    assert t.state == TaskState.DONE
+    assert t.resolution == "shipped in 6e7ddd5"
+    assert t.completed_at != ""
+    assert any("Fast-closed from brainstorm" in e.message for e in t.work_log)
+
+
+def test_close_from_plan_sets_done(mgr):
+    mgr.create_task("T-1", "Plan then fast-close")
+    mgr.transition("T-1", TaskState.PLAN)
+    t = mgr.close_task("T-1", "subsumed by T-2")
+    assert t.state == TaskState.DONE
+    assert any("Fast-closed from plan" in e.message for e in t.work_log)
+
+
+def test_close_rejects_from_execute(mgr):
+    """Fast-close only makes sense from brainstorm/plan — execute has a worktree."""
+    mgr.create_task("T-1", "Has worktree")
+    mgr.transition("T-1", TaskState.PLAN)
+    # Force into execute without strict plan check (fixture sets it false anyway).
+    mgr.transition("T-1", TaskState.EXECUTE)
+    with pytest.raises(ValueError, match="brainstorm or plan"):
+        mgr.close_task("T-1", "nope")
+
+
+def test_close_requires_resolution(mgr):
+    mgr.create_task("T-1", "needs reason")
+    with pytest.raises(ValueError, match="non-empty resolution"):
+        mgr.close_task("T-1", "")
+
+
+def test_close_yaml_byte_clean_for_unrelated_fields(mgr):
+    """Closing a task must not introduce empty link fields into YAML."""
+    mgr.create_task("T-1", "fast close")
+    mgr.close_task("T-1", "done")
+    yaml_text = (mgr.tasks_dir / "T-1" / "task.yaml").read_text()
+    assert "related:" not in yaml_text
+    assert "see_also:" not in yaml_text
+    assert "folded_into:" not in yaml_text
+
+
+def test_force_transition_skips_guard(mgr):
+    """plan → brainstorm is normally invalid; --force allows it."""
+    mgr.create_task("T-1", "rollback me")
+    mgr.transition("T-1", TaskState.PLAN)
+    assert mgr.get_task("T-1").state == TaskState.PLAN
+    t = mgr.transition(
+        "T-1", TaskState.BRAINSTORM, force=True, reason="plan started by mistake"
+    )
+    assert t.state == TaskState.BRAINSTORM
+    assert any(
+        "Forced transition plan → brainstorm" in e.message for e in t.work_log
+    )
+
+
+def test_force_requires_reason(mgr):
+    mgr.create_task("T-1", "need reason")
+    mgr.transition("T-1", TaskState.PLAN)
+    with pytest.raises(ValueError, match="reason"):
+        mgr.transition("T-1", TaskState.BRAINSTORM, force=True, reason="")
+
+
+def test_force_same_state_rejected(mgr):
+    mgr.create_task("T-1", "already there")
+    with pytest.raises(ValueError, match="already in state"):
+        mgr.transition(
+            "T-1", TaskState.BRAINSTORM, force=True, reason="oops"
+        )
+
+
+def test_add_link_related_is_bidirectional(mgr):
+    mgr.create_task("T-1", "A")
+    mgr.create_task("T-2", "B")
+    mgr.add_link("T-1", "T-2", link_type="related")
+    a = mgr.get_task("T-1")
+    b = mgr.get_task("T-2")
+    assert a.related == ["T-2"]
+    assert b.related == ["T-1"]
+
+
+def test_add_link_see_also_is_bidirectional(mgr):
+    mgr.create_task("T-1", "A")
+    mgr.create_task("T-2", "B")
+    mgr.add_link("T-1", "T-2", link_type="see-also")
+    assert mgr.get_task("T-1").see_also == ["T-2"]
+    assert mgr.get_task("T-2").see_also == ["T-1"]
+
+
+def test_add_link_fold_is_directional(mgr):
+    mgr.create_task("T-1", "Folded")
+    mgr.create_task("T-2", "Keeper")
+    mgr.add_link("T-1", "T-2", link_type="fold")
+    assert mgr.get_task("T-1").folded_into == "T-2"
+    assert mgr.get_task("T-2").folded_into == ""
+
+
+def test_add_link_fold_refuses_overwrite(mgr):
+    mgr.create_task("T-1", "Folded")
+    mgr.create_task("T-2", "First keeper")
+    mgr.create_task("T-3", "Second keeper")
+    mgr.add_link("T-1", "T-2", link_type="fold")
+    with pytest.raises(ValueError, match="already folded into"):
+        mgr.add_link("T-1", "T-3", link_type="fold")
+
+
+def test_add_link_self_rejected(mgr):
+    mgr.create_task("T-1", "A")
+    with pytest.raises(ValueError, match="link a task to itself"):
+        mgr.add_link("T-1", "T-1")
+
+
+def test_add_link_unknown_type_rejected(mgr):
+    mgr.create_task("T-1", "A")
+    mgr.create_task("T-2", "B")
+    with pytest.raises(ValueError, match="Unknown link type"):
+        mgr.add_link("T-1", "T-2", link_type="bogus")
+
+
+def test_add_link_unknown_target_rejected(mgr):
+    mgr.create_task("T-1", "A")
+    with pytest.raises(ValueError, match="not found"):
+        mgr.add_link("T-1", "T-99")
+
+
+def test_add_link_idempotent(mgr):
+    mgr.create_task("T-1", "A")
+    mgr.create_task("T-2", "B")
+    mgr.add_link("T-1", "T-2")
+    mgr.add_link("T-1", "T-2")  # second call: must not duplicate
+    assert mgr.get_task("T-1").related == ["T-2"]
+
+
+def test_remove_link_related(mgr):
+    mgr.create_task("T-1", "A")
+    mgr.create_task("T-2", "B")
+    mgr.add_link("T-1", "T-2")
+    mgr.remove_link("T-1", "T-2")
+    assert mgr.get_task("T-1").related == []
+    assert mgr.get_task("T-2").related == []
+
+
+def test_remove_link_fold(mgr):
+    mgr.create_task("T-1", "A")
+    mgr.create_task("T-2", "B")
+    mgr.add_link("T-1", "T-2", link_type="fold")
+    mgr.remove_link("T-1", "T-2", link_type="fold")
+    assert mgr.get_task("T-1").folded_into == ""
+
+
+def test_remove_link_no_op_on_absent(mgr):
+    mgr.create_task("T-1", "A")
+    mgr.create_task("T-2", "B")
+    # Never linked — must not raise.
+    mgr.remove_link("T-1", "T-2")
+    assert mgr.get_task("T-1").related == []
+
+
+def test_find_subsumed_by(mgr):
+    mgr.create_task("T-1", "Folded into 3")
+    mgr.create_task("T-2", "Folded into 3 also")
+    mgr.create_task("T-3", "Keeper")
+    mgr.add_link("T-1", "T-3", link_type="fold")
+    mgr.add_link("T-2", "T-3", link_type="fold")
+    subsumed = mgr.find_subsumed_by("T-3")
+    assert set(subsumed) == {"T-1", "T-2"}
+
+
+def test_find_subsumed_by_empty_when_none(mgr):
+    mgr.create_task("T-1", "Lonely")
+    assert mgr.find_subsumed_by("T-1") == []
+
+
+def test_link_fields_byte_clean_when_empty(mgr):
+    mgr.create_task("T-1", "No links")
+    yaml_text = (mgr.tasks_dir / "T-1" / "task.yaml").read_text()
+    assert "related" not in yaml_text
+    assert "see_also" not in yaml_text
+    assert "folded_into" not in yaml_text
+
+
+def test_link_round_trip_through_yaml(mgr):
+    mgr.create_task("T-1", "A")
+    mgr.create_task("T-2", "B")
+    mgr.add_link("T-1", "T-2", link_type="related")
+    mgr.add_link("T-1", "T-2", link_type="see-also")
+    # Reload from disk and verify the fields stuck.
+    a = mgr.get_task("T-1")
+    assert a.related == ["T-2"]
+    assert a.see_also == ["T-2"]

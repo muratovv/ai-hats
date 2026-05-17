@@ -760,6 +760,9 @@ class TaskCard(_YamlModel):
             "parent_task",
             "subtasks",
             "depends_on",
+            "related",
+            "see_also",
+            "folded_into",
             "tags",
             "work_log",
             "final_state",
@@ -781,6 +784,9 @@ class TaskCard(_YamlModel):
     parent_task: str = ""
     subtasks: list[str] = Field(default_factory=list)
     depends_on: list[str] = Field(default_factory=list)
+    related: list[str] = Field(default_factory=list)
+    see_also: list[str] = Field(default_factory=list)
+    folded_into: str = ""
     tags: list[str] = Field(default_factory=list)
     work_log: list[WorkLogEntry] = Field(default_factory=list)
     final_state: str = ""
@@ -875,6 +881,13 @@ class TaskCard(_YamlModel):
         # noise in diffs). Cards with real blockers still serialize as expected.
         if self.depends_on:
             d["depends_on"] = self.depends_on
+        # Same byte-clean rule for the HATS-371 link fields — only emit when set.
+        if self.related:
+            d["related"] = self.related
+        if self.see_also:
+            d["see_also"] = self.see_also
+        if self.folded_into:
+            d["folded_into"] = self.folded_into
         # Round-trip unknown fields verbatim. Known fields take precedence in
         # case of accidental collision (extras should never contain known keys
         # since _capture_extras filters them out, but we defend against direct

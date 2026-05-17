@@ -121,13 +121,13 @@ The framework's backlog lives in three parallel state machines: tasks (`HATS-NNN
 <!-- Sources: docs/assets/diagrams/backlog-{task,hyp,prop}-fsm.d2 -->
 
 
-- **Task (`HATS-NNN`)** — a unit of planned work. Happy path — the fixed pipeline `brainstorm → plan → execute → document → review → done` without skipping states. Side routes: `blocked` (returnable to `plan` or `execute`), `failed` (recoverable via `brainstorm`), `cancelled` (administrative close from any non-terminal state), and from `done` a reopen path to `execute` is available for finishing epic scope. On the transition to `plan` a `plan.md` scaffold is created; the work log is written with session tracking; a file lock protects against race conditions.
+- **Task (`HATS-NNN`)** — a unit of planned work. Happy path — the fixed pipeline `brainstorm → plan → execute → document → review → done` without skipping states. Side routes: `blocked` (returnable to `plan` or `execute`), `failed` (recoverable via `brainstorm`), `cancelled` (administrative close from any non-terminal state), and from `done` a reopen path to `execute` is available for finishing epic scope. Shortcuts: `ai-hats task close <id> --resolution "..."` fast-closes a `brainstorm`/`plan` task straight to `done` when the work shipped on master (no worktree theatre); `ai-hats task transition <id> <state> --force --reason "..."` bypasses the FSM guard for corrective overrides (e.g. undo a stray `plan` transition) and records the reason in `work_log`. Cross-references between cards live in `related: []`, `see_also: []`, and `folded_into: <id>` fields, managed via `ai-hats task link`. On the transition to `plan` a `plan.md` scaffold is created; the work log is written with session tracking; a file lock protects against race conditions.
 - **Hypothesis (`HYP-NNN`)** — a claim about system or process behavior. Stays `active` while sessions accumulate verdicts in `validation_log`; closes into `confirmed`, `refuted`, or `stalled` per `exit_criteria`. Verdicts are written by reflect-session (see below).
 - **Proposal (`PROP-NNN`)** — an improvement suggestion: either from reflect-session on self-problem, or filed by hand. Stays `open` until triaged in `reflect all` → `accepted` / `rejected` / `deferred` / `duplicate`.
 
 ### Searching tasks
 
-`--search` accepts a regex (case-insensitive) and matches against id, title, description, tags, parent_task, and depends_on:
+`--search` accepts a regex (case-insensitive) and matches against id, title, description, tags, parent_task, depends_on, related, see_also, and folded_into:
 
 ```bash
 ai-hats task list --search epic              # all epics (by tag or title)

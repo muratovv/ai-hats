@@ -174,6 +174,9 @@ class TaskManager:
         task_id: str,
         new_state: TaskState,
         resolution: str | None = None,
+        *,
+        force: bool = False,
+        reason: str | None = None,
     ) -> TaskCard:
         """Transition a task to a new state with file-lock protection.
 
@@ -182,6 +185,13 @@ class TaskManager:
         enforces that ``resolution`` is provided when ``new_state`` is
         CANCELLED; the manager itself is permissive (policy stays at the
         edge, not duplicated here).
+
+        ``force=True`` bypasses the FSM guard for corrective transitions
+        (e.g. ``plan → brainstorm`` when planning was started by mistake).
+        ``reason`` is required when ``force`` is set and is recorded in
+        ``work_log``. State-specific side effects (worktree setup/teardown,
+        plan scaffold) still fire based on ``new_state`` — ``--force`` only
+        relaxes the guard, not the post-transition machinery.
         """
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -191,8 +201,21 @@ class TaskManager:
             if task is None:
                 raise ValueError(f"Task '{task_id}' not found")
 
+            if force and not (reason and reason.strip()):
+                raise ValueError("force=True requires a non-empty reason")
+
             old_state = task.state
-            task.transition_to(new_state)
+            if force:
+                if old_state == new_state:
+                    raise ValueError(
+                        f"Task '{task_id}' is already in state '{new_state.value}'"
+                    )
+                task.state = new_state
+                task.log_work(
+                    f"Forced transition {old_state.value} → {new_state.value}: {reason}"
+                )
+            else:
+                task.transition_to(new_state)
             task.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             if resolution is not None:
                 task.resolution = resolution
@@ -328,6 +351,234 @@ class TaskManager:
             self._save_task(task)
 
         return task
+
+    def close_task(self, task_id: str, resolution: str) -> TaskCard:
+        """Fast-close: ``brainstorm | plan → done`` with mandatory resolution.
+
+        Skips the worktree theatre — there is no worktree in brainstorm/plan,
+        and the work was shipped on master out-of-band. Records the
+        resolution and a work_log entry so the close stays auditable.
+
+        Refuses to close from execute/document/review (those have real
+        worktree state and should walk the regular ``transition done`` path)
+        and from terminal states (done/failed/cancelled).
+        """
+        if not (resolution and resolution.strip()):
+            raise ValueError("close_task requires a non-empty resolution")
+        lock_path = self.tasks_dir / task_id / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with FileLock(str(lock_path)):
+            task = self.get_task(task_id)
+            if task is None:
+                raise ValueError(f"Task '{task_id}' not found")
+
+            if task.state not in (TaskState.BRAINSTORM, TaskState.PLAN):
+                raise ValueError(
+                    f"close is only valid from brainstorm or plan "
+                    f"(current: {task.state.value}). "
+                    "Use `task transition <id> done` from review, "
+                    "or `--force` for corrective overrides."
+                )
+
+            old_state = task.state
+            task.state = TaskState.DONE
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            task.completed_at = now
+            task.updated = now
+            task.resolution = resolution
+            task.log_work(f"Fast-closed from {old_state.value}: {resolution}")
+            self._save_task(task)
+            self._update_indexes()
+
+        return task
+
+    # Link types accepted by ``add_link`` / ``remove_link``. Centralised so the
+    # CLI choice list and the dispatch table stay in sync.
+    LINK_TYPES: tuple[str, ...] = ("related", "see-also", "fold")
+
+    def add_link(
+        self,
+        from_id: str,
+        to_id: str,
+        link_type: str = "related",
+    ) -> tuple[TaskCard, TaskCard]:
+        """Create a cross-reference between two task cards.
+
+        - ``related`` / ``see-also``: symmetric — written to both cards.
+        - ``fold``: directional — ``from_id`` is folded into ``to_id``.
+          Sets ``from.folded_into = to_id``. The inverse "Subsumed by"
+          relation is computed on read via :meth:`find_subsumed_by`.
+
+        Refuses self-links and (for ``fold``) overwriting an existing
+        ``folded_into`` — the caller should ``remove_link`` first.
+        """
+        if link_type not in self.LINK_TYPES:
+            raise ValueError(
+                f"Unknown link type '{link_type}'. "
+                f"Valid: {list(self.LINK_TYPES)}"
+            )
+        if from_id == to_id:
+            raise ValueError("Cannot link a task to itself")
+
+        a = self.get_task(from_id)
+        if a is None:
+            raise ValueError(f"Task '{from_id}' not found")
+        b = self.get_task(to_id)
+        if b is None:
+            raise ValueError(f"Task '{to_id}' not found")
+
+        # Two-card writes don't share a single lock — we take both serially,
+        # smaller-ID-first to avoid deadlocks under concurrent link/unlink.
+        ids_sorted = sorted([from_id, to_id])
+        lock_a = self.tasks_dir / ids_sorted[0] / ".lock"
+        lock_b = self.tasks_dir / ids_sorted[1] / ".lock"
+        lock_a.parent.mkdir(parents=True, exist_ok=True)
+        lock_b.parent.mkdir(parents=True, exist_ok=True)
+
+        with FileLock(str(lock_a)), FileLock(str(lock_b)):
+            a = self.get_task(from_id)
+            b = self.get_task(to_id)
+            if a is None or b is None:
+                raise ValueError("Task disappeared during link")
+
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            if link_type == "fold":
+                if a.folded_into and a.folded_into != to_id:
+                    raise ValueError(
+                        f"'{from_id}' is already folded into "
+                        f"'{a.folded_into}'. Remove that link first."
+                    )
+                a.folded_into = to_id
+                a.updated = now
+                self._save_task(a)
+            elif link_type == "related":
+                changed = False
+                if to_id not in a.related:
+                    a.related.append(to_id)
+                    a.updated = now
+                    changed = True
+                if from_id not in b.related:
+                    b.related.append(from_id)
+                    b.updated = now
+                    changed = True
+                if changed:
+                    self._save_task(a)
+                    self._save_task(b)
+            else:  # see-also
+                changed = False
+                if to_id not in a.see_also:
+                    a.see_also.append(to_id)
+                    a.updated = now
+                    changed = True
+                if from_id not in b.see_also:
+                    b.see_also.append(from_id)
+                    b.updated = now
+                    changed = True
+                if changed:
+                    self._save_task(a)
+                    self._save_task(b)
+
+            self._update_indexes()
+            return a, b
+
+    def remove_link(
+        self,
+        from_id: str,
+        to_id: str,
+        link_type: str = "related",
+    ) -> tuple[TaskCard, TaskCard]:
+        """Inverse of :meth:`add_link`. Silently no-ops if the link is absent."""
+        if link_type not in self.LINK_TYPES:
+            raise ValueError(
+                f"Unknown link type '{link_type}'. "
+                f"Valid: {list(self.LINK_TYPES)}"
+            )
+        a = self.get_task(from_id)
+        if a is None:
+            raise ValueError(f"Task '{from_id}' not found")
+        b = self.get_task(to_id)
+        if b is None:
+            raise ValueError(f"Task '{to_id}' not found")
+
+        ids_sorted = sorted([from_id, to_id])
+        lock_a = self.tasks_dir / ids_sorted[0] / ".lock"
+        lock_b = self.tasks_dir / ids_sorted[1] / ".lock"
+        lock_a.parent.mkdir(parents=True, exist_ok=True)
+        lock_b.parent.mkdir(parents=True, exist_ok=True)
+
+        with FileLock(str(lock_a)), FileLock(str(lock_b)):
+            a = self.get_task(from_id)
+            b = self.get_task(to_id)
+            if a is None or b is None:
+                raise ValueError("Task disappeared during unlink")
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            if link_type == "fold":
+                if a.folded_into == to_id:
+                    a.folded_into = ""
+                    a.updated = now
+                    self._save_task(a)
+            elif link_type == "related":
+                changed = False
+                if to_id in a.related:
+                    a.related = [x for x in a.related if x != to_id]
+                    a.updated = now
+                    changed = True
+                if from_id in b.related:
+                    b.related = [x for x in b.related if x != from_id]
+                    b.updated = now
+                    changed = True
+                if changed:
+                    self._save_task(a)
+                    self._save_task(b)
+            else:  # see-also
+                changed = False
+                if to_id in a.see_also:
+                    a.see_also = [x for x in a.see_also if x != to_id]
+                    a.updated = now
+                    changed = True
+                if from_id in b.see_also:
+                    b.see_also = [x for x in b.see_also if x != from_id]
+                    b.updated = now
+                    changed = True
+                if changed:
+                    self._save_task(a)
+                    self._save_task(b)
+
+            self._update_indexes()
+            return a, b
+
+    def find_subsumed_by(self, task_id: str) -> list[str]:
+        """Return IDs of tasks whose ``folded_into`` points at ``task_id``.
+
+        Cheap regex scan over the task files — avoids a full YAML parse for
+        every card on a ``task show`` render. Falls back to a full load if
+        the regex misses (e.g. quoted scalar layout).
+        """
+        if not self.tasks_dir.exists():
+            return []
+        pattern = re.compile(
+            rf"^folded_into:\s*['\"]?{re.escape(task_id)}['\"]?\s*$",
+            re.MULTILINE,
+        )
+        subsumed: list[str] = []
+        for task_dir in sorted(self.tasks_dir.iterdir()):
+            task_file = task_dir / "task.yaml"
+            if not task_file.exists():
+                continue
+            try:
+                text = task_file.read_text()
+            except OSError:
+                continue
+            if pattern.search(text):
+                # Read the id from the same file (don't trust dir name —
+                # users may rename dirs).
+                m = re.search(r"^id:\s*['\"]?([^'\"\n]+)['\"]?\s*$", text, re.MULTILINE)
+                if m:
+                    subsumed.append(m.group(1).strip())
+        return subsumed
 
     def list_tasks(
         self,
