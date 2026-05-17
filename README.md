@@ -146,7 +146,7 @@ Full reference — `ai-hats --tree`.
 
 ## Customization
 
-The shipped library splits into `library/core/` (engine fundament) and `library/usage/` (curated content). To override a built-in role, add your own skill / rule / trait, or replace a system role like `session-reviewer` — see **[docs/extending.md](docs/extending.md)** for the override-precedence chain and worked examples.
+The shipped library splits into `library/core/` (engine fundament) and `library/usage/` (curated content). To override a built-in role, add your own skill / rule / trait, or replace a system role like `session-reviewer` — see **[docs/how-to-extend.md](docs/how-to-extend.md)** for the override-precedence chain and worked examples.
 
 ## Architecture
 

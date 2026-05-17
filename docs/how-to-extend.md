@@ -1,13 +1,13 @@
-# Extending ai-hats: your own roles, traits, rules, skills
+# How to extend ai-hats with your own components
 
-This is the guide for adding your own content to ai-hats — roles, traits, rules, skills — without touching the installed package. For `ai-hats.yaml` overlay tweaks (add a skill to an existing role, change provider, etc.) see [how-to.md](how-to.md).
+Add your own roles, traits, rules, skills, and pipelines to ai-hats — without forking the package. For `ai-hats.yaml` overlay tweaks (add a skill to an existing role, change provider, etc.) see [how-to.md](how-to.md). For implementing a custom pipeline step in Python, see [how-to-custom-pipeline-steps.md](how-to-custom-pipeline-steps.md).
 
 ## The shipped library: core vs usage
 
 When you `pip install ai-hats`, two layers ship as built-in content:
 
-- **`library/core/`** — engine fundament. System roles (`session-reviewer`, `auditor-for-role`, `judge-for-role`, `hypothesis-intake`, `test-agent`, `initial-wizard`), base traits (`trait-base`, `trait-agent`, `trait-analyst-base`, `base-judge`, `base-auditor`, `trait-reflect-mode`), global rules, foundational skills (`backlog-manager`, `git-mastery`, `context-*`, `review-*`, etc.), and all reflect-pipeline YAML. Without these, `ai-hats init` / `ai-hats self bump` / reflect pipelines do not work.
-- **`library/usage/`** — curated content catalog. Opinionated roles (`assistant`, `architect`, `judge`, `sre`, `go-dev`, `go-dev-full`), domain traits (`trait-se-mindset`, `dev::python`, `dev::shell`, `dev::go-*`, `env::proxmox`, …), and ~55 optional skills (golang, terraform, ansible, observability, system-design, …).
+- **`library/core/`** — engine fundament. System roles invoked by name from engine code (`initial-wizard`, `session-reviewer`, `auditor-for-role`, `judge`, `judge-for-role`, `hypothesis-intake`, `test-agent`), base traits (`trait-base`, `trait-agent`, `trait-analyst-base`, `base-judge`, `base-auditor`, `trait-reflect-mode`), global rules, foundational skills (`backlog-manager`, `git-mastery`, `context-*`, `review-*`, etc.), and all reflect-pipeline YAML. Without these, `ai-hats init` / `ai-hats self bump` / reflect pipelines do not work.
+- **`library/usage/`** — curated content catalog. Opinionated roles (`assistant`, `architect`, `sre`, `go-dev`, `go-dev-full`), domain traits (`trait-se-mindset`, `dev::python`, `dev::shell`, `dev::go-*`, `env::proxmox`, …), and ~55 optional skills (golang, terraform, ansible, observability, system-design, …).
 
 The split is informational — both layers are loaded at runtime. You can override either from your own library path.
 
@@ -152,6 +152,38 @@ MD
 ```
 
 Attach via `composition.skills` in a role or trait.
+
+## Custom pipelines (advanced)
+
+Pipelines are YAML graphs of steps that wire together composition, prompt
+resolution, provider launch, logging, and reflect-specific glue. The built-in
+pipelines (`execute`, `human`, `reflect-{session,role,all,issue}`) live in
+`library/core/pipelines/` and are invoked by the CLI behind the scenes.
+
+You can drop your own pipeline YAML under any library path:
+
+```yaml
+# libraries/pipelines/smoke.yaml
+name: smoke
+steps:
+  - id: compose_role
+  - id: resolve_prompt
+    params: {default_text: "ping"}
+  - id: launch_provider
+```
+
+Available step IDs match the registry under `src/ai_hats/pipeline/steps/`.
+
+> **Limitation today**: there is no public CLI flag to invoke an arbitrary
+> custom pipeline by name. Custom pipelines can only be launched from Python
+> via `PipelineHarness("smoke", project_dir).run({...})`. A public
+> `ai-hats pipeline run <name>` command is planned under HATS-268
+> (epic HATS-095: developer experience & tooling). Until that lands,
+> custom pipelines are useful mainly as scaffolding for future engine work,
+> not as a day-to-day extension point.
+
+For the step contract (inputs, outputs, failure policy) see
+[ADR-0002 — Pipeline subsystem CLI](adr/0002-pipeline-subsystem-cli.md).
 
 ## Replacing a system role (e.g. your own auditor)
 
