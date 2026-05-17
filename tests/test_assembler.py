@@ -644,3 +644,97 @@ def test_tool_call_hygiene_is_always_on():
     prompt = ClaudeProvider().build_system_prompt(result)
     assert "dev_rule_tool_call_hygiene" in prompt
     assert "Tool-Call Hygiene" in prompt
+
+
+# --------------------------------------------------------------------- #
+# HATS-380 — `<ai_hats_dir>` placeholder must be expanded before reaching
+# the agent (skill bodies, rule bodies, role/trait injection).
+# --------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def project_with_placeholder_library(tmp_path):
+    """Library where every injectable surface embeds `<ai_hats_dir>`."""
+    project = tmp_path / "project"
+    project.mkdir()
+    lib = tmp_path / "lib"
+
+    rule_dir = lib / "rules" / "ph_rule"
+    rule_dir.mkdir(parents=True)
+    (rule_dir / "rule.md").write_text("Rule body refs <ai_hats_dir>/state.\n")
+    (rule_dir / "metadata.yaml").write_text("name: ph_rule\n")
+
+    skill_dir = lib / "skills" / "ph_skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: ph_skill\ndescription: ph\n---\n"
+        "Write reports to <ai_hats_dir>/sessions/retros/.\n"
+    )
+
+    trait_dir = lib / "traits" / "trait-ph"
+    trait_dir.mkdir(parents=True)
+    (trait_dir / "config.yaml").write_text(
+        "name: trait-ph\ninjection: 'Trait sees <ai_hats_dir>/tracker.'\n"
+    )
+
+    role_dir = lib / "roles" / "ph-role"
+    role_dir.mkdir(parents=True)
+    (role_dir / "config.yaml").write_text(
+        "name: ph-role\n"
+        "priorities: [Quality]\n"
+        "composition:\n"
+        "  traits: [trait-ph]\n"
+        "  rules: [ph_rule]\n"
+        "  skills: [ph_skill]\n"
+        "injection: 'Role writes to <ai_hats_dir>/sessions/audits/.'\n"
+    )
+
+    config = ProjectConfig(provider="claude", library_paths=[str(lib)])
+    config.save(project / "ai-hats.yaml")
+    return project, lib
+
+
+def _assert_no_literal_placeholder(*paths: Path) -> None:
+    offenders = [p for p in paths if p.is_file() and "<ai_hats_dir>" in p.read_text()]
+    assert not offenders, f"placeholder leaked into: {offenders}"
+
+
+def test_canonical_dir_has_no_literal_placeholder(project_with_placeholder_library):
+    """Top-level canonical files (priorities/role/traits/rules/skills_index/imports)
+    are the ones imported by `./CLAUDE.md`; the `library/` mirror is on-disk
+    source-of-truth and intentionally preserves placeholders."""
+    project, lib = project_with_placeholder_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("ph-role", provider_name="claude")
+
+    canonical = project / ".agent" / "ai-hats"
+    surfaces = [
+        canonical / "priorities.md",
+        canonical / "role.md",
+        canonical / "skills_index.md",
+        canonical / "imports.md",
+        *(canonical / "traits").glob("*.md"),
+        *(canonical / "rules").glob("*.md"),
+    ]
+    _assert_no_literal_placeholder(*surfaces)
+
+    # Spot-check: substitution actually landed.
+    role_md = (canonical / "role.md").read_text()
+    assert ".agent/ai-hats/sessions/audits/" in role_md
+
+
+def test_provider_skills_export_has_no_literal_placeholder(
+    project_with_placeholder_library,
+):
+    """`.claude/skills/<name>/SKILL.md` must be expanded after export_skills."""
+    project, lib = project_with_placeholder_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("ph-role", provider_name="claude")
+
+    skill_md = project / ".claude" / "skills" / "ph_skill" / "SKILL.md"
+    assert skill_md.exists()
+    content = skill_md.read_text()
+    assert "<ai_hats_dir>" not in content
+    assert ".agent/ai-hats/sessions/retros/" in content
