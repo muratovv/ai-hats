@@ -1,6 +1,6 @@
 # How to extend ai-hats with your own components
 
-Add your own roles, traits, rules, skills, and pipelines to ai-hats — without forking the package. For `ai-hats.yaml` overlay tweaks (add a skill to an existing role, change provider, etc.) see [how-to.md](how-to.md). For implementing a custom pipeline step in Python, see [how-to-custom-pipeline-steps.md](how-to-custom-pipeline-steps.md).
+Add your own roles, traits, rules, skills, and pipelines to ai-hats — without forking the package. For `ai-hats.yaml` overlay tweaks (add a skill to an existing role, change provider, etc.) see [how-to.md](how-to.md). For implementing a custom pipeline step in Python, see [how-to-advanced.md §1](how-to-advanced.md#1-custom-pipeline-steps).
 
 ## The shipped library: core vs usage
 

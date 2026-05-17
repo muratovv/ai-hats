@@ -124,7 +124,7 @@ Eight top-level groups:
 | `self`    | Tool lifecycle: init / bump / update / clean / rollback                 |
 | `session` | Observability: list / show / audit / retro for sessions                 |
 | `task`    | Backlog: task / hyp / proposal cards with a state machine — recipes in **[docs/how-to-backlog.md](docs/how-to-backlog.md)** |
-| `wt`      | Git worktrees: create / merge / discard / exec / env                    |
+| `wt`      | Git worktrees: create / merge / discard / exec / env — recipes in **[docs/how-to-advanced.md §2](docs/how-to-advanced.md#2-worktree-workflow)** |
 
 Common scenarios:
 
@@ -149,6 +149,8 @@ Full reference — `ai-hats --tree`.
 ## Customization
 
 The shipped library splits into `library/core/` (engine fundament) and `library/usage/` (curated content). To override a built-in role, add your own skill / rule / trait, or replace a system role like `session-reviewer` — see **[docs/how-to-extend.md](docs/how-to-extend.md)** for the override-precedence chain and worked examples.
+
+Advanced flows — custom pipeline steps, isolated worktrees, parallel sub-agents — live in **[docs/how-to-advanced.md](docs/how-to-advanced.md)**.
 
 ## Architecture
 
