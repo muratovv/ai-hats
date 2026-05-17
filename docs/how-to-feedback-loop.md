@@ -15,17 +15,11 @@ The session-end retrospective is **a single LLM call** under the `session-review
 
 ## Concept minimum
 
-| Entity                  | Where it lives                                      | Schema / role                                     | Who writes                                   |
-| ----------------------- | --------------------------------------------------- | ------------------------------------------------- | -------------------------------------------- |
-| **Session**             | `.gitlog/session_<id>/`                             | `audit.md` + `metrics.json` + `transcript.txt`    | runtime — see [11]                           |
-| **HYP** (hypothesis)    | `.agent/hypotheses/HYP-NNN.yaml`                    | human-readable YAML                               | human or agent (via CLI)                     |
-| **PROP** (proposal)     | `.agent/backlog/proposals/PROP-NNN.yaml`            | human-readable YAML                               | `session-reviewer` on self-problem, or human |
-| **SessionReview**       | `.agent/retrospectives/sessions/<id>.md`            | `hats-session-review/v1` (one artifact, one call) | `session-reviewer` role                      |
-| **Reflect-all handoff** | `.agent/retrospectives/reflect-all/<ts>-handoff.md` | markdown pointer doc                              | `ai-hats reflect all` pre-flight             |
+Core terms (**session**, **HYP**, **PROP**, **SessionReview**, **JudgeReport**) are defined in [13]. This section adds the loop-specific pieces that the glossary doesn't cover.
 
 > Sample artifacts (synthetic but realistic shape): [4], [5], [6].
 
-**Hypothesis** — a YAML with `success_criterion`, `observation_window`, `exit_criteria`. It stays in status `active` until it accumulates enough verdicts in `validation_log` to transition to `confirmed` / `refuted` / `stalled`.
+**Reflect-all handoff** — `<ai_hats_dir>/sessions/retros/reflect-all/<ts>-handoff.md`. A markdown pointer doc the pre-flight of `ai-hats reflect all` writes for the `judge` LLM to read.
 
 **Verdict** — one entry in a hypothesis's `validation_log`:
 
@@ -324,6 +318,8 @@ Worked example: the synthetic HYP fixture shows a hypothesis after two appended 
 
 **[12]** — [`docs/how-to.md`](how-to.md) — general `ai-hats.yaml` recipes.
 
+**[13]** — [`docs/glossary.md`](glossary.md) — naming source-of-truth for ai-hats core terms.
+
 [1]: reflect.md
 [2]: ARCHITECTURE.md#reflection-loop
 [3]: ARCHITECTURE.md#backlog-state-machines
@@ -336,3 +332,4 @@ Worked example: the synthetic HYP fixture shows a hypothesis after two appended 
 [10]: ../library/core/skills/review-proposal/SKILL.md
 [11]: ARCHITECTURE.md#session-lifecycle
 [12]: how-to.md
+[13]: glossary.md

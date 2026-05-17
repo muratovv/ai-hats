@@ -46,6 +46,8 @@ roles/assistant ── trait-base + trait-agent + dev::python
                    └── injection → GEMINI.md / CLAUDE.md
 ```
 
+> Names and core terms (role, session, reflect, backlog, …) — see [docs/glossary.md](docs/glossary.md).
+
 ## Quick start
 
 A bash launcher in `~/.local/bin/ai-hats` (one-time per host) plus a per-project venv in `<ai_hats_dir>/.venv/`. Get help for any command with `ai-hats --help`. View the full CLI tree with `ai-hats --tree`.
