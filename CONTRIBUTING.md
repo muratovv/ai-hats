@@ -78,6 +78,14 @@ If you have committed something sensitive by accident, contact the
 maintainer (see [SECURITY.md](SECURITY.md)) — there is a documented
 filter-repo procedure for purging the history.
 
+## Docs and naming
+
+[`docs/glossary.md`](docs/glossary.md) is the naming source-of-truth for core concepts — **role**, **session**, **reflect**, **backlog** (task / HYP / PROP), **worktree**, **artifacts** and friends. When you write or edit a doc:
+
+- Link to the glossary entry instead of redefining a core term.
+- If a term is genuinely new (not yet in the glossary), update the glossary first, then reference it.
+- Code paths, CLI commands, and inline identifiers stay inline (no numbered ref); cross-doc and cross-file pointers use the numbered-refs convention (see [`docs/how-to-feedback-loop.md`](docs/how-to-feedback-loop.md) for the canonical style).
+
 ## Diagrams
 
 Architecture diagrams live in `docs/assets/diagrams/` and are written
