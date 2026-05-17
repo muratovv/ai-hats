@@ -268,13 +268,26 @@ class Assembler:
         role: str | None = None,
         provider: str | None = None,
         task_prefix: str | None = None,
+        ai_hats_dir: str | None = None,
+        venv_path: str | None = None,
+        manage_gitignore: bool | None = None,
     ) -> None:
         """Initialize project structure. Idempotent.
 
-        Validates `role`, `provider`, and `task_prefix` before touching disk —
-        unknown values raise ValueError with a helpful message, and no
-        files/dirs are created. Re-running init with a `task_prefix` that
-        conflicts with the value already in `ai-hats.yaml` is rejected.
+        Validates `role`, `provider`, `task_prefix`, and the workspace
+        path overrides before touching disk — unknown values raise
+        ValueError with a helpful message, and no files/dirs are created.
+        Re-running init with a `task_prefix` that conflicts with the
+        value already in `ai-hats.yaml` is rejected.
+
+        Bootstrap-time-only knobs (HATS-347 wizard):
+        - ``ai_hats_dir`` — relocate the framework directory before any
+          dirs are created. Default is ``.agent/ai-hats``.
+        - ``venv_path`` — point ai-hats at a user-owned venv instead of
+          the managed default ``<ai_hats_dir>/.venv``. Written to yaml;
+          the bash launcher reads it on next invocation.
+        - ``manage_gitignore`` — opt out of the one-shot `.gitignore`
+          entry by passing ``False``.
         """
         # Validate inputs BEFORE creating any filesystem artifacts.
         if provider is not None:
@@ -290,6 +303,46 @@ class Assembler:
                     f"init called with {task_prefix!r}. Edit the yaml manually "
                     f"if you really want to change it."
                 )
+        # Pydantic v2 field validators don't fire on direct attribute
+        # assignment (no validate_assignment in _YamlModel) — normalize
+        # path overrides eagerly so values written to yaml are canonical.
+        from .paths import normalize_ai_hats_dir, normalize_venv_path
+
+        if ai_hats_dir is not None:
+            ai_hats_dir = normalize_ai_hats_dir(ai_hats_dir)
+        if venv_path is not None:
+            venv_path = normalize_venv_path(venv_path)
+
+        # Apply path overrides to the in-memory config BEFORE resolving any
+        # paths, so runs_dir / tasks_dir see the new location.
+        save_config_early = False
+        if ai_hats_dir is not None:
+            existing_dir = self.project_config.ai_hats_dir
+            if self.config_path.exists() and existing_dir != ai_hats_dir:
+                raise ValueError(
+                    f"ai_hats_dir conflict: ai-hats.yaml has {existing_dir!r}, "
+                    f"init called with {ai_hats_dir!r}. Relocating an existing "
+                    "framework directory is not automated — move the directory "
+                    "manually and edit the yaml."
+                )
+            self.project_config.ai_hats_dir = ai_hats_dir
+            save_config_early = True
+        if venv_path is not None:
+            self.project_config.venv_path = venv_path
+            save_config_early = True
+        if manage_gitignore is not None:
+            self.project_config.manage_gitignore = manage_gitignore
+            save_config_early = True
+
+        # Persist path overrides NOW so subsequent path resolution
+        # (runs_dir / tasks_dir) reads the new ai_hats_dir from yaml.
+        if save_config_early:
+            # Provider must be set before the very first save (yaml is
+            # rejected without it). Pick the requested value, fall back
+            # to whatever's already on the config, finally gemini.
+            if not self.config_path.exists() and not self.project_config.provider:
+                self.project_config.provider = provider or "gemini"
+            self.project_config.save(self.config_path)
 
         # HATS-312 / HATS-313 / HATS-314: all framework roots live under
         # <ai_hats_dir>/. .agent/ itself is no longer populated by ai-hats.

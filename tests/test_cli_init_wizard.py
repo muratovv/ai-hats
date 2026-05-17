@@ -92,7 +92,10 @@ def test_init_wizard_invokes_launch_after_provider_prompt(fresh_project, monkeyp
     ):
         # --no-update keeps the test offline-safe; the update path is
         # exercised separately below.
-        result = runner.invoke(main, ["self", "init", "--no-update"], input="claude\n")
+        # Inputs in order: provider answer, advanced-setup gate (n = skip).
+        result = runner.invoke(
+            main, ["self", "init", "--no-update"], input="claude\nn\n",
+        )
     assert result.exit_code == 0, result.output
     assert (fresh_project / "ai-hats.yaml").exists()
     launch.assert_called_once()
@@ -107,7 +110,10 @@ def test_init_wizard_with_provider_flag_skips_provider_prompt(fresh_project, mon
         patch("ai_hats.cli.assembly._launch_wizard_session") as launch,
         patch("ai_hats.cli.assembly._run_self_update"),
     ):
-        result = runner.invoke(main, ["self", "init", "-p", "gemini", "--no-update"])
+        # Provider via flag, so only the advanced-setup gate remains (n = skip).
+        result = runner.invoke(
+            main, ["self", "init", "-p", "gemini", "--no-update"], input="n\n",
+        )
     assert result.exit_code == 0, result.output
     assert "Choose provider" not in result.output
     launch.assert_called_once()
@@ -121,7 +127,7 @@ def test_init_wizard_runs_self_update_by_default(fresh_project, monkeypatch):
         patch("ai_hats.cli.assembly._launch_wizard_session"),
         patch("ai_hats.cli.assembly._run_self_update", return_value=True) as upd,
     ):
-        result = runner.invoke(main, ["self", "init"], input="claude\n")
+        result = runner.invoke(main, ["self", "init"], input="claude\nn\n")
     assert result.exit_code == 0, result.output
     upd.assert_called_once()
 
@@ -137,3 +143,52 @@ def test_init_flag_only_path_does_not_self_update(fresh_project):
     assert result.exit_code == 0, result.output
     upd.assert_not_called()
     launch.assert_not_called()
+
+
+def test_init_advanced_setup_persists_paths(fresh_project, monkeypatch):
+    """Wizard advanced-setup branch writes custom ai_hats_dir / venv_path / gitignore."""
+    import yaml
+
+    runner = CliRunner()
+    monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
+    with (
+        patch("ai_hats.cli.assembly._launch_wizard_session"),
+        patch("ai_hats.cli.assembly._run_self_update"),
+    ):
+        # provider=claude, advanced=y, dir=agents/, venv=~/.venv/foo, gitignore=n
+        result = runner.invoke(
+            main,
+            ["self", "init", "--no-update"],
+            input="claude\ny\nagents/\n~/.venv/foo\nn\n",
+        )
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load((fresh_project / "ai-hats.yaml").read_text())
+    assert data["ai_hats_dir"] == "agents"  # trailing slash stripped by normalize
+    assert "venv_path" in data
+    assert data["manage_gitignore"] is False
+
+
+def test_init_flag_only_persists_paths(fresh_project):
+    """Non-wizard flag form writes ai_hats_dir + venv + no-manage-gitignore."""
+    import yaml
+
+    runner = CliRunner()
+    with (
+        patch("ai_hats.cli.assembly._launch_wizard_session"),
+        patch("ai_hats.cli.assembly._run_self_update"),
+    ):
+        result = runner.invoke(
+            main,
+            [
+                "self", "init",
+                "-p", "claude", "-r", "assistant",
+                "--ai-hats-dir", "agents/",
+                "--venv", "~/.venvs/x",
+                "--no-manage-gitignore",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load((fresh_project / "ai-hats.yaml").read_text())
+    assert data["ai_hats_dir"] == "agents"
+    assert data["venv_path"]  # any non-empty value
+    assert data["manage_gitignore"] is False
