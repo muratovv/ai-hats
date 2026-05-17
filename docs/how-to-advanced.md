@@ -2,12 +2,12 @@
 
 Umbrella for advanced ai-hats workflows beyond first-time setup. Each section is self-contained — jump to the one you need.
 
-| § | Topic | Status |
-|---|---|---|
-| 1 | **Custom pipeline steps** — drop a Python step into a project and reference it from a YAML pipeline | live |
-| 2 | **Worktree workflow** — isolate task work in a linked worktree, parallel sub-agents, merge / discard / recover | live |
-| 3 | **Orchestration** — fan out sessions in parallel / CI, tag metadata, parse JSON, lean on exit codes | TODO — see [4] |
-| 4 | **CLI integrations** — wire external services (Google, GitHub, BQ) as a regular skill | TODO — see [5] |
+| § | Topic                                                                                                          | Status         |
+| - | -------------------------------------------------------------------------------------------------------------- | -------------- |
+| 1 | **Custom pipeline steps** — drop a Python step into a project and reference it from a YAML pipeline            | live           |
+| 2 | **Worktree workflow** — isolate task work in a linked worktree, parallel sub-agents, merge / discard / recover | live           |
+| 3 | **Orchestration** — fan out sessions in parallel / CI, tag metadata, parse JSON, lean on exit codes            | TODO — see [4] |
+| 4 | **CLI integrations** — wire external services (Google, GitHub, BQ) as a regular skill                          | TODO — see [5] |
 
 > Full CLI reference — `ai-hats --tree`. First-time setup → [1]. Day-to-day backlog CLI → [2]. Pipeline contract reference (`Step` / `StepIO`) → [3].
 
@@ -57,12 +57,12 @@ register("echo", EchoStep)
 
 **StepIO fields** (the contract every step declares):
 
-| Field      | Meaning                                                                                                                |
-|---         |---                                                                                                                     |
-| `name`     | YAML id used to reference the step (`- id: echo`).                                                                     |
+| Field      | Meaning                                                                                                                  |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `name`     | YAML id used to reference the step (`- id: echo`).                                                                       |
 | `requires` | Keys that **must** be in pipeline state when the step runs. Missing → `BuildError` at validation, before anything fires. |
-| `optional` | Keys the step may consume if present; missing ones are silently absent.                                                |
-| `produces` | Keys this step is allowed to emit. Returning anything outside this set raises `StepError` and aborts the pipeline.     |
+| `optional` | Keys the step may consume if present; missing ones are silently absent.                                                  |
+| `produces` | Keys this step is allowed to emit. Returning anything outside this set raises `StepError` and aborts the pipeline.       |
 
 Full contract — [3].
 
@@ -102,9 +102,9 @@ print(final["echoed"])
 
 `failure_policy` controls what happens when `run()` raises:
 
-| Value        | Behaviour                                                                                       |
-|---           |---                                                                                              |
-| `"halt"`     | Default. Exception re-raises after trace is emitted; the rest of the pipeline does NOT run.     |
+| Value        | Behaviour                                                                                           |
+| ------------ | --------------------------------------------------------------------------------------------------- |
+| `"halt"`     | Default. Exception re-raises after trace is emitted; the rest of the pipeline does NOT run.         |
 | `"continue"` | Exception is captured into `state["errors"][step_name]`; the pipeline keeps going to the next step. |
 
 Pick `continue` only when downstream steps can cope with the absence of your `produces`. Default to `halt`.
@@ -178,13 +178,13 @@ Git worktrees give each task its own working copy: separate branch, separate fil
 
 ### 2.1 When to use a worktree
 
-| Situation | Use a worktree |
-|---|---|
+| Situation                                        | Use a worktree                                                                            |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | Non-trivial change you want isolated from master | yes — `ai-hats wt create` (or just `task transition <id> execute`, which does it for you) |
-| Parallel sub-agents on independent tasks | yes — each agent gets its own worktree via `ai-hats agent --isolation` |
-| Risky refactor you might abandon | yes — `wt discard` cleans the branch + dir in one shot |
-| One-line typo / README fix | no — commit on master |
-| Hotfix that must ship from master | no — direct commit; the worktree adds bookkeeping that hurts here |
+| Parallel sub-agents on independent tasks         | yes — each agent gets its own worktree via `ai-hats agent --isolation`                    |
+| Risky refactor you might abandon                 | yes — `wt discard` cleans the branch + dir in one shot                                    |
+| One-line typo / README fix                       | no — commit on master                                                                     |
+| Hotfix that must ship from master                | no — direct commit; the worktree adds bookkeeping that hurts here                         |
 
 ### 2.2 Lifecycle
 
