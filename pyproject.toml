@@ -54,11 +54,22 @@ ai-hats = "ai_hats.cli:main_entry"
 [tool.setuptools_scm]
 version_file = "src/ai_hats/_version.py"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.setuptools]
+package-dir = {"" = "src", "ai_hats.library" = "library"}
+packages = [
+    "ai_hats",
+    "ai_hats.cli",
+    "ai_hats.hypothesis",
+    "ai_hats.pipeline",
+    "ai_hats.pipeline.steps",
+    "ai_hats.retro",
+    "ai_hats.templates",
+    "ai_hats.library",
+]
 
 [tool.setuptools.package-data]
-ai_hats = ["libraries/**/*", "templates/**/*"]
+"ai_hats" = ["templates/**/*"]
+"ai_hats.library" = ["**/*"]
 
 [tool.ruff]
 target-version = "py311"

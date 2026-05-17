@@ -1,7 +1,7 @@
 """Built-in pipeline presets — Python-level reference compositions.
 
 The 4 production-shape pipelines live as YAML in
-``ai_hats/libraries/pipelines/`` and are loaded via ``loader.load_pipeline``.
+``ai_hats/library/core/pipelines/`` and are loaded via ``loader.load_pipeline``.
 ``execute_pipeline`` here mirrors ``execute.yaml`` but built in Python —
 kept for tests that exercise the pipeline core without YAML parsing.
 """

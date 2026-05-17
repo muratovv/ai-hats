@@ -142,6 +142,10 @@ ai-hats config status                      # health-check the composition
 
 Full reference — `ai-hats --tree`.
 
+## Customization
+
+The shipped library splits into `library/core/` (engine fundament) and `library/usage/` (curated content). To override a built-in role, add your own skill / rule / trait, or replace a system role like `session-reviewer` — see **[docs/extending.md](docs/extending.md)** for the override-precedence chain and worked examples.
+
 ## Architecture
 
 Roles compose from traits + rules + skills, a flat model, a task state machine, multi-provider injection. The full tour of the internal model, directory layout, skill format, and a sample `config.yaml` — see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .library import LibraryResolver
+from .resolver import LibraryResolver
 from .models import ComponentConfig, ComponentType, HooksConfig, OverlayConfig
 
 

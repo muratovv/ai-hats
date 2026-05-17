@@ -4,7 +4,7 @@ A collection of common tasks you hit when wiring ai-hats into a project: extendi
 
 > Full CLI reference with descriptions and options — `ai-hats --tree` (or a subtree: `ai-hats --tree config`, `ai-hats --tree task hyp`).
 
-> All changes to `ai-hats.yaml` are applied with `ai-hats self bump` (rebuilds `CLAUDE.md` / `GEMINI.md` and `.claude/*` from the config). Base roles in `libraries/roles/` should **not** be edited directly — use `customizations` (overlay) instead.
+> All changes to `ai-hats.yaml` are applied with `ai-hats self bump` (rebuilds `CLAUDE.md` / `GEMINI.md` and `.claude/*` from the config). Built-in roles (under `library/{core,usage}/roles/` inside the installed package) should **not** be edited directly — use `customizations` (overlay) instead. To author your own roles see [extending.md](extending.md).
 >
 > Any overlay edit can be done in two ways:
 > 1. **CLI:** `ai-hats config customize <role> --add-skill <name> | --remove-skill <name> | --add-trait <name> | --injection-append "<text>"`. The command writes into `ai-hats.yaml` itself.
@@ -135,7 +135,7 @@ customizations:
         - dev::python
 ```
 
-The `<group>::<trait>` syntax points to a trait inside `libraries/traits/<group>/<trait>/`. The trait pulls in its own rules + skills + injection.
+The `<group>::<trait>` syntax points to a trait inside `library/usage/traits/<group>/<trait>/` (built-in) or any user library path. The trait pulls in its own rules + skills + injection.
 
 ---
 
