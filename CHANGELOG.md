@@ -12,10 +12,29 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Changed
 
+- Built-in library moved from `src/ai_hats/libraries/` to a root-level
+  `library/` directory and split into two layers: `library/core/`
+  (engine fundament — system roles, base traits, global rules,
+  foundational skills, all pipelines + injections, provider
+  templates) and `library/usage/` (curated content catalog —
+  opinionated roles, domain traits, opt-in skills). Both ship inside
+  the installed `ai_hats.library` sub-package; no runtime behavior
+  change for users. The split documents the engine/content boundary
+  and unblocks future content-package extraction. (HATS-363)
+- Python module `ai_hats.library` (containing `LibraryResolver`) was
+  renamed to `ai_hats.resolver` to free up `ai_hats.library` as a
+  data sub-package. Import updates: `from ai_hats.resolver import
+  LibraryResolver`. (HATS-363)
 - All user-facing docs (`docs/ARCHITECTURE.md`, the `docs/how-to-*.md`
   set, `docs/migration.md`, and the diagram-preview pages) are now
   English-only. The README hints that browser auto-translate handles
   other languages cleanly. (HATS-352)
+
+### Added
+
+- `docs/extending.md` — new guide for authoring own roles / traits /
+  rules / skills, override-precedence chain, and replacing system
+  roles. (HATS-363)
 
 ### Removed
 

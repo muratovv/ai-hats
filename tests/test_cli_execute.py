@@ -49,10 +49,11 @@ def test_resolve_prompt_raw_text_fallback() -> None:
     assert _resolve_prompt("hello world") == "hello world"
 
 
-def test_initial_injections_dir_points_to_package_libraries() -> None:
+def test_initial_injections_dir_points_to_package_library() -> None:
     d = _initial_injections_dir()
     assert d.name == "initial_injections"
-    assert d.parent.name == "libraries"
+    assert d.parent.name == "core"
+    assert d.parent.parent.name == "library"
     assert (d / "reflect-all.md").is_file()
 
 

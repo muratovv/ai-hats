@@ -43,10 +43,9 @@ In scope:
 - The ai-hats CLI (`ai-hats` binary) and the Python package (`pip install ai-hats`).
 - The bash launcher (`scripts/ai-hats-launcher`) and the installer
   (`scripts/install-launcher.sh`).
-- Pre-commit hooks shipped under `src/ai_hats/libraries/skills/*/git_hooks/`
+- Pre-commit hooks shipped under `library/{core,usage}/skills/*/git_hooks/`
   — particularly the privacy hook.
-- The skill library packaged with ai-hats (anything under
-  `src/ai_hats/libraries/`).
+- The skill library packaged with ai-hats (anything under `library/`).
 
 Out of scope:
 

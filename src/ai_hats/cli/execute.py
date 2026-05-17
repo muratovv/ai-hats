@@ -8,8 +8,8 @@ One command, two modes:
   output). Same path as ``ai-hats agent``.
 
 The ``--prompt`` flag resolves either to a file under
-``libraries/initial_injections/<name>.md`` (by short name) or to a filesystem
-path. The resolved content becomes the first user-visible message.
+``library/core/initial_injections/<name>.md`` (by short name) or to a
+filesystem path. The resolved content becomes the first user-visible message.
 
 All entry-points (bare ``ai-hats``, ``ai-hats agent``, ``ai-hats reflect *``)
 go through ``PipelineHarness`` over a built-in YAML pipeline (HATS-269).
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import sys
+from importlib.resources import files
 from pathlib import Path
 
 import click
@@ -28,8 +29,7 @@ from ._helpers import _project_dir, console
 
 def _initial_injections_dir() -> Path:
     """Builtin initial_injections dir under the installed package."""
-    # cli/execute.py → src/ai_hats/cli/ → src/ai_hats/libraries/initial_injections
-    return Path(__file__).parent.parent / "libraries" / "initial_injections"
+    return Path(str(files("ai_hats.library") / "core" / "initial_injections"))
 
 
 def _resolve_prompt(arg: str | None) -> str | None:
@@ -37,7 +37,7 @@ def _resolve_prompt(arg: str | None) -> str | None:
 
     Lookup order:
       1. ``arg is None`` → return ``None``.
-      2. ``libraries/initial_injections/<arg>.md`` (short name).
+      2. ``library/core/initial_injections/<arg>.md`` (short name).
       3. ``arg`` as a filesystem path (absolute or cwd-relative).
       4. Fallback: treat ``arg`` as raw prompt text.
 
@@ -82,7 +82,7 @@ def _resolve_prompt(arg: str | None) -> str | None:
     "prompt_arg",
     default=None,
     help="Initial prompt: short name (resolves to "
-    "libraries/initial_injections/<name>.md) or filesystem path.",
+    "library/core/initial_injections/<name>.md) or filesystem path.",
 )
 @click.option("--model", default="", help="Model override (batch only).")
 @click.option(

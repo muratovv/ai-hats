@@ -312,13 +312,13 @@ Worked example: the synthetic HYP fixture shows a hypothesis after two appended 
 
 **[6]** — [`tests/fixtures/real_backlog/PROP-001-sample.yaml`](../tests/fixtures/real_backlog/PROP-001-sample.yaml) — synthetic proposal with `votes[]`.
 
-**[7]** — `src/ai_hats/libraries/roles/session-reviewer/config.yaml` — role composition.
+**[7]** — `library/core/roles/session-reviewer/config.yaml` — role composition.
 
-**[8]** — `src/ai_hats/libraries/skills/review-session/SKILL.md` — orchestrator: four-step session-review procedure.
+**[8]** — `library/core/skills/review-session/SKILL.md` — orchestrator: four-step session-review procedure.
 
-**[9]** — `src/ai_hats/libraries/skills/review-hypothesis/SKILL.md` — verdict contract on the per-HYP pass.
+**[9]** — `library/core/skills/review-hypothesis/SKILL.md` — verdict contract on the per-HYP pass.
 
-**[10]** — `src/ai_hats/libraries/skills/review-proposal/SKILL.md` — inbox vote / novel-PROP contract.
+**[10]** — `library/core/skills/review-proposal/SKILL.md` — inbox vote / novel-PROP contract.
 
 **[11]** — [`docs/ARCHITECTURE.md#session-lifecycle`](ARCHITECTURE.md#session-lifecycle) — what runtime writes during a session, where `<id>` comes from.
 
@@ -330,9 +330,9 @@ Worked example: the synthetic HYP fixture shows a hypothesis after two appended 
 [4]: ../tests/fixtures/real_session/session-review.md
 [5]: ../tests/fixtures/real_backlog/HYP-001-sample.yaml
 [6]: ../tests/fixtures/real_backlog/PROP-001-sample.yaml
-[7]: ../src/ai_hats/libraries/roles/session-reviewer/config.yaml
-[8]: ../src/ai_hats/libraries/skills/review-session/SKILL.md
-[9]: ../src/ai_hats/libraries/skills/review-hypothesis/SKILL.md
-[10]: ../src/ai_hats/libraries/skills/review-proposal/SKILL.md
+[7]: ../library/core/roles/session-reviewer/config.yaml
+[8]: ../library/core/skills/review-session/SKILL.md
+[9]: ../library/core/skills/review-hypothesis/SKILL.md
+[10]: ../library/core/skills/review-proposal/SKILL.md
 [11]: ARCHITECTURE.md#session-lifecycle
 [12]: how-to.md

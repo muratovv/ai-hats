@@ -8,17 +8,16 @@ import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli import main
-from ai_hats.library import LibraryResolver
+from ai_hats.resolver import LibraryResolver
 from ai_hats.models import ComponentType
 from ai_hats.paths import rules_dir, skills_dir, tasks_dir
 
 
 def _all_roles() -> list[str]:
-    """Discover all roles from the built-in library."""
-    from pathlib import Path
+    """Discover all roles from the built-in library (core + usage)."""
+    from ai_hats.assembler import _builtin_library_layers
 
-    builtin = Path(__file__).resolve().parent.parent / "src" / "ai_hats" / "libraries"
-    resolver = LibraryResolver([builtin])
+    resolver = LibraryResolver(_builtin_library_layers())
     return sorted(resolver.list_components(ComponentType.ROLE))
 
 

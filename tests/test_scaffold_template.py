@@ -18,10 +18,10 @@ from ai_hats.providers import (
 
 def _builtin_template_path() -> Path:
     """Path to the builtin Claude scaffold template inside the package."""
-    import ai_hats
+    from importlib.resources import files
 
-    return (
-        Path(ai_hats.__file__).parent / "libraries" / "templates" / "claude" / "CLAUDE.md.template"
+    return Path(
+        str(files("ai_hats.library") / "core" / "templates" / "claude" / "CLAUDE.md.template")
     )
 
 
