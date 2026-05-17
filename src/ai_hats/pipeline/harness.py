@@ -163,7 +163,7 @@ class PipelineHarness:
 
     def run(self, initial: Mapping[str, Any]) -> dict[str, Any]:
         """Load the named YAML pipeline and run it against ``initial``."""
-        res = files("ai_hats.libraries.pipelines") / f"{self.name}.yaml"
+        res = files("ai_hats.library") / "core" / "pipelines" / f"{self.name}.yaml"
         with as_file(res) as yaml_path:
             pipeline = load_pipeline(yaml_path)
         return run_pipeline(

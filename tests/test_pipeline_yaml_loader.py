@@ -12,7 +12,7 @@ from ai_hats.pipeline.loader import PipelineYamlError, load_pipeline
 
 
 _BUILTIN_DIR = (
-    Path(__file__).parent.parent / "src/ai_hats/libraries/pipelines"
+    Path(__file__).parent.parent / "library/core/pipelines"
 )
 
 

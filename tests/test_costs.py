@@ -7,7 +7,7 @@ import pytest
 
 from ai_hats.composer import Composer
 from ai_hats.costs import analyze_composition, count_tokens_approx, count_tokens_sdk
-from ai_hats.library import LibraryResolver
+from ai_hats.resolver import LibraryResolver
 
 
 @pytest.fixture
