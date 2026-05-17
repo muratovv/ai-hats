@@ -241,7 +241,7 @@ Acceptance: `ai-hats reflect handoff | ai-hats execute --role X --batch --prompt
 
 Работа: `judge-protocol` skill инструктирует писать между `BEGIN_JUDGE_REPORT`/`END_JUDGE_REPORT`; `reflect_all_cmd` → Pipeline (включает `ExtractMarker` для отчёта); persistence отчёта — `Path.write_text(final["judge_report"])` после `run()`.
 
-Acceptance: trade-off A из HATS-260 закрыт. `.agent/retrospectives/judge/<ts>-report.md` появляется автоматически.
+Acceptance: trade-off A из HATS-260 закрыт. `<ai_hats_dir>/sessions/retros/judge/<ts>-report.md` появляется автоматически.
 
 ### Phase 5 — Перевод остальных flow на Pipeline
 
@@ -251,7 +251,7 @@ Acceptance: все 5 LLM-команд внутренне работают чер
 
 ## All flows as Pipeline literals
 
-Полные Pipeline-литералы для всех LLM-команд приведены в плане (`.agent/backlog/tasks/HATS-261/plan.md`, секции 3.1-3.6). Включают: bare `ai-hats`, `ai-hats execute`, `ai-hats agent`, `ai-hats reflect all`, `ai-hats reflect session` (foreground + `--background`), и иллюстрацию parallel models comparison.
+Полные Pipeline-литералы для всех LLM-команд приведены в плане (`<ai_hats_dir>/tracker/backlog/tasks/HATS-261/plan.md`, секции 3.1-3.6). Включают: bare `ai-hats`, `ai-hats execute`, `ai-hats agent`, `ai-hats reflect all`, `ai-hats reflect session` (foreground + `--background`), и иллюстрацию parallel models comparison.
 
 Per-flag CLI mapping (Command → Pipeline reference) — там же.
 

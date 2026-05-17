@@ -17,7 +17,7 @@ ADR-0001 (HATS-261) утвердил **контракт** typed-dataflow pipelin
 - **Сосуществование.** Существующие CLI-команды (`bare ai-hats`, `execute`, `reflect all`, `reflect session`) **не пайплайнятся** на этом этапе. Старый и новый код не смешиваются. Финальная миграция CLI-команд на pipeline отложена до HATS-269 / Phase 5 эпика — после стабилизации subsystem'а.
 - **ADR-0001 не отменяется.** Контракт `StepIO`/`Step`/`Pipeline` валиден целиком. Этот ADR-0002 дополняет его тремя ортогональными слоями: harness contract, step inventory, CLI subsystem.
 
-Брейншторм с альтернативами и discussion'ом 9 открытых вопросов: `.agent/backlog/tasks/HATS-273/brainstorm.md`. Полный blueprint с детальными step specs и YAML-композициями: `.agent/backlog/tasks/HATS-273/plan.md`.
+Брейншторм с альтернативами и discussion'ом 9 открытых вопросов: `<ai_hats_dir>/tracker/backlog/tasks/HATS-273/brainstorm.md`. Полный blueprint с детальными step specs и YAML-композициями: `<ai_hats_dir>/tracker/backlog/tasks/HATS-273/plan.md`.
 
 ## Decision
 
@@ -52,7 +52,7 @@ Pipeline-core видит только `Path` и плоские значения.
 - **Параметризация.** Бизнес-step'ы (`compose_role`, `launch_provider`, `build_handoff`, `spawn_session_review`) — без `params`, всё runtime через initial state. `resolve_prompt` имеет один param (`default_text`). Структурные step'ы (`extract_marker`, `save_artifact`, `pre_log`/`post_log`) обязаны декларировать схему params, потому что эти параметры описывают форму конкретного pipeline'а, а не runtime-ввод.
 - **`reflect-session` остаётся blackbox-step'ом** (`run_session_review`) на этом этапе. Декомпозиция на 5+ под-step'ов (compute_facts / build_prompt / launch / extract / validate / save / harness_check) — отдельная работа Phase 3 эпика (HATS-267).
 
-Детальные IO-контракты, failure_policy, edge cases для каждого step'а — `.agent/backlog/tasks/HATS-273/plan.md` §"Step specifications (детально)".
+Детальные IO-контракты, failure_policy, edge cases для каждого step'а — `<ai_hats_dir>/tracker/backlog/tasks/HATS-273/plan.md` §"Step specifications (детально)".
 
 ### §3 Built-in pipelines (4 эмуляции CLI-команд)
 
@@ -101,7 +101,7 @@ steps:
   - id: save_artifact
     params:
       key: judge_report
-      out_path_template: ".agent/retrospectives/judge/{ts}-report.md"
+      out_path_template: "<ai_hats_dir>/sessions/retros/judge/{ts}-report.md"
   - id: spawn_session_review
   - id: post_log
     params: {keys: [session_id, exit_code, review_pid, saved_path]}
@@ -183,8 +183,8 @@ ai-hats pipeline show <name>    → cat YAML
 ## References
 
 - ADR-0001: `docs/adr/0001-pipelines-as-typed-dataflow.md` — контракт StepIO/Step/Pipeline (валиден целиком).
-- Brainstorm: `.agent/backlog/tasks/HATS-273/brainstorm.md` — 9 открытых вопросов и discussion.
-- Plan (детальный blueprint): `.agent/backlog/tasks/HATS-273/plan.md` — step specs, YAML compositions, threading, edge cases.
+- Brainstorm: `<ai_hats_dir>/tracker/backlog/tasks/HATS-273/brainstorm.md` — 9 открытых вопросов и discussion.
+- Plan (детальный blueprint): `<ai_hats_dir>/tracker/backlog/tasks/HATS-273/plan.md` — step specs, YAML compositions, threading, edge cases.
 - Pipeline Phase 1: commits `90d4f3c` (ADR-0001 landing), `e92ae6b` (core+stubs+preset).
 - Эпик-план: `.claude/plans/moonlit-sprouting-tower.md` — 5-фазный roadmap миграции (Phase 2-5 нуждаются в ревизии после landing'а ADR-0002).
 - Существующий relevant runtime:

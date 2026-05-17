@@ -2,7 +2,7 @@
 
 Realistic-shape fixtures of HYP and PROP YAML files. **Synthetic** — IDs
 and content are fabricated; the structure mirrors production
-`.agent/ai-hats/tracker/{hypotheses,backlog/proposals}/` entries.
+`<ai_hats_dir>/tracker/{hypotheses,backlog/proposals}/` entries.
 
 | File | What it contains |
 |---|---|

@@ -26,9 +26,9 @@ since the latest tag lives under **Unreleased** until the next release.
   data sub-package. Import updates: `from ai_hats.resolver import
   LibraryResolver`. (HATS-363)
 - All user-facing docs (`docs/ARCHITECTURE.md`, the `docs/how-to-*.md`
-  set, `docs/migration.md`, and the diagram-preview pages) are now
-  English-only. The README hints that browser auto-translate handles
-  other languages cleanly. (HATS-352)
+  set, and the diagram-preview pages) are now English-only. The
+  README hints that browser auto-translate handles other languages
+  cleanly. (HATS-352)
 
 ### Added
 
@@ -40,6 +40,11 @@ since the latest tag lives under **Unreleased** until the next release.
 
 - `docs/README.ru.md`. Browser translation replaces the maintained
   Russian mirror. (HATS-352)
+- `docs/migration.md` (pipx → launcher) and `docs/migration-311.md`
+  (v3 → v4 layout). Migration tooling is no longer a project flow:
+  breaking changes ship cleanly per release, and both legacy
+  migrations are long past. References in README and `docs/how-to.md`
+  removed. (HATS-356)
 
 ## [0.4.0] - 2026-05-16
 

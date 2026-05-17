@@ -103,7 +103,7 @@ ai-hats self update           # update ai-hats and auto-bump
 
 Full configuration walkthrough (wizard, role pick, customization, feedback policy, venv) → **[docs/how-to-configure.md](docs/how-to-configure.md)**.
 
-Alternative install paths (bash bootstrap from a clone, override venv, migrating from pipx, developing ai-hats itself) live in **[docs/how-to.md](docs/how-to.md)** and **[docs/migration.md](docs/migration.md)**.
+Alternative install paths (bash bootstrap from a clone, override venv, developing ai-hats itself) live in **[docs/how-to.md](docs/how-to.md)**.
 
 ## CLI
 
