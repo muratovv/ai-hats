@@ -601,7 +601,7 @@ class Assembler:
         # message is informational — never an error.
 
         print(
-            "NOTE: .agent/ holds only the managed ai-hats/ namespace; "
+            "[Warning] ⚠️  .agent/ holds only the managed ai-hats/ namespace; "
             "legacy top-level artefacts (rules/, skills/, hooks/, backlog/, "
             "STATE.md, ...) have migrated to <ai_hats_dir>/. If nothing "
             "else of yours lives in .agent/, the wrapper is no longer "
