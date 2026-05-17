@@ -227,8 +227,6 @@ Moved to the narrative walkthrough — see [`docs/how-to-configure.md` §6](how-
 | Override venv broken | `python3 -m venv <override-path> && <override-path>/bin/pip install 'ai-hats @ git+ssh://...'` (user-managed) |
 | Full project wipe (data loss!) | `rm -rf .agent/ai-hats/ && ai-hats self update && ai-hats self init -r <role> -p <provider>` |
 
-Detailed migration guide for projects moving from pipx → launcher: `docs/migration.md`.
-
 ---
 
 ## See also
