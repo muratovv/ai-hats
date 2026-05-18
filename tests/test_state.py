@@ -10,6 +10,9 @@ from ai_hats.state import TaskManager
 from ai_hats.worktree import WorktreeManager
 
 
+pytestmark = pytest.mark.integration
+
+
 @pytest.fixture
 def mgr(tmp_path):
     project = tmp_path / "project"

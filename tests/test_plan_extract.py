@@ -16,6 +16,9 @@ from ai_hats.state import TaskManager
 from ai_hats.paths import state_md_path, tasks_dir
 
 
+pytestmark = pytest.mark.integration
+
+
 # ----------------------------- parser --------------------------------------
 
 
