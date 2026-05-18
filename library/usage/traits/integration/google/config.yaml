@@ -1,0 +1,8 @@
+name: integration::google
+composition:
+  traits: []
+  rules: []
+  skills:
+    - gworkspace-cli
+  hooks: {}
+injection: ""
