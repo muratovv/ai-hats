@@ -88,17 +88,8 @@ What ai-hats persists on disk during normal use.
 
 **[6]** — [`docs/how-to-configure.md`](how-to-configure.md) — full configuration walkthrough (provider, role, customizations, feedback policy, venv).
 
-**[7]** — `docs/how-to-backlog.md` — task / HYP / PROP day-to-day workflow. *Not yet written — tracked under HATS-358.*
+**[7]** — [`docs/how-to-backlog.md`](how-to-backlog.md) — `ai-hats task` / `task hyp` / `task proposal` day-to-day workflow.
 
 **[8]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture and schema dispatch.
 
 **[9]** — [`docs/how-to-extend.md`](how-to-extend.md) — shipped library layout (`library/core/` vs `library/usage/`), override precedence, recipes for adding your own roles / traits / rules / skills.
-
-[1]: ARCHITECTURE.md#providers
-[2]: ARCHITECTURE.md#session-lifecycle
-[3]: ARCHITECTURE.md#component-model
-[4]: ARCHITECTURE.md#backlog-state-machines
-[5]: how-to-feedback-loop.md
-[6]: how-to-configure.md
-[8]: reflect.md
-[9]: how-to-extend.md

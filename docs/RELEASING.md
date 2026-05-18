@@ -21,8 +21,7 @@ with one pre-1.0 caveat documented below.
   breaking shape changes; migrations live in `docs/migration*.md`.
 - Tracker on-disk format: the `tracker/backlog/tasks/HATS-NNN/` layout,
   task-card YAML schema, `STATE.md` format.
-- The skill / rule / trait file format documented in
-  [ARCHITECTURE.md](ARCHITECTURE.md).
+- The skill / rule / trait file format documented in [1].
 
 **Unstable surface — no SemVer guarantee until 1.0:**
 
@@ -73,7 +72,7 @@ downstream packagers (post-1.0), we add a PyPI publish step.
 
 ## CHANGELOG flow
 
-[`CHANGELOG.md`](../CHANGELOG.md) follows Keep a Changelog 1.1.0.
+The changelog [2] follows Keep a Changelog 1.1.0.
 
 - Every PR with user-visible impact updates the **Unreleased** section
   under one of: *Added*, *Changed*, *Deprecated*, *Removed*, *Fixed*,
@@ -197,3 +196,9 @@ applies. There is no "release candidate" step — the work that justifies
   fine for the current cadence.
 - **CI-driven release** — a GitHub Actions workflow that triggers on
   tag and attaches built wheels lands in HATS-345 (CI infrastructure).
+
+## References
+
+**[1]** — [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) — skill / rule / trait file format and the rest of the engine model.
+
+**[2]** — [`CHANGELOG.md`](../CHANGELOG.md) — versioned release notes following Keep a Changelog 1.1.0.
