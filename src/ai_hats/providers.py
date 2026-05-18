@@ -112,6 +112,24 @@ class Provider(abc.ABC):
         """
         return [], {}
 
+    def materialize_runtime_skills(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+    ) -> list[str]:
+        """Materialize the composed role's skills for runtime discovery.
+
+        HATS-307: returns extra CLI args (e.g. ``["--plugin-dir", <path>]``)
+        that make the spawned provider session see the role's skills via its
+        own Skill registry. Callers MUST clean up any filesystem artifacts
+        referenced by the returned args (``_cleanup_plugin_dir`` in runtime.py).
+
+        Default: no-op — the provider has no per-spawn skill materialization
+        mechanism (Gemini case — see HATS-367 follow-up).
+        """
+        del project_dir, result
+        return []
+
     @abc.abstractmethod
     def skills_export_dir(self, project_dir: Path) -> Path:
         """Provider-native skills directory."""
@@ -424,7 +442,31 @@ class ClaudeProvider(Provider):
             f.write(full_content)
         override_file = Path(override_path)
 
-        return ["--system-prompt-file", str(override_file)], {}
+        # HATS-307: materialize spawned role's skills into ephemeral plugin-dir
+        # so Claude Code's Skill tool can resolve them. Caller cleans up.
+        skill_args = self.materialize_runtime_skills(project_dir, result)
+
+        return [
+            "--system-prompt-file", str(override_file),
+            *skill_args,
+        ], {}
+
+    def materialize_runtime_skills(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+    ) -> list[str]:
+        """Materialize composed role's skills into a per-spawn plugin-dir.
+
+        Returns ``["--plugin-dir", <tmp_path>]``. Caller MUST ``shutil.rmtree``
+        the path after the spawned ``claude`` process exits. Empty skill list
+        still produces a valid (empty) plugin-dir so the argument is always
+        consistent — the no-skills case is free.
+        """
+        from .plugin_dir import materialize_plugin_dir
+
+        plugin_dir = materialize_plugin_dir(result.name, result.skills, project_dir)
+        return ["--plugin-dir", str(plugin_dir)]
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         cmd = ["claude"]
