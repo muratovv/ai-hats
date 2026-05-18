@@ -12,6 +12,35 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Added
 
+- **Harness reliability** (HATS-378). Pipeline steps can opt into
+  post-run validation via a new `harness:` block on the step YAML:
+  ```yaml
+  - id: run_session_review
+    harness:
+      reporting: true
+      on_zero_output: harness_incident
+      on_timeout: { retry: 1, budget_multiplier: 2, then: harness_incident }
+  ```
+  - **Zero-output guard** (HATS-323) — a reporting step whose sub-agent
+    exited cleanly but emitted zero tokens AND zero tool calls now
+    raises `HarnessZeroOutputError` instead of silently succeeding.
+    Targets the failure mode in session `20260512-074105-1`
+    (judge-for-role, 4 s, 0/0/0).
+  - **Timeout retry + escalation** (HATS-321) — when `on_timeout` is
+    set, `SubAgentRunner` retries a timed-out subprocess at the
+    configured budget multiplier and raises `HarnessTimeoutError` only
+    after retries are exhausted. Without a policy, the legacy behaviour
+    (return session with `timed_out=True`) is preserved.
+  - **New meta-PROP target `harness-incident`** — `reflect_session_main`
+    routes `HarnessReliabilityError` (timeout, zero-output) to
+    `target=harness-incident`, distinct from `target=session-reviewer`.
+    Both targets dedup per failed session but coexist if both arise.
+  - **Pipeline metrics** — `PipelineHarness.__exit__` writes
+    `<run_dir>/pipeline_metrics.json` with `silent_zero_output_incidents`
+    and `harness_timeout_incidents` counters.
+  - Bundled pipelines `reflect-session`, `reflect-role`, `reflect-all`
+    are opted-in. User pipelines without a `harness:` block keep
+    pre-v0.6 behaviour.
 - `ai-hats task close <id> --resolution "..."` — fast-close a task from
   `brainstorm`/`plan` straight to `done` for work shipped on master,
   without the worktree theatre. Subsumes the original "fast-close"
