@@ -10,6 +10,35 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Changed
+
+- **Judge pain-extraction protocol strengthened** (HATS-390). Two skills
+  updated to make contrast-first reporting the default output of a
+  judge sweep rather than a result of user push-back:
+  - `library/core/skills/judge-protocol/SKILL.md` — new **Step 1.5
+    "Inventory deliverables since prior report"** (window derived from
+    prior report's ISO timestamp; first-run-ever falls back to last 7
+    days) and **Step 3.5 "Counter-claims pass"** (devil's advocate
+    gates: count-check, variance-vs-failure, shipped-vs-in-flight,
+    survivor-bias). The report template now requires
+    `## Deliverables since prior report` (before `## Hypotheses`) and
+    `## Counter-claims` (before `## Notes`); section order is
+    load-bearing. Step 3.5 ships with 3 few-shot examples that mirror
+    the failure modes from session `20260518-140617-1` (over-stated
+    cadence, mis-framed `inconclusive`, in-flight conflated with
+    shipped regression) — the format trains behaviour rather than
+    asserting a rule. Step 3 (PROP triage) gains a cost-citation
+    heuristic: patience for cost-cited PROPs, faster `defer`/`reject`
+    for uncited pain claims open ≥ 1 sweep cycle.
+  - `library/core/skills/review-proposal/SKILL.md` — `--rationale`
+    cost-citation rule formalised across Step 2b (create) and Step 3
+    (triage). Field reference row updated; two new examples (✓ Good
+    cost-cited PROP-036 with `9-test breakage + 1 plan pivot`, ✗ Bad
+    uncited pain claim) document the precedent and anti-pattern.
+  Out of scope: reuse of `self-retrospective` inside judge sweep (M4 —
+  tracked separately via HYP-020) and any runtime/harness changes.
+  Regression tracking is filed as a new HYP post-merge.
+
 ### Added
 
 - **`assert_command_exists` test helper** (HATS-374). New
