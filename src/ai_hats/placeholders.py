@@ -5,9 +5,17 @@ for documentation clarity. Without expansion, the LLM sometimes obeys the
 placeholder verbatim and writes artefacts under a literal directory named
 ``<ai_hats_dir>/`` in the project root (HATS-380).
 
-Expansion happens at the writer layer (last gate before the file reaches
-the agent): the canonical-dir writer in :mod:`ai_hats.assembler` and
-:meth:`ai_hats.providers.BaseProvider.export_skills`.
+Expansion happens at every writer layer (each "last gate" before the
+prompt or path reaches the agent / filesystem):
+
+- The canonical-dir writer in :mod:`ai_hats.assembler`.
+- :meth:`ai_hats.providers.BaseProvider.export_skills` + the Gemini /
+  Claude override paths.
+- :meth:`ai_hats.runtime.SubAgentRunner._build_meta_prompt`.
+- The pipeline ``save_artifact`` step
+  (:class:`ai_hats.pipeline.steps.save.SaveArtifact`, HATS-395) —
+  the path template is expanded before ``.format(...)`` is applied
+  so the literal placeholder never reaches ``Path()``.
 """
 
 from __future__ import annotations

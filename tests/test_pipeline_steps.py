@@ -216,6 +216,39 @@ def test_save_artifact_ts_only_no_extra_requires(tmp_path: Path):
     assert step.io.requires == frozenset({"blob"})
 
 
+def test_save_artifact_expands_ai_hats_dir_placeholder(tmp_path: Path):
+    """HATS-395 regression. ``<ai_hats_dir>`` in ``out_path_template`` must be
+    expanded to the project's ai-hats dir; the literal placeholder must not
+    survive into the filesystem path (which would create a bogus
+    ``<ai_hats_dir>/`` directory in the project root — HATS-380 recurrence).
+    """
+    template = "<ai_hats_dir>/sessions/retros/judge/{ts}-report.md"
+    step = SaveArtifact({"key": "blob", "out_path_template": template})
+    # Step auto-requires ``project_dir`` when the placeholder is present
+    # so the pipeline core surfaces a missing-projection at build time
+    # instead of silently writing to a literal-placeholder path.
+    assert "project_dir" in step.io.requires
+    out = step.run(blob="payload", project_dir=tmp_path)
+    saved = out["saved_path"]
+    assert "<ai_hats_dir>" not in str(saved)
+    assert ".agent/ai-hats/sessions/retros/judge/" in str(saved).replace("\\", "/")
+    assert saved.exists()
+    assert saved.read_text() == "payload"
+
+
+def test_save_artifact_template_without_placeholder_skips_project_dir(tmp_path: Path):
+    """Backwards-compat (HATS-395): templates that don't embed ``<ai_hats_dir>``
+    must NOT require ``project_dir`` — the pipeline-state contract stays
+    minimal for the common case (e.g. reflect-role's ``{target_role}``-only
+    template).
+    """
+    template = str(tmp_path / "{ts}.txt")
+    step = SaveArtifact({"key": "blob", "out_path_template": template})
+    assert "project_dir" not in step.io.requires
+    out = step.run(blob="x")  # no project_dir argument required
+    assert out["saved_path"].read_text() == "x"
+
+
 # ---------------- spawn_session_review ----------------
 
 def test_spawn_session_review_returns_pid(tmp_path: Path):

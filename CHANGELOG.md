@@ -10,6 +10,26 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`<ai_hats_dir>` placeholder leak in pipeline `save_artifact`** (HATS-395).
+  HATS-380 fixed four writer surfaces (canonical writer, provider skill
+  export, Claude/Gemini overrides, `SubAgentRunner._build_meta_prompt`)
+  but missed the pipeline step
+  `ai_hats.pipeline.steps.save.SaveArtifact`, which formatted templates
+  like `<ai_hats_dir>/sessions/retros/judge/{ts}-report.md`
+  (from `library/core/pipelines/reflect-all.yaml`) directly into
+  `Path(...)` without expansion. Result: a recurring 0-byte file at the
+  literal path `/<project>/<ai_hats_dir>/sessions/retros/judge/...`,
+  reproduced on 2026-05-18 after the HATS-380 final fix had landed. The
+  step now auto-adds `project_dir` to its `io.requires` whenever the
+  template embeds `<ai_hats_dir>`, and expands the placeholder via
+  `expand_path_placeholders` before the `.format()` call. Two new
+  tests in `tests/test_pipeline_steps.py` lock both the
+  expansion path (fails-under-revert) and backwards-compat for
+  placeholder-free templates. The `placeholders.py` module docstring
+  now lists all four writer gates.
+
 ### Changed
 
 - **Judge pain-extraction protocol strengthened** (HATS-390). Two skills
