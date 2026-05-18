@@ -4,6 +4,10 @@ steps:
   - id: resolve_prompt
     params: {default_text: ""}
   - id: launch_provider
+    # HATS-378: judge is a reporting role; same opt-in as reflect-role.
+    harness:
+      reporting: true
+      on_zero_output: harness_incident
   - id: extract_marker
     params: {start: BEGIN_JUDGE, end: END_JUDGE, out_key: judge_report}
   - id: save_artifact
