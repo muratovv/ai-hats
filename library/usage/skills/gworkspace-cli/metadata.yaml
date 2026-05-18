@@ -1,0 +1,14 @@
+name: gworkspace-cli
+description: Google Workspace via the gws CLI (Drive/Sheets/Docs/Gmail/Calendar/Chat/Admin)
+author: ai-hats
+tags: [integration, cli, google]
+pattern: reference
+
+triggers:
+  - "any read or write to Google Workspace (Drive, Sheets, Docs, Gmail, Calendar, Chat)"
+  - "user mentions gws, gworkspace, Google Sheets/Drive/Gmail/Calendar by name"
+  - "agent needs to invoke gws CLI"
+  - "user asks how to install or authorize Google Workspace CLI"
+skip:
+  - "real-time market data or non-Google services"
+  - "Google APIs accessed via a different mechanism (e.g. an MCP server)"
