@@ -16,6 +16,9 @@ from ai_hats.state import (
 )
 
 
+pytestmark = pytest.mark.integration
+
+
 def _init_git(project: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=project, check=True)
     subprocess.run(["git", "config", "user.email", "t@t.t"], cwd=project, check=True)
