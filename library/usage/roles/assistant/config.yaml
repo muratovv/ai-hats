@@ -11,6 +11,7 @@ composition:
     - skill-engineer
     - dev::python
     - dev::shell
+    - ai-hats-maintainer
     - trait-researcher-mindset
   rules: []
   skills: []
