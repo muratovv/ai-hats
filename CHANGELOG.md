@@ -10,6 +10,22 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-18
+
+User-extensibility and reliability release. New CLI ergonomics on the
+backlog (`task close`, `task link`/`unlink`, `task transition --force`)
+shrink the brainstorm-to-done loop for work shipped on master. Harness
+reliability lands: reporting pipeline steps can opt into zero-output
+guards and timeout retry/escalation via a new `harness:` block. A new
+E2E test gate (`dev_rule_e2e_gate`) requires real-subprocess coverage
+for any CLI / shell / pip surface change, backed by the
+`assert_command_exists` helper and a per-session plugin-dir refactor
+that fixes a cluster of sub-agent skill-loading bugs while shaving
+~4.5K composition tokens. Docs polish completes the 1.0 narrative
+track: new `how-to-advanced.md` and `how-to-backlog.md`, a
+numbered-refs convention sweep across all docs, and the glossary
+extended with system roles, traits, and core skills.
+
 ### Fixed
 
 - **`<ai_hats_dir>` placeholder leak in pipeline `save_artifact`** (HATS-395).
@@ -133,6 +149,11 @@ since the latest tag lives under **Unreleased** until the next release.
   `brainstorm → plan`); records the override in `work_log`. (HATS-371)
 - `TaskCard` fields `related: []`, `see_also: []`, `folded_into: ""`.
   Round-trip is byte-clean: empty fields are not serialized. (HATS-371)
+- E2E test `tests/e2e/test_task_cli.py` covering the HATS-371 task CLI
+  surface (`task close`, `task link`/`unlink`, `task transition --force`)
+  with real-subprocess assertions on state transitions, link rendering,
+  and error exit codes. Closes the `dev_rule_e2e_gate` retroactively for
+  HATS-371 during the v0.6 release cut. (HATS-370)
 
 ### Changed
 
