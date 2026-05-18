@@ -49,6 +49,14 @@ fragment the signal.
 
 The CLI returns the new `PROP-NNN`.
 
+> **Cost-citation in `--rationale`.** If the rationale is a claim of
+> *regress / pain / waste*, cite a concrete cost: hours lost, tests
+> broken, iterations wasted, user-facing incident, plan pivots. Uncited
+> pain claims still file (signal isn't lost), but they carry less weight
+> in triage — judge may close them earlier (Step 3). Cited cost = the
+> judge gives the PROP patience. Precedent: **PROP-036**
+> (`9-test breakage + 1 plan pivot`).
+
 ### Step 3 — Triage open proposals (judge / triage roles only)
 
 If you are the role responsible for closing the inbox (typically `judge`),
@@ -60,6 +68,19 @@ flip status after weighing votes/evidence:
 "$AH" task proposal status --prop PROP-NNN --status deferred
 "$AH" task proposal status --prop PROP-NNN --status duplicate
 ```
+
+**Cost-citation heuristic** — drives *how long* a PROP stays open, not
+cosmetic framing:
+
+| `--rationale` content | Triage default |
+|---|---|
+| Concrete cited cost (`9 tests`, `2h`, `1 incident`, plan pivots) | **Patience**: keep open across multiple sweep cycles, especially for `rule` / `process` categories. Wait for votes / additional evidence. |
+| Uncited pain claim ("feels wrong", "process is off") open ≥ 1 sweep cycle | **Faster close**: `defer` (if ≥1 vote shows others see something) or `reject` (no votes). Don't let pseudo-pain proposals occupy inbox indefinitely. |
+
+The point: critical-category PROPs deserve long observation windows
+**when there's something to observe**. Without a cited cost, the judge
+can't tell signal from noise — so the inbox shouldn't keep them
+indefinitely.
 
 ### Step 4 — Meta-proposal (when YOU are the problem)
 
@@ -96,7 +117,7 @@ How the action is *reported* depends on the calling role:
 | `--category` | yes | `rule`, `skill`, `code`, `process`, `doc` |
 | `--target` | yes | The thing being changed (file path, skill/rule/role name) |
 | `--description` | yes | What the change is (what, not why) |
-| `--rationale` | yes | Why — cite session evidence |
+| `--rationale` | yes | Why — cite session evidence. If the claim is regress/pain/waste, cite a concrete cost (tests, iterations, hours, incident, plan pivots); uncited claims may be closed earlier by judge (see Step 3). |
 | `--related-hypotheses` | optional | Comma-separated `HYP-NNN[,...]` |
 | `--session` | yes | Source session id |
 
@@ -112,6 +133,22 @@ covers your concern. → vote with one-line reasoning.
 Inbox has nothing on `target=src/ai_hats/cli/_helpers.py`. You found that
 `exec_claude_with_retro` ignores `--prompt-suffix`. → create with
 `category=code`.
+
+### ✓ Good: cost-cited PROP
+
+PROP-036 — `category=process`, target `plan-stage data-shape verification +
+signature-widening grep habit`. Rationale cites concrete cost:
+**`9-test breakage`** + **one Phase-1 architectural pivot**. Judge gives
+the PROP patience (multi-sweep observation) because the cost is
+quantified — signal vs noise is clear.
+
+### ✗ Bad: uncited pain claim
+
+PROP filed with `--rationale "process feels wrong; we waste time"` and
+no cited cost. → judge `defer`s it on the next sweep (or `reject`s if
+no votes accumulate). Either re-file with cited cost (tests broken,
+iterations measured) or vote on an existing cost-cited PROP that covers
+the same ground.
 
 ### ✗ Bad: duplicate creation
 
