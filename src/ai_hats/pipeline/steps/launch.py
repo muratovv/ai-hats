@@ -91,6 +91,9 @@ class LaunchProvider(Step):
             }
 
         runner = SubAgentRunner(project_dir)
+        # HATS-378: SubAgentRunner internally applies timeout retry and
+        # zero-output guard when ``harness_policy`` is supplied — no
+        # external guard call needed for the sub-agent branch.
         session = runner.run(
             role_name=role or "",
             task=prompt_text,
@@ -99,6 +102,7 @@ class LaunchProvider(Step):
             isolation_mode=isolation,
             tags=tags,
             system_prompt_override=system_prompt,
+            harness_policy=self.harness_policy,
         )
         exit_code = 1
         if session.metrics_path.exists():
@@ -107,12 +111,6 @@ class LaunchProvider(Step):
                 exit_code = int(metrics.get("exit_code", 1))
             except (OSError, ValueError):
                 exit_code = 1
-        # HATS-378: sub-agent metrics from _finalize_sub_agent lack
-        # tokens/tool_calls (no trace enrichment yet), so the guard is
-        # a no-op for this branch — HATS-271 per-runner transcript check
-        # remains the safety net for session-reviewer-style sub-agents
-        # until sub-agent metrics enrichment lands as a follow-up.
-        apply_post_run_guard(session, self.harness_policy)
         # Non-interactive: sub-agent stdout lands in transcript.txt
         # (written by _finalize_sub_agent). trace.log only carries
         # SUB/RES system events, so extract_marker on it would miss

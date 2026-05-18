@@ -22,6 +22,7 @@ import yaml
 from pydantic import ValidationError
 
 from ..harness.diagnostic import diagnose_silent_session
+from ..harness.errors import HarnessReliabilityError
 from ..hypothesis import HypothesisStore, ProposalStore
 from .facts import compute_facts
 from .loader import parse
@@ -30,6 +31,7 @@ from .session_review_schema import SCHEMA_VERSION, SessionReviewV1
 from .writer import dump
 
 if TYPE_CHECKING:
+    from ..pipeline.harness_policy import HarnessPolicy
     from ..runtime import SubAgentRunner
 
 logger = logging.getLogger(__name__)
@@ -71,21 +73,35 @@ class SessionReviewRunner:
 
     # ---- public API ----
 
-    def run(self, session_id: str, *, max_retries: int = 1) -> Path:
+    def run(
+        self,
+        session_id: str,
+        *,
+        max_retries: int = 1,
+        harness_policy: "HarnessPolicy | None" = None,
+    ) -> Path:
         """Run session-reviewer on ``session_id``. Returns path to saved review.
 
-        Raises :class:`SessionReviewError` on any failure. Meta-proposal filing
-        is delegated to the harness check at the CLI layer.
+        Raises :class:`SessionReviewError` on validation/schema failure
+        (target=session-reviewer). Raises :class:`HarnessReliabilityError`
+        (HATS-378) when the harness-layer guard fires — those propagate
+        unwrapped so callers can route the meta-PROP to
+        ``target=harness-incident``.
         """
         try:
             facts = compute_facts(self.project_dir, session_id)
             prompt = self._build_prompt(facts)
             analysis = self._run_and_validate(
-                prompt, facts.session_id, max_retries
+                prompt, facts.session_id, max_retries,
+                harness_policy=harness_policy,
             )
             review = self._merge(facts, analysis)
             self._validate_integrity(review, facts.session_id)
             return self._save(review)
+        except HarnessReliabilityError:
+            # Don't wrap — caller routes harness-incident vs
+            # session-reviewer via meta-PROP target (HATS-378 Phase 3).
+            raise
         except Exception as exc:  # noqa: BLE001 — surface every failure to harness
             error_msg = f"{type(exc).__name__}: {exc}"
             logger.warning(
@@ -223,7 +239,12 @@ class SessionReviewRunner:
         return (sr.review_model or sr.reflect_model or "")
 
     def _run_and_validate(
-        self, prompt: str, session_id: str, max_retries: int,
+        self,
+        prompt: str,
+        session_id: str,
+        max_retries: int,
+        *,
+        harness_policy: "HarnessPolicy | None" = None,
     ) -> dict[str, Any]:
         runner = self._get_runner()
         review_model = self._review_model()
@@ -241,6 +262,7 @@ class SessionReviewRunner:
                 # project's hypothesis backlog. Trust model: role injection
                 # forbids non-CLI mutations.
                 isolation_mode="none",
+                harness_policy=harness_policy,
             )
             transcript_path = session.session_dir / "transcript.txt"
             transcript = (

@@ -86,7 +86,8 @@ def mock_runners(monkeypatch, project_dir, captured):
     class _SessionReviewRunner:
         def __init__(self, _pd): pass
 
-        def run(self, sid, max_retries=1):
+        def run(self, sid, max_retries=1, harness_policy=None):
+            del harness_policy  # accepted for API parity, unused by stubs
             cap["session_review_calls"].append((sid, max_retries))
             out = retros_dir(pd) / "sessions" / f"{sid}.md"
             out.parent.mkdir(parents=True, exist_ok=True)

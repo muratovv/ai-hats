@@ -13,11 +13,19 @@ import uuid
 from dataclasses import replace
 from pathlib import Path
 
+from typing import TYPE_CHECKING
+
 from .assembler import Assembler
+from .harness.diagnostic import diagnose_silent_session
+from .harness.errors import HarnessTimeoutError
+from .harness.guard import apply_post_run_guard
 from .models import LifecycleEvent
 from .observe import AuditWriter, Session, SessionManager, SidecarTracer, TraceTag
 from .providers import get_provider
 from .worktree import IsolationMode, WorktreeManager
+
+if TYPE_CHECKING:
+    from .pipeline.harness_policy import HarnessPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +83,17 @@ def _cleanup_plugin_dir(override_args: list[str]) -> None:
     if idx + 1 >= len(override_args):
         return
     shutil.rmtree(override_args[idx + 1], ignore_errors=True)
+
+
+def _session_timed_out(session: Session) -> bool:
+    """True iff the session's metrics.json records ``timed_out: True``."""
+    if not session.metrics_path.exists():
+        return False
+    try:
+        metrics = json.loads(session.metrics_path.read_text())
+    except (OSError, ValueError):
+        return False
+    return bool(metrics.get("timed_out"))
 
 
 def _finalize_sub_agent(
@@ -793,17 +812,93 @@ class SubAgentRunner:
         isolation_mode: str = "discard",
         tags: dict[str, str] | None = None,
         system_prompt_override: str | None = None,
+        harness_policy: "HarnessPolicy | None" = None,
     ) -> Session:
         """Execute a sub-agent in isolation.
 
         ``system_prompt_override`` (HATS-267): when supplied, replaces the
         merged injection in the meta-prompt build while keeping structural
         composition data intact for provider-specific overrides.
+
+        ``harness_policy`` (HATS-378): optional post-run reliability
+        policy. When ``on_timeout`` is set, a subprocess timeout triggers
+        retry-with-increased-budget up to ``retry`` extra attempts; on
+        final timeout raises :class:`HarnessTimeoutError`. When
+        ``reporting`` is set, the zero-output guard fires after a clean
+        run. ``None`` preserves pre-HATS-378 behaviour (timeout returns
+        a session with ``timed_out=True``; no zero-output check).
         """
-        # Create sub-session
+        on_timeout = (
+            harness_policy.on_timeout if harness_policy is not None else None
+        )
+        max_attempts = 1 + (on_timeout.retry if on_timeout is not None else 0)
+
+        last_session: Session | None = None
+        for attempt in range(1, max_attempts + 1):
+            if attempt == 1 or on_timeout is None:
+                timeout_s = SUBAGENT_SUBPROCESS_TIMEOUT_S
+            else:
+                timeout_s = int(
+                    SUBAGENT_SUBPROCESS_TIMEOUT_S * on_timeout.budget_multiplier
+                )
+            attempt_tags = dict(tags or {})
+            if attempt > 1:
+                attempt_tags["harness_retry_attempt"] = str(attempt)
+
+            last_session = self._run_attempt(
+                role_name=role_name,
+                task=task,
+                ticket_id=ticket_id,
+                model=model,
+                parent_session=parent_session,
+                isolation_mode=isolation_mode,
+                tags=attempt_tags,
+                system_prompt_override=system_prompt_override,
+                timeout_s=timeout_s,
+            )
+            if not _session_timed_out(last_session):
+                break  # success or non-timeout error — retry loop done
+
+        assert last_session is not None  # loop body always assigns
+
+        # Timeout policy: if final attempt still timed out and we had a
+        # policy in place, escalate. Without a policy, preserve the
+        # legacy behaviour: return the session with timed_out=True.
+        if on_timeout is not None and _session_timed_out(last_session):
+            raise HarnessTimeoutError(
+                last_session.session_id,
+                diagnose_silent_session(last_session),
+            )
+
+        # Zero-output guard: no-op when policy is None or reporting is
+        # off. For sub-agents without trace-derived tokens/tool_calls in
+        # metrics, the guard is also a no-op (see is_zero_output) — future
+        # sub-agent metrics enrichment lights it up automatically.
+        apply_post_run_guard(last_session, harness_policy)
+
+        return last_session
+
+    def _run_attempt(
+        self,
+        *,
+        role_name: str,
+        task: str,
+        ticket_id: str,
+        model: str,
+        parent_session: str | None,
+        isolation_mode: str,
+        tags: dict[str, str],
+        system_prompt_override: str | None,
+        timeout_s: int,
+    ) -> Session:
+        """One subprocess attempt — always finalizes metrics, never re-raises.
+
+        Timeout and other failure modes are surfaced via metrics fields
+        (``timed_out``, ``error``, ``exit_code``) so the outer retry loop
+        can inspect them without exception plumbing.
+        """
         session = self.session_mgr.create_session(parent_session=parent_session)
 
-        # Compose the role
         result = self.assembler.composer.compose(
             role_name, overlay=self.assembler._get_overlay(role_name),
         )
@@ -812,7 +907,6 @@ class SubAgentRunner:
         provider_name = self.assembler.project_config.provider
         provider = get_provider(provider_name)
 
-        # Build meta-prompt
         meta_prompt = self._build_meta_prompt(
             result=result,
             provider=provider,
@@ -823,7 +917,6 @@ class SubAgentRunner:
         session.init_audit(role=role_name, provider=provider.name, model=model)
         session.log_trace(TraceTag.SUB, f"Sub-agent started: role={role_name}")
 
-        # For now, execute via CLI subprocess (SDK integration is provider-specific)
         env = {
             **os.environ,
             **session.get_env(),
@@ -836,13 +929,14 @@ class SubAgentRunner:
         # currently [] (HATS-367 will fill that gap).
         skill_args = provider.materialize_runtime_skills(self.project_dir, result)
         cmd = cmd + skill_args
-        # Add prompt via stdin for non-interactive execution
         session.log_trace(TraceTag.SUB, f"Executing: {' '.join(cmd)}")
 
         mode = IsolationMode(isolation_mode)
         session.log_trace(TraceTag.SUB, f"Isolation: {mode.value}")
 
-        with WorktreeManager(self.project_dir, role_name, session.session_id, mode) as work_dir:
+        with WorktreeManager(
+            self.project_dir, role_name, session.session_id, mode,
+        ) as work_dir:
             session.log_trace(TraceTag.SUB, f"Working directory: {work_dir}")
             t0 = time.monotonic()
             try:
@@ -855,7 +949,7 @@ class SubAgentRunner:
                     env=env,
                     capture_output=True,
                     text=True,
-                    timeout=SUBAGENT_SUBPROCESS_TIMEOUT_S,
+                    timeout=timeout_s,
                 )
                 session.log_trace(TraceTag.RES, f"Exit code: {proc.returncode}")
                 _finalize_sub_agent(
@@ -873,7 +967,7 @@ class SubAgentRunner:
             except subprocess.TimeoutExpired as exc:
                 session.log_trace(
                     TraceTag.SYS,
-                    f"Sub-agent timed out after {SUBAGENT_SUBPROCESS_TIMEOUT_S}s",
+                    f"Sub-agent timed out after {timeout_s}s",
                 )
                 _finalize_sub_agent(
                     session,

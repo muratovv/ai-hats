@@ -218,9 +218,10 @@ def test_reflect_session_uses_session_review_runner(
     class _StubSessionReviewRunner:
         def __init__(self, _pd): pass
 
-        def run(self, session_id, max_retries=1):
+        def run(self, session_id, max_retries=1, harness_policy=None):
             captured["session_id"] = session_id
             captured["max_retries"] = max_retries
+            captured["harness_policy"] = harness_policy
             return retros_dir(project_dir) / "fake.md"
 
     # reflect session now goes through PipelineHarness → run_session_review

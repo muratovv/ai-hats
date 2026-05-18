@@ -44,5 +44,9 @@ class RunSessionReview(Step):
         # CLI flags (--max-retries) without YAML-level reconfiguration.
         retries = max_retries if max_retries is not None else self.max_retries
         runner = SessionReviewRunner(project_dir)
-        review_path = runner.run(session_id, max_retries=retries)
+        review_path = runner.run(
+            session_id,
+            max_retries=retries,
+            harness_policy=self.harness_policy,
+        )
         return {"review_path": review_path}
