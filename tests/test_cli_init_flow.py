@@ -1,4 +1,4 @@
-"""E2E tests for full system initialization flow via CLI."""
+"""In-process CLI tests for full system initialization flow (CliRunner-based)."""
 
 from __future__ import annotations
 
@@ -178,7 +178,7 @@ def test_set_idempotent_via_cli(cli_project):
     assert prompt_first == prompt_second
 
 
-# -- Role override (shadow prompt) e2e tests --
+# -- Role override (shadow prompt) CLI tests --
 
 
 def _capture_launch(monkeypatch):
