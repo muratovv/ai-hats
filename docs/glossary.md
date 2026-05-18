@@ -22,9 +22,20 @@ Lifecycle diagram — see [2].
 
 A root composition that the agent wears during a session — bundles traits, rules, skills, and an injection block into one config. The shipped library splits into two layers: `library/core/roles/` (engine-internal: `initial-wizard`, `session-reviewer`, `judge`, `judge-for-role`, `auditor-for-role`, `hypothesis-intake`, `test-agent`) and `library/usage/roles/` (curated user-facing: `assistant`, `architect`, `sre`, `go-dev`, `go-dev-full`). Catalog — `ai-hats list roles`; layered structure and override precedence — see [9]. Example: [`library/usage/roles/assistant/config.yaml`](../library/usage/roles/assistant/config.yaml). Customization (add / remove / override) — see [6].
 
+Key system roles you will meet in cross-doc prose:
+
+- `initial-wizard` — interactive setup that runs on `ai-hats self init`. See [6].
+- `session-reviewer` — per-session retrospective; votes on active HYPs and files a PROP on self-problem. Triggered by `ai-hats reflect session` (auto on `session_end` per policy, or manual). See [5].
+- `judge` / `judge-for-role` / `auditor-for-role` — the reflection-loop roles for backlog triage (`ai-hats reflect all`) and role-coherence audits (`ai-hats reflect role`). See [5].
+
 ## Trait
 
 An ai-hats-native composition primitive: a reusable bundle (rules + skills + injection text) included by one or more roles. Traits are the unit of cross-role reuse — a fix in one trait reaches every role that pulls it in on the next `ai-hats self bump`. Flat model: a trait cannot include another trait. Format: `library/{core,usage}/traits/<name>/config.yaml`. Catalog — `ai-hats list traits`. Composition rules — see [3]; library layout — see [9].
+
+Key system traits every role inherits transitively:
+
+- `trait-base` — minimum behaviour for every role: core principles (safety > integrity > convenience > velocity), pessimistic verification, brevity, least astonishment.
+- `trait-agent` — agent-mode loop primitives: backlog state machine, delegation pattern, memory hygiene (context-reset / handoff / summary), anti-anchoring, tool-call hygiene.
 
 ## Rule, Skill
 
