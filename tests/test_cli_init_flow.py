@@ -481,12 +481,11 @@ def test_update_command_runs_via_cli(cli_project, monkeypatch):
     assert "Current version:" in result.output
     assert "Library:" in result.output
 
-    # Find the pip install command among all subprocess calls
+    # Interaction-count only: exactly one pip install call.
+    # Cmd composition is covered by test_update_command_uses_force_reinstall;
+    # the real install flow is covered by tests/e2e/test_install.py.
     pip_cmds = [c for c in captured_cmds if "--force-reinstall" in c]
     assert len(pip_cmds) == 1, f"Expected 1 pip install call, got {len(pip_cmds)}"
-    pip_cmd = pip_cmds[0]
-    assert "--no-deps" not in pip_cmd
-    assert any("git+ssh://git@github.com/muratovv/ai-hats.git" in arg for arg in pip_cmd)
 
 
 def test_update_command_reports_failure(cli_project, monkeypatch):

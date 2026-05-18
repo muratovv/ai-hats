@@ -15,6 +15,9 @@ from ai_hats.assembler import (
 from ai_hats.models import ProjectConfig
 
 
+pytestmark = pytest.mark.integration
+
+
 def _git_init(path: Path) -> None:
     subprocess.run(
         ["git", "init", "--quiet"],

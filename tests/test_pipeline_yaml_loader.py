@@ -130,6 +130,7 @@ def test_load_step_with_invalid_harness_block_raises(tmp_path: Path):
 # ---- __main__ dry-run inspector ----
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "name", ["human", "execute", "reflect-all", "reflect-session"]
 )
