@@ -166,14 +166,14 @@ vars: @./_palette
 
 Slot mapping (16 colors, derived from the project logo's navy/orange/cream):
 
-| Slot | Hex | Used for |
-|---|---|---|
-| N7 | `#faf2e6` | Paper/canvas background |
-| N1 → N3 | navy shades | Bold text → italic edge labels |
-| B1 → B6 | navy spectrum | Box fills, arrow strokes |
-| AA4 | `#e8632b` | Brand orange — storage shapes (cylinders, ovals) |
-| AA2 / AA5 | orange shades | Subdued / dark variants |
-| AB4 / AB5 | cream/beige | Soft accent shapes (parallelograms) |
+| Slot      | Hex           | Used for                                         |
+| --------- | ------------- | ------------------------------------------------ |
+| N7        | `#faf2e6`     | Paper/canvas background                          |
+| N1 → N3   | navy shades   | Bold text → italic edge labels                   |
+| B1 → B6   | navy spectrum | Box fills, arrow strokes                         |
+| AA4       | `#e8632b`     | Brand orange — storage shapes (cylinders, ovals) |
+| AA2 / AA5 | orange shades | Subdued / dark variants                          |
+| AB4 / AB5 | cream/beige   | Soft accent shapes (parallelograms)              |
 
 See `docs/assets/diagrams/PALETTES.md` for the full preview of
 alternative palettes (dracula, tokyo-night, nord, gruvbox) on the same
@@ -229,48 +229,6 @@ note: |md
   stale (e.g. you upgrade Source Code Pro), delete
   `$TMPDIR/ai-hats-fonts/` and rerun the script.
 
-## Documentation references
-
-User-facing docs (`README.md`, `docs/*.md`, `CONTRIBUTING.md`) use one of three link styles depending on the kind of target. Pick by **what** is being linked, not by **where** the link appears.
-
-| Link kind | Style |
-|---|---|
-| Cross-doc, cross-file, or fixture path | **numbered** — `[N]` in body + a visible `## References` section at the end of the file |
-| In-doc section anchor (`#some-section`) | **inline** `[text](#anchor)` |
-| CLI command, env var, file path-as-string | **inline code** — `` `ai-hats task ...` ``, `` `<ai_hats_dir>/...` `` |
-
-**Rationale.** Cross-doc links earn a citation slot at the bottom because they survive doc reshuffles, declutter the body, and form a quick "what does this doc depend on" index. Anchors and CLI strings stay inline because they're navigation / identifiers, not citations.
-
-**Numbered-refs format** (locked by HATS-358):
-
-- One **visible** `## References` section at the end of the file. Entries look like:
-  ```markdown
-  **[1]** — [`docs/glossary.md`](glossary.md) — naming source-of-truth for core terms.
-  ```
-- **No** `[N]: url` link-reference definitions at the bottom — they duplicate the URL. `[N]` in body is a plain pointer to the numbered list, not a clickable shortcut.
-- Numbering is **per-file** (resets to `[1]` each doc), ordered by first appearance in body.
-
-**Worked example.**
-
-```markdown
-The cycle has two parts: auto reflect-session (per session) feeds the HYP log
-and PROP inbox; manual reflect-all (user-initiated) triages the accumulated
-backlog. Architecture reference — [1]. Sample artifacts — [2], [3]. See also
-the [Hypothesis section](#hypotheses) below.
-
-Run `ai-hats reflect all` to start the triage.
-
-## References
-
-**[1]** — [`docs/reflect.md`](reflect.md) — pipeline architecture, schema dispatch.
-
-**[2]** — [`tests/fixtures/real_backlog/HYP-001-sample.yaml`](../tests/fixtures/real_backlog/HYP-001-sample.yaml) — synthetic hypothesis fixture.
-
-**[3]** — [`tests/fixtures/real_backlog/PROP-001-sample.yaml`](../tests/fixtures/real_backlog/PROP-001-sample.yaml) — synthetic proposal fixture.
-```
-
-Reference docs already on this style: [`docs/how-to-backlog.md`](docs/how-to-backlog.md), [`docs/how-to-advanced.md`](docs/how-to-advanced.md), [`docs/how-to-feedback-loop.md`](docs/how-to-feedback-loop.md).
-
 ## Pull requests
 
 - Open the PR against `master`.
@@ -303,3 +261,45 @@ the body.
 
 By contributing, you agree that your contributions will be licensed
 under the [MIT License](LICENSE).
+
+## Documentation references
+
+User-facing docs (`README.md`, `docs/*.md`, `CONTRIBUTING.md`) use one of three link styles depending on the kind of target. Pick by **what** is being linked, not by **where** the link appears.
+
+| Link kind                                 | Style                                                                                   |
+| ----------------------------------------- | --------------------------------------------------------------------------------------- |
+| Cross-doc, cross-file, or fixture path    | **numbered** — `[N]` in body + a visible `## References` section at the end of the file |
+| In-doc section anchor (`#some-section`)   | **inline** `[text](#anchor)`                                                            |
+| CLI command, env var, file path-as-string | **inline code** — `` `ai-hats task ...` ``, `` `<ai_hats_dir>/...` ``                   |
+
+**Rationale.** Cross-doc links earn a citation slot at the bottom because they survive doc reshuffles, declutter the body, and form a quick "what does this doc depend on" index. Anchors and CLI strings stay inline because they're navigation / identifiers, not citations.
+
+**Numbered-refs format** (locked by HATS-358):
+
+- One **visible** `## References` section at the end of the file. Entries look like:
+  ```markdown
+  **[1]** — [`docs/glossary.md`](glossary.md) — naming source-of-truth for core terms.
+  ```
+- **No** `[N]: url` link-reference definitions at the bottom — they duplicate the URL. `[N]` in body is a plain pointer to the numbered list, not a clickable shortcut.
+- Numbering is **per-file** (resets to `[1]` each doc), ordered by first appearance in body.
+
+**Worked example.**
+
+```markdown
+The cycle has two parts: auto reflect-session (per session) feeds the HYP log
+and PROP inbox; manual reflect-all (user-initiated) triages the accumulated
+backlog. Architecture reference — [1]. Sample artifacts — [2], [3]. See also
+the [Hypothesis section](#hypotheses) below.
+
+Run `ai-hats reflect all` to start the triage.
+
+## References
+
+**[1]** — [`docs/reflect.md`](reflect.md) — pipeline architecture, schema dispatch.
+
+**[2]** — [`tests/fixtures/real_backlog/HYP-001-sample.yaml`](../tests/fixtures/real_backlog/HYP-001-sample.yaml) — synthetic hypothesis fixture.
+
+**[3]** — [`tests/fixtures/real_backlog/PROP-001-sample.yaml`](../tests/fixtures/real_backlog/PROP-001-sample.yaml) — synthetic proposal fixture.
+```
+
+Reference docs already on this style: [`docs/how-to-backlog.md`](docs/how-to-backlog.md), [`docs/how-to-advanced.md`](docs/how-to-advanced.md), [`docs/how-to-feedback-loop.md`](docs/how-to-feedback-loop.md).
