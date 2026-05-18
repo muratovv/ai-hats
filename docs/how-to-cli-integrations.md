@@ -73,5 +73,5 @@ After `ai-hats bump` the skill becomes visible to the agent through the standard
 
 ## Examples
 
-- `gworkspace-cli` — Google Workspace via https://github.com/googleworkspace/cli (see epic HATS-341).
+- [`gworkspace-cli`](../library/usage/skills/gworkspace-cli/SKILL.md) — Google Workspace via the `gws` CLI. **Landed.** Setup walk-through: [`docs/integrations/gworkspace-cli-setup.md`](integrations/gworkspace-cli-setup.md). Bundled into trait `integration::google` (`library/usage/traits/integration/google/config.yaml`). Use that setup guide as the reference layout for future CLI integration skills.
 - Additional CLI integrations are added as child tasks under HATS-341.
