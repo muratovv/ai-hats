@@ -55,6 +55,7 @@ class LaunchProvider(Step):
         extra_args: list[str] | None = None,
         **_: Any,
     ) -> dict[str, Any]:
+        from ...harness.guard import apply_post_run_guard
         from ...models import ProjectConfig
         from ...runtime import SubAgentRunner, WrapRunner
 
@@ -77,6 +78,11 @@ class LaunchProvider(Step):
                 tags=tags,
                 system_prompt_override=system_prompt,
             )
+            # HATS-378: universal zero-output guard for reporting steps.
+            # Interactive (main) sessions have trace-enriched metrics by
+            # the time WrapRunner returns, so the token/tool_calls
+            # criterion is reliable here.
+            apply_post_run_guard(session, self.harness_policy)
             return {
                 "session_id": session.session_id,
                 "session_dir": session.session_dir,
@@ -101,6 +107,12 @@ class LaunchProvider(Step):
                 exit_code = int(metrics.get("exit_code", 1))
             except (OSError, ValueError):
                 exit_code = 1
+        # HATS-378: sub-agent metrics from _finalize_sub_agent lack
+        # tokens/tool_calls (no trace enrichment yet), so the guard is
+        # a no-op for this branch — HATS-271 per-runner transcript check
+        # remains the safety net for session-reviewer-style sub-agents
+        # until sub-agent metrics enrichment lands as a follow-up.
+        apply_post_run_guard(session, self.harness_policy)
         # Non-interactive: sub-agent stdout lands in transcript.txt
         # (written by _finalize_sub_agent). trace.log only carries
         # SUB/RES system events, so extract_marker on it would miss
