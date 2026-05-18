@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composer import CompositionResult, ResolvedComponent
+from .placeholders import expand_path_placeholders
 
 if TYPE_CHECKING:
     from .observe import SessionManager
@@ -130,6 +131,15 @@ class Provider(abc.ABC):
                 if dest.exists():
                     shutil.rmtree(dest)
                 shutil.copytree(skill.source_path, dest)
+                # HATS-380: SKILL.md is what the agent reads as prompt content;
+                # expand `<ai_hats_dir>` so the agent never obeys the literal
+                # placeholder. Other assets (hooks, fixtures) are copied verbatim.
+                skill_md = dest / "SKILL.md"
+                if skill_md.exists():
+                    original = skill_md.read_text()
+                    expanded = expand_path_placeholders(original, project_dir)
+                    if expanded != original:
+                        skill_md.write_text(expanded)
                 managed_names.append(skill.name)
 
         # Track which skills we own
@@ -265,6 +275,8 @@ class GeminiProvider(Provider):
         Uses GEMINI_CLI_PROJECT_RULES_PATH to inject without touching GEMINI.md.
         """
         prompt_content = self.build_system_prompt(result)
+        # HATS-380: expand placeholder before temp prompt reaches the agent.
+        prompt_content = expand_path_placeholders(prompt_content, project_dir)
 
         # Create isolated rules dir in temp
         rules_dir = Path(tempfile.mkdtemp(prefix="ai-hats-override-rules-"))
@@ -374,6 +386,9 @@ class ClaudeProvider(Provider):
         Preserves project-local content outside AI-HATS markers.
         """
         prompt_content = self.build_system_prompt(result)
+        # HATS-380: expand placeholder before --system-prompt-file content
+        # reaches the agent.
+        prompt_content = expand_path_placeholders(prompt_content, project_dir)
 
         # Build full file content preserving project-local sections.
         # HATS-285: handle both legacy uppercase markers and the new lowercase

@@ -34,6 +34,16 @@ since the latest tag lives under **Unreleased** until the next release.
 - `ai-hats task list --search` now also matches against `related`,
   `see_also`, and `folded_into`. (HATS-371)
 
+### Fixed
+
+- `<ai_hats_dir>` placeholder is now expanded before skill/role/rule
+  bodies reach the agent. Previously the LLM occasionally obeyed the
+  literal token and wrote artefacts to `./<ai_hats_dir>/...` in the
+  project root. Substitution happens at the writer layer
+  (`Assembler._write_canonical_dir` and `BaseProvider.export_skills`);
+  library source files keep the placeholder as canonical reference.
+  (HATS-380)
+
 ## [0.5.0] - 2026-05-17
 
 Bootstrap experience overhaul: `ai-hats self init` now opens an

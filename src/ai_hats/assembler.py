@@ -22,6 +22,7 @@ from .paths import (
     rules_dir as _lib_rules_dir,
     skills_dir as _lib_skills_dir,
 )
+from .placeholders import expand_path_placeholders
 from .providers import (
     INJECTION_END,
     INJECTION_START,
@@ -485,6 +486,9 @@ class Assembler:
             # still uses the inline path (non-goal of HATS-276).
             if provider.scaffold_template_relpath() is None:
                 prompt_content = provider.build_system_prompt(result)
+                # HATS-380: substitute placeholders before the inline-block
+                # writer path (Gemini ./GEMINI.md) — bypasses canonical writer.
+                prompt_content = expand_path_placeholders(prompt_content, self.project_dir)
                 provider.update_system_prompt(self.project_dir, prompt_content)
 
             # 6. Verify
@@ -1205,6 +1209,14 @@ class Assembler:
             list(targets.keys()),
             order=self._resolve_imports_order(self.project_config.imports_order),
         ).encode()
+
+        # HATS-380: expand `<ai_hats_dir>` placeholder before write so the
+        # agent never sees the literal token (it would otherwise create a
+        # bogus `./<ai_hats_dir>/` directory in the project root).
+        targets = {
+            relpath: expand_path_placeholders(content.decode(), self.project_dir).encode()
+            for relpath, content in targets.items()
+        }
 
         # Idempotent write
         for relpath, content in targets.items():
