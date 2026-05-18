@@ -1,9 +1,11 @@
-"""Shared e2e helpers for HATS-269 regression suite.
+"""Shared pipeline-integration helpers for HATS-269 regression suite.
 
-Mocking strategy: at the runner boundary (WrapRunner / SubAgentRunner /
-SessionReviewRunner) plus subprocess.Popen. Pipeline core / harness /
-steps run for real — these tests are the regression catcher for the
-migration, so they must observe end-to-end side-effects.
+Layer: pipeline-integration (not e2e). Pipeline core / harness / steps
+run for real and observe end-to-end side-effects. The runner boundary —
+WrapRunner / SubAgentRunner / SessionReviewRunner — and subprocess.Popen
+are stubbed so that no real Claude / shell subprocess is spawned. True
+CLI e2e tests (real bash + real pip + real ai-hats binary) live under
+``tests/e2e/``.
 """
 
 from __future__ import annotations
