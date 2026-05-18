@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._cli_helpers import assert_command_exists
+
 
 pytestmark = pytest.mark.integration
 
@@ -91,6 +93,7 @@ def _setup_env(tmp_path):
 
 def test_bootstrap_installs_launcher_then_invokes_self_update(tmp_path):
     """install-launcher writes the launcher; bootstrap then calls `self update`."""
+    assert_command_exists("self", "update")
     _, project, dest, log, bootstrap = _setup_env(tmp_path)
 
     res = _run_bootstrap(bootstrap, cwd=project, launcher_dest=dest)
@@ -104,6 +107,8 @@ def test_bootstrap_installs_launcher_then_invokes_self_update(tmp_path):
 
 def test_bootstrap_propagates_role_provider_to_init(tmp_path):
     """-r foo -p bar → launcher called with `init --role foo --provider bar`."""
+    assert_command_exists("self", "init")
+    assert_command_exists("self", "update")
     _, project, dest, log, bootstrap = _setup_env(tmp_path)
 
     res = _run_bootstrap(
