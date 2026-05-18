@@ -12,6 +12,18 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Added
 
+- **`assert_command_exists` test helper** (HATS-374). New
+  `tests/_cli_helpers.py:assert_command_exists(*path)` shells out to
+  `ai-hats <path> --help` and asserts exit 0. Lightweight catch for the
+  "command moved between groups" bug class (HATS-333 bug B: bootstrap.sh
+  kept referencing `ai-hats init` after HATS-242 nested it under `self`,
+  and the unit test asserted only what bootstrap output — the missing
+  command was invisible to the suite). Real subprocess → callers must
+  carry `@pytest.mark.integration`. Sourced from PROP-032; signature
+  generalised to variadic `*path` so 3-level paths (`task hyp create`)
+  work without a None special case for top-level. Applied in
+  `tests/test_bootstrap_sh.py` as a pre-flight check.
+
 - **E2E test gate for CLI/shell/pip changes** (HATS-373). New rule
   `dev_rule_e2e_gate` requires any task that touches `src/ai_hats/cli/`,
   `scripts/*.sh`, `_bootstrap.py`, `cli/maintenance.py`, or
