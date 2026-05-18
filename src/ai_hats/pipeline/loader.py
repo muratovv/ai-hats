@@ -6,11 +6,19 @@ YAML schema:
     steps:
       - id: <step_name>          # FQN from registry
         params: {<key>: <val>}   # optional, step-specific
+        harness:                 # optional, HATS-378 reliability policy
+          reporting: <bool>
+          on_zero_output: harness_incident | ignore
+          on_timeout:
+            retry: <int>
+            budget_multiplier: <float>
+            then: harness_incident
 
 The loader resolves each ``id`` against ``pipeline.registry``, builds the
-Step with its declared ``params``, and assembles a ``Pipeline``. Build-
-time consistency (every step's ``requires`` is producible) is then
-re-checked at ``pipeline.run`` against the actual initial state.
+Step with its declared ``params``, attaches the optional ``harness``
+policy, and assembles a ``Pipeline``. Build-time consistency (every
+step's ``requires`` is producible) is then re-checked at ``pipeline.run``
+against the actual initial state.
 
 Run as a module for dry-run inspection:
 
@@ -25,6 +33,7 @@ from typing import Any
 import yaml
 
 from . import registry, steps  # noqa: F401  — import registers built-ins
+from .harness_policy import HarnessPolicyError, parse_harness_policy
 from .pipeline import Pipeline, build
 
 
@@ -81,6 +90,16 @@ def load_pipeline(yaml_path: Path) -> Pipeline:
             raise PipelineYamlError(
                 f"{yaml_path}: steps[{i}] ({step_id}): {e}"
             ) from e
+        # HATS-378: optional harness reliability policy. Additive —
+        # steps without `harness:` keep the base-class default (None).
+        harness_raw = item.get("harness")
+        if harness_raw is not None:
+            try:
+                instance.harness_policy = parse_harness_policy(harness_raw)
+            except HarnessPolicyError as e:
+                raise PipelineYamlError(
+                    f"{yaml_path}: steps[{i}] ({step_id}): harness: {e}"
+                ) from e
         instances.append(instance)
 
     return build(*instances, name=name)

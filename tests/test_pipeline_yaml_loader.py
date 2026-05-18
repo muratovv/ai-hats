@@ -79,6 +79,54 @@ def test_load_top_level_not_mapping(tmp_path: Path):
         load_pipeline(f)
 
 
+# ---- HATS-378 Phase 0: harness policy on pipeline steps ----
+
+
+def test_load_step_without_harness_block_has_none_policy(tmp_path: Path):
+    f = tmp_path / "p.yaml"
+    f.write_text(
+        "name: x\nsteps:\n"
+        "  - id: pre_log\n"
+    )
+    p = load_pipeline(f)
+    assert p.steps[0].harness_policy is None
+
+
+def test_load_step_with_harness_block_attaches_policy(tmp_path: Path):
+    f = tmp_path / "p.yaml"
+    f.write_text(
+        "name: x\nsteps:\n"
+        "  - id: pre_log\n"
+        "    harness:\n"
+        "      reporting: true\n"
+        "      on_zero_output: harness_incident\n"
+        "      on_timeout:\n"
+        "        retry: 1\n"
+        "        budget_multiplier: 2\n"
+        "        then: harness_incident\n"
+    )
+    p = load_pipeline(f)
+    policy = p.steps[0].harness_policy
+    assert policy is not None
+    assert policy.reporting is True
+    assert policy.on_zero_output == "harness_incident"
+    assert policy.on_timeout is not None
+    assert policy.on_timeout.retry == 1
+    assert policy.on_timeout.budget_multiplier == 2.0
+
+
+def test_load_step_with_invalid_harness_block_raises(tmp_path: Path):
+    f = tmp_path / "p.yaml"
+    f.write_text(
+        "name: x\nsteps:\n"
+        "  - id: pre_log\n"
+        "    harness:\n"
+        "      reporting: maybe\n"
+    )
+    with pytest.raises(PipelineYamlError, match="harness:.*reporting must be bool"):
+        load_pipeline(f)
+
+
 # ---- __main__ dry-run inspector ----
 
 
