@@ -833,3 +833,29 @@ def test_claude_build_override_has_no_literal_placeholder(
     content = prompt_file.read_text()
     assert "<ai_hats_dir>" not in content
     assert ".agent/ai-hats/sessions/audits/" in content
+
+
+def test_subagent_meta_prompt_has_no_literal_placeholder(
+    project_with_placeholder_library,
+):
+    """HATS-380 residual gap: SubAgentRunner._build_meta_prompt must expand
+    `<ai_hats_dir>` in result.merged_injection. Roles like session-reviewer
+    (auto-spawned by reflect-session) carry the literal in their injection."""
+    from ai_hats.providers import get_provider
+    from ai_hats.runtime import SubAgentRunner
+
+    project, lib = project_with_placeholder_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("ph-role", provider_name="claude")
+    result = asm.composer.compose("ph-role")
+
+    runner = SubAgentRunner(project)
+    meta_prompt = runner._build_meta_prompt(
+        result=result, provider=get_provider("claude"), task="", ticket_id="",
+    )
+
+    assert "<ai_hats_dir>" not in meta_prompt
+    # Spot-check both trait + role injection landed expanded.
+    assert ".agent/ai-hats/tracker" in meta_prompt
+    assert ".agent/ai-hats/sessions/audits/" in meta_prompt
