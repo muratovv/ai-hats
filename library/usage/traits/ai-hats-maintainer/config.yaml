@@ -1,0 +1,21 @@
+name: ai-hats-maintainer
+composition:
+  traits: []
+  rules:
+    - dev_rule_e2e_gate
+  skills: []
+  hooks: {}
+injection: |
+  ## AI-HATS MAINTAINER
+
+  You maintain the ai-hats codebase itself — CLI surface, shell scripts,
+  install/launcher flow. Engineering discipline beyond the generic agent:
+
+  ### E2E gate (see rule `dev_rule_e2e_gate`)
+  - If your change touches `src/ai_hats/cli/`, `scripts/*.sh`, `_bootstrap.py`,
+    `cli/maintenance.py`, or `[project.scripts]` — the plan MUST name the
+    e2e test(s) you will add under `tests/e2e/` (real bash + real pip + real
+    `ai-hats` binary, `@pytest.mark.integration`).
+  - Pipeline-integration tests and in-process `CliRunner` tests do NOT
+    satisfy this gate. Reviewer rejects `done` if the named test is missing
+    or doesn't fail-under-revert.

@@ -12,6 +12,23 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Added
 
+- **E2E test gate for CLI/shell/pip changes** (HATS-373). New rule
+  `dev_rule_e2e_gate` requires any task that touches `src/ai_hats/cli/`,
+  `scripts/*.sh`, `_bootstrap.py`, `cli/maintenance.py`, or
+  `[project.scripts]` to include an e2e test under `tests/e2e/` (real
+  bash + real pip + real `ai-hats` binary, `@pytest.mark.integration`)
+  before transitioning to `done`. Pipeline-integration tests and
+  in-process `CliRunner` tests do not satisfy the gate. Sourced from
+  PROP-031; motivated by HATS-333, which shipped two production bugs
+  (PEP 508 rejection of local-path `ai-hats @ /path`, click
+  command-nesting drift) past a green unit suite that stubbed the very
+  contracts the change broke.
+- **`ai-hats-maintainer` trait** (HATS-373). New project-specific trait
+  in `library/usage/traits/` bundling `dev_rule_e2e_gate` plus a
+  plan-stage injection that names the gate. Attached to the `assistant`
+  role. Reusable: any CLI-shipping ai-hats project can pin the same
+  rule via its own maintainer trait without inheriting it globally.
+
 - **Harness reliability** (HATS-378). Pipeline steps can opt into
   post-run validation via a new `harness:` block on the step YAML:
   ```yaml
