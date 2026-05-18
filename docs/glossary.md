@@ -70,10 +70,6 @@ The feedback loop that turns session evidence plus active HYP / open PROP into a
 
 Practical recipes — see [5]. Pipeline architecture — see [8].
 
-## Worktree
-
-An isolated git-worktree clone where an agent works without touching the mainline. CLI: `ai-hats wt create | exec | merge | discard | env`. **All task execution flows happen in their own worktree** — `ai-hats agent <role>` and `ai-hats task transition <id> execute` both spawn one automatically. The mainline stays clean; results merge back explicitly via `ai-hats wt merge`.
-
 ## Artifacts
 
 What ai-hats persists on disk during normal use.
