@@ -303,6 +303,8 @@ Two equivalent flows — pick one, do not mix:
 1. `ai-hats task transition <ID> execute` — creates a `task/<id>` worktree automatically
 2. `cd <printed-worktree-path>`
 
+> **Do not** pre-create the `task/<id>` branch (e.g. `git branch task/hats-NNN`) before this transition. The CLI invokes `git worktree add -b task/<id> ...`; if the branch already exists, the command fails and you have to delete the branch and retry. (HATS-375)
+
 **B. Custom branch name (manual worktree first):**
 1. `ai-hats wt create type/TICKET-ID` (e.g. `feat/PROJ-004`) → **worktree-isolation**
 2. `cd <printed-worktree-path>`
