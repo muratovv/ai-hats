@@ -22,6 +22,7 @@ composition:
     - network-documentation
     - network-change-verification
     - distributed-systems-checklist
+    - trust-boundary-mapping
   hooks:
     session_start: []
     session_end: []
