@@ -275,6 +275,8 @@ class GeminiProvider(Provider):
         Uses GEMINI_CLI_PROJECT_RULES_PATH to inject without touching GEMINI.md.
         """
         prompt_content = self.build_system_prompt(result)
+        # HATS-380: expand placeholder before temp prompt reaches the agent.
+        prompt_content = expand_path_placeholders(prompt_content, project_dir)
 
         # Create isolated rules dir in temp
         rules_dir = Path(tempfile.mkdtemp(prefix="ai-hats-override-rules-"))
@@ -384,6 +386,9 @@ class ClaudeProvider(Provider):
         Preserves project-local content outside AI-HATS markers.
         """
         prompt_content = self.build_system_prompt(result)
+        # HATS-380: expand placeholder before --system-prompt-file content
+        # reaches the agent.
+        prompt_content = expand_path_placeholders(prompt_content, project_dir)
 
         # Build full file content preserving project-local sections.
         # HATS-285: handle both legacy uppercase markers and the new lowercase
