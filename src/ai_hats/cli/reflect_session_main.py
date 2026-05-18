@@ -19,9 +19,18 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
+from ..harness.errors import HarnessReliabilityError
 from ..hypothesis import HypothesisStore, Proposal, ProposalStore, next_proposal_id
 from ..pipeline.harness import PipelineHarness
 from ..retro.session_review_runner import SessionReviewError
+
+
+# HATS-378: meta-PROP targets. session-reviewer = role's own output failed
+# validation (schema, empty frontmatter). harness-incident = the harness
+# layer detected a failure independent of the role's logic
+# (subprocess timeout, zero-output silent run).
+TARGET_SESSION_REVIEWER = "session-reviewer"
+TARGET_HARNESS_INCIDENT = "harness-incident"
 
 
 def main() -> int:
@@ -37,6 +46,7 @@ def main() -> int:
     project_dir = Path.cwd()
 
     runner_error: str | None = None
+    harness_error: HarnessReliabilityError | None = None
     saved_path: Path | None = None
     try:
         with PipelineHarness("reflect-session", project_dir) as h:
@@ -46,6 +56,14 @@ def main() -> int:
                 "max_retries": max_retries,
             })
             saved_path = final.get("review_path")
+    except HarnessReliabilityError as exc:
+        # HATS-378: harness-layer failure (timeout, zero-output guard) →
+        # file under target=harness-incident, NOT session-reviewer.
+        harness_error = exc
+        print(
+            f"harness incident for {session_id}: {exc}",
+            file=sys.stderr,
+        )
     except SessionReviewError as exc:
         runner_error = str(exc)
         print(
@@ -53,9 +71,20 @@ def main() -> int:
             file=sys.stderr,
         )
 
+    if harness_error is not None:
+        _file_meta_proposal(
+            project_dir, session_id,
+            issues=[f"harness: {harness_error}"],
+            target=TARGET_HARNESS_INCIDENT,
+        )
+        return 2
+
     issues = _harness_check(project_dir, session_id, runner_error)
     if issues:
-        _file_meta_proposal(project_dir, session_id, issues)
+        _file_meta_proposal(
+            project_dir, session_id, issues,
+            target=TARGET_SESSION_REVIEWER,
+        )
         return 2
     if saved_path is not None:
         print(f"session-reviewer saved to {saved_path}")
@@ -149,43 +178,44 @@ def _load_active_hyp_ids(project_dir: Path) -> set[str]:
 
 
 def _file_meta_proposal(
-    project_dir: Path, session_id: str, issues: list[str],
+    project_dir: Path,
+    session_id: str,
+    issues: list[str],
+    *,
+    target: str = TARGET_SESSION_REVIEWER,
 ) -> None:
     from ..paths import proposals_dir as _proposals_dir
 
     proposals_dir = _proposals_dir(project_dir)
     store = ProposalStore(proposals_dir)
 
-    # De-dup: skip if a process/session-reviewer proposal already exists for
-    # this failed_session_id.
-    for existing in store.filter(category="process", target="session-reviewer"):
+    # De-dup: skip if a process proposal with the SAME target already
+    # exists for this failed_session_id. Distinct targets coexist —
+    # a harness-incident and a session-reviewer proposal for the same
+    # session capture different facets and should both be filed if both
+    # arise.
+    for existing in store.filter(category="process", target=target):
         if existing.failed_session_id == session_id:
             print(
-                f"[harness] meta-proposal already filed for {session_id}: "
-                f"{existing.id}",
+                f"[harness] meta-proposal already filed for {session_id} "
+                f"(target={target}): {existing.id}",
                 file=sys.stderr,
             )
             return
 
     proposals_dir.mkdir(parents=True, exist_ok=True)
     prop_id = next_proposal_id(proposals_dir)
-    description = (
-        "Harness check detected incomplete session-reviewer output for "
-        f"{session_id}. Issues: " + "; ".join(issues)
-    )[:1000]
-    title = f"session-reviewer incomplete: {session_id}"[:200]
+    title, description, rationale = _build_meta_proposal_body(
+        session_id, issues, target,
+    )
     proposal = Proposal(
         id=prop_id,
         created=datetime.now(tz=timezone.utc),
         title=title,
         category="process",
-        target="session-reviewer",
+        target=target,
         description=description,
-        rationale=(
-            "Runtime safety net: harness check detected incomplete review "
-            "output. Re-run with `ai-hats reflect session --session "
-            f"{session_id}` after addressing the cause."
-        ),
+        rationale=rationale,
         failed_session_id=session_id,
     )
     try:
@@ -196,6 +226,38 @@ def _file_meta_proposal(
             f"[harness] failed to file meta-proposal for {session_id}: {e}",
             file=sys.stderr,
         )
+
+
+def _build_meta_proposal_body(
+    session_id: str, issues: list[str], target: str,
+) -> tuple[str, str, str]:
+    """Build (title, description, rationale) appropriate for the target."""
+    joined = "; ".join(issues)
+    if target == TARGET_HARNESS_INCIDENT:
+        title = f"harness incident: {session_id}"[:200]
+        description = (
+            f"Harness reliability failure for session {session_id}. "
+            f"Details: {joined}"
+        )[:1000]
+        rationale = (
+            "Runtime safety net: harness detected a failure independent "
+            "of the reporting role (subprocess timeout or silent "
+            "zero-output run). Investigate the harness/subprocess "
+            "plumbing rather than the role itself."
+        )
+        return title, description, rationale
+    # Default: session-reviewer target.
+    title = f"session-reviewer incomplete: {session_id}"[:200]
+    description = (
+        "Harness check detected incomplete session-reviewer output for "
+        f"{session_id}. Issues: {joined}"
+    )[:1000]
+    rationale = (
+        "Runtime safety net: harness check detected incomplete review "
+        "output. Re-run with `ai-hats reflect session --session "
+        f"{session_id}` after addressing the cause."
+    )
+    return title, description, rationale
 
 
 if __name__ == "__main__":
