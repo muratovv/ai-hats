@@ -4,3 +4,12 @@ steps:
   - id: resolve_prompt
     params: {default_text: ""}
   - id: launch_provider
+    # HATS-378: judge-for-role is a reporting role — silent runs were
+    # the original motivator. Interactive (WrapRunner) sessions have
+    # trace-enriched metrics so the zero-output guard catches the
+    # tokens=0/tool_calls=0 failure mode (failed session
+    # 20260512-074105-1). Timeout policy is not wired for interactive
+    # — WrapRunner does not enforce a wall-clock budget.
+    harness:
+      reporting: true
+      on_zero_output: harness_incident

@@ -2,3 +2,15 @@ name: reflect-session
 steps:
   - id: run_session_review
     params: {max_retries: 1}
+    # HATS-378: reporting step — zero-output guard + timeout retry.
+    # Sub-agent metrics for session-reviewer don't yet carry tokens/
+    # tool_calls so the zero-output guard is a defensive no-op here;
+    # the HATS-271 transcript check remains the safety net. Timeout
+    # retry-then-incident is active.
+    harness:
+      reporting: true
+      on_zero_output: harness_incident
+      on_timeout:
+        retry: 1
+        budget_multiplier: 2
+        then: harness_incident

@@ -59,6 +59,7 @@ package-dir = {"" = "src", "ai_hats.library" = "library"}
 packages = [
     "ai_hats",
     "ai_hats.cli",
+    "ai_hats.harness",
     "ai_hats.hypothesis",
     "ai_hats.pipeline",
     "ai_hats.pipeline.steps",

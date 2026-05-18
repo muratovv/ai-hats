@@ -12,6 +12,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from .harness_policy import HarnessPolicy
+
 
 FailurePolicy = Literal["halt", "continue"]
 
@@ -30,6 +32,12 @@ class StepError(RuntimeError):
 
 class Step(ABC):
     failure_policy: FailurePolicy = "halt"
+
+    # HATS-378: opt-in harness reliability policy attached by the YAML
+    # loader. Default None means no zero-output guard and no timeout
+    # retry — current behaviour. Steps that spawn sub-agents read this
+    # attribute and propagate it into their inner runner.
+    harness_policy: HarnessPolicy | None = None
 
     @property
     @abstractmethod

@@ -55,6 +55,7 @@ class LaunchProvider(Step):
         extra_args: list[str] | None = None,
         **_: Any,
     ) -> dict[str, Any]:
+        from ...harness.guard import apply_post_run_guard
         from ...models import ProjectConfig
         from ...runtime import SubAgentRunner, WrapRunner
 
@@ -77,6 +78,11 @@ class LaunchProvider(Step):
                 tags=tags,
                 system_prompt_override=system_prompt,
             )
+            # HATS-378: universal zero-output guard for reporting steps.
+            # Interactive (main) sessions have trace-enriched metrics by
+            # the time WrapRunner returns, so the token/tool_calls
+            # criterion is reliable here.
+            apply_post_run_guard(session, self.harness_policy)
             return {
                 "session_id": session.session_id,
                 "session_dir": session.session_dir,
@@ -85,6 +91,9 @@ class LaunchProvider(Step):
             }
 
         runner = SubAgentRunner(project_dir)
+        # HATS-378: SubAgentRunner internally applies timeout retry and
+        # zero-output guard when ``harness_policy`` is supplied — no
+        # external guard call needed for the sub-agent branch.
         session = runner.run(
             role_name=role or "",
             task=prompt_text,
@@ -93,6 +102,7 @@ class LaunchProvider(Step):
             isolation_mode=isolation,
             tags=tags,
             system_prompt_override=system_prompt,
+            harness_policy=self.harness_policy,
         )
         exit_code = 1
         if session.metrics_path.exists():
