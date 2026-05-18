@@ -14,6 +14,11 @@ import stat
 import subprocess
 from pathlib import Path
 
+import pytest
+
+
+pytestmark = pytest.mark.integration
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BOOTSTRAP = REPO_ROOT / "scripts" / "bootstrap.sh"

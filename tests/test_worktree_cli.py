@@ -14,6 +14,9 @@ from ai_hats.worktree import WorktreeManager
 from ai_hats.paths import worktree_state_path, worktrees_dir
 
 
+pytestmark = pytest.mark.integration
+
+
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
