@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 from pydantic import ValidationError
 
+from ..harness.diagnostic import diagnose_silent_session
 from ..hypothesis import HypothesisStore, ProposalStore
 from .facts import compute_facts
 from .loader import parse
@@ -254,7 +255,7 @@ class SessionReviewRunner:
             if not transcript.strip():
                 raise ValueError(
                     "session-reviewer sub-agent produced no output: "
-                    f"{self._diagnose_empty_transcript(session)}"
+                    f"{diagnose_silent_session(session)}"
                 )
             md = self._extract_yaml(transcript)
             last_md = md
@@ -276,34 +277,6 @@ class SessionReviewRunner:
             f"{attempt + 1} attempt(s): {last_error}\n"
             f"Last extracted YAML (truncated):\n{last_md[:500]}"
         )
-
-    @staticmethod
-    def _diagnose_empty_transcript(session) -> str:
-        """Build a diagnostic summary when sub-agent transcript is missing/empty.
-
-        Reads metrics.json + reasoning.log from the sub-session dir to expose
-        exit_code, timed_out, error fields, and a stderr tail — so the failure
-        message in retro.log explains *why* the reviewer produced nothing
-        instead of just "Empty frontmatter".
-        """
-        bits: list[str] = [f"sub-session={session.session_id}"]
-        try:
-            if session.metrics_path.exists():
-                metrics = json.loads(session.metrics_path.read_text())
-                for key in ("exit_code", "timed_out", "error"):
-                    if key in metrics and metrics[key] not in (None, False):
-                        bits.append(f"{key}={metrics[key]}")
-        except (OSError, ValueError):
-            bits.append("metrics=unreadable")
-        reasoning = session.session_dir / "reasoning.log"
-        if reasoning.exists():
-            try:
-                tail = reasoning.read_text()[-300:].strip()
-                if tail:
-                    bits.append(f"stderr_tail={tail!r}")
-            except OSError:
-                pass
-        return "; ".join(bits)
 
     def _extract_yaml(self, transcript: str) -> str:
         if not transcript:
