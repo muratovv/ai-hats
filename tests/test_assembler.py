@@ -738,3 +738,64 @@ def test_provider_skills_export_has_no_literal_placeholder(
     content = skill_md.read_text()
     assert "<ai_hats_dir>" not in content
     assert ".agent/ai-hats/sessions/retros/" in content
+
+
+def test_gemini_inline_prompt_has_no_literal_placeholder(
+    project_with_placeholder_library,
+):
+    """`./GEMINI.md` injection block (Gemini's set_role path) must be expanded."""
+    project, lib = project_with_placeholder_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("ph-role", provider_name="gemini")
+
+    gemini_md = project / "GEMINI.md"
+    assert gemini_md.exists()
+    content = gemini_md.read_text()
+    assert "<ai_hats_dir>" not in content
+    # Spot-check substitution landed in the injected block.
+    assert ".agent/ai-hats/sessions/audits/" in content
+
+
+def test_gemini_build_override_has_no_literal_placeholder(
+    project_with_placeholder_library,
+):
+    """Gemini override prompt (`00_MANDATORY_ROLE.md`) must be expanded."""
+    from ai_hats.composer import Composer
+    from ai_hats.observe import SessionManager
+    from ai_hats.providers import GeminiProvider
+    from ai_hats.resolver import LibraryResolver
+
+    project, lib = project_with_placeholder_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    result = Composer(LibraryResolver([lib])).compose("ph-role")
+
+    _, env = GeminiProvider().build_override(project, result, SessionManager(project))
+    override = Path(env["GEMINI_CLI_PROJECT_RULES_PATH"]) / "00_MANDATORY_ROLE.md"
+    content = override.read_text()
+    assert "<ai_hats_dir>" not in content
+    assert ".agent/ai-hats/sessions/audits/" in content
+
+
+def test_claude_build_override_has_no_literal_placeholder(
+    project_with_placeholder_library,
+):
+    """Claude --system-prompt-file content must be expanded."""
+    from ai_hats.composer import Composer
+    from ai_hats.observe import SessionManager
+    from ai_hats.providers import ClaudeProvider
+    from ai_hats.resolver import LibraryResolver
+
+    project, lib = project_with_placeholder_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("ph-role", provider_name="claude")
+    result = Composer(LibraryResolver([lib])).compose("ph-role")
+
+    args, _ = ClaudeProvider().build_override(project, result, SessionManager(project))
+    # build_override returns ["--system-prompt-file", <path>]
+    prompt_file = Path(args[args.index("--system-prompt-file") + 1])
+    content = prompt_file.read_text()
+    assert "<ai_hats_dir>" not in content
+    assert ".agent/ai-hats/sessions/audits/" in content

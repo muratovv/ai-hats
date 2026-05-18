@@ -486,6 +486,9 @@ class Assembler:
             # still uses the inline path (non-goal of HATS-276).
             if provider.scaffold_template_relpath() is None:
                 prompt_content = provider.build_system_prompt(result)
+                # HATS-380: substitute placeholders before the inline-block
+                # writer path (Gemini ./GEMINI.md) — bypasses canonical writer.
+                prompt_content = expand_path_placeholders(prompt_content, self.project_dir)
                 provider.update_system_prompt(self.project_dir, prompt_content)
 
             # 6. Verify
