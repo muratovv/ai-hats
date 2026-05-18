@@ -379,10 +379,13 @@ def test_claude_build_override_creates_temp_file(project_with_library):
     result = asm.composer.compose("other-role")
     args, env = provider.build_override(project, result, None)
 
-    assert len(args) == 2
+    # HATS-307: args now include --system-prompt-file AND --plugin-dir
     assert args[0] == "--system-prompt-file"
+    assert "--plugin-dir" in args
     override_path = Path(args[1])
+    plugin_dir = Path(args[args.index("--plugin-dir") + 1])
     assert override_path.exists()
+    assert plugin_dir.is_dir()
 
     content = override_path.read_text()
     # Override prompt is injected
@@ -394,6 +397,34 @@ def test_claude_build_override_creates_temp_file(project_with_library):
 
     # Cleanup
     override_path.unlink()
+    import shutil as _shutil
+    _shutil.rmtree(plugin_dir, ignore_errors=True)
+
+
+def test_claude_build_override_materializes_role_skills_in_plugin_dir(project_with_library):
+    """HATS-307: spawned role's skills must end up under --plugin-dir/skills/."""
+    import shutil as _shutil
+    from ai_hats.providers import ClaudeProvider
+
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    # Active role has NO skills (other-role); the spawned role (test-role)
+    # composes test_skill — exactly the HATS-307 scenario.
+    asm.set_role("other-role", provider_name="claude")
+
+    provider = ClaudeProvider()
+    result = asm.composer.compose("test-role")
+    args, _ = provider.build_override(project, result, None)
+
+    assert "--plugin-dir" in args
+    plugin_dir = Path(args[args.index("--plugin-dir") + 1])
+    try:
+        assert (plugin_dir / ".claude-plugin" / "plugin.json").exists()
+        assert (plugin_dir / "skills" / "test_skill" / "SKILL.md").exists()
+    finally:
+        Path(args[1]).unlink()
+        _shutil.rmtree(plugin_dir, ignore_errors=True)
 
 
 def test_claude_build_override_does_not_modify_project_claude_md(project_with_library):
@@ -415,6 +446,9 @@ def test_claude_build_override_does_not_modify_project_claude_md(project_with_li
     assert (project / "CLAUDE.md").read_text() == original_content
     # Cleanup
     Path(args[1]).unlink()
+    if "--plugin-dir" in args:
+        import shutil as _shutil
+        _shutil.rmtree(args[args.index("--plugin-dir") + 1], ignore_errors=True)
 
 
 def test_gemini_build_override_creates_rules_dir(project_with_library):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -58,6 +59,22 @@ _TERM_RESET_PRELUDE = (
     "\x1b[?1l"
     "\x1b[?25h"
 )
+
+
+def _cleanup_plugin_dir(override_args: list[str]) -> None:
+    """Remove the ephemeral plugin-dir created by ``Provider.build_override``.
+
+    HATS-307: ``ClaudeProvider.build_override`` materializes a per-spawn plugin
+    dir under ``/tmp/`` and emits ``["--plugin-dir", <path>]``. We delete it
+    once the spawned process exits. ``ignore_errors`` keeps us robust against
+    repeated cleanup attempts and missing paths.
+    """
+    if "--plugin-dir" not in override_args:
+        return
+    idx = override_args.index("--plugin-dir")
+    if idx + 1 >= len(override_args):
+        return
+    shutil.rmtree(override_args[idx + 1], ignore_errors=True)
 
 
 def _finalize_sub_agent(
@@ -568,6 +585,9 @@ class WrapRunner:
                 tracer=tracer,
                 tags=tags,
             )
+            # HATS-307: drop the ephemeral plugin-dir created by build_override.
+            # Orphans on SIGKILL are accepted (OS reclaims /tmp on reboot).
+            _cleanup_plugin_dir(override_args)
 
         return exit_code, session
 
@@ -811,6 +831,11 @@ class SubAgentRunner:
         }
 
         cmd = provider.get_cli_command()
+        # HATS-307: materialize spawned role's skills for the sub-agent.
+        # For Claude this returns ["--plugin-dir", <tmp>]; for Gemini it's
+        # currently [] (HATS-367 will fill that gap).
+        skill_args = provider.materialize_runtime_skills(self.project_dir, result)
+        cmd = cmd + skill_args
         # Add prompt via stdin for non-interactive execution
         session.log_trace(TraceTag.SUB, f"Executing: {' '.join(cmd)}")
 
@@ -874,6 +899,8 @@ class SubAgentRunner:
                     tags=tags,
                     duration_s=time.monotonic() - t0,
                 )
+            finally:
+                _cleanup_plugin_dir(skill_args)
 
         return session
 
