@@ -6,6 +6,7 @@ plus optional human-in-the-loop dialogue. Run by `ai-hats reflect all`
 interactive).
 
 > **Harness shell prelude.** Before any `ai-hats` invocation:
+>
 > ```bash
 > AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
 > ```
@@ -21,9 +22,9 @@ protocol end-to-end, mutate state ONLY through CLI (per
 
 Determine the operating mode from the launch context:
 
-| Signal | Mode |
-|---|---|
-| Env var `AI_HATS_HITL=1`, or first user message says "interactive" / "let's discuss" / asks open-ended question | **interactive** (Mode B) |
+| Signal                                                                                                                                                | Mode                            |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Env var `AI_HATS_HITL=1`, or first user message says "interactive" / "let's discuss" / asks open-ended question                                       | **interactive** (Mode B)        |
 | Env var `AI_HATS_HITL=0` (or unset), pipeline-launched (e.g. `ai-hats reflect all`), or handoff message is a structured directive with no open prompt | **autopilot** (Mode A, default) |
 
 State the chosen mode in the very first response so the user can override
@@ -90,14 +91,14 @@ recommendation, then persist via
 `ai-hats task hyp append-verdict ...` (signal-bearing verdicts) and
 `ai-hats task hyp set-status ...` (when the window closes).
 
-| Decision shorthand | review-hypothesis verdict | review-hypothesis recommendation | set-status (if closing) |
-|---|---|---|---|
-| `confirmed` | `confirmed` | `close_confirmed` | `confirmed` |
-| `refuted` | `refuted` | `close_refuted` | `refuted` |
-| `inconclusive` | `inconclusive` | `keep` or `extend_window` | — (status stays `active`) |
-| `keep` | (verdict per evidence) | `keep` | — |
-| `extend` | (verdict per evidence) | `extend_window` | — |
-| `stalled` | — | — | `stalled` |
+| Decision shorthand | review-hypothesis verdict | review-hypothesis recommendation | set-status (if closing)   |
+| ------------------ | ------------------------- | -------------------------------- | ------------------------- |
+| `confirmed`        | `confirmed`               | `close_confirmed`                | `confirmed`               |
+| `refuted`          | `refuted`                 | `close_refuted`                  | `refuted`                 |
+| `inconclusive`     | `inconclusive`            | `keep` or `extend_window`        | — (status stays `active`) |
+| `keep`             | (verdict per evidence)    | `keep`                           | —                         |
+| `extend`           | (verdict per evidence)    | `extend_window`                  | —                         |
+| `stalled`          | —                         | —                                | `stalled`                 |
 
 ### Step 3 — Walk open proposals
 
@@ -196,27 +197,34 @@ must precede Hypotheses; Counter-claims must precede Notes):
 # Judge report — <UTC ts>
 
 ## Mode
+
 autopilot | interactive
 
 ## Deliverables since prior report
+
 - <HATS-NNN> — <title> (done, <date>)
 - git: <sha> <subject>
-(or `(none)`)
+  (or `(none)`)
 
 ## Hypotheses
+
 - HYP-NNN — <verdict>: <one-line rationale>
 
 ## Proposals
+
 - PROP-NNN — <decision>: <one-line rationale>
 
 ## New tasks
+
 - HATS-NNN — <title> (created from PROP-NNN)
 
 ## Counter-claims
+
 - "<draft negative claim>" → kept (verified: <count/cite>) | downgraded to observation | dropped (<reason>)
-(or `(none)`)
+  (or `(none)`)
 
 ## Notes
+
 <free-form observations, trends vs prior report. Claims of regress/pain
 must cite concrete cost (tests/iterations/hours/incident); uncited claims
 weaken any PROP they source and may be closed earlier (see Step 3
