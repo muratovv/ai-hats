@@ -41,7 +41,7 @@ def test_main_runner_error_files_proposal(
 
     class _FailingRunner:
         def __init__(self, _pd): pass
-        def run(self, sid, max_retries=1):
+        def run(self, sid, max_retries=1, harness_policy=None):
             raise SessionReviewError("provider down")
 
     monkeypatch.setattr("ai_hats.retro.session_review_runner.SessionReviewRunner", _FailingRunner)
@@ -64,7 +64,7 @@ def test_main_incomplete_yaml_files_proposal(
 
     class _BadRunner:
         def __init__(self, _pd): pass
-        def run(self, sid, max_retries=1):
+        def run(self, sid, max_retries=1, harness_policy=None):
             out = (
                 project_dir / ".agent" / "retrospectives" / "sessions"
                 / f"{sid}.md"
@@ -90,7 +90,7 @@ def test_main_runner_error_dedups_proposal(
 
     class _FailingRunner:
         def __init__(self, _pd): pass
-        def run(self, sid, max_retries=1):
+        def run(self, sid, max_retries=1, harness_policy=None):
             raise SessionReviewError("fail")
 
     monkeypatch.setattr("ai_hats.retro.session_review_runner.SessionReviewRunner", _FailingRunner)

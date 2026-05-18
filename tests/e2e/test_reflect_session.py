@@ -30,7 +30,7 @@ def test_reflect_session_foreground_failure(
     """SessionReviewError propagates to exit 2."""
     class _FailingRunner:
         def __init__(self, _pd): pass
-        def run(self, sid, max_retries=1):
+        def run(self, sid, max_retries=1, harness_policy=None):
             raise SessionReviewError("synthetic fail")
 
     # Patch at the source — the run_session_review pipeline step does a

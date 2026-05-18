@@ -252,7 +252,9 @@ def test_run_session_review_delegates(tmp_path: Path):
             session_id="sid", project_dir=tmp_path,
         )
     assert out == {"review_path": expected}
-    fake_runner.run.assert_called_once_with("sid", max_retries=3)
+    fake_runner.run.assert_called_once_with(
+        "sid", max_retries=3, harness_policy=None,
+    )
 
 
 def test_run_session_review_failure_policy_halt():
