@@ -111,7 +111,7 @@ filter-repo procedure for purging the history.
 
 ## Docs and naming
 
-[`docs/glossary.md`](docs/glossary.md) is the naming source-of-truth for core concepts — **role**, **session**, **reflect**, **backlog** (task / HYP / PROP), **worktree**, **artifacts** and friends. When you write or edit a doc:
+[`docs/glossary.md`](docs/glossary.md) is the naming source-of-truth for core concepts — **role**, **session**, **reflect**, **backlog** (task / HYP / PROP), **artifacts** and friends. When you write or edit a doc:
 
 - Link to the glossary entry instead of redefining a core term.
 - If a term is genuinely new (not yet in the glossary), update the glossary first, then reference it.
