@@ -906,14 +906,19 @@ class SubAgentRunner:
 
     def _build_meta_prompt(self, result, provider, task: str, ticket_id: str) -> str:
         """Build the meta-prompt for sub-agent execution."""
+        from .paths import state_md_path
+        from .placeholders import expand_path_placeholders
+
         sections = []
 
-        # SYSTEM_ROLE
-        sections.append(f"# SYSTEM_ROLE\n{result.merged_injection}")
+        # SYSTEM_ROLE — HATS-380: expand <ai_hats_dir> before the role/trait
+        # injection reaches the sub-agent inline. Canonical writer and provider
+        # build_override paths already expand; meta-prompt was the residual gap
+        # (roles like session-reviewer carry literal <ai_hats_dir> in injection).
+        merged = expand_path_placeholders(result.merged_injection, self.project_dir)
+        sections.append(f"# SYSTEM_ROLE\n{merged}")
 
         # PROJECT_STATE
-        from .paths import state_md_path
-
         state_md = state_md_path(self.project_dir)
         if state_md.exists():
             sections.append(f"# PROJECT_STATE\n{state_md.read_text()}")
