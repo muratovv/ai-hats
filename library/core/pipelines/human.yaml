@@ -1,4 +1,6 @@
 name: human
 steps:
+  - id: check_update_async
   - id: compose_role
   - id: launch_provider
+  - id: render_update_banner
