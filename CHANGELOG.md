@@ -11,6 +11,14 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Fixed
+- **HATS-400** — `ai-hats self update` now re-execs auto-bump in a fresh
+  Python interpreter when the version on disk actually changed. The old
+  in-process call kept executing OLD in-memory code from the running
+  update — so migrations or healer code newly delivered by pip install
+  did NOT activate until the user manually ran a second `ai-hats self
+  bump`. This was the proxmox regression where HATS-397 healer's first
+  `self update` didn't fix `.claude/settings.json`. Same-version updates
+  keep the in-process path (no overhead).
 - **HATS-399** — Clean two stale legacy-path refs from the bundled
   `library/` source (`worktree-isolation/SKILL.md`,
   `git-mastery/git_hooks/pre-commit-smoke.sh`). Without this, `bump`'s
