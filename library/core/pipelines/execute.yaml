@@ -1,6 +1,8 @@
 name: execute
 steps:
+  - id: check_update_async
   - id: compose_role
   - id: resolve_prompt
     params: {default_text: ""}
   - id: launch_provider
+  - id: render_update_banner
