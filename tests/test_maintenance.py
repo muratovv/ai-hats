@@ -1,17 +1,25 @@
-"""Unit tests for ``cli.maintenance`` helpers (HATS-398).
+"""Unit tests for ``cli.maintenance`` helpers (HATS-398, HATS-400).
 
-Currently covers ``_get_changelog``: shallow-clones the public repo and
-returns recent commits formatted for the ``Recent changes`` block of
-``ai-hats self update``. The contract: hide merge commits, keep
-conventional-commit titles.
+- ``_get_changelog``: shallow-clones the public repo and returns recent
+  commits formatted for the ``Recent changes`` block of
+  ``ai-hats self update``. The contract: hide merge commits, keep
+  conventional-commit titles.
+- ``update`` subprocess-bump control flow (HATS-400): when the version
+  on disk changes, auto-bump runs in a fresh interpreter so newly
+  installed code (migrations, healer, etc.) activates without a second
+  user invocation.
 """
 
 from __future__ import annotations
 
 import subprocess
-from unittest.mock import patch
+import sys
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from ai_hats.cli.maintenance import _get_changelog
+from click.testing import CliRunner
+
+from ai_hats.cli.maintenance import _get_changelog, update
 
 
 def _make_completed(args, *, returncode: int, stdout: str = "", stderr: str = ""):
@@ -84,3 +92,113 @@ def test_get_changelog_handles_subprocess_error() -> None:
 
     with patch("subprocess.run", side_effect=fake_run):
         assert _get_changelog() == ""
+
+
+# ---------- HATS-400: subprocess-bump on version change ----------
+
+
+def _setup_update_test_env(tmp_path: Path) -> Path:
+    """Seed a minimal project with active role so ``update`` reaches step 5."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "ai-hats.yaml").write_text(
+        "schema_version: 4\n"
+        "provider: claude\n"
+        "ai_hats_dir: .agent/ai-hats\n"
+        "active_role: assistant\n"
+    )
+    return project
+
+
+def test_update_runs_bump_in_subprocess_when_version_changed(tmp_path: Path) -> None:
+    """When ``new_version != old_version``, bump runs in fresh interpreter.
+
+    Contract: ``subprocess.run`` is called with
+    ``[sys.executable, "-m", "ai_hats", "self", "bump"]`` and cwd = project_dir.
+    """
+    project = _setup_update_test_env(tmp_path)
+    captured_calls: list[tuple] = []
+
+    def fake_run(args, **kwargs):
+        captured_calls.append((tuple(args), kwargs))
+        # First call: pip install — succeed
+        # Second call: verify — succeed
+        # Third call: bump — succeed
+        return _make_completed(args, returncode=0, stdout="ok")
+
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project), \
+         patch("ai_hats.cli.maintenance._get_installed_version",
+               side_effect=["new-version-X"]), \
+         patch("ai_hats.cli.maintenance._snapshot_library", return_value={}), \
+         patch("ai_hats.cli.maintenance._snapshot_dep_versions", return_value={}), \
+         patch("ai_hats.cli.maintenance._snapshot_composition",
+               return_value=(set(), set())), \
+         patch("ai_hats.cli.maintenance._format_component_diff", return_value=False), \
+         patch("ai_hats.cli.maintenance._build_update_cmd",
+               return_value=["pip", "install", "ai-hats"]), \
+         patch("ai_hats.cli.maintenance._get_changelog", return_value=""), \
+         patch("ai_hats.cli.maintenance._assembler") as mock_asm_factory, \
+         patch("subprocess.run", side_effect=fake_run):
+        # old_version = "old-v" (module-level __version__ at import time);
+        # patch it so the diff is unambiguous.
+        with patch("ai_hats.__version__", "old-v"):
+            result = CliRunner().invoke(update, [])
+
+    assert result.exit_code == 0, f"update failed: {result.output}"
+
+    # Find the bump subprocess invocation among captured calls
+    bump_calls = [
+        c for c in captured_calls
+        if len(c[0]) >= 4 and c[0][1:5] == ("-m", "ai_hats", "self", "bump")
+    ]
+    assert bump_calls, (
+        f"expected subprocess bump call, got: "
+        f"{[c[0] for c in captured_calls]}"
+    )
+    args, kwargs = bump_calls[0]
+    assert args[0] == sys.executable, f"wrong interpreter: {args[0]}"
+    assert kwargs.get("cwd") == str(project), f"wrong cwd: {kwargs.get('cwd')}"
+    assert kwargs.get("check") is False, "must not raise on bump exit code"
+    # in-process bump should NOT be called when version changed
+    assert not mock_asm_factory.return_value.bump.called, \
+        "in-process bump fired despite version change"
+
+
+def test_update_runs_bump_in_process_when_version_unchanged(tmp_path: Path) -> None:
+    """When versions match, in-process ``asm.bump()`` runs (no subprocess)."""
+    project = _setup_update_test_env(tmp_path)
+    bump_result_stub = MagicMock(rules=[], skills=[], errors=[])
+
+    def fake_run(args, **kwargs):
+        # pip install + verify should both succeed; no bump subprocess expected
+        return _make_completed(args, returncode=0, stdout="ok")
+
+    mock_asm = MagicMock()
+    mock_asm.bump.return_value = bump_result_stub
+
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project), \
+         patch("ai_hats.cli.maintenance._get_installed_version",
+               side_effect=["same-version"]), \
+         patch("ai_hats.cli.maintenance._snapshot_library", return_value={}), \
+         patch("ai_hats.cli.maintenance._snapshot_dep_versions", return_value={}), \
+         patch("ai_hats.cli.maintenance._snapshot_composition",
+               return_value=(set(), set())), \
+         patch("ai_hats.cli.maintenance._format_component_diff", return_value=False), \
+         patch("ai_hats.cli.maintenance._build_update_cmd",
+               return_value=["pip", "install", "ai-hats"]), \
+         patch("ai_hats.cli.maintenance._get_changelog", return_value=""), \
+         patch("ai_hats.cli.maintenance._assembler", return_value=mock_asm), \
+         patch("subprocess.run", side_effect=fake_run) as mock_run, \
+         patch("ai_hats.__version__", "same-version"):
+        result = CliRunner().invoke(update, [])
+
+    assert result.exit_code == 0, f"update failed: {result.output}"
+    # subprocess called for pip install + verify only — never for bump
+    bump_calls = [
+        c for c in mock_run.call_args_list
+        if len(c.args[0]) >= 4 and tuple(c.args[0][1:5]) == ("-m", "ai_hats", "self", "bump")
+    ]
+    assert not bump_calls, f"unexpected bump subprocess: {bump_calls}"
+    # in-process bump fired exactly once
+    assert mock_asm.bump.call_count == 1, \
+        f"in-process bump call count: {mock_asm.bump.call_count}"
