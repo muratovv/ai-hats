@@ -11,6 +11,10 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Fixed
+- **HATS-398** — `ai-hats self update` no longer pollutes the "Recent
+  changes" block with `Merge branch 'task/hats-NNN'` titles. The git-log
+  fetch now passes `--no-merges`, leaving only conventional-commit titles
+  from the actual work (`fix(...)`, `feat(...)`).
 - **HATS-397** — `ai-hats self bump` / `self update` now self-heals stale
   legacy-path refs left behind in user-managed files after the v4 layout
   migration moves content under `<ai-hats_dir>/`. JSON integration points
