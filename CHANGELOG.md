@@ -10,6 +10,18 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+- **HATS-397** — `ai-hats self bump` / `self update` now self-heals stale
+  legacy-path refs left behind in user-managed files after the v4 layout
+  migration moves content under `<ai-hats_dir>/`. JSON integration points
+  (`.claude/settings.json{,.local}`) are always auto-rewritten; markdown,
+  shell, and template files (`*.md` / `*.txt` / `*.j2` / `*.sh` / `.envrc`)
+  are rewritten only when git-clean and otherwise listed in
+  `<ai-hats_dir>/sessions/audits/<ts>-legacy-refs.md`. Triggered by the
+  proxmox regression where `.claude/settings.json` PreToolUse-hook
+  references to `.agent/hooks/<file>` broke silently after `ai-hats self
+  update`.
+
 ## [0.6.0] - 2026-05-18
 
 User-extensibility and reliability release. New CLI ergonomics on the
