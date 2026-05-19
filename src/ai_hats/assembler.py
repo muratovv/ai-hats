@@ -573,6 +573,15 @@ class Assembler:
         """
         self._cleanup_obsolete_files(self.project_dir)
         provider = get_provider(self.project_config.provider)
+        # HATS-397: heal stale legacy-path refs FIRST, while user files are
+        # still clean in git. Running after `_migrate_claude_md_to_v3` would
+        # see ai-hats-induced edits as user-dirty and force inventory fallback.
+        # The substring rewrite uses the canonical LEGACY_PATH_MAP, so it
+        # works regardless of whether the layout migrations have moved
+        # content yet — by end-of-bump, refs and content land in sync.
+        from .migration_healer import heal_external_refs
+
+        heal_external_refs(self.project_dir)
         self._migrate_claude_md_to_v3(provider)
         self._migrate_layout_v4_sessions()
         self._migrate_layout_v4_tracker()
