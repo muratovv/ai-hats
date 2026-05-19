@@ -65,6 +65,7 @@ packages = [
     "ai_hats.pipeline.steps",
     "ai_hats.retro",
     "ai_hats.templates",
+    "ai_hats.update_check",
     "ai_hats.library",
 ]
 

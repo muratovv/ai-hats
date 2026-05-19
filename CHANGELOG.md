@@ -10,6 +10,18 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+- **HATS-401** — Session-end **Update banner** in `execute` / `human`
+  pipelines. When the installed `ai-hats` SHA lags upstream `master`, a
+  three-line block surfaces under the `✨ Session summary`: short SHAs,
+  the `ai-hats update` command, and a dim opt-out hint. The probe is
+  non-blocking — a detached background subprocess writes the result to
+  `<ai_hats_dir>/.cache/update-check.json` (24h TTL,
+  stale-while-revalidate). Opt-out: `AI_HATS_NO_UPDATE_CHECK=1` suppresses
+  both probe and banner. New module `ai_hats.update_check`, new pipeline
+  steps `check_update_async` / `render_update_banner`, glossary entries
+  for **Session summary** vs **Update banner**.
+
 ### Fixed
 - **HATS-400** — `ai-hats self update` now re-execs auto-bump in a fresh
   Python interpreter when the version on disk actually changed. The old

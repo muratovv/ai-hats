@@ -107,12 +107,14 @@ def test_execute_pipeline_skeleton():
     assert execute_pipeline.pipeline_name == "execute"
     names = [s.io.name for s in execute_pipeline.steps]
     assert names == [
+        "check_update_async",
         "compose_role",
         "resolve_prompt",
         "pre_log",
         "launch_provider",
         "spawn_session_review",
         "post_log",
+        "render_update_banner",
     ]
 
 
