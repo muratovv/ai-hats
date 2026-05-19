@@ -24,7 +24,7 @@ else
     main_root="."
 fi
 
-task_dir="$main_root/.agent/backlog/tasks"
+task_dir="$main_root/.agent/ai-hats/tracker/backlog/tasks"
 if [[ ! -d "$task_dir" ]]; then
     exit 0
 fi
