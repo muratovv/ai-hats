@@ -11,6 +11,13 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Fixed
+- **HATS-399** — Clean two stale legacy-path refs from the bundled
+  `library/` source (`worktree-isolation/SKILL.md`,
+  `git-mastery/git_hooks/pre-commit-smoke.sh`). Without this, `bump`'s
+  publish step kept re-injecting old paths into consumer mirrors
+  (`.claude/skills/`, `.githooks/`), forcing HATS-397 healer to repeat
+  work on every bump (non-idempotent). New regression test
+  (`test_library_no_legacy_refs`) prevents reintroduction.
 - **HATS-398** — `ai-hats self update` no longer pollutes the "Recent
   changes" block with `Merge branch 'task/hats-NNN'` titles. The git-log
   fetch now passes `--no-merges`, leaving only conventional-commit titles

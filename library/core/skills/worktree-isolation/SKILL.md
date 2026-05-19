@@ -89,7 +89,7 @@ After editing `library/{core,usage}/skills/*/SKILL.md`, run:
 ```
 ai-hats self bump
 ```
-This re-copies all skills to `.claude/skills/` and `.agent/skills/`.
+This re-copies all skills to `.claude/skills/` and `.agent/ai-hats/library/skills/`.
 **Never manually `cp` skill files** — it generates garbage permission entries.
 
 ## Anti-Patterns
