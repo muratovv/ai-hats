@@ -280,36 +280,65 @@ def update():
         console.print("  [dim]No changes[/]")
 
     # 5. Auto-bump if role active (HATS-285: migration runs inside bump now;
-    # standalone `ai-hats self migrate` was removed).
+    # standalone `ai-hats self migrate` was removed). HATS-400: when the
+    # update actually changed the version on disk, run bump in a *fresh*
+    # subprocess so the new code (migrations, healer, etc.) is loaded —
+    # in-process `asm.bump()` would silently keep using the OLD code from
+    # this update's interpreter, leaving the project half-fixed until the
+    # user manually runs `ai-hats self bump` a second time.
     if active_role:
         console.print(f"\n[bold]Re-assembling:[/] {active_role}")
-        try:
+        version_changed = new_version != old_version
+        if version_changed:
+            # Fresh interpreter → new code (healer, migrations, etc.).
+            # Stdout/stderr passthrough so [heal] lines / spinners stream live.
+            proc = subprocess.run(
+                [sys.executable, "-m", "ai_hats", "self", "bump"],
+                cwd=str(project_dir),
+                check=False,
+            )
+            if proc.returncode != 0:
+                console.print(
+                    f"  [yellow]Bump (fresh interpreter) exited "
+                    f"{proc.returncode} — review output above[/]"
+                )
+            # Snapshot composition AFTER bump to compute rule/skill diff.
             asm = _assembler(project_dir)
-            bump_result = asm.bump()
-            if bump_result:
-                after_rules = {r.name for r in bump_result.rules}
-                after_skills = {s.name for s in bump_result.skills}
-                added_r = sorted(after_rules - before_rules)
-                removed_r = sorted(before_rules - after_rules)
-                added_s = sorted(after_skills - before_skills)
-                removed_s = sorted(before_skills - after_skills)
-                has_diff = bool(added_r or removed_r or added_s or removed_s)
-                if has_diff:
-                    for r in added_r:
-                        console.print(f"  [green]+[/] rule: {r}", highlight=False)
-                    for r in removed_r:
-                        console.print(f"  [red]-[/] rule: {r}", highlight=False)
-                    for s in added_s:
-                        console.print(f"  [green]+[/] skill: {s}", highlight=False)
-                    for s in removed_s:
-                        console.print(f"  [red]-[/] skill: {s}", highlight=False)
+            after_rules, after_skills = _snapshot_composition(asm)
+        else:
+            # No version change → no chicken-and-egg risk; in-process is fine
+            # and avoids ~150ms subprocess overhead.
+            try:
+                asm = _assembler(project_dir)
+                bump_result = asm.bump()
+                if bump_result:
+                    after_rules = {r.name for r in bump_result.rules}
+                    after_skills = {s.name for s in bump_result.skills}
+                    if bump_result.errors:
+                        for err in bump_result.errors:
+                            console.print(f"  [yellow]{err}[/]")
                 else:
-                    console.print("  [dim]No composition changes[/]")
-                if bump_result.errors:
-                    for err in bump_result.errors:
-                        console.print(f"  [yellow]{err}[/]")
-        except (AssemblyError, ValueError, OSError) as e:
-            console.print(f"  [red]Bump failed[/]: {e}")
+                    after_rules, after_skills = set(), set()
+            except (AssemblyError, ValueError, OSError) as e:
+                console.print(f"  [red]Bump failed[/]: {e}")
+                after_rules, after_skills = before_rules, before_skills
+
+        added_r = sorted(after_rules - before_rules)
+        removed_r = sorted(before_rules - after_rules)
+        added_s = sorted(after_skills - before_skills)
+        removed_s = sorted(before_skills - after_skills)
+        has_diff = bool(added_r or removed_r or added_s or removed_s)
+        if has_diff:
+            for r in added_r:
+                console.print(f"  [green]+[/] rule: {r}", highlight=False)
+            for r in removed_r:
+                console.print(f"  [red]-[/] rule: {r}", highlight=False)
+            for s in added_s:
+                console.print(f"  [green]+[/] skill: {s}", highlight=False)
+            for s in removed_s:
+                console.print(f"  [red]-[/] skill: {s}", highlight=False)
+        else:
+            console.print("  [dim]No composition changes[/]")
 
 
 # HATS-285: `ai-hats self migrate` removed. Migration is transparent inside
