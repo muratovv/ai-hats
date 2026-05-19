@@ -85,7 +85,10 @@ def _get_changelog() -> str:
         if result.returncode != 0:
             return ""
         log = subprocess.run(
-            ["git", "-C", tmp, "log", "--oneline", "-7"],
+            # `--no-merges`: hide `Merge branch 'task/hats-NNN'` titles —
+            # conventional-commit titles from the actual work are more useful
+            # than the wrapping merge commits under a no-ff merge convention.
+            ["git", "-C", tmp, "log", "--oneline", "--no-merges", "-7"],
             capture_output=True,
             text=True,
         )
