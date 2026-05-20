@@ -438,6 +438,91 @@ def test_migrate_cleanup_skips_when_already_clean(tmp_path):
     assert Assembler._cleanup_obsolete_files(tmp_path) == []
 
 
+def test_migrate_cleanup_sweeps_stale_last_backup_pointer(tmp_path):
+    """HATS-407: stale `.last_backup` pointer file and its referenced
+    tmp backup dir (created by the retired `Assembler._backup()` helper
+    via ``tempfile.mkdtemp(prefix="ai-hats-backup-")``) are swept by
+    `_cleanup_obsolete_files`.
+
+    Symmetric closure of removing the `_backup()/_restore()` chain:
+    projects upgrading from v0.6 still have orphan pointer files left by
+    pre-HATS-407 `set_role` calls; bump should wipe them in one shot.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from ai_hats.assembler import Assembler
+
+    (tmp_path / "ai-hats.yaml").write_text(
+        "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
+    )
+    canon = tmp_path / ".agent" / "ai-hats"
+    canon.mkdir(parents=True)
+
+    # Real-world fixture: use the same prefix the retired _backup()
+    # helper produced so the sweeper's safety gate
+    # (basename startswith "ai-hats-backup-") matches.
+    backup_payload = Path(tempfile.mkdtemp(prefix="ai-hats-backup-"))
+    (backup_payload / "marker").write_text("payload")
+
+    pointer = canon / ".last_backup"
+    pointer.write_text(str(backup_payload))
+
+    actions = Assembler._cleanup_obsolete_files(tmp_path)
+
+    assert not pointer.exists(), "pointer file must be swept"
+    assert not backup_payload.exists(), "referenced backup dir must be removed"
+    assert any(".last_backup" in a for a in actions), actions
+
+    # Idempotent on second call.
+    assert Assembler._cleanup_obsolete_files(tmp_path) == []
+
+
+def test_migrate_cleanup_sweeps_stale_last_backup_as_directory(tmp_path):
+    """If `.last_backup` exists as a directory (legacy v3 shape pre-tracker
+    migration), `_cleanup_obsolete_files` removes the directory."""
+    from ai_hats.assembler import Assembler
+
+    (tmp_path / "ai-hats.yaml").write_text(
+        "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
+    )
+    canon = tmp_path / ".agent" / "ai-hats"
+    canon.mkdir(parents=True)
+    backup_dir = canon / ".last_backup"
+    backup_dir.mkdir()
+    (backup_dir / "stale.txt").write_text("stale")
+
+    actions = Assembler._cleanup_obsolete_files(tmp_path)
+    assert not backup_dir.exists()
+    assert any(".last_backup" in a for a in actions)
+
+
+def test_migrate_cleanup_ignores_non_tmp_pointer_target(tmp_path):
+    """A pointer that names a non-/tmp/ path must NOT cause rmtree (defense
+    against corrupt pointers being able to redirect cleanup at user files).
+    Pointer file itself is still removed."""
+    from ai_hats.assembler import Assembler
+
+    (tmp_path / "ai-hats.yaml").write_text(
+        "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
+    )
+    canon = tmp_path / ".agent" / "ai-hats"
+    canon.mkdir(parents=True)
+
+    user_dir = tmp_path / "user-precious"
+    user_dir.mkdir()
+    (user_dir / "important.txt").write_text("DO NOT DELETE")
+
+    pointer = canon / ".last_backup"
+    pointer.write_text(str(user_dir))
+
+    Assembler._cleanup_obsolete_files(tmp_path)
+
+    # Pointer swept; user content preserved.
+    assert not pointer.exists()
+    assert (user_dir / "important.txt").exists()
+
+
 def test_update_command_uses_force_reinstall():
     """Update command must use --force-reinstall to bypass pip cache."""
     from ai_hats.cli.maintenance import _build_update_cmd
