@@ -95,7 +95,9 @@ def test_e2e_install_init_break_heal(tmp_path):
     assert (project / "ai-hats.yaml").is_file()
     assert (project / "CLAUDE.md").is_file()
     yaml_text = (project / "ai-hats.yaml").read_text()
-    assert "active_role: assistant" in yaml_text
+    # HATS-407: init writes default_role; active_role stays empty
+    # (runtime cache, written by session-bootstrap only).
+    assert "default_role: assistant" in yaml_text
     assert "provider: claude" in yaml_text
 
     # ---- 4. composition smoke ----

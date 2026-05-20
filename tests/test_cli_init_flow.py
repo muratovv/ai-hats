@@ -279,11 +279,12 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
 
     project, runner = cli_project
 
-    # Init + set base role
+    # Init + set base role. HATS-407: CLI writes default_role, not active_role.
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
     original_claude = (project / "CLAUDE.md").read_text()
     original_profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
-    assert original_profile.active_role == "assistant"
+    assert original_profile.default_role == "assistant"
+    assert original_profile.active_role == ""  # runtime-only field
 
     # Build override for a different role (simulate what WrapRunner.run does)
     asm = Assembler(project)
@@ -301,7 +302,8 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
     # Project files NOT modified
     assert (project / "CLAUDE.md").read_text() == original_claude
     after_profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
-    assert after_profile.active_role == "assistant"
+    assert after_profile.default_role == "assistant"
+    assert after_profile.active_role == ""
 
     override_path.unlink()
 
@@ -396,9 +398,11 @@ def test_gemini_override_creates_session_rules_dir(cli_project):
         dir_b / "00_MANDATORY_ROLE.md"
     ).read_text()
 
-    # GEMINI.md untouched
-    gemini_content = (project / "GEMINI.md").read_text()
-    assert "assistant" in gemini_content.lower() or "PRIMARY" in gemini_content
+    # HATS-407: `ai-hats config set` is yaml-only — ./GEMINI.md is not
+    # materialized until the runtime set_role path runs (lazy bootstrap
+    # on first session). The per-session rules dir captures the composed
+    # role independently, so this test no longer asserts ./GEMINI.md
+    # state.
 
     shutil.rmtree(dir_a)
     shutil.rmtree(dir_b)
