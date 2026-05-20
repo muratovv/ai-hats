@@ -69,20 +69,41 @@ _TERM_RESET_PRELUDE = (
 )
 
 
-def _cleanup_plugin_dir(session_args: list[str]) -> None:
-    """Remove the ephemeral plugin-dir created by ``Provider.build_session_prompt``.
+def _cleanup_session_cache(project_dir: Path, session_id: str) -> None:
+    """Remove the session's per-session cache dir (HATS-294).
 
-    HATS-307: ``ClaudeProvider.build_session_prompt`` materializes a per-spawn plugin
-    dir under ``/tmp/`` and emits ``["--plugin-dir", <path>]``. We delete it
-    once the spawned process exits. ``ignore_errors`` keeps us robust against
-    repeated cleanup attempts and missing paths.
+    Drops the whole ``<ai_hats_dir>/.cache/sessions/<session_id>/`` tree
+    (prompt.md + plugin/ + anything else providers stashed there).
+    ``ignore_errors`` keeps us robust against repeated cleanup attempts,
+    missing paths, and SIGKILL-orphans (TTL sweep mops those up later).
     """
-    if "--plugin-dir" not in session_args:
+    from .paths import session_cache_dir
+
+    shutil.rmtree(session_cache_dir(project_dir, session_id), ignore_errors=True)
+
+
+def _sweep_orphan_session_caches(project_dir: Path, ttl_hours: int = 24) -> None:
+    """Remove session cache dirs older than ttl_hours (HATS-294).
+
+    Idempotent. Called once per ``Runtime.run`` invocation on session_start.
+    Cheap when the cache root is empty or recent.
+    """
+    import time
+
+    from .paths import session_cache_root
+
+    root = session_cache_root(project_dir)
+    if not root.exists():
         return
-    idx = session_args.index("--plugin-dir")
-    if idx + 1 >= len(session_args):
-        return
-    shutil.rmtree(session_args[idx + 1], ignore_errors=True)
+    cutoff = time.time() - ttl_hours * 3600
+    for entry in root.iterdir():
+        if not entry.is_dir():
+            continue
+        try:
+            if entry.stat().st_mtime < cutoff:
+                shutil.rmtree(entry, ignore_errors=True)
+        except OSError:
+            pass
 
 
 def _session_timed_out(session: Session) -> bool:
@@ -523,19 +544,24 @@ class WrapRunner:
                 self.assembler.set_role(effective_role, provider_name)
                 cfg = self.assembler.project_config  # reload
 
+        active_role = role_override or cfg.active_role
+
+        # HATS-294: sweep stale session cache dirs (>24h old) before allocating
+        # a new sid. Idempotent and cheap when cache root is empty.
+        _sweep_orphan_session_caches(self.project_dir)
+
+        # Create session — must happen before build_session_prompt so we can
+        # key the per-session cache dir on session.session_id (HATS-294).
+        session = self.session_mgr.create_session()
+
         result = self.assembler.composer.compose(
             effective_role, overlay=self.assembler._get_overlay(effective_role),
         )
         if system_prompt_override is not None:
             result = replace(result, injections=[system_prompt_override])
         session_args, session_env = provider.build_session_prompt(
-            self.project_dir, result, self.session_mgr,
+            self.project_dir, result, session.session_id,
         )
-
-        active_role = role_override or cfg.active_role
-
-        # Create session
-        session = self.session_mgr.create_session()
         session.init_audit(
             role=active_role,
             provider=provider_name,
@@ -604,9 +630,10 @@ class WrapRunner:
                 tracer=tracer,
                 tags=tags,
             )
-            # HATS-307: drop the ephemeral plugin-dir created by build_session_prompt.
-            # Orphans on SIGKILL are accepted (OS reclaims /tmp on reboot).
-            _cleanup_plugin_dir(session_args)
+            # HATS-294: drop the per-session cache dir (prompt + plugin/).
+            # SIGKILL-orphans are accepted — TTL sweep mops them up on the
+            # next session_start.
+            _cleanup_session_cache(self.project_dir, session.session_id)
 
         return exit_code, session
 
@@ -925,9 +952,12 @@ class SubAgentRunner:
 
         cmd = provider.get_cli_command()
         # HATS-307: materialize spawned role's skills for the sub-agent.
-        # For Claude this returns ["--plugin-dir", <tmp>]; for Gemini it's
-        # currently [] (HATS-367 will fill that gap).
-        skill_args = provider.materialize_runtime_skills(self.project_dir, result)
+        # For Claude this returns ["--plugin-dir", <cache_dir>/plugin]; for
+        # Gemini it's currently [] (HATS-367 will fill that gap). Cleaned by
+        # _cleanup_session_cache in the finally block.
+        skill_args = provider.materialize_runtime_skills(
+            self.project_dir, result, session.session_id,
+        )
         cmd = cmd + skill_args
         session.log_trace(TraceTag.SUB, f"Executing: {' '.join(cmd)}")
 
@@ -994,7 +1024,7 @@ class SubAgentRunner:
                     duration_s=time.monotonic() - t0,
                 )
             finally:
-                _cleanup_plugin_dir(skill_args)
+                _cleanup_session_cache(self.project_dir, session.session_id)
 
         return session
 

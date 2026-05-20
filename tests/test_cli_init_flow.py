@@ -292,7 +292,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
     asm = Assembler(project)
     provider = ClaudeProvider()
     result = asm.composer.compose("sre")
-    args, env = provider.build_session_prompt(project, result, None)
+    args, env = provider.build_session_prompt(project, result, "test-sid")
 
     # Shadow prompt created
     assert args[0] == "--system-prompt-file"
@@ -322,11 +322,12 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
     asm = Assembler(project)
     provider = ClaudeProvider()
 
-    # Simulate 3 parallel override sessions for different roles
+    # Simulate 3 parallel override sessions for different roles. Each session
+    # gets its own session_id (HATS-294 isolation contract).
     overrides = {}
     for role in ("sre", "go-dev", "architect"):
         result = asm.composer.compose(role)
-        args, _ = provider.build_session_prompt(project, result, None)
+        args, _ = provider.build_session_prompt(project, result, f"test-sid-{role}")
         override_path = Path(args[1])
         overrides[role] = {
             "path": override_path,
@@ -380,9 +381,9 @@ def test_gemini_override_creates_session_rules_dir(cli_project):
 
     # Build two parallel overrides
     result_a = asm.composer.compose("judge")
-    _, env_a = provider.build_session_prompt(project, result_a, None)
+    _, env_a = provider.build_session_prompt(project, result_a, "test-sid-a")
     result_b = asm.composer.compose("go-dev")
-    _, env_b = provider.build_session_prompt(project, result_b, None)
+    _, env_b = provider.build_session_prompt(project, result_b, "test-sid-b")
 
     dir_a = Path(env_a["GEMINI_CLI_PROJECT_RULES_PATH"])
     dir_b = Path(env_b["GEMINI_CLI_PROJECT_RULES_PATH"])

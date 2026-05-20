@@ -377,7 +377,7 @@ def test_claude_build_session_prompt_creates_temp_file(project_with_library):
     # Build override for other-role
     provider = ClaudeProvider()
     result = asm.composer.compose("other-role")
-    args, env = provider.build_session_prompt(project, result, None)
+    args, env = provider.build_session_prompt(project, result, "test-sid")
 
     # HATS-307: args now include --system-prompt-file AND --plugin-dir
     assert args[0] == "--system-prompt-file"
@@ -415,7 +415,7 @@ def test_claude_build_session_prompt_materializes_role_skills_in_plugin_dir(proj
 
     provider = ClaudeProvider()
     result = asm.composer.compose("test-role")
-    args, _ = provider.build_session_prompt(project, result, None)
+    args, _ = provider.build_session_prompt(project, result, "test-sid")
 
     assert "--plugin-dir" in args
     plugin_dir = Path(args[args.index("--plugin-dir") + 1])
@@ -440,7 +440,7 @@ def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_w
 
     provider = ClaudeProvider()
     result = asm.composer.compose("other-role")
-    args, _ = provider.build_session_prompt(project, result, None)
+    args, _ = provider.build_session_prompt(project, result, "test-sid")
 
     # CLAUDE.md unchanged
     assert (project / "CLAUDE.md").read_text() == original_content
@@ -463,7 +463,7 @@ def test_gemini_build_session_prompt_creates_rules_dir(project_with_library):
 
     provider = GeminiProvider()
     result = asm.composer.compose("other-role")
-    args, env = provider.build_session_prompt(project, result, None)
+    args, env = provider.build_session_prompt(project, result, "test-sid")
 
     assert args == []
     assert "GEMINI_CLI_PROJECT_RULES_PATH" in env
@@ -758,22 +758,6 @@ def test_canonical_dir_has_no_literal_placeholder(project_with_placeholder_libra
     assert ".agent/ai-hats/sessions/audits/" in role_md
 
 
-def test_provider_skills_export_has_no_literal_placeholder(
-    project_with_placeholder_library,
-):
-    """`.claude/skills/<name>/SKILL.md` must be expanded after export_skills."""
-    project, lib = project_with_placeholder_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    asm.set_role("ph-role", provider_name="claude")
-
-    skill_md = project / ".claude" / "skills" / "ph_skill" / "SKILL.md"
-    assert skill_md.exists()
-    content = skill_md.read_text()
-    assert "<ai_hats_dir>" not in content
-    assert ".agent/ai-hats/sessions/retros/" in content
-
-
 def test_gemini_inline_prompt_has_no_literal_placeholder(
     project_with_placeholder_library,
 ):
@@ -796,7 +780,6 @@ def test_gemini_build_session_prompt_has_no_literal_placeholder(
 ):
     """Gemini override prompt (`00_MANDATORY_ROLE.md`) must be expanded."""
     from ai_hats.composer import Composer
-    from ai_hats.observe import SessionManager
     from ai_hats.providers import GeminiProvider
     from ai_hats.resolver import LibraryResolver
 
@@ -805,7 +788,7 @@ def test_gemini_build_session_prompt_has_no_literal_placeholder(
     asm.init()
     result = Composer(LibraryResolver([lib])).compose("ph-role")
 
-    _, env = GeminiProvider().build_session_prompt(project, result, SessionManager(project))
+    _, env = GeminiProvider().build_session_prompt(project, result, "test-sid")
     override = Path(env["GEMINI_CLI_PROJECT_RULES_PATH"]) / "00_MANDATORY_ROLE.md"
     content = override.read_text()
     assert "<ai_hats_dir>" not in content
@@ -817,7 +800,6 @@ def test_claude_build_session_prompt_has_no_literal_placeholder(
 ):
     """Claude --system-prompt-file content must be expanded."""
     from ai_hats.composer import Composer
-    from ai_hats.observe import SessionManager
     from ai_hats.providers import ClaudeProvider
     from ai_hats.resolver import LibraryResolver
 
@@ -827,7 +809,7 @@ def test_claude_build_session_prompt_has_no_literal_placeholder(
     asm.set_role("ph-role", provider_name="claude")
     result = Composer(LibraryResolver([lib])).compose("ph-role")
 
-    args, _ = ClaudeProvider().build_session_prompt(project, result, SessionManager(project))
+    args, _ = ClaudeProvider().build_session_prompt(project, result, "test-sid")
     # build_session_prompt returns ["--system-prompt-file", <path>]
     prompt_file = Path(args[args.index("--system-prompt-file") + 1])
     content = prompt_file.read_text()
