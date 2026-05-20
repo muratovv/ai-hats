@@ -3,6 +3,7 @@
 import pytest
 
 from ai_hats.models import (
+    Attachment,
     ComponentConfig,
     Composition,
     FeedbackConfig,
@@ -835,3 +836,83 @@ def test_imports_order_custom_list_round_trip_via_yaml(tmp_path):
 
     loaded = ProjectConfig.from_yaml(src)
     assert loaded.imports_order == custom
+
+
+# ---------- Attachment / TaskCard.attachments (HATS-402) ----------
+
+
+def test_attachment_digest_validation_accepts_12_hex():
+    Attachment(name="plan.md", digest="a1b2c3d4e5f6", added="2026-05-20T00:00:00Z")
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "a1b2c3d4e5",  # 10 chars — too short
+        "a1b2c3d4e5f60",  # 13 chars — too long
+        "A1B2C3D4E5F6",  # uppercase
+        "g1b2c3d4e5f6",  # non-hex char
+        "a1b2c3d4e5f60000000000000000000000000000000000000000000000000000",  # full sha256 — must reject
+    ],
+)
+def test_attachment_digest_validation_rejects_invalid(bad):
+    with pytest.raises(Exception):
+        Attachment(name="x", digest=bad, added="2026-05-20T00:00:00Z")
+
+
+def test_attachment_digest_empty_allowed_for_construction():
+    """Default-constructed Attachment (e.g. before populating) tolerates empty digest."""
+    Attachment()
+
+
+def test_task_card_attachments_field_round_trip():
+    card = TaskCard(
+        id="T-1",
+        title="Test",
+        attachments=[
+            Attachment(
+                name="plan.md",
+                digest="a1b2c3d4e5f6",
+                added="2026-05-20T00:00:00Z",
+                note="design",
+            )
+        ],
+    )
+    out = card.to_dict()
+    assert out["attachments"] == [
+        {
+            "name": "plan.md",
+            "digest": "a1b2c3d4e5f6",
+            "added": "2026-05-20T00:00:00Z",
+            "note": "design",
+        }
+    ]
+    reloaded = TaskCard.from_dict(out)
+    assert reloaded.attachments[0].name == "plan.md"
+    assert reloaded.attachments[0].digest == "a1b2c3d4e5f6"
+
+
+def test_task_card_empty_attachments_omitted_from_output():
+    card = TaskCard.from_dict({"id": "T-1", "title": "Test"})
+    out = card.to_dict()
+    assert "attachments" not in out
+
+
+def test_task_card_legacy_yaml_without_attachments_loads_as_empty_list():
+    """Existing YAML predating HATS-402 must load without errors and yield []."""
+    card = TaskCard.from_dict({"id": "T-1", "title": "Test"})
+    assert card.attachments == []
+
+
+def test_task_card_attachments_not_captured_into_extras():
+    """attachments is a typed field — must not leak into extras."""
+    data = {
+        "id": "T-1",
+        "title": "Test",
+        "attachments": [
+            {"name": "x.md", "digest": "0123456789ab", "added": "", "note": ""}
+        ],
+    }
+    card = TaskCard.from_dict(data)
+    assert len(card.attachments) == 1
+    assert "attachments" not in card.extras
