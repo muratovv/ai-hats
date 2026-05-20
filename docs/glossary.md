@@ -60,6 +60,15 @@ Three kinds of cards with strict state machines. **All operations go through the
 
 State-machine diagrams — see [4]. Day-to-day workflow — see [7] (HATS-358, not yet written).
 
+## Attachment
+
+A file attached to a Task via `ai-hats task attach add`. Blob lives in
+`<ai_hats_dir>/tracker/backlog/tasks/<ID>/attachments/<name>`; the manifest
+entry — `name`, `digest` (12-char SHA-256 prefix), `added`, `note` — is stored
+in `task.yaml::attachments[]`. A pre-commit hook (HATS-402) refuses commits
+that add or modify files under `attachments/` without a corresponding
+manifest entry; the only legal path is the CLI.
+
 ## Reflect
 
 The feedback loop that turns session evidence plus active HYP / open PROP into actionable items. Three entry points:

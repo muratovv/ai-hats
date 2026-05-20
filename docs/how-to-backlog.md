@@ -147,6 +147,36 @@ ai-hats task log HATS-NNN "abandoned overlay approach — replacing role wholesa
 - **Corrective override.** `ai-hats task transition <id> <state> --force --reason "..."` bypasses the FSM guard and records the reason in `work_log`. Reach for it only when you transitioned to the wrong state; default to the normal path.
 - **Fast-close.** `ai-hats task close <id> --resolution "..."` — see Quick start (b).
 
+### Attachments (HATS-402)
+
+Attach files to a task — plans, diagrams, sample inputs, postmortem artifacts. Blobs live under `<ai_hats_dir>/tracker/backlog/tasks/<ID>/attachments/<name>`; metadata (`name`, `digest`, `added`, `note`) lives in `task.yaml::attachments[]`. Works on any task state, including `done` and `cancelled`.
+
+| Command | Purpose |
+| --- | --- |
+| `task attach add <ID> <PATH> [--name N] [--note T]` | Move file into `attachments/`, record manifest entry |
+| `task attach list <ID>` | Show all attachments on a task |
+| `task attach show <ID> <NAME>` | Print attachment to stdout (binaries print only the path) |
+| `task attach remove <ID> <NAME> [--yes]` | Detach + delete blob |
+
+**Idempotency.** Re-running `attach add` with identical content under the same name is a no-op (`exit 0`). Different content under an existing name is a **hard error** — there is no silent overwrite. To replace: `attach remove` first, then `attach add`.
+
+**Delete safety.** `attach remove` checks whether the blob is git-tracked. Tracked blobs are removed silently (`git restore` brings them back). Untracked blobs require `--yes` — deletion is permanent.
+
+**Pre-commit guard.** Any file landing under `tasks/<ID>/attachments/` outside the CLI gets blocked by a pre-commit hook installed via the `backlog-manager` skill. The fix is `attach add`; per-commit override is `AI_HATS_ATTACH_ACK=1 git commit ...`.
+
+```bash
+# Attach a design plan
+ai-hats task attach add HATS-042 .claude/plans/hats-042-design.md \
+    --note "approved 2026-05-20"
+
+# Inspect
+ai-hats task attach list HATS-042
+ai-hats task attach show HATS-042 hats-042-design.md
+
+# Detach (no --yes needed if blob is git-tracked)
+ai-hats task attach remove HATS-042 hats-042-design.md
+```
+
 ---
 
 ## Hypotheses (`HYP-NNN`)
