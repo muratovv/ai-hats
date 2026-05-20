@@ -43,7 +43,6 @@ from .providers import (
 
 AGENT_DIR = ".agent"
 PROJECT_CONFIG = "ai-hats.yaml"
-PROFILE_FILE = "profile.json"  # legacy, used only for backup compat
 GITHOOKS_DIR = ".githooks"
 GITHOOKS_MANIFEST = ".ai-hats-manifest"
 GITHOOKS_DISPATCHER_MARKER = "AI-HATS-DISPATCHER-MARKER"
@@ -276,6 +275,13 @@ class Assembler:
 
         Each entry: (relative path, human reason). Idempotent — missing
         files are skipped silently.
+
+        HATS-407: sweeps stale ``.last_backup`` pointer files (and the
+        ``/tmp/ai-hats-backup-*`` dirs they reference) left behind by the
+        retired ``Assembler._backup()`` chain. Both the v3 legacy
+        location (``.agent/.last_backup``) and the v4 location
+        (``<ai_hats_dir>/.last_backup``) are swept so upgrades from any
+        prior version land in a clean state.
         """
         obsolete = [
             (".agent/backlog.md", "removed legacy backlog.md (unified into STATE.md)"),
@@ -290,6 +296,38 @@ class Assembler:
             else:
                 target.unlink()
             actions.append(reason)
+
+        # HATS-407: sweep stale .last_backup pointer + referenced /tmp dir.
+        # Local import avoids a top-level cycle with paths.py at module load.
+        from .paths import last_backup_path as _last_backup_path
+
+        for backup_ref in (
+            project_dir / ".agent" / ".last_backup",  # pre-v4 location
+            _last_backup_path(project_dir),           # v4 location
+        ):
+            if not backup_ref.exists():
+                continue
+            # Pointer-file form: text content names a /tmp backup dir
+            # created by the retired _backup() helper, which used
+            # ``tempfile.mkdtemp(prefix="ai-hats-backup-")``. Defensively
+            # restrict rmtree to absolute paths whose basename carries
+            # that prefix — a corrupt or hand-edited pointer cannot
+            # redirect cleanup at the user's project tree.
+            if backup_ref.is_file():
+                try:
+                    tmp_target = Path(backup_ref.read_text().strip())
+                    if (
+                        tmp_target.is_absolute()
+                        and tmp_target.exists()
+                        and tmp_target.name.startswith("ai-hats-backup-")
+                    ):
+                        shutil.rmtree(tmp_target, ignore_errors=True)
+                except (OSError, ValueError):
+                    pass
+                backup_ref.unlink(missing_ok=True)
+            elif backup_ref.is_dir():
+                shutil.rmtree(backup_ref, ignore_errors=True)
+            actions.append(f"swept stale {backup_ref.relative_to(project_dir)} (HATS-407)")
         return actions
 
     def init(
