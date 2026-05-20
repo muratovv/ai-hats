@@ -1,4 +1,10 @@
-"""Role-assembly commands: init, set, customize, status, bump, rollback, clean."""
+"""Role-assembly commands: init, set, customize, status, bump, clean.
+
+HATS-407: ``rollback`` was removed — ``config set`` is yaml-only, ``init`` /
+``bump`` only touch git-tracked scaffold files (``./CLAUDE.md`` / ``.gitignore``)
+and the gitignored canonical aggregator, so ``git checkout`` is the recovery
+path documented in the v0.7 CHANGELOG (HATS-409).
+"""
 
 from __future__ import annotations
 
@@ -227,7 +233,7 @@ def init(
     console.print(f"[green]{label}[/] ai-hats in {project_dir}")
 
     if role:
-        console.print(f"  Role: [bold]{role}[/]")
+        console.print(f"  Default role: [bold]{role}[/]")
     console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
     if task_prefix:
         console.print(f"  Task prefix: [bold]{asm.project_config.task_prefix}[/]")
@@ -237,6 +243,15 @@ def init(
         console.print(f"  Venv path: [bold]{asm.project_config.venv_path}[/]")
     if manage_gitignore is False:
         console.print("  manage_gitignore: [bold]disabled[/]")
+
+    # HATS-407: surface the Fork B trade — bare ``claude`` in project_dir
+    # loads only user-rules. Suppressed when handing off to the wizard
+    # (the wizard role explains this in its own copy).
+    if not (use_wizard and not role):
+        console.print(
+            "  [dim]💡 Direct `claude` reads only user-rules. "
+            "Run `ai-hats execute [-r ROLE]` for role-loaded sessions.[/]"
+        )
 
     # Hand off to the wizard role for the remaining configuration steps
     # (stack detection, role selection, customization, feedback policy).
@@ -409,18 +424,25 @@ def set_role(
                 )
 
     if role:
+        # HATS-407: yaml-only update — composition validates but does not
+        # materialize. ``active_role`` stays untouched (it's a runtime
+        # cache, written by ``runtime._launch_session`` at session start).
         try:
-            result = asm.set_role(role, provider_name=provider)
+            result = asm.set_default_role(role, provider_name=provider)
         except ValueError as err:
             console.print(f"[red]Error[/]: {err}")
             raise SystemExit(1)
         if result.errors:
             for err in result.errors:
                 console.print(f"  [yellow]Warning[/]: {err}")
-        console.print(f"[green]Role set[/]: [bold]{result.name}[/]")
+        console.print(f"[green]Default role[/]: [bold]{result.name}[/]")
         console.print(f"  Rules: {len(result.rules)}")
         console.print(f"  Skills: {len(result.skills)}")
         console.print(f"  Injections: {len(result.injections)}")
+        console.print(
+            "  [dim]💡 Composed per-session. Direct `claude` reads only "
+            "user-rules; use `ai-hats execute` for role-loaded sessions.[/]"
+        )
 
     console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
 
@@ -576,23 +598,22 @@ def status():
 
 @click.command()
 def bump():
-    """Update to latest component versions (re-assemble)."""
+    """Refresh migrations, scaffold, canonical aggregator, and git hooks.
+
+    HATS-407: no longer re-applies the role — per-session compose
+    (HATS-294) handles framework content in memory. ``bump`` is now a
+    migration / refresh command for on-disk artefacts.
+    """
     asm = _assembler()
     result = asm.bump()
     if result is None:
-        console.print("[yellow]No role active to bump[/]")
-        return
-    console.print(f"[green]Bumped[/]: {result.name}")
-
-
-@click.command()
-def rollback():
-    """Rollback to previous state."""
-    asm = _assembler()
-    if asm.rollback():
-        console.print("[green]Rolled back[/] to previous state")
+        console.print("[green]Bumped[/]: migrations + scaffold + canonical refreshed")
     else:
-        console.print("[yellow]No backup available[/]")
+        console.print(f"[green]Bumped[/]: {result.name} (hooks re-installed)")
+    console.print(
+        "  [dim]💡 Direct `claude` reads only user-rules. "
+        "Run `ai-hats execute [-r ROLE]` for role-loaded sessions.[/]"
+    )
 
 
 @click.command()

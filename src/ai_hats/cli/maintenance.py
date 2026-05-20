@@ -165,16 +165,20 @@ def _format_component_diff(
 
 
 def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
-    """Snapshot current role's rules and skills via composition."""
+    """Snapshot current role's rules and skills via composition.
+
+    HATS-407: falls back to default_role when active_role is empty —
+    fresh projects (post-init, pre-first-session) carry intent in
+    default_role only.
+    """
     from ..assembler import AssemblyError
 
-    if not asm.project_config.active_role:
+    cfg = asm.project_config
+    role = cfg.active_role or cfg.default_role
+    if not role:
         return set(), set()
     try:
-        result = asm.composer.compose(
-            asm.project_config.active_role,
-            overlay=asm._get_overlay(asm.project_config.active_role),
-        )
+        result = asm.composer.compose(role, overlay=asm._get_overlay(role))
         return {r.name for r in result.rules}, {s.name for s in result.skills}
     except (AssemblyError, ValueError, OSError, KeyError, AttributeError):
         logger.debug("composition snapshot failed", exc_info=True)
@@ -208,7 +212,12 @@ def update():
 
     if config_path.exists():
         config = ProjectConfig.from_yaml(config_path)
-        active_role = config.active_role or None
+        # HATS-407: active_role is the runtime cache (empty until first
+        # session). For a freshly-installed project where only default_role
+        # is set, we still want auto-bump to run so migrations and the
+        # canonical aggregator refresh. Fall back to default_role for the
+        # bump-trigger decision.
+        active_role = config.active_role or config.default_role or None
         if active_role:
             asm = _assembler(project_dir)
             before_rules, before_skills = _snapshot_composition(asm)

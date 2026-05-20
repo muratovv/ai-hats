@@ -176,14 +176,18 @@ main.add_command(config_mod.config)
 # 'self' — framework lifecycle (HATS-241). Convention: rustup self update,
 # gh extension self ... — instantly signals 'operations on the tool itself,
 # not on your project'.
+#
+# HATS-407: ``self rollback`` removed. Per-session compose (HATS-294) plus
+# yaml-only ``config set`` means the only mutable on-disk state is yaml +
+# git-tracked scaffold files — ``git checkout`` is the user-facing recovery
+# path.
 @click.group("self")
 def self_group():
-    """Manage the ai-hats installation itself (init, bump, clean, update, rollback)."""
+    """Manage the ai-hats installation itself (init, bump, clean, update)."""
 
 
 self_group.add_command(assembly.init)
 self_group.add_command(assembly.bump)
-self_group.add_command(assembly.rollback)
 self_group.add_command(assembly.clean)
 self_group.add_command(maintenance.update)
 main.add_command(self_group)
