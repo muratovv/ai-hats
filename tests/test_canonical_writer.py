@@ -84,7 +84,7 @@ def _canonical(project: Path) -> Path:
 def test_write_canonical_emits_imports_md_only(project_with_library: Path) -> None:
     """No priorities.md / role.md / traits/ / rules/ / skills_index.md on disk."""
     asm, result = _compose(project_with_library)
-    asm.write_canonical(result)
+    asm.write_canonical()
 
     canonical = _canonical(project_with_library)
     assert (canonical / "imports.md").is_file()
@@ -99,14 +99,14 @@ def test_write_canonical_emits_imports_md_only(project_with_library: Path) -> No
 def test_write_canonical_creates_empty_user_rules_dir(project_with_library: Path) -> None:
     """``user-rules/`` is always created so the aggregator has a place to look."""
     asm, result = _compose(project_with_library)
-    asm.write_canonical(result)
+    asm.write_canonical()
     assert (_canonical(project_with_library) / USER_RULES_SUBDIR).is_dir()
 
 
 def test_write_canonical_manifest_tracks_imports_only(project_with_library: Path) -> None:
     """MANAGED manifest tracks ``imports.md`` and nothing else."""
     asm, result = _compose(project_with_library)
-    asm.write_canonical(result)
+    asm.write_canonical()
 
     manifest = (_canonical(project_with_library) / CANONICAL_MANIFEST).read_text()
     entries = [
@@ -123,7 +123,7 @@ def test_write_canonical_manifest_tracks_imports_only(project_with_library: Path
 def test_imports_aggregator_empty_when_no_user_rules(project_with_library: Path) -> None:
     """No user-rules → aggregator is an empty file (still tracked in manifest)."""
     asm, result = _compose(project_with_library)
-    asm.write_canonical(result)
+    asm.write_canonical()
     assert (_canonical(project_with_library) / "imports.md").read_text() == ""
 
 
@@ -138,7 +138,7 @@ def test_imports_aggregator_lists_user_rules_sorted(project_with_library: Path) 
     (user_rules / "m_middle.md").write_text("m")
 
     asm, result = _compose(project_with_library)
-    asm.write_canonical(result)
+    asm.write_canonical()
 
     body = (canonical / "imports.md").read_text()
     assert body == (
@@ -151,7 +151,7 @@ def test_imports_aggregator_lists_user_rules_sorted(project_with_library: Path) 
 def test_imports_aggregator_no_framework_refs(project_with_library: Path) -> None:
     """No legacy ``@./priorities.md``, ``@./role.md``, ``@./traits/...``, etc."""
     asm, result = _compose(project_with_library)
-    asm.write_canonical(result)
+    asm.write_canonical()
 
     body = (_canonical(project_with_library) / "imports.md").read_text()
     for forbidden in ("priorities.md", "role.md", "skills_index.md", "traits/", "rules/"):
@@ -166,11 +166,11 @@ def test_imports_aggregator_no_framework_refs(project_with_library: Path) -> Non
 def test_write_canonical_idempotent_no_op(project_with_library: Path) -> None:
     """Re-running with the same result is a no-op for imports.md mtime."""
     asm, result = _compose(project_with_library)
-    asm.write_canonical(result)
+    asm.write_canonical()
     imports_md = _canonical(project_with_library) / "imports.md"
     first_mtime = imports_md.stat().st_mtime_ns
 
-    asm.write_canonical(result)
+    asm.write_canonical()
     assert imports_md.stat().st_mtime_ns == first_mtime
 
 
@@ -194,7 +194,7 @@ def test_write_canonical_sweeps_legacy_framework_files(project_with_library: Pat
     )
 
     asm, result = _compose(project_with_library)
-    asm.write_canonical(result)
+    asm.write_canonical()
 
     assert not (canonical / "priorities.md").exists()
     assert not (canonical / "role.md").exists()
@@ -216,7 +216,7 @@ def test_write_canonical_does_not_delete_user_rules(project_with_library: Path) 
     )
 
     asm, result = _compose(project_with_library)
-    asm.write_canonical(result)
+    asm.write_canonical()
 
     assert (user_rules / "my-rule.md").read_text() == "# user content"
 
@@ -240,7 +240,7 @@ def test_write_canonical_ignores_priorities_role_traits_rules_skills(
     assert result.rules
     assert result.skills
 
-    asm.write_canonical(result)
+    asm.write_canonical()
     canonical = _canonical(project_with_library)
 
     # Only imports.md + user-rules/ subdir + MANAGED manifest on disk.

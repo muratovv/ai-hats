@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import hooks_dir, last_backup_path, rules_dir, runs_dir, skills_dir, state_md_path, tasks_dir
+from ai_hats.paths import hooks_dir, rules_dir, runs_dir, skills_dir, state_md_path, tasks_dir
 
 
 @pytest.fixture
@@ -100,6 +100,9 @@ def test_init_is_idempotent(tmp_path):
 
 
 def test_set_role(project_with_library):
+    """HATS-407: set_role is runtime-bootstrap — composes, writes active_role,
+    ensures provider scaffold, installs hooks, regenerates user-rules
+    aggregator. No more _copy_components materialization of rules/skills."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
@@ -108,15 +111,14 @@ def test_set_role(project_with_library):
 
     assert result.name == "test-role"
     assert len(result.errors) == 0
-    assert (rules_dir(project) / "test_rule" / "rule.md").exists()
-    assert (skills_dir(project) / "test_skill" / "SKILL.md").exists()
+    # Gemini inline path: ./GEMINI.md exists with role injection.
     assert (project / "GEMINI.md").exists()
-
     prompt = (project / "GEMINI.md").read_text()
     assert "Role injection" in prompt
-    # Rules are copied to .agent/rules/ but only always-on rules appear in prompt
-    # Context-specific rules load on demand via native provider skills
-    assert (rules_dir(project) / "test_rule" / "rule.md").exists()
+    # HATS-407: rules/skills are NOT copied into the canonical library tree.
+    # Composition resolves them in-memory via the library layers.
+    assert not (rules_dir(project) / "test_rule").exists()
+    assert not (skills_dir(project) / "test_skill").exists()
 
 
 def test_set_role_with_claude(project_with_library):
@@ -133,20 +135,8 @@ def test_set_role_with_claude(project_with_library):
     assert "Role injection" in asm.composer.compose("test-role").role_injection
 
 
-def test_rollback(project_with_library):
-    project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    asm.set_role("test-role")
-
-    # Verify role is set
-    assert (rules_dir(project) / "test_rule").exists()
-
-    # Now rollback
-    assert asm.rollback()
-
-    # Rules from role should be gone (restored to pre-set state)
-    # Note: the backup was taken before set_role cleaned, so it restores the pre-set state
+# HATS-407: rollback / _backup / _restore_backup removed — git is the
+# user-facing recovery path. Tests below were retired with the helpers.
 
 
 def test_clean(project_with_library):
@@ -156,12 +146,16 @@ def test_clean(project_with_library):
     asm.set_role("test-role")
 
     asm.clean()
-    # Rules dir should be empty (no files, just directory)
-    rules_contents = list((rules_dir(project)).iterdir())
-    assert len(rules_contents) == 0
+    # Rules dir is wiped by clean() — empty (no files) or absent.
+    rdir = rules_dir(project)
+    assert not rdir.exists() or list(rdir.iterdir()) == []
 
 
 def test_status(project_with_library):
+    """HATS-407: status.health reflects on-disk artefacts only.
+    With per-session compose, rules/skills are NOT materialized into the
+    canonical tree, so the only verifiable disk pieces are imports.md and
+    the provider system prompt."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
@@ -171,8 +165,9 @@ def test_status(project_with_library):
     assert status["role"] == "test-role"
     assert status["provider"] == "gemini"
     assert status["tree"] is not None
-    assert "rule:test_rule" in status["health"]
-    assert status["health"]["rule:test_rule"] == "OK"
+    assert "imports.md" in status["health"]
+    assert status["health"]["imports.md"] == "OK"
+    assert status["health"]["system_prompt"] == "OK"
 
 
 def test_bump(project_with_library):
@@ -297,61 +292,9 @@ def test_preserve_local_rules(project_with_library):
     assert (rules_dir(project) / "my_local_rule" / "rule.md").exists()
 
 
-def test_rollback_restores_previous_role(project_with_library):
-    """After set_role(B), rollback() restores role A's profile (HATS-294: role
-    content is composed per-session, so profile.active_role is the only piece
-    of role state that lives on disk).
-    """
-    from ai_hats.models import ProjectConfig
-
-    project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-
-    asm.set_role("test-role", provider_name="claude")
-    profile_a = ProjectConfig.from_yaml(project / "ai-hats.yaml")
-    assert profile_a.active_role == "test-role"
-
-    asm.set_role("other-role", provider_name="claude")
-    profile_b = ProjectConfig.from_yaml(project / "ai-hats.yaml")
-    assert profile_b.active_role == "other-role"
-
-    assert asm.rollback()
-    profile_restored = ProjectConfig.from_yaml(project / "ai-hats.yaml")
-    assert profile_restored.active_role == "test-role"
-    # Composition still produces role A's content under the restored profile.
-    assert "Role injection" in asm.composer.compose("test-role").role_injection
-
-
-def test_rollback_cleans_up_backup_dir(project_with_library):
-    """rollback() should remove the temp backup dir and .last_backup ref."""
-    project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-
-    asm.set_role("test-role")
-
-    # .last_backup ref should exist after set_role
-    ref_path = last_backup_path(project)
-    assert ref_path.exists()
-    backup_dir = Path(ref_path.read_text().strip())
-    assert backup_dir.exists()
-
-    # Rollback
-    asm.rollback()
-
-    # Backup dir and ref should be cleaned up
-    assert not backup_dir.exists()
-    assert not ref_path.exists()
-
-
-def test_rollback_returns_false_when_no_backup(project_with_library):
-    """rollback() returns False when there's nothing to rollback to."""
-    project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-
-    assert not asm.rollback()
+# HATS-407: rollback / _backup / _restore_backup helpers removed.
+# test_rollback_restores_previous_role, test_rollback_cleans_up_backup_dir,
+# test_rollback_returns_false_when_no_backup retired with them.
 
 
 def test_claude_build_session_prompt_creates_temp_file(project_with_library):
@@ -470,8 +413,11 @@ def test_gemini_build_session_prompt_creates_rules_dir(project_with_library):
     assert mandatory.exists()
     assert "Other role injection" in mandatory.read_text()
 
-    # Project rules copied
-    assert (rules_dir / "test_rule").exists()
+    # HATS-407: library-sourced rules are no longer materialized under
+    # `<ai_hats_dir>/library/rules/`, so the per-session rules-dir copy
+    # of test_rule is gone. Always-on rules + role injection still reach
+    # the agent via 00_MANDATORY_ROLE.md (the inline composed prompt).
+    assert not (rules_dir / "test_rule").exists()
 
     # GEMINI.md not touched
     assert "Role injection" in (project / "GEMINI.md").read_text()
@@ -480,37 +426,7 @@ def test_gemini_build_session_prompt_creates_rules_dir(project_with_library):
     shutil.rmtree(rules_dir)
 
 
-def test_backup_survives_self_referential_symlinks_in_provider_skills(
-    project_with_library,
-):
-    """Regression: a self-referential symlink under .gemini/skills or
-    .claude/skills must not cause _backup() to loop until ELOOP.
-
-    Repro: user had `.gemini/skills/foo/foo -> .gemini/skills/foo` in a
-    pre-existing project. shutil.copytree(..., symlinks=False) followed the
-    link and recursed until the OS raised errno 62 ("Too many levels of
-    symbolic links"), aborting `ai-hats self init` mid-flight.
-    """
-    project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-
-    # Plant a self-referential symlink under .gemini/skills, mirroring the
-    # real-world shape from the bug report.
-    gemini_skills = project / ".gemini" / "skills" / "subagent-analyzer"
-    gemini_skills.mkdir(parents=True)
-    (gemini_skills / "SKILL.md").write_text("# stub\n")
-    (gemini_skills / "subagent-analyzer").symlink_to(gemini_skills)
-
-    # set_role invokes _backup(); must not raise shutil.Error/OSError.
-    asm.set_role("test-role")
-
-    # After set_role, a backup exists. Verify the self-symlink survived as a
-    # link (not dereferenced, not traversed).
-    ref_path = last_backup_path(project)
-    backup_dir = Path(ref_path.read_text().strip())
-    backup_symlink = backup_dir / ".gemini" / "skills" / "subagent-analyzer" / "subagent-analyzer"
-    assert backup_symlink.is_symlink()
+# HATS-407: _backup() removed — test_backup_survives_self_referential_symlinks_in_provider_skills retired.
 
 
 # --------------------------------------------------------------------- #
@@ -585,25 +501,22 @@ def test_gitignore_opt_out_skips_write(project_with_library):
 # --------------------------------------------------------------------- #
 
 
-def test_managed_manifest_written_for_skills(project_with_library):
-    """set_role drops a .ai-hats-managed manifest listing managed skills."""
+# HATS-407: _copy_components removed — set_role no longer materializes
+# rules/skills/hooks under the canonical library tree. Library overlay tests
+# (managed-manifest, library-sourced skill survival) are retired; per-session
+# compose resolves these in memory.
+
+
+def test_managed_manifest_absent_after_set_role(project_with_library):
+    """HATS-407: with _copy_components removed, set_role no longer writes
+    .ai-hats-managed for skills/hooks/rules — composition resolves them in
+    memory via library_paths and the canonical tree stays minimal."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role")
 
-    manifest = skills_dir(project) / ".ai-hats-managed"
-    assert manifest.exists(), "Expected .ai-hats-managed manifest in .agent/skills"
-    assert manifest.read_text().splitlines() == ["test_skill"]
-
-
-def test_managed_manifest_absent_when_no_entries(project_with_library):
-    """Composition without hooks leaves that dir without a manifest."""
-    project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    asm.set_role("test-role")
-
+    assert not (skills_dir(project) / ".ai-hats-managed").exists()
     assert not (hooks_dir(project) / ".ai-hats-managed").exists()
 
 
@@ -614,12 +527,15 @@ def test_user_hook_survives_bump(project_with_library):
     asm.init()
     asm.set_role("test-role")
 
+    # Ensure the dir exists (post-HATS-407 it may be empty until the user
+    # drops a file in it — _copy_components no longer pre-populates).
+    hooks_dir(project).mkdir(parents=True, exist_ok=True)
     user_hook = hooks_dir(project) / "my-custom.sh"
     user_hook.write_text("#!/usr/bin/env bash\necho custom\n")
 
     asm.bump()
 
-    assert user_hook.exists(), "User hook must survive re-assembly"
+    assert user_hook.exists(), "User hook must survive bump"
     assert user_hook.read_text() == "#!/usr/bin/env bash\necho custom\n"
 
 
@@ -630,6 +546,7 @@ def test_user_skill_dir_survives_bump(project_with_library):
     asm.init()
     asm.set_role("test-role")
 
+    skills_dir(project).mkdir(parents=True, exist_ok=True)
     user_skill = skills_dir(project) / "my_local_skill"
     user_skill.mkdir()
     (user_skill / "SKILL.md").write_text("# local\n")
@@ -637,8 +554,9 @@ def test_user_skill_dir_survives_bump(project_with_library):
     asm.bump()
 
     assert (user_skill / "SKILL.md").exists()
-    # Library-sourced skill re-installed alongside.
-    assert (skills_dir(project) / "test_skill" / "SKILL.md").exists()
+    # HATS-407: library-sourced skills are no longer copied into the
+    # canonical tree. They are resolved in-memory at session-compose time.
+    assert not (skills_dir(project) / "test_skill").exists()
 
 
 # --------------------------------------------------------------------- #
