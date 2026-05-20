@@ -11,6 +11,7 @@ Subcommands:
 from __future__ import annotations
 
 import json
+import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -134,7 +135,11 @@ def hyp_create(
         success_criterion=success_criterion,
         rollback_condition=rollback_condition,
     )
-    store.create(h)
+    try:
+        store.create(h)
+    except FileExistsError as e:
+        console.print(f"[red]Error[/]: {e}")
+        sys.exit(1)
     if as_json:
         click.echo(json.dumps({"id": new_id}))
     else:

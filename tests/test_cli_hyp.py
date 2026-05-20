@@ -114,6 +114,32 @@ def test_create_increments_id(project_dir: Path):
     assert "HYP-002" in res.output
 
 
+def test_create_duplicate_id_rejected(project_dir: Path, monkeypatch):
+    """A duplicate HYP id must exit 1 with a clean error, not a traceback.
+
+    next_hypothesis_id auto-bumps past collisions, so to exercise the
+    FileExistsError path we stub it to return an id that already exists.
+    """
+    _write_hyp(project_dir, "HYP-001", title="original")
+    monkeypatch.setattr("ai_hats.cli.hyp.next_hypothesis_id", lambda _d: "HYP-001")
+    res = _invoke(
+        [
+            "create",
+            "--title",
+            "duplicate",
+            "--hypothesis",
+            "h",
+            "--source-task",
+            "HATS-001",
+        ]
+    )
+    assert res.exit_code == 1, res.output
+    assert "already exists" in res.output.lower()
+    assert "Traceback" not in res.output
+    data = yaml.safe_load((hypotheses_dir(project_dir) / "HYP-001.yaml").read_text())
+    assert data["title"] == "original"
+
+
 def test_create_with_optional_fields(project_dir: Path):
     res = _invoke(
         [
