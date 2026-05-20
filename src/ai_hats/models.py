@@ -738,6 +738,35 @@ class WorkLogEntry(_YamlModel):
     message: str = ""
 
 
+_DIGEST_LEN = 12
+_DIGEST_RE = re.compile(rf"^[0-9a-f]{{{_DIGEST_LEN}}}$")
+
+
+class Attachment(_YamlModel):
+    """Manifest entry for a file under tasks/<ID>/attachments/.
+
+    The on-disk blob lives in the task's ``attachments/`` directory; this
+    record carries the metadata. ``digest`` is the first 12 hex chars of the
+    blob's SHA-256 — full hash would balloon ``task.yaml`` and tax every
+    agent that loads the card. 48 bits gives a birthday-collision bound
+    around 2^24 attachments, vastly beyond any realistic per-task scale.
+    """
+
+    name: str = ""
+    digest: str = ""
+    added: str = ""
+    note: str = ""
+
+    @field_validator("digest")
+    @classmethod
+    def _check_digest(cls, value: str) -> str:
+        if value and not _DIGEST_RE.match(value):
+            raise ValueError(
+                f"digest must be {_DIGEST_LEN} lowercase hex chars (got {value!r})"
+            )
+        return value
+
+
 class TaskCard(_YamlModel):
     """YAML task card for state machine.
 
@@ -765,6 +794,7 @@ class TaskCard(_YamlModel):
             "folded_into",
             "tags",
             "work_log",
+            "attachments",
             "final_state",
             "resolution",
             "created",
@@ -789,6 +819,7 @@ class TaskCard(_YamlModel):
     folded_into: str = ""
     tags: list[str] = Field(default_factory=list)
     work_log: list[WorkLogEntry] = Field(default_factory=list)
+    attachments: list[Attachment] = Field(default_factory=list)
     final_state: str = ""
     resolution: str = ""
     created: str = ""
@@ -888,6 +919,8 @@ class TaskCard(_YamlModel):
             d["see_also"] = self.see_also
         if self.folded_into:
             d["folded_into"] = self.folded_into
+        if self.attachments:
+            d["attachments"] = [a.to_dict() for a in self.attachments]
         # Round-trip unknown fields verbatim. Known fields take precedence in
         # case of accidental collision (extras should never contain known keys
         # since _capture_extras filters them out, but we defend against direct
