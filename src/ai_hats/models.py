@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sys
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -355,6 +356,16 @@ class FeedbackConfig(_YamlModel):
 # ----- ProjectConfig -----
 
 
+# HATS-408: yaml keys that landed in some v0.6 projects but were never
+# wired (or were reverted) before the v0.7 cut. Stripped *before* pydantic
+# strict validation so `extra="forbid"` does not fail-loud on every command
+# the user runs on a v0.6 project. Add new ghosts here; never remove — this
+# is the migration scar tissue, not a feature flag list.
+_DEPRECATED_PROJECT_FIELDS: frozenset[str] = frozenset({
+    "imports_order",  # HATS-290 planned but reverted; ghost in some v0.6 yamls.
+})
+
+
 class ProjectConfigError(ValueError):
     """Raised when ai-hats.yaml fails schema validation."""
 
@@ -450,10 +461,55 @@ class ProjectConfig(_YamlModel):
                 f"Invalid {path}:\n  - ai_hats_dir: field required "
                 "(add 'ai_hats_dir: .agent/ai-hats' to ai-hats.yaml)"
             )
+        # HATS-408: drop known-deprecated ghosts BEFORE strict pydantic
+        # validation so v0.6 projects do not crash every ai-hats command
+        # before `self migrate-v07` can even run. Mutates `data` in-place
+        # (the healed shape is what we'd want to persist on a save anyway).
+        cls._strip_deprecated_fields(data, path)
+        # HATS-408: heal empty default_role from active_role on load. Any
+        # ai-hats command that needs an "effective role" already falls back
+        # to (active_role or default_role); persisting the heal makes the
+        # downstream contract — default_role is the source of truth — true.
+        cls._heal_default_role(data, path)
         try:
             return cls.model_validate(data)
         except ValidationError as e:
             raise ProjectConfigError(_format_project_config_error(path, e)) from e
+
+    @staticmethod
+    def _strip_deprecated_fields(data: dict[str, Any], path: Path) -> None:
+        """Remove known-deprecated keys from `data` in place; one stderr WARN
+        per stripped field. Idempotent — silent if no deprecated keys present.
+
+        Channel: plain stderr (not `logging`) — fires at yaml-load, before
+        any logging config is in place, and must be user-visible regardless
+        of log level. Format mirrors `print(..., file=sys.stderr)` used by
+        HATS-407 cleanup paths.
+        """
+        for field in sorted(_DEPRECATED_PROJECT_FIELDS):
+            if field in data:
+                data.pop(field)
+                print(
+                    f"WARN: {path}: dropping deprecated field {field!r} "
+                    f"(no longer supported; remove from yaml to silence).",
+                    file=sys.stderr,
+                )
+
+    @staticmethod
+    def _heal_default_role(data: dict[str, Any], path: Path) -> None:
+        """If `default_role` is empty/missing and `active_role` is set, copy
+        `active_role` into `default_role`. Single stderr WARN per heal.
+        Idempotent — silent if both already set or both already empty.
+        """
+        active = data.get("active_role") or ""
+        default = data.get("default_role") or ""
+        if active and not default:
+            data["default_role"] = active
+            print(
+                f"WARN: {path}: healed default_role := active_role "
+                f"({active!r}).",
+                file=sys.stderr,
+            )
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
