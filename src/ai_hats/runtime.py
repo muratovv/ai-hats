@@ -69,7 +69,7 @@ _TERM_RESET_PRELUDE = (
 )
 
 
-def _cleanup_plugin_dir(override_args: list[str]) -> None:
+def _cleanup_plugin_dir(session_args: list[str]) -> None:
     """Remove the ephemeral plugin-dir created by ``Provider.build_session_prompt``.
 
     HATS-307: ``ClaudeProvider.build_session_prompt`` materializes a per-spawn plugin
@@ -77,12 +77,12 @@ def _cleanup_plugin_dir(override_args: list[str]) -> None:
     once the spawned process exits. ``ignore_errors`` keeps us robust against
     repeated cleanup attempts and missing paths.
     """
-    if "--plugin-dir" not in override_args:
+    if "--plugin-dir" not in session_args:
         return
-    idx = override_args.index("--plugin-dir")
-    if idx + 1 >= len(override_args):
+    idx = session_args.index("--plugin-dir")
+    if idx + 1 >= len(session_args):
         return
-    shutil.rmtree(override_args[idx + 1], ignore_errors=True)
+    shutil.rmtree(session_args[idx + 1], ignore_errors=True)
 
 
 def _session_timed_out(session: Session) -> bool:
@@ -497,8 +497,9 @@ class WrapRunner:
         still returns only the exit code to its CLI callers.
 
         ``system_prompt_override`` (HATS-267): when supplied, replaces the
-        merged injection used for shadow override while keeping structural
-        composition data so provider build_session_prompt keeps working.
+        merged injection used for the per-session composed prompt while
+        keeping structural composition data so provider build_session_prompt
+        keeps working.
         """
         # Resolve provider
         provider = get_provider(provider_name)
@@ -507,31 +508,30 @@ class WrapRunner:
         cfg = self.assembler.project_config
         effective_role = role_override or cfg.active_role or cfg.default_role
 
-        # Role override uses shadow prompt (temp file) — never modifies project files.
-        # Permanent assembly only when no override.
-        override_args: list[str] = []
-        override_env: dict[str, str] = {}
-
-        if role_override and cfg.active_role:
-            # Shadow override: compose to temp file, pass via CLI flags
-            result = self.assembler.composer.compose(
-                effective_role, overlay=self.assembler._get_overlay(effective_role),
-            )
-            if system_prompt_override is not None:
-                result = replace(result, injections=[system_prompt_override])
-            override_args, override_env = provider.build_session_prompt(
-                self.project_dir, result, self.session_mgr,
-            )
-        elif effective_role:
+        # HATS-294: unified per-session compose. Every session — default role
+        # and explicit --role alike — goes through build_session_prompt. The
+        # composed prompt is written to a per-session temp file (no shared
+        # canonical role-content). set_role still runs on first-run /
+        # provider-switch to sync project_config.active_role, but the session
+        # itself no longer depends on the canonical layout on disk.
+        if effective_role and not role_override:
             needs_assembly = (
                 not cfg.active_role  # no role set yet
                 or cfg.provider != provider_name  # provider mismatch
             )
             if needs_assembly:
                 self.assembler.set_role(effective_role, provider_name)
+                cfg = self.assembler.project_config  # reload
 
-        # Reload after potential set_role
-        cfg = self.assembler.project_config
+        result = self.assembler.composer.compose(
+            effective_role, overlay=self.assembler._get_overlay(effective_role),
+        )
+        if system_prompt_override is not None:
+            result = replace(result, injections=[system_prompt_override])
+        session_args, session_env = provider.build_session_prompt(
+            self.project_dir, result, self.session_mgr,
+        )
+
         active_role = role_override or cfg.active_role
 
         # Create session
@@ -551,7 +551,7 @@ class WrapRunner:
             **os.environ,
             **session.get_env(),
             **provider.get_env(session.session_dir, self.project_dir),
-            **override_env,
+            **session_env,
             "AI_HATS_ROLE": active_role,
         }
 
@@ -566,7 +566,7 @@ class WrapRunner:
         # Build CLI command with session ID for JSONL linkage
         claude_session_id = str(uuid.uuid4())
         cmd = provider.get_cli_command(extra_args)
-        cmd.extend(override_args)
+        cmd.extend(session_args)
         # Don't inject --session-id when the user is resuming/continuing
         # an existing session — it already has its own id, and Claude CLI
         # rejects --session-id + --resume without --fork-session.
@@ -606,7 +606,7 @@ class WrapRunner:
             )
             # HATS-307: drop the ephemeral plugin-dir created by build_session_prompt.
             # Orphans on SIGKILL are accepted (OS reclaims /tmp on reboot).
-            _cleanup_plugin_dir(override_args)
+            _cleanup_plugin_dir(session_args)
 
         return exit_code, session
 
