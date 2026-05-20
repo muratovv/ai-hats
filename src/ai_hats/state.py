@@ -109,6 +109,8 @@ class TaskManager:
         """
         depends = list(depends_on or [])
         self._reject_self_or_cycle(task_id, parent_task, depends)
+        if (self.tasks_dir / task_id / "task.yaml").exists():
+            raise ValueError(f"Task '{task_id}' already exists")
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         task = TaskCard(
             id=task_id,
