@@ -146,6 +146,24 @@ def test_create_warns_on_missing_refs(cli, project_dir):
     assert t.depends_on == ["T-99"]
 
 
+def test_create_duplicate_id_rejected(cli, project_dir):
+    """`task create --id X` must refuse to overwrite an existing task."""
+    mgr = TaskManager(project_dir, prefix="T")
+    mgr.create_task("T-1", "Original", description="keep me")
+
+    result = cli.invoke(main, [
+        "task", "create", "Overwriter",
+        "--id", "T-1",
+        "--description", "should not land",
+    ])
+    assert result.exit_code == 1, result.output
+    assert "already exists" in result.output.lower()
+
+    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    assert t.title == "Original"
+    assert t.description == "keep me"
+
+
 def test_create_self_reference_rejected(cli, project_dir):
     result = cli.invoke(main, [
         "task", "create", "Self parent",
