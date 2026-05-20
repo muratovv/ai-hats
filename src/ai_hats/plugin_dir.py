@@ -1,22 +1,19 @@
-"""Per-spawn plugin-dir materialization for spawned sub-agent skills (HATS-307).
+"""Per-session plugin-dir materialization (HATS-307, refined in HATS-294).
 
-Sub-agent sessions spawned via ``Provider.build_session_prompt`` cannot see skills
-that are absent from the project's ``.claude/skills/`` mirror (which reflects
-the *active* role, not the spawned role). To fix this for Claude, the
-spawned role's skills are materialized into an ephemeral directory under
-``/tmp/`` and passed to ``claude`` via ``--plugin-dir`` — a session-scoped,
-repeatable flag that merges plugin skills into the default Skill registry
-under their plain names.
-
-The primary user session is unaffected — it still relies on the persistent
-``.claude/skills/`` mirror written by ``Assembler.set_role``.
+Sessions spawned via ``Provider.build_session_prompt`` cannot see skills
+that are absent from the project's ``.claude/skills/`` mirror (which today
+reflects the *active* role, not the spawned role). To fix this for Claude,
+the spawned role's skills are materialized into a directory under the
+per-session cache (``<ai_hats_dir>/.cache/sessions/<sid>/plugin/``) and
+passed to ``claude`` via ``--plugin-dir`` — a session-scoped, repeatable
+flag that merges plugin skills into the default Skill registry under their
+plain names.
 """
 
 from __future__ import annotations
 
 import json
 import shutil
-import tempfile
 from pathlib import Path
 
 from .composer import ResolvedComponent
@@ -27,13 +24,18 @@ def materialize_plugin_dir(
     role_name: str,
     skills: list[ResolvedComponent],
     project_dir: Path,
+    plugin_dir: Path,
 ) -> Path:
-    """Create an ephemeral plugin directory with the role's skills.
+    """Populate ``plugin_dir`` with the role's skills as a claude plugin.
 
-    Returns the plugin-dir path. The caller owns cleanup
-    (``shutil.rmtree(path, ignore_errors=True)`` in a ``try/finally``).
+    HATS-294: caller provides the target ``plugin_dir`` (per-session cache).
+    Directory is recreated from scratch — any prior contents are wiped so
+    the result is byte-stable for given inputs (Fork E determinism).
+    Returns ``plugin_dir`` for caller convenience.
     """
-    plugin_dir = Path(tempfile.mkdtemp(prefix="ai-hats-plugin-"))
+    if plugin_dir.exists():
+        shutil.rmtree(plugin_dir)
+    plugin_dir.mkdir(parents=True)
 
     manifest_dir = plugin_dir / ".claude-plugin"
     manifest_dir.mkdir()

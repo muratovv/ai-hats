@@ -9,8 +9,10 @@ Expansion happens at every writer layer (each "last gate" before the
 prompt or path reaches the agent / filesystem):
 
 - The canonical-dir writer in :mod:`ai_hats.assembler`.
-- :meth:`ai_hats.providers.BaseProvider.export_skills` + the Gemini /
-  Claude override paths.
+- :meth:`ai_hats.providers.GeminiProvider.build_session_prompt` and
+  :meth:`ai_hats.providers.ClaudeProvider.build_session_prompt` (the
+  per-session composed prompt) plus the plugin-dir materialization in
+  :mod:`ai_hats.plugin_dir` (HATS-380 parity for SKILL.md content).
 - :meth:`ai_hats.runtime.SubAgentRunner._build_meta_prompt`.
 - The pipeline ``save_artifact`` step
   (:class:`ai_hats.pipeline.steps.save.SaveArtifact`, HATS-395) —

@@ -470,8 +470,9 @@ class Assembler:
             # 3c. Write canonical layered layer (HATS-282)
             self.write_canonical(result)
 
-            # 4. Export skills to provider-native directory
-            provider.export_skills(self.project_dir, result.skills)
+            # HATS-294: permanent .claude/skills/ export removed. Skills are
+            # materialized per-session into <ai_hats_dir>/.cache/sessions/<sid>/plugin/
+            # by ClaudeProvider.build_session_prompt and passed via --plugin-dir.
 
             # 4b. HATS-291 legacy cleanup — remove stale routing.md mirrors
             # left by HATS-264's lazy-publish path (now collapsed into
@@ -526,13 +527,9 @@ class Assembler:
         ref_path.unlink(missing_ok=True)
         return True
 
-    def clean(self, provider_name: str | None = None) -> None:
+    def clean(self) -> None:
         """Clean all active directories."""
         self._clean(preserve_local=False)
-        # Clean provider-native skills
-        pname = provider_name or self.project_config.provider
-        provider = get_provider(pname)
-        provider.cleanup_skills(self.project_dir)
 
     def status(self) -> dict:
         """Get current status: role, dependency tree, health."""
