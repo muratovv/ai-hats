@@ -53,30 +53,36 @@ def test_role_swap_keeps_claude_md_byte_stable(project_two_roles: Path) -> None:
     assert md5(project_two_roles / "CLAUDE.md") == md5_step1
 
 
-def test_role_swap_aggregator_and_role_md_track_active_role(
+def test_role_swap_tracks_active_role_in_profile(
     project_two_roles: Path,
 ) -> None:
+    """HATS-294: role content lives in composition memory, not on disk.
+    Role swap is reflected in ``project_config.active_role``; the composed
+    result still carries the role-specific injection.
+    """
+    from ai_hats.models import ProjectConfig
+
     asm = Assembler(project_two_roles)
     asm.init(provider="claude")
     asm.set_role("role-a", provider_name="claude")
-
-    aggregator = project_two_roles / ".agent" / "ai-hats" / "imports.md"
-    role_md = project_two_roles / ".agent" / "ai-hats" / "role.md"
-
-    role_a_aggregator = aggregator.read_bytes()
-    role_a_role_md = role_md.read_bytes()
-    assert b"Role A injection." in role_a_role_md
+    profile = ProjectConfig.from_yaml(project_two_roles / "ai-hats.yaml")
+    assert profile.active_role == "role-a"
+    assert "Role A injection." in asm.composer.compose("role-a").role_injection
 
     asm.set_role("role-b", provider_name="claude")
-    assert role_md.read_bytes() != role_a_role_md
-    assert b"Role B injection." in role_md.read_bytes()
+    profile = ProjectConfig.from_yaml(project_two_roles / "ai-hats.yaml")
+    assert profile.active_role == "role-b"
+    assert "Role B injection." in asm.composer.compose("role-b").role_injection
 
     asm.set_role("role-a", provider_name="claude")
-    assert aggregator.read_bytes() == role_a_aggregator
-    assert role_md.read_bytes() == role_a_role_md
+    profile = ProjectConfig.from_yaml(project_two_roles / "ai-hats.yaml")
+    assert profile.active_role == "role-a"
 
 
 def test_bump_after_role_swap_is_byte_stable(project_two_roles: Path) -> None:
+    """HATS-294: only CLAUDE.md scaffold and imports.md (user-rules aggregator)
+    survive on disk. Both must be byte-stable across bump.
+    """
     asm = Assembler(project_two_roles)
     asm.init(provider="claude")
     asm.set_role("role-a", provider_name="claude")
@@ -84,16 +90,15 @@ def test_bump_after_role_swap_is_byte_stable(project_two_roles: Path) -> None:
     snapshot = {
         "claude_md": md5(project_two_roles / "CLAUDE.md"),
         "aggregator": md5(project_two_roles / ".agent" / "ai-hats" / "imports.md"),
-        "role_md": md5(project_two_roles / ".agent" / "ai-hats" / "role.md"),
-        "priorities": md5(project_two_roles / ".agent" / "ai-hats" / "priorities.md"),
     }
 
     asm.bump()
 
     assert md5(project_two_roles / "CLAUDE.md") == snapshot["claude_md"]
-    assert md5(project_two_roles / ".agent" / "ai-hats" / "imports.md") == snapshot["aggregator"]
-    assert md5(project_two_roles / ".agent" / "ai-hats" / "role.md") == snapshot["role_md"]
-    assert md5(project_two_roles / ".agent" / "ai-hats" / "priorities.md") == snapshot["priorities"]
+    assert (
+        md5(project_two_roles / ".agent" / "ai-hats" / "imports.md")
+        == snapshot["aggregator"]
+    )
 
 
 def test_set_role_gemini_still_inline(tmp_path: Path) -> None:
