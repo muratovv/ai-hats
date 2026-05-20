@@ -49,7 +49,6 @@ def test_set_creates_project(cli_project):
     assert (project / "CLAUDE.md").exists()
     assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
     assert (project / ".agent" / "ai-hats" / "imports.md").exists()
-    assert len((project / ".agent" / "ai-hats" / "imports.md").read_text()) > 100
 
 
 @pytest.mark.parametrize("role", ALL_ROLES, ids=ALL_ROLES)
@@ -63,7 +62,6 @@ def test_set_all_roles(cli_project, role):
     assert (project / "CLAUDE.md").exists()
     assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
     assert (project / ".agent" / "ai-hats" / "imports.md").exists()
-    assert len((project / ".agent" / "ai-hats" / "imports.md").read_text()) > 100
 
 
 def test_status_after_set(cli_project):
@@ -96,7 +94,6 @@ def test_bump_after_set(cli_project):
     aggregator_after = (project / ".agent" / "ai-hats" / "imports.md").read_text()
     assert prompt_before == prompt_after
     assert aggregator_before == aggregator_after
-    assert len(aggregator_after) > 100
 
 
 def test_init_unknown_role_fails_loud(cli_project):
@@ -353,12 +350,11 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
         or "ARCHITECT" in overrides["architect"]["content"]
     )
 
-    # Project CLAUDE.md is a scaffold pointing at the aggregator; aggregator
-    # carries the active role's content.
+    # HATS-294: project CLAUDE.md still imports the canonical aggregator;
+    # aggregator now contains only user-rules (empty in this fixture).
+    # Per-session role content lives in the override temp files asserted above.
     claude_scaffold = (project / "CLAUDE.md").read_text()
     assert "@./.agent/ai-hats/imports.md" in claude_scaffold
-    aggregator_content = (project / ".agent" / "ai-hats" / "imports.md").read_text()
-    assert "@./role.md" in aggregator_content
 
     # Cleanup
     for info in overrides.values():

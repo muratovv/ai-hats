@@ -125,11 +125,12 @@ def test_set_role_with_claude(project_with_library):
     asm.init()
 
     asm.set_role("test-role", provider_name="claude")
-    # HATS-284/285: ./CLAUDE.md is now a thin scaffold; role content lives
-    # in .claude/CLAUDE.md aggregator + .agent/ai-hats/role.md.
+    # HATS-294: ./CLAUDE.md is a thin scaffold importing only user-rules via
+    # imports.md. Role injection is composed per-session by the provider, not
+    # materialized to disk.
     assert (project / "CLAUDE.md").exists()
     assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
-    assert "Role injection" in (project / ".agent" / "ai-hats" / "role.md").read_text()
+    assert "Role injection" in asm.composer.compose("test-role").role_injection
 
 
 def test_rollback(project_with_library):
@@ -205,7 +206,7 @@ def test_set_role_then_switch_provider(project_with_library):
     asm.set_role("test-role", provider_name="claude")
     assert (project / "CLAUDE.md").exists()
     assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
-    assert "Role injection" in (project / ".agent" / "ai-hats" / "role.md").read_text()
+    assert "Role injection" in asm.composer.compose("test-role").role_injection
 
     # Profile must track the new provider
     from ai_hats.models import ProjectConfig
@@ -240,7 +241,7 @@ def test_wrap_reassembles_on_provider_mismatch(project_with_library):
     # and surfaced via the .claude/CLAUDE.md aggregator (HATS-284/285).
     assert (project / "CLAUDE.md").exists()
     assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
-    assert "Role injection" in (project / ".agent" / "ai-hats" / "role.md").read_text()
+    assert "Role injection" in asm.composer.compose("test-role").role_injection
 
     # Profile updated
     profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
@@ -274,7 +275,7 @@ def test_wrap_uses_default_role_when_no_active_role(project_with_library):
     asm.set_role(effective_role, provider_name="claude")
     assert (project / "CLAUDE.md").exists()
     assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
-    assert "Role injection" in (project / ".agent" / "ai-hats" / "role.md").read_text()
+    assert "Role injection" in asm.composer.compose("test-role").role_injection
 
 
 def test_preserve_local_rules(project_with_library):
@@ -297,35 +298,29 @@ def test_preserve_local_rules(project_with_library):
 
 
 def test_rollback_restores_previous_role(project_with_library):
-    """After set_role(B), rollback() restores role A's prompt and profile."""
+    """After set_role(B), rollback() restores role A's profile (HATS-294: role
+    content is composed per-session, so profile.active_role is the only piece
+    of role state that lives on disk).
+    """
     from ai_hats.models import ProjectConfig
 
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
 
-    # Set role A — content lives in canonical role.md (HATS-282).
     asm.set_role("test-role", provider_name="claude")
-    role_md = project / ".agent" / "ai-hats" / "role.md"
-    prompt_a = role_md.read_text()
-    assert "Role injection" in prompt_a
     profile_a = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile_a.active_role == "test-role"
 
-    # Set role B (override)
     asm.set_role("other-role", provider_name="claude")
-    prompt_b = role_md.read_text()
-    assert "Other role injection" in prompt_b
     profile_b = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile_b.active_role == "other-role"
 
-    # Rollback → should restore role A
     assert asm.rollback()
-    prompt_restored = role_md.read_text()
-    assert "Role injection" in prompt_restored
-    assert "Other role injection" not in prompt_restored
     profile_restored = ProjectConfig.from_yaml(project / "ai-hats.yaml")
     assert profile_restored.active_role == "test-role"
+    # Composition still produces role A's content under the restored profile.
+    assert "Role injection" in asm.composer.compose("test-role").role_injection
 
 
 def test_rollback_cleans_up_backup_dir(project_with_library):
@@ -734,28 +729,18 @@ def _assert_no_literal_placeholder(*paths: Path) -> None:
 
 
 def test_canonical_dir_has_no_literal_placeholder(project_with_placeholder_library):
-    """Top-level canonical files (priorities/role/traits/rules/skills_index/imports)
-    are the ones imported by `./CLAUDE.md`; the `library/` mirror is on-disk
-    source-of-truth and intentionally preserves placeholders."""
+    """HATS-294: only ``imports.md`` is materialized on disk; it imports
+    user-rules only and must be placeholder-free. Framework content with
+    placeholders is composed per-session — verified separately via the
+    Provider.build_session_prompt path.
+    """
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("ph-role", provider_name="claude")
 
     canonical = project / ".agent" / "ai-hats"
-    surfaces = [
-        canonical / "priorities.md",
-        canonical / "role.md",
-        canonical / "skills_index.md",
-        canonical / "imports.md",
-        *(canonical / "traits").glob("*.md"),
-        *(canonical / "rules").glob("*.md"),
-    ]
-    _assert_no_literal_placeholder(*surfaces)
-
-    # Spot-check: substitution actually landed.
-    role_md = (canonical / "role.md").read_text()
-    assert ".agent/ai-hats/sessions/audits/" in role_md
+    _assert_no_literal_placeholder(canonical / "imports.md")
 
 
 def test_gemini_inline_prompt_has_no_literal_placeholder(

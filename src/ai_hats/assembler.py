@@ -8,10 +8,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .composer import Composer, CompositionResult, ResolvedComponent
+from .composer import Composer, CompositionResult
 from .resolver import LibraryResolver
 from .models import (
-    IMPORTS_ORDER_PRESETS,
     ComponentType,
     ProjectConfig,
     SkillMetadata,
@@ -30,7 +29,6 @@ from .providers import (
     PUBLISH_AGGREGATOR_END,
     PUBLISH_AGGREGATOR_START,
     Provider,
-    _extract_frontmatter_description,
     get_provider,
 )
 
@@ -50,11 +48,6 @@ MANAGED_SKILLS_MARKER = ".ai-hats-managed"
 CANONICAL_DIR = "ai-hats"
 CANONICAL_MANIFEST = "MANAGED"
 USER_RULES_SUBDIR = "user-rules"
-
-
-def _md_table_escape(text: str) -> str:
-    """Escape pipe characters and collapse newlines for a single markdown table cell."""
-    return text.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
 
 
 def _builtin_library_layers() -> list[Path]:
@@ -1161,79 +1154,42 @@ class Assembler:
         return self.agent_dir / CANONICAL_DIR
 
     def write_canonical(self, result: CompositionResult) -> None:
-        """Write the layered canonical view of `result` under .agent/ai-hats/.
+        """Write the canonical aggregator under .agent/ai-hats/ (HATS-294).
+
+        Emits only ``imports.md`` — a list of ``@./user-rules/*.md`` imports.
+        All framework content (priorities / role / traits / rules / skills_index)
+        is composed in memory per-session by ``Provider.build_session_prompt``
+        and never materialized on disk.
+
+        Stale framework files from prior v0.6 layouts are swept by the
+        manifest-driven cleanup below; ``user-rules/`` is never touched.
 
         Idempotent: per-file bytes-compare avoids spurious mtime updates.
-        Manifest-driven cleanup removes stale files from previous compositions
-        but never touches `user-rules/`.
         """
+        del result  # composition is consumed per-session, not written here
         canonical = self._canonical_dir
         canonical.mkdir(parents=True, exist_ok=True)
         (canonical / USER_RULES_SUBDIR).mkdir(exist_ok=True)
 
-        targets: dict[str, bytes] = {}
-
-        priorities = self._render_priorities(result.priorities)
-        if priorities is not None:
-            targets["priorities.md"] = priorities.encode()
-
-        role_doc = self._render_role(result.role_injection, result.overlay_injection)
-        if role_doc is not None:
-            targets["role.md"] = role_doc.encode()
-
-        for trait_name, text in result.trait_injections.items():
-            if not text:
-                continue
-            targets[f"traits/{trait_name}.md"] = self._ensure_trailing_newline(text).encode()
-
-        for rule in result.rules:
-            if not rule.injection:
-                continue
-            targets[f"rules/{rule.name}.md"] = self._ensure_trailing_newline(
-                rule.injection
-            ).encode()
-
-        # HATS-264 + HATS-291: skills_index.md is the single always-on file
-        # for skill discovery. It now embeds the trigger→skill routing table
-        # (and optional skip table) generated from each skill's
-        # metadata.yaml — so trigger phrases are visible to the agent in the
-        # imports.md aggregator without a separate lazy-loaded artefact.
-        skills_index = self._render_skills_index(result.skills)
-        if skills_index is not None:
-            targets["skills_index.md"] = skills_index.encode()
-
-        # HATS-289: aggregator-in-canonical. Imports every other file in
-        # deterministic order so `./CLAUDE.md` can `@import` a single stable
-        # entry-point. Computed before write so the aggregator can include
-        # user-rules/ files (which are NOT in `targets` — they live outside
-        # the manifest by design).
-        # Pass the ordered keys (insertion order = composition order from the
-        # composer) so the aggregator preserves general-to-specific ordering
-        # rather than re-sorting alphabetically.
-        targets["imports.md"] = self._render_canonical_aggregator(
-            canonical,
-            list(targets.keys()),
-            order=self._resolve_imports_order(self.project_config.imports_order),
-        ).encode()
-
+        aggregator = self._render_canonical_aggregator(canonical).encode()
         # HATS-380: expand `<ai_hats_dir>` placeholder before write so the
         # agent never sees the literal token (it would otherwise create a
         # bogus `./<ai_hats_dir>/` directory in the project root).
-        targets = {
-            relpath: expand_path_placeholders(content.decode(), self.project_dir).encode()
-            for relpath, content in targets.items()
-        }
-
-        # Idempotent write
-        for relpath, content in targets.items():
-            self._atomic_write_if_changed(canonical / relpath, content)
+        aggregator = expand_path_placeholders(
+            aggregator.decode(), self.project_dir
+        ).encode()
+        self._atomic_write_if_changed(canonical / "imports.md", aggregator)
 
         # Stale cleanup: remove previous-managed files no longer present.
+        # On v0.6→v0.7 upgrade this sweeps priorities.md, role.md, traits/*,
+        # rules/*, skills_index.md. ``user-rules/`` is always preserved.
+        # HATS-408 layers user-edit detection on top of this cleanup before
+        # release; HATS-294 alone is not user-shippable.
+        new_paths = {"imports.md"}
         previous = self._read_canonical_manifest(canonical / CANONICAL_MANIFEST)
-        new_paths = set(targets.keys())
         for stale in previous - new_paths:
             if stale.startswith(f"{USER_RULES_SUBDIR}/") or stale == USER_RULES_SUBDIR:
-                continue  # never touch user-rules/
+                continue
             target = canonical / stale
             target.unlink(missing_ok=True)
             # Best-effort cleanup of empty parent dirs (stop at canonical root)
@@ -1245,156 +1201,27 @@ class Assembler:
                     break
                 parent = parent.parent
 
-        # Write the new manifest.
         self._write_canonical_manifest(canonical / CANONICAL_MANIFEST, sorted(new_paths))
 
     @staticmethod
-    def _render_priorities(priorities: list[str]) -> str | None:
-        if not priorities:
-            return None
-        body = "\n".join(f"{i}. {p}" for i, p in enumerate(priorities, start=1))
-        return f"# Priorities\n\n{body}\n"
+    def _render_canonical_aggregator(canonical_dir: Path) -> str:
+        """Build ``imports.md`` — a sorted list of ``@./user-rules/*.md`` imports.
 
-    @staticmethod
-    def _render_role(role_text: str, overlay_text: str) -> str | None:
-        parts = [t for t in (role_text, overlay_text) if t]
-        if not parts:
-            return None
-        return Assembler._ensure_trailing_newline("\n\n".join(parts))
-
-    # HATS-290: outer-section bucket predicates for imports.md.
-    # Maps each canonical section name to a path-predicate; user-rules is
-    # handled separately because its files live outside the manifest.
-    _SECTION_BUCKETS: dict[str, "callable[[str], bool]"] = {
-        "priorities":   lambda p: p == "priorities.md",
-        "traits":       lambda p: p.startswith("traits/"),
-        "role":         lambda p: p == "role.md",
-        "rules":        lambda p: p.startswith("rules/"),
-        "skills_index": lambda p: p == "skills_index.md",
-    }
-
-    @staticmethod
-    def _resolve_imports_order(
-        config_value: str | list[str] | None,
-    ) -> list[str]:
-        """Resolve `imports_order` config to a concrete section ordering.
-
-        None / "default" → the default preset. A preset name → the preset's list.
-        A list[str] → returned as-is (already validated to be a permutation of
-        IMPORTS_SECTION_NAMES at config-load time).
+        HATS-294: framework content (priorities / role / traits / rules /
+        skills_index) is composed in memory per session and never written to
+        disk; the aggregator therefore lists only user-rules. ``./CLAUDE.md``
+        still imports this single file as its stable entry-point.
         """
-        if config_value is None:
-            return list(IMPORTS_ORDER_PRESETS["default"])
-        if isinstance(config_value, str):
-            return list(IMPORTS_ORDER_PRESETS[config_value])
-        return list(config_value)
-
-    @staticmethod
-    def _render_canonical_aggregator(
-        canonical_dir: Path,
-        framework_paths: list[str],
-        order: list[str] | None = None,
-    ) -> str:
-        """Build the `imports.md` aggregator in canonical (HATS-289 + HATS-290).
-
-        Pure `@import` list, no markers, no headings. Outer order is driven by
-        `order` — a list of section names from IMPORTS_SECTION_NAMES. When
-        `order` is None, the "default" preset is used (preserves the original
-        priorities → traits → role → rules → user-rules → skills_index).
-
-        Within each section, paths preserve their **insertion order** in
-        `framework_paths` (= composition / resolution order from the composer
-        — general traits before specific ones, depth-first across the
-        dependency tree). Alphabetical sort would scramble that.
-
-        `framework_paths` is the ordered list of relpaths the canonical writer
-        will own; `user-rules/*.md` is enumerated separately because user-rules
-        live outside the manifest (composer never writes them).
-        """
-        if order is None:
-            order = list(IMPORTS_ORDER_PRESETS["default"])
-
-        sections: list[list[str]] = []
-        for name in order:
-            if name == "user-rules":
-                user_rules_dir = canonical_dir / USER_RULES_SUBDIR
-                if user_rules_dir.is_dir():
-                    user_paths = sorted(
-                        f"@./{USER_RULES_SUBDIR}/{md.name}"
-                        for md in user_rules_dir.glob("*.md")
-                    )
-                    if user_paths:
-                        sections.append(user_paths)
-                continue
-            predicate = Assembler._SECTION_BUCKETS[name]
-            picked = [p for p in framework_paths if predicate(p)]
-            if picked:
-                sections.append([f"@./{p}" for p in picked])
-
-        body = "\n\n".join("\n".join(lines) for lines in sections)
-        return body + ("\n" if body else "")
-
-    @staticmethod
-    def _render_skills_index(skills: list[ResolvedComponent]) -> str | None:
-        """Render `skills_index.md` — the single always-on skill-discovery file.
-
-        Top section: one-liner per skill (name + frontmatter description).
-        Bottom sections (HATS-264 + HATS-291): a `## Routing` table mapping
-        trigger phrases to skills, and an optional `## Skip` table — both
-        sourced from each skill's `metadata.yaml` (`triggers:` / `skip:`).
-        Skills with empty triggers are absent from the routing table but
-        still appear in the top index.
-
-        The routing tables live here (rather than in a separate lazy file)
-        so the agent sees activation hints directly in the always-on
-        imports.md aggregator — closing the chicken-and-egg gap that an
-        on-demand routing.md left open.
-        """
-        if not skills:
-            return None
-        lines = ["# Skills Index", ""]
-        for skill in skills:
-            desc = _extract_frontmatter_description(skill)
-            # Fall back to empty when description equals the name (no frontmatter).
-            if desc == skill.name:
-                lines.append(f"- **{skill.name}**")
-            else:
-                lines.append(f"- **{skill.name}** — {desc}")
-
-        trigger_rows: list[tuple[str, str]] = []  # (trigger, skill_name)
-        skip_rows: list[tuple[str, str]] = []  # (skill_name, skip_phrase)
-        for skill in skills:
-            metadata = SkillMetadata.from_yaml(skill.source_path / "metadata.yaml")
-            for trigger in metadata.triggers:
-                phrase = str(trigger).strip()
-                if phrase:
-                    trigger_rows.append((phrase, skill.name))
-            for skip in metadata.skip:
-                phrase = str(skip).strip()
-                if phrase:
-                    skip_rows.append((skill.name, phrase))
-
-        if trigger_rows:
-            lines.append("")
-            lines.append("## Routing")
-            lines.append("")
-            lines.append("| Trigger | Skill |")
-            lines.append("|---------|-------|")
-            for trigger, skill_name in trigger_rows:
-                lines.append(f"| {_md_table_escape(trigger)} | {skill_name} |")
-        if skip_rows:
-            lines.append("")
-            lines.append("## Skip")
-            lines.append("")
-            lines.append("| Skill | Skip when |")
-            lines.append("|-------|-----------|")
-            for skill_name, phrase in skip_rows:
-                lines.append(f"| {skill_name} | {_md_table_escape(phrase)} |")
-        return "\n".join(lines) + "\n"
-
-    @staticmethod
-    def _ensure_trailing_newline(text: str) -> str:
-        return text if text.endswith("\n") else text + "\n"
+        user_rules_dir = canonical_dir / USER_RULES_SUBDIR
+        if not user_rules_dir.is_dir():
+            return ""
+        paths = sorted(
+            f"@./{USER_RULES_SUBDIR}/{md.name}"
+            for md in user_rules_dir.glob("*.md")
+        )
+        if not paths:
+            return ""
+        return "\n".join(paths) + "\n"
 
     @staticmethod
     def _atomic_write_if_changed(path: Path, content: bytes) -> bool:

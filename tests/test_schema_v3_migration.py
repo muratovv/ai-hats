@@ -165,8 +165,9 @@ def test_set_role_on_legacy_project_migrates(tmp_path: Path) -> None:
     body = (project / "CLAUDE.md").read_text()
     assert INJECTION_START not in body
     assert PUBLISH_AGGREGATOR_START in body
-    aggregator = (project / ".agent" / "ai-hats" / "imports.md").read_text()
-    assert "@./role.md" in aggregator
+    # HATS-294: aggregator no longer imports framework files; user-rules only.
+    aggregator = (project / ".agent" / "ai-hats" / "imports.md")
+    assert aggregator.exists()
 
 
 def test_bump_migrates_then_assembles(tmp_path: Path) -> None:
