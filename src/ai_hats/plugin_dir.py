@@ -1,6 +1,6 @@
 """Per-spawn plugin-dir materialization for spawned sub-agent skills (HATS-307).
 
-Sub-agent sessions spawned via ``Provider.build_override`` cannot see skills
+Sub-agent sessions spawned via ``Provider.build_session_prompt`` cannot see skills
 that are absent from the project's ``.claude/skills/`` mirror (which reflects
 the *active* role, not the spawned role). To fix this for Claude, the
 spawned role's skills are materialized into an ephemeral directory under

@@ -99,14 +99,15 @@ class Provider(abc.ABC):
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         """Get environment variables needed for the provider."""
 
-    def build_override(
+    def build_session_prompt(
         self,
         project_dir: Path,
         result: CompositionResult,
         session_mgr: "SessionManager",
     ) -> tuple[list[str], dict[str, str]]:
-        """Build CLI args and env vars for a temporary role override.
+        """Build CLI args and env vars for a per-session composed prompt.
 
+        Called for EVERY session (default role and explicit ``--role`` alike).
         Returns (extra_args, extra_env). Must NOT modify project files.
         Default: no-op (subclasses override).
         """
@@ -282,13 +283,13 @@ class GeminiProvider(Provider):
                     shutil.rmtree(dest)
                 shutil.copytree(rule.source_path, dest)
 
-    def build_override(
+    def build_session_prompt(
         self,
         project_dir: Path,
         result: CompositionResult,
         session_mgr: "SessionManager",
     ) -> tuple[list[str], dict[str, str]]:
-        """Create session-scoped rules dir with override prompt.
+        """Create session-scoped rules dir with composed prompt.
 
         Uses GEMINI_CLI_PROJECT_RULES_PATH to inject without touching GEMINI.md.
         """
@@ -393,13 +394,13 @@ class ClaudeProvider(Provider):
                     shutil.rmtree(dest)
                 shutil.copytree(rule.source_path, dest)
 
-    def build_override(
+    def build_session_prompt(
         self,
         project_dir: Path,
         result: CompositionResult,
         session_mgr: "SessionManager",
     ) -> tuple[list[str], dict[str, str]]:
-        """Write override prompt to temp file, pass via --system-prompt-file.
+        """Write composed prompt to temp file, pass via --system-prompt-file.
 
         Preserves project-local content outside AI-HATS markers.
         """

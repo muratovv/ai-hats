@@ -359,8 +359,8 @@ def test_rollback_returns_false_when_no_backup(project_with_library):
     assert not asm.rollback()
 
 
-def test_claude_build_override_creates_temp_file(project_with_library):
-    """ClaudeProvider.build_override() creates temp file with override prompt."""
+def test_claude_build_session_prompt_creates_temp_file(project_with_library):
+    """ClaudeProvider.build_session_prompt() creates temp file with override prompt."""
     from ai_hats.providers import ClaudeProvider
 
     project, lib = project_with_library
@@ -377,7 +377,7 @@ def test_claude_build_override_creates_temp_file(project_with_library):
     # Build override for other-role
     provider = ClaudeProvider()
     result = asm.composer.compose("other-role")
-    args, env = provider.build_override(project, result, None)
+    args, env = provider.build_session_prompt(project, result, None)
 
     # HATS-307: args now include --system-prompt-file AND --plugin-dir
     assert args[0] == "--system-prompt-file"
@@ -401,7 +401,7 @@ def test_claude_build_override_creates_temp_file(project_with_library):
     _shutil.rmtree(plugin_dir, ignore_errors=True)
 
 
-def test_claude_build_override_materializes_role_skills_in_plugin_dir(project_with_library):
+def test_claude_build_session_prompt_materializes_role_skills_in_plugin_dir(project_with_library):
     """HATS-307: spawned role's skills must end up under --plugin-dir/skills/."""
     import shutil as _shutil
     from ai_hats.providers import ClaudeProvider
@@ -415,7 +415,7 @@ def test_claude_build_override_materializes_role_skills_in_plugin_dir(project_wi
 
     provider = ClaudeProvider()
     result = asm.composer.compose("test-role")
-    args, _ = provider.build_override(project, result, None)
+    args, _ = provider.build_session_prompt(project, result, None)
 
     assert "--plugin-dir" in args
     plugin_dir = Path(args[args.index("--plugin-dir") + 1])
@@ -427,8 +427,8 @@ def test_claude_build_override_materializes_role_skills_in_plugin_dir(project_wi
         _shutil.rmtree(plugin_dir, ignore_errors=True)
 
 
-def test_claude_build_override_does_not_modify_project_claude_md(project_with_library):
-    """build_override() must never modify the project CLAUDE.md."""
+def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_with_library):
+    """build_session_prompt() must never modify the project CLAUDE.md."""
     from ai_hats.providers import ClaudeProvider
 
     project, lib = project_with_library
@@ -440,7 +440,7 @@ def test_claude_build_override_does_not_modify_project_claude_md(project_with_li
 
     provider = ClaudeProvider()
     result = asm.composer.compose("other-role")
-    args, _ = provider.build_override(project, result, None)
+    args, _ = provider.build_session_prompt(project, result, None)
 
     # CLAUDE.md unchanged
     assert (project / "CLAUDE.md").read_text() == original_content
@@ -451,8 +451,8 @@ def test_claude_build_override_does_not_modify_project_claude_md(project_with_li
         _shutil.rmtree(args[args.index("--plugin-dir") + 1], ignore_errors=True)
 
 
-def test_gemini_build_override_creates_rules_dir(project_with_library):
-    """GeminiProvider.build_override() creates session rules dir with override."""
+def test_gemini_build_session_prompt_creates_rules_dir(project_with_library):
+    """GeminiProvider.build_session_prompt() creates session rules dir with override."""
     import shutil
     from ai_hats.providers import GeminiProvider
 
@@ -463,7 +463,7 @@ def test_gemini_build_override_creates_rules_dir(project_with_library):
 
     provider = GeminiProvider()
     result = asm.composer.compose("other-role")
-    args, env = provider.build_override(project, result, None)
+    args, env = provider.build_session_prompt(project, result, None)
 
     assert args == []
     assert "GEMINI_CLI_PROJECT_RULES_PATH" in env
@@ -791,7 +791,7 @@ def test_gemini_inline_prompt_has_no_literal_placeholder(
     assert ".agent/ai-hats/sessions/audits/" in content
 
 
-def test_gemini_build_override_has_no_literal_placeholder(
+def test_gemini_build_session_prompt_has_no_literal_placeholder(
     project_with_placeholder_library,
 ):
     """Gemini override prompt (`00_MANDATORY_ROLE.md`) must be expanded."""
@@ -805,14 +805,14 @@ def test_gemini_build_override_has_no_literal_placeholder(
     asm.init()
     result = Composer(LibraryResolver([lib])).compose("ph-role")
 
-    _, env = GeminiProvider().build_override(project, result, SessionManager(project))
+    _, env = GeminiProvider().build_session_prompt(project, result, SessionManager(project))
     override = Path(env["GEMINI_CLI_PROJECT_RULES_PATH"]) / "00_MANDATORY_ROLE.md"
     content = override.read_text()
     assert "<ai_hats_dir>" not in content
     assert ".agent/ai-hats/sessions/audits/" in content
 
 
-def test_claude_build_override_has_no_literal_placeholder(
+def test_claude_build_session_prompt_has_no_literal_placeholder(
     project_with_placeholder_library,
 ):
     """Claude --system-prompt-file content must be expanded."""
@@ -827,8 +827,8 @@ def test_claude_build_override_has_no_literal_placeholder(
     asm.set_role("ph-role", provider_name="claude")
     result = Composer(LibraryResolver([lib])).compose("ph-role")
 
-    args, _ = ClaudeProvider().build_override(project, result, SessionManager(project))
-    # build_override returns ["--system-prompt-file", <path>]
+    args, _ = ClaudeProvider().build_session_prompt(project, result, SessionManager(project))
+    # build_session_prompt returns ["--system-prompt-file", <path>]
     prompt_file = Path(args[args.index("--system-prompt-file") + 1])
     content = prompt_file.read_text()
     assert "<ai_hats_dir>" not in content

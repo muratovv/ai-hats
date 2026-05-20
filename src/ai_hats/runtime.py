@@ -70,9 +70,9 @@ _TERM_RESET_PRELUDE = (
 
 
 def _cleanup_plugin_dir(override_args: list[str]) -> None:
-    """Remove the ephemeral plugin-dir created by ``Provider.build_override``.
+    """Remove the ephemeral plugin-dir created by ``Provider.build_session_prompt``.
 
-    HATS-307: ``ClaudeProvider.build_override`` materializes a per-spawn plugin
+    HATS-307: ``ClaudeProvider.build_session_prompt`` materializes a per-spawn plugin
     dir under ``/tmp/`` and emits ``["--plugin-dir", <path>]``. We delete it
     once the spawned process exits. ``ignore_errors`` keeps us robust against
     repeated cleanup attempts and missing paths.
@@ -498,7 +498,7 @@ class WrapRunner:
 
         ``system_prompt_override`` (HATS-267): when supplied, replaces the
         merged injection used for shadow override while keeping structural
-        composition data so provider build_override keeps working.
+        composition data so provider build_session_prompt keeps working.
         """
         # Resolve provider
         provider = get_provider(provider_name)
@@ -519,7 +519,7 @@ class WrapRunner:
             )
             if system_prompt_override is not None:
                 result = replace(result, injections=[system_prompt_override])
-            override_args, override_env = provider.build_override(
+            override_args, override_env = provider.build_session_prompt(
                 self.project_dir, result, self.session_mgr,
             )
         elif effective_role:
@@ -604,7 +604,7 @@ class WrapRunner:
                 tracer=tracer,
                 tags=tags,
             )
-            # HATS-307: drop the ephemeral plugin-dir created by build_override.
+            # HATS-307: drop the ephemeral plugin-dir created by build_session_prompt.
             # Orphans on SIGKILL are accepted (OS reclaims /tmp on reboot).
             _cleanup_plugin_dir(override_args)
 
@@ -1007,7 +1007,7 @@ class SubAgentRunner:
 
         # SYSTEM_ROLE — HATS-380: expand <ai_hats_dir> before the role/trait
         # injection reaches the sub-agent inline. Canonical writer and provider
-        # build_override paths already expand; meta-prompt was the residual gap
+        # build_session_prompt paths already expand; meta-prompt was the residual gap
         # (roles like session-reviewer carry literal <ai_hats_dir> in injection).
         merged = expand_path_placeholders(result.merged_injection, self.project_dir)
         sections.append(f"# SYSTEM_ROLE\n{merged}")
