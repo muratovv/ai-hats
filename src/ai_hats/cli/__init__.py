@@ -152,6 +152,7 @@ def _launch_session(
 from . import (  # noqa: E402
     agent as agent_mod,
     assembly,
+    attach as attach_mod,
     config as config_mod,
     execute as execute_mod,
     hyp as hyp_mod,
@@ -209,6 +210,7 @@ main.add_command(session.session)
 #   ai-hats task proposal ...
 task.task.add_command(hyp_mod.hyp)
 task.task.add_command(proposal_mod.proposal)
+task.task.add_command(attach_mod.attach)
 main.add_command(task.task)
 
 # Reflect (post-session retro)
