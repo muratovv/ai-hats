@@ -187,7 +187,14 @@ def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
 
 @click.command()
 def update():
-    """Update ai-hats from GitHub."""
+    """Update ai-hats from GitHub.
+
+    Auto-bumps after install. HATS-408 v0.6 gate: the auto-bump will
+    refuse on a v0.6 project (canonical MANAGED manifest still listing
+    framework files) and point at ``ai-hats self migrate-v07``. Run
+    that first to either preserve user edits (default) or overwrite
+    with ``--force``, then re-run ``ai-hats self update``.
+    """
     import subprocess
 
     from .. import __version__ as old_version
@@ -487,13 +494,22 @@ _MIGRATE_COMMIT_MESSAGE = (
 def migrate_v07(force: bool, no_commit: bool, check_branches: bool):
     """One-shot safe migration from v0.6 materialised layout to v0.7 per-session compose.
 
-    Inspects every v0.6 on-disk artefact (priorities.md, role.md, traits/*.md,
-    rules/*.md, skills_index.md, library/{rules,skills,hooks}/<name>/), diffs
-    each vs a freshly composed baseline, refuses with guidance on any user
-    edit (--force bypasses with WARN per file). On success: deletes stale
-    files, regenerates the v0.7 imports.md aggregator, persists yaml
-    hardening (deprecated-field strip + default_role heal), commits in a
-    single atomic envelope.
+    Inspects every v0.6 on-disk artefact:
+
+    * Canonical role-content files: ``priorities.md``, ``role.md``,
+      ``skills_index.md``, ``traits/*.md``, ``rules/*.md``.
+    * Library mirror subdirectories: ``library/rules/<name>/`` and
+      ``library/skills/<name>/`` (whole-dir copies).
+    * Library hook flat files: ``library/hooks/*.sh`` and ``*.py``
+      (v0.6 wrote hooks as flat scripts via ``as_dir=False``, not
+      subdirectories).
+
+    Each finding is diffed vs a freshly composed baseline. The command
+    refuses with guidance on any user edit (--force bypasses with one
+    stderr WARN per file). On success: deletes stale files, regenerates
+    the v0.7 imports.md aggregator, persists yaml hardening
+    (deprecated-field strip + default_role heal), commits in a single
+    atomic envelope.
 
     Idempotent — re-running on a clean v0.7 project is a no-op.
 

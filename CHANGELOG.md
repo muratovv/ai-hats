@@ -11,6 +11,19 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Added
+- **HATS-408** — `ai-hats self migrate-v07` — one-shot safe migration
+  from v0.6 materialised canonical layout to v0.7 per-session compose.
+  Inspects every on-disk artefact (canonical role-content files,
+  library mirror dirs for rules/skills, flat hook scripts under
+  `library/hooks/`), diffs each vs a freshly composed baseline,
+  refuses with guidance on user edits (`--force` bypasses with one
+  stderr WARN per overwritten file). Atomic single git commit; idempotent
+  re-runs no-op. Flags: `--force / --no-commit / --check-branches`.
+  Exit codes 0/1/2/3/4 documented in `--help`. The companion gate
+  `Assembler._refuse_on_v06_layout` blocks `bump` / `self update` on
+  v0.6 projects so the destructive sweep can't fire before the user
+  runs `migrate-v07` — closes the silent-data-loss seam that exists
+  when HATS-294 + HATS-407 ship together without it.
 - **HATS-401** — Session-end **Update banner** in `execute` / `human`
   pipelines. When the installed `ai-hats` SHA lags upstream `master`, a
   three-line block surfaces under the `✨ Session summary`: short SHAs,
@@ -22,7 +35,29 @@ since the latest tag lives under **Unreleased** until the next release.
   steps `check_update_async` / `render_update_banner`, glossary entries
   for **Session summary** vs **Update banner**.
 
+### Changed
+- **HATS-294** — Composition is now per-session in memory; the canonical
+  layer no longer materialises `priorities.md` / `role.md` /
+  `traits/*.md` / `rules/*.md` / `skills_index.md`. `write_canonical`
+  emits only the `imports.md` aggregator listing `@./user-rules/*.md`
+  files (plus the `MANAGED` manifest tracking it). Providers'
+  `build_override` renamed to `build_session_prompt`; runtime collapsed
+  shadow-vs-permanent paths into a single compose path; per-session
+  cache dir replaces the permanent `.claude/skills` export.
+- **HATS-407** — `ai-hats role set <name>` is now yaml-only (writes
+  `default_role:` to `ai-hats.yaml` and updates the running provider's
+  system prompt inline). Removed `ai-hats self rollback` — yaml-only
+  config means `git checkout` is the recovery path. Swept stale
+  `.last_backup` pointers and dropped `PROFILE_FILE`.
+
 ### Fixed
+- **HATS-412** — `WrapRunner` lifecycle `HooksRunner` now reads from the
+  canonical `<ai_hats_dir>/library/hooks/` instead of the legacy
+  `.agent/hooks/` path. The bug was latent since HATS-314's layout
+  migration (commit `2eb329d`) — `HooksRunner._find_scripts` returned
+  `[]` for every project since, so skill-contributed `session_start` /
+  `session_end` hooks silently never fired. Extracted
+  `_make_session_hooks_runner` helper guards against future drift.
 - **HATS-400** — `ai-hats self update` now re-execs auto-bump in a fresh
   Python interpreter when the version on disk actually changed. The old
   in-process call kept executing OLD in-memory code from the running
