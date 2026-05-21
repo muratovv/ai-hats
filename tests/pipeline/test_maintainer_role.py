@@ -289,4 +289,37 @@ def test_initial_wizard_recommends_dev_python_for_pyproject() -> None:
 def test_initial_wizard_lists_dev_python_in_available_roles() -> None:
     body = _read("library/core/roles/initial-wizard/config.yaml")
     # The role description block surfaces dev-python as a distinct option.
-    assert "- **dev-python**" in body or "**dev-python** —" in body
+    # Anchor on the Available-roles section header so this test doesn't
+    # silently pass on the Step 3 mapping bullet (which uses the same string).
+    available_idx = body.index("## Available base roles")
+    step3_idx = body.index("### Step 3")
+    available_section = body[available_idx:step3_idx]
+    assert "**dev-python**" in available_section, (
+        "dev-python must appear in the Available-roles section, not only the Step 3 mapping"
+    )
+
+
+def test_initial_wizard_recommends_dev_python_for_setup_py() -> None:
+    # Step 3 mapping must cover both pyproject.toml AND setup.py.
+    body = _read("library/core/roles/initial-wizard/config.yaml")
+    # Find the line that maps setup.py — must point to dev-python.
+    lines = [ln for ln in body.splitlines() if "setup.py" in ln and "→" in ln]
+    assert lines, "no setup.py mapping line found in initial-wizard"
+    assert any("dev-python" in ln for ln in lines), (
+        f"setup.py mapping does not target dev-python: {lines}"
+    )
+
+
+@pytest.mark.parametrize(
+    "doc_rel",
+    [
+        "README.md",
+        "docs/glossary.md",
+        "docs/ARCHITECTURE.md",
+        "docs/how-to-extend.md",
+        "docs/how-to-configure.md",
+    ],
+)
+def test_doc_catalog_mentions_dev_python(doc_rel: str) -> None:
+    body = _read(doc_rel)
+    assert "dev-python" in body, f"{doc_rel} must mention dev-python in its catalog/mapping"
