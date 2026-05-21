@@ -4,6 +4,12 @@ Thanks for taking the time to look at ai-hats. This guide covers the
 practical bits — dev setup, branch and commit conventions, what to test,
 and what **not** to commit.
 
+> **For agents working in this repo:** the policies below are mirrored
+> into the `maintainer` role via the `ai-hats-maintainer` trait. Load it
+> with `ai-hats config set -r maintainer` (the project's `ai-hats.yaml`
+> ships this default). This `CONTRIBUTING.md` is the human-readable
+> reference — agents pick up the same content through `ai-hats self bump`.
+
 For the architectural overview see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 For how the framework's reflection loop works see
 [docs/how-to-feedback-loop.md](docs/how-to-feedback-loop.md).

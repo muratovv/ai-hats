@@ -61,3 +61,12 @@ Enforce user-defined task boundaries. Prevent scope creep and over-implementatio
 - Writing tests when asked for design only
 - 30+ tool calls in a single response without a checkpoint — the user loses visibility
 - Skipping "discuss approach" on tasks with multiple implementation options
+- **"Skeleton / infrastructure / framework" signal misread.** When the user
+  says "make a skeleton of X" or "set up the infrastructure for Y" or
+  "wire up the framework call for Z" — interpret as **minimum viable demo +
+  ask before expanding**, NOT as "wire up all related entry-points". A
+  one-liner answer about scope without an explicit "everything" defaults to
+  "only what was specifically named". Worked example: HATS-265 — user said
+  "нужен скелет вызова ai-hats", agent switched 4 CLI handlers via
+  pipeline-presets; user rolled back 3 of them. The correct ask is: "only X,
+  X and Y, or all four?" with a concrete enumeration.

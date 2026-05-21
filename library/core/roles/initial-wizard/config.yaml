@@ -6,6 +6,7 @@ priorities:
 composition:
   traits:
     - trait-base
+    - ai-hats-framework
   rules:
     - dev_rule_tool_call_hygiene
   skills:

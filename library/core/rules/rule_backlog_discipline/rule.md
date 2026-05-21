@@ -6,6 +6,7 @@ Applies to all three backlog item types — **tasks** (`HATS-NNN`), **hypotheses
 2. **Work log cadence.** Log after every significant action on a task: approach changes, file deletions, branch operations, milestone completions. For HYP/PROP, append to `validation_log` / `votes` via CLI.
 3. **State transitions immediate.** Transition state when work changes phase — no stale states. Applies to task lifecycle (`brainstorm → … → done`), HYP status (`active → confirmed | refuted | stalled`), and PROP status (`open → accepted | rejected | deferred | duplicate`).
 4. **Completion gate.** A task is `done` only when: state is `done`, work_log has a final entry, STATE.md is synced.
+5. **HYP vs technical risk.** HYP / PROP backlog is reserved for **agent-behaviour hypotheses** (how the agent makes decisions, which triggers fire, which practices yield results). **Do NOT file** HYP / PROP for carry-over technical / migration / harness / documentation / coordination risks surfaced in review — those go to `ai-hats task log <FOLLOW_UP_ID>` (or as plan-stage additions on the relevant task), not to a new HYP "just in case". Cost rationale: HYP / PROP carry expensive scaffolding (validation_log, votes, judge triage in reflect-all). Concrete technical risks bound to a known task live there. If a risk isn't bound to a concrete task and isn't behavioural either — memory or skip; "we'll see it when we get there" is acceptable.
 
 ## Scope
 
