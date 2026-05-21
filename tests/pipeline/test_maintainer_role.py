@@ -223,3 +223,70 @@ def test_contributing_has_maintainer_pointer() -> None:
     head = "\n".join(body.splitlines()[:20])
     assert "maintainer" in head.lower()
     assert "ai-hats config set -r maintainer" in head or "ai-hats config" in head
+
+
+# --- HATS-392 — assistant split + dev-python role -------------------------
+
+
+def test_assistant_has_expected_8_traits() -> None:
+    role = _load("library/usage/roles/assistant/config.yaml")
+    expected = {
+        "trait-base",
+        "trait-agent",
+        "trait-se-mindset",
+        "trait-researcher-mindset",
+        "personal-workflow",
+        "integration::google",
+        "dev::python",
+        "dev::shell",
+    }
+    assert set(role.composition.traits) == expected
+
+
+def test_assistant_drops_repo_specific_traits() -> None:
+    role = _load("library/usage/roles/assistant/config.yaml")
+    forbidden = {"skill-engineer", "ai-hats-maintainer"}
+    assert not (forbidden & set(role.composition.traits))
+
+
+def test_dev_python_role_exists() -> None:
+    role = _load("library/usage/roles/dev-python/config.yaml")
+    assert role.name == "dev-python"
+
+
+def test_dev_python_composition() -> None:
+    role = _load("library/usage/roles/dev-python/config.yaml")
+    expected = {
+        "trait-base",
+        "trait-agent",
+        "trait-se-mindset",
+        "trait-researcher-mindset",
+        "dev::python",
+        "dev::shell",
+    }
+    assert set(role.composition.traits) == expected
+
+
+def test_dev_python_is_clean_no_personal_or_google() -> None:
+    role = _load("library/usage/roles/dev-python/config.yaml")
+    forbidden = {"personal-workflow", "integration::google"}
+    assert not (forbidden & set(role.composition.traits))
+
+
+def test_dev_python_injection_has_role_header() -> None:
+    role = _load("library/usage/roles/dev-python/config.yaml")
+    assert "PYTHON DEVELOPMENT ASSISTANT" in role.injection
+
+
+def test_initial_wizard_recommends_dev_python_for_pyproject() -> None:
+    body = _read("library/core/roles/initial-wizard/config.yaml")
+    # Step 3 stack-detection mapping must route pyproject.toml to dev-python.
+    assert "pyproject.toml" in body
+    # The exact bullet that defines the mapping after HATS-392.
+    assert "**dev-python**" in body
+
+
+def test_initial_wizard_lists_dev_python_in_available_roles() -> None:
+    body = _read("library/core/roles/initial-wizard/config.yaml")
+    # The role description block surfaces dev-python as a distinct option.
+    assert "- **dev-python**" in body or "**dev-python** —" in body
