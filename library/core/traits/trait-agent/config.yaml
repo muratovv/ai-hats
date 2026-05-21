@@ -17,6 +17,7 @@ composition:
     - context-handoff
     - task-summary
     - tool-call-hygiene
+    - design-minimalism
   hooks: {}
 injection: |
   ## AGENT BEHAVIOR

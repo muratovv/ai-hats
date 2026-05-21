@@ -6,6 +6,7 @@ composition:
   skills:
     - systematic-debugging
     - audit-reviewer
+    - predictive-accounting
   hooks: {}
 injection: |
   ## SE MINDSET

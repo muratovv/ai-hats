@@ -71,11 +71,17 @@ manifest entry; the only legal path is the CLI.
 
 ## Reflect
 
-The feedback loop that turns session evidence plus active HYP / open PROP into actionable items. Three entry points:
+The feedback loop that turns session evidence plus active HYP / open PROP into actionable items. CLI subcommand ↔ spawned role:
 
-- **`ai-hats reflect session`** — per-session retrospective under the `session-reviewer` role. Votes on every active HYP it can test, files a PROP on self-problem. Runs automatically after `session_end` (policy `always` / `smart`) or on demand.
-- **`ai-hats reflect all`** — bulk triage under the `judge` role: closes HYPs and decides PROPs in the inbox.
-- **`ai-hats reflect role <target>`** — coherence audit of a role composition (`auditor-for-role` autopilot pass and / or interactive `judge-for-role`).
+| CLI subcommand | Spawned role | Mode | Purpose |
+| --- | --- | --- | --- |
+| `ai-hats reflect session` | `session-reviewer` | non-interactive | Per-session retrospective: HYP verdicts + PROP-on-self-problem. Auto on `session_end` (policy `always` / `smart`) or on demand. |
+| `ai-hats reflect all` | `judge` | interactive (HITL) | Bulk triage: close HYPs and decide PROPs in the inbox. |
+| `ai-hats reflect role <target>` | `auditor-for-role` then `judge-for-role` | autopilot + optional HITL | Coherence audit of a single role: autopilot pass first, then interactive review. |
+| `ai-hats reflect roles` | `judge-for-role` * | per-role HITL | Bulk role audit — spawns one session per project role. |
+| `ai-hats reflect issue` | (no role) | non-interactive | Log a supervisor observation as a new HYP, or merge into an active one. |
+
+**Naming note:** `auditor-for-role` and `judge-for-role` are distinct — `auditor-for-role` is the non-interactive coherence pass; `judge-for-role` is the interactive review. They co-exist; one does not replace the other. `hypothesis-intake` exists for Haiku-class observation classification but is **not** wired into `reflect *` directly.
 
 Practical recipes — see [5]. Pipeline architecture — see [8].
 

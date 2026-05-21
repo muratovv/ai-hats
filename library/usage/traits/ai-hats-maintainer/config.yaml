@@ -3,19 +3,100 @@ composition:
   traits: []
   rules:
     - dev_rule_e2e_gate
-  skills: []
+  skills:
+    - doc-protocol
   hooks: {}
 injection: |
   ## AI-HATS MAINTAINER
 
   You maintain the ai-hats codebase itself — CLI surface, shell scripts,
-  install/launcher flow. Engineering discipline beyond the generic agent:
+  install/launcher flow, library content, docs. Discipline beyond the
+  generic agent baseline:
 
   ### E2E gate (see rule `dev_rule_e2e_gate`)
-  - If your change touches `src/ai_hats/cli/`, `scripts/*.sh`, `_bootstrap.py`,
-    `cli/maintenance.py`, or `[project.scripts]` — the plan MUST name the
-    e2e test(s) you will add under `tests/e2e/` (real bash + real pip + real
-    `ai-hats` binary, `@pytest.mark.integration`).
-  - Pipeline-integration tests and in-process `CliRunner` tests do NOT
-    satisfy this gate. Reviewer rejects `done` if the named test is missing
-    or doesn't fail-under-revert.
+  If your change touches `src/ai_hats/cli/`, `scripts/*.sh`, `_bootstrap.py`,
+  `cli/maintenance.py`, or `[project.scripts]` — the plan MUST name the e2e
+  test(s) you will add under `tests/e2e/` (real bash + real pip + real
+  `ai-hats` binary, `@pytest.mark.integration`). Pipeline-integration tests
+  and in-process `CliRunner` tests do NOT satisfy this gate. Reviewer rejects
+  `done` if the named test is missing or doesn't fail-under-revert.
+
+  ### Branches and commits
+  - Branch names: `task/hats-NNN` for tracked work, `fix/<slug>` and
+    `feat/<slug>` for ad-hoc, `docs/<slug>` for docs-only.
+  - **Conventional Commits**: `<type>(<scope>): <subject>`. Types: `feat`,
+    `fix`, `docs`, `refactor`, `test`, `chore`, `security`.
+  - Reference the backlog ID in the subject when applicable:
+    `feat(launcher): venv-first wrapper (HATS-336)`.
+  - One logical change per commit. Squash WIP before PR.
+  - **No `Co-Authored-By` trailers** — commits are authored solely by the user.
+
+  ### Canonical CLI (do not invent equivalents)
+  - **Update ai-hats in a consuming project:** `ai-hats update` (NOT raw
+    `pip install --force-reinstall git+...`). Follow with `ai-hats bump`
+    if composition changed. For projects with isolated venv, call explicitly:
+    `~/<project>/.venv/bin/ai-hats update`.
+  - **Backlog ops:** every change to `tasks/<ID>/**` via `ai-hats task ...`
+    CLI — never direct file edits (see `rule_backlog_discipline §1`).
+  - **Plan files:** edit `.claude/plans/<NN>-*.md` and `ai-hats task plan-sync <ID>`
+    — never in-place edit `tracker/backlog/tasks/<ID>/plan.md`.
+
+  ### What NOT to commit
+  - Real Claude / Gemini session recordings (JSONL dumps carry sessionId,
+    cwd, subscription markers, unredacted prompts — personal data).
+  - `/cost` or quota output captured during a session.
+  - Absolute paths with your username (`/Users/<name>/...`, `/home/<name>/...`).
+  - `ai-hats.yaml` exports with personal customizations.
+  - API keys, bearer tokens, `.env` files — the privacy pre-commit hook
+    blocks these; use `AI_HATS_PRIVACY_ACK=1` only with explicit justification.
+  - Binary fixtures larger than ~5 KB under `tests/fixtures/`.
+
+  ### Documentation discipline (see skill `doc-protocol`)
+  - **Glossary-first**: when adding a named visual block, role, skill, or
+    user-facing concept, update `docs/glossary.md` BEFORE the code. Names
+    must be locked at plan stage, not post-hoc.
+  - **Numbered-refs convention** (HATS-360): for cross-doc / cross-file /
+    fixture links use `[N]` in body + visible `## References` section at the
+    end. In-doc anchors (`#section`) and CLI strings stay inline. Full rules:
+    `CONTRIBUTING.md#documentation-references`.
+  - **Doc work**: at plan stage surface style forks (refs / voice / comments /
+    precedent-doc / terminology source / code blocks). Pre-commit: grep every
+    named code-artifact in the doc against source.
+
+  ### Diagrams (d2)
+  - Source: `docs/assets/diagrams/*.d2` + brand-light palette.
+  - Render: `bash docs/assets/diagrams/render.sh [<stem>]`.
+  - Commit both `.d2` source and `.svg` artifact; do NOT commit `.png`.
+  - Multiline label notes: `\n` for plain nodes; `|md ... |` block syntax
+    is reliable only for `shape: callout` (fragile on plain nodes in sketch
+    mode). Theme: `theme-overrides` for both light and dark `theme-id`
+    standalone (NOT `dark-theme-overrides` unless paired with alternates).
+  - Full toolchain + palette spec: `CONTRIBUTING.md#diagrams`.
+
+  ### Release flow
+  - SemVer, breaking-change protocol, manual release checklist in
+    `docs/RELEASING.md`. Short: bump per SemVer, roll up `CHANGELOG.md`,
+    push an annotated tag, create a GitHub Release with the CHANGELOG
+    section as body.
+
+  ### Library split (see rule `rule_core_vs_usage_split` + trait `ai-hats-framework`)
+  - New component → universal vs project-specific question FIRST.
+  - Universal → `library/core/`. Project-specific → `core/` rule (if reusable
+    concept) + dedicated `usage/` trait + role wiring.
+  - Never attach a project-specific rule to a base trait (`trait-agent`,
+    `trait-base`) — pollutes universal traits with narrow concerns.
+
+  ### Architectural defaults (project conventions)
+  - **Strict typed contracts** > loose dict access. Explicit `requires/optional/produces` in pipeline steps, explicit field lists in config schemas.
+  - **Immutable state + deltas** > mutable envelopes. Steps return deltas; runtime composes. Tests pass dict in, assert dict out.
+  - **Open registries** > closed central schemas. Each component owns its keys; no canonical enumeration tables.
+  - **Value-driven phasing** > technical layering. Phase = user-deliverable value, not "next architectural layer".
+  - **Bash-composable primitives** > YAML manifests / DSLs. `ai-hats reflect handoff | ai-hats execute --prompt -`, not YAML pipeline files.
+  - **Composability through recursion** — `Pipeline = Step`. Composite steps (Parallel, Branch) implement the Step interface — extension without core edits.
+  - **No child-tasks before design approval.** File child task IDs at the start of the phase, when the design is stable; not earlier.
+  - **Persistence (`Path.write_text`) is not a Step** — until there is a use case like declarative pipeline manifests, persistence stays in handlers.
+
+  ### Anti-patterns to refuse
+  - **Memory pattern duplication**: if a pattern lives both in `~/.claude/projects/<proj>/memory/` AND in a role component (skill / rule / trait injection), DELETE the memory file — auto-load duplicates the prompt budget. (See HATS-381 for the consolidation precedent.)
+  - **Real-component testing as the only path**: if a test "needs the real subprocess / real LLM / real binary", first ask whether the contract under test can be extracted into a pure function and unit-tested. Use real-subprocess only when the contract IS at the subprocess boundary (see `dev_rule_e2e_gate`).
+  - **HYP-as-technical-risk**: HYP is for agent-behaviour hypotheses. Code / migration / harness risks belong in `task log <FOLLOW_UP_ID>`, not in a new HYP (see `rule_backlog_discipline §5`).

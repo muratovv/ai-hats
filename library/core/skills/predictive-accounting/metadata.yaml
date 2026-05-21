@@ -1,0 +1,15 @@
+name: predictive-accounting
+description: For shrink/refactor/optimize/cleanup tasks, present baseline + predicted delta + dependency cost BEFORE implementation
+author: ai-hats
+tags: [agent-protocol, planning, refactor, metrics]
+pattern: checklist
+
+triggers:
+  - "task description contains verbs shrink/trim/refactor/extract/optimize/cleanup/consolidate/split"
+  - "task mentions a target saving (lines / tokens / time) precise or fuzzy"
+  - "plan touches a large refactor of existing components"
+  - "short-term cost may be non-trivial or temporarily negative"
+
+skip:
+  - "single-file localized edit with no metric impact"
+  - "refactor inside an already-approved + already-measured plan"
