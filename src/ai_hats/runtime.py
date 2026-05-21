@@ -23,6 +23,7 @@ from .models import LifecycleEvent
 from .observe import AuditWriter, Session, SessionManager, SidecarTracer, TraceTag
 from .paths import hooks_dir as _hooks_dir
 from .providers import get_provider
+from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .worktree import IsolationMode, WorktreeManager
 
 if TYPE_CHECKING:
@@ -815,15 +816,17 @@ class WrapRunner:
                 signal.signal(signal.SIGWINCH, prev_winch)
             except (ValueError, OSError):
                 pass
-            if proc.isalive():
-                try:
-                    proc.terminate(force=True)
-                except Exception:
-                    pass
-            try:
-                proc.wait()
-            except Exception:
-                pass
+            # HATS-411: bounded shutdown — ptyprocess.wait() blocks on
+            # os.waitpid(pid, 0) which hangs forever when the child is
+            # stuck in macOS exit-pending state (`?Es`, libuv handle
+            # leak). Escalate grace → SIGTERM-pgroup → SIGKILL → WNOHANG
+            # reap so the parent always returns within bounded time.
+            bounded_proc_shutdown(proc)
+            # After the child is gone, clear mouse-tracking DECSETs on
+            # the OUTER terminal (parent stdout) — prevents raw SGR
+            # mouse reports from rendering as text in the surrounding
+            # shell when the child crashed without disabling them.
+            emit_terminal_reset(stdout_fd)
 
         if proc.exitstatus is not None:
             return int(proc.exitstatus)
