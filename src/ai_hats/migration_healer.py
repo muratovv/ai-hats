@@ -93,6 +93,17 @@ SKIP_DIR_NAMES: frozenset[str] = frozenset({
     ".ruff_cache", ".pytest_cache", "dist", "build", ".tox",
 })
 
+# Files excluded from auto-heal even when their extension matches
+# TEXT_EXTENSIONS. By convention these are historical records that
+# legitimately reference old paths as facts-in-time — auto-rewriting
+# would invert the prose meaning (e.g. "canonical X instead of legacy X").
+# Source: HATS-416 — observed false-positive across 3 consecutive bumps
+# where the HATS-412 CHANGELOG entry describing the legacy-path bug got
+# its own description rewritten.
+SKIP_FILENAMES: frozenset[str] = frozenset({
+    "CHANGELOG.md",
+})
+
 
 # ---------- Regex compilation ----------
 
@@ -219,6 +230,8 @@ def _walk_candidate_files(project_dir: Path):
                         continue
                     stack.append(entry)
                 elif entry.is_file():
+                    if entry.name in SKIP_FILENAMES:
+                        continue
                     yield entry
             except OSError:
                 continue
