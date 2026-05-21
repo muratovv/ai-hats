@@ -654,6 +654,16 @@ class Assembler:
         launcher architecture makes mixed installs impossible by
         construction.
         """
+        # HATS-408 cross-task gate: bump() (also called transitively by
+        # ``ai-hats self update``) used to wipe v0.6 framework files
+        # (priorities.md, role.md, traits/*, rules/*, skills_index.md) via
+        # ``write_canonical``'s manifest-driven sweep — silently, with no
+        # user-edit detection. That bypassed HATS-408's whole safety story.
+        # Now we refuse early with the migrate-v07 instruction so the user
+        # gets to choose: ``migrate-v07`` (refuse + guidance) or
+        # ``migrate-v07 --force`` (WARN-per-overwrite + atomic commit).
+        self._refuse_on_v06_layout()
+
         self._cleanup_obsolete_files(self.project_dir)
         provider = get_provider(self.project_config.provider)
         # HATS-397: heal stale legacy-path refs FIRST, while user files are
@@ -1208,6 +1218,51 @@ class Assembler:
         tmp.write_bytes(content)
         tmp.replace(path)
         return True
+
+    def _refuse_on_v06_layout(self) -> None:
+        """Raise AssemblyError if the canonical MANAGED manifest still lists
+        v0.6 framework files (priorities/role/traits/rules/skills_index).
+
+        Detection: the v0.7 manifest contains ONLY ``imports.md``. Any
+        entry beyond ``imports.md`` (excluding the ``user-rules/`` safe
+        list — which the manifest never touches in practice but we mask
+        defensively) means a previous v0.6 run wrote framework content
+        we'd otherwise sweep without user-edit detection.
+
+        Called from ``bump()`` (and indirectly from ``self update`` →
+        ``self bump``) so the destructive sweep can't fire silently
+        before the user runs ``ai-hats self migrate-v07``.
+
+        ``migrate-v07`` itself calls ``write_canonical`` directly, never
+        ``bump()``, so the gate does not block the intended migration
+        path.
+        """
+        canonical = self._canonical_dir
+        manifest_path = canonical / CANONICAL_MANIFEST
+        previous = self._read_canonical_manifest(manifest_path)
+        # User-rules entries are never in the manifest in practice but we
+        # filter them out defensively in case a future ``write_canonical``
+        # change adds them.
+        v06_entries = {
+            entry
+            for entry in previous
+            if entry != "imports.md"
+            and entry != USER_RULES_SUBDIR
+            and not entry.startswith(f"{USER_RULES_SUBDIR}/")
+        }
+        if not v06_entries:
+            return
+        sample = sorted(v06_entries)
+        preview = ", ".join(sample[:3])
+        if len(sample) > 3:
+            preview += f", … ({len(sample) - 3} more)"
+        raise AssemblyError(
+            "v0.6 canonical layout detected — MANAGED manifest still lists "
+            f"framework files: {preview}.\n"
+            "Run `ai-hats self migrate-v07` first to either preserve user "
+            "edits or consciously overwrite them with `--force`. Bypassing "
+            "this gate would silently delete those files."
+        )
 
     @staticmethod
     def _read_canonical_manifest(path: Path) -> set[str]:
