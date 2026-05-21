@@ -625,7 +625,12 @@ class Assembler:
 
         return status
 
-    def bump(self) -> CompositionResult | None:
+    def bump(
+        self,
+        *,
+        force_v07_migration: bool = False,
+        check_v07_branches: bool = False,
+    ) -> CompositionResult | None:
         """Refresh on-disk state: migrations, scaffold, canonical, git hooks.
 
         HATS-407: no longer triggers a full role-compose-and-materialize
@@ -655,16 +660,21 @@ class Assembler:
         HATS-337: the HATS-330 mixed-install gate was removed — venv-first
         launcher architecture makes mixed installs impossible by
         construction.
+
+        HATS-415: the HATS-408 ``_refuse_on_v06_layout`` naive gate was
+        replaced by an inline ``plan_migration`` classifier — clean v0.6
+        layouts self-heal during ``self update`` / ``self bump`` without
+        a separate CLI command. User edits still refuse loudly via
+        ``AssemblyError`` with per-file guidance; ``--migrate-force``
+        (threaded as ``force_v07_migration=True``) overwrites with one
+        stderr WARN per file. No auto-commit — sweep deletions land in
+        the worktree, user commits at leisure (same pattern as the
+        ``_normalize_yaml`` yaml rewrite).
         """
-        # HATS-408 cross-task gate: bump() (also called transitively by
-        # ``ai-hats self update``) used to wipe v0.6 framework files
-        # (priorities.md, role.md, traits/*, rules/*, skills_index.md) via
-        # ``write_canonical``'s manifest-driven sweep — silently, with no
-        # user-edit detection. That bypassed HATS-408's whole safety story.
-        # Now we refuse early with the migrate-v07 instruction so the user
-        # gets to choose: ``migrate-v07`` (refuse + guidance) or
-        # ``migrate-v07 --force`` (WARN-per-overwrite + atomic commit).
-        self._refuse_on_v06_layout()
+        self._run_v07_migration(
+            force=force_v07_migration,
+            check_branches=check_v07_branches,
+        )
 
         # HATS-413: persist any HATS-408 in-memory yaml healing
         # (deprecated-field strip, default_role := active_role) so the
@@ -1228,50 +1238,163 @@ class Assembler:
         tmp.replace(path)
         return True
 
-    def _refuse_on_v06_layout(self) -> None:
-        """Raise AssemblyError if the canonical MANAGED manifest still lists
-        v0.6 framework files (priorities/role/traits/rules/skills_index).
+    def _run_v07_migration(self, *, force: bool, check_branches: bool) -> None:
+        """HATS-415 inline v0.6 → v0.7 migration. Called from ``bump()``.
 
-        Detection: the v0.7 manifest contains ONLY ``imports.md``. Any
-        entry beyond ``imports.md`` (excluding the ``user-rules/`` safe
-        list — which the manifest never touches in practice but we mask
-        defensively) means a previous v0.6 run wrote framework content
-        we'd otherwise sweep without user-edit detection.
+        Replaces the naive HATS-408 ``_refuse_on_v06_layout`` gate with a
+        real diff-against-baseline classifier from
+        :mod:`ai_hats.migration_v07`.
 
-        Called from ``bump()`` (and indirectly from ``self update`` →
-        ``self bump``) so the destructive sweep can't fire silently
-        before the user runs ``ai-hats self migrate-v07``.
+        Behaviour:
 
-        ``migrate-v07`` itself calls ``write_canonical`` directly, never
-        ``bump()``, so the gate does not block the intended migration
-        path.
+        * **Safe-to-delete findings** (bytes match composition baseline) are
+          swept inline — no commit, no user prompt. ``self update`` heals
+          v0.6 layouts transparently for the common case.
+        * **User-edit findings** raise ``AssemblyError`` with per-file
+          guidance pointing at the v0.7 home (``user-rules/`` or
+          ``library/usage/...``). Same surface as the old ``migrate-v07``
+          refusal — relocated, not re-engineered.
+        * **--migrate-force** (``force=True``) bypasses the refusal,
+          overwrites with one stderr ``WARN`` line per file.
+        * **--check-branches** (``check_branches=True``) runs a local-branch
+          scanner and emits stderr ``WARN`` lines if any branch modifies a
+          path we're about to delete. Best-effort: never blocks.
+
+        No-op on already-migrated projects (``has_work=False``) — idempotent.
         """
-        canonical = self._canonical_dir
-        manifest_path = canonical / CANONICAL_MANIFEST
-        previous = self._read_canonical_manifest(manifest_path)
-        # User-rules entries are never in the manifest in practice but we
-        # filter them out defensively in case a future ``write_canonical``
-        # change adds them.
-        v06_entries = {
-            entry
-            for entry in previous
-            if entry != "imports.md"
-            and entry != USER_RULES_SUBDIR
-            and not entry.startswith(f"{USER_RULES_SUBDIR}/")
-        }
-        if not v06_entries:
-            return
-        sample = sorted(v06_entries)
-        preview = ", ".join(sample[:3])
-        if len(sample) > 3:
-            preview += f", … ({len(sample) - 3} more)"
-        raise AssemblyError(
-            "v0.6 canonical layout detected — MANAGED manifest still lists "
-            f"framework files: {preview}.\n"
-            "Run `ai-hats self migrate-v07` first to either preserve user "
-            "edits or consciously overwrite them with `--force`. Bypassing "
-            "this gate would silently delete those files."
+        from .migration_v07 import (
+            check_branches_modify_paths,
+            empty_composition,
+            execute_deletions,
+            plan_migration,
+            render_user_edits_refusal,
         )
+
+        cfg = self.project_config
+        effective_role = cfg.active_role or cfg.default_role
+        if effective_role:
+            try:
+                composition = self.composer.compose(
+                    effective_role, overlay=self._get_overlay(effective_role)
+                )
+                source_lookup = self._build_v07_tier2_source_lookup()
+            except Exception:  # noqa: BLE001 — defensive fallback for compose failure
+                composition = empty_composition()
+                source_lookup = {}
+        else:
+            composition = empty_composition()
+            source_lookup = {}
+        hook_source_dirs = self._collect_v07_hook_source_dirs()
+
+        report = plan_migration(
+            self._canonical_dir,
+            composition,
+            source_lookup,
+            project_dir=self.project_dir,
+            tier2_hook_source_dirs=hook_source_dirs,
+        )
+
+        # HATS-415 trigger contract: only run the inline migration when
+        # Tier-1 canonical files are present on disk (priorities/role/
+        # traits/rules/skills_index). Those are framework-owned files that
+        # CANNOT legitimately exist on a v0.7 project — their presence is
+        # the strong v0.6 signal.
+        #
+        # Without this gate, every bump on a v0.7 project that happens to
+        # have a user-authored flat hook under ``library/hooks/<x>.sh``
+        # (a legitimate v0.7 use case) would refuse — Tier-2 findings
+        # alone do not justify a migration. They are only swept when we
+        # already know the project is v0.6.
+        has_tier1 = any(f.tier == 1 for f in report.findings)
+        if not has_tier1:
+            return
+
+        if check_branches and report.paths_to_delete:
+            warns = check_branches_modify_paths(
+                self.project_dir, report.paths_to_delete
+            )
+            if warns:
+                print(
+                    "WARN: local branches modify v0.7-migration paths slated "
+                    "for deletion:",
+                    file=sys.stderr,
+                )
+                for branch, paths in warns:
+                    print(f"  {branch}", file=sys.stderr)
+                    for p in paths:
+                        print(f"    {p}", file=sys.stderr)
+                print(
+                    "  Merge / cherry-pick first or those edits will be lost.",
+                    file=sys.stderr,
+                )
+
+        if report.user_edits and not force:
+            raise AssemblyError(render_user_edits_refusal(
+                report.user_edits, self.project_dir
+            ))
+
+        if force and report.user_edits:
+            for f in report.user_edits:
+                try:
+                    rel = f.path.relative_to(self.project_dir)
+                except ValueError:
+                    rel = f.path
+                print(
+                    f"WARN: v07-migrate: overwriting {rel} (user edit detected)",
+                    file=sys.stderr,
+                )
+
+        execute_deletions(report, self._canonical_dir)
+
+    def _collect_v07_hook_source_dirs(self) -> list[Path]:
+        """Return library hook root dirs from every layer of ``self.library_paths``.
+
+        HATS-408 C1: a v0.6 ``library/hooks/<basename>`` flat-file finding is
+        classified as safe-to-delete when its bytes match a source library hook
+        of the same basename. Scanning all library layers in order avoids the
+        user having to point at a particular one.
+        """
+        out: list[Path] = []
+        for lib in self.library_paths:
+            hooks_root = Path(lib) / "hooks"
+            if hooks_root.is_dir():
+                out.append(hooks_root)
+        return out
+
+    def _build_v07_tier2_source_lookup(self) -> dict[str, Path]:
+        """Map mirror-dir name → source root for every rule/skill the composer resolved.
+
+        Used by :func:`ai_hats.migration_v07.plan_migration` so Tier-2 dirs
+        whose source we can locate get a diff baseline (safe-to-delete when
+        content matches).
+        """
+        from .models import resolve_namespace
+
+        resolver = self.composer.resolver
+        effective = self.project_config.active_role or self.project_config.default_role
+        if not effective:
+            return {}
+        try:
+            comp = self.composer.compose(
+                effective, overlay=self._get_overlay(effective)
+            )
+        except Exception:  # noqa: BLE001 — defensive: any compose failure → empty lookup
+            return {}
+        out: dict[str, Path] = {}
+        for r in comp.rules:
+            src = resolver.resolve_rule_dir(r.name)
+            if src is not None:
+                # Mirror-dir name on disk uses fs-namespace form (`a::b` → `a/b`),
+                # but the directory baseline match uses the mirror's own basename
+                # which is the leaf name. Index both for safety.
+                out[r.name] = src
+                out[resolve_namespace(r.name).rsplit("/", 1)[-1]] = src
+        for s in comp.skills:
+            src = resolver.resolve_skill_dir(s.name)
+            if src is not None:
+                out[s.name] = src
+                out[resolve_namespace(s.name).rsplit("/", 1)[-1]] = src
+        return out
 
     def _normalize_yaml(self) -> None:
         """Persist HATS-408 in-memory yaml healing to disk.

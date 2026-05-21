@@ -181,80 +181,75 @@ def test_bump(project_with_library):
     assert result.name == "test-role"
 
 
-# -- HATS-408 cross-task gate: bump refuses to silently sweep v0.6 framework files --
+# -- HATS-415: bump inline v0.6 → v0.7 migration (replaces HATS-408 naive gate) --
 
 
-def test_bump_refuses_on_v06_manifest(project_with_library):
-    """A MANAGED manifest listing v0.6 framework files (priorities/role/traits/
-    rules/skills_index) means the project was last touched by v0.6
-    write_canonical. Bumping under v0.7 would silently sweep those files with
-    no user-edit detection. HATS-408 gates this with a clear migrate-v07 hint.
+def test_bump_refuses_on_v06_user_edits(project_with_library):
+    """v0.6 canonical file on disk whose bytes do not match the composition
+    baseline → bump must raise AssemblyError with per-file guidance pointing
+    at the v0.7 home. Without this, ``self update`` would silently delete
+    the user's edits via ``write_canonical``'s manifest sweep.
     """
     from ai_hats.assembler import AssemblyError
 
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
+    asm.set_role("test-role")
 
     canonical = project / ".agent" / "ai-hats"
-    (canonical / "MANAGED").write_text(
-        "# ai-hats canonical layer manifest. Do not edit.\n"
-        "imports.md\n"
-        "priorities.md\n"
-        "role.md\n"
-        "traits/foo.md\n"
-        "rules/bar.md\n"
-        "skills_index.md\n"
+    # A v0.6 file with content that won't match any baseline → classified
+    # as user_edit (conservative — None baseline path or diverging bytes).
+    (canonical / "priorities.md").write_text(
+        "# Priorities\n\n1. user-edited paragraph that must trigger refusal\n"
     )
 
     with pytest.raises(AssemblyError) as exc:
         asm.bump()
     msg = str(exc.value)
     assert "v0.6 canonical layout detected" in msg
-    assert "ai-hats self migrate-v07" in msg
-    # User-facing preview of what's being protected.
-    assert "priorities.md" in msg or "role.md" in msg
+    assert "user edits found on disk" in msg
+    # Per-file guidance present.
+    assert "priorities.md" in msg
+    assert "user-rules" in msg or "library/usage" in msg
+    # The user-edited file MUST still be on disk (refusal = no writes).
+    assert (canonical / "priorities.md").exists()
 
 
-def test_bump_succeeds_when_manifest_lists_only_imports_md(project_with_library):
-    """v0.7 manifest shape (only ``imports.md``) → gate passes silently."""
+def test_bump_force_v07_migration_overwrites_user_edits(project_with_library, capsys):
+    """``force_v07_migration=True`` bypasses the refusal — files are swept
+    even though the diff classifier flagged them as user-edited. One WARN
+    line per overwritten file lands on stderr."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
+    asm.set_role("test-role")
+
     canonical = project / ".agent" / "ai-hats"
-    (canonical / "MANAGED").write_text(
-        "# ai-hats canonical layer manifest. Do not edit.\n"
-        "imports.md\n"
+    (canonical / "priorities.md").write_text(
+        "# Priorities\n\n1. user-edited\n"
     )
-    # No raise.
-    asm.bump()
+
+    # No raise — force bypasses the AssemblyError.
+    asm.bump(force_v07_migration=True)
+
+    assert not (canonical / "priorities.md").exists(), \
+        "force_v07_migration must sweep the user-edited file"
+    captured = capsys.readouterr()
+    assert "WARN: v07-migrate: overwriting" in captured.err
+    assert "priorities.md" in captured.err
 
 
-def test_bump_succeeds_when_no_manifest(project_with_library):
-    """Greenfield projects (no MANAGED file yet) → gate is silent."""
+def test_bump_silent_on_clean_v07_layout(project_with_library):
+    """No v0.6 files on disk → migration is a no-op, bump proceeds normally."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     canonical = project / ".agent" / "ai-hats"
-    if (canonical / "MANAGED").exists():
-        (canonical / "MANAGED").unlink()
-    # No raise.
-    asm.bump()
-
-
-def test_bump_user_rules_in_manifest_does_not_trigger_gate(project_with_library):
-    """Defensive: future user-rules entries in MANAGED must not falsely flag v0.6."""
-    project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    canonical = project / ".agent" / "ai-hats"
-    (canonical / "MANAGED").write_text(
-        "# ai-hats canonical layer manifest. Do not edit.\n"
-        "imports.md\n"
-        "user-rules/my_rule.md\n"
-        "user-rules\n"
-    )
-    asm.bump()
+    # Sanity: project_with_library + init does not seed any v0.6 Tier-1 files.
+    assert not (canonical / "priorities.md").exists()
+    assert not (canonical / "role.md").exists()
+    asm.bump()  # no raise — has_work=False path
 
 
 # -- HATS-413: bump persists yaml hardening (heal + deprecated-strip) --
@@ -335,15 +330,21 @@ def test_bump_no_op_when_yaml_already_normalized(project_with_library):
     )
 
 
-def test_bump_skips_normalize_when_v06_gate_refuses(project_with_library):
-    """If the v0.6 gate refuses first, _normalize_yaml must NOT have run
-    (preserves the v0.6 yaml shape until the user runs migrate-v07)."""
+def test_bump_skips_normalize_when_v07_migration_refuses(project_with_library):
+    """HATS-415 ordering contract: ``_run_v07_migration`` is the first action
+    inside ``bump()``. When user edits trigger a refusal, ``_normalize_yaml``
+    must NOT have run — the v0.6 yaml shape is preserved until the user
+    resolves the conflict (relocates content, or re-runs with
+    ``force_v07_migration=True``)."""
     from ai_hats.assembler import AssemblyError
 
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
+    asm.set_role("test-role")
+
     config_path = project / "ai-hats.yaml"
+    # Re-write with v0.6-shape yaml (deprecated field + empty default_role).
     config_path.write_text(
         "schema_version: 4\n"
         "provider: claude\n"
@@ -353,10 +354,8 @@ def test_bump_skips_normalize_when_v06_gate_refuses(project_with_library):
         "imports_order: role-first\n"
     )
     canonical = project / ".agent" / "ai-hats"
-    (canonical / "MANAGED").write_text(
-        "# ai-hats canonical layer manifest. Do not edit.\n"
-        "imports.md\n"
-        "priorities.md\n"
+    (canonical / "priorities.md").write_text(
+        "# Priorities\n\n1. user-edited\n"
     )
     pre_bytes = config_path.read_bytes()
 
@@ -364,7 +363,7 @@ def test_bump_skips_normalize_when_v06_gate_refuses(project_with_library):
     with pytest.raises(AssemblyError):
         asm2.bump()
 
-    # Yaml untouched — gate fired before _normalize_yaml.
+    # Yaml untouched — migration refusal fired before _normalize_yaml.
     assert config_path.read_bytes() == pre_bytes
 
 

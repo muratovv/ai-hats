@@ -463,7 +463,8 @@ class ProjectConfig(_YamlModel):
             )
         # HATS-408: drop known-deprecated ghosts BEFORE strict pydantic
         # validation so v0.6 projects do not crash every ai-hats command
-        # before `self migrate-v07` can even run. Mutates `data` in-place
+        # before the inline v0.6 → v0.7 migration (HATS-415, runs in
+        # ``Assembler.bump``) gets a chance. Mutates ``data`` in-place
         # (the healed shape is what we'd want to persist on a save anyway).
         cls._strip_deprecated_fields(data, path)
         # HATS-408: heal empty default_role from active_role on load. Any

@@ -190,10 +190,11 @@ def test_default_role_heal_explicit_empty_string(tmp_path, capsys):
 
 
 def test_save_after_load_preserves_user_fields(tmp_path, capsys):
-    """migrate-v07 calls cfg.save() to persist healed default_role + strip
-    deprecated keys. cfg.save() must NOT silently drop other user-configured
-    sections (customizations, library_paths, feedback policy, task_prefix,
-    venv_path, manage_gitignore) — that would erase user settings."""
+    """HATS-415 ``_normalize_yaml`` inside ``bump()`` calls ``cfg.save()`` to
+    persist healed default_role + strip deprecated keys. ``cfg.save()`` must
+    NOT silently drop other user-configured sections (customizations,
+    library_paths, feedback policy, task_prefix, venv_path,
+    manage_gitignore) — that would erase user settings."""
     import yaml
 
     path = tmp_path / "ai-hats.yaml"
@@ -224,7 +225,8 @@ def test_save_after_load_preserves_user_fields(tmp_path, capsys):
 
     cfg = ProjectConfig.from_yaml(path)
     capsys.readouterr()  # drain any WARNs
-    # Simulate what migrate-v07 does on the --force path.
+    # Simulate what ``_normalize_yaml`` does inside ``bump()`` (the path
+    # previously owned by ``migrate-v07 --force``).
     cfg.save(path)
 
     saved = yaml.safe_load(path.read_text())
@@ -241,9 +243,9 @@ def test_save_after_load_preserves_user_fields(tmp_path, capsys):
 
 
 def test_save_after_strip_preserves_round_trip_for_deprecated_yaml(tmp_path, capsys):
-    """End-to-end migrate-v07 yaml normalisation: load v0.6 yaml with
-    imports_order + customizations, save, re-load, save again → byte-stable
-    + user fields survive both passes."""
+    """End-to-end HATS-415 yaml normalisation (was migrate-v07): load v0.6
+    yaml with imports_order + customizations, save, re-load, save again →
+    byte-stable + user fields survive both passes."""
     import yaml
 
     path = tmp_path / "ai-hats.yaml"

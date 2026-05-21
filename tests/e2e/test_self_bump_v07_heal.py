@@ -1,21 +1,20 @@
-"""E2E: ``ai-hats self migrate-v07`` real-subprocess gate (HATS-408 P4).
+"""E2E: HATS-415 inline v0.6 → v0.7 migration via ``ai-hats self bump``.
 
-Covers the four contracts named in the HATS-408 plan §4:
+Covers the four contracts (was HATS-408 P4 — relocated from
+``self migrate-v07`` to inline ``bump``):
 
-1. Refusal on user edit (default behaviour): exit 1, no writes, no commit.
-2. ``--force`` bypass: sweep Tier 1+2, regenerate ``imports.md``, persist
-   yaml hardening (``imports_order`` strip + ``default_role`` heal), single
-   atomic git commit, stderr WARN per overwritten file.
-3. Idempotent rerun: second ``--force`` on the migrated tree is a no-op
-   (no second commit).
+1. Refusal on user edit (default behaviour): exit 1, no writes.
+2. ``--migrate-force`` bypass: sweep Tier 1+2, regenerate ``imports.md``,
+   persist yaml hardening (``imports_order`` strip + ``default_role`` heal),
+   stderr WARN per overwritten file. **No auto-commit** — the worktree
+   carries unstaged deletions, user commits at leisure.
+3. Idempotent rerun: second ``--migrate-force`` on the migrated tree is a
+   no-op (nothing to sweep).
 4. ``--check-branches``: surfaces a warning row when a sibling local
    branch touches a path the sweep would delete.
 
 Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``. CliRunner and
-pipeline-integration tests do NOT satisfy the gate — those live at
-``tests/test_cli_migrate_v07.py`` and serve a different (cheap, focused)
-purpose.
+``ai-hats`` binary, marked ``@pytest.mark.integration``.
 
 Fixture strategy follows ``tests/e2e/test_self_update_heals_legacy_refs.py``:
 one ``installed_launcher`` per *module* (cost: ~60s pip install + ~30s
@@ -197,23 +196,25 @@ def test_e2e_refuse_on_user_edit_default_behavior(installed_launcher, tmp_path):
     before_commits = _git_log_count(project, env)
 
     res = _run(
-        [str(launcher), "self", "migrate-v07"],
+        [str(launcher), "self", "bump"],
         cwd=project, env=env, timeout=60, expect_exit=1,
     )
 
     combined = res.stdout + res.stderr
-    assert "refusing" in combined, combined
+    assert "v0.6 canonical layout detected" in combined, combined
+    assert "user edits found on disk" in combined, combined
     assert "role.md" in combined, combined
     assert "user-rules" in combined, combined  # guidance pointer
+    assert "--migrate-force" in combined, combined  # next-step hint
 
-    # No writes anywhere.
+    # No writes anywhere — bump refused before any sweep / yaml normalize.
     assert paths["role"].read_bytes() == original_role
     assert paths["priorities"].read_bytes() == original_priorities
     assert (project / "ai-hats.yaml").read_bytes() == original_yaml
     assert paths["library_rule_md"].is_file()
     assert paths["user_rule"].read_text() == "# user rule — DO NOT TOUCH\n"
 
-    # No commit and no staging.
+    # No commit (HATS-415: bump never commits) and no staging.
     assert _git_log_count(project, env) == before_commits
     diff = subprocess.run(
         ["git", "diff", "--cached", "--quiet"],
@@ -223,7 +224,7 @@ def test_e2e_refuse_on_user_edit_default_behavior(installed_launcher, tmp_path):
 
     # The yaml-load WARNs (imports_order strip + default_role heal) fire on
     # the refuse path too — that's the contract: WARNs are about yaml shape,
-    # not about commits.
+    # not about migration.
     assert "imports_order" in res.stderr
     assert "default_role" in res.stderr
 
@@ -232,7 +233,12 @@ def test_e2e_refuse_on_user_edit_default_behavior(installed_launcher, tmp_path):
 
 
 @pytest.mark.integration
-def test_e2e_force_bypass_atomic_commit(installed_launcher, tmp_path):
+def test_e2e_migrate_force_bypass_sweeps_without_commit(installed_launcher, tmp_path):
+    """HATS-415: ``self bump --migrate-force`` overwrites user-edited v0.6
+    files and continues with the rest of bump (yaml normalize, scaffold,
+    write_canonical). No atomic commit — the worktree carries unstaged
+    deletions. Variant B (auto-commit) was explicitly rejected during the
+    HATS-415 design fork."""
     launcher, env = installed_launcher
     project = tmp_path / "proj"
     project.mkdir()
@@ -241,7 +247,7 @@ def test_e2e_force_bypass_atomic_commit(installed_launcher, tmp_path):
     before_commits = _git_log_count(project, env)
 
     res = _run(
-        [str(launcher), "self", "migrate-v07", "--force"],
+        [str(launcher), "self", "bump", "--migrate-force"],
         cwd=project, env=env, timeout=60, expect_exit=0,
     )
 
@@ -251,7 +257,7 @@ def test_e2e_force_bypass_atomic_commit(installed_launcher, tmp_path):
     assert not paths["skills_index"].exists()
     assert not (paths["canonical_dir"] / "traits").exists()
     assert not (paths["canonical_dir"] / "rules").exists()
-    # Tier 2 wiped — rules subdir (whole tree) AND hooks flat file (C1).
+    # Tier 2 wiped — rules subdir (whole tree) AND hooks flat file.
     assert not paths["library_rule_dir"].exists()
     assert not paths["library_hook_flat"].exists()
     # imports.md regenerated (v0.7 shape — sorted user-rules aggregator).
@@ -268,23 +274,19 @@ def test_e2e_force_bypass_atomic_commit(installed_launcher, tmp_path):
         if line.strip() and not line.lstrip().startswith("#")
     ]
     assert managed_entries == ["imports.md"], managed_entries
-    # user-rules untouched.
+    # user-rules untouched (defence in depth).
     assert paths["user_rule"].read_text() == "# user rule — DO NOT TOUCH\n"
 
-    # Yaml hardened on disk.
+    # Yaml hardened on disk by ``_normalize_yaml`` (runs after migration).
     import yaml as _yaml
     saved = _yaml.safe_load((project / "ai-hats.yaml").read_text())
     assert "imports_order" not in saved, saved
     assert saved.get("default_role") == "assistant", saved
 
-    # Atomic SINGLE commit added.
-    assert _git_log_count(project, env) == before_commits + 1
-    msg = subprocess.run(
-        ["git", "log", "-1", "--pretty=%B"], cwd=str(project), env=env,
-        capture_output=True, text=True, check=True,
-    ).stdout.strip()
-    assert msg.startswith("chore(v0.7): migrate to dynamic role composition"), msg
-    assert "HATS-294" in msg
+    # NO auto-commit — bump does not commit. The user reviews and commits
+    # via ``git status`` / ``git commit`` at leisure.
+    assert _git_log_count(project, env) == before_commits, \
+        "bump must not create commits on the user's behalf"
 
     # stderr WARN per overwritten user-edit file.
     assert "overwriting" in res.stderr
@@ -296,6 +298,10 @@ def test_e2e_force_bypass_atomic_commit(installed_launcher, tmp_path):
 
 @pytest.mark.integration
 def test_e2e_idempotent_rerun(installed_launcher, tmp_path):
+    """Second ``self bump --migrate-force`` on a migrated tree is a no-op:
+    no Tier-1 findings → migration skips entirely (HATS-415 trigger
+    contract). Subsequent bump work (scaffold, write_canonical) is also
+    idempotent on a clean v0.7 layout."""
     launcher, env = installed_launcher
     project = tmp_path / "proj"
     project.mkdir()
@@ -303,88 +309,46 @@ def test_e2e_idempotent_rerun(installed_launcher, tmp_path):
     _git_init_commit(project, env)
 
     _run(
-        [str(launcher), "self", "migrate-v07", "--force"],
+        [str(launcher), "self", "bump", "--migrate-force"],
         cwd=project, env=env, timeout=60, expect_exit=0,
     )
-    commits_after_first = _git_log_count(project, env)
+    # Snapshot the canonical dir after first run.
+    canonical = project / ".agent" / "ai-hats"
+    after_first_bytes = {
+        p.relative_to(canonical).as_posix(): p.read_bytes()
+        for p in canonical.rglob("*")
+        if p.is_file()
+    }
 
     res = _run(
-        [str(launcher), "self", "migrate-v07", "--force"],
+        [str(launcher), "self", "bump", "--migrate-force"],
         cwd=project, env=env, timeout=60, expect_exit=0,
     )
 
-    # No second commit; no new staging.
-    assert _git_log_count(project, env) == commits_after_first
-    diff = subprocess.run(
-        ["git", "diff", "--cached", "--quiet"], cwd=str(project), env=env,
-        check=False,
-    )
-    assert diff.returncode == 0
-    combined = res.stdout + res.stderr
-    assert ("Already migrated" in combined) or ("nothing to commit" in combined), combined
+    # Second pass: no Tier-1 left to sweep, no WARN re-emission.
+    assert "overwriting" not in res.stderr, res.stderr
+    # Canonical tree bytes are stable (idempotent).
+    after_second_bytes = {
+        p.relative_to(canonical).as_posix(): p.read_bytes()
+        for p in canonical.rglob("*")
+        if p.is_file()
+    }
+    assert after_first_bytes == after_second_bytes, \
+        "second bump --migrate-force changed canonical bytes"
 
 
 # ----- Test 4: --check-branches surfaces a sibling-branch warning -----
 
 
-# ----- Test 5: cross-task gate — bump refuses on v0.6 layout -----
-
-
-@pytest.mark.integration
-def test_e2e_bump_refuses_on_v06_and_surfaces_migrate_v07_hint(installed_launcher, tmp_path):
-    """The HATS-408 release-gate contract requires that a v0.6 user running
-    `ai-hats self bump` (or `self update` which transitively bumps) CANNOT
-    silently lose their canonical-file edits. The gate in `assembler.bump`
-    refuses and points at `migrate-v07`. This is the cross-task seam the
-    third judge audit identified as a blocker — if it regresses the entire
-    HATS-408 safety story is null."""
-    launcher, env = installed_launcher
-    project = tmp_path / "proj"
-    project.mkdir()
-    paths = _seed_v06_project(project)
-    _git_init_commit(project, env)
-    original_role = paths["role"].read_bytes()
-    original_priorities = paths["priorities"].read_bytes()
-
-    # `self bump` must refuse with the migrate-v07 instruction.
-    res = subprocess.run(
-        [str(launcher), "self", "bump"],
-        cwd=str(project), env=env,
-        capture_output=True, text=True, timeout=60,
-    )
-    assert res.returncode != 0, (
-        f"bump silently succeeded on v0.6 layout — gate regressed\n"
-        f"stdout:\n{res.stdout}\nstderr:\n{res.stderr}"
-    )
-    combined = res.stdout + res.stderr
-    assert "v0.6 canonical layout detected" in combined, combined
-    assert "migrate-v07" in combined, combined
-
-    # Files must be untouched.
-    assert paths["role"].read_bytes() == original_role
-    assert paths["priorities"].read_bytes() == original_priorities
-    assert paths["managed"].is_file()
-
-    # After running migrate-v07 --force, bump succeeds.
-    _run(
-        [str(launcher), "self", "migrate-v07", "--force"],
-        cwd=project, env=env, timeout=60, expect_exit=0,
-    )
-    # Now bump should be clean.
-    after = subprocess.run(
-        [str(launcher), "self", "bump"],
-        cwd=str(project), env=env,
-        capture_output=True, text=True, timeout=120,
-    )
-    # bump may still exit non-zero if the active_role isn't resolvable in the
-    # bootstrap library — accept that, but the v0.6 gate specifically must
-    # not fire again.
-    after_combined = after.stdout + after.stderr
-    assert "v0.6 canonical layout detected" not in after_combined, after_combined
+# ----- Test 4: --check-branches surfaces a sibling-branch warning -----
 
 
 @pytest.mark.integration
 def test_e2e_check_branches_warns(installed_launcher, tmp_path):
+    """``--check-branches`` is additive: surfaces a stderr WARN row when a
+    sibling branch modifies a path slated for deletion. Does not block —
+    the user-edit refusal still fires for the same reason it would
+    without the flag."""
     launcher, env = installed_launcher
     project = tmp_path / "proj"
     project.mkdir()
@@ -398,12 +362,13 @@ def test_e2e_check_branches_warns(installed_launcher, tmp_path):
     _git(project, "checkout", "-q", "main", env=env)
 
     res = _run(
-        [str(launcher), "self", "migrate-v07", "--check-branches"],
+        [str(launcher), "self", "bump", "--check-branches"],
         cwd=project, env=env, timeout=60, expect_exit=1,
     )
 
     # The refusal still fires (seed has a USER-AUTHORED paragraph in role.md);
-    # the branch warning is additive.
+    # the branch warning is additive on stderr.
     combined = res.stdout + res.stderr
     assert "sibling" in combined, combined
     assert ".agent/ai-hats/priorities.md" in combined, combined
+    assert "v0.7-migration paths" in combined, combined
