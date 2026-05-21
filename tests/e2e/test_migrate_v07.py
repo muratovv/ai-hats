@@ -103,6 +103,9 @@ def _seed_v06_project(project_dir: Path) -> dict[str, Path]:
     (canonical / "user-rules").mkdir()
     library_rules = canonical / "library" / "rules" / "dev_rule_bar"
     library_rules.mkdir(parents=True)
+    # HATS-408 review B1: hooks were a v0.6 Tier-2 sweep target too.
+    library_hooks = canonical / "library" / "hooks" / "pre-commit-attachments"
+    library_hooks.mkdir(parents=True)
     paths = {
         "priorities": canonical / "priorities.md",
         "role": canonical / "role.md",
@@ -111,9 +114,11 @@ def _seed_v06_project(project_dir: Path) -> dict[str, Path]:
         "skills_index": canonical / "skills_index.md",
         "library_rule_md": library_rules / "rule.md",
         "library_rule_meta": library_rules / "metadata.yaml",
+        "library_hook_script": library_hooks / "pre-commit",
         "user_rule": canonical / "user-rules" / "keep_me.md",
         "canonical_dir": canonical,
         "library_rule_dir": library_rules,
+        "library_hook_dir": library_hooks,
     }
     paths["priorities"].write_text("# Priorities\n\n1. v0.6 placeholder\n")
     paths["role"].write_text(
@@ -125,6 +130,7 @@ def _seed_v06_project(project_dir: Path) -> dict[str, Path]:
     paths["skills_index"].write_text("# Skills Index\n\n- **alpha**\n")
     paths["library_rule_md"].write_text("# library mirror copy\n")
     paths["library_rule_meta"].write_text("kind: rule\n")
+    paths["library_hook_script"].write_text("#!/bin/sh\nexit 0\n")
     paths["user_rule"].write_text("# user rule — DO NOT TOUCH\n")
     return paths
 
@@ -229,8 +235,9 @@ def test_e2e_force_bypass_atomic_commit(installed_launcher, tmp_path):
     assert not paths["skills_index"].exists()
     assert not (paths["canonical_dir"] / "traits").exists()
     assert not (paths["canonical_dir"] / "rules").exists()
-    # Tier 2 wiped (whole mirror dir gone).
+    # Tier 2 wiped (whole mirror dir gone — rules AND hooks; B1 review).
     assert not paths["library_rule_dir"].exists()
+    assert not paths["library_hook_dir"].exists()
     # imports.md regenerated (v0.7 shape — sorted user-rules aggregator).
     imports_md = paths["canonical_dir"] / "imports.md"
     assert imports_md.is_file()
