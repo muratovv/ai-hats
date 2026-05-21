@@ -680,7 +680,7 @@ def execute_deletions(report: MigrationReport, canonical_dir: Path) -> list[Path
                 absolute.unlink(missing_ok=True)
         except OSError as e:
             sys.stderr.write(
-                f"WARN: migrate-v07: could not remove {absolute} ({e.strerror or e}); "
+                f"WARN: v07-migrate: could not remove {absolute} ({e.strerror or e}); "
                 "fix permissions and re-run, or remove manually.\n"
             )
             continue
@@ -698,3 +698,91 @@ def execute_deletions(report: MigrationReport, canonical_dir: Path) -> list[Path
                     break
                 parent = parent.parent
     return removed
+
+
+# ---------- Public helpers (HATS-415: callable from Assembler) ----------
+
+
+def migration_guidance(tier: int, kind: str, path_name: str) -> str:
+    """Human-readable pointer to the new home for a v0.6 finding.
+
+    Returns Rich-markup-friendly text — both the CLI (``console.print``)
+    and ``AssemblyError`` consumers (caught by ``console.print``) render
+    the markup. Plain stderr printers will see literal ``[bold]`` tags;
+    that's acceptable for the user-edits refusal path because
+    ``AssemblyError`` propagates to a Rich-aware catch in ``cli.main``.
+    """
+    if tier == 1:
+        return (
+            "Move project-wide content to [bold].agent/ai-hats/user-rules/<name>.md[/]; "
+            "move role-specific content to "
+            "[bold].agent/ai-hats/library/usage/{traits,rules,skills,roles}/...[/]."
+        )
+    if tier == 2:
+        bucket = {
+            "lib_rule_dir": "rules",
+            "lib_skill_dir": "skills",
+            "lib_hook_file": "hooks",
+        }.get(kind, "rules")
+        if kind == "lib_hook_file":
+            return (
+                f"v0.6 library-hook leftover. Move custom logic to "
+                f"[bold].agent/ai-hats/library/usage/hooks/{path_name}[/] "
+                "or delete after confirming."
+            )
+        return (
+            f"Move overrides to [bold].agent/ai-hats/library/usage/{bucket}/{path_name}/...[/]."
+        )
+    return ""
+
+
+def empty_composition() -> CompositionResult:
+    """Return an empty CompositionResult for projects without an effective role.
+
+    Used when both ``active_role`` and ``default_role`` are unset — no role to
+    compose, so any Tier-1 file on disk is by definition baselineless and
+    classifies as a user edit (conservative — release-gate fork A).
+    """
+    from .models import HooksConfig
+
+    return CompositionResult(
+        name="",
+        priorities=[],
+        rules=[],
+        skills=[],
+        hooks=HooksConfig(),
+        injections=[],
+    )
+
+
+def render_user_edits_refusal(
+    user_edits: list[TierFinding], project_dir: Path
+) -> str:
+    """Render the ``AssemblyError`` message body for a user-edits refusal.
+
+    Used by ``Assembler._run_v07_migration`` to surface the same per-file
+    guidance that the old ``self migrate-v07`` CLI command printed —
+    relocated here so the assembler stays library-pure (no Rich import).
+    The returned string carries Rich markup; the CLI-side AssemblyError
+    catcher passes it through ``console.print`` which renders it.
+    """
+    lines: list[str] = [
+        "v0.6 canonical layout detected — user edits found on disk:",
+        "",
+    ]
+    for f in user_edits:
+        try:
+            rel = f.path.relative_to(project_dir)
+        except ValueError:
+            rel = f.path
+        lines.append(f"  [yellow]{rel}[/]")
+        lines.append(
+            f"    → tier {f.tier} ({f.kind}). "
+            + migration_guidance(f.tier, f.kind, f.path.name)
+        )
+        lines.append("")
+    lines.append(
+        "Re-run with [bold]--migrate-force[/] to overwrite (logs WARN per file) "
+        "after relocating the content."
+    )
+    return "\n".join(lines)

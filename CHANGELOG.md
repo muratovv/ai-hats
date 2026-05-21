@@ -36,6 +36,22 @@ since the latest tag lives under **Unreleased** until the next release.
   for **Session summary** vs **Update banner**.
 
 ### Changed
+- **HATS-415** — `ai-hats self update` and `self bump` now self-heal v0.6 →
+  v0.7 layouts inline. The naive HATS-408 `_refuse_on_v06_layout` gate
+  (manifest-only check) is replaced by the real `plan_migration`
+  classifier inside `Assembler.bump()`: safe-to-delete v0.6 files (bytes
+  match composition baseline) are swept transparently for the common
+  case; user-edited files raise `AssemblyError` with per-file guidance
+  pointing at the v0.7 home (`user-rules/` or `library/usage/...`). New
+  flags on both `self update` and `self bump`: `--migrate-force`
+  (bypass user-edit refusal, one stderr `WARN` per overwritten file)
+  and `--check-branches` (warn when local branches modify paths slated
+  for deletion). **No auto-commit** — sweep deletions land in the
+  worktree, user commits at leisure (same pattern as the existing
+  `_normalize_yaml` yaml rewrite). Migration triggers only when Tier-1
+  framework files (`priorities.md` / `role.md` / `traits/*` / `rules/*` /
+  `skills_index.md`) are present — projects with user-authored hooks
+  under `library/hooks/<x>.sh` no longer falsely refuse.
 - **HATS-294** — Composition is now per-session in memory; the canonical
   layer no longer materialises `priorities.md` / `role.md` /
   `traits/*.md` / `rules/*.md` / `skills_index.md`. `write_canonical`
@@ -49,6 +65,17 @@ since the latest tag lives under **Unreleased** until the next release.
   system prompt inline). Removed `ai-hats self rollback` — yaml-only
   config means `git checkout` is the recovery path. Swept stale
   `.last_backup` pointers and dropped `PROFILE_FILE`.
+
+### Removed
+- **HATS-415** — `ai-hats self migrate-v07` CLI command. The one-shot
+  v0.6 → v0.7 migration (introduced under HATS-408) is no longer a
+  separate command — its logic lives inline in `Assembler.bump()` and
+  surfaces on `self update` / `self bump`. Power-user levers re-homed
+  as flags: `--force` → `--migrate-force`, `--check-branches` kept as
+  is. `--no-commit` has no analog (bump never committed; user reviews
+  and commits at leisure). The `chore(v0.7): migrate to dynamic role
+  composition` atomic commit envelope is gone — the user owns the
+  commit decision.
 
 ### Fixed
 - **HATS-411** — PTY shutdown is now bounded — the `_pty_spawn` finally
