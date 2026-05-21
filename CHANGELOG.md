@@ -78,6 +78,17 @@ since the latest tag lives under **Unreleased** until the next release.
   commit decision.
 
 ### Fixed
+- **HATS-419** — `session-reviewer` retro pipeline no longer dies on
+  markdown-fenced YAML. The model frequently wraps the YAML body in
+  ` ```yaml ... ``` ` inside the `BEGIN_REFLECT_SESSION_RETRO` /
+  `END_REFLECT_SESSION_RETRO` markers; `_extract_yaml` passed the fence
+  verbatim to `yaml.safe_load`, which choked with `found character '\``
+  that cannot start any token`. New `_strip_code_fence` helper removes
+  the surrounding fence after delimiter extraction; plain YAML passes
+  through unchanged. Unblocks the ~30+ stranded threshold-trigger
+  sessions accumulated since the model behavior shifted; parent
+  investigation HATS-418 still covers the L1 hook-dispatch and L3
+  invalid-YAML failure modes.
 - **HATS-411** — PTY shutdown is now bounded — the `_pty_spawn` finally
   block used to call `ptyprocess.wait()` (blocking `os.waitpid(pid, 0)`),
   which hung forever when a Claude/libuv child got stuck in macOS
