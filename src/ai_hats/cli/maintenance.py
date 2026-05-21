@@ -542,7 +542,9 @@ def migrate_v07(force: bool, no_commit: bool, check_branches: bool):
         composition = _empty_composition()
         source_lookup = {}
 
-    report = plan_migration(canonical_dir, composition, source_lookup)
+    report = plan_migration(
+        canonical_dir, composition, source_lookup, project_dir=project_dir
+    )
 
     # --check-branches is additive: surface a warning, then continue to the
     # refuse/force decision. Never blocks on its own.

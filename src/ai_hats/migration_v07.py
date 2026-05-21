@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -370,6 +371,7 @@ def plan_migration(
     canonical_dir: Path,
     composition: CompositionResult,
     tier2_source_lookup: dict[str, Path] | None = None,
+    project_dir: Path | None = None,
 ) -> MigrationReport:
     """Inspect ``canonical_dir`` and classify each finding.
 
@@ -380,6 +382,16 @@ def plan_migration(
     Tier-1 baselines. ``tier2_source_lookup`` (optional) maps mirror-dir
     name → source root; absence means Tier-2 dirs all classify as user-edit
     (conservative).
+
+    ``project_dir`` (optional) enables placeholder expansion on Tier-1
+    baselines — v0.6 ``write_canonical`` called
+    :func:`ai_hats.placeholders.expand_path_placeholders` on every
+    rendered byte before write, so any baseline whose source content
+    contains the literal ``<ai_hats_dir>`` token would diff-mismatch the
+    expanded on-disk byte stream and falsely classify as a user edit
+    (HATS-408 review A1). Tier-2 mirror bytes are NOT placeholder-expanded
+    by v0.6 (they were verbatim file copies from the library source),
+    so they skip this step.
     """
     report = MigrationReport()
     trait_baseline = composition.trait_injections
@@ -393,6 +405,9 @@ def plan_migration(
             trait_baseline=trait_baseline,
             rule_baseline=rule_baseline,
         )
+        if baseline is not None and project_dir is not None:
+            from .placeholders import expand_path_placeholders
+            baseline = expand_path_placeholders(baseline, project_dir)
         actual = _safe_read(path)
         edited = is_user_edit(actual, baseline)
         report.findings.append(
@@ -585,14 +600,26 @@ def execute_deletions(report: MigrationReport, canonical_dir: Path) -> list[Path
         # Check both so we don't silently skip a broken symlink finding.
         if not absolute.exists() and not absolute.is_symlink():
             continue
-        if absolute.is_symlink():
-            # Unlink the link itself, never the target — covers both
-            # symlink-to-file and symlink-to-dir cases uniformly.
-            absolute.unlink()
-        elif absolute.is_dir():
-            shutil.rmtree(absolute)
-        else:
-            absolute.unlink(missing_ok=True)
+        # HATS-408 review B5: a permission-denied or read-only file in the
+        # sweep set used to crash the whole pass mid-deletion (partial
+        # state + no commit). Now: per-path try/except OSError surfaces
+        # one stderr line per failure and the loop continues so the rest
+        # of the sweep + the atomic commit envelope still run.
+        try:
+            if absolute.is_symlink():
+                # Unlink the link itself, never the target — covers both
+                # symlink-to-file and symlink-to-dir cases uniformly.
+                absolute.unlink()
+            elif absolute.is_dir():
+                shutil.rmtree(absolute)
+            else:
+                absolute.unlink(missing_ok=True)
+        except OSError as e:
+            sys.stderr.write(
+                f"WARN: migrate-v07: could not remove {absolute} ({e.strerror or e}); "
+                "fix permissions and re-run, or remove manually.\n"
+            )
+            continue
         removed.append(absolute)
         # Sweep empty parent dirs, but stop at canonical_dir itself.
         parent = absolute.parent
