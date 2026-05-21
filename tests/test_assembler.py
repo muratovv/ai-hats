@@ -181,6 +181,82 @@ def test_bump(project_with_library):
     assert result.name == "test-role"
 
 
+# -- HATS-408 cross-task gate: bump refuses to silently sweep v0.6 framework files --
+
+
+def test_bump_refuses_on_v06_manifest(project_with_library):
+    """A MANAGED manifest listing v0.6 framework files (priorities/role/traits/
+    rules/skills_index) means the project was last touched by v0.6
+    write_canonical. Bumping under v0.7 would silently sweep those files with
+    no user-edit detection. HATS-408 gates this with a clear migrate-v07 hint.
+    """
+    from ai_hats.assembler import AssemblyError
+
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    canonical = project / ".agent" / "ai-hats"
+    (canonical / "MANAGED").write_text(
+        "# ai-hats canonical layer manifest. Do not edit.\n"
+        "imports.md\n"
+        "priorities.md\n"
+        "role.md\n"
+        "traits/foo.md\n"
+        "rules/bar.md\n"
+        "skills_index.md\n"
+    )
+
+    with pytest.raises(AssemblyError) as exc:
+        asm.bump()
+    msg = str(exc.value)
+    assert "v0.6 canonical layout detected" in msg
+    assert "ai-hats self migrate-v07" in msg
+    # User-facing preview of what's being protected.
+    assert "priorities.md" in msg or "role.md" in msg
+
+
+def test_bump_succeeds_when_manifest_lists_only_imports_md(project_with_library):
+    """v0.7 manifest shape (only ``imports.md``) → gate passes silently."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    canonical = project / ".agent" / "ai-hats"
+    (canonical / "MANAGED").write_text(
+        "# ai-hats canonical layer manifest. Do not edit.\n"
+        "imports.md\n"
+    )
+    # No raise.
+    asm.bump()
+
+
+def test_bump_succeeds_when_no_manifest(project_with_library):
+    """Greenfield projects (no MANAGED file yet) → gate is silent."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    canonical = project / ".agent" / "ai-hats"
+    if (canonical / "MANAGED").exists():
+        (canonical / "MANAGED").unlink()
+    # No raise.
+    asm.bump()
+
+
+def test_bump_user_rules_in_manifest_does_not_trigger_gate(project_with_library):
+    """Defensive: future user-rules entries in MANAGED must not falsely flag v0.6."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    canonical = project / ".agent" / "ai-hats"
+    (canonical / "MANAGED").write_text(
+        "# ai-hats canonical layer manifest. Do not edit.\n"
+        "imports.md\n"
+        "user-rules/my_rule.md\n"
+        "user-rules\n"
+    )
+    asm.bump()
+
+
 def test_set_role_then_switch_provider(project_with_library):
     """Switching provider must regenerate system prompt for the new provider.
 
