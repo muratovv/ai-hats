@@ -93,8 +93,12 @@ injection: |
 
   ## Available base roles (knowledge — do NOT read yaml)
 
-  - **assistant** — universal Python-leaning assistant
-    (trait-se-mindset + dev::python + dev::shell). Safe default.
+  - **assistant** — curated default: base + agent + SE-mindset + researcher
+    + dev::python + dev::shell + integration::google + personal-workflow.
+    Picks up Python/Shell traits AND Google Workspace skill; richest baseline.
+  - **dev-python** — clean Python: base + agent + SE-mindset + researcher
+    + dev::python + dev::shell. No integrations, no personal workflow.
+    Recommended for fresh Python projects.
   - **architect** — Principal Software Architect: C4-level design, ADRs,
     API / trust boundaries. For architecture review, not implementation.
   - **go-dev** / **go-dev-full** — Go development; `-full` adds the
@@ -180,7 +184,7 @@ injection: |
   `go.mod`, `pyproject.toml`, `setup.py`, `package.json`, `Cargo.toml`,
   `README.md`, `Makefile`. Mapping:
   - `go.mod` → recommend **go-dev**
-  - `pyproject.toml` / `setup.py` → **assistant**
+  - `pyproject.toml` / `setup.py` → **dev-python** (clean Python baseline)
   - `package.json` / `Cargo.toml` only → **assistant** (universal)
   - empty → **assistant** as safe default
 
