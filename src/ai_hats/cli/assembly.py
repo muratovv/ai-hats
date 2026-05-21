@@ -597,21 +597,46 @@ def status():
 
 
 @click.command()
-def bump():
+@click.option(
+    "--migrate-force",
+    is_flag=True,
+    help="Bypass v0.6 → v0.7 user-edit refusal (logs WARN per overwritten file).",
+)
+@click.option(
+    "--check-branches",
+    is_flag=True,
+    help="Warn if local branches modify any v0.7-migration path slated for deletion.",
+)
+def bump(migrate_force: bool, check_branches: bool):
     """Refresh migrations, scaffold, canonical aggregator, and git hooks.
 
     HATS-407: no longer re-applies the role — per-session compose
     (HATS-294) handles framework content in memory. ``bump`` is now a
     migration / refresh command for on-disk artefacts.
 
-    HATS-408 v0.6 gate: refuses on projects whose canonical MANAGED
-    manifest still lists framework files (``priorities.md`` / ``role.md``
-    / ``traits/*`` / ``rules/*`` / ``skills_index.md``). The error
-    message points at ``ai-hats self migrate-v07`` which is the
-    user-edit-aware sweep. Run that first, then re-run bump.
+    HATS-415: the v0.6 → v0.7 migration runs inline. Safe-to-delete v0.6
+    files (bytes match composition baseline) are swept transparently;
+    user-edited files refuse with per-file guidance pointing at the v0.7
+    home. Use ``--migrate-force`` to overwrite user edits (one stderr
+    WARN per file). ``--check-branches`` surfaces a warning when local
+    branches modify the paths slated for deletion. No auto-commit —
+    review with ``git status`` and commit at leisure.
     """
+    from ..assembler import AssemblyError
+
     asm = _assembler()
-    result = asm.bump()
+    try:
+        result = asm.bump(
+            force_v07_migration=migrate_force,
+            check_v07_branches=check_branches,
+        )
+    except AssemblyError as e:
+        # HATS-415: render the user-edits refusal message via Rich so the
+        # per-file guidance markup (`[bold]…[/]`, `[yellow]…[/]`) inside
+        # ``render_user_edits_refusal`` displays cleanly. ``console.print``
+        # auto-renders newline-separated Rich markup.
+        console.print(f"[red]Bump refused[/]:\n{e}")
+        sys.exit(1)
     if result is None:
         console.print("[green]Bumped[/]: migrations + scaffold + canonical refreshed")
     else:
