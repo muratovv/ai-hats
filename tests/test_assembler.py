@@ -257,6 +257,117 @@ def test_bump_user_rules_in_manifest_does_not_trigger_gate(project_with_library)
     asm.bump()
 
 
+# -- HATS-413: bump persists yaml hardening (heal + deprecated-strip) --
+
+
+def test_bump_persists_default_role_heal(project_with_library):
+    """The ``default_role := active_role`` heal from from_yaml stays in memory
+    by design. ``bump()`` must persist it so the WARN doesn't re-fire on
+    every subsequent CLI invocation."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    # Write a yaml that triggers the heal: active_role set + default_role empty.
+    config_path = project / "ai-hats.yaml"
+    config_path.write_text(
+        "schema_version: 4\n"
+        "provider: claude\n"
+        "ai_hats_dir: .agent/ai-hats\n"
+        "active_role: test-role\n"
+        "default_role: ''\n"
+    )
+
+    # Reload through Assembler (triggers from_yaml heal in memory).
+    asm2 = Assembler(project, library_paths=[lib])
+    assert asm2.project_config.default_role == "test-role"  # healed in memory
+
+    asm2.bump()
+
+    # Yaml on disk now has the healed value persisted.
+    import yaml as _yaml
+    saved = _yaml.safe_load(config_path.read_text())
+    assert saved["default_role"] == "test-role"
+
+    # Confirm the next load doesn't trigger another heal (raw == in-memory).
+    asm3 = Assembler(project, library_paths=[lib])
+    raw = _yaml.safe_load(config_path.read_text())
+    assert raw.get("default_role") == asm3.project_config.default_role == "test-role"
+
+
+def test_bump_persists_deprecated_field_strip(project_with_library):
+    """Deprecated yaml keys (HATS-408) stripped in memory by from_yaml must
+    also be removed on disk after bump."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    config_path = project / "ai-hats.yaml"
+    # Append the deprecated ghost.
+    original = config_path.read_text()
+    config_path.write_text(original + "imports_order: role-first\n")
+
+    asm2 = Assembler(project, library_paths=[lib])
+    asm2.bump()
+
+    import yaml as _yaml
+    saved = _yaml.safe_load(config_path.read_text())
+    assert "imports_order" not in saved
+
+
+def test_bump_no_op_when_yaml_already_normalized(project_with_library):
+    """Idempotency: bump on a yaml that needs no normalization does NOT
+    rewrite the file (mtime / bytes preserved)."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    # asm.init() already wrote a clean yaml. Capture state.
+    config_path = project / "ai-hats.yaml"
+    pre_bytes = config_path.read_bytes()
+    pre_mtime = config_path.stat().st_mtime_ns
+
+    asm.bump()
+
+    # Bytes unchanged → no rewrite happened.
+    # (mtime can move if other init paths touch the file; bytes is the
+    # ground-truth contract.)
+    assert config_path.read_bytes() == pre_bytes, (
+        f"yaml rewritten unexpectedly:\nbefore mtime={pre_mtime}, "
+        f"after mtime={config_path.stat().st_mtime_ns}"
+    )
+
+
+def test_bump_skips_normalize_when_v06_gate_refuses(project_with_library):
+    """If the v0.6 gate refuses first, _normalize_yaml must NOT have run
+    (preserves the v0.6 yaml shape until the user runs migrate-v07)."""
+    from ai_hats.assembler import AssemblyError
+
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    config_path = project / "ai-hats.yaml"
+    config_path.write_text(
+        "schema_version: 4\n"
+        "provider: claude\n"
+        "ai_hats_dir: .agent/ai-hats\n"
+        "active_role: test-role\n"
+        "default_role: ''\n"
+        "imports_order: role-first\n"
+    )
+    canonical = project / ".agent" / "ai-hats"
+    (canonical / "MANAGED").write_text(
+        "# ai-hats canonical layer manifest. Do not edit.\n"
+        "imports.md\n"
+        "priorities.md\n"
+    )
+    pre_bytes = config_path.read_bytes()
+
+    asm2 = Assembler(project, library_paths=[lib])
+    with pytest.raises(AssemblyError):
+        asm2.bump()
+
+    # Yaml untouched — gate fired before _normalize_yaml.
+    assert config_path.read_bytes() == pre_bytes
+
+
 def test_set_role_then_switch_provider(project_with_library):
     """Switching provider must regenerate system prompt for the new provider.
 
