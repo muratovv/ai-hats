@@ -832,7 +832,11 @@ class WrapRunner:
             return int(proc.exitstatus)
         if proc.signalstatus is not None:
             return 128 + int(proc.signalstatus)
-        return 0
+        # HATS-411: bounded_proc_shutdown could not confirm clean exit
+        # (child stuck in `?Es` — WNOHANG reap returned (0, 0)). Surface
+        # this as 124 (GNU coreutils `timeout` convention, also used by
+        # SUBAGENT_EXIT_TIMEOUT) instead of silently returning success.
+        return 124
 
 
 class SubAgentRunner:

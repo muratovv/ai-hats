@@ -60,10 +60,14 @@ since the latest tag lives under **Unreleased** until the next release.
   module escalates grace → SIGTERM-pgroup → SIGKILL → `WNOHANG` reap;
   worst case the zombie remains but the parent returns and the pane is
   recoverable. Timings overridable via `AI_HATS_PTY_GRACE_S` (default
-  5.0) / `AI_HATS_PTY_TERM_S` (default 2.0). Also emits DECRST
-  mouse-tracking reset on the parent's outer stdout after shutdown, so
-  raw SGR mouse reports do not leak into the surrounding shell when
-  the child crashed without disabling them.
+  5.0) / `AI_HATS_PTY_TERM_S` (default 2.0). When the WNOHANG reap can't
+  confirm exit (kernel still wedged), `_pty_spawn` now returns `124`
+  (GNU `timeout` convention) instead of silently `0`, so callers see the
+  unresolved-exit signal. Also emits DECRST mouse-tracking reset on the
+  parent's outer stdout after shutdown — guarded by `os.isatty(fd)` so
+  redirected output (`ai-hats run > out.log`) is not polluted with
+  escape bytes — preventing raw SGR mouse reports from leaking into the
+  surrounding shell when the child crashed without disabling them.
 - **HATS-412** — `WrapRunner` lifecycle `HooksRunner` now reads from the
   canonical `<ai_hats_dir>/library/hooks/` instead of the legacy
   `.agent/hooks/` path. The bug was latent since HATS-314's layout

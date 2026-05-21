@@ -95,18 +95,21 @@ def _env_float(name: str, default: float) -> float:
 def _poll_until_dead(proc, deadline: float) -> bool:
     """Poll ``proc.isalive`` until *deadline* (monotonic seconds).
 
-    Returns True iff the child has exited by the deadline.
+    Returns True iff the child has exited by the deadline. OSError /
+    ProcessLookupError from ``isalive`` are treated as "dead" (ptyprocess
+    can raise these against an already-reaped child); narrower than bare
+    ``Exception`` so genuine programming bugs in callers don't get hidden.
     """
     while time.monotonic() < deadline:
         try:
             if not proc.isalive():
                 return True
-        except Exception:  # noqa: BLE001 — ptyprocess can raise misc OSErrors
+        except (OSError, ProcessLookupError):
             return True
         time.sleep(_POLL_INTERVAL_S)
     try:
         return not proc.isalive()
-    except Exception:  # noqa: BLE001
+    except (OSError, ProcessLookupError):
         return True
 
 
@@ -177,8 +180,9 @@ def bounded_proc_shutdown(
     Returns
     -------
     None
-        Never blocks longer than ``grace_s + term_s + _POLL_INTERVAL_S``
-        plus signal/reap syscalls.
+        Never blocks longer than ``grace_s + term_s + 2 × _POLL_INTERVAL_S``
+        plus signal/reap syscalls. Each stage does one post-deadline
+        re-check inside :func:`_poll_until_dead`.
     """
     if grace_s is None:
         grace_s = _env_float("AI_HATS_PTY_GRACE_S", _DEFAULT_GRACE_S)
@@ -210,7 +214,7 @@ def bounded_proc_shutdown(
     _nonblocking_reap(proc)
 
 
-def emit_terminal_reset(fd: int = 1) -> None:
+def emit_terminal_reset(fd: int = 1, *, force: bool = False) -> None:
     """Write DECRST mouse-tracking off to *fd*.
 
     Called from the PTY parent on its own stdout AFTER the child has
@@ -218,6 +222,11 @@ def emit_terminal_reset(fd: int = 1) -> None:
     pane / Ghostty window), so this clears mouse-tracking state that
     the dead child may have left enabled — preventing raw SGR mouse
     reports from rendering as visible text in the surrounding shell.
+
+    When *fd* is not a TTY (redirected to file / pipe — CI capture,
+    ``ai-hats run > out.log``), emission is skipped so escape bytes
+    don't pollute the log. Pass ``force=True`` to bypass the guard
+    (used by tests writing to ``os.pipe()`` / ``openpty`` slaves).
 
     Tolerates closed-fd / broken-pipe — best-effort cleanup.
 
@@ -227,6 +236,12 @@ def emit_terminal_reset(fd: int = 1) -> None:
     interprets the bytes as commands (lesson from HATS-411 work_log
     2026-05-21T04:17). Always emit DECRST on the parent's own stdout.
     """
+    if not force:
+        try:
+            if not os.isatty(fd):
+                return
+        except OSError:
+            return
     try:
         os.write(fd, _DECRST_MOUSE_RESET.encode("ascii"))
     except OSError:
