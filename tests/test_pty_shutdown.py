@@ -208,10 +208,18 @@ def test_waitpid_updates_exitstatus(monkeypatch):
 
 
 def test_waitpid_updates_signalstatus(monkeypatch):
-    """Reaped child WIFSIGNALED → proc.signalstatus set."""
+    """Reaped child WIFSIGNALED → proc.signalstatus set.
+
+    Note: passing raw ``signal.SIGTERM`` (15) as the status word works
+    here because ``WIFSIGNALED(15) == True`` and ``WTERMSIG(15) == 15``
+    — i.e. for low signal numbers the encoded status word coincides
+    with the signal number. For higher signals (e.g. SIGKILL=9 is fine,
+    but SIGSYS=12 with core-dump bit would differ), the kernel-encoded
+    word would be different. This fixture intentionally exercises the
+    low-signal coincidence to keep the test self-contained.
+    """
     monkeypatch.setattr(pty_shutdown.os, "getpgid", lambda pid: pid)
     monkeypatch.setattr(pty_shutdown.os, "killpg", lambda *_: None)
-    # Status with low 7 bits = signal number, high bit = core dump (ignored).
     monkeypatch.setattr(pty_shutdown.os, "waitpid", lambda *_: (99999, signal.SIGTERM))
 
     proc = FakeProc(alive_sequence=[False])
@@ -285,28 +293,54 @@ def test_isalive_exception_treated_as_dead(monkeypatch):
 # ---------- emit_terminal_reset ----------------------------------------
 
 
-def test_emit_terminal_reset_writes_expected_bytes(tmp_path):
-    """Verify the exact DECRST sequence reaches the fd."""
+def test_emit_terminal_reset_writes_expected_bytes_when_forced(tmp_path):
+    """Verify the exact DECRST sequence reaches the fd (force=True)."""
     log = tmp_path / "out.bin"
     with log.open("wb") as fh:
-        emit_terminal_reset(fh.fileno())
+        emit_terminal_reset(fh.fileno(), force=True)
 
     written = log.read_bytes()
-    # All five DEC private mode reset sequences, in order.
-    assert b"\x1b[?1000l" in written
-    assert b"\x1b[?1002l" in written
-    assert b"\x1b[?1003l" in written
-    assert b"\x1b[?1006l" in written
-    assert b"\x1b[?1015l" in written
-    # Sanity check the concatenation order.
     assert written == (
         b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l"
     )
 
 
+def test_emit_terminal_reset_skips_non_tty_by_default(tmp_path):
+    """Without force, redirected stdout (file/pipe) gets no bytes."""
+    log = tmp_path / "out.bin"
+    with log.open("wb") as fh:
+        emit_terminal_reset(fh.fileno())  # not a tty → noop
+
+    assert log.read_bytes() == b""
+
+
+def test_emit_terminal_reset_writes_when_fd_is_real_tty():
+    """openpty() slave fd is a tty → write happens without force."""
+    master, slave = os.openpty()
+    try:
+        emit_terminal_reset(slave)  # no force; isatty(slave) is True
+        # Read from master to confirm bytes flowed.
+        # Use os.set_blocking(False) so this never deadlocks if write skipped.
+        os.set_blocking(master, False)
+        try:
+            data = os.read(master, 1024)
+        except BlockingIOError:
+            data = b""
+        assert data == (
+            b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l"
+        )
+    finally:
+        os.close(master)
+        os.close(slave)
+
+
 def test_emit_terminal_reset_tolerates_bad_fd():
     """EBADF on closed fd must not raise — best-effort cleanup."""
     r, w = os.pipe()
-    os.close(w)  # write end gone → write to *r* (read-end) will EBADF
-    emit_terminal_reset(r)  # must not raise
+    os.close(w)
+    # isatty on read-end-of-pipe is False → noop path, but must not raise.
+    emit_terminal_reset(r)
+    # Even with force, os.write to a half-closed pipe-read-fd raises EBADF
+    # in the OSError branch and is swallowed.
+    emit_terminal_reset(r, force=True)
     os.close(r)

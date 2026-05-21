@@ -47,6 +47,28 @@ STUCK_CHILD_SOURCE = textwrap.dedent(
 )
 
 
+# Fast cooperative child for the wired-path smoke test. Prints banner,
+# exits cleanly after a short delay. Goal: drive a real PtyProcess
+# through WrapRunner._pty_spawn end-to-end so the import / call site
+# of bounded_proc_shutdown is actually executed.
+#
+# Scope limitation (acknowledged): this is a smoke test for the wire,
+# not a revert-detection guard. We cannot reproduce the original macOS
+# `?Es` exit-stall from pure Python — that bug requires kernel-level
+# libuv handle leak. A revert that re-introduced blocking
+# ``proc.wait()`` would still pass this test because the child exits
+# cleanly. Honest naming: this catches import errors, call-site
+# removal, and bounded_proc_shutdown raising on already-dead children.
+WIRED_CHILD_SOURCE = textwrap.dedent(
+    """\
+    import sys, time
+    sys.stdout.write("wired_child up\\n")
+    sys.stdout.flush()
+    time.sleep(0.2)
+    """
+)
+
+
 # Cooperative child: exits on SIGTERM. Used for the happy-path check.
 COOPERATIVE_CHILD_SOURCE = textwrap.dedent(
     """\
@@ -159,20 +181,124 @@ def test_e2e_bounded_shutdown_fast_path_cooperative(tmp_path, _import_pty_shutdo
 
 
 @pytest.mark.integration
-def test_e2e_emit_terminal_reset_writes_to_real_pipe(_import_pty_shutdown):
-    """emit_terminal_reset writes the DECRST bytes to a real pipe fd."""
-    r, w = os.pipe()
-    try:
-        _import_pty_shutdown.emit_terminal_reset(w)
-        os.close(w)
-        data = os.read(r, 1024)
-    finally:
-        try:
-            os.close(r)
-        except OSError:
-            pass
+def test_e2e_emit_terminal_reset_writes_to_real_tty(_import_pty_shutdown):
+    """emit_terminal_reset writes the DECRST bytes when fd is a real TTY.
 
-    # All five sequences present and concatenated in the documented order.
+    Uses ``os.openpty()`` rather than ``os.pipe()`` so the isatty guard
+    inside ``emit_terminal_reset`` passes naturally — covers the runtime
+    contract (a session's stdout IS a tty).
+    """
+    master, slave = os.openpty()
+    try:
+        _import_pty_shutdown.emit_terminal_reset(slave)
+        os.set_blocking(master, False)
+        try:
+            data = os.read(master, 1024)
+        except BlockingIOError:
+            data = b""
+    finally:
+        os.close(master)
+        os.close(slave)
+
     assert data == (
         b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l"
+    )
+
+
+@pytest.mark.integration
+def test_e2e_emit_terminal_reset_skips_non_tty(tmp_path, _import_pty_shutdown):
+    """Redirected stdout (file) → emit_terminal_reset writes nothing.
+
+    Prevents log pollution when running ``ai-hats run > out.log`` under
+    CI / batch automation.
+    """
+    log = tmp_path / "out.bin"
+    with log.open("wb") as fh:
+        _import_pty_shutdown.emit_terminal_reset(fh.fileno())
+    assert log.read_bytes() == b""
+
+
+@pytest.mark.integration
+def test_e2e_pty_spawn_wired_path_executes_bounded_shutdown(
+    tmp_path, _import_pty_shutdown,
+):
+    """Smoke test: WrapRunner._pty_spawn finally block invokes the new wire.
+
+    Drives a real PtyProcess through ``_pty_spawn`` end-to-end (no mocks),
+    confirming that the runtime.py imports + finally-block calls to
+    ``bounded_proc_shutdown`` / ``emit_terminal_reset`` work without
+    raising — i.e. the wire is in place and the call site is reachable.
+
+    Coverage gap (documented honestly): this is NOT a revert-detection
+    test. A hypothetical revert that re-introduced the old
+    ``proc.terminate(force=True)`` + blocking ``proc.wait()`` block
+    would still pass — our cooperative child exits in 200 ms, so
+    blocking wait reaps it instantly. The original macOS ``?Es``
+    exit-stall (kernel-level libuv handle leak) is the only failure
+    shape that detects the regression at e2e level, and it cannot be
+    reproduced from pure Python userspace.
+    """
+    from ai_hats.observe import Session, SidecarTracer
+    from ai_hats.runtime import WrapRunner
+
+    child_path = _write_child(tmp_path, "wired_child.py", WIRED_CHILD_SOURCE)
+
+    session_dir = tmp_path / "s"
+    session_dir.mkdir()
+    session = Session(session_id="hats-411-wired", session_dir=session_dir)
+    tracer = SidecarTracer(session)
+
+    # Bypass WrapRunner.__init__ — _pty_spawn needs only (cmd, env, tracer).
+    runner = object.__new__(WrapRunner)
+
+    t0 = time.monotonic()
+    exit_code = runner._pty_spawn([sys.executable, str(child_path)], {}, tracer)
+    elapsed = time.monotonic() - t0
+
+    # Cooperative child sleeps 0.2s; wire overhead is sub-millisecond.
+    assert elapsed < 3.0, f"_pty_spawn took {elapsed:.3f}s — bounded path regression?"
+
+    # Child exits cleanly → exit_code 0 from waitpid, or 124 if the
+    # WNOHANG path lost the race (rare under fast cooperative child).
+    assert exit_code in {0, 124}, (
+        f"unexpected exit_code {exit_code} from _pty_spawn"
+    )
+
+
+@pytest.mark.integration
+def test_e2e_pty_spawn_returns_124_when_shutdown_unresolved(
+    tmp_path, monkeypatch, _import_pty_shutdown,
+):
+    """HATS-411 Major-1 fix: _pty_spawn returns 124 when shutdown leaves no status.
+
+    Simulates the macOS `?Es` exit-stall outcome by monkeypatching
+    ``bounded_proc_shutdown`` to a no-op — neither ``exitstatus`` nor
+    ``signalstatus`` get set on proc. Pre-fix, runtime.py returned 0
+    in this branch (silent success masking a leaked zombie); post-fix,
+    it returns 124 (GNU `timeout` convention).
+    """
+    from ai_hats import runtime as runtime_mod
+    from ai_hats.observe import Session, SidecarTracer
+    from ai_hats.runtime import WrapRunner
+
+    child_path = _write_child(tmp_path, "wired_child.py", WIRED_CHILD_SOURCE)
+
+    session_dir = tmp_path / "s"
+    session_dir.mkdir()
+    session = Session(session_id="hats-411-unresolved", session_dir=session_dir)
+    tracer = SidecarTracer(session)
+
+    # No-op shutdown: leaves proc.exitstatus / signalstatus as None.
+    monkeypatch.setattr(runtime_mod, "bounded_proc_shutdown", lambda *_a, **_k: None)
+    # Also stub emit_terminal_reset so we don't write to test stdout.
+    monkeypatch.setattr(runtime_mod, "emit_terminal_reset", lambda *_a, **_k: None)
+
+    runner = object.__new__(WrapRunner)
+    exit_code = runner._pty_spawn([sys.executable, str(child_path)], {}, tracer)
+
+    # The child does exit cleanly, but our stubbed shutdown didn't reap
+    # it via WNOHANG, so neither exitstatus nor signalstatus is set
+    # before we reach runtime.py:831-839 — exercises the 124 branch.
+    assert exit_code == 124, (
+        f"expected 124 (unresolved shutdown), got {exit_code}"
     )
