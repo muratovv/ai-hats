@@ -5,17 +5,20 @@ contract with a ``FakeProc`` and monkeypatched signals — fast, but
 cannot catch the original bug where ``ptyprocess.wait()`` blocks on real
 ``os.waitpid(pid, 0)`` against a real macOS exit-pending child.
 
-This test spawns a real ``ptyprocess.PtyProcess`` against a real Python
-``stuck_child.py`` and asserts that:
+This module spawns real ``ptyprocess.PtyProcess`` children and asserts:
 
-1. ``bounded_proc_shutdown`` returns within the configured deadline,
-2. the test never hangs (pytest-timeout 10s),
-3. ``emit_terminal_reset`` writes DECRST bytes to the captured fd.
+1. ``bounded_proc_shutdown`` returns within the configured deadline
+   (in-test elapsed assertions; pytest-timeout is NOT a project dep,
+   so a true hang relies on CI job-level wall-clock to catch),
+2. ``emit_terminal_reset`` writes DECRST bytes when the fd is a real
+   TTY and skips when redirected to a file (isatty guard),
+3. ``WrapRunner._pty_spawn`` end-to-end exercises the wired
+   ``bounded_proc_shutdown`` call site without raising.
 
-The child is **not** a perfect macOS `?Es` reproducer — that path
-requires Claude-grade libuv handles — but it does cover the broader
-"child ignores SIGTERM" failure shape, which is the same code path the
-fix protects.
+Children are **not** perfect macOS `?Es` reproducers — that path
+requires Claude-grade libuv-handle leak at the kernel level — but
+cover the broader "child ignores SIGTERM" + wired-path-import-works
+failure shapes.
 
 Marker: ``integration`` (real PTY, real signals).
 """
@@ -258,10 +261,13 @@ def test_e2e_pty_spawn_wired_path_executes_bounded_shutdown(
     # Cooperative child sleeps 0.2s; wire overhead is sub-millisecond.
     assert elapsed < 3.0, f"_pty_spawn took {elapsed:.3f}s — bounded path regression?"
 
-    # Child exits cleanly → exit_code 0 from waitpid, or 124 if the
-    # WNOHANG path lost the race (rare under fast cooperative child).
-    assert exit_code in {0, 124}, (
-        f"unexpected exit_code {exit_code} from _pty_spawn"
+    # Strict exit-code check: cooperative child exits cleanly, so the
+    # bounded shutdown's WNOHANG reap MUST succeed and set exitstatus=0.
+    # A 124 here would mean bounded_proc_shutdown silently regressed
+    # (failed to reap a reapable child) — caught explicitly rather than
+    # masked under the round-1 permissive `{0, 124}` set.
+    assert exit_code == 0, (
+        f"expected 0 from cooperative child; got {exit_code} — bounded shutdown regression?"
     )
 
 
@@ -302,3 +308,14 @@ def test_e2e_pty_spawn_returns_124_when_shutdown_unresolved(
     assert exit_code == 124, (
         f"expected 124 (unresolved shutdown), got {exit_code}"
     )
+
+    # Reap any leaked zombies — the stubbed shutdown skipped the WNOHANG
+    # reap, so the child sits in the process table until init reparents.
+    # Drain politely now so `pytest -x` loops don't accumulate zombies.
+    while True:
+        try:
+            reaped, _ = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            break
+        if reaped == 0:
+            break
