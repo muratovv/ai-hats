@@ -1,0 +1,28 @@
+name: personal-workflow
+# NOTE: TEMPORARY trait. Bundles user-private workflow patterns that should
+# travel with the user across projects. To be REMOVED from ai-hats once
+# user-side skill-install lands (see HATS-393 / sibling proposals for the
+# bring-your-own-skill mechanism). Until then, this trait is the seam.
+composition:
+  traits: []
+  rules: []
+  skills: []
+  hooks: {}
+injection: |
+  ## PERSONAL WORKFLOW
+
+  ### Plan-mode iteration hygiene
+  Between iterations in plan-mode (when the user has left comments embedded
+  in the plan file): the FIRST action of every new iteration is to scan
+  the file for **bare ``` blocks with prose** (these are review-comments,
+  not code-fences), delete the ones addressed by the previous round, then
+  add new content. The plan should read as a final design draft, not as a
+  back-and-forth conversation log.
+
+  Distinguish:
+  - Code-fence blocks (` ```python `, ` ```yaml `, ` ```bash `) — KEEP.
+  - Bare ` ``` ` blocks with prose inside — these are user review-comments
+    from a prior iteration. DELETE the ones already addressed.
+
+  Do not leave "memos" or "TODO from prior iteration" markers between
+  iterations. The plan file is not a chat log.

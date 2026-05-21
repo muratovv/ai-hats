@@ -1,0 +1,22 @@
+name: ai-hats-framework
+composition:
+  traits: []
+  rules:
+    - rule_core_vs_usage_split
+  skills: []
+  hooks: {}
+injection: |
+  ## AI-HATS FRAMEWORK
+
+  This project (or its tooling) is composed via ai-hats. The library is layered:
+
+  - **`library/core/`** — engine fundament. System roles, base traits, global
+    rules, foundational skills, pipelines. Universal across consumers.
+  - **`library/usage/`** — opinionated content catalog. Domain roles, dev::/env::
+    traits, opt-in skills. Project- or domain-specific.
+
+  When creating a new rule / skill / trait, first ask: **universal or
+  project-specific?** Universal → `core/` (attach to a base trait).
+  Project-specific → `core/` for the rule (if the concept is reusable across
+  projects) + dedicated `usage/` trait that bundles it + role wiring in
+  `usage/roles/`. See rule `rule_core_vs_usage_split` for the full decision tree.
