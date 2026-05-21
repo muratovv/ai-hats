@@ -137,24 +137,104 @@ def test_collect_tier2_finds_mirror_dirs(tmp_path):
     assert kinds["backlog-manager"] == "lib_skill_dir"
 
 
-def test_collect_tier2_finds_hooks_mirror(tmp_path):
-    """HATS-408 review B1: v0.6 also materialised library/hooks/<name>/.
-
-    Without this finder, a v0.6 project shipping a hook keeps a stale
-    ``library/hooks/<name>/`` tree after ``--force`` — breaks the
-    release-gate contract that the sweep is total.
+def test_collect_tier2_finds_hooks_as_flat_files(tmp_path):
+    """HATS-408 second-round review C1: v0.6 wrote hooks as FLAT scripts
+    (``library/hooks/session_start.sh``), not subdirectories. The original
+    B1 fix used dir-mode which missed the v0.6 shape entirely AND would
+    have swept undocumented user-owned ``library/hooks/<subdir>/`` content.
+    File-mode finder catches the real v0.6 leftover and leaves user subdirs
+    alone (any user-authored subdir lives outside the v0.6/v0.7 contract).
     """
     canonical = tmp_path / "ai-hats"
     hooks_parent = canonical / "library" / "hooks"
     hooks_parent.mkdir(parents=True)
-    hook_dir = hooks_parent / "pre-commit-attachments"
-    hook_dir.mkdir()
-    (hook_dir / "pre-commit").write_text("#!/bin/sh\nexit 0\n")
+    (hooks_parent / "session_start.sh").write_text("#!/bin/sh\necho hi\n")
+    (hooks_parent / "session_end.py").write_text("print('bye')\n")
+    # User-authored subdir — out of v0.6 contract; must NOT be a finding.
+    user_subdir = hooks_parent / "user_owned"
+    user_subdir.mkdir()
+    (user_subdir / "custom.sh").write_text("user script\n")
+    # Bookkeeping marker — must NOT be a finding (dotfile).
+    (hooks_parent / ".ai-hats-managed").write_text("session_start.sh\nsession_end.py\n")
+    # Unrelated suffix — must NOT be a finding.
+    (hooks_parent / "README.md").write_text("docs\n")
 
     found = m.collect_tier2(canonical)
 
     by_name = {p.name: k for p, k in found}
-    assert by_name == {"pre-commit-attachments": "lib_hook_dir"}
+    assert by_name == {
+        "session_start.sh": "lib_hook_file",
+        "session_end.py": "lib_hook_file",
+    }
+    # Sanity: user-owned subdir is not a finding.
+    assert "user_owned" not in by_name
+
+
+def test_render_tier2_hook_file_baseline_matches_source(tmp_path):
+    """Hook source file in library_paths' hooks root → byte-equal baseline."""
+    mirror = tmp_path / "ai-hats" / "library" / "hooks"
+    mirror.mkdir(parents=True)
+    hook = mirror / "session_start.sh"
+    hook.write_text("#!/bin/sh\nexit 0\n")
+    source_root = tmp_path / "lib" / "hooks"
+    source_root.mkdir(parents=True)
+    (source_root / "session_start.sh").write_text("#!/bin/sh\nexit 0\n")
+    baseline = m.render_tier2_hook_file_baseline(hook, [source_root])
+    assert baseline == hook.read_text()
+
+
+def test_render_tier2_hook_file_baseline_none_when_source_missing(tmp_path):
+    """No matching hook in any source dir → None → caller classifies as user-edit."""
+    mirror = tmp_path / "ai-hats" / "library" / "hooks"
+    mirror.mkdir(parents=True)
+    hook = mirror / "session_start.sh"
+    hook.write_text("#!/bin/sh\n")
+    other_source = tmp_path / "lib" / "hooks"
+    other_source.mkdir(parents=True)
+    (other_source / "session_end.sh").write_text("#!/bin/sh\n")  # wrong name
+    assert m.render_tier2_hook_file_baseline(hook, [other_source]) is None
+    assert m.render_tier2_hook_file_baseline(hook, []) is None
+    assert m.render_tier2_hook_file_baseline(hook, None) is None
+
+
+def test_plan_migration_tier2_hook_file_safe_when_source_matches(tmp_path):
+    canonical = tmp_path / "ai-hats"
+    hooks_parent = canonical / "library" / "hooks"
+    hooks_parent.mkdir(parents=True)
+    (hooks_parent / "session_start.sh").write_text("#!/bin/sh\nbody\n")
+    source_root = tmp_path / "lib" / "hooks"
+    source_root.mkdir(parents=True)
+    (source_root / "session_start.sh").write_text("#!/bin/sh\nbody\n")
+    compose = _make_compose()
+
+    report = m.plan_migration(
+        canonical, compose, tier2_hook_source_dirs=[source_root]
+    )
+
+    findings = [f for f in report.findings if f.kind == "lib_hook_file"]
+    assert len(findings) == 1
+    assert findings[0].is_user_edit is False
+    assert findings[0].baseline_present is True
+
+
+def test_plan_migration_tier2_hook_file_user_edit_when_source_diverges(tmp_path):
+    canonical = tmp_path / "ai-hats"
+    hooks_parent = canonical / "library" / "hooks"
+    hooks_parent.mkdir(parents=True)
+    (hooks_parent / "session_start.sh").write_text("#!/bin/sh\nMODIFIED BY USER\n")
+    source_root = tmp_path / "lib" / "hooks"
+    source_root.mkdir(parents=True)
+    (source_root / "session_start.sh").write_text("#!/bin/sh\noriginal\n")
+    compose = _make_compose()
+
+    report = m.plan_migration(
+        canonical, compose, tier2_hook_source_dirs=[source_root]
+    )
+
+    findings = [f for f in report.findings if f.kind == "lib_hook_file"]
+    assert len(findings) == 1
+    assert findings[0].is_user_edit is True
+    assert findings[0].baseline_present is True
 
 
 def test_collect_tier2_ignores_dotfiles_at_parent_level(tmp_path):
@@ -486,6 +566,50 @@ def test_execute_deletions_logs_and_continues_on_permission_error(
     assert "poison.md" in captured.err
     # poison.md still on disk so the user can fix permissions and re-run.
     assert poison.exists()
+
+
+def test_execute_deletions_logs_and_continues_on_rmtree_error(
+    tmp_path, monkeypatch, capsys
+):
+    """HATS-408 second-round review T2: B5 only patched Path.unlink which
+    leaves the shutil.rmtree branch (Tier-2 dir findings) untested. A
+    permission-denied directory must also log + continue, not crash."""
+    canonical = tmp_path / "ai-hats"
+    rules_parent = canonical / "library" / "rules"
+    rules_parent.mkdir(parents=True)
+    poison = rules_parent / "poison_dir"
+    poison.mkdir()
+    (poison / "rule.md").write_text("x\n")
+    survivor_dir = rules_parent / "ok_dir"
+    survivor_dir.mkdir()
+    (survivor_dir / "rule.md").write_text("y\n")
+
+    import shutil as _shutil
+
+    real_rmtree = _shutil.rmtree
+
+    def selective_rmtree(path, *args, **kwargs):
+        if Path(path).name == "poison_dir":
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr("ai_hats.migration_v07.shutil.rmtree", selective_rmtree)
+
+    report = m.MigrationReport(findings=[
+        m.TierFinding(path=poison, tier=2, kind="lib_rule_dir",
+                      is_user_edit=False, baseline_present=True),
+        m.TierFinding(path=survivor_dir, tier=2, kind="lib_rule_dir",
+                      is_user_edit=False, baseline_present=True),
+    ])
+
+    removed = m.execute_deletions(report, canonical)
+
+    assert survivor_dir.absolute() in removed
+    assert poison.absolute() not in removed
+    assert poison.is_dir()  # untouched
+    captured = capsys.readouterr()
+    assert "could not remove" in captured.err
+    assert "poison_dir" in captured.err
 
 
 # ---------- HATS-408 review A4: integration with a real Composer ----------

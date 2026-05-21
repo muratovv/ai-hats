@@ -54,16 +54,24 @@ _TIER1_SUBDIRS: dict[str, str] = {
     "traits": "trait",
     "rules": "rule",
 }
-# Tier-2 mirror parents under canonical/. Each child *directory* is a finding.
-# HATS-408 review (B1): v0.6 materialised hooks alongside rules and skills
-# via the same ``_lib_*_dir`` triple (assembler.py:420). Omitting hooks here
-# would leave a stale ``library/hooks/<name>/`` tree on every v0.6 project
-# that ships a hook, breaking the release-gate contract that ``--force`` is
-# a *total* sweep.
-_TIER2_PARENTS: dict[str, str] = {
+# Tier-2 dir-mode parents — each child *directory* is a finding (rule/skill
+# mirrors were written by v0.6 as whole subtrees: library/rules/<name>/rule.md
+# + metadata.yaml, library/skills/<name>/SKILL.md, etc.).
+_TIER2_PARENTS_DIR_MODE: dict[str, str] = {
     "library/rules": "lib_rule_dir",
     "library/skills": "lib_skill_dir",
-    "library/hooks": "lib_hook_dir",
+}
+
+# Tier-2 file-mode parents — each child *file* with one of the allowed
+# suffixes is a finding (hooks were written by v0.6 as flat scripts:
+# library/hooks/session_start.sh, library/hooks/session_end.py, etc., per
+# HATS-314 commit 2eb329d which migrated ``.agent/hooks/`` flat layout to
+# ``<ai_hats_dir>/library/hooks/`` keeping the flat shape via
+# ``as_dir=False``). HATS-408 second-round review C1: the previous
+# directory-only collector missed the v0.6 shape entirely AND would have
+# swept undocumented user-owned ``library/hooks/<subdir>/`` content.
+_TIER2_PARENTS_FILE_MODE: dict[str, tuple[str, tuple[str, ...]]] = {
+    "library/hooks": ("lib_hook_file", (".sh", ".py")),
 }
 # Files inside Tier-2 mirror dirs that we treat as out-of-band (the marker
 # itself, dotfiles) — they are deleted with the parent dir but never raise
@@ -155,21 +163,40 @@ def collect_tier1(canonical_dir: Path) -> list[tuple[Path, str]]:
 
 
 def collect_tier2(canonical_dir: Path) -> list[tuple[Path, str]]:
-    """Return ``[(mirror_dir_path, kind), ...]`` for every Tier-2 library mirror dir.
+    """Return ``[(path, kind), ...]`` for every Tier-2 library mirror artefact.
 
-    Each direct child *directory* under ``library/rules/`` and
-    ``library/skills/`` is one finding (dotfiles / marker files are ignored —
-    they go away with the parent dir during sweep).
+    Two modes per parent:
+
+    * **Dir mode** (rules/skills): each non-dot child *directory* is one
+      finding (rule_dir, skill_dir).
+    * **File mode** (hooks): each child *file* with an allowed suffix
+      (``.sh`` / ``.py``) is one finding (hook_file) — matches v0.6
+      ``as_dir=False`` flat-script layout.
+
+    Dotfile markers (``.ai-hats-managed``, ``.library_rules``) at the
+    parent level are NOT findings — they survive the sweep as harmless
+    stale pointers; write_canonical owns canonical-side manifest hygiene.
     """
     if not canonical_dir.is_dir():
         return []
     out: list[tuple[Path, str]] = []
-    for subpath, kind in _TIER2_PARENTS.items():
+    for subpath, kind in _TIER2_PARENTS_DIR_MODE.items():
         parent = canonical_dir / subpath
         if not parent.is_dir():
             continue
         for entry in sorted(parent.iterdir()):
             if entry.is_dir() and not entry.name.startswith("."):
+                out.append((entry, kind))
+    for subpath, (kind, suffixes) in _TIER2_PARENTS_FILE_MODE.items():
+        parent = canonical_dir / subpath
+        if not parent.is_dir():
+            continue
+        for entry in sorted(parent.iterdir()):
+            if (
+                entry.is_file()
+                and entry.suffix in suffixes
+                and not entry.name.startswith(".")
+            ):
                 out.append((entry, kind))
     return out
 
@@ -344,6 +371,32 @@ def render_tier2_dir_baseline(
     return "\n----\n".join(parts)
 
 
+def render_tier2_hook_file_baseline(
+    hook_file: Path, hook_source_dirs: list[Path] | None
+) -> str | None:
+    """Reconstruct the v0.6 hook-file baseline by scanning library hook roots.
+
+    v0.6 ``_collect_from_manifest(... as_dir=False)`` copied source library
+    hook scripts verbatim to ``<ai_hats_dir>/library/hooks/<basename>``.
+    For diff baseline we scan ``hook_source_dirs`` (the library_paths'
+    hooks roots) for a matching filename and return its content.
+
+    Returns None when no matching source is found → caller (planner)
+    treats as user-edited (conservative — could be a user-authored
+    script that v0.6 never wrote).
+    """
+    if not hook_source_dirs:
+        return None
+    for source_dir in hook_source_dirs:
+        candidate = source_dir / hook_file.name
+        if candidate.is_file():
+            try:
+                return candidate.read_text()
+            except (OSError, UnicodeDecodeError):
+                return None
+    return None
+
+
 def render_tier2_dir_actual(mirror_dir: Path) -> str:
     """Mirror of ``render_tier2_dir_baseline`` for the on-disk side."""
     actual_files = sorted(
@@ -372,6 +425,7 @@ def plan_migration(
     composition: CompositionResult,
     tier2_source_lookup: dict[str, Path] | None = None,
     project_dir: Path | None = None,
+    tier2_hook_source_dirs: list[Path] | None = None,
 ) -> MigrationReport:
     """Inspect ``canonical_dir`` and classify each finding.
 
@@ -421,14 +475,24 @@ def plan_migration(
         )
 
     for path, kind in collect_tier2(canonical_dir):
-        baseline = render_tier2_dir_baseline(path, tier2_source_lookup)
-        if baseline is None:
-            edited = True
-            baseline_present = False
+        if kind == "lib_hook_file":
+            baseline = render_tier2_hook_file_baseline(path, tier2_hook_source_dirs)
+            if baseline is None:
+                edited = True
+                baseline_present = False
+            else:
+                actual_bytes = _safe_read(path)
+                edited = is_user_edit(actual_bytes, baseline)
+                baseline_present = True
         else:
-            actual = render_tier2_dir_actual(path)
-            edited = _normalize(actual) != _normalize(baseline)
-            baseline_present = True
+            baseline = render_tier2_dir_baseline(path, tier2_source_lookup)
+            if baseline is None:
+                edited = True
+                baseline_present = False
+            else:
+                actual = render_tier2_dir_actual(path)
+                edited = _normalize(actual) != _normalize(baseline)
+                baseline_present = True
         report.findings.append(
             TierFinding(
                 path=path,
