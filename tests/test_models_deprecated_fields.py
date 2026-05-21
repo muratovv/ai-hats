@@ -186,6 +186,92 @@ def test_default_role_heal_explicit_empty_string(tmp_path, capsys):
 # -- Combined stripping + healing --
 
 
+# -- HATS-408 review A2: round-trip preserves user-configured fields --
+
+
+def test_save_after_load_preserves_user_fields(tmp_path, capsys):
+    """migrate-v07 calls cfg.save() to persist healed default_role + strip
+    deprecated keys. cfg.save() must NOT silently drop other user-configured
+    sections (customizations, library_paths, feedback policy, task_prefix,
+    venv_path, manage_gitignore) — that would erase user settings."""
+    import yaml
+
+    path = tmp_path / "ai-hats.yaml"
+    # A "loaded" v0.6 yaml with every reasonable user customisation set.
+    # Note: ``customizations`` wire format is NESTED add/remove (not flat
+    # add_traits) — see OverlayConfig.from_dict/to_dict.
+    path.write_text(
+        "schema_version: 4\n"
+        "provider: claude\n"
+        "ai_hats_dir: .agent/ai-hats\n"
+        "active_role: dev\n"
+        "default_role: dev\n"
+        "library_paths:\n"
+        "  - /opt/extra-lib\n"
+        "  - ./local-lib\n"
+        "manage_gitignore: false\n"
+        "task_prefix: PROJ\n"
+        "customizations:\n"
+        "  dev:\n"
+        "    add:\n"
+        "      traits: [my-trait]\n"
+        "    remove:\n"
+        "      skills: [skill-x]\n"
+        "feedback:\n"
+        "  session_retro:\n"
+        "    policy: always\n"
+    )
+
+    cfg = ProjectConfig.from_yaml(path)
+    capsys.readouterr()  # drain any WARNs
+    # Simulate what migrate-v07 does on the --force path.
+    cfg.save(path)
+
+    saved = yaml.safe_load(path.read_text())
+    assert saved["library_paths"] == ["/opt/extra-lib", "./local-lib"], saved
+    assert saved.get("manage_gitignore") is False, saved
+    assert saved.get("task_prefix") == "PROJ", saved
+    assert "customizations" in saved and "dev" in saved["customizations"], saved
+    assert saved["customizations"]["dev"]["add"]["traits"] == ["my-trait"]
+    assert saved["customizations"]["dev"]["remove"]["skills"] == ["skill-x"]
+    assert "feedback" in saved, saved
+    assert saved["feedback"]["session_retro"]["policy"] == "always"
+    # And the v0.6 ghost is gone.
+    assert "imports_order" not in saved
+
+
+def test_save_after_strip_preserves_round_trip_for_deprecated_yaml(tmp_path, capsys):
+    """End-to-end migrate-v07 yaml normalisation: load v0.6 yaml with
+    imports_order + customizations, save, re-load, save again → byte-stable
+    + user fields survive both passes."""
+    import yaml
+
+    path = tmp_path / "ai-hats.yaml"
+    path.write_text(
+        "schema_version: 4\n"
+        "provider: claude\n"
+        "ai_hats_dir: .agent/ai-hats\n"
+        "active_role: dev\n"
+        "imports_order: role-first\n"
+        "customizations:\n"
+        "  dev:\n"
+        "    add:\n"
+        "      traits: [extra]\n"
+    )
+
+    ProjectConfig.from_yaml(path).save(path)
+    first_bytes = path.read_bytes()
+    capsys.readouterr()
+    ProjectConfig.from_yaml(path).save(path)
+    second_bytes = path.read_bytes()
+
+    assert first_bytes == second_bytes, "second save drifted from first"
+    saved = yaml.safe_load(first_bytes)
+    assert "imports_order" not in saved
+    assert saved["default_role"] == "dev"
+    assert saved["customizations"]["dev"]["add"]["traits"] == ["extra"]
+
+
 def test_strip_and_heal_independent_warns(tmp_path, capsys):
     """A v0.6 yaml that needs both fixes emits BOTH WARNs in a single from_yaml call."""
     path = tmp_path / "ai-hats.yaml"

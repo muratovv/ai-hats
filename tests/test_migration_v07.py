@@ -399,6 +399,167 @@ def test_plan_migration_tier2_safe_when_mirror_matches_source(tmp_path):
     assert tier2[0].baseline_present is True
 
 
+# ---------- HATS-408 review A1: placeholder expansion ----------
+
+
+def test_plan_migration_expands_ai_hats_dir_placeholder_in_baseline(tmp_path):
+    """v0.6 wrote canonical files with `<ai_hats_dir>` already expanded
+    (via expand_path_placeholders). Our baseline render must apply the
+    same expansion before diff or every project with a `<ai_hats_dir>`
+    token in a trait/role gets falsely classified as user-edited."""
+    project = tmp_path / "proj"
+    canonical = project / ".agent" / "ai-hats" / "traits"
+    canonical.mkdir(parents=True)
+    on_disk = canonical.parent / "traits" / "foo.md"
+    # Disk file carries the EXPANDED path (this is what v0.6 wrote).
+    on_disk.write_text("see .agent/ai-hats/sessions/\n")
+
+    # Composition trait_injection carries the LITERAL placeholder.
+    compose = _make_compose(
+        trait_injections={"foo": "see <ai_hats_dir>/sessions/"},
+    )
+
+    # Without project_dir: false-positive user edit.
+    report_unexpanded = m.plan_migration(canonical.parent, compose)
+    finding = next(f for f in report_unexpanded.findings if f.path.name == "foo.md")
+    assert finding.is_user_edit is True
+
+    # With project_dir: baseline expands, diff matches.
+    report_expanded = m.plan_migration(
+        canonical.parent, compose, project_dir=project
+    )
+    finding = next(f for f in report_expanded.findings if f.path.name == "foo.md")
+    assert finding.is_user_edit is False, "expanded baseline should match disk bytes"
+
+
+def test_plan_migration_placeholder_irrelevant_when_token_absent(tmp_path):
+    """Smoke: passing project_dir is harmless when no placeholder is present."""
+    project = tmp_path / "proj"
+    canonical = project / ".agent" / "ai-hats" / "traits"
+    canonical.mkdir(parents=True)
+    on_disk = canonical.parent / "traits" / "foo.md"
+    on_disk.write_text("plain trait body\n")
+
+    compose = _make_compose(trait_injections={"foo": "plain trait body"})
+    report = m.plan_migration(canonical.parent, compose, project_dir=project)
+    finding = next(f for f in report.findings if f.path.name == "foo.md")
+    assert finding.is_user_edit is False
+
+
+# ---------- HATS-408 review B5: permission-denied resilience ----------
+
+
+def test_execute_deletions_logs_and_continues_on_permission_error(
+    tmp_path, monkeypatch, capsys
+):
+    """A read-only file mid-sweep must not crash the loop — partial
+    deletion + no commit would leave the project half-migrated."""
+    canonical = tmp_path / "ai-hats"
+    (canonical / "traits").mkdir(parents=True)
+    poison = canonical / "traits" / "poison.md"
+    poison.write_text("x\n")
+    survivor = canonical / "traits" / "ok.md"
+    survivor.write_text("y\n")
+
+    real_unlink = Path.unlink
+
+    def selective_unlink(self, *args, **kwargs):
+        if self.name == "poison.md":
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", selective_unlink)
+
+    report = m.MigrationReport(findings=[
+        m.TierFinding(path=poison, tier=1, kind="trait",
+                      is_user_edit=False, baseline_present=True),
+        m.TierFinding(path=survivor, tier=1, kind="trait",
+                      is_user_edit=False, baseline_present=True),
+    ])
+    removed = m.execute_deletions(report, canonical)
+
+    # Loop continued: survivor was removed; poison logged.
+    assert survivor.absolute() in removed
+    assert poison.absolute() not in removed
+    captured = capsys.readouterr()
+    assert "could not remove" in captured.err
+    assert "poison.md" in captured.err
+    # poison.md still on disk so the user can fix permissions and re-run.
+    assert poison.exists()
+
+
+# ---------- HATS-408 review A4: integration with a real Composer ----------
+
+
+def test_render_priorities_integrates_with_real_composer(tmp_path):
+    """A4: catch drift between our baseline renderer and what a live
+    Composer + LibraryResolver actually produce. Uses a hand-built
+    minimal library (role + 1 trait + 1 rule) — no ai-hats install
+    needed — and asserts the renderer yields non-trivial, well-shaped
+    bytes for every Tier-1 kind."""
+    from ai_hats.composer import Composer
+    from ai_hats.resolver import LibraryResolver
+
+    # Minimal library layout matching the library/{traits,rules,roles}
+    # spec the resolver expects.
+    lib = tmp_path / "lib"
+    role_dir = lib / "roles" / "minimal"
+    rule_dir = lib / "rules" / "demo_rule"
+    trait_dir = lib / "traits" / "demo_trait"
+    for d in (role_dir, rule_dir, trait_dir):
+        d.mkdir(parents=True)
+
+    (role_dir / "config.yaml").write_text(
+        "name: minimal\n"
+        "injection: role-text-marker\n"
+        "priorities:\n  - Reliability\n  - Cleanliness\n"
+        "composition:\n"
+        "  traits: [demo_trait]\n"
+        "  rules: [demo_rule]\n"
+        "  skills: []\n"
+    )
+    (trait_dir / "config.yaml").write_text(
+        "name: demo_trait\n"
+        "injection: trait-text-marker\n"
+        "composition:\n  traits: []\n  rules: []\n  skills: []\n"
+    )
+    (rule_dir / "config.yaml").write_text("name: demo_rule\n")
+    (rule_dir / "rule.md").write_text("rule-text-marker\n")
+
+    resolver = LibraryResolver([lib])
+    composer = Composer(resolver)
+    result = composer.compose("minimal")
+
+    # Real composer produces what we expect → renderers can build baselines.
+    priorities_md = m.render_priorities_md(result.priorities)
+    role_md = m.render_role_md(result.role_injection, result.overlay_injection)
+    trait_md = m.render_trait_md(result.trait_injections.get("demo_trait", ""))
+    rule_md = m.render_rule_md(
+        next((r.injection for r in result.rules if r.name == "demo_rule"), "")
+    )
+
+    assert priorities_md is not None
+    assert priorities_md.startswith("# Priorities\n")
+    assert "Reliability" in priorities_md
+    assert role_md == "role-text-marker\n"
+    assert trait_md == "trait-text-marker\n"
+    assert rule_md == "rule-text-marker\n"
+
+    # Round-trip through plan_migration on disk content that matches
+    # baseline → no user edits.
+    canonical = tmp_path / "ai-hats"
+    (canonical / "traits").mkdir(parents=True)
+    (canonical / "rules").mkdir()
+    (canonical / "priorities.md").write_text(priorities_md)
+    (canonical / "role.md").write_text(role_md)
+    (canonical / "traits" / "demo_trait.md").write_text(trait_md)
+    (canonical / "rules" / "demo_rule.md").write_text(rule_md)
+
+    report = m.plan_migration(canonical, result)
+    assert report.user_edits == [], \
+        f"unexpected user-edit findings from real-composer baseline: {report.user_edits}"
+
+
 # ---------- yaml change detection ----------
 
 
