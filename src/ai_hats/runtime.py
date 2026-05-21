@@ -21,6 +21,7 @@ from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
 from .models import LifecycleEvent
 from .observe import AuditWriter, Session, SessionManager, SidecarTracer, TraceTag
+from .paths import hooks_dir as _hooks_dir
 from .providers import get_provider
 from .worktree import IsolationMode, WorktreeManager
 
@@ -502,6 +503,18 @@ class WrapRunner:
         self.assembler = Assembler(project_dir)
         self.session_mgr = SessionManager(project_dir)
 
+    def _make_session_hooks_runner(self) -> HooksRunner:
+        """Build the session lifecycle ``HooksRunner`` against the canonical
+        hooks dir (``<ai_hats_dir>/library/hooks/``).
+
+        Extracted from ``run()`` for HATS-412 testability — the original
+        inline construction hard-coded the legacy ``.agent/hooks/`` path
+        which has been empty since HATS-314 deleted that tree, so
+        lifecycle hooks silently never fired. Having a single helper
+        means future call-sites can't drift back to the legacy path.
+        """
+        return HooksRunner(_hooks_dir(self.project_dir), self.project_dir)
+
     def run(
         self,
         provider_name: str,
@@ -581,11 +594,9 @@ class WrapRunner:
             "AI_HATS_ROLE": active_role,
         }
 
-        # Run hooks: session_start
-        hooks_runner = HooksRunner(
-            self.project_dir / ".agent" / "hooks",
-            self.project_dir,
-        )
+        # Run hooks: session_start. See _make_session_hooks_runner for the
+        # canonical-path rationale (HATS-412).
+        hooks_runner = self._make_session_hooks_runner()
         hooks_runner.run(LifecycleEvent.SESSION_START, env=env)
         session.log_trace(TraceTag.SYS, "hooks.session_start completed")
 
