@@ -373,8 +373,14 @@ def _migration_guidance(tier: int, kind: str, path_name: str) -> str:
         bucket = {
             "lib_rule_dir": "rules",
             "lib_skill_dir": "skills",
-            "lib_hook_dir": "hooks",
+            "lib_hook_file": "hooks",
         }.get(kind, "rules")
+        if kind == "lib_hook_file":
+            return (
+                f"v0.6 library-hook leftover. Move custom logic to "
+                f"[bold].agent/ai-hats/library/usage/hooks/{path_name}[/] "
+                "or delete after confirming."
+            )
         return (
             f"Move overrides to [bold].agent/ai-hats/library/usage/{bucket}/{path_name}/...[/]."
         )
@@ -399,6 +405,22 @@ def _empty_composition():
         hooks=HooksConfig(),
         injections=[],
     )
+
+
+def _collect_hook_source_dirs(asm) -> list[Path]:
+    """Return library hook root dirs from every layer of the assembler's library_paths.
+
+    HATS-408 C1: a v0.6 ``library/hooks/<basename>`` flat-file finding is
+    classified as safe-to-delete when its bytes match a source library hook
+    of the same basename. Scanning all library layers in order avoids the
+    user having to point at a particular one.
+    """
+    out: list[Path] = []
+    for lib in getattr(asm, "library_paths", []):
+        hooks_root = Path(lib) / "hooks"
+        if hooks_root.is_dir():
+            out.append(hooks_root)
+    return out
 
 
 def _build_tier2_source_lookup(asm) -> dict[str, Path]:
@@ -541,9 +563,14 @@ def migrate_v07(force: bool, no_commit: bool, check_branches: bool):
     else:
         composition = _empty_composition()
         source_lookup = {}
+    hook_source_dirs = _collect_hook_source_dirs(asm)
 
     report = plan_migration(
-        canonical_dir, composition, source_lookup, project_dir=project_dir
+        canonical_dir,
+        composition,
+        source_lookup,
+        project_dir=project_dir,
+        tier2_hook_source_dirs=hook_source_dirs,
     )
 
     # --check-branches is additive: surface a warning, then continue to the
