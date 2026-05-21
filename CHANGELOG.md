@@ -51,6 +51,19 @@ since the latest tag lives under **Unreleased** until the next release.
   `.last_backup` pointers and dropped `PROFILE_FILE`.
 
 ### Fixed
+- **HATS-411** — PTY shutdown is now bounded — the `_pty_spawn` finally
+  block used to call `ptyprocess.wait()` (blocking `os.waitpid(pid, 0)`),
+  which hung forever when a Claude/libuv child got stuck in macOS
+  exit-pending state (`ps` STAT `?Es`, JS heap released but libuv
+  handles still open). Field repro on 2026-05-20: 7 simultaneously-stuck
+  panes across Claude 2.1.126/138/139/143. New `ai_hats.pty_shutdown`
+  module escalates grace → SIGTERM-pgroup → SIGKILL → `WNOHANG` reap;
+  worst case the zombie remains but the parent returns and the pane is
+  recoverable. Timings overridable via `AI_HATS_PTY_GRACE_S` (default
+  5.0) / `AI_HATS_PTY_TERM_S` (default 2.0). Also emits DECRST
+  mouse-tracking reset on the parent's outer stdout after shutdown, so
+  raw SGR mouse reports do not leak into the surrounding shell when
+  the child crashed without disabling them.
 - **HATS-412** — `WrapRunner` lifecycle `HooksRunner` now reads from the
   canonical `<ai_hats_dir>/library/hooks/` instead of the legacy
   `.agent/hooks/` path. The bug was latent since HATS-314's layout
