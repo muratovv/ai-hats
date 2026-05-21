@@ -137,6 +137,26 @@ def test_collect_tier2_finds_mirror_dirs(tmp_path):
     assert kinds["backlog-manager"] == "lib_skill_dir"
 
 
+def test_collect_tier2_finds_hooks_mirror(tmp_path):
+    """HATS-408 review B1: v0.6 also materialised library/hooks/<name>/.
+
+    Without this finder, a v0.6 project shipping a hook keeps a stale
+    ``library/hooks/<name>/`` tree after ``--force`` — breaks the
+    release-gate contract that the sweep is total.
+    """
+    canonical = tmp_path / "ai-hats"
+    hooks_parent = canonical / "library" / "hooks"
+    hooks_parent.mkdir(parents=True)
+    hook_dir = hooks_parent / "pre-commit-attachments"
+    hook_dir.mkdir()
+    (hook_dir / "pre-commit").write_text("#!/bin/sh\nexit 0\n")
+
+    found = m.collect_tier2(canonical)
+
+    by_name = {p.name: k for p, k in found}
+    assert by_name == {"pre-commit-attachments": "lib_hook_dir"}
+
+
 def test_collect_tier2_ignores_dotfiles_at_parent_level(tmp_path):
     canonical = tmp_path / "ai-hats"
     parent = canonical / "library" / "rules"
@@ -442,6 +462,51 @@ def test_execute_deletions_never_touches_user_rules(tmp_path):
     m.execute_deletions(report, canonical)
 
     assert sacred.exists()
+
+
+def test_execute_deletions_unlinks_symlink_without_following_target(tmp_path):
+    """HATS-408 review B2: a malicious symlink finding must be unlinked,
+    not followed — the link target (e.g. /etc/passwd) must survive."""
+    canonical = tmp_path / "ai-hats"
+    (canonical / "traits").mkdir(parents=True)
+    outside = tmp_path / "outside_target.txt"
+    outside.write_text("DO NOT DELETE ME\n")
+    link = canonical / "traits" / "foo.md"
+    link.symlink_to(outside)
+    report = m.MigrationReport(findings=[
+        m.TierFinding(path=link, tier=1, kind="trait",
+                      is_user_edit=False, baseline_present=True),
+    ])
+
+    m.execute_deletions(report, canonical)
+
+    # Symlink itself gone.
+    assert not link.exists() and not link.is_symlink()
+    # Outside target survived.
+    assert outside.read_text() == "DO NOT DELETE ME\n"
+
+
+def test_execute_deletions_does_not_rmtree_through_symlinked_dir(tmp_path):
+    """A symlinked Tier-2 mirror dir must be unlinked, not rmtree'd into."""
+    canonical = tmp_path / "ai-hats"
+    mirror_parent = canonical / "library" / "rules"
+    mirror_parent.mkdir(parents=True)
+    outside_dir = tmp_path / "external_lib"
+    outside_dir.mkdir()
+    (outside_dir / "important.md").write_text("KEEP\n")
+    link = mirror_parent / "fake_rule"
+    link.symlink_to(outside_dir)
+    report = m.MigrationReport(findings=[
+        m.TierFinding(path=link, tier=2, kind="lib_rule_dir",
+                      is_user_edit=False, baseline_present=True),
+    ])
+
+    m.execute_deletions(report, canonical)
+
+    assert not link.exists() and not link.is_symlink()
+    # External dir + its contents untouched.
+    assert outside_dir.is_dir()
+    assert (outside_dir / "important.md").read_text() == "KEEP\n"
 
 
 def test_execute_deletions_idempotent_on_missing_paths(tmp_path):

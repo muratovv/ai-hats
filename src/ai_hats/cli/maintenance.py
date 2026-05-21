@@ -192,7 +192,6 @@ def update():
 
     from .. import __version__ as old_version
     from ..assembler import AssemblyError
-    from ..models import ProjectConfig
 
     console.print(f"Current version: [bold]{old_version}[/]")
     # HATS-318: surface which interpreter we're updating. When the wrapper has
@@ -211,15 +210,19 @@ def update():
     before_skills: set[str] = set()
 
     if config_path.exists():
-        config = ProjectConfig.from_yaml(config_path)
+        # HATS-408 review (R1): we used to call ``ProjectConfig.from_yaml``
+        # AND ``_assembler`` (which itself calls ``from_yaml``), firing the
+        # yaml-load WARNs (deprecated-field strip, default_role heal) twice
+        # per ``self update``. Build the Assembler once and read its config.
+        asm = _assembler(project_dir)
+        cfg = asm.project_config
         # HATS-407: active_role is the runtime cache (empty until first
         # session). For a freshly-installed project where only default_role
         # is set, we still want auto-bump to run so migrations and the
         # canonical aggregator refresh. Fall back to default_role for the
         # bump-trigger decision.
-        active_role = config.active_role or config.default_role or None
+        active_role = cfg.active_role or cfg.default_role or None
         if active_role:
-            asm = _assembler(project_dir)
             before_rules, before_skills = _snapshot_composition(asm)
 
     # 2. Install — wrapped in a Rich spinner so the terminal isn't silent
@@ -367,7 +370,11 @@ def _migration_guidance(tier: int, kind: str, path_name: str) -> str:
             "[bold].agent/ai-hats/library/usage/{traits,rules,skills,roles}/...[/]."
         )
     if tier == 2:
-        bucket = "rules" if kind == "lib_rule_dir" else "skills"
+        bucket = {
+            "lib_rule_dir": "rules",
+            "lib_skill_dir": "skills",
+            "lib_hook_dir": "hooks",
+        }.get(kind, "rules")
         return (
             f"Move overrides to [bold].agent/ai-hats/library/usage/{bucket}/{path_name}/...[/]."
         )
@@ -459,14 +466,27 @@ def migrate_v07(force: bool, no_commit: bool, check_branches: bool):
     """One-shot safe migration from v0.6 materialised layout to v0.7 per-session compose.
 
     Inspects every v0.6 on-disk artefact (priorities.md, role.md, traits/*.md,
-    rules/*.md, skills_index.md, library/{rules,skills}/<name>/), diffs each
-    vs a freshly composed baseline, refuses with guidance on any user edit
-    (--force bypasses with WARN per file). On success: deletes stale files,
-    regenerates the v0.7 imports.md aggregator, persists yaml hardening
-    (deprecated-field strip + default_role heal), commits in a single atomic
-    envelope.
+    rules/*.md, skills_index.md, library/{rules,skills,hooks}/<name>/), diffs
+    each vs a freshly composed baseline, refuses with guidance on any user
+    edit (--force bypasses with WARN per file). On success: deletes stale
+    files, regenerates the v0.7 imports.md aggregator, persists yaml
+    hardening (deprecated-field strip + default_role heal), commits in a
+    single atomic envelope.
 
     Idempotent — re-running on a clean v0.7 project is a no-op.
+
+    Exit codes:
+      0 — success (migrated, or already-migrated no-op).
+      1 — refused: user edits detected on disk; re-run with --force after
+          relocating the content (use the guidance the command prints).
+      2 — yaml unreadable or invalid (cannot parse ai-hats.yaml at all).
+      3 — git stage/commit failure. Filesystem deletions and staging are
+          intact; resolve the git error (e.g. set user.email) and either
+          commit the staged tree manually or roll back with
+          ``git restore --staged . && git checkout -- .``.
+      4 — write_canonical failure after the sweep (rare). The deletions
+          have already happened; recover with ``git checkout -- .`` and
+          re-run.
     """
     import subprocess
 

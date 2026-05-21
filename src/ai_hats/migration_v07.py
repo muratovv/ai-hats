@@ -54,9 +54,15 @@ _TIER1_SUBDIRS: dict[str, str] = {
     "rules": "rule",
 }
 # Tier-2 mirror parents under canonical/. Each child *directory* is a finding.
+# HATS-408 review (B1): v0.6 materialised hooks alongside rules and skills
+# via the same ``_lib_*_dir`` triple (assembler.py:420). Omitting hooks here
+# would leave a stale ``library/hooks/<name>/`` tree on every v0.6 project
+# that ships a hook, breaking the release-gate contract that ``--force`` is
+# a *total* sweep.
 _TIER2_PARENTS: dict[str, str] = {
     "library/rules": "lib_rule_dir",
     "library/skills": "lib_skill_dir",
+    "library/hooks": "lib_hook_dir",
 }
 # Files inside Tier-2 mirror dirs that we treat as out-of-band (the marker
 # itself, dotfiles) — they are deleted with the parent dir but never raise
@@ -549,31 +555,48 @@ def execute_deletions(report: MigrationReport, canonical_dir: Path) -> list[Path
     targets so the caller can produce an accurate audit). Never touches
     ``user-rules/`` — defence in depth on top of the planner already not
     classifying it as a finding.
+
+    HATS-408 review (B2 — symlink safety):
+
+    * Uses lexical ``.absolute()`` instead of ``.resolve()`` so a malicious
+      symlink at the finding (e.g. ``traits/foo.md`` → ``/etc/passwd``)
+      cannot cause us to delete an out-of-tree file.
+    * Symlink findings are removed with ``Path.unlink`` (removes the link,
+      not the target), regardless of file-vs-dir kind.
+    * ``shutil.rmtree`` is only invoked on real directories — never on a
+      symlink-to-dir (would otherwise wipe the link's external target).
+    * The ``user-rules`` defence check is also lexical, so a symlink under
+      a Tier-1 subdir whose link target happens to escape canonical_dir
+      still gets matched + skipped if it lexically lives under user-rules,
+      and otherwise gets its symlink (not target) unlinked.
     """
     removed: list[Path] = []
-    canonical_resolved = canonical_dir.resolve()
-    user_rules = canonical_resolved / "user-rules"
+    canonical_absolute = canonical_dir.absolute()
+    user_rules = canonical_absolute / "user-rules"
     for path in report.paths_to_delete:
+        absolute = path.absolute()
+        # Defence in depth: never delete anything lexically inside user-rules/.
         try:
-            resolved = path.resolve()
-        except OSError:
-            continue
-        # Defence in depth: never delete anything inside user-rules/.
-        try:
-            resolved.relative_to(user_rules)
+            absolute.relative_to(user_rules)
             continue
         except ValueError:
             pass
-        if not resolved.exists():
+        # ``exists()`` follows symlinks → returns False for broken links.
+        # Check both so we don't silently skip a broken symlink finding.
+        if not absolute.exists() and not absolute.is_symlink():
             continue
-        if resolved.is_dir():
-            shutil.rmtree(resolved)
+        if absolute.is_symlink():
+            # Unlink the link itself, never the target — covers both
+            # symlink-to-file and symlink-to-dir cases uniformly.
+            absolute.unlink()
+        elif absolute.is_dir():
+            shutil.rmtree(absolute)
         else:
-            resolved.unlink(missing_ok=True)
-        removed.append(resolved)
+            absolute.unlink(missing_ok=True)
+        removed.append(absolute)
         # Sweep empty parent dirs, but stop at canonical_dir itself.
-        parent = resolved.parent
-        while parent != canonical_resolved and canonical_resolved in parent.parents:
+        parent = absolute.parent
+        while parent != canonical_absolute and canonical_absolute in parent.parents:
             try:
                 next(parent.iterdir())
                 break
