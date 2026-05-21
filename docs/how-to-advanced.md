@@ -240,7 +240,7 @@ Branch naming convention: `<type>/<TICKET-ID>` (e.g. `feat/HATS-200`, `fix/HATS-
 ### 2.5 Pitfalls
 
 - **Uncommitted work in a worktree is NOT protected.** A worktree is a filesystem directory; parallel sessions, cleanup hooks, or `git worktree remove --force` can destroy it without warning, and there is **no recovery** for uncommitted changes. Commit at every meaningful checkpoint (every passing test run, every completed sub-task).
-- **Don't `cp` skill files manually.** After editing `library/{core,usage}/skills/*/SKILL.md`, run `ai-hats self bump` — it re-copies all skills into `.claude/skills/` and `.agent/skills/`. Hand-copying generates noisy permission entries on every new worktree.
+- **Don't `cp` skill files manually.** After editing `library/{core,usage}/skills/*/SKILL.md`, run `ai-hats self bump` — it re-copies all skills into `.claude/skills/` and `.agent/ai-hats/library/skills/`. Hand-copying generates noisy permission entries on every new worktree.
 - **Don't create a worktree from inside a worktree.** `ai-hats wt create` from a linked worktree is blocked. Always `cd` back to the main repo first.
 - **Don't mix manual `wt create` with `task transition execute` from the main repo.** If you created a worktree by hand and want the task to use it, `cd` into the worktree first, then transition. Otherwise the transition errors out with a clear remediation message.
 - **Don't forget to `cd` back to the project dir before merge / discard** — the auto-detect of the active worktree depends on cwd; from the main repo, pass the branch explicitly.

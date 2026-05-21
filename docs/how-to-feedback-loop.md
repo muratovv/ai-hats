@@ -196,7 +196,7 @@ Two layers of "no silent failure":
 
 ### Running manually (foreground, for debugging)
 
-A "session" is one invocation of `ai-hats` or `ai-hats agent <role>` — its trace dir lives in `.gitlog/session_<id>/`. Full breakdown of what runtime writes during a session: ARCHITECTURE.md (Session lifecycle).
+A "session" is one invocation of `ai-hats` or `ai-hats agent <role>` — its trace dir lives in `.agent/ai-hats/sessions/runs/session_<id>/`. Full breakdown of what runtime writes during a session: ARCHITECTURE.md (Session lifecycle).
 
 ```bash
 ai-hats reflect session --session <id>                # foreground

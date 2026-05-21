@@ -18,9 +18,9 @@ metrics:
     cache_creation: 12000
 
 artifacts:
-  audit: ".gitlog/session_20260406-034154-1/audit.md"
-  transcript: ".gitlog/session_20260406-034154-1/transcript.txt"
-  metrics: ".gitlog/session_20260406-034154-1/metrics.json"
+  audit: ".agent/ai-hats/sessions/runs/session_20260406-034154-1/audit.md"
+  transcript: ".agent/ai-hats/sessions/runs/session_20260406-034154-1/transcript.txt"
+  metrics: ".agent/ai-hats/sessions/runs/session_20260406-034154-1/metrics.json"
   trace: null  # consumed during audit finalize
 
 links:
