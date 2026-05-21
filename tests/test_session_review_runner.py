@@ -79,6 +79,63 @@ def test_check_allowed_keys_rejects_facts(tmp_path: Path) -> None:
         runner._check_allowed_keys({"summary": "x", "metrics": {}})
 
 
+# ---- _extract_yaml / _strip_code_fence (HATS-419) ----
+#
+# Session-reviewer often wraps the YAML body in a markdown code-fence inside
+# the BEGIN/END delimiters. The parser must strip the fence; otherwise
+# yaml.safe_load chokes on the leading "```yaml" character. Plain YAML must
+# pass through unchanged.
+
+
+def _wrap_in_delims(body: str) -> str:
+    from ai_hats.retro.session_review_runner import (
+        REVIEW_DELIM_START,
+        REVIEW_DELIM_END,
+    )
+    return f"junk before\n{REVIEW_DELIM_START}\n{body}\n{REVIEW_DELIM_END}\njunk after"
+
+
+def test_extract_yaml_passes_bare_yaml_unchanged(tmp_path: Path) -> None:
+    runner = SessionReviewRunner(tmp_path)
+    body = "summary: hi\nobservations: []\n"
+    transcript = _wrap_in_delims(body)
+    out = runner._extract_yaml(transcript)
+    # Round-trip through yaml to confirm parseability (the actual contract).
+    assert yaml.safe_load(out) == {"summary": "hi", "observations": []}
+
+
+def test_extract_yaml_strips_fenced_with_yaml_lang_tag(tmp_path: Path) -> None:
+    runner = SessionReviewRunner(tmp_path)
+    body = "```yaml\nsummary: hi\nobservations: []\n```"
+    transcript = _wrap_in_delims(body)
+    out = runner._extract_yaml(transcript)
+    assert not out.startswith("```")
+    assert yaml.safe_load(out) == {"summary": "hi", "observations": []}
+
+
+def test_extract_yaml_strips_fence_without_lang_tag(tmp_path: Path) -> None:
+    runner = SessionReviewRunner(tmp_path)
+    body = "```\nsummary: hi\nobservations: []\n```"
+    transcript = _wrap_in_delims(body)
+    out = runner._extract_yaml(transcript)
+    assert not out.startswith("```")
+    assert yaml.safe_load(out) == {"summary": "hi", "observations": []}
+
+
+def test_strip_code_fence_handles_trailing_blank_lines(tmp_path: Path) -> None:
+    """Defensive: model may emit trailing whitespace after closing fence."""
+    runner = SessionReviewRunner(tmp_path)
+    body = "```yaml\nsummary: hi\n```\n\n"
+    out = runner._strip_code_fence(body)
+    assert yaml.safe_load(out) == {"summary": "hi"}
+
+
+def test_strip_code_fence_no_fence_returns_input(tmp_path: Path) -> None:
+    runner = SessionReviewRunner(tmp_path)
+    body = "summary: hi\nobservations: []\n"
+    assert runner._strip_code_fence(body) == body
+
+
 # ---- _validate_analysis_shape ----
 
 
