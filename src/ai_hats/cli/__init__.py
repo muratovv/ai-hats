@@ -190,6 +190,7 @@ self_group.add_command(assembly.init)
 self_group.add_command(assembly.bump)
 self_group.add_command(assembly.clean)
 self_group.add_command(maintenance.update)
+self_group.add_command(maintenance.migrate_v07)
 main.add_command(self_group)
 
 # List
