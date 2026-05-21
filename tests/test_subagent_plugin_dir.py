@@ -93,7 +93,7 @@ def test_claude_materialize_runtime_skills_returns_plugin_dir_arg(tmp_path):
     )
 
     provider = ClaudeProvider()
-    args = provider.materialize_runtime_skills(tmp_path, result)
+    args = provider.materialize_runtime_skills(tmp_path, result, "test-sid")
     try:
         assert args[0] == "--plugin-dir"
         plugin_dir = Path(args[1])
@@ -116,7 +116,7 @@ def test_gemini_materialize_runtime_skills_is_noop(tmp_path):
         hooks=HooksConfig(),
         injections=[],
     )
-    assert GeminiProvider().materialize_runtime_skills(tmp_path, result) == []
+    assert GeminiProvider().materialize_runtime_skills(tmp_path, result, "test-sid") == []
 
 
 def test_subagent_runner_threads_plugin_dir_through_cmd(

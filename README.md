@@ -152,6 +152,14 @@ The shipped library splits into `library/core/` (engine fundament) and `library/
 
 Advanced flows — custom pipeline steps, isolated worktrees, parallel sub-agents — live in [5].
 
+## Update notification
+
+When the installed `ai-hats` SHA lags upstream `master`, a three-line **Update banner** appears under the **Session summary** at the end of each interactive session. It tells you the current and latest short SHAs, suggests `ai-hats update`, and prints the opt-out env var on the dim third line.
+
+The probe is non-blocking: a detached background subprocess fires at session start and caches the result for 24h under `<ai_hats_dir>/.cache/update-check.json`. The banner reads whatever's currently in the cache (stale-while-revalidate) — first probe results land in the next session, not the current one.
+
+Suppress both probe and banner with `AI_HATS_NO_UPDATE_CHECK=1` (useful for CI / scripted invocations). Term definitions — see [1].
+
 ## Architecture
 
 Roles compose from traits + rules + skills, a flat model, a task state machine, multi-provider injection. The full tour of the internal model, directory layout, skill format, and a sample `config.yaml` — see [7].

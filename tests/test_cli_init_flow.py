@@ -49,7 +49,6 @@ def test_set_creates_project(cli_project):
     assert (project / "CLAUDE.md").exists()
     assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
     assert (project / ".agent" / "ai-hats" / "imports.md").exists()
-    assert len((project / ".agent" / "ai-hats" / "imports.md").read_text()) > 100
 
 
 @pytest.mark.parametrize("role", ALL_ROLES, ids=ALL_ROLES)
@@ -63,7 +62,6 @@ def test_set_all_roles(cli_project, role):
     assert (project / "CLAUDE.md").exists()
     assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
     assert (project / ".agent" / "ai-hats" / "imports.md").exists()
-    assert len((project / ".agent" / "ai-hats" / "imports.md").read_text()) > 100
 
 
 def test_status_after_set(cli_project):
@@ -96,7 +94,6 @@ def test_bump_after_set(cli_project):
     aggregator_after = (project / ".agent" / "ai-hats" / "imports.md").read_text()
     assert prompt_before == prompt_after
     assert aggregator_before == aggregator_after
-    assert len(aggregator_after) > 100
 
 
 def test_init_unknown_role_fails_loud(cli_project):
@@ -282,17 +279,18 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
 
     project, runner = cli_project
 
-    # Init + set base role
+    # Init + set base role. HATS-407: CLI writes default_role, not active_role.
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
     original_claude = (project / "CLAUDE.md").read_text()
     original_profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
-    assert original_profile.active_role == "assistant"
+    assert original_profile.default_role == "assistant"
+    assert original_profile.active_role == ""  # runtime-only field
 
     # Build override for a different role (simulate what WrapRunner.run does)
     asm = Assembler(project)
     provider = ClaudeProvider()
     result = asm.composer.compose("sre")
-    args, env = provider.build_override(project, result, None)
+    args, env = provider.build_session_prompt(project, result, "test-sid")
 
     # Shadow prompt created
     assert args[0] == "--system-prompt-file"
@@ -304,7 +302,8 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
     # Project files NOT modified
     assert (project / "CLAUDE.md").read_text() == original_claude
     after_profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
-    assert after_profile.active_role == "assistant"
+    assert after_profile.default_role == "assistant"
+    assert after_profile.active_role == ""
 
     override_path.unlink()
 
@@ -322,11 +321,12 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
     asm = Assembler(project)
     provider = ClaudeProvider()
 
-    # Simulate 3 parallel override sessions for different roles
+    # Simulate 3 parallel override sessions for different roles. Each session
+    # gets its own session_id (HATS-294 isolation contract).
     overrides = {}
     for role in ("sre", "go-dev", "architect"):
         result = asm.composer.compose(role)
-        args, _ = provider.build_override(project, result, None)
+        args, _ = provider.build_session_prompt(project, result, f"test-sid-{role}")
         override_path = Path(args[1])
         overrides[role] = {
             "path": override_path,
@@ -352,12 +352,11 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
         or "ARCHITECT" in overrides["architect"]["content"]
     )
 
-    # Project CLAUDE.md is a scaffold pointing at the aggregator; aggregator
-    # carries the active role's content.
+    # HATS-294: project CLAUDE.md still imports the canonical aggregator;
+    # aggregator now contains only user-rules (empty in this fixture).
+    # Per-session role content lives in the override temp files asserted above.
     claude_scaffold = (project / "CLAUDE.md").read_text()
     assert "@./.agent/ai-hats/imports.md" in claude_scaffold
-    aggregator_content = (project / ".agent" / "ai-hats" / "imports.md").read_text()
-    assert "@./role.md" in aggregator_content
 
     # Cleanup
     for info in overrides.values():
@@ -380,9 +379,9 @@ def test_gemini_override_creates_session_rules_dir(cli_project):
 
     # Build two parallel overrides
     result_a = asm.composer.compose("judge")
-    _, env_a = provider.build_override(project, result_a, None)
+    _, env_a = provider.build_session_prompt(project, result_a, "test-sid-a")
     result_b = asm.composer.compose("go-dev")
-    _, env_b = provider.build_override(project, result_b, None)
+    _, env_b = provider.build_session_prompt(project, result_b, "test-sid-b")
 
     dir_a = Path(env_a["GEMINI_CLI_PROJECT_RULES_PATH"])
     dir_b = Path(env_b["GEMINI_CLI_PROJECT_RULES_PATH"])
@@ -399,9 +398,11 @@ def test_gemini_override_creates_session_rules_dir(cli_project):
         dir_b / "00_MANDATORY_ROLE.md"
     ).read_text()
 
-    # GEMINI.md untouched
-    gemini_content = (project / "GEMINI.md").read_text()
-    assert "assistant" in gemini_content.lower() or "PRIMARY" in gemini_content
+    # HATS-407: `ai-hats config set` is yaml-only — ./GEMINI.md is not
+    # materialized until the runtime set_role path runs (lazy bootstrap
+    # on first session). The per-session rules dir captures the composed
+    # role independently, so this test no longer asserts ./GEMINI.md
+    # state.
 
     shutil.rmtree(dir_a)
     shutil.rmtree(dir_b)
@@ -435,6 +436,91 @@ def test_migrate_cleanup_skips_when_already_clean(tmp_path):
 
     (tmp_path / ".agent").mkdir()
     assert Assembler._cleanup_obsolete_files(tmp_path) == []
+
+
+def test_migrate_cleanup_sweeps_stale_last_backup_pointer(tmp_path):
+    """HATS-407: stale `.last_backup` pointer file and its referenced
+    tmp backup dir (created by the retired `Assembler._backup()` helper
+    via ``tempfile.mkdtemp(prefix="ai-hats-backup-")``) are swept by
+    `_cleanup_obsolete_files`.
+
+    Symmetric closure of removing the `_backup()/_restore()` chain:
+    projects upgrading from v0.6 still have orphan pointer files left by
+    pre-HATS-407 `set_role` calls; bump should wipe them in one shot.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from ai_hats.assembler import Assembler
+
+    (tmp_path / "ai-hats.yaml").write_text(
+        "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
+    )
+    canon = tmp_path / ".agent" / "ai-hats"
+    canon.mkdir(parents=True)
+
+    # Real-world fixture: use the same prefix the retired _backup()
+    # helper produced so the sweeper's safety gate
+    # (basename startswith "ai-hats-backup-") matches.
+    backup_payload = Path(tempfile.mkdtemp(prefix="ai-hats-backup-"))
+    (backup_payload / "marker").write_text("payload")
+
+    pointer = canon / ".last_backup"
+    pointer.write_text(str(backup_payload))
+
+    actions = Assembler._cleanup_obsolete_files(tmp_path)
+
+    assert not pointer.exists(), "pointer file must be swept"
+    assert not backup_payload.exists(), "referenced backup dir must be removed"
+    assert any(".last_backup" in a for a in actions), actions
+
+    # Idempotent on second call.
+    assert Assembler._cleanup_obsolete_files(tmp_path) == []
+
+
+def test_migrate_cleanup_sweeps_stale_last_backup_as_directory(tmp_path):
+    """If `.last_backup` exists as a directory (legacy v3 shape pre-tracker
+    migration), `_cleanup_obsolete_files` removes the directory."""
+    from ai_hats.assembler import Assembler
+
+    (tmp_path / "ai-hats.yaml").write_text(
+        "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
+    )
+    canon = tmp_path / ".agent" / "ai-hats"
+    canon.mkdir(parents=True)
+    backup_dir = canon / ".last_backup"
+    backup_dir.mkdir()
+    (backup_dir / "stale.txt").write_text("stale")
+
+    actions = Assembler._cleanup_obsolete_files(tmp_path)
+    assert not backup_dir.exists()
+    assert any(".last_backup" in a for a in actions)
+
+
+def test_migrate_cleanup_ignores_non_tmp_pointer_target(tmp_path):
+    """A pointer that names a non-/tmp/ path must NOT cause rmtree (defense
+    against corrupt pointers being able to redirect cleanup at user files).
+    Pointer file itself is still removed."""
+    from ai_hats.assembler import Assembler
+
+    (tmp_path / "ai-hats.yaml").write_text(
+        "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
+    )
+    canon = tmp_path / ".agent" / "ai-hats"
+    canon.mkdir(parents=True)
+
+    user_dir = tmp_path / "user-precious"
+    user_dir.mkdir()
+    (user_dir / "important.txt").write_text("DO NOT DELETE")
+
+    pointer = canon / ".last_backup"
+    pointer.write_text(str(user_dir))
+
+    Assembler._cleanup_obsolete_files(tmp_path)
+
+    # Pointer swept; user content preserved.
+    assert not pointer.exists()
+    assert (user_dir / "important.txt").exists()
 
 
 def test_update_command_uses_force_reinstall():

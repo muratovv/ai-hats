@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sys
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -355,63 +356,18 @@ class FeedbackConfig(_YamlModel):
 # ----- ProjectConfig -----
 
 
+# HATS-408: yaml keys that landed in some v0.6 projects but were never
+# wired (or were reverted) before the v0.7 cut. Stripped *before* pydantic
+# strict validation so `extra="forbid"` does not fail-loud on every command
+# the user runs on a v0.6 project. Add new ghosts here; never remove — this
+# is the migration scar tissue, not a feature flag list.
+_DEPRECATED_PROJECT_FIELDS: frozenset[str] = frozenset({
+    "imports_order",  # HATS-290 planned but reverted; ghost in some v0.6 yamls.
+})
+
+
 class ProjectConfigError(ValueError):
     """Raised when ai-hats.yaml fails schema validation."""
-
-
-# HATS-290 — outer section ordering of `.agent/ai-hats/imports.md`.
-# Names match the canonical file/dir prefix the renderer uses to bucket paths.
-IMPORTS_SECTION_NAMES: tuple[str, ...] = (
-    "priorities",
-    "traits",
-    "role",
-    "rules",
-    "user-rules",
-    "skills_index",
-)
-
-# Named outer-order presets. Authors can pick a preset string or supply a full
-# permutation list under `imports_order:` in ai-hats.yaml. `None` (the default)
-# means "use the `default` preset" — kept as an explicit alias so omitting the
-# field never carries semantic weight beyond "no opinion".
-IMPORTS_ORDER_PRESETS: dict[str, list[str]] = {
-    # Identity → constraints → references. Today's hardcoded behaviour.
-    "default": [
-        "priorities",
-        "traits",
-        "role",
-        "rules",
-        "user-rules",
-        "skills_index",
-    ],
-    # Role-first: identity-driven. "Who am I → goals → behaviour → constraints".
-    "role-first": [
-        "role",
-        "priorities",
-        "traits",
-        "rules",
-        "user-rules",
-        "skills_index",
-    ],
-    # Constraints-first: safety-driven. Loads rules even if context truncates.
-    "constraints-first": [
-        "rules",
-        "user-rules",
-        "priorities",
-        "role",
-        "traits",
-        "skills_index",
-    ],
-    # Anthropic-style: persona → behaviour → goals → constraints → tools.
-    "anthropic": [
-        "role",
-        "traits",
-        "priorities",
-        "rules",
-        "user-rules",
-        "skills_index",
-    ],
-}
 
 
 class ProjectConfig(_YamlModel):
@@ -421,7 +377,6 @@ class ProjectConfig(_YamlModel):
       - Project: provider, library_paths, ai_hats_dir
       - Role: active_role, default_role, customizations
       - Feedback: session_retro
-      - Composition: imports_order
       - Meta: schema_version (4 = current)
     """
 
@@ -448,10 +403,6 @@ class ProjectConfig(_YamlModel):
     feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
     manage_gitignore: bool = True
     task_prefix: str = "TASK"
-    # HATS-290: outer section order of imports.md.
-    # None → use the "default" preset. str → preset name. list[str] → custom
-    # permutation of IMPORTS_SECTION_NAMES.
-    imports_order: str | list[str] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -491,43 +442,6 @@ class ProjectConfig(_YamlModel):
 
         return normalize_venv_path(value)
 
-    @field_validator("imports_order")
-    @classmethod
-    def _validate_imports_order(cls, value: Any) -> Any:
-        if value is None:
-            return None
-        if isinstance(value, str):
-            if value not in IMPORTS_ORDER_PRESETS:
-                allowed = ", ".join(sorted(IMPORTS_ORDER_PRESETS))
-                raise ValueError(
-                    f"unknown imports_order preset {value!r} — allowed: {allowed}"
-                )
-            return value
-        if isinstance(value, list):
-            if not all(isinstance(item, str) for item in value):
-                raise ValueError("imports_order list entries must be strings")
-            allowed_set = set(IMPORTS_SECTION_NAMES)
-            seen: set[str] = set()
-            for item in value:
-                if item not in allowed_set:
-                    raise ValueError(
-                        f"unknown imports_order section {item!r} — "
-                        f"allowed: {', '.join(IMPORTS_SECTION_NAMES)}"
-                    )
-                if item in seen:
-                    raise ValueError(f"duplicate imports_order section {item!r}")
-                seen.add(item)
-            missing = allowed_set - seen
-            if missing:
-                raise ValueError(
-                    f"imports_order list missing sections: "
-                    f"{', '.join(sorted(missing))}"
-                )
-            return value
-        raise ValueError(
-            "imports_order must be null, a preset name, or a list of section names"
-        )
-
     @classmethod
     def from_yaml(cls, path: Path) -> ProjectConfig:
         if not path.exists():
@@ -547,10 +461,55 @@ class ProjectConfig(_YamlModel):
                 f"Invalid {path}:\n  - ai_hats_dir: field required "
                 "(add 'ai_hats_dir: .agent/ai-hats' to ai-hats.yaml)"
             )
+        # HATS-408: drop known-deprecated ghosts BEFORE strict pydantic
+        # validation so v0.6 projects do not crash every ai-hats command
+        # before `self migrate-v07` can even run. Mutates `data` in-place
+        # (the healed shape is what we'd want to persist on a save anyway).
+        cls._strip_deprecated_fields(data, path)
+        # HATS-408: heal empty default_role from active_role on load. Any
+        # ai-hats command that needs an "effective role" already falls back
+        # to (active_role or default_role); persisting the heal makes the
+        # downstream contract — default_role is the source of truth — true.
+        cls._heal_default_role(data, path)
         try:
             return cls.model_validate(data)
         except ValidationError as e:
             raise ProjectConfigError(_format_project_config_error(path, e)) from e
+
+    @staticmethod
+    def _strip_deprecated_fields(data: dict[str, Any], path: Path) -> None:
+        """Remove known-deprecated keys from `data` in place; one stderr WARN
+        per stripped field. Idempotent — silent if no deprecated keys present.
+
+        Channel: plain stderr (not `logging`) — fires at yaml-load, before
+        any logging config is in place, and must be user-visible regardless
+        of log level. Format mirrors `print(..., file=sys.stderr)` used by
+        HATS-407 cleanup paths.
+        """
+        for field in sorted(_DEPRECATED_PROJECT_FIELDS):
+            if field in data:
+                data.pop(field)
+                print(
+                    f"WARN: {path}: dropping deprecated field {field!r} "
+                    f"(no longer supported; remove from yaml to silence).",
+                    file=sys.stderr,
+                )
+
+    @staticmethod
+    def _heal_default_role(data: dict[str, Any], path: Path) -> None:
+        """If `default_role` is empty/missing and `active_role` is set, copy
+        `active_role` into `default_role`. Single stderr WARN per heal.
+        Idempotent — silent if both already set or both already empty.
+        """
+        active = data.get("active_role") or ""
+        default = data.get("default_role") or ""
+        if active and not default:
+            data["default_role"] = active
+            print(
+                f"WARN: {path}: healed default_role := active_role "
+                f"({active!r}).",
+                file=sys.stderr,
+            )
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -581,8 +540,6 @@ class ProjectConfig(_YamlModel):
             d["manage_gitignore"] = False
         if self.task_prefix != "TASK":
             d["task_prefix"] = self.task_prefix
-        if self.imports_order is not None:
-            d["imports_order"] = self.imports_order
         return d
 
     def save(self, path: Path) -> None:
@@ -738,6 +695,35 @@ class WorkLogEntry(_YamlModel):
     message: str = ""
 
 
+_DIGEST_LEN = 12
+_DIGEST_RE = re.compile(rf"^[0-9a-f]{{{_DIGEST_LEN}}}$")
+
+
+class Attachment(_YamlModel):
+    """Manifest entry for a file under tasks/<ID>/attachments/.
+
+    The on-disk blob lives in the task's ``attachments/`` directory; this
+    record carries the metadata. ``digest`` is the first 12 hex chars of the
+    blob's SHA-256 — full hash would balloon ``task.yaml`` and tax every
+    agent that loads the card. 48 bits gives a birthday-collision bound
+    around 2^24 attachments, vastly beyond any realistic per-task scale.
+    """
+
+    name: str = ""
+    digest: str = ""
+    added: str = ""
+    note: str = ""
+
+    @field_validator("digest")
+    @classmethod
+    def _check_digest(cls, value: str) -> str:
+        if value and not _DIGEST_RE.match(value):
+            raise ValueError(
+                f"digest must be {_DIGEST_LEN} lowercase hex chars (got {value!r})"
+            )
+        return value
+
+
 class TaskCard(_YamlModel):
     """YAML task card for state machine.
 
@@ -765,6 +751,7 @@ class TaskCard(_YamlModel):
             "folded_into",
             "tags",
             "work_log",
+            "attachments",
             "final_state",
             "resolution",
             "created",
@@ -789,6 +776,7 @@ class TaskCard(_YamlModel):
     folded_into: str = ""
     tags: list[str] = Field(default_factory=list)
     work_log: list[WorkLogEntry] = Field(default_factory=list)
+    attachments: list[Attachment] = Field(default_factory=list)
     final_state: str = ""
     resolution: str = ""
     created: str = ""
@@ -888,6 +876,8 @@ class TaskCard(_YamlModel):
             d["see_also"] = self.see_also
         if self.folded_into:
             d["folded_into"] = self.folded_into
+        if self.attachments:
+            d["attachments"] = [a.to_dict() for a in self.attachments]
         # Round-trip unknown fields verbatim. Known fields take precedence in
         # case of accidental collision (extras should never contain known keys
         # since _capture_extras filters them out, but we defend against direct

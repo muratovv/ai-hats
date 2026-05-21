@@ -164,10 +164,9 @@ def test_init_then_set_role_no_double_blocks(tmp_path: Path) -> None:
     assert INJECTION_START not in body
     assert INJECTION_END not in body
 
-    # T3 publish still runs.
+    # HATS-294: aggregator now lists only user-rules (empty in this fixture).
     aggregator = project / ".agent" / "ai-hats" / "imports.md"
     assert aggregator.exists()
-    assert "@./role.md" in aggregator.read_text()
 
 
 def test_set_role_on_legacy_project_migrates_to_v3(tmp_path: Path) -> None:
@@ -198,8 +197,8 @@ def test_set_role_on_legacy_project_migrates_to_v3(tmp_path: Path) -> None:
     assert "old inline content" not in body
     assert PUBLISH_AGGREGATOR_START in body
     assert "@./.agent/ai-hats/imports.md" in body
-    # Role content lives in the canonical layer + aggregator.
-    assert "Role X." in (project / ".agent" / "ai-hats" / "role.md").read_text()
+    # HATS-294: role content is composed per-session, not written to disk.
+    assert "Role X." in asm.composer.compose("r1").role_injection
 
 
 @pytest.mark.parametrize("idem_calls", [1, 2, 3])

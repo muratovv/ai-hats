@@ -87,6 +87,11 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
     (legacy_hooks / "guard.sh").chmod(0o755)
 
     settings = project / ".claude" / "settings.json"
+    # HATS-294 dropped the permanent ``.claude/skills`` export; the
+    # assembler's legacy-claude cleanup may rmdir an empty ``.claude/``
+    # during the test's init phase, so the parent isn't guaranteed to
+    # exist by the time we write settings.json. Create it explicitly.
+    settings.parent.mkdir(parents=True, exist_ok=True)
     settings.write_text(json.dumps({
         "hooks": {
             "PreToolUse": [{

@@ -11,6 +11,7 @@ disk for traceability.
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -130,7 +131,11 @@ def proposal_create(
         related_hypotheses=related_list,
         failed_session_id=failed_session_id,
     )
-    store.create(p)
+    try:
+        store.create(p)
+    except FileExistsError as e:
+        console.print(f"[red]Error[/]: {e}")
+        sys.exit(1)
     if as_json:
         click.echo(json.dumps({"id": new_id, "session": session_id}))
     else:
