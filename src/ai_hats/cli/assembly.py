@@ -603,6 +603,12 @@ def bump():
     HATS-407: no longer re-applies the role — per-session compose
     (HATS-294) handles framework content in memory. ``bump`` is now a
     migration / refresh command for on-disk artefacts.
+
+    HATS-408 v0.6 gate: refuses on projects whose canonical MANAGED
+    manifest still lists framework files (``priorities.md`` / ``role.md``
+    / ``traits/*`` / ``rules/*`` / ``skills_index.md``). The error
+    message points at ``ai-hats self migrate-v07`` which is the
+    user-edit-aware sweep. Run that first, then re-run bump.
     """
     asm = _assembler()
     result = asm.bump()
