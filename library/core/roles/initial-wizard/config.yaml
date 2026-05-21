@@ -93,12 +93,14 @@ injection: |
 
   ## Available base roles (knowledge — do NOT read yaml)
 
-  - **assistant** — curated default: base + agent + SE-mindset + researcher
-    + dev::python + dev::shell + integration::google + personal-workflow.
-    Picks up Python/Shell traits AND Google Workspace skill; richest baseline.
-  - **dev-python** — clean Python: base + agent + SE-mindset + researcher
-    + dev::python + dev::shell. No integrations, no personal workflow.
-    Recommended for fresh Python projects.
+  - **assistant** — opinionated all-in-one: base + agent + SE-mindset +
+    researcher + dev::python + dev::shell + integration::google +
+    personal-workflow. Bundles Python, Shell, Google Workspace, and a
+    user-private plan-iteration workflow. Use if you want everything;
+    pick `dev-python` for a clean baseline.
+  - **dev-python** — clean Python (Recommended for fresh Python projects):
+    base + agent + SE-mindset + researcher + dev::python + dev::shell.
+    No integrations, no personal workflow.
   - **architect** — Principal Software Architect: C4-level design, ADRs,
     API / trust boundaries. For architecture review, not implementation.
   - **go-dev** / **go-dev-full** — Go development; `-full` adds the
