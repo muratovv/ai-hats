@@ -201,7 +201,7 @@ library/
     initial_injections/   initial-wizard, reflect-all, reflect-role
     templates/      claude/CLAUDE.md.template (provider scaffold)
   usage/                             # curated content catalog — opt-in
-    roles/          assistant, architect, sre, go-dev, go-dev-full
+    roles/          assistant, dev-python, maintainer, architect, sre, go-dev, go-dev-full
     traits/         trait-se-mindset, trait-researcher-mindset, skill-engineer, dev::python, dev::shell, dev::go-*, env::proxmox
     rules/          dev_rule_secure_coding, env_rule_proxmox_infra
     skills/         55+ skills (golang-*, terraform, ansible, observability, system-design, ...)

@@ -40,10 +40,10 @@ ai-hats answers this with two things:
 - **Deep reflection after every session** — a structured retrospective with a factual layer (metrics, files, commits) plus an LLM narrative that delivers verdicts on active hypotheses and votes on improvement proposals. Patterns observed across 3–5 sessions become new rules and skills, and the loop closes.
 
 ```
-roles/assistant ── trait-base + trait-agent + dev::python
-                   ├── rules: git_workflow, tdd
-                   ├── skills: backlog-manager, git-mastery
-                   └── injection → GEMINI.md / CLAUDE.md
+roles/dev-python ── trait-base + trait-agent + dev::python + dev::shell
+                    ├── rules: git_workflow, tdd
+                    ├── skills: backlog-manager, git-mastery
+                    └── injection → GEMINI.md / CLAUDE.md
 ```
 
 > Names and core terms (role, session, reflect, backlog, …) — see [1].

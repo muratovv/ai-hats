@@ -8,11 +8,11 @@ composition:
     - trait-base
     - trait-agent
     - trait-se-mindset
-    - skill-engineer
+    - trait-researcher-mindset
+    - personal-workflow
+    - integration::google
     - dev::python
     - dev::shell
-    - ai-hats-maintainer
-    - trait-researcher-mindset
   rules: []
   skills: []
   hooks:
