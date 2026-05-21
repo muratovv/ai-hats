@@ -155,6 +155,30 @@ def test_scan_skips_backup_dirs(tmp_path: Path) -> None:
     assert refs == []
 
 
+def test_scan_skips_changelog_md(tmp_path: Path) -> None:
+    """CHANGELOG.md is by convention historical record — must NOT be auto-healed.
+
+    Regression guard for HATS-416: three consecutive ``ai-hats self bump``
+    runs rewrote the HATS-412 CHANGELOG entry that DESCRIBED the legacy-path
+    bug, turning "canonical X instead of legacy Y" into "canonical X instead
+    of legacy X" — loss of meaning. The fix excludes CHANGELOG.md from
+    `_walk_candidate_files`. Counter-test confirms a sibling .md file with
+    the same legacy substring IS still healed (skip is filename-specific,
+    not content-specific).
+    """
+    p = _init_project(tmp_path)
+    (p / "CHANGELOG.md").write_text(
+        "## [0.6.0]\n- HATS-412 — fix references to `.agent/hooks/` legacy path.\n"
+    )
+    (p / "OTHER.md").write_text(
+        "Hook lives at `.agent/hooks/foo.py` and is documented.\n"
+    )
+    refs = scan_external_refs(p)
+    ref_files = {r.file.name for r in refs}
+    assert "CHANGELOG.md" not in ref_files, "CHANGELOG.md must be skipped"
+    assert "OTHER.md" in ref_files, "non-CHANGELOG .md files must still scan"
+
+
 def test_scan_picks_up_multiple_extensions(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
     (p / "a.md").write_text("`.agent/hooks/a`\n")
