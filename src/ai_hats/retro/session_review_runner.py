@@ -307,8 +307,33 @@ class SessionReviewRunner:
         if s >= 0:
             e = transcript.find(REVIEW_DELIM_END, s + len(REVIEW_DELIM_START))
             if e > s:
-                return transcript[s + len(REVIEW_DELIM_START):e].strip()
-        return transcript
+                body = transcript[s + len(REVIEW_DELIM_START):e].strip()
+                return self._strip_code_fence(body)
+        return self._strip_code_fence(transcript)
+
+    @staticmethod
+    def _strip_code_fence(body: str) -> str:
+        """Strip a surrounding markdown code-fence (```yaml ... ``` or ``` ... ```).
+
+        Defensive: the session-reviewer prompt asks for raw YAML between the
+        REVIEW_DELIM markers, but the model often wraps it in a markdown
+        code-fence. Stripping in the parser is deterministic; prompt
+        instructions are not. Plain YAML (no fence) passes through unchanged.
+        """
+        if not body:
+            return body
+        stripped = body.strip()
+        if not stripped.startswith("```"):
+            return body
+        lines = stripped.splitlines()
+        # First line is fence opener (```yaml, ``` or ```<lang>); drop it.
+        # Walk from the end to find the closing fence; drop trailing blanks too.
+        inner = lines[1:]
+        while inner and not inner[-1].strip():
+            inner.pop()
+        if inner and inner[-1].strip() == "```":
+            inner.pop()
+        return "\n".join(inner).strip()
 
     @staticmethod
     def _check_allowed_keys(raw: dict[str, Any]) -> None:
