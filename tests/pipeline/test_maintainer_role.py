@@ -105,8 +105,13 @@ def test_maintainer_injection_has_role_header() -> None:
         # Glossary-first + numbered-refs
         "Glossary-first",
         "Numbered-refs",
-        # D2 diagrams pointer
+        # D2 diagrams — promoted reference_d2_label_syntax content
         "Diagrams (d2)",
+        "Multiline labels",
+        "Theme overrides",
+        "Palette slot map",
+        "_palette.d2",
+        "Source Code Pro",
         # Architectural defaults (design preferences)
         "Strict typed contracts",
         "Immutable state",

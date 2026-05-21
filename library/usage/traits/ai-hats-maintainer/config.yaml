@@ -64,14 +64,43 @@ injection: |
     named code-artifact in the doc against source.
 
   ### Diagrams (d2)
-  - Source: `docs/assets/diagrams/*.d2` + brand-light palette.
-  - Render: `bash docs/assets/diagrams/render.sh [<stem>]`.
-  - Commit both `.d2` source and `.svg` artifact; do NOT commit `.png`.
-  - Multiline label notes: `\n` for plain nodes; `|md ... |` block syntax
-    is reliable only for `shape: callout` (fragile on plain nodes in sketch
-    mode). Theme: `theme-overrides` for both light and dark `theme-id`
-    standalone (NOT `dark-theme-overrides` unless paired with alternates).
-  - Full toolchain + palette spec: `CONTRIBUTING.md#diagrams`.
+  Sources live at `docs/assets/diagrams/*.d2`; the brand-light palette is
+  shared via `docs/assets/diagrams/_palette.d2` (imported in every diagram
+  as `vars: @./_palette`). Render with `bash docs/assets/diagrams/render.sh
+  [<stem>]` — the script auto-extracts Source Code Pro Medium / SemiBold /
+  Medium-Italic statics to `$TMPDIR/ai-hats-fonts/` on first run. Commit
+  both `.d2` source and `.svg` artifact; do NOT commit `.png`. Full
+  toolchain + shape conventions: `CONTRIBUTING.md#diagrams`.
+
+  **Multiline labels.** Inside default or double-quoted label strings,
+  `\n` works for plain nodes:
+
+      node: First line\nSecond line
+      node2: "First line\nSecond line"
+
+  Single-quoted strings do NOT interpret escapes — `'foo\nbar'` renders the
+  literal `\n` characters. The `|md ... |` block syntax is reliable for
+  `shape: callout` but fragile on plain nodes in sketch mode (labels often
+  collapse to a single line) — prefer `\n` for plain nodes.
+
+  **Theme overrides.** `vars.d2-config.theme-overrides` applies to both
+  light and dark `theme-id` standalone. The separate `dark-theme-overrides`
+  field applies only when a light theme is the default and a dark theme is
+  set as an alternate — using it for `theme-id: 200` alone silently leaves
+  the Catppuccin Mocha base in place (HATS-348 first attempt).
+
+  **Palette slot map** (16 slots from `_palette.d2`): `N1`–`N7` neutrals
+  (text → cream background `#faf2e6`), `B1`–`B6` navy spectrum (box fills,
+  arrow strokes), `AA2/AA4/AA5` brand-orange variants (`AA4 = #e8632b`,
+  used for cylinder/oval storage shapes), `AB4/AB5` cream/beige (soft
+  accent parallelograms).
+
+  **Containers + nested direction.** `direction: <inner>` inside a container
+  can be silently ignored by the ELK layout engine when it conflicts with
+  the outer direction. HATS-348 backlog FSMs were attempted as one diagram
+  with three containers → unreadable; resolved by splitting into 3 separate
+  `.d2` files. Prefer **separate files** for independent diagrams when more
+  than ~10 nodes are involved.
 
   ### Release flow
   - SemVer, breaking-change protocol, manual release checklist in
