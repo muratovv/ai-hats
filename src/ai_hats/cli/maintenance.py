@@ -478,7 +478,6 @@ def migrate_v07(force: bool, no_commit: bool, check_branches: bool):
         execute_deletions,
         plan_migration,
     )
-    from ..models import ProjectConfig
 
     project_dir = _project_dir()
     config_path = project_dir / "ai-hats.yaml"
@@ -489,8 +488,10 @@ def migrate_v07(force: bool, no_commit: bool, check_branches: bool):
         )
         sys.exit(2)
 
-    # Capture raw yaml shape BEFORE from_yaml mutates anything; we use the
-    # diff to report which yaml-level changes the user is about to commit.
+    # Capture raw yaml shape so detect_yaml_changes can tell us what would
+    # change on disk when we re-save. ``Assembler.__init__`` calls from_yaml
+    # itself (with strip/heal); we let that be the single source of WARNs
+    # so the user sees each diagnostic exactly once per invocation.
     try:
         raw = yaml.safe_load(config_path.read_text()) or {}
     except yaml.YAMLError as e:
@@ -498,17 +499,17 @@ def migrate_v07(force: bool, no_commit: bool, check_branches: bool):
         sys.exit(2)
 
     try:
-        cfg = ProjectConfig.from_yaml(config_path)
-    except Exception as e:  # ProjectConfigError or pydantic surface
+        asm = _assembler(project_dir)
+    except Exception as e:  # noqa: BLE001 — ProjectConfigError or pydantic surface
         console.print(f"[red]migrate-v07: invalid yaml[/]: {e}")
         sys.exit(2)
+    cfg = asm.project_config
 
     yaml_changes = detect_yaml_changes(raw, cfg)
     canonical_dir = project_dir / cfg.ai_hats_dir
 
     effective_role = cfg.active_role or cfg.default_role
-    asm = _assembler(project_dir) if effective_role else None
-    if asm is not None and effective_role:
+    if effective_role:
         try:
             composition = asm.composer.compose(
                 effective_role, overlay=asm._get_overlay(effective_role)
@@ -593,12 +594,8 @@ def migrate_v07(force: bool, no_commit: bool, check_branches: bool):
     # regeneration via write_canonical so the resulting MANAGED manifest
     # reflects post-sweep reality.
     removed = execute_deletions(report, canonical_dir)
-    if asm is None:
-        # No effective role — still re-run write_canonical to materialise
-        # the (likely empty) imports.md + MANAGED manifest in v0.7 shape.
-        asm = _assembler(project_dir)
     try:
-        asm.write_canonical(composition)
+        asm.write_canonical()
     except Exception as e:  # noqa: BLE001 — partial state is recoverable from git
         console.print(f"[red]migrate-v07: write_canonical failed[/]: {e}")
         sys.exit(4)

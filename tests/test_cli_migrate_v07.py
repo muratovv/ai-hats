@@ -110,7 +110,7 @@ class _FakeAssembler:
     def _get_overlay(self, _role):
         return None
 
-    def write_canonical(self, _result) -> None:
+    def write_canonical(self) -> None:
         canonical = self.project_dir / ".agent" / "ai-hats"
         canonical.mkdir(parents=True, exist_ok=True)
         (canonical / "user-rules").mkdir(exist_ok=True)
