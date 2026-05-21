@@ -16,6 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
 from .composer import Composer, CompositionResult
 from .resolver import LibraryResolver
 from .models import (
@@ -664,6 +666,13 @@ class Assembler:
         # ``migrate-v07 --force`` (WARN-per-overwrite + atomic commit).
         self._refuse_on_v06_layout()
 
+        # HATS-413: persist any HATS-408 in-memory yaml healing
+        # (deprecated-field strip, default_role := active_role) so the
+        # WARN doesn't re-fire on every subsequent CLI invocation. Read-
+        # only commands (task show, status) intentionally do NOT call
+        # this — the "no rewrite on read" principle holds for them.
+        self._normalize_yaml()
+
         self._cleanup_obsolete_files(self.project_dir)
         provider = get_provider(self.project_config.provider)
         # HATS-397: heal stale legacy-path refs FIRST, while user files are
@@ -1263,6 +1272,43 @@ class Assembler:
             "edits or consciously overwrite them with `--force`. Bypassing "
             "this gate would silently delete those files."
         )
+
+    def _normalize_yaml(self) -> None:
+        """Persist HATS-408 in-memory yaml healing to disk.
+
+        ``ProjectConfig.from_yaml`` strips deprecated fields
+        (``imports_order``) and heals ``default_role := active_role``
+        in memory only — by design, so read-only commands like ``task
+        show`` or ``status`` never surprise the user with a yaml
+        rewrite. The cost is that the WARN fires on EVERY load until
+        something explicitly persists. HATS-413: ``bump()`` (also the
+        target of the ``self update`` auto-bump chain) now persists
+        the heal once, so the WARN doesn't re-fire forever.
+
+        Drift detection peeks at the raw yaml dict (pre-load shape) and
+        compares to the in-memory ``self.project_config``:
+
+        * Deprecated key present in raw → strip is pending.
+        * Raw ``default_role`` empty while in-memory non-empty → heal
+          was applied and needs persisting.
+
+        Idempotent: no-op on already-normalized yaml.
+        """
+        if not self.config_path.exists():
+            return
+        try:
+            raw = yaml.safe_load(self.config_path.read_text()) or {}
+        except yaml.YAMLError:
+            # Broken yaml — the next load surfaces the error loudly; we
+            # don't try to "fix" what we can't parse.
+            return
+        from .models import _DEPRECATED_PROJECT_FIELDS
+
+        has_deprecated = any(k in raw for k in _DEPRECATED_PROJECT_FIELDS)
+        raw_default = raw.get("default_role") or ""
+        heal_pending = bool(self.project_config.default_role) and not raw_default
+        if has_deprecated or heal_pending:
+            self.project_config.save(self.config_path)
 
     @staticmethod
     def _read_canonical_manifest(path: Path) -> set[str]:
