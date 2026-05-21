@@ -1,17 +1,24 @@
-"""Assembly engine — backup, clean, copy, update, rollback, verify."""
+"""Assembly engine — yaml-only role mutations + per-session compose.
+
+HATS-407 trimmed the legacy backup / clean / copy_components / verify
+side-effects: with HATS-294's per-session compose, framework content
+never lands in the canonical tree, so the heavy assembly cycle became
+dead-work. ``set_role`` is now a session-bootstrap helper for runtime;
+the CLI surface uses :meth:`Assembler.set_default_role` which mutates
+only ``ai-hats.yaml``. ``Assembler.rollback`` and its backup helpers
+were removed — git owns user recovery.
+"""
 
 from __future__ import annotations
 
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
-from .composer import Composer, CompositionResult, ResolvedComponent
+from .composer import Composer, CompositionResult
 from .resolver import LibraryResolver
 from .models import (
-    IMPORTS_ORDER_PRESETS,
     ComponentType,
     ProjectConfig,
     SkillMetadata,
@@ -30,14 +37,12 @@ from .providers import (
     PUBLISH_AGGREGATOR_END,
     PUBLISH_AGGREGATOR_START,
     Provider,
-    _extract_frontmatter_description,
     get_provider,
 )
 
 
 AGENT_DIR = ".agent"
 PROJECT_CONFIG = "ai-hats.yaml"
-PROFILE_FILE = "profile.json"  # legacy, used only for backup compat
 GITHOOKS_DIR = ".githooks"
 GITHOOKS_MANIFEST = ".ai-hats-manifest"
 GITHOOKS_DISPATCHER_MARKER = "AI-HATS-DISPATCHER-MARKER"
@@ -50,11 +55,6 @@ MANAGED_SKILLS_MARKER = ".ai-hats-managed"
 CANONICAL_DIR = "ai-hats"
 CANONICAL_MANIFEST = "MANAGED"
 USER_RULES_SUBDIR = "user-rules"
-
-
-def _md_table_escape(text: str) -> str:
-    """Escape pipe characters and collapse newlines for a single markdown table cell."""
-    return text.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
 
 
 def _builtin_library_layers() -> list[Path]:
@@ -275,6 +275,13 @@ class Assembler:
 
         Each entry: (relative path, human reason). Idempotent — missing
         files are skipped silently.
+
+        HATS-407: sweeps stale ``.last_backup`` pointer files (and the
+        ``/tmp/ai-hats-backup-*`` dirs they reference) left behind by the
+        retired ``Assembler._backup()`` chain. Both the v3 legacy
+        location (``.agent/.last_backup``) and the v4 location
+        (``<ai_hats_dir>/.last_backup``) are swept so upgrades from any
+        prior version land in a clean state.
         """
         obsolete = [
             (".agent/backlog.md", "removed legacy backlog.md (unified into STATE.md)"),
@@ -289,6 +296,38 @@ class Assembler:
             else:
                 target.unlink()
             actions.append(reason)
+
+        # HATS-407: sweep stale .last_backup pointer + referenced /tmp dir.
+        # Local import avoids a top-level cycle with paths.py at module load.
+        from .paths import last_backup_path as _last_backup_path
+
+        for backup_ref in (
+            project_dir / ".agent" / ".last_backup",  # pre-v4 location
+            _last_backup_path(project_dir),           # v4 location
+        ):
+            if not backup_ref.exists():
+                continue
+            # Pointer-file form: text content names a /tmp backup dir
+            # created by the retired _backup() helper, which used
+            # ``tempfile.mkdtemp(prefix="ai-hats-backup-")``. Defensively
+            # restrict rmtree to absolute paths whose basename carries
+            # that prefix — a corrupt or hand-edited pointer cannot
+            # redirect cleanup at the user's project tree.
+            if backup_ref.is_file():
+                try:
+                    tmp_target = Path(backup_ref.read_text().strip())
+                    if (
+                        tmp_target.is_absolute()
+                        and tmp_target.exists()
+                        and tmp_target.name.startswith("ai-hats-backup-")
+                    ):
+                        shutil.rmtree(tmp_target, ignore_errors=True)
+                except (OSError, ValueError):
+                    pass
+                backup_ref.unlink(missing_ok=True)
+            elif backup_ref.is_dir():
+                shutil.rmtree(backup_ref, ignore_errors=True)
+            actions.append(f"swept stale {backup_ref.relative_to(project_dir)} (HATS-407)")
         return actions
 
     def init(
@@ -419,9 +458,25 @@ class Assembler:
         if self.project_config.manage_gitignore:
             self._ensure_gitignore_entry()
 
-        # Apply role if specified
+        # HATS-407: write the user-rules aggregator at init time so direct
+        # ``claude`` in project_dir has a stable entry-point even before the
+        # first ai-hats session. Sweeps stale v0.6 framework files via the
+        # manifest. No role-content materialization (per-session compose
+        # handles that — HATS-294).
+        self.write_canonical()
+
+        # Apply role if specified — HATS-407: persists default_role in yaml
+        # and installs HATS-088 git hooks for the chosen role. NO heavy
+        # set_role chain (backup/clean/copy/verify is gone post-294).
         if role:
-            self.set_role(role)
+            self.project_config.default_role = role
+            self.project_config.save(self.config_path)
+            # Install git hooks only when a git repo is present; otherwise
+            # `.git/hooks/` does not exist and `_install_git_hooks` would
+            # need a no-op guard. Cheap pre-check keeps the path tidy.
+            if (self.project_dir / ".git").exists():
+                result = self.composer.compose(role, overlay=self._get_overlay(role))
+                self._install_git_hooks(result)
 
     def _get_overlay(self, role_name: str):
         """Get overlay for a role from project config, or None."""
@@ -430,12 +485,60 @@ class Assembler:
             return None
         return overlay
 
-    def set_role(self, role_name: str, provider_name: str | None = None) -> CompositionResult:
-        """Apply a role to the project. Full assembly cycle.
+    def set_default_role(
+        self, role_name: str, provider_name: str | None = None
+    ) -> CompositionResult:
+        """CLI-surface: set the project's ``default_role`` in ``ai-hats.yaml``.
 
-        Fails loudly on unknown role/provider: the project must not end up in
-        a half-applied state where the config is saved but no components are
-        materialized.
+        HATS-407: ``ai-hats config set -r X`` reduces to a yaml field write.
+        Validation is a dry-run compose (so unknown roles / missing components
+        surface before the yaml is touched) but NO canonical materialization,
+        backup, copy, or hook-install side-effects happen here.
+
+        ``active_role`` is intentionally untouched — it is a runtime cache
+        managed by :meth:`set_role` on the session-bootstrap path.
+
+        Idempotent: when both target values already match the current yaml,
+        no write occurs.
+
+        Returns the CompositionResult so the caller (CLI) can display
+        rule/skill counts to the user.
+        """
+        self._validate_role(role_name)
+        if provider_name is not None:
+            self._validate_provider(provider_name)
+
+        # Dry-run compose to surface unknown components before yaml write.
+        result = self.composer.compose(role_name, overlay=self._get_overlay(role_name))
+
+        cfg = self.project_config
+        new_provider = provider_name or cfg.provider
+        if cfg.default_role == role_name and cfg.provider == new_provider:
+            return result  # idempotent no-op
+
+        cfg.default_role = role_name
+        cfg.provider = new_provider
+        cfg.save(self.config_path)
+        return result
+
+    def set_role(self, role_name: str, provider_name: str | None = None) -> CompositionResult:
+        """Runtime-bootstrap: sync ``active_role`` + materialize per-session deps.
+
+        Called by :class:`Runtime` on the first session of a fresh project (or
+        on provider switch) to bring on-disk state into a usable shape: the
+        canonical user-rules aggregator and skill-contributed git hooks
+        (HATS-088). NOT invoked by the CLI surface — use
+        :meth:`set_default_role` for that.
+
+        HATS-407: backup/clean/copy_components/verify side-effects were
+        removed; per-session compose (HATS-294) means framework content is
+        never materialized into the canonical tree. The Gemini inline-prompt
+        path is retained as a known asymmetry (no scaffold-template
+        equivalent for bare-gemini in project_dir).
+
+        Fails loudly on unknown role/provider: the project must not end up
+        in a half-applied state where active_role is saved but composition
+        is broken.
         """
         # Validate before doing any work so we fail fast with a clear message.
         self._validate_role(role_name)
@@ -445,100 +548,63 @@ class Assembler:
         provider = get_provider(provider_name or self.project_config.provider)
         result = self.composer.compose(role_name, overlay=self._get_overlay(role_name))
 
-        if result.errors:
-            # Non-fatal errors (e.g. missing optional rule) are still surfaced
-            # to the caller via result.errors and do not abort assembly.
-            pass
+        # Non-fatal compose errors (e.g. missing optional rule) are surfaced
+        # via result.errors; do not abort.
 
-        # 0. HATS-285: legacy ./CLAUDE.md migration runs before backup.
-        # No rollback needed if it fails — backup hasn't happened yet.
+        # 1. Bring ./CLAUDE.md to the v3 scaffold layout if a legacy
+        # uppercase AI-HATS block or v2 inline injection is present. The
+        # migrator also runs in ``bump`` and ``init``; keeping the call
+        # here lets first-session bootstrap heal legacy projects without
+        # forcing the user to run bump explicitly. Idempotent.
         self._migrate_claude_md_to_v3(provider)
+        # 2. Ensure provider scaffold exists (./CLAUDE.md for Claude). Cheap
+        # and idempotent — no-op for providers without a scaffold template
+        # (Gemini), and no-op when the file already exists.
+        self._ensure_scaffold(provider)
 
-        # 1. Backup
-        backup_path = self._backup()
+        # 3. Skill-contributed git hooks (HATS-088).
+        self._install_git_hooks(result)
 
-        try:
-            # 2. Clean active directories (preserve project-local rules)
-            self._clean(preserve_local=True)
+        # 4. Canonical user-rules aggregator (HATS-294).
+        self.write_canonical()
 
-            # 3. Copy components
-            self._copy_components(result)
+        # 5. Provider inline system prompt — Gemini-only path.
+        # Claude declares a scaffold template (HATS-284); ./CLAUDE.md is
+        # owned by the scaffold + canonical aggregator. Gemini has no
+        # scaffold mechanism, so bare-gemini in project_dir relies on
+        # ./GEMINI.md inline-block injection. Documented asymmetry with
+        # Claude Fork B (HATS-294); separate cleanup task tracks
+        # symmetric drop later.
+        if provider.scaffold_template_relpath() is None:
+            prompt_content = provider.build_system_prompt(result)
+            prompt_content = expand_path_placeholders(prompt_content, self.project_dir)
+            provider.update_system_prompt(self.project_dir, prompt_content)
 
-            # 3b. Install skill-contributed git hooks (HATS-088)
-            self._install_git_hooks(result)
-
-            # 3c. Write canonical layered layer (HATS-282)
-            self.write_canonical(result)
-
-            # 4. Export skills to provider-native directory
-            provider.export_skills(self.project_dir, result.skills)
-
-            # 4b. HATS-291 legacy cleanup — remove stale routing.md mirrors
-            # left by HATS-264's lazy-publish path (now collapsed into
-            # skills_index.md). Idempotent; can drop once everyone has
-            # bumped past HATS-291.
-            for prov_root in (".claude", ".gemini"):
-                (self.project_dir / prov_root / "routing.md").unlink(missing_ok=True)
-
-            # 5. Update system prompt — legacy inline block path. Providers
-            # that declare a scaffold template (Claude — HATS-284) own
-            # ./CLAUDE.md via canonical+aggregator (HATS-282/289); Gemini
-            # still uses the inline path (non-goal of HATS-276).
-            if provider.scaffold_template_relpath() is None:
-                prompt_content = provider.build_system_prompt(result)
-                # HATS-380: substitute placeholders before the inline-block
-                # writer path (Gemini ./GEMINI.md) — bypasses canonical writer.
-                prompt_content = expand_path_placeholders(prompt_content, self.project_dir)
-                provider.update_system_prompt(self.project_dir, prompt_content)
-
-            # 6. Verify
-            self._verify(result, provider)
-
-            # 7. Update config (active_role + provider)
-            self.project_config.active_role = role_name
-            self.project_config.provider = provider.name
-            self.project_config.save(self.config_path)
-
-            # 8. Save backup reference
-            self._save_backup_ref(backup_path)
-
-            # HATS-317: gitignore handling moved to one-shot init.
-            # set_role / bump never touch .gitignore.
-
-        except Exception:
-            # Rollback on failure
-            if backup_path:
-                self._restore_backup(backup_path)
-            raise
+        # 6. Persist active_role + provider.
+        self.project_config.active_role = role_name
+        self.project_config.provider = provider.name
+        self.project_config.save(self.config_path)
 
         return result
 
-    def rollback(self) -> bool:
-        """Rollback to the last backup. Cleans up temp backup dir after restore."""
-        ref_path = self._backup_ref_path()
-        if not ref_path.exists():
-            return False
-        backup_path = Path(ref_path.read_text().strip())
-        if not backup_path.exists():
-            return False
-        self._restore_backup(backup_path)
-        shutil.rmtree(backup_path, ignore_errors=True)
-        ref_path.unlink(missing_ok=True)
-        return True
-
-    def clean(self, provider_name: str | None = None) -> None:
+    def clean(self) -> None:
         """Clean all active directories."""
         self._clean(preserve_local=False)
-        # Clean provider-native skills
-        pname = provider_name or self.project_config.provider
-        provider = get_provider(pname)
-        provider.cleanup_skills(self.project_dir)
 
     def status(self) -> dict:
-        """Get current status: role, dependency tree, health."""
+        """Get current status: role, dependency tree, health.
+
+        HATS-407: surfaces both ``default_role`` (user-intent persisted by
+        the CLI) and ``active_role`` (runtime cache written on session
+        start). The composite ``role`` field resolves the effective role
+        the next session would use, mirroring runtime resolution order.
+        """
         cfg = self.project_config
+        effective_role = cfg.active_role or cfg.default_role
         status = {
-            "role": cfg.active_role,
+            "role": effective_role,
+            "default_role": cfg.default_role,
+            "active_role": cfg.active_role,
             "provider": cfg.provider,
             "project_dir": str(self.project_dir),
             "library_paths": [str(p) for p in self.library_paths],
@@ -546,10 +612,10 @@ class Assembler:
             "tree": None,
         }
 
-        if cfg.active_role:
+        if effective_role:
             result = self.composer.compose(
-                cfg.active_role,
-                overlay=self._get_overlay(cfg.active_role),
+                effective_role,
+                overlay=self._get_overlay(effective_role),
             )
             status["tree"] = self._build_tree(result)
             status["health"] = self._check_health(result)
@@ -558,27 +624,51 @@ class Assembler:
         return status
 
     def bump(self) -> CompositionResult | None:
-        """Re-apply current role (update to latest).
+        """Refresh on-disk state: migrations, scaffold, canonical, git hooks.
 
-        HATS-285: cleanup obsolete files. HATS-289: also run scaffold/cleanup
-        migration even when there's no active role, so legacy projects with
-        a populated `./CLAUDE.md` but no `active_role` still get fixed up by
-        a plain `ai-hats self bump`. HATS-312: also runs the v4 sessions-class
-        layout migration so legacy paths (`.gitlog/pipeline_runs/`,
-        `.agent/retrospectives/`, etc.) land under `<ai_hats_dir>/sessions/`.
+        HATS-407: no longer triggers a full role-compose-and-materialize
+        cycle (per-session compose handles framework content in memory —
+        HATS-294). bump is now strictly a migration + refresh command:
+
+        1. ``_cleanup_obsolete_files`` — drop files retired by prior releases.
+        2. ``heal_external_refs`` (HATS-397) — fix legacy-path refs in user
+           docs BEFORE the scaffold migrator runs so its edits do not look
+           like user-dirty content to the inventory fallback.
+        3. ``_migrate_claude_md_to_v3`` — bring ``./CLAUDE.md`` to the v3
+           scaffold layout.
+        4. ``_migrate_layout_v4_*`` — relocate legacy `.agent/...` paths
+           into ``<ai_hats_dir>/sessions/`` / ``tracker/`` / ``library/``.
+        5. ``_note_empty_legacy_agent_dir`` — surface a NOTE when only
+           the managed ``.agent/ai-hats/`` subtree remains.
+        6. ``_ensure_scaffold`` — re-create the provider scaffold if the
+           user-owned prompt file is missing.
+        7. ``write_canonical`` — regenerate the user-rules aggregator and
+           sweep stale framework files via the manifest.
+        8. ``_install_git_hooks`` — re-install skill-contributed hooks for
+           the active role (HATS-088).
+
+        Returns the CompositionResult for the active role (or ``None`` when
+        the project has no active_role yet — legacy bare-bump path).
 
         HATS-337: the HATS-330 mixed-install gate was removed — venv-first
-        launcher architecture makes mixed installs impossible by construction
-        (no global python install, only the bash launcher).
+        launcher architecture makes mixed installs impossible by
+        construction.
         """
+        # HATS-408 cross-task gate: bump() (also called transitively by
+        # ``ai-hats self update``) used to wipe v0.6 framework files
+        # (priorities.md, role.md, traits/*, rules/*, skills_index.md) via
+        # ``write_canonical``'s manifest-driven sweep — silently, with no
+        # user-edit detection. That bypassed HATS-408's whole safety story.
+        # Now we refuse early with the migrate-v07 instruction so the user
+        # gets to choose: ``migrate-v07`` (refuse + guidance) or
+        # ``migrate-v07 --force`` (WARN-per-overwrite + atomic commit).
+        self._refuse_on_v06_layout()
+
         self._cleanup_obsolete_files(self.project_dir)
         provider = get_provider(self.project_config.provider)
         # HATS-397: heal stale legacy-path refs FIRST, while user files are
         # still clean in git. Running after `_migrate_claude_md_to_v3` would
         # see ai-hats-induced edits as user-dirty and force inventory fallback.
-        # The substring rewrite uses the canonical LEGACY_PATH_MAP, so it
-        # works regardless of whether the layout migrations have moved
-        # content yet — by end-of-bump, refs and content land in sync.
         from .migration_healer import heal_external_refs
 
         heal_external_refs(self.project_dir)
@@ -587,9 +677,21 @@ class Assembler:
         self._migrate_layout_v4_tracker()
         self._migrate_layout_v4_library()
         self._note_empty_legacy_agent_dir()
-        if not self.project_config.active_role:
+
+        # Scaffold + canonical aggregator. Run unconditionally — these are
+        # disk artefacts every project needs, regardless of active_role.
+        self._ensure_scaffold(provider)
+        self.write_canonical()
+
+        # Git hooks live in `.git/hooks/` and reflect the skills composed
+        # for the active role. Without an active_role we have nothing to
+        # install — return early.
+        role = self.project_config.active_role or self.project_config.default_role
+        if not role:
             return None
-        return self.set_role(self.project_config.active_role, self.project_config.provider or None)
+        result = self.composer.compose(role, overlay=self._get_overlay(role))
+        self._install_git_hooks(result)
+        return result
 
     def _note_empty_legacy_agent_dir(self) -> None:
         """HATS-317: print a NOTE if `.agent/` only holds the managed `ai-hats/`.
@@ -723,71 +825,6 @@ class Assembler:
             f"Unknown provider: {provider_name}. Available: {sorted(PROVIDERS.keys())}"
         )
 
-    def _backup(self) -> Path | None:
-        """Backup .agent/ to $TMPDIR."""
-        if not self.agent_dir.exists():
-            return None
-        backup_dir = Path(tempfile.mkdtemp(prefix="ai-hats-backup-"))
-        # symlinks=True copies links as links instead of dereferencing them.
-        # Why: user-managed provider dirs (.gemini/skills, .claude/skills) can
-        # contain self-referential or circular symlinks; dereferencing loops
-        # until the OS raises ELOOP ("Too many levels of symbolic links").
-        shutil.copytree(self.agent_dir, backup_dir / AGENT_DIR, symlinks=True)
-        # Also backup system prompt files
-        for name in ("GEMINI.md", "CLAUDE.md"):
-            src = self.project_dir / name
-            if src.exists():
-                shutil.copy2(src, backup_dir / name)
-        # Backup provider-native skills dirs only. HATS-289 collapsed the
-        # canonical publish into `.agent/ai-hats/` (which is included via
-        # the AGENT_DIR copytree above), so `.claude/` outside `skills/` is
-        # no longer ai-hats-managed.
-        for provider_dir in (".claude/skills", ".gemini/skills"):
-            src = self.project_dir / provider_dir
-            if src.exists():
-                shutil.copytree(src, backup_dir / provider_dir, symlinks=True)
-        # Backup ai-hats.yaml
-        if self.config_path.exists():
-            shutil.copy2(self.config_path, backup_dir / PROJECT_CONFIG)
-        return backup_dir
-
-    def _restore_backup(self, backup_path: Path) -> None:
-        """Restore from backup."""
-        agent_backup = backup_path / AGENT_DIR
-        if agent_backup.exists():
-            if self.agent_dir.exists():
-                shutil.rmtree(self.agent_dir)
-            shutil.copytree(agent_backup, self.agent_dir, symlinks=True)
-
-        for name in ("GEMINI.md", "CLAUDE.md"):
-            src = backup_path / name
-            if src.exists():
-                shutil.copy2(src, self.project_dir / name)
-
-        # Restore provider-native skills dirs only (HATS-289).
-        for provider_dir in (".claude/skills", ".gemini/skills"):
-            src = backup_path / provider_dir
-            dest = self.project_dir / provider_dir
-            if src.exists():
-                if dest.exists():
-                    shutil.rmtree(dest)
-                shutil.copytree(src, dest, symlinks=True)
-
-        config_backup = backup_path / PROJECT_CONFIG
-        if config_backup.exists():
-            shutil.copy2(config_backup, self.config_path)
-            self.project_config = ProjectConfig.from_yaml(self.config_path)
-
-    def _save_backup_ref(self, backup_path: Path | None) -> None:
-        ref = self._backup_ref_path()
-        ref.parent.mkdir(parents=True, exist_ok=True)
-        ref.write_text(str(backup_path) if backup_path else "")
-
-    def _backup_ref_path(self) -> Path:
-        from .paths import last_backup_path
-
-        return last_backup_path(self.project_dir)
-
     def _clean(self, *, preserve_local: bool = False) -> None:
         """Clean active directories.
 
@@ -836,57 +873,6 @@ class Assembler:
             elif entry.exists():
                 entry.unlink()
         marker.unlink()
-
-    def _copy_components(self, result: CompositionResult) -> None:
-        """Copy resolved components into .agent/."""
-        # Copy rules
-        rules_dir = _lib_rules_dir(self.project_dir)
-        rules_dir.mkdir(parents=True, exist_ok=True)
-        library_rule_names = []
-        for rule in result.rules:
-            dest = rules_dir / rule.name
-            if dest.exists():
-                shutil.rmtree(dest)
-            shutil.copytree(rule.source_path, dest)
-            library_rule_names.append(rule.name)
-
-        # Track which rules came from library
-        marker = rules_dir / ".library_rules"
-        marker.write_text("\n".join(library_rule_names))
-
-        # Copy skills
-        skills_dir = _lib_skills_dir(self.project_dir)
-        skills_dir.mkdir(parents=True, exist_ok=True)
-        managed_skills: list[str] = []
-        for skill in result.skills:
-            dest = skills_dir / skill.name
-            if dest.exists():
-                shutil.rmtree(dest)
-            shutil.copytree(skill.source_path, dest)
-            managed_skills.append(skill.name)
-        self._write_managed_manifest(skills_dir, managed_skills)
-
-        # Copy hook scripts
-        hooks_dir = _lib_hooks_dir(self.project_dir)
-        hooks_dir.mkdir(parents=True, exist_ok=True)
-        managed_hooks: list[str] = []
-        for event_name in (
-            "session_start",
-            "session_end",
-            "task_start",
-            "task_complete",
-            "task_failed",
-            "error",
-        ):
-            scripts = getattr(result.hooks, event_name)
-            for script in scripts:
-                src = self._find_hook_script(script)
-                if src and src.exists():
-                    dest = hooks_dir / src.name
-                    shutil.copy2(src, dest)
-                    if src.name not in managed_hooks:
-                        managed_hooks.append(src.name)
-        self._write_managed_manifest(hooks_dir, managed_hooks)
 
     @staticmethod
     def _write_managed_manifest(target: Path, names: list[str]) -> None:
@@ -1101,27 +1087,6 @@ class Assembler:
         except subprocess.CalledProcessError as e:
             warnings.append(f"failed to set core.hooksPath: {e.stderr.strip() or e}")
 
-    def _verify(self, result: CompositionResult, provider: Provider) -> None:
-        """Verify assembly correctness."""
-        # Check all rules copied
-        for rule in result.rules:
-            dest = _lib_rules_dir(self.project_dir) / rule.name
-            if not dest.exists():
-                raise AssemblyError(f"Rule '{rule.name}' not copied to {dest}")
-
-        # Check all skills copied
-        for skill in result.skills:
-            dest = _lib_skills_dir(self.project_dir) / skill.name
-            if not dest.exists():
-                raise AssemblyError(f"Skill '{skill.name}' not copied to {dest}")
-
-        # Check system prompt exists and has content
-        prompt_path = provider.system_prompt_path(self.project_dir)
-        if not prompt_path.exists():
-            raise AssemblyError(f"System prompt not created at {prompt_path}")
-        if not prompt_path.read_text().strip():
-            raise AssemblyError("System prompt is empty")
-
     def _build_tree(self, result: CompositionResult) -> dict:
         """Build a dependency tree representation."""
         return {
@@ -1145,14 +1110,21 @@ class Assembler:
         }
 
     def _check_health(self, result: CompositionResult) -> dict[str, str]:
-        """Check health of all components."""
+        """Check health of disk-resident artefacts post-HATS-407.
+
+        With per-session compose (HATS-294) and yaml-only set_role
+        (HATS-407), framework rules/skills/hooks are not materialized into
+        the canonical tree — composition resolves them via the library
+        layers in memory. Only artefacts that DO live on disk are
+        verifiable here:
+
+        - ``<ai_hats_dir>/imports.md`` — canonical user-rules aggregator.
+        - Provider system prompt (``./CLAUDE.md`` / ``./GEMINI.md``).
+        """
+        del result  # composition is checked in-memory via composer.compose
         health: dict[str, str] = {}
-        for rule in result.rules:
-            dest = _lib_rules_dir(self.project_dir) / rule.name
-            health[f"rule:{rule.name}"] = "OK" if dest.exists() else "Missing"
-        for skill in result.skills:
-            dest = _lib_skills_dir(self.project_dir) / skill.name
-            health[f"skill:{skill.name}"] = "OK" if dest.exists() else "Missing"
+        imports_md = self._canonical_dir / "imports.md"
+        health["imports.md"] = "OK" if imports_md.exists() else "Missing"
         prompt_ok = any((self.project_dir / f).exists() for f in ("GEMINI.md", "CLAUDE.md"))
         health["system_prompt"] = "OK" if prompt_ok else "Missing"
         return health
@@ -1163,80 +1135,46 @@ class Assembler:
     def _canonical_dir(self) -> Path:
         return self.agent_dir / CANONICAL_DIR
 
-    def write_canonical(self, result: CompositionResult) -> None:
-        """Write the layered canonical view of `result` under .agent/ai-hats/.
+    def write_canonical(self) -> None:
+        """Write the canonical aggregator under .agent/ai-hats/ (HATS-294/407).
+
+        Emits only ``imports.md`` — a list of ``@./user-rules/*.md`` imports.
+        All framework content (priorities / role / traits / rules / skills_index)
+        is composed in memory per-session by ``Provider.build_session_prompt``
+        and never materialized on disk.
+
+        Stale framework files from prior v0.6 layouts are swept by the
+        manifest-driven cleanup below; ``user-rules/`` is never touched.
 
         Idempotent: per-file bytes-compare avoids spurious mtime updates.
-        Manifest-driven cleanup removes stale files from previous compositions
-        but never touches `user-rules/`.
+
+        HATS-407: the ``result`` parameter was dropped — composition no longer
+        feeds the canonical writer, and callers must not pretend to influence
+        the emitted aggregator via the result.
         """
         canonical = self._canonical_dir
         canonical.mkdir(parents=True, exist_ok=True)
         (canonical / USER_RULES_SUBDIR).mkdir(exist_ok=True)
 
-        targets: dict[str, bytes] = {}
-
-        priorities = self._render_priorities(result.priorities)
-        if priorities is not None:
-            targets["priorities.md"] = priorities.encode()
-
-        role_doc = self._render_role(result.role_injection, result.overlay_injection)
-        if role_doc is not None:
-            targets["role.md"] = role_doc.encode()
-
-        for trait_name, text in result.trait_injections.items():
-            if not text:
-                continue
-            targets[f"traits/{trait_name}.md"] = self._ensure_trailing_newline(text).encode()
-
-        for rule in result.rules:
-            if not rule.injection:
-                continue
-            targets[f"rules/{rule.name}.md"] = self._ensure_trailing_newline(
-                rule.injection
-            ).encode()
-
-        # HATS-264 + HATS-291: skills_index.md is the single always-on file
-        # for skill discovery. It now embeds the trigger→skill routing table
-        # (and optional skip table) generated from each skill's
-        # metadata.yaml — so trigger phrases are visible to the agent in the
-        # imports.md aggregator without a separate lazy-loaded artefact.
-        skills_index = self._render_skills_index(result.skills)
-        if skills_index is not None:
-            targets["skills_index.md"] = skills_index.encode()
-
-        # HATS-289: aggregator-in-canonical. Imports every other file in
-        # deterministic order so `./CLAUDE.md` can `@import` a single stable
-        # entry-point. Computed before write so the aggregator can include
-        # user-rules/ files (which are NOT in `targets` — they live outside
-        # the manifest by design).
-        # Pass the ordered keys (insertion order = composition order from the
-        # composer) so the aggregator preserves general-to-specific ordering
-        # rather than re-sorting alphabetically.
-        targets["imports.md"] = self._render_canonical_aggregator(
-            canonical,
-            list(targets.keys()),
-            order=self._resolve_imports_order(self.project_config.imports_order),
-        ).encode()
-
+        aggregator = self._render_canonical_aggregator(canonical).encode()
         # HATS-380: expand `<ai_hats_dir>` placeholder before write so the
         # agent never sees the literal token (it would otherwise create a
         # bogus `./<ai_hats_dir>/` directory in the project root).
-        targets = {
-            relpath: expand_path_placeholders(content.decode(), self.project_dir).encode()
-            for relpath, content in targets.items()
-        }
-
-        # Idempotent write
-        for relpath, content in targets.items():
-            self._atomic_write_if_changed(canonical / relpath, content)
+        aggregator = expand_path_placeholders(
+            aggregator.decode(), self.project_dir
+        ).encode()
+        self._atomic_write_if_changed(canonical / "imports.md", aggregator)
 
         # Stale cleanup: remove previous-managed files no longer present.
+        # On v0.6→v0.7 upgrade this sweeps priorities.md, role.md, traits/*,
+        # rules/*, skills_index.md. ``user-rules/`` is always preserved.
+        # HATS-408 layers user-edit detection on top of this cleanup before
+        # release; HATS-294 alone is not user-shippable.
+        new_paths = {"imports.md"}
         previous = self._read_canonical_manifest(canonical / CANONICAL_MANIFEST)
-        new_paths = set(targets.keys())
         for stale in previous - new_paths:
             if stale.startswith(f"{USER_RULES_SUBDIR}/") or stale == USER_RULES_SUBDIR:
-                continue  # never touch user-rules/
+                continue
             target = canonical / stale
             target.unlink(missing_ok=True)
             # Best-effort cleanup of empty parent dirs (stop at canonical root)
@@ -1248,156 +1186,27 @@ class Assembler:
                     break
                 parent = parent.parent
 
-        # Write the new manifest.
         self._write_canonical_manifest(canonical / CANONICAL_MANIFEST, sorted(new_paths))
 
     @staticmethod
-    def _render_priorities(priorities: list[str]) -> str | None:
-        if not priorities:
-            return None
-        body = "\n".join(f"{i}. {p}" for i, p in enumerate(priorities, start=1))
-        return f"# Priorities\n\n{body}\n"
+    def _render_canonical_aggregator(canonical_dir: Path) -> str:
+        """Build ``imports.md`` — a sorted list of ``@./user-rules/*.md`` imports.
 
-    @staticmethod
-    def _render_role(role_text: str, overlay_text: str) -> str | None:
-        parts = [t for t in (role_text, overlay_text) if t]
-        if not parts:
-            return None
-        return Assembler._ensure_trailing_newline("\n\n".join(parts))
-
-    # HATS-290: outer-section bucket predicates for imports.md.
-    # Maps each canonical section name to a path-predicate; user-rules is
-    # handled separately because its files live outside the manifest.
-    _SECTION_BUCKETS: dict[str, "callable[[str], bool]"] = {
-        "priorities":   lambda p: p == "priorities.md",
-        "traits":       lambda p: p.startswith("traits/"),
-        "role":         lambda p: p == "role.md",
-        "rules":        lambda p: p.startswith("rules/"),
-        "skills_index": lambda p: p == "skills_index.md",
-    }
-
-    @staticmethod
-    def _resolve_imports_order(
-        config_value: str | list[str] | None,
-    ) -> list[str]:
-        """Resolve `imports_order` config to a concrete section ordering.
-
-        None / "default" → the default preset. A preset name → the preset's list.
-        A list[str] → returned as-is (already validated to be a permutation of
-        IMPORTS_SECTION_NAMES at config-load time).
+        HATS-294: framework content (priorities / role / traits / rules /
+        skills_index) is composed in memory per session and never written to
+        disk; the aggregator therefore lists only user-rules. ``./CLAUDE.md``
+        still imports this single file as its stable entry-point.
         """
-        if config_value is None:
-            return list(IMPORTS_ORDER_PRESETS["default"])
-        if isinstance(config_value, str):
-            return list(IMPORTS_ORDER_PRESETS[config_value])
-        return list(config_value)
-
-    @staticmethod
-    def _render_canonical_aggregator(
-        canonical_dir: Path,
-        framework_paths: list[str],
-        order: list[str] | None = None,
-    ) -> str:
-        """Build the `imports.md` aggregator in canonical (HATS-289 + HATS-290).
-
-        Pure `@import` list, no markers, no headings. Outer order is driven by
-        `order` — a list of section names from IMPORTS_SECTION_NAMES. When
-        `order` is None, the "default" preset is used (preserves the original
-        priorities → traits → role → rules → user-rules → skills_index).
-
-        Within each section, paths preserve their **insertion order** in
-        `framework_paths` (= composition / resolution order from the composer
-        — general traits before specific ones, depth-first across the
-        dependency tree). Alphabetical sort would scramble that.
-
-        `framework_paths` is the ordered list of relpaths the canonical writer
-        will own; `user-rules/*.md` is enumerated separately because user-rules
-        live outside the manifest (composer never writes them).
-        """
-        if order is None:
-            order = list(IMPORTS_ORDER_PRESETS["default"])
-
-        sections: list[list[str]] = []
-        for name in order:
-            if name == "user-rules":
-                user_rules_dir = canonical_dir / USER_RULES_SUBDIR
-                if user_rules_dir.is_dir():
-                    user_paths = sorted(
-                        f"@./{USER_RULES_SUBDIR}/{md.name}"
-                        for md in user_rules_dir.glob("*.md")
-                    )
-                    if user_paths:
-                        sections.append(user_paths)
-                continue
-            predicate = Assembler._SECTION_BUCKETS[name]
-            picked = [p for p in framework_paths if predicate(p)]
-            if picked:
-                sections.append([f"@./{p}" for p in picked])
-
-        body = "\n\n".join("\n".join(lines) for lines in sections)
-        return body + ("\n" if body else "")
-
-    @staticmethod
-    def _render_skills_index(skills: list[ResolvedComponent]) -> str | None:
-        """Render `skills_index.md` — the single always-on skill-discovery file.
-
-        Top section: one-liner per skill (name + frontmatter description).
-        Bottom sections (HATS-264 + HATS-291): a `## Routing` table mapping
-        trigger phrases to skills, and an optional `## Skip` table — both
-        sourced from each skill's `metadata.yaml` (`triggers:` / `skip:`).
-        Skills with empty triggers are absent from the routing table but
-        still appear in the top index.
-
-        The routing tables live here (rather than in a separate lazy file)
-        so the agent sees activation hints directly in the always-on
-        imports.md aggregator — closing the chicken-and-egg gap that an
-        on-demand routing.md left open.
-        """
-        if not skills:
-            return None
-        lines = ["# Skills Index", ""]
-        for skill in skills:
-            desc = _extract_frontmatter_description(skill)
-            # Fall back to empty when description equals the name (no frontmatter).
-            if desc == skill.name:
-                lines.append(f"- **{skill.name}**")
-            else:
-                lines.append(f"- **{skill.name}** — {desc}")
-
-        trigger_rows: list[tuple[str, str]] = []  # (trigger, skill_name)
-        skip_rows: list[tuple[str, str]] = []  # (skill_name, skip_phrase)
-        for skill in skills:
-            metadata = SkillMetadata.from_yaml(skill.source_path / "metadata.yaml")
-            for trigger in metadata.triggers:
-                phrase = str(trigger).strip()
-                if phrase:
-                    trigger_rows.append((phrase, skill.name))
-            for skip in metadata.skip:
-                phrase = str(skip).strip()
-                if phrase:
-                    skip_rows.append((skill.name, phrase))
-
-        if trigger_rows:
-            lines.append("")
-            lines.append("## Routing")
-            lines.append("")
-            lines.append("| Trigger | Skill |")
-            lines.append("|---------|-------|")
-            for trigger, skill_name in trigger_rows:
-                lines.append(f"| {_md_table_escape(trigger)} | {skill_name} |")
-        if skip_rows:
-            lines.append("")
-            lines.append("## Skip")
-            lines.append("")
-            lines.append("| Skill | Skip when |")
-            lines.append("|-------|-----------|")
-            for skill_name, phrase in skip_rows:
-                lines.append(f"| {skill_name} | {_md_table_escape(phrase)} |")
-        return "\n".join(lines) + "\n"
-
-    @staticmethod
-    def _ensure_trailing_newline(text: str) -> str:
-        return text if text.endswith("\n") else text + "\n"
+        user_rules_dir = canonical_dir / USER_RULES_SUBDIR
+        if not user_rules_dir.is_dir():
+            return ""
+        paths = sorted(
+            f"@./{USER_RULES_SUBDIR}/{md.name}"
+            for md in user_rules_dir.glob("*.md")
+        )
+        if not paths:
+            return ""
+        return "\n".join(paths) + "\n"
 
     @staticmethod
     def _atomic_write_if_changed(path: Path, content: bytes) -> bool:
@@ -1409,6 +1218,51 @@ class Assembler:
         tmp.write_bytes(content)
         tmp.replace(path)
         return True
+
+    def _refuse_on_v06_layout(self) -> None:
+        """Raise AssemblyError if the canonical MANAGED manifest still lists
+        v0.6 framework files (priorities/role/traits/rules/skills_index).
+
+        Detection: the v0.7 manifest contains ONLY ``imports.md``. Any
+        entry beyond ``imports.md`` (excluding the ``user-rules/`` safe
+        list — which the manifest never touches in practice but we mask
+        defensively) means a previous v0.6 run wrote framework content
+        we'd otherwise sweep without user-edit detection.
+
+        Called from ``bump()`` (and indirectly from ``self update`` →
+        ``self bump``) so the destructive sweep can't fire silently
+        before the user runs ``ai-hats self migrate-v07``.
+
+        ``migrate-v07`` itself calls ``write_canonical`` directly, never
+        ``bump()``, so the gate does not block the intended migration
+        path.
+        """
+        canonical = self._canonical_dir
+        manifest_path = canonical / CANONICAL_MANIFEST
+        previous = self._read_canonical_manifest(manifest_path)
+        # User-rules entries are never in the manifest in practice but we
+        # filter them out defensively in case a future ``write_canonical``
+        # change adds them.
+        v06_entries = {
+            entry
+            for entry in previous
+            if entry != "imports.md"
+            and entry != USER_RULES_SUBDIR
+            and not entry.startswith(f"{USER_RULES_SUBDIR}/")
+        }
+        if not v06_entries:
+            return
+        sample = sorted(v06_entries)
+        preview = ", ".join(sample[:3])
+        if len(sample) > 3:
+            preview += f", … ({len(sample) - 3} more)"
+        raise AssemblyError(
+            "v0.6 canonical layout detected — MANAGED manifest still lists "
+            f"framework files: {preview}.\n"
+            "Run `ai-hats self migrate-v07` first to either preserve user "
+            "edits or consciously overwrite them with `--force`. Bypassing "
+            "this gate would silently delete those files."
+        )
 
     @staticmethod
     def _read_canonical_manifest(path: Path) -> set[str]:

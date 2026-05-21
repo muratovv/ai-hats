@@ -3,6 +3,7 @@
 import pytest
 
 from ai_hats.models import (
+    Attachment,
     ComponentConfig,
     Composition,
     FeedbackConfig,
@@ -761,77 +762,81 @@ def test_skill_metadata_missing_yaml_returns_empty_lists(tmp_path):
     assert meta.skip == []
 
 
-# -- HATS-290: imports_order configurability --
+# ---------- Attachment / TaskCard.attachments (HATS-402) ----------
 
 
-def test_imports_order_defaults_to_none():
-    config = ProjectConfig()
-    assert config.imports_order is None
-    # Default omitted from serialization.
-    assert "imports_order" not in config.to_dict()
+def test_attachment_digest_validation_accepts_12_hex():
+    Attachment(name="plan.md", digest="a1b2c3d4e5f6", added="2026-05-20T00:00:00Z")
 
 
 @pytest.mark.parametrize(
-    "preset",
-    ["default", "role-first", "constraints-first", "anthropic"],
+    "bad",
+    [
+        "a1b2c3d4e5",  # 10 chars — too short
+        "a1b2c3d4e5f60",  # 13 chars — too long
+        "A1B2C3D4E5F6",  # uppercase
+        "g1b2c3d4e5f6",  # non-hex char
+        "a1b2c3d4e5f60000000000000000000000000000000000000000000000000000",  # full sha256 — must reject
+    ],
 )
-def test_imports_order_accepts_known_preset(preset):
-    config = ProjectConfig(imports_order=preset)
-    assert config.imports_order == preset
-    assert config.to_dict()["imports_order"] == preset
+def test_attachment_digest_validation_rejects_invalid(bad):
+    with pytest.raises(Exception):
+        Attachment(name="x", digest=bad, added="2026-05-20T00:00:00Z")
 
 
-def test_imports_order_rejects_unknown_preset():
-    with pytest.raises(ValueError, match="unknown imports_order preset"):
-        ProjectConfig(imports_order="weird-mode")
+def test_attachment_digest_empty_allowed_for_construction():
+    """Default-constructed Attachment (e.g. before populating) tolerates empty digest."""
+    Attachment()
 
 
-def test_imports_order_accepts_full_permutation_list():
-    custom = ["role", "rules", "user-rules", "priorities", "traits", "skills_index"]
-    config = ProjectConfig(imports_order=custom)
-    assert config.imports_order == custom
-    assert config.to_dict()["imports_order"] == custom
+def test_task_card_attachments_field_round_trip():
+    card = TaskCard(
+        id="T-1",
+        title="Test",
+        attachments=[
+            Attachment(
+                name="plan.md",
+                digest="a1b2c3d4e5f6",
+                added="2026-05-20T00:00:00Z",
+                note="design",
+            )
+        ],
+    )
+    out = card.to_dict()
+    assert out["attachments"] == [
+        {
+            "name": "plan.md",
+            "digest": "a1b2c3d4e5f6",
+            "added": "2026-05-20T00:00:00Z",
+            "note": "design",
+        }
+    ]
+    reloaded = TaskCard.from_dict(out)
+    assert reloaded.attachments[0].name == "plan.md"
+    assert reloaded.attachments[0].digest == "a1b2c3d4e5f6"
 
 
-def test_imports_order_rejects_list_with_unknown_section():
-    bad = ["role", "rules", "user-rules", "priorities", "traits", "GHOST"]
-    with pytest.raises(ValueError, match="unknown imports_order section"):
-        ProjectConfig(imports_order=bad)
+def test_task_card_empty_attachments_omitted_from_output():
+    card = TaskCard.from_dict({"id": "T-1", "title": "Test"})
+    out = card.to_dict()
+    assert "attachments" not in out
 
 
-def test_imports_order_rejects_list_with_duplicate_section():
-    bad = ["role", "role", "user-rules", "priorities", "traits", "skills_index"]
-    with pytest.raises(ValueError, match="duplicate imports_order section"):
-        ProjectConfig(imports_order=bad)
+def test_task_card_legacy_yaml_without_attachments_loads_as_empty_list():
+    """Existing YAML predating HATS-402 must load without errors and yield []."""
+    card = TaskCard.from_dict({"id": "T-1", "title": "Test"})
+    assert card.attachments == []
 
 
-def test_imports_order_rejects_list_missing_sections():
-    bad = ["role", "priorities", "traits", "skills_index"]  # missing rules + user-rules
-    with pytest.raises(ValueError, match="missing sections"):
-        ProjectConfig(imports_order=bad)
-
-
-def test_imports_order_rejects_wrong_type():
-    # Pydantic's union typing rejects non-str/list/None values before our
-    # field_validator runs; either layer surfacing the rejection is fine.
-    with pytest.raises(ValueError, match=r"imports_order"):
-        ProjectConfig(imports_order=42)
-
-
-def test_imports_order_round_trip_via_yaml(tmp_path):
-    src = tmp_path / "ai-hats.yaml"
-    config = ProjectConfig(provider="claude", imports_order="role-first")
-    config.save(src)
-
-    loaded = ProjectConfig.from_yaml(src)
-    assert loaded.imports_order == "role-first"
-
-
-def test_imports_order_custom_list_round_trip_via_yaml(tmp_path):
-    src = tmp_path / "ai-hats.yaml"
-    custom = ["rules", "user-rules", "role", "priorities", "traits", "skills_index"]
-    config = ProjectConfig(provider="claude", imports_order=custom)
-    config.save(src)
-
-    loaded = ProjectConfig.from_yaml(src)
-    assert loaded.imports_order == custom
+def test_task_card_attachments_not_captured_into_extras():
+    """attachments is a typed field — must not leak into extras."""
+    data = {
+        "id": "T-1",
+        "title": "Test",
+        "attachments": [
+            {"name": "x.md", "digest": "0123456789ab", "added": "", "note": ""}
+        ],
+    }
+    card = TaskCard.from_dict(data)
+    assert len(card.attachments) == 1
+    assert "attachments" not in card.extras

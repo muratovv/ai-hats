@@ -3,17 +3,12 @@
 from __future__ import annotations
 
 import abc
-import os
 import shutil
-import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from .composer import CompositionResult, ResolvedComponent
+from .paths import session_cache_dir
 from .placeholders import expand_path_placeholders
-
-if TYPE_CHECKING:
-    from .observe import SessionManager
 
 
 INJECTION_START = "<!-- AI-HATS:START -->"
@@ -99,15 +94,20 @@ class Provider(abc.ABC):
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         """Get environment variables needed for the provider."""
 
-    def build_override(
+    def build_session_prompt(
         self,
         project_dir: Path,
         result: CompositionResult,
-        session_mgr: "SessionManager",
+        session_id: str,
     ) -> tuple[list[str], dict[str, str]]:
-        """Build CLI args and env vars for a temporary role override.
+        """Build CLI args and env vars for a per-session composed prompt.
 
-        Returns (extra_args, extra_env). Must NOT modify project files.
+        Called for EVERY session (default role and explicit ``--role`` alike).
+        ``session_id`` keys the per-session cache dir under
+        ``<ai_hats_dir>/.cache/sessions/<session_id>/`` — provider writes the
+        prompt file and plugin-dir there. Caller owns dir cleanup at
+        session_end (``_cleanup_session_cache`` in runtime.py).
+        Returns (extra_args, extra_env).
         Default: no-op (subclasses override).
         """
         return [], {}
@@ -116,68 +116,21 @@ class Provider(abc.ABC):
         self,
         project_dir: Path,
         result: CompositionResult,
+        session_id: str,
     ) -> list[str]:
         """Materialize the composed role's skills for runtime discovery.
 
         HATS-307: returns extra CLI args (e.g. ``["--plugin-dir", <path>]``)
         that make the spawned provider session see the role's skills via its
-        own Skill registry. Callers MUST clean up any filesystem artifacts
-        referenced by the returned args (``_cleanup_plugin_dir`` in runtime.py).
+        own Skill registry. ``session_id`` keys the cache dir; plugin lives
+        at ``<cache_dir>/plugin/`` and is cleaned with the whole cache dir
+        at session_end.
 
         Default: no-op — the provider has no per-spawn skill materialization
         mechanism (Gemini case — see HATS-367 follow-up).
         """
-        del project_dir, result
+        del project_dir, result, session_id
         return []
-
-    @abc.abstractmethod
-    def skills_export_dir(self, project_dir: Path) -> Path:
-        """Provider-native skills directory."""
-
-    _MANAGED_MARKER = ".ai-hats-managed"
-
-    def export_skills(self, project_dir: Path, skills: list[ResolvedComponent]) -> None:
-        """Copy skills to provider-native directory for /skills discovery."""
-        target_dir = self.skills_export_dir(project_dir)
-        self._clean_managed_skills(target_dir)
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        managed_names: list[str] = []
-        for skill in skills:
-            if skill.source_path.is_dir():
-                dest = target_dir / skill.name
-                if dest.exists():
-                    shutil.rmtree(dest)
-                shutil.copytree(skill.source_path, dest)
-                # HATS-380: SKILL.md is what the agent reads as prompt content;
-                # expand `<ai_hats_dir>` so the agent never obeys the literal
-                # placeholder. Other assets (hooks, fixtures) are copied verbatim.
-                skill_md = dest / "SKILL.md"
-                if skill_md.exists():
-                    original = skill_md.read_text()
-                    expanded = expand_path_placeholders(original, project_dir)
-                    if expanded != original:
-                        skill_md.write_text(expanded)
-                managed_names.append(skill.name)
-
-        # Track which skills we own
-        (target_dir / self._MANAGED_MARKER).write_text("\n".join(managed_names) + "\n")
-
-    def cleanup_skills(self, project_dir: Path) -> None:
-        """Remove only ai-hats-managed skills, keep user-created ones."""
-        target_dir = self.skills_export_dir(project_dir)
-        self._clean_managed_skills(target_dir)
-
-    def _clean_managed_skills(self, target_dir: Path) -> None:
-        """Remove skills tracked by the managed marker."""
-        marker = target_dir / self._MANAGED_MARKER
-        if not marker.exists():
-            return
-        for name in marker.read_text().strip().splitlines():
-            skill_path = target_dir / name
-            if skill_path.exists():
-                shutil.rmtree(skill_path)
-        marker.unlink()
 
     def scaffold_template_relpath(self) -> str | None:
         """Library-relative path to the provider's prompt-file scaffold template.
@@ -235,9 +188,6 @@ class GeminiProvider(Provider):
     def system_prompt_path(self, project_dir: Path) -> Path:
         return project_dir / "GEMINI.md"
 
-    def skills_export_dir(self, project_dir: Path) -> Path:
-        return project_dir / ".gemini" / "skills"
-
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"
 
@@ -282,22 +232,26 @@ class GeminiProvider(Provider):
                     shutil.rmtree(dest)
                 shutil.copytree(rule.source_path, dest)
 
-    def build_override(
+    def build_session_prompt(
         self,
         project_dir: Path,
         result: CompositionResult,
-        session_mgr: "SessionManager",
+        session_id: str,
     ) -> tuple[list[str], dict[str, str]]:
-        """Create session-scoped rules dir with override prompt.
+        """Create session-scoped rules dir with composed prompt.
 
         Uses GEMINI_CLI_PROJECT_RULES_PATH to inject without touching GEMINI.md.
+        Rules dir lives under ``<ai_hats_dir>/.cache/sessions/<session_id>/rules/``
+        and is cleaned with the whole cache dir at session_end.
         """
         prompt_content = self.build_system_prompt(result)
-        # HATS-380: expand placeholder before temp prompt reaches the agent.
+        # HATS-380: expand placeholder before the prompt reaches the agent.
         prompt_content = expand_path_placeholders(prompt_content, project_dir)
 
-        # Create isolated rules dir in temp
-        rules_dir = Path(tempfile.mkdtemp(prefix="ai-hats-override-rules-"))
+        # Per-session cache dir (HATS-294): gitignored, swept by TTL.
+        cache_dir = session_cache_dir(project_dir, session_id)
+        rules_dir = cache_dir / "rules"
+        rules_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy existing project rules
         from .paths import rules_dir as _project_rules_dir
@@ -342,9 +296,6 @@ class ClaudeProvider(Provider):
 
     def system_prompt_path(self, project_dir: Path) -> Path:
         return project_dir / "CLAUDE.md"
-
-    def skills_export_dir(self, project_dir: Path) -> Path:
-        return project_dir / ".claude" / "skills"
 
     def scaffold_template_relpath(self) -> str | None:
         return "templates/claude/CLAUDE.md.template"
@@ -393,13 +344,18 @@ class ClaudeProvider(Provider):
                     shutil.rmtree(dest)
                 shutil.copytree(rule.source_path, dest)
 
-    def build_override(
+    def build_session_prompt(
         self,
         project_dir: Path,
         result: CompositionResult,
-        session_mgr: "SessionManager",
+        session_id: str,
     ) -> tuple[list[str], dict[str, str]]:
-        """Write override prompt to temp file, pass via --system-prompt-file.
+        """Write composed prompt to per-session cache, pass via --system-prompt-file.
+
+        HATS-294: prompt and plugin-dir both live under
+        ``<ai_hats_dir>/.cache/sessions/<session_id>/`` so the whole session's
+        ephemeral artefacts are colocated and cleaned in one rmtree at
+        session_end.
 
         Preserves project-local content outside AI-HATS markers.
         """
@@ -434,17 +390,17 @@ class ClaudeProvider(Provider):
         else:
             full_content = f"{INJECTION_START}\n{prompt_content}\n{INJECTION_END}\n"
 
-        # Write to temp file (survives sigkill — just orphaned, no harm).
-        # mkstemp atomically creates the file with mode 0600, avoiding TOCTOU
-        # race condition that bandit B306/CWE-377 flags on tempfile.mktemp.
-        fd, override_path = tempfile.mkstemp(prefix="ai-hats-override-", suffix=".md")
-        with os.fdopen(fd, "w") as f:
-            f.write(full_content)
-        override_file = Path(override_path)
+        # HATS-294: write to per-session cache dir. The whole dir is
+        # cleaned at session_end by _cleanup_session_cache in runtime.py,
+        # which also sweeps orphans older than 24h on session_start.
+        cache_dir = session_cache_dir(project_dir, session_id)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        override_file = cache_dir / "prompt.md"
+        override_file.write_text(full_content)
 
-        # HATS-307: materialize spawned role's skills into ephemeral plugin-dir
-        # so Claude Code's Skill tool can resolve them. Caller cleans up.
-        skill_args = self.materialize_runtime_skills(project_dir, result)
+        # HATS-307: materialize spawned role's skills into a plugin-dir under
+        # the same cache dir so Claude Code's Skill tool can resolve them.
+        skill_args = self.materialize_runtime_skills(project_dir, result, session_id)
 
         return [
             "--system-prompt-file", str(override_file),
@@ -455,17 +411,20 @@ class ClaudeProvider(Provider):
         self,
         project_dir: Path,
         result: CompositionResult,
+        session_id: str,
     ) -> list[str]:
-        """Materialize composed role's skills into a per-spawn plugin-dir.
+        """Materialize composed role's skills into a per-session plugin-dir.
 
-        Returns ``["--plugin-dir", <tmp_path>]``. Caller MUST ``shutil.rmtree``
-        the path after the spawned ``claude`` process exits. Empty skill list
-        still produces a valid (empty) plugin-dir so the argument is always
+        Returns ``["--plugin-dir", <cache_dir>/plugin]``. The dir lives under
+        ``<ai_hats_dir>/.cache/sessions/<session_id>/plugin/`` and is cleaned
+        with the whole cache dir at session_end. Empty skill list still
+        produces a valid (empty) plugin-dir so the argument is always
         consistent — the no-skills case is free.
         """
         from .plugin_dir import materialize_plugin_dir
 
-        plugin_dir = materialize_plugin_dir(result.name, result.skills, project_dir)
+        plugin_dir = session_cache_dir(project_dir, session_id) / "plugin"
+        materialize_plugin_dir(result.name, result.skills, project_dir, plugin_dir)
         return ["--plugin-dir", str(plugin_dir)]
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:

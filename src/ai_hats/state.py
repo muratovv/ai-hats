@@ -109,6 +109,8 @@ class TaskManager:
         """
         depends = list(depends_on or [])
         self._reject_self_or_cycle(task_id, parent_task, depends)
+        if (self.tasks_dir / task_id / "task.yaml").exists():
+            raise ValueError(f"Task '{task_id}' already exists")
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         task = TaskCard(
             id=task_id,
@@ -392,6 +394,109 @@ class TaskManager:
             self._update_indexes()
 
         return task
+
+    # ----- Attachments (HATS-402) -----
+
+    def attach_add(
+        self,
+        task_id: str,
+        blob_path: Path,
+        name: str,
+        note: str = "",
+    ) -> "ReconcileResult":
+        """Attach ``blob_path`` to ``task_id`` under ``name``.
+
+        Performs reconcile + file-op + manifest update + work_log entry under
+        the task's file lock. On ERROR_COLLISION nothing is mutated.
+        """
+        from .attachments import (
+            FileOp,
+            ReconcileAction,
+            attachments_dir,
+            reconcile,
+        )
+
+        if not blob_path.is_file():
+            raise ValueError(f"blob not found: {blob_path}")
+
+        lock_path = self.tasks_dir / task_id / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with FileLock(str(lock_path)):
+            task = self.get_task(task_id)
+            if task is None:
+                raise ValueError(f"Task '{task_id}' not found")
+
+            card_dir = self.tasks_dir / task_id
+            result = reconcile(task, card_dir, blob_path, name=name, note=note)
+
+            if result.action is ReconcileAction.ERROR_COLLISION:
+                return result
+
+            if result.action is ReconcileAction.NOOP:
+                return result
+
+            # ADDED or REGISTERED_EXISTING — both append to manifest; only
+            # ADDED moves the file.
+            assert result.attachment is not None
+            if result.file_op is FileOp.MOVE:
+                target_dir = attachments_dir(card_dir)
+                target_dir.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(blob_path), str(target_dir / name))
+
+            task.attachments.append(result.attachment)
+            task.log_work(
+                f"attached '{name}' (digest {result.attachment.digest}, "
+                f"{result.action.value})"
+            )
+            task.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            self._save_task(task)
+            return result
+
+    def attach_remove(
+        self,
+        task_id: str,
+        name: str,
+    ) -> "tuple[TaskCard, object | None, Path]":
+        """Remove ``name`` from ``task_id`` (manifest + blob).
+
+        Returns ``(card, removed_entry_or_None, blob_path)``. The blob_path
+        is returned even on miss so the CLI layer can report it. Does
+        nothing if the entry isn't on the card; the CLI surfaces that.
+        """
+        from .attachments import attachments_dir
+
+        lock_path = self.tasks_dir / task_id / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with FileLock(str(lock_path)):
+            task = self.get_task(task_id)
+            if task is None:
+                raise ValueError(f"Task '{task_id}' not found")
+
+            card_dir = self.tasks_dir / task_id
+            blob_path = attachments_dir(card_dir) / name
+
+            entry = next((a for a in task.attachments if a.name == name), None)
+            if entry is None:
+                return task, None, blob_path
+
+            task.attachments = [a for a in task.attachments if a.name != name]
+            if blob_path.is_file():
+                blob_path.unlink()
+            task.log_work(f"detached '{name}' (digest {entry.digest})")
+            task.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            self._save_task(task)
+            return task, entry, blob_path
+
+    def attach_verify(self, task_id: str) -> "list":
+        """Return divergences between ``task_id``'s manifest and its on-disk folder."""
+        from .attachments import verify_manifest
+
+        task = self.get_task(task_id)
+        if task is None:
+            raise ValueError(f"Task '{task_id}' not found")
+        return verify_manifest(task, self.tasks_dir / task_id)
 
     # Link types accepted by ``add_link`` / ``remove_link``. Centralised so the
     # CLI choice list and the dispatch table stay in sync.

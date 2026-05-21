@@ -51,6 +51,21 @@ def test_create_increments_id(project_dir: Path):
     assert "PROP-002" in res.output
 
 
+def test_create_duplicate_id_rejected(project_dir: Path, monkeypatch):
+    """Duplicate PROP id must exit 1 with a clean error, not a traceback."""
+    res1 = _create()
+    assert res1.exit_code == 0, res1.output
+    # Force next_proposal_id to collide by pre-creating PROP-002 then stubbing the id generator.
+    p = proposals_dir(project_dir) / "PROP-001.yaml"
+    original = p.read_text()
+    monkeypatch.setattr("ai_hats.cli.proposal.next_proposal_id", lambda _d: "PROP-001")
+    res2 = _create(title="duplicate")
+    assert res2.exit_code == 1, res2.output
+    assert "already exists" in res2.output.lower()
+    assert "Traceback" not in res2.output
+    assert p.read_text() == original
+
+
 def test_create_meta_proposal_with_failed_session(project_dir: Path):
     res = _invoke([
         "create",

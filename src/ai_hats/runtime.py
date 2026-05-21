@@ -21,6 +21,7 @@ from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
 from .models import LifecycleEvent
 from .observe import AuditWriter, Session, SessionManager, SidecarTracer, TraceTag
+from .paths import hooks_dir as _hooks_dir
 from .providers import get_provider
 from .worktree import IsolationMode, WorktreeManager
 
@@ -69,20 +70,41 @@ _TERM_RESET_PRELUDE = (
 )
 
 
-def _cleanup_plugin_dir(override_args: list[str]) -> None:
-    """Remove the ephemeral plugin-dir created by ``Provider.build_override``.
+def _cleanup_session_cache(project_dir: Path, session_id: str) -> None:
+    """Remove the session's per-session cache dir (HATS-294).
 
-    HATS-307: ``ClaudeProvider.build_override`` materializes a per-spawn plugin
-    dir under ``/tmp/`` and emits ``["--plugin-dir", <path>]``. We delete it
-    once the spawned process exits. ``ignore_errors`` keeps us robust against
-    repeated cleanup attempts and missing paths.
+    Drops the whole ``<ai_hats_dir>/.cache/sessions/<session_id>/`` tree
+    (prompt.md + plugin/ + anything else providers stashed there).
+    ``ignore_errors`` keeps us robust against repeated cleanup attempts,
+    missing paths, and SIGKILL-orphans (TTL sweep mops those up later).
     """
-    if "--plugin-dir" not in override_args:
+    from .paths import session_cache_dir
+
+    shutil.rmtree(session_cache_dir(project_dir, session_id), ignore_errors=True)
+
+
+def _sweep_orphan_session_caches(project_dir: Path, ttl_hours: int = 24) -> None:
+    """Remove session cache dirs older than ttl_hours (HATS-294).
+
+    Idempotent. Called once per ``Runtime.run`` invocation on session_start.
+    Cheap when the cache root is empty or recent.
+    """
+    import time
+
+    from .paths import session_cache_root
+
+    root = session_cache_root(project_dir)
+    if not root.exists():
         return
-    idx = override_args.index("--plugin-dir")
-    if idx + 1 >= len(override_args):
-        return
-    shutil.rmtree(override_args[idx + 1], ignore_errors=True)
+    cutoff = time.time() - ttl_hours * 3600
+    for entry in root.iterdir():
+        if not entry.is_dir():
+            continue
+        try:
+            if entry.stat().st_mtime < cutoff:
+                shutil.rmtree(entry, ignore_errors=True)
+        except OSError:
+            pass
 
 
 def _session_timed_out(session: Session) -> bool:
@@ -481,6 +503,18 @@ class WrapRunner:
         self.assembler = Assembler(project_dir)
         self.session_mgr = SessionManager(project_dir)
 
+    def _make_session_hooks_runner(self) -> HooksRunner:
+        """Build the session lifecycle ``HooksRunner`` against the canonical
+        hooks dir (``<ai_hats_dir>/library/hooks/``).
+
+        Extracted from ``run()`` for HATS-412 testability — the original
+        inline construction hard-coded the legacy ``.agent/hooks/`` path
+        which has been empty since HATS-314 deleted that tree, so
+        lifecycle hooks silently never fired. Having a single helper
+        means future call-sites can't drift back to the legacy path.
+        """
+        return HooksRunner(_hooks_dir(self.project_dir), self.project_dir)
+
     def run(
         self,
         provider_name: str,
@@ -497,8 +531,9 @@ class WrapRunner:
         still returns only the exit code to its CLI callers.
 
         ``system_prompt_override`` (HATS-267): when supplied, replaces the
-        merged injection used for shadow override while keeping structural
-        composition data so provider build_override keeps working.
+        merged injection used for the per-session composed prompt while
+        keeping structural composition data so provider build_session_prompt
+        keeps working.
         """
         # Resolve provider
         provider = get_provider(provider_name)
@@ -507,35 +542,39 @@ class WrapRunner:
         cfg = self.assembler.project_config
         effective_role = role_override or cfg.active_role or cfg.default_role
 
-        # Role override uses shadow prompt (temp file) — never modifies project files.
-        # Permanent assembly only when no override.
-        override_args: list[str] = []
-        override_env: dict[str, str] = {}
-
-        if role_override and cfg.active_role:
-            # Shadow override: compose to temp file, pass via CLI flags
-            result = self.assembler.composer.compose(
-                effective_role, overlay=self.assembler._get_overlay(effective_role),
-            )
-            if system_prompt_override is not None:
-                result = replace(result, injections=[system_prompt_override])
-            override_args, override_env = provider.build_override(
-                self.project_dir, result, self.session_mgr,
-            )
-        elif effective_role:
+        # HATS-294: unified per-session compose. Every session — default role
+        # and explicit --role alike — goes through build_session_prompt. The
+        # composed prompt is written to a per-session temp file (no shared
+        # canonical role-content). set_role still runs on first-run /
+        # provider-switch to sync project_config.active_role, but the session
+        # itself no longer depends on the canonical layout on disk.
+        if effective_role and not role_override:
             needs_assembly = (
                 not cfg.active_role  # no role set yet
                 or cfg.provider != provider_name  # provider mismatch
             )
             if needs_assembly:
                 self.assembler.set_role(effective_role, provider_name)
+                cfg = self.assembler.project_config  # reload
 
-        # Reload after potential set_role
-        cfg = self.assembler.project_config
         active_role = role_override or cfg.active_role
 
-        # Create session
+        # HATS-294: sweep stale session cache dirs (>24h old) before allocating
+        # a new sid. Idempotent and cheap when cache root is empty.
+        _sweep_orphan_session_caches(self.project_dir)
+
+        # Create session — must happen before build_session_prompt so we can
+        # key the per-session cache dir on session.session_id (HATS-294).
         session = self.session_mgr.create_session()
+
+        result = self.assembler.composer.compose(
+            effective_role, overlay=self.assembler._get_overlay(effective_role),
+        )
+        if system_prompt_override is not None:
+            result = replace(result, injections=[system_prompt_override])
+        session_args, session_env = provider.build_session_prompt(
+            self.project_dir, result, session.session_id,
+        )
         session.init_audit(
             role=active_role,
             provider=provider_name,
@@ -551,22 +590,20 @@ class WrapRunner:
             **os.environ,
             **session.get_env(),
             **provider.get_env(session.session_dir, self.project_dir),
-            **override_env,
+            **session_env,
             "AI_HATS_ROLE": active_role,
         }
 
-        # Run hooks: session_start
-        hooks_runner = HooksRunner(
-            self.project_dir / ".agent" / "hooks",
-            self.project_dir,
-        )
+        # Run hooks: session_start. See _make_session_hooks_runner for the
+        # canonical-path rationale (HATS-412).
+        hooks_runner = self._make_session_hooks_runner()
         hooks_runner.run(LifecycleEvent.SESSION_START, env=env)
         session.log_trace(TraceTag.SYS, "hooks.session_start completed")
 
         # Build CLI command with session ID for JSONL linkage
         claude_session_id = str(uuid.uuid4())
         cmd = provider.get_cli_command(extra_args)
-        cmd.extend(override_args)
+        cmd.extend(session_args)
         # Don't inject --session-id when the user is resuming/continuing
         # an existing session — it already has its own id, and Claude CLI
         # rejects --session-id + --resume without --fork-session.
@@ -604,9 +641,10 @@ class WrapRunner:
                 tracer=tracer,
                 tags=tags,
             )
-            # HATS-307: drop the ephemeral plugin-dir created by build_override.
-            # Orphans on SIGKILL are accepted (OS reclaims /tmp on reboot).
-            _cleanup_plugin_dir(override_args)
+            # HATS-294: drop the per-session cache dir (prompt + plugin/).
+            # SIGKILL-orphans are accepted — TTL sweep mops them up on the
+            # next session_start.
+            _cleanup_session_cache(self.project_dir, session.session_id)
 
         return exit_code, session
 
@@ -925,9 +963,12 @@ class SubAgentRunner:
 
         cmd = provider.get_cli_command()
         # HATS-307: materialize spawned role's skills for the sub-agent.
-        # For Claude this returns ["--plugin-dir", <tmp>]; for Gemini it's
-        # currently [] (HATS-367 will fill that gap).
-        skill_args = provider.materialize_runtime_skills(self.project_dir, result)
+        # For Claude this returns ["--plugin-dir", <cache_dir>/plugin]; for
+        # Gemini it's currently [] (HATS-367 will fill that gap). Cleaned by
+        # _cleanup_session_cache in the finally block.
+        skill_args = provider.materialize_runtime_skills(
+            self.project_dir, result, session.session_id,
+        )
         cmd = cmd + skill_args
         session.log_trace(TraceTag.SUB, f"Executing: {' '.join(cmd)}")
 
@@ -994,7 +1035,7 @@ class SubAgentRunner:
                     duration_s=time.monotonic() - t0,
                 )
             finally:
-                _cleanup_plugin_dir(skill_args)
+                _cleanup_session_cache(self.project_dir, session.session_id)
 
         return session
 
@@ -1007,7 +1048,7 @@ class SubAgentRunner:
 
         # SYSTEM_ROLE — HATS-380: expand <ai_hats_dir> before the role/trait
         # injection reaches the sub-agent inline. Canonical writer and provider
-        # build_override paths already expand; meta-prompt was the residual gap
+        # build_session_prompt paths already expand; meta-prompt was the residual gap
         # (roles like session-reviewer carry literal <ai_hats_dir> in injection).
         merged = expand_path_placeholders(result.merged_injection, self.project_dir)
         sections.append(f"# SYSTEM_ROLE\n{merged}")

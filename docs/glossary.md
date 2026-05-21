@@ -60,6 +60,15 @@ Three kinds of cards with strict state machines. **All operations go through the
 
 State-machine diagrams — see [4]. Day-to-day workflow — see [7] (HATS-358, not yet written).
 
+## Attachment
+
+A file attached to a Task via `ai-hats task attach add`. Blob lives in
+`<ai_hats_dir>/tracker/backlog/tasks/<ID>/attachments/<name>`; the manifest
+entry — `name`, `digest` (12-char SHA-256 prefix), `added`, `note` — is stored
+in `task.yaml::attachments[]`. A pre-commit hook (HATS-402) refuses commits
+that add or modify files under `attachments/` without a corresponding
+manifest entry; the only legal path is the CLI.
+
 ## Reflect
 
 The feedback loop that turns session evidence plus active HYP / open PROP into actionable items. Three entry points:
@@ -78,6 +87,13 @@ What ai-hats persists on disk during normal use.
 - **SessionReview** — `<ai_hats_dir>/sessions/retros/sessions/<id>.md`. Output of `session-reviewer`: `summary`, `observations`, `hypothesis_verdicts`, `proposal_actions`. Schema `hats-session-review/v1`. Consumed by the next reflect cycle. Detail — see [5].
 - **JudgeReport** — `<ai_hats_dir>/sessions/retros/judge/<UTC-ts>-report.md`. Output of `ai-hats reflect all` — HYP closures plus PROP decisions for one triage session. Detail — see [5].
 - **RoleCoherenceReport** — `<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ts>-<target>.md`. Output of `ai-hats reflect role` — findings on internal contradictions in a role composition. Detail — see [8].
+
+## Session-end output blocks
+
+Two visually similar blocks fire at the end of a [Session](#session). Use these names in code, docs, and conversation — calling both "плашка" or "banner" hides the distinction.
+
+- **Session summary** — the `✨ Session <id> complete!` block with duration, turn count, audit / trace size, retro decision, tokens, and session directory. Always printed; produced by `runtime._print_session_end` inside the `launch_provider` pipeline step.
+- **Update banner** — a separate three-line block surfaced only when the installed `ai-hats` SHA lags upstream `master`. Format: yellow lead line with `current → latest` short SHAs, cyan `ai-hats update` command, dim `silence: export AI_HATS_NO_UPDATE_CHECK=1` hint. Produced by the `render_update_banner` pipeline step (`execute.yaml` / `human.yaml`); reads `<ai_hats_dir>/.cache/update-check.json` written by the `check_update_async` step's background probe (24h TTL, stale-while-revalidate).
 
 ---
 

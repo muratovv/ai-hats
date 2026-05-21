@@ -196,6 +196,24 @@ def state_md_path(project_dir: Path) -> Path:
     return ai_hats_dir(project_dir) / "STATE.md"
 
 
+# ---------- Session cache (HATS-294) ----------
+
+
+def session_cache_root(project_dir: Path) -> Path:
+    """Root dir for per-session ephemeral artefacts: ``<ai_hats_dir>/.cache/sessions/``.
+
+    Each session keeps its composed prompt and plugin-dir under
+    ``<root>/<session_id>/``. The whole ``.cache/`` tree is gitignored
+    and swept by TTL on session_start.
+    """
+    return ai_hats_dir(project_dir) / ".cache" / "sessions"
+
+
+def session_cache_dir(project_dir: Path, session_id: str) -> Path:
+    """Per-session cache dir: ``<ai_hats_dir>/.cache/sessions/<session_id>/``."""
+    return session_cache_root(project_dir) / session_id
+
+
 # ---------- Library class ----------
 
 
