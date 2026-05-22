@@ -124,6 +124,9 @@ class SessionReviewRunner:
         )
         sections.append(self._render_active_hypotheses())
         sections.append(self._render_open_proposals())
+        composition_section = self._render_composition(facts)
+        if composition_section:
+            sections.append(composition_section)
         sections.append(self._render_session_evidence(sid))
         sections.append(
             "## Output requirements (STRICT — extras are rejected)\n\n"
@@ -174,6 +177,43 @@ class SessionReviewRunner:
                 f"  success_criterion: {h.success_criterion!r}\n"
                 f"  observation_window: {h.observation_window!r}"
             )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _render_composition(facts) -> str:
+        """HATS-442: surface the effective composition with source-tags.
+
+        Returns an empty string when the snapshot is absent (old sessions),
+        so the prompt stays clean for legacy data.
+        """
+        composition = getattr(facts, "composition", None) or {}
+        if not composition:
+            return ""
+        prov = composition.get("provenance", {}) or {}
+
+        def _fmt(names: list[str], layer_map: dict) -> str:
+            if not names:
+                return "(none)"
+            return ", ".join(
+                f"{n} ({layer_map.get(n, 'built-in')})" for n in names
+            )
+
+        lines = [
+            "## Effective composition (what actually loaded for this session)",
+            "",
+            f"Role: {facts.role}",
+            f"Traits: {_fmt(composition.get('traits', []) or [], prov.get('traits', {}))}",
+            f"Rules:  {_fmt(composition.get('rules', []) or [], prov.get('rules', {}))}",
+            f"Skills: {_fmt(composition.get('skills', []) or [], prov.get('skills', {}))}",
+            "",
+            "Layer tags: `(built-in)` = ships with ai-hats; `(global)` = the "
+            "user's `~/.ai-hats/customizations.yaml`; `(project)` = this "
+            "project's `ai-hats.yaml::customizations`. When citing why a "
+            "behaviour occurred (or didn't), the source-tag tells you whether "
+            "the issue belongs to framework defaults, the user's personal "
+            "overlay, or this project's overlay — useful for the proposal's "
+            "`target` field.",
+        ]
         return "\n".join(lines)
 
     def _render_open_proposals(self) -> str:
