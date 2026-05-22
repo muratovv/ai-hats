@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import sys
-from importlib.resources import files
 from pathlib import Path
 
 import click
@@ -27,17 +26,14 @@ import click
 from ._helpers import _project_dir, console
 
 
-def _initial_injections_dir() -> Path:
-    """Builtin initial_injections dir under the installed package."""
-    return Path(str(files("ai_hats.library") / "core" / "initial_injections"))
-
-
-def _resolve_prompt(arg: str | None) -> str | None:
+def _resolve_prompt(arg: str | None, project_dir: Path) -> str | None:
     """Resolve ``--prompt`` into the text to inject as first user message.
 
-    Lookup order:
+    Lookup order (HATS-445):
       1. ``arg is None`` → return ``None``.
-      2. ``library/core/initial_injections/<arg>.md`` (short name).
+      2. ``initial_injections/<arg>.md`` across the full ``library_paths``
+         chain via :meth:`LibraryResolver.resolve_injection` — last-wins,
+         so a project-local override beats user-global beats built-in.
       3. ``arg`` as a filesystem path (absolute or cwd-relative).
       4. Fallback: treat ``arg`` as raw prompt text.
 
@@ -47,9 +43,11 @@ def _resolve_prompt(arg: str | None) -> str | None:
     """
     if arg is None:
         return None
-    name_path = _initial_injections_dir() / f"{arg}.md"
-    if name_path.is_file():
-        return name_path.read_text()
+    from ..assembler import Assembler
+
+    inj_path = Assembler(project_dir).resolver.resolve_injection(arg)
+    if inj_path is not None:
+        return inj_path.read_text()
     fs_path = Path(arg)
     if fs_path.is_file():
         return fs_path.read_text()
@@ -57,7 +55,8 @@ def _resolve_prompt(arg: str | None) -> str | None:
     if "/" in arg or arg.endswith((".md", ".txt")):
         raise click.BadParameter(
             f"--prompt {arg!r}: looks like a path but no such file. "
-            f"Tried {name_path} and {fs_path.resolve()}.",
+            f"Tried initial_injections/{arg}.md across library_paths and "
+            f"{fs_path.resolve()}.",
             param_hint="--prompt",
         )
     return arg
@@ -82,7 +81,8 @@ def _resolve_prompt(arg: str | None) -> str | None:
     "prompt_arg",
     default=None,
     help="Initial prompt: short name (resolves to "
-    "library/core/initial_injections/<name>.md) or filesystem path.",
+    "initial_injections/<name>.md across library_paths, last-wins) "
+    "or filesystem path.",
 )
 @click.option("--model", default="", help="Model override (batch only).")
 @click.option(
@@ -126,8 +126,8 @@ def execute_cmd(
     except TagValidationError as e:
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
-    prompt_text = _resolve_prompt(prompt_arg)
     project_dir = _project_dir()
+    prompt_text = _resolve_prompt(prompt_arg, project_dir)
 
     with PipelineHarness("execute", project_dir) as h:
         # Interactive mode: provider CLI receives prompt as the first
