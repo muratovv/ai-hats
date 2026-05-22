@@ -49,7 +49,7 @@ def test_renders_banner_when_update_available(tmp_path, monkeypatch, capsys):
     assert "ai-hats update available" in captured.err
     assert "a1b2c3d" in captured.err
     assert "9876543" in captured.err
-    assert "ai-hats update" in captured.err
+    assert "ai-hats self update" in captured.err
     # Discoverability: env var name must appear in the banner itself.
     assert "AI_HATS_NO_UPDATE_CHECK" in captured.err
 
