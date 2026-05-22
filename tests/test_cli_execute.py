@@ -10,19 +10,20 @@ import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli import main
-from ai_hats.cli.execute import _initial_injections_dir, _resolve_prompt
+from ai_hats.cli.execute import _resolve_prompt
 
 
 # ---------- _resolve_prompt ----------
 
 
-def test_resolve_prompt_none() -> None:
-    assert _resolve_prompt(None) is None
+def test_resolve_prompt_none(tmp_path: Path) -> None:
+    assert _resolve_prompt(None, tmp_path) is None
 
 
 def test_resolve_prompt_short_name_resolves_to_builtin(tmp_path: Path) -> None:
-    # The shipped reflect-all.md must resolve by short name.
-    text = _resolve_prompt("reflect-all")
+    # The shipped reflect-all.md must resolve by short name via the
+    # built-in entry of LibraryResolver.library_paths (HATS-445).
+    text = _resolve_prompt("reflect-all", tmp_path)
     assert text is not None
     assert "Reflect-all triage session" in text
 
@@ -30,31 +31,64 @@ def test_resolve_prompt_short_name_resolves_to_builtin(tmp_path: Path) -> None:
 def test_resolve_prompt_filesystem_path(tmp_path: Path) -> None:
     f = tmp_path / "my-prompt.md"
     f.write_text("hello world")
-    text = _resolve_prompt(str(f))
+    text = _resolve_prompt(str(f), tmp_path)
     assert text == "hello world"
 
 
 def test_resolve_prompt_fail_fast_on_path_shape(tmp_path: Path) -> None:
     """Path-shaped arg with no file → fail fast (likely a typo)."""
     with pytest.raises(click.BadParameter):
-        _resolve_prompt("./does-not-exist.md")
+        _resolve_prompt("./does-not-exist.md", tmp_path)
     with pytest.raises(click.BadParameter):
-        _resolve_prompt("/no/such/file.txt")
+        _resolve_prompt("/no/such/file.txt", tmp_path)
 
 
-def test_resolve_prompt_raw_text_fallback() -> None:
+def test_resolve_prompt_raw_text_fallback(tmp_path: Path) -> None:
     """Plain text (no path-shape) is returned verbatim — supports
     ``--prompt 'ping'`` use case where user just wants to send a message."""
-    assert _resolve_prompt("ping") == "ping"
-    assert _resolve_prompt("hello world") == "hello world"
+    assert _resolve_prompt("ping", tmp_path) == "ping"
+    assert _resolve_prompt("hello world", tmp_path) == "hello world"
 
 
-def test_initial_injections_dir_points_to_package_library() -> None:
-    d = _initial_injections_dir()
-    assert d.name == "initial_injections"
-    assert d.parent.name == "core"
-    assert d.parent.parent.name == "library"
-    assert (d / "reflect-all.md").is_file()
+def test_resolve_prompt_project_library_overrides_builtin(
+    tmp_path: Path,
+) -> None:
+    """A project-local ``libraries/initial_injections/<name>.md`` shadows
+    the built-in file of the same name — last-wins precedence (HATS-445).
+    """
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "ai-hats.yaml").write_text(
+        "schema_version: 2\nprovider: claude\nactive_role: maintainer\n"
+    )
+    inj_dir = project / "libraries" / "initial_injections"
+    inj_dir.mkdir(parents=True)
+    (inj_dir / "reflect-all.md").write_text("PROJECT_OVERRIDE_MARKER")
+
+    text = _resolve_prompt("reflect-all", project)
+    assert text == "PROJECT_OVERRIDE_MARKER"
+
+
+def test_resolve_prompt_project_library_ships_custom_injection(
+    tmp_path: Path,
+) -> None:
+    """End-to-end PoC: a plugin's own ``initial_injections/<name>.md`` is
+    discoverable through ``--prompt <name>`` (HATS-445).
+    """
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "ai-hats.yaml").write_text(
+        "schema_version: 2\nprovider: claude\nactive_role: maintainer\n"
+    )
+    inj_dir = project / "libraries" / "initial_injections"
+    inj_dir.mkdir(parents=True)
+    (inj_dir / "rebalance-long.md").write_text(
+        "Rebalance the long strategy: ...\n"
+    )
+
+    text = _resolve_prompt("rebalance-long", project)
+    assert text is not None
+    assert "Rebalance the long strategy" in text
 
 
 # ---------- execute --help (smoke for click wiring) ----------

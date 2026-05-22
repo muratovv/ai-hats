@@ -64,6 +64,26 @@ class LibraryResolver:
             return None
         return rule_md.read_text()
 
+    def resolve_injection(self, name: str) -> Path | None:
+        """Resolve an initial-injection prompt file via ``library_paths``.
+
+        Searches each library root for ``initial_injections/<name>.md``.
+        Last-wins, same as components — a project-local override beats
+        user-global, which beats built-in (HATS-445).
+
+        Initial injections are NOT components (no ``config.yaml``, no
+        type enum), so this lives next to ``resolve_rule_dir`` rather
+        than going through ``_type_subdir``.
+
+        Returns ``None`` if no library carries the file.
+        """
+        result = None
+        for lib_path in self.library_paths:
+            candidate = lib_path / "initial_injections" / f"{name}.md"
+            if candidate.is_file():
+                result = candidate
+        return result
+
     def list_components(self, component_type: ComponentType) -> list[str]:
         """List all available components of a given type."""
         subdir = self._type_subdir(component_type)
