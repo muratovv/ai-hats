@@ -11,6 +11,21 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Added
+- **HATS-445** — `ai-hats execute --prompt <name>` now resolves
+  `initial_injections/<name>.md` through the full `library_paths` chain
+  (built-in core → usage → `~/.ai-hats/` → `cfg.library_paths` →
+  `<project>/libraries/`), last-wins. Unlocks **shell-alias custom
+  verbs**: plugin authors ship a role + an initial-injection prompt
+  under any library path, wrap `ai-hats execute` in a shell function
+  (e.g. `rebalance() { ai-hats execute --role fin_consult --prompt
+  "rebalance-$1"; }`), and get a custom verb with zero ai-hats core
+  changes. Built-in `reflect-all` / `reflect-role` preambles migrated to
+  the same resolver (the dead `_initial_injections_dir()` helper was
+  removed). A project-local override of any built-in injection name is
+  now possible. New section in `docs/how-to-extend.md`: "Custom verbs
+  via shell aliases", with the boundary criterion for when to graduate
+  to a full custom pipeline (HATS-268).
+
 - **HATS-437** — Two-level defence against autonomous shared-state writes
   (closes HYP-026 + HYP-027, cited in PROP-052). A new always-on rule
   `rule_pause_before_shared_state_write` (injected via `trait-agent`,
