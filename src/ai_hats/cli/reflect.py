@@ -141,8 +141,8 @@ def _spawn_detached(session_id: str, max_retries: int) -> None:
 )
 def reflect_all_cmd(dry_run: bool):
     """Interactive HYP closure + proposal triage via the `judge` role."""
+    from ..assembler import Assembler
     from ..pipeline.harness import PipelineHarness
-    from .execute import _initial_injections_dir
 
     project_dir = _project_dir()
     handoff_path = _build_handoff(project_dir)
@@ -150,7 +150,15 @@ def reflect_all_cmd(dry_run: bool):
     if dry_run:
         return
 
-    preamble = (_initial_injections_dir() / "reflect-all.md").read_text()
+    preamble_path = Assembler(project_dir).resolver.resolve_injection(
+        "reflect-all",
+    )
+    if preamble_path is None:
+        raise click.ClickException(
+            "built-in initial_injection 'reflect-all' not found in any "
+            "library_path — ai-hats packaging is broken"
+        )
+    preamble = preamble_path.read_text()
     handoff_text = handoff_path.read_text()
     combined = f"{preamble}\n\n---\n\n{handoff_text}"
 
@@ -215,18 +223,22 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
     """
     from ..assembler import Assembler
     from ..pipeline.harness import PipelineHarness
-    from .execute import _initial_injections_dir
 
-    composer = Assembler(project_dir).composer
+    assembler = Assembler(project_dir)
+    composer = assembler.composer
     composition = composer.compose(target_role)
     if composition.errors:
         raise click.ClickException(
             f"Cannot compose role {target_role!r}: {composition.errors}"
         )
 
-    preamble_template = (
-        _initial_injections_dir() / "reflect-role.md"
-    ).read_text()
+    preamble_path = assembler.resolver.resolve_injection("reflect-role")
+    if preamble_path is None:
+        raise click.ClickException(
+            "built-in initial_injection 'reflect-role' not found in any "
+            "library_path — ai-hats packaging is broken"
+        )
+    preamble_template = preamble_path.read_text()
 
     console.print(
         f"[cyan]→ Launching judge-for-role to audit: {target_role}[/]"
