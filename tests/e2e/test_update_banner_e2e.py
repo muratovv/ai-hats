@@ -51,7 +51,16 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-def _seed_cache(project: Path, *, installed: str, latest: str) -> Path:
+def _seed_cache(
+    project: Path,
+    *,
+    installed: str,
+    latest: str,
+    behind: int | None = None,
+    ahead: int | None = None,
+    installed_label: str | None = None,
+    latest_label: str | None = None,
+) -> Path:
     cache = project / ".agent" / "ai-hats" / ".cache" / "update-check.json"
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps({
@@ -61,6 +70,10 @@ def _seed_cache(project: Path, *, installed: str, latest: str) -> Path:
         "installed_sha": installed,
         "latest_sha": latest,
         "remote_url": "https://example.git",
+        "behind": behind,
+        "ahead": ahead,
+        "installed_label": installed_label,
+        "latest_label": latest_label,
     }) + "\n")
     return cache
 
@@ -75,10 +88,16 @@ def test_update_banner_e2e(tmp_path):
       3. ai-hats self init → ``ai-hats.yaml`` + composition.
       4. Inspect ``execute.yaml`` via the installed loader — assert both
          update-check steps are present in the right order.
-      5. Pre-seed cache with mismatch, run ``RenderUpdateBanner`` via
-         venv python — assert banner on stderr + opt-out hint visible.
-      6. Same step with ``AI_HATS_NO_UPDATE_CHECK=1`` — assert silent.
-      7. Seed matching SHAs — assert silent (no spurious banner).
+      5. Pre-seed cache with strictly-behind state (behind=19, ahead=0),
+         run ``RenderUpdateBanner`` via venv python — assert banner on
+         stderr + ``+19 commits`` suffix + opt-out hint visible.
+      5b. HATS-432 regression — installed ahead of upstream
+          (behind=0, ahead=5), assert silent.
+      5c. Diverged — both sides carry unique commits
+          (behind=3, ahead=2), assert silent.
+      6. Strictly-behind cache with ``AI_HATS_NO_UPDATE_CHECK=1`` —
+         assert silent.
+      7. Identical tips (behind=ahead=0) — assert silent.
       8. Verify ``python -m ai_hats.update_check`` exists as a runnable
          module (missing-arg → exit 1).
     """
@@ -130,8 +149,14 @@ def test_update_banner_e2e(tmp_path):
     assert "check_update_async" in lines[0], lines
     assert "render_update_banner" in lines[-1], lines
 
-    # ---- 5. seed mismatch → banner renders ----
-    _seed_cache(project, installed=INSTALLED_SHA, latest=LATEST_SHA)
+    # ---- 5. seed strictly-behind → banner renders with +N suffix ----
+    _seed_cache(
+        project,
+        installed=INSTALLED_SHA,
+        latest=LATEST_SHA,
+        behind=19,
+        ahead=0,
+    )
     res = _run(
         [str(venv_python), "-c",
          "import sys; from pathlib import Path; "
@@ -143,11 +168,58 @@ def test_update_banner_e2e(tmp_path):
     assert "ai-hats update available" in res.stderr, res.stderr
     assert INSTALLED_SHA[:7] in res.stderr, res.stderr
     assert LATEST_SHA[:7] in res.stderr, res.stderr
+    assert "+19 commits" in res.stderr, res.stderr
     assert "ai-hats self update" in res.stderr, res.stderr
     # Discoverability of opt-out — third dim line.
     assert "AI_HATS_NO_UPDATE_CHECK" in res.stderr, res.stderr
 
-    # ---- 6. opt-out — same seeded cache, banner suppressed ----
+    # ---- 5b. HATS-432 regression: installed AHEAD of upstream → silent ----
+    # The cache claims a "latest" SHA but installed has commits past it. The
+    # old `installed_sha != latest_sha` check fired here (arrow backwards in
+    # time); the ahead/behind semantics must suppress.
+    _seed_cache(
+        project,
+        installed=INSTALLED_SHA,
+        latest=LATEST_SHA,
+        behind=0,
+        ahead=5,
+    )
+    res = _run(
+        [str(venv_python), "-c",
+         "import sys; from pathlib import Path; "
+         "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
+         "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
+         str(project)],
+        cwd=project, env=env, timeout=15,
+    )
+    assert "ai-hats update available" not in res.stderr, res.stderr
+
+    # ---- 5c. diverged (both sides have unique commits) → silent ----
+    _seed_cache(
+        project,
+        installed=INSTALLED_SHA,
+        latest=LATEST_SHA,
+        behind=3,
+        ahead=2,
+    )
+    res = _run(
+        [str(venv_python), "-c",
+         "import sys; from pathlib import Path; "
+         "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
+         "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
+         str(project)],
+        cwd=project, env=env, timeout=15,
+    )
+    assert "ai-hats update available" not in res.stderr, res.stderr
+
+    # ---- 6. opt-out — strictly-behind cache, banner suppressed by env var ----
+    _seed_cache(
+        project,
+        installed=INSTALLED_SHA,
+        latest=LATEST_SHA,
+        behind=19,
+        ahead=0,
+    )
     env_optout = env.copy()
     env_optout["AI_HATS_NO_UPDATE_CHECK"] = "1"
     res = _run(
@@ -160,8 +232,14 @@ def test_update_banner_e2e(tmp_path):
     )
     assert "ai-hats update available" not in res.stderr, res.stderr
 
-    # ---- 7. matching SHAs — silent ----
-    _seed_cache(project, installed=INSTALLED_SHA, latest=INSTALLED_SHA)
+    # ---- 7. matching SHAs (behind=ahead=0) — silent ----
+    _seed_cache(
+        project,
+        installed=INSTALLED_SHA,
+        latest=INSTALLED_SHA,
+        behind=0,
+        ahead=0,
+    )
     res = _run(
         [str(venv_python), "-c",
          "import sys; from pathlib import Path; "
