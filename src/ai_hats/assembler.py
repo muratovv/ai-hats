@@ -1193,10 +1193,37 @@ class Assembler:
             warnings.append(f"failed to set core.hooksPath: {e.stderr.strip() or e}")
 
     def _build_tree(self, result: CompositionResult) -> dict:
-        """Build a dependency tree representation."""
+        """Build a dependency tree representation.
+
+        HATS-421: includes a ``provenance`` map ``{traits|rules|skills:
+        {name: "built-in"|"global"|"project"}}`` so ``config status`` can
+        annotate each node with which layer contributed it. The traits
+        list is also surfaced here (it doesn't otherwise appear in the
+        tree — composer flattens traits into rules/skills/injections).
+        """
+        provenance = self._get_overlay_provenance(result.name)
+        # Effective trait order: base composition + overlay-added (overlay
+        # removes are already applied by the composer for the composition
+        # lists, but trait-level visibility is what `config status` cares
+        # about). Walk layers in same order as provenance: base → global → project.
+        base_cfg = self.resolver.resolve_role_config(result.name)
+        effective_traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
+        for layer in (
+            self._get_global_overlay(result.name),
+            self._get_overlay(result.name),
+        ):
+            if layer is None:
+                continue
+            for name in layer.remove_traits:
+                if name in effective_traits:
+                    effective_traits.remove(name)
+            for name in layer.add_traits:
+                if name not in effective_traits:
+                    effective_traits.append(name)
         return {
             "name": result.name,
             "priorities": result.priorities,
+            "traits": effective_traits,
             "rules": [r.name for r in result.rules],
             "skills": [s.name for s in result.skills],
             "hooks": {
@@ -1212,6 +1239,7 @@ class Assembler:
                 if getattr(result.hooks, k)
             },
             "injections_count": len(result.injections),
+            "provenance": provenance,
         }
 
     def _check_health(self, result: CompositionResult) -> dict[str, str]:
