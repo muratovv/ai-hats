@@ -258,3 +258,105 @@ def test_raw_dump_disabled_by_default(tmp_path):
 
     assert not session.pty_raw_path.exists()
 
+
+
+# --- HATS-442: composition snapshot ---
+
+
+def _sample_composition() -> dict:
+    return {
+        "traits": ["trait-base", "personal-workflow"],
+        "rules": ["global_rule_resource_hygiene"],
+        "skills": ["design-minimalism"],
+        "provenance": {
+            "traits": {
+                "trait-base": "built-in",
+                "personal-workflow": "global",
+            },
+            "rules": {"global_rule_resource_hygiene": "built-in"},
+            "skills": {"design-minimalism": "built-in"},
+        },
+    }
+
+
+def test_init_audit_without_composition_is_backwards_compatible(tmp_path):
+    """Old callers (no composition kwarg) work identically — no Composition
+    section in audit.md, no composition key in metrics.json."""
+    session = make_test_session(tmp_path)
+    session.init_audit(role="maintainer", provider="claude", model="sonnet-4-6")
+    body = session.audit_path.read_text()
+    assert "## Composition" not in body
+    session.finalize_audit({"turns": 1, "tool_calls": 0})
+    import json
+    metrics = json.loads(session.metrics_path.read_text())
+    assert "composition" not in metrics
+
+
+def test_init_audit_with_composition_renders_section(tmp_path):
+    session = make_test_session(tmp_path)
+    session.init_audit(
+        role="maintainer",
+        provider="claude",
+        composition=_sample_composition(),
+    )
+    body = session.audit_path.read_text()
+    assert "## Composition" in body
+    # Traits line tags source layers explicitly.
+    assert "trait-base (built-in)" in body
+    assert "personal-workflow (global)" in body
+    assert "global_rule_resource_hygiene (built-in)" in body
+    assert "design-minimalism (built-in)" in body
+    # Order: composition section sits BEFORE the events table (so reviewers
+    # see context before the timeline).
+    assert body.index("## Composition") < body.index("## Events")
+
+
+def test_finalize_audit_includes_composition_in_metrics(tmp_path):
+    session = make_test_session(tmp_path)
+    composition = _sample_composition()
+    session.init_audit(role="maintainer", provider="claude", composition=composition)
+    session.finalize_audit({"turns": 3, "tool_calls": 12})
+    import json
+    metrics = json.loads(session.metrics_path.read_text())
+    assert metrics["composition"] == composition
+    # Existing fields preserved.
+    assert metrics["turns"] == 3
+    assert metrics["tool_calls"] == 12
+
+
+def test_composition_section_omits_empty_buckets(tmp_path):
+    """A role with no skills (e.g. test-agent) shouldn't render an empty
+    'Skills:' line — the render skips empty buckets."""
+    session = make_test_session(tmp_path)
+    session.init_audit(
+        role="bare",
+        provider="claude",
+        composition={
+            "traits": ["t1"],
+            "rules": [],
+            "skills": [],
+            "provenance": {"traits": {"t1": "built-in"}, "rules": {}, "skills": {}},
+        },
+    )
+    body = session.audit_path.read_text()
+    assert "- **Traits**:" in body
+    assert "- **Rules**:" not in body
+    assert "- **Skills**:" not in body
+
+
+def test_composition_provenance_defaults_to_built_in(tmp_path):
+    """A trait listed in the effective list but without an entry in the
+    provenance map falls back to 'built-in' — safe-default for partial maps."""
+    session = make_test_session(tmp_path)
+    session.init_audit(
+        role="r",
+        provider="claude",
+        composition={
+            "traits": ["unmapped-trait"],
+            "rules": [],
+            "skills": [],
+            "provenance": {"traits": {}, "rules": {}, "skills": {}},
+        },
+    )
+    body = session.audit_path.read_text()
+    assert "unmapped-trait (built-in)" in body
