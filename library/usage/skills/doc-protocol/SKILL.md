@@ -127,6 +127,27 @@ ai-hats <subcommand> --help | grep <flag>
 Surface any phantom references **before commit**. Update the doc, file a
 backlog item, or delete the reference.
 
+### INDEX.md freshness
+
+When a doc task **adds, removes, or renames** a file under `docs/`, or
+significantly restructures an existing one (new top-level section, renamed
+anchor), update `docs/INDEX.md`:
+
+- Add the file to the **Companion docs catalog** table with topic and
+  when-to-read.
+- If the file is relevant to a specific wizard step — add it under the
+  **Wizard companion docs** section too.
+- Remove the entry on file deletion; update the row on rename.
+
+Mechanical enforcement: `pre-commit-docs-index.sh` (from the `git-mastery`
+skill) blocks the commit when staged changes add / delete / rename
+`docs/*.md` without `docs/INDEX.md` also being staged. Content-only
+edits (status `M`) do not trigger the hook. This instruction explains
+the **why**; the hook is the safety net.
+
+Override (rare, only after user confirmation that the catalog drift is
+intentional): `AI_HATS_DOCS_INDEX_ACK=1 git commit ...`.
+
 ### Worked example
 
 **HATS-354 sync-pass on `how-to-feedback-loop.md`.** Doc referenced a
@@ -156,6 +177,7 @@ A doc task passes this protocol when:
 - If enumeration ≥6: triage was performed and ≤5 items remain (or user explicitly waived).
 - Every named code artifact in the doc passes a `grep` check against source.
 - Numbered-refs convention from CONTRIBUTING followed (if cross-doc/cross-file/fixture links).
+- `docs/INDEX.md` updated when the task adds, removes, or renames a file under `docs/`.
 
 ## See also
 
@@ -163,3 +185,4 @@ A doc task passes this protocol when:
 - `scope-guard` — implementation-stage scope discipline.
 - `CONTRIBUTING.md#documentation-references` — numbered-refs format spec.
 - `docs/glossary.md` — terminology source-of-truth.
+- `docs/INDEX.md` — wizard companion-docs catalog (must stay in sync; enforced by `pre-commit-docs-index.sh`).
