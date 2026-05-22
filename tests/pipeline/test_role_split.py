@@ -101,7 +101,7 @@ def test_maintainer_injection_has_role_header() -> None:
         "What NOT to commit",
         "Branches and commits",
         # Canonical CLI
-        "ai-hats update",
+        "ai-hats self update",
         # Glossary-first + numbered-refs
         "Glossary-first",
         "Numbered-refs",

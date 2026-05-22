@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ...update_check import OPT_OUT_ENV, is_disabled, read_cache
+from ...update_check.cache import CacheEntry
 from ..step import Step, StepIO
 
 
@@ -36,11 +37,26 @@ def _short(sha: str) -> str:
     return sha[:7] if sha else "?"
 
 
-def _render(installed: str, latest: str) -> str:
+def _render(entry: CacheEntry) -> str:
+    """Three-line banner. Prefer ``git describe`` labels; in the SHA-fallback
+    branch append ``, +<behind> commits`` so the user sees the delta size
+    without a human-readable tag.
+    """
+    installed_label = entry.installed_label or _short(entry.installed_sha)
+    latest_label = entry.latest_label or _short(entry.latest_sha)
+    have_labels = entry.installed_label is not None and entry.latest_label is not None
+    if have_labels:
+        delta_suffix = ""
+    else:
+        # ``has_update`` guarantees ``behind`` is a positive int by the time
+        # we render, but stay defensive so an unexpected schema never raises
+        # on the session-end hot path.
+        n = entry.behind if isinstance(entry.behind, int) and entry.behind > 0 else 0
+        delta_suffix = f", +{n} commits" if n else ""
     return (
         f"\n{_YELLOW}ai-hats update available "
-        f"({_short(installed)} → {_short(latest)}){_RESET}\n"
-        f"  run: {_CYAN}ai-hats update{_RESET}\n"
+        f"({installed_label} → {latest_label}{delta_suffix}){_RESET}\n"
+        f"  run: {_CYAN}ai-hats self update{_RESET}\n"
         f"  {_DIM}silence: export {OPT_OUT_ENV}=1{_RESET}\n"
     )
 
@@ -64,6 +80,6 @@ class RenderUpdateBanner(Step):
         entry = read_cache(project_dir)
         if entry is None or not entry.has_update:
             return {}
-        sys.stderr.write(_render(entry.installed_sha, entry.latest_sha))
+        sys.stderr.write(_render(entry))
         sys.stderr.flush()
         return {}
