@@ -12,7 +12,6 @@ composition:
     - skill-engineer
     - ai-hats-maintainer
     - ai-hats-framework
-    - personal-workflow
     - dev::python
     - dev::shell
   rules: []
@@ -51,5 +50,7 @@ injection: |
     d2 diagram workflow, release flow, architectural defaults.
   - **Framework knowledge** loaded via `ai-hats-framework` trait: core/usage
     library split decision rule.
-  - **Personal workflow** loaded via `personal-workflow` trait (temporary —
-    will move to user-side skill-install when that lands).
+  - **Personal workflow** (if you have one) is now layered in via your
+    `~/.ai-hats/customizations.yaml` — add via
+    `ai-hats config customize maintainer --add-trait personal-workflow --global`.
+    Lives in user-scope, not framework defaults (HATS-433).

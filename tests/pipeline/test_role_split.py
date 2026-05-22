@@ -1,5 +1,11 @@
-"""HATS-381 — assert maintainer role + ai-hats-framework + personal-workflow
-traits ship in the library and carry the promoted MEMORY content.
+"""HATS-381 — assert maintainer role + ai-hats-framework trait ship in the
+library and carry the promoted MEMORY content.
+
+HATS-433 removed the `personal-workflow` trait from the library — it now
+lives in user-scope (`~/.ai-hats/traits/personal-workflow/`) and is layered
+in via `ai-hats config customize <role> --add-trait personal-workflow
+--global`. Tests for that trait's content moved to the user's own concern;
+this file only asserts that the trait is NO LONGER present in the library.
 
 These are static-shape assertions on the YAML configs and bundled SKILL.md /
 rule.md bodies. No subprocess, no real bump. The E2E gate does not apply
@@ -38,9 +44,9 @@ def test_ai_hats_framework_trait_exists() -> None:
     assert trait.name == "ai-hats-framework"
 
 
-def test_personal_workflow_trait_exists() -> None:
-    trait = _load("library/usage/traits/personal-workflow/config.yaml")
-    assert trait.name == "personal-workflow"
+def test_personal_workflow_trait_removed_from_library() -> None:
+    """HATS-433: trait migrated to user-scope; library copy must be gone."""
+    assert not (LIBRARY / "usage/traits/personal-workflow").exists()
 
 
 def test_rule_core_vs_usage_split_exists() -> None:
@@ -70,6 +76,7 @@ def test_new_skill_exists_with_frontmatter(skill_rel: str) -> None:
 
 def test_maintainer_composition_has_expected_traits() -> None:
     role = _load("library/usage/roles/maintainer/config.yaml")
+    # HATS-433: personal-workflow dropped — now layered via user-scope `--global`.
     expected = {
         "trait-base",
         "trait-agent",
@@ -78,7 +85,6 @@ def test_maintainer_composition_has_expected_traits() -> None:
         "skill-engineer",
         "ai-hats-maintainer",
         "ai-hats-framework",
-        "personal-workflow",
         "dev::python",
         "dev::shell",
     }
@@ -153,21 +159,13 @@ def test_ai_hats_framework_injection_mentions_layered_library() -> None:
     assert "universal" in inj.lower()
 
 
-# --- personal-workflow trait — plan-iteration content present --------------
-
-
-def test_personal_workflow_has_plan_iteration_content() -> None:
-    trait = _load("library/usage/traits/personal-workflow/config.yaml")
-    inj = trait.injection
-    assert "Plan-mode iteration hygiene" in inj
-    assert "review-comments" in inj or "review-marker" in inj.lower()
-
-
-def test_personal_workflow_marked_temporary() -> None:
-    # The YAML carries an inline NOTE-comment flagging the trait as temporary;
-    # this preserves the "remove when user-skill-install lands" exit criterion.
-    raw = (LIBRARY / "usage/traits/personal-workflow/config.yaml").read_text()
-    assert "TEMPORARY" in raw.upper()
+# --- personal-workflow trait — content lives in user-scope (HATS-433) -----
+# Removed: `test_personal_workflow_has_plan_iteration_content` and
+# `test_personal_workflow_marked_temporary`. The trait is no longer in the
+# library — it migrated to `~/.ai-hats/traits/personal-workflow/` and is
+# activated per-user via the `--global` overlay. The TEMPORARY marker that
+# pointed at "remove when user-skill-install lands" is now satisfied
+# (HATS-421 shipped the user-skill-install mechanism).
 
 
 # --- Existing-trait wiring (skill attachments) -----------------------------
@@ -228,14 +226,14 @@ def test_contributing_has_maintainer_pointer() -> None:
 # --- HATS-392 — assistant split + dev-python role -------------------------
 
 
-def test_assistant_has_expected_8_traits() -> None:
+def test_assistant_has_expected_traits() -> None:
+    """HATS-433: personal-workflow removed; assistant now bundles 7 traits."""
     role = _load("library/usage/roles/assistant/config.yaml")
     expected = {
         "trait-base",
         "trait-agent",
         "trait-se-mindset",
         "trait-researcher-mindset",
-        "personal-workflow",
         "integration::google",
         "dev::python",
         "dev::shell",
@@ -267,10 +265,12 @@ def test_dev_python_composition() -> None:
     assert set(role.composition.traits) == expected
 
 
-def test_dev_python_is_clean_no_personal_or_google() -> None:
+def test_dev_python_is_clean_no_google_integration() -> None:
+    """HATS-433: personal-workflow removed from library entirely — this
+    test now only guards against integration::google leaking into the
+    clean Python baseline (assistant has it; dev-python must not)."""
     role = _load("library/usage/roles/dev-python/config.yaml")
-    forbidden = {"personal-workflow", "integration::google"}
-    assert not (forbidden & set(role.composition.traits))
+    assert "integration::google" not in role.composition.traits
 
 
 def test_dev_python_injection_has_role_header() -> None:

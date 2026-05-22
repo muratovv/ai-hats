@@ -253,6 +253,44 @@ After `ai-hats self bump`, the composed role is materialized into your project. 
 - **Tweak the injection of a built-in trait** — copy `library/usage/traits/<name>/config.yaml` into your `libraries/traits/<name>/`, edit the `injection:` block, `ai-hats self bump`. Same last-wins rule applies to traits.
 - **Share a private skill across projects** — put it under `~/.ai-hats/skills/<name>/`. Every project on your machine sees it without further config.
 
+## Migrating from a removed built-in component
+
+Sometimes ai-hats removes a component that previous releases shipped (the
+v0.7 example: `personal-workflow` trait — HATS-433). The component moves
+into user-scope; you re-instate it for yourself in two steps. Use this
+recipe whenever you see a `BREAKING` entry pointing at a component you relied on.
+
+**1. Re-create the component locally.** Read the deleted file from the
+git history of `ai-hats` at the previous tag, copy its body to your
+user-scope library:
+
+```bash
+# Find the last commit that had the file:
+cd $(python -c 'import ai_hats, os; print(os.path.dirname(ai_hats.__file__))')
+git log --diff-filter=D --name-only --oneline -- library/usage/traits/personal-workflow
+
+# (Outside the package, in your shell:)
+mkdir -p ~/.ai-hats/traits/personal-workflow
+# … paste the recovered config.yaml content into the file …
+```
+
+**2. Re-attach via a global overlay** so every project keeps loading it:
+
+```bash
+ai-hats config customize maintainer --add-trait personal-workflow --global
+ai-hats config customize assistant  --add-trait personal-workflow --global
+
+# In each project that uses these roles:
+ai-hats self bump
+```
+
+Verify with `ai-hats config status` — the trait should appear under the
+role's `traits` branch with a `(global)` source-tag.
+
+This pattern works for any removed trait / skill / rule: re-create under
+`~/.ai-hats/{traits,skills,rules}/<name>/` and re-attach via the
+`--global` overlay. No fork of the role required.
+
 ## References
 
 **[1]** — [`docs/how-to.md`](how-to.md) — `ai-hats.yaml` overlay recipes (add a skill, change provider, switch role, project-local libraries).

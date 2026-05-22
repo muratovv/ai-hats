@@ -10,6 +10,34 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Removed (BREAKING)
+- **HATS-433** — `personal-workflow` trait removed from the ai-hats package.
+  It was marked TEMPORARY in v0.6 with the explicit exit condition
+  "remove once user-side skill-install lands" — HATS-421 shipped that
+  mechanism, so the trait migrates to user-scope.
+
+  **Migration (one-time, per machine):**
+  ```bash
+  mkdir -p ~/.ai-hats/traits/personal-workflow
+  # Recover content from the previous tag — see docs/how-to-extend.md
+  # "Migrating from a removed built-in component" for the worked example.
+
+  # Re-attach via global overlay so every project keeps loading it:
+  ai-hats config customize maintainer --add-trait personal-workflow --global
+  ai-hats config customize assistant  --add-trait personal-workflow --global
+
+  # In each project that uses these roles:
+  ai-hats self bump
+  ```
+  Affected roles: `maintainer` (was 10 traits → now 9), `assistant`
+  (was 8 traits → now 7). `initial-wizard` Step 3 role descriptions
+  updated to point at `--global` instead of the bundled trait. Trait
+  content is unchanged — it's the same plan-mode iteration hygiene
+  body, just in user-scope so it follows you across every project
+  rather than living in framework defaults. Rationale: the TEMPORARY
+  seam was always intended as a placeholder until layered user
+  customizations existed (HATS-421 closed that gap).
+
 ### Added
 - **HATS-421** — User-level customizations layer
   (`~/.ai-hats/customizations.yaml`). Symmetric to the project-level
