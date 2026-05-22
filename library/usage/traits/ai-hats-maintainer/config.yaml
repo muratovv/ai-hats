@@ -32,10 +32,10 @@ injection: |
   - **No `Co-Authored-By` trailers** — commits are authored solely by the user.
 
   ### Canonical CLI (do not invent equivalents)
-  - **Update ai-hats in a consuming project:** `ai-hats update` (NOT raw
-    `pip install --force-reinstall git+...`). Follow with `ai-hats bump`
+  - **Update ai-hats in a consuming project:** `ai-hats self update` (NOT raw
+    `pip install --force-reinstall git+...`). Follow with `ai-hats self bump`
     if composition changed. For projects with isolated venv, call explicitly:
-    `~/<project>/.venv/bin/ai-hats update`.
+    `~/<project>/.venv/bin/ai-hats self update`.
   - **Backlog ops:** every change to `tasks/<ID>/**` via `ai-hats task ...`
     CLI — never direct file edits (see `rule_backlog_discipline §1`).
   - **Plan files:** edit `.claude/plans/<NN>-*.md` and `ai-hats task plan-sync <ID>`
