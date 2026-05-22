@@ -360,3 +360,31 @@ def test_composition_provenance_defaults_to_built_in(tmp_path):
     )
     body = session.audit_path.read_text()
     assert "unmapped-trait (built-in)" in body
+
+
+def test_audit_writer_preserves_composition_after_rebuild(tmp_path, monkeypatch):
+    """HATS-442 follow-up: AuditWriter.build rewrites audit.md from
+    JSONL/trace; the composition snapshot written by init_audit must
+    survive the rebuild (read back from metrics.json which preserves
+    existing keys via existing.update)."""
+    import json
+    from ai_hats.observe import AuditWriter, Session
+
+    session = make_test_session(tmp_path)
+    composition = _sample_composition()
+    session.init_audit(role="maintainer", provider="claude", composition=composition)
+    session.finalize_audit({"role": "maintainer", "provider": "claude", "turns": 1, "tool_calls": 0})
+
+    # Sanity — metrics.json carries the composition before rebuild.
+    metrics = json.loads(session.metrics_path.read_text())
+    assert metrics["composition"] == composition
+
+    # No JSONL → AuditWriter falls back to trace.log path (empty in this fixture).
+    # The fallback still calls _format_audit which must surface composition.
+    session.trace_path.write_text("")  # empty trace
+    AuditWriter().build(session, jsonl_path=None, keep_raw=False)
+
+    rebuilt = session.audit_path.read_text()
+    assert "## Composition" in rebuilt, "composition section lost during AuditWriter rebuild"
+    assert "trait-base (built-in)" in rebuilt
+    assert "personal-workflow (global)" in rebuilt
