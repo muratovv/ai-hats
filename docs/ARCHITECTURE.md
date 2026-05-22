@@ -244,6 +244,40 @@ generates a dispatcher at `.githooks/<event>`, and sets
 configured a `core.hooksPath` or has their own dispatcher without our
 marker — those are not touched; a warning with instructions is printed.
 
+### Shared-state guard (HATS-437)
+
+Some operations write shared state with no undo path — `gh pr merge` and
+`git push --force` chief among them. The framework defends against
+autonomous invocations in two layers:
+
+1. **Always-on rule** `rule_pause_before_shared_state_write` — injected
+   via `trait-agent` into every agent role; registered in
+   `ALWAYS_ON_RULES` so it ships inline in the provider system prompt
+   on every session. Requires the agent to pause and name the command
+   before any shared-state write (PR/issue/release/push/TaskCreate), and
+   forbids chaining such commands with other Bash calls in one
+   invocation.
+
+2. **Deterministic hooks** on the irreversible subset:
+   - `library/hooks/pre_bash_shared_state_guard.sh` — Claude Code
+     PreToolUse hook. Wired into `.claude/settings.json` idempotently by
+     `ClaudeProvider.ensure_runtime_hooks()` during `self init` and
+     `self bump`. Blocks `gh pr merge` and `git push --force` when run
+     without a controlling TTY (i.e. agent context).
+   - `library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`
+     — git pre-push hook installed via the HATS-088 mechanism. Detects
+     non-fast-forward pushes and blocks them; branch creations and
+     deletions short-circuit so benign cleanup is not affected.
+
+   Both hooks honour a per-command override:
+   `AI_HATS_SHARED_STATE_ACK=1 <command>`.
+
+**Provider asymmetry.** Gemini CLI has no PreToolUse equivalent, so
+Gemini sessions get the rule + the git pre-push hook only — the
+`gh pr merge` deterministic block is Claude-only. `ClaudeProvider`
+overrides `Provider.ensure_runtime_hooks()` to perform the auto-wire;
+`GeminiProvider` keeps the default no-op.
+
 ### Sample role config.yaml
 
 ```yaml

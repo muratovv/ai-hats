@@ -3,6 +3,7 @@ composition:
   traits: []
   rules:
     - rule_backlog_discipline
+    - rule_pause_before_shared_state_write
     - dev_rule_edit_efficiency
     - dev_rule_tool_call_hygiene
   skills:

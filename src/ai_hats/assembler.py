@@ -488,6 +488,10 @@ class Assembler:
             if (self.project_dir / ".git").exists():
                 result = self.composer.compose(role, overlays=self._get_overlays(role))
                 self._install_git_hooks(result)
+            # HATS-437: provider-specific runtime hooks (Claude PreToolUse).
+            # Independent of .git presence — settings.json wiring is useful
+            # even in non-git project dirs. Idempotent.
+            active_provider.ensure_runtime_hooks(self.project_dir)
 
     def _get_overlay(self, role_name: str) -> OverlayConfig | None:
         """Get the **project** overlay for a role, or ``None`` if absent/empty.
@@ -653,6 +657,12 @@ class Assembler:
         # 3. Skill-contributed git hooks (HATS-088).
         self._install_git_hooks(result)
 
+        # 3a. Provider-specific runtime hooks — HATS-437.
+        # Claude: writes a PreToolUse entry for the shared-state guard
+        # into ``.claude/settings.json``. Gemini: no-op (no equivalent
+        # channel). Idempotent.
+        provider.ensure_runtime_hooks(self.project_dir)
+
         # 4. Canonical user-rules aggregator (HATS-294).
         self.write_canonical()
 
@@ -796,6 +806,10 @@ class Assembler:
             return None
         result = self.composer.compose(role, overlays=self._get_overlays(role))
         self._install_git_hooks(result)
+        # HATS-437: re-install provider-specific runtime hooks (Claude
+        # PreToolUse). Idempotent; recreates the entry if the user deleted
+        # .claude/settings.json manually between bumps.
+        provider.ensure_runtime_hooks(self.project_dir)
         return result
 
     def _note_empty_legacy_agent_dir(self) -> None:
