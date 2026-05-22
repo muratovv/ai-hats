@@ -26,6 +26,18 @@ When resolving a component by name, ai-hats walks these paths in order; **later 
 
 So a `~/.ai-hats/roles/my-role/` is visible to every project on your machine; a `<project>/libraries/roles/my-role/` is visible only to that project; both override anything with the same name in the built-in layers.
 
+> **Composition layer vs library layer.** The table above is about *where
+> ai-hats finds component definitions* (the body of a trait, the markdown
+> of a skill, the yaml of a role). Separately, there's a **composition
+> overlay** mechanism (`customizations:`) that lets you add/remove
+> components from a role without forking it; that overlay is also
+> layered — global (`~/.ai-hats/customizations.yaml`) before project
+> (`<project>/ai-hats.yaml`). See `docs/how-to.md` §4b for global
+> overlays and `docs/how-to-configure.md` §4 for full CLI reference. Use
+> the library layers below for new components; use the composition
+> overlays when you only need to tweak which existing components a role
+> pulls in.
+
 ## Worked example: add your own role
 
 Add `code-reviewer` to one project:

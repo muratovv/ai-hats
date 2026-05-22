@@ -159,6 +159,48 @@ ai-hats config customize sre --reset
 
 > If `--remove-skill X` references a skill not in the base composition, ai-hats emits an `Overlay: cannot remove ...` warning and continues. Not an error — just an alert that the overlay is silently inert.
 
+### Two layers: project and global
+
+Every `customize` flag accepts an optional `--global` to route the edit
+into `~/.ai-hats/customizations.yaml` instead of the project's
+`ai-hats.yaml`. Same flags, same schema, different file. The user-level
+overlay applies to **every** project you open.
+
+```bash
+ai-hats config customize sre --add-skill kubernetes-ops              # project
+ai-hats config customize sre --add-skill kubernetes-ops --global     # user-wide
+```
+
+Inspect each layer:
+
+```bash
+ai-hats config customize sre --show               # both layers
+ai-hats config customize sre --show --global      # only user-level
+ai-hats config customize sre --show --project     # only project
+```
+
+`--global` and `--project` are mutually exclusive on writes (a `--global`
+write goes to the user file; without `--global`, the write goes to the
+project).
+
+**Compose order** is built-in role → global overlay → project overlay →
+final composition. **Project wins on conflict** because it is applied
+last:
+
+| global | project | result                  |
+| ------ | ------- | ----------------------- |
+| `add: X`    | `remove: X`  | no `X`             |
+| `remove: X` | `add: X`     | `X` at the tail    |
+| `add: X`    | `add: X`     | `X` (deduplicated) |
+
+Putting the same name in both `add` and `remove` **within a single layer**
+is a documented "move-to-end" reorder operation — see the recipe in
+`docs/how-to.md` §4c.
+
+Run `ai-hats config status` to see the merged dependency tree with a
+source-tag per node — `(built-in)`, `(global)`, or `(project)` — so you
+always know which layer contributed each trait, rule, and skill.
+
 For more recipes (add a whole trait, switch provider without losing settings, local-library skills, minimal config for a new project) — see [2].
 
 ---

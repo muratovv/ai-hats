@@ -123,6 +123,102 @@ The skill name must match the directory name under `library_paths/skills/`.
 
 ---
 
+## 4b. Global overlays for personal workflow
+
+**Scenario:** you have 5–10 projects and the same personal trait/skill/rule
+should be active in every one of them (e.g. a HILT workflow trait you wrote,
+a personal `git-mastery` skill, or a custom rule about code style). You do
+NOT want to repeat `config customize` in each project; you also don't want
+to fork the role definition.
+
+Use the **user-level** overlay file at `~/.ai-hats/customizations.yaml`. It
+has the same schema as `customizations:` in `ai-hats.yaml`, applies before
+the project layer, and follows you across every project.
+
+```yaml
+# ~/.ai-hats/customizations.yaml
+schema_version: 4
+customizations:
+  maintainer:
+    add:
+      traits:
+        - hilt-workflow
+  assistant:
+    add:
+      traits:
+        - hilt-workflow
+```
+
+CLI equivalent (one-time):
+
+```bash
+# Put your personal trait somewhere ai-hats can find it.
+mkdir -p ~/.ai-hats/traits/hilt-workflow
+$EDITOR ~/.ai-hats/traits/hilt-workflow/config.yaml
+
+# Apply globally — runs once, affects every project.
+ai-hats config customize maintainer --add-trait hilt-workflow --global
+ai-hats config customize assistant  --add-trait hilt-workflow --global
+```
+
+In each project that uses these roles, run `ai-hats self bump` once to
+regenerate `CLAUDE.md` / `GEMINI.md`. After that, new sessions automatically
+compose `hilt-workflow` in.
+
+**Inspecting layers**:
+
+```bash
+ai-hats config customize maintainer --show              # both layers
+ai-hats config customize maintainer --show --global     # only global
+ai-hats config customize maintainer --show --project    # only project
+ai-hats config status                                   # full tree with (built-in)/(global)/(project) tags
+```
+
+**Removing**:
+
+```bash
+ai-hats config customize maintainer --reset --global    # clear global only
+```
+
+If you clear the last user-level customization, `~/.ai-hats/customizations.yaml`
+is removed automatically — no empty stub left behind.
+
+**Project overrides global on conflict.** If global adds `X` and project
+removes `X`, the trait is absent (project wins). The merge order is:
+built-in role → global overlay → project overlay → final composition. See
+[Reordering composition](#4c-reordering-composition) for the move-to-end
+semantic that uses `add: X` + `remove: X` deliberately.
+
+---
+
+## 4c. Reordering composition
+
+**Scenario:** you want a trait/skill loaded at the **end** of composition so
+it can override or dedup-displace something earlier. The overlay schema gives
+you this for free: putting the same name in BOTH `add` and `remove` inside a
+single layer is a documented "move to layer's tail" operation.
+
+```yaml
+# Layered overlay (project-level shown; same works at global level):
+customizations:
+  maintainer:
+    remove:
+      traits: [tool-call-hygiene]    # remove from its current position
+    add:
+      traits: [tool-call-hygiene]    # re-append at the layer's tail
+```
+
+The composer's `_apply_overlay` runs `remove` first, then `add` (append), so
+the trait ends up last within the layer's scope. Cross-layer reorder works
+the same way: global puts `X` at the end of the global layer; project puts
+`X` at the end after both layers have applied.
+
+Note: the CLI's `--add-X` after `--remove-X` (or vice versa) *cancels* the
+previous operation as a typo-correction convenience. To express deliberate
+reorder, edit the yaml directly so both lists contain the name.
+
+---
+
 ## 5. Add a whole trait (e.g. dev::python)
 
 **Scenario:** Python tooling has appeared in an SRE project, and you want to pull the entire Python rules/skills stack in one move.
