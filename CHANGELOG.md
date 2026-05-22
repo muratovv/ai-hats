@@ -11,6 +11,23 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Added
+- **HATS-444** — `docs/INDEX.md` is now the single source of truth for the
+  initial-wizard role's companion-docs catalog. The wizard injection
+  previously hardcoded a per-step list of `how-to-*.md` references in
+  two places, which meant every new doc required a synchronised wizard
+  edit. The new pattern: the wizard opener points at `docs/INDEX.md` and
+  keeps a 3-line minimal fallback (configure / extend / glossary) for
+  legacy projects where INDEX is missing; the per-step «Companion docs
+  (full catalog)» section is replaced with a pointer to INDEX. Maintainer
+  contract: the `doc-protocol` skill now requires INDEX updates when a
+  doc task adds, removes, or renames a file under `docs/`. Mechanical
+  enforcement: a new git pre-commit hook
+  (`library/core/skills/git-mastery/git_hooks/pre-commit-docs-index.sh`)
+  blocks commits that stage structural docs/ changes (A/D/R/C) without
+  staging `docs/INDEX.md` alongside; content-only edits (status M) are
+  not affected. Override per-commit: `AI_HATS_DOCS_INDEX_ACK=1 git commit
+  ...`.
+
 - **HATS-437** — Two-level defence against autonomous shared-state writes
   (closes HYP-026 + HYP-027, cited in PROP-052). A new always-on rule
   `rule_pause_before_shared_state_write` (injected via `trait-agent`,
