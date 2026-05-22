@@ -9,7 +9,6 @@ composition:
     - trait-agent
     - trait-se-mindset
     - trait-researcher-mindset
-    - personal-workflow
     - integration::google
     - dev::python
     - dev::shell
