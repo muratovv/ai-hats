@@ -148,7 +148,16 @@ Full reference — `ai-hats --tree`.
 
 ## Customization
 
-The shipped library splits into `library/core/` (engine fundament) and `library/usage/` (curated content). To override a built-in role, add your own skill / rule / trait, or replace a system role like `session-reviewer` — see [6] for the override-precedence chain and worked examples.
+The shipped library splits into `library/core/` (engine fundament) and `library/usage/` (curated content). Role definitions live under `library/core/roles/` and `library/usage/roles/`; you change behaviour by composing or replacing them rather than editing core code.
+
+Reference for role changes — [`docs/how-to-extend.md`](docs/how-to-extend.md):
+
+- [Worked example: add your own role](docs/how-to-extend.md#worked-example-add-your-own-role) — minimal recipe for a new role from scratch.
+- [Replacing a system role](docs/how-to-extend.md#replacing-a-system-role-eg-your-own-auditor) — override a built-in like `session-reviewer`.
+- [Pointing ai-hats at extra library paths](docs/how-to-extend.md#pointing-ai-hats-at-extra-library-paths) — keep roles in an external repo and consume them globally.
+- [Custom verbs via shell aliases](docs/how-to-extend.md#custom-verbs-via-shell-aliases) — ship a role + initial-injection prompt as a one-liner shell alias.
+
+Same doc covers the override-precedence chain ([6]) for traits, rules, and skills. Documentation entry-point: [`docs/INDEX.md`](docs/INDEX.md) ([8]).
 
 Advanced flows — custom pipeline steps, isolated worktrees, parallel sub-agents — live in [5].
 
@@ -206,3 +215,5 @@ Roles compose from traits + rules + skills, a flat model, a task state machine, 
 **[6]** — [`docs/how-to-extend.md`](docs/how-to-extend.md) — shipped library layout, override precedence, recipes for your own roles / traits / rules / skills.
 
 **[7]** — [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — internal model, directory layout, skill format, sample `config.yaml`.
+
+**[8]** — [`docs/INDEX.md`](docs/INDEX.md) — documentation catalog and entry-point: per-step wizard references plus the full list of `how-to-*.md` files with topic / when-to-read tags.
