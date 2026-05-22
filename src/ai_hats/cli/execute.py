@@ -8,8 +8,9 @@ One command, two modes:
   output). Same path as ``ai-hats agent``.
 
 The ``--prompt`` flag resolves either to a file under
-``library/core/initial_injections/<name>.md`` (by short name) or to a
-filesystem path. The resolved content becomes the first user-visible message.
+``initial_injections/<name>.md`` across the full ``library_paths`` chain
+(by short name, last-wins — HATS-445) or to a filesystem path. The
+resolved content becomes the first user-visible message.
 
 All entry-points (bare ``ai-hats``, ``ai-hats agent``, ``ai-hats reflect *``)
 go through ``PipelineHarness`` over a built-in YAML pipeline (HATS-269).
