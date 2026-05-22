@@ -178,7 +178,7 @@ def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
     if not role:
         return set(), set()
     try:
-        result = asm.composer.compose(role, overlay=asm._get_overlay(role))
+        result = asm.composer.compose(role, overlays=asm._get_overlays(role))
         return {r.name for r in result.rules}, {s.name for s in result.skills}
     except (AssemblyError, ValueError, OSError, KeyError, AttributeError):
         logger.debug("composition snapshot failed", exc_info=True)
