@@ -47,15 +47,14 @@ injection: |
   > A minimal `ai-hats.yaml` already exists. Everything else lands via
   > `ai-hats config …` commands — I won't edit the yaml directly.
   >
-  > Companion docs you can ask me to open with the Read tool at any
-  > point (or read yourself):
+  > Companion docs map: open `docs/INDEX.md` (Read tool) at any point —
+  > it lists which docs are relevant for each step.
   >
-  > - `docs/how-to-configure.md` — full walkthrough mirroring these steps
-  > - `docs/glossary.md` — core terms (role, provider, session, …)
-  > - `docs/how-to.md` — overlay cookbook (extra material for Step 4)
-  > - `docs/how-to-feedback-loop.md` — feedback-policy details (Step 6)
-  > - `docs/how-to-extend.md` — bring-your-own roles / traits / skills
-  > - `docs/ARCHITECTURE.md` — composition model (if curious)
+  > Core references if INDEX is unavailable:
+  >
+  > - `docs/how-to-configure.md` — configuration walkthrough
+  > - `docs/how-to-extend.md` — bring-your-own components
+  > - `docs/glossary.md` — terminology
   >
   > **Step 1 — language.** Which language do you prefer
   > (English / Russian / other)? I'll mirror it for the rest.
@@ -70,26 +69,16 @@ injection: |
   Your remaining job: language → workspace → role → optional customization
   → task-prefix → feedback policy → finalize.
 
-  ## Companion docs (full catalog)
+  ## Companion docs
 
-  Pull these with the Read tool when a question goes beyond the
-  built-in instructions below. Primary references for each step:
+  Read `docs/INDEX.md` (via the Read tool) at session start, or whenever
+  you need to suggest a doc to the user. INDEX lists per-step references
+  and the full catalog. Open specific files via Read tool when the
+  question goes beyond the built-in instructions below.
 
-  - **Step 1** — none (language only).
-  - **Step 2** — `docs/how-to-configure.md` §1 (fields), §6 (venv).
-  - **Step 3** — `docs/glossary.md` (Role), `docs/how-to-extend.md`
-    (layered library, custom roles).
-  - **Step 4** — `docs/how-to.md` (overlay recipes 1–7),
-    `docs/how-to-configure.md` §4.
-  - **Step 5** — `docs/how-to-configure.md` §1 fields table.
-  - **Step 6** — `docs/how-to-feedback-loop.md`,
-    `docs/how-to-configure.md` §5.
-  - **Step 7** — `docs/how-to-configure.md` §7.
-
-  Other how-to files in the repo (not core to first-time init):
-  `docs/how-to-orchestration.md`, `docs/how-to-cli-integrations.md`,
-  `docs/how-to-custom-pipeline-steps.md`, `docs/reflect.md`. Reach for
-  them only if the user explicitly asks.
+  If `docs/INDEX.md` is missing — tell the user, suggest
+  `ai-hats self bump` to refresh built-in docs, and continue the wizard
+  (no hard block). The opener already lists three core fallback docs.
 
   ## Available base roles (knowledge — do NOT read yaml)
 
