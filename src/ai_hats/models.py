@@ -244,6 +244,19 @@ class OverlayConfig(_YamlModel):
 
     Wire format nests add/remove sections (``add: {traits: [...], ...}``) while
     the in-memory shape is flat. ``from_dict`` / ``to_dict`` bridge the two.
+
+    **Move-to-end reorder semantic (HATS-421).** Within a single overlay,
+    putting the same name in BOTH ``add: [X]`` and ``remove: [X]`` is a
+    first-class operation meaning "remove X from its current position and
+    re-append it to the layer's tail". The composer applies ``remove`` then
+    ``append`` per layer (see ``Composer._apply_overlay``), so this round-trip
+    produces a reorder rather than cancelling out. Use it when injection
+    order or dedup priority matters.
+
+    Layered semantics (composer applies overlays sequentially, global then
+    project): a name removed by global can be re-added by project; a name
+    added by global can be removed by project. Project always wins because
+    it is applied last.
     """
 
     add_traits: list[str] = Field(default_factory=list)
