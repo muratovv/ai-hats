@@ -78,6 +78,21 @@ since the latest tag lives under **Unreleased** until the next release.
   commit decision.
 
 ### Fixed
+- **HATS-432** — Update-banner false-positive suppressed when installed
+  HEAD is *ahead of* or *diverged from* cached upstream master. The old
+  `installed_sha != latest_sha` check fired in both cases (live reproducer:
+  arrow pointed backwards in time). New semantics: `has_update` is True
+  only when installed is *strictly behind* upstream (`behind > 0 and
+  ahead == 0`). Probe now runs `git fetch <url> master` into the package
+  checkout, then `git rev-list --left-right --count <installed>...<latest>`
+  for the counts; `git describe --tags` resolves human-readable labels.
+  Cache schema gains `behind` / `ahead` / `installed_label` / `latest_label`
+  (legacy cache files parse cleanly and regenerate on the next probe; no
+  migration). Banner now prefers the `describe` labels (e.g.
+  `v0.6.0 → v0.6.0-19-g…`) and falls back to short SHAs with an explicit
+  `, +<behind> commits` suffix when no labels are available. New
+  regression tests assert silence for installed-ahead and diverged states
+  end-to-end.
 - **HATS-432** — Update-banner hint corrected: the cyan command line now
   reads `ai-hats self update` (the actual CLI verb) instead of the
   nonexistent top-level `ai-hats update`. Same fix swept through the

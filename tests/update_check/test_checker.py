@@ -160,15 +160,44 @@ def test_run_check_writes_cache_on_success(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
     with patch.object(checker, "detect_installed_sha", return_value="a" * 40), \
          patch.object(checker, "detect_remote_url", return_value="https://example.git"), \
-         patch.object(checker, "fetch_latest_sha", return_value="b" * 40):
+         patch.object(checker, "fetch_latest_sha", return_value="b" * 40), \
+         patch.object(checker, "_fetch_into_pkg", return_value=True), \
+         patch.object(checker, "_count_ahead_behind", return_value=(0, 19)), \
+         patch.object(checker, "_describe", side_effect=["v0.6.0", "v0.6.0-19-gabcdef0"]):
         entry = run_check(tmp_path)
     assert entry is not None
     assert entry.installed_sha == "a" * 40
     assert entry.latest_sha == "b" * 40
-    # Cache file must exist now.
+    assert entry.ahead == 0
+    assert entry.behind == 19
+    assert entry.installed_label == "v0.6.0"
+    assert entry.latest_label == "v0.6.0-19-gabcdef0"
+    assert entry.has_update is True
+    # Cache file must exist and round-trip.
     from ai_hats.update_check.cache import cache_path, read_cache
     assert cache_path(tmp_path).exists()
-    assert read_cache(tmp_path) is not None
+    loaded = read_cache(tmp_path)
+    assert loaded is not None and loaded.behind == 19 and loaded.ahead == 0
+
+
+def test_run_check_persists_unknown_counts_when_git_fails(tmp_path, monkeypatch):
+    """Fetch / rev-list fail (e.g. non-git install) — we still persist
+    installed/latest SHAs, but behind/ahead/labels stay None so the banner
+    is suppressed via ``has_update == False``.
+    """
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    with patch.object(checker, "detect_installed_sha", return_value="a" * 40), \
+         patch.object(checker, "detect_remote_url", return_value="https://example.git"), \
+         patch.object(checker, "fetch_latest_sha", return_value="b" * 40), \
+         patch.object(checker, "_fetch_into_pkg", return_value=False), \
+         patch.object(checker, "_count_ahead_behind", return_value=None), \
+         patch.object(checker, "_describe", return_value=None):
+        entry = run_check(tmp_path)
+    assert entry is not None
+    assert entry.behind is None
+    assert entry.ahead is None
+    assert entry.has_update is False
 
 
 def test_run_check_skips_when_installed_unknown(tmp_path, monkeypatch):
@@ -186,3 +215,78 @@ def test_run_check_skips_when_remote_unreachable(tmp_path, monkeypatch):
     # No cache should be written.
     from ai_hats.update_check.cache import cache_path
     assert not cache_path(tmp_path).exists()
+
+
+# ---------- _count_ahead_behind ----------
+
+
+def test_count_ahead_behind_parses_rev_list_output():
+    # ``git rev-list --left-right --count A...B`` → "<L>\t<R>"
+    # L = ahead-of-upstream (installed has these), R = behind (latest has these).
+    fake = subprocess.CompletedProcess(args=[], returncode=0, stdout="0\t19\n", stderr="")
+    with patch.object(subprocess, "run", return_value=fake):
+        assert checker._count_ahead_behind("a", "b") == (0, 19)
+
+
+def test_count_ahead_behind_handles_diverged():
+    fake = subprocess.CompletedProcess(args=[], returncode=0, stdout="3\t4\n", stderr="")
+    with patch.object(subprocess, "run", return_value=fake):
+        assert checker._count_ahead_behind("a", "b") == (3, 4)
+
+
+def test_count_ahead_behind_returns_none_on_unknown_sha():
+    fail = subprocess.CompletedProcess(args=[], returncode=128, stdout="", stderr="fatal: bad revision")
+    with patch.object(subprocess, "run", return_value=fail):
+        assert checker._count_ahead_behind("a", "b") is None
+
+
+def test_count_ahead_behind_returns_none_on_malformed_output():
+    weird = subprocess.CompletedProcess(args=[], returncode=0, stdout="just-one-token\n", stderr="")
+    with patch.object(subprocess, "run", return_value=weird):
+        assert checker._count_ahead_behind("a", "b") is None
+
+
+def test_count_ahead_behind_returns_none_when_git_missing():
+    with patch.object(subprocess, "run", side_effect=FileNotFoundError):
+        assert checker._count_ahead_behind("a", "b") is None
+
+
+# ---------- _fetch_into_pkg ----------
+
+
+def test_fetch_into_pkg_true_on_success():
+    fake = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    with patch.object(subprocess, "run", return_value=fake):
+        assert checker._fetch_into_pkg("https://example.git") is True
+
+
+def test_fetch_into_pkg_false_on_nonzero():
+    fail = subprocess.CompletedProcess(args=[], returncode=128, stdout="", stderr="fatal")
+    with patch.object(subprocess, "run", return_value=fail):
+        assert checker._fetch_into_pkg("https://example.git") is False
+
+
+def test_fetch_into_pkg_false_on_timeout():
+    with patch.object(subprocess, "run", side_effect=subprocess.TimeoutExpired("git", 10)):
+        assert checker._fetch_into_pkg("https://example.git") is False
+
+
+# ---------- _describe ----------
+
+
+def test_describe_returns_label():
+    fake = subprocess.CompletedProcess(args=[], returncode=0, stdout="v0.6.0-19-gabcdef0\n", stderr="")
+    with patch.object(subprocess, "run", return_value=fake):
+        assert checker._describe("abcdef0") == "v0.6.0-19-gabcdef0"
+
+
+def test_describe_returns_none_when_no_tags():
+    # ``git describe`` exits non-zero when no annotated tags reach the SHA.
+    fail = subprocess.CompletedProcess(args=[], returncode=128, stdout="", stderr="fatal: No names found")
+    with patch.object(subprocess, "run", return_value=fail):
+        assert checker._describe("abcdef0") is None
+
+
+def test_describe_returns_none_when_git_missing():
+    with patch.object(subprocess, "run", side_effect=FileNotFoundError):
+        assert checker._describe("abcdef0") is None
