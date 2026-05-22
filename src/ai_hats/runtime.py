@@ -473,6 +473,44 @@ def _finalize_session(
         except (Exception, KeyboardInterrupt):
             logger.warning("retro decision/log failed", exc_info=True)
 
+        # HATS-418: in-process dispatch for session-reviewer spawn.
+        # HATS-294 dropped the install step that populated
+        # ``<ai_hats_dir>/library/hooks/``, so the shell-hook path
+        # ``session_end_auto-retro.sh`` no longer fires. Spawn the
+        # reviewer directly here for the auto-retro flow. The
+        # ``hooks_runner.run()`` call below stays intact for any
+        # user-authored hooks that may land in ``library/hooks/`` later
+        # (Approach A — out of scope for this task).
+        #
+        # Recursion guard mirrors ``auto_retro.main()``: the sub-Claude
+        # session spawned by the reviewer sets ``HATS_SKIP_RETRO=1`` in
+        # its env, so we bail without re-spawning.
+        #
+        # Both ``sr.background = True/False`` legacy branches in
+        # ``auto_retro.main()`` converged on
+        # ``_spawn_session_reviewer_background`` (the ``False`` branch
+        # only added an extra Python intermediate process via
+        # ``_run_background`` → ``auto_retro --foreground``). We collapse
+        # that here — the flag has no behavioural effect on the spawned
+        # reviewer process itself.
+        if (
+            retro_decision is not None
+            and retro_decision.get("action") == "run"
+            and os.environ.get("HATS_SKIP_RETRO") != "1"
+        ):
+            try:
+                from .retro.auto_retro import (
+                    _spawn_session_reviewer_background,
+                )
+
+                _spawn_session_reviewer_background(
+                    project_dir, session.session_id,
+                )
+            except (Exception, KeyboardInterrupt):
+                logger.warning(
+                    "session-reviewer spawn failed", exc_info=True,
+                )
+
         # Run session_end hooks AFTER metrics.json and enriched audit
         # are written, so hooks (e.g. auto-retro) can read them.
         try:

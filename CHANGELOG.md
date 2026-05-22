@@ -78,6 +78,26 @@ since the latest tag lives under **Unreleased** until the next release.
   commit decision.
 
 ### Fixed
+- **HATS-418** — Session-retro pipeline dispatch restored. Since 2026-05-13
+  every threshold-trigger session wrote the `runtime decision run: …` line
+  to `<runs>/session_<sid>/retro.log` but no `hook spawn` / `session-reviewer
+  spawn` ever followed — pipeline was 0-output for ~30 sessions. Root cause:
+  HATS-294 dropped the v0.6 `_collect_from_manifest` side-effect that copied
+  skill-shipped hook scripts (e.g. `session_end_auto-retro.sh`) into
+  `<ai_hats_dir>/library/hooks/`, so the `HooksRunner._find_scripts` sweep
+  found an empty directory after HATS-412 wired it up. Fix bypasses the
+  shell-hook indirection for this flow: `WrapRunner._finalize_session` now
+  calls `auto_retro._spawn_session_reviewer_background` in-process right
+  after writing the runtime decision line, gated on
+  `action == "run"` and `HATS_SKIP_RETRO != "1"` (recursion guard). The
+  `HooksRunner.run(SESSION_END)` call below stays intact for any
+  user-authored hooks landing in `library/hooks/` later. Restoring the
+  full skill→hook→runtime install path remains a deliberate non-goal —
+  no concrete user demand. Pairs with HATS-419's parser fix; together
+  they close both L1 (dispatch) and L2 (parse) regressions opened in
+  the 2026-05-13 boundary window. New smoke tests under
+  `tests/smoke/test_session_retro_pipeline.py` lock the dispatch
+  contract and the `start_new_session=True` SIGHUP-immunity kwarg.
 - **HATS-419** — `session-reviewer` retro pipeline no longer dies on
   markdown-fenced YAML. The model frequently wraps the YAML body in
   ` ```yaml ... ``` ` inside the `BEGIN_REFLECT_SESSION_RETRO` /
