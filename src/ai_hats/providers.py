@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import abc
+import json
 import shutil
 from pathlib import Path
 
 from .composer import CompositionResult, ResolvedComponent
+from .paths import hooks_dir as _lib_hooks_dir
 from .paths import session_cache_dir
 from .placeholders import expand_path_placeholders
 
@@ -27,6 +29,9 @@ ALWAYS_ON_RULES = {
     "global_rule_resource_hygiene",
     "dev_rule_secure_coding",
     "dev_rule_tool_call_hygiene",
+    # HATS-437: primary defense against autonomous shared-state writes.
+    # The PreToolUse / pre-push hooks are a safety net for this rule.
+    "rule_pause_before_shared_state_write",
 }
 
 
@@ -139,6 +144,22 @@ class Provider(abc.ABC):
         Subclasses point at a markdown asset under
         `libraries/templates/<provider>/...`.
         """
+        return None
+
+    def ensure_runtime_hooks(self, project_dir: Path) -> None:
+        """Install provider-specific runtime hooks (e.g. Claude Code PreToolUse).
+
+        Called by ``Assembler.set_role`` after skill-contributed git hooks
+        are installed. Idempotent — safe to invoke on every role apply.
+
+        Default: no-op. Providers without a runtime-hook channel (Gemini)
+        rely on the rule layer plus skill-contributed git hooks.
+
+        HATS-437: ClaudeProvider overrides to write a PreToolUse entry
+        for ``library/hooks/pre_bash_shared_state_guard.sh`` into
+        ``.claude/settings.json``.
+        """
+        del project_dir
         return None
 
     def update_system_prompt(self, project_dir: Path, content: str) -> None:
@@ -445,6 +466,108 @@ class ClaudeProvider(Provider):
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         return {}
+
+    # ----- HATS-437: PreToolUse hook auto-wire -----
+
+    # Marker tag on managed PreToolUse entries. Lets ``ensure_runtime_hooks``
+    # locate prior installs and update them in place rather than appending
+    # a duplicate. User-authored entries (without the tag) are never touched.
+    _MANAGED_HOOK_TAG = "ai-hats:hats-437"
+
+    def ensure_runtime_hooks(self, project_dir: Path) -> None:
+        """Install / refresh the shared-state-guard PreToolUse hook in
+        ``.claude/settings.json``. Idempotent.
+
+        Layout written:
+
+            {
+              "hooks": {
+                "PreToolUse": [
+                  {
+                    "matcher": "Bash",
+                    "_ai_hats_managed": "ai-hats:hats-437",
+                    "hooks": [
+                      {"type": "command",
+                       "command": "<project>/.agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh"}
+                    ]
+                  }
+                ]
+              }
+            }
+
+        Path strategy: write the relative path from ``project_dir`` so the
+        config survives ``project_dir`` moves but stays anchored to the
+        Claude session's CWD. ``ai-hats self update``'s migration_healer
+        owns the case where the hooks dir physically moves.
+        """
+        settings_path = project_dir / ".claude" / "settings.json"
+        hook_path = _lib_hooks_dir(project_dir) / "pre_bash_shared_state_guard.sh"
+
+        # Resolve the relative form. If the resolved hook lives outside
+        # project_dir (unusual — only happens when ``ai_hats_dir`` is set
+        # to an absolute path outside the project), fall back to absolute.
+        try:
+            rel_command = str(hook_path.relative_to(project_dir))
+        except ValueError:
+            rel_command = str(hook_path)
+
+        # Read existing settings, tolerating missing file / malformed JSON.
+        data: dict = {}
+        if settings_path.exists():
+            try:
+                raw = settings_path.read_text()
+                if raw.strip():
+                    data = json.loads(raw)
+                    if not isinstance(data, dict):
+                        # Settings file is not an object — bail to avoid clobbering.
+                        return
+            except json.JSONDecodeError:
+                # Malformed user-owned settings. Leave alone.
+                return
+
+        hooks_root = data.setdefault("hooks", {})
+        if not isinstance(hooks_root, dict):
+            return  # user-shaped — do not clobber
+        pretool_list = hooks_root.setdefault("PreToolUse", [])
+        if not isinstance(pretool_list, list):
+            return  # user-shaped — do not clobber
+
+        managed_entry = {
+            "matcher": "Bash",
+            "_ai_hats_managed": self._MANAGED_HOOK_TAG,
+            "hooks": [{"type": "command", "command": rel_command}],
+        }
+
+        # Look for an existing managed entry by tag; update in place.
+        for i, entry in enumerate(pretool_list):
+            if (
+                isinstance(entry, dict)
+                and entry.get("_ai_hats_managed") == self._MANAGED_HOOK_TAG
+            ):
+                if entry == managed_entry:
+                    return  # already correct — no write
+                pretool_list[i] = managed_entry
+                self._write_settings(settings_path, data)
+                return
+
+        # No managed entry yet. Also dedupe against user-authored entries
+        # that happen to point at the same script (avoid double-firing).
+        for entry in pretool_list:
+            if not isinstance(entry, dict):
+                continue
+            for h in entry.get("hooks", []) or []:
+                if isinstance(h, dict) and h.get("command", "").endswith(
+                    "pre_bash_shared_state_guard.sh"
+                ):
+                    return  # user already wired it manually — respect that
+
+        pretool_list.append(managed_entry)
+        self._write_settings(settings_path, data)
+
+    @staticmethod
+    def _write_settings(settings_path: Path, data: dict) -> None:
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(json.dumps(data, indent=2) + "\n")
 
 
 PROVIDERS: dict[str, type[Provider]] = {

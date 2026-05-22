@@ -10,6 +10,11 @@ git_hooks:
   pre-commit:
     - git_hooks/pre-commit-privacy.sh
     - git_hooks/pre-commit-smoke.sh
+  # HATS-437: provider-agnostic safety net for `git push --force`. Claude
+  # gets a stronger PreToolUse-level block via ClaudeProvider auto-wiring;
+  # this pre-push hook protects Gemini sessions and direct-terminal pushes.
+  pre-push:
+    - git_hooks/pre-push-shared-state.sh
 
 triggers:
   - "managing feature branches with conventional commits"
