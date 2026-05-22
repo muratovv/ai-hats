@@ -11,6 +11,30 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Added
+- **HATS-421** — User-level customizations layer
+  (`~/.ai-hats/customizations.yaml`). Symmetric to the project-level
+  `customizations:` block in `ai-hats.yaml`, same `OverlayConfig` schema
+  per role, shared `schema_version=4`. Apply via the new `--global`
+  flag on `ai-hats config customize <role>`; inspect each layer with
+  `--show --global` / `--show --project` / plain `--show` (both).
+  Reset a layer with `--reset` (project) or `--reset --global` (user).
+  Compose order is built-in role → global overlay → project overlay →
+  composition; project wins on cross-layer conflict. Within a single
+  layer, putting the same name in both `add` and `remove` is a
+  first-class "move-to-end" reorder operation (composer applies
+  `_apply_overlay` once per layer, remove-then-append). `config status`
+  now annotates every trait/rule/skill with a `(built-in)` / `(global)`
+  / `(project)` source-tag and prints a legend so users know where
+  each component came from. New `models.UserConfig` with the same
+  contract surface as `ProjectConfig` (`from_yaml`, `save`, missing →
+  empty, malformed → `UserConfigError`). `Assembler` loads the user
+  layer lazily-eagerly at construction; `composer.compose` accepts a
+  new keyword `overlays: list[OverlayConfig]` alongside the legacy
+  single-overlay form (backwards compatible — all 8 in-tree call sites
+  migrated). `initial-wizard` Step 4 now offers a project-only vs
+  user-wide choice when applying customizations; Step 7 explains the
+  source-tags. Tests: 32 new (UserConfig loader, sequential apply
+  conflict matrix, CLI `--global` routing, source-tag rendering).
 - **HATS-408** — `ai-hats self migrate-v07` — one-shot safe migration
   from v0.6 materialised canonical layout to v0.7 per-session compose.
   Inspects every on-disk artefact (canonical role-content files,

@@ -67,8 +67,36 @@ class Composer:
     def __init__(self, resolver: LibraryResolver) -> None:
         self.resolver = resolver
 
-    def compose(self, role_name: str, overlay: OverlayConfig | None = None) -> CompositionResult:
-        """Compose a role by resolving its full dependency tree."""
+    def compose(
+        self,
+        role_name: str,
+        overlay: OverlayConfig | None = None,
+        *,
+        overlays: list[OverlayConfig] | None = None,
+    ) -> CompositionResult:
+        """Compose a role by resolving its full dependency tree.
+
+        Overlays are applied in order; later overlays "win" on conflict
+        because each ``_apply_overlay`` call mutates the same composition
+        lists (remove-first-then-append, current semantic preserved within
+        each layer). Within a single overlay, ``add: X`` + ``remove: X`` is
+        a documented "move X to that layer's tail" reorder operation
+        (HATS-421).
+
+        Two parameter forms are supported for backwards compatibility:
+
+        - ``compose(role, overlay=X)``       — single-overlay (legacy).
+        - ``compose(role, overlays=[G, P])`` — layered (global → project).
+
+        Passing both is an error. ``injection_append`` from each overlay is
+        appended in the same order, after the role's own injection.
+        """
+        if overlay is not None and overlays is not None:
+            raise ValueError("compose: pass either `overlay` or `overlays`, not both")
+        layers: list[OverlayConfig] = (
+            list(overlays) if overlays is not None else ([overlay] if overlay else [])
+        )
+
         config = self.resolver.resolve_role_config(role_name)
         if config is None:
             return CompositionResult(
@@ -93,9 +121,10 @@ class Composer:
         overlay_injection_text = ""
         hooks = HooksConfig()
 
-        # Apply overlay (add/remove) before resolution
-        if overlay:
-            self._apply_overlay(config, overlay, errors)
+        # Apply overlays in order — each layer's `remove` then `add` (move-to-end
+        # within a layer; project-after-global means project wins cross-layer).
+        for layer in layers:
+            self._apply_overlay(config, layer, errors)
 
         # Recursively resolve traits first (depth-first, pre-order)
         self._resolve_traits(
@@ -139,14 +168,20 @@ class Composer:
             injections.append(role_injection_text)
             seen_injections.add(role_injection_text)
 
-        # Append overlay injection after role's own.
-        # overlay_injection is recorded independently of dedup for the same
-        # reason as role_injection.
-        if overlay and overlay.injection_append.strip():
-            overlay_injection_text = overlay.injection_append.strip()
-            if overlay_injection_text not in seen_injections:
-                injections.append(overlay_injection_text)
-                seen_injections.add(overlay_injection_text)
+        # Append each overlay's injection_append after role's own (in layer
+        # order: global before project). Each is recorded independently of
+        # dedup, like role_injection. ``overlay_injection`` exposes the
+        # concatenation so layered writers can emit a single overlay.md.
+        appended_overlay_texts: list[str] = []
+        for layer in layers:
+            text = layer.injection_append.strip()
+            if not text:
+                continue
+            if text not in seen_injections:
+                injections.append(text)
+                seen_injections.add(text)
+            appended_overlay_texts.append(text)
+        overlay_injection_text = "\n\n".join(appended_overlay_texts)
 
         return CompositionResult(
             name=config.name,

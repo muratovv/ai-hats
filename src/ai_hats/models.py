@@ -244,6 +244,19 @@ class OverlayConfig(_YamlModel):
 
     Wire format nests add/remove sections (``add: {traits: [...], ...}``) while
     the in-memory shape is flat. ``from_dict`` / ``to_dict`` bridge the two.
+
+    **Move-to-end reorder semantic (HATS-421).** Within a single overlay,
+    putting the same name in BOTH ``add: [X]`` and ``remove: [X]`` is a
+    first-class operation meaning "remove X from its current position and
+    re-append it to the layer's tail". The composer applies ``remove`` then
+    ``append`` per layer (see ``Composer._apply_overlay``), so this round-trip
+    produces a reorder rather than cancelling out. Use it when injection
+    order or dedup priority matters.
+
+    Layered semantics (composer applies overlays sequentially, global then
+    project): a name removed by global can be re-added by project; a name
+    added by global can be removed by project. Project always wins because
+    it is applied last.
     """
 
     add_traits: list[str] = Field(default_factory=list)
@@ -610,6 +623,109 @@ class ProjectConfig(_YamlModel):
         if len(prefixes) == 1:
             return prefixes.pop()
         return None
+
+
+class UserConfigError(ValueError):
+    """Raised when ~/.ai-hats/customizations.yaml fails schema validation."""
+
+
+class UserConfig(_YamlModel):
+    """~/.ai-hats/customizations.yaml — user-level role customizations (HATS-421).
+
+    Symmetric to ``ProjectConfig.customizations`` but lives in the user's home
+    directory and applies to every project the user opens. Same ``OverlayConfig``
+    schema per role.
+
+    Merge order at compose time: built-in role composition → user (this)
+    → project. Project applied last wins on conflict. Within each layer, the
+    composer's ``_apply_overlay`` runs ``remove`` then ``append`` — so
+    ``add: X`` + ``remove: X`` inside a single layer is a first-class
+    "move X to that layer's tail" reorder operation.
+
+    Schema_version is intentionally shared with ``ProjectConfig`` (currently 4):
+    bumping the project schema bumps this one too, so migration healers update
+    both files in lockstep.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: int = 4
+    customizations: dict[str, OverlayConfig] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_customizations(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("customizations"):
+            data["customizations"] = {
+                role: OverlayConfig.from_dict(overlay) if isinstance(overlay, dict) else overlay
+                for role, overlay in data["customizations"].items()
+            }
+        return data
+
+    @classmethod
+    def default_path(cls) -> Path:
+        """Canonical location: ``~/.ai-hats/customizations.yaml``."""
+        return Path.home() / ".ai-hats" / "customizations.yaml"
+
+    @classmethod
+    def from_yaml(cls, path: Path) -> UserConfig:
+        """Load the user customization file.
+
+        - Missing file → empty ``UserConfig`` (silent default, symmetric to a
+          fresh project before ``ai-hats config customize`` has been run).
+        - Malformed yaml or schema violation → ``UserConfigError`` with the
+          path up front so the user knows which file to fix.
+        """
+        if not path.exists():
+            return cls()
+        try:
+            data = yaml.safe_load(path.read_text()) or {}
+        except yaml.YAMLError as e:
+            raise UserConfigError(f"Invalid {path}:\n  - yaml parse error: {e}") from e
+        if not isinstance(data, dict):
+            raise UserConfigError(
+                f"Invalid {path}:\n  - top-level value must be a mapping, got {type(data).__name__}"
+            )
+        try:
+            return cls.model_validate(data)
+        except ValidationError as e:
+            raise UserConfigError(_format_project_config_error(path, e)) from e
+
+    def overlay_for(self, role_name: str) -> OverlayConfig | None:
+        """Return the overlay for ``role_name`` or ``None`` if absent/empty.
+
+        Used by the assembler to compose the global layer; dormant roles
+        (customized here but not active in the current project) trivially
+        resolve to ``None`` and are ignored downstream.
+        """
+        overlay = self.customizations.get(role_name)
+        if overlay is None or overlay.is_empty:
+            return None
+        return overlay
+
+    def to_dict(self) -> dict[str, Any]:
+        live = {
+            name: overlay.to_dict()
+            for name, overlay in self.customizations.items()
+            if not overlay.is_empty
+        }
+        d: dict[str, Any] = {"schema_version": self.schema_version}
+        if live:
+            d["customizations"] = live
+        return d
+
+    def save(self, path: Path) -> None:
+        """Persist the file. If every overlay is empty, delete the file
+        instead of writing an empty stub (keeps ``~/.ai-hats/`` tidy).
+        """
+        live = any(not overlay.is_empty for overlay in self.customizations.values())
+        if not live:
+            if path.exists():
+                path.unlink()
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            yaml.dump(self.to_dict(), f, default_flow_style=False, allow_unicode=True)
 
 
 def _format_project_config_error(path: Path, err: ValidationError) -> str:

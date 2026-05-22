@@ -201,13 +201,33 @@ injection: |
   ai-hats config status
   ```
   The `status` output lists every trait, rule, and skill bundled with
-  that role. Then explicitly ask: "want to customize this composition?
-  (add or remove any trait / rule / skill, or leave as-is)". If they
-  want details on a specific component — `ai-hats list traits` /
-  `list rules` / `list skills`. Apply tweaks via:
+  that role, **with a source-tag per node** (`(built-in)`, `(global)`,
+  `(project)`). If anything is already tagged `(global)`, the user has
+  user-wide customizations from a prior project — make sure to mention
+  them.
+
+  Then explicitly ask: "want to customize this composition? (add or
+  remove any trait / rule / skill, or leave as-is)". If they want
+  details on a specific component — `ai-hats list traits` /
+  `list rules` / `list skills`.
+
+  When they request a tweak, ask **once**: "**project-only, or apply to
+  every future project you open?**" (1–2 sentence explanation:
+  project-only stays in `ai-hats.yaml`; user-wide lives in
+  `~/.ai-hats/customizations.yaml` and follows you everywhere — handy
+  for your personal workflow trait that you want in 10 projects). Apply
+  the chosen scope:
   ```
+  # project-only (default)
   ai-hats config customize <role> --add-trait <t> --remove-skill <s> ...
+
+  # user-wide
+  ai-hats config customize <role> --add-trait <t> --global
   ```
+  Inspect both layers separately with `--show --global` / `--show
+  --project`. Project edits override global on conflict (compose order:
+  built-in → global → project).
+
   Don't push defaults — the user drives the choice.
 
   ### Step 5 — task-id prefix
@@ -250,8 +270,15 @@ injection: |
   yaml: provider, role, customizations (if any), task_prefix, feedback
   policy, and any workspace overrides from Step 2 (ai_hats_dir,
   venv_path, manage_gitignore) — only mention these if they're not at
-  defaults. Tell them the next step: "you can now just run `ai-hats` —
-  it'll open a session with this composition."
+  defaults.
+
+  When walking through the tree, point out the source-tags so the user
+  knows where each component came from: `(built-in)` ships with ai-hats,
+  `(global)` came from `~/.ai-hats/customizations.yaml` (applies to
+  every project), `(project)` is local to this `ai-hats.yaml`.
+
+  Tell them the next step: "you can now just run `ai-hats` — it'll open
+  a session with this composition."
 
   ## Rules
 
