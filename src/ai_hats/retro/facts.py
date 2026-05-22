@@ -40,6 +40,9 @@ class SessionFacts:
     links: SessionLinks
     session_start: datetime
     session_end: datetime
+    # HATS-442: effective composition snapshot captured at session start.
+    # ``None`` for sessions written before this field landed (backwards compat).
+    composition: dict | None = None
 
 
 def compute_facts(project_dir: Path, session_id: str) -> SessionFacts:
@@ -88,7 +91,27 @@ def compute_facts(project_dir: Path, session_id: str) -> SessionFacts:
         links=links,
         session_start=session_start,
         session_end=session_end,
+        composition=_parse_composition(session_dir),
     )
+
+
+def _parse_composition(session_dir: Path) -> dict | None:
+    """Read composition snapshot from metrics.json — HATS-442.
+
+    Returns ``None`` for old sessions that lack the field (pre-HATS-442)
+    or any session whose metrics.json is missing/unparsable.
+    """
+    metrics_path = session_dir / "metrics.json"
+    if not metrics_path.exists():
+        return None
+    try:
+        data = json.loads(metrics_path.read_text())
+    except json.JSONDecodeError:
+        return None
+    composition = data.get("composition")
+    if isinstance(composition, dict):
+        return composition
+    return None
 
 
 def _normalize(session_id: str) -> str:

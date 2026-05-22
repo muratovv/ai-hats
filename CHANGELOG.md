@@ -10,6 +10,21 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+- **HATS-442** — Session audit now records the **effective role composition
+  snapshot** (traits + rules + skills with per-component source-tags
+  `(built-in)` / `(global)` / `(project)`) at session start. The snapshot
+  is written into `audit.md` as a `## Composition` section and into
+  `metrics.json` as a structured `composition` field. `SessionFacts`
+  parses it; `session-reviewer` injects an `## Effective composition`
+  block into the LLM evidence prompt and learns to cite source-tags when
+  explaining behaviour or filing proposals (the tag tells you whether to
+  target the framework, the user overlay, or this project's overlay).
+  Backwards compatible — old sessions without the field reflect normally
+  with `composition: None`. Closes the observability gap created by
+  HATS-421: before this change, two sessions with the same role name but
+  different user-level customizations produced identical-looking retros.
+
 ### ✨ Bring your own traits/skills — user-level overlays (HATS-421 + HATS-433, **BREAKING**)
 
 One coherent user story shipped as two commits:

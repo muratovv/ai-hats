@@ -168,17 +168,78 @@ class Session:
         with open(self.trace_path, "a") as f:
             f.write(entry)
 
-    def init_audit(self, role: str, provider: str, model: str = "") -> None:
-        """Initialize incremental audit.md."""
+    def init_audit(
+        self,
+        role: str,
+        provider: str,
+        model: str = "",
+        composition: dict | None = None,
+    ) -> None:
+        """Initialize incremental audit.md.
+
+        HATS-442: ``composition`` is an optional snapshot of the effective
+        role composition with per-component source layers
+        (``built-in``/``global``/``project``) — captured at session start
+        so post-session reviewers can cite exactly what loaded.
+
+        Expected shape::
+
+            {
+                "traits":   ["name", ...],          # effective order
+                "rules":    ["name", ...],
+                "skills":   ["name", ...],
+                "provenance": {
+                    "traits": {"name": "built-in" | "global" | "project"},
+                    "rules":  {...},
+                    "skills": {...},
+                },
+            }
+
+        Persisted in audit.md (human-readable) and surfaced again in
+        metrics.json via ``finalize_audit`` (machine-readable).
+        """
+        self._composition = composition  # latched for finalize_audit
         header = (
             f"# Session Audit: {self.session_id}\n\n"
             f"- **Role**: {role}\n"
             f"- **Provider**: {provider}\n"
             f"- **Model**: {model}\n"
             f"- **Started**: {datetime.now(timezone.utc).isoformat()}\n\n"
-            f"## Events\n\n"
         )
+        if composition:
+            header += self._render_composition_md(composition) + "\n"
+        header += "## Events\n\n"
         self.audit_path.write_text(header)
+
+    @staticmethod
+    def _render_composition_md(composition: dict) -> str:
+        """Render the composition snapshot as a markdown section."""
+        prov = composition.get("provenance", {}) or {}
+
+        def _line(name: str, layer_map: dict) -> str:
+            layer = layer_map.get(name, "built-in")
+            return f"{name} ({layer})"
+
+        lines = ["## Composition\n"]
+        traits = composition.get("traits", []) or []
+        if traits:
+            lines.append(
+                "- **Traits**: "
+                + ", ".join(_line(t, prov.get("traits", {})) for t in traits)
+            )
+        rules = composition.get("rules", []) or []
+        if rules:
+            lines.append(
+                "- **Rules**: "
+                + ", ".join(_line(r, prov.get("rules", {})) for r in rules)
+            )
+        skills = composition.get("skills", []) or []
+        if skills:
+            lines.append(
+                "- **Skills**: "
+                + ", ".join(_line(s, prov.get("skills", {})) for s in skills)
+            )
+        return "\n".join(lines) + "\n"
 
     def append_audit(self, event: str) -> None:
         """Append an event to the incremental audit."""
@@ -187,15 +248,25 @@ class Session:
             f.write(f"- `{ts}` {event}\n")
 
     def finalize_audit(self, metrics: dict) -> None:
-        """Finalize audit with summary metrics."""
+        """Finalize audit with summary metrics.
+
+        HATS-442: composition snapshot captured at ``init_audit`` is
+        embedded into metrics.json as the ``composition`` field so
+        post-session reviewers can read it without parsing markdown.
+        """
         with open(self.audit_path, "a") as f:
             f.write("\n## Metrics\n\n")
             for k, v in metrics.items():
                 f.write(f"- **{k}**: {v}\n")
 
-        # Save metrics as JSON too
+        # Save metrics as JSON too — fold in the composition snapshot
+        # if init_audit was called with one.
+        out = dict(metrics)
+        composition = getattr(self, "_composition", None)
+        if composition is not None:
+            out["composition"] = composition
         with open(self.metrics_path, "w") as f:
-            json.dump(metrics, f, indent=2)
+            json.dump(out, f, indent=2)
 
     def save_meta_prompt(self, prompt: str) -> None:
         """Save the meta-prompt used for sub-agent execution."""

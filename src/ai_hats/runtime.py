@@ -273,6 +273,46 @@ def _print_session_start(role: str, provider: str, session_id: str) -> None:
     print(f"\n[*] Role: {role_info} | Provider: {provider_info} | Session: {session_id}\n")
 
 
+def _composition_snapshot(assembler: Assembler, role_name: str, result) -> dict:
+    """Build the composition snapshot dict for ``Session.init_audit`` (HATS-442).
+
+    Returns a dict with effective ``traits``/``rules``/``skills`` lists plus
+    a ``provenance`` map tagging each name with the contributing layer
+    (``built-in``/``global``/``project``). Used by session-reviewer and any
+    other post-session consumer to know what actually loaded in a session.
+
+    The traits list is computed by walking the role's base composition and
+    re-applying overlays (mirroring ``_build_tree``); composer's output
+    already has the resolved rules/skills.
+    """
+    try:
+        base_cfg = assembler.resolver.resolve_role_config(role_name)
+        effective_traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
+        for layer in (
+            assembler._get_global_overlay(role_name),
+            assembler._get_overlay(role_name),
+        ):
+            if layer is None:
+                continue
+            for name in layer.remove_traits:
+                if name in effective_traits:
+                    effective_traits.remove(name)
+            for name in layer.add_traits:
+                if name not in effective_traits:
+                    effective_traits.append(name)
+        provenance = assembler._get_overlay_provenance(role_name)
+    except Exception:
+        # Defensive: a broken overlay shouldn't kill session start. Fall
+        # back to "no snapshot" — audit.md just won't have the section.
+        return {}
+    return {
+        "traits": effective_traits,
+        "rules": [r.name for r in result.rules],
+        "skills": [s.name for s in result.skills],
+        "provenance": provenance,
+    }
+
+
 def _fmt_duration(session_id: str) -> str:
     from datetime import datetime, timezone
     try:
@@ -617,6 +657,7 @@ class WrapRunner:
         session.init_audit(
             role=active_role,
             provider=provider_name,
+            composition=_composition_snapshot(self.assembler, effective_role, result),
         )
         session.log_trace(TraceTag.SYS, f"Session started: role={active_role}")
 
@@ -997,7 +1038,12 @@ class SubAgentRunner:
             ticket_id=ticket_id,
         )
         session.save_meta_prompt(meta_prompt)
-        session.init_audit(role=role_name, provider=provider.name, model=model)
+        session.init_audit(
+            role=role_name,
+            provider=provider.name,
+            model=model,
+            composition=_composition_snapshot(self.assembler, role_name, result),
+        )
         session.log_trace(TraceTag.SUB, f"Sub-agent started: role={role_name}")
 
         env = {
