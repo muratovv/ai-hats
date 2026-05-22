@@ -447,19 +447,9 @@ def set_role(
     console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
 
 
-@click.command()
-@click.argument("role")
-@click.option("--add-trait", multiple=True, help="Add a trait to the role")
-@click.option("--remove-trait", multiple=True, help="Remove a trait from the role")
-@click.option("--add-rule", multiple=True, help="Add a rule to the role")
-@click.option("--remove-rule", multiple=True, help="Remove a rule from the role")
-@click.option("--add-skill", multiple=True, help="Add a skill to the role")
-@click.option("--remove-skill", multiple=True, help="Remove a skill from the role")
-@click.option("--injection-append", default=None, help="Append injection text")
-@click.option("--show", "show_only", is_flag=True, help="Show current customizations")
-@click.option("--reset", "do_reset", is_flag=True, help="Remove all customizations for role")
-def customize(
-    role: str,
+def _apply_overlay_edits(
+    overlay,
+    *,
     add_trait: tuple,
     remove_trait: tuple,
     add_rule: tuple,
@@ -467,50 +457,18 @@ def customize(
     add_skill: tuple,
     remove_skill: tuple,
     injection_append: str | None,
-    show_only: bool,
-    do_reset: bool,
-):
-    """Customize a role: add/remove traits, rules, skills."""
-    from ..models import OverlayConfig, ProjectConfig
+) -> None:
+    """In-place edit of ``OverlayConfig`` from CLI flags.
 
-    project_dir = _project_dir()
-    config_path = project_dir / "ai-hats.yaml"
-    if not config_path.exists():
-        console.print("[red]No ai-hats.yaml found[/]. Run: ai-hats config set -r <role> -p <provider>")
-        raise SystemExit(1)
-
-    config = ProjectConfig.from_yaml(config_path)
-
-    if do_reset:
-        config.customizations.pop(role, None)
-        config.save(config_path)
-        console.print(f"[green]Reset[/] customizations for [bold]{role}[/]")
-        return
-
-    overlay = config.customizations.get(role, OverlayConfig())
-
-    if show_only:
-        if overlay.is_empty:
-            console.print(f"[dim]No customizations for {role}[/]")
-        else:
-            import yaml
-
-            console.print(f"[bold]{role}[/] customizations:")
-            console.print(yaml.dump(overlay.to_dict(), default_flow_style=False).rstrip())
-        return
-
-    has_changes = any(
-        [add_trait, remove_trait, add_rule, remove_rule, add_skill, remove_skill, injection_append]
-    )
-    if not has_changes:
-        console.print("[yellow]No changes specified[/]. Use --add-trait, --remove-trait, etc.")
-        return
-
-    # Merge new values into existing overlay
+    Convention: opposite-side undo (e.g., adding a trait that was previously
+    in ``remove_traits`` removes it from there) makes typo correction one
+    command. To express a deliberate reorder ("move X to the layer's tail"),
+    edit the yaml file directly so that both ``add: [X]`` and ``remove: [X]``
+    coexist in the same overlay — composer's sequential apply honours this.
+    """
     for t in add_trait:
         if t not in overlay.add_traits:
             overlay.add_traits.append(t)
-        # If previously removed, undo
         if t in overlay.remove_traits:
             overlay.remove_traits.remove(t)
     for t in remove_trait:
@@ -541,12 +499,189 @@ def customize(
     if injection_append is not None:
         overlay.injection_append = injection_append
 
-    config.customizations[role] = overlay
-    config.save(config_path)
-    console.print(f"[green]Updated[/] customizations for [bold]{role}[/]")
-    import yaml
 
-    console.print(yaml.dump(overlay.to_dict(), default_flow_style=False).rstrip())
+def _print_overlay(layer_label: str, role: str, overlay) -> None:
+    """Render an overlay for ``--show`` output, with a layer banner."""
+    import yaml as _yaml
+
+    if overlay.is_empty:
+        console.print(f"[dim]No {layer_label} customizations for {role}[/]")
+        return
+    console.print(f"[bold]{role}[/] ({layer_label}) customizations:")
+    console.print(_yaml.dump(overlay.to_dict(), default_flow_style=False).rstrip())
+
+
+@click.command()
+@click.argument("role")
+@click.option("--add-trait", multiple=True, help="Add a trait to the role")
+@click.option("--remove-trait", multiple=True, help="Remove a trait from the role")
+@click.option("--add-rule", multiple=True, help="Add a rule to the role")
+@click.option("--remove-rule", multiple=True, help="Remove a rule from the role")
+@click.option("--add-skill", multiple=True, help="Add a skill to the role")
+@click.option("--remove-skill", multiple=True, help="Remove a skill from the role")
+@click.option("--injection-append", default=None, help="Append injection text")
+@click.option("--show", "show_only", is_flag=True, help="Show current customizations")
+@click.option("--reset", "do_reset", is_flag=True, help="Remove all customizations for role")
+@click.option(
+    "--global",
+    "is_global",
+    is_flag=True,
+    help="Target the user-level customizations (~/.ai-hats/customizations.yaml) "
+    "instead of the project. Symmetric in syntax; writes go to your home so they "
+    "apply to every project you open (HATS-421).",
+)
+@click.option(
+    "--project",
+    "is_project",
+    is_flag=True,
+    help="Target the project layer explicitly (default; mutually exclusive with --global).",
+)
+def customize(
+    role: str,
+    add_trait: tuple,
+    remove_trait: tuple,
+    add_rule: tuple,
+    remove_rule: tuple,
+    add_skill: tuple,
+    remove_skill: tuple,
+    injection_append: str | None,
+    show_only: bool,
+    do_reset: bool,
+    is_global: bool,
+    is_project: bool,
+):
+    """Customize a role — add/remove traits, rules, skills (project or user-level).
+
+    Two layers, symmetric syntax:
+
+    \b
+      ai-hats config customize <role> --add-trait T            # project (default)
+      ai-hats config customize <role> --add-trait T --global   # user-wide
+
+    Inspection:
+
+    \b
+      ai-hats config customize <role> --show                   # both layers
+      ai-hats config customize <role> --show --global          # only global
+      ai-hats config customize <role> --show --project         # only project
+
+    Reset:
+
+    \b
+      ai-hats config customize <role> --reset                  # clear project
+      ai-hats config customize <role> --reset --global         # clear global
+
+    Compose order is built-in → global → project, so project edits override
+    user-wide defaults for the current project (HATS-421).
+    """
+    from ..models import OverlayConfig, ProjectConfig, UserConfig
+
+    if is_global and is_project:
+        raise click.UsageError("--global and --project are mutually exclusive")
+
+    project_dir = _project_dir()
+    project_path = project_dir / "ai-hats.yaml"
+    user_path = UserConfig.default_path()
+
+    # ----- SHOW mode -----
+    if show_only:
+        # `--show` alone shows BOTH layers so the user can see what's at play.
+        # `--show --global` / `--show --project` narrow to a single layer.
+        if is_global:
+            user_cfg = UserConfig.from_yaml(user_path)
+            _print_overlay("global", role, user_cfg.customizations.get(role, OverlayConfig()))
+            return
+        if is_project:
+            if not project_path.exists():
+                console.print("[red]No ai-hats.yaml found[/].")
+                raise SystemExit(1)
+            proj_cfg = ProjectConfig.from_yaml(project_path)
+            _print_overlay("project", role, proj_cfg.customizations.get(role, OverlayConfig()))
+            return
+        # No layer flag → render both.
+        user_cfg = UserConfig.from_yaml(user_path)
+        _print_overlay("global", role, user_cfg.customizations.get(role, OverlayConfig()))
+        if project_path.exists():
+            proj_cfg = ProjectConfig.from_yaml(project_path)
+            _print_overlay(
+                "project", role, proj_cfg.customizations.get(role, OverlayConfig())
+            )
+        else:
+            console.print("[dim]No project ai-hats.yaml — only the global layer is in effect.[/]")
+        return
+
+    # ----- RESET mode -----
+    if do_reset:
+        if is_global:
+            user_cfg = UserConfig.from_yaml(user_path)
+            user_cfg.customizations.pop(role, None)
+            user_cfg.save(user_path)
+            console.print(
+                f"[green]Reset[/] (global) customizations for [bold]{role}[/] "
+                f"([dim]{user_path}[/])"
+            )
+            return
+        if not project_path.exists():
+            console.print("[red]No ai-hats.yaml found[/].")
+            raise SystemExit(1)
+        proj_cfg = ProjectConfig.from_yaml(project_path)
+        proj_cfg.customizations.pop(role, None)
+        proj_cfg.save(project_path)
+        console.print(f"[green]Reset[/] (project) customizations for [bold]{role}[/]")
+        return
+
+    # ----- WRITE mode -----
+    has_changes = any(
+        [add_trait, remove_trait, add_rule, remove_rule, add_skill, remove_skill, injection_append]
+    )
+    if not has_changes:
+        console.print("[yellow]No changes specified[/]. Use --add-trait, --remove-trait, etc.")
+        return
+
+    if is_global:
+        user_cfg = UserConfig.from_yaml(user_path)
+        overlay = user_cfg.customizations.get(role, OverlayConfig())
+        _apply_overlay_edits(
+            overlay,
+            add_trait=add_trait,
+            remove_trait=remove_trait,
+            add_rule=add_rule,
+            remove_rule=remove_rule,
+            add_skill=add_skill,
+            remove_skill=remove_skill,
+            injection_append=injection_append,
+        )
+        user_cfg.customizations[role] = overlay
+        user_cfg.save(user_path)
+        console.print(
+            f"[green]Updated[/] (global) customizations for [bold]{role}[/] "
+            f"([dim]{user_path}[/])"
+        )
+        _print_overlay("global", role, overlay)
+        return
+
+    # Default: project layer.
+    if not project_path.exists():
+        console.print(
+            "[red]No ai-hats.yaml found[/]. Run: ai-hats config set -r <role> -p <provider>"
+        )
+        raise SystemExit(1)
+    proj_cfg = ProjectConfig.from_yaml(project_path)
+    overlay = proj_cfg.customizations.get(role, OverlayConfig())
+    _apply_overlay_edits(
+        overlay,
+        add_trait=add_trait,
+        remove_trait=remove_trait,
+        add_rule=add_rule,
+        remove_rule=remove_rule,
+        add_skill=add_skill,
+        remove_skill=remove_skill,
+        injection_append=injection_append,
+    )
+    proj_cfg.customizations[role] = overlay
+    proj_cfg.save(project_path)
+    console.print(f"[green]Updated[/] (project) customizations for [bold]{role}[/]")
+    _print_overlay("project", role, overlay)
 
 
 @click.command()
