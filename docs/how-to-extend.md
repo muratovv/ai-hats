@@ -196,6 +196,84 @@ Available step IDs match the registry under `src/ai_hats/pipeline/steps/`.
 
 For the step contract (inputs, outputs, failure policy) see [3].
 
+## Custom verbs via shell aliases
+
+If your command fits the stock `execute` pipeline — *agent loads state via its
+own tools, makes decisions, calls tools to act* — you do not need a custom
+pipeline YAML, a custom step, or any change to ai-hats. Ship a **role** and an
+**initial-injection prompt** under any library path; wrap `ai-hats execute` in
+a shell function.
+
+This is the recommended path for plugin-style verbs while the
+[generic `ai-hats run <pipeline>` command](#custom-pipelines-advanced) (HATS-268)
+is in flight.
+
+### Worked example: `rebalance long` for a finance plugin
+
+**1. Plugin layout** (project-local, but `~/.ai-hats/` works the same):
+
+```
+libraries/
+  roles/
+    fin_consult/
+      config.yaml                # composition: traits, rules, skills, injection
+  initial_injections/
+    rebalance-long.md            # startup checklist for long-strategy rebalance
+    rebalance-short.md           # ditto for short
+```
+
+The `--prompt <name>` flag resolves `initial_injections/<name>.md` across the
+**full `library_paths` chain** (built-in core → usage → `~/.ai-hats/` →
+`cfg.library_paths` → `<project>/libraries/`), last-wins. So your plugin's
+prompts are discoverable by short name without any package fork (HATS-445).
+
+**2. Shell wrapper** (in `~/.zshrc` or `~/.bashrc`):
+
+```bash
+rebalance() {
+  local strategy="${1:?usage: rebalance <long|short>}"
+  case "$strategy" in
+    long|short) ;;
+    *) echo "rebalance: unknown strategy '$strategy'" >&2; return 2 ;;
+  esac
+  ai-hats execute --role fin_consult --prompt "rebalance-$strategy" "${@:2}"
+}
+```
+
+Now `rebalance long` runs the `fin_consult` role with the
+`rebalance-long.md` prompt as the first user-visible message. Shell handles
+argument validation (`case`) and verb dispatch — no conflict possible with
+built-in `ai-hats` subcommands because the alias is expanded *before*
+`ai-hats` runs.
+
+### Role of `fin_consult` vs prompt of `rebalance-long.md`
+
+| Layer | Carries | Stable across runs? |
+|---|---|---|
+| **Role** (`fin_consult`) | Identity, tools, rules, behaviour ("you are a financial consultant; here are your tools and constraints") | Yes — same role for every `rebalance` invocation |
+| **Initial injection** (`rebalance-long.md`) | Per-run startup checklist ("read portfolio.yaml, compare to long-strategy targets, propose trades, confirm before executing") | Per-verb, swapped via `--prompt` |
+
+This is the cleanest separation when the run is a single agent session with
+no pre/post processing outside the agent itself.
+
+### When to graduate to a custom pipeline
+
+The shell-alias path fits when:
+
+- One agent session per invocation.
+- Domain state (`portfolio.yaml`, market data, …) is read by the agent
+  through its own tools (Read, MCP, bash).
+- Output is consumed by a human, not by a downstream pipeline step.
+
+You need a [custom pipeline](#custom-pipelines-advanced) and step plugins
+(HATS-268) when:
+
+- State must be **fetched in Python** before the agent runs
+  (`load_portfolio`, `fetch_market_snapshot`, `persist_run_record`, …).
+- Output must be **parsed and validated** (schema-checked trade plan,
+  written to a typed store).
+- Multiple agent sessions chain together with structured handoff.
+
 ## Replacing a system role (e.g. your own auditor)
 
 The built-in `session-reviewer` and `auditor-for-role` are reachable by name from engine code. Their **content** is overrideable — drop a file with the same name in any later-precedence path:
