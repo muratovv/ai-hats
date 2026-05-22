@@ -10,59 +10,82 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
-### Removed (BREAKING)
-- **HATS-433** — `personal-workflow` trait removed from the ai-hats package.
-  It was marked TEMPORARY in v0.6 with the explicit exit condition
-  "remove once user-side skill-install lands" — HATS-421 shipped that
-  mechanism, so the trait migrates to user-scope.
+### ✨ Bring your own traits/skills — user-level overlays (HATS-421 + HATS-433, **BREAKING**)
 
-  **Migration (one-time, per machine):**
-  ```bash
-  mkdir -p ~/.ai-hats/traits/personal-workflow
-  # Recover content from the previous tag — see docs/how-to-extend.md
-  # "Migrating from a removed built-in component" for the worked example.
+One coherent user story shipped as two commits:
 
-  # Re-attach via global overlay so every project keeps loading it:
-  ai-hats config customize maintainer --add-trait personal-workflow --global
-  ai-hats config customize assistant  --add-trait personal-workflow --global
+**The new mechanism (HATS-421).** A second customization layer lives at
+`~/.ai-hats/customizations.yaml` — same schema as the project-level
+`customizations:` block, just in your home directory so it applies to
+every project you open. You no longer need to repeat
+`ai-hats config customize` across N projects, and personal trait/skill/rule
+content no longer has to leak into the ai-hats package as TEMPORARY seams.
 
-  # In each project that uses these roles:
-  ai-hats self bump
-  ```
-  Affected roles: `maintainer` (was 10 traits → now 9), `assistant`
-  (was 8 traits → now 7). `initial-wizard` Step 3 role descriptions
-  updated to point at `--global` instead of the bundled trait. Trait
-  content is unchanged — it's the same plan-mode iteration hygiene
-  body, just in user-scope so it follows you across every project
-  rather than living in framework defaults. Rationale: the TEMPORARY
-  seam was always intended as a placeholder until layered user
-  customizations existed (HATS-421 closed that gap).
+```bash
+# One-time, per machine:
+mkdir -p ~/.ai-hats/traits/<your-trait>
+$EDITOR ~/.ai-hats/traits/<your-trait>/config.yaml
+
+# Attach globally — affects every project:
+ai-hats config customize <role> --add-trait <your-trait> --global
+
+# Inspect:
+ai-hats config customize <role> --show               # both layers
+ai-hats config customize <role> --show --global      # only user-wide
+ai-hats config customize <role> --show --project     # only project
+ai-hats config status                                # full tree with source-tags
+```
+
+Compose order: built-in role → global overlay → project overlay. Project
+wins on cross-layer conflict (it's applied last). Within a single layer,
+putting the same name in both `add` and `remove` is a first-class
+"move-to-end" reorder operation — useful when you need a trait loaded last
+so dedup/priority lands on your version. `config status` now annotates
+every trait, rule, and skill with a `(built-in)` / `(global)` / `(project)`
+source-tag and a legend line so it's always obvious where each component
+came from.
+
+**The migration (HATS-433, BREAKING).** With the mechanism in place, the
+`personal-workflow` trait — TEMPORARY in v0.6 with the explicit exit
+condition "remove once user-side skill-install lands" — leaves the
+package and moves to user-scope. Affected roles: `maintainer` (10 → 9
+traits), `assistant` (8 → 7 traits). `initial-wizard` Step 3 role
+descriptions updated to point at `--global` instead of the bundled trait.
+Trait body is unchanged — same plan-mode iteration hygiene rules, just
+sourced from your home directory.
+
+```bash
+# Migration (one-time, per machine) — see docs/how-to-extend.md
+# "Migrating from a removed built-in component" for the worked example.
+mkdir -p ~/.ai-hats/traits/personal-workflow
+# Recover content from the previous tag of this repo, then:
+
+ai-hats config customize maintainer --add-trait personal-workflow --global
+ai-hats config customize assistant  --add-trait personal-workflow --global
+
+# In each project that uses these roles:
+ai-hats self bump
+```
+
+**Under the hood.** New `models.UserConfig` with the same contract as
+`ProjectConfig` (`from_yaml`, `save`; missing → empty; malformed →
+`UserConfigError`). `Assembler` loads the user layer at construction.
+`composer.compose` now accepts `overlays: list[OverlayConfig]` alongside
+the legacy single-overlay form (all 8 in-tree call sites migrated;
+backwards compatible). New `_get_overlays(role)` returns the ordered
+`[global, project]` list; new `_get_overlay_provenance(role)` powers the
+source-tag rendering. `initial-wizard` Step 4 now offers a project-only
+vs user-wide choice when the user wants to customize. 32 new tests:
+UserConfig loader, sequential-apply conflict matrix, CLI `--global`
+routing, source-tag rendering, end-to-end roundtrip.
+
+Docs: new `docs/how-to.md` §4b "Global overlays for personal workflow"
+recipe, §4c "Reordering composition" recipe; `docs/how-to-configure.md`
+§4 grew a "Two layers" subsection with the conflict matrix;
+`docs/how-to-extend.md` worked example "Migrating from a removed
+built-in component".
 
 ### Added
-- **HATS-421** — User-level customizations layer
-  (`~/.ai-hats/customizations.yaml`). Symmetric to the project-level
-  `customizations:` block in `ai-hats.yaml`, same `OverlayConfig` schema
-  per role, shared `schema_version=4`. Apply via the new `--global`
-  flag on `ai-hats config customize <role>`; inspect each layer with
-  `--show --global` / `--show --project` / plain `--show` (both).
-  Reset a layer with `--reset` (project) or `--reset --global` (user).
-  Compose order is built-in role → global overlay → project overlay →
-  composition; project wins on cross-layer conflict. Within a single
-  layer, putting the same name in both `add` and `remove` is a
-  first-class "move-to-end" reorder operation (composer applies
-  `_apply_overlay` once per layer, remove-then-append). `config status`
-  now annotates every trait/rule/skill with a `(built-in)` / `(global)`
-  / `(project)` source-tag and prints a legend so users know where
-  each component came from. New `models.UserConfig` with the same
-  contract surface as `ProjectConfig` (`from_yaml`, `save`, missing →
-  empty, malformed → `UserConfigError`). `Assembler` loads the user
-  layer lazily-eagerly at construction; `composer.compose` accepts a
-  new keyword `overlays: list[OverlayConfig]` alongside the legacy
-  single-overlay form (backwards compatible — all 8 in-tree call sites
-  migrated). `initial-wizard` Step 4 now offers a project-only vs
-  user-wide choice when applying customizations; Step 7 explains the
-  source-tags. Tests: 32 new (UserConfig loader, sequential apply
-  conflict matrix, CLI `--global` routing, source-tag rendering).
 - **HATS-408** — `ai-hats self migrate-v07` — one-shot safe migration
   from v0.6 materialised canonical layout to v0.7 per-session compose.
   Inspects every on-disk artefact (canonical role-content files,
