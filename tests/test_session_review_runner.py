@@ -136,6 +136,43 @@ def test_strip_code_fence_no_fence_returns_input(tmp_path: Path) -> None:
     assert runner._strip_code_fence(body) == body
 
 
+# ---- _truncate_audit (HATS-424) ----
+#
+# End-of-session events (self-retro Skill calls, final commits, transitions,
+# judge-report writes) live in the audit tail. Naive head-cut at 8KB made
+# them invisible to the reviewer. Head+tail biased trim keeps both ends so
+# late-session signal reaches the reviewer.
+
+
+def test_truncate_audit_short_passes_through_unchanged() -> None:
+    text = "audit content well under budget\n" * 50  # ~1.6 KB
+    assert SessionReviewRunner._truncate_audit(text) == text
+
+
+def test_truncate_audit_long_keeps_head_and_tail_sentinels() -> None:
+    head_sentinel = "HEAD_SENTINEL_VISIBLE_TO_REVIEWER"
+    tail_sentinel = "TAIL_SENTINEL_VISIBLE_TO_REVIEWER"
+    # Build a 20 KB audit: head sentinel at byte 0, tail sentinel near end.
+    body = "x" * 20000
+    text = head_sentinel + body + tail_sentinel
+    out = SessionReviewRunner._truncate_audit(text)
+    assert head_sentinel in out, "head sentinel must survive truncation"
+    assert tail_sentinel in out, "tail sentinel must survive truncation"
+    assert "truncated from middle" in out, "marker must announce gap"
+    # Sanity: prompt budget approximately preserved (head + tail + small marker).
+    assert len(out) < len(text), "truncation must shrink"
+    assert (
+        len(out)
+        < SessionReviewRunner._AUDIT_HEAD + SessionReviewRunner._AUDIT_TAIL + 200
+    )
+
+
+def test_truncate_audit_at_budget_boundary_no_truncation() -> None:
+    budget = SessionReviewRunner._AUDIT_HEAD + SessionReviewRunner._AUDIT_TAIL
+    text = "y" * budget  # exactly at budget — no truncation
+    assert SessionReviewRunner._truncate_audit(text) == text
+
+
 # ---- _validate_analysis_shape ----
 
 
