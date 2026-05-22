@@ -206,11 +206,27 @@ class SessionReviewRunner:
                 pass
         audit_path = sdir / "audit.md"
         if audit_path.exists():
-            audit_text = audit_path.read_text()
-            if len(audit_text) > 8000:
-                audit_text = audit_text[:8000] + "\n... (truncated)"
+            audit_text = self._truncate_audit(audit_path.read_text())
             parts.append(f"audit.md:\n```\n{audit_text}\n```")
         return "\n\n".join(parts)
+
+    # HATS-424: end-of-session events (self-retro Skill calls, final commits,
+    # transitions, judge-report writes) live in the audit tail. Naive head-cut
+    # at 8KB made them structurally invisible to the reviewer — verified on 8
+    # sessions where `🔧 Skill: self-retrospective` sat at bytes 22K-60K and the
+    # reviewer reported "no self-retro visible" with full conviction.
+    # Keep both ends; total budget unchanged.
+    _AUDIT_HEAD = 4000
+    _AUDIT_TAIL = 4000
+
+    @classmethod
+    def _truncate_audit(cls, text: str) -> str:
+        budget = cls._AUDIT_HEAD + cls._AUDIT_TAIL
+        if len(text) <= budget:
+            return text
+        dropped = len(text) - budget
+        marker = f"\n... ({dropped} bytes truncated from middle) ...\n"
+        return text[: cls._AUDIT_HEAD] + marker + text[-cls._AUDIT_TAIL :]
 
     # ---- run + validate ----
 
