@@ -78,6 +78,20 @@ since the latest tag lives under **Unreleased** until the next release.
   commit decision.
 
 ### Fixed
+- **HATS-424** — Session-reviewer audit truncation now keeps both ends of
+  the session, not just the head. The old `audit_text[:8000]` head-cut
+  made end-of-session events (self-retrospective Skill calls, final
+  commits, transitions, judge-report writes) structurally invisible to
+  the reviewer when audit > 8 KB. Verified false-negative across 8
+  sessions where `🔧 Skill: self-retrospective` lived at bytes 22K-60K
+  and the reviewer returned `n/a` with "no self-retro visible". New
+  `_truncate_audit` helper keeps `_AUDIT_HEAD` (4 KB) + `_AUDIT_TAIL`
+  (4 KB) with a `... (<N> bytes truncated from middle) ...` marker so
+  the reviewer knows the gap exists. Prompt budget unchanged. Three
+  unit tests cover short-passes-through, long-keeps-sentinels, and
+  boundary-no-truncation. Re-running `reflect session` on existing
+  self-retro sessions restores correct HYP-020 signal (separate
+  backfill task).
 - **HATS-418** — Session-retro pipeline dispatch restored. Since 2026-05-13
   every threshold-trigger session wrote the `runtime decision run: …` line
   to `<runs>/session_<sid>/retro.log` but no `hook spawn` / `session-reviewer
