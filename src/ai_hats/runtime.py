@@ -607,7 +607,7 @@ class WrapRunner:
         session = self.session_mgr.create_session()
 
         result = self.assembler.composer.compose(
-            effective_role, overlay=self.assembler._get_overlay(effective_role),
+            effective_role, overlays=self.assembler._get_overlays(effective_role),
         )
         if system_prompt_override is not None:
             result = replace(result, injections=[system_prompt_override])
@@ -983,7 +983,7 @@ class SubAgentRunner:
         session = self.session_mgr.create_session(parent_session=parent_session)
 
         result = self.assembler.composer.compose(
-            role_name, overlay=self.assembler._get_overlay(role_name),
+            role_name, overlays=self.assembler._get_overlays(role_name),
         )
         if system_prompt_override is not None:
             result = replace(result, injections=[system_prompt_override])

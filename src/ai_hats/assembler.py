@@ -22,8 +22,11 @@ from .composer import Composer, CompositionResult
 from .resolver import LibraryResolver
 from .models import (
     ComponentType,
+    OverlayConfig,
     ProjectConfig,
     SkillMetadata,
+    UserConfig,
+    UserConfigError,
 )
 from .paths import (
     hooks_dir as _lib_hooks_dir,
@@ -89,6 +92,12 @@ class Assembler:
         self.agent_dir = project_dir / AGENT_DIR
         self.config_path = project_dir / PROJECT_CONFIG
         self.project_config = ProjectConfig.from_yaml(self.config_path)
+
+        # HATS-421: user-level customizations layer. Loaded lazily-eagerly here
+        # so the global overlay applies to every composer invocation through
+        # this assembler. Missing file → empty (silent default); malformed
+        # raises UserConfigError up-front, before any composition runs.
+        self.user_config = UserConfig.from_yaml(UserConfig.default_path())
 
         # Build library paths: built-in + project config + explicit
         self.library_paths = self._build_library_paths(library_paths or [])
@@ -477,15 +486,92 @@ class Assembler:
             # `.git/hooks/` does not exist and `_install_git_hooks` would
             # need a no-op guard. Cheap pre-check keeps the path tidy.
             if (self.project_dir / ".git").exists():
-                result = self.composer.compose(role, overlay=self._get_overlay(role))
+                result = self.composer.compose(role, overlays=self._get_overlays(role))
                 self._install_git_hooks(result)
 
-    def _get_overlay(self, role_name: str):
-        """Get overlay for a role from project config, or None."""
+    def _get_overlay(self, role_name: str) -> OverlayConfig | None:
+        """Get the **project** overlay for a role, or ``None`` if absent/empty.
+
+        Kept for code that still wants only the project layer (mostly
+        introspection in CLI ``--show --project``). For composition use
+        :meth:`_get_overlays`, which returns the layered list including
+        the user-level customizations.
+        """
         overlay = self.project_config.customizations.get(role_name)
-        if overlay and overlay.is_empty:
+        if overlay is None or overlay.is_empty:
             return None
         return overlay
+
+    def _get_global_overlay(self, role_name: str) -> OverlayConfig | None:
+        """Get the user-level overlay for a role, or ``None`` if absent/empty.
+
+        Reads from ``~/.ai-hats/customizations.yaml`` (loaded at assembler
+        construction time as ``self.user_config``).
+        """
+        return self.user_config.overlay_for(role_name)
+
+    def _get_overlays(self, role_name: str) -> list[OverlayConfig]:
+        """Return the ordered list of overlay layers for a role (HATS-421).
+
+        Order: ``[global, project]`` — global applied first, project
+        applied last. ``compose`` runs ``_apply_overlay`` per layer in this
+        order so project-level edits win on conflict, and each layer's own
+        ``remove`` + ``add`` is honoured for in-layer reorder.
+
+        Empty layers are omitted from the returned list so the composer
+        never wastes work applying a no-op overlay.
+        """
+        layers: list[OverlayConfig] = []
+        gl = self._get_global_overlay(role_name)
+        if gl is not None:
+            layers.append(gl)
+        pr = self._get_overlay(role_name)
+        if pr is not None:
+            layers.append(pr)
+        return layers
+
+    def _get_overlay_provenance(self, role_name: str) -> dict[str, dict[str, str]]:
+        """Return a ``{component_type: {name: layer}}`` provenance map for a role.
+
+        ``component_type`` ∈ ``{"traits", "rules", "skills"}``. ``layer`` ∈
+        ``{"built-in", "global", "project"}``. Used by ``config status`` to
+        annotate the dependency tree with a source-tag per node.
+
+        Walked in the same global-then-project order used by ``_get_overlays``
+        so that a name added by global and re-added by project surfaces as
+        ``project`` (last-wins), matching the composer's final state.
+        """
+        provenance: dict[str, dict[str, str]] = {"traits": {}, "rules": {}, "skills": {}}
+        # Seed from the resolved role's base composition.
+        base_cfg = self.resolver.resolve_role_config(role_name)
+        if base_cfg is not None:
+            for name in base_cfg.composition.traits:
+                provenance["traits"][name] = "built-in"
+            for name in base_cfg.composition.rules:
+                provenance["rules"][name] = "built-in"
+            for name in base_cfg.composition.skills:
+                provenance["skills"][name] = "built-in"
+        # Apply layers in order: each `add` claims provenance, each `remove`
+        # drops the entry so a later layer's add can re-claim it.
+        for layer, label in (
+            (self._get_global_overlay(role_name), "global"),
+            (self._get_overlay(role_name), "project"),
+        ):
+            if layer is None:
+                continue
+            for name in layer.remove_traits:
+                provenance["traits"].pop(name, None)
+            for name in layer.remove_rules:
+                provenance["rules"].pop(name, None)
+            for name in layer.remove_skills:
+                provenance["skills"].pop(name, None)
+            for name in layer.add_traits:
+                provenance["traits"][name] = label
+            for name in layer.add_rules:
+                provenance["rules"][name] = label
+            for name in layer.add_skills:
+                provenance["skills"][name] = label
+        return provenance
 
     def set_default_role(
         self, role_name: str, provider_name: str | None = None
@@ -511,7 +597,7 @@ class Assembler:
             self._validate_provider(provider_name)
 
         # Dry-run compose to surface unknown components before yaml write.
-        result = self.composer.compose(role_name, overlay=self._get_overlay(role_name))
+        result = self.composer.compose(role_name, overlays=self._get_overlays(role_name))
 
         cfg = self.project_config
         new_provider = provider_name or cfg.provider
@@ -548,7 +634,7 @@ class Assembler:
             self._validate_provider(provider_name)
 
         provider = get_provider(provider_name or self.project_config.provider)
-        result = self.composer.compose(role_name, overlay=self._get_overlay(role_name))
+        result = self.composer.compose(role_name, overlays=self._get_overlays(role_name))
 
         # Non-fatal compose errors (e.g. missing optional rule) are surfaced
         # via result.errors; do not abort.
@@ -617,7 +703,7 @@ class Assembler:
         if effective_role:
             result = self.composer.compose(
                 effective_role,
-                overlay=self._get_overlay(effective_role),
+                overlays=self._get_overlays(effective_role),
             )
             status["tree"] = self._build_tree(result)
             status["health"] = self._check_health(result)
@@ -708,7 +794,7 @@ class Assembler:
         role = self.project_config.active_role or self.project_config.default_role
         if not role:
             return None
-        result = self.composer.compose(role, overlay=self._get_overlay(role))
+        result = self.composer.compose(role, overlays=self._get_overlays(role))
         self._install_git_hooks(result)
         return result
 
@@ -1107,10 +1193,37 @@ class Assembler:
             warnings.append(f"failed to set core.hooksPath: {e.stderr.strip() or e}")
 
     def _build_tree(self, result: CompositionResult) -> dict:
-        """Build a dependency tree representation."""
+        """Build a dependency tree representation.
+
+        HATS-421: includes a ``provenance`` map ``{traits|rules|skills:
+        {name: "built-in"|"global"|"project"}}`` so ``config status`` can
+        annotate each node with which layer contributed it. The traits
+        list is also surfaced here (it doesn't otherwise appear in the
+        tree — composer flattens traits into rules/skills/injections).
+        """
+        provenance = self._get_overlay_provenance(result.name)
+        # Effective trait order: base composition + overlay-added (overlay
+        # removes are already applied by the composer for the composition
+        # lists, but trait-level visibility is what `config status` cares
+        # about). Walk layers in same order as provenance: base → global → project.
+        base_cfg = self.resolver.resolve_role_config(result.name)
+        effective_traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
+        for layer in (
+            self._get_global_overlay(result.name),
+            self._get_overlay(result.name),
+        ):
+            if layer is None:
+                continue
+            for name in layer.remove_traits:
+                if name in effective_traits:
+                    effective_traits.remove(name)
+            for name in layer.add_traits:
+                if name not in effective_traits:
+                    effective_traits.append(name)
         return {
             "name": result.name,
             "priorities": result.priorities,
+            "traits": effective_traits,
             "rules": [r.name for r in result.rules],
             "skills": [s.name for s in result.skills],
             "hooks": {
@@ -1126,6 +1239,7 @@ class Assembler:
                 if getattr(result.hooks, k)
             },
             "injections_count": len(result.injections),
+            "provenance": provenance,
         }
 
     def _check_health(self, result: CompositionResult) -> dict[str, str]:
@@ -1275,7 +1389,7 @@ class Assembler:
         if effective_role:
             try:
                 composition = self.composer.compose(
-                    effective_role, overlay=self._get_overlay(effective_role)
+                    effective_role, overlays=self._get_overlays(effective_role)
                 )
                 source_lookup = self._build_v07_tier2_source_lookup()
             except Exception:  # noqa: BLE001 — defensive fallback for compose failure
@@ -1376,7 +1490,7 @@ class Assembler:
             return {}
         try:
             comp = self.composer.compose(
-                effective, overlay=self._get_overlay(effective)
+                effective, overlays=self._get_overlays(effective)
             )
         except Exception:  # noqa: BLE001 — defensive: any compose failure → empty lookup
             return {}
