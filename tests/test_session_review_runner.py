@@ -388,3 +388,78 @@ def test_run_surfaces_subagent_failure_when_transcript_blank(
     assert "sub-agent produced no output" in msg
     assert "exit_code=1" in msg
     assert "Empty frontmatter" not in msg
+
+
+# --- HATS-442: composition rendering ----------------------------------------
+
+
+def test_render_composition_returns_empty_string_for_no_snapshot():
+    """Pre-HATS-442 sessions (composition is None) → no section emitted."""
+    from ai_hats.retro.session_review_runner import SessionReviewRunner
+
+    facts = _facts()  # default has no composition
+    assert SessionReviewRunner._render_composition(facts) == ""
+
+
+def test_render_composition_emits_role_and_layer_tags():
+    from ai_hats.retro.session_review_runner import SessionReviewRunner
+
+    facts = _facts()
+    facts.composition = {
+        "traits": ["trait-base", "personal-workflow"],
+        "rules": ["global_rule_destructive_actions"],
+        "skills": ["design-minimalism"],
+        "provenance": {
+            "traits": {
+                "trait-base": "built-in",
+                "personal-workflow": "global",
+            },
+            "rules": {"global_rule_destructive_actions": "built-in"},
+            "skills": {"design-minimalism": "built-in"},
+        },
+    }
+    out = SessionReviewRunner._render_composition(facts)
+    assert "## Effective composition" in out
+    assert f"Role: {facts.role}" in out
+    assert "trait-base (built-in)" in out
+    assert "personal-workflow (global)" in out
+    assert "global_rule_destructive_actions (built-in)" in out
+    assert "design-minimalism (built-in)" in out
+    # Layer-tags glossary present (helps the LLM use them in proposals).
+    assert "(built-in)" in out
+    assert "(global)" in out
+    assert "(project)" in out
+
+
+def test_render_composition_handles_empty_buckets():
+    """A role with no skills should still render — just print '(none)'
+    rather than crash or emit a malformed line."""
+    from ai_hats.retro.session_review_runner import SessionReviewRunner
+
+    facts = _facts()
+    facts.composition = {
+        "traits": ["trait-base"],
+        "rules": [],
+        "skills": [],
+        "provenance": {"traits": {"trait-base": "built-in"}, "rules": {}, "skills": {}},
+    }
+    out = SessionReviewRunner._render_composition(facts)
+    assert "Skills: (none)" in out
+    assert "Rules:  (none)" in out
+    assert "trait-base (built-in)" in out
+
+
+def test_render_composition_provenance_defaults_to_built_in():
+    """When provenance map is missing an entry, the renderer falls back
+    to 'built-in' — safe-default for partial maps."""
+    from ai_hats.retro.session_review_runner import SessionReviewRunner
+
+    facts = _facts()
+    facts.composition = {
+        "traits": ["unmapped"],
+        "rules": [],
+        "skills": [],
+        "provenance": {"traits": {}, "rules": {}, "skills": {}},
+    }
+    out = SessionReviewRunner._render_composition(facts)
+    assert "unmapped (built-in)" in out

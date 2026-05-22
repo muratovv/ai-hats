@@ -61,6 +61,18 @@ injection: |
   - **review-proposal** — read the open inbox first, vote on similar PROP,
     or create a novel one.
 
+  ### Citing composition (HATS-442)
+
+  When the evidence block includes an `## Effective composition` section,
+  it lists every trait/rule/skill that loaded for this session with a
+  source-tag — `(built-in)`, `(global)`, or `(project)`. Use these tags
+  when explaining why a behaviour did or didn't happen. They also tell
+  you the right `target` for any new proposal: `built-in` → propose
+  against the framework component; `global` → propose against the user's
+  personal overlay; `project` → propose against this project's
+  `ai-hats.yaml::customizations`. Old sessions (pre-HATS-442) may omit
+  the section — proceed without it.
+
   ## Scope (read-only direct mutations)
 
   You DO NOT mutate `<ai_hats_dir>/tracker/backlog/tasks/*` or other project state directly.
