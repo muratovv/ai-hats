@@ -594,6 +594,17 @@ class AuditWriter:
             "",
         ]
 
+        # HATS-442: preserve composition snapshot through the post-session
+        # audit rebuild. The init_audit path wrote a `## Composition` section
+        # in the live audit.md and a `composition` field in metrics.json; the
+        # AuditWriter then rebuilds audit.md from JSONL/trace and would
+        # clobber it. Pull the snapshot back from metrics.json (whose existing
+        # keys survive via `_write_metrics`' existing.update) and re-emit.
+        composition = metrics.get("composition")
+        if isinstance(composition, dict) and composition:
+            lines.append(Session._render_composition_md(composition).rstrip())
+            lines.append("")
+
         for i, turn in enumerate(turns, 1):
             # Support both trace format "17:32:34.581" and ISO "2026-03-27T18:15:00"
             ts_display = turn.timestamp
