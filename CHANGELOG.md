@@ -78,6 +78,12 @@ since the latest tag lives under **Unreleased** until the next release.
   commit decision.
 
 ### Fixed
+- **HATS-432** — Update-banner hint corrected: the cyan command line now
+  reads `ai-hats self update` (the actual CLI verb) instead of the
+  nonexistent top-level `ai-hats update`. Same fix swept through the
+  `ai-hats-maintainer` trait's Canonical CLI section (also `ai-hats bump`
+  → `ai-hats self bump`), README §Update notification, and
+  `docs/glossary.md` Update-banner entry so all user-facing prompts agree.
 - **HATS-424** — Session-reviewer audit truncation now keeps both ends of
   the session, not just the head. The old `audit_text[:8000]` head-cut
   made end-of-session events (self-retrospective Skill calls, final

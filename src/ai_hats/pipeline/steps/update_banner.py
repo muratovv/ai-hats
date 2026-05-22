@@ -40,7 +40,7 @@ def _render(installed: str, latest: str) -> str:
     return (
         f"\n{_YELLOW}ai-hats update available "
         f"({_short(installed)} → {_short(latest)}){_RESET}\n"
-        f"  run: {_CYAN}ai-hats update{_RESET}\n"
+        f"  run: {_CYAN}ai-hats self update{_RESET}\n"
         f"  {_DIM}silence: export {OPT_OUT_ENV}=1{_RESET}\n"
     )
 

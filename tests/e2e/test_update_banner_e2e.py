@@ -143,7 +143,7 @@ def test_update_banner_e2e(tmp_path):
     assert "ai-hats update available" in res.stderr, res.stderr
     assert INSTALLED_SHA[:7] in res.stderr, res.stderr
     assert LATEST_SHA[:7] in res.stderr, res.stderr
-    assert "ai-hats update" in res.stderr, res.stderr
+    assert "ai-hats self update" in res.stderr, res.stderr
     # Discoverability of opt-out — third dim line.
     assert "AI_HATS_NO_UPDATE_CHECK" in res.stderr, res.stderr
 
