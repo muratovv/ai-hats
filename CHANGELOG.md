@@ -11,6 +11,32 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Added
+- **HATS-437** — Two-level defence against autonomous shared-state writes
+  (closes HYP-026 + HYP-027, cited in PROP-052). A new always-on rule
+  `rule_pause_before_shared_state_write` (injected via `trait-agent`,
+  registered in `ALWAYS_ON_RULES`) forbids the agent from running
+  `gh pr create/close/merge`, `gh issue comment`, `gh release create`,
+  `git push` (any form), or `TaskCreate` without a per-command pause and
+  explicit user confirmation in the next turn — and explicitly bans
+  chaining any of them with other commands in a single Bash invocation
+  (the actual incident pattern: `gh pr merge … --delete-branch && git
+  push && git checkout master && git pull` in one call). Two new hook
+  scripts back the rule with deterministic blocks on the **irreversible**
+  subset (`gh pr merge`, `git push --force` / `-f` / `--force-with-lease`):
+  `library/hooks/pre_bash_shared_state_guard.sh` is a Claude Code
+  PreToolUse hook, wired into `.claude/settings.json` idempotently by
+  `ClaudeProvider.ensure_runtime_hooks()` on every `self init` / `self
+  bump`; `library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`
+  is a provider-agnostic git pre-push hook that detects non-fast-forward
+  pushes (deletions and new-branch pushes are short-circuited so benign
+  cleanup is not blocked). Both hooks default to **refuse** when run
+  without a controlling TTY (i.e. inside an agent harness); the user
+  can ack a single command with `AI_HATS_SHARED_STATE_ACK=1 <command>`
+  per the HATS-402 attach-hook pattern. **Gemini asymmetry:** Gemini CLI
+  has no PreToolUse equivalent, so Gemini sessions are protected by the
+  rule + the git pre-push hook only; the `gh pr merge` deterministic block
+  is Claude-only. Documented in `docs/ARCHITECTURE.md`.
+
 - **HATS-442** — Session audit now records the **effective role composition
   snapshot** (traits + rules + skills with per-component source-tags
   `(built-in)` / `(global)` / `(project)`) at session start. The snapshot
