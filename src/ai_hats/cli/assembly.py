@@ -697,26 +697,45 @@ def status():
     console.print(f"Role: [bold]{st['role']}[/]")
     console.print(f"Provider: {st['provider']}")
 
-    # Dependency tree
+    # Dependency tree (HATS-421: each node tagged with source layer).
     if st["tree"]:
+        provenance = st["tree"].get("provenance", {})
+
+        def _tag(component_type: str, name: str) -> str:
+            """Return a source-tag suffix like ``  (global)`` for a node.
+
+            Defaults to ``built-in`` when no overlay claims the name.
+            Empty for ``priorities`` and ``hooks`` (no layer notion).
+            """
+            label = provenance.get(component_type, {}).get(name, "built-in")
+            color = {"global": "magenta", "project": "cyan"}.get(label, "dim")
+            return f"  [{color}]({label})[/{color}]"
+
         tree = Tree(f"[bold]{st['tree']['name']}[/]")
         if st["tree"]["priorities"]:
             p_branch = tree.add("[dim]priorities[/]")
             for p in st["tree"]["priorities"]:
                 p_branch.add(p)
+        if st["tree"].get("traits"):
+            t_branch = tree.add("[dim]traits[/]")
+            for t in st["tree"]["traits"]:
+                t_branch.add(f"{t}{_tag('traits', t)}")
         if st["tree"]["rules"]:
             r_branch = tree.add("[dim]rules[/]")
             for r in st["tree"]["rules"]:
-                r_branch.add(r)
+                r_branch.add(f"{r}{_tag('rules', r)}")
         if st["tree"]["skills"]:
             s_branch = tree.add("[dim]skills[/]")
             for s in st["tree"]["skills"]:
-                s_branch.add(s)
+                s_branch.add(f"{s}{_tag('skills', s)}")
         if st["tree"]["hooks"]:
             h_branch = tree.add("[dim]hooks[/]")
             for event, scripts in st["tree"]["hooks"].items():
                 h_branch.add(f"{event}: {scripts}")
         console.print(tree)
+        console.print(
+            "[dim]Legend:[/] [dim](built-in)[/]  [magenta](global)[/]  [cyan](project)[/]"
+        )
 
     # Health
     if st.get("health"):
