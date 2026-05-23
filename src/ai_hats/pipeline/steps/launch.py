@@ -71,12 +71,17 @@ class LaunchProvider(Step):
             if prompt_text:
                 eff_extra = [prompt_text, *eff_extra]
             runner = WrapRunner(project_dir)
+            # HATS-452 (П2 in ADR-0005): WrapRunner is HITL — no override
+            # channel. The role's full composition reaches the agent via
+            # ``build_session_prompt`` inside ``run_session``. ``system_prompt``
+            # from the funnel is silently ignored in this branch (sub-agent
+            # branch below is the legitimate consumer for HATS-267 prompt
+            # injection).
             exit_code, session = runner.run(
                 eff_provider,
                 role_override=role,
                 extra_args=eff_extra,
                 tags=tags,
-                system_prompt_override=system_prompt,
             )
             # HATS-378: universal zero-output guard for reporting steps.
             # Interactive (main) sessions have trace-enriched metrics by
