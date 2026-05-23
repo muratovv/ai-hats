@@ -82,6 +82,8 @@ root in `library/`, split into two layers shipped together inside the
    pipeline? → **core**.
 3. Otherwise — **usage**.
 
+**Touching `src/ai_hats/pipeline/`, `src/ai_hats/runtime.py`, or `src/ai_hats/composer.py`?** Read [ADR-0005](docs/adr/0005-composition-and-pipeline-value-contract.md) first — composition / pipeline-funnel / HITL-vs-Automate invariants must be preserved. Rule `rule_composition_value_contract` (auto-injected via `trait-agent`) is the agent-facing short form.
+
 For end-user docs on extending the library (worked examples for roles /
 traits / rules / skills, override precedence, replacing a system role) see
 [docs/how-to-extend.md](docs/how-to-extend.md).
