@@ -13,11 +13,8 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.composer import CompositionResult
-from ai_hats.materialize import compose_for_role, materialize_system_prompt
+from ai_hats.materialize import compose_for_role
 from ai_hats.models import ProjectConfig
-from ai_hats.providers import get_provider
-
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIBRARY_DIR = REPO_ROOT / "library"
 
@@ -88,70 +85,15 @@ def test_compose_for_role_unknown_role_surfaces_in_errors(maintainer_project):
 
 
 # --------------------------------------------------------------------- #
-# materialize_system_prompt
+# Note on dropped ``materialize_system_prompt`` function
 # --------------------------------------------------------------------- #
-
-
-def test_materialize_system_prompt_returns_str_with_priorities_and_rules(
-    maintainer_project,
-):
-    """Full materialization: returns the agent-visible text the
-    ``ai-hats config show-prompt`` command would print."""
-    provider = get_provider("claude")
-    text = materialize_system_prompt(maintainer_project, "maintainer", provider)
-    assert isinstance(text, str)
-    # Maintainer composition produces all three canonical sections.
-    assert "## PRIORITIES" in text
-    assert "## RULES" in text
-    assert "## AVAILABLE SKILLS" in text
-
-
-def test_materialize_system_prompt_matches_inline_compose_plus_build(
-    maintainer_project,
-):
-    """Equivalence to the inline ``compose + build_system_prompt`` pair.
-
-    This is the bit-identity contract the Phase 0 e2e test asserts at
-    the integration level — proven here at the unit level to localise
-    regressions.
-    """
-    provider = get_provider("claude")
-    via_facade = materialize_system_prompt(
-        maintainer_project, "maintainer", provider
-    )
-    inline_result = maintainer_project.composer.compose(
-        "maintainer",
-        overlays=maintainer_project._get_overlays("maintainer"),
-    )
-    via_inline = provider.build_system_prompt(inline_result)
-    assert via_facade == via_inline
-
-
-def test_materialize_system_prompt_provider_is_dispatched_to(maintainer_project):
-    """``provider`` parameter is actually called — verified via a spy
-    around ``build_system_prompt``.
-
-    Note: today Claude and Gemini providers happen to produce identical
-    text from ``build_system_prompt`` — the asymmetry between them
-    lives in ``build_session_prompt`` (file layout / env vars), not in
-    the materialized text. So byte-comparing outputs of two providers
-    is not a valid dispatch check; spying is.
-    """
-    provider = get_provider("claude")
-    calls: list = []
-    real_build = provider.build_system_prompt
-
-    def spy(result):
-        calls.append(result)
-        return real_build(result)
-
-    provider.build_system_prompt = spy  # type: ignore[method-assign]
-    try:
-        text = materialize_system_prompt(maintainer_project, "maintainer", provider)
-    finally:
-        provider.build_system_prompt = real_build  # type: ignore[method-assign]
-
-    assert len(calls) == 1, f"expected 1 build_system_prompt call, got {len(calls)}"
-    assert isinstance(calls[0], CompositionResult)
-    assert calls[0].name == "maintainer"
-    assert text, "facade returned empty text"
+#
+# The plan (F1) proposed a second facade function returning a fully
+# materialized prompt string (compose + ``provider.build_system_prompt``).
+# During Phase 1 migration every real consumer turned out to need the
+# intermediate ``CompositionResult`` for some parallel concern (hook
+# install, audit snapshot, stats payload, HATS-267 override). Nobody
+# just wants the text. The function was dropped before Phase 2 per
+# design-minimalism. If a real text-only consumer appears later, add
+# it back — but assert at least one real call-site exists in the same
+# commit.
