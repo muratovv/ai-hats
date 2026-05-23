@@ -199,21 +199,114 @@ def _fetch_into_pkg(remote_url: str, ref: str = "master") -> bool:
     return result.returncode == 0
 
 
-def _count_ahead_behind(installed: str, latest: str) -> tuple[int, int] | None:
+def _probe_mirror_dir(project_dir: Path) -> Path:
+    """Path to the bare probe-mirror used as the local object graph for
+    non-editable / wheel installs (HATS-458)."""
+    from ..paths import ai_hats_dir
+
+    return ai_hats_dir(project_dir) / ".cache" / "probe-mirror"
+
+
+def _ensure_probe_mirror(project_dir: Path) -> Path | None:
+    """Init or reuse a bare probe-mirror at ``<ai_hats_dir>/.cache/probe-mirror/``.
+
+    HATS-458: when ``_fetch_into_pkg`` refuses (no usable ``.git`` next to
+    the installed package — the common non-editable layout), the mirror is
+    the local object graph in which we fetch upstream master + installed
+    SHA, then run ``rev-list`` / ``describe`` against it. Idempotent —
+    existing mirror (``HEAD`` file present) is reused.
+
+    Returns the mirror path on success, ``None`` when ``git init`` failed
+    (no git, no write permission, etc.).
+    """
+    mirror = _probe_mirror_dir(project_dir)
+    if (mirror / "HEAD").exists():
+        return mirror
+    try:
+        mirror.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "init", "--bare", "--quiet", str(mirror)],
+            capture_output=True,
+            text=True,
+            timeout=GIT_QUERY_TIMEOUT,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    return mirror if result.returncode == 0 else None
+
+
+def _fetch_into_mirror(
+    mirror: Path,
+    remote_url: str,
+    ref: str,
+    *,
+    shallow: bool = False,
+) -> bool:
+    """``git fetch [--depth=1] <remote_url> <ref>`` into the probe-mirror (HATS-458).
+
+    The ai-hats master branch is small (hundreds of commits) so a full
+    fetch is cheap and guarantees ``rev-list`` can compute ``behind`` for
+    any lag. The installed SHA only needs to exist as an object — pass
+    ``shallow=True`` to fetch with ``--depth=1`` (just the tip commit).
+
+    ``rev-list --left-right --count <installed>...<master>`` then works:
+    walking from ``installed`` hits the shallow boundary immediately
+    (zero ancestors) and walking from ``master`` finds the installed
+    commit somewhere in its history — yielding correct ``behind`` and
+    ``ahead == 0`` for the non-editable user. The diverged case
+    (``ahead > 0``) is structurally impossible for non-editable installs,
+    so the approximation is safe.
+
+    Concurrency: relies on git's own ref-level locking. A concurrent
+    probe racing the same fetch may surface a transient lock failure →
+    False; the next probe re-fetches and heals.
+    """
+    args = ["git", "-C", str(mirror), "fetch", "--quiet"]
+    if shallow:
+        args.append("--depth=1")
+    args.extend([remote_url, ref])
+    try:
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=FETCH_TIMEOUT,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
+def _count_ahead_behind(
+    installed: str,
+    latest: str,
+    *,
+    git_dir: Path | None = None,
+) -> tuple[int, int] | None:
     """``git rev-list --left-right --count <installed>...<latest>`` → ``(ahead, behind)``.
 
     Output is ``"<L>\\t<R>"`` where L = commits in installed not in latest
     (ahead-of-upstream), R = commits in latest not in installed (behind).
     Returns ``None`` on any failure (missing object, not a git checkout,
     parse error).
+
+    HATS-458: ``git_dir`` selects which repository hosts the rev-list.
+    Default is the package directory (editable / git-checkout path);
+    pass the probe-mirror returned by :func:`_ensure_probe_mirror` for
+    non-editable installs.
     """
-    pkg_dir = _package_dir()
+    target = git_dir if git_dir is not None else _package_dir()
     try:
         result = subprocess.run(
             [
                 "git",
                 "-C",
-                str(pkg_dir),
+                str(target),
                 "rev-list",
                 "--left-right",
                 "--count",
@@ -237,16 +330,20 @@ def _count_ahead_behind(installed: str, latest: str) -> tuple[int, int] | None:
         return None
 
 
-def _describe(sha: str) -> str | None:
+def _describe(sha: str, *, git_dir: Path | None = None) -> str | None:
     """``git describe --tags <sha>`` → label or ``None``.
 
     Best-effort cosmetic label for the banner. Fails (returns ``None``)
     when the repo has no tags, is shallow, or the SHA isn't reachable.
+
+    HATS-458: ``git_dir`` selects which repository hosts the describe.
+    Mirror fetches use ``--depth=50`` so older tags may be unreachable —
+    that's acceptable; the banner falls back to short SHAs.
     """
-    pkg_dir = _package_dir()
+    target = git_dir if git_dir is not None else _package_dir()
     try:
         result = subprocess.run(
-            ["git", "-C", str(pkg_dir), "describe", "--tags", sha],
+            ["git", "-C", str(target), "describe", "--tags", sha],
             capture_output=True,
             text=True,
             timeout=GIT_QUERY_TIMEOUT,
@@ -278,13 +375,34 @@ def run_check(project_dir: Path) -> CacheEntry | None:
 
     ahead: int | None = None
     behind: int | None = None
+    installed_label: str | None = None
+    latest_label: str | None = None
+
+    # Fast path: pkg-checkout (editable installs reachable through
+    # ``_fetch_into_pkg``'s tracked-check gate, HATS-441).
     if _fetch_into_pkg(remote_url):
         counts = _count_ahead_behind(installed, latest)
         if counts is not None:
             ahead, behind = counts
-
-    installed_label = _describe(installed)
-    latest_label = _describe(latest)
+        installed_label = _describe(installed)
+        latest_label = _describe(latest)
+    else:
+        # HATS-458 fallback: probe-mirror for non-editable / wheel
+        # installs. We own a bare repo and fetch both refs explicitly so
+        # ``rev-list`` / ``describe`` resolve locally — no pollution of
+        # any foreign ``.git`` in an ancestor (HATS-441 closed that
+        # surface), no dependency on a pkg-checkout-shaped install.
+        mirror = _ensure_probe_mirror(project_dir)
+        if (
+            mirror is not None
+            and _fetch_into_mirror(mirror, remote_url, "master")
+            and _fetch_into_mirror(mirror, remote_url, installed, shallow=True)
+        ):
+            counts = _count_ahead_behind(installed, latest, git_dir=mirror)
+            if counts is not None:
+                ahead, behind = counts
+            installed_label = _describe(installed, git_dir=mirror)
+            latest_label = _describe(latest, git_dir=mirror)
 
     entry = CacheEntry(
         checked_at=datetime.now(timezone.utc),
