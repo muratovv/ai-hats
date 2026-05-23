@@ -10,7 +10,6 @@ import subprocess
 import sys
 import time
 import uuid
-from dataclasses import replace
 from pathlib import Path
 
 from typing import TYPE_CHECKING
@@ -650,7 +649,9 @@ class WrapRunner:
             effective_role, overlays=self.assembler._get_overlays(effective_role),
         )
         if system_prompt_override is not None:
-            result = replace(result, injections=[system_prompt_override])
+            # HATS-452: explicit immutable transformation via the typed
+            # ``with_*`` API on ``CompositionResult`` (П1 in ADR-0005).
+            result = result.with_injection_override(system_prompt_override)
         session_args, session_env = provider.build_session_prompt(
             self.project_dir, result, session.session_id,
         )
@@ -1027,7 +1028,9 @@ class SubAgentRunner:
             role_name, overlays=self.assembler._get_overlays(role_name),
         )
         if system_prompt_override is not None:
-            result = replace(result, injections=[system_prompt_override])
+            # HATS-452: explicit immutable transformation via the typed
+            # ``with_*`` API on ``CompositionResult`` (П1 in ADR-0005).
+            result = result.with_injection_override(system_prompt_override)
         provider_name = self.assembler.project_config.provider
         provider = get_provider(provider_name)
 
