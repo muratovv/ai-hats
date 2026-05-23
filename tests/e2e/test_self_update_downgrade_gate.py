@@ -92,15 +92,33 @@ def test_e2e_self_update_refuses_silent_downgrade(tmp_path: Path) -> None:
         ["git", "-C", str(src_repo), "config", "user.name", "E2E"],
         check=True,
     )
+    # Capture src-repo HEAD BEFORE the +1 commit — this becomes the
+    # explicit remote master target, guaranteeing a clean 1-ahead/0-behind
+    # delta regardless of which branch git-clone-of-a-worktree happened
+    # to follow as its default HEAD.
+    pre_ahead_sha = subprocess.run(
+        ["git", "-C", str(src_repo), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
     subprocess.run(
         ["git", "-C", str(src_repo), "commit", "--allow-empty",
          "-m", "HATS-441 e2e: simulated ahead-of-remote commit"],
         check=True,
     )
 
-    # ----- fixture: fake-remote.git (probe target — bare clone @ REPO_ROOT HEAD) -----
+    # ----- fixture: fake-remote.git (probe target — bare clone, master pinned) -----
     subprocess.run(
         ["git", "clone", "--quiet", "--bare", str(REPO_ROOT), str(fake_remote)],
+        check=True,
+    )
+    # Force fake-remote master to ``pre_ahead_sha`` — exactly one commit
+    # behind src-repo HEAD. ``git clone --bare`` of a worktree may otherwise
+    # leave master at the worktree's currently-checked-out branch tip,
+    # which is identical to src-repo's pre-commit HEAD on the common path
+    # but is not guaranteed and depends on the host environment.
+    subprocess.run(
+        ["git", "-C", str(fake_remote), "update-ref",
+         "refs/heads/master", pre_ahead_sha],
         check=True,
     )
 
