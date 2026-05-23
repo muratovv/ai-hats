@@ -27,6 +27,21 @@ since the latest tag lives under **Unreleased** until the next release.
   user-visible behavior change. ADR-0005 appended with a "Phase 2" section.
 
 ### Fixed
+- **HATS-441** — `ai-hats self update` now refuses to overwrite the local
+  install when installed HEAD is strictly ahead of remote master (silent
+  downgrade) or has diverged from it. The command exits with code 3 and
+  names installed/remote labels + override hint. Use `--force-downgrade`
+  to bypass when intentional (warning printed). Probe reuses the
+  ahead/behind axes added by HATS-432; the gate is best-effort and falls
+  back to the previous unconditional behaviour when the probe cannot
+  resolve ahead/behind (non-git install, offline, shallow checkout).
+  Also tightens the HATS-432 probe so `git -C <pkg_dir>` can't walk up
+  into a foreign `.git` in an ancestor (non-editable install inside a
+  user's project venv): `detect_installed_sha` now gates `rev-parse HEAD`
+  behind a `git ls-files --error-unmatch __init__.py` tracked-check,
+  and `_fetch_into_pkg` refuses to fetch ai-hats's `master` into a repo
+  that doesn't track ai-hats's source (prevents polluting user-project
+  git history with our remote refs).
 - **HATS-452** — composition / pipeline value contract. Bare `ai-hats`
   (no `--role`, `active_role` in `ai-hats.yaml`) was writing a
   `prompt.md` missing the merged role/trait injection — hundreds of

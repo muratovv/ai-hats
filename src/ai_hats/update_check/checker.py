@@ -47,23 +47,65 @@ def _package_dir() -> Path:
     return Path(ai_hats.__file__).resolve().parent
 
 
-def detect_installed_sha() -> str | None:
-    """SHA of the installed copy of ai-hats; ``None`` when unknown."""
-    pkg_dir = _package_dir()
+def _pkg_tracked_by_local_git(pkg_dir: Path) -> bool:
+    """True iff ``pkg_dir/__init__.py`` is tracked by the enclosing git repo.
+
+    HATS-441: ``git -C <pkg_dir> ...`` walks up looking for ``.git``. When
+    ai_hats is non-editable-installed into
+    ``<project>/.venv/.../site-packages/ai_hats/`` and the user's project
+    itself is a git repo, the walk finds the *project's* ``.git`` — a
+    foreign repository that knows nothing about ai_hats. Without this
+    guard:
+
+    - :func:`detect_installed_sha` returns the user's project HEAD as
+      ai-hats's installed SHA (wrong),
+    - :func:`_fetch_into_pkg` pollutes the user's project repo with
+      ai-hats's ``master`` ref (side effect on user data).
+
+    Fast check via ``git ls-files --error-unmatch __init__.py`` — non-zero
+    when the file isn't tracked by the found repo. For editable installs
+    (``<repo>/src/ai_hats/__init__.py``) the file IS tracked so probe
+    paths proceed normally.
+    """
     try:
         result = subprocess.run(
-            ["git", "-C", str(pkg_dir), "rev-parse", "HEAD"],
+            ["git", "-C", str(pkg_dir),
+             "ls-files", "--error-unmatch", "__init__.py"],
             capture_output=True,
             text=True,
             timeout=REV_PARSE_TIMEOUT,
             check=False,
         )
-        if result.returncode == 0:
-            sha = result.stdout.strip()
-            if sha:
-                return sha
     except (FileNotFoundError, subprocess.SubprocessError):
-        pass
+        return False
+    return result.returncode == 0
+
+
+def detect_installed_sha() -> str | None:
+    """SHA of the installed copy of ai-hats; ``None`` when unknown.
+
+    HATS-441: gates ``git rev-parse HEAD`` behind
+    :func:`_pkg_tracked_by_local_git` so a foreign ``.git`` in an ancestor
+    of pkg_dir can't masquerade as ai-hats's repo. Falls back to the
+    ``__commit__`` baked into ``_version.py`` by setuptools-scm at install
+    time for wheel / non-editable scenarios.
+    """
+    pkg_dir = _package_dir()
+    if _pkg_tracked_by_local_git(pkg_dir):
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(pkg_dir), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=REV_PARSE_TIMEOUT,
+                check=False,
+            )
+            if result.returncode == 0:
+                sha = result.stdout.strip()
+                if sha:
+                    return sha
+        except (FileNotFoundError, subprocess.SubprocessError):
+            pass
     try:
         from ai_hats._version import __commit__  # type: ignore[attr-defined]
     except (ImportError, AttributeError):
@@ -137,8 +179,13 @@ def _fetch_into_pkg(remote_url: str, ref: str = "master") -> bool:
     ``rev-list`` / ``describe`` against ``<latest_sha>`` resolve locally.
     Silent failure (no remote, network down, not a git checkout) → False;
     the caller treats that as "ahead/behind unknown".
+
+    HATS-441: gated by :func:`_pkg_tracked_by_local_git` to prevent
+    polluting a foreign user-project ``.git`` with our remote refs.
     """
     pkg_dir = _package_dir()
+    if not _pkg_tracked_by_local_git(pkg_dir):
+        return False
     try:
         result = subprocess.run(
             ["git", "-C", str(pkg_dir), "fetch", "--quiet", remote_url, ref],
