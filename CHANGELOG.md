@@ -162,6 +162,21 @@ built-in component".
 
 ### Fixed
 
+- **`.gitignore` legacy block sweep** — `ai-hats self bump` / `self
+  update` now removes the pre-HATS-317 `# AI-HATS:START..END` managed
+  block from user `.gitignore` files. HATS-317 retired the dynamic
+  generator in favour of a single static line at init, but never
+  shipped the one-shot cleanup — every project initialized before
+  HATS-317 carried 50–90 stale per-component entries
+  (`.agent/ai-hats/rules/X.md`, `traits/Y.md`, etc.), many pointing at
+  v0.7-vanished paths after HATS-294 stopped materialising the
+  canonical layer. Doubly stale: redundant (the bare `.agent/`
+  user-init line covers the subtree) AND broken (paths no longer
+  exist). New `Assembler._strip_legacy_managed_block()` strips the
+  block + one preceding blank-line separator, idempotent, respects
+  `manage_gitignore = False`. Delivery pattern matches HATS-413:
+  persisted on `self bump` only, no rewrite-on-read. Dogfooded on
+  ai-hats's own `.gitignore` (121 → 48 lines).
 - **`ai-hats self update`** — short-circuit `pip install` when installed
   SHA already matches remote `master`. Saved 10-15 s per no-op update
   (60s+ on slow links — users mistook for hang). Reuses the
