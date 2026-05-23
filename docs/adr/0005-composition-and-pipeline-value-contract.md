@@ -75,9 +75,38 @@ Self-documenting at the type level; mechanical bug fixed. But П1 stays unsatisf
 
 **Chosen — full four-layer fix.** Mechanism prevents the bug class at the type / API / framework-behavior layer; convention (this ADR) documents intent; reminder (new rule) keeps agents aware; test (e2e + three unit guards) catches regressions early.
 
+## Phase 2 — П1-meta closure (HATS-456, 2026-05-23)
+
+П1 above forbids *re-composition* of the same `(role, overlays)` pair in two layers — that's re-derivation of the same logical entity. Phase 1 (the HATS-452 fix) closed the **acute** instance: composition was no longer computed twice across `ComposeRole` step and `WrapRunner.run_session`.
+
+But the same logical operation — `composer.compose(role, overlays=assembler._get_overlays(role))` — was still inlined at multiple sites:
+
+- `WrapRunner.run_session` (HITL)
+- `SubAgentRunner._run_attempt` (Automate, with `with_injection_override` after the compose)
+- `Assembler.set_role` (on-disk write for providers without a scaffold template)
+- `MaterializeSystemPrompt.run` (preview, the `ai-hats config show-prompt` surface)
+- Several compose-only sites in `Assembler` (init / set_default_role / status / bump / tier2 lookup / mirror-dir setup)
+- One site in `cli/maintenance.py` (composition snapshot for self-update)
+
+The sites were *accidentally* aligned — they all spelled the call the same way — but the alignment was a coincidence of code review, not a structural guarantee. A future change adding an extra overlay (or skipping `_get_overlays`) in any single site would silently produce a different composition for that path, reproducing the П1-meta problem at the catalog level.
+
+**Phase-2 closure.** New module `src/ai_hats/materialize.py` exposes one function — `compose_for_role(assembler, role) -> CompositionResult` — which is the sole place in `src/ai_hats/` where the with-overlays compose call appears. Every consumer above now routes through it. A grep-style guard (`tests/test_no_direct_compose_outside_facade.py`) makes future drift fail at test time.
+
+The build surface stays runtime-specific per П2: `WrapRunner` builds session argv+env via `build_session_prompt`, `SubAgentRunner` builds a sub-agent meta-prompt via `_build_meta_prompt`, `MaterializeSystemPrompt` builds preview text via `build_system_prompt`, `Assembler.set_role` builds the on-disk file via `build_system_prompt` + `expand_path_placeholders`. The facade does not collapse these — only the compose primitive is unified.
+
+Two patterns were intentionally **not** migrated:
+
+- `pipeline/steps/compose.py` — `compose(role)` *without* overlays (audit-only step, П4).
+- `cli/reflect.py` — `compose(target_role)` *without* overlays (reflect a role in isolation).
+
+Both have different semantics from "compose role X for this project" and would change behavior if force-fitted onto the facade. The drift guard's regex narrowed accordingly: it matches the `overlays=` form only.
+
+**Out of scope (deferred):** a `materialize_system_prompt(asm, role, provider) -> str` helper for callers that need only the agent-visible text was proposed in the plan (F1) and removed during execution — every real consumer needs the intermediate `CompositionResult` for hooks install / audit snapshot / stats / override. Re-introduce when a real text-only consumer appears.
+
 ## Related
 
 - HATS-294 — per-session cache + override mechanism (introduced the HATS-267 channel that was later misused).
 - HATS-267 — sub-agent custom prompt (legitimate use of the override channel, on the Automate path).
 - HATS-442 — record role composition snapshot per session (existing audit-side surface that П4 preserves).
+- HATS-456 — П1-meta closure: the materialization facade described in Phase 2 above.
 - ADR-0001 / ADR-0002 — pipeline / step contracts. П3 is a refinement of the existing funnel semantics, not a new mechanism.
