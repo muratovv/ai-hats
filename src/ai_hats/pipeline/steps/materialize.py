@@ -6,11 +6,13 @@ record. This is the single source of truth for the question "what would
 the agent actually see for role X under provider Y" — the canonical
 materialization surface (HATS-452 / ADR-0005 П1 follow-up).
 
-Phase-1 scope (HATS-452): step + ``preview.yaml`` + ``ai-hats config
-show-prompt`` CLI shim. Existing runtime consumers (``WrapRunner``,
-``SubAgentRunner``, ``Assembler.set_role`` write path) keep their own
-inline compose+build for now; unifying them under this step is a
-separate task (Phase 2 follow-up).
+HATS-456 (Phase 2 closure). Routes through the
+``ai_hats.materialize.compose_for_role`` facade so this step, runtime
+consumers (``WrapRunner``, ``SubAgentRunner``), and the on-disk
+``Assembler.set_role`` writer all derive the composition through a
+single function — no four-way drift possible. The step's own job
+(text + stats) keeps the build step inline because it needs the
+intermediate ``CompositionResult`` for the stats payload.
 """
 
 from __future__ import annotations
@@ -45,6 +47,7 @@ class MaterializeSystemPrompt(Step):
         **_: Any,
     ) -> dict[str, Any]:
         from ...assembler import Assembler
+        from ...materialize import compose_for_role
         from ...providers import get_provider
 
         asm = Assembler(project_dir)
@@ -65,9 +68,11 @@ class MaterializeSystemPrompt(Step):
                 "Set `provider:` in ai-hats.yaml or pass `provider=...`."
             )
 
-        result = asm.composer.compose(
-            eff_role, overlays=asm._get_overlays(eff_role)
-        )
+        # HATS-456: single derivation point for "compose for role X".
+        # Build step stays inline because stats need the intermediate
+        # CompositionResult (the facade's materialize_system_prompt
+        # discards it).
+        result = compose_for_role(asm, eff_role)
         if result.errors:
             raise RuntimeError(
                 f"materialize_system_prompt: compose errors for role "
