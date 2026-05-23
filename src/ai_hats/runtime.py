@@ -1026,9 +1026,9 @@ class SubAgentRunner:
         """
         session = self.session_mgr.create_session(parent_session=parent_session)
 
-        result = self.assembler.composer.compose(
-            role_name, overlays=self.assembler._get_overlays(role_name),
-        )
+        # HATS-456: single derivation point for "compose for role X".
+        # Override (HATS-267) stays on the Automate path per ADR-0005 П2.
+        result = compose_for_role(self.assembler, role_name)
         if system_prompt_override is not None:
             # HATS-452: explicit immutable transformation via the typed
             # ``with_*`` API on ``CompositionResult`` (П1 in ADR-0005).
