@@ -77,7 +77,10 @@ def test_human_pipeline_e2e(tmp_path: Path):
     fake_runner.run.assert_called_once()
     call_kwargs = fake_runner.run.call_args.kwargs
     assert call_kwargs["role_override"] == "assistant"
-    assert call_kwargs["system_prompt_override"] == "ROLE PROMPT"
+    # HATS-452 (П2 in ADR-0005): WrapRunner has NO system_prompt_override
+    # channel — composition reaches the agent via build_session_prompt
+    # inside run_session, not via a pipeline-side string handoff.
+    assert "system_prompt_override" not in call_kwargs
 
 
 def test_human_pipeline_e2e_no_role(tmp_path: Path):
