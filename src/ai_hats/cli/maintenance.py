@@ -193,11 +193,27 @@ def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
 DOWNGRADE_REFUSAL_EXIT_CODE = 3
 
 
-def _check_downgrade_gate(project_dir: Path):
-    """Probe ahead/behind vs remote master. Returns (reason, entry) or None.
+def _probe_remote_state(project_dir: Path):
+    """Run the ahead/behind probe. Returns the cache entry or ``None``.
 
-    HATS-441: reuses the HATS-432 probe infrastructure
-    (``update_check.checker.run_check``) to determine whether
+    Wrapper around :func:`update_check.checker.run_check` that swallows
+    transport errors — a network blip MUST NOT block an explicit
+    ``self update`` invocation. Returns ``None`` only when the probe could
+    not resolve SHAs (no network, non-git install, malformed remote).
+    """
+    from ..update_check.checker import run_check
+
+    try:
+        return run_check(project_dir)
+    except (OSError, ValueError):
+        logger.debug("update-check probe failed", exc_info=True)
+        return None
+
+
+def _classify_downgrade(entry) -> str | None:
+    """Classify a probe entry vs the downgrade gate. Returns reason or None.
+
+    HATS-441: reuses the HATS-432 probe infrastructure to determine whether
     ``ai-hats self update`` would silently regress the local install. Two
     refusal classes:
 
@@ -209,27 +225,16 @@ def _check_downgrade_gate(project_dir: Path):
 
     Returns ``None`` (gate inactive — proceed) when:
 
-    - probe failed (no network, non-git install, shallow clone),
+    - entry is ``None`` (probe failed),
     - ahead/behind couldn't be resolved (``None`` axes),
     - installed is behind or in sync (normal update / no-op).
-
-    Probe is intentionally best-effort — a network blip MUST NOT block an
-    explicit ``self update`` invocation. The ``--force-downgrade`` override
-    handles confirmed-refusal cases.
     """
-    from ..update_check.checker import run_check
-
-    try:
-        entry = run_check(project_dir)
-    except (OSError, ValueError):
-        logger.debug("downgrade probe failed", exc_info=True)
-        return None
     if entry is None or entry.ahead is None or entry.behind is None:
         return None
     if entry.ahead > 0 and entry.behind == 0:
-        return ("ahead", entry)
+        return "ahead"
     if entry.ahead > 0 and entry.behind > 0:
-        return ("diverged", entry)
+        return "diverged"
     return None
 
 
@@ -306,6 +311,10 @@ def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
     # remote master. ``--force-downgrade`` opts back into the destructive
     # ``pip install --force-reinstall git+…`` behaviour for callers who
     # know what they're doing (e.g. discarding a stale dev branch).
+    # Single probe — feeds both the downgrade gate and the no-op
+    # short-circuit below. Avoids running run_check twice per invocation.
+    probe = None if force_downgrade else _probe_remote_state(project_dir)
+
     if force_downgrade:
         console.print(
             "[yellow]Warning:[/] --force-downgrade bypasses the "
@@ -313,10 +322,9 @@ def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
             "unpushed commits) will be replaced by remote master."
         )
     else:
-        gate = _check_downgrade_gate(project_dir)
-        if gate is not None:
-            reason, entry = gate
-            _render_downgrade_refusal(reason, entry)
+        reason = _classify_downgrade(probe)
+        if reason is not None:
+            _render_downgrade_refusal(reason, probe)
             sys.exit(DOWNGRADE_REFUSAL_EXIT_CODE)
 
     # 1. Snapshot before update
@@ -343,38 +351,61 @@ def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
         if active_role:
             before_rules, before_skills = _snapshot_composition(asm)
 
-    # 2. Install — wrapped in a Rich spinner so the terminal isn't silent
-    # while pip downloads (can take 30s+ on slow links).
-    cmd = _build_update_cmd()
-    with console.status(
-        "[cyan]Downloading ai-hats from GitHub …[/] "
-        "[dim](pip install — may take a minute)[/]",
-        spinner="dots",
-    ):
-        result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        console.print(f"[red]Update failed[/]: {result.stderr}")
-        return
-
-    # 2b. HATS-213 stage-2 verify: run a fresh interpreter against the
-    # just-installed on-disk code, so any new declared runtime dep that
-    # somehow didn't land gets healed before the user's next invocation.
-    # Failures are non-fatal — layer A in cli.main() catches the rest.
-    with console.status("[cyan]Verifying install …[/]", spinner="dots"):
-        verify = subprocess.run(
-            [sys.executable, "-m", "ai_hats._bootstrap", "verify"],
-            capture_output=True,
-            text=True,
+    # 2. Install — short-circuited when the probe confirms installed SHA
+    # already matches remote master AND the ahead/behind axes resolved to
+    # exactly (0, 0). The double check guards against environments where
+    # SHA detection returns identical garbage on both sides (e.g.,
+    # subprocess.run mocks that yield ``stdout=""`` for every git call);
+    # ahead/behind only resolve to (0, 0) when ``git rev-list`` actually
+    # walked real commits. No point paying ``pip install --force-reinstall
+    # --no-cache-dir``'s 10-15s re-download for a no-op; bump() below
+    # still runs to apply any pending migrations.
+    skip_install = (
+        not force_downgrade
+        and probe is not None
+        and probe.installed_sha == probe.latest_sha
+        and probe.ahead == 0
+        and probe.behind == 0
+    )
+    if skip_install:
+        console.print(
+            f"[green]Already up to date[/] ({old_version}) "
+            "[dim]— skipping pip install[/]"
         )
-    if verify.returncode != 0:
-        warning = (verify.stderr or verify.stdout or "").strip() or "see logs"
-        console.print(f"[yellow]Post-install verify warned[/]: {warning}")
-
-    # 3. Version diff
-    new_version = _get_installed_version()
-    if new_version == old_version:
-        console.print(f"[green]Already up to date[/] ({old_version})")
+        new_version = old_version
     else:
+        cmd = _build_update_cmd()
+        # Wrapped in a Rich spinner so the terminal isn't silent while pip
+        # downloads (can take 30s+ on slow links).
+        with console.status(
+            "[cyan]Downloading ai-hats from GitHub …[/] "
+            "[dim](pip install — may take a minute)[/]",
+            spinner="dots",
+        ):
+            result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            console.print(f"[red]Update failed[/]: {result.stderr}")
+            return
+
+        # 2b. HATS-213 stage-2 verify: run a fresh interpreter against the
+        # just-installed on-disk code, so any new declared runtime dep that
+        # somehow didn't land gets healed before the user's next invocation.
+        # Failures are non-fatal — layer A in cli.main() catches the rest.
+        with console.status("[cyan]Verifying install …[/]", spinner="dots"):
+            verify = subprocess.run(
+                [sys.executable, "-m", "ai_hats._bootstrap", "verify"],
+                capture_output=True,
+                text=True,
+            )
+        if verify.returncode != 0:
+            warning = (verify.stderr or verify.stdout or "").strip() or "see logs"
+            console.print(f"[yellow]Post-install verify warned[/]: {warning}")
+
+        # 3. Version diff
+        new_version = _get_installed_version()
+        if new_version == old_version:
+            console.print(f"[green]Already up to date[/] ({old_version})")
+    if new_version != old_version:
         console.print(f"[green]Updated[/]: {old_version} → [bold]{new_version}[/]")
 
         changelog = _get_changelog()
@@ -442,13 +473,21 @@ def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
             after_rules, after_skills = _snapshot_composition(asm)
         else:
             # No version change → no chicken-and-egg risk; in-process is fine
-            # and avoids ~150ms subprocess overhead.
+            # and avoids ~150ms subprocess overhead. Wrapped in a spinner so
+            # the terminal isn't silent while migrations / healers run — on a
+            # warm install bump is ~50ms, but cold filesystem walks (heal_
+            # external_refs scans the whole project tree) can push 1-2s and
+            # users have mistaken the quiet pause for a hang.
             try:
                 asm = _assembler(project_dir)
-                bump_result = asm.bump(
-                    force_v07_migration=migrate_force,
-                    check_v07_branches=check_branches,
-                )
+                with console.status(
+                    f"[cyan]Migrating / refreshing[/] {active_role} …",
+                    spinner="dots",
+                ):
+                    bump_result = asm.bump(
+                        force_v07_migration=migrate_force,
+                        check_v07_branches=check_branches,
+                    )
                 if bump_result:
                     after_rules = {r.name for r in bump_result.rules}
                     after_skills = {s.name for s in bump_result.skills}
