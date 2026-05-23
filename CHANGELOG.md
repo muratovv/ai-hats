@@ -10,6 +10,22 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Internal
+- **HATS-456** — materialization facade (Phase 2 closure of HATS-452 / ADR-0005
+  П1). Eight+ sites across `runtime.py`, `assembler.py`, `cli/maintenance.py`,
+  and `pipeline/steps/materialize.py` inlined the same
+  `composer.compose(role, overlays=_get_overlays(role))` call. They were
+  accidentally aligned. New module `src/ai_hats/materialize.py` exposes
+  `compose_for_role(assembler, role) -> CompositionResult` as the sole entry
+  point; every consumer routes through it. A drift-guard test
+  (`tests/test_no_direct_compose_outside_facade.py`) walks `src/ai_hats/` and
+  fails if the with-overlays call appears anywhere outside the facade.
+  A second e2e test (`test_show_prompt_matches_session_prompt.py`) pins
+  `ai-hats config show-prompt` byte-equal (modulo placeholder expansion)
+  to the file `ai-hats execute` (bare) hands the agent — no four-way drift
+  between preview surface and real session prompt is now possible. No
+  user-visible behavior change. ADR-0005 appended with a "Phase 2" section.
+
 ### Fixed
 - **HATS-452** — composition / pipeline value contract. Bare `ai-hats`
   (no `--role`, `active_role` in `ai-hats.yaml`) was writing a
