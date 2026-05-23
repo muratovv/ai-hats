@@ -23,7 +23,7 @@ INJECTION_END = "<!-- AI-HATS:END -->"
 PUBLISH_AGGREGATOR_START = "<!-- ai-hats:start -->"
 PUBLISH_AGGREGATOR_END = "<!-- ai-hats:end -->"
 
-# Always-on rules that stay in prompt (safety-critical)
+# Always-on rules that stay in prompt (safety-critical + framework invariants).
 ALWAYS_ON_RULES = {
     "global_rule_destructive_actions",
     "global_rule_resource_hygiene",
@@ -32,6 +32,11 @@ ALWAYS_ON_RULES = {
     # HATS-437: primary defense against autonomous shared-state writes.
     # The PreToolUse / pre-push hooks are a safety net for this rule.
     "rule_pause_before_shared_state_write",
+    # HATS-452: framework-invariant reminder for any agent that may
+    # touch composition / pipeline / runtime internals. Short body
+    # (~600 chars); acceptable budget for an always-on architectural
+    # guard. Full rationale: docs/adr/0005-*.md.
+    "rule_composition_value_contract",
 }
 
 
