@@ -10,419 +10,281 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
-### Fixed
-- **`ai-hats self update`** — short-circuit `pip install` when the
-  installed SHA already matches remote `master`. Before the fix the
-  command unconditionally ran `pip install --force-reinstall
-  --no-cache-dir`, a 10-15 s no-op on a warm cache and noticeably longer
-  on slow links / cold caches; the silent re-download between "Already
-  up to date" and the next print mistaken for a hang by users running
-  back-to-back updates. The HATS-432 ahead/behind probe already runs as
-  part of the HATS-441 downgrade gate — its result now feeds an early
-  exit when `installed_sha == latest_sha` and `(ahead, behind) ==
-  (0, 0)` (the double check guards against environments where SHA
-  detection returns identical garbage on both sides). Bump still runs
-  in-process so pending migrations / hook refreshes apply. The
-  in-process bump path also gained a Rich spinner so the terminal
-  isn't silent between "Re-assembling: …" and "No composition changes"
-  on projects whose `heal_external_refs` walk takes longer than the
-  human eyeblink threshold. Pure UX fix — no behaviour change for the
-  ahead / diverged / probe-failed branches.
+Composition-and-customization release. **MAJOR** bump driven by three shifts:
 
-### Internal
-- **HATS-456** — materialization facade (Phase 2 closure of HATS-452 / ADR-0005
-  П1). Eight+ sites across `runtime.py`, `assembler.py`, `cli/maintenance.py`,
-  and `pipeline/steps/materialize.py` inlined the same
-  `composer.compose(role, overlays=_get_overlays(role))` call. They were
-  accidentally aligned. New module `src/ai_hats/materialize.py` exposes
-  `compose_for_role(assembler, role) -> CompositionResult` as the sole entry
-  point; every consumer routes through it. A drift-guard test
-  (`tests/test_no_direct_compose_outside_facade.py`) walks `src/ai_hats/` and
-  fails if the with-overlays call appears anywhere outside the facade.
-  A second e2e test (`test_show_prompt_matches_session_prompt.py`) pins
-  `ai-hats config show-prompt` byte-equal (modulo placeholder expansion)
-  to the file `ai-hats execute` (bare) hands the agent — no four-way drift
-  between preview surface and real session prompt is now possible. No
-  user-visible behavior change. ADR-0005 appended with a "Phase 2" section.
+1. **v0.6 → v0.7 layout migration** is now folded into `self update` /
+   `self bump`; the standalone `self migrate-v07` verb is retired
+   (`Migration:` under *Removed*).
+2. **User-level overlays** at `~/.ai-hats/customizations.yaml` ship as a
+   first-class layer; `personal-workflow` migrates there
+   (`Migration:` in the ✨ BREAKING section).
+3. **Role architecture splits** — `assistant` = opinionated default
+   (Google Workspace + personal-workflow bundled); `dev-python` = clean
+   Python baseline; `maintainer` = new role for ai-hats-codebase work.
 
-### Fixed
-- **HATS-457** — `ai-hats wt merge` drift guard (HYP-017). Between
-  `wt create` and `wt merge` the original base branch could advance —
-  another agent's worktree already merged into local `master`, or
-  `origin/<base>` received commits via `git pull` — and the current
-  agent's pre-merge `grep-verify` became silently stale. Concrete
-  precedent: HATS-361 shipped a glossary with `src/ai_hats/libraries/...`
-  paths after HATS-363 had renamed the directory to `library/`, needing
-  a follow-up commit to repair. `WorktreeManager.create` now snapshots
-  the original-branch SHA into the per-worktree state file
-  (`base_sha_at_create`). `wt merge` runs a best-effort `git fetch
-  origin <base>` (silent on no-remote / offline), then refuses with
-  `WorktreeDriftError` if either local `<base>` or `origin/<base>` has
-  advanced past the snapshot — listing the diverged commit count and
-  affected paths. New `--accept-drift` flag bypasses after the operator
-  re-verifies; deliberately **separate from `--force`** (dirty-workdir
-  bypass) — two checks, two risks, two flags. Legacy state files
-  pre-457 omit the SHA and gracefully skip the check (no migration).
-  Adversarial filenames in diverged commits cannot inject Rich markup
-  into operator terminals (`rich.markup.escape` at the CLI render
-  boundary). Eleven unit tests cover local / remote-only / both / no-
-  remote / legacy-state / markup-safety / state-roundtrip; e2e exercises
-  real binary + real git with fail-under-revert verification.
-- **HATS-452** — composition / pipeline value contract. Bare `ai-hats`
-  (no `--role`, `active_role` in `ai-hats.yaml`) was writing a
-  `prompt.md` missing the merged role/trait injection — hundreds of
-  lines of behavioral guidance (E2E gate, Agent Protocol, role workflow,
-  etc.) never reached the agent. Root cause: pipeline `compose_role`
-  step returned `{"system_prompt": ""}` for a missing role; runtime's
-  `WrapRunner.run_session` accepted the empty string as a legitimate
-  override and **replaced** the freshly-composed 16k-character injection
-  list with `[""]`. Fix is four-layer (mechanism / convention / reminder
-  / test) per [ADR-0005](docs/adr/0005-composition-and-pipeline-value-contract.md):
-  `CompositionResult` is now `frozen=True` with explicit
-  `with_injection_override(text)`; pipeline funnel drops `None`-valued
-  keys at the merge boundary (`None` == missing); `compose_role` emits
-  `{}` for no-role; `WrapRunner.run` lost its `system_prompt_override`
-  parameter entirely (HITL has no override channel — see П2);
-  `SubAgentRunner` keeps it (HATS-267 Automate path). New rule
-  `rule_composition_value_contract` (auto-injected via `trait-agent`)
-  documents the four invariants for any future agent touching the
-  composition / pipeline / runtime surface.
+Also: composition is now an immutable contract (ADR-0005, HATS-452),
+two-level defence against autonomous shared-state writes (HATS-437),
+banner reads real git state (HATS-432) + fires on non-editable installs
+(HATS-458), `self update` refuses silent downgrades (HATS-441) and
+short-circuits pip on a no-op, `wt merge` has a pre-merge drift guard
+(HATS-457).
 
-### Added
-- **HATS-445** — `ai-hats execute --prompt <name>` now resolves
-  `initial_injections/<name>.md` through the full `library_paths` chain
-  (built-in core → usage → `~/.ai-hats/` → `cfg.library_paths` →
-  `<project>/libraries/`), last-wins. Unlocks **shell-alias custom
-  verbs**: plugin authors ship a role + an initial-injection prompt
-  under any library path, wrap `ai-hats execute` in a shell function
-  (e.g. `rebalance() { ai-hats execute --role fin_consult --prompt
-  "rebalance-$1"; }`), and get a custom verb with zero ai-hats core
-  changes. Built-in `reflect-all` / `reflect-role` preambles migrated to
-  the same resolver (the dead `_initial_injections_dir()` helper was
-  removed). A project-local override of any built-in injection name is
-  now possible. New section in `docs/how-to-extend.md`: "Custom verbs
-  via shell aliases", with the boundary criterion for when to graduate
-  to a full custom pipeline (HATS-268).
+### 🎭 v0.7 role architecture — `maintainer` + `dev-python` extraction (HATS-381 + HATS-392)
 
-- **HATS-444** — `docs/INDEX.md` is now the single source of truth for the
-  initial-wizard role's companion-docs catalog. The wizard injection
-  previously hardcoded a per-step list of `how-to-*.md` references in
-  two places, which meant every new doc required a synchronised wizard
-  edit. The new pattern: the wizard opener points at `docs/INDEX.md` and
-  keeps a 3-line minimal fallback (configure / extend / glossary) for
-  legacy projects where INDEX is missing; the per-step «Companion docs
-  (full catalog)» section is replaced with a pointer to INDEX. Maintainer
-  contract: the `doc-protocol` skill now requires INDEX updates when a
-  doc task adds, removes, or renames a file under `docs/`. Mechanical
-  enforcement: a new git pre-commit hook
-  (`library/core/skills/git-mastery/git_hooks/pre-commit-docs-index.sh`)
-  blocks commits that stage structural docs/ changes (A/D/R/C) without
-  staging `docs/INDEX.md` alongside; content-only edits (status M) are
-  not affected. Override per-commit: `AI_HATS_DOCS_INDEX_ACK=1 git commit
-  ...`.
+**`maintainer` extracted (HATS-381).** Codebase work on ai-hats itself
+moves out of `assistant` into a dedicated role. New shipped content:
 
-- **HATS-437** — Two-level defence against autonomous shared-state writes
-  (closes HYP-026 + HYP-027, cited in PROP-052). A new always-on rule
-  `rule_pause_before_shared_state_write` (injected via `trait-agent`,
-  registered in `ALWAYS_ON_RULES`) forbids the agent from running
-  `gh pr create/close/merge`, `gh issue comment`, `gh release create`,
-  `git push` (any form), or `TaskCreate` without a per-command pause and
-  explicit user confirmation in the next turn — and explicitly bans
-  chaining any of them with other commands in a single Bash invocation
-  (the actual incident pattern: `gh pr merge … --delete-branch && git
-  push && git checkout master && git pull` in one call). Two new hook
-  scripts back the rule with deterministic blocks on the **irreversible**
-  subset (`gh pr merge`, `git push --force` / `-f` / `--force-with-lease`):
-  `library/hooks/pre_bash_shared_state_guard.sh` is a Claude Code
-  PreToolUse hook, wired into `.claude/settings.json` idempotently by
-  `ClaudeProvider.ensure_runtime_hooks()` on every `self init` / `self
-  bump`; `library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`
-  is a provider-agnostic git pre-push hook that detects non-fast-forward
-  pushes (deletions and new-branch pushes are short-circuited so benign
-  cleanup is not blocked). Both hooks default to **refuse** when run
-  without a controlling TTY (i.e. inside an agent harness); the user
-  can ack a single command with `AI_HATS_SHARED_STATE_ACK=1 <command>`
-  per the HATS-402 attach-hook pattern. **Gemini asymmetry:** Gemini CLI
-  has no PreToolUse equivalent, so Gemini sessions are protected by the
-  rule + the git pre-push hook only; the `gh pr merge` deterministic block
-  is Claude-only. Documented in `docs/ARCHITECTURE.md`.
+- `core/skills/design-minimalism` — every primitive at plan stage needs
+  a concrete use case; speculative additions → Out of scope.
+- `core/skills/predictive-accounting` — for shrink/refactor tasks,
+  present baseline + delta *before* implementation.
+- `usage/skills/doc-protocol` — plan-stage style forks + scope triage
+  + pre-commit artifact verification (folds three prior memory-only
+  patterns).
+- `core/rules/rule_core_vs_usage_split` — universal-vs-project-specific
+  decision tree for library content (sourced from PROP-037).
+- `core/traits/ai-hats-framework` — wraps the rule + layered-library
+  injection.
 
-- **HATS-442** — Session audit now records the **effective role composition
-  snapshot** (traits + rules + skills with per-component source-tags
-  `(built-in)` / `(global)` / `(project)`) at session start. The snapshot
-  is written into `audit.md` as a `## Composition` section and into
-  `metrics.json` as a structured `composition` field. `SessionFacts`
-  parses it; `session-reviewer` injects an `## Effective composition`
-  block into the LLM evidence prompt and learns to cite source-tags when
-  explaining behaviour or filing proposals (the tag tells you whether to
-  target the framework, the user overlay, or this project's overlay).
-  Backwards compatible — old sessions without the field reflect normally
-  with `composition: None`. Closes the observability gap created by
-  HATS-421: before this change, two sessions with the same role name but
-  different user-level customizations produced identical-looking retros.
+The `ai-hats-maintainer` trait injection grew from ~10 to ~90 lines:
+Conventional Commits, what-NOT-to-commit, canonical CLI, glossary-first,
+numbered-refs, d2 practical gotchas, release flow, 8 architectural
+defaults, 3 anti-patterns. Replaces the last per-project memory
+references.
+
+**`dev-python` extracted (HATS-392).** `assistant` (8 traits) is
+reframed as *opinionated all-in-one* — bundled Google Workspace +
+personal-workflow; not a clean baseline. New **`dev-python`** (6 traits)
+is the clean Python + Shell starter. Wizard Step 3 maps `pyproject.toml`
+/ `setup.py` → `dev-python`; empty / non-Python projects still →
+`assistant`.
 
 ### ✨ Bring your own traits/skills — user-level overlays (HATS-421 + HATS-433, **BREAKING**)
 
-One coherent user story shipped as two commits:
-
-**The new mechanism (HATS-421).** A second customization layer lives at
-`~/.ai-hats/customizations.yaml` — same schema as the project-level
-`customizations:` block, just in your home directory so it applies to
-every project you open. You no longer need to repeat
-`ai-hats config customize` across N projects, and personal trait/skill/rule
-content no longer has to leak into the ai-hats package as TEMPORARY seams.
+**The mechanism (HATS-421).** A second customization layer lives at
+`~/.ai-hats/customizations.yaml` — same schema as project-level,
+applied to every project. No more repeating `ai-hats config customize`
+across N projects; personal content no longer leaks into the package.
 
 ```bash
-# One-time, per machine:
 mkdir -p ~/.ai-hats/traits/<your-trait>
 $EDITOR ~/.ai-hats/traits/<your-trait>/config.yaml
-
-# Attach globally — affects every project:
 ai-hats config customize <role> --add-trait <your-trait> --global
-
-# Inspect:
-ai-hats config customize <role> --show               # both layers
-ai-hats config customize <role> --show --global      # only user-wide
-ai-hats config customize <role> --show --project     # only project
-ai-hats config status                                # full tree with source-tags
+ai-hats config status   # full tree with (built-in) / (global) / (project) source-tags
 ```
 
-Compose order: built-in role → global overlay → project overlay. Project
-wins on cross-layer conflict (it's applied last). Within a single layer,
-putting the same name in both `add` and `remove` is a first-class
-"move-to-end" reorder operation — useful when you need a trait loaded last
-so dedup/priority lands on your version. `config status` now annotates
-every trait, rule, and skill with a `(built-in)` / `(global)` / `(project)`
-source-tag and a legend line so it's always obvious where each component
-came from.
+Compose order: built-in → global → project (project wins on conflict).
+`config status` annotates every component with a source-tag.
 
-**The migration (HATS-433, BREAKING).** With the mechanism in place, the
-`personal-workflow` trait — TEMPORARY in v0.6 with the explicit exit
-condition "remove once user-side skill-install lands" — leaves the
-package and moves to user-scope. Affected roles: `maintainer` (10 → 9
-traits), `assistant` (8 → 7 traits). `initial-wizard` Step 3 role
-descriptions updated to point at `--global` instead of the bundled trait.
-Trait body is unchanged — same plan-mode iteration hygiene rules, just
-sourced from your home directory.
+**Migration: HATS-433, BREAKING.** `personal-workflow` trait —
+TEMPORARY in v0.6 — leaves the package and moves to user-scope. Affects
+`maintainer` (10 → 9 traits) and `assistant` (8 → 7 traits). Trait body
+unchanged.
 
 ```bash
-# Migration (one-time, per machine) — see docs/how-to-extend.md
-# "Migrating from a removed built-in component" for the worked example.
 mkdir -p ~/.ai-hats/traits/personal-workflow
-# Recover content from the previous tag of this repo, then:
-
+# Recover content from the previous tag, then:
 ai-hats config customize maintainer --add-trait personal-workflow --global
 ai-hats config customize assistant  --add-trait personal-workflow --global
-
-# In each project that uses these roles:
+# In each project:
 ai-hats self bump
 ```
 
-**Under the hood.** New `models.UserConfig` with the same contract as
-`ProjectConfig` (`from_yaml`, `save`; missing → empty; malformed →
-`UserConfigError`). `Assembler` loads the user layer at construction.
-`composer.compose` now accepts `overlays: list[OverlayConfig]` alongside
-the legacy single-overlay form (all 8 in-tree call sites migrated;
-backwards compatible). New `_get_overlays(role)` returns the ordered
-`[global, project]` list; new `_get_overlay_provenance(role)` powers the
-source-tag rendering. `initial-wizard` Step 4 now offers a project-only
-vs user-wide choice when the user wants to customize. 32 new tests:
-UserConfig loader, sequential-apply conflict matrix, CLI `--global`
-routing, source-tag rendering, end-to-end roundtrip.
-
-Docs: new `docs/how-to.md` §4b "Global overlays for personal workflow"
-recipe, §4c "Reordering composition" recipe; `docs/how-to-configure.md`
-§4 grew a "Two layers" subsection with the conflict matrix;
-`docs/how-to-extend.md` worked example "Migrating from a removed
+Worked example: `docs/how-to-extend.md` §"Migrating from a removed
 built-in component".
 
 ### Added
-- **HATS-408** — `ai-hats self migrate-v07` — one-shot safe migration
-  from v0.6 materialised canonical layout to v0.7 per-session compose.
-  Inspects every on-disk artefact (canonical role-content files,
-  library mirror dirs for rules/skills, flat hook scripts under
-  `library/hooks/`), diffs each vs a freshly composed baseline,
-  refuses with guidance on user edits (`--force` bypasses with one
-  stderr WARN per overwritten file). Atomic single git commit; idempotent
-  re-runs no-op. Flags: `--force / --no-commit / --check-branches`.
-  Exit codes 0/1/2/3/4 documented in `--help`. The companion gate
-  `Assembler._refuse_on_v06_layout` blocks `bump` / `self update` on
-  v0.6 projects so the destructive sweep can't fire before the user
-  runs `migrate-v07` — closes the silent-data-loss seam that exists
-  when HATS-294 + HATS-407 ship together without it.
+
+- **HATS-445** — `ai-hats execute --prompt <name>` resolves
+  `initial_injections/<name>.md` through the full `library_paths` chain.
+  Unlocks **shell-alias custom verbs**: plugin authors ship a role +
+  injection and wrap `ai-hats execute` in a shell function — custom verb
+  with zero ai-hats core changes. New section in
+  `docs/how-to-extend.md`: "Custom verbs via shell aliases".
+- **HATS-444** — `docs/INDEX.md` is the single source of truth for the
+  wizard's companion-docs catalog. Mechanical enforcement via new git
+  pre-commit hook (`pre-commit-docs-index.sh`) blocks commits that
+  stage structural docs/ changes without staging `INDEX.md`. Override:
+  `AI_HATS_DOCS_INDEX_ACK=1`.
+- **HATS-437** — Two-level defence against autonomous shared-state
+  writes (HYP-026 + HYP-027). Always-on rule
+  `rule_pause_before_shared_state_write` forbids `gh pr
+  create/close/merge`, `gh issue comment`, `gh release create`,
+  `git push`, `TaskCreate` without per-command pause + user confirmation,
+  and bans chaining them in one Bash invocation. Two hook scripts back
+  the rule with deterministic blocks on the **irreversible** subset
+  (`gh pr merge`, `git push --force`). Per-command ack via
+  `AI_HATS_SHARED_STATE_ACK=1`. Gemini sessions get the rule +
+  pre-push hook only (no PreToolUse equivalent in Gemini CLI).
+- **HATS-442** — Session audit records the **effective role composition
+  snapshot** (traits + rules + skills with source-tags) at session
+  start. `session-reviewer` cites source-tags when filing proposals
+  (framework vs user vs project). Closes the observability gap created
+  by HATS-421.
+- **HATS-408** — `ai-hats self migrate-v07` one-shot safe migration from
+  v0.6 to v0.7. Inspects on-disk artefacts, diffs each vs composition
+  baseline, refuses on user edits (`--force` bypasses). Atomic single
+  git commit; idempotent. *(Superseded by HATS-415 — see Removed.)*
 - **HATS-401** — Session-end **Update banner** in `execute` / `human`
-  pipelines. When the installed `ai-hats` SHA lags upstream `master`, a
-  three-line block surfaces under the `✨ Session summary`: short SHAs,
-  the `ai-hats update` command, and a dim opt-out hint. The probe is
-  non-blocking — a detached background subprocess writes the result to
-  `<ai_hats_dir>/.cache/update-check.json` (24h TTL,
-  stale-while-revalidate). Opt-out: `AI_HATS_NO_UPDATE_CHECK=1` suppresses
-  both probe and banner. New module `ai_hats.update_check`, new pipeline
-  steps `check_update_async` / `render_update_banner`, glossary entries
-  for **Session summary** vs **Update banner**.
+  pipelines. When installed SHA lags upstream, surfaces short SHAs +
+  `ai-hats self update` hint under `✨ Session summary`. Non-blocking
+  detached probe writes to `<ai_hats_dir>/.cache/update-check.json`
+  (24h TTL). Opt-out: `AI_HATS_NO_UPDATE_CHECK=1`.
 
 ### Changed
-- **HATS-415** — `ai-hats self update` and `self bump` now self-heal v0.6 →
-  v0.7 layouts inline. The naive HATS-408 `_refuse_on_v06_layout` gate
-  (manifest-only check) is replaced by the real `plan_migration`
-  classifier inside `Assembler.bump()`: safe-to-delete v0.6 files (bytes
-  match composition baseline) are swept transparently for the common
-  case; user-edited files raise `AssemblyError` with per-file guidance
-  pointing at the v0.7 home (`user-rules/` or `library/usage/...`). New
-  flags on both `self update` and `self bump`: `--migrate-force`
-  (bypass user-edit refusal, one stderr `WARN` per overwritten file)
-  and `--check-branches` (warn when local branches modify paths slated
-  for deletion). **No auto-commit** — sweep deletions land in the
-  worktree, user commits at leisure (same pattern as the existing
-  `_normalize_yaml` yaml rewrite). Migration triggers only when Tier-1
-  framework files (`priorities.md` / `role.md` / `traits/*` / `rules/*` /
-  `skills_index.md`) are present — projects with user-authored hooks
-  under `library/hooks/<x>.sh` no longer falsely refuse.
-- **HATS-294** — Composition is now per-session in memory; the canonical
+
+- **HATS-415** — `ai-hats self update` and `self bump` self-heal
+  v0.6 → v0.7 layouts inline. Safe-to-delete v0.6 files (bytes match
+  baseline) are swept transparently; user-edited files raise
+  `AssemblyError` with per-file guidance. New flags: `--migrate-force`
+  (bypass refusal) and `--check-branches` (warn on local branches
+  modifying paths slated for deletion). No auto-commit — user owns the
+  commit decision.
+- **HATS-294** — Composition is now per-session in memory; canonical
   layer no longer materialises `priorities.md` / `role.md` /
   `traits/*.md` / `rules/*.md` / `skills_index.md`. `write_canonical`
-  emits only the `imports.md` aggregator listing `@./user-rules/*.md`
-  files (plus the `MANAGED` manifest tracking it). Providers'
-  `build_override` renamed to `build_session_prompt`; runtime collapsed
-  shadow-vs-permanent paths into a single compose path; per-session
-  cache dir replaces the permanent `.claude/skills` export.
-- **HATS-407** — `ai-hats role set <name>` is now yaml-only (writes
-  `default_role:` to `ai-hats.yaml` and updates the running provider's
-  system prompt inline). Removed `ai-hats self rollback` — yaml-only
-  config means `git checkout` is the recovery path. Swept stale
-  `.last_backup` pointers and dropped `PROFILE_FILE`.
+  emits only the `imports.md` aggregator. Providers' `build_override`
+  renamed to `build_session_prompt`.
+- **Migration: HATS-407** — `ai-hats role set <name>` is yaml-only
+  (writes `default_role:` to `ai-hats.yaml`). **Removed
+  `ai-hats self rollback`** — yaml-only config means `git checkout
+  ai-hats.yaml` is the recovery path. Users scripting `self rollback`
+  should switch to `git checkout`.
 
 ### Removed
-- **HATS-415** — `ai-hats self migrate-v07` CLI command. The one-shot
-  v0.6 → v0.7 migration (introduced under HATS-408) is no longer a
-  separate command — its logic lives inline in `Assembler.bump()` and
-  surfaces on `self update` / `self bump`. Power-user levers re-homed
-  as flags: `--force` → `--migrate-force`, `--check-branches` kept as
-  is. `--no-commit` has no analog (bump never committed; user reviews
-  and commits at leisure). The `chore(v0.7): migrate to dynamic role
-  composition` atomic commit envelope is gone — the user owns the
-  commit decision.
+
+- **Migration: HATS-415** — `ai-hats self migrate-v07` CLI command
+  removed. Its logic lives inline in `Assembler.bump()` and surfaces on
+  `self update` / `self bump`. Flags re-homed: `--force` →
+  `--migrate-force`, `--check-branches` kept. `--no-commit` has no
+  analog. Migration: drop the `self migrate-v07` invocation, run
+  `ai-hats self update` — sweep auto-applies on a v0.6-shape project.
 
 ### Fixed
+
+- **`ai-hats self update`** — short-circuit `pip install` when installed
+  SHA already matches remote `master`. Saved 10-15 s per no-op update
+  (60s+ on slow links — users mistook for hang). Reuses the
+  HATS-432/441 ahead/behind probe; bump still runs in-process so
+  migrations apply. Bump path gained a Rich spinner so the
+  `heal_external_refs` walk no longer looks like a hang.
+- **HATS-457** — `ai-hats wt merge` drift guard (HYP-017). Between
+  `wt create` and `wt merge` the base branch could advance — another
+  agent's merge into local `master`, or `origin/<base>` pulled in
+  commits — and the pre-merge `grep-verify` became silently stale.
+  `WorktreeManager.create` snapshots base SHA; `wt merge` does a
+  best-effort `git fetch` and refuses with `WorktreeDriftError` on
+  divergence. New `--accept-drift` flag (separate from `--force` —
+  two checks, two flags). Legacy state files gracefully skip.
+- **HATS-452** — composition / pipeline value contract. Bare `ai-hats`
+  was writing a `prompt.md` missing the merged role/trait injection —
+  16k chars of behavioral guidance never reached the agent. Root cause:
+  `compose_role` returned `{"system_prompt": ""}` for missing role;
+  `WrapRunner.run_session` accepted the empty string and replaced the
+  freshly-composed list with `[""]`. Four-layer fix per
+  [ADR-0005](docs/adr/0005-composition-and-pipeline-value-contract.md):
+  immutable `CompositionResult`, funnel drops `None` at merge boundary,
+  `compose_role` emits `{}` for no-role, `WrapRunner.run` lost
+  `system_prompt_override` (HITL has no override channel). New rule
+  `rule_composition_value_contract` (always-on via `trait-agent`)
+  documents the four invariants.
 - **HATS-432** — Update-banner false-positive suppressed when installed
-  HEAD is *ahead of* or *diverged from* cached upstream master. The old
-  `installed_sha != latest_sha` check fired in both cases (live reproducer:
-  arrow pointed backwards in time). New semantics: `has_update` is True
-  only when installed is *strictly behind* upstream (`behind > 0 and
-  ahead == 0`). Probe now runs `git fetch <url> master` into the package
-  checkout, then `git rev-list --left-right --count <installed>...<latest>`
-  for the counts; `git describe --tags` resolves human-readable labels.
-  Cache schema gains `behind` / `ahead` / `installed_label` / `latest_label`
-  (legacy cache files parse cleanly and regenerate on the next probe; no
-  migration). Banner now prefers the `describe` labels (e.g.
-  `v0.6.0 → v0.6.0-19-g…`) and falls back to short SHAs with an explicit
-  `, +<behind> commits` suffix when no labels are available. New
-  regression tests assert silence for installed-ahead and diverged states
-  end-to-end.
-- **HATS-432** — Update-banner hint corrected: the cyan command line now
-  reads `ai-hats self update` (the actual CLI verb) instead of the
-  nonexistent top-level `ai-hats update`. Same fix swept through the
-  `ai-hats-maintainer` trait's Canonical CLI section (also `ai-hats bump`
-  → `ai-hats self bump`), README §Update notification, and
-  `docs/glossary.md` Update-banner entry so all user-facing prompts agree.
-- **HATS-424** — Session-reviewer audit truncation now keeps both ends of
-  the session, not just the head. The old `audit_text[:8000]` head-cut
-  made end-of-session events (self-retrospective Skill calls, final
-  commits, transitions, judge-report writes) structurally invisible to
-  the reviewer when audit > 8 KB. Verified false-negative across 8
-  sessions where `🔧 Skill: self-retrospective` lived at bytes 22K-60K
-  and the reviewer returned `n/a` with "no self-retro visible". New
-  `_truncate_audit` helper keeps `_AUDIT_HEAD` (4 KB) + `_AUDIT_TAIL`
-  (4 KB) with a `... (<N> bytes truncated from middle) ...` marker so
-  the reviewer knows the gap exists. Prompt budget unchanged. Three
-  unit tests cover short-passes-through, long-keeps-sentinels, and
-  boundary-no-truncation. Re-running `reflect session` on existing
-  self-retro sessions restores correct HYP-020 signal (separate
-  backfill task).
-- **HATS-418** — Session-retro pipeline dispatch restored. Since 2026-05-13
-  every threshold-trigger session wrote the `runtime decision run: …` line
-  to `<runs>/session_<sid>/retro.log` but no `hook spawn` / `session-reviewer
-  spawn` ever followed — pipeline was 0-output for ~30 sessions. Root cause:
-  HATS-294 dropped the v0.6 `_collect_from_manifest` side-effect that copied
-  skill-shipped hook scripts (e.g. `session_end_auto-retro.sh`) into
-  `<ai_hats_dir>/library/hooks/`, so the `HooksRunner._find_scripts` sweep
-  found an empty directory after HATS-412 wired it up. Fix bypasses the
-  shell-hook indirection for this flow: `WrapRunner._finalize_session` now
-  calls `auto_retro._spawn_session_reviewer_background` in-process right
-  after writing the runtime decision line, gated on
-  `action == "run"` and `HATS_SKIP_RETRO != "1"` (recursion guard). The
-  `HooksRunner.run(SESSION_END)` call below stays intact for any
-  user-authored hooks landing in `library/hooks/` later. Restoring the
-  full skill→hook→runtime install path remains a deliberate non-goal —
-  no concrete user demand. Pairs with HATS-419's parser fix; together
-  they close both L1 (dispatch) and L2 (parse) regressions opened in
-  the 2026-05-13 boundary window. New smoke tests under
-  `tests/smoke/test_session_retro_pipeline.py` lock the dispatch
-  contract and the `start_new_session=True` SIGHUP-immunity kwarg.
+  HEAD is *ahead of* or *diverged from* cached upstream. New semantics:
+  `has_update` is True only when installed is *strictly behind*
+  (`behind > 0 and ahead == 0`). Probe runs `git fetch <url> master` +
+  `rev-list --left-right --count`; banner prefers `git describe` labels
+  (e.g. `v0.6.0 → v0.6.0-19-g…`).
+- **HATS-432** — Update-banner hint corrected: `ai-hats self update`
+  (actual CLI verb) instead of nonexistent top-level `ai-hats update`.
+  Swept through the `ai-hats-maintainer` trait, README, and
+  `docs/glossary.md`.
+- **HATS-458** — Update banner fires for **non-editable installs**.
+  HATS-441 lost ahead/behind detection for the majority install layout
+  (`pip install`, not `-e`); axes stayed `None`, banner silent. New
+  fallback: bare git mirror at `<ai_hats_dir>/.cache/probe-mirror/`,
+  master fetched into it, `rev-list` resolves the baked installed SHA
+  (`__commit_id__` from `_version.py`) against the freshly-fetched
+  object graph. `run_check` tries the editable fast path first, falls
+  back to the mirror.
+- **HATS-441** — `self update` refuses silent downgrades when installed
+  HEAD is ahead of remote master. Reuses the HATS-432 probe; new exit
+  code `3` for refusal. `--force-downgrade` opts back into the
+  destructive `pip install` for callers who know what they're doing.
+- **HATS-416** — `migration_healer` skips `CHANGELOG.md`. The HATS-397
+  auto-rewriter had been rewriting literal `.agent/hooks/` strings
+  *inside* the HATS-412 entry that described the legacy-path bug —
+  collapsed «canonical X instead of legacy X» prose to «canonical X
+  instead of canonical X». CHANGELOG is historical record by
+  convention. Whole-file skip, filename-specific.
+- **HATS-413** — `self bump` persists yaml hardening so heals stick
+  across CLI invocations. HATS-408 regression: `from_yaml` healed
+  `default_role := active_role` in memory only, so every invocation
+  re-logged `WARN: healed default_role` until the user explicitly ran
+  `migrate-v07`. New `_normalize_yaml()` persists when deprecated
+  fields remain in raw yaml. Idempotent. Read-only commands still
+  don't persist (no-rewrite-on-read).
+- **HATS-404** — `ai-hats hyp create` / `proposal create` surface
+  duplicate-id collisions as a clean `Error:` line + exit 1 instead of
+  a raw `FileExistsError` traceback.
+- **HATS-403** — `ai-hats task create --id N` no longer silently
+  overwrites an existing task. `TaskManager.create_task` raises
+  `ValueError` before `mkdir` when the path exists. Closes a
+  silent-data-loss seam.
+- **HATS-424** — Session-reviewer audit truncation keeps both ends of
+  the session, not just the head. Old `audit_text[:8000]` head-cut made
+  end-of-session events (self-retrospective Skill calls, judge-report
+  writes) invisible to the reviewer for audit > 8 KB. New
+  `_truncate_audit` keeps 4 KB head + 4 KB tail with a marker.
+- **HATS-418** — Session-retro pipeline dispatch restored. Since
+  2026-05-13 every threshold-trigger session wrote the runtime decision
+  line but no `session-reviewer spawn` followed — pipeline was
+  0-output for ~30 sessions. Root cause: HATS-294 dropped the v0.6
+  hook-copy side-effect; `HooksRunner._find_scripts` swept an empty
+  dir. Fix: `WrapRunner._finalize_session` calls
+  `auto_retro._spawn_session_reviewer_background` in-process, gated on
+  `action == "run"` and `HATS_SKIP_RETRO != "1"`.
 - **HATS-419** — `session-reviewer` retro pipeline no longer dies on
-  markdown-fenced YAML. The model frequently wraps the YAML body in
-  ` ```yaml ... ``` ` inside the `BEGIN_REFLECT_SESSION_RETRO` /
-  `END_REFLECT_SESSION_RETRO` markers; `_extract_yaml` passed the fence
-  verbatim to `yaml.safe_load`, which choked with `found character '\``
-  that cannot start any token`. New `_strip_code_fence` helper removes
-  the surrounding fence after delimiter extraction; plain YAML passes
-  through unchanged. Unblocks the ~30+ stranded threshold-trigger
-  sessions accumulated since the model behavior shifted; parent
-  investigation HATS-418 still covers the L1 hook-dispatch and L3
-  invalid-YAML failure modes.
-- **HATS-411** — PTY shutdown is now bounded — the `_pty_spawn` finally
-  block used to call `ptyprocess.wait()` (blocking `os.waitpid(pid, 0)`),
-  which hung forever when a Claude/libuv child got stuck in macOS
-  exit-pending state (`ps` STAT `?Es`, JS heap released but libuv
-  handles still open). Field repro on 2026-05-20: 7 simultaneously-stuck
-  panes across Claude 2.1.126/138/139/143. New `ai_hats.pty_shutdown`
-  module escalates grace → SIGTERM-pgroup → SIGKILL → `WNOHANG` reap;
-  worst case the zombie remains but the parent returns and the pane is
-  recoverable. Timings overridable via `AI_HATS_PTY_GRACE_S` (default
-  5.0) / `AI_HATS_PTY_TERM_S` (default 2.0). When the WNOHANG reap can't
-  confirm exit (kernel still wedged), `_pty_spawn` now returns `124`
-  (GNU `timeout` convention) instead of silently `0`, so callers see the
-  unresolved-exit signal. Also emits DECRST mouse-tracking reset on the
-  parent's outer stdout after shutdown — guarded by `os.isatty(fd)` so
-  redirected output (`ai-hats run > out.log`) is not polluted with
-  escape bytes — preventing raw SGR mouse reports from leaking into the
-  surrounding shell when the child crashed without disabling them.
-- **HATS-412** — `WrapRunner` lifecycle `HooksRunner` now reads from the
-  canonical `<ai_hats_dir>/library/hooks/` instead of the legacy
-  `.agent/hooks/` path. The bug was latent since HATS-314's layout
-  migration (commit `2eb329d`) — `HooksRunner._find_scripts` returned
-  `[]` for every project since, so skill-contributed `session_start` /
-  `session_end` hooks silently never fired. Extracted
-  `_make_session_hooks_runner` helper guards against future drift.
-- **HATS-400** — `ai-hats self update` now re-execs auto-bump in a fresh
-  Python interpreter when the version on disk actually changed. The old
-  in-process call kept executing OLD in-memory code from the running
-  update — so migrations or healer code newly delivered by pip install
-  did NOT activate until the user manually ran a second `ai-hats self
-  bump`. This was the proxmox regression where HATS-397 healer's first
-  `self update` didn't fix `.claude/settings.json`. Same-version updates
-  keep the in-process path (no overhead).
-- **HATS-399** — Clean two stale legacy-path refs from the bundled
-  `library/` source (`worktree-isolation/SKILL.md`,
-  `git-mastery/git_hooks/pre-commit-smoke.sh`). Without this, `bump`'s
-  publish step kept re-injecting old paths into consumer mirrors
-  (`.claude/skills/`, `.githooks/`), forcing HATS-397 healer to repeat
-  work on every bump (non-idempotent). New regression test
-  (`test_library_no_legacy_refs`) prevents reintroduction.
-- **HATS-398** — `ai-hats self update` no longer pollutes the "Recent
-  changes" block with `Merge branch 'task/hats-NNN'` titles. The git-log
-  fetch now passes `--no-merges`, leaving only conventional-commit titles
-  from the actual work (`fix(...)`, `feat(...)`).
-- **HATS-397** — `ai-hats self bump` / `self update` now self-heals stale
-  legacy-path refs left behind in user-managed files after the v4 layout
-  migration moves content under `<ai-hats_dir>/`. JSON integration points
-  (`.claude/settings.json{,.local}`) are always auto-rewritten; markdown,
-  shell, and template files (`*.md` / `*.txt` / `*.j2` / `*.sh` / `.envrc`)
-  are rewritten only when git-clean and otherwise listed in
-  `<ai-hats_dir>/sessions/audits/<ts>-legacy-refs.md`. Triggered by the
-  proxmox regression where `.claude/settings.json` PreToolUse-hook
-  references to `.agent/hooks/<file>` broke silently after `ai-hats self
-  update`.
+  markdown-fenced YAML. Model frequently wraps the body in
+  ` ```yaml ... ``` ` inside the `BEGIN_REFLECT_SESSION_RETRO` markers;
+  `_extract_yaml` passed the fence verbatim to `safe_load`. New
+  `_strip_code_fence` helper. Unblocks ~30+ stranded sessions.
+- **HATS-411** — PTY shutdown is bounded. `_pty_spawn` used to call
+  blocking `ptyprocess.wait()`, which hung when a Claude/libuv child
+  got stuck in macOS exit-pending state. Field repro 2026-05-20: 7
+  simultaneously-stuck panes. New `pty_shutdown` module escalates
+  grace → SIGTERM-pgroup → SIGKILL → `WNOHANG` reap. Returns exit
+  code `124` (GNU `timeout` convention) when reap can't confirm exit.
+  Timings overridable via `AI_HATS_PTY_GRACE_S` / `AI_HATS_PTY_TERM_S`.
+- **HATS-412** — `HooksRunner` reads from canonical
+  `<ai_hats_dir>/library/hooks/` instead of legacy `.agent/hooks/`.
+  Latent since HATS-314's layout migration — skill-contributed
+  `session_start` / `session_end` hooks silently never fired since.
+- **HATS-400** — `ai-hats self update` re-execs auto-bump in a fresh
+  Python interpreter when version changed. Old in-process call kept
+  executing OLD in-memory code from the running update, so
+  newly-delivered migrations didn't activate until a second
+  `self bump`.
+- **HATS-399** — Cleaned two stale legacy-path refs from bundled
+  `library/` source. Without this, `bump`'s publish step kept
+  re-injecting old paths into consumer mirrors, forcing the HATS-397
+  healer to repeat work non-idempotently.
+- **HATS-398** — `ai-hats self update` no longer pollutes "Recent
+  changes" with `Merge branch 'task/hats-NNN'` titles. `git log` now
+  passes `--no-merges`.
+- **HATS-397** — `self bump` / `self update` self-heals stale
+  legacy-path refs left in user-managed files after the v4 layout
+  migration. JSON integration files (`.claude/settings.json{,.local}`)
+  are always auto-rewritten; markdown / shell / template files are
+  rewritten only when git-clean and otherwise listed in a session audit.
+
+### Internal
+
+- **HATS-456** — materialization facade (Phase 2 closure of HATS-452 /
+  ADR-0005). New module `src/ai_hats/materialize.py` exposes
+  `compose_for_role(assembler, role) -> CompositionResult` as the sole
+  entry point; eight+ inlined `composer.compose(role, overlays=...)`
+  sites now route through it. Drift-guard test fails on direct calls
+  outside the facade. ADR-0005 appended with a "Phase 2" section.
 
 ## [0.6.0] - 2026-05-18
 
@@ -485,9 +347,9 @@ extended with system roles, traits, and core skills.
     (triage). Field reference row updated; two new examples (✓ Good
     cost-cited PROP-036 with `9-test breakage + 1 plan pivot`, ✗ Bad
     uncited pain claim) document the precedent and anti-pattern.
-  Out of scope: reuse of `self-retrospective` inside judge sweep (M4 —
-  tracked separately via HYP-020) and any runtime/harness changes.
-  Regression tracking is filed as a new HYP post-merge.
+    Out of scope: reuse of `self-retrospective` inside judge sweep (M4 —
+    tracked separately via HYP-020) and any runtime/harness changes.
+    Regression tracking is filed as a new HYP post-merge.
 
 ### Added
 
@@ -802,7 +664,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/muratovv/ai-hats/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/muratovv/ai-hats/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/muratovv/ai-hats/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/muratovv/ai-hats/releases/tag/v0.3.0
