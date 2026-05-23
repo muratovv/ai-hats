@@ -84,14 +84,22 @@ def wt_create(branch: str):
 @click.argument("branch", required=False)
 @click.option("--squash", is_flag=True, default=False, help="Squash all commits into one")
 @click.option("--force", is_flag=True, default=False, help="Merge even with uncommitted changes")
-def wt_merge(branch: str | None, squash: bool, force: bool):
+@click.option(
+    "--accept-drift",
+    is_flag=True,
+    default=False,
+    help="Proceed even if the base branch moved since worktree create (HATS-457)",
+)
+def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
     """Merge worktree changes back and clean up.
 
     Without BRANCH: auto-detect from CWD (if inside a linked worktree).
     Default: --no-ff merge preserving commit history.
     Refuses if worktree has uncommitted changes (use --force to override).
+    Refuses if the base branch moved since `wt create` — local or remote
+    drift (use --accept-drift to override after re-verifying).
     """
-    from ..worktree import WorktreeDirtyError
+    from ..worktree import WorktreeDirtyError, WorktreeDriftError
 
     mgr = _resolve_worktree(branch)
     if mgr is None:
@@ -102,9 +110,16 @@ def wt_merge(branch: str | None, squash: bool, force: bool):
 
     name = mgr.branch_name
     try:
-        mgr.merge(squash=squash, force=force)
+        mgr.merge(squash=squash, force=force, accept_drift=accept_drift)
     except WorktreeDirtyError as e:
         console.print(f"[red]Refused[/]: {e}")
+        sys.exit(1)
+    except WorktreeDriftError as e:
+        # Drift message embeds filenames from the diverged commits — escape
+        # so a filename like `[red]boom[/]` cannot inject Rich markup into
+        # the operator's terminal.
+        from rich.markup import escape as _escape
+        console.print(f"[red]Refused (drift)[/]:\n{_escape(str(e))}")
         sys.exit(1)
     console.print(f"[green]Merged[/]: {name}")
 
