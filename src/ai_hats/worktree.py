@@ -103,6 +103,19 @@ class OriginalBranchMissingError(Exception):
     """
 
 
+class WorktreeDriftError(Exception):
+    """Raised when the worktree's original branch moved between create and merge.
+
+    HATS-457 / HYP-017: the base branch SHA captured at ``wt create`` no
+    longer matches the current local (or remote) tip, which means another
+    agent's worktree merge — or an explicit ``git pull`` — landed commits
+    that the current worktree's pre-merge verification never saw.
+
+    Default ``wt merge`` refuses to proceed; the user re-verifies against
+    the new base and re-runs with ``--accept-drift``.
+    """
+
+
 class IsolationMode(str, Enum):
     DISCARD = "discard"
     SQUASH = "squash"
@@ -151,6 +164,7 @@ class WorktreeManager:
         self.branch_name = branch_name or f"agent/{role_name}/{session_id}"
         self._is_git = False
         self._original_branch: str | None = None
+        self._base_sha_at_create: str | None = None  # HATS-457
 
     def create(self) -> Path:
         """Create an isolated worktree. Returns project_dir if not a git repo
@@ -172,6 +186,15 @@ class WorktreeManager:
 
         self._is_git = True
         self._original_branch = self._get_current_branch()
+        # HATS-457: snapshot the base SHA so `wt merge` can detect drift if the
+        # original branch advances between create and merge (concurrent agent
+        # worktrees, manual `git pull`, etc.).
+        try:
+            self._base_sha_at_create = self._git(
+                "rev-parse", self._original_branch
+            ).stdout.strip()
+        except subprocess.CalledProcessError:
+            self._base_sha_at_create = None
 
         prefix = self.branch_name.replace("/", "-")
         tmpdir = tempfile.mkdtemp(prefix=f"ai-hats-wt-{prefix}-")
@@ -181,11 +204,23 @@ class WorktreeManager:
         logger.info("Created worktree %s on branch %s", self.worktree_path, self.branch_name)
         return self.worktree_path
 
-    def merge(self, *, squash: bool = False, force: bool = False) -> None:
+    def merge(
+        self,
+        *,
+        squash: bool = False,
+        force: bool = False,
+        accept_drift: bool = False,
+    ) -> None:
         """Merge worktree changes back into the original branch and clean up.
 
         Raises WorktreeDirtyError if the worktree has uncommitted changes
         unless force=True (HATS-062).
+
+        Raises WorktreeDriftError if the original branch moved between
+        worktree create and merge (locally or on the remote) unless
+        accept_drift=True (HATS-457 / HYP-017). ``force`` deliberately
+        does not bypass drift — the two checks address different risks
+        (uncommitted changes vs stale baseline).
 
         Raises OriginalBranchMissingError if the original branch was deleted
         while the worktree was active. Worktree dir is removed but the
@@ -195,6 +230,8 @@ class WorktreeManager:
             return
         if not force:
             self._check_clean()
+        if not accept_drift:
+            self._check_drift()
         if self._original_branch and not self._branch_exists(self._original_branch):
             self._remove_worktree()
             self._clear_state()
@@ -276,6 +313,7 @@ class WorktreeManager:
             "branch": self.branch_name,
             "worktree_path": str(self.worktree_path),
             "original_branch": self._original_branch,
+            "base_sha_at_create": self._base_sha_at_create,  # HATS-457
         }
         with _acquire(state_path):
             _atomic_write_json(state_path, state)
@@ -335,6 +373,9 @@ class WorktreeManager:
         mgr = cls(project_dir, branch_name=data["branch"])
         mgr.worktree_path = wt_path
         mgr._original_branch = data.get("original_branch")
+        # HATS-457: legacy state files (pre-457) omit this key — graceful
+        # degradation, drift check becomes a no-op.
+        mgr._base_sha_at_create = data.get("base_sha_at_create")
         mgr._is_git = True
         mgr._state_key_cached = key
         return mgr
@@ -518,6 +559,118 @@ class WorktreeManager:
             return True
         except subprocess.CalledProcessError:
             return False
+
+    # ------------------------------------------------------------------
+    # Drift detection (HATS-457 / HYP-017)
+    # ------------------------------------------------------------------
+
+    _DRIFT_PATH_LIMIT = 50  # max paths printed inline; overflow → "… N more"
+
+    def _check_drift(self) -> None:
+        """Raise WorktreeDriftError if the original branch moved since create.
+
+        Drift sources:
+          * local: another worktree's `wt merge` advanced the local
+            original branch.
+          * remote: someone pushed commits to ``origin/<base>`` that the
+            local branch has not pulled.
+
+        Best-effort ``git fetch origin <base>`` runs first to surface
+        remote drift. Network/no-remote failures are swallowed so an
+        offline merge still proceeds with the local check.
+
+        Skips silently when the saved ``base_sha_at_create`` is missing
+        (legacy state file from before HATS-457).
+        """
+        if self._base_sha_at_create is None or self._original_branch is None:
+            return
+
+        # Best-effort fetch — silent on failure (no remote, offline, etc.).
+        try:
+            self._git("fetch", "origin", self._original_branch)
+        except subprocess.CalledProcessError:
+            logger.debug(
+                "Drift check: fetch origin %s failed, falling back to local-only check",
+                self._original_branch,
+            )
+
+        try:
+            current_local = self._git(
+                "rev-parse", self._original_branch
+            ).stdout.strip()
+        except subprocess.CalledProcessError:
+            # Can't read the original branch SHA — let the missing-branch
+            # path in merge() handle it.
+            return
+
+        current_remote: str | None
+        try:
+            current_remote = self._git(
+                "rev-parse", "--verify", "--quiet", f"origin/{self._original_branch}"
+            ).stdout.strip()
+        except subprocess.CalledProcessError:
+            current_remote = None
+
+        local_drifted = current_local != self._base_sha_at_create
+        remote_drifted = (
+            current_remote is not None
+            and current_remote != current_local
+        )
+
+        if not local_drifted and not remote_drifted:
+            return
+
+        lines = [
+            f"Worktree base '{self._original_branch}' drifted since worktree was created."
+        ]
+        if local_drifted:
+            n, paths = self._drift_summary(self._base_sha_at_create, current_local)
+            lines.append(
+                f"  local: {self._short(self._base_sha_at_create)} → "
+                f"{self._short(current_local)} ({n} commit{'s' if n != 1 else ''} ahead)"
+            )
+            if paths:
+                lines.append("  affected paths (local drift):")
+                lines.extend(f"    {p}" for p in paths)
+        if remote_drifted:
+            assert current_remote is not None
+            n_r, paths_r = self._drift_summary(current_local, current_remote)
+            lines.append(
+                f"  remote: origin/{self._original_branch} is "
+                f"{n_r} commit{'s' if n_r != 1 else ''} ahead of local"
+            )
+            if paths_r:
+                lines.append("  affected paths (remote drift):")
+                lines.extend(f"    {p}" for p in paths_r)
+        lines.append(
+            "Re-verify your changes against the new base, then re-run with --accept-drift."
+        )
+
+        raise WorktreeDriftError("\n".join(lines))
+
+    def _drift_summary(self, base: str, head: str) -> tuple[int, list[str]]:
+        """Return (commit count, capped affected-path list) for base..head."""
+        try:
+            n_str = self._git("rev-list", "--count", f"{base}..{head}").stdout.strip()
+            n = int(n_str) if n_str else 0
+        except (subprocess.CalledProcessError, ValueError):
+            n = 0
+        try:
+            diff = self._git("diff", "--name-only", f"{base}..{head}").stdout
+        except subprocess.CalledProcessError:
+            diff = ""
+        paths = [line for line in diff.splitlines() if line.strip()]
+        if len(paths) > self._DRIFT_PATH_LIMIT:
+            overflow = len(paths) - self._DRIFT_PATH_LIMIT
+            # Use a marker that obviously isn't a path (parentheses + word
+            # "files"), so the operator can't mistake the cap line for a
+            # real filename.
+            paths = paths[: self._DRIFT_PATH_LIMIT] + [f"(… {overflow} more files)"]
+        return n, paths
+
+    @staticmethod
+    def _short(sha: str) -> str:
+        return sha[:8] if sha else "?"
 
     def _squash_merge(self) -> None:
         """Squash-merge worktree branch into original branch."""

@@ -27,34 +27,28 @@ since the latest tag lives under **Unreleased** until the next release.
   user-visible behavior change. ADR-0005 appended with a "Phase 2" section.
 
 ### Fixed
-- **HATS-458** — Update banner now fires for non-editable installs (the
-  typical layout for users who install via the launcher: ai-hats lives
-  in `site-packages/` with no `.git`). `update_check.run_check` falls
-  back to a persistent probe-mirror at
-  `<ai_hats_dir>/.cache/probe-mirror/` when the package directory
-  doesn't carry a usable `.git` (the case HATS-441 made silent-safe by
-  refusing to fetch into a foreign repo). The mirror owns the local
-  object graph: `master` is fetched full (cheap; the project's master
-  is small) and the installed SHA is fetched shallow (`--depth=1` —
-  only the commit object is required). `rev-list --left-right --count`
-  then computes `behind` correctly for any lag. Editable installs keep
-  using the pkg-checkout fast path. Closes the false-negative class
-  left over from HATS-432.
-- **HATS-441** — `ai-hats self update` now refuses to overwrite the local
-  install when installed HEAD is strictly ahead of remote master (silent
-  downgrade) or has diverged from it. The command exits with code 3 and
-  names installed/remote labels + override hint. Use `--force-downgrade`
-  to bypass when intentional (warning printed). Probe reuses the
-  ahead/behind axes added by HATS-432; the gate is best-effort and falls
-  back to the previous unconditional behaviour when the probe cannot
-  resolve ahead/behind (non-git install, offline, shallow checkout).
-  Also tightens the HATS-432 probe so `git -C <pkg_dir>` can't walk up
-  into a foreign `.git` in an ancestor (non-editable install inside a
-  user's project venv): `detect_installed_sha` now gates `rev-parse HEAD`
-  behind a `git ls-files --error-unmatch __init__.py` tracked-check,
-  and `_fetch_into_pkg` refuses to fetch ai-hats's `master` into a repo
-  that doesn't track ai-hats's source (prevents polluting user-project
-  git history with our remote refs).
+- **HATS-457** — `ai-hats wt merge` drift guard (HYP-017). Between
+  `wt create` and `wt merge` the original base branch could advance —
+  another agent's worktree already merged into local `master`, or
+  `origin/<base>` received commits via `git pull` — and the current
+  agent's pre-merge `grep-verify` became silently stale. Concrete
+  precedent: HATS-361 shipped a glossary with `src/ai_hats/libraries/...`
+  paths after HATS-363 had renamed the directory to `library/`, needing
+  a follow-up commit to repair. `WorktreeManager.create` now snapshots
+  the original-branch SHA into the per-worktree state file
+  (`base_sha_at_create`). `wt merge` runs a best-effort `git fetch
+  origin <base>` (silent on no-remote / offline), then refuses with
+  `WorktreeDriftError` if either local `<base>` or `origin/<base>` has
+  advanced past the snapshot — listing the diverged commit count and
+  affected paths. New `--accept-drift` flag bypasses after the operator
+  re-verifies; deliberately **separate from `--force`** (dirty-workdir
+  bypass) — two checks, two risks, two flags. Legacy state files
+  pre-457 omit the SHA and gracefully skip the check (no migration).
+  Adversarial filenames in diverged commits cannot inject Rich markup
+  into operator terminals (`rich.markup.escape` at the CLI render
+  boundary). Eleven unit tests cover local / remote-only / both / no-
+  remote / legacy-state / markup-safety / state-roundtrip; e2e exercises
+  real binary + real git with fail-under-revert verification.
 - **HATS-452** — composition / pipeline value contract. Bare `ai-hats`
   (no `--role`, `active_role` in `ai-hats.yaml`) was writing a
   `prompt.md` missing the merged role/trait injection — hundreds of
