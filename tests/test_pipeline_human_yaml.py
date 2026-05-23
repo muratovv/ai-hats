@@ -100,7 +100,9 @@ def test_human_pipeline_e2e_no_role(tmp_path: Path):
             "project_dir": tmp_path,
         })
 
-    assert final["system_prompt"] == ""
+    # HATS-452 (П3): compose_role with role=None omits the key entirely;
+    # downstream consumers treat missing == None == "no override".
+    assert "system_prompt" not in final
     assert final["exit_code"] == 0
     fake_runner.run.assert_called_once()
     assert fake_runner.run.call_args.kwargs["role_override"] is None

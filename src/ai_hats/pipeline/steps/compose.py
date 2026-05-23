@@ -32,12 +32,20 @@ class ComposeRole(Step):
     def run(
         self, *, project_dir: Path, role: str | None = None, **_: Any,
     ) -> dict[str, Any]:
-        # Mirror WrapRunner's tolerance: a session with no role uses the
-        # on-disk assembled state (CLAUDE.md etc.) — nothing to compose
-        # in that case. Empty system_prompt downstream means the runner
-        # falls through to the no-override path.
+        # HATS-452 (П3 in ADR-0005): when no role is requested, OMIT the
+        # ``system_prompt`` key entirely instead of emitting ``""``.
+        # Downstream (``LaunchProvider`` → ``WrapRunner``) treats a
+        # missing key and ``None`` as identical — both mean "no override,
+        # let the runner compose the role from on-disk state". The
+        # previous empty-string return tripped ``WrapRunner.run_session``'s
+        # ``if system_prompt_override is not None`` guard, which then
+        # replaced the freshly-composed 16k-character injection list with
+        # ``[""]``. The pipeline funnel merge boundary also drops
+        # ``None`` values (HATS-452 in pipeline.py), so producers that
+        # prefer to emit ``{"system_prompt": None}`` get the same
+        # behaviour.
         if not role:
-            return {"system_prompt": ""}
+            return {}
         from ...assembler import Assembler
 
         composer = Assembler(project_dir).composer
