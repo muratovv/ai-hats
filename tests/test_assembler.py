@@ -683,6 +683,133 @@ def test_gitignore_opt_out_skips_write(project_with_library):
 
 
 # --------------------------------------------------------------------- #
+# HATS-317 cleanup — legacy managed block sweep on bump
+# --------------------------------------------------------------------- #
+
+# Synthetic legacy block — mirrors the pre-HATS-317 generator output:
+# per-component lines pointing at canonical-materialized files that
+# HATS-294 stopped emitting in v0.7.
+_LEGACY_BLOCK = (
+    "# AI-HATS:START — managed by ai-hats, do not edit\n"
+    ".agent/ai-hats/.last_backup\n"
+    ".agent/ai-hats/imports.md\n"
+    ".agent/ai-hats/library/skills/audit-reviewer/\n"
+    ".agent/ai-hats/rules/dev_rule_edit_efficiency.md\n"
+    ".agent/ai-hats/traits/dev::python.md\n"
+    "# AI-HATS:END\n"
+)
+
+
+def test_strip_legacy_managed_block_removes_block(project_with_library):
+    """HATS-317 cleanup: the legacy `# AI-HATS:START..END` block is removed,
+    user content around it is preserved verbatim."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    gi = project / ".gitignore"
+    gi.write_text(
+        "# user header\n*.pyc\n.agent/\n\n"
+        + _LEGACY_BLOCK
+        + "user-tail\n"
+    )
+
+    changed = asm._strip_legacy_managed_block()
+
+    assert changed is True
+    content = gi.read_text()
+    assert "AI-HATS:START" not in content
+    assert "AI-HATS:END" not in content
+    # Stale per-component entries gone.
+    assert "dev_rule_edit_efficiency" not in content
+    assert "dev::python.md" not in content
+    assert "audit-reviewer" not in content
+    # User content intact.
+    for fragment in ("# user header", "*.pyc", ".agent/", "user-tail"):
+        assert fragment in content
+
+
+def test_strip_legacy_managed_block_idempotent(project_with_library):
+    """Re-running the sweep on an already-clean file is a no-op."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    gi = project / ".gitignore"
+    gi.write_text("*.pyc\n\n" + _LEGACY_BLOCK)
+
+    changed1 = asm._strip_legacy_managed_block()
+    assert changed1 is True
+    first = gi.read_text()
+
+    changed2 = asm._strip_legacy_managed_block()
+    assert changed2 is False
+    assert gi.read_text() == first
+    assert "AI-HATS:" not in first
+
+
+def test_strip_legacy_managed_block_no_op_when_absent(project_with_library):
+    """A .gitignore without the legacy block is not touched."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    gi = project / ".gitignore"
+    original = gi.read_text()
+
+    changed = asm._strip_legacy_managed_block()
+
+    assert changed is False
+    assert gi.read_text() == original
+
+
+def test_strip_legacy_managed_block_respects_opt_out(project_with_library):
+    """When manage_gitignore=False the legacy block is NOT stripped —
+    opted-out projects own their .gitignore entirely."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.project_config.manage_gitignore = False
+    gi = project / ".gitignore"
+    gi.write_text(_LEGACY_BLOCK)
+
+    changed = asm._strip_legacy_managed_block()
+
+    assert changed is False
+    assert "AI-HATS:START" in gi.read_text()
+
+
+def test_strip_legacy_managed_block_unclosed_marker_left_alone(project_with_library):
+    """Unclosed START marker (corrupted file) → silent no-op.
+    Prevents silent destruction of legitimate user content past the opener."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    gi = project / ".gitignore"
+    corrupted = "*.pyc\n# AI-HATS:START\n.agent/ai-hats/imports.md\nuser-tail\n"
+    gi.write_text(corrupted)
+
+    changed = asm._strip_legacy_managed_block()
+
+    assert changed is False
+    assert gi.read_text() == corrupted
+
+
+def test_bump_invokes_legacy_block_sweep(project_with_library):
+    """Integration: bump() chains the sweep so existing users get the fix
+    on their next `ai-hats self bump` / `self update`."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+    gi = project / ".gitignore"
+    gi.write_text(gi.read_text() + "\n" + _LEGACY_BLOCK)
+
+    asm.bump()
+
+    after = gi.read_text()
+    assert "AI-HATS:START" not in after
+    assert "AI-HATS:END" not in after
+
+
+# --------------------------------------------------------------------- #
 # HATS-155 — manifest-driven .agent/{hooks,skills}/ management
 # --------------------------------------------------------------------- #
 

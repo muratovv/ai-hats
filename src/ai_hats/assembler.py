@@ -779,6 +779,14 @@ class Assembler:
         # this — the "no rewrite on read" principle holds for them.
         self._normalize_yaml()
 
+        # HATS-317 cleanup: strip the pre-HATS-317 dynamic managed block
+        # from `.gitignore`. The generator was retired but no cleanup was
+        # shipped, so projects initialized before HATS-317 carry stale
+        # per-component entries forever — many of them pointing at v0.6
+        # canonical files HATS-294 stopped materializing. Idempotent;
+        # respects `manage_gitignore = False`.
+        self._strip_legacy_managed_block()
+
         self._cleanup_obsolete_files(self.project_dir)
         provider = get_provider(self.project_config.provider)
         # HATS-397: heal stale legacy-path refs FIRST, while user files are
@@ -1600,6 +1608,82 @@ class Assembler:
             return
         sep = "" if existing.endswith("\n") else "\n"
         gitignore.write_text(existing + sep + line + "\n")
+
+    def _strip_legacy_managed_block(self) -> bool:
+        """One-shot: remove the pre-HATS-317 `# AI-HATS:START..END` block from `.gitignore`.
+
+        Returns ``True`` when the file was modified.
+
+        HATS-317 replaced the dynamic managed-block generator with a single
+        static line (``<ai_hats_dir>/``) written once at ``init`` time, but
+        did NOT include a one-shot cleanup for projects that already had the
+        block written by the old generator. Result: every project that ran
+        ``ai-hats self init`` before HATS-317 still carries 50-90 stale
+        per-component lines like ``.agent/ai-hats/library/skills/X/``,
+        ``.agent/ai-hats/rules/Y.md``, ``.agent/ai-hats/traits/Z.md``.
+
+        After HATS-294 (v0.7 per-session compose) most of those files no
+        longer exist on disk, so the block is doubly stale: the bare
+        ``.agent/`` line already covers the subtree, AND the per-file
+        entries point at vanished paths.
+
+        Safe whole-block strip: the block was always machine-generated;
+        the ``START`` marker explicitly says "managed by ai-hats, do not
+        edit". No ``--force`` flag — if a user did edit lines inside, they
+        contradicted the explicit contract.
+
+        Called from ``bump()`` so existing users pick up the sweep on the
+        next ``ai-hats self bump`` / ``self update`` (same delivery pattern
+        as HATS-413 ``_normalize_yaml`` and HATS-415 v0.7 layout sweep).
+        Skipped when ``manage_gitignore = False`` — opted-out projects own
+        the whole file.
+        """
+        if not self.project_config.manage_gitignore:
+            return False
+        gitignore = self.project_dir / GITIGNORE_FILE
+        if not gitignore.exists():
+            return False
+
+        text = gitignore.read_text()
+        start_marker = "# AI-HATS:START"
+        end_marker = "# AI-HATS:END"
+        has_start = start_marker in text
+        has_end = end_marker in text
+        if not has_start and not has_end:
+            return False  # common case — block was never written
+        if has_start and not has_end:
+            # Corrupted: START opened but never closed. Refuse to mangle
+            # what might be user content past the opener. Silent no-op —
+            # the .gitignore won't sweep, but nothing breaks either; user
+            # can fix the marker by hand and re-run.
+            return False
+        if has_end and not has_start:
+            return False  # unrelated line that happens to contain the END text
+
+        lines = text.splitlines(keepends=True)
+        start_idx: int | None = None
+        end_idx: int | None = None
+        for i, ln in enumerate(lines):
+            if start_marker in ln and start_idx is None:
+                start_idx = i
+            elif end_marker in ln and start_idx is not None and end_idx is None:
+                end_idx = i
+                break
+        # Defensive: parser should always find both since we verified above.
+        if start_idx is None or end_idx is None:
+            return False
+
+        # Absorb one preceding blank line (visual separator) so we don't
+        # leave a stranded blank line between unrelated user content.
+        removal_start = start_idx
+        if removal_start > 0 and lines[removal_start - 1].strip() == "":
+            removal_start -= 1
+
+        new_text = "".join(lines[:removal_start] + lines[end_idx + 1 :])
+        if new_text == text:
+            return False
+        gitignore.write_text(new_text)
+        return True
 
     def _gitignore_swap_entry(self, old_rel: str, new_rel: str) -> bool:
         """Replace .gitignore line `old_rel/` with `new_rel/`.
