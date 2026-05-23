@@ -10,6 +10,25 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+- **`ai-hats self update`** — short-circuit `pip install` when the
+  installed SHA already matches remote `master`. Before the fix the
+  command unconditionally ran `pip install --force-reinstall
+  --no-cache-dir`, a 10-15 s no-op on a warm cache and noticeably longer
+  on slow links / cold caches; the silent re-download between "Already
+  up to date" and the next print mistaken for a hang by users running
+  back-to-back updates. The HATS-432 ahead/behind probe already runs as
+  part of the HATS-441 downgrade gate — its result now feeds an early
+  exit when `installed_sha == latest_sha` and `(ahead, behind) ==
+  (0, 0)` (the double check guards against environments where SHA
+  detection returns identical garbage on both sides). Bump still runs
+  in-process so pending migrations / hook refreshes apply. The
+  in-process bump path also gained a Rich spinner so the terminal
+  isn't silent between "Re-assembling: …" and "No composition changes"
+  on projects whose `heal_external_refs` walk takes longer than the
+  human eyeblink threshold. Pure UX fix — no behaviour change for the
+  ahead / diverged / probe-failed branches.
+
 ### Internal
 - **HATS-456** — materialization facade (Phase 2 closure of HATS-452 / ADR-0005
   П1). Eight+ sites across `runtime.py`, `assembler.py`, `cli/maintenance.py`,
