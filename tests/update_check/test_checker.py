@@ -21,10 +21,43 @@ from ai_hats.update_check.checker import (
 # ---------- detect_installed_sha ----------
 
 
+def _ok(stdout=""):
+    return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout, stderr="")
+
+
+def _fail(stderr=""):
+    return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr=stderr)
+
+
 def test_detect_installed_sha_via_git_rev_parse():
-    fake = subprocess.CompletedProcess(args=[], returncode=0, stdout="deadbeef\n", stderr="")
-    with patch.object(subprocess, "run", return_value=fake):
+    # HATS-441: detect_installed_sha now runs ``git ls-files --error-unmatch
+    # __init__.py`` first to confirm pkg_dir is tracked by the enclosing
+    # repo before trusting its HEAD. Mock both subprocess calls in order.
+    with patch.object(
+        subprocess, "run",
+        side_effect=[_ok(), _ok("deadbeef\n")],
+    ):
         assert detect_installed_sha() == "deadbeef"
+
+
+def test_detect_installed_sha_skips_foreign_git(monkeypatch):
+    """HATS-441: pkg_dir tracked-check fails → skip rev-parse, use __commit__.
+
+    Guards the false-positive class where ``ai_hats`` is non-editable-installed
+    inside a user's project venv whose project itself is a git repo. Without
+    the tracked-check, git walks up from site-packages and returns the user's
+    project HEAD as ai-hats's installed SHA.
+    """
+    import sys, types
+    sys.modules["ai_hats._version"] = types.SimpleNamespace(__commit__="cafebabe")
+    try:
+        # ls-files returns non-zero (foreign repo doesn't track pkg's __init__.py).
+        # rev-parse is NOT called — but if it were, the mock would still
+        # be exhausted (we provide just the one ls-files return).
+        with patch.object(subprocess, "run", side_effect=[_fail()]):
+            assert detect_installed_sha() == "cafebabe"
+    finally:
+        sys.modules.pop("ai_hats._version", None)
 
 
 def test_detect_installed_sha_falls_back_to_version_module():
@@ -255,19 +288,35 @@ def test_count_ahead_behind_returns_none_when_git_missing():
 
 
 def test_fetch_into_pkg_true_on_success():
-    fake = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-    with patch.object(subprocess, "run", return_value=fake):
+    # HATS-441: ls-files tracked-check runs first; fetch second.
+    with patch.object(
+        subprocess, "run",
+        side_effect=[_ok(), _ok()],
+    ):
         assert checker._fetch_into_pkg("https://example.git") is True
 
 
 def test_fetch_into_pkg_false_on_nonzero():
     fail = subprocess.CompletedProcess(args=[], returncode=128, stdout="", stderr="fatal")
-    with patch.object(subprocess, "run", return_value=fail):
+    with patch.object(
+        subprocess, "run",
+        side_effect=[_ok(), fail],
+    ):
         assert checker._fetch_into_pkg("https://example.git") is False
 
 
 def test_fetch_into_pkg_false_on_timeout():
-    with patch.object(subprocess, "run", side_effect=subprocess.TimeoutExpired("git", 10)):
+    # Tracked-check succeeds; the actual fetch raises timeout.
+    with patch.object(
+        subprocess, "run",
+        side_effect=[_ok(), subprocess.TimeoutExpired("git", 10)],
+    ):
+        assert checker._fetch_into_pkg("https://example.git") is False
+
+
+def test_fetch_into_pkg_false_when_pkg_not_tracked():
+    """HATS-441: foreign repo in ancestor → refuse to fetch (no pollution)."""
+    with patch.object(subprocess, "run", side_effect=[_fail()]):
         assert checker._fetch_into_pkg("https://example.git") is False
 
 

@@ -187,6 +187,77 @@ def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
         return set(), set()
 
 
+# HATS-441: refusal exit code for state-guard failures (installed ahead of
+# remote master, or diverged history). Distinct from click's 0 (success),
+# 1 (UsageError), 2 (BadParameter) so scripts can disambiguate.
+DOWNGRADE_REFUSAL_EXIT_CODE = 3
+
+
+def _check_downgrade_gate(project_dir: Path):
+    """Probe ahead/behind vs remote master. Returns (reason, entry) or None.
+
+    HATS-441: reuses the HATS-432 probe infrastructure
+    (``update_check.checker.run_check``) to determine whether
+    ``ai-hats self update`` would silently regress the local install. Two
+    refusal classes:
+
+    - ``"ahead"`` — installed strictly ahead of remote master
+      (``ahead > 0 and behind == 0``); ``pip install -U git+…`` would
+      overwrite local commits.
+    - ``"diverged"`` — both sides have commits the other lacks
+      (``ahead > 0 and behind > 0``); same overwrite risk.
+
+    Returns ``None`` (gate inactive — proceed) when:
+
+    - probe failed (no network, non-git install, shallow clone),
+    - ahead/behind couldn't be resolved (``None`` axes),
+    - installed is behind or in sync (normal update / no-op).
+
+    Probe is intentionally best-effort — a network blip MUST NOT block an
+    explicit ``self update`` invocation. The ``--force-downgrade`` override
+    handles confirmed-refusal cases.
+    """
+    from ..update_check.checker import run_check
+
+    try:
+        entry = run_check(project_dir)
+    except (OSError, ValueError):
+        logger.debug("downgrade probe failed", exc_info=True)
+        return None
+    if entry is None or entry.ahead is None or entry.behind is None:
+        return None
+    if entry.ahead > 0 and entry.behind == 0:
+        return ("ahead", entry)
+    if entry.ahead > 0 and entry.behind > 0:
+        return ("diverged", entry)
+    return None
+
+
+def _render_downgrade_refusal(reason: str, entry) -> None:
+    """Print a coloured refusal message naming installed/remote + override hint."""
+    installed = entry.installed_label or entry.installed_sha[:9]
+    latest = entry.latest_label or entry.latest_sha[:9]
+    if reason == "ahead":
+        console.print(
+            f"[red]Installed version[/] [bold]{installed}[/] is ahead of "
+            f"remote master [bold]{latest}[/] by {entry.ahead} commits. "
+            f"[red]Refusing to downgrade.[/]\n"
+            f"Use [bold]--force-downgrade[/] to override "
+            f"(will replace your local install).",
+            highlight=False,
+        )
+    else:  # diverged
+        console.print(
+            f"[red]Installed version[/] [bold]{installed}[/] has diverged "
+            f"from remote master [bold]{latest}[/] "
+            f"(local ahead: {entry.ahead}, remote ahead: {entry.behind}). "
+            f"[red]Refusing to downgrade.[/]\n"
+            f"Use [bold]--force-downgrade[/] to override "
+            f"(will replace your local install).",
+            highlight=False,
+        )
+
+
 @click.command()
 @click.option(
     "--migrate-force",
@@ -199,7 +270,14 @@ def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
     is_flag=True,
     help="Warn if local branches modify any v0.7-migration path slated for deletion.",
 )
-def update(migrate_force: bool, check_branches: bool):
+@click.option(
+    "--force-downgrade",
+    is_flag=True,
+    help="Bypass the ahead/diverged guard (HATS-441). Replaces the local "
+    "install with the remote master state — destroys unpushed work in "
+    "editable installs.",
+)
+def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
     """Update ai-hats from GitHub.
 
     Auto-bumps after install. HATS-415: ``bump`` now self-heals v0.6 →
@@ -222,10 +300,28 @@ def update(migrate_force: bool, check_branches: bool):
     if "/.venv/bin/python" in sys.executable:
         console.print(f"[dim]Target venv:[/] {sys.executable}")
 
+    project_dir = _project_dir()
+
+    # HATS-441: refuse silent downgrade when installed HEAD is ahead of
+    # remote master. ``--force-downgrade`` opts back into the destructive
+    # ``pip install --force-reinstall git+…`` behaviour for callers who
+    # know what they're doing (e.g. discarding a stale dev branch).
+    if force_downgrade:
+        console.print(
+            "[yellow]Warning:[/] --force-downgrade bypasses the "
+            "ahead/diverged guard. Your local install (including editable / "
+            "unpushed commits) will be replaced by remote master."
+        )
+    else:
+        gate = _check_downgrade_gate(project_dir)
+        if gate is not None:
+            reason, entry = gate
+            _render_downgrade_refusal(reason, entry)
+            sys.exit(DOWNGRADE_REFUSAL_EXIT_CODE)
+
     # 1. Snapshot before update
     before_lib = _snapshot_library()
     before_deps = _snapshot_dep_versions()
-    project_dir = _project_dir()
     config_path = project_dir / "ai-hats.yaml"
     active_role = None
     before_rules: set[str] = set()

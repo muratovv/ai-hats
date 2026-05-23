@@ -19,7 +19,13 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from ai_hats.cli.maintenance import _get_changelog, update
+from ai_hats.cli.maintenance import (
+    DOWNGRADE_REFUSAL_EXIT_CODE,
+    _get_changelog,
+    update,
+)
+from ai_hats.update_check.cache import CacheEntry
+from datetime import datetime, timezone
 
 
 def _make_completed(args, *, returncode: int, stdout: str = "", stderr: str = ""):
@@ -202,3 +208,149 @@ def test_update_runs_bump_in_process_when_version_unchanged(tmp_path: Path) -> N
     # in-process bump fired exactly once
     assert mock_asm.bump.call_count == 1, \
         f"in-process bump call count: {mock_asm.bump.call_count}"
+
+
+# ---------- HATS-441: refuse silent downgrade ----------
+
+
+def _entry(*, ahead: int | None, behind: int | None,
+           installed_sha: str = "aaaaaaa1111", latest_sha: str = "bbbbbbb2222",
+           installed_label: str | None = None, latest_label: str | None = None) -> CacheEntry:
+    """Build a ``CacheEntry`` with controlled ahead/behind axes for gate tests."""
+    return CacheEntry(
+        checked_at=datetime.now(timezone.utc),
+        installed_sha=installed_sha,
+        latest_sha=latest_sha,
+        remote_url="https://github.com/muratovv/ai-hats.git",
+        behind=behind,
+        ahead=ahead,
+        installed_label=installed_label,
+        latest_label=latest_label,
+    )
+
+
+def _invoke_update(args: list[str], *, run_check_return,
+                   tmp_path: Path) -> tuple[int, str, list[tuple]]:
+    """Invoke ``update`` with all heavy I/O patched; return (exit, output, subprocess calls)."""
+    project = _setup_update_test_env(tmp_path)
+    captured: list[tuple] = []
+
+    def fake_run(cmd_args, **kwargs):
+        captured.append((tuple(cmd_args), kwargs))
+        return _make_completed(cmd_args, returncode=0, stdout="ok")
+
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project), \
+         patch("ai_hats.cli.maintenance._get_installed_version",
+               side_effect=["same-version"]), \
+         patch("ai_hats.cli.maintenance._snapshot_library", return_value={}), \
+         patch("ai_hats.cli.maintenance._snapshot_dep_versions", return_value={}), \
+         patch("ai_hats.cli.maintenance._snapshot_composition",
+               return_value=(set(), set())), \
+         patch("ai_hats.cli.maintenance._format_component_diff", return_value=False), \
+         patch("ai_hats.cli.maintenance._build_update_cmd",
+               return_value=["pip", "install", "ai-hats"]), \
+         patch("ai_hats.cli.maintenance._get_changelog", return_value=""), \
+         patch("ai_hats.cli.maintenance._assembler") as mock_asm_factory, \
+         patch("ai_hats.update_check.checker.run_check",
+               return_value=run_check_return), \
+         patch("subprocess.run", side_effect=fake_run), \
+         patch("ai_hats.__version__", "same-version"):
+        mock_asm_factory.return_value.bump.return_value = MagicMock(
+            rules=[], skills=[], errors=[],
+        )
+        result = CliRunner().invoke(update, args)
+    return result.exit_code, result.output, captured
+
+
+def _pip_called(captured: list[tuple]) -> bool:
+    return any(c[0][:2] == ("pip", "install") for c in captured)
+
+
+def test_update_refuses_when_installed_ahead(tmp_path: Path) -> None:
+    """ahead>0, behind==0 → exit 3, no pip install, refusal message."""
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=_entry(ahead=2, behind=0,
+                                     installed_label="v0.6.1-77",
+                                     latest_label="v0.6.1-70"),
+        tmp_path=tmp_path,
+    )
+    assert exit_code == DOWNGRADE_REFUSAL_EXIT_CODE == 3, \
+        f"expected exit 3, got {exit_code}; output:\n{output}"
+    assert "Refusing to downgrade" in output, f"missing refusal text:\n{output}"
+    assert "--force-downgrade" in output, f"missing override hint:\n{output}"
+    assert "v0.6.1-77" in output and "v0.6.1-70" in output, \
+        f"refusal omits version labels:\n{output}"
+    assert not _pip_called(captured), \
+        f"pip install ran despite refusal: {captured}"
+
+
+def test_update_refuses_when_diverged(tmp_path: Path) -> None:
+    """ahead>0, behind>0 → exit 3, no pip install, 'diverged' wording."""
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=_entry(ahead=1, behind=3),
+        tmp_path=tmp_path,
+    )
+    assert exit_code == DOWNGRADE_REFUSAL_EXIT_CODE, \
+        f"expected exit 3, got {exit_code}; output:\n{output}"
+    assert "diverged" in output.lower(), f"missing 'diverged' wording:\n{output}"
+    assert "Refusing to downgrade" in output, f"missing refusal text:\n{output}"
+    assert not _pip_called(captured), \
+        f"pip install ran despite refusal: {captured}"
+
+
+def test_update_force_downgrade_bypasses_gate(tmp_path: Path) -> None:
+    """--force-downgrade with ahead state → exit 0, warning printed, pip runs."""
+    exit_code, output, captured = _invoke_update(
+        ["--force-downgrade"],
+        run_check_return=_entry(ahead=2, behind=0),
+        tmp_path=tmp_path,
+    )
+    assert exit_code == 0, f"expected exit 0, got {exit_code}; output:\n{output}"
+    assert "--force-downgrade bypasses" in output, \
+        f"missing flag warning:\n{output}"
+    assert "Refusing to downgrade" not in output, \
+        f"refusal printed despite override:\n{output}"
+    assert _pip_called(captured), \
+        f"pip install did not run with --force-downgrade: {captured}"
+
+
+def test_update_proceeds_when_behind(tmp_path: Path) -> None:
+    """behind>0, ahead==0 → normal update path: no refusal, pip runs."""
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=_entry(ahead=0, behind=4),
+        tmp_path=tmp_path,
+    )
+    assert exit_code == 0, f"expected exit 0, got {exit_code}; output:\n{output}"
+    assert "Refusing to downgrade" not in output, \
+        f"unexpected refusal:\n{output}"
+    assert "--force-downgrade bypasses" not in output, \
+        f"unexpected flag warning without --force-downgrade:\n{output}"
+    assert _pip_called(captured), f"pip install missing: {captured}"
+
+
+def test_update_proceeds_when_probe_unknown(tmp_path: Path) -> None:
+    """run_check returns None (non-git install / probe failure) → proceed."""
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=None, tmp_path=tmp_path,
+    )
+    assert exit_code == 0, f"expected exit 0, got {exit_code}; output:\n{output}"
+    assert "Refusing to downgrade" not in output, \
+        f"unexpected refusal on unknown probe:\n{output}"
+    assert _pip_called(captured), f"pip install missing: {captured}"
+
+
+def test_update_proceeds_when_ahead_behind_axes_none(tmp_path: Path) -> None:
+    """run_check returns entry with ahead=None or behind=None (no git fetch).
+
+    Defensive: HATS-432 sets these to None when ``git fetch`` into pkg dir
+    fails (non-git install, network down). Gate MUST NOT fire — fall back to
+    current behaviour.
+    """
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=_entry(ahead=None, behind=None),
+        tmp_path=tmp_path,
+    )
+    assert exit_code == 0, f"expected exit 0, got {exit_code}; output:\n{output}"
+    assert "Refusing to downgrade" not in output, \
+        f"unexpected refusal on unresolved axes:\n{output}"
+    assert _pip_called(captured), f"pip install missing: {captured}"
