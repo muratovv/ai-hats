@@ -18,6 +18,7 @@ from .assembler import Assembler
 from .harness.diagnostic import diagnose_silent_session
 from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
+from .materialize import compose_for_role
 from .models import LifecycleEvent
 from .observe import AuditWriter, Session, SessionManager, SidecarTracer, TraceTag
 from .paths import hooks_dir as _hooks_dir
@@ -649,11 +650,10 @@ class WrapRunner:
         # key the per-session cache dir on session.session_id (HATS-294).
         session = self.session_mgr.create_session()
 
-        result = self.assembler.composer.compose(
-            effective_role, overlays=self.assembler._get_overlays(effective_role),
-        )
+        # HATS-456: single derivation point for "compose for role X".
         # HATS-452 (П2): no override channel on WrapRunner — the composition
-        # produced above flows straight into ``build_session_prompt``.
+        # produced here flows straight into ``build_session_prompt``.
+        result = compose_for_role(self.assembler, effective_role)
         session_args, session_env = provider.build_session_prompt(
             self.project_dir, result, session.session_id,
         )
