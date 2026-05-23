@@ -9,9 +9,15 @@ from .resolver import LibraryResolver
 from .models import ComponentConfig, ComponentType, HooksConfig, OverlayConfig
 
 
-@dataclass
+@dataclass(frozen=True)
 class ResolvedComponent:
-    """A fully resolved component with its source path."""
+    """A fully resolved component with its source path.
+
+    HATS-452: frozen — once the composer has resolved a component, no layer
+    is allowed to mutate its fields. Use ``dataclasses.replace`` (or, for
+    `CompositionResult`, the explicit ``with_*`` methods) to produce a
+    modified copy.
+    """
 
     name: str
     component_type: ComponentType
@@ -19,7 +25,7 @@ class ResolvedComponent:
     injection: str = ""
 
 
-@dataclass
+@dataclass(frozen=True)
 class CompositionResult:
     """The flattened result of composing a role.
 
@@ -37,6 +43,22 @@ class CompositionResult:
 
     Rules and skills already carry provenance via `rules`/`skills` lists
     (deduped by name), so no separate maps are needed for them.
+
+    HATS-452 immutability contract. ``CompositionResult`` is ``frozen=True``:
+    fields cannot be reassigned after construction. Transformations that
+    derive a *modified* result (e.g. replacing the injection text with an
+    explicit override for a sub-agent) MUST go through the dedicated
+    ``with_*`` methods so the call-site is self-documenting and the
+    immutable contract stays uniform. Re-composing the same (role, overlays)
+    pair in a second layer to obtain a "modified" variant is forbidden —
+    that's re-derivation of the same logical entity in two places (П1 in
+    ADR-0005).
+
+    Note on container fields. ``frozen=True`` prevents *field reassignment*
+    only — the inner ``list``/``dict`` containers are still technically
+    mutable. By convention (and by the ``with_*`` API) callers do not mutate
+    them in place; the composer builds them once during ``compose`` and
+    never touches them afterwards.
     """
 
     name: str
@@ -54,6 +76,26 @@ class CompositionResult:
     def merged_injection(self) -> str:
         """Concatenate all injections in dependency-tree order."""
         return "\n\n".join(inj for inj in self.injections if inj.strip())
+
+    # ----- immutable transformations (HATS-452) -----
+
+    def with_injection_override(self, text: str) -> "CompositionResult":
+        """Return a copy whose ``injections`` is replaced by a single entry.
+
+        Used by sub-agent path (HATS-267) to inject a caller-supplied prompt
+        in place of the composed role text while preserving the rest of the
+        composition (rules/skills/hooks/priorities). The new injections list
+        contains exactly the override text; pass an empty string to
+        explicitly clear (rare — the consumer-side filter will then emit no
+        injection section).
+
+        Per П2 in ADR-0005, this method is intended ONLY for the Automate
+        path (``SubAgentRunner``). HITL (``WrapRunner``) does not have an
+        override channel and must not call this.
+        """
+        from dataclasses import replace
+
+        return replace(self, injections=[text])
 
 
 class Composer:

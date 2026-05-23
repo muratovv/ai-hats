@@ -51,7 +51,9 @@ def test_execute_preset_interactive_threads_flat_keys(tmp_path: Path):
     assert state["session_dir"] == sess.session_dir
     assert state["transcript_path"] == sess.trace_path
     assert state["review_pid"] == 1
-    assert state["system_prompt"] == ""
+    # HATS-452 (П3): compose_role with role=None omits the key entirely;
+    # downstream consumers treat missing == None == "no override".
+    assert "system_prompt" not in state
     assert state["prompt_text"] == ""
 
 

@@ -94,6 +94,16 @@ What ai-hats persists on disk during normal use.
 - **JudgeReport** — `<ai_hats_dir>/sessions/retros/judge/<UTC-ts>-report.md`. Output of `ai-hats reflect all` — HYP closures plus PROP decisions for one triage session. Detail — see [5].
 - **RoleCoherenceReport** — `<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ts>-<target>.md`. Output of `ai-hats reflect role` — findings on internal contradictions in a role composition. Detail — see [8].
 
+## Composition & pipeline internals
+
+Names for the framework's composition pipeline + runtime split. Lock these in code, docs, and conversation so the "who owns the prompt" boundary stays unambiguous. Full rationale: [ADR-0005](adr/0005-composition-and-pipeline-value-contract.md).
+
+- **CompositionResult** — the flat, immutable output of `Composer.compose(role, overlays=...)`. `@dataclass(frozen=True)`; modifications via `with_*` methods only (`with_injection_override(text)` returns a new instance). Carries `priorities`, `rules`, `skills`, `hooks`, `injections`, plus provenance maps (`trait_injections`, `role_injection`, `overlay_injection`).
+- **Pipeline funnel** — the producer-emits / consumer-may-ignore convention by which pipeline steps thread state. Producer puts a key in the merge delta; consumer may or may not pick it up. **Value contract:** `obj is None` and `key not in ctx` are identical (the framework drops `None` values at the merge boundary); `""` / `0` / `False` / `[]` are valid non-absent values whose semantics differ from "absent". Never use magic `""` to signal "no value" — emit `None` or omit the key.
+- **HITL runner** — `WrapRunner`. The human-in-the-loop runner: a user is at the keyboard, the agent runs interactively under a PTY proxy. **Has no `system_prompt_override` channel** — prompt injection is meaningless here. The role's full composition reaches the agent through `composer.compose(...)` + `build_session_prompt` inside `run_session`.
+- **Automate runner** — `SubAgentRunner`. The automation runner: subprocess invocation with a required `task` argument. Used for sub-agent fan-out, batch / non-interactive `ai-hats execute`, and pipeline-driven spawns. **Accepts** `system_prompt_override` (HATS-267 use case — caller-supplied prompt replaces the composed injection text).
+- **Composition snapshot** — `_composition_snapshot(assembler, role, result) -> dict`. Audit-only structural snapshot emitted into `Session.init_audit`. Lives in a separate channel from data-producing pipeline steps (П4 in ADR-0005) — a producer step does NOT piggyback composition data into its `produces` set for downstream routing.
+
 ## Session-end output blocks
 
 Two visually similar blocks fire at the end of a [Session](#session). Use these names in code, docs, and conversation — calling both "плашка" or "banner" hides the distinction.
