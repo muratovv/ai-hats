@@ -127,6 +127,10 @@ def test_e2e_self_update_refuses_silent_downgrade(tmp_path: Path) -> None:
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
     env["AI_HATS_REPO_URL"] = str(src_repo)
     env.pop("AI_HATS_VENV", None)
+    # PYTHONPATH from the test runner can shadow the venv's editable install
+    # by adding the worktree's ``src/`` to sys.path ahead of site-packages.
+    # The subprocess MUST resolve ``ai_hats`` from the project venv only.
+    env.pop("PYTHONPATH", None)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
     # First update populates the project venv with a working ai-hats install.
@@ -137,14 +141,36 @@ def test_e2e_self_update_refuses_silent_downgrade(tmp_path: Path) -> None:
     # The ahead/behind probe (``_fetch_into_pkg`` / ``_count_ahead_behind``
     # in ``update_check/checker.py``) requires a git checkout reachable
     # from ``ai_hats.__file__``'s directory. Non-editable pip extracts to
-    # site-packages without ``.git``; editable points back at src-repo
-    # which IS a checkout.
+    # site-packages without ``.git``; editable points ``ai_hats.__file__``
+    # back at ``<src-repo>/src/ai_hats/__init__.py`` which IS tracked.
+    #
+    # ``pip install -e`` over an existing non-editable snapshot can be a
+    # silent no-op ("already satisfied"). Force the conversion by
+    # uninstalling first.
     venv_pip = project / ".agent" / "ai-hats" / ".venv" / "bin" / "pip"
+    venv_python = project / ".agent" / "ai-hats" / ".venv" / "bin" / "python"
     assert venv_pip.is_file(), \
         f"project venv pip missing at {venv_pip}"
     subprocess.run(
+        [str(venv_pip), "uninstall", "-y", "--quiet", "ai-hats"],
+        env=env, check=True, timeout=60,
+    )
+    subprocess.run(
         [str(venv_pip), "install", "--quiet", "-e", str(src_repo)],
-        check=True, timeout=120,
+        env=env, check=True, timeout=120,
+    )
+    # Sanity: ``ai_hats.__file__`` MUST resolve into src-repo's tree, else
+    # the editable conversion is broken and the rest of the test would
+    # silently exercise a non-editable install (which falls into the
+    # ``__commit__`` fallback path and bypasses the gate by design).
+    where = subprocess.run(
+        [str(venv_python), "-c",
+         "import ai_hats, pathlib; print(pathlib.Path(ai_hats.__file__).resolve())"],
+        env=env, capture_output=True, text=True, check=True, timeout=15,
+    ).stdout.strip()
+    assert str(src_repo) in where, (
+        f"editable conversion did not take effect: ai_hats.__file__={where!r}, "
+        f"expected to be under src-repo={src_repo}"
     )
 
     # ----- swap probe target to the fake remote (behind installed by 1) -----
