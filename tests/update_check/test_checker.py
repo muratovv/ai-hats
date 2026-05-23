@@ -214,9 +214,8 @@ def test_run_check_writes_cache_on_success(tmp_path, monkeypatch):
 
 
 def test_run_check_persists_unknown_counts_when_git_fails(tmp_path, monkeypatch):
-    """Fetch / rev-list fail (e.g. non-git install) — we still persist
-    installed/latest SHAs, but behind/ahead/labels stay None so the banner
-    is suppressed via ``has_update == False``.
+    """Both pkg-checkout and mirror fallback fail → entry preserves
+    installed/latest SHAs but axes/labels stay None (banner silent).
     """
     monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
     monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
@@ -224,6 +223,7 @@ def test_run_check_persists_unknown_counts_when_git_fails(tmp_path, monkeypatch)
          patch.object(checker, "detect_remote_url", return_value="https://example.git"), \
          patch.object(checker, "fetch_latest_sha", return_value="b" * 40), \
          patch.object(checker, "_fetch_into_pkg", return_value=False), \
+         patch.object(checker, "_ensure_probe_mirror", return_value=None), \
          patch.object(checker, "_count_ahead_behind", return_value=None), \
          patch.object(checker, "_describe", return_value=None):
         entry = run_check(tmp_path)
@@ -231,6 +231,187 @@ def test_run_check_persists_unknown_counts_when_git_fails(tmp_path, monkeypatch)
     assert entry.behind is None
     assert entry.ahead is None
     assert entry.has_update is False
+
+
+# ---------- HATS-458: probe-mirror fallback ----------
+
+
+def test_run_check_falls_back_to_mirror_when_pkg_path_unusable(tmp_path, monkeypatch):
+    """Editable fast path fails (HATS-441 guard) → mirror path produces
+    correct ahead/behind/labels and entry.has_update fires.
+    """
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    fake_mirror = tmp_path / "ai-hats-data" / ".cache" / "probe-mirror"
+
+    with patch.object(checker, "detect_installed_sha", return_value="a" * 40), \
+         patch.object(checker, "detect_remote_url", return_value="https://example.git"), \
+         patch.object(checker, "fetch_latest_sha", return_value="b" * 40), \
+         patch.object(checker, "_fetch_into_pkg", return_value=False), \
+         patch.object(checker, "_ensure_probe_mirror", return_value=fake_mirror) as mock_init, \
+         patch.object(checker, "_fetch_into_mirror", return_value=True) as mock_fetch, \
+         patch.object(checker, "_count_ahead_behind", return_value=(0, 19)) as mock_count, \
+         patch.object(checker, "_describe", side_effect=["v0.6.0", "v0.6.0-19-gabcdef0"]) as mock_describe:
+        entry = run_check(tmp_path)
+
+    assert entry is not None
+    assert entry.behind == 19 and entry.ahead == 0
+    assert entry.installed_label == "v0.6.0"
+    assert entry.latest_label == "v0.6.0-19-gabcdef0"
+    assert entry.has_update is True
+
+    # Mirror was initialized once + fetched twice (master + installed_sha).
+    assert mock_init.call_count == 1
+    assert mock_fetch.call_count == 2, f"expected 2 fetches, got {mock_fetch.call_args_list}"
+    fetch_refs = [c.args[2] for c in mock_fetch.call_args_list]
+    assert "master" in fetch_refs and "a" * 40 in fetch_refs, fetch_refs
+
+    # rev-list / describe were dispatched against the mirror (not pkg dir).
+    count_kwargs = mock_count.call_args.kwargs
+    assert count_kwargs.get("git_dir") == fake_mirror, count_kwargs
+    for call in mock_describe.call_args_list:
+        assert call.kwargs.get("git_dir") == fake_mirror, call
+
+
+def test_run_check_mirror_fetch_failure_records_none_axes(tmp_path, monkeypatch):
+    """Mirror inits but one of the two fetches fails — axes stay None.
+
+    Defensive: validates that a server refusing fetch-by-SHA degrades to
+    "banner silent" rather than emitting a half-known entry.
+    """
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    fake_mirror = tmp_path / "ai-hats-data" / ".cache" / "probe-mirror"
+
+    with patch.object(checker, "detect_installed_sha", return_value="a" * 40), \
+         patch.object(checker, "detect_remote_url", return_value="https://example.git"), \
+         patch.object(checker, "fetch_latest_sha", return_value="b" * 40), \
+         patch.object(checker, "_fetch_into_pkg", return_value=False), \
+         patch.object(checker, "_ensure_probe_mirror", return_value=fake_mirror), \
+         patch.object(checker, "_fetch_into_mirror", side_effect=[True, False]), \
+         patch.object(checker, "_count_ahead_behind") as mock_count, \
+         patch.object(checker, "_describe") as mock_describe:
+        entry = run_check(tmp_path)
+
+    assert entry is not None
+    assert entry.ahead is None and entry.behind is None
+    assert entry.installed_label is None and entry.latest_label is None
+    # Short-circuited before computing axes/labels.
+    mock_count.assert_not_called()
+    mock_describe.assert_not_called()
+
+
+def test_ensure_probe_mirror_creates_and_reuses(tmp_path):
+    """First call inits a bare repo; second call reuses without re-init."""
+    project = tmp_path
+    init_calls: list = []
+
+    def fake_run(args, **kwargs):
+        init_calls.append(args)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    with patch.object(subprocess, "run", side_effect=fake_run):
+        first = checker._ensure_probe_mirror(project)
+    assert first is not None and first.is_dir(), first
+    # Simulate ``git init`` having written HEAD (real git does; the mock
+    # doesn't, so write it ourselves).
+    (first / "HEAD").write_text("ref: refs/heads/master\n")
+
+    with patch.object(subprocess, "run", side_effect=fake_run) as mock_run:
+        second = checker._ensure_probe_mirror(project)
+    assert second == first
+    # No subprocess on re-entry — early return.
+    mock_run.assert_not_called()
+
+
+def test_ensure_probe_mirror_returns_none_on_git_init_failure(tmp_path):
+    fail = subprocess.CompletedProcess(args=[], returncode=128, stdout="", stderr="fatal")
+    with patch.object(subprocess, "run", return_value=fail):
+        assert checker._ensure_probe_mirror(tmp_path) is None
+
+
+def test_ensure_probe_mirror_returns_none_when_git_missing(tmp_path):
+    with patch.object(subprocess, "run", side_effect=FileNotFoundError):
+        assert checker._ensure_probe_mirror(tmp_path) is None
+
+
+def test_fetch_into_mirror_success(tmp_path):
+    with patch.object(subprocess, "run", return_value=_ok()):
+        assert checker._fetch_into_mirror(tmp_path, "https://example.git", "master") is True
+
+
+def test_fetch_into_mirror_false_on_nonzero(tmp_path):
+    fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="not found")
+    with patch.object(subprocess, "run", return_value=fail):
+        assert checker._fetch_into_mirror(tmp_path, "https://example.git", "master") is False
+
+
+def test_fetch_into_mirror_false_on_timeout(tmp_path):
+    with patch.object(subprocess, "run", side_effect=subprocess.TimeoutExpired("git", 10)):
+        assert checker._fetch_into_mirror(tmp_path, "https://example.git", "master") is False
+
+
+def test_fetch_into_mirror_full_by_default(tmp_path):
+    """Default fetch is full (no ``--depth``) — master needs full history
+    so ``rev-list`` can compute ``behind`` for any lag.
+    """
+    captured: list = []
+
+    def fake_run(args, **kwargs):
+        captured.append(args)
+        return _ok()
+
+    with patch.object(subprocess, "run", side_effect=fake_run):
+        checker._fetch_into_mirror(tmp_path, "https://example.git", "master")
+    assert captured
+    assert not any(a.startswith("--depth") for a in captured[0]), captured
+
+
+def test_fetch_into_mirror_shallow_when_requested(tmp_path):
+    """``shallow=True`` adds ``--depth=1`` — used for the installed SHA
+    where only the commit object's presence matters."""
+    captured: list = []
+
+    def fake_run(args, **kwargs):
+        captured.append(args)
+        return _ok()
+
+    with patch.object(subprocess, "run", side_effect=fake_run):
+        checker._fetch_into_mirror(
+            tmp_path, "https://example.git", "abc123sha", shallow=True,
+        )
+    assert captured and "--depth=1" in captured[0], captured
+
+
+def test_count_ahead_behind_uses_git_dir_param(tmp_path):
+    """Explicit ``git_dir`` kwarg reaches the subprocess as ``git -C <dir>``."""
+    captured: list = []
+
+    def fake_run(args, **kwargs):
+        captured.append(args)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="0\t5\n", stderr="")
+
+    with patch.object(subprocess, "run", side_effect=fake_run):
+        checker._count_ahead_behind("a", "b", git_dir=tmp_path)
+    assert captured
+    # ``git -C <git_dir> rev-list ...``
+    args = captured[0]
+    assert args[0] == "git" and args[1] == "-C", args
+    assert args[2] == str(tmp_path), args
+
+
+def test_describe_uses_git_dir_param(tmp_path):
+    captured: list = []
+
+    def fake_run(args, **kwargs):
+        captured.append(args)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="v0.6.0\n", stderr="")
+
+    with patch.object(subprocess, "run", side_effect=fake_run):
+        checker._describe("abcdef0", git_dir=tmp_path)
+    assert captured
+    args = captured[0]
+    assert args[:3] == ["git", "-C", str(tmp_path)], args
 
 
 def test_run_check_skips_when_installed_unknown(tmp_path, monkeypatch):
