@@ -27,6 +27,19 @@ since the latest tag lives under **Unreleased** until the next release.
   user-visible behavior change. ADR-0005 appended with a "Phase 2" section.
 
 ### Fixed
+- **HATS-458** — Update banner now fires for non-editable installs (the
+  typical layout for users who install via the launcher: ai-hats lives
+  in `site-packages/` with no `.git`). `update_check.run_check` falls
+  back to a persistent probe-mirror at
+  `<ai_hats_dir>/.cache/probe-mirror/` when the package directory
+  doesn't carry a usable `.git` (the case HATS-441 made silent-safe by
+  refusing to fetch into a foreign repo). The mirror owns the local
+  object graph: `master` is fetched full (cheap; the project's master
+  is small) and the installed SHA is fetched shallow (`--depth=1` —
+  only the commit object is required). `rev-list --left-right --count`
+  then computes `behind` correctly for any lag. Editable installs keep
+  using the pkg-checkout fast path. Closes the false-negative class
+  left over from HATS-432.
 - **HATS-441** — `ai-hats self update` now refuses to overwrite the local
   install when installed HEAD is strictly ahead of remote master (silent
   downgrade) or has diverged from it. The command exits with code 3 and
