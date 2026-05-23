@@ -29,6 +29,13 @@ Isolated development using git worktrees. Each task gets its own working copy �
    ai-hats wt merge            # squash merge (default)
    ai-hats wt merge --no-squash  # regular merge
    ```
+   If `wt merge` refuses with `Refused (drift)`, the base branch
+   advanced since `wt create` (another agent's worktree already
+   merged, or `origin/<base>` received commits). Re-verify your
+   changes against the new base (re-run grep-verify, re-check
+   moved/renamed paths), then `ai-hats wt merge --accept-drift`.
+   **Do not** pass `--force` for drift — `--force` only bypasses
+   uncommitted changes; drift has its own override (HATS-457).
 
 4. **Abandon** → discard:
    ```
