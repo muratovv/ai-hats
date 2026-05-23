@@ -19,6 +19,7 @@ from pathlib import Path
 import yaml
 
 from .composer import Composer, CompositionResult
+from .materialize import compose_for_role
 from .resolver import LibraryResolver
 from .models import (
     ComponentType,
@@ -486,7 +487,7 @@ class Assembler:
             # `.git/hooks/` does not exist and `_install_git_hooks` would
             # need a no-op guard. Cheap pre-check keeps the path tidy.
             if (self.project_dir / ".git").exists():
-                result = self.composer.compose(role, overlays=self._get_overlays(role))
+                result = compose_for_role(self, role)
                 self._install_git_hooks(result)
             # HATS-437: provider-specific runtime hooks (Claude PreToolUse).
             # Independent of .git presence — settings.json wiring is useful
@@ -601,7 +602,7 @@ class Assembler:
             self._validate_provider(provider_name)
 
         # Dry-run compose to surface unknown components before yaml write.
-        result = self.composer.compose(role_name, overlays=self._get_overlays(role_name))
+        result = compose_for_role(self, role_name)
 
         cfg = self.project_config
         new_provider = provider_name or cfg.provider
@@ -638,7 +639,9 @@ class Assembler:
             self._validate_provider(provider_name)
 
         provider = get_provider(provider_name or self.project_config.provider)
-        result = self.composer.compose(role_name, overlays=self._get_overlays(role_name))
+        # HATS-456: single derivation point — used for hooks install (~L658)
+        # AND build_system_prompt for Gemini scaffold-less branch (~L677).
+        result = compose_for_role(self, role_name)
 
         # Non-fatal compose errors (e.g. missing optional rule) are surfaced
         # via result.errors; do not abort.
@@ -711,10 +714,7 @@ class Assembler:
         }
 
         if effective_role:
-            result = self.composer.compose(
-                effective_role,
-                overlays=self._get_overlays(effective_role),
-            )
+            result = compose_for_role(self, effective_role)
             status["tree"] = self._build_tree(result)
             status["health"] = self._check_health(result)
             status["errors"] = result.errors
@@ -804,7 +804,7 @@ class Assembler:
         role = self.project_config.active_role or self.project_config.default_role
         if not role:
             return None
-        result = self.composer.compose(role, overlays=self._get_overlays(role))
+        result = compose_for_role(self, role)
         self._install_git_hooks(result)
         # HATS-437: re-install provider-specific runtime hooks (Claude
         # PreToolUse). Idempotent; recreates the entry if the user deleted
@@ -1402,9 +1402,7 @@ class Assembler:
         effective_role = cfg.active_role or cfg.default_role
         if effective_role:
             try:
-                composition = self.composer.compose(
-                    effective_role, overlays=self._get_overlays(effective_role)
-                )
+                composition = compose_for_role(self, effective_role)
                 source_lookup = self._build_v07_tier2_source_lookup()
             except Exception:  # noqa: BLE001 — defensive fallback for compose failure
                 composition = empty_composition()
@@ -1503,9 +1501,7 @@ class Assembler:
         if not effective:
             return {}
         try:
-            comp = self.composer.compose(
-                effective, overlays=self._get_overlays(effective)
-            )
+            comp = compose_for_role(self, effective)
         except Exception:  # noqa: BLE001 — defensive: any compose failure → empty lookup
             return {}
         out: dict[str, Path] = {}
