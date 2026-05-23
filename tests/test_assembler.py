@@ -792,6 +792,88 @@ def test_strip_legacy_managed_block_unclosed_marker_left_alone(project_with_libr
     assert gi.read_text() == corrupted
 
 
+# --- HATS-465: orphan user-level `.claude/skills/.ai-hats-managed` ---
+
+
+def _seed_orphan_marker(fake_home):
+    """Create `~/.claude/skills/.ai-hats-managed` under a fake HOME."""
+    skills_dir = fake_home / ".claude" / "skills"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / ".ai-hats-managed").write_text(
+        "audit-reviewer\nbacklog-manager\n"
+    )
+
+
+def test_warn_orphan_user_level_managed_skills_emits_warn(
+    project_with_library, tmp_path, monkeypatch, capsys
+):
+    """HATS-465: orphan marker under HOME → WARN on stderr with safe-remove hint.
+
+    ai-hats has never written to ``~/.claude/skills/`` (pre-HATS-294 export
+    was project-level; HATS-294 dropped permanent export entirely). The
+    marker is invariably an artefact of a manual
+    ``cp -r .claude/skills/ ~/.claude/skills/``. Bump must surface it
+    without self-healing."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    monkeypatch.setattr("ai_hats.assembler.Path.home", lambda: fake_home)
+    _seed_orphan_marker(fake_home)
+
+    emitted = asm._warn_orphan_user_level_managed_skills()
+
+    assert emitted is True
+    err = capsys.readouterr().err
+    assert "Orphan ai-hats marker" in err
+    assert "~/.claude/skills/.ai-hats-managed" in err
+    assert "rm -rf ~/.claude/skills/" in err
+    # Marker MUST still exist — we never delete user data ourselves.
+    assert (fake_home / ".claude" / "skills" / ".ai-hats-managed").exists()
+
+
+def test_warn_orphan_user_level_managed_skills_silent_when_absent(
+    project_with_library, tmp_path, monkeypatch, capsys
+):
+    """No marker under HOME → no WARN, returns False."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    monkeypatch.setattr("ai_hats.assembler.Path.home", lambda: fake_home)
+
+    emitted = asm._warn_orphan_user_level_managed_skills()
+
+    assert emitted is False
+    assert capsys.readouterr().err == ""
+
+
+def test_warn_orphan_user_level_managed_skills_idempotent(
+    project_with_library, tmp_path, monkeypatch, capsys
+):
+    """Re-running emits WARN every time — non-self-healing by design.
+
+    The fix is user-side (`rm -rf ~/.claude/skills/`); until they do,
+    every bump re-surfaces it."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    monkeypatch.setattr("ai_hats.assembler.Path.home", lambda: fake_home)
+    _seed_orphan_marker(fake_home)
+
+    assert asm._warn_orphan_user_level_managed_skills() is True
+    capsys.readouterr()  # drain
+    assert asm._warn_orphan_user_level_managed_skills() is True
+    assert "Orphan ai-hats marker" in capsys.readouterr().err
+
+
 def test_bump_invokes_legacy_block_sweep(project_with_library):
     """Integration: bump() chains the sweep so existing users get the fix
     on their next `ai-hats self bump` / `self update`."""

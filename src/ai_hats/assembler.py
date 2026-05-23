@@ -787,6 +787,18 @@ class Assembler:
         # respects `manage_gitignore = False`.
         self._strip_legacy_managed_block()
 
+        # HATS-465: detect an orphan `.ai-hats-managed` marker in
+        # `~/.claude/skills/`. ai-hats has never written to that
+        # location — pre-HATS-294 `Provider.skills_export_dir` for
+        # Claude was project-level (`<project>/.claude/skills`), and
+        # HATS-294 removed permanent export entirely in favor of the
+        # per-session plugin-dir under `<ai_hats_dir>/.cache/sessions/`.
+        # The marker is invariably an artefact of a manual
+        # `cp -r .claude/skills/ ~/.claude/skills/`; the dir then drifts
+        # forever because no bump-time refresh path exists. WARN-only:
+        # we do not delete user data ourselves (rule_destructive_actions).
+        self._warn_orphan_user_level_managed_skills()
+
         self._cleanup_obsolete_files(self.project_dir)
         provider = get_provider(self.project_config.provider)
         # HATS-397: heal stale legacy-path refs FIRST, while user files are
@@ -1683,6 +1695,48 @@ class Assembler:
         if new_text == text:
             return False
         gitignore.write_text(new_text)
+        return True
+
+    def _warn_orphan_user_level_managed_skills(self) -> bool:
+        """HATS-465: WARN when `~/.claude/skills/.ai-hats-managed` exists.
+
+        ai-hats has never written to ``~/.claude/skills/``. Pre-HATS-294
+        ``Provider.skills_export_dir`` for Claude pointed at the
+        project-level ``<project>/.claude/skills`` mirror; HATS-294
+        removed permanent export entirely in favor of the per-session
+        plugin-dir under ``<ai_hats_dir>/.cache/sessions/<sid>/plugin/``.
+        Yet some user environments carry
+        ``~/.claude/skills/.ai-hats-managed`` from a manual
+        ``cp -r .claude/skills/ ~/.claude/skills/`` (the marker tagged
+        along). That marker claims ai-hats ownership, but no refresh
+        path exists — the dir drifts from source-of-truth forever and
+        Claude Code's user-level skill auto-discovery serves stale
+        content to sub-agents.
+
+        Print one WARN per bump with a safe-remove instruction. We do
+        NOT delete the directory ourselves: ai-hats never wrote it, so
+        treating it as ours to discard would violate
+        ``global_rule_destructive_actions §1``. Idempotent and
+        non-self-healing — re-fires on every bump until the user
+        removes the directory.
+
+        Returns ``True`` when a WARN was emitted (test seam).
+        """
+        marker = Path.home() / ".claude" / "skills" / ".ai-hats-managed"
+        if not marker.exists():
+            return False
+        print(
+            "[Warning] ⚠️  Orphan ai-hats marker detected: "
+            "~/.claude/skills/.ai-hats-managed\n"
+            "  ai-hats does not manage user-level Claude skills — they "
+            "are session-scoped via per-session plugin-dir since v0.7 "
+            "(HATS-294).\n"
+            "  The marker was likely created by a manual "
+            "`cp -r .claude/skills/ ~/.claude/skills/`; the directory "
+            "will drift from source-of-truth.\n"
+            "  Safe to remove: `rm -rf ~/.claude/skills/`",
+            file=sys.stderr,
+        )
         return True
 
     def _gitignore_swap_entry(self, old_rel: str, new_rel: str) -> bool:
