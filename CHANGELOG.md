@@ -10,6 +10,27 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+- **HATS-452** — composition / pipeline value contract. Bare `ai-hats`
+  (no `--role`, `active_role` in `ai-hats.yaml`) was writing a
+  `prompt.md` missing the merged role/trait injection — hundreds of
+  lines of behavioral guidance (E2E gate, Agent Protocol, role workflow,
+  etc.) never reached the agent. Root cause: pipeline `compose_role`
+  step returned `{"system_prompt": ""}` for a missing role; runtime's
+  `WrapRunner.run_session` accepted the empty string as a legitimate
+  override and **replaced** the freshly-composed 16k-character injection
+  list with `[""]`. Fix is four-layer (mechanism / convention / reminder
+  / test) per [ADR-0005](docs/adr/0005-composition-and-pipeline-value-contract.md):
+  `CompositionResult` is now `frozen=True` with explicit
+  `with_injection_override(text)`; pipeline funnel drops `None`-valued
+  keys at the merge boundary (`None` == missing); `compose_role` emits
+  `{}` for no-role; `WrapRunner.run` lost its `system_prompt_override`
+  parameter entirely (HITL has no override channel — see П2);
+  `SubAgentRunner` keeps it (HATS-267 Automate path). New rule
+  `rule_composition_value_contract` (auto-injected via `trait-agent`)
+  documents the four invariants for any future agent touching the
+  composition / pipeline / runtime surface.
+
 ### Added
 - **HATS-445** — `ai-hats execute --prompt <name>` now resolves
   `initial_injections/<name>.md` through the full `library_paths` chain
