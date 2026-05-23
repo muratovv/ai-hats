@@ -106,12 +106,34 @@ def detect_installed_sha() -> str | None:
                     return sha
         except (FileNotFoundError, subprocess.SubprocessError):
             pass
+    return _read_baked_commit_sha()
+
+
+def _read_baked_commit_sha() -> str | None:
+    """Read the installed SHA from ``ai_hats._version`` (HATS-458 fix).
+
+    setuptools-scm 8+ writes ``__commit_id__`` (and ``commit_id``) into the
+    generated ``_version.py`` — a short SHA prefixed with ``g`` (the git-
+    describe convention, e.g. ``gc1f43bcb6``). Older versions used
+    ``__commit__`` without the ``g`` prefix. Strip the prefix when present
+    so the returned value is a bare hex SHA (short or full).
+
+    Returns ``None`` when the module is missing all known attribute names
+    or all values are the sentinel ``"unknown"``.
+    """
+    import importlib
+
     try:
-        from ai_hats._version import __commit__  # type: ignore[attr-defined]
-    except (ImportError, AttributeError):
+        # importlib.import_module consults sys.modules first — important
+        # for unit tests that swap in a synthetic ``_version`` module.
+        _version = importlib.import_module("ai_hats._version")
+    except ImportError:
         return None
-    if isinstance(__commit__, str) and __commit__ and __commit__ != "unknown":
-        return __commit__
+    for attr in ("__commit_id__", "commit_id", "__commit__"):
+        value = getattr(_version, attr, None)
+        if isinstance(value, str) and value and value != "unknown":
+            # ``g<sha>`` → ``<sha>`` (setuptools-scm describe prefix).
+            return value[1:] if value.startswith("g") else value
     return None
 
 
@@ -239,39 +261,27 @@ def _ensure_probe_mirror(project_dir: Path) -> Path | None:
     return mirror if result.returncode == 0 else None
 
 
-def _fetch_into_mirror(
-    mirror: Path,
-    remote_url: str,
-    ref: str,
-    *,
-    shallow: bool = False,
-) -> bool:
-    """``git fetch [--depth=1] <remote_url> <ref>`` into the probe-mirror (HATS-458).
+def _fetch_into_mirror(mirror: Path, remote_url: str, ref: str) -> bool:
+    """``git fetch <remote_url> <ref>`` into the probe-mirror (HATS-458).
 
-    The ai-hats master branch is small (hundreds of commits) so a full
-    fetch is cheap and guarantees ``rev-list`` can compute ``behind`` for
-    any lag. The installed SHA only needs to exist as an object — pass
-    ``shallow=True`` to fetch with ``--depth=1`` (just the tip commit).
-
-    ``rev-list --left-right --count <installed>...<master>`` then works:
-    walking from ``installed`` hits the shallow boundary immediately
-    (zero ancestors) and walking from ``master`` finds the installed
-    commit somewhere in its history — yielding correct ``behind`` and
-    ``ahead == 0`` for the non-editable user. The diverged case
-    (``ahead > 0``) is structurally impossible for non-editable installs,
-    so the approximation is safe.
+    Full fetch (no shallow). The ai-hats master branch is small
+    (hundreds of commits, a few hundred KB), so fetching it fully is
+    cheap and guarantees ``rev-list installed...master`` resolves
+    correctly — the typical non-editable user's installed_sha is some
+    ancestor of master and thus already in the local object graph
+    after the master fetch. No separate ``fetch <installed_sha>`` call
+    is needed; that avoids the short-SHA / protocol limitations of
+    fetch-by-SHA (setuptools-scm bakes a 9-char short SHA into
+    ``_version.py`` which most HTTPS remotes refuse in the want line).
 
     Concurrency: relies on git's own ref-level locking. A concurrent
     probe racing the same fetch may surface a transient lock failure →
     False; the next probe re-fetches and heals.
     """
-    args = ["git", "-C", str(mirror), "fetch", "--quiet"]
-    if shallow:
-        args.append("--depth=1")
-    args.extend([remote_url, ref])
     try:
         result = subprocess.run(
-            args,
+            ["git", "-C", str(mirror), "fetch",
+             "--quiet", remote_url, ref],
             capture_output=True,
             text=True,
             timeout=FETCH_TIMEOUT,
@@ -396,7 +406,6 @@ def run_check(project_dir: Path) -> CacheEntry | None:
         if (
             mirror is not None
             and _fetch_into_mirror(mirror, remote_url, "master")
-            and _fetch_into_mirror(mirror, remote_url, installed, shallow=True)
         ):
             counts = _count_ahead_behind(installed, latest, git_dir=mirror)
             if counts is not None:

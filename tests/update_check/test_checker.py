@@ -63,11 +63,41 @@ def test_detect_installed_sha_skips_foreign_git(monkeypatch):
 def test_detect_installed_sha_falls_back_to_version_module():
     fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="not a repo")
     import sys, types
-    fake_module = types.SimpleNamespace(__commit__="cafebabe")
+    # HATS-458: setuptools-scm 8+ writes ``__commit_id__`` (with leading
+    # ``g`` prefix per git-describe convention). ``detect_installed_sha``
+    # must strip the prefix.
+    fake_module = types.SimpleNamespace(__commit_id__="gcafebabe")
     sys.modules["ai_hats._version"] = fake_module
     try:
         with patch.object(subprocess, "run", return_value=fail):
             assert detect_installed_sha() == "cafebabe"
+    finally:
+        sys.modules.pop("ai_hats._version", None)
+
+
+def test_detect_installed_sha_accepts_legacy_commit_attr():
+    """Legacy ``__commit__`` (older setuptools-scm) still works."""
+    fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+    import sys, types
+    sys.modules["ai_hats._version"] = types.SimpleNamespace(__commit__="deadbeef")
+    try:
+        with patch.object(subprocess, "run", return_value=fail):
+            assert detect_installed_sha() == "deadbeef"
+    finally:
+        sys.modules.pop("ai_hats._version", None)
+
+
+def test_detect_installed_sha_prefers_commit_id_over_commit():
+    """When both attrs exist, prefer the modern ``__commit_id__``."""
+    fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+    import sys, types
+    sys.modules["ai_hats._version"] = types.SimpleNamespace(
+        __commit_id__="gnewer123",
+        __commit__="legacy456",
+    )
+    try:
+        with patch.object(subprocess, "run", return_value=fail):
+            assert detect_installed_sha() == "newer123"
     finally:
         sys.modules.pop("ai_hats._version", None)
 
@@ -260,11 +290,14 @@ def test_run_check_falls_back_to_mirror_when_pkg_path_unusable(tmp_path, monkeyp
     assert entry.latest_label == "v0.6.0-19-gabcdef0"
     assert entry.has_update is True
 
-    # Mirror was initialized once + fetched twice (master + installed_sha).
+    # Mirror was initialized once + master fetched once. installed_sha is
+    # NOT fetched separately (it's typically reachable from master's
+    # history; if not, rev-list returns None and axes stay None).
     assert mock_init.call_count == 1
-    assert mock_fetch.call_count == 2, f"expected 2 fetches, got {mock_fetch.call_args_list}"
-    fetch_refs = [c.args[2] for c in mock_fetch.call_args_list]
-    assert "master" in fetch_refs and "a" * 40 in fetch_refs, fetch_refs
+    assert mock_fetch.call_count == 1, \
+        f"expected single master fetch, got {mock_fetch.call_args_list}"
+    fetch_ref = mock_fetch.call_args_list[0].args[2]
+    assert fetch_ref == "master", fetch_ref
 
     # rev-list / describe were dispatched against the mirror (not pkg dir).
     count_kwargs = mock_count.call_args.kwargs
@@ -274,10 +307,10 @@ def test_run_check_falls_back_to_mirror_when_pkg_path_unusable(tmp_path, monkeyp
 
 
 def test_run_check_mirror_fetch_failure_records_none_axes(tmp_path, monkeypatch):
-    """Mirror inits but one of the two fetches fails — axes stay None.
+    """Mirror inits but master fetch fails — axes stay None.
 
-    Defensive: validates that a server refusing fetch-by-SHA degrades to
-    "banner silent" rather than emitting a half-known entry.
+    Defensive: validates that an offline / unreachable remote degrades
+    to "banner silent" rather than emitting a half-known entry.
     """
     monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
     monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
@@ -288,7 +321,7 @@ def test_run_check_mirror_fetch_failure_records_none_axes(tmp_path, monkeypatch)
          patch.object(checker, "fetch_latest_sha", return_value="b" * 40), \
          patch.object(checker, "_fetch_into_pkg", return_value=False), \
          patch.object(checker, "_ensure_probe_mirror", return_value=fake_mirror), \
-         patch.object(checker, "_fetch_into_mirror", side_effect=[True, False]), \
+         patch.object(checker, "_fetch_into_mirror", return_value=False), \
          patch.object(checker, "_count_ahead_behind") as mock_count, \
          patch.object(checker, "_describe") as mock_describe:
         entry = run_check(tmp_path)
@@ -351,9 +384,11 @@ def test_fetch_into_mirror_false_on_timeout(tmp_path):
         assert checker._fetch_into_mirror(tmp_path, "https://example.git", "master") is False
 
 
-def test_fetch_into_mirror_full_by_default(tmp_path):
-    """Default fetch is full (no ``--depth``) — master needs full history
-    so ``rev-list`` can compute ``behind`` for any lag.
+def test_fetch_into_mirror_is_full(tmp_path):
+    """Fetch is always full (no ``--depth``) — master needs full history
+    so ``rev-list installed...master`` resolves any lag. Short-SHA
+    fetch-by-installed is intentionally NOT performed (most HTTPS
+    remotes refuse short SHAs in want lines).
     """
     captured: list = []
 
@@ -365,22 +400,6 @@ def test_fetch_into_mirror_full_by_default(tmp_path):
         checker._fetch_into_mirror(tmp_path, "https://example.git", "master")
     assert captured
     assert not any(a.startswith("--depth") for a in captured[0]), captured
-
-
-def test_fetch_into_mirror_shallow_when_requested(tmp_path):
-    """``shallow=True`` adds ``--depth=1`` — used for the installed SHA
-    where only the commit object's presence matters."""
-    captured: list = []
-
-    def fake_run(args, **kwargs):
-        captured.append(args)
-        return _ok()
-
-    with patch.object(subprocess, "run", side_effect=fake_run):
-        checker._fetch_into_mirror(
-            tmp_path, "https://example.git", "abc123sha", shallow=True,
-        )
-    assert captured and "--depth=1" in captured[0], captured
 
 
 def test_count_ahead_behind_uses_git_dir_param(tmp_path):
