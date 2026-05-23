@@ -171,5 +171,18 @@ def _run_steps(
                 on_step, s.io.name, kwargs, delta, duration_ms,
                 error=None, include_values=trace_values,
             )
-        state.update(delta)
+        # HATS-452 (П3 in ADR-0005): pipeline funnel value contract.
+        # Drop keys whose value is ``None`` at the merge boundary so a
+        # consumer cannot distinguish "the step did not emit the key" from
+        # "the step emitted the key with value None". This makes the
+        # funnel single-meaning and prevents the empty-Optional-as-absent
+        # trap that broke HATS-452 (compose_role returned
+        # ``{"system_prompt": ""}`` for a missing role; downstream
+        # consumed ``""`` as a legitimate override).
+        #
+        # ``""`` (and other falsy values like ``0``, ``False``, ``[]``)
+        # are intentionally NOT filtered — they are valid non-absent
+        # values whose semantics differ from "key absent". Steps that
+        # need "absent" must emit ``None`` (or omit the key entirely).
+        state.update({k: v for k, v in delta.items() if v is not None})
     return state

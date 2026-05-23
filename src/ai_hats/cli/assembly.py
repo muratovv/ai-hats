@@ -750,6 +750,68 @@ def status():
             console.print(f"  [yellow]{err}[/]")
 
 
+@click.command("show-prompt")
+@click.option(
+    "--role", "-r", default=None,
+    help="Role to materialize (default: active_role from ai-hats.yaml).",
+)
+@click.option(
+    "--provider", "-p", default=None,
+    help="Provider for build_system_prompt formatting (default: configured).",
+)
+@click.option(
+    "--stats",
+    is_flag=True,
+    help="Emit composition_stats JSON to stdout instead of the prompt text.",
+)
+def show_prompt(role: str | None, provider: str | None, stats: bool):
+    """Print the system prompt the agent would see for ROLE.
+
+    Pure read — composes the role and renders through the provider's
+    build_system_prompt, no session/file/spawn. Runs through the same
+    ``materialize_system_prompt`` pipeline step that future runtime
+    consumers will share (HATS-452 Phase 1).
+
+    Examples
+    --------
+
+    \b
+    ai-hats config show-prompt                    # active role, text
+    ai-hats config show-prompt --role architect   # any role
+    ai-hats config show-prompt --stats            # structured JSON
+    ai-hats config show-prompt | grep "E2E gate"  # marker presence
+    """
+    from ..pipeline.pipeline import build as build_pipeline
+    from ..pipeline.steps.emit import EmitStdout
+    from ..pipeline.steps.materialize import MaterializeSystemPrompt
+    from ._helpers import _project_dir
+
+    project_dir = _project_dir()
+
+    # Build the preview pipeline in-process — same shape as
+    # library/core/pipelines/preview.yaml (which is shipped as a
+    # canonical reference). YAML loader resolves pipelines via the
+    # installed package's bundled library and is therefore opaque to
+    # the project's library_paths; the programmatic build keeps the
+    # CLI runnable from any project layout.
+    emit_key = "composition_stats" if stats else "system_prompt_text"
+    emit_fmt = "json" if stats else "text"
+    pipeline = build_pipeline(
+        MaterializeSystemPrompt(),
+        EmitStdout({"key": emit_key, "format": emit_fmt}),
+        name="preview",
+    )
+    try:
+        pipeline.run(
+            project_dir=project_dir,
+            role=role,
+            provider=provider,
+        )
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(2)
+
+
 @click.command()
 @click.option(
     "--migrate-force",

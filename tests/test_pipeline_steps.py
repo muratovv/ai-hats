@@ -24,10 +24,19 @@ from ai_hats.paths import runs_dir
 
 # ---------------- compose_role ----------------
 
-def test_compose_role_empty_when_role_none(tmp_path: Path):
+def test_compose_role_omits_key_when_role_none(tmp_path: Path):
+    """HATS-452 / П3: when no role is requested, the step OMITS the
+    ``system_prompt`` key entirely (rather than emitting ``""``). The
+    pipeline funnel + downstream consumers (``LaunchProvider`` →
+    ``WrapRunner``) treat missing == None == "no override".
+    """
     step = ComposeRole()
     out = step.run(project_dir=tmp_path, role=None)
-    assert out == {"system_prompt": ""}
+    assert out == {}, (
+        "compose_role must NOT emit system_prompt='' for missing role "
+        "(HATS-452); the empty-string-as-absent trap broke composition "
+        "delivery in WrapRunner."
+    )
 
 
 def test_compose_role_calls_composer(tmp_path: Path):

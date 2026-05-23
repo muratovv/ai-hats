@@ -10,7 +10,6 @@ import subprocess
 import sys
 import time
 import uuid
-from dataclasses import replace
 from pathlib import Path
 
 from typing import TYPE_CHECKING
@@ -600,7 +599,6 @@ class WrapRunner:
         role_override: str | None = None,
         extra_args: list[str] | None = None,
         tags: dict[str, str] | None = None,
-        system_prompt_override: str | None = None,
     ) -> tuple[int, Session]:
         """Launch a wrapped CLI session with PTY proxying.
 
@@ -609,10 +607,15 @@ class WrapRunner:
         legacy ``int``-only contract is preserved by ``_do_execute`` which
         still returns only the exit code to its CLI callers.
 
-        ``system_prompt_override`` (HATS-267): when supplied, replaces the
-        merged injection used for the per-session composed prompt while
-        keeping structural composition data so provider build_session_prompt
-        keeps working.
+        HATS-452 (П2 in ADR-0005). ``WrapRunner`` is the **HITL** runner —
+        a human is at the keyboard and the role's full composition reaches
+        the agent through the composer + ``build_session_prompt`` write.
+        It deliberately has **no** ``system_prompt_override`` channel:
+        prompt injection in HITL is meaningless (the user types into the
+        terminal) and the previously-exposed Optional override was the
+        literal trap that caused HATS-452. Callers needing to inject an
+        explicit prompt should use ``SubAgentRunner`` (Automate path),
+        which takes a required ``task`` argument.
         """
         # Resolve provider
         provider = get_provider(provider_name)
@@ -649,8 +652,8 @@ class WrapRunner:
         result = self.assembler.composer.compose(
             effective_role, overlays=self.assembler._get_overlays(effective_role),
         )
-        if system_prompt_override is not None:
-            result = replace(result, injections=[system_prompt_override])
+        # HATS-452 (П2): no override channel on WrapRunner — the composition
+        # produced above flows straight into ``build_session_prompt``.
         session_args, session_env = provider.build_session_prompt(
             self.project_dir, result, session.session_id,
         )
@@ -1027,7 +1030,9 @@ class SubAgentRunner:
             role_name, overlays=self.assembler._get_overlays(role_name),
         )
         if system_prompt_override is not None:
-            result = replace(result, injections=[system_prompt_override])
+            # HATS-452: explicit immutable transformation via the typed
+            # ``with_*`` API on ``CompositionResult`` (П1 in ADR-0005).
+            result = result.with_injection_override(system_prompt_override)
         provider_name = self.assembler.project_config.provider
         provider = get_provider(provider_name)
 
