@@ -10,10 +10,12 @@ from __future__ import annotations
 from .. import registry
 from .check_update import CheckUpdateAsync
 from .compose import ComposeRole
+from .emit import EmitStdout
 from .extract import ExtractMarker
 from .handoff import BuildHandoff
 from .launch import LaunchProvider
 from .log import PostLog, PreLog
+from .materialize import MaterializeSystemPrompt
 from .prompt import ResolvePrompt
 from .save import SaveArtifact
 from .session_review import RunSessionReview
@@ -24,6 +26,7 @@ from .update_banner import RenderUpdateBanner
 _BUILTINS = {
     "check_update_async": CheckUpdateAsync,
     "compose_role": ComposeRole,
+    "materialize_system_prompt": MaterializeSystemPrompt,
     "resolve_prompt": ResolvePrompt,
     "build_handoff": BuildHandoff,
     "pre_log": PreLog,
@@ -34,6 +37,7 @@ _BUILTINS = {
     "post_log": PostLog,
     "run_session_review": RunSessionReview,
     "render_update_banner": RenderUpdateBanner,
+    "emit_stdout": EmitStdout,
 }
 
 
@@ -51,8 +55,10 @@ __all__ = [
     "BuildHandoff",
     "CheckUpdateAsync",
     "ComposeRole",
+    "EmitStdout",
     "ExtractMarker",
     "LaunchProvider",
+    "MaterializeSystemPrompt",
     "PostLog",
     "PreLog",
     "RenderUpdateBanner",

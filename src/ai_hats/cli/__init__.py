@@ -170,6 +170,7 @@ from . import (  # noqa: E402
 config_mod.config.add_command(assembly.set_role)
 config_mod.config.add_command(assembly.customize)
 config_mod.config.add_command(assembly.status)
+config_mod.config.add_command(assembly.show_prompt)  # HATS-452 Phase 1
 main.add_command(config_mod.config)
 
 
