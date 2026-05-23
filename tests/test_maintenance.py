@@ -144,6 +144,8 @@ def test_update_runs_bump_in_subprocess_when_version_changed(tmp_path: Path) -> 
                return_value=["pip", "install", "ai-hats"]), \
          patch("ai_hats.cli.maintenance._get_changelog", return_value=""), \
          patch("ai_hats.cli.maintenance._assembler") as mock_asm_factory, \
+         patch("ai_hats.cli.maintenance._probe_remote_state",
+               return_value=None), \
          patch("subprocess.run", side_effect=fake_run):
         # old_version = "old-v" (module-level __version__ at import time);
         # patch it so the diff is unambiguous.
@@ -194,6 +196,8 @@ def test_update_runs_bump_in_process_when_version_unchanged(tmp_path: Path) -> N
                return_value=["pip", "install", "ai-hats"]), \
          patch("ai_hats.cli.maintenance._get_changelog", return_value=""), \
          patch("ai_hats.cli.maintenance._assembler", return_value=mock_asm), \
+         patch("ai_hats.cli.maintenance._probe_remote_state",
+               return_value=None), \
          patch("subprocess.run", side_effect=fake_run) as mock_run, \
          patch("ai_hats.__version__", "same-version"):
         result = CliRunner().invoke(update, [])
@@ -337,6 +341,40 @@ def test_update_proceeds_when_probe_unknown(tmp_path: Path) -> None:
     assert "Refusing to downgrade" not in output, \
         f"unexpected refusal on unknown probe:\n{output}"
     assert _pip_called(captured), f"pip install missing: {captured}"
+
+
+def test_update_skips_pip_when_installed_sha_matches_remote(tmp_path: Path) -> None:
+    """installed_sha == latest_sha → pip install short-circuited, bump still runs.
+
+    HATS-follow-up: when ``run_check`` confirms the installed SHA matches
+    remote ``master``, the unconditional ``pip install --force-reinstall
+    --no-cache-dir`` is a 10-15s no-op (~minute on slow links) that users
+    have mistaken for a hang. Reuse the probe entry to short-circuit pip;
+    bump still runs so any pending in-process migrations apply.
+    """
+    same_sha = "deadbeefcafe1234"
+    exit_code, output, captured = _invoke_update(
+        [],
+        run_check_return=_entry(
+            ahead=0, behind=0,
+            installed_sha=same_sha, latest_sha=same_sha,
+        ),
+        tmp_path=tmp_path,
+    )
+    assert exit_code == 0, f"expected exit 0, got {exit_code}; output:\n{output}"
+    assert not _pip_called(captured), \
+        f"pip install ran despite SHA match: {captured}"
+    assert "Already up to date" in output, \
+        f"missing already-up-to-date banner:\n{output}"
+    assert "skipping pip install" in output, \
+        f"missing skip-pip dim hint:\n{output}"
+    # Verify subprocess must not run when pip was skipped — nothing to verify.
+    verify_called = any(
+        len(c[0]) >= 4 and c[0][1:4] == ("-m", "ai_hats._bootstrap")
+        for c in captured
+    )
+    assert not verify_called, \
+        f"_bootstrap verify ran despite skipped install: {captured}"
 
 
 def test_update_proceeds_when_ahead_behind_axes_none(tmp_path: Path) -> None:
