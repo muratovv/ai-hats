@@ -169,13 +169,20 @@ def test_update_runs_bump_in_subprocess_when_version_changed(tmp_path: Path) -> 
     assert args[0] == sys.executable, f"wrong interpreter: {args[0]}"
     assert kwargs.get("cwd") == str(project), f"wrong cwd: {kwargs.get('cwd')}"
     assert kwargs.get("check") is False, "must not raise on bump exit code"
-    # in-process bump should NOT be called when version changed
-    assert not mock_asm_factory.return_value.bump.called, \
-        "in-process bump fired despite version change"
+    # HATS-469: in-process pipeline (was asm.bump) should NOT be called
+    # when version changed — subprocess path takes over.
+    assert not mock_asm_factory.return_value._refresh.called, \
+        "in-process _refresh fired despite version change"
 
 
 def test_update_runs_bump_in_process_when_version_unchanged(tmp_path: Path) -> None:
-    """When versions match, in-process ``asm.bump()`` runs (no subprocess)."""
+    """When versions match, in-process pipeline runs (no subprocess).
+
+    HATS-469: ``Assembler.bump`` was removed; the in-process pipeline now
+    composes ``_run_v07_migration`` + ``compose_for_role`` + ``_refresh``
+    + ``_run_diagnostics`` inline in ``cli/maintenance.py``. We spy on
+    ``_refresh`` as the canonical "in-process pipeline fired" signal.
+    """
     project = _setup_update_test_env(tmp_path)
     bump_result_stub = MagicMock(rules=[], skills=[], errors=[])
 
@@ -184,7 +191,8 @@ def test_update_runs_bump_in_process_when_version_unchanged(tmp_path: Path) -> N
         return _make_completed(args, returncode=0, stdout="ok")
 
     mock_asm = MagicMock()
-    mock_asm.bump.return_value = bump_result_stub
+    # mock_asm._refresh returns None (matches real signature); the bump-result
+    # equivalent is now ``compose_for_role(...)``, patched separately below.
 
     with patch("ai_hats.cli.maintenance._project_dir", return_value=project), \
          patch("ai_hats.cli.maintenance._get_installed_version",
@@ -200,6 +208,8 @@ def test_update_runs_bump_in_process_when_version_unchanged(tmp_path: Path) -> N
          patch("ai_hats.cli.maintenance._assembler", return_value=mock_asm), \
          patch("ai_hats.cli.maintenance._probe_remote_state",
                return_value=None), \
+         patch("ai_hats.materialize.compose_for_role",
+               return_value=bump_result_stub), \
          patch("subprocess.run", side_effect=fake_run) as mock_run, \
          patch("ai_hats.__version__", "same-version"):
         result = CliRunner().invoke(update, [])
@@ -211,9 +221,9 @@ def test_update_runs_bump_in_process_when_version_unchanged(tmp_path: Path) -> N
         if len(c.args[0]) >= 3 and tuple(c.args[0][1:3]) == ("-m", "ai_hats._bump_internal")
     ]
     assert not bump_calls, f"unexpected bump subprocess: {bump_calls}"
-    # in-process bump fired exactly once
-    assert mock_asm.bump.call_count == 1, \
-        f"in-process bump call count: {mock_asm.bump.call_count}"
+    # in-process pipeline fired exactly once (signal = _refresh call)
+    assert mock_asm._refresh.call_count == 1, \
+        f"in-process _refresh call count: {mock_asm._refresh.call_count}"
 
 
 # ---------- HATS-441: refuse silent downgrade ----------

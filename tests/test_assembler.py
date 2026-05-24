@@ -7,6 +7,10 @@ from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import hooks_dir, rules_dir, runs_dir, skills_dir, state_md_path, tasks_dir
 
+# HATS-469: ``Assembler.bump()`` was removed; use the test-side pipeline
+# helper that mirrors ``cli/assembly.py::do_bump``.
+from tests._assembler_helpers import bump_pipeline
+
 
 @pytest.fixture
 def project_with_library(tmp_path):
@@ -63,8 +67,17 @@ composition:
 injection: Other role injection.
 """)
 
-    # Create project config
-    config = ProjectConfig(provider="gemini", library_paths=[str(lib)])
+    # Create project config. HATS-469: seed ``migration_step=latest_step()``
+    # so init's ``_refresh`` is silent on stderr (registry no-op). Tests
+    # exercising migration registry replay should pre-create yaml with
+    # ``migration_step=0`` explicitly (see ``test_bump_persists_*``).
+    from ai_hats.migrations import latest_step
+
+    config = ProjectConfig(
+        provider="gemini",
+        library_paths=[str(lib)],
+        migration_step=latest_step(),
+    )
     config.save(project / "ai-hats.yaml")
 
     return project, lib
@@ -176,9 +189,19 @@ def test_bump(project_with_library):
     asm.init()
     asm.set_role("test-role")
 
-    result = asm.bump()
+    result = bump_pipeline(asm)
     assert result is not None
     assert result.name == "test-role"
+
+
+def test_bump_pipeline_returns_none_without_role(project_with_library):
+    """HATS-469: bump_pipeline must return None when no role is active —
+    same contract as the old ``Assembler.bump()`` legacy bare-bump path."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()  # no role
+    result = bump_pipeline(asm)
+    assert result is None
 
 
 # -- HATS-415: bump inline v0.6 → v0.7 migration (replaces HATS-408 naive gate) --
@@ -205,7 +228,7 @@ def test_bump_refuses_on_v06_user_edits(project_with_library):
     )
 
     with pytest.raises(AssemblyError) as exc:
-        asm.bump()
+        bump_pipeline(asm)
     msg = str(exc.value)
     assert "v0.6 canonical layout detected" in msg
     assert "user edits found on disk" in msg
@@ -231,7 +254,7 @@ def test_bump_force_v07_migration_overwrites_user_edits(project_with_library, ca
     )
 
     # No raise — force bypasses the AssemblyError.
-    asm.bump(force_v07_migration=True)
+    bump_pipeline(asm, force_v07_migration=True)
 
     assert not (canonical / "priorities.md").exists(), \
         "force_v07_migration must sweep the user-edited file"
@@ -249,7 +272,7 @@ def test_bump_silent_on_clean_v07_layout(project_with_library):
     # Sanity: project_with_library + init does not seed any v0.6 Tier-1 files.
     assert not (canonical / "priorities.md").exists()
     assert not (canonical / "role.md").exists()
-    asm.bump()  # no raise — has_work=False path
+    bump_pipeline(asm)  # no raise — has_work=False path
 
 
 # -- HATS-413: bump persists yaml hardening (heal + deprecated-strip) --
@@ -276,7 +299,7 @@ def test_bump_persists_default_role_heal(project_with_library):
     asm2 = Assembler(project, library_paths=[lib])
     assert asm2.project_config.default_role == "test-role"  # healed in memory
 
-    asm2.bump()
+    bump_pipeline(asm2)
 
     # Yaml on disk now has the healed value persisted.
     import yaml as _yaml
@@ -290,20 +313,34 @@ def test_bump_persists_default_role_heal(project_with_library):
 
 
 def test_bump_persists_deprecated_field_strip(project_with_library):
-    """Deprecated yaml keys (HATS-408) stripped in memory by from_yaml must
-    also be removed on disk after bump."""
-    project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    config_path = project / "ai-hats.yaml"
-    # Append the deprecated ghost.
-    original = config_path.read_text()
-    config_path.write_text(original + "imports_order: role-first\n")
+    """HATS-413/471/469: deprecated yaml keys are stripped on the FIRST
+    install-time pass through the registry (step=1 ``_normalize_yaml``).
 
-    asm2 = Assembler(project, library_paths=[lib])
-    asm2.bump()
+    HATS-469 unification means ``init`` itself runs the registry, so any
+    deprecated field present on the pre-init yaml is cleaned during the
+    init call. After ``migration_step`` advances past step=1,
+    ``_normalize_yaml`` is a one-shot and does NOT re-fire on subsequent
+    ``bump_pipeline`` calls (HATS-471 registry contract). Re-introduced
+    deprecated keys are warned about on every load but not
+    auto-persisted.
 
+    The fixture seeds ``migration_step=latest_step()``; this test
+    explicitly rewinds it to 0 to trigger the registry replay.
+    """
     import yaml as _yaml
+
+    project, lib = project_with_library
+    config_path = project / "ai-hats.yaml"
+    # Rewind migration_step to 0 + add deprecated ghost BEFORE init so
+    # the first registry pass picks it up.
+    raw = _yaml.safe_load(config_path.read_text())
+    raw["migration_step"] = 0
+    raw["imports_order"] = "role-first"
+    config_path.write_text(_yaml.safe_dump(raw))
+
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()  # _refresh(install_time=True) → run_pending → step=1 cleans
+
     saved = _yaml.safe_load(config_path.read_text())
     assert "imports_order" not in saved
 
@@ -322,13 +359,13 @@ def test_bump_no_op_when_yaml_already_normalized(project_with_library):
 
     # First bump: drives migration_step → latest_step via the registry runner,
     # plus any HATS-413 yaml heal still pending from the fixture's bare save.
-    asm.bump()
+    bump_pipeline(asm)
 
     # Snapshot AFTER the first bump has done its one-time normalization.
     pre_bytes = config_path.read_bytes()
     pre_mtime = config_path.stat().st_mtime_ns
 
-    asm.bump()
+    bump_pipeline(asm)
 
     # Bytes unchanged → no rewrite happened on the second bump.
     # (mtime can move if other init paths touch the file; bytes is the
@@ -370,7 +407,7 @@ def test_bump_skips_normalize_when_v07_migration_refuses(project_with_library):
 
     asm2 = Assembler(project, library_paths=[lib])
     with pytest.raises(AssemblyError):
-        asm2.bump()
+        bump_pipeline(asm2)
 
     # Yaml untouched — migration refusal fired before _normalize_yaml.
     assert config_path.read_bytes() == pre_bytes
@@ -884,16 +921,35 @@ def test_warn_orphan_user_level_managed_skills_idempotent(
 
 
 def test_bump_invokes_legacy_block_sweep(project_with_library):
-    """Integration: bump() chains the sweep so existing users get the fix
-    on their next `ai-hats self bump` / `self update`."""
+    """Integration: bump_pipeline chains the sweep so existing users get
+    the fix on their next ``ai-hats self bump`` / ``self update``.
+
+    HATS-471: ``_strip_legacy_managed_block`` is registry step=2 — one-shot
+    per project, gated by ``migration_step``. The fixture seeds
+    ``migration_step=latest`` (post-HATS-469), so this test explicitly
+    rewinds it to 0 to trigger the sweep replay.
+    """
+    import yaml as _yaml
+
     project, lib = project_with_library
+    config_path = project / "ai-hats.yaml"
+    raw = _yaml.safe_load(config_path.read_text())
+    raw["migration_step"] = 0
+    config_path.write_text(_yaml.safe_dump(raw))
+
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role")
     gi = project / ".gitignore"
     gi.write_text(gi.read_text() + "\n" + _LEGACY_BLOCK)
 
-    asm.bump()
+    # Rewind again — init/set_role may have advanced migration_step.
+    raw = _yaml.safe_load(config_path.read_text())
+    raw["migration_step"] = 1  # past step=1 (yaml normalize), still before step=2
+    config_path.write_text(_yaml.safe_dump(raw))
+
+    asm2 = Assembler(project, library_paths=[lib])
+    bump_pipeline(asm2)
 
     after = gi.read_text()
     assert "AI-HATS:START" not in after
@@ -937,7 +993,7 @@ def test_user_hook_survives_bump(project_with_library):
     user_hook = hooks_dir(project) / "my-custom.sh"
     user_hook.write_text("#!/usr/bin/env bash\necho custom\n")
 
-    asm.bump()
+    bump_pipeline(asm)
 
     assert user_hook.exists(), "User hook must survive bump"
     assert user_hook.read_text() == "#!/usr/bin/env bash\necho custom\n"
@@ -955,7 +1011,7 @@ def test_user_skill_dir_survives_bump(project_with_library):
     user_skill.mkdir()
     (user_skill / "SKILL.md").write_text("# local\n")
 
-    asm.bump()
+    bump_pipeline(asm)
 
     assert (user_skill / "SKILL.md").exists()
     # HATS-407: library-sourced skills are no longer copied into the

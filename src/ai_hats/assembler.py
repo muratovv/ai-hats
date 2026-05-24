@@ -483,9 +483,17 @@ class Assembler:
         for subdir_fn in (_lib_rules_dir, _lib_skills_dir, _lib_hooks_dir):
             subdir_fn(self.project_dir).mkdir(parents=True, exist_ok=True)
 
+        # HATS-469 R2: capture greenfield state BEFORE the ai-hats.yaml
+        # save block below consumes ``config_path.exists()`` as a signal.
+        # Used downstream for:
+        #   - migration_step=latest seeding (greenfield only)
+        #   - greenfield seed-invariant assertion before _refresh
+        #   - skipping _run_v07_migration on greenfield (nothing to heal)
+        greenfield = not self.config_path.exists()
+
         # Create/update ai-hats.yaml
         save_config = False
-        if not self.config_path.exists():
+        if greenfield:
             self.project_config.provider = provider or "gemini"
             if role:
                 self.project_config.default_role = role
@@ -512,49 +520,62 @@ class Assembler:
         if not state_md.exists():
             state_md.write_text("# Task State\n\nNo active tasks.\n")
 
-        # Write provider scaffold (./CLAUDE.md etc.) if missing — HATS-284.
-        # Must run before set_role so update_system_prompt sees the lowercase
-        # scaffold markers and skips writing the legacy uppercase block.
         active_provider = get_provider(self.project_config.provider)
-        self._ensure_scaffold(active_provider)
 
-        # HATS-285: strip legacy uppercase AI-HATS block from existing
-        # ./CLAUDE.md so old projects upgrade in place.
+        # HATS-469 R1: direct heal of ./CLAUDE.md on re-init.
+        # ``_migrate_claude_md_to_v3`` is also a registry entry (step 5)
+        # but registry is gated by ``migration_step``; a re-init on a
+        # fully-migrated project (migration_step=latest) would skip it.
+        # The direct call preserves the legacy contract "init re-run
+        # always normalises CLAUDE.md" — covers the edge case where the
+        # user manually re-introduces a legacy uppercase block.
+        # Idempotent; on greenfield ./CLAUDE.md does not exist yet so
+        # this is a no-op.
         self._migrate_claude_md_to_v3(active_provider)
+
+        # HATS-469 R2: greenfield invariant — migration_step MUST be
+        # seeded to latest BEFORE _refresh. Otherwise run_pending would
+        # replay every migration on empty files
+        # (``_strip_legacy_managed_block`` on a non-existent ``.gitignore``,
+        # ``_migrate_layout_v4`` on absent directories). Cheap guard
+        # against future refactors that might reorder the seed.
+        if greenfield:
+            from .migrations import latest_step
+
+            assert self.project_config.migration_step == latest_step(), (
+                "HATS-469 R2: greenfield init must seed migration_step to "
+                "latest BEFORE _refresh; otherwise registry replays on "
+                "empty files."
+            )
+
+        # HATS-469 R6: re-init on a v0.6 layout must heal BEFORE _refresh
+        # fires the registry (run_pending step 6 = ``_migrate_layout_v4``
+        # would otherwise run against a still-v0.6 tree). Defaults
+        # (force=False, check_branches=False) match the previous auto-bump
+        # behaviour from cli/assembly.py:245-259 (now removed by R6).
+        # User-edits trip ``AssemblyError`` with per-file guidance; user
+        # re-runs with ``ai-hats self bump --migrate-force`` to override.
+        # Greenfield: skip — nothing to migrate.
+        if not greenfield:
+            self._run_v07_migration(force=False, check_branches=False)
 
         # HATS-317: one-shot .gitignore entry. Idempotent; no managed block.
         if self.project_config.manage_gitignore:
             self._ensure_gitignore_entry()
 
-        # HATS-407: write the user-rules aggregator at init time so direct
-        # ``claude`` in project_dir has a stable entry-point even before the
-        # first ai-hats session. Sweeps stale v0.6 framework files via the
-        # manifest. No role-content materialization (per-session compose
-        # handles that — HATS-294).
-        self.write_canonical()
-
-        # Apply role if specified — HATS-407: persists default_role in yaml
-        # and installs HATS-088 git hooks for the chosen role. NO heavy
-        # set_role chain (backup/clean/copy/verify is gone post-294).
+        # Apply role to yaml first so _refresh sees the new default_role
+        # (and the post-init session reads the right value). Compose result
+        # is passed through to _refresh which installs role git hooks.
+        result: CompositionResult | None = None
         if role:
             self.project_config.default_role = role
             self.project_config.save(self.config_path)
-            # Install git hooks only when a git repo is present; otherwise
-            # `.git/hooks/` does not exist and `_install_git_hooks` would
-            # need a no-op guard. Cheap pre-check keeps the path tidy.
-            if (self.project_dir / ".git").exists():
-                result = compose_for_role(self, role)
-                self._install_git_hooks(result)
-            # HATS-437: provider-specific runtime hooks (Claude PreToolUse).
-            # Independent of .git presence — settings.json wiring is useful
-            # even in non-git project dirs. Idempotent.
-            active_provider.ensure_runtime_hooks(self.project_dir)
-            # HATS-467: materialize PreToolUse hook scripts to disk. The
-            # settings.json entry above points at a file under
-            # <ai_hats_dir>/library/hooks/ that does not exist until we
-            # copy it from package data. Without this, the hook silently
-            # fails with "No such file or directory" on every Bash call.
-            self._materialize_pretooluse_hooks()
+            result = compose_for_role(self, role)
+
+        # HATS-469: single entry-point for all heal/install work.
+        # install_time=True → registry fires (gated by migration_step;
+        # greenfield no-ops via the R2 seed above).
+        self._refresh(install_time=True, result=result)
 
     def _get_overlay(self, role_name: str) -> OverlayConfig | None:
         """Get the **project** overlay for a role, or ``None`` if absent/empty.
@@ -685,6 +706,11 @@ class Assembler:
         (HATS-088). NOT invoked by the CLI surface — use
         :meth:`set_default_role` for that.
 
+        HATS-469: delegated to :meth:`_refresh` (install_time=False — runtime
+        bootstrap does not re-run migrations; init/bump already did). The
+        Gemini inline-prompt path and ``active_role``/``provider`` persist
+        stay here as set_role-only concerns.
+
         HATS-407: backup/clean/copy_components/verify side-effects were
         removed; per-session compose (HATS-294) means framework content is
         never materialized into the canonical tree. The Gemini inline-prompt
@@ -701,40 +727,31 @@ class Assembler:
             self._validate_provider(provider_name)
 
         provider = get_provider(provider_name or self.project_config.provider)
-        # HATS-456: single derivation point — used for hooks install (~L658)
-        # AND build_system_prompt for Gemini scaffold-less branch (~L677).
+        # HATS-456: single derivation point — used for hooks install
+        # AND build_system_prompt for Gemini scaffold-less branch (below).
         result = compose_for_role(self, role_name)
 
         # Non-fatal compose errors (e.g. missing optional rule) are surfaced
         # via result.errors; do not abort.
 
-        # 1. Bring ./CLAUDE.md to the v3 scaffold layout if a legacy
-        # uppercase AI-HATS block or v2 inline injection is present. The
-        # migrator also runs in ``bump`` and ``init``; keeping the call
-        # here lets first-session bootstrap heal legacy projects without
-        # forcing the user to run bump explicitly. Idempotent.
+        # HATS-285: bring ./CLAUDE.md to the v3 scaffold layout if a
+        # legacy uppercase AI-HATS block or v2 inline injection is
+        # present. Also a registry entry (step 5), but the runner is
+        # gated by ``migration_step``; the direct call here is the
+        # sole-direct-caller contract documented in migrations.py:38-43
+        # — bootstrap path the registry cannot cover (first session may
+        # predate any bump). Idempotent.
         self._migrate_claude_md_to_v3(provider)
-        # 2. Ensure provider scaffold exists (./CLAUDE.md for Claude). Cheap
-        # and idempotent — no-op for providers without a scaffold template
-        # (Gemini), and no-op when the file already exists.
-        self._ensure_scaffold(provider)
 
-        # 3. Skill-contributed git hooks (HATS-088).
-        self._install_git_hooks(result)
+        # HATS-469: single entry-point. install_time=False → skip registry
+        # (migrations replay only via init/do_bump). _refresh handles
+        # _ensure_scaffold, write_canonical, ensure_runtime_hooks,
+        # _materialize_pretooluse_hooks, _install_git_hooks. Diagnostics
+        # are NOT called from here — runtime auto-trigger stays silent
+        # (HATS-469 R3).
+        self._refresh(install_time=False, result=result)
 
-        # 3a. Provider-specific runtime hooks — HATS-437.
-        # Claude: writes a PreToolUse entry for the shared-state guard
-        # into ``.claude/settings.json``. Gemini: no-op (no equivalent
-        # channel). Idempotent.
-        provider.ensure_runtime_hooks(self.project_dir)
-        # HATS-467: materialize the hook scripts on disk so the entry
-        # above actually resolves to a runnable file.
-        self._materialize_pretooluse_hooks()
-
-        # 4. Canonical user-rules aggregator (HATS-294).
-        self.write_canonical()
-
-        # 5. Provider inline system prompt — Gemini-only path.
+        # Provider inline system prompt — Gemini-only path.
         # Claude declares a scaffold template (HATS-284); ./CLAUDE.md is
         # owned by the scaffold + canonical aggregator. Gemini has no
         # scaffold mechanism, so bare-gemini in project_dir relies on
@@ -746,7 +763,7 @@ class Assembler:
             prompt_content = expand_path_placeholders(prompt_content, self.project_dir)
             provider.update_system_prompt(self.project_dir, prompt_content)
 
-        # 6. Persist active_role + provider.
+        # Persist active_role + provider.
         self.project_config.active_role = role_name
         self.project_config.provider = provider.name
         self.project_config.save(self.config_path)
@@ -786,103 +803,89 @@ class Assembler:
 
         return status
 
-    def bump(
+    def _refresh(
         self,
         *,
-        force_v07_migration: bool = False,
-        check_v07_branches: bool = False,
-    ) -> CompositionResult | None:
-        """Refresh on-disk state: migrations, scaffold, canonical, git hooks.
+        install_time: bool,
+        result: CompositionResult | None,
+    ) -> None:
+        """Single idempotent entry-point for on-disk state pull-up.
 
-        HATS-407: no longer triggers a full role-compose-and-materialize
-        cycle (per-session compose handles framework content in memory —
-        HATS-294). bump is now strictly a migration + refresh command:
+        Replaces the historical init/set_role/bump triple-dispatch
+        (HATS-469). One method, called from every public entry-point that
+        needs to bring the project tree to a consistent shape.
 
-        1. ``_run_v07_migration`` — v0.6 → v0.7 layout heal (self-gated,
-           kept inline because it consumes CLI kwargs).
-        2. ``migrations.run_pending`` (HATS-471) — replay one-shot
-           migrations from the registry, gated by ``migration_step``.
-           Covers yaml normalize, gitignore strip, obsolete files
-           cleanup, external-ref heal, claude.md v3, and layout v4.
-        3. ``_warn_orphan_user_level_managed_skills`` —
-           diagnostic (HATS-465), fires every bump while the orphan
-           exists.
-        4. ``_note_empty_legacy_agent_dir`` — diagnostic (HATS-317).
-        5. ``_ensure_scaffold`` — re-create the provider scaffold if the
-           user-owned prompt file is missing.
-        6. ``write_canonical`` — regenerate the user-rules aggregator and
-           sweep stale framework files via the manifest.
-        7. ``_install_git_hooks`` — re-install skill-contributed hooks for
-           the active role (HATS-088).
+        Parameters:
+            install_time: ``True`` for ``init`` / ``do_bump`` paths — runs
+                the migration registry (``migrations.run_pending``).
+                ``False`` for ``set_role`` (runtime first-session
+                bootstrap) — skip migrations, they have already replayed
+                via init or a prior bump.
+            result: composition for the active role, or ``None`` when
+                no role is active (legacy bare-bump path / init without
+                ``-r``). When provided AND ``.git/`` exists, role-specific
+                git hooks (HATS-088) are installed.
 
-        Returns the CompositionResult for the active role (or ``None`` when
-        the project has no active_role yet — legacy bare-bump path).
+        Concurrency contract: extends migrations.py:29-33 — under N
+        parallel ``init`` / ``set_role`` / ``bump`` processes against the
+        same project, every method invoked here MUST be idempotent (this
+        was already the case for the bump-only world; we explicitly
+        extend the surface). The registry guarantees at-most-once across
+        **sequential** invocations; concurrent ones may replay one step
+        per process (by design, documented in migrations.py).
 
-        HATS-337: the HATS-330 mixed-install gate was removed — venv-first
-        launcher architecture makes mixed installs impossible by
-        construction.
-
-        HATS-415: the HATS-408 ``_refuse_on_v06_layout`` naive gate was
-        replaced by an inline ``plan_migration`` classifier — clean v0.6
-        layouts self-heal during ``self update`` / ``self bump`` without
-        a separate CLI command. User edits still refuse loudly via
-        ``AssemblyError`` with per-file guidance; ``--migrate-force``
-        (threaded as ``force_v07_migration=True``) overwrites with one
-        stderr WARN per file. No auto-commit — sweep deletions land in
-        the worktree, user commits at leisure (same pattern as the
-        ``_normalize_yaml`` yaml rewrite).
+        Diagnostics (``_warn_orphan_*`` / ``_note_empty_*``) are NOT part
+        of refresh — they live in :meth:`_run_diagnostics` and fire only
+        on user-initiated paths (``do_bump``, init re-init). Runtime
+        set_role stays silent (HATS-469 R3: per-session orphan-warning
+        spam = bad UX).
         """
-        self._run_v07_migration(
-            force=force_v07_migration,
-            check_branches=check_v07_branches,
-        )
+        # 1. Migration registry — install_time only (HATS-471).
+        if install_time:
+            from .migrations import run_pending
+            run_pending(self)
 
-        # HATS-471: replay one-shot migrations from the registry. Each entry
-        # advances ``migration_step`` and persists on success, so subsequent
-        # bumps skip the registry entirely on a fully-migrated project.
-        # Ordering inside the registry matches the historical inline order
-        # (yaml normalize → gitignore strip → obsolete cleanup → external
-        # ref heal → claude.md v3 → layout v4). Diagnostic-only inline
-        # calls (``_warn_orphan_*``, ``_note_empty_*``) stay outside the
-        # registry — they are not one-shot.
-        from .migrations import run_pending
-
-        run_pending(self)
-
-        # HATS-465 diagnostic — NOT a migration. Must re-fire every bump
-        # until the user resolves the orphan, so it stays inline.
-        self._warn_orphan_user_level_managed_skills()
-
+        # 2. Heal — always.
         provider = get_provider(self.project_config.provider)
-
-        # HATS-317 diagnostic — NOT a migration. Conditional on directory
-        # state; emits NOTE every time .agent/ holds only the managed
-        # subtree. Inline.
-        self._note_empty_legacy_agent_dir()
-
-        # Scaffold + canonical aggregator. Run unconditionally — these are
-        # disk artefacts every project needs, regardless of active_role.
         self._ensure_scaffold(provider)
         self.write_canonical()
 
-        # Git hooks live in `.git/hooks/` and reflect the skills composed
-        # for the active role. Without an active_role we have nothing to
-        # install — return early.
-        role = self.project_config.active_role or self.project_config.default_role
-        if not role:
-            return None
-        result = compose_for_role(self, role)
-        self._install_git_hooks(result)
-        # HATS-437: re-install provider-specific runtime hooks (Claude
-        # PreToolUse). Idempotent; recreates the entry if the user deleted
-        # .claude/settings.json manually between bumps.
+        # 3. Provider-level hooks — always (HATS-469 D1).
+        # ``ensure_runtime_hooks`` writes ``.claude/settings.json``
+        # PreToolUse entry; ``_materialize_pretooluse_hooks`` copies
+        # hook bodies from package data. Both are idempotent and
+        # REQUIRED on set_role first-session bootstrap (without them,
+        # Claude fires PreToolUse against a non-existent script on
+        # the very first Bash call).
         provider.ensure_runtime_hooks(self.project_dir)
-        # HATS-467: re-materialize hook scripts. Picks up updated bodies
-        # after `pip install -U ai-hats` (self update → bump path) — and
-        # restores files if the user manually removed any from
-        # <ai_hats_dir>/library/hooks/.
         self._materialize_pretooluse_hooks()
-        return result
+
+        # 4. Role-specific git hooks — only if role active AND .git/
+        # exists. ``.git/`` guard lives here (was inline in init); other
+        # call sites benefit too — non-git project dirs skip silently.
+        if result is not None and (self.project_dir / ".git").exists():
+            self._install_git_hooks(result)
+
+    def _run_diagnostics(self) -> None:
+        """Surface state-condition diagnostics on user-initiated paths only.
+
+        Conditional-print methods — emit only when the underlying state
+        is true (orphan exists / ``.agent/`` is bare). Called from:
+
+        - ``do_bump`` (cli) after ``_refresh`` — user explicitly asked
+          for maintenance; expects a report.
+        - ``cli/assembly.py self_init`` after ``_refresh`` IFF re-init
+          existing project — user explicitly re-ran, wants the state.
+        - ``cli/maintenance.py`` self-update path — same as do_bump.
+
+        NOT called from:
+
+        - :meth:`set_role` — runtime auto-trigger; must be silent
+          (HATS-469 R3: orphan-warning every session = bad UX).
+        - Greenfield ``init`` — nothing to diagnose on a fresh project.
+        """
+        self._warn_orphan_user_level_managed_skills()
+        self._note_empty_legacy_agent_dir()
 
     def _note_empty_legacy_agent_dir(self) -> None:
         """HATS-317: print a NOTE if `.agent/` only holds the managed `ai-hats/`.
