@@ -447,14 +447,16 @@ def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
     # subprocess so the new code (migrations, healer, etc.) is loaded —
     # in-process `asm.bump()` would silently keep using the OLD code from
     # this update's interpreter, leaving the project half-fixed until the
-    # user manually runs `ai-hats self bump` a second time.
+    # user manually re-runs the bump-internal entry. HATS-470: the
+    # subprocess entry-point moved from `ai-hats self bump` (CLI command
+    # removed) to `python -m ai_hats._bump_internal` (hidden module).
     if active_role:
         console.print(f"\n[bold]Re-assembling:[/] {active_role}")
         version_changed = new_version != old_version
         if version_changed:
             # Fresh interpreter → new code (healer, migrations, etc.).
             # Stdout/stderr passthrough so [heal] lines / spinners stream live.
-            bump_cmd = [sys.executable, "-m", "ai_hats", "self", "bump"]
+            bump_cmd = [sys.executable, "-m", "ai_hats._bump_internal"]
             if migrate_force:
                 bump_cmd.append("--migrate-force")
             if check_branches:

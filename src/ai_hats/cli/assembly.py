@@ -812,31 +812,21 @@ def show_prompt(role: str | None, provider: str | None, stats: bool):
         sys.exit(2)
 
 
-@click.command()
-@click.option(
-    "--migrate-force",
-    is_flag=True,
-    help="Bypass v0.6 → v0.7 user-edit refusal (logs WARN per overwritten file).",
-)
-@click.option(
-    "--check-branches",
-    is_flag=True,
-    help="Warn if local branches modify any v0.7-migration path slated for deletion.",
-)
-def bump(migrate_force: bool, check_branches: bool):
-    """Refresh migrations, scaffold, canonical aggregator, and git hooks.
+def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
+    """Run the bump pipeline in-process. Returns process exit code.
 
-    HATS-407: no longer re-applies the role — per-session compose
-    (HATS-294) handles framework content in memory. ``bump`` is now a
-    migration / refresh command for on-disk artefacts.
+    HATS-407 + HATS-415 + HATS-470: ``bump`` is no longer exposed as
+    ``ai-hats self bump`` — it's an internal operation reachable only
+    via :mod:`ai_hats._bump_internal` (fresh-subprocess path used by
+    ``self update``, HATS-400) or via ``self init`` after the in-process
+    assembler hook.
 
-    HATS-415: the v0.6 → v0.7 migration runs inline. Safe-to-delete v0.6
-    files (bytes match composition baseline) are swept transparently;
-    user-edited files refuse with per-file guidance pointing at the v0.7
-    home. Use ``--migrate-force`` to overwrite user edits (one stderr
-    WARN per file). ``--check-branches`` surfaces a warning when local
-    branches modify the paths slated for deletion. No auto-commit —
-    review with ``git status`` and commit at leisure.
+    Refreshes migrations, scaffold, canonical aggregator, and git hooks.
+    Safe-to-delete v0.6 files are swept transparently; user-edited
+    files refuse with per-file guidance. ``migrate_force`` bypasses
+    the refusal (one stderr WARN per file). ``check_branches`` warns
+    when local branches modify paths slated for deletion. No
+    auto-commit — review with ``git status`` and commit at leisure.
     """
     from ..assembler import AssemblyError
 
@@ -852,7 +842,7 @@ def bump(migrate_force: bool, check_branches: bool):
         # ``render_user_edits_refusal`` displays cleanly. ``console.print``
         # auto-renders newline-separated Rich markup.
         console.print(f"[red]Bump refused[/]:\n{e}")
-        sys.exit(1)
+        return 1
     if result is None:
         console.print("[green]Bumped[/]: migrations + scaffold + canonical refreshed")
     else:
@@ -861,6 +851,13 @@ def bump(migrate_force: bool, check_branches: bool):
         "  [dim]💡 Direct `claude` reads only user-rules. "
         "Run `ai-hats execute [-r ROLE]` for role-loaded sessions.[/]"
     )
+    # HATS-470: surface the trash-bin banner so the user knows where
+    # snapshots from this bump live (if any).
+    from ..safe_delete import session_summary as _trash_summary
+    banner = _trash_summary()
+    if banner:
+        console.print(f"  [dim]{banner}[/]")
+    return 0
 
 
 @click.command()
