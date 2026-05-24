@@ -41,7 +41,8 @@ library_paths:                 # extra component sources (last wins)
 
 | Field               | Meaning                                                                                                       |
 | ------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `schema_version`    | Config schema version. Set by init; do not edit.                                                              |
+| `schema_version`    | Config schema version (yaml format). Set by init; do not edit.                                                |
+| `migration_step`    | Counter for one-shot migrations replayed at bump time (HATS-471). Set by init / advanced automatically by `ai-hats self update`; do not edit. |
 | `provider`          | Target LLM CLI — see [1].                                                                                     |
 | `active_role`       | Role injected on the next `ai-hats` launch.                                                                   |
 | `default_role`      | Role used when `--role` is omitted (usually identical to `active_role`).                                      |

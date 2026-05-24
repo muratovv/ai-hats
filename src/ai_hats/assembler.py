@@ -489,6 +489,11 @@ class Assembler:
             self.project_config.provider = provider or "gemini"
             if role:
                 self.project_config.default_role = role
+            # HATS-471: greenfield projects start at the latest migration
+            # step. No registry entry needs to run — the directory is fresh.
+            from .migrations import latest_step
+
+            self.project_config.migration_step = latest_step()
             save_config = True
         elif provider:
             self.project_config.provider = provider
@@ -793,21 +798,21 @@ class Assembler:
         cycle (per-session compose handles framework content in memory —
         HATS-294). bump is now strictly a migration + refresh command:
 
-        1. ``_cleanup_obsolete_files`` — drop files retired by prior releases.
-        2. ``heal_external_refs`` (HATS-397) — fix legacy-path refs in user
-           docs BEFORE the scaffold migrator runs so its edits do not look
-           like user-dirty content to the inventory fallback.
-        3. ``_migrate_claude_md_to_v3`` — bring ``./CLAUDE.md`` to the v3
-           scaffold layout.
-        4. ``_migrate_layout_v4_*`` — relocate legacy `.agent/...` paths
-           into ``<ai_hats_dir>/sessions/`` / ``tracker/`` / ``library/``.
-        5. ``_note_empty_legacy_agent_dir`` — surface a NOTE when only
-           the managed ``.agent/ai-hats/`` subtree remains.
-        6. ``_ensure_scaffold`` — re-create the provider scaffold if the
+        1. ``_run_v07_migration`` — v0.6 → v0.7 layout heal (self-gated,
+           kept inline because it consumes CLI kwargs).
+        2. ``migrations.run_pending`` (HATS-471) — replay one-shot
+           migrations from the registry, gated by ``migration_step``.
+           Covers yaml normalize, gitignore strip, obsolete files
+           cleanup, external-ref heal, claude.md v3, and layout v4.
+        3. ``_warn_orphan_user_level_managed_skills`` —
+           diagnostic (HATS-465), fires every bump while the orphan
+           exists.
+        4. ``_note_empty_legacy_agent_dir`` — diagnostic (HATS-317).
+        5. ``_ensure_scaffold`` — re-create the provider scaffold if the
            user-owned prompt file is missing.
-        7. ``write_canonical`` — regenerate the user-rules aggregator and
+        6. ``write_canonical`` — regenerate the user-rules aggregator and
            sweep stale framework files via the manifest.
-        8. ``_install_git_hooks`` — re-install skill-contributed hooks for
+        7. ``_install_git_hooks`` — re-install skill-contributed hooks for
            the active role (HATS-088).
 
         Returns the CompositionResult for the active role (or ``None`` when
@@ -832,45 +837,27 @@ class Assembler:
             check_branches=check_v07_branches,
         )
 
-        # HATS-413: persist any HATS-408 in-memory yaml healing
-        # (deprecated-field strip, default_role := active_role) so the
-        # WARN doesn't re-fire on every subsequent CLI invocation. Read-
-        # only commands (task show, status) intentionally do NOT call
-        # this — the "no rewrite on read" principle holds for them.
-        self._normalize_yaml()
+        # HATS-471: replay one-shot migrations from the registry. Each entry
+        # advances ``migration_step`` and persists on success, so subsequent
+        # bumps skip the registry entirely on a fully-migrated project.
+        # Ordering inside the registry matches the historical inline order
+        # (yaml normalize → gitignore strip → obsolete cleanup → external
+        # ref heal → claude.md v3 → layout v4). Diagnostic-only inline
+        # calls (``_warn_orphan_*``, ``_note_empty_*``) stay outside the
+        # registry — they are not one-shot.
+        from .migrations import run_pending
 
-        # HATS-317 cleanup: strip the pre-HATS-317 dynamic managed block
-        # from `.gitignore`. The generator was retired but no cleanup was
-        # shipped, so projects initialized before HATS-317 carry stale
-        # per-component entries forever — many of them pointing at v0.6
-        # canonical files HATS-294 stopped materializing. Idempotent;
-        # respects `manage_gitignore = False`.
-        self._strip_legacy_managed_block()
+        run_pending(self)
 
-        # HATS-465: detect an orphan `.ai-hats-managed` marker in
-        # `~/.claude/skills/`. ai-hats has never written to that
-        # location — pre-HATS-294 `Provider.skills_export_dir` for
-        # Claude was project-level (`<project>/.claude/skills`), and
-        # HATS-294 removed permanent export entirely in favor of the
-        # per-session plugin-dir under `<ai_hats_dir>/.cache/sessions/`.
-        # The marker is invariably an artefact of a manual
-        # `cp -r .claude/skills/ ~/.claude/skills/`; the dir then drifts
-        # forever because no bump-time refresh path exists. WARN-only:
-        # we do not delete user data ourselves (rule_destructive_actions).
+        # HATS-465 diagnostic — NOT a migration. Must re-fire every bump
+        # until the user resolves the orphan, so it stays inline.
         self._warn_orphan_user_level_managed_skills()
 
-        self._cleanup_obsolete_files(self.project_dir)
         provider = get_provider(self.project_config.provider)
-        # HATS-397: heal stale legacy-path refs FIRST, while user files are
-        # still clean in git. Running after `_migrate_claude_md_to_v3` would
-        # see ai-hats-induced edits as user-dirty and force inventory fallback.
-        from .migration_healer import heal_external_refs
 
-        heal_external_refs(self.project_dir)
-        self._migrate_claude_md_to_v3(provider)
-        self._migrate_layout_v4_sessions()
-        self._migrate_layout_v4_tracker()
-        self._migrate_layout_v4_library()
+        # HATS-317 diagnostic — NOT a migration. Conditional on directory
+        # state; emits NOTE every time .agent/ holds only the managed
+        # subtree. Inline.
         self._note_empty_legacy_agent_dir()
 
         # Scaffold + canonical aggregator. Run unconditionally — these are
@@ -927,6 +914,21 @@ class Assembler:
             "required — ai-hats will not remove it automatically.",
             file=sys.stderr,
         )
+
+    def _migrate_layout_v4(self) -> None:
+        """HATS-471: unified v3→v4 layout migration entry-point.
+
+        Consolidates the three historical splits — sessions / tracker / library —
+        into a single call site so the migration registry has one entry per
+        logical migration (not three for the same v4 layout move).
+
+        The three sub-methods stay as private helpers (they remain
+        independently testable and the split is convenient for narrow log
+        diagnostics), but no other caller invokes them directly.
+        """
+        self._migrate_layout_v4_sessions()
+        self._migrate_layout_v4_tracker()
+        self._migrate_layout_v4_library()
 
     def _migrate_layout_v4_library(self) -> None:
         """One-shot migration of library-mirror artefacts (HATS-314).
@@ -1762,6 +1764,31 @@ class Assembler:
         heal_pending = bool(self.project_config.default_role) and not raw_default
         if has_deprecated or heal_pending:
             self.project_config.save(self.config_path)
+
+    def _persist_migration_step(self, step: int) -> None:
+        """HATS-471: persist ``ProjectConfig.migration_step`` to disk after
+        each successful registry entry.
+
+        Called by ``migrations.run_pending`` between entries so a partial
+        failure (entry N raises) leaves yaml at ``migration_step = N-1``;
+        the next ``bump`` resumes from entry N.
+
+        The in-memory config has already been mutated by the runner — this
+        helper just writes the whole config back through the standard
+        ``ProjectConfig.save`` path so other persisted fields stay
+        consistent. No-op if ``ai-hats.yaml`` does not exist (pre-init).
+        """
+        if not self.config_path.exists():
+            return
+        # Sanity: only persist when the in-memory value already reflects
+        # the requested step. Catches a programmer error if the runner
+        # contract ever drifts.
+        if self.project_config.migration_step != step:  # pragma: no cover
+            raise AssertionError(
+                f"_persist_migration_step({step}) called while in-memory "
+                f"config has migration_step={self.project_config.migration_step}"
+            )
+        self.project_config.save(self.config_path)
 
     @staticmethod
     def _read_canonical_manifest(path: Path) -> set[str]:
