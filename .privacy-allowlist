@@ -2,3 +2,5 @@
 # Tests don't contain real secrets — they use tmp_path / fake values.
 tests/test_*.py
 tests/e2e/test_*.py
+tests/conftest.py
+tests/e2e/conftest.py
