@@ -210,40 +210,118 @@ def _json_safe(payload) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def _run_sdk(
-    options: "ClaudeAgentOptions",
-    initial_message: str,
-    timeout_s: int,
-) -> SdkRunResult:
-    """Async core: spawn ``ClaudeSDKClient``, send the initial message,
-    drain messages until ``ResultMessage``, format, return.
+async def drain_one_turn(
+    client,
+    message: str,
+) -> tuple[SdkRunResult, list]:
+    """Send one user message to an open SDK client; drain until terminal.
 
-    Wrapped in :func:`asyncio.wait_for` by the sync entry point so a wall-
-    clock cap matches the legacy ``subprocess.run(timeout=...)`` semantic.
-    Never re-raises — converts all SDK exceptions into a ``SdkRunResult``
-    with ``error`` populated so the caller can finalize uniformly.
+    Used by both the one-shot path (``_run_sdk``) and the multi-turn API
+    (:class:`SubAgentSession` — HATS-474 Phase 3). The client MUST
+    already be inside its ``async with`` context — this helper neither
+    enters nor exits it, so it can be called repeatedly against the
+    same long-lived client without re-spawning ``claude``.
+
+    Returns ``(SdkRunResult, messages)``: the formatted result envelope
+    plus the raw SDK message list so callers that want structured
+    introspection (tool-call inspection, custom assertions) keep access
+    to it without re-parsing the formatted transcript.
+
+    Never re-raises — converts any per-turn exception (query failure,
+    stream error) to an error :class:`SdkRunResult`. The caller decides
+    whether to break the loop or call ``send`` again.
     """
-    from claude_agent_sdk import (
-        ClaudeSDKClient,
-        ResultMessage,
-    )
+    from claude_agent_sdk import ResultMessage
 
     messages: list = []
     result_msg: "ResultMessage | None" = None
 
     try:
+        await client.query(message)
+        async for msg in client.receive_response():
+            messages.append(msg)
+            if isinstance(msg, ResultMessage):
+                result_msg = msg
+                break
+    except Exception as exc:  # noqa: BLE001 — wide net, convert to error envelope
+        return (
+            SdkRunResult(
+                exit_code=SDK_EXIT_ERROR,
+                stdout=format_transcript(messages),
+                stderr=format_reasoning(messages),
+                claude_session_id=None,
+                total_cost_usd=None,
+                num_turns=None,
+                stop_reason=None,
+                timed_out=False,
+                error=f"{type(exc).__name__}: {exc}",
+            ),
+            messages,
+        )
+
+    transcript = format_transcript(messages)
+    reasoning = format_reasoning(messages)
+
+    if result_msg is None:
+        # Stream ended without a terminal ResultMessage — surface as error.
+        return (
+            SdkRunResult(
+                exit_code=SDK_EXIT_ERROR,
+                stdout=transcript,
+                stderr=reasoning,
+                claude_session_id=None,
+                total_cost_usd=None,
+                num_turns=None,
+                stop_reason=None,
+                timed_out=False,
+                error="SDK stream ended without ResultMessage",
+            ),
+            messages,
+        )
+
+    exit_code = SDK_EXIT_ERROR if result_msg.is_error else SDK_EXIT_SUCCESS
+    return (
+        SdkRunResult(
+            exit_code=exit_code,
+            stdout=transcript,
+            stderr=reasoning,
+            claude_session_id=result_msg.session_id,
+            total_cost_usd=result_msg.total_cost_usd,
+            num_turns=result_msg.num_turns,
+            stop_reason=result_msg.stop_reason,
+            timed_out=False,
+            error=None,
+        ),
+        messages,
+    )
+
+
+async def _run_sdk(
+    options: "ClaudeAgentOptions",
+    initial_message: str,
+    timeout_s: int,
+) -> SdkRunResult:
+    """Async core for the one-shot path: spawn ``ClaudeSDKClient``, send
+    the initial message, drain until ``ResultMessage``, format, return.
+
+    Wrapped in :func:`asyncio.wait_for` by the sync entry point so a wall-
+    clock cap matches the legacy ``subprocess.run(timeout=...)`` semantic.
+    Never re-raises — converts any context-entry / per-turn exception
+    into a :class:`SdkRunResult` with ``error`` populated so the caller
+    can finalize uniformly.
+    """
+    del timeout_s  # threaded in by run_claude_sdk_blocking via asyncio.wait_for
+    from claude_agent_sdk import ClaudeSDKClient
+
+    try:
         async with ClaudeSDKClient(options=options) as client:
-            await client.query(initial_message)
-            async for msg in client.receive_response():
-                messages.append(msg)
-                if isinstance(msg, ResultMessage):
-                    result_msg = msg
-                    break
-    except Exception as exc:  # noqa: BLE001 — wide net, convert to error finalize
+            result, _msgs = await drain_one_turn(client, initial_message)
+            return result
+    except Exception as exc:  # context-entry / shutdown errors (auth, etc.)
         return SdkRunResult(
             exit_code=SDK_EXIT_ERROR,
-            stdout=format_transcript(messages),
-            stderr=format_reasoning(messages),
+            stdout="",
+            stderr="",
             claude_session_id=None,
             total_cost_usd=None,
             num_turns=None,
@@ -251,36 +329,6 @@ async def _run_sdk(
             timed_out=False,
             error=f"{type(exc).__name__}: {exc}",
         )
-
-    transcript = format_transcript(messages)
-    reasoning = format_reasoning(messages)
-
-    if result_msg is None:
-        # Stream ended without a terminal ``ResultMessage`` — surface as error.
-        return SdkRunResult(
-            exit_code=SDK_EXIT_ERROR,
-            stdout=transcript,
-            stderr=reasoning,
-            claude_session_id=None,
-            total_cost_usd=None,
-            num_turns=None,
-            stop_reason=None,
-            timed_out=False,
-            error="SDK stream ended without ResultMessage",
-        )
-
-    exit_code = SDK_EXIT_ERROR if result_msg.is_error else SDK_EXIT_SUCCESS
-    return SdkRunResult(
-        exit_code=exit_code,
-        stdout=transcript,
-        stderr=reasoning,
-        claude_session_id=result_msg.session_id,
-        total_cost_usd=result_msg.total_cost_usd,
-        num_turns=result_msg.num_turns,
-        stop_reason=result_msg.stop_reason,
-        timed_out=False,
-        error=None,
-    )
 
 
 def run_claude_sdk_blocking(
