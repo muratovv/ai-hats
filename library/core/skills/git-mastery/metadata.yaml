@@ -13,6 +13,10 @@ git_hooks:
     # HATS-444: enforce docs/INDEX.md freshness — block commits that
     # add/delete/rename docs/*.md without staging INDEX.md alongside.
     - git_hooks/pre-commit-docs-index.sh
+    # HATS-470: forbid raw path.unlink / shutil.rmtree / .rmdir under
+    # src/ai_hats/ outside safe_delete.py without an inline
+    # `# safe-delete: ok <reason>` marker. No-op on non-ai-hats projects.
+    - git_hooks/pre-commit-no-raw-destructive.sh
   # HATS-437: provider-agnostic safety net for `git push --force`. Claude
   # gets a stronger PreToolUse-level block via ClaudeProvider auto-wiring;
   # this pre-push hook protects Gemini sessions and direct-terminal pushes.

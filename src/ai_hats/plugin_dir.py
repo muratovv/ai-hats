@@ -34,7 +34,9 @@ def materialize_plugin_dir(
     Returns ``plugin_dir`` for caller convenience.
     """
     if plugin_dir.exists():
-        shutil.rmtree(plugin_dir)
+        # Per-session plugin dir: rebuilt every session_start from compose.
+        # Whitelist.
+        shutil.rmtree(plugin_dir)  # safe-delete: ok session-plugin-rebuild
     plugin_dir.mkdir(parents=True)
 
     manifest_dir = plugin_dir / ".claude-plugin"

@@ -75,8 +75,12 @@ def test_status_after_set(cli_project):
     assert ALL_ROLES[0] in r.output
 
 
-def test_bump_after_set(cli_project):
-    """ai-hats self bumpre-assembles without errors."""
+def test_bump_after_set(cli_project, monkeypatch):
+    """HATS-470: `ai-hats self bump` removed from CLI. The bump operation
+    is now reached via `python -m ai_hats._bump_internal` (hidden) or
+    inline from `ai-hats self init` / `self update`. Exercise the
+    internal entry-point directly here.
+    """
     project, runner = cli_project
 
     runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
@@ -84,12 +88,20 @@ def test_bump_after_set(cli_project):
     prompt_before = (project / "CLAUDE.md").read_text()
     aggregator_before = (project / ".agent" / "ai-hats" / "imports.md").read_text()
 
-    r = runner.invoke(main, ["self", "bump"])
-    assert r.exit_code == 0, r.output
-    assert "Bumped" in r.output
+    # `ai-hats self bump` must NOT be a registered click command anymore.
+    bump_cli_attempt = runner.invoke(main, ["self", "bump"])
+    assert bump_cli_attempt.exit_code != 0
+    assert "No such command" in bump_cli_attempt.output
 
-    # ./CLAUDE.md (scaffold) is byte-stable; .claude/CLAUDE.md (aggregator)
-    # carries content and is also stable for the same role.
+    # The hidden module entry-point still works.
+    from ai_hats import _bump_internal
+
+    monkeypatch.chdir(project)
+    rc = _bump_internal.main([])
+    assert rc == 0
+
+    # ./CLAUDE.md (scaffold) is byte-stable; canonical aggregator is
+    # also stable for the same role.
     prompt_after = (project / "CLAUDE.md").read_text()
     aggregator_after = (project / ".agent" / "ai-hats" / "imports.md").read_text()
     assert prompt_before == prompt_after

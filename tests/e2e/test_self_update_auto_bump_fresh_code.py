@@ -176,7 +176,7 @@ def test_e2e_python_dash_m_ai_hats_self_bump_invokable(tmp_path: Path) -> None:
     assert venv_python.is_file(), "project venv python missing"
 
     res = _run(
-        [str(venv_python), "-m", "ai_hats", "self", "bump"],
+        [str(venv_python), "-m", "ai_hats._bump_internal"],
         cwd=project, env=env, timeout=60,
     )
     # Successful bump produces a 'Bumped:' line (per Assembler.bump output flow).

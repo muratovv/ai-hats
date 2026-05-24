@@ -190,7 +190,7 @@ class PipelineHarness:
         )
         # Keep the (N-1) most recent; this run creates the Nth.
         for old in siblings[max(0, keep_n - 1):]:
-            shutil.rmtree(old, ignore_errors=True)
+            shutil.rmtree(old, ignore_errors=True)  # safe-delete: ok pipeline-runs-rotation
 
     def materialize_prompt(self, text: str | None) -> Path | None:
         """Write ``text`` to a file in the namespace; return its path.

@@ -131,7 +131,7 @@ def test_e2e_healer_rewrites_settings_and_clean_markdown(installed_launcher, tmp
     _git_init_commit(project, env)
 
     res = _run(
-        [str(launcher), "self", "bump"],
+        [f"{env["AI_HATS_VENV"]}/bin/python", "-m", "ai_hats._bump_internal"],
         cwd=project, env=env, timeout=120,
     )
 
@@ -178,7 +178,7 @@ def test_e2e_healer_dirty_markdown_falls_back_to_inventory(installed_launcher, t
     )
 
     res = _run(
-        [str(launcher), "self", "bump"],
+        [f"{env["AI_HATS_VENV"]}/bin/python", "-m", "ai_hats._bump_internal"],
         cwd=project, env=env, timeout=120,
     )
 
@@ -210,7 +210,7 @@ def test_e2e_healer_idempotent_rerun(installed_launcher, tmp_path):
     _seed_legacy_project(project)
     _git_init_commit(project, env)
 
-    _run([str(launcher), "self", "bump"], cwd=project, env=env, timeout=120)
+    _run([f"{env["AI_HATS_VENV"]}/bin/python", "-m", "ai_hats._bump_internal"], cwd=project, env=env, timeout=120)
     # Commit the heal so the tree is clean again
     _git(project, "add", "-A", env=env)
     _git(project, "commit", "-q", "-m", "post-heal", env=env)
@@ -219,7 +219,7 @@ def test_e2e_healer_idempotent_rerun(installed_launcher, tmp_path):
     before = {p.name for p in audits.glob("*")} if audits.exists() else set()
 
     res = _run(
-        [str(launcher), "self", "bump"],
+        [f"{env["AI_HATS_VENV"]}/bin/python", "-m", "ai_hats._bump_internal"],
         cwd=project, env=env, timeout=120,
     )
 

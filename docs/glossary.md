@@ -8,7 +8,7 @@ This file is the naming source-of-truth. When another doc needs to define a core
 
 ## Provider
 
-A target LLM CLI that ai-hats wraps: `claude` or `gemini`. The choice lives in `ai-hats.yaml` (`provider:`). One role composition produces two injection targets — `CLAUDE.md` or `GEMINI.md` — built by `ai-hats self bump`. Switching keeps composition intact: `ai-hats config set -p <provider>`.
+A target LLM CLI that ai-hats wraps: `claude` or `gemini`. The choice lives in `ai-hats.yaml` (`provider:`). One role composition produces two injection targets — `CLAUDE.md` or `GEMINI.md` — built during `ai-hats self init` / `self update` (the `self bump` CLI verb was removed in HATS-470; bump runs implicitly inside those flows via `ai_hats._bump_internal`). Switching keeps composition intact: `ai-hats config set -p <provider>`.
 
 Detail — see [1].
 
@@ -30,7 +30,7 @@ Key system roles you will meet in cross-doc prose:
 
 ## Trait
 
-An ai-hats-native composition primitive: a reusable bundle (rules + skills + injection text) included by one or more roles. Traits are the unit of cross-role reuse — a fix in one trait reaches every role that pulls it in on the next `ai-hats self bump`. Flat model: a trait cannot include another trait. Format: `library/{core,usage}/traits/<name>/config.yaml`. Catalog — `ai-hats list traits`. Composition rules — see [3]; library layout — see [9].
+An ai-hats-native composition primitive: a reusable bundle (rules + skills + injection text) included by one or more roles. Traits are the unit of cross-role reuse — a fix in one trait reaches every role that pulls it in on the next `ai-hats self init`. Flat model: a trait cannot include another trait. Format: `library/{core,usage}/traits/<name>/config.yaml`. Catalog — `ai-hats list traits`. Composition rules — see [3]; library layout — see [9].
 
 Key system traits every role inherits transitively:
 
@@ -89,7 +89,7 @@ Practical recipes — see [5]. Pipeline architecture — see [8].
 
 What ai-hats persists on disk during normal use.
 
-- **`ai-hats.yaml`** — project config. Fields: `schema_version`, `provider`, `active_role`, `default_role`, `task_prefix`, `customizations`, `feedback`, `library_paths`, `venv_path`. Source of truth for composition. Apply changes with `ai-hats self bump`; verify with `ai-hats config status`. Full walkthrough — see [6].
+- **`ai-hats.yaml`** — project config. Fields: `schema_version`, `provider`, `active_role`, `default_role`, `task_prefix`, `customizations`, `feedback`, `library_paths`, `venv_path`. Source of truth for composition. Apply changes by re-running `ai-hats self init` (idempotent) or `ai-hats self update` (which folds bump in); verify with `ai-hats config status`. Full walkthrough — see [6].
 - **SessionReview** — `<ai_hats_dir>/sessions/retros/sessions/<id>.md`. Output of `session-reviewer`: `summary`, `observations`, `hypothesis_verdicts`, `proposal_actions`. Schema `hats-session-review/v1`. Consumed by the next reflect cycle. Detail — see [5].
 - **JudgeReport** — `<ai_hats_dir>/sessions/retros/judge/<UTC-ts>-report.md`. Output of `ai-hats reflect all` — HYP closures plus PROP decisions for one triage session. Detail — see [5].
 - **RoleCoherenceReport** — `<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ts>-<target>.md`. Output of `ai-hats reflect role` — findings on internal contradictions in a role composition. Detail — see [8].
@@ -111,6 +111,16 @@ Two visually similar blocks fire at the end of a [Session](#session). Use these 
 
 - **Session summary** — the `✨ Session <id> complete!` block with duration, turn count, audit / trace size, retro decision, tokens, and session directory. Always printed; produced by `runtime._print_session_end` inside the `launch_provider` pipeline step.
 - **Update banner** — a separate three-line block surfaced only when the installed `ai-hats` SHA lags upstream `master`. Format: yellow lead line with `current → latest` short SHAs, cyan `ai-hats self update` command, dim `silence: export AI_HATS_NO_UPDATE_CHECK=1` hint. Produced by the `render_update_banner` pipeline step (`execute.yaml` / `human.yaml`); reads `<ai_hats_dir>/.cache/update-check.json` written by the `check_update_async` step's background probe (24h TTL, stale-while-revalidate).
+
+## Safe-delete trash bin
+
+Single point of truth for destructive filesystem ops in ai-hats core (HATS-470). Replaces the historical pattern of raw `path.unlink()` / `shutil.rmtree()` / in-place `path.write_text(new)` calls.
+
+- **`ai_hats.safe_delete`** — module exposing `discard(path, *, reason, project_dir)`, `replace(path, new_content, *, reason, project_dir)`, `session_summary()`, `session_root()`, `reset_session()`, plus `TrashFullError`. `discard` moves a file/dir/symlink to the current trash session; `replace` snapshots the old content to trash, then atomic-writes the new bytes. Symlinks are unlinked (link only — target preserved, original target written to a sidecar `.symlink` file).
+- **Trash session directory** — `${TMPDIR:-/tmp}/ai-hats/trash-<utc-ts>-<pid>-XXXXXX/`. One per process, lazily created on the first destructive op; `tempfile.mkdtemp` guarantees uniqueness across concurrent ai-hats invocations. Contents mirror the project-relative path of each victim, plus a `MANIFEST.md` recording every op (timestamp, kind, reason, original → trash path). External-to-project paths land under `_external/<abs-tail>/`. Recovery: `cp -r <session>/<rel> <project>/<rel>`. **Not auto-cleaned** — relies on OS `/tmp` retention.
+- **`AI_HATS_TRASH_DIR`** — env var. Overrides the trash base directory (the `trash-<ts>-<pid>-XXXXXX/` subdir is still created underneath). Special sentinel `AI_HATS_TRASH_DIR=-` enables **hard-delete mode**: no snapshots, one WARN to stderr per op, no session directory. Intended for CI / ephemeral environments where snapshot value is zero.
+- **`TrashFullError`** — `OSError` subclass raised when the snapshot can't land (ENOSPC, read-only filesystem, missing permission). Callers (bump / init) treat it as fatal — partial migrations without a recoverable snapshot violate the trash-bin contract.
+- **Inline whitelist marker** — `# safe-delete: ok <reason>` on the same line as a raw `unlink` / `rmtree` / `rmdir`. Use only for genuinely safe cases (empty-dir cleanup, internal `.tmp` from atomic-write, session-cache rebuild, framework-managed manifest). Enforced by the `pre-commit-no-raw-destructive.sh` hook in the `git-mastery` skill — refuses commits that introduce raw destructive ops without either being in `src/ai_hats/safe_delete.py` or carrying the marker. Override: `AI_HATS_NO_RAW_DESTRUCTIVE_SKIP=1 git commit ...`.
 
 ---
 
