@@ -10,6 +10,16 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+- `self bump` now warns when an orphan `.ai-hats-managed` marker is
+  detected under `~/.claude/skills/` (typically left by a manual
+  `cp -r .claude/skills/ ~/.claude/skills/` performed pre-v0.7). ai-hats
+  has never written to that location — user-level Claude skills are not
+  managed and the dir drifts forever without a refresh path. The WARN
+  prints a safe-remove hint (`rm -rf ~/.claude/skills/`) and re-fires on
+  every bump until the user clears it; ai-hats does not delete the dir
+  itself (HATS-465).
+
 ## [0.7.0] - 2026-05-23
 
 Composition-and-customization release. **MAJOR** bump driven by three shifts:
