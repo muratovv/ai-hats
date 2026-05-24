@@ -184,14 +184,16 @@ main.add_command(config_mod.config)
 # path.
 @click.group("self")
 def self_group():
-    """Manage the ai-hats installation itself (init, bump, clean, update)."""
+    """Manage the ai-hats installation itself (init, clean, update)."""
 
 
 self_group.add_command(assembly.init)
-self_group.add_command(assembly.bump)
 self_group.add_command(assembly.clean)
 self_group.add_command(maintenance.update)
 # HATS-415: ``self migrate-v07`` removed — migration is inline in ``bump``.
+# HATS-470: ``self bump`` removed from CLI surface; the operation now runs
+# via :mod:`ai_hats._bump_internal` (subprocess from ``self update``,
+# preserves HATS-400 fresh-interpreter semantics) and inline from ``init``.
 main.add_command(self_group)
 
 # List

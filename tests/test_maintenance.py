@@ -120,7 +120,9 @@ def test_update_runs_bump_in_subprocess_when_version_changed(tmp_path: Path) -> 
     """When ``new_version != old_version``, bump runs in fresh interpreter.
 
     Contract: ``subprocess.run`` is called with
-    ``[sys.executable, "-m", "ai_hats", "self", "bump"]`` and cwd = project_dir.
+    ``[sys.executable, "-m", "ai_hats._bump_internal"]`` and cwd = project_dir.
+    HATS-470: entry-point moved from ``ai-hats self bump`` (CLI command
+    removed) to the hidden ``_bump_internal`` module.
     """
     project = _setup_update_test_env(tmp_path)
     captured_calls: list[tuple] = []
@@ -157,7 +159,7 @@ def test_update_runs_bump_in_subprocess_when_version_changed(tmp_path: Path) -> 
     # Find the bump subprocess invocation among captured calls
     bump_calls = [
         c for c in captured_calls
-        if len(c[0]) >= 4 and c[0][1:5] == ("-m", "ai_hats", "self", "bump")
+        if len(c[0]) >= 3 and c[0][1:3] == ("-m", "ai_hats._bump_internal")
     ]
     assert bump_calls, (
         f"expected subprocess bump call, got: "
@@ -206,7 +208,7 @@ def test_update_runs_bump_in_process_when_version_unchanged(tmp_path: Path) -> N
     # subprocess called for pip install + verify only — never for bump
     bump_calls = [
         c for c in mock_run.call_args_list
-        if len(c.args[0]) >= 4 and tuple(c.args[0][1:5]) == ("-m", "ai_hats", "self", "bump")
+        if len(c.args[0]) >= 3 and tuple(c.args[0][1:3]) == ("-m", "ai_hats._bump_internal")
     ]
     assert not bump_calls, f"unexpected bump subprocess: {bump_calls}"
     # in-process bump fired exactly once
