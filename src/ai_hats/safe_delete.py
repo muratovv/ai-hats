@@ -210,12 +210,19 @@ def _resolve_dest(
     For paths inside ``project_dir`` → ``<session>/<relpath>``.
     For external paths (or ``project_dir is None``) →
     ``<session>/_external/<abs-tail-without-leading-slash>``.
+
+    HATS-470 review A1: if the natural dest already exists (file, dir,
+    or sibling ``.symlink`` sidecar from a prior symlink-discard), append
+    a monotonic ``.1``, ``.2``, ... counter to the basename so a second
+    op on the same victim in one session does NOT clobber the first
+    snapshot. The actual returned path is collision-free at call time.
     """
     abs_path = path.absolute()
     if project_dir is not None:
         try:
             rel = abs_path.relative_to(project_dir.absolute())
-            return session.root / rel
+            natural = session.root / rel
+            return _disambiguate_dest(natural)
         except ValueError:
             pass
     # External: strip leading anchor (/) and nest under _external/.
@@ -223,7 +230,31 @@ def _resolve_dest(
         tail = Path(*abs_path.parts[1:])
     else:
         tail = abs_path
-    return session.root / "_external" / tail
+    return _disambiguate_dest(session.root / "_external" / tail)
+
+
+def _disambiguate_dest(natural: Path) -> Path:
+    """Return ``natural`` if free, else append ``.1``, ``.2``, ... .
+
+    Considers both the path itself AND the sibling ``<name>.symlink``
+    sidecar so that two symlink-discards on the same path don't lose
+    the first sidecar.
+
+    Race window between disambiguation and write is acceptable: the
+    trash session is per-process and ai-hats has no concurrent
+    destructive callers within one process.
+    """
+    if not natural.exists() and not natural.is_symlink() \
+            and not (natural.parent / f"{natural.name}.symlink").exists():
+        return natural
+    counter = 1
+    while True:
+        candidate = natural.with_name(f"{natural.name}.{counter}")
+        sidecar = candidate.parent / f"{candidate.name}.symlink"
+        if not candidate.exists() and not candidate.is_symlink() \
+                and not sidecar.exists():
+            return candidate
+        counter += 1
 
 
 # ---------------------- IO primitives ----------------------

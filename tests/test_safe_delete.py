@@ -473,6 +473,77 @@ def test_discard_then_replace_share_one_session(project, trash_base):
     assert "replace" in manifest
 
 
+# ---------------------- regression: HATS-470 review A1 ----------------------
+#
+# Same-path collision must preserve ALL prior snapshots in the session.
+# Pre-fix: a second op on the same victim silently overwrote the first
+# snapshot — the trash bin lost data.
+
+
+def test_replace_twice_on_same_path_preserves_both_snapshots(project, trash_base):
+    """`replace(p, v2)` then `replace(p, v3)` must keep v1 and v2 recoverable."""
+    f = project / "config.yaml"
+    f.write_bytes(b"v1")
+    replace(f, b"v2", project_dir=project)
+    replace(f, b"v3", project_dir=project)
+
+    assert f.read_bytes() == b"v3"
+    # Both v1 and v2 live somewhere under the session root with matching
+    # basename / .N suffix.
+    snaps = sorted(
+        p for p in session_root().rglob("config.yaml*")
+        if p.is_file() and p.name != "MANIFEST.md"
+    )
+    contents = {p.read_bytes() for p in snaps}
+    assert b"v1" in contents, f"v1 lost: {[(p.name, p.read_bytes()) for p in snaps]}"
+    assert b"v2" in contents, f"v2 lost: {[(p.name, p.read_bytes()) for p in snaps]}"
+
+
+def test_discard_then_recreate_then_discard_preserves_first_snapshot(
+    project, trash_base
+):
+    """Discard p, recreate p with new content, discard again — both snapshots survive."""
+    f = project / "victim.txt"
+    f.write_bytes(b"original")
+    discard(f, project_dir=project)
+    assert not f.exists()
+
+    f.write_bytes(b"recreated")
+    discard(f, project_dir=project)
+
+    snaps = sorted(
+        p for p in session_root().rglob("victim.txt*")
+        if p.is_file() and p.name != "MANIFEST.md"
+    )
+    contents = {p.read_bytes() for p in snaps}
+    assert b"original" in contents
+    assert b"recreated" in contents
+
+
+def test_discard_symlink_then_discard_same_path_preserves_sidecar(
+    project, trash_base, tmp_path
+):
+    """Two symlink-discards on the same path keep both sidecars."""
+    target1 = tmp_path / "target1.txt"
+    target1.write_text("one")
+    target2 = tmp_path / "target2.txt"
+    target2.write_text("two")
+
+    link = project / "alias"
+    link.symlink_to(target1)
+    discard(link, project_dir=project)
+
+    link.symlink_to(target2)
+    discard(link, project_dir=project)
+
+    sidecars = sorted(session_root().rglob("alias*.symlink"))
+    assert len(sidecars) == 2, (
+        f"expected 2 sidecars, got {[s.name for s in sidecars]}"
+    )
+    sidecar_targets = {s.read_text() for s in sidecars}
+    assert sidecar_targets == {str(target1), str(target2)}
+
+
 def test_replace_does_not_create_session_on_pure_no_op(project, trash_base):
     """Bytes-identical replace must not leave an empty session dir."""
     f = project / "same.bin"

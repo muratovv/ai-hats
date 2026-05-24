@@ -202,7 +202,12 @@ def test_bump_regenerates_user_rules_aggregator_only(fresh_project):
     user_rules.mkdir(parents=True, exist_ok=True)
     (user_rules / "my-rule.md").write_text("# my rule\n\nProject-specific guidance.\n")
 
-    res = _run(["ai-hats", "self", "init"], cwd=project)
+    # HATS-470: `self bump` CLI removed; direct bump testing routes
+    # through the hidden `_bump_internal` entry-point (the same
+    # subprocess hook `self update` uses internally). The bump banner
+    # still prints "Bumped".
+    import sys as _sys
+    res = _run([_sys.executable, "-m", "ai_hats._bump_internal"], cwd=project)
     assert "Bumped" in res.stdout, res.stdout
 
     # imports.md picked up the new user-rule.

@@ -191,7 +191,14 @@ def init(
         and not (provider and role)
     )
 
-    if not use_wizard and provider is None and role is None and not no_wizard:
+    # HATS-470 review A2: when the project is already initialized AND no
+    # provider/role flags were passed, treat this as "re-apply config"
+    # (the replacement for the removed `self bump` CLI). Skip the wizard
+    # and let the post-init bump path handle the refresh — never raise
+    # the no-TTY-no-flags error in this case.
+    if already and provider is None and role is None:
+        use_wizard = False
+    elif not use_wizard and provider is None and role is None and not no_wizard:
         console.print(
             "[red]No TTY and no flags[/]: cannot run interactive wizard.\n"
             "Pass --provider/-p (and optionally --role/-r), or run with "
@@ -236,11 +243,17 @@ def init(
     # everything is a no-op. On the wizard path this would race with
     # the wizard's own session-bootstrap; skip there.
     if already and not use_wizard:
+        from ..safe_delete import TrashFullError as _TrashFull
+        from ..safe_delete import session_summary as _trash_summary
         try:
             asm.bump()
-        except Exception as e:  # noqa: BLE001 — bump should never block init
+        except _TrashFull:
+            # HATS-470 review (Quality nit 3): trash-bin failures MUST
+            # propagate — silently dropping snapshots violates the
+            # safe-delete contract. Init aborts loudly.
+            raise
+        except Exception as e:  # noqa: BLE001 — other bump failures don't block init
             console.print(f"  [yellow]Post-init bump warned:[/] {e}")
-        from ..safe_delete import session_summary as _trash_summary
         banner = _trash_summary()
         if banner:
             console.print(f"  [dim]{banner}[/]")
