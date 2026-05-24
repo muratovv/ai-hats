@@ -306,3 +306,264 @@ def test_format_git_create_error_generic_fallback() -> None:
     msg = _format_git_create_error(exc, "task/x")
     assert "task/x" in msg
     assert "something else broke" in msg
+
+
+# ---------------------------------------------------------------------------
+# TC-N1..N3 — real-git concurrency scenarios for WorktreeManager.create
+# (HATS-479 L1+L2+L4)
+# ---------------------------------------------------------------------------
+
+
+def _create_worker(
+    project_dir: str,
+    branch: str,
+    result_dict: dict,
+    key: str,
+) -> None:
+    """Child process: run WorktreeManager.create + save_state, record outcome.
+
+    Stores ``{"path": str|None, "error": str|None}`` under ``key`` so the
+    parent test can assert exactly one winner / one loser.
+    """
+    from ai_hats.worktree import WorktreeCreateError
+
+    project = Path(project_dir)
+    mgr = WorktreeManager(project, branch_name=branch)
+    try:
+        path = mgr.create()
+        mgr.save_state()
+        result_dict[key] = {"path": str(path), "error": None}
+    except WorktreeCreateError as exc:
+        result_dict[key] = {"path": None, "error": str(exc)}
+    except Exception as exc:  # pragma: no cover — should be wrapped
+        result_dict[key] = {
+            "path": None,
+            "error": f"UNEXPECTED {type(exc).__name__}: {exc}",
+        }
+
+
+def _list_leftover_tempdirs(prefix: str) -> list[Path]:
+    """All /tmp dirs matching a wt prefix that still exist on disk."""
+    from tempfile import gettempdir
+
+    root = Path(gettempdir())
+    return [p for p in root.iterdir() if p.name.startswith(prefix)]
+
+
+def test_parallel_create_same_branch_exactly_one_winner(
+    git_project: Path,
+) -> None:
+    """TC-N1: 2 procs create same branch → 1 success, 1 friendly error,
+    no leaked tempdir, exactly 1 branch on disk."""
+    branch = "task/hats-479-n1"
+    prefix = f"ai-hats-wt-{branch.replace('/', '-')}-"
+
+    pre_existing_dirs = {p.name for p in _list_leftover_tempdirs(prefix)}
+
+    manager = multiprocessing.Manager()
+    results = manager.dict()
+
+    p1 = multiprocessing.Process(
+        target=_create_worker, args=(str(git_project), branch, results, "p1")
+    )
+    p2 = multiprocessing.Process(
+        target=_create_worker, args=(str(git_project), branch, results, "p2")
+    )
+    p1.start()
+    p2.start()
+    p1.join(timeout=30)
+    p2.join(timeout=30)
+    assert p1.exitcode == 0 and p2.exitcode == 0
+
+    outcomes = [dict(results["p1"]), dict(results["p2"])]
+    winners = [o for o in outcomes if o["error"] is None]
+    losers = [o for o in outcomes if o["error"] is not None]
+    assert len(winners) == 1, f"expected 1 winner, got {outcomes}"
+    assert len(losers) == 1, f"expected 1 loser, got {outcomes}"
+
+    # Loser sees a friendly message — not an opaque CalledProcessError.
+    err = losers[0]["error"]
+    assert "already exists" in err.lower(), err
+    assert "CalledProcessError" not in err
+
+    # Exactly one branch.
+    branches = subprocess.run(
+        ["git", "branch", "--list", branch],
+        cwd=str(git_project),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert branches.count(branch) == 1, branches
+
+    # State JSON exists exactly once.
+    state_path = worktrees_dir(git_project) / f"{_state_key(branch)}.json"
+    assert state_path.exists()
+
+    # No new leaked tempdirs from the loser.
+    after = {p.name for p in _list_leftover_tempdirs(prefix)}
+    new_dirs = after - pre_existing_dirs
+    # The winner's dir is still around (real worktree). At most 1 new dir.
+    assert len(new_dirs) <= 1, f"leaked tempdirs: {new_dirs}"
+    if new_dirs:
+        # The remaining dir must be the winner's worktree.
+        assert str(list(new_dirs)[0]) in winners[0]["path"]
+
+
+def test_parallel_create_different_branches_both_succeed(
+    git_project: Path,
+) -> None:
+    """TC-N2: parallel create on different branches → both succeed."""
+    branch_a = "task/hats-479-n2-a"
+    branch_b = "task/hats-479-n2-b"
+
+    manager = multiprocessing.Manager()
+    results = manager.dict()
+
+    p1 = multiprocessing.Process(
+        target=_create_worker, args=(str(git_project), branch_a, results, "p1")
+    )
+    p2 = multiprocessing.Process(
+        target=_create_worker, args=(str(git_project), branch_b, results, "p2")
+    )
+    p1.start()
+    p2.start()
+    p1.join(timeout=30)
+    p2.join(timeout=30)
+    assert p1.exitcode == 0 and p2.exitcode == 0
+
+    for k in ("p1", "p2"):
+        outcome = dict(results[k])
+        assert outcome["error"] is None, outcome
+        assert outcome["path"] is not None
+
+    # Both state files exist.
+    assert (worktrees_dir(git_project) / f"{_state_key(branch_a)}.json").exists()
+    assert (worktrees_dir(git_project) / f"{_state_key(branch_b)}.json").exists()
+
+
+def test_create_failure_cleans_tempdir_preserves_pre_existing_branch(
+    git_project: Path,
+) -> None:
+    """TC-N3: pre-create the branch externally → create() raises
+    WorktreeCreateError, tempdir is cleaned, pre-existing branch SURVIVES."""
+    from ai_hats.worktree import WorktreeCreateError
+
+    branch = "task/hats-479-n3"
+    prefix = f"ai-hats-wt-{branch.replace('/', '-')}-"
+
+    # Pre-create branch externally so L2 (load_for_branch) sees no state but
+    # `git worktree add -b` will fail with "already exists".
+    _git(git_project, "branch", branch)
+    # Confirm git sees it.
+    branches_before = subprocess.run(
+        ["git", "branch", "--list", branch],
+        cwd=str(git_project),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+    pre_existing_dirs = {p.name for p in _list_leftover_tempdirs(prefix)}
+
+    mgr = WorktreeManager(git_project, branch_name=branch)
+    with pytest.raises(WorktreeCreateError) as ei:
+        mgr.create()
+    assert "already exists" in str(ei.value).lower()
+
+    # No leaked tempdirs.
+    after = {p.name for p in _list_leftover_tempdirs(prefix)}
+    assert after == pre_existing_dirs, f"leaked: {after - pre_existing_dirs}"
+
+    # Pre-existing branch UNCHANGED — L4 must not have deleted it.
+    branches_after = subprocess.run(
+        ["git", "branch", "--list", branch],
+        cwd=str(git_project),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert branches_after == branches_before
+    assert branch in branches_after
+
+
+# ---------------------------------------------------------------------------
+# TC-N7 — `task transition execute` adopt-on-race (HATS-479 + state.py)
+# ---------------------------------------------------------------------------
+
+
+def _setup_worktree_worker(
+    project_dir: str, task_id: str, result_dict: dict, key: str
+) -> None:
+    """Child process: invoke TaskManager._setup_worktree, record outcome."""
+    from datetime import datetime, timezone
+
+    from ai_hats.models import TaskCard, TaskState
+    from ai_hats.state import TaskManager
+
+    tm = TaskManager(Path(project_dir), prefix="HATS")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    task = TaskCard(
+        id=task_id,
+        title="t",
+        state=TaskState.EXECUTE,
+        description="",
+        priority="medium",
+        role="",
+        reviewer="user",
+        parent_task="",
+        depends_on=[],
+        tags=[],
+        created=now,
+        updated=now,
+    )
+    try:
+        path = tm._setup_worktree(task)
+        result_dict[key] = {"path": str(path) if path else None, "error": None}
+    except Exception as exc:
+        result_dict[key] = {
+            "path": None,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def test_setup_worktree_concurrent_adopts_peer(git_project: Path) -> None:
+    """TC-N7: parallel transition `execute` for same task → both succeed,
+    both return the SAME worktree path (one creates, one adopts), one branch."""
+    task_id = "HATS-N7"
+    branch = f"task/{task_id.lower()}"
+
+    manager = multiprocessing.Manager()
+    results = manager.dict()
+
+    p1 = multiprocessing.Process(
+        target=_setup_worktree_worker,
+        args=(str(git_project), task_id, results, "p1"),
+    )
+    p2 = multiprocessing.Process(
+        target=_setup_worktree_worker,
+        args=(str(git_project), task_id, results, "p2"),
+    )
+    p1.start()
+    p2.start()
+    p1.join(timeout=30)
+    p2.join(timeout=30)
+    assert p1.exitcode == 0 and p2.exitcode == 0
+
+    o1 = dict(results["p1"])
+    o2 = dict(results["p2"])
+    assert o1["error"] is None, o1
+    assert o2["error"] is None, o2
+    # Both processes converge on the SAME worktree path.
+    assert o1["path"] == o2["path"], (o1, o2)
+    assert o1["path"] is not None
+
+    # Exactly one branch exists.
+    branches = subprocess.run(
+        ["git", "branch", "--list", branch],
+        cwd=str(git_project),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert branches.count(branch) == 1, branches
