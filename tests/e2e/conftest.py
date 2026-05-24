@@ -11,9 +11,12 @@
   tests against the ``ai-hats`` CLI. Function-scoped. Returns a
   :class:`tests.e2e._helpers.project.Project`.
 * ``tmp_venv_project`` — launcher-tier project backed by a real
-  ai-hats venv built once per test module. **Module-scoped** —
-  multiple tests in the same file share the venv build (~30-60s)
-  and the project dir. Tests must NOT mutate the venv destructively.
+  ai-hats venv built once per test module. **Function-scoped Project
+  on top of a module-scoped venv build** — multiple tests in the
+  same file share the (~30-60s) venv build cost, but each test
+  receives a fresh project directory that points at the shared venv
+  via ``AI_HATS_VENV``. Tests can mutate their own project freely;
+  they MUST NOT mutate the shared venv (no rm -rf, no pip uninstall).
 """
 
 from __future__ import annotations
@@ -136,15 +139,12 @@ def tmp_project(tmp_path: Path, repo_root: Path):
 
 
 @pytest.fixture(scope="module")
-def tmp_venv_project(tmp_path_factory, repo_root: Path):
-    """Module-scoped launcher-tier project + real ai-hats venv.
+def _shared_launcher_venv(tmp_path_factory, repo_root: Path):
+    """Module-scoped venv build — internal helper for :func:`tmp_venv_project`.
 
-    Builds the launcher + its inner venv ONCE per test module via
-    :func:`tests.e2e._helpers.venv.build_launcher_venv` (~30-60s on
-    cold pip cache). All tests in the same file reuse the same
-    :class:`Project` instance — they MUST NOT mutate the venv
-    destructively (deletion of ``.agent/ai-hats/.venv`` will break
-    every subsequent test in the module).
+    Builds the launcher + a shared ai-hats venv ONCE per test module
+    via :func:`tests.e2e._helpers.venv.build_launcher_venv` (~30-60s on
+    cold pip cache). Returns ``(launcher_path, shared_venv_path)``.
 
     Skips the whole module when:
 
@@ -152,32 +152,56 @@ def tmp_venv_project(tmp_path_factory, repo_root: Path):
     * the launcher install or ``self update`` raises
       :class:`subprocess.CalledProcessError` (typically: no network
       and no warm pip cache for transitive deps)
-
-    Returns a :class:`Project` whose ``ai_hats_binary`` is the
-    sandboxed launcher (NOT the dev venv binary used by
-    :func:`tmp_project`). The project dir is a sibling of the
-    bootstrap dir so ``self init`` operates on a clean slate.
+    * the launcher / venv artefacts don't materialise as expected
+      (raises :class:`RuntimeError` from the helper)
     """
     import subprocess as _subprocess
 
-    from _helpers.project import Project
     from _helpers.venv import build_launcher_venv, network_available
 
     work = tmp_path_factory.mktemp("hats-venv-tier")
-    project_path = work / "project"
-    project_path.mkdir()
     if not network_available():
         pytest.skip("pip not on PATH — cannot build launcher venv")
     try:
-        launcher = build_launcher_venv(
-            work, repo_root, project_dir=project_path,
-        )
+        return build_launcher_venv(work, repo_root)
     except FileNotFoundError as exc:
         pytest.skip(f"install-launcher.sh missing: {exc}")
-    except _subprocess.CalledProcessError as exc:
+    except (_subprocess.CalledProcessError, RuntimeError) as exc:
+        detail = getattr(exc, "stderr", None) or str(exc)
         pytest.skip(
             "launcher venv build failed (likely offline / no warm pip cache); "
-            f"stderr tail:\n{(exc.stderr or '')[-400:]}"
+            f"detail tail:\n{detail[-400:]}"
         )
-    return Project(path=project_path, ai_hats_binary=launcher,
-                   env={"AI_HATS_REPO_URL": str(repo_root)})
+
+
+@pytest.fixture
+def tmp_venv_project(tmp_path: Path, _shared_launcher_venv, repo_root: Path):
+    """Function-scoped launcher-tier project on a module-shared venv.
+
+    Each test gets a fresh project directory; the underlying
+    ai-hats venv is built once per module (see
+    :func:`_shared_launcher_venv`) and reached via the
+    ``AI_HATS_VENV`` env knob, so tests can mutate their project
+    freely without poisoning siblings in the same module.
+
+    The shared venv MUST NOT be mutated destructively — no
+    ``rm -rf <venv>``, no ``pip uninstall``, no ``self bump`` to a
+    different ai-hats version. Tests that need to break the venv
+    should declare their own function-scoped builder instead.
+
+    Returns a :class:`Project` whose ``ai_hats_binary`` is the
+    sandboxed launcher (NOT the dev venv binary used by
+    :func:`tmp_project`).
+    """
+    from _helpers.project import Project
+
+    launcher, shared_venv = _shared_launcher_venv
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    return Project(
+        path=project_path, ai_hats_binary=launcher,
+        env={
+            "AI_HATS_REPO_URL": str(repo_root),
+            "AI_HATS_VENV": str(shared_venv),
+        },
+    )
