@@ -202,7 +202,7 @@ def test_bump_regenerates_user_rules_aggregator_only(fresh_project):
     user_rules.mkdir(parents=True, exist_ok=True)
     (user_rules / "my-rule.md").write_text("# my rule\n\nProject-specific guidance.\n")
 
-    res = _run(["ai-hats", "self", "bump"], cwd=project)
+    res = _run(["ai-hats", "self", "init"], cwd=project)
     assert "Bumped" in res.stdout, res.stdout
 
     # imports.md picked up the new user-rule.
