@@ -6,7 +6,17 @@
 * ``repo_root`` — single source of truth for repo path math.
 * ``probe_project`` — minimal claude-provider project ready for
   :func:`tests.e2e._helpers.live.live_session`. Function-scoped: tests
-  get a fresh tmp project each run.
+  get a fresh tmp project each run. Bakes the ``probe`` role.
+* ``tmp_project`` — generic role-less project for subprocess-only
+  tests against the ``ai-hats`` CLI. Function-scoped. Returns a
+  :class:`tests.e2e._helpers.project.Project`.
+* ``tmp_venv_project`` — launcher-tier project backed by a real
+  ai-hats venv built once per test module. **Function-scoped Project
+  on top of a module-scoped venv build** — multiple tests in the
+  same file share the (~30-60s) venv build cost, but each test
+  receives a fresh project directory that points at the shared venv
+  via ``AI_HATS_VENV``. Tests can mutate their own project freely;
+  they MUST NOT mutate the shared venv (no rm -rf, no pip uninstall).
 """
 
 from __future__ import annotations
@@ -28,9 +38,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def repo_root() -> Path:
-    """Repo checkout root — single source of truth for path math."""
+    """Repo checkout root — single source of truth for path math.
+
+    Session-scoped: the value is a process-wide constant, so promoting
+    it lets module-scoped fixtures (``tmp_venv_project``) depend on it.
+    """
     return REPO_ROOT
 
 
@@ -86,3 +100,108 @@ def probe_project(tmp_path: Path) -> Path:
     asm.init()
     asm.set_role("probe", provider_name="claude")
     return project
+
+
+@pytest.fixture
+def tmp_project(tmp_path: Path, repo_root: Path):
+    """Role-less ai-hats project + Project driver for CLI subprocess tests.
+
+    Contract:
+
+    * ``ai-hats.yaml`` written with ``provider: claude`` and an empty
+      ``library_paths`` (caller adds entries / roles if needed).
+    * ``.agent/ai-hats/`` bootstrapped via :class:`ai_hats.assembler.Assembler`.
+      No role set — keeps the project deterministic for tests that
+      exercise the CLI surface without an active role.
+    * Project's ``ai_hats_binary`` points at the dev venv binary
+      (``<repo_root>/.venv/bin/ai-hats``) so tests invoke the local
+      checkout, not whatever happens to be on PATH.
+
+    Returns a :class:`tests.e2e._helpers.project.Project`. Use
+    :meth:`Project.run` for one-shot ``ai-hats <cmd>`` invocations and
+    the fluent ``RunResult.expect_*`` verbs for assertions.
+    """
+    from ai_hats.assembler import Assembler
+    from ai_hats.models import ProjectConfig
+
+    from _helpers.project import Project
+
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    ProjectConfig(provider="claude", library_paths=[]).save(
+        project_path / "ai-hats.yaml"
+    )
+    Assembler(project_path).init()
+    return Project(
+        path=project_path,
+        ai_hats_binary=repo_root / ".venv" / "bin" / "ai-hats",
+    )
+
+
+@pytest.fixture(scope="module")
+def _shared_launcher_venv(tmp_path_factory, repo_root: Path):
+    """Module-scoped venv build — internal helper for :func:`tmp_venv_project`.
+
+    Builds the launcher + a shared ai-hats venv ONCE per test module
+    via :func:`tests.e2e._helpers.venv.build_launcher_venv` (~30-60s on
+    cold pip cache). Returns ``(launcher_path, shared_venv_path)``.
+
+    Skips the whole module when:
+
+    * ``scripts/install-launcher.sh`` is missing (untrusted checkout)
+    * the launcher install or ``self update`` raises
+      :class:`subprocess.CalledProcessError` (typically: no network
+      and no warm pip cache for transitive deps)
+    * the launcher / venv artefacts don't materialise as expected
+      (raises :class:`RuntimeError` from the helper)
+    """
+    import subprocess as _subprocess
+
+    from _helpers.venv import build_launcher_venv, network_available
+
+    work = tmp_path_factory.mktemp("hats-venv-tier")
+    if not network_available():
+        pytest.skip("pip not on PATH — cannot build launcher venv")
+    try:
+        return build_launcher_venv(work, repo_root)
+    except FileNotFoundError as exc:
+        pytest.skip(f"install-launcher.sh missing: {exc}")
+    except (_subprocess.CalledProcessError, RuntimeError) as exc:
+        detail = getattr(exc, "stderr", None) or str(exc)
+        pytest.skip(
+            "launcher venv build failed (likely offline / no warm pip cache); "
+            f"detail tail:\n{detail[-400:]}"
+        )
+
+
+@pytest.fixture
+def tmp_venv_project(tmp_path: Path, _shared_launcher_venv, repo_root: Path):
+    """Function-scoped launcher-tier project on a module-shared venv.
+
+    Each test gets a fresh project directory; the underlying
+    ai-hats venv is built once per module (see
+    :func:`_shared_launcher_venv`) and reached via the
+    ``AI_HATS_VENV`` env knob, so tests can mutate their project
+    freely without poisoning siblings in the same module.
+
+    The shared venv MUST NOT be mutated destructively — no
+    ``rm -rf <venv>``, no ``pip uninstall``, no ``self bump`` to a
+    different ai-hats version. Tests that need to break the venv
+    should declare their own function-scoped builder instead.
+
+    Returns a :class:`Project` whose ``ai_hats_binary`` is the
+    sandboxed launcher (NOT the dev venv binary used by
+    :func:`tmp_project`).
+    """
+    from _helpers.project import Project
+
+    launcher, shared_venv = _shared_launcher_venv
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    return Project(
+        path=project_path, ai_hats_binary=launcher,
+        env={
+            "AI_HATS_REPO_URL": str(repo_root),
+            "AI_HATS_VENV": str(shared_venv),
+        },
+    )
