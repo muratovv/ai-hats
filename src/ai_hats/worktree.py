@@ -325,7 +325,7 @@ class WorktreeManager:
         state_path = worktrees_dir(self.project_dir) / f"{k}.json"
         with _acquire(state_path):
             try:
-                state_path.unlink()
+                state_path.unlink()  # safe-delete: ok worktree-state (git-managed)
             except FileNotFoundError:
                 pass
 
@@ -359,14 +359,14 @@ class WorktreeManager:
                 # Corrupted state — best-effort cleanup, treat as absent.
                 logger.warning("Corrupted worktree state at %s — removing", state_path)
                 try:
-                    state_path.unlink()
+                    state_path.unlink()  # safe-delete: ok worktree-state (corrupted)
                 except FileNotFoundError:
                     pass
                 return None
             wt_path = Path(data["worktree_path"])
             if not wt_path.exists():
                 try:
-                    state_path.unlink()  # stale
+                    state_path.unlink()  # safe-delete: ok worktree-state (stale)
                 except FileNotFoundError:
                     pass
                 return None
@@ -436,7 +436,9 @@ class WorktreeManager:
                 if not new_path.exists():
                     _atomic_write_json(new_path, data)
             try:
-                old.unlink()
+                # Data already preserved at new_path — duplicate cleanup,
+                # no recovery value in a snapshot. Whitelist.
+                old.unlink()  # safe-delete: ok layout-migration duplicate
             except FileNotFoundError:
                 pass
 
@@ -704,7 +706,11 @@ class WorktreeManager:
             self._git("worktree", "remove", str(self.worktree_path), "--force")
         except subprocess.CalledProcessError:
             if self.worktree_path.exists():
-                shutil.rmtree(self.worktree_path, ignore_errors=True)
+                # Worktree removal fallback: git failed, we force-clean.
+                # Worktree contents are user code, but the worktree was
+                # already meant to be torn down via `git worktree remove`
+                # which would have nuked it anyway. Whitelist.
+                shutil.rmtree(self.worktree_path, ignore_errors=True)  # safe-delete: ok git-worktree-teardown
             try:
                 self._git("worktree", "prune")
             except subprocess.CalledProcessError:

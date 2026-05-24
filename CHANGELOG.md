@@ -10,15 +10,62 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+- **Safe-delete trash bin** for all destructive ops under `src/ai_hats/`.
+  New module `ai_hats.safe_delete` with `discard()` / `replace()`
+  module-level API: instead of `path.unlink()` / `shutil.rmtree()` /
+  in-place `path.write_text(new)`, victims are moved (or snapshotted,
+  for overwrites) to `$TMPDIR/ai-hats/trash-<utc-ts>-<pid>/<relpath>/`
+  before the original is touched. Recovery is `cp -r <session>/<rel>
+  <project>/<rel>`. Each session writes a `MANIFEST.md` listing every
+  op with timestamp + reason + original→trash mapping (HATS-470).
+- **`AI_HATS_TRASH_DIR`** env var to override the trash base directory.
+  Special sentinel `AI_HATS_TRASH_DIR=-` enables hard-delete mode (no
+  snapshots, WARN to stderr per op) — intended for CI / ephemeral
+  environments where snapshot value is zero. ENOSPC / read-only
+  filesystem on snapshot raises `TrashFullError` and aborts the
+  destructive operation rather than silently losing data (HATS-470).
+- **Pre-commit hook** (`git-mastery` skill,
+  `pre-commit-no-raw-destructive.sh`) forbidding raw `unlink` /
+  `rmtree` / `rmdir` under `src/ai_hats/` outside `safe_delete.py`.
+  Inline `# safe-delete: ok <reason>` markers on the offending line
+  act as reviewer-visible bypasses for ephemeral / framework-state
+  cases (git worktree state, session cache, empty-dir cleanup). No-op
+  on projects without `src/ai_hats/`. Override:
+  `AI_HATS_NO_RAW_DESTRUCTIVE_SKIP=1 git commit ...` (HATS-470).
+
+### Changed
+- `self update`'s auto-bump now runs via `python -m
+  ai_hats._bump_internal` (new hidden module entry-point) instead of
+  `ai-hats self bump`. Behaviour is identical — same flags
+  (`--migrate-force` / `--check-branches`), same fresh-interpreter
+  semantics required by HATS-400 — but the entry-point is private and
+  not surfaced in `--help` / `--tree` (HATS-470).
+
+### Removed
+- **`ai-hats self bump` CLI command.** Bump functionality is preserved
+  and now runs only via the auto-bump path inside `ai-hats self
+  update` (fresh subprocess, HATS-400) and inline from `ai-hats self
+  init`. Direct user invocation of bump is rare in practice and the
+  new internal entry-point makes the "framework-internal" status
+  honest. The hidden `python -m ai_hats._bump_internal` remains for
+  the subprocess case (HATS-470).
+
 ### Fixed
-- `self bump` now warns when an orphan `.ai-hats-managed` marker is
-  detected under `~/.claude/skills/` (typically left by a manual
-  `cp -r .claude/skills/ ~/.claude/skills/` performed pre-v0.7). ai-hats
-  has never written to that location — user-level Claude skills are not
-  managed and the dir drifts forever without a refresh path. The WARN
-  prints a safe-remove hint (`rm -rf ~/.claude/skills/`) and re-fires on
-  every bump until the user clears it; ai-hats does not delete the dir
-  itself (HATS-465).
+- `self update` / `self init` bump path warns when an orphan
+  `.ai-hats-managed` marker is detected under `~/.claude/skills/`
+  (typically left by a manual `cp -r .claude/skills/
+  ~/.claude/skills/` performed pre-v0.7). ai-hats has never written to
+  that location — user-level Claude skills are not managed and the dir
+  drifts forever without a refresh path. The WARN prints a safe-remove
+  hint (`rm -rf ~/.claude/skills/`) and re-fires until the user clears
+  it; ai-hats does not delete the dir itself (HATS-465).
+- Closes long-standing data-loss windows where `ai-hats self update` /
+  `self init` would `shutil.rmtree` or blind-`write_text` over
+  user-owned files (`.claude/role.md`, `.claude/settings.json`,
+  `.gitignore` writes, CLAUDE.md no-markers branch,
+  `migration_healer.heal_text_file` on non-git projects). All such
+  operations now snapshot to the trash bin first (HATS-470).
 
 ## [0.7.0] - 2026-05-23
 

@@ -81,7 +81,9 @@ def _cleanup_session_cache(project_dir: Path, session_id: str) -> None:
     """
     from .paths import session_cache_dir
 
-    shutil.rmtree(session_cache_dir(project_dir, session_id), ignore_errors=True)
+    # Per-session cache: ephemeral, swept at session_end + TTL on next start.
+    # Whitelist.
+    shutil.rmtree(session_cache_dir(project_dir, session_id), ignore_errors=True)  # safe-delete: ok session-cache
 
 
 def _sweep_orphan_session_caches(project_dir: Path, ttl_hours: int = 24) -> None:
@@ -103,7 +105,7 @@ def _sweep_orphan_session_caches(project_dir: Path, ttl_hours: int = 24) -> None
             continue
         try:
             if entry.stat().st_mtime < cutoff:
-                shutil.rmtree(entry, ignore_errors=True)
+                shutil.rmtree(entry, ignore_errors=True)  # safe-delete: ok session-cache (TTL sweep)
         except OSError:
             pass
 

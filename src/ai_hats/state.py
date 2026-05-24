@@ -483,7 +483,13 @@ class TaskManager:
 
             task.attachments = [a for a in task.attachments if a.name != name]
             if blob_path.is_file():
-                blob_path.unlink()
+                # HATS-470: user-uploaded blob — route through trash so
+                # accidental detach is recoverable.
+                from .safe_delete import discard as _safe_discard
+                _safe_discard(
+                    blob_path, reason="attachment-detach",
+                    project_dir=self.project_dir,
+                )
             task.log_work(f"detached '{name}' (digest {entry.digest})")
             task.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             self._save_task(task)
@@ -707,10 +713,16 @@ class TaskManager:
 
     def sync(self) -> int:
         """Synchronize STATE.md with current task cards. Returns task count."""
+        from .safe_delete import discard as _safe_discard
+
         headers = self._iter_headers()
         self._update_state_md(headers)
         if self._legacy_backlog_md_path.exists():
-            self._legacy_backlog_md_path.unlink()
+            _safe_discard(
+                self._legacy_backlog_md_path,
+                reason="legacy-backlog",
+                project_dir=self.project_dir,
+            )
         return len(headers)
 
     # -- Internal --
@@ -856,10 +868,16 @@ class TaskManager:
 
     def _update_indexes(self) -> None:
         """Regenerate STATE.md (single source of truth for the task index)."""
+        from .safe_delete import discard as _safe_discard
+
         headers = self._iter_headers()
         self._update_state_md(headers)
         if self._legacy_backlog_md_path.exists():
-            self._legacy_backlog_md_path.unlink()
+            _safe_discard(
+                self._legacy_backlog_md_path,
+                reason="legacy-backlog",
+                project_dir=self.project_dir,
+            )
 
     def _update_state_md(self, headers: list[dict[str, str]]) -> None:
         """Regenerate STATE.md from header dicts."""
@@ -887,5 +905,16 @@ class TaskManager:
         if not headers:
             lines.append("\nNo active tasks.\n")
 
+        # HATS-470: STATE.md regen is high-frequency (every state-changing
+        # task command). bytes-identical replace is a no-op, so user-edits
+        # between commands are snapshotted but the steady-state pure regen
+        # doesn't churn /tmp. If this proves noisy in practice, convert
+        # to a whitelist-marker site (regen is deterministic from tasks/).
+        from .safe_delete import replace as _safe_replace
         self.state_md_path.parent.mkdir(parents=True, exist_ok=True)
-        self.state_md_path.write_text("\n".join(lines) + "\n")
+        _safe_replace(
+            self.state_md_path,
+            ("\n".join(lines) + "\n").encode("utf-8"),
+            reason="state-md-regen",
+            project_dir=self.project_dir,
+        )

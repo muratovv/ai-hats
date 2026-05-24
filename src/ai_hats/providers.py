@@ -178,6 +178,8 @@ class Provider(abc.ABC):
         return below provides a defense-in-depth no-op if it is invoked
         anyway.
         """
+        from .safe_delete import replace as _safe_replace
+
         prompt_path = self.system_prompt_path(project_dir)
         prompt_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -193,17 +195,26 @@ class Provider(abc.ABC):
                 before = existing[: existing.index(INJECTION_START)]
                 after = existing[existing.index(INJECTION_END) + len(INJECTION_END) :]
                 new_content = f"{before}{INJECTION_START}\n{content}\n{INJECTION_END}{after}"
-                prompt_path.write_text(new_content)
+                _safe_replace(
+                    prompt_path, new_content.encode("utf-8"),
+                    reason="system-prompt", project_dir=project_dir,
+                )
                 return
             if existing.strip():
                 # Existing file without markers — preserve as project context
-                prompt_path.write_text(
-                    f"{INJECTION_START}\n{content}\n{INJECTION_END}\n\n{existing}"
+                _safe_replace(
+                    prompt_path,
+                    f"{INJECTION_START}\n{content}\n{INJECTION_END}\n\n{existing}".encode("utf-8"),
+                    reason="system-prompt", project_dir=project_dir,
                 )
                 return
 
         # Fresh write with markers
-        prompt_path.write_text(f"{INJECTION_START}\n{content}\n{INJECTION_END}\n")
+        _safe_replace(
+            prompt_path,
+            f"{INJECTION_START}\n{content}\n{INJECTION_END}\n".encode("utf-8"),
+            reason="system-prompt", project_dir=project_dir,
+        )
 
 
 class GeminiProvider(Provider):
@@ -255,7 +266,7 @@ class GeminiProvider(Provider):
             if rule.source_path.is_dir():
                 dest = rules_dir / rule.name
                 if dest.exists():
-                    shutil.rmtree(dest)
+                    shutil.rmtree(dest)  # safe-delete: ok session-cache (per-session ephemeral republish)
                 shutil.copytree(rule.source_path, dest)
 
     def build_session_prompt(
@@ -367,7 +378,7 @@ class ClaudeProvider(Provider):
             if rule.source_path.is_dir():
                 dest = rules_dir / rule.name
                 if dest.exists():
-                    shutil.rmtree(dest)
+                    shutil.rmtree(dest)  # safe-delete: ok session-cache (per-session ephemeral republish)
                 shutil.copytree(rule.source_path, dest)
 
     def build_session_prompt(
@@ -552,7 +563,7 @@ class ClaudeProvider(Provider):
                 if entry == managed_entry:
                     return  # already correct — no write
                 pretool_list[i] = managed_entry
-                self._write_settings(settings_path, data)
+                self._write_settings(settings_path, data, project_dir)
                 return
 
         # No managed entry yet. Also dedupe against user-authored entries
@@ -567,12 +578,22 @@ class ClaudeProvider(Provider):
                     return  # user already wired it manually — respect that
 
         pretool_list.append(managed_entry)
-        self._write_settings(settings_path, data)
+        self._write_settings(settings_path, data, project_dir)
 
     @staticmethod
-    def _write_settings(settings_path: Path, data: dict) -> None:
+    def _write_settings(settings_path: Path, data: dict, project_dir: Path) -> None:
+        from .safe_delete import replace as _safe_replace
+
         settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(json.dumps(data, indent=2) + "\n")
+        # HATS-470: .claude/settings.json is a user-owned file (carries
+        # the user's PreToolUse hooks). Snapshot via safe_delete.replace
+        # so a bad ai-hats overwrite is recoverable from trash.
+        _safe_replace(
+            settings_path,
+            (json.dumps(data, indent=2) + "\n").encode("utf-8"),
+            reason="claude-settings",
+            project_dir=project_dir,
+        )
 
 
 PROVIDERS: dict[str, type[Provider]] = {

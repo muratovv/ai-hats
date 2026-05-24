@@ -36,6 +36,8 @@ from .paths import (
     skills_dir as _lib_skills_dir,
 )
 from .placeholders import expand_path_placeholders
+from .safe_delete import discard as _safe_discard
+from .safe_delete import replace as _safe_replace
 from .providers import (
     INJECTION_END,
     INJECTION_START,
@@ -168,7 +170,13 @@ class Assembler:
         if template is None:
             return
         prompt_path.parent.mkdir(parents=True, exist_ok=True)
-        prompt_path.write_bytes(template.read_bytes())
+        # exists-check above means this is always a fresh write — replace()
+        # routes through atomic write without taking a snapshot (no-op for
+        # missing files).
+        _safe_replace(
+            prompt_path, template.read_bytes(),
+            reason="scaffold", project_dir=self.project_dir,
+        )
 
     def _migrate_claude_md_to_v3(self, provider: Provider) -> None:
         """Bring `./CLAUDE.md` to the current v3 scaffold layout (HATS-285/289).
@@ -230,7 +238,14 @@ class Assembler:
         )
 
         if new_content != existing:
-            prompt_path.write_text(new_content)
+            # HATS-470: snapshot the pre-migrate content so users can
+            # recover if the v3 scaffold rewrite mangles their file
+            # (especially the no-markers branch above which prepends
+            # blindly).
+            _safe_replace(
+                prompt_path, new_content.encode("utf-8"),
+                reason="claude-md-migrate", project_dir=self.project_dir,
+            )
 
         # 3. Drop legacy `.claude/` publish artefacts.
         self._cleanup_legacy_claude_publish()
@@ -257,27 +272,46 @@ class Assembler:
                     managed.add(line)
 
         # Manifest-listed files (excluding skills/, never managed by publish).
+        # HATS-470: routed via safe_delete so the .claude/role.md etc.
+        # belt-and-suspenders sweep is recoverable from trash.
         for rel in managed:
             if rel.startswith("skills/"):
                 continue
             target = claude_dir / rel
-            target.unlink(missing_ok=True)
+            _safe_discard(
+                target, reason="claude-legacy-publish",
+                project_dir=self.project_dir,
+            )
 
         # Well-known publish artefacts as belt-and-suspenders.
         for rel in ("CLAUDE.md", "priorities.md", "role.md", "skills_index.md"):
-            (claude_dir / rel).unlink(missing_ok=True)
+            _safe_discard(
+                claude_dir / rel, reason="claude-legacy-publish",
+                project_dir=self.project_dir,
+            )
         for sub in ("traits", "rules"):
             sub_dir = claude_dir / sub
             if sub_dir.is_dir():
-                shutil.rmtree(sub_dir, ignore_errors=True)
+                # Preserve permissive "ignore_errors=True" semantics —
+                # original code chose best-effort cleanup for these dirs.
+                try:
+                    _safe_discard(
+                        sub_dir, reason="claude-legacy-publish",
+                        project_dir=self.project_dir,
+                    )
+                except OSError:
+                    pass
 
-        manifest.unlink(missing_ok=True)
+        _safe_discard(
+            manifest, reason="claude-legacy-manifest",
+            project_dir=self.project_dir,
+        )
 
         # Best-effort empty-dir cleanup of `.claude/` itself if `skills/`
         # is also absent — but never delete `.claude/skills/` content.
         try:
             if not any(claude_dir.iterdir()):
-                claude_dir.rmdir()
+                claude_dir.rmdir()  # safe-delete: ok empty-dir
         except OSError:
             pass
 
@@ -303,10 +337,9 @@ class Assembler:
             target = project_dir / rel
             if not target.exists():
                 continue
-            if target.is_dir():
-                shutil.rmtree(target)
-            else:
-                target.unlink()
+            _safe_discard(
+                target, reason="obsolete-file", project_dir=project_dir,
+            )
             actions.append(reason)
 
         # HATS-407: sweep stale .last_backup pointer + referenced /tmp dir.
@@ -322,9 +355,12 @@ class Assembler:
             # Pointer-file form: text content names a /tmp backup dir
             # created by the retired _backup() helper, which used
             # ``tempfile.mkdtemp(prefix="ai-hats-backup-")``. Defensively
-            # restrict rmtree to absolute paths whose basename carries
+            # restrict cleanup to absolute paths whose basename carries
             # that prefix — a corrupt or hand-edited pointer cannot
-            # redirect cleanup at the user's project tree.
+            # redirect cleanup at the user's project tree. HATS-470:
+            # the /tmp target lands in safe_delete's well-known-prefix
+            # shortcut (_is_under_tmp), so it's hard-deleted directly
+            # rather than copied into trash session.
             if backup_ref.is_file():
                 try:
                     tmp_target = Path(backup_ref.read_text().strip())
@@ -333,12 +369,27 @@ class Assembler:
                         and tmp_target.exists()
                         and tmp_target.name.startswith("ai-hats-backup-")
                     ):
-                        shutil.rmtree(tmp_target, ignore_errors=True)
+                        try:
+                            _safe_discard(
+                                tmp_target, reason="obsolete-backup-tmp",
+                                project_dir=project_dir,
+                            )
+                        except OSError:
+                            pass
                 except (OSError, ValueError):
                     pass
-                backup_ref.unlink(missing_ok=True)
+                _safe_discard(
+                    backup_ref, reason="obsolete-backup-pointer",
+                    project_dir=project_dir,
+                )
             elif backup_ref.is_dir():
-                shutil.rmtree(backup_ref, ignore_errors=True)
+                try:
+                    _safe_discard(
+                        backup_ref, reason="obsolete-backup-dir",
+                        project_dir=project_dir,
+                    )
+                except OSError:
+                    pass
             actions.append(f"swept stale {backup_ref.relative_to(project_dir)} (HATS-407)")
         return actions
 
@@ -907,17 +958,24 @@ class Assembler:
                 shutil.move(str(orphan), str(dest))
             else:
                 try:
-                    orphan.unlink()
+                    _safe_discard(
+                        orphan, reason="layout-v4-orphan",
+                        project_dir=self.project_dir,
+                    )
                 except OSError:
                     pass
 
-    @staticmethod
-    def _idempotent_move(old_abs: Path, new_abs: Path) -> None:
+    def _idempotent_move(self, old_abs: Path, new_abs: Path) -> None:
         """Move `old_abs` to `new_abs`, merging into existing dirs when needed.
 
         - new_abs missing → simple shutil.move (parent created).
         - new_abs is a dir → copy items missing on the new side, then drop old.
         - new_abs is a file → assume already migrated; remove the stale source.
+
+        HATS-470: collision-side drops (old beats new) route through
+        safe_delete so the loser side is recoverable from trash.
+        Converted from ``@staticmethod`` because trash recording wants
+        ``self.project_dir`` for relpath preservation.
         """
         if not old_abs.exists():
             return
@@ -931,17 +989,23 @@ class Assembler:
                 if target.exists():
                     continue
                 shutil.move(str(entry), str(target))
-            # New side wins on collisions: drop the rest of old to keep the
-            # migration deterministic. rmtree is best-effort so a concurrent
+            # New side wins on collisions: drop the rest of old to keep
+            # the migration deterministic. Best-effort — concurrent
             # cleanup or read-only entry is benign.
-            shutil.rmtree(old_abs, ignore_errors=True)
+            try:
+                _safe_discard(
+                    old_abs, reason="move-collision",
+                    project_dir=self.project_dir,
+                )
+            except OSError:
+                pass
             return
         # File-vs-file or type mismatch: trust new, drop old.
         try:
-            if old_abs.is_dir():
-                shutil.rmtree(old_abs)
-            else:
-                old_abs.unlink()
+            _safe_discard(
+                old_abs, reason="move-collision",
+                project_dir=self.project_dir,
+            )
         except OSError:
             pass
 
@@ -975,7 +1039,10 @@ class Assembler:
             if preserve_local:
                 self._clean_non_local(rules_dir)
             else:
-                shutil.rmtree(rules_dir)
+                _safe_discard(
+                    rules_dir, reason="clean-rules",
+                    project_dir=self.project_dir,
+                )
                 rules_dir.mkdir(parents=True, exist_ok=True)
 
         for subdir in ("skills", "hooks"):
@@ -991,15 +1058,23 @@ class Assembler:
             for rule_name in library_rules:
                 rule_path = rules_dir / rule_name
                 if rule_path.exists():
-                    shutil.rmtree(rule_path)
-            marker_file.unlink()
+                    _safe_discard(
+                        rule_path, reason="clean-rules",
+                        project_dir=self.project_dir,
+                    )
+            _safe_discard(
+                marker_file, reason="clean-marker",
+                project_dir=self.project_dir,
+            )
 
-    @staticmethod
-    def _clean_managed_entries(target: Path) -> None:
+    def _clean_managed_entries(self, target: Path) -> None:
         """Remove only entries listed in the target's `.ai-hats-managed` manifest.
 
         Without a manifest the directory is assumed to hold only user content,
         so we leave it alone.
+
+        HATS-470: converted from ``@staticmethod`` so trash recording
+        gets ``self.project_dir`` for relpath preservation.
         """
         marker = target / MANAGED_SKILLS_MARKER
         if not marker.exists():
@@ -1007,11 +1082,15 @@ class Assembler:
         managed = {n for n in marker.read_text().splitlines() if n.strip()}
         for name in managed:
             entry = target / name
-            if entry.is_dir():
-                shutil.rmtree(entry)
-            elif entry.exists():
-                entry.unlink()
-        marker.unlink()
+            if entry.exists():
+                _safe_discard(
+                    entry, reason="clean-managed",
+                    project_dir=self.project_dir,
+                )
+        _safe_discard(
+            marker, reason="clean-managed-marker",
+            project_dir=self.project_dir,
+        )
 
     @staticmethod
     def _write_managed_manifest(target: Path, names: list[str]) -> None:
@@ -1020,7 +1099,9 @@ class Assembler:
         if names:
             marker.write_text("\n".join(names) + "\n")
         elif marker.exists():
-            marker.unlink()
+            # Manifest is framework bookkeeping — empty-state cleanup of
+            # our own marker, no user content. Whitelisted.
+            marker.unlink()  # safe-delete: ok framework-manifest
 
     def _find_hook_script(self, script_ref: str) -> Path | None:
         """Find a hook script across library paths."""
@@ -1181,12 +1262,16 @@ class Assembler:
                             continue
                     except OSError:
                         continue
-                target.unlink(missing_ok=True)
-        manifest_path.unlink(missing_ok=True)
+                _safe_discard(
+                    target, reason="githook-dispatcher",
+                    project_dir=self.project_dir,
+                )
+        # Manifest itself is framework bookkeeping — whitelist.
+        manifest_path.unlink(missing_ok=True)  # safe-delete: ok framework-manifest
         # Remove empty <event>.d/ subdirs.
         for child in githooks_dir.iterdir():
             if child.is_dir() and child.name.endswith(".d") and not any(child.iterdir()):
-                child.rmdir()
+                child.rmdir()  # safe-delete: ok empty-dir
 
     def _configure_hooks_path(self, warnings: list[str]) -> None:
         """Set git config core.hooksPath = .githooks if safe to do so."""
@@ -1343,12 +1428,15 @@ class Assembler:
             if stale.startswith(f"{USER_RULES_SUBDIR}/") or stale == USER_RULES_SUBDIR:
                 continue
             target = canonical / stale
-            target.unlink(missing_ok=True)
+            _safe_discard(
+                target, reason="canonical-stale",
+                project_dir=self.project_dir,
+            )
             # Best-effort cleanup of empty parent dirs (stop at canonical root)
             parent = target.parent
             while parent != canonical and parent.is_dir():
                 try:
-                    parent.rmdir()
+                    parent.rmdir()  # safe-delete: ok empty-dir
                 except OSError:
                     break
                 parent = parent.parent
@@ -1490,7 +1578,9 @@ class Assembler:
                     file=sys.stderr,
                 )
 
-        execute_deletions(report, self._canonical_dir)
+        execute_deletions(
+            report, self._canonical_dir, project_dir=self.project_dir
+        )
 
     def _collect_v07_hook_source_dirs(self) -> list[Path]:
         """Return library hook root dirs from every layer of ``self.library_paths``.
@@ -1612,14 +1702,20 @@ class Assembler:
         line = ai_hats_rel.rstrip("/") + "/"
 
         if not gitignore.exists():
-            gitignore.write_text(line + "\n")
+            _safe_replace(
+                gitignore, (line + "\n").encode("utf-8"),
+                reason="gitignore-init", project_dir=self.project_dir,
+            )
             return
         existing = gitignore.read_text()
         existing_lines = {ln.strip() for ln in existing.splitlines()}
         if line in existing_lines:
             return
         sep = "" if existing.endswith("\n") else "\n"
-        gitignore.write_text(existing + sep + line + "\n")
+        _safe_replace(
+            gitignore, (existing + sep + line + "\n").encode("utf-8"),
+            reason="gitignore-append", project_dir=self.project_dir,
+        )
 
     def _strip_legacy_managed_block(self) -> bool:
         """One-shot: remove the pre-HATS-317 `# AI-HATS:START..END` block from `.gitignore`.
@@ -1694,7 +1790,10 @@ class Assembler:
         new_text = "".join(lines[:removal_start] + lines[end_idx + 1 :])
         if new_text == text:
             return False
-        gitignore.write_text(new_text)
+        _safe_replace(
+            gitignore, new_text.encode("utf-8"),
+            reason="gitignore-strip", project_dir=self.project_dir,
+        )
         return True
 
     def _warn_orphan_user_level_managed_skills(self) -> bool:
@@ -1751,7 +1850,10 @@ class Assembler:
         new_line = new_rel.rstrip("/") + "/"
 
         if not gitignore.exists():
-            gitignore.write_text(new_line + "\n")
+            _safe_replace(
+                gitignore, (new_line + "\n").encode("utf-8"),
+                reason="gitignore-swap", project_dir=self.project_dir,
+            )
             return True
 
         text = gitignore.read_text()
@@ -1775,7 +1877,10 @@ class Assembler:
             body += "\n"
         if body == text:
             return False
-        gitignore.write_text(body)
+        _safe_replace(
+            gitignore, body.encode("utf-8"),
+            reason="gitignore-swap", project_dir=self.project_dir,
+        )
         return True
 
     # ----- Relocation (HATS-366) -----
@@ -1855,7 +1960,10 @@ class Assembler:
         if self.project_config.venv_path is None:
             old_venv = old_abs / ".venv"
             if old_venv.exists():
-                shutil.rmtree(old_venv)
+                _safe_discard(
+                    old_venv, reason="venv-relocate",
+                    project_dir=self.project_dir,
+                )
                 venv_removed = True
 
         self.project_config.ai_hats_dir = new_rel
@@ -1869,7 +1977,7 @@ class Assembler:
         # user has unrelated files there.
         if old_abs.exists() and old_abs.is_dir():
             try:
-                old_abs.rmdir()
+                old_abs.rmdir()  # safe-delete: ok empty-dir
             except OSError:
                 pass
 

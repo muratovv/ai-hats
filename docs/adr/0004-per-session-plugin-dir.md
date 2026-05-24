@@ -66,13 +66,13 @@ Conclusion: the project-mirror-wins behavior is acceptable because content equiv
 
 The two-track design described above (permanent `.claude/skills/` mirror **plus** per-session plugin-dir) is no longer current. **HATS-294 implemented Alternative D**: `Provider.export_skills` / `cleanup_skills` / `skills_export_dir` were removed; skills now live exclusively in the per-session plugin-dir under `<ai_hats_dir>/.cache/sessions/<sid>/plugin/`, materialized by `plugin_dir.materialize_plugin_dir` and passed to `claude` via `--plugin-dir`. The original ADR-0004 decision and analysis are retained verbatim above as historical record; the "primary user session unchanged" wording (§Decision) and the "mirror wins on name collision" row (§Edge cases) no longer reflect the system.
 
-Follow-on consequence captured by **HATS-465**: because ai-hats never wrote to `~/.claude/skills/` (and now never writes to `.claude/skills/` either), any `.ai-hats-managed` marker found under `~/.claude/skills/` is an artefact of a pre-v0.7 manual `cp -r .claude/skills/ ~/.claude/skills/`. `self bump` now surfaces such orphan markers with a WARN.
+Follow-on consequence captured by **HATS-465**: because ai-hats never wrote to `~/.claude/skills/` (and now never writes to `.claude/skills/` either), any `.ai-hats-managed` marker found under `~/.claude/skills/` is an artefact of a pre-v0.7 manual `cp -r .claude/skills/ ~/.claude/skills/`. `self init` now surfaces such orphan markers with a WARN.
 
 ## References
 
 - HATS-307 — this task.
 - HATS-294 — per-session cache + drop of permanent `.claude/skills` export (realizes Alternative D).
-- HATS-465 — `self bump` WARN on orphan `~/.claude/skills/.ai-hats-managed` marker.
+- HATS-465 — `self init` WARN on orphan `~/.claude/skills/.ai-hats-managed` marker.
 - HATS-380 — placeholder expansion (`expand_path_placeholders`); reused in the plugin-dir generator.
 - HATS-367 — cross-provider per-step provider selection; Gemini's analog for `--plugin-dir` belongs here.
 - HATS-278 — epic: role-prompt composition. Hosts the on-demand skill model and any follow-up to retire the `.claude/skills/` mirror (alternative D).

@@ -288,7 +288,10 @@ def _materialize_target_composition(
 
     target_dir = base_dir / target_role
     if target_dir.exists():
-        shutil.rmtree(target_dir)
+        # Role-mirror is a publish artefact regenerated from the live
+        # composition on every `ai-hats reflect` — recovery is `ai-hats
+        # reflect` itself. Whitelist.
+        shutil.rmtree(target_dir)  # safe-delete: ok reflect-republish
     target_dir.mkdir(parents=True)
 
     manifest = {

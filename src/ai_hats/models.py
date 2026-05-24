@@ -721,7 +721,9 @@ class UserConfig(_YamlModel):
         live = any(not overlay.is_empty for overlay in self.customizations.values())
         if not live:
             if path.exists():
-                path.unlink()
+                # File is empty by contract — no recovery value in a
+                # snapshot. Whitelist with reason.
+                path.unlink()  # safe-delete: ok empty-config
             return
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:

@@ -33,7 +33,6 @@ re-materialisation is intentionally out of scope.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -627,28 +626,36 @@ def check_branches_modify_paths(
 # ---------- Execution ----------
 
 
-def execute_deletions(report: MigrationReport, canonical_dir: Path) -> list[Path]:
-    """Delete every path in the report. Sweep empty parent dirs up to ``canonical_dir``.
+def execute_deletions(
+    report: MigrationReport,
+    canonical_dir: Path,
+    *,
+    project_dir: Path | None = None,
+) -> list[Path]:
+    """Move every finding to trash. Sweep empty parent dirs up to ``canonical_dir``.
+
+    HATS-470: routed through :func:`ai_hats.safe_delete.discard` instead
+    of raw ``unlink`` / ``rmtree``. Victims land under
+    ``$TMPDIR/ai-hats/trash-<ts>-<pid>/<relpath>`` for recovery.
 
     Returns the list of paths actually removed (excludes already-missing
     targets so the caller can produce an accurate audit). Never touches
     ``user-rules/`` — defence in depth on top of the planner already not
     classifying it as a finding.
 
-    HATS-408 review (B2 — symlink safety):
+    HATS-408 review (B2 — symlink safety) — preserved via
+    :func:`safe_delete.discard` semantics:
 
-    * Uses lexical ``.absolute()`` instead of ``.resolve()`` so a malicious
+    * Uses lexical ``.absolute()`` for the user-rules guard so a malicious
       symlink at the finding (e.g. ``traits/foo.md`` → ``/etc/passwd``)
-      cannot cause us to delete an out-of-tree file.
-    * Symlink findings are removed with ``Path.unlink`` (removes the link,
-      not the target), regardless of file-vs-dir kind.
-    * ``shutil.rmtree`` is only invoked on real directories — never on a
-      symlink-to-dir (would otherwise wipe the link's external target).
-    * The ``user-rules`` defence check is also lexical, so a symlink under
-      a Tier-1 subdir whose link target happens to escape canonical_dir
-      still gets matched + skipped if it lexically lives under user-rules,
-      and otherwise gets its symlink (not target) unlinked.
+      cannot escape the check.
+    * Symlinks: ``discard`` unlinks the link, target is preserved
+      (sidecar ``.symlink`` file records the original target).
+    * ``project_dir`` (when passed) controls trash project-relative
+      layout — assembler caller passes ``self.project_dir``.
     """
+    from .safe_delete import TrashFullError, discard
+
     removed: list[Path] = []
     canonical_absolute = canonical_dir.absolute()
     user_rules = canonical_absolute / "user-rules"
@@ -664,20 +671,13 @@ def execute_deletions(report: MigrationReport, canonical_dir: Path) -> list[Path
         # Check both so we don't silently skip a broken symlink finding.
         if not absolute.exists() and not absolute.is_symlink():
             continue
-        # HATS-408 review B5: a permission-denied or read-only file in the
-        # sweep set used to crash the whole pass mid-deletion (partial
-        # state + no commit). Now: per-path try/except OSError surfaces
-        # one stderr line per failure and the loop continues so the rest
-        # of the sweep + the atomic commit envelope still run.
+        # HATS-408 review B5: per-path try/except OSError surfaces one
+        # stderr line per failure and the loop continues. HATS-470:
+        # TrashFullError propagates (fatal — bump aborts).
         try:
-            if absolute.is_symlink():
-                # Unlink the link itself, never the target — covers both
-                # symlink-to-file and symlink-to-dir cases uniformly.
-                absolute.unlink()
-            elif absolute.is_dir():
-                shutil.rmtree(absolute)
-            else:
-                absolute.unlink(missing_ok=True)
+            discard(absolute, reason="v07-migration", project_dir=project_dir)
+        except TrashFullError:
+            raise
         except OSError as e:
             sys.stderr.write(
                 f"WARN: v07-migrate: could not remove {absolute} ({e.strerror or e}); "
@@ -693,7 +693,7 @@ def execute_deletions(report: MigrationReport, canonical_dir: Path) -> list[Path
                 break
             except (StopIteration, OSError):
                 try:
-                    parent.rmdir()
+                    parent.rmdir()  # safe-delete: ok empty-dir
                 except OSError:
                     break
                 parent = parent.parent

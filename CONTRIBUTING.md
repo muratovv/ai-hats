@@ -8,7 +8,7 @@ and what **not** to commit.
 > into the `maintainer` role via the `ai-hats-maintainer` trait. Load it
 > with `ai-hats config set -r maintainer` (the project's `ai-hats.yaml`
 > ships this default). This `CONTRIBUTING.md` is the human-readable
-> reference — agents pick up the same content through `ai-hats self bump`.
+> reference — agents pick up the same content through `ai-hats self init`.
 
 For the architectural overview see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 For how the framework's reflection loop works see
@@ -78,7 +78,7 @@ root in `library/`, split into two layers shipped together inside the
 1. Is it referenced by name in `src/ai_hats/` code, or pulled in transitively
    by a core trait (`trait-base`, `trait-agent`, `trait-analyst-base`,
    `base-judge`, `base-auditor`, `trait-reflect-mode`)? → **core**.
-2. Does removing it break `ai-hats init` / `ai-hats self bump` / a reflect
+2. Does removing it break `ai-hats init` / `ai-hats self init` / a reflect
    pipeline? → **core**.
 3. Otherwise — **usage**.
 
