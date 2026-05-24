@@ -445,7 +445,8 @@ def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
     # standalone `ai-hats self migrate` was removed). HATS-400: when the
     # update actually changed the version on disk, run bump in a *fresh*
     # subprocess so the new code (migrations, healer, etc.) is loaded —
-    # in-process `asm.bump()` would silently keep using the OLD code from
+    # in-process pipeline (was `asm.bump()`, HATS-469 now `_refresh`+helpers)
+    # would silently keep using the OLD code from
     # this update's interpreter, leaving the project half-fixed until the
     # user manually re-runs the bump-internal entry. HATS-470: the
     # subprocess entry-point moved from `ai-hats self bump` (CLI command
@@ -483,14 +484,25 @@ def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
             # users have mistaken the quiet pause for a hang.
             try:
                 asm = _assembler(project_dir)
+                # HATS-469: ``Assembler.bump`` was replaced by ``_refresh``;
+                # the bump pipeline is now an explicit composition (same
+                # as ``cli/assembly.py::do_bump``).
+                from ..materialize import compose_for_role
+
                 with console.status(
                     f"[cyan]Migrating / refreshing[/] {active_role} …",
                     spinner="dots",
                 ):
-                    bump_result = asm.bump(
-                        force_v07_migration=migrate_force,
-                        check_v07_branches=check_branches,
+                    asm._run_v07_migration(
+                        force=migrate_force, check_branches=check_branches,
                     )
+                    cfg = asm.project_config
+                    role_name = cfg.active_role or cfg.default_role
+                    bump_result = (
+                        compose_for_role(asm, role_name) if role_name else None
+                    )
+                    asm._refresh(install_time=True, result=bump_result)
+                    asm._run_diagnostics()
                 if bump_result:
                     after_rules = {r.name for r in bump_result.rules}
                     after_skills = {s.name for s in bump_result.skills}
@@ -522,13 +534,16 @@ def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
 
 
 # HATS-285: `ai-hats self migrate` removed. Migration is transparent inside
-# `Assembler.set_role` / `Assembler.bump` (filesystem) and `ProjectConfig
-# .from_yaml` (yaml). Cleanup of obsolete files lives in `Assembler.bump`.
+# `Assembler.set_role` / `Assembler._refresh(install_time=True)` (HATS-469;
+# the latter is reached via init and the do_bump CLI pipeline). Yaml-side
+# migration lives in `ProjectConfig.from_yaml`. Cleanup of obsolete files
+# is registry step=3 (HATS-471).
 
-# HATS-415: `ai-hats self migrate-v07` removed. The v0.6 → v0.7 migration
-# is now inline in `Assembler.bump()` and exposed via
-# `ai-hats self update --migrate-force` / `--check-branches` (also on
-# `self bump` directly). Helpers (`migration_guidance`,
+# HATS-415/469: `ai-hats self migrate-v07` removed. The v0.6 → v0.7 layout
+# migration runs inline in the `do_bump` CLI pipeline (and on `Assembler.init`
+# re-init for existing projects), exposed via
+# `ai-hats self update --migrate-force` / `--check-branches`. Helpers
+# (`migration_guidance`,
 # `empty_composition`, `render_user_edits_refusal`) live in
 # :mod:`ai_hats.migration_v07`; the Assembler owns hook-source and
 # tier-2 source-lookup discovery as private methods.

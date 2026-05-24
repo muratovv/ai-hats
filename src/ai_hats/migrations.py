@@ -2,15 +2,20 @@
 
 Stop accumulating migration code forever. Migrations run **once per project**,
 gated by ``ProjectConfig.migration_step``. Each entry advances the counter on
-success; subsequent ``Assembler.bump()`` invocations skip entries whose step
-is already covered.
+success; subsequent invocations skip entries whose step is already covered.
+
+After HATS-469 the registry is replayed by :meth:`Assembler._refresh` when
+called with ``install_time=True`` (the path used by ``Assembler.init`` and
+the ``do_bump`` CLI pipeline). The ``set_role`` runtime bootstrap path
+uses ``install_time=False`` and skips the registry — migrations are
+expected to have run during the user-initiated init/bump.
 
 ``migration_step`` is **orthogonal** to ``schema_version``:
 
 * ``schema_version`` describes the on-disk yaml format (handled in
   :func:`ProjectConfig.from_yaml`).
 * ``migration_step`` is a monotonic counter for one-shot side effects
-  performed by ``Assembler.bump()`` (file moves, cleanups, content heals).
+  performed at install-time refresh (file moves, cleanups, content heals).
 
 Two are independent: bumping yaml schema does not automatically advance
 ``migration_step``, and adding a new migration entry does not require a yaml
@@ -26,11 +31,14 @@ schema bump.
   on-disk state consistent enough that a re-run completes the job. The
   runner does not roll back; it advances ``migration_step`` only after the
   function returns successfully.
-* **Concurrency-tolerant.** Under N parallel ``ai-hats self bump`` processes
-  on the same project, a migration may execute up to N times. Idempotency
-  must hold for that case — file locks at the ``_safe_replace`` level handle
-  most byte-level races, but two processes reading ``migration_step=0`` and
-  both replaying step 1 is the steady-state expectation, not a bug.
+* **Concurrency-tolerant.** Under N parallel install-time refreshes
+  (``ai-hats self init`` / ``self update`` / ``_bump_internal``) on the
+  same project, a migration may execute up to N times. Idempotency must
+  hold for that case — file locks at the ``_safe_replace`` level handle
+  most byte-level races, but two processes reading ``migration_step=0``
+  and both replaying step 1 is the steady-state expectation, not a bug.
+  HATS-469 widened the concurrency surface from bump-only to all three
+  install-time entry-points; the idempotency contract is unchanged.
 
 **Scope of the "at-most-once" guarantee.** The runner gates entries by
 ``cfg.migration_step``, but the wrapped methods are still ordinary
@@ -46,9 +54,10 @@ bootstrap paths the registry cannot cover.
 :class:`Assembler` instance, not a generic ``(Path, ProjectConfig)`` tuple,
 because the wrapped methods need ``self.provider`` / ``self.agent_dir`` /
 ``self.composer.resolver``. The wrappers (``_m_*`` below) are pure dispatch
-to existing Assembler methods. This is a refactor of inline
-``Assembler.bump()`` calls into a registry, **not** a generic framework —
-do not import ``MIGRATIONS`` from outside Assembler-aware code.
+to existing Assembler methods. This is a refactor of the pre-HATS-471
+inline migration calls (which lived in the now-removed ``Assembler.bump``
+method) into a registry, **not** a generic framework — do not import
+``MIGRATIONS`` from outside Assembler-aware code.
 
 The registry is intentionally additive: when a migration is no longer needed
 in supported releases, a follow-up will delete the entry and introduce an

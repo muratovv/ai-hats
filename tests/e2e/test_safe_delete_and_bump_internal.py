@@ -211,6 +211,18 @@ def test_e2e_init_creates_trash_session_on_legacy_ref_heal(
     settings_path.write_text(json.dumps(legacy_settings, indent=2) + "\n")
     original_bytes = settings_path.read_bytes()
 
+    # HATS-469: ``heal_external_refs`` is registry step 4 (one-shot gated
+    # by ``migration_step``). The initial ``_init_minimal_project`` ran
+    # ``ai-hats self init`` which now seeds ``migration_step=latest``
+    # (post-HATS-469). To exercise the heal pathway after seeding the
+    # legacy ref, rewind ``migration_step`` below step 4 so the next
+    # registry pass replays ``heal_external_refs``.
+    import yaml as _yaml
+    cfg_path = project / "ai-hats.yaml"
+    cfg_data = _yaml.safe_load(cfg_path.read_text())
+    cfg_data["migration_step"] = 3
+    cfg_path.write_text(_yaml.safe_dump(cfg_data))
+
     # Re-run init: idempotent on yaml, triggers bump (HATS-470 ergonomics
     # fix) which runs heal_external_refs.
     _run(
