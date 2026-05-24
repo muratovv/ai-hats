@@ -196,7 +196,7 @@ def test_e2e_refuse_on_user_edit_default_behavior(installed_launcher, tmp_path):
     before_commits = _git_log_count(project, env)
 
     res = _run(
-        [str(launcher), "self", "init"],
+        [f"{env["AI_HATS_VENV"]}/bin/python", "-m", "ai_hats._bump_internal"],
         cwd=project, env=env, timeout=60, expect_exit=1,
     )
 
