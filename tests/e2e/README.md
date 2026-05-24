@@ -79,15 +79,19 @@ handful live. Always prefer free over venv over live.
 | `repo_root` | session | `Path` | Repo checkout root. Process-wide constant. |
 | `requires_claude_auth` | function | `None` | Skip marker. Skips if `claude --version` doesn't exit 0. |
 | `tmp_project` | function | `Project` | Role-less project + dev-venv binary. Free-tier. |
-| `tmp_venv_project` | **module** | `Project` | Full launcher install + inner venv. Venv-tier. Build amortises across tests in one file. |
-| `probe_project` | function | `Path` | Bakes a deterministic `probe` role for live-session tests. |
+| `tmp_venv_project` | function (on a module-scoped venv builder) | `Project` | Fresh project dir + shared launcher venv via `AI_HATS_VENV`. Venv-tier. |
+| `probe_project` | function | `Path` | Bakes a deterministic `probe` role for live-session tests. Gated on `requires_claude_auth` at the test signature when a live SDK call follows. |
 
-The module scope on `tmp_venv_project` is deliberate: building the
-launcher venv runs `bash scripts/install-launcher.sh` + `ai-hats self
-update`, ~30-60s on a cold pip cache. Sharing across tests in one
-file cuts that cost by ~Nx. **Tests must NOT mutate the venv
-destructively** (e.g. `rm -rf .agent/ai-hats/.venv`) — that breaks
-every subsequent test in the module.
+`tmp_venv_project` is layered: an internal module-scoped builder
+(`_shared_launcher_venv`) runs `bash scripts/install-launcher.sh` +
+`ai-hats self update` once per file (~30-60s on a cold pip cache),
+while the user-facing fixture is function-scoped and hands each test
+a fresh project directory pointing at the shared venv via
+`AI_HATS_VENV`. Tests can mutate their own project freely. **The
+shared venv MUST NOT be mutated destructively** — no
+`rm -rf <venv>`, no `pip uninstall`, no `self bump` to a different
+ai-hats version. Tests that need a hostile venv should declare their
+own function-scoped builder.
 
 ## Helper modules (`tests/e2e/_helpers/`)
 

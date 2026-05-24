@@ -10,10 +10,12 @@ Maps to Core scenarios:
 * ``test_self_init_is_idempotent_on_repeat`` → S-CLI-36. Two
   back-to-back ``self init`` calls; the second must succeed without
   re-prompting and without trashing the existing yaml.
-* ``test_venv_project_yaml_exists`` → trivial reuse check. Lives
-  alongside the idempotency test so we can EYEBALL module-scoped
-  reuse — if the venv were rebuilt for this second test, total
-  wall-clock would roughly double.
+* ``test_shared_venv_reused_across_tests`` → reuse proof. The
+  function-scoped fixture sits on top of a module-scoped venv
+  builder; this test confirms the second invocation in the module
+  points at the same already-built venv (cheap, sub-second), which
+  is the whole point of the layered scope. If the venv were rebuilt,
+  total wall-clock would roughly double.
 
 Skips the whole module when the launcher install or ``self update``
 can't run (no ``install-launcher.sh``, no network + no warm pip
@@ -37,9 +39,17 @@ def test_self_init_is_idempotent_on_repeat(tmp_venv_project) -> None:
     )
 
 
-def test_venv_project_yaml_exists(tmp_venv_project) -> None:
-    """Module-scoped reuse proof — second test sees the same project
-    that the idempotency test populated, no fixture rebuild required.
-    Wall-clock for this test alone should be sub-second."""
-    assert tmp_venv_project.yaml.is_file()
-    assert "default_role: assistant" in tmp_venv_project.yaml.read_text()
+def test_shared_venv_reused_across_tests(tmp_venv_project) -> None:
+    """Reuse proof — the function-scoped Project sees a fresh empty
+    project dir AND points at the already-built shared venv via
+    ``AI_HATS_VENV``. The venv directory exists, its python is on
+    disk, and the project's own ``.agent/`` hasn't been populated
+    yet (clean slate)."""
+    from pathlib import Path
+    shared_venv = Path(tmp_venv_project.env["AI_HATS_VENV"])
+    assert (shared_venv / "bin" / "python").is_file(), \
+        "shared venv not visible to second test — reuse broken"
+    assert not tmp_venv_project.yaml.exists(), \
+        "fresh project should not carry yaml across tests"
+    assert not (tmp_venv_project.path / ".agent").exists(), \
+        "fresh project should not carry .agent/ across tests"

@@ -4,10 +4,11 @@ Mirrors the pattern from ``tests/e2e/test_install.py`` but exposes it
 as a helper so module-scoped fixtures can amortise the ~30-60s build
 across multiple tests in the same module.
 
-Single entry point: :func:`build_launcher_venv`. Returns the launcher
-binary path; the inner ai-hats venv lives at ``<project>/.agent/ai-
-hats/.venv/`` after the first ``self update``. Tests typically run
-``ai-hats self init`` next to populate the project.
+Single entry point: :func:`build_launcher_venv`. Builds the venv in
+a dedicated sandbox directory (not inside any test's project dir)
+so tests can be handed a clean project that points at the shared
+venv via the ``AI_HATS_VENV`` env knob. This honours the plan's
+"fresh Project per yield" contract while keeping the venv shared.
 """
 
 from __future__ import annotations
@@ -18,30 +19,33 @@ import subprocess
 from pathlib import Path
 
 
-def build_launcher_venv(
-    work_dir: Path, repo_root: Path, *, project_dir: Path,
-) -> Path:
-    """Install the ai-hats launcher and bootstrap its venv in ``project_dir``.
+def build_launcher_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
+    """Install the ai-hats launcher and bootstrap a shared venv.
 
     Steps:
 
     1. Run ``scripts/install-launcher.sh`` with
        ``AI_HATS_LAUNCHER_DEST=<work_dir>/bin/ai-hats`` so the binary
        lands inside the test sandbox.
-    2. Run ``<launcher> self update`` from ``project_dir`` with
+    2. Run ``<launcher> self update`` from a dedicated bootstrap
+       directory (``<work_dir>/bootstrap/``) with
        ``AI_HATS_REPO_URL=<repo_root>`` so pip installs from the
        local checkout (no network for ai-hats itself). The inner
-       venv lands at ``<project_dir>/.agent/ai-hats/.venv/`` —
-       subsequent CLI calls in that project find it automatically.
+       venv lands at ``<work_dir>/bootstrap/.agent/ai-hats/.venv/``.
 
-    Returns the launcher path. The project itself is owned by the
-    caller (typically a module-scoped fixture).
+    Returns ``(launcher_path, shared_venv_path)``. Callers point
+    per-test projects at the shared venv via the ``AI_HATS_VENV``
+    env knob — the bootstrap dir itself is NOT a test project.
 
     Raises :class:`FileNotFoundError` if ``scripts/install-launcher.sh``
     is missing — callers can catch that and ``pytest.skip``.
     Raises :class:`subprocess.CalledProcessError` on launcher or
     self-update failure (e.g. no network when pip needs to fetch
     transitive deps not in the local wheel cache).
+    Raises :class:`RuntimeError` if the launcher binary lands but
+    isn't executable, or if the venv directory doesn't materialise.
+    Callers that pre-skip on missing artefacts should catch these
+    three explicitly.
     """
     install_script = repo_root / "scripts" / "install-launcher.sh"
     if not install_script.is_file():
@@ -49,6 +53,8 @@ def build_launcher_venv(
 
     launcher = work_dir / "bin" / "ai-hats"
     launcher.parent.mkdir(parents=True, exist_ok=True)
+    bootstrap = work_dir / "bootstrap"
+    bootstrap.mkdir(exist_ok=True)
 
     env = os.environ.copy()
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher)
@@ -63,15 +69,18 @@ def build_launcher_venv(
     if not launcher.is_file() or not os.access(launcher, os.X_OK):
         raise RuntimeError(f"launcher not installed at {launcher}")
 
-    # Bootstrap the inner venv via the launcher, INSIDE project_dir
-    # so subsequent ``ai-hats self <cmd>`` invocations find it at
-    # ``<project_dir>/.agent/ai-hats/.venv/`` (the default lookup path).
+    # Bootstrap the inner venv via the launcher in a DEDICATED dir,
+    # NOT a project that tests will use — tests get fresh project
+    # paths and reach the venv via AI_HATS_VENV env override.
     subprocess.run(
         [str(launcher), "self", "update"],
-        cwd=str(project_dir), env=env,
+        cwd=str(bootstrap), env=env,
         capture_output=True, text=True, timeout=180, check=True,
     )
-    return launcher
+    shared_venv = bootstrap / ".agent" / "ai-hats" / ".venv"
+    if not (shared_venv / "bin" / "python").is_file():
+        raise RuntimeError(f"shared venv not bootstrapped at {shared_venv}")
+    return launcher, shared_venv
 
 
 def network_available() -> bool:
