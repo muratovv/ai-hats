@@ -236,24 +236,21 @@ def init(
         console.print(f"[red]Error[/]: {err}")
         raise SystemExit(1)
 
-    # HATS-470: `self bump` CLI removed; `self init` now folds bump in so
-    # re-running init on an existing project refreshes migrations,
-    # scaffold, canonical aggregator, and git hooks (the user-facing
-    # equivalent of the old `self bump` ergonomics). On a fresh project
-    # everything is a no-op. On the wizard path this would race with
-    # the wizard's own session-bootstrap; skip there.
+    # HATS-469 R6: auto-bump block removed. ``Assembler.init`` itself now
+    # calls ``_refresh(install_time=True)`` (which runs migrations + heal
+    # + hook install) and ``_run_v07_migration`` on re-init. The only
+    # remaining init-time chores not covered by that refresh are the
+    # state-condition diagnostics (orphan warning, empty .agent/ note)
+    # and the trash-bin summary banner. ``TrashFullError`` from inside
+    # ``_refresh`` already propagates up via ``asm.init`` above — no
+    # re-raise needed here. Wizard path still skips (the wizard role
+    # handles its own session-bootstrap surface).
     if already and not use_wizard:
-        from ..safe_delete import TrashFullError as _TrashFull
         from ..safe_delete import session_summary as _trash_summary
-        try:
-            asm.bump()
-        except _TrashFull:
-            # HATS-470 review (Quality nit 3): trash-bin failures MUST
-            # propagate — silently dropping snapshots violates the
-            # safe-delete contract. Init aborts loudly.
-            raise
-        except Exception as e:  # noqa: BLE001 — other bump failures don't block init
-            console.print(f"  [yellow]Post-init bump warned:[/] {e}")
+
+        # HATS-469 R3: re-init is user-initiated → diagnostics OK
+        # (set_role / runtime path stays silent).
+        asm._run_diagnostics()
         banner = _trash_summary()
         if banner:
             console.print(f"  [dim]{banner}[/]")
@@ -850,7 +847,16 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
     ``self update``, HATS-400) or via ``self init`` after the in-process
     assembler hook.
 
-    Refreshes migrations, scaffold, canonical aggregator, and git hooks.
+    HATS-469: ``Assembler.bump`` was replaced by ``_refresh`` — the
+    bump pipeline is now an explicit composition here:
+
+    1. ``_run_v07_migration`` — v0.6 → v0.7 layout heal (CLI-kwarg-gated,
+       kept outside ``_refresh`` to preserve a clean signature).
+    2. ``_refresh(install_time=True)`` — registry replay + scaffold +
+       canonical + hooks.
+    3. ``_run_diagnostics`` — orphan warning + empty .agent/ note
+       (user-initiated path).
+
     Safe-to-delete v0.6 files are swept transparently; user-edited
     files refuse with per-file guidance. ``migrate_force`` bypasses
     the refusal (one stderr WARN per file). ``check_branches`` warns
@@ -858,13 +864,25 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
     auto-commit — review with ``git status`` and commit at leisure.
     """
     from ..assembler import AssemblyError
+    from ..materialize import compose_for_role
 
     asm = _assembler()
     try:
-        result = asm.bump(
-            force_v07_migration=migrate_force,
-            check_v07_branches=check_branches,
-        )
+        # 1. v0.6→v0.7 layout heal — must run BEFORE registry (step 6
+        # = _migrate_layout_v4 expects v0.7 tree).
+        asm._run_v07_migration(force=migrate_force, check_branches=check_branches)
+
+        # 2. Compose for the active role (or None if none set). Passed
+        # through to _refresh which installs role git hooks.
+        cfg = asm.project_config
+        role_name = cfg.active_role or cfg.default_role
+        result = compose_for_role(asm, role_name) if role_name else None
+
+        # 3. Unified heal/install.
+        asm._refresh(install_time=True, result=result)
+
+        # 4. Diagnostics — user-initiated path; expects state report.
+        asm._run_diagnostics()
     except AssemblyError as e:
         # HATS-415: render the user-edits refusal message via Rich so the
         # per-file guidance markup (`[bold]…[/]`, `[yellow]…[/]`) inside

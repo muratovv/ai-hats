@@ -16,6 +16,9 @@ import pytest
 
 from ai_hats.assembler import Assembler
 
+# HATS-469: ``Assembler.bump()`` removed; use the test pipeline helper.
+from tests._assembler_helpers import bump_pipeline
+
 
 def md5(path: Path) -> str:
     return hashlib.md5(path.read_bytes()).hexdigest()
@@ -92,7 +95,7 @@ def test_bump_after_role_swap_is_byte_stable(project_two_roles: Path) -> None:
         "aggregator": md5(project_two_roles / ".agent" / "ai-hats" / "imports.md"),
     }
 
-    asm.bump()
+    bump_pipeline(asm)
 
     assert md5(project_two_roles / "CLAUDE.md") == snapshot["claude_md"]
     assert (
