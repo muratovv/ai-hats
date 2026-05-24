@@ -54,7 +54,11 @@ def wt():
 @click.argument("branch")
 def wt_create(branch: str):
     """Create an isolated worktree on a new branch."""
-    from ..worktree import WorktreeManager
+    from ..worktree import (
+        WorktreeCreateError,
+        WorktreeLockError,
+        WorktreeManager,
+    )
 
     project_dir = _project_dir()
 
@@ -65,15 +69,23 @@ def wt_create(branch: str):
         console.print("  Run [bold]ai-hats wt create[/] from the main repo.")
         sys.exit(1)
 
-    # HATS-061: check if this specific branch already has a worktree.
-    existing = WorktreeManager.load_for_branch(project_dir, branch)
-    if existing is not None:
-        console.print(f"[red]Worktree already exists for branch[/]: {existing.branch_name}")
-        console.print(f"  Path: {existing.worktree_path}")
+    # HATS-479: the previous pre-check (load_for_branch outside any lock) was
+    # the TOCTOU surface — two concurrent `wt create <same-branch>` callers
+    # both saw `existing is None`, then both ran `git worktree add -b`, and
+    # the loser got an opaque CalledProcessError + a leaked tempdir.
+    # WorktreeManager.create() now re-checks under the repo-scoped L1 lock
+    # and raises WorktreeCreateError with a friendly message; we just relay.
+    mgr = WorktreeManager(project_dir, branch_name=branch)
+    try:
+        wt_path = mgr.create()
+    except WorktreeCreateError as exc:
+        console.print(f"[red]{exc}[/]")
+        sys.exit(1)
+    except WorktreeLockError as exc:
+        console.print("[red]wt create lock unavailable[/]")
+        console.print(str(exc))
         sys.exit(1)
 
-    mgr = WorktreeManager(project_dir, branch_name=branch)
-    wt_path = mgr.create()
     mgr.save_state()
     console.print(f"[green]Worktree created[/]: {branch}")
     console.print(f"  Path: {wt_path}")

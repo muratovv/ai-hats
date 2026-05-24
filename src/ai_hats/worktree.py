@@ -338,7 +338,21 @@ class WorktreeManager:
 
     def create(self) -> Path:
         """Create an isolated worktree. Returns project_dir if not a git repo
-        or if isolation_mode is NONE (no worktree, runs in project_dir)."""
+        or if isolation_mode is NONE (no worktree, runs in project_dir).
+
+        HATS-479: concurrent ai-hats peers and external git writers are
+        handled via L1 (repo-scoped create-mutex), L2 (TOCTOU re-check
+        under the mutex), L3 (bounded retry of ``git worktree add`` on
+        transient stderr) and L4 (cleanup of ``mkdtemp`` and the branch
+        on failure). See module docstring "Create-time concurrency".
+
+        :raises WorktreeCreateError: branch already exists under our
+            tracked state, or ``git worktree add`` failed after retries.
+            Stderr is parsed into the message; callers should NOT see an
+            opaque :class:`subprocess.CalledProcessError` from here.
+        :raises WorktreeLockError: L1 mutex was held by another process
+            for longer than :data:`CREATE_LOCK_TIMEOUT`.
+        """
         if self.isolation_mode == IsolationMode.NONE:
             # No worktree: sub-agent runs directly in project_dir.
             # worktree_path stays None so cleanup() is a no-op.
@@ -366,13 +380,50 @@ class WorktreeManager:
         except subprocess.CalledProcessError:
             self._base_sha_at_create = None
 
-        prefix = self.branch_name.replace("/", "-")
-        tmpdir = tempfile.mkdtemp(prefix=f"ai-hats-wt-{prefix}-")
-        self.worktree_path = Path(tmpdir)
+        # HATS-479 — L1 + L2 + L4. See module docstring "Create-time concurrency".
+        with _acquire_create_lock(self.project_dir):
+            # L2: re-check under the lock. Closes the TOCTOU window between a
+            # caller's optional pre-check and our work.
+            existing = WorktreeManager.load_for_branch(
+                self.project_dir, self.branch_name
+            )
+            if existing is not None:
+                raise WorktreeCreateError(
+                    f"Worktree already exists for branch "
+                    f"'{self.branch_name}': {existing.worktree_path}"
+                )
 
-        self._git("worktree", "add", "-b", self.branch_name, str(self.worktree_path))
-        logger.info("Created worktree %s on branch %s", self.worktree_path, self.branch_name)
-        return self.worktree_path
+            # Snapshot pre-existing branch state — L4 deletes the branch on
+            # failure ONLY if we created it ourselves. Without this, an
+            # accidental `wt create <existing-branch>` would delete the user's
+            # branch in cleanup.
+            branch_existed_before = self._branch_exists(self.branch_name)
+
+            prefix = self.branch_name.replace("/", "-")
+            tmpdir = tempfile.mkdtemp(prefix=f"ai-hats-wt-{prefix}-")
+            self.worktree_path = Path(tmpdir)
+
+            try:
+                _retry_worktree_add(
+                    self._git, self.branch_name, self.worktree_path
+                )
+            except subprocess.CalledProcessError as exc:
+                # L4: cleanup leaked tempdir + (only-our) branch.
+                shutil.rmtree(self.worktree_path, ignore_errors=True)
+                self.worktree_path = None
+                if not branch_existed_before:
+                    try:
+                        self._git("branch", "-D", self.branch_name)
+                    except subprocess.CalledProcessError:
+                        pass  # branch may not have been created — fine
+                raise WorktreeCreateError(
+                    _format_git_create_error(exc, self.branch_name)
+                ) from exc
+            logger.info(
+                "Created worktree %s on branch %s",
+                self.worktree_path, self.branch_name,
+            )
+            return self.worktree_path
 
     def merge(
         self,
