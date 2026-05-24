@@ -18,7 +18,10 @@ with one pre-1.0 caveat documented below.
 - The `ai-hats` CLI: top-level groups, command names, and documented
   flags. `ai-hats --tree` is the canonical inventory of the surface.
 - `ai-hats.yaml` schema. The top-level `schema_version` field tracks
-  breaking shape changes; migrations live in `docs/migration*.md`.
+  breaking shape changes; migrations live in `docs/migration*.md`. The
+  `migration_step` field (HATS-471) is NOT part of the schema contract
+  — it is an internal counter for one-shot side-effect replay, freely
+  bumped by additive registry entries without a SemVer signal.
 - Tracker on-disk format: the `tracker/backlog/tasks/HATS-NNN/` layout,
   task-card YAML schema, `STATE.md` format.
 - The skill / rule / trait file format documented in [1].

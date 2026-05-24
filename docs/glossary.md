@@ -89,7 +89,7 @@ Practical recipes — see [5]. Pipeline architecture — see [8].
 
 What ai-hats persists on disk during normal use.
 
-- **`ai-hats.yaml`** — project config. Fields: `schema_version`, `provider`, `active_role`, `default_role`, `task_prefix`, `customizations`, `feedback`, `library_paths`, `venv_path`. Source of truth for composition. Apply changes by re-running `ai-hats self init` (idempotent) or `ai-hats self update` (which folds bump in); verify with `ai-hats config status`. Full walkthrough — see [6].
+- **`ai-hats.yaml`** — project config. Fields: `schema_version`, `migration_step`, `provider`, `active_role`, `default_role`, `task_prefix`, `customizations`, `feedback`, `library_paths`, `venv_path`. `schema_version` describes the yaml format; `migration_step` (HATS-471) is a monotonic counter for one-shot migrations replayed at bump time — each entry runs once per project, then the gate short-circuits. Source of truth for composition. Apply changes by re-running `ai-hats self init` (idempotent) or `ai-hats self update` (which folds bump in); verify with `ai-hats config status`. Full walkthrough — see [6].
 - **SessionReview** — `<ai_hats_dir>/sessions/retros/sessions/<id>.md`. Output of `session-reviewer`: `summary`, `observations`, `hypothesis_verdicts`, `proposal_actions`. Schema `hats-session-review/v1`. Consumed by the next reflect cycle. Detail — see [5].
 - **JudgeReport** — `<ai_hats_dir>/sessions/retros/judge/<UTC-ts>-report.md`. Output of `ai-hats reflect all` — HYP closures plus PROP decisions for one triage session. Detail — see [5].
 - **RoleCoherenceReport** — `<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ts>-<target>.md`. Output of `ai-hats reflect role` — findings on internal contradictions in a role composition. Detail — see [8].
