@@ -116,9 +116,17 @@ def _ensure_session() -> _Session:
             return _current_session
         assert base is not None  # narrow the type for mypy
         ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        session = base / f"{SESSION_PREFIX}{ts}-{os.getpid()}"
+        # mkdtemp guarantees uniqueness even when two ai-hats processes
+        # (or two pytest cases within the same wall second) initialise
+        # sessions back-to-back — its random suffix avoids collisions
+        # that a naive ts+pid path triggered. ts + pid still encoded
+        # in the prefix for human grep-ability.
         try:
-            session.mkdir(parents=True, exist_ok=False)
+            base.mkdir(parents=True, exist_ok=True)
+            session_str = tempfile.mkdtemp(
+                prefix=f"{SESSION_PREFIX}{ts}-{os.getpid()}-",
+                dir=str(base),
+            )
         except OSError as e:
             if e.errno == errno.ENOSPC:
                 raise TrashFullError(
@@ -133,7 +141,7 @@ def _ensure_session() -> _Session:
                     f"{ENV_TRASH_DIR}=- to disable trash."
                 ) from e
             raise
-        _current_session = _Session(root=session, hard_delete=False)
+        _current_session = _Session(root=Path(session_str), hard_delete=False)
         return _current_session
 
 

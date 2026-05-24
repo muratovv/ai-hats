@@ -532,8 +532,15 @@ def test_plan_migration_placeholder_irrelevant_when_token_absent(tmp_path):
 def test_execute_deletions_logs_and_continues_on_permission_error(
     tmp_path, monkeypatch, capsys
 ):
-    """A read-only file mid-sweep must not crash the loop — partial
-    deletion + no commit would leave the project half-migrated."""
+    """A permission-denied file mid-sweep must not crash the loop.
+
+    HATS-470: error injection moved to safe_delete.shutil.move (the new
+    destructive primitive) since execute_deletions now routes through
+    safe_delete.discard().
+    """
+    from ai_hats import safe_delete
+    safe_delete.reset_session()
+
     canonical = tmp_path / "ai-hats"
     (canonical / "traits").mkdir(parents=True)
     poison = canonical / "traits" / "poison.md"
@@ -541,14 +548,14 @@ def test_execute_deletions_logs_and_continues_on_permission_error(
     survivor = canonical / "traits" / "ok.md"
     survivor.write_text("y\n")
 
-    real_unlink = Path.unlink
+    real_move = safe_delete.shutil.move
 
-    def selective_unlink(self, *args, **kwargs):
-        if self.name == "poison.md":
-            raise PermissionError(13, "Permission denied", str(self))
-        return real_unlink(self, *args, **kwargs)
+    def selective_move(src, dst, *args, **kwargs):
+        if Path(src).name == "poison.md":
+            raise PermissionError(13, "Permission denied", str(src))
+        return real_move(src, dst, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "unlink", selective_unlink)
+    monkeypatch.setattr(safe_delete.shutil, "move", selective_move)
 
     report = m.MigrationReport(findings=[
         m.TierFinding(path=poison, tier=1, kind="trait",
@@ -567,13 +574,22 @@ def test_execute_deletions_logs_and_continues_on_permission_error(
     # poison.md still on disk so the user can fix permissions and re-run.
     assert poison.exists()
 
+    safe_delete.reset_session()
+
 
 def test_execute_deletions_logs_and_continues_on_rmtree_error(
     tmp_path, monkeypatch, capsys
 ):
-    """HATS-408 second-round review T2: B5 only patched Path.unlink which
-    leaves the shutil.rmtree branch (Tier-2 dir findings) untested. A
-    permission-denied directory must also log + continue, not crash."""
+    """Permission-denied DIRECTORY finding must also log + continue.
+
+    HATS-470: safe_delete.discard uses shutil.move for both files and
+    dirs (single primitive). Error injection on the move primitive
+    covers both branches; the historical rmtree-specific branch test
+    becomes another move-injection variant.
+    """
+    from ai_hats import safe_delete
+    safe_delete.reset_session()
+
     canonical = tmp_path / "ai-hats"
     rules_parent = canonical / "library" / "rules"
     rules_parent.mkdir(parents=True)
@@ -584,16 +600,14 @@ def test_execute_deletions_logs_and_continues_on_rmtree_error(
     survivor_dir.mkdir()
     (survivor_dir / "rule.md").write_text("y\n")
 
-    import shutil as _shutil
+    real_move = safe_delete.shutil.move
 
-    real_rmtree = _shutil.rmtree
+    def selective_move(src, dst, *args, **kwargs):
+        if Path(src).name == "poison_dir":
+            raise PermissionError(13, "Permission denied", str(src))
+        return real_move(src, dst, *args, **kwargs)
 
-    def selective_rmtree(path, *args, **kwargs):
-        if Path(path).name == "poison_dir":
-            raise PermissionError(13, "Permission denied", str(path))
-        return real_rmtree(path, *args, **kwargs)
-
-    monkeypatch.setattr("ai_hats.migration_v07.shutil.rmtree", selective_rmtree)
+    monkeypatch.setattr(safe_delete.shutil, "move", selective_move)
 
     report = m.MigrationReport(findings=[
         m.TierFinding(path=poison, tier=2, kind="lib_rule_dir",
@@ -610,6 +624,8 @@ def test_execute_deletions_logs_and_continues_on_rmtree_error(
     captured = capsys.readouterr()
     assert "could not remove" in captured.err
     assert "poison_dir" in captured.err
+
+    safe_delete.reset_session()
 
 
 # ---------- HATS-408 review A4: integration with a real Composer ----------

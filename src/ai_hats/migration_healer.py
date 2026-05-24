@@ -358,7 +358,13 @@ def heal_json_file(path: Path, project_dir: Path) -> int:
 
     Preserves the original file's trailing newline. Idempotent: a re-run on
     already-healed content returns 0.
+
+    HATS-470: old content is snapshotted to the trash session via
+    :func:`safe_delete.replace` before the rewrite, so users can recover
+    from a faulty heal pass.
     """
+    from .safe_delete import replace as _safe_replace
+
     try:
         raw = path.read_text(encoding="utf-8")
         data = json.loads(raw)
@@ -370,7 +376,12 @@ def heal_json_file(path: Path, project_dir: Path) -> int:
     new_text = json.dumps(new_data, indent=2, ensure_ascii=False)
     if raw.endswith("\n"):
         new_text += "\n"
-    path.write_text(new_text, encoding="utf-8")
+    _safe_replace(
+        path,
+        new_text.encode("utf-8"),
+        reason="heal-json",
+        project_dir=project_dir,
+    )
     return count
 
 
@@ -406,7 +417,14 @@ def heal_text_file(path: Path, project_dir: Path) -> int:
 
     Caller is responsible for invoking ``is_file_git_clean`` first; this
     function blindly applies the rewrite.
+
+    HATS-470: old content is snapshotted to the trash session via
+    :func:`safe_delete.replace` — important for the non-git fallback
+    branch where ``is_file_git_clean`` returns True permissively and
+    a faulty regex could otherwise irreversibly mangle user content.
     """
+    from .safe_delete import replace as _safe_replace
+
     try:
         content = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -417,7 +435,12 @@ def heal_text_file(path: Path, project_dir: Path) -> int:
     )
     if count == 0:
         return 0
-    path.write_text(new_content, encoding="utf-8")
+    _safe_replace(
+        path,
+        new_content.encode("utf-8"),
+        reason="heal-text",
+        project_dir=project_dir,
+    )
     return count
 
 
