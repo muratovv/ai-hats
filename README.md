@@ -36,7 +36,7 @@ Have you ever watched the same AI agent step on the same rakes across projects? 
 
 ai-hats answers this with two things:
 
-- **Roles as compositions of reusable components** — `traits`, `rules`, `skills`, and `hooks` are assembled into a role once and injected into the system prompt of any provider (Gemini / Claude). A fix to one component reaches every role that includes it via `ai-hats self bump`.
+- **Roles as compositions of reusable components** — `traits`, `rules`, `skills`, and `hooks` are assembled into a role once and injected into the system prompt of any provider (Gemini / Claude). A fix to one component reaches every role that includes it via `ai-hats self init`.
 - **Deep reflection after every session** — a structured retrospective with a factual layer (metrics, files, commits) plus an LLM narrative that delivers verdicts on active hypotheses and votes on improvement proposals. Patterns observed across 3–5 sessions become new rules and skills, and the loop closes.
 
 ```
@@ -95,7 +95,7 @@ ai-hats self init -p claude -r go-dev --no-wizard \
 ai-hats                       # start a session with current settings
 ai-hats --resume              # flags pass through to the provider (claude / gemini)
 ai-hats config status         # health-check the composition
-ai-hats self bump             # rebuild the prompt after library changes
+ai-hats self init             # rebuild the prompt after library changes
 ai-hats self update           # update ai-hats and auto-bump
 ```
 
@@ -121,7 +121,7 @@ Eight top-level groups:
 | `config`  | Read / edit `ai-hats.yaml` (provider, role, customizations, feedback)   |
 | `list`    | Discovery: roles / skills / rules / traits / providers / tokens         |
 | `reflect` | Feedback loop — per-session vote and bulk triage of HYP / PROP          |
-| `self`    | Tool lifecycle: init / bump / update / clean / rollback                 |
+| `self`    | Tool lifecycle: init / update / clean / rollback                 |
 | `session` | Observability: list / show / audit / retro for sessions                 |
 | `task`    | Backlog: task / hyp / proposal cards with a state machine — recipes in [4] |
 | `wt`      | Git worktrees: create / merge / discard / exec / env — recipes in [5] §2 |
@@ -140,7 +140,7 @@ ai-hats agent sre --task "investigate alert XYZ"
 # Lifecycle
 ai-hats self init                          # interactive bootstrap (wizard) — new projects
 ai-hats config set -r <role> -p <provider> # change role / provider in an existing project
-ai-hats self update && ai-hats self bump   # update ai-hats and rebuild the prompt
+ai-hats self update && ai-hats self init   # update ai-hats and rebuild the prompt
 ai-hats config status                      # health-check the composition
 ```
 
@@ -168,6 +168,24 @@ When the installed `ai-hats` SHA lags upstream `master`, a three-line **Update b
 The probe is non-blocking: a detached background subprocess fires at session start and caches the result for 24h under `<ai_hats_dir>/.cache/update-check.json`. The banner reads whatever's currently in the cache (stale-while-revalidate) — first probe results land in the next session, not the current one.
 
 Suppress both probe and banner with `AI_HATS_NO_UPDATE_CHECK=1` (useful for CI / scripted invocations). Term definitions — see [1].
+
+## Recovery from accidental change
+
+Every destructive op inside `ai-hats self update` / `self init` (migrations, scaffold rewrites, `.gitignore` edits, `.claude/settings.json` writes, `heal_*` rewrites) snapshots the original content to a per-process **trash session** before touching disk:
+
+```text
+$TMPDIR/ai-hats/trash-<utc-ts>-<pid>-XXXXXX/<project-relative-path>
+```
+
+The session also writes a `MANIFEST.md` next to the moved files listing every op (timestamp, kind, reason, original → trash path). Recover a single file:
+
+```bash
+ls $TMPDIR/ai-hats/                                # list all trash sessions
+cat $TMPDIR/ai-hats/trash-<id>/MANIFEST.md         # see what's in this one
+cp -r $TMPDIR/ai-hats/trash-<id>/<rel> ./<rel>     # restore
+```
+
+Sessions are NOT auto-cleaned — `/tmp` retention is enough in practice (macOS / Linux clean on reboot). To override the trash location, set `AI_HATS_TRASH_DIR=<path>`. To opt out entirely in CI / ephemeral environments, set `AI_HATS_TRASH_DIR=-` (hard-delete mode, no snapshots, WARN per op). On `ENOSPC` / read-only filesystem the destructive op aborts loudly (`TrashFullError`) rather than silently losing data. Term definitions — see [1].
 
 ## Architecture
 

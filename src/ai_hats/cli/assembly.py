@@ -229,6 +229,22 @@ def init(
         console.print(f"[red]Error[/]: {err}")
         raise SystemExit(1)
 
+    # HATS-470: `self bump` CLI removed; `self init` now folds bump in so
+    # re-running init on an existing project refreshes migrations,
+    # scaffold, canonical aggregator, and git hooks (the user-facing
+    # equivalent of the old `self bump` ergonomics). On a fresh project
+    # everything is a no-op. On the wizard path this would race with
+    # the wizard's own session-bootstrap; skip there.
+    if already and not use_wizard:
+        try:
+            asm.bump()
+        except Exception as e:  # noqa: BLE001 — bump should never block init
+            console.print(f"  [yellow]Post-init bump warned:[/] {e}")
+        from ..safe_delete import session_summary as _trash_summary
+        banner = _trash_summary()
+        if banner:
+            console.print(f"  [dim]{banner}[/]")
+
     label = "Re-initialized" if already else "Initialized"
     console.print(f"[green]{label}[/] ai-hats in {project_dir}")
 

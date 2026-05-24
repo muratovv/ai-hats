@@ -132,7 +132,7 @@ You can overlay add / remove / inject without forking the base role. Two equival
 ai-hats config customize sre --add-skill kubernetes-ops
 ai-hats config customize sre --remove-skill network-documentation
 ai-hats config customize sre --injection-append "All infra changes via ArgoCD PRs."
-ai-hats self bump
+ai-hats self init
 ```
 
 **YAML form** (same end state):
@@ -288,7 +288,7 @@ venv_path: .venv          # an existing project venv at the repo root
 Any edit to `ai-hats.yaml` is applied with one command:
 
 ```bash
-ai-hats self bump          # rebuild CLAUDE.md / GEMINI.md and .claude/* from the config
+ai-hats self init          # rebuild CLAUDE.md / GEMINI.md and .claude/* from the config
 ai-hats config status      # confirm provider, role, composition, feedback policy
 ```
 
@@ -298,13 +298,13 @@ If you want to see what the bump changed:
 git diff CLAUDE.md ai-hats.yaml
 ```
 
-Rerun `self bump` after: yaml edits, `ai-hats self update`, or any change under `library_paths`. `ai-hats config status` is a health-check — green means the next session will get the composition you expect.
+Rerun `self init` after: yaml edits, `ai-hats self update`, or any change under `library_paths`. `ai-hats config status` is a health-check — green means the next session will get the composition you expect.
 
 ---
 
 ## 8. Common pitfalls
 
-- **Stale prompt.** Edited `ai-hats.yaml` and didn't see the change in the next session? You forgot `ai-hats self bump`. Add it to your apply-step muscle memory.
+- **Stale prompt.** Edited `ai-hats.yaml` and didn't see the change in the next session? You forgot `ai-hats self init`. Add it to your apply-step muscle memory.
 - **Overlay warnings.** `Overlay: cannot remove 'X' — not in base role` is a soft warning. The build still succeeds; the overlay is just inert. Fix by spelling the component name as it appears in `ai-hats config status`.
 - **`library_paths` precedence.** Later paths win; project-local `<project>/libraries/` overrides the shipped library. Full precedence table — see [3].
 - **Override venv updates.** Once `venv_path:` is set, ai-hats only does `pip install -U` into that venv — never recreates it. If it breaks (e.g. corrupted site-packages), you fix it manually.

@@ -50,7 +50,7 @@ feedback:
 ```
 
 ```bash
-ai-hats self bump
+ai-hats self init
 ```
 
 That's it. After every session that crosses the smart threshold (5 turns OR 10 tool calls by default — see [Policy setup](#flow-0-policy-setup-in-ai-hatsyaml) for tuning), the `session-reviewer` role runs in the background and writes `<ai_hats_dir>/sessions/retros/sessions/<id>.md`.
@@ -150,7 +150,7 @@ Behavior:
 - The old `reflect_model` field is accepted as a deprecated alias (with `DeprecationWarning`); the `model` field (the former LLM-builder) is no longer used and is ignored.
 - Supported for both `provider: claude` and `provider: gemini` (the `--model` flag is standard for both CLIs).
 
-After editing — `ai-hats self bump`.
+After editing — `ai-hats self init`.
 
 ---
 

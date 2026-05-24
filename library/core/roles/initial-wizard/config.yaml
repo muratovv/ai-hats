@@ -77,7 +77,7 @@ injection: |
   question goes beyond the built-in instructions below.
 
   If `docs/INDEX.md` is missing — tell the user, suggest
-  `ai-hats self bump` to refresh built-in docs, and continue the wizard
+  `ai-hats self init` to refresh built-in docs, and continue the wizard
   (no hard block). The opener already lists three core fallback docs.
 
   ## Available base roles (knowledge — do NOT read yaml)

@@ -6,7 +6,7 @@ Add your own roles, traits, rules, skills, and pipelines to ai-hats — without 
 
 When you `pip install ai-hats`, two layers ship as built-in content:
 
-- **`library/core/`** — engine fundament. System roles invoked by name from engine code (`initial-wizard`, `session-reviewer`, `auditor-for-role`, `judge`, `judge-for-role`, `hypothesis-intake`, `test-agent`), base traits (`trait-base`, `trait-agent`, `trait-analyst-base`, `base-judge`, `base-auditor`, `trait-reflect-mode`), global rules, foundational skills (`backlog-manager`, `git-mastery`, `context-*`, `review-*`, etc.), and all reflect-pipeline YAML. Without these, `ai-hats init` / `ai-hats self bump` / reflect pipelines do not work.
+- **`library/core/`** — engine fundament. System roles invoked by name from engine code (`initial-wizard`, `session-reviewer`, `auditor-for-role`, `judge`, `judge-for-role`, `hypothesis-intake`, `test-agent`), base traits (`trait-base`, `trait-agent`, `trait-analyst-base`, `base-judge`, `base-auditor`, `trait-reflect-mode`), global rules, foundational skills (`backlog-manager`, `git-mastery`, `context-*`, `review-*`, etc.), and all reflect-pipeline YAML. Without these, `ai-hats init` / `ai-hats self init` / reflect pipelines do not work.
 - **`library/usage/`** — curated content catalog. Opinionated roles (`assistant`, `dev-python`, `maintainer`, `architect`, `sre`, `go-dev`, `go-dev-full`), domain traits (`trait-se-mindset`, `dev::python`, `dev::shell`, `dev::go-*`, `env::proxmox`, …), and ~55 optional skills (golang, terraform, ansible, observability, system-design, …).
 
 The split is informational — both layers are loaded at runtime. You can override either from your own library path.
@@ -68,7 +68,7 @@ injection: |
 YAML
 
 ai-hats config set -r code-reviewer
-ai-hats self bump
+ai-hats self init
 ```
 
 `ai-hats list roles` will now show `code-reviewer` alongside the built-in roles.
@@ -291,7 +291,7 @@ cp "$(python -c 'from importlib.resources import files; print(files("ai_hats.lib
 $EDITOR libraries/roles/session-reviewer/config.yaml
 
 # 4. Apply
-ai-hats self bump
+ai-hats self init
 ```
 
 The next time a reflect pipeline invokes `session-reviewer` (by name), the resolver finds your version first (last-wins) and uses it.
@@ -319,7 +319,7 @@ Paths are expanded (`~` → `$HOME`) and walked in order. Each path is treated a
 
 ## Inspecting what's resolved
 
-After `ai-hats self bump`, the composed role is materialized into your project. To see what got pulled in:
+After `ai-hats self init`, the composed role is materialized into your project. To see what got pulled in:
 
 - `ai-hats list rules` / `ai-hats list skills` / `ai-hats list traits` / `ai-hats list roles` — flat list of everything visible.
 - `ai-hats tree` (or `ai-hats list roles --tree`) — composition graph for the active role.
@@ -328,7 +328,7 @@ After `ai-hats self bump`, the composed role is materialized into your project. 
 ## Cookbook entries
 
 - **Add a project-specific rule that bans `git push --force`** — make `libraries/rules/no-force-push/rule.md` with the constraint, then `ai-hats config customize <role> --add-rule no-force-push`.
-- **Tweak the injection of a built-in trait** — copy `library/usage/traits/<name>/config.yaml` into your `libraries/traits/<name>/`, edit the `injection:` block, `ai-hats self bump`. Same last-wins rule applies to traits.
+- **Tweak the injection of a built-in trait** — copy `library/usage/traits/<name>/config.yaml` into your `libraries/traits/<name>/`, edit the `injection:` block, `ai-hats self init`. Same last-wins rule applies to traits.
 - **Share a private skill across projects** — put it under `~/.ai-hats/skills/<name>/`. Every project on your machine sees it without further config.
 
 ## Migrating from a removed built-in component
@@ -359,7 +359,7 @@ ai-hats config customize maintainer --add-trait personal-workflow --global
 ai-hats config customize assistant  --add-trait personal-workflow --global
 
 # In each project that uses these roles:
-ai-hats self bump
+ai-hats self init
 ```
 
 Verify with `ai-hats config status` — the trait should appear under the
