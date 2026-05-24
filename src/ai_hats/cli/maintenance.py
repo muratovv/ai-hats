@@ -99,7 +99,8 @@ def _get_changelog() -> str:
     finally:
         import shutil
 
-        shutil.rmtree(tmp, ignore_errors=True)
+        # Local tempfile.mkdtemp() — own temp dir, no user data.
+        shutil.rmtree(tmp, ignore_errors=True)  # safe-delete: ok own-tmpdir
 
 
 def _snapshot_dep_versions() -> dict[str, str]:
