@@ -400,6 +400,15 @@ class ProjectConfig(_YamlModel):
     default_role: str = ""
     active_role: str = ""
     schema_version: int = 4
+    # HATS-471: monotonic counter for one-shot migrations replayed at
+    # `Assembler.bump()`. Orthogonal to ``schema_version`` (which describes
+    # yaml format). The registry in ``ai_hats/migrations.py`` runs entries
+    # with ``m.step > migration_step``; after each successful entry the
+    # counter advances and persists. Greenfield init seeds it to the
+    # latest registry step; existing projects seed to 0 and replay the
+    # whole registry once (idempotent by invariant of every migration
+    # function).
+    migration_step: int = 0
     # HATS-316: where ai-hats keeps its managed artefacts. Migration (v3→v4)
     # and `ai-hats init` write this field to disk explicitly so users see it.
     # The class-level default is a bootstrap safety net for `ProjectConfig()`
@@ -532,6 +541,13 @@ class ProjectConfig(_YamlModel):
             # HATS-316: ai_hats_dir is unconditionally serialized so users
             # see the configurable path in their ai-hats.yaml.
             "ai_hats_dir": self.ai_hats_dir,
+            # HATS-471: migration_step is unconditionally serialized once
+            # any save fires — same as schema_version. Greenfield init
+            # seeds it to ``migrations.latest_step()``; the registry
+            # runner persists subsequent advances. Existing pre-HATS-471
+            # projects load with the pydantic default 0 (no field in
+            # yaml) and pick up the field on the next save.
+            "migration_step": self.migration_step,
             "library_paths": self.library_paths,
             "active_role": self.active_role,
             "default_role": self.default_role,
