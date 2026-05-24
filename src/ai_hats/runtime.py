@@ -1084,8 +1084,19 @@ class SubAgentRunner:
         )
         session.log_trace(TraceTag.SUB, f"Sub-agent started: role={role_name}")
 
+        # HATS-474 review fix: keep the env we pass to a *subprocess* (Gemini
+        # path) as the full inherited environment — subprocess.run replaces
+        # the child env wholesale when given. The SDK path uses an *overlay*
+        # via ClaudeAgentOptions.env, which the SDK merges on top of
+        # os.environ at spawn time, so we hand it only ai-hats-specific
+        # keys to avoid widening the secret-exposure surface (the SDK
+        # stores options on a long-lived object, repr-able).
         env = {
             **os.environ,
+            **session.get_env(),
+            "AI_HATS_ROLE": role_name,
+        }
+        sdk_env_overlay = {
             **session.get_env(),
             "AI_HATS_ROLE": role_name,
         }
@@ -1124,7 +1135,7 @@ class SubAgentRunner:
                         session_id=session.session_id,
                         task=task,
                         ticket_id=ticket_id,
-                        env=env,
+                        env=sdk_env_overlay,
                         model=model,
                         timeout_s=timeout_s,
                     )
@@ -1456,8 +1467,11 @@ class SubAgentRunner:
             TraceTag.SUB, f"Sub-agent session started: role={role}",
         )
 
-        env = {
-            **os.environ,
+        # HATS-474 review fix: hand the SDK only an ai-hats-specific
+        # overlay; the SDK merges this on top of inherited os.environ at
+        # spawn time, so the full host env doesn't sit on a long-lived
+        # ClaudeAgentOptions object.
+        sdk_env_overlay = {
             **session.get_env(),
             "AI_HATS_ROLE": role,
         }
@@ -1482,29 +1496,43 @@ class SubAgentRunner:
                     session_id=session.session_id,
                     work_dir=work_dir,
                     model=model or "",
-                    extra_env=env or None,
+                    extra_env=sdk_env_overlay or None,
                     max_budget_usd=max_budget_usd,
                     max_turns=max_turns,
                     permission_mode=permission_mode,
                     allowed_tools=allowed_tools,
                 )
-                async with ClaudeSDKClient(options=options) as client:
-                    sub = SubAgentSession(
-                        client=client,
-                        session=session,
-                        role=role,
-                        model=model,
-                        isolation_mode=mode.value,
-                    )
-                    try:
-                        yield sub
-                    except BaseException as exc:
-                        # Capture so the finally block can record it in
-                        # metrics — then re-raise so the caller still
-                        # sees the original exception. asynccontextmanager
-                        # contract: re-raise (or don't catch) on caller error.
+                # HATS-474 review fix #4: also catch exceptions raised by
+                # ClaudeSDKClient.__aexit__ (SDK shutdown failures) so
+                # they reach _finalize_session_audit and land in
+                # metrics.json.error. Without this wrapper an SDK-level
+                # shutdown error would propagate past our local try
+                # without populating yield_error, and the audit would
+                # mis-classify the session as clean.
+                try:
+                    async with ClaudeSDKClient(options=options) as client:
+                        sub = SubAgentSession(
+                            client=client,
+                            session=session,
+                            role=role,
+                            model=model,
+                            isolation_mode=mode.value,
+                        )
+                        try:
+                            yield sub
+                        except BaseException as exc:
+                            # Capture so the finally block can record it
+                            # in metrics — then re-raise so the caller
+                            # still sees the original exception.
+                            yield_error = exc
+                            raise
+                except BaseException as exc:
+                    # Either context entry / shutdown failed, or the
+                    # inner block re-raised. Don't overwrite a
+                    # yield_error already captured by the inner handler.
+                    if yield_error is None:
                         yield_error = exc
-                        raise
+                    raise
         finally:
             self._finalize_session_audit(
                 session=session,

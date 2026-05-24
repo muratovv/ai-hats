@@ -37,6 +37,7 @@ module's contracts.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -139,11 +140,27 @@ class SubAgentSession:
         self._model = model
         self._isolation_mode = isolation_mode
         self._acc = _SessionAccumulator()
+        # HATS-474 review fix: single-flight guard. ``client.query`` +
+        # ``client.receive_response`` share one bidirectional stdin/stdout
+        # channel; two parallel ``send`` calls would interleave queries
+        # with responses and corrupt the accumulator. The lock serializes
+        # them; concurrent callers wait their turn rather than seeing a
+        # racy mix.
+        self._send_lock = asyncio.Lock()
 
     # ----- public surface -----
 
     async def send(self, message: str) -> Response:
-        """Send one user turn; drain until terminal; return the response."""
+        """Send one user turn; drain until terminal; return the response.
+
+        Serialised via an internal :class:`asyncio.Lock` — calling
+        ``send`` from two coroutines on the same ``SubAgentSession``
+        will queue one behind the other, never interleave.
+        """
+        async with self._send_lock:
+            return await self._send_locked(message)
+
+    async def _send_locked(self, message: str) -> Response:
         from .sdk_runner import drain_one_turn
 
         self._acc.send_count += 1
@@ -213,6 +230,20 @@ class SubAgentSession:
 
     @property
     def num_turns_total(self) -> int:
+        """Sum of ``ResultMessage.num_turns`` across sends.
+
+        .. note::
+
+           SDK semantics of ``ResultMessage.num_turns`` are not fully
+           documented — the field may report the agent's *cumulative*
+           turn index (1, 2, 3, ...) rather than the per-send turn
+           count, in which case this property double-counts. The
+           ambiguity is tracked as a follow-up to HATS-474; downstream
+           callers SHOULD treat this as a coarse-grained signal of
+           "did the agent do nontrivial work" rather than an exact
+           tool-loop count. ``send_count`` is the precise per-session
+           message count.
+        """
         return self._acc.num_turns_total
 
     @property

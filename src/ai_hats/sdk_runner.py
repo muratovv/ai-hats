@@ -299,18 +299,17 @@ async def drain_one_turn(
 async def _run_sdk(
     options: "ClaudeAgentOptions",
     initial_message: str,
-    timeout_s: int,
 ) -> SdkRunResult:
     """Async core for the one-shot path: spawn ``ClaudeSDKClient``, send
     the initial message, drain until ``ResultMessage``, format, return.
 
-    Wrapped in :func:`asyncio.wait_for` by the sync entry point so a wall-
-    clock cap matches the legacy ``subprocess.run(timeout=...)`` semantic.
-    Never re-raises — converts any context-entry / per-turn exception
-    into a :class:`SdkRunResult` with ``error`` populated so the caller
-    can finalize uniformly.
+    The wall-clock cap is applied by :func:`run_claude_sdk_blocking` via
+    :func:`asyncio.wait_for` around this coroutine — kept out of the
+    function body so the timeout semantic stays in one place. Never
+    re-raises — converts any context-entry / per-turn exception into a
+    :class:`SdkRunResult` with ``error`` populated so the caller can
+    finalize uniformly.
     """
-    del timeout_s  # threaded in by run_claude_sdk_blocking via asyncio.wait_for
     from claude_agent_sdk import ClaudeSDKClient
 
     try:
@@ -344,7 +343,7 @@ def run_claude_sdk_blocking(
     """
     async def _gated() -> SdkRunResult:
         return await asyncio.wait_for(
-            _run_sdk(options, initial_message, timeout_s),
+            _run_sdk(options, initial_message),
             timeout=timeout_s,
         )
 
