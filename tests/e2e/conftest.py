@@ -6,7 +6,10 @@
 * ``repo_root`` — single source of truth for repo path math.
 * ``probe_project`` — minimal claude-provider project ready for
   :func:`tests.e2e._helpers.live.live_session`. Function-scoped: tests
-  get a fresh tmp project each run.
+  get a fresh tmp project each run. Bakes the ``probe`` role.
+* ``tmp_project`` — generic role-less project for subprocess-only
+  tests against the ``ai-hats`` CLI. Function-scoped. Returns a
+  :class:`tests.e2e._helpers.project.Project`.
 """
 
 from __future__ import annotations
@@ -86,3 +89,39 @@ def probe_project(tmp_path: Path) -> Path:
     asm.init()
     asm.set_role("probe", provider_name="claude")
     return project
+
+
+@pytest.fixture
+def tmp_project(tmp_path: Path, repo_root: Path):
+    """Role-less ai-hats project + Project driver for CLI subprocess tests.
+
+    Contract:
+
+    * ``ai-hats.yaml`` written with ``provider: claude`` and an empty
+      ``library_paths`` (caller adds entries / roles if needed).
+    * ``.agent/ai-hats/`` bootstrapped via :class:`ai_hats.assembler.Assembler`.
+      No role set — keeps the project deterministic for tests that
+      exercise the CLI surface without an active role.
+    * Project's ``ai_hats_binary`` points at the dev venv binary
+      (``<repo_root>/.venv/bin/ai-hats``) so tests invoke the local
+      checkout, not whatever happens to be on PATH.
+
+    Returns a :class:`tests.e2e._helpers.project.Project`. Use
+    :meth:`Project.run` for one-shot ``ai-hats <cmd>`` invocations and
+    the fluent ``RunResult.expect_*`` verbs for assertions.
+    """
+    from ai_hats.assembler import Assembler
+    from ai_hats.models import ProjectConfig
+
+    from _helpers.project import Project
+
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    ProjectConfig(provider="claude", library_paths=[]).save(
+        project_path / "ai-hats.yaml"
+    )
+    Assembler(project_path).init()
+    return Project(
+        path=project_path,
+        ai_hats_binary=repo_root / ".venv" / "bin" / "ai-hats",
+    )
