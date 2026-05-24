@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from typing import TYPE_CHECKING
@@ -1347,3 +1348,220 @@ class SubAgentRunner:
         if task_file.exists():
             return task_file.read_text()
         return ""
+
+    # ----- HATS-474 Phase 3: multi-turn API -----
+
+    def session(
+        self,
+        role: str,
+        *,
+        model: str = "",
+        isolation_mode: str = "discard",
+        parent_session: str | None = None,
+        tags: dict[str, str] | None = None,
+        system_prompt_override: str | None = None,
+    ):
+        """Open a multi-turn sub-agent session as an async context manager.
+
+        Usage::
+
+            async with runner.session("maintainer", model="claude-haiku-4-5") as s:
+                r1 = await s.send("Analyse auth.py")
+                r2 = await s.send("Now refactor to use JWT")
+
+        On entry: compose the role, init audit, open the worktree, spawn
+        :class:`ClaudeSDKClient`. On exit: emit aggregated ``transcript
+        .txt`` / ``reasoning.log`` and ``metrics.json`` (summed
+        ``total_cost_usd``, total ``num_turns_total``, stable
+        ``claude_session_id``, ``send_count``, last ``stop_reason``),
+        then drop the per-session cache.
+
+        Claude-only — Gemini and future CLI-only providers don't have a
+        multi-turn SDK channel. Use :meth:`run` for those.
+        """
+        provider_name = self.assembler.project_config.provider
+        if provider_name != "claude":
+            raise ValueError(
+                f"SubAgentRunner.session() is Claude-only (got "
+                f"provider={provider_name!r}). Use SubAgentRunner.run() "
+                "for one-shot non-Claude sub-agents."
+            )
+        return self._session_impl(
+            role=role,
+            model=model,
+            isolation_mode=isolation_mode,
+            parent_session=parent_session,
+            tags=tags,
+            system_prompt_override=system_prompt_override,
+        )
+
+    @asynccontextmanager
+    async def _session_impl(
+        self,
+        *,
+        role: str,
+        model: str,
+        isolation_mode: str,
+        parent_session: str | None,
+        tags: dict[str, str] | None,
+        system_prompt_override: str | None,
+    ):
+        """Implementation of :meth:`session` — wrapped by a thin sync
+        validator so consumers get a clear ``ValueError`` on misuse
+        (e.g. wrong provider) at call time rather than buried inside
+        ``async with`` machinery.
+        """
+        from claude_agent_sdk import ClaudeSDKClient
+
+        from .sdk_options import build_options
+        from .subagent_session import SubAgentSession
+
+        session = self.session_mgr.create_session(parent_session=parent_session)
+
+        result = compose_for_role(self.assembler, role)
+        if system_prompt_override is not None:
+            result = result.with_injection_override(system_prompt_override)
+
+        provider = get_provider(self.assembler.project_config.provider)
+
+        meta_prompt = self._build_sdk_prompt_audit(
+            result=result, task="", ticket_id="",
+        )
+        session.save_meta_prompt(meta_prompt)
+        session.init_audit(
+            role=role,
+            provider=provider.name,
+            model=model,
+            composition=_composition_snapshot(self.assembler, role, result),
+        )
+        session.log_trace(
+            TraceTag.SUB, f"Sub-agent session started: role={role}",
+        )
+
+        env = {
+            **os.environ,
+            **session.get_env(),
+            "AI_HATS_ROLE": role,
+        }
+
+        mode = IsolationMode(isolation_mode)
+        session.log_trace(TraceTag.SUB, f"Isolation: {mode.value}")
+
+        t0 = time.monotonic()
+        sub: SubAgentSession | None = None
+        yield_error: BaseException | None = None
+
+        try:
+            with WorktreeManager(
+                self.project_dir, role, session.session_id, mode,
+            ) as work_dir:
+                session.log_trace(
+                    TraceTag.SUB, f"Working directory: {work_dir}",
+                )
+                options = build_options(
+                    result,
+                    project_dir=self.project_dir,
+                    session_id=session.session_id,
+                    work_dir=work_dir,
+                    model=model or "",
+                    extra_env=env or None,
+                )
+                async with ClaudeSDKClient(options=options) as client:
+                    sub = SubAgentSession(
+                        client=client,
+                        session=session,
+                        role=role,
+                        model=model,
+                        isolation_mode=mode.value,
+                    )
+                    try:
+                        yield sub
+                    except BaseException as exc:
+                        # Capture so the finally block can record it in
+                        # metrics — then re-raise so the caller still
+                        # sees the original exception. asynccontextmanager
+                        # contract: re-raise (or don't catch) on caller error.
+                        yield_error = exc
+                        raise
+        finally:
+            self._finalize_session_audit(
+                session=session,
+                role=role,
+                model=model,
+                mode=mode,
+                sub=sub,
+                yield_error=yield_error,
+                tags=tags,
+                duration_s=time.monotonic() - t0,
+            )
+            _cleanup_session_cache(self.project_dir, session.session_id)
+
+    def _finalize_session_audit(
+        self,
+        *,
+        session: Session,
+        role: str,
+        model: str,
+        mode: IsolationMode,
+        sub,  # SubAgentSession | None — kept untyped to avoid import cycle
+        yield_error: BaseException | None,
+        tags: dict[str, str] | None,
+        duration_s: float,
+    ) -> None:
+        """Emit the per-session ``transcript.txt`` / ``reasoning.log`` /
+        ``metrics.json`` once a multi-turn session has finished.
+
+        Centralises the conditional logic for: (a) clean session →
+        aggregated stats from ``sub``, (b) yield raised but ``sub``
+        existed → record the error alongside whatever turns ran, (c)
+        setup failed before ``sub`` existed → minimal error finalize so
+        ``session_dir`` is consistent regardless.
+        """
+        if sub is None:
+            # Setup phase failed before SubAgentSession was created
+            # (compose / worktree / SDK context entry).
+            error_text = "session setup failed"
+            if yield_error is not None:
+                error_text = (
+                    f"{type(yield_error).__name__}: {yield_error}"
+                )
+            _finalize_sub_agent(
+                session,
+                role=role,
+                model=model,
+                isolation_mode=mode.value,
+                exit_code=SUBAGENT_EXIT_ERROR,
+                error=error_text,
+                tags=tags,
+                duration_s=duration_s,
+            )
+            return
+
+        exit_code = (
+            SUBAGENT_EXIT_ERROR
+            if (sub.is_error or yield_error is not None)
+            else 0
+        )
+        error_text = sub.first_error
+        if yield_error is not None and error_text is None:
+            error_text = f"{type(yield_error).__name__}: {yield_error}"
+
+        _finalize_sub_agent(
+            session,
+            role=role,
+            model=model,
+            isolation_mode=mode.value,
+            exit_code=exit_code,
+            stdout=sub.aggregated_transcript,
+            stderr=sub.aggregated_reasoning,
+            error=error_text,
+            tags=tags,
+            duration_s=duration_s,
+            extra_metrics={
+                "claude_session_id": sub.claude_session_id,
+                "total_cost_usd": sub.total_cost_usd,
+                "num_turns_total": sub.num_turns_total,
+                "send_count": sub.send_count,
+                "stop_reason": sub.last_stop_reason,
+            },
+        )
