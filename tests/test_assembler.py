@@ -204,6 +204,39 @@ def test_bump_pipeline_returns_none_without_role(project_with_library):
     assert result is None
 
 
+def test_reinit_without_role_arg_still_composes_for_default_role(project_with_library):
+    """HATS-469 R8 (audit regression): re-init without ``-r`` MUST still
+    compose for ``default_role`` (from yaml) so role git hooks get
+    re-installed. The pre-HATS-469 auto-bump path did this implicitly
+    via ``asm.bump()``; with auto-bump gone (R6), init must read the
+    saved role explicitly.
+
+    Spy: ``_install_git_hooks`` is the canonical "role pipeline fired"
+    signal. We monkeypatch it on the second Assembler to count calls.
+    """
+    project, lib = project_with_library
+    # Make ``.git/`` so _refresh's guard would normally let
+    # _install_git_hooks fire.
+    (project / ".git").mkdir(exist_ok=True)
+
+    # Step 1: init with explicit role → persists default_role.
+    asm = Assembler(project, library_paths=[lib])
+    asm.init(role="test-role")
+    assert asm.project_config.default_role == "test-role"
+
+    # Step 2: re-init WITHOUT role kwarg on the same project.
+    asm2 = Assembler(project, library_paths=[lib])
+    install_calls = []
+    asm2._install_git_hooks = lambda r: install_calls.append(r.name)  # type: ignore[assignment]
+    asm2.init()  # no role; default_role=test-role in yaml
+
+    assert install_calls == ["test-role"], (
+        f"HATS-469 R8: re-init without -r failed to re-install role "
+        f"git hooks for default_role. _install_git_hooks calls: "
+        f"{install_calls!r}"
+    )
+
+
 # -- HATS-415: bump inline v0.6 → v0.7 migration (replaces HATS-408 naive gate) --
 
 
