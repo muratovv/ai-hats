@@ -134,6 +134,7 @@ def _finalize_sub_agent(
     error: str | None = None,
     tags: dict[str, str] | None = None,
     duration_s: float | None = None,
+    extra_metrics: dict | None = None,
 ) -> None:
     """Save transcripts and finalize audit with structured metrics.
 
@@ -142,6 +143,13 @@ def _finalize_sub_agent(
     written if we have any output, metrics.json written with exit_code and
     optional timed_out/error/tags/duration_s fields. Provider-agnostic —
     behaves identically for claude and gemini.
+
+    ``extra_metrics`` (HATS-474): provider-specific keys to merge into
+    the metrics dict — e.g. ``claude_session_id``, ``total_cost_usd``,
+    ``num_turns``, ``stop_reason`` from the Claude Agent SDK path.
+    ``None`` values inside are skipped so legacy subprocess callers
+    (Gemini) that have no such telemetry keep producing the same
+    metrics.json shape they always did.
     """
     if stdout:
         (session.session_dir / "transcript.txt").write_text(stdout)
@@ -162,6 +170,10 @@ def _finalize_sub_agent(
         metrics["tags"] = tags
     if duration_s is not None:
         metrics["duration_s"] = round(duration_s, 3)
+    if extra_metrics:
+        for k, v in extra_metrics.items():
+            if v is not None:
+                metrics[k] = v
 
     session.finalize_audit(metrics)
 
@@ -1020,7 +1032,18 @@ class SubAgentRunner:
         system_prompt_override: str | None,
         timeout_s: int,
     ) -> Session:
-        """One subprocess attempt — always finalizes metrics, never re-raises.
+        """One sub-agent attempt — always finalizes metrics, never re-raises.
+
+        Two execution engines live behind this entry point:
+
+        * **Claude** path (HATS-474): :class:`claude_agent_sdk.ClaudeSDKClient`
+          via :mod:`ai_hats.sdk_runner`. Wall-clock cap implemented as
+          ``asyncio.wait_for(timeout_s)``; the helper never raises and
+          always returns an :class:`SdkRunResult` we finalize from.
+
+        * **Legacy subprocess** path (Gemini, future providers): unchanged
+          ``subprocess.run`` flow. ``subprocess.TimeoutExpired`` keeps its
+          long-standing finalize semantics here.
 
         Timeout and other failure modes are surfaced via metrics fields
         (``timed_out``, ``error``, ``exit_code``) so the outer retry loop
@@ -1038,12 +1061,19 @@ class SubAgentRunner:
         provider_name = self.assembler.project_config.provider
         provider = get_provider(provider_name)
 
-        meta_prompt = self._build_meta_prompt(
-            result=result,
-            provider=provider,
-            task=task,
-            ticket_id=ticket_id,
-        )
+        # HATS-474: for the Claude path the meta-prompt stored on disk is
+        # a *forensic* artifact — it records what we actually sent to the
+        # SDK (system_prompt + initial user message), not what the legacy
+        # ``-p`` arg would have looked like. For non-Claude providers we
+        # keep the legacy structure intact.
+        if provider_name == "claude":
+            meta_prompt = self._build_sdk_prompt_audit(
+                result=result, task=task, ticket_id=ticket_id,
+            )
+        else:
+            meta_prompt = self._build_meta_prompt(
+                result=result, provider=provider, task=task, ticket_id=ticket_id,
+            )
         session.save_meta_prompt(meta_prompt)
         session.init_audit(
             role=role_name,
@@ -1059,16 +1089,22 @@ class SubAgentRunner:
             "AI_HATS_ROLE": role_name,
         }
 
-        cmd = provider.get_cli_command()
-        # HATS-307: materialize spawned role's skills for the sub-agent.
-        # For Claude this returns ["--plugin-dir", <cache_dir>/plugin]; for
-        # Gemini it's currently [] (HATS-367 will fill that gap). Cleaned by
-        # _cleanup_session_cache in the finally block.
-        skill_args = provider.materialize_runtime_skills(
-            self.project_dir, result, session.session_id,
-        )
-        cmd = cmd + skill_args
-        session.log_trace(TraceTag.SUB, f"Executing: {' '.join(cmd)}")
+        # Legacy subprocess path still needs cmd / skill_args precomputed.
+        # The Claude SDK path materializes skills internally via
+        # ``build_options`` → ``_build_plugins``, so we skip the upfront
+        # ``materialize_runtime_skills`` call when provider is claude
+        # (the cache dir is produced inside the SDK builder instead).
+        cmd: list[str] = []
+        if provider_name != "claude":
+            cmd = provider.get_cli_command()
+            # HATS-307: materialize spawned role's skills for the sub-agent.
+            # For Gemini this is currently a no-op (HATS-367 follow-up).
+            # Cleaned by _cleanup_session_cache in the finally block.
+            skill_args = provider.materialize_runtime_skills(
+                self.project_dir, result, session.session_id,
+            )
+            cmd = cmd + skill_args
+            session.log_trace(TraceTag.SUB, f"Executing: {' '.join(cmd)}")
 
         mode = IsolationMode(isolation_mode)
         session.log_trace(TraceTag.SUB, f"Isolation: {mode.value}")
@@ -1079,29 +1115,70 @@ class SubAgentRunner:
             session.log_trace(TraceTag.SUB, f"Working directory: {work_dir}")
             t0 = time.monotonic()
             try:
-                full_cmd = provider.get_run_command(
-                    cmd, meta_prompt, model=model or None,
-                )
-                proc = subprocess.run(
-                    full_cmd,
-                    cwd=str(work_dir),
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout_s,
-                )
-                session.log_trace(TraceTag.RES, f"Exit code: {proc.returncode}")
-                _finalize_sub_agent(
-                    session,
-                    role=role_name,
-                    model=model,
-                    isolation_mode=mode.value,
-                    exit_code=proc.returncode,
-                    stdout=proc.stdout or "",
-                    stderr=proc.stderr or "",
-                    tags=tags,
-                    duration_s=time.monotonic() - t0,
-                )
+                if provider_name == "claude":
+                    # HATS-474 Phase 2: SDK engine.
+                    run_result = self._run_via_sdk(
+                        result=result,
+                        work_dir=work_dir,
+                        session_id=session.session_id,
+                        task=task,
+                        ticket_id=ticket_id,
+                        env=env,
+                        model=model,
+                        timeout_s=timeout_s,
+                    )
+                    session.log_trace(
+                        TraceTag.RES, f"Exit code: {run_result.exit_code}",
+                    )
+                    if run_result.claude_session_id:
+                        session.log_trace(
+                            TraceTag.SUB,
+                            f"Claude session_id: {run_result.claude_session_id}",
+                        )
+                    _finalize_sub_agent(
+                        session,
+                        role=role_name,
+                        model=model,
+                        isolation_mode=mode.value,
+                        exit_code=run_result.exit_code,
+                        stdout=run_result.stdout,
+                        stderr=run_result.stderr,
+                        timed_out=run_result.timed_out,
+                        error=run_result.error,
+                        tags=tags,
+                        duration_s=time.monotonic() - t0,
+                        extra_metrics={
+                            "claude_session_id": run_result.claude_session_id,
+                            "total_cost_usd": run_result.total_cost_usd,
+                            "num_turns": run_result.num_turns,
+                            "stop_reason": run_result.stop_reason,
+                        },
+                    )
+                else:
+                    # Legacy subprocess path (Gemini and future non-SDK providers).
+                    full_cmd = provider.get_run_command(
+                        cmd, meta_prompt, model=model or None,
+                    )
+                    proc = subprocess.run(
+                        full_cmd,
+                        cwd=str(work_dir),
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout_s,
+                    )
+                    session.log_trace(TraceTag.RES, f"Exit code: {proc.returncode}")
+                    _finalize_sub_agent(
+                        session,
+                        role=role_name,
+                        model=model,
+                        isolation_mode=mode.value,
+                        exit_code=proc.returncode,
+                        stdout=proc.stdout or "",
+                        stderr=proc.stderr or "",
+                        tags=tags,
+                        duration_s=time.monotonic() - t0,
+                    )
 
             except subprocess.TimeoutExpired as exc:
                 session.log_trace(
@@ -1121,6 +1198,10 @@ class SubAgentRunner:
                     duration_s=time.monotonic() - t0,
                 )
             except Exception as e:
+                # Catches any unanticipated SDK-path exception too — defence
+                # in depth. ``run_claude_sdk_blocking`` is designed not to
+                # raise, but ``asyncio.run`` itself can fail in weird envs
+                # (running event loop, etc.) — surface as a clean error.
                 session.log_trace(TraceTag.SYS, f"Sub-agent error: {e}")
                 _finalize_sub_agent(
                     session,
@@ -1136,6 +1217,91 @@ class SubAgentRunner:
                 _cleanup_session_cache(self.project_dir, session.session_id)
 
         return session
+
+    # ----- HATS-474 helpers -----
+
+    def _run_via_sdk(
+        self,
+        *,
+        result,
+        work_dir: Path,
+        session_id: str,
+        task: str,
+        ticket_id: str,
+        env: dict[str, str],
+        model: str,
+        timeout_s: int,
+    ):
+        """Drive the SDK path for one sub-agent attempt.
+
+        Composes :class:`ClaudeAgentOptions` from the role result and runs
+        the SDK under a wall-clock cap. Never raises — returns an
+        :class:`SdkRunResult` for every terminal path (success, SDK error,
+        timeout) so the caller's finalize logic is uniform.
+        """
+        from .sdk_options import build_first_user_message, build_options
+        from .sdk_runner import run_claude_sdk_blocking
+
+        ticket_context = self._load_ticket(ticket_id)
+        project_state = self._read_project_state()
+
+        options = build_options(
+            result,
+            project_dir=self.project_dir,
+            session_id=session_id,
+            work_dir=work_dir,
+            model=model or "",
+            extra_env=env or None,
+        )
+        initial_message = build_first_user_message(
+            ticket_context=ticket_context,
+            task=task,
+            project_state=project_state,
+        )
+        return run_claude_sdk_blocking(
+            options=options,
+            initial_message=initial_message,
+            timeout_s=timeout_s,
+        )
+
+    def _build_sdk_prompt_audit(
+        self,
+        *,
+        result,
+        task: str,
+        ticket_id: str,
+    ) -> str:
+        """Render a human-readable artifact of what the SDK was actually sent.
+
+        Saved alongside the session as ``meta_prompt.txt`` (same path the
+        legacy subprocess path used) so audit / debugging tooling that
+        relies on that file keeps working. The structure mirrors the two
+        SDK inputs: the appended part of ``system_prompt`` and the first
+        user message.
+        """
+        from .sdk_options import _build_system_prompt, build_first_user_message
+
+        sp = _build_system_prompt(result, self.project_dir)
+        system_text = sp.get("append", "")
+        initial_message = build_first_user_message(
+            ticket_context=self._load_ticket(ticket_id),
+            task=task,
+            project_state=self._read_project_state(),
+        )
+        return (
+            "==== SDK system_prompt (preset=claude_code, append) ====\n"
+            f"{system_text}\n"
+            "\n"
+            "==== SDK first user message ====\n"
+            f"{initial_message}\n"
+        )
+
+    def _read_project_state(self) -> str:
+        """Read ``state.md`` for the SDK path's first user message."""
+        from .paths import state_md_path
+
+        state_md = state_md_path(self.project_dir)
+        return state_md.read_text() if state_md.exists() else ""
 
     def _build_meta_prompt(self, result, provider, task: str, ticket_id: str) -> str:
         """Build the meta-prompt for sub-agent execution."""
