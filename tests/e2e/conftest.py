@@ -10,6 +10,10 @@
 * ``tmp_project`` — generic role-less project for subprocess-only
   tests against the ``ai-hats`` CLI. Function-scoped. Returns a
   :class:`tests.e2e._helpers.project.Project`.
+* ``tmp_venv_project`` — launcher-tier project backed by a real
+  ai-hats venv built once per test module. **Module-scoped** —
+  multiple tests in the same file share the venv build (~30-60s)
+  and the project dir. Tests must NOT mutate the venv destructively.
 """
 
 from __future__ import annotations
@@ -31,9 +35,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def repo_root() -> Path:
-    """Repo checkout root — single source of truth for path math."""
+    """Repo checkout root — single source of truth for path math.
+
+    Session-scoped: the value is a process-wide constant, so promoting
+    it lets module-scoped fixtures (``tmp_venv_project``) depend on it.
+    """
     return REPO_ROOT
 
 
@@ -125,3 +133,51 @@ def tmp_project(tmp_path: Path, repo_root: Path):
         path=project_path,
         ai_hats_binary=repo_root / ".venv" / "bin" / "ai-hats",
     )
+
+
+@pytest.fixture(scope="module")
+def tmp_venv_project(tmp_path_factory, repo_root: Path):
+    """Module-scoped launcher-tier project + real ai-hats venv.
+
+    Builds the launcher + its inner venv ONCE per test module via
+    :func:`tests.e2e._helpers.venv.build_launcher_venv` (~30-60s on
+    cold pip cache). All tests in the same file reuse the same
+    :class:`Project` instance — they MUST NOT mutate the venv
+    destructively (deletion of ``.agent/ai-hats/.venv`` will break
+    every subsequent test in the module).
+
+    Skips the whole module when:
+
+    * ``scripts/install-launcher.sh`` is missing (untrusted checkout)
+    * the launcher install or ``self update`` raises
+      :class:`subprocess.CalledProcessError` (typically: no network
+      and no warm pip cache for transitive deps)
+
+    Returns a :class:`Project` whose ``ai_hats_binary`` is the
+    sandboxed launcher (NOT the dev venv binary used by
+    :func:`tmp_project`). The project dir is a sibling of the
+    bootstrap dir so ``self init`` operates on a clean slate.
+    """
+    import subprocess as _subprocess
+
+    from _helpers.project import Project
+    from _helpers.venv import build_launcher_venv, network_available
+
+    work = tmp_path_factory.mktemp("hats-venv-tier")
+    project_path = work / "project"
+    project_path.mkdir()
+    if not network_available():
+        pytest.skip("pip not on PATH — cannot build launcher venv")
+    try:
+        launcher = build_launcher_venv(
+            work, repo_root, project_dir=project_path,
+        )
+    except FileNotFoundError as exc:
+        pytest.skip(f"install-launcher.sh missing: {exc}")
+    except _subprocess.CalledProcessError as exc:
+        pytest.skip(
+            "launcher venv build failed (likely offline / no warm pip cache); "
+            f"stderr tail:\n{(exc.stderr or '')[-400:]}"
+        )
+    return Project(path=project_path, ai_hats_binary=launcher,
+                   env={"AI_HATS_REPO_URL": str(repo_root)})
