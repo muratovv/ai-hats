@@ -1,14 +1,19 @@
-"""HATS-307: SubAgentRunner must pass spawned role's skills via --plugin-dir.
+"""HATS-307 contract: spawned role's skills must reach the sub-agent.
 
-Without this, `ai-hats reflect role <X>` spawns a sub-agent whose Skill registry
-still reflects the project's active_role, so role-specific skills surface as
-`Unknown skill`. This test mocks `subprocess.run` and asserts the spawned `claude`
-command contains `--plugin-dir <tmp>` and that the dir is removed afterwards.
+Originally written against the subprocess engine (asserting
+``--plugin-dir`` ended up in argv). HATS-474 Phase 2 moved the Claude
+path onto :mod:`claude_agent_sdk`; skills now reach the agent via
+``ClaudeAgentOptions.plugins`` instead of an explicit CLI flag. The
+end-to-end test is rewritten to assert the same behavioural contract on
+the new surface: the plugin entry is built, populated on disk, and
+removed after the attempt finishes. The legacy
+:meth:`ClaudeProvider.materialize_runtime_skills` unit test stays —
+it still covers the same disk layout the Gemini / future-CLI providers
+will keep using.
 """
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -119,12 +124,17 @@ def test_gemini_materialize_runtime_skills_is_noop(tmp_path):
     assert GeminiProvider().materialize_runtime_skills(tmp_path, result, "test-sid") == []
 
 
-def test_subagent_runner_threads_plugin_dir_through_cmd(
+def test_subagent_runner_threads_plugin_dir_to_sdk_options(
     project_with_two_roles, monkeypatch
 ):
-    """End-to-end: SubAgentRunner.run('guest') passes --plugin-dir to subprocess.run
-    and the plugin-dir contains guest's role-specific skill."""
+    """End-to-end: SubAgentRunner.run('guest') reaches the SDK with a
+    ``plugins=[{type: local, path: <dir>}]`` entry, and the on-disk
+    plugin-dir contains the guest role's unique skill. After the attempt
+    finalizes, the per-session cache (including the plugin-dir) is
+    cleaned up by ``_cleanup_session_cache``.
+    """
     from ai_hats import runtime as runtime_mod
+    from ai_hats.sdk_runner import SdkRunResult
 
     project, _lib = project_with_two_roles
     # Initialise project on host (active_role mirrors host's skills = empty).
@@ -134,27 +144,45 @@ def test_subagent_runner_threads_plugin_dir_through_cmd(
 
     captured: dict = {}
 
-    def _fake_run(cmd, **kwargs):
-        captured["cmd"] = cmd
-        # Snapshot plugin-dir contents BEFORE cleanup runs (which happens
-        # in SubAgentRunner's finally block after this call returns).
-        if "--plugin-dir" in cmd:
-            pd = Path(cmd[cmd.index("--plugin-dir") + 1])
+    def _fake_sdk(*, options, initial_message, timeout_s):
+        # Record the options' plugin entry plus snapshot the on-disk
+        # contents BEFORE cleanup deletes the cache dir in the runner's
+        # finally block (which happens after this stub returns).
+        captured["plugins"] = list(options.plugins)
+        captured["initial_message"] = initial_message
+        if options.plugins:
+            pd = Path(options.plugins[0]["path"])
             captured["plugin_dir"] = pd
+            skills_root = pd / "skills"
             captured["plugin_skills"] = (
-                sorted(p.name for p in (pd / "skills").iterdir())
-                if (pd / "skills").exists()
+                sorted(p.name for p in skills_root.iterdir())
+                if skills_root.exists()
                 else []
             )
-        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="ok", stderr="")
+        return SdkRunResult(
+            exit_code=0,
+            stdout="ok",
+            stderr="",
+            claude_session_id="stub-sid",
+            total_cost_usd=0.0,
+            num_turns=1,
+            stop_reason="end_turn",
+            timed_out=False,
+            error=None,
+        )
 
-    monkeypatch.setattr(runtime_mod.subprocess, "run", _fake_run)
+    monkeypatch.setattr(runtime_mod, "_cleanup_session_cache", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        "ai_hats.sdk_runner.run_claude_sdk_blocking", _fake_sdk,
+    )
 
     runner = runtime_mod.SubAgentRunner(project)
     runner.run(role_name="guest", task="hi", isolation_mode="discard")
 
-    cmd = captured["cmd"]
-    assert "--plugin-dir" in cmd, f"--plugin-dir missing from spawned cmd: {cmd}"
+    assert len(captured["plugins"]) == 1, captured["plugins"]
+    plugin = captured["plugins"][0]
+    assert plugin["type"] == "local"
+    assert Path(plugin["path"]) == captured["plugin_dir"]
     assert captured["plugin_skills"] == ["guest-only-skill"]
-    # Cleanup ran in finally — directory should be gone now.
-    assert not captured["plugin_dir"].exists()
+    # The initial user message reached the SDK with the task text in it.
+    assert "hi" in captured["initial_message"]
