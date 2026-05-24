@@ -283,6 +283,73 @@ def test_replace_records_manifest_entry(project, trash_base):
     assert "bump" in text
 
 
+# ---------------------- replace: mode kwarg (HATS-467) ----------------------
+
+
+import stat as _stat  # noqa: E402  — keeps the kwarg block self-contained
+
+
+def test_replace_mode_applied_on_fresh_file(project, trash_base):
+    """``mode=0o755`` on a missing path: file appears already executable.
+
+    Fail-under-revert: drop the ``mode`` param from ``_write_atomic`` →
+    file lands at umask default (e.g. 0o644) and this assertion fails.
+    """
+    f = project / "hook.sh"
+    result = replace(
+        f, b"#!/bin/sh\necho ok\n",
+        reason="materialize", project_dir=project, mode=0o755,
+    )
+
+    assert result is False  # fresh write, no snapshot
+    assert f.read_bytes() == b"#!/bin/sh\necho ok\n"
+    assert _stat.S_IMODE(f.stat().st_mode) == 0o755
+
+
+def test_replace_mode_applied_on_existing_file_with_diff(project, trash_base):
+    """``mode=0o755`` on a different-bytes existing file: snapshot + perms set."""
+    f = project / "hook.sh"
+    f.write_bytes(b"old\n")
+    f.chmod(0o644)
+
+    result = replace(
+        f, b"new\n",
+        reason="refresh", project_dir=project, mode=0o755,
+    )
+
+    assert result is True
+    assert f.read_bytes() == b"new\n"
+    assert _stat.S_IMODE(f.stat().st_mode) == 0o755
+
+
+def test_replace_mode_none_uses_default_umask(project, trash_base):
+    """``mode=None`` (default): perms inherit from process umask. Backward-compat."""
+    f = project / "doc.md"
+    result = replace(f, b"hello", reason="default", project_dir=project)
+
+    assert result is False
+    # We don't assert a specific mode — just that we did NOT force 0o755.
+    assert _stat.S_IMODE(f.stat().st_mode) != 0o755
+
+
+def test_replace_mode_not_applied_on_bytes_identical_noop(project, trash_base):
+    """Bytes-identical no-op skips ``_write_atomic`` → ``mode`` is not enforced.
+
+    Documents the explicit carve-out in the docstring. Caller responsibility.
+    """
+    f = project / "stable.sh"
+    f.write_bytes(b"unchanged\n")
+    f.chmod(0o600)
+
+    result = replace(
+        f, b"unchanged\n",
+        reason="noop", project_dir=project, mode=0o755,
+    )
+
+    assert result is False
+    assert _stat.S_IMODE(f.stat().st_mode) == 0o600  # NOT 0o755
+
+
 # ---------------------- env: hard-delete sentinel ----------------------
 
 

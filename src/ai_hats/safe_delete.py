@@ -299,17 +299,24 @@ def _move_to_trash(src: Path, dest: Path) -> None:
         raise
 
 
-def _write_atomic(path: Path, content: bytes) -> None:
+def _write_atomic(path: Path, content: bytes, mode: int | None = None) -> None:
     """Atomic write: tmp + rename. Internal helper (NOT routed through trash).
 
     The ``.tmp`` file lives for milliseconds and never carries user data
     — it's the standard atomic-write pattern. Lint-whitelisted within
     safe_delete.py.
+
+    When ``mode`` is given, ``chmod`` is applied to the ``.tmp`` BEFORE
+    the atomic rename, so the final path appears with the requested
+    permission bits in a single fs operation — no window where the file
+    exists with default umask perms (HATS-467).
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     try:
         tmp.write_bytes(content)
+        if mode is not None:
+            tmp.chmod(mode)
         tmp.replace(path)
     except OSError as e:
         try:
@@ -422,6 +429,7 @@ def replace(
     *,
     reason: str = "",
     project_dir: Path | None = None,
+    mode: int | None = None,
 ) -> bool:
     """Snapshot old content to trash, then atomically write ``new_content``.
 
@@ -431,6 +439,11 @@ def replace(
             call site — keeps the API honest about what hits disk.)
         reason: Free-form tag recorded in MANIFEST.md.
         project_dir: Project root for relative path preservation.
+        mode: Optional octal permission bits applied atomically (e.g.
+            ``0o755`` for executables). When ``None`` (default), the
+            file inherits the process umask. Applied to the temp file
+            BEFORE the atomic rename — no window with default perms
+            (HATS-467).
 
     Returns:
         ``True`` if old content was snapshotted (file existed and bytes
@@ -441,11 +454,14 @@ def replace(
 
     * **Missing path** → atomic write only (no snapshot). Returns False.
     * **Bytes-identical** → no-op, no session created. Returns False.
+      ``mode`` is NOT enforced in this branch — caller must ensure perms
+      separately if it matters and the file already exists with the
+      right bytes.
     * **Hard-delete mode** → atomic write + WARN, no snapshot. Returns False.
     * **ENOSPC** during snapshot or write → :class:`TrashFullError`.
     """
     if not path.exists():
-        _write_atomic(path, new_content)
+        _write_atomic(path, new_content, mode=mode)
         return False
 
     try:
@@ -459,7 +475,7 @@ def replace(
     session = _ensure_session()
 
     if session.hard_delete:
-        _write_atomic(path, new_content)
+        _write_atomic(path, new_content, mode=mode)
         _record(session, "hard-replace", reason, path, None)
         print(
             f"safe_delete: hard-replaced {path} "
@@ -484,7 +500,7 @@ def replace(
             ) from e
         raise
 
-    _write_atomic(path, new_content)
+    _write_atomic(path, new_content, mode=mode)
     _record(session, "replace", reason, path, dest)
     return True
 

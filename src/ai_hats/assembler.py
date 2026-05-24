@@ -544,6 +544,12 @@ class Assembler:
             # Independent of .git presence — settings.json wiring is useful
             # even in non-git project dirs. Idempotent.
             active_provider.ensure_runtime_hooks(self.project_dir)
+            # HATS-467: materialize PreToolUse hook scripts to disk. The
+            # settings.json entry above points at a file under
+            # <ai_hats_dir>/library/hooks/ that does not exist until we
+            # copy it from package data. Without this, the hook silently
+            # fails with "No such file or directory" on every Bash call.
+            self._materialize_pretooluse_hooks()
 
     def _get_overlay(self, role_name: str) -> OverlayConfig | None:
         """Get the **project** overlay for a role, or ``None`` if absent/empty.
@@ -716,6 +722,9 @@ class Assembler:
         # into ``.claude/settings.json``. Gemini: no-op (no equivalent
         # channel). Idempotent.
         provider.ensure_runtime_hooks(self.project_dir)
+        # HATS-467: materialize the hook scripts on disk so the entry
+        # above actually resolves to a runnable file.
+        self._materialize_pretooluse_hooks()
 
         # 4. Canonical user-rules aggregator (HATS-294).
         self.write_canonical()
@@ -881,6 +890,11 @@ class Assembler:
         # PreToolUse). Idempotent; recreates the entry if the user deleted
         # .claude/settings.json manually between bumps.
         provider.ensure_runtime_hooks(self.project_dir)
+        # HATS-467: re-materialize hook scripts. Picks up updated bodies
+        # after `pip install -U ai-hats` (self update → bump path) — and
+        # restores files if the user manually removed any from
+        # <ai_hats_dir>/library/hooks/.
+        self._materialize_pretooluse_hooks()
         return result
 
     def _note_empty_legacy_agent_dir(self) -> None:
@@ -1115,6 +1129,88 @@ class Assembler:
         return None
 
     # ----- Skill-contributed git hooks (HATS-088) -----
+
+    def _materialize_pretooluse_hooks(self) -> None:
+        """Copy ``library/hooks/*.sh`` from package data to ``<ai_hats_dir>/library/hooks/``.
+
+        HATS-467: restores the HATS-437 safety net.
+        ``.claude/settings.json``'s PreToolUse entry (written by
+        :meth:`ClaudeProvider.ensure_runtime_hooks`) expects a real
+        script at ``<ai_hats_dir>/library/hooks/<name>.sh``. Post-HATS-294
+        framework content is composed in memory and not materialized on
+        disk — but PreToolUse hooks are the exception: Claude Code's
+        hook channel calls ``/bin/sh <path>`` and so the file must exist.
+
+        Idempotent. Uses :func:`safe_delete.replace` (bytes-compare
+        no-op, ``mode=0o755`` set atomically) for writes and
+        :func:`safe_delete.discard` for sweep of files no longer in
+        package source. Manifest at ``<target>/.manifest`` tracks
+        managed names across runs.
+
+        Fails loudly (``AssemblyError``) if the package data hook root
+        cannot be resolved — a broken install is not a state we'd want
+        to silently paper over with an empty hooks dir.
+        """
+        from importlib.resources import files
+
+        try:
+            source_root = files("ai_hats.library") / "hooks"
+        except (ModuleNotFoundError, FileNotFoundError) as e:
+            raise AssemblyError(
+                "ai_hats.library.hooks not found in package data — "
+                "broken install"
+            ) from e
+
+        source_root_path = Path(str(source_root))
+        if not source_root_path.is_dir():
+            raise AssemblyError(
+                f"Hook source dir missing: {source_root_path}"
+            )
+
+        target_dir = _lib_hooks_dir(self.project_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = target_dir / ".manifest"
+
+        previous: set[str] = set()
+        if manifest_path.exists():
+            previous = {
+                line.strip()
+                for line in manifest_path.read_text().splitlines()
+                if line.strip() and not line.startswith("#")
+            }
+
+        new_names: set[str] = set()
+        for src in sorted(source_root_path.iterdir()):
+            if not src.is_file() or src.suffix != ".sh":
+                continue
+            new_names.add(src.name)
+            _safe_replace(
+                target_dir / src.name,
+                src.read_bytes(),
+                reason="materialize-pretooluse",
+                project_dir=self.project_dir,
+                mode=0o755,
+            )
+
+        # Sweep entries managed previously but no longer in source.
+        for stale in previous - new_names:
+            _safe_discard(
+                target_dir / stale,
+                reason="materialize-pretooluse-sweep",
+                project_dir=self.project_dir,
+            )
+
+        body = (
+            "# ai-hats managed — do not edit\n"
+            + "\n".join(sorted(new_names))
+            + "\n"
+        )
+        _safe_replace(
+            manifest_path,
+            body.encode(),
+            reason="materialize-pretooluse-manifest",
+            project_dir=self.project_dir,
+        )
 
     def _install_git_hooks(self, result: CompositionResult) -> None:
         """Install git hooks declared by composed skills.
