@@ -10,6 +10,17 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+- **e2e framework Wave 1 — `tmp_project` + `tmp_venv_project` fixtures**
+  (HATS-478). Two reusable pytest fixtures plus a `tests/e2e/README.md`
+  unlock 51 of the 69 Core e2e scenarios (32 free-tier CLI + 19
+  venv-tier launcher) — contributors writing a new e2e test now pick a
+  tier and write ≤10 LOC of body, instead of plumbing ad-hoc setup per
+  PR. `tmp_project` is function-scoped, role-less, $0; `tmp_venv_project`
+  is module-scoped and amortises the ~30-60s launcher install. New
+  helper `tests/e2e/_helpers/venv.py` exposes `build_launcher_venv()`
+  for callers that want raw access.
+
 ### Fixed
 - **PreToolUse hook safety net restored** (HATS-437 + HATS-467). Post
   HATS-294 `.claude/settings.json`'s PreToolUse entry pointed at
