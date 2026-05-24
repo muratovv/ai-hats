@@ -10,7 +10,28 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+- **PreToolUse hook safety net restored** (HATS-437 + HATS-467). Post
+  HATS-294 `.claude/settings.json`'s PreToolUse entry pointed at
+  `<ai_hats_dir>/library/hooks/pre_bash_shared_state_guard.sh` but
+  the file was never materialized → every Bash invocation died with
+  "No such file or directory" and the shared-state guard was silently
+  a no-op in every session. New `Assembler._materialize_pretooluse_hooks()`
+  copies `*.sh` from package data (`ai_hats.library/hooks/`) to
+  `<ai_hats_dir>/library/hooks/` with mode 0o755 via
+  `safe_delete.replace()`. Wired into `init` / `set_role` / `bump`
+  alongside the existing settings.json wiring. Idempotent
+  (bytes-compare), stale files swept via `safe_delete.discard()`,
+  manifest at `<target>/.manifest` tracks managed names.
+
 ### Added
+- **`safe_delete.replace(mode=...)` kwarg** (HATS-467) — optional
+  octal permission bits applied to the temp file BEFORE the atomic
+  rename, so executables (e.g. PreToolUse hooks) appear at the
+  destination already with the right bits — no window where the file
+  exists with default umask perms. Backward-compatible (`mode=None`
+  keeps current behaviour). Bytes-identical no-op explicitly does NOT
+  enforce the mode (skip path doesn't call `_write_atomic`).
 - **Safe-delete trash bin** for all destructive ops under `src/ai_hats/`.
   New module `ai_hats.safe_delete` with `discard()` / `replace()`
   module-level API: instead of `path.unlink()` / `shutil.rmtree()` /
