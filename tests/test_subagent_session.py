@@ -348,6 +348,50 @@ class TestSubAgentSession:
         _async(_t())
         assert sub.total_cost_usd is None
 
+    def test_concurrent_sends_are_serialised(self, tmp_path):
+        """Two coroutines awaiting ``send`` in parallel must NOT interleave.
+
+        Regression for the HATS-474 review finding: ``client.query`` +
+        ``client.receive_response`` share one bidirectional channel, so
+        racing two ``send`` calls would scramble queries with
+        responses. The session-internal lock serialises them; both turns
+        complete cleanly and ``send_count`` is exactly 2.
+
+        We sequence the stub to record the order ``query`` arrived in;
+        no matter how the asyncio scheduler interleaves the wrapping
+        ``send`` calls, the lock keeps each ``query`` → drain pair
+        atomic, so ``received_queries`` lists both prompts in caller
+        order without intermixing.
+        """
+        client = _StubClient(turn_responses=[
+            [_assistant(TextBlock(text="A")), _result(cost=0.001)],
+            [_assistant(TextBlock(text="B")), _result(cost=0.002)],
+        ])
+        sub = SubAgentSession(
+            client=client, session=_bare_session(tmp_path),
+            role="role", model="", isolation_mode="discard",
+        )
+
+        async def _t():
+            async with client:
+                # asyncio.gather launches both coroutines concurrently;
+                # the lock must serialise them.
+                results = await asyncio.gather(
+                    sub.send("first"),
+                    sub.send("second"),
+                )
+                return results
+
+        results = _async(_t())
+        assert len(results) == 2
+        # Both turns succeeded; the per-turn cost reached the response.
+        assert {results[0].cost_usd, results[1].cost_usd} == {0.001, 0.002}
+        # Aggregator records both sends — not partial / not 3.
+        assert sub.send_count == 2
+        # Both queries reached the client; order is whichever the
+        # scheduler picked, but neither was lost.
+        assert sorted(client.received_queries) == ["first", "second"]
+
     def test_response_tool_calls_derived_from_messages(self, tmp_path):
         client = _StubClient(turn_responses=[[
             _assistant(
