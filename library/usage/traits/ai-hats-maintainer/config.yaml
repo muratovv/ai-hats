@@ -33,7 +33,7 @@ injection: |
 
   ### Canonical CLI (do not invent equivalents)
   - **Update ai-hats in a consuming project:** `ai-hats self update` (NOT raw
-    `pip install --force-reinstall git+...`). Follow with `ai-hats self bump`
+    `pip install --force-reinstall git+...`). Follow with `ai-hats self init`
     if composition changed. For projects with isolated venv, call explicitly:
     `~/<project>/.venv/bin/ai-hats self update`.
   - **Backlog ops:** every change to `tasks/<ID>/**` via `ai-hats task ...`

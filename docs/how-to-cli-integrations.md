@@ -69,7 +69,7 @@ composition:
     - github-cli
 ```
 
-After `ai-hats bump` the skill becomes visible to the agent through the standard skill-injection mechanism.
+After `ai-hats self init` the skill becomes visible to the agent through the standard skill-injection mechanism.
 
 ## Examples
 

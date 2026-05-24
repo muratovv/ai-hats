@@ -13,7 +13,7 @@ Internal model of ai-hats: components, composition rules, project layout, librar
 
 ### Role customization
 
-You can add or remove traits, rules, and skills from a library role without modifying the source config. Customizations live in `ai-hats.yaml` and survive `ai-hats self update` and `ai-hats self bump`.
+You can add or remove traits, rules, and skills from a library role without modifying the source config. Customizations live in `ai-hats.yaml` and survive `ai-hats self update` and `ai-hats self init`.
 
 > A collection of common scenarios with ready-to-use `ai-hats.yaml` examples — see [1].
 
@@ -31,7 +31,7 @@ ai-hats config customize sre --injection-append "Always use k9s for K8s."
 ai-hats config customize sre --show
 
 # Apply
-ai-hats self bump
+ai-hats self init
 ```
 
 Format in `ai-hats.yaml`:
@@ -48,7 +48,7 @@ customizations:
       Always use k9s for K8s.
 ```
 
-Customizations apply on every `config set`, `self bump`, and `--role` override. If `remove` references a component not in the base role — a warning is printed; this is not an error.
+Customizations apply on every `config set`, `self init`, and `--role` override. If `remove` references a component not in the base role — a warning is printed; this is not an error.
 
 ### Composition
 
@@ -71,7 +71,7 @@ From role to materialized prompt — a single pipeline; the split happens only a
 
 The overlay from `ai-hats.yaml.customizations` affects the pipeline at two points: `add` / `remove` patches the component lists before resolution, and `injection_append` is appended last — after the role's own injection. Deduplication happens during resolution: traits are collected first (depth-first), then the role's own rules and skills are added on top; duplicates by name are ignored.
 
-- **Disk materialization** — the primary path: `ai-hats self bump` writes `CLAUDE.md` / `GEMINI.md` at the project root, and the provider CLI picks them up automatically at session start.
+- **Disk materialization** — the primary path: `ai-hats self init` writes `CLAUDE.md` / `GEMINI.md` at the project root, and the provider CLI picks them up automatically at session start.
 - **In-prompt materialization** — for sub-agents and one-shot roles: the same composition is written to a temporary file and passed via `--system-prompt-file`, without landing in the repo.
 
 ### Providers
@@ -262,7 +262,7 @@ autonomous invocations in two layers:
    - `library/hooks/pre_bash_shared_state_guard.sh` — Claude Code
      PreToolUse hook. Wired into `.claude/settings.json` idempotently by
      `ClaudeProvider.ensure_runtime_hooks()` during `self init` and
-     `self bump`. Blocks `gh pr merge` and `git push --force` when run
+     `self init`. Blocks `gh pr merge` and `git push --force` when run
      without a controlling TTY (i.e. agent context).
    - `library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`
      — git pre-push hook installed via the HATS-088 mechanism. Detects
