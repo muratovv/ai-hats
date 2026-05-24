@@ -539,14 +539,20 @@ class Assembler:
         # (``_strip_legacy_managed_block`` on a non-existent ``.gitignore``,
         # ``_migrate_layout_v4`` on absent directories). Cheap guard
         # against future refactors that might reorder the seed.
+        # Explicit ``raise`` (not ``assert``) so the invariant holds
+        # under ``python -O`` — assertions get stripped by the optimiser
+        # and we'd lose this safety net silently in production.
         if greenfield:
             from .migrations import latest_step
 
-            assert self.project_config.migration_step == latest_step(), (
-                "HATS-469 R2: greenfield init must seed migration_step to "
-                "latest BEFORE _refresh; otherwise registry replays on "
-                "empty files."
-            )
+            if self.project_config.migration_step != latest_step():
+                raise RuntimeError(
+                    "HATS-469 R2: greenfield init must seed migration_step "
+                    "to latest BEFORE _refresh; otherwise registry replays "
+                    "on empty files. Current value: "
+                    f"{self.project_config.migration_step!r}, "
+                    f"expected: {latest_step()!r}."
+                )
 
         # HATS-469 R6: re-init on a v0.6 layout must heal BEFORE _refresh
         # fires the registry (run_pending step 6 = ``_migrate_layout_v4``
@@ -566,11 +572,23 @@ class Assembler:
         # Apply role to yaml first so _refresh sees the new default_role
         # (and the post-init session reads the right value). Compose result
         # is passed through to _refresh which installs role git hooks.
-        result: CompositionResult | None = None
+        #
+        # HATS-469 R8 (audit): on re-init WITHOUT CLI ``-r`` we still
+        # compose for the effective role (``active_role`` falls back to
+        # ``default_role``). The pre-HATS-469 auto-bump path did this
+        # implicitly via ``asm.bump()`` (which read
+        # ``active_role or default_role``); without it, re-init on an
+        # existing project with a saved role would silently SKIP
+        # role-git-hooks re-installation — regression vs prior behaviour
+        # whenever a user wipes ``.githooks/`` and re-runs ``self init``.
         if role:
             self.project_config.default_role = role
             self.project_config.save(self.config_path)
-            result = compose_for_role(self, role)
+        cfg = self.project_config
+        effective_role = role or cfg.active_role or cfg.default_role
+        result: CompositionResult | None = (
+            compose_for_role(self, effective_role) if effective_role else None
+        )
 
         # HATS-469: single entry-point for all heal/install work.
         # install_time=True → registry fires (gated by migration_step;
