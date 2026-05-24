@@ -21,6 +21,28 @@ since the latest tag lives under **Unreleased** until the next release.
   helper `tests/e2e/_helpers/venv.py` exposes `build_launcher_venv()`
   for callers that want raw access.
 
+### Changed
+- **Unified `Assembler._refresh()` entry-point** (HATS-469). The
+  historical `init` / `set_role` / `bump` triple-dispatch is gone:
+  a single `_refresh(*, install_time, result)` method now drives
+  registry replay (`install_time=True` only — init and `do_bump`),
+  scaffold + canonical aggregator heal, provider runtime hooks
+  (`.claude/settings.json` + `_materialize_pretooluse_hooks`,
+  always-fire so first-session bootstrap on Claude works), and
+  role-specific git hooks. State-condition diagnostics
+  (orphan-skill warning, empty `.agent/` note) split into
+  `_run_diagnostics()` which fires ONLY on user-initiated paths
+  (`do_bump`, init re-init, `self update`) — runtime `set_role`
+  stays silent (no per-session orphan-warning spam). Internal
+  refactor: `Assembler.bump()` was removed; the `do_bump` CLI
+  composes `_run_v07_migration` + `compose_for_role` + `_refresh`
+  + `_run_diagnostics` inline. `cli/assembly.py`'s post-init
+  auto-bump block was removed (init itself is the refresh path).
+  Behaviour change on re-init: existing projects with
+  `migration_step=0` (pre-HATS-471 shape) now replay the registry
+  on `ai-hats self init` — same effect as the old `self bump`
+  auto-trigger but via init directly.
+
 ### Fixed
 - **PreToolUse hook safety net restored** (HATS-437 + HATS-467). Post
   HATS-294 `.claude/settings.json`'s PreToolUse entry pointed at

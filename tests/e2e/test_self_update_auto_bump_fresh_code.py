@@ -104,6 +104,17 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
         },
     }, indent=2) + "\n")
 
+    # HATS-469: ``heal_external_refs`` is registry step 4 (one-shot gated
+    # by ``migration_step``). Post-HATS-469 ``ai-hats self init`` seeds
+    # ``migration_step=latest``, so the next bump would skip the heal.
+    # Rewind below step 4 so the subsequent ``self update`` actually
+    # replays the heal entry against our planted legacy file.
+    import yaml as _yaml
+    cfg_path = project / "ai-hats.yaml"
+    cfg_data = _yaml.safe_load(cfg_path.read_text())
+    cfg_data["migration_step"] = 3
+    cfg_path.write_text(_yaml.safe_dump(cfg_data))
+
     # Initialize git so the healer's git-clean gate can evaluate cleanliness.
     subprocess.run(
         ["git", "init", "-q"], cwd=str(project), env=env, check=True,

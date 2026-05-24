@@ -400,10 +400,13 @@ class ProjectConfig(_YamlModel):
     default_role: str = ""
     active_role: str = ""
     schema_version: int = 4
-    # HATS-471: monotonic counter for one-shot migrations replayed at
-    # `Assembler.bump()`. Orthogonal to ``schema_version`` (which describes
-    # yaml format). The registry in ``ai_hats/migrations.py`` runs entries
-    # with ``m.step > migration_step``; after each successful entry the
+    # HATS-471/469: monotonic counter for one-shot migrations replayed
+    # at install-time refresh paths (``Assembler.init`` and the
+    # ``do_bump`` CLI pipeline; both invoke ``_refresh(install_time=True)``
+    # which calls ``migrations.run_pending``). Orthogonal to
+    # ``schema_version`` (which describes yaml format). The registry in
+    # ``ai_hats/migrations.py`` runs entries with
+    # ``m.step > migration_step``; after each successful entry the
     # counter advances and persists. Greenfield init seeds it to the
     # latest registry step; existing projects seed to 0 and replay the
     # whole registry once (idempotent by invariant of every migration

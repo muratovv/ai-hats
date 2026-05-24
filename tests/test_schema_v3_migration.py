@@ -11,6 +11,9 @@ from click.testing import CliRunner
 from ai_hats.assembler import Assembler
 from ai_hats.cli import main
 from ai_hats.models import ProjectConfig
+
+# HATS-469: ``Assembler.bump()`` removed; use the test pipeline helper.
+from tests._assembler_helpers import bump_pipeline
 from ai_hats.providers import (
     INJECTION_END,
     INJECTION_START,
@@ -184,7 +187,7 @@ def test_bump_migrates_then_assembles(tmp_path: Path) -> None:
     legacy = f"{INJECTION_START}\n[old huge content]\n{INJECTION_END}\n"
     (project / "CLAUDE.md").write_text(legacy)
 
-    Assembler(project).bump()
+    bump_pipeline(Assembler(project))
 
     body = (project / "CLAUDE.md").read_text()
     assert INJECTION_START not in body
@@ -201,7 +204,7 @@ def test_obsolete_files_cleanup_in_bump(tmp_path: Path) -> None:
     (project / "ai-hats.yaml").write_text("schema_version: 2\nprovider: claude\n")
 
     asm = Assembler(project)
-    asm.bump()  # no active role, but cleanup still runs
+    bump_pipeline(asm)  # no active role, but cleanup still runs
 
     assert not legacy_md.exists()
 
@@ -238,7 +241,7 @@ def test_migrate_rewrites_legacy_publish_import_line(tmp_path: Path) -> None:
     (project / "CLAUDE.md").write_text(legacy_scaffold)
     (project / "ai-hats.yaml").write_text("schema_version: 3\nprovider: claude\n")
 
-    Assembler(project).bump()
+    bump_pipeline(Assembler(project))
 
     body = (project / "CLAUDE.md").read_text()
     assert "@./.claude/CLAUDE.md" not in body
@@ -270,7 +273,7 @@ def test_migrate_cleans_legacy_claude_publish(tmp_path: Path) -> None:
     (claude / "skills" / "my_skill" / "SKILL.md").write_text("# user skill\n")
     (project / "ai-hats.yaml").write_text("schema_version: 3\nprovider: claude\n")
 
-    Assembler(project).bump()
+    bump_pipeline(Assembler(project))
 
     assert not (claude / "CLAUDE.md").exists()
     assert not (claude / "rules").exists()
@@ -291,8 +294,8 @@ def test_migrate_legacy_publish_cleanup_idempotent(tmp_path: Path) -> None:
     )
     (project / "ai-hats.yaml").write_text("schema_version: 3\nprovider: claude\n")
 
-    Assembler(project).bump()
-    Assembler(project).bump()  # second run — no error, no diff
+    bump_pipeline(Assembler(project))
+    bump_pipeline(Assembler(project))  # second run — no error, no diff
 
     body = (project / "CLAUDE.md").read_text()
     assert "@./.agent/ai-hats/imports.md" in body
