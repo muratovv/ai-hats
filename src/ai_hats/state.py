@@ -737,17 +737,24 @@ class TaskManager:
         HATS-061: each task gets its own worktree state slot — no singleton
         conflict between parallel tasks.
 
+        HATS-479: if a concurrent ai-hats peer creates the same task's
+        worktree between our pre-check and our ``create()``, the L1+L2
+        defense raises :class:`WorktreeCreateError`. We re-fetch and adopt
+        the peer's worktree — both transitions converge on one worktree.
+
         Returns the adopted linked-worktree path if invoked from inside one
-        (HATS-060 short-circuit), the existing/created worktree path on the
-        happy path, or None for non-git projects.
+        (HATS-060 short-circuit), the existing / created / adopted worktree
+        path on the happy path, or None for non-git projects.
         """
-        from .worktree import WorktreeManager
+        from .worktree import WorktreeCreateError, WorktreeManager
 
         # HATS-060: invoked from inside a linked worktree → adopt it.
         if WorktreeManager.is_inside_linked_worktree(self.project_dir):
             return self.project_dir
 
-        # Per-task lookup (HATS-061) — each task has its own state slot.
+        # Per-task lookup (HATS-061) — fast-path, avoids the create-lock
+        # roundtrip on the common case. The lock is acquired inside create()
+        # for the actual decision.
         existing = WorktreeManager.load_for_task(self.project_dir, task.id)
         if existing is not None:
             return existing.worktree_path
@@ -755,7 +762,21 @@ class TaskManager:
         # No existing worktree for this task — create one.
         branch = f"task/{task.id.lower()}"
         mgr = WorktreeManager(self.project_dir, branch_name=branch)
-        path = mgr.create()
+        try:
+            path = mgr.create()
+        except WorktreeCreateError:
+            # HATS-479: race-loser — another process won between our
+            # pre-check and the L2 re-check under the create lock. Adopt
+            # the peer's worktree instead of failing the transition.
+            existing = WorktreeManager.load_for_task(self.project_dir, task.id)
+            if existing is not None:
+                logger.info(
+                    "Adopted concurrently-created worktree for %s at %s",
+                    task.id, existing.worktree_path,
+                )
+                return existing.worktree_path
+            # Truly failed (state not findable) — propagate.
+            raise
         if path != self.project_dir:  # git repo — worktree created
             mgr.save_state()
             return path

@@ -16,6 +16,36 @@ Acquire timeout is ``LOCK_TIMEOUT`` (10s). On timeout
 ``WorktreeLockError`` is raised pointing the user at the lock file
 and ``ps`` for diagnosis. Real operations are <50ms, so 10s is a
 ~200x safety margin for live-but-stuck holders.
+
+Create-time concurrency (HATS-479)
+----------------------------------
+``git worktree add`` writes to repo-wide shared state (``.git/config``
+for upstream tracking, ``.git/worktrees/<name>/``, ``.git/refs/heads/``),
+which git does NOT serialize across processes. Per-branch locks would
+miss the real failure mode (two creates on *different* branches both
+contend on ``.git/config.lock`` — see Anthropic claude-code #34645).
+
+Defense is layered:
+
+* **L1** — :func:`_acquire_create_lock` (repo-scoped mutex at
+  ``<state_dir>/.git-worktree-create.lock``) wraps the entire
+  ``load_for_branch → git worktree add → save_state`` critical section.
+  Serializes ai-hats vs. ai-hats writes.
+* **L2** — TOCTOU re-check of :meth:`WorktreeManager.load_for_branch`
+  under L1; raises :class:`WorktreeCreateError` if the branch was
+  created by a concurrent ai-hats peer between the caller's pre-check
+  and L1 acquisition.
+* **L3** — :func:`_retry_worktree_add` retries ``git worktree add`` with
+  jittered exponential backoff on transient stderr (``could not lock
+  config file``, ``File exists``) caused by *external* git processes
+  (IDE, manual ``git commit``) briefly holding ``.git/config.lock``.
+* **L4** — :meth:`WorktreeManager.create` cleans up ``mkdtemp`` and the
+  branch (only when ``not branch_existed_before``) on any
+  ``CalledProcessError``, then raises :class:`WorktreeCreateError` with
+  parsed stderr — never an opaque ``subprocess.CalledProcessError``.
+
+The lock file ``<state_dir>``  **must reside on a local filesystem**.
+``filelock.FileLock`` (``fcntl`` advisory) is unreliable on NFS / SMB.
 """
 
 from __future__ import annotations
@@ -23,9 +53,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import shutil
 import subprocess
 import tempfile
+import time
 from contextlib import contextmanager
 from enum import Enum
 from pathlib import Path
@@ -38,6 +70,13 @@ from .paths import worktree_state_path, worktrees_dir
 logger = logging.getLogger(__name__)
 
 LOCK_TIMEOUT = 10.0  # seconds — see module docstring
+
+# HATS-479 — create-time concurrency (see module docstring "Create-time concurrency")
+CREATE_LOCK_TIMEOUT = 10.0       # L1: repo-scoped mutex acquisition
+GIT_RETRY_MAX = 5                 # L3: 1 initial + 4 retries
+GIT_RETRY_BASE_DELAY = 0.05       # 50 ms, exponential up to GIT_RETRY_MAX_DELAY
+GIT_RETRY_MAX_DELAY = 0.8         # cap per-attempt delay so 5 retries finish < 4 s
+CREATE_LOCK_CONTENTION_WARN = 1.0  # log at WARNING if acquisition took longer
 
 
 def _state_key(branch_name: str) -> str:
@@ -86,12 +125,143 @@ def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def _create_lock_path(project_dir: Path) -> Path:
+    """Repo-scoped create-lock file path (HATS-479 L1)."""
+    return worktrees_dir(project_dir) / ".git-worktree-create.lock"
+
+
+@contextmanager
+def _acquire_create_lock(project_dir: Path) -> Iterator[None]:
+    """Hold the repo-scoped create-mutex for the wt-create critical section.
+
+    HATS-479 L1. See module docstring "Create-time concurrency".
+
+    Serializes ai-hats vs. ai-hats writes to ``.git/config``, ``.git/refs``,
+    ``.git/worktrees/``. Does NOT protect against external git processes
+    (IDE, manual ``git commit``) — :func:`_retry_worktree_add` covers that.
+    """
+    lock_path = _create_lock_path(project_dir)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock = filelock.FileLock(str(lock_path), timeout=CREATE_LOCK_TIMEOUT)
+    t0 = time.monotonic()
+    try:
+        with lock:
+            waited = time.monotonic() - t0
+            if waited > CREATE_LOCK_CONTENTION_WARN:
+                logger.warning(
+                    "wt create lock acquired after %.2fs (contention)", waited
+                )
+            yield
+    except filelock.Timeout as exc:
+        raise WorktreeLockError(
+            f"wt create lock held by another process for "
+            f">{CREATE_LOCK_TIMEOUT:.0f}s.\n"
+            f"  Lock file: {lock_path}\n"
+            f"  Likely a stuck ai-hats process — check: ps aux | grep ai-hats\n"
+            f"  If safe, remove the lock file and retry."
+        ) from exc
+
+
+# HATS-479 L3 — git stderr substrings that indicate transient contention from
+# an external git writer (IDE, manual `git commit`) briefly holding
+# .git/config.lock or a partially-set-up .git/worktrees/<name>/. Compared
+# case-insensitively. Anything not on this list fails fast (e.g.
+# "not a valid object name", "branch already exists" — those are NOT transient).
+_RETRIABLE_STDERR_PATTERNS = (
+    "could not lock config file",
+    "file exists",
+    "unable to create",
+)
+
+
+def _is_retriable_git_error(exc: subprocess.CalledProcessError) -> bool:
+    """True iff the stderr matches a known transient-contention pattern."""
+    stderr = (exc.stderr or "").lower()
+    return any(p in stderr for p in _RETRIABLE_STDERR_PATTERNS)
+
+
+def _retry_worktree_add(
+    git_runner,
+    branch: str,
+    worktree_path: Path,
+    *,
+    sleep=time.sleep,
+) -> None:
+    """Run ``git worktree add -b <branch> <path>`` with bounded retry.
+
+    HATS-479 L3. Retries only on stderr patterns from
+    :data:`_RETRIABLE_STDERR_PATTERNS`. Any other error fails fast.
+
+    :param git_runner: callable like :meth:`WorktreeManager._git`. Called as
+        ``git_runner("worktree", "add", "-b", branch, str(path))``.
+    :param sleep: injected for tests; defaults to :func:`time.sleep`.
+    :raises subprocess.CalledProcessError: on non-retriable error, or after
+        exhausting :data:`GIT_RETRY_MAX` retriable attempts.
+    """
+    delay = GIT_RETRY_BASE_DELAY
+    last_exc: subprocess.CalledProcessError | None = None
+    for attempt in range(1, GIT_RETRY_MAX + 1):
+        try:
+            git_runner("worktree", "add", "-b", branch, str(worktree_path))
+            return
+        except subprocess.CalledProcessError as exc:
+            if not _is_retriable_git_error(exc):
+                raise
+            last_exc = exc
+            if attempt == GIT_RETRY_MAX:
+                break
+            jitter = random.uniform(0, delay)
+            logger.info(
+                "git worktree add transient failure (attempt %d/%d): %s",
+                attempt, GIT_RETRY_MAX,
+                (exc.stderr or "").strip().splitlines()[-1] if exc.stderr else "<no stderr>",
+            )
+            sleep(delay + jitter)
+            delay = min(delay * 2, GIT_RETRY_MAX_DELAY)
+    assert last_exc is not None
+    raise last_exc
+
+
+def _format_git_create_error(
+    exc: subprocess.CalledProcessError, branch: str
+) -> str:
+    """Build a human-readable message for :class:`WorktreeCreateError`.
+
+    Special-cases the common "branch already exists" git output so that
+    callers see the same message whether the collision was detected by L2
+    (re-check under the create lock) or by git itself.
+    """
+    stderr = (exc.stderr or "").strip()
+    if "already exists" in stderr.lower():
+        return (
+            f"Cannot create worktree on '{branch}': branch already exists.\n"
+            f"  git: {stderr.splitlines()[-1] if stderr else '<no stderr>'}"
+        )
+    head = stderr.splitlines()[-1] if stderr else "<no stderr>"
+    return (
+        f"git worktree add failed for branch '{branch}'.\n"
+        f"  git: {head}"
+    )
+
+
 class WorktreeDirtyError(Exception):
     """Raised when a destructive operation targets a worktree with uncommitted changes."""
 
 
 class WorktreeLockError(Exception):
     """Raised when acquiring a worktree state lock times out (HATS-121)."""
+
+
+class WorktreeCreateError(Exception):
+    """Raised when ``git worktree add`` fails (after retries) or another
+    ai-hats peer races to create the same branch (HATS-479).
+
+    Wraps parsed git stderr in a human-readable message so callers (CLI,
+    ``state._setup_worktree``) can surface a friendly error instead of an
+    opaque ``subprocess.CalledProcessError``. Distinct from
+    :class:`WorktreeLockError` (L1 mutex timeout) and
+    :class:`WorktreeDirtyError` (pre-check failure).
+    """
 
 
 class OriginalBranchMissingError(Exception):
@@ -168,7 +338,21 @@ class WorktreeManager:
 
     def create(self) -> Path:
         """Create an isolated worktree. Returns project_dir if not a git repo
-        or if isolation_mode is NONE (no worktree, runs in project_dir)."""
+        or if isolation_mode is NONE (no worktree, runs in project_dir).
+
+        HATS-479: concurrent ai-hats peers and external git writers are
+        handled via L1 (repo-scoped create-mutex), L2 (TOCTOU re-check
+        under the mutex), L3 (bounded retry of ``git worktree add`` on
+        transient stderr) and L4 (cleanup of ``mkdtemp`` and the branch
+        on failure). See module docstring "Create-time concurrency".
+
+        :raises WorktreeCreateError: branch already exists under our
+            tracked state, or ``git worktree add`` failed after retries.
+            Stderr is parsed into the message; callers should NOT see an
+            opaque :class:`subprocess.CalledProcessError` from here.
+        :raises WorktreeLockError: L1 mutex was held by another process
+            for longer than :data:`CREATE_LOCK_TIMEOUT`.
+        """
         if self.isolation_mode == IsolationMode.NONE:
             # No worktree: sub-agent runs directly in project_dir.
             # worktree_path stays None so cleanup() is a no-op.
@@ -196,13 +380,50 @@ class WorktreeManager:
         except subprocess.CalledProcessError:
             self._base_sha_at_create = None
 
-        prefix = self.branch_name.replace("/", "-")
-        tmpdir = tempfile.mkdtemp(prefix=f"ai-hats-wt-{prefix}-")
-        self.worktree_path = Path(tmpdir)
+        # HATS-479 — L1 + L2 + L4. See module docstring "Create-time concurrency".
+        with _acquire_create_lock(self.project_dir):
+            # L2: re-check under the lock. Closes the TOCTOU window between a
+            # caller's optional pre-check and our work.
+            existing = WorktreeManager.load_for_branch(
+                self.project_dir, self.branch_name
+            )
+            if existing is not None:
+                raise WorktreeCreateError(
+                    f"Worktree already exists for branch "
+                    f"'{self.branch_name}': {existing.worktree_path}"
+                )
 
-        self._git("worktree", "add", "-b", self.branch_name, str(self.worktree_path))
-        logger.info("Created worktree %s on branch %s", self.worktree_path, self.branch_name)
-        return self.worktree_path
+            # Snapshot pre-existing branch state — L4 deletes the branch on
+            # failure ONLY if we created it ourselves. Without this, an
+            # accidental `wt create <existing-branch>` would delete the user's
+            # branch in cleanup.
+            branch_existed_before = self._branch_exists(self.branch_name)
+
+            prefix = self.branch_name.replace("/", "-")
+            tmpdir = tempfile.mkdtemp(prefix=f"ai-hats-wt-{prefix}-")
+            self.worktree_path = Path(tmpdir)
+
+            try:
+                _retry_worktree_add(
+                    self._git, self.branch_name, self.worktree_path
+                )
+            except subprocess.CalledProcessError as exc:
+                # L4: cleanup leaked tempdir + (only-our) branch.
+                shutil.rmtree(self.worktree_path, ignore_errors=True)
+                self.worktree_path = None
+                if not branch_existed_before:
+                    try:
+                        self._git("branch", "-D", self.branch_name)
+                    except subprocess.CalledProcessError:
+                        pass  # branch may not have been created — fine
+                raise WorktreeCreateError(
+                    _format_git_create_error(exc, self.branch_name)
+                ) from exc
+            logger.info(
+                "Created worktree %s on branch %s",
+                self.worktree_path, self.branch_name,
+            )
+            return self.worktree_path
 
     def merge(
         self,
