@@ -1360,6 +1360,10 @@ class SubAgentRunner:
         parent_session: str | None = None,
         tags: dict[str, str] | None = None,
         system_prompt_override: str | None = None,
+        max_budget_usd: float | None = None,
+        max_turns: int | None = None,
+        permission_mode: str | None = None,
+        allowed_tools: list[str] | None = None,
     ):
         """Open a multi-turn sub-agent session as an async context manager.
 
@@ -1375,6 +1379,12 @@ class SubAgentRunner:
         ``total_cost_usd``, total ``num_turns_total``, stable
         ``claude_session_id``, ``send_count``, last ``stop_reason``),
         then drop the per-session cache.
+
+        ``max_budget_usd`` and ``max_turns`` (HATS-474 Phase 4) plumb
+        through to ``ClaudeAgentOptions`` so e2e tests can bound CI cost
+        even when the session spans many turns — the SDK enforces the
+        cap and emits ``ResultMessage{subtype: "error_max_budget_usd"}``
+        / ``"error_max_turns"`` when crossed.
 
         Claude-only — Gemini and future CLI-only providers don't have a
         multi-turn SDK channel. Use :meth:`run` for those.
@@ -1393,6 +1403,10 @@ class SubAgentRunner:
             parent_session=parent_session,
             tags=tags,
             system_prompt_override=system_prompt_override,
+            max_budget_usd=max_budget_usd,
+            max_turns=max_turns,
+            permission_mode=permission_mode,
+            allowed_tools=allowed_tools,
         )
 
     @asynccontextmanager
@@ -1405,6 +1419,10 @@ class SubAgentRunner:
         parent_session: str | None,
         tags: dict[str, str] | None,
         system_prompt_override: str | None,
+        max_budget_usd: float | None,
+        max_turns: int | None,
+        permission_mode: str | None,
+        allowed_tools: list[str] | None,
     ):
         """Implementation of :meth:`session` — wrapped by a thin sync
         validator so consumers get a clear ``ValueError`` on misuse
@@ -1465,6 +1483,10 @@ class SubAgentRunner:
                     work_dir=work_dir,
                     model=model or "",
                     extra_env=env or None,
+                    max_budget_usd=max_budget_usd,
+                    max_turns=max_turns,
+                    permission_mode=permission_mode,
+                    allowed_tools=allowed_tools,
                 )
                 async with ClaudeSDKClient(options=options) as client:
                     sub = SubAgentSession(
