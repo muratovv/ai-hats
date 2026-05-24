@@ -670,9 +670,9 @@ class AuditWriter:
             )
         session.audit_path.write_text(audit_content)
 
-        # Clean up raw trace — redundant after audit is written
+        # Clean up raw trace — redundant after audit is written. Whitelist.
         if not keep_raw and session.trace_path.exists():
-            session.trace_path.unlink()
+            session.trace_path.unlink()  # safe-delete: ok raw-trace (audit superseded)
 
     def _write_metrics(
         self,
