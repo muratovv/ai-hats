@@ -309,19 +309,28 @@ def test_bump_persists_deprecated_field_strip(project_with_library):
 
 
 def test_bump_no_op_when_yaml_already_normalized(project_with_library):
-    """Idempotency: bump on a yaml that needs no normalization does NOT
-    rewrite the file (mtime / bytes preserved)."""
+    """Idempotency: bump on a fully-normalized yaml does NOT rewrite the file
+    (bytes preserved). HATS-471: ``project_with_library`` writes yaml with
+    ``migration_step=0`` (pre-HATS-471 shape), so the FIRST bump after
+    ``init`` legitimately advances the registry counter to ``latest_step``
+    and persists. The subsequent bump is the true no-op tested here.
+    """
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    # asm.init() already wrote a clean yaml. Capture state.
     config_path = project / "ai-hats.yaml"
+
+    # First bump: drives migration_step → latest_step via the registry runner,
+    # plus any HATS-413 yaml heal still pending from the fixture's bare save.
+    asm.bump()
+
+    # Snapshot AFTER the first bump has done its one-time normalization.
     pre_bytes = config_path.read_bytes()
     pre_mtime = config_path.stat().st_mtime_ns
 
     asm.bump()
 
-    # Bytes unchanged → no rewrite happened.
+    # Bytes unchanged → no rewrite happened on the second bump.
     # (mtime can move if other init paths touch the file; bytes is the
     # ground-truth contract.)
     assert config_path.read_bytes() == pre_bytes, (
