@@ -25,9 +25,13 @@ import pytest
 
 from ai_hats.paths import worktrees_dir
 from ai_hats.worktree import (
+    GIT_RETRY_MAX,
     WorktreeLockError,
     WorktreeManager,
     _acquire,
+    _format_git_create_error,
+    _is_retriable_git_error,
+    _retry_worktree_add,
     _state_key,
 )
 
@@ -190,3 +194,115 @@ def test_acquire_timeout_raises_worktree_lock_error(
     finally:
         holder.join(timeout=10)
         assert holder.exitcode == 0
+
+
+# ---------------------------------------------------------------------------
+# TC-N4..N6 — _retry_worktree_add (HATS-479 L3)
+#
+# Pure unit tests of the retry helper. No real git, no fixtures. Inject a
+# stubbed ``git_runner`` so we can drive exact failure sequences, and inject
+# ``sleep=lambda _: None`` so the suite stays fast.
+# ---------------------------------------------------------------------------
+
+
+def _make_called_process_error(stderr: str) -> subprocess.CalledProcessError:
+    exc = subprocess.CalledProcessError(
+        returncode=128, cmd=["git", "worktree", "add"], stderr=stderr
+    )
+    return exc
+
+
+class _StubGit:
+    """Callable stub for ``WorktreeManager._git``.
+
+    Pops one entry per call from ``responses``: either ``None`` (success) or
+    a ``CalledProcessError`` to raise. Records the number of calls.
+    """
+
+    def __init__(self, responses: list[object]) -> None:
+        self._responses = list(responses)
+        self.calls = 0
+
+    def __call__(self, *args: str) -> None:
+        self.calls += 1
+        try:
+            r = self._responses.pop(0)
+        except IndexError as exc:
+            raise AssertionError(
+                f"Unexpected extra call to _git (#{self.calls})"
+            ) from exc
+        if isinstance(r, BaseException):
+            raise r
+
+
+def test_retry_succeeds_after_transient_failures(tmp_path: Path) -> None:
+    """TC-N4 — 2 retriable failures then success → 3 calls, no raise."""
+    stub = _StubGit(
+        [
+            _make_called_process_error("fatal: could not lock config file .git/config: File exists"),
+            _make_called_process_error("fatal: File exists"),
+            None,  # success
+        ]
+    )
+    _retry_worktree_add(stub, "task/n4", tmp_path / "wt", sleep=lambda _: None)
+    assert stub.calls == 3
+
+
+def test_retry_exhausted_raises_last_error(tmp_path: Path) -> None:
+    """TC-N5 — all attempts retriable-fail → raises CalledProcessError."""
+    stderr = "fatal: could not lock config file .git/config: File exists"
+    stub = _StubGit(
+        [_make_called_process_error(stderr) for _ in range(GIT_RETRY_MAX)]
+    )
+    with pytest.raises(subprocess.CalledProcessError) as ei:
+        _retry_worktree_add(
+            stub, "task/n5", tmp_path / "wt", sleep=lambda _: None
+        )
+    assert stub.calls == GIT_RETRY_MAX
+    assert "could not lock config file" in (ei.value.stderr or "")
+
+
+def test_retry_fails_fast_on_non_retriable(tmp_path: Path) -> None:
+    """TC-N6 — non-retriable stderr → 1 call, no retries."""
+    stub = _StubGit(
+        [_make_called_process_error("fatal: not a valid object name: HEAD")]
+    )
+    with pytest.raises(subprocess.CalledProcessError):
+        _retry_worktree_add(
+            stub, "task/n6", tmp_path / "wt", sleep=lambda _: None
+        )
+    assert stub.calls == 1
+
+
+def test_is_retriable_git_error_classification() -> None:
+    """Direct check on the classifier — covers each pattern + a non-match."""
+    retriable = [
+        "fatal: could not lock config file .git/config: File exists",
+        "fatal: File exists",
+        "error: Unable to create '.git/worktrees/X/locked'",
+    ]
+    non_retriable = [
+        "fatal: not a valid object name: HEAD",
+        "fatal: A branch named 'task/x' already exists.",
+        "",
+    ]
+    for s in retriable:
+        assert _is_retriable_git_error(_make_called_process_error(s)), s
+    for s in non_retriable:
+        assert not _is_retriable_git_error(_make_called_process_error(s)), s
+
+
+def test_format_git_create_error_special_cases_already_exists() -> None:
+    exc = _make_called_process_error(
+        "fatal: A branch named 'task/x' already exists."
+    )
+    msg = _format_git_create_error(exc, "task/x")
+    assert "task/x" in msg
+    assert "already exists" in msg
+
+
+def test_format_git_create_error_generic_fallback() -> None:
+    exc = _make_called_process_error("fatal: something else broke")
+    msg = _format_git_create_error(exc, "task/x")
+    assert "task/x" in msg
+    assert "something else broke" in msg
