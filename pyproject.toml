@@ -89,6 +89,7 @@ filterwarnings = [
 markers = [
     "integration: tests that spawn real subprocesses or use real PTY",
     "smoke: lightweight real-path tests run by the pre-commit smoke gate on integration tasks",
+    "external_env: tests that rely on real host environment (claude config, pip cache); candidates for sandboxing before xdist (HATS-464 R4)",
 ]
 
 [tool.coverage.run]
