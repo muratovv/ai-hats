@@ -22,8 +22,14 @@ Setup contract (real subprocess + real pip):
   - ``project``   — fresh project dir; launcher resolves venv to
                     ``<project>/.agent/ai-hats/.venv`` per its default
                     precedence (no ``AI_HATS_VENV`` exported).
-  - bootstrap.sh installs ai-hats in editable mode from ``src-repo`` —
-                    exactly the dev-loop the D2 protection guards.
+  - **editable conversion** — bootstrap.sh installs ai-hats *non-*editable
+                    from a ``file://`` URL (the default launcher flow). For
+                    D2 to mean anything we must convert to editable via
+                    ``pip uninstall && pip install -e <src-repo>``, mirroring
+                    the established pattern in
+                    ``test_self_update_downgrade_gate.py`` (which needed
+                    editable for a different reason — ``.git`` reachable
+                    from ``ai_hats.__file__``).
 
 Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
 ``ai-hats`` binary, marked ``@pytest.mark.integration``.
@@ -122,12 +128,32 @@ def test_e2e_self_update_revision(tmp_path: Path) -> None:
     venv_dir = project / ".agent" / "ai-hats" / ".venv"
     assert venv_dir.is_dir(), f"venv missing at {venv_dir}"
 
-    # Bootstrap install must be editable for assertion 1 to mean anything.
+    # Launcher bootstrap installs from ``file://`` non-editable by default
+    # (direct_url.json has dir_info={} — file URL but no editable marker).
+    # Convert to editable so the D2 path is reachable in assertion 1.
+    venv_pip = venv_dir / "bin" / "pip"
+    assert venv_pip.is_file(), f"project venv pip missing at {venv_pip}"
+    subprocess.run(
+        [str(venv_pip), "uninstall", "-y", "--quiet", "ai-hats"],
+        env=env, check=True, timeout=60,
+    )
+    subprocess.run(
+        [str(venv_pip), "install", "--quiet", "-e", str(src_repo)],
+        env=env, check=True, timeout=180,
+    )
     initial = json.loads(_find_direct_url(venv_dir).read_text())
     assert initial.get("dir_info", {}).get("editable") is True, (
-        f"bootstrap install is not editable; assertion 1 (D2) would not "
-        f"exercise the editable-refusal path. direct_url={initial!r}"
+        f"editable conversion did not take effect; assertion 1 (D2) would "
+        f"not exercise the editable-refusal path. direct_url={initial!r}"
     )
+
+    # ----- swap AI_HATS_REPO_URL to git+file:// for the --revision tests -----
+    # The launcher bootstrap above used the bare path (which pip resolves as
+    # a plain directory install, no git semantics). --revision requires a
+    # git URL: pip clones, checks out the ref, builds. ``git+file://`` is
+    # the canonical scheme for local git repos and is what pip + ``git
+    # ls-remote`` (with the ``git+`` prefix stripped) both understand.
+    env["AI_HATS_REPO_URL"] = f"git+file://{src_repo}"
 
     # ----- assertion 1: D2 — editable + --revision WITHOUT --force → refuse -----
     a1 = _run(
