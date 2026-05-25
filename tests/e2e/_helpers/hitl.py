@@ -152,6 +152,25 @@ class HitlResult:
             )
         return self
 
+    def expect_exit_in(self, codes: frozenset[int] | set[int]) -> "HitlResult":
+        """``exit_code`` must be one of ``codes``.
+
+        For the default exit payload (``/exit\\n\\x03\\x03``), claude
+        teardown via SIGINT lands as ``130``. A clean ``/exit`` slash-
+        command teardown (no Ctrl-C needed) lands as ``0``. Other
+        codes are surprising and should fail the assertion. Tighter
+        than ``expect_no_hang`` (which only excludes timeout) — pins
+        the subprocess to a known-good outcome set.
+        """
+        if self.exit_code not in codes:
+            raise AssertionError(
+                f"unexpected exit code {self.exit_code}; expected one of "
+                f"{sorted(codes)}.\n"
+                f"stdout_plain (tail 500):\n{self.stdout_plain[-500:]}\n"
+                f"stderr (tail 300):\n{self.stderr[-300:]}"
+            )
+        return self
+
 
 # ---------------------------------------------------------------------------
 # Driver

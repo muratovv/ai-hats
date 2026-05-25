@@ -226,6 +226,7 @@ def test_hitl_banners_via_bare_ai_hats(
     (
         drive_bare_hitl(tmp_venv_project, role="assistant")
         .expect_no_hang()
+        .expect_exit_in({0, 130})   # clean /exit (0) OR Ctrl-C teardown (130)
         .expect_start_banner(role="assistant", provider="claude")
         .expect_end_banner()
     )
