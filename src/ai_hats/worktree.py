@@ -44,6 +44,40 @@ Defense is layered:
   ``CalledProcessError``, then raises :class:`WorktreeCreateError` with
   parsed stderr — never an opaque ``subprocess.CalledProcessError``.
 
+Merge-time concurrency (HATS-481)
+---------------------------------
+Concurrent ``ai-hats task transition <ID> done`` on worktrees sharing
+a base ref (e.g. both based on ``master``) contend on
+``.git/index.lock`` when running ``git merge``. Pre-HATS-481
+``state._teardown_worktree`` swallowed the resulting
+``CalledProcessError`` at WARNING and let ``transition`` proceed to
+``_save_task``, persisting the new DONE state despite the merge
+failure — silent data loss (same class as the GitHub Merge Queue
+April-2026 incident). Defense is layered:
+
+* **L1'** — :func:`_acquire_base_branch_lock` (filelock at
+  ``<state_dir>/.base-<sanitized>.lock``) wraps
+  :meth:`WorktreeManager._fast_forward_merge` and
+  :meth:`WorktreeManager._squash_merge`. Granularity = one writer per
+  ``(project, base_ref)`` — bors / Kodiak / Mergify / GH Merge Queue
+  consensus. Closes ai-hats vs. ai-hats contention; UX-fix.
+* **Free win** — :meth:`WorktreeManager._git_with_ref_lock_wait`
+  passes ``-c core.filesRefLockTimeout`` /
+  ``-c core.packedRefsTimeout``, letting git absorb ref-lock
+  contention internally without a userspace retry. Requires git
+  ≥ 2.31.
+* **L3'** — :func:`_retry_git_merge` retries ``git merge`` with AWS
+  full-jitter exponential backoff on the broader transient stderr set
+  (``unable to create``, ``index.lock``, ``another git process``,
+  ``could not lock``) — covers external git writers (IDE, manual
+  ``git commit``) holding ``.git/index.lock``, which has
+  no git wait-flag.
+* **L4'** — :meth:`state.TaskManager._teardown_worktree` re-raises
+  any merge failure (except :class:`OriginalBranchMissingError`).
+  ``transition`` aborts before ``_save_task``, task stays in
+  ``review``. **Data-integrity guarantee — L4' alone is sufficient
+  to close the silent-loss class; L1' + L3' are UX-optimization.**
+
 The lock file ``<state_dir>``  **must reside on a local filesystem**.
 ``filelock.FileLock`` (``fcntl`` advisory) is unreliable on NFS / SMB.
 """
