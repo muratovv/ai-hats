@@ -109,7 +109,7 @@ class Provider(abc.ABC):
         project_dir: Path,
         result: CompositionResult,
         session_id: str,
-    ) -> tuple[list[str], dict[str, str]]:
+    ) -> tuple[list[str], dict[str, str], str]:
         """Build CLI args and env vars for a per-session composed prompt.
 
         Called for EVERY session (default role and explicit ``--role`` alike).
@@ -117,10 +117,17 @@ class Provider(abc.ABC):
         ``<ai_hats_dir>/.cache/sessions/<session_id>/`` — provider writes the
         prompt file and plugin-dir there. Caller owns dir cleanup at
         session_end (``_cleanup_session_cache`` in runtime.py).
-        Returns (extra_args, extra_env).
+
+        Returns ``(extra_args, extra_env, meta_prompt)``. ``meta_prompt`` is
+        the EXACT bytes that the provider will see as system-prompt override
+        (HATS-523: persisted to ``<session_dir>/meta_prompt.txt`` by
+        ``WrapRunner.run`` for post-hoc audit / regression detection,
+        symmetric with ``SubAgentRunner.run``). Empty string when the
+        provider has no system-prompt channel.
+
         Default: no-op (subclasses override).
         """
-        return [], {}
+        return [], {}, ""
 
     def materialize_runtime_skills(
         self,
@@ -274,12 +281,17 @@ class GeminiProvider(Provider):
         project_dir: Path,
         result: CompositionResult,
         session_id: str,
-    ) -> tuple[list[str], dict[str, str]]:
+    ) -> tuple[list[str], dict[str, str], str]:
         """Create session-scoped rules dir with composed prompt.
 
         Uses GEMINI_CLI_PROJECT_RULES_PATH to inject without touching GEMINI.md.
         Rules dir lives under ``<ai_hats_dir>/.cache/sessions/<session_id>/rules/``
         and is cleaned with the whole cache dir at session_end.
+
+        Third return element (HATS-523): ``prompt_content`` — the exact bytes
+        written to ``00_MANDATORY_ROLE.md`` (after HATS-380 placeholder
+        expansion). Persisted by ``WrapRunner`` to
+        ``<session_dir>/meta_prompt.txt`` for post-hoc audit.
         """
         prompt_content = self.build_system_prompt(result)
         # HATS-380: expand placeholder before the prompt reaches the agent.
@@ -302,7 +314,7 @@ class GeminiProvider(Provider):
         # Write mandatory role override (00_ prefix = highest priority)
         (rules_dir / "00_MANDATORY_ROLE.md").write_text(prompt_content)
 
-        return [], {"GEMINI_CLI_PROJECT_RULES_PATH": str(rules_dir)}
+        return [], {"GEMINI_CLI_PROJECT_RULES_PATH": str(rules_dir)}, prompt_content
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         cmd = ["gemini"]
@@ -386,7 +398,7 @@ class ClaudeProvider(Provider):
         project_dir: Path,
         result: CompositionResult,
         session_id: str,
-    ) -> tuple[list[str], dict[str, str]]:
+    ) -> tuple[list[str], dict[str, str], str]:
         """Write composed prompt to per-session cache, pass via --system-prompt-file.
 
         HATS-294: prompt and plugin-dir both live under
@@ -395,6 +407,13 @@ class ClaudeProvider(Provider):
         session_end.
 
         Preserves project-local content outside AI-HATS markers.
+
+        Third return element (HATS-523): ``full_content`` — the exact bytes
+        written to ``<cache>/sessions/<session_id>/prompt.md`` and passed via
+        ``--system-prompt-file``. Persisted by ``WrapRunner`` to
+        ``<session_dir>/meta_prompt.txt`` for post-hoc regression detection
+        (HATS-452 / HATS-501 class) and e2e verification, symmetric with
+        ``SubAgentRunner.save_meta_prompt``.
         """
         prompt_content = self.build_system_prompt(result)
         # HATS-380: expand placeholder before --system-prompt-file content
@@ -442,7 +461,7 @@ class ClaudeProvider(Provider):
         return [
             "--system-prompt-file", str(override_file),
             *skill_args,
-        ], {}
+        ], {}, full_content
 
     def materialize_runtime_skills(
         self,
