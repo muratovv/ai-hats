@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
+import subprocess
 import sys
+from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 
 import click
 
 from ._helpers import _assembler, _project_dir, console, logger
+
+# HATS-496: accept tag / branch / full-or-short SHA as a --revision argument.
+# Bare SHA detection skips the ls-remote pre-flight (git ls-remote returns
+# tags/branches keyed by refspec, not arbitrary commit ids — for raw SHA we
+# defer to pip's own resolution downstream).
+_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
 
 
 # HATS-337: AI_HATS_REPO_URL env overrides the default git URL, mirroring
@@ -20,7 +30,7 @@ def _git_install_url() -> str:
     )
 
 
-def _build_update_cmd() -> list[str]:
+def _build_update_cmd(ref: str | None = None) -> list[str]:
     """Build the pip command for updating ai-hats from GitHub.
 
     NOTE: we intentionally do NOT pass --no-deps. Dropping it means new
@@ -31,9 +41,22 @@ def _build_update_cmd() -> list[str]:
     HATS-337/follow-up: PEP 508 `name @ url` requires a URL scheme. For
     local-path AI_HATS_REPO_URL (e.g. `--local /path` in bootstrap.sh) we
     pass the path directly — pip detects pyproject.toml and installs.
+
+    HATS-496: when ``ref`` is set, append ``@<ref>`` so pip installs that
+    tag / branch / commit instead of the implicit ``HEAD`` of master.
+    Caller is expected to have validated ``ref`` upstream (``_resolve_ref``)
+    and to have refused local-path URLs (which don't support refs).
     """
     url = _git_install_url()
-    target = f"ai-hats @ {url}" if "://" in url else url
+    if ref and "://" in url:
+        target = f"ai-hats @ {url}@{ref}"
+    elif ref:
+        # Local path with --revision is refused upstream; defensive fallback
+        # appends @ref anyway so the failure shows up at pip rather than
+        # silently installing HEAD.
+        target = f"{url}@{ref}"
+    else:
+        target = f"ai-hats @ {url}" if "://" in url else url
     return [
         sys.executable,
         "-m",
@@ -43,6 +66,65 @@ def _build_update_cmd() -> list[str]:
         "--no-cache-dir",
         target,
     ]
+
+
+def _is_editable_install() -> tuple[bool, str | None]:
+    """Detect whether the active ai-hats install is editable.
+
+    Returns ``(is_editable, source_url)``. Reads ``direct_url.json`` from
+    the dist-info via :mod:`importlib.metadata`, which is the canonical
+    PEP 610 source. Falls back to ``(False, None)`` when the metadata is
+    missing or malformed — i.e. treat as "installable / non-editable" so
+    a fresh venv with no ai-hats yet doesn't trigger the protection path.
+    """
+    try:
+        dist = distribution("ai-hats")
+        raw = dist.read_text("direct_url.json")
+    except (PackageNotFoundError, FileNotFoundError):
+        return (False, None)
+    if raw is None:
+        return (False, None)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return (False, None)
+    dir_info = data.get("dir_info") or {}
+    return (bool(dir_info.get("editable")), data.get("url"))
+
+
+def _resolve_ref(repo_url: str, ref: str) -> str | None:
+    """Validate ``ref`` against ``repo_url`` via ``git ls-remote``.
+
+    Returns the resolved SHA on success, ``None`` if the ref isn't found
+    on the remote or the probe fails (timeout, missing git). A bare SHA
+    (``[0-9a-f]{7,40}``) short-circuits and returns itself — ``git
+    ls-remote`` keys by refspec, not arbitrary commit ids, so we defer
+    invalid-SHA detection to pip downstream.
+
+    The ``git+`` PEP 508 prefix is stripped before invoking git, which
+    only speaks the bare URL schemes.
+    """
+    if _SHA_RE.fullmatch(ref):
+        return ref
+
+    ls_url = repo_url.removeprefix("git+")
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", ls_url, ref],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    out = result.stdout.strip()
+    if not out:
+        return None
+    # First column of first matching line is the SHA.
+    return out.splitlines()[0].split()[0]
 
 
 def _get_installed_version() -> str:
@@ -283,7 +365,32 @@ def _render_downgrade_refusal(reason: str, entry) -> None:
     "install with the remote master state — destroys unpushed work in "
     "editable installs.",
 )
-def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
+@click.option(
+    "--revision",
+    "revision",
+    default=None,
+    metavar="REF",
+    help="Install ai-hats at an explicit tag, branch, or commit SHA "
+    "instead of remote master (HATS-496). Bypasses the ahead/diverged "
+    "guard; pre-flight 'git ls-remote' validates the ref before any pip "
+    "call. Editable target venv requires --force.",
+)
+@click.option(
+    "--force",
+    "force",
+    is_flag=True,
+    help="With --revision: overwrite the editable install in the target "
+    "venv (HATS-496 D2). No effect without --revision. Distinct from "
+    "--force-downgrade, which only applies to plain master-targeted "
+    "updates.",
+)
+def update(
+    migrate_force: bool,
+    check_branches: bool,
+    force_downgrade: bool,
+    revision: str | None,
+    force: bool,
+):
     """Update ai-hats from GitHub.
 
     Auto-bumps after install. HATS-415: ``bump`` now self-heals v0.6 →
@@ -293,9 +400,12 @@ def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
     after relocating the content (or to overwrite). ``--check-branches``
     surfaces a warning when local branches modify the paths slated for
     deletion.
-    """
-    import subprocess
 
+    HATS-496: ``--revision <REF>`` pins the install to an explicit tag,
+    branch, or commit SHA. Skips the downgrade probe / guard (D1). On an
+    editable target venv, refuses unless ``--force`` is passed (D2). A
+    pre-flight ``git ls-remote`` validates the ref before any pip call.
+    """
     from .. import __version__ as old_version
     from ..assembler import AssemblyError
 
@@ -308,25 +418,70 @@ def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
 
     project_dir = _project_dir()
 
-    # HATS-441: refuse silent downgrade when installed HEAD is ahead of
-    # remote master. ``--force-downgrade`` opts back into the destructive
-    # ``pip install --force-reinstall git+…`` behaviour for callers who
-    # know what they're doing (e.g. discarding a stale dev branch).
-    # Single probe — feeds both the downgrade gate and the no-op
-    # short-circuit below. Avoids running run_check twice per invocation.
-    probe = None if force_downgrade else _probe_remote_state(project_dir)
+    # HATS-496: --revision short-circuits the guard machinery — the user
+    # is explicit about the target ref, so probing master and comparing
+    # ahead/behind axes would only obstruct. Editable check (D2) and ref
+    # pre-flight (steps 2-3 of plan) happen here, BEFORE the snapshot /
+    # install path runs.
+    probe = None
+    if revision:
+        url = _git_install_url()
+        if "://" not in url:
+            console.print(
+                f"[red]--revision requires a git URL[/] "
+                f"(AI_HATS_REPO_URL={url!r} looks like a local path; "
+                "local-path installs do not support refs)."
+            )
+            sys.exit(2)
 
-    if force_downgrade:
+        is_editable, source_url = _is_editable_install()
+        if is_editable and not force:
+            console.print(
+                f"[red]Target venv has editable install[/] at "
+                f"[bold]{source_url}[/]. Set "
+                f"[bold]AI_HATS_VENV=<other-path>[/] to install into a "
+                f"different venv, or pass [bold]--force[/] to overwrite "
+                f"the editable install."
+            )
+            sys.exit(2)
+
+        with console.status(
+            f"[cyan]Resolving ref[/] {revision} on {url} …",
+            spinner="dots",
+        ):
+            resolved = _resolve_ref(url, revision)
+        if resolved is None:
+            console.print(
+                f"[red]error:[/] ref '{revision}' not found on remote {url}"
+            )
+            sys.exit(2)
+
         console.print(
-            "[yellow]Warning:[/] --force-downgrade bypasses the "
-            "ahead/diverged guard. Your local install (including editable / "
-            "unpushed commits) will be replaced by remote master."
+            "[yellow]Warning:[/] --revision bypasses the ahead/diverged "
+            "guard. Installing arbitrary ref may downgrade your install."
         )
+        console.print(f"  [dim]Resolved {revision} → {resolved}[/]")
     else:
-        reason = _classify_downgrade(probe)
-        if reason is not None:
-            _render_downgrade_refusal(reason, probe)
-            sys.exit(DOWNGRADE_REFUSAL_EXIT_CODE)
+        # HATS-441: refuse silent downgrade when installed HEAD is ahead of
+        # remote master. ``--force-downgrade`` opts back into the destructive
+        # ``pip install --force-reinstall git+…`` behaviour for callers who
+        # know what they're doing (e.g. discarding a stale dev branch).
+        # Single probe — feeds both the downgrade gate and the no-op
+        # short-circuit below. Avoids running run_check twice per invocation.
+        probe = None if force_downgrade else _probe_remote_state(project_dir)
+
+        if force_downgrade:
+            console.print(
+                "[yellow]Warning:[/] --force-downgrade bypasses the "
+                "ahead/diverged guard. Your local install (including "
+                "editable / unpushed commits) will be replaced by remote "
+                "master."
+            )
+        else:
+            reason = _classify_downgrade(probe)
+            if reason is not None:
+                _render_downgrade_refusal(reason, probe)
+                sys.exit(DOWNGRADE_REFUSAL_EXIT_CODE)
 
     # 1. Snapshot before update
     before_lib = _snapshot_library()
@@ -361,8 +516,13 @@ def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
     # walked real commits. No point paying ``pip install --force-reinstall
     # --no-cache-dir``'s 10-15s re-download for a no-op; bump() below
     # still runs to apply any pending migrations.
+    # HATS-496: --revision always re-installs. The user asked for a specific
+    # ref; even if the resolved SHA happens to equal the installed SHA, force
+    # the pip call so direct_url.json.vcs_info.requested_revision is rewritten
+    # to the literal ref the user typed (HATS-497 reads this).
     skip_install = (
         not force_downgrade
+        and not revision
         and probe is not None
         and probe.installed_sha == probe.latest_sha
         and probe.ahead == 0
@@ -375,7 +535,7 @@ def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
         )
         new_version = old_version
     else:
-        cmd = _build_update_cmd()
+        cmd = _build_update_cmd(ref=revision)
         # Wrapped in a Rich spinner so the terminal isn't silent while pip
         # downloads (can take 30s+ on slow links).
         with console.status(
@@ -472,6 +632,17 @@ def update(migrate_force: bool, check_branches: bool, force_downgrade: bool):
                     f"  [yellow]Bump (fresh interpreter) exited "
                     f"{proc.returncode} — review output above[/]"
                 )
+                if revision:
+                    # HATS-496 D3: pinning to an older ref often means the
+                    # on-disk ai-hats.yaml schema is ahead of installed code.
+                    # Surface the explicit recovery path so the user isn't
+                    # left guessing at the traceback.
+                    console.print(
+                        "  [dim]Hint: yaml schema may be ahead of the "
+                        "pinned version; run [bold]ai-hats self init "
+                        "--migrate-force[/bold] manually if migrations "
+                        "stalled.[/]"
+                    )
             # Snapshot composition AFTER bump to compute rule/skill diff.
             asm = _assembler(project_dir)
             after_rules, after_skills = _snapshot_composition(asm)
