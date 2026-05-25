@@ -26,11 +26,14 @@ import pytest
 from ai_hats.paths import worktrees_dir
 from ai_hats.worktree import (
     GIT_RETRY_MAX,
+    MERGE_RETRY_MAX,
     WorktreeLockError,
     WorktreeManager,
     _acquire,
     _format_git_create_error,
     _is_retriable_git_error,
+    _is_retriable_merge_error,
+    _retry_git_merge,
     _retry_worktree_add,
     _state_key,
 )
@@ -567,3 +570,78 @@ def test_setup_worktree_concurrent_adopts_peer(git_project: Path) -> None:
         check=True,
     ).stdout
     assert branches.count(branch) == 1, branches
+
+
+# ---------------------------------------------------------------------------
+# HATS-481 L3' — _retry_git_merge unit tests
+#
+# Pure unit tests of the merge-retry helper. Stubbed git_runner; sleep
+# injected as no-op so the suite stays fast.
+# ---------------------------------------------------------------------------
+
+
+def test_retry_git_merge_succeeds_after_transient_failures(tmp_path: Path) -> None:
+    """TC-N8: 2 retriable failures (index.lock contention) then success."""
+    stub = _StubGit(
+        [
+            _make_called_process_error(
+                "fatal: Unable to create '.git/index.lock': File exists.\n"
+                "Another git process seems to be running in this repository."
+            ),
+            _make_called_process_error(
+                "fatal: Unable to create '.git/index.lock': File exists."
+            ),
+            None,  # success
+        ]
+    )
+    _retry_git_merge(stub, "merge", "--no-ff", "task/x", sleep=lambda _: None)
+    assert stub.calls == 3
+
+
+def test_retry_git_merge_exhausted_raises_last_error(tmp_path: Path) -> None:
+    """TC-N9: all MERGE_RETRY_MAX retriable failures → raises last."""
+    stderr = (
+        "fatal: Unable to create '.git/index.lock': File exists.\n"
+        "Another git process seems to be running in this repository."
+    )
+    stub = _StubGit(
+        [_make_called_process_error(stderr) for _ in range(MERGE_RETRY_MAX)]
+    )
+    with pytest.raises(subprocess.CalledProcessError) as ei:
+        _retry_git_merge(stub, "merge", "--no-ff", "task/y", sleep=lambda _: None)
+    assert stub.calls == MERGE_RETRY_MAX
+    assert "index.lock" in (ei.value.stderr or "").lower()
+
+
+def test_retry_git_merge_fails_fast_on_non_retriable(tmp_path: Path) -> None:
+    """TC-N10: non-retriable stderr (e.g. merge conflict) → 1 call, no retry."""
+    stub = _StubGit(
+        [
+            _make_called_process_error(
+                "Automatic merge failed; fix conflicts and then commit the result."
+            )
+        ]
+    )
+    with pytest.raises(subprocess.CalledProcessError):
+        _retry_git_merge(stub, "merge", "--no-ff", "task/z", sleep=lambda _: None)
+    assert stub.calls == 1
+
+
+def test_is_retriable_merge_error_classification() -> None:
+    """Each pattern in _RETRIABLE_MERGE_STDERR_PATTERNS matches; clear cases don't."""
+    retriable = [
+        "fatal: Unable to create '.git/index.lock': File exists",
+        "Another git process seems to be running in this repository",
+        "error: could not lock config file .git/config",
+        "fatal: Unable to create '.git/HEAD.lock': File exists",
+    ]
+    non_retriable = [
+        "Automatic merge failed; fix conflicts and then commit the result.",
+        "fatal: refusing to merge unrelated histories",
+        "fatal: not a valid object name: HEAD",
+        "",
+    ]
+    for s in retriable:
+        assert _is_retriable_merge_error(_make_called_process_error(s)), s
+    for s in non_retriable:
+        assert not _is_retriable_merge_error(_make_called_process_error(s)), s
