@@ -905,3 +905,106 @@ def test_link_round_trip_through_yaml(mgr):
     a = mgr.get_task("T-1")
     assert a.related == ["T-2"]
     assert a.see_also == ["T-2"]
+
+
+# ---------------------------------------------------------------------------
+# HATS-481 — L4' fail-loud teardown
+# ---------------------------------------------------------------------------
+
+
+class _FailingMergeManager:
+    """Stand-in for WorktreeManager: merge() raises CalledProcessError."""
+
+    def __init__(self, branch_name: str = "task/t-1") -> None:
+        self.branch_name = branch_name
+
+    def merge(self) -> None:
+        raise subprocess.CalledProcessError(
+            returncode=128,
+            cmd=["git", "merge", "--no-ff", self.branch_name],
+            stderr=(
+                "fatal: Unable to create '.git/index.lock': File exists.\n"
+                "Another git process seems to be running in this repository."
+            ),
+        )
+
+    def discard(self, *, force: bool = False) -> None:  # pragma: no cover
+        pass
+
+
+def test_teardown_worktree_reraises_on_merge_failure(mgr, monkeypatch):
+    """TC-N13 (HATS-481 L4'): merge failure on ``transition done`` must
+    leave the task in ``review`` — not silently mark it DONE.
+
+    Pre-HATS-481 the ``except Exception`` block in ``_teardown_worktree``
+    swallowed every error at WARNING, then ``transition`` proceeded to
+    ``_save_task``, persisting the new DONE state despite the merge
+    failure. That's the silent-data-loss class (GH Merge Queue
+    Apr-2026 postmortem). L4' re-raises → ``_save_task`` is never
+    reached under the filelock context manager → on-disk state stays
+    at ``review``.
+    """
+    from ai_hats import worktree as worktree_module
+
+    mgr.create_task("T-1", "L4' regression coverage")
+    mgr.transition("T-1", TaskState.PLAN)
+    mgr.transition("T-1", TaskState.EXECUTE)
+    mgr.transition("T-1", TaskState.DOCUMENT)
+    mgr.transition("T-1", TaskState.REVIEW)
+
+    # Force `_teardown_worktree(merge=True)` to see a manager whose
+    # `.merge()` raises. The real `load_for_task` would return None for
+    # this non-git fixture project, so without the patch the teardown
+    # is a no-op and the bug is not reproducible.
+    def fake_load_for_task(project_dir, task_id):
+        return _FailingMergeManager(branch_name=f"task/{task_id.lower()}")
+
+    monkeypatch.setattr(
+        worktree_module.WorktreeManager,
+        "load_for_task",
+        staticmethod(fake_load_for_task),
+    )
+
+    with pytest.raises(subprocess.CalledProcessError):
+        mgr.transition("T-1", TaskState.DONE)
+
+    # The on-disk task must NOT have moved to DONE.
+    reloaded = mgr.get_task("T-1")
+    assert reloaded.state == TaskState.REVIEW, (
+        f"task moved to {reloaded.state} despite merge failure — "
+        f"silent data loss regression"
+    )
+    assert reloaded.completed_at == "", (
+        "completed_at must not be persisted when merge fails"
+    )
+
+
+def test_teardown_worktree_swallows_discard_failure(mgr, monkeypatch):
+    """L4' must not regress discard semantics: ``transition failed`` /
+    ``transition cancelled`` (merge=False) keep the swallowing behavior,
+    because the user is administratively dropping the work."""
+    from ai_hats import worktree as worktree_module
+
+    class _FailingDiscardManager:
+        branch_name = "task/t-2"
+
+        def merge(self):  # pragma: no cover
+            pass
+
+        def discard(self, *, force: bool = False):
+            raise subprocess.CalledProcessError(
+                returncode=128, cmd=["git", "branch", "-D"],
+                stderr="fatal: could not lock something",
+            )
+
+    mgr.create_task("T-2", "Cancel me")
+    monkeypatch.setattr(
+        worktree_module.WorktreeManager,
+        "load_for_task",
+        staticmethod(lambda *_a, **_kw: _FailingDiscardManager()),
+    )
+    # Should NOT raise — admin close path is permissive.
+    mgr.transition("T-2", TaskState.CANCELLED, resolution="dropped")
+
+    reloaded = mgr.get_task("T-2")
+    assert reloaded.state == TaskState.CANCELLED
