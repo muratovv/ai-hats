@@ -11,6 +11,16 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Added
+- **Docs: dev-vs-runtime venv discipline in CONTRIBUTING.md**
+  (HATS-494). New `### Stable runtime vs editable dev install`
+  subsection under `## Development setup` codifies the
+  two-venv pattern (`AI_HATS_VENV` env override + `ai-hats self update
+  --revision <REF>` to pin the stable venv to a known-good tag), with
+  caveats about editable installs (frozen `pyproject.toml`, hardcoded
+  repo path in the meta-path finder, generated `_version.py`,
+  `direct_url.json` editable protection). Solves the dogfooding paradox
+  where the harness driving a Claude Code session and the install
+  under test are the same editable `.venv`.
 - **`ai-hats self update --revision <REF>`** for pinned installs
   (HATS-496). Accepts a tag, branch, or commit SHA and installs ai-hats
   at exactly that ref instead of remote master. Unblocks reproducible
