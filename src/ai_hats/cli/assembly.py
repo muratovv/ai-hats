@@ -716,15 +716,19 @@ def status():
     asm = _assembler()
     st = asm.status()
 
+    # HATS-497: the role + tree section is role-dependent, but install
+    # diagnostics in the Health section below are useful regardless of
+    # whether a role is composed (e.g. answering "what version am I
+    # running, where does it live" before init). Don't early-return on
+    # missing role — fall through to the Health block.
     if not st["role"]:
         console.print("[yellow]No role active[/]")
-        return
-
-    console.print(f"Role: [bold]{st['role']}[/]")
-    console.print(f"Provider: {st['provider']}")
+    else:
+        console.print(f"Role: [bold]{st['role']}[/]")
+        console.print(f"Provider: {st['provider']}")
 
     # Dependency tree (HATS-421: each node tagged with source layer).
-    if st["tree"]:
+    if st["role"] and st["tree"]:
         provenance = st["tree"].get("provenance", {})
 
         def _tag(component_type: str, name: str) -> str:
@@ -763,9 +767,17 @@ def status():
             "[dim]Legend:[/] [dim](built-in)[/]  [magenta](global)[/]  [cyan](project)[/]"
         )
 
-    # Health
+    # Health — HATS-497: prefixed with install-level diagnostics (version,
+    # interpreter, venv, source, library, resolved-via, repo HEAD) so a
+    # single ``config status`` answers both project-config and "where does
+    # my ai-hats live" questions. Existing project-side checks
+    # (imports.md, system_prompt) print after, with their OK/Missing icons.
+    from .maintenance import _gather_install_info
+
+    console.print("\n[bold]Health:[/]")
+    for key, val in _gather_install_info().items():
+        console.print(f"  {key}: [dim]{val}[/]", highlight=False)
     if st.get("health"):
-        console.print("\n[bold]Health:[/]")
         for component, status_val in st["health"].items():
             icon = "[green]OK[/]" if status_val == "OK" else "[red]Missing[/]"
             console.print(f"  {component}: {icon}", highlight=False)
