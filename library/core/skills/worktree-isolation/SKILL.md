@@ -43,6 +43,34 @@ Isolated development using git worktrees. Each task gets its own working copy �
    ai-hats wt discard
    ```
 
+## Pre-merge checklist (long-lived tasks)
+
+For tasks that span multiple sessions OR multiple review rounds,
+the base branch (usually `master`) can drift forward while you work
+— other agents' worktrees merge in parallel, or `origin/<base>`
+receives commits. `ai-hats task transition <id> done` will then
+fail with `WorktreeDriftError` and you'll need an ad-hoc recovery.
+
+Rebase **before** closing so drift never accumulates past your
+verification window:
+
+```bash
+cd <worktree-path>
+git fetch --all
+git rebase <base-branch>         # usually master
+# resolve any conflicts
+# re-run the affected tests
+ai-hats task transition <id> done   # framework auto-merges
+```
+
+**Skip this for short tasks** (< ~2 hours wall-clock, no review
+rounds). Drift typically only matters on multi-session work; for a
+30-minute task the base hasn't moved.
+
+If you skipped the checklist and hit `WorktreeDriftError` anyway,
+the recovery is the same rebase plus an explicit acceptance flag —
+see the drift block in step 3 of the Workflow above.
+
 ## Commands
 
 | Command | What it does |
