@@ -3,18 +3,47 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 
 import click
 
-from ._helpers import _project_dir, console
+from ._helpers import _guard_not_inside_linked_worktree, _project_dir, console
+
+
+# HATS-482 (B-07): branch-name input filter for `wt create`. Permissive on
+# case (mixed case is now safe with case-preserving `_state_key`), strict
+# on chars that break path math, git itself, or state-file naming:
+#   * leading dot/dash/slash → git refuses anyway, fail earlier with hint;
+#   * whitespace → state file name corruption + shell injection footgun;
+#   * `..` segment → would let an operator escape `worktrees_dir` if it
+#     ever leaked into a path join. Cheap defense in depth.
+_BRANCH_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9/_.-]*$")
+
+
+def _validate_branch_name(_ctx, _param, value: str) -> str:
+    """Click callback: reject branch names that break paths or git."""
+    if not _BRANCH_NAME_RE.match(value) or ".." in value:
+        raise click.BadParameter(
+            f"Invalid branch name '{value}'. "
+            "Use [A-Za-z0-9/_.-], no leading dot/dash/slash, "
+            "no whitespace, no '..' segment."
+        )
+    return value
 
 
 def _resolve_worktree(branch: str | None = None):
-    """Resolve a WorktreeManager from branch arg, CWD, or first active.
+    """Resolve a WorktreeManager from branch arg, CWD, or sole active worktree.
 
     Returns None when nothing can be found.
+
+    HATS-482 (R-08): when no branch is supplied AND CWD is not in a linked
+    worktree, refuse to silently grab ``list_active()[0]`` when ``>1``
+    worktree is tracked — raises :class:`click.UsageError` listing branches
+    so the operator explicitly disambiguates.  ``len(active) == 1`` keeps
+    the prior convenience (no need to type the branch in the single-wt
+    case).
     """
     import subprocess as _sp
 
@@ -39,9 +68,16 @@ def _resolve_worktree(branch: str | None = None):
             return None
         return WorktreeManager.load_for_branch(project_dir, head)
 
-    # Fallback: first active worktree.
+    # HATS-482 / R-08: fail-on-ambiguity instead of silent first-active.
     active = WorktreeManager.list_active(project_dir)
-    return active[0] if active else None
+    if not active:
+        return None
+    if len(active) == 1:
+        return active[0]
+    branches = ", ".join(m.branch_name for m in active)
+    raise click.UsageError(
+        f"Multiple active worktrees, specify which one as the first arg: {branches}"
+    )
 
 
 @click.group()
@@ -51,7 +87,7 @@ def wt():
 
 
 @wt.command("create")
-@click.argument("branch")
+@click.argument("branch", callback=_validate_branch_name)
 def wt_create(branch: str):
     """Create an isolated worktree on a new branch."""
     from ..worktree import (
@@ -62,12 +98,9 @@ def wt_create(branch: str):
 
     project_dir = _project_dir()
 
-    # HATS-060: refuse to create from inside a linked worktree.
-    if WorktreeManager.is_inside_linked_worktree(project_dir):
-        console.print("[red]Cannot create a worktree from inside a linked worktree[/]")
-        console.print(f"  You are in: {project_dir}")
-        console.print("  Run [bold]ai-hats wt create[/] from the main repo.")
-        sys.exit(1)
+    # HATS-060: refuse to create from inside a linked worktree
+    # (helper-extracted in HATS-482 / B-08 so merge/discard/list share it).
+    _guard_not_inside_linked_worktree(project_dir)
 
     # HATS-479: the previous pre-check (load_for_branch outside any lock) was
     # the TOCTOU surface — two concurrent `wt create <same-branch>` callers
@@ -111,7 +144,14 @@ def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
     Refuses if the base branch moved since `wt create` — local or remote
     drift (use --accept-drift to override after re-verifying).
     """
-    from ..worktree import WorktreeDirtyError, WorktreeDriftError
+    from ..worktree import (
+        WorktreeDirtyError,
+        WorktreeDriftError,
+        WorktreePartialCleanupError,
+    )
+
+    # HATS-482 / B-08: guard before resolving CWD/_project_dir.
+    _guard_not_inside_linked_worktree(_project_dir())
 
     mgr = _resolve_worktree(branch)
     if mgr is None:
@@ -133,6 +173,20 @@ def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
         from rich.markup import escape as _escape
         console.print(f"[red]Refused (drift)[/]:\n{_escape(str(e))}")
         sys.exit(1)
+    except WorktreePartialCleanupError as e:
+        # HATS-482 / B-02: merge committed, worktree dir gone, but branch
+        # cleanup failed for a known cause. State JSON intact so the
+        # operator can retry after fixing the cause.
+        console.print(
+            f"[yellow]Worktree torn down, but branch '{e.branch_name}' "
+            f"preserved[/] ({e.reason})"
+        )
+        console.print(f"  git: {e.stderr_tail}")
+        console.print(
+            f"  Manual cleanup: [bold]git branch -D {e.branch_name}[/] "
+            f"(after resolving the cause)"
+        )
+        sys.exit(2)
     console.print(f"[green]Merged[/]: {name}")
 
 
@@ -145,7 +199,10 @@ def wt_discard(branch: str | None, force: bool):
     Without BRANCH: auto-detect from CWD (if inside a linked worktree).
     Refuses if worktree has uncommitted changes (use --force to override).
     """
-    from ..worktree import WorktreeDirtyError
+    from ..worktree import WorktreeDirtyError, WorktreePartialCleanupError
+
+    # HATS-482 / B-08: guard before resolving CWD/_project_dir.
+    _guard_not_inside_linked_worktree(_project_dir())
 
     mgr = _resolve_worktree(branch)
     if mgr is None:
@@ -160,6 +217,18 @@ def wt_discard(branch: str | None, force: bool):
     except WorktreeDirtyError as e:
         console.print(f"[red]Refused[/]: {e}")
         sys.exit(1)
+    except WorktreePartialCleanupError as e:
+        # HATS-482 / B-02: worktree dir gone, branch survived.
+        console.print(
+            f"[yellow]Worktree torn down, but branch '{e.branch_name}' "
+            f"preserved[/] ({e.reason})"
+        )
+        console.print(f"  git: {e.stderr_tail}")
+        console.print(
+            f"  Manual cleanup: [bold]git branch -D {e.branch_name}[/] "
+            f"(after resolving the cause)"
+        )
+        sys.exit(2)
     console.print(f"[green]Discarded[/]: {name}")
 
 
@@ -169,6 +238,8 @@ def wt_list():
     from ..worktree import WorktreeManager
 
     project_dir = _project_dir()
+    # HATS-482 / B-08: guard CWD-from-inside-linked-worktree.
+    _guard_not_inside_linked_worktree(project_dir)
     worktrees = WorktreeManager.list_worktrees(project_dir)
     tracked_branches = {m.branch_name for m in WorktreeManager.list_active(project_dir)}
 
