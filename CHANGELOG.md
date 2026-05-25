@@ -11,6 +11,22 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Added
+- **`ai-hats self update --revision <REF>`** for pinned installs
+  (HATS-496). Accepts a tag, branch, or commit SHA and installs ai-hats
+  at exactly that ref instead of remote master. Unblocks reproducible
+  QA, bisect, and "test against last known-good release" workflows
+  without manual `pip install --force-reinstall git+...@<ref>`
+  incantations. Bypasses the HATS-441 ahead/diverged downgrade guard
+  with an explicit yellow WARN (the user asked for an arbitrary ref, so
+  the guard would only obstruct). On an editable target venv — i.e. the
+  `pip install -e .` dev loop inside the ai-hats repo itself — refuses
+  unless `--force` is passed, with a message that points at the
+  `AI_HATS_VENV` env override as the non-destructive alternative.
+  Pre-flight `git ls-remote` validates the ref before any pip call so
+  typos fail fast (~1s) instead of after a 30s pip clone. Pip-managed
+  `direct_url.json` (PEP 610) records the literal ref and resolved SHA
+  for later introspection — no custom marker files. New flags:
+  `--revision REF`, `--force`.
 - **e2e framework Wave 1 — `tmp_project` + `tmp_venv_project` fixtures**
   (HATS-478). Two reusable pytest fixtures plus a `tests/e2e/README.md`
   unlock 51 of the 69 Core e2e scenarios (32 free-tier CLI + 19
