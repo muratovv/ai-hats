@@ -31,11 +31,14 @@ from ai_hats.worktree import (
     WorktreeManager,
     _acquire,
     _acquire_base_branch_lock,
+    _acquire_lifecycle_lock,
     _base_lock_key,
     _base_lock_path,
     _format_git_create_error,
     _is_retriable_git_error,
     _is_retriable_merge_error,
+    _lifecycle_lock_path,
+    _lock_path,
     _retry_git_merge,
     _retry_worktree_add,
     _state_key,
@@ -814,3 +817,279 @@ def test_parallel_merges_into_same_base_both_succeed(git_project: Path) -> None:
     # Both unique files on the base branch.
     assert (git_project / "file-a.txt").read_text() == "alpha\n"
     assert (git_project / "file-b.txt").read_text() == "beta\n"
+
+
+# ---------------------------------------------------------------------------
+# TC-N14..N16 — HATS-480 lifecycle-lock helpers (pure unit, no real git)
+# ---------------------------------------------------------------------------
+
+
+def test_lifecycle_lock_path_is_sibling_of_state(tmp_path: Path) -> None:
+    """TC-N14: lifecycle lock filename = <state>.json.lifecycle.lock — and is
+    DISTINCT from the HATS-121 state-lock (``<state>.json.lock``).
+
+    Distinct lock files matter: state-lock is held only across millisecond-
+    scoped JSON I/O, lifecycle-lock spans tens of seconds (merge + fetch +
+    remove). Reusing the same lock would block ``wt list`` / ``load_for_branch``
+    on peers throughout a merge.
+    """
+    state = tmp_path / "task-hats-480.json"
+    lc = _lifecycle_lock_path(state)
+    assert lc.name == "task-hats-480.json.lifecycle.lock"
+    assert lc.parent == state.parent
+    # Must NOT collide with the HATS-121 state-lock.
+    assert lc != _lock_path(state)
+
+
+def test_acquire_lifecycle_lock_timeout_raises(tmp_path: Path) -> None:
+    """TC-N15: a held lifecycle lock makes the second acquire raise
+    WorktreeLockError after the timeout elapses.
+
+    Mirrors the existing HATS-121 / HATS-481 timeout tests — uses a child
+    process to hold the lock so the second acquire actually sees fcntl
+    contention (in-process re-entry would succeed under filelock's reentrant
+    semantics).
+    """
+    state = tmp_path / "state.json"
+    ready = tmp_path / "ready.flag"
+    holder = multiprocessing.Process(
+        target=_hold_lifecycle_lock,
+        args=(str(state), 0.5, str(ready)),
+    )
+    holder.start()
+    try:
+        for _ in range(50):
+            if ready.exists():
+                break
+            time.sleep(0.02)
+        assert ready.exists(), "holder failed to grab lifecycle lock"
+
+        with pytest.raises(WorktreeLockError) as exc_info:
+            with _acquire_lifecycle_lock(state, timeout=0.1):
+                pass  # pragma: no cover
+        # Error message points at the lock file for manual recovery (479/481 pattern).
+        assert str(_lifecycle_lock_path(state)) in str(exc_info.value)
+    finally:
+        holder.join(timeout=5)
+        assert holder.exitcode == 0
+
+
+def _hold_lifecycle_lock(state_path_str: str, hold_s: float, ready: str) -> None:
+    """Child-process worker — must be top-level for multiprocessing pickling."""
+    state = Path(state_path_str)
+    state.parent.mkdir(parents=True, exist_ok=True)
+    with _acquire_lifecycle_lock(state):
+        Path(ready).write_text("ready")
+        time.sleep(hold_s)
+
+
+# TC-N16 (helper `_load_state_or_none`) was dropped in review: the
+# idempotency gate inside merge()/discard()/cleanup() uses
+# ``worktree_path.exists()`` directly — cheaper and matches the actual
+# semantic ("peer's _remove_worktree happened"). The helper was an
+# orphan; deleted alongside this test.
+
+
+# ---------------------------------------------------------------------------
+# TC-N17 — parallel merge + discard on the SAME branch (HATS-480 R-03)
+# ---------------------------------------------------------------------------
+
+
+def _setup_wt_for_lifecycle_race(
+    project_dir: Path, branch: str, payload_file: str
+) -> None:
+    """Create + populate a worktree, save state, leave it ready for merge/discard.
+
+    Shared setup for TC-N17/N18: the race test only exercises merge()/discard(),
+    NOT create(). Doing setup in the parent process keeps the race timeline
+    tight (no fork/exec overhead between create and the lifecycle op).
+    """
+    mgr = WorktreeManager(project_dir, branch_name=branch)
+    wt_path = mgr.create()
+    mgr.save_state()
+    subprocess.run(["git", "config", "user.email", "tc@n17.test"],
+                   cwd=str(wt_path), check=True)
+    subprocess.run(["git", "config", "user.name", "TC-N17"],
+                   cwd=str(wt_path), check=True)
+    (wt_path / payload_file).write_text("payload\n")
+    subprocess.run(["git", "add", payload_file], cwd=str(wt_path), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", f"wt: {payload_file}"],
+        cwd=str(wt_path), check=True, capture_output=True,
+    )
+
+
+def _merge_worker(
+    project_dir: str, branch: str, results: dict, key: str, barrier
+) -> None:
+    """Child process: load worktree by branch, sync on barrier, merge it.
+
+    Loading BEFORE the barrier ensures both workers have a valid manager
+    instance and reach the race window simultaneously — without this, a
+    fast peer could fully complete before the slow peer even loads state,
+    bypassing the R-03 race we're trying to exercise.
+    """
+    project = Path(project_dir)
+    try:
+        mgr = WorktreeManager.load_for_branch(project, branch)
+        if mgr is None:
+            results[key] = {"error": "state was None at pre-race load"}
+            return
+        barrier.wait(timeout=10)
+        mgr.merge()
+        results[key] = {"error": None, "op": "merge"}
+    except Exception as exc:
+        results[key] = {"error": f"{type(exc).__name__}: {exc}", "op": "merge"}
+
+
+def _discard_worker(
+    project_dir: str, branch: str, results: dict, key: str, barrier
+) -> None:
+    """Child process: load worktree by branch, sync on barrier, discard it."""
+    project = Path(project_dir)
+    try:
+        mgr = WorktreeManager.load_for_branch(project, branch)
+        if mgr is None:
+            results[key] = {"error": "state was None at pre-race load"}
+            return
+        barrier.wait(timeout=10)
+        mgr.discard()
+        results[key] = {"error": None, "op": "discard"}
+    except Exception as exc:
+        results[key] = {"error": f"{type(exc).__name__}: {exc}", "op": "discard"}
+
+
+def test_parallel_merge_and_discard_same_branch_consistent_outcome(
+    git_project: Path,
+) -> None:
+    """TC-N17: parallel ``merge()`` + ``discard()`` on the same wt branch
+    → one wins cleanly, the other no-ops idempotently. NO half-merged state.
+
+    R-03 from HATS-476: without the lifecycle lock, the second op walks
+    into the middle of the first (``_remove_worktree`` mid-merge, or
+    ``branch -D`` while merge is still resolving refs). Outcome was
+    non-deterministic — either half-merged commit on master, or opaque
+    ``CalledProcessError``, or branch graveyard.
+
+    Under the lifecycle lock, two outcomes are valid and consistent:
+      * Merge wins: file present on base branch, HEAD advanced, branch
+        deleted, state cleared.
+      * Discard wins: file absent on base, HEAD unchanged, branch
+        deleted, state cleared.
+
+    Either way: NO half-state, BOTH workers return error=None, branch
+    deleted exactly once, state cleared exactly once.
+    """
+    branch = "task/hats-480-n17"
+    _setup_wt_for_lifecycle_race(git_project, branch, "feature.txt")
+
+    # Snapshot the base branch — used to decide which side won.
+    initial_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(git_project), check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+    manager = multiprocessing.Manager()
+    results = manager.dict()
+    barrier = manager.Barrier(2)
+
+    p_merge = multiprocessing.Process(
+        target=_merge_worker,
+        args=(str(git_project), branch, results, "merge", barrier),
+    )
+    p_discard = multiprocessing.Process(
+        target=_discard_worker,
+        args=(str(git_project), branch, results, "discard", barrier),
+    )
+    p_merge.start()
+    p_discard.start()
+    p_merge.join(timeout=60)
+    p_discard.join(timeout=60)
+    assert p_merge.exitcode == 0, "merge worker died"
+    assert p_discard.exitcode == 0, "discard worker died"
+
+    o_m = dict(results["merge"])
+    o_d = dict(results["discard"])
+    assert o_m["error"] is None, f"merge raised: {o_m}"
+    assert o_d["error"] is None, f"discard raised: {o_d}"
+
+    # State cleared exactly once — both finished, no leftover JSON.
+    assert WorktreeManager.load_for_branch(git_project, branch) is None
+
+    # Branch deleted exactly once (whichever winner reached _delete_branch).
+    branch_ls = subprocess.run(
+        ["git", "branch", "--list", branch],
+        cwd=str(git_project), check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert branch_ls == "", f"branch should be deleted, got: {branch_ls!r}"
+
+    # Final base-branch state: either merge won (file present + HEAD advanced)
+    # or discard won (no file + HEAD unchanged). NEVER half-merged.
+    feature_path = git_project / "feature.txt"
+    final_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(git_project), check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    if feature_path.exists():
+        assert final_head != initial_head, "file present but HEAD didn't advance"
+    else:
+        assert final_head == initial_head, (
+            f"file absent but HEAD advanced ({initial_head[:8]} -> {final_head[:8]}) "
+            f"— half-merged state!"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TC-N18 — parallel discard + discard on the SAME branch (idempotency)
+# ---------------------------------------------------------------------------
+
+
+def test_parallel_discard_same_branch_idempotent(git_project: Path) -> None:
+    """TC-N18: two parallel ``discard()`` calls on the same wt branch both
+    exit cleanly; neither raises despite only one of them actually doing
+    the destructive work.
+
+    Without the lifecycle lock, the second discard hits a partially
+    torn-down state: ``_remove_worktree`` fails because the dir is gone,
+    falls back to ``shutil.rmtree(ignore_errors=True)``; ``branch -D``
+    fails (already deleted), swallowed at DEBUG (B-02). The user sees
+    inconsistent CLI exit codes and silent failures in the log — a
+    discoverability bug.
+
+    Under the lock + idempotency check, the second worker observes
+    ``worktree_path`` gone and no-ops with a single INFO log line.
+    """
+    branch = "task/hats-480-n18"
+    _setup_wt_for_lifecycle_race(git_project, branch, "discardable.txt")
+
+    manager = multiprocessing.Manager()
+    results = manager.dict()
+    barrier = manager.Barrier(2)
+
+    p1 = multiprocessing.Process(
+        target=_discard_worker,
+        args=(str(git_project), branch, results, "d1", barrier),
+    )
+    p2 = multiprocessing.Process(
+        target=_discard_worker,
+        args=(str(git_project), branch, results, "d2", barrier),
+    )
+    p1.start()
+    p2.start()
+    p1.join(timeout=60)
+    p2.join(timeout=60)
+    assert p1.exitcode == 0, "discard p1 worker died"
+    assert p2.exitcode == 0, "discard p2 worker died"
+
+    o1 = dict(results["d1"])
+    o2 = dict(results["d2"])
+    assert o1["error"] is None, f"discard p1 raised: {o1}"
+    assert o2["error"] is None, f"discard p2 raised: {o2}"
+
+    # State + branch cleaned up exactly once.
+    assert WorktreeManager.load_for_branch(git_project, branch) is None
+    branch_ls = subprocess.run(
+        ["git", "branch", "--list", branch],
+        cwd=str(git_project), check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert branch_ls == "", f"branch should be deleted, got: {branch_ls!r}"
