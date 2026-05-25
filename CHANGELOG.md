@@ -11,6 +11,20 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Added
+- **Install diagnostics in `ai-hats config status` Health section**
+  (HATS-497). `config status` now prints install-level fields
+  alongside the existing project-side health checks: `Version`,
+  `Interpreter` (Python executable + version), `Venv`, `Source`
+  (editable / pinned / git, with ref and short SHA where applicable),
+  `Library` path, `Resolved via` (heuristic over `AI_HATS_VENV` env >
+  `ai-hats.yaml` `venv_path` > default), and `Repo HEAD` (editable
+  installs only — short SHA + branch + clean/dirty). Pip-managed
+  `direct_url.json` (PEP 610) is the source of truth for `Source`;
+  HATS-496's `--revision` writes the ref that lights up the "pinned @"
+  display. Refactor: the Health block now prints regardless of whether
+  a role is active — install info is useful before init too (e.g.
+  troubleshooting "what version am I on, where does it live" on a
+  fresh checkout).
 - **Docs: dev-vs-runtime venv discipline in CONTRIBUTING.md**
   (HATS-494). New `### Stable runtime vs editable dev install`
   subsection under `## Development setup` codifies the
