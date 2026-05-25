@@ -148,6 +148,7 @@ def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
         WorktreeDirtyError,
         WorktreeDriftError,
         WorktreePartialCleanupError,
+        WorktreeRemoveError,
     )
 
     # HATS-482 / B-08: guard before resolving CWD/_project_dir.
@@ -173,6 +174,22 @@ def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
         from rich.markup import escape as _escape
         console.print(f"[red]Refused (drift)[/]:\n{_escape(str(e))}")
         sys.exit(1)
+    except WorktreeRemoveError as e:
+        # HATS-488 / B-03: merge committed, but worktree dir cleanup
+        # failed for a non-junk reason (held-open files, perms). Branch
+        # state JSON intact; operator can investigate and retry.
+        from rich.markup import escape as _escape
+        console.print(
+            f"[yellow]Merged, but worktree dir still on disk[/]: "
+            f"{_escape(str(e.path))}"
+        )
+        console.print(f"  git: {_escape(e.stderr_tail)}")
+        console.print(
+            f"  Manual cleanup: investigate the cause "
+            f"(e.g. lsof '{_escape(str(e.path))}'), then [bold]rm -rf "
+            f"{_escape(str(e.path))}[/] + [bold]git worktree prune[/]."
+        )
+        sys.exit(2)
     except WorktreePartialCleanupError as e:
         # HATS-482 / B-02: merge committed, worktree dir gone, but branch
         # cleanup failed for a known cause. State JSON intact so the
@@ -197,13 +214,27 @@ def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
 @wt.command("discard")
 @click.argument("branch", required=False)
 @click.option("--force", is_flag=True, default=False, help="Discard even with uncommitted changes")
-def wt_discard(branch: str | None, force: bool):
+@click.option(
+    "--force-remove",
+    is_flag=True,
+    default=False,
+    help="If `git worktree remove --force` fails (e.g. held-open files), "
+         "fall back to rm -rf. HATS-488 / B-03: opt-in only — default refuses "
+         "to silently nuke residual data.",
+)
+def wt_discard(branch: str | None, force: bool, force_remove: bool):
     """Discard worktree changes and clean up.
 
     Without BRANCH: auto-detect from CWD (if inside a linked worktree).
     Refuses if worktree has uncommitted changes (use --force to override).
+    Refuses if `git worktree remove --force` cannot delete the directory
+    (e.g. held-open files) — pass --force-remove to fall back to rm -rf.
     """
-    from ..worktree import WorktreeDirtyError, WorktreePartialCleanupError
+    from ..worktree import (
+        WorktreeDirtyError,
+        WorktreePartialCleanupError,
+        WorktreeRemoveError,
+    )
 
     # HATS-482 / B-08: guard before resolving CWD/_project_dir.
     _guard_not_inside_linked_worktree(_project_dir())
@@ -217,10 +248,26 @@ def wt_discard(branch: str | None, force: bool):
 
     name = mgr.branch_name
     try:
-        mgr.discard(force=force)
+        mgr.discard(force=force, force_remove=force_remove)
     except WorktreeDirtyError as e:
         console.print(f"[red]Refused[/]: {e}")
         sys.exit(1)
+    except WorktreeRemoveError as e:
+        # HATS-488 / B-03: data-preservation guard fired — git couldn't
+        # delete the worktree dir and operator hasn't opted in to rm-rf.
+        # Path + stderr_tail come from git output / fs error (untrusted
+        # re: Rich markup); escape before console.print.
+        from rich.markup import escape as _escape
+        console.print(
+            f"[yellow]Refused to remove worktree dir[/] (data preservation): "
+            f"{_escape(str(e.path))}"
+        )
+        console.print(f"  git: {_escape(e.stderr_tail)}")
+        console.print(
+            "  Re-run with [bold]--force-remove[/] if the dir contents are "
+            "known to be junk, or clean it manually first."
+        )
+        sys.exit(2)
     except WorktreePartialCleanupError as e:
         # HATS-482 / B-02: worktree dir gone, branch survived.
         # branch_name + stderr_tail come from git output (untrusted re:
