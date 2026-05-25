@@ -763,9 +763,17 @@ def status():
             "[dim]Legend:[/] [dim](built-in)[/]  [magenta](global)[/]  [cyan](project)[/]"
         )
 
-    # Health
+    # Health — HATS-497: prefixed with install-level diagnostics (version,
+    # interpreter, venv, source, library, resolved-via, repo HEAD) so a
+    # single ``config status`` answers both project-config and "where does
+    # my ai-hats live" questions. Existing project-side checks
+    # (imports.md, system_prompt) print after, with their OK/Missing icons.
+    from .maintenance import _gather_install_info
+
+    console.print("\n[bold]Health:[/]")
+    for key, val in _gather_install_info().items():
+        console.print(f"  {key}: [dim]{val}[/]", highlight=False)
     if st.get("health"):
-        console.print("\n[bold]Health:[/]")
         for component, status_val in st["health"].items():
             icon = "[green]OK[/]" if status_val == "OK" else "[red]Missing[/]"
             console.print(f"  {component}: {icon}", highlight=False)

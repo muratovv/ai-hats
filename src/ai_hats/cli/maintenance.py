@@ -68,25 +68,46 @@ def _build_update_cmd(ref: str | None = None) -> list[str]:
     ]
 
 
-def _is_editable_install() -> tuple[bool, str | None]:
-    """Detect whether the active ai-hats install is editable.
+def _read_direct_url() -> dict | None:
+    """Return the parsed ``direct_url.json`` (PEP 610) for the active install.
 
-    Returns ``(is_editable, source_url)``. Reads ``direct_url.json`` from
-    the dist-info via :mod:`importlib.metadata`, which is the canonical
-    PEP 610 source. Falls back to ``(False, None)`` when the metadata is
-    missing or malformed — i.e. treat as "installable / non-editable" so
-    a fresh venv with no ai-hats yet doesn't trigger the protection path.
+    Returns ``None`` when the metadata is missing, malformed, or the
+    package isn't installed — callers treat that as "no install info
+    available" rather than blocking. The PEP 610 dict contains:
+
+    - ``url``           — install source (file://, https://, git+ssh://, …)
+    - ``dir_info``      — ``{"editable": bool}`` for local-dir installs
+    - ``vcs_info``      — ``{"vcs": "git", "commit_id": …,
+      "requested_revision": …}`` for git installs
+
+    HATS-497 reads ``vcs_info`` / ``dir_info`` for ``config status``
+    install diagnostics. HATS-496 reads ``dir_info`` for the editable-
+    target protection in ``self update --revision``.
     """
     try:
         dist = distribution("ai-hats")
         raw = dist.read_text("direct_url.json")
     except (PackageNotFoundError, FileNotFoundError):
-        return (False, None)
+        return None
     if raw is None:
-        return (False, None)
+        return None
     try:
-        data = json.loads(raw)
+        return json.loads(raw)
     except json.JSONDecodeError:
+        return None
+
+
+def _is_editable_install() -> tuple[bool, str | None]:
+    """Detect whether the active ai-hats install is editable.
+
+    Returns ``(is_editable, source_url)``. Backward-compatible wrapper
+    over :func:`_read_direct_url`. Falls back to ``(False, None)`` when
+    direct_url.json is missing — treat as "installable / non-editable"
+    so a fresh venv with no ai-hats yet doesn't trigger the protection
+    path.
+    """
+    data = _read_direct_url()
+    if data is None:
         return (False, None)
     dir_info = data.get("dir_info") or {}
     return (bool(dir_info.get("editable")), data.get("url"))
@@ -125,6 +146,171 @@ def _resolve_ref(repo_url: str, ref: str) -> str | None:
         return None
     # First column of first matching line is the SHA.
     return out.splitlines()[0].split()[0]
+
+
+# HATS-497: Install diagnostics for ``ai-hats config status`` Health section.
+# Helpers below produce a flat dict of display-key → display-value. Layer
+# boundary: install-level (interpreter, venv, source); does NOT touch the
+# Assembler (which is project-level).
+
+
+def _format_install_source() -> str:
+    """Format the ``Source:`` line for ``ai-hats config status``.
+
+    Reads PEP 610 ``direct_url.json`` via :func:`_read_direct_url`. Three
+    branches map to user-visible labels:
+
+    - ``editable @ <url>``                            — local dev install
+    - ``pinned @ <ref> → <sha>``                      — ``vcs_info`` has
+      ``requested_revision`` AND it's not "HEAD" / branch-tip
+    - ``git @ <ref-or-HEAD> → <sha>``                 — plain git install
+
+    Falls back to ``"(unknown — direct_url.json missing)"`` when the
+    metadata isn't available. Truncates SHA to 7 chars for display;
+    full SHA stays in direct_url.json for tooling.
+    """
+    data = _read_direct_url()
+    if data is None:
+        return "(unknown — direct_url.json missing)"
+    url = data.get("url") or "?"
+    dir_info = data.get("dir_info") or {}
+    if dir_info.get("editable"):
+        return f"editable @ {url}"
+    vcs_info = data.get("vcs_info") or {}
+    commit = vcs_info.get("commit_id") or ""
+    short = commit[:7] if commit else "?"
+    requested = vcs_info.get("requested_revision")
+    if requested and requested not in ("HEAD",):
+        return f"pinned @ {requested} → {short}"
+    if vcs_info:
+        return f"git @ {requested or 'HEAD'} → {short}"
+    # Non-editable, non-vcs (e.g. local-path / wheel install).
+    return f"installed @ {url}"
+
+
+def _library_path() -> str:
+    """Resolve the built-in library root via ``importlib.resources``."""
+    try:
+        from importlib.resources import files
+
+        return str(files("ai_hats.library"))
+    except (ModuleNotFoundError, FileNotFoundError, OSError) as exc:
+        logger.debug("library path lookup failed", exc_info=exc)
+        return "(unknown)"
+
+
+def _resolved_via_heuristic(venv: Path) -> str:
+    """Best-effort guess at which knob routed the launcher to this venv.
+
+    Heuristic — see HATS-497 plan D4. Python sees only ``sys.executable``;
+    the launcher's bash-side precedence (``AI_HATS_VENV`` env >
+    ``ai-hats.yaml`` ``venv_path`` > default ``<PWD>/.agent/ai-hats/.venv``)
+    isn't directly observable. We compare canonical paths and report the
+    first knob that matches; document as best-effort, do NOT promise
+    source-of-truth semantics.
+    """
+    try:
+        venv_real = venv.resolve()
+    except OSError:
+        venv_real = venv
+
+    env_val = os.environ.get("AI_HATS_VENV")
+    if env_val:
+        env_path = Path(env_val.replace("~", str(Path.home()))).resolve()
+        if env_path == venv_real:
+            return "AI_HATS_VENV env"
+
+    # ai-hats.yaml venv_path (relative to project_dir, expanded by paths.py).
+    try:
+        project_dir = _project_dir()
+        yaml_path = project_dir / "ai-hats.yaml"
+        if yaml_path.is_file():
+            # Lightweight grep — matches the launcher's bash-side scan
+            # (scripts/ai-hats-launcher) rather than loading the full
+            # ProjectConfig (heavier import, fires yaml-load WARNs).
+            for line in yaml_path.read_text().splitlines():
+                if line.startswith("venv_path:"):
+                    candidate = line.split(":", 1)[1].strip().strip("'\"")
+                    if candidate:
+                        candidate_path = Path(
+                            candidate.replace("~", str(Path.home()))
+                        )
+                        if not candidate_path.is_absolute():
+                            candidate_path = project_dir / candidate_path
+                        if candidate_path.resolve() == venv_real:
+                            return "ai-hats.yaml venv_path"
+                    break
+    except OSError as exc:
+        logger.debug("venv_path heuristic probe failed", exc_info=exc)
+
+    return "default <PWD>/.agent/ai-hats/.venv"
+
+
+def _repo_head_for_editable() -> str | None:
+    """Return ``<short-sha> (<branch>, clean|dirty)`` if active install is editable.
+
+    Returns ``None`` for non-editable installs (in those cases the SHA is
+    already in ``direct_url.json.vcs_info.commit_id`` and shown under
+    "Source"), or when ``git`` isn't available / the path isn't a repo.
+    """
+    is_editable, source_url = _is_editable_install()
+    if not is_editable or not source_url:
+        return None
+    # source_url is typically ``file:///abs/path``. Strip the scheme.
+    repo_path = source_url.removeprefix("file://")
+    repo = Path(repo_path)
+    if not (repo / ".git").exists():
+        return None
+    try:
+        sha = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        if sha.returncode != 0:
+            return None
+        branch = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        porcelain = subprocess.run(
+            ["git", "-C", str(repo), "status", "--porcelain"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    branch_name = (branch.stdout.strip() if branch.returncode == 0 else "?") or "?"
+    clean_flag = "clean" if not porcelain.stdout.strip() else "dirty"
+    return f"{sha.stdout.strip()} ({branch_name}, {clean_flag})"
+
+
+def _gather_install_info() -> dict[str, str]:
+    """Gather install-level diagnostics for ``ai-hats config status``.
+
+    Returns an ordered ``dict`` of display-key → display-value. Order
+    matches the plan (D2): install identity → source → resolution →
+    optional editable repo state. Keys are OMITTED (not in dict) when
+    not applicable — caller iterates dict, so omission = no print.
+
+    Output is human-readable only (D3); add ``--json`` in a follow-up
+    if a programmatic consumer appears.
+    """
+    from .. import __version__
+
+    info: dict[str, str] = {}
+    info["Version"] = __version__
+    info["Interpreter"] = (
+        f"{sys.executable} "
+        f"({sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro})"
+    )
+    venv = Path(sys.executable).parent.parent
+    info["Venv"] = str(venv)
+    info["Source"] = _format_install_source()
+    info["Library"] = _library_path()
+    info["Resolved via"] = _resolved_via_heuristic(venv)
+    head = _repo_head_for_editable()
+    if head is not None:
+        info["Repo HEAD"] = head
+    return info
 
 
 def _get_installed_version() -> str:
