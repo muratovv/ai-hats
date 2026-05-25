@@ -81,6 +81,32 @@ def _assembler(project_dir: Path | None = None):
     return Assembler(project_dir or _project_dir())
 
 
+def _guard_not_inside_linked_worktree(project_dir: Path) -> None:
+    """HATS-060 / HATS-482 (B-08): refuse `wt` ops issued from inside a linked
+    worktree, except those designed to be run there (`wt exec`, `wt env`).
+
+    Without this guard, `_project_dir` walks up through ``.agent/`` /
+    ``.git/`` and — if the user shelled into a ``/tmp/ai-hats-wt-…`` dir
+    without those markers — resolves to a parent that is NOT the real project
+    root. CLI then writes state files under the tmp tree → corrupt /
+    orphaned state on next agent invocation.
+
+    Originally inline in ``wt_create`` (HATS-060). Lifted to a helper so
+    ``wt_merge`` / ``wt_discard`` / ``wt_list`` share the same guard (B-08).
+
+    Prints a guidance message and ``sys.exit(1)`` on breach. Returns None
+    when CWD is OK (main worktree or non-git path).
+    """
+    from ..worktree import WorktreeManager
+
+    if WorktreeManager.is_inside_linked_worktree(project_dir):
+        console.print("[red]Cannot run this command from inside a linked worktree[/]")
+        console.print(f"  You are in: {project_dir}")
+        console.print("  Run from the main repo. To act on the active worktree without")
+        console.print("  leaving it, use [bold]ai-hats wt exec[/] / [bold]ai-hats wt env[/].")
+        sys.exit(1)
+
+
 def _task_manager(project_dir: Path | None = None):
     """Construct a TaskManager with the project's configured task-id prefix.
 
