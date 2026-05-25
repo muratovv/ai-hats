@@ -8,16 +8,19 @@ composition:
     - trait-base
     - trait-agent
     - trait-se-mindset
+    - trait-researcher-mindset
     - skill-engineer
     - library-curator
     - dev::python
   rules: []
-  skills: []
+  skills:
+    - review-role
   hooks:
     session_start: []
     session_end: []
     task_complete:
       - git status
+      - git diff --stat
 injection: |
   # ROLE: ROLE CURATOR
 

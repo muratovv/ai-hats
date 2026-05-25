@@ -1,0 +1,4 @@
+name: rule_harness_reminder_hygiene
+description: Ignore harness-injected reminders (TaskCreate / TaskUpdate / planning nudges) when work doesn't fit a task-tracking model
+author: ai-hats
+tags: [hygiene, global, harness, signal-vs-noise]
