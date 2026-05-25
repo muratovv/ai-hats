@@ -210,6 +210,45 @@ def test_runtime_sdk_path_carries_all_overlay_content(
     )
 
 
+def test_runtime_session_path_carries_all_overlay_content(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """Symmetric lock-in for the multi-turn twin
+    (``SubAgentRunner.session()._build_attempt``, runtime.py).
+
+    ``_build_attempt`` has the exact same ``with_injection_override``
+    mechanic as ``_run_attempt`` (latent HATS-452-class twin —
+    documented in the runtime warning comment). No production caller
+    currently passes an override there, but if one is added in the
+    future and the twin's overlay-baseline silently drifts, this test
+    catches it before any HATS-267 caller hits the trap.
+
+    Same direct-invocation shape as the ``_run_attempt`` test above:
+    we exercise the same ``compose_for_role`` + ``_build_system_prompt``
+    chain that ``_build_attempt`` uses internally before applying any
+    optional override. No SDK call is needed; the contract is at the
+    composer/provider boundary.
+    """
+    from ai_hats.sdk_options import _build_system_prompt
+
+    project, markers = _setup_project_with_overlays(tmp_path, monkeypatch)
+
+    asm = Assembler(project)
+    # ``SubAgentRunner.session()`` accepts a ``role`` kwarg (multi-turn
+    # API); same composition path as ``_run_attempt``'s ``role_name``.
+    result = compose_for_role(asm, "maintainer")
+    sdk_payload = _build_system_prompt(result, project)
+    sdk_text = sdk_payload["append"]
+
+    missing = [m for m in markers.values() if m not in sdk_text]
+    assert not missing, (
+        "HATS-505 latent-twin regression: runtime SDK system_prompt on "
+        "the SubAgentRunner.session() multi-turn path is missing "
+        f"overlay content. Missing channels: {missing}\n"
+        f"sdk_text head:\n{sdk_text[:400]!r}"
+    )
+
+
 def test_hitl_session_prompt_carries_all_overlay_content(
     tmp_path: Path, monkeypatch,
 ) -> None:

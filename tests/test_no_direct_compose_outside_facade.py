@@ -29,6 +29,7 @@ no-overlay form wasn't flagged inside pipeline/.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -82,49 +83,61 @@ def test_compose_with_overlays_only_in_facade():
     )
 
 
-# HATS-505: any ``composer.compose(...)`` call, regardless of whether
-# ``overlays=`` is present, with or without ``self.`` qualifier.
-ANY_COMPOSE_CALL_RE = re.compile(
-    r"\bcomposer\.compose\s*\(",
-)
-
-# Whitelist for the pipeline-scoped guard. Files inside ``src/ai_hats/
-# pipeline/`` are NOT allowed; the canonical role-delivery path is the
-# ``compose_for_role`` facade. The only project-wide deliberate
-# no-overlay site (``cli/reflect.py``) is OUTSIDE ``pipeline/`` and
-# therefore not in scope here — its justification lives at the call.
-NO_DIRECT_COMPOSE_IN_PIPELINE_ALLOWED: set[Path] = set()
+# HATS-505 — whitelist for the pipeline-scoped guard. Each entry maps
+# the file to a non-empty justification. The single project-wide
+# deliberate no-overlay site (``cli/reflect.py``) is OUTSIDE
+# ``pipeline/`` and therefore not in scope here — its justification
+# lives at the call. The dict is empty by design; adding an entry
+# requires a one-line justification asserting why a pipeline step
+# legitimately wants the no-overlay form.
+NO_DIRECT_COMPOSE_IN_PIPELINE_ALLOWED: dict[Path, str] = {}
 
 
-def _strip_docstrings_and_comments(text: str) -> str:
-    """Crude stripper: drop ``#``-comment-only lines and lines inside a
-    triple-double-quoted block. Sufficient for this test's purpose
-    (false-positive prevention on prose mentioning ``composer.compose``
-    inside docstrings / RST backticks)."""
-    out: list[str] = []
-    in_doc = False
-    for raw in text.splitlines():
-        stripped = raw.strip()
-        if stripped.startswith('"""') and not (
-            stripped.endswith('"""') and len(stripped) > 3
-        ):
-            in_doc = not in_doc
+def _find_composer_compose_calls(text: str) -> list[tuple[int, str]]:
+    """AST-based detector for ``composer.compose(...)`` calls.
+
+    Walks the module AST, returns ``(lineno, source_segment)`` for every
+    ``Call`` whose ``func`` is an ``Attribute`` named ``compose`` on a
+    ``Name`` or ``Attribute`` ending in ``composer``. This handles
+    ``composer.compose(...)``, ``self.composer.compose(...)``, and the
+    ``asm.composer.compose(...)`` spelling, and is immune to all the
+    false-positive traps a regex-based scanner has (docstrings,
+    comments, RST backtick prose, string literals).
+
+    Returns ``[]`` for files that fail to parse — those are not our
+    concern (other tests catch syntax errors).
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
             continue
-        if stripped.startswith('"""') and stripped.endswith('"""'):
-            # one-line docstring
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr != "compose":
             continue
-        if in_doc:
+        # ``composer.compose(...)`` — the recipient attribute must end
+        # in ``composer``. Accept ``composer`` as a Name (``composer.
+        # compose(...)``) or any Attribute access whose final attr is
+        # ``composer`` (``self.composer.compose(...)``,
+        # ``assembler.composer.compose(...)``).
+        recipient = func.value
+        recipient_tail: str | None = None
+        if isinstance(recipient, ast.Name):
+            recipient_tail = recipient.id
+        elif isinstance(recipient, ast.Attribute):
+            recipient_tail = recipient.attr
+        if recipient_tail != "composer":
             continue
-        if stripped.startswith("#"):
-            continue
-        # Skip lines where the pattern appears only inside backticks
-        # (rst / docstring references that survived the docstring strip
-        # because they're at module-body level in code comments).
-        if "``" in stripped and stripped.count("`") >= 4:
-            # Likely an inline rst/backtick reference; drop the line.
-            continue
-        out.append(raw)
-    return "\n".join(out)
+        # Crude rendering of the call site for the failure message.
+        try:
+            segment = ast.unparse(node)
+        except Exception:  # noqa: BLE001 — defensive; ast.unparse is reliable on 3.11+
+            segment = "composer.compose(...)"
+        found.append((node.lineno, segment))
+    return found
 
 
 def test_no_direct_compose_inside_pipeline_subtree():
@@ -136,7 +149,7 @@ def test_no_direct_compose_inside_pipeline_subtree():
     pipeline_dir = SRC_DIR / "pipeline"
     assert pipeline_dir.is_dir(), pipeline_dir
 
-    offenders: list[tuple[Path, str]] = []
+    offenders: list[tuple[Path, int, str]] = []
     for py_file in pipeline_dir.rglob("*.py"):
         if py_file in NO_DIRECT_COMPOSE_IN_PIPELINE_ALLOWED:
             continue
@@ -144,14 +157,8 @@ def test_no_direct_compose_inside_pipeline_subtree():
             text = py_file.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        cleaned = _strip_docstrings_and_comments(text)
-        for match in ANY_COMPOSE_CALL_RE.finditer(cleaned):
-            line_start = cleaned.rfind("\n", 0, match.start()) + 1
-            line_end = cleaned.find("\n", match.end())
-            line = cleaned[
-                line_start: line_end if line_end > 0 else None
-            ].strip()
-            offenders.append((py_file.relative_to(REPO_ROOT), line))
+        for lineno, segment in _find_composer_compose_calls(text):
+            offenders.append((py_file.relative_to(REPO_ROOT), lineno, segment))
 
     assert not offenders, (
         "HATS-505 drift: composer.compose(...) appears inside "
@@ -159,8 +166,21 @@ def test_no_direct_compose_inside_pipeline_subtree():
         "compose_for_role(assembler, role) (materialize.py facade) "
         "so layered composition (project + global overlays) is "
         "preserved. HATS-501 was caused by exactly this pattern.\n"
-        + "\n".join(f"  {p}: {line}" for p, line in offenders)
+        + "\n".join(f"  {p}:{ln}: {seg}" for p, ln, seg in offenders)
     )
+
+
+def test_no_direct_compose_in_pipeline_whitelist_has_justifications():
+    """Convention enforcement: every entry in the whitelist must carry
+    a non-empty justification. Keeps the whitelist from drifting into a
+    silent escape hatch.
+    """
+    for path, justification in NO_DIRECT_COMPOSE_IN_PIPELINE_ALLOWED.items():
+        assert justification.strip(), (
+            f"Whitelist entry {path} has no justification — every "
+            "entry must explain why a pipeline step legitimately "
+            "calls ``composer.compose(role)`` directly."
+        )
 
 
 def test_facade_itself_contains_one_compose_call():
