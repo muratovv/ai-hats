@@ -953,8 +953,14 @@ class WorktreeManager:
 
         Derives the key via the same _state_key used by save_state:
         task_id "HATS-086" → branch "task/hats-086" → key "task-hats-086".
+
+        HATS-482: ``state.py`` lowercases ``task.id`` when constructing the
+        branch (``f"task/{task.id.lower()}"``). With ``_state_key`` no
+        longer lowercasing post-482, we must mirror that convention here
+        or the lookup key will not match the saved file (e.g. ``HATS-086``
+        → key ``task-HATS-086``, while ``save_state`` wrote ``task-hats-086``).
         """
-        key = _state_key(f"task/{task_id}")
+        key = _state_key(f"task/{task_id.lower()}")
         return cls._load_by_key(project_dir, key)
 
     @classmethod

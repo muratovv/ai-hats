@@ -177,13 +177,17 @@ def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
         # HATS-482 / B-02: merge committed, worktree dir gone, but branch
         # cleanup failed for a known cause. State JSON intact so the
         # operator can retry after fixing the cause.
+        # branch_name + stderr_tail come from git output (untrusted re:
+        # Rich markup); escape before console.print mirrors the drift
+        # handler above.
+        from rich.markup import escape as _escape
         console.print(
-            f"[yellow]Worktree torn down, but branch '{e.branch_name}' "
+            f"[yellow]Worktree torn down, but branch '{_escape(e.branch_name)}' "
             f"preserved[/] ({e.reason})"
         )
-        console.print(f"  git: {e.stderr_tail}")
+        console.print(f"  git: {_escape(e.stderr_tail)}")
         console.print(
-            f"  Manual cleanup: [bold]git branch -D {e.branch_name}[/] "
+            f"  Manual cleanup: [bold]git branch -D {_escape(e.branch_name)}[/] "
             f"(after resolving the cause)"
         )
         sys.exit(2)
@@ -219,13 +223,16 @@ def wt_discard(branch: str | None, force: bool):
         sys.exit(1)
     except WorktreePartialCleanupError as e:
         # HATS-482 / B-02: worktree dir gone, branch survived.
+        # branch_name + stderr_tail come from git output (untrusted re:
+        # Rich markup); escape before console.print.
+        from rich.markup import escape as _escape
         console.print(
-            f"[yellow]Worktree torn down, but branch '{e.branch_name}' "
+            f"[yellow]Worktree torn down, but branch '{_escape(e.branch_name)}' "
             f"preserved[/] ({e.reason})"
         )
-        console.print(f"  git: {e.stderr_tail}")
+        console.print(f"  git: {_escape(e.stderr_tail)}")
         console.print(
-            f"  Manual cleanup: [bold]git branch -D {e.branch_name}[/] "
+            f"  Manual cleanup: [bold]git branch -D {_escape(e.branch_name)}[/] "
             f"(after resolving the cause)"
         )
         sys.exit(2)

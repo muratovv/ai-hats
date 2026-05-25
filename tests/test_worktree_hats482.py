@@ -125,6 +125,50 @@ class TestStateKeyCasePreserving:
 
         assert not primary.exists()
 
+    def test_load_for_task_uppercase_id_finds_lowercase_branch_file(
+        self, git_project: Path
+    ) -> None:
+        """REGRESSION (audit-review): state.py:763 creates branches as
+        ``f"task/{task.id.lower()}"``. The canonical state file for task
+        HATS-086 lives at ``task-hats-086.json`` (state.py's branch
+        construction + post-482 case-preserving _state_key). Therefore
+        ``load_for_task("HATS-086")`` MUST mirror state.py and lowercase
+        the task_id before key derivation — otherwise the lookup key
+        ``task-HATS-086`` wouldn't match.
+
+        Filesystem note: this test runs on case-insensitive APFS by
+        default on macOS, where ``Path("task-HATS-086.json").exists()``
+        returns True if ``task-hats-086.json`` exists (same inode). The
+        substantive invariant is therefore: (a) load returns the right
+        manager, AND (b) the state directory stays at exactly one entry
+        across save + load + save round-trips (no orphaned alternate-key
+        file lurking on case-sensitive FS like Linux ext4)."""
+        mgr = WorktreeManager(git_project, branch_name="task/hats-086")
+        mgr.create()
+        mgr.save_state()
+        try:
+            states = worktrees_dir(git_project)
+            before = sorted(p.name for p in states.iterdir())
+            assert before == ["task-hats-086.json"], before
+
+            # Uppercase task_id (project convention) must resolve to the
+            # same file. Round-trip save again — load_for_task must point
+            # at the SAME key so save_state doesn't fork into a second
+            # file on case-sensitive FS.
+            loaded = WorktreeManager.load_for_task(git_project, "HATS-086")
+            assert loaded is not None
+            assert loaded.branch_name == "task/hats-086"
+            loaded.save_state()
+
+            after = sorted(p.name for p in states.iterdir())
+            assert after == ["task-hats-086.json"], (
+                f"save_state after load_for_task forked into a second key "
+                f"on case-sensitive FS — load_for_task didn't match the "
+                f"canonical branch-derived key. Got: {after}"
+            )
+        finally:
+            mgr.discard(force=True)
+
 
 # ---------------------------------------------------------------------------
 # B-07 — soft CLI branch-name validation
