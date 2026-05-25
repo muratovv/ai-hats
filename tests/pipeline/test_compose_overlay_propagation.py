@@ -1,11 +1,23 @@
-"""HATS-501: pipeline funnel must preserve overlay content for sub-agent path.
+"""HATS-501 + HATS-505: role-delivery path on the sub-agent side.
 
-Locks the contract that ``ComposeRole`` (and any future producer of the
-``system_prompt`` funnel key) emits text containing every overlay-layer
-contribution — not just the role's built-in composition. The wholesale
-``with_injection_override`` mechanic inside ``SubAgentRunner._run_attempt``
-means a partial funnel text silently replaces a fully-composed result;
-this test guards the funnel input so that path is harmless.
+Three contracts locked here, all under epic HATS-506:
+
+1. **HATS-505 (a)** — the pipeline MUST NOT feed a funnel-supplied
+   prompt into ``SubAgentRunner.run`` as ``system_prompt_override``.
+   The override channel is reserved for explicit HATS-267 callers; the
+   pipeline's role composition reaches the agent via the runner's own
+   ``compose_for_role`` call.
+
+2. **HATS-501** — the runtime's own compose + SDK-build path (what
+   ``SubAgentRunner._run_attempt`` sends to the Claude SDK as
+   ``system_prompt``) MUST include every overlay-layer contribution
+   from both global + project layers — `injection_append` text AND
+   `add_traits` injection bodies.
+
+3. **HITL lock-in** — the same overlay content must reach
+   ``--system-prompt-file`` in the HITL ``WrapRunner`` /
+   ``ClaudeProvider.build_session_prompt`` path. Direct invocation,
+   no pipeline involvement.
 
 Sister to ``test_funnel_value_contract.py`` — same HATS-452 contract
 family (П1 in ADR-0005 / HATS-456 single-derivation-point invariant).
@@ -122,20 +134,21 @@ def _setup_project_with_overlays(tmp_path: Path, monkeypatch) -> tuple[Path, dic
     return project, markers
 
 
-def test_subagent_funnel_carries_all_overlay_content(
+def test_pipeline_does_not_feed_subagent_override(
     tmp_path: Path, monkeypatch, mock_runners,
 ) -> None:
-    """``system_prompt_override`` reaching ``SubAgentRunner.run`` must
-    include every overlay-layer contribution from both global + project
-    layers.
+    """HATS-505 regression catcher: the pipeline MUST NOT pass
+    ``system_prompt_override`` into ``SubAgentRunner.run``. The override
+    channel is reserved for explicit HATS-267 callers
+    (e.g. ``subagent_session.py``, future direct API consumers); the
+    pipeline's role composition reaches the agent via the runner's own
+    ``compose_for_role`` call.
 
-    HATS-501 regression catcher — fails on revert of the
-    ``ComposeRole`` → ``compose_for_role`` facade routing fix
-    (``src/ai_hats/pipeline/steps/compose.py``: replace the
-    ``compose_for_role(asm, role)`` call with the legacy
-    ``composer.compose(role)`` form to reproduce the original bug).
+    Fail-under-revert: re-add ``system_prompt_override=system_prompt``
+    to ``LaunchProvider.run``'s sub-agent branch in
+    ``src/ai_hats/pipeline/steps/launch.py`` and this assertion fires.
     """
-    project, markers = _setup_project_with_overlays(tmp_path, monkeypatch)
+    project, _markers = _setup_project_with_overlays(tmp_path, monkeypatch)
 
     pf = project / "p.txt"
     pf.write_text("ok")
@@ -146,17 +159,93 @@ def test_subagent_funnel_carries_all_overlay_content(
 
     sub_calls = mock_runners["sub_calls"]
     assert len(sub_calls) == 1, sub_calls
-    funnel_override = sub_calls[0].get("system_prompt_override") or ""
+    funnel_override = sub_calls[0].get("system_prompt_override")
+    assert funnel_override is None, (
+        "HATS-505 regression: the pipeline is feeding "
+        "system_prompt_override into SubAgentRunner.run again. The "
+        "override channel is reserved for explicit HATS-267 callers; "
+        "the pipeline's role composition reaches the agent via the "
+        "runner's own compose_for_role call.\n"
+        f"Got: {funnel_override!r}"
+    )
 
-    missing = [
-        f"{label!r} ({marker!r})"
-        for label, marker in markers.items()
-        if marker not in funnel_override
-    ]
+
+def test_runtime_sdk_path_carries_all_overlay_content(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """HATS-501 regression catcher (post-HATS-505): the runtime's own
+    compose + SDK-build path — what ``SubAgentRunner._run_attempt``
+    sends to the Claude SDK as ``system_prompt`` — must include every
+    overlay-layer contribution from both global + project layers.
+
+    Direct invocation of the same ``compose_for_role`` +
+    ``_build_system_prompt`` chain the runner uses internally;
+    ``SubAgentRunner.run`` itself is not exercised (stubbed via
+    ``mock_runners`` in the sibling test). Together, the two tests
+    cover (a) "pipeline behaves" + (b) "runtime composes correctly"
+    without needing a real SDK call.
+
+    Fail-under-revert: revert the ``ComposeRole`` →
+    ``compose_for_role`` routing fix in
+    ``src/ai_hats/pipeline/steps/compose.py`` AND restore the
+    pass-through in ``launch.py`` to reproduce HATS-501. With only
+    HATS-505 (a) reverted, this test still passes — that's correct;
+    the runtime path doesn't depend on the pipeline funnel for
+    correctness anymore.
+    """
+    from ai_hats.sdk_options import _build_system_prompt
+
+    project, markers = _setup_project_with_overlays(tmp_path, monkeypatch)
+
+    asm = Assembler(project)
+    result = compose_for_role(asm, "maintainer")
+    sdk_payload = _build_system_prompt(result, project)
+    sdk_text = sdk_payload["append"]
+
+    missing = [m for m in markers.values() if m not in sdk_text]
     assert not missing, (
-        "HATS-501 regression: pipeline funnel dropped overlay content "
-        f"before SubAgentRunner. Missing {len(missing)} channel(s): "
-        f"{missing}\n\nfunnel_override head:\n{funnel_override[:400]!r}"
+        "HATS-501 regression: runtime SDK system_prompt is missing "
+        f"overlay content. Missing channels: {missing}\n"
+        f"sdk_text head:\n{sdk_text[:400]!r}"
+    )
+
+
+def test_runtime_session_path_carries_all_overlay_content(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """Symmetric lock-in for the multi-turn twin
+    (``SubAgentRunner.session()._build_attempt``, runtime.py).
+
+    ``_build_attempt`` has the exact same ``with_injection_override``
+    mechanic as ``_run_attempt`` (latent HATS-452-class twin —
+    documented in the runtime warning comment). No production caller
+    currently passes an override there, but if one is added in the
+    future and the twin's overlay-baseline silently drifts, this test
+    catches it before any HATS-267 caller hits the trap.
+
+    Same direct-invocation shape as the ``_run_attempt`` test above:
+    we exercise the same ``compose_for_role`` + ``_build_system_prompt``
+    chain that ``_build_attempt`` uses internally before applying any
+    optional override. No SDK call is needed; the contract is at the
+    composer/provider boundary.
+    """
+    from ai_hats.sdk_options import _build_system_prompt
+
+    project, markers = _setup_project_with_overlays(tmp_path, monkeypatch)
+
+    asm = Assembler(project)
+    # ``SubAgentRunner.session()`` accepts a ``role`` kwarg (multi-turn
+    # API); same composition path as ``_run_attempt``'s ``role_name``.
+    result = compose_for_role(asm, "maintainer")
+    sdk_payload = _build_system_prompt(result, project)
+    sdk_text = sdk_payload["append"]
+
+    missing = [m for m in markers.values() if m not in sdk_text]
+    assert not missing, (
+        "HATS-505 latent-twin regression: runtime SDK system_prompt on "
+        "the SubAgentRunner.session() multi-turn path is missing "
+        f"overlay content. Missing channels: {missing}\n"
+        f"sdk_text head:\n{sdk_text[:400]!r}"
     )
 
 

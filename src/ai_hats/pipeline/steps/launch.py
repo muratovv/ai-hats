@@ -30,8 +30,18 @@ class LaunchProvider(Step):
         return StepIO(
             name="launch_provider",
             requires=frozenset({"interactive", "project_dir"}),
+            # HATS-505: ``system_prompt`` is no longer in the optional set.
+            # ``ComposeRole`` still emits it for ``PreLog`` (observability),
+            # but ``LaunchProvider`` deliberately does not read it — neither
+            # the HITL branch (composes via ``WrapRunner.build_session_prompt``)
+            # nor the sub-agent branch (composes via
+            # ``SubAgentRunner._run_attempt → compose_for_role``) needs a
+            # funnel-supplied prompt. ``SubAgentRunner.run``'s
+            # ``system_prompt_override`` parameter survives for explicit
+            # HATS-267 callers (e.g. ``subagent_session.py``); the pipeline
+            # is no longer one of them.
             optional=frozenset({
-                "role", "provider", "system_prompt", "prompt_text",
+                "role", "provider", "prompt_text",
                 "model", "isolation", "ticket", "tags", "extra_args",
             }),
             produces=frozenset({
@@ -46,7 +56,6 @@ class LaunchProvider(Step):
         project_dir: Path,
         role: str | None = None,
         provider: str | None = None,
-        system_prompt: str | None = None,
         prompt_text: str = "",
         model: str = "",
         isolation: str = "discard",
@@ -73,10 +82,11 @@ class LaunchProvider(Step):
             runner = WrapRunner(project_dir)
             # HATS-452 (П2 in ADR-0005): WrapRunner is HITL — no override
             # channel. The role's full composition reaches the agent via
-            # ``build_session_prompt`` inside ``run_session``. ``system_prompt``
-            # from the funnel is silently ignored in this branch (sub-agent
-            # branch below is the legitimate consumer for HATS-267 prompt
-            # injection).
+            # ``build_session_prompt`` inside ``run_session``. HATS-505:
+            # the sub-agent branch below also no longer consumes a
+            # funnel-supplied ``system_prompt`` — only explicit HATS-267
+            # callers (e.g. ``subagent_session.py``) use
+            # ``SubAgentRunner.run``'s ``system_prompt_override`` channel.
             exit_code, session = runner.run(
                 eff_provider,
                 role_override=role,
@@ -99,6 +109,14 @@ class LaunchProvider(Step):
         # HATS-378: SubAgentRunner internally applies timeout retry and
         # zero-output guard when ``harness_policy`` is supplied — no
         # external guard call needed for the sub-agent branch.
+        # HATS-505: do NOT forward a funnel-supplied prompt as
+        # ``system_prompt_override``. The runner composes the role itself
+        # via ``compose_for_role`` (full overlay layering); pre-feeding the
+        # override would only re-apply the same composition (no value) while
+        # leaving the HATS-452-class trap (``with_injection_override``
+        # wholesale-replace) wired to a pipeline funnel value. The override
+        # parameter on ``SubAgentRunner.run`` survives for explicit HATS-267
+        # callers, which the pipeline is not.
         session = runner.run(
             role_name=role or "",
             task=prompt_text,
@@ -106,7 +124,6 @@ class LaunchProvider(Step):
             model=model,
             isolation_mode=isolation,
             tags=tags,
-            system_prompt_override=system_prompt,
             harness_policy=self.harness_policy,
         )
         exit_code = 1
