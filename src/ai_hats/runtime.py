@@ -1055,6 +1055,19 @@ class SubAgentRunner:
         # HATS-456: single derivation point for "compose for role X".
         # Override (HATS-267) stays on the Automate path per ADR-0005 П2.
         result = compose_for_role(self.assembler, role_name)
+        # HATS-505 / HATS-452-class trap warning:
+        # ``with_injection_override`` REPLACES ``result.injections``
+        # WHOLESALE — every overlay-layer contribution (global + project
+        # ``injection_append`` text, ``add_traits`` injection bodies)
+        # gets dropped from the SDK system_prompt. The pipeline
+        # (``LaunchProvider``) no longer feeds an override here
+        # (HATS-505 (a)); the only legitimate caller is a HATS-267
+        # explicit-prompt invocation (e.g. ``subagent_session.py`` or a
+        # direct API consumer). If you add a new caller, the override
+        # text MUST already contain everything the role would have
+        # composed — or compose the role first and pass an *augmented*
+        # (not replacement) string. Layered composition is in
+        # ``result`` above this line if you need to read it.
         if system_prompt_override is not None:
             # HATS-452: explicit immutable transformation via the typed
             # ``with_*`` API on ``CompositionResult`` (П1 in ADR-0005).
@@ -1448,6 +1461,13 @@ class SubAgentRunner:
         session = self.session_mgr.create_session(parent_session=parent_session)
 
         result = compose_for_role(self.assembler, role)
+        # HATS-505 / HATS-452-class trap warning (multi-turn twin of
+        # ``_run_attempt``): ``with_injection_override`` REPLACES
+        # ``result.injections`` WHOLESALE. The same caveat applies as
+        # in ``_run_attempt`` above — see that site for the full
+        # explanation. ``SubAgentRunner.session()`` is the multi-turn
+        # entry; no production caller currently passes an override
+        # here, but the parameter survives for HATS-267 future use.
         if system_prompt_override is not None:
             result = result.with_injection_override(system_prompt_override)
 
