@@ -8,14 +8,25 @@ sub-agent runner, on-disk Assembler writer, ``MaterializeSystemPrompt``
 step) cannot drift from each other.
 
 Allowed exception: the **no-overlay** form (``compose(role)`` without
-``overlays=``) belongs to two intentionally different semantics:
+``overlays=``) belongs to deliberately different semantics:
 
-- ``pipeline/steps/compose.py`` — audit-only step (ADR-0005 П4).
-- ``cli/reflect.py`` — reflect a target role without project overlays.
+- ``cli/reflect.py`` — reflect a target role's *built-in* composition
+  for inspection / debugging, intentionally excluding project /global
+  overlay layering. The semantic difference is the whole point of the
+  command and is documented at the call site.
 
-These are out-of-scope for the facade (different inputs → different
-output) and the regex below excludes them by requiring ``overlays=``
-on the matched line.
+The regex below only catches the ``overlays=`` form so deliberate
+no-overlay calls don't trip the guard. **However** — the regex is a
+*loose* guard: it doesn't catch drift introduced by a new file calling
+``composer.compose(role)`` *intending* layered composition but
+forgetting ``overlays=``. That class of drift slipped past this test
+once (HATS-501: ``pipeline/steps/compose.py`` was calling
+``composer.compose(role)`` without overlays for a production funnel
+value and the doc here previously whitelisted it as "audit-only"; it
+isn't, and the step now routes through ``compose_for_role`` like every
+other consumer). Strengthening the regex to flag direct
+``composer.compose(role)`` calls inside ``pipeline/`` is tracked in
+HATS-505.
 """
 
 from __future__ import annotations
