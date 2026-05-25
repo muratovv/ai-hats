@@ -97,3 +97,65 @@ def test_wt_create_refuses_on_feature_branch(tmp_venv_project) -> None:
     # standard codes; tolerate either 0 or 2 (partial cleanup is fine in
     # tmp, the dir is under tmp_path and pytest will sweep it).
     proj.run("wt", "discard", "task/probe", "--force")
+
+
+def test_task_transition_execute_refuses_on_feature_branch(tmp_venv_project) -> None:
+    """E2E gate for the second call site (`cli/task.py`).
+
+    Covers the path the unit test exercises via `TaskManager.transition()`
+    directly — but here through the real binary, real backlog state file,
+    and real disk I/O. Without this, a regression that breaks the
+    `WorktreeBaseBranchError` propagation in `cli/task.py::task_transition`
+    (e.g. accidentally catching it as a generic `Exception` earlier in
+    the chain) would slip past the unit suite.
+
+    1. ``git init -b master`` + commit + .agent layout.
+    2. Seed a task and transition it to ``plan``.
+    3. ``git checkout -b feat/parking``.
+    4. ``ai-hats task transition <ID> execute`` → exit 1, stderr/stdout
+       names ``Refused`` + the feature branch + ``master``.
+    5. Task card on disk is still in ``plan`` state (no partial commit).
+    """
+    proj = tmp_venv_project
+    project = proj.path
+
+    _git_init_on_master(project)
+
+    # Seed a card and walk it to PLAN via the real CLI. The project has no
+    # `ai-hats.yaml` (tmp_venv_project skips init), so prefix falls back to
+    # the default `TASK` per `ProjectConfig.resolve_task_prefix`. First
+    # auto-generated ID is `TASK-001`.
+    proj.run("task", "create", "Probe HATS-518 e2e").expect_ok()
+    proj.run("task", "transition", "TASK-001", "plan").expect_ok()
+    # The PLAN scaffold is empty; `transition execute` defaults to
+    # strict_plan_check=True and would raise EmptyPlanError BEFORE our
+    # guard fires. Fill the scaffold with arbitrary non-empty content so
+    # the empty-plan check passes and execution proceeds to the guard.
+    plan_path = (
+        project / ".agent" / "ai-hats" / "tracker" / "backlog"
+        / "tasks" / "TASK-001" / "plan.md"
+    )
+    assert plan_path.exists(), f"expected plan scaffold at {plan_path}"
+    plan_path.write_text("# Plan\n\nNon-empty plan body for e2e.\n")
+
+    # Park HEAD on a feature branch and try to execute.
+    _git(project, "checkout", "-b", "feat/parking")
+    (
+        proj.run("task", "transition", "TASK-001", "execute")
+        .expect_failure()
+        .expect_stdout_contains("Refused", "feat/parking", "master")
+    )
+
+    # Card untouched — still in plan on disk.
+    show = proj.run("task", "show", "TASK-001").expect_ok()
+    assert "state: plan" in show.stdout, (
+        f"Card should remain in 'plan' state after refused transition; "
+        f"`task show` output tail:\n{show.stdout[-400:]}"
+    )
+
+    # No worktree leak — only the main repo's worktree listed.
+    wt_list = _git(project, "worktree", "list").stdout.strip().splitlines()
+    assert len(wt_list) == 1, (
+        f"Refused transition must not create a worktree; got {len(wt_list)}:\n"
+        + "\n".join(wt_list)
+    )

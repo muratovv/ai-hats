@@ -95,7 +95,7 @@ def wt_create(branch: str):
         WorktreeCreateError,
         WorktreeLockError,
         WorktreeManager,
-        _assert_head_is_canonical_base,
+        assert_head_is_canonical_base,
     )
 
     project_dir = _project_dir()
@@ -108,7 +108,7 @@ def wt_create(branch: str):
     # Otherwise the worktree captures the feature branch as its merge target
     # and `wt merge` silently lands on the feature branch, not master.
     try:
-        _assert_head_is_canonical_base(project_dir)
+        assert_head_is_canonical_base(project_dir)
     except WorktreeBaseBranchError as exc:
         console.print(f"[red]{exc}[/]")
         sys.exit(1)

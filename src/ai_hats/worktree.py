@@ -768,6 +768,12 @@ class WorktreeBaseBranchError(Exception):
 
     Recovery: ``git checkout <canonical-base>`` in the main repo, then
     re-run the command.
+
+    **`--force` does NOT bypass this guard.** ``task transition --force``
+    overrides the FSM (state-machine arrow), not the safety contract —
+    same as merge / discard refusals (HATS-481). If the operator genuinely
+    wants the worktree to merge into a non-canonical branch, they checkout
+    that branch in the main repo first; ``--force`` is not the lever.
     """
 
     def __init__(self, current: str, canonical: list[str]) -> None:
@@ -790,7 +796,7 @@ class WorktreeBaseBranchError(Exception):
 CANONICAL_BASE_BRANCHES: tuple[str, ...] = ("master", "main")
 
 
-def _assert_head_is_canonical_base(project_dir: Path) -> None:
+def assert_head_is_canonical_base(project_dir: Path) -> None:
     """Refuse if main-repo HEAD is not on a canonical base branch.
 
     No-op when:
