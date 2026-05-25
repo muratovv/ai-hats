@@ -40,14 +40,15 @@ def test_compose_role_omits_key_when_role_none(tmp_path: Path):
 
 
 def test_compose_role_routes_through_facade(tmp_path: Path):
-    """HATS-501: ``ComposeRole`` MUST route through the ``compose_for_role``
-    facade so the emitted ``system_prompt`` reflects the *layered*
-    composition (built-in + global overlay + project overlay) — matching
-    every other composition consumer (HATS-456 single-derivation-point
-    invariant). Going directly through ``composer.compose(role)`` (no
-    overlays) is the bug that HATS-501 fixed: see
-    ``tests/pipeline/test_compose_overlay_propagation.py`` for the
-    end-to-end regression catcher.
+    """HATS-501: ``ComposeRole`` MUST route through the
+    ``compose_for_role`` facade (HATS-456 single-derivation-point
+    invariant) — bypassing it is the HATS-501 bug.
+
+    Structural-only check: both ``Assembler`` and ``compose_for_role``
+    are mocked, so this test asserts *which function is called* with
+    *which arguments*, not that overlays actually land in the result.
+    The real layered-composition assertion lives in
+    ``tests/pipeline/test_compose_overlay_propagation.py``.
     """
     step = ComposeRole()
     fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
