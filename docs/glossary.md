@@ -112,6 +112,14 @@ Two visually similar blocks fire at the end of a [Session](#session). Use these 
 - **Session summary** — the `✨ Session <id> complete!` block with duration, turn count, audit / trace size, retro decision, tokens, and session directory. Always printed; produced by `runtime._print_session_end` inside the `launch_provider` pipeline step.
 - **Update banner** — a separate three-line block surfaced only when the installed `ai-hats` SHA lags upstream `master`. Format: yellow lead line with `current → latest` short SHAs, cyan `ai-hats self update` command, dim `silence: export AI_HATS_NO_UPDATE_CHECK=1` hint. Produced by the `render_update_banner` pipeline step (`execute.yaml` / `human.yaml`); reads `<ai_hats_dir>/.cache/update-check.json` written by the `check_update_async` step's background probe (24h TTL, stale-while-revalidate).
 
+## Canonical base branch
+
+The name (or names) of the branch that worktrees are expected to be created from and merged back into. Hardcoded to `master` and `main`, in that priority order (HATS-518); the first one that actually exists in the repo is the comparison target.
+
+- **Why it matters.** `WorktreeManager.create()` captures whatever branch the main repo's HEAD currently points at as the worktree's `_original_branch` — and that is the branch `ai-hats wt merge` later lands commits on. If the operator parks the main repo on a feature branch before `wt create` or `task transition <ID> execute`, the worktree quietly inherits that branch as its merge target. The CLI reports "merged" while master never sees the work.
+- **Guard.** `_assert_head_is_canonical_base()` in `ai_hats.worktree` refuses both `wt create` and `task transition execute` when HEAD is not on a canonical base. Operator runs `git checkout <base>` in the main repo, then retries. Detached HEAD, non-git directories, and exotic repos that have neither `master` nor `main` are passed through (no canon to compare against).
+- **Not configurable.** Hardcoded two-name list, no override flag. If a project needs a different base, raise a ticket with the second use case — until then, KISS / design-minimalism.
+
 ## Safe-delete trash bin
 
 Single point of truth for destructive filesystem ops in ai-hats core (HATS-470). Replaces the historical pattern of raw `path.unlink()` / `shutil.rmtree()` / in-place `path.write_text(new)` calls.

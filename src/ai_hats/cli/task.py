@@ -112,6 +112,7 @@ def task_transition(
 ):
     """Transition a task to a new state."""
     from ..models import TaskState
+    from ..worktree import WorktreeBaseBranchError  # HATS-518
 
     mgr = _task_manager(_project_dir())
     try:
@@ -195,6 +196,12 @@ def task_transition(
             "to import from .claude/plans/."
         )
         sys.exit(2)
+    except WorktreeBaseBranchError as e:
+        # HATS-518: main-repo HEAD wasn't on a canonical base when we tried
+        # to create the execute worktree. Card stays in its prior state —
+        # the transition's _save_task was never reached.
+        console.print(f"[red]{e}[/]")
+        sys.exit(1)
     except ValueError as e:
         console.print(f"[red]Error[/]: {e}")
         sys.exit(1)
