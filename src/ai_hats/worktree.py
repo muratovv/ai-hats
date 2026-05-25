@@ -149,6 +149,29 @@ Teardown hardening (HATS-488)
   between the two forks (path comparison saw mismatched paths if
   ``.git`` was renamed between calls) and is incidentally faster.
 
+Stale-lock observability (HATS-486)
+-----------------------------------
+``.git/index.lock`` left behind by a crashed git process (manual SIGKILL,
+OOM kill, system crash mid-merge) blocks every subsequent merge. Git's
+own message ("Another git process seems to be running") suggests manual
+``rm -f`` but gives no confidence signal — the operator can't tell from
+the message whether a live process holds the lock or whether it's just
+debris.
+
+* **v1 (this layer)** — :func:`_stale_index_lock_age` is probed inside
+  :func:`_retry_git_merge` on the FIRST retriable error. When the lock
+  is older than :data:`STALE_INDEX_LOCK_THRESHOLD_S` (60 s),
+  ``logger.warning`` emits the absolute path + age + the exact
+  ``rm -f`` command the operator should run. Surfaces the actionable
+  hint before retry exhaustion (~30 s for the 8-attempt cycle).
+  **Warn-only** — no auto-delete; v2 will revisit after the warning
+  has been observed in production logs.
+* Limited to ``.git/index.lock`` — other lockfiles (``config.lock``,
+  ``HEAD.lock``, ``packed-refs.lock``) are absorbed inside git via
+  the ``core.filesRefLockTimeout`` / ``core.packedRefsTimeout`` flags
+  HATS-481 already passes. Only ``index.lock`` has no wait-flag in
+  git and is the empirical source of mid-merge-crash pain.
+
 Lock ordering hierarchy across HATS-121/479/480/481 (always outer →
 inner, no inversion → no deadlock):
 
@@ -201,6 +224,53 @@ REF_LOCK_TIMEOUT_MS = 5000         # passed to git as core.filesRefLockTimeout �
 
 # HATS-480 — per-branch lifecycle serialization (see module docstring "Lifecycle concurrency")
 LIFECYCLE_LOCK_TIMEOUT = 60.0     # covers fetch + merge + remove + branch -D end-to-end
+
+# HATS-486 — stale .git/index.lock observability (see module docstring
+# "Stale-lock observability"). Threshold above which the lock is treated
+# as evidence of a crashed git process (warn-only — no auto-delete in v1).
+STALE_INDEX_LOCK_THRESHOLD_S = 60.0
+
+
+def _stale_index_lock_age(
+    project_dir: Path,
+    threshold_s: float = STALE_INDEX_LOCK_THRESHOLD_S,
+) -> tuple[float, Path] | None:
+    """Return ``(age_seconds, lock_path)`` if ``.git/index.lock`` exists
+    AND is older than ``threshold_s``; else ``None``.
+
+    HATS-486 v1: warn-only — caller decides what to do with the
+    information. No file mutation.
+
+    Uses ``git rev-parse --git-common-dir`` so both main and linked
+    worktrees resolve to the same index.lock path (linked worktrees
+    don't have their own index.lock — git serializes against the
+    common .git/index.lock).
+
+    Returns ``None`` on:
+      * git binary missing / not a git repo (caller is in a tmp tree);
+      * ``.git/index.lock`` doesn't exist (happy path);
+      * lock exists but age below threshold (legit in-progress merge).
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    common_dir = Path(result.stdout.strip())
+    lock_path = common_dir / "index.lock"
+    try:
+        st = lock_path.stat()
+    except FileNotFoundError:
+        return None
+    age = time.time() - st.st_mtime
+    if age < threshold_s:
+        return None
+    return age, lock_path
 
 
 def _state_key(branch_name: str) -> str:
@@ -520,6 +590,7 @@ def _retry_git_merge(
     git_runner,
     *git_args: str,
     sleep=time.sleep,
+    project_dir: Path | None = None,
 ) -> None:
     """Run a git command (typically ``merge``) with AWS full-jitter
     exponential backoff. HATS-481 L3'.
@@ -536,6 +607,13 @@ def _retry_git_merge(
     :param git_runner: callable like :meth:`WorktreeManager._git`. Called as
         ``git_runner(*git_args)``.
     :param sleep: injected for tests; defaults to :func:`time.sleep`.
+    :param project_dir: if provided, on the FIRST retriable error we probe
+        ``.git/index.lock`` for staleness (HATS-486 v1, warn-only). When
+        the lock is older than :data:`STALE_INDEX_LOCK_THRESHOLD_S`,
+        logger.warning emits the path + age + ``rm -f`` recommendation so
+        the operator can intervene without waiting for retry exhaustion.
+        Pass ``None`` (default) to skip the probe — callers in code paths
+        that don't touch index.lock don't need it.
     :raises subprocess.CalledProcessError: on non-retriable error or after
         exhausting :data:`MERGE_RETRY_MAX` retriable attempts.
     """
@@ -548,6 +626,21 @@ def _retry_git_merge(
         except subprocess.CalledProcessError as exc:
             if not _is_retriable_merge_error(exc):
                 raise
+            # HATS-486: probe stale index.lock on FIRST retriable error so
+            # the operator sees the actionable hint BEFORE retry exhaustion
+            # (~30s for 8 attempts at full-jitter ceiling). Only on attempt
+            # 1 — repeated probes would spam.
+            if attempt == 1 and project_dir is not None:
+                stale = _stale_index_lock_age(project_dir)
+                if stale is not None:
+                    age, lock_path = stale
+                    logger.warning(
+                        ".git/index.lock is %.0fs old (threshold %.0fs) — "
+                        "likely stale from a crashed git process. If no live "
+                        "git is running, manually clean with: rm -f %s "
+                        "(see HATS-486)",
+                        age, STALE_INDEX_LOCK_THRESHOLD_S, lock_path,
+                    )
             last_exc = exc
             if attempt == MERGE_RETRY_MAX:
                 break
@@ -1512,10 +1605,12 @@ class WorktreeManager:
             _retry_git_merge(
                 self._git_with_ref_lock_wait,
                 "merge", "--squash", self.branch_name,
+                project_dir=self.project_dir,  # HATS-486 stale-lock probe
             )
             _retry_git_merge(
                 self._git_with_ref_lock_wait,
                 "commit", "-m", f"feat(agent): {self.branch_name}",
+                project_dir=self.project_dir,  # HATS-486 stale-lock probe
             )
         logger.info("Squash-merged %s into %s", self.branch_name, self._original_branch)
 
@@ -1533,6 +1628,7 @@ class WorktreeManager:
             _retry_git_merge(
                 self._git_with_ref_lock_wait,
                 "merge", "--no-ff", self.branch_name,
+                project_dir=self.project_dir,  # HATS-486 stale-lock probe
             )
         logger.info("Merged %s into %s", self.branch_name, self._original_branch)
 
