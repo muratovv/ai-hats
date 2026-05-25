@@ -783,7 +783,24 @@ class TaskManager:
         return None
 
     def _teardown_worktree(self, task: TaskCard, *, merge: bool = True) -> None:
-        """Merge or discard the worktree for a specific task (HATS-061)."""
+        """Merge or discard the worktree for a specific task (HATS-061).
+
+        HATS-481 — fail-loud for merge failures. Previously this method
+        swallowed ALL exceptions at WARNING and let ``transition`` continue
+        to ``_save_task``, marking the task DONE even when merge failed →
+        silent data loss class (same category as GitHub Merge Queue
+        Apr-2026 incident). Now:
+
+        * ``merge=True`` (``transition done``) re-raises any merge failure
+          except :class:`OriginalBranchMissingError` (branch deleted —
+          work is preserved on the worktree branch; user rebases manually).
+          The transition aborts; task stays in ``review`` and the user
+          retries after resolving the contention or conflict.
+        * ``merge=False`` (``transition failed`` / ``transition cancelled``)
+          keeps the swallowing behavior — the user is dropping the work
+          administratively, so an orphaned worktree dir is a minor sin
+          compared to refusing the admin close.
+        """
         from .worktree import OriginalBranchMissingError, WorktreeManager
 
         active = WorktreeManager.load_for_task(self.project_dir, task.id)
@@ -796,11 +813,26 @@ class TaskManager:
             else:
                 active.discard(force=True)  # failed → intentional discard
         except OriginalBranchMissingError as exc:
+            # Branch deleted between create and teardown — keep current
+            # behavior: warn but let the transition complete. The worktree
+            # branch is preserved by WorktreeManager.merge; user rebases
+            # manually. The work is NOT lost — it's just on a detached branch.
             logger.warning("Worktree merge skipped: %s", exc)
         except Exception:
+            if merge:
+                # HATS-481 fail-loud: re-raise so `transition` aborts before
+                # `_save_task` marks the task DONE. The worktree branch is
+                # preserved by the caller (WorktreeManager.merge cleans up
+                # on exception path).
+                logger.error(
+                    "Worktree merge failed for task %s, branch '%s' "
+                    "preserved. Task NOT marked done — resolve and retry.",
+                    task.id, active.branch_name,
+                )
+                raise
+            # merge=False (failed / cancelled administrative close): swallow.
             logger.warning(
-                "Worktree %s failed, branch '%s' preserved",
-                "merge" if merge else "discard",
+                "Worktree discard failed, branch '%s' preserved",
                 active.branch_name,
                 exc_info=True,
             )
