@@ -92,7 +92,7 @@ The sites were *accidentally* aligned — they all spelled the call the same way
 
 **Phase-2 closure.** New module `src/ai_hats/materialize.py` exposes one function — `compose_for_role(assembler, role) -> CompositionResult` — which is the sole place in `src/ai_hats/` where the with-overlays compose call appears. Every consumer above now routes through it. A grep-style guard (`tests/test_no_direct_compose_outside_facade.py`) makes future drift fail at test time.
 
-The build surface stays runtime-specific per П2: `WrapRunner` builds session argv+env via `build_session_prompt`, `SubAgentRunner` builds a sub-agent meta-prompt via `_build_meta_prompt`, `MaterializeSystemPrompt` builds preview text via `build_system_prompt`, `Assembler.set_role` builds the on-disk file via `build_system_prompt` + `expand_path_placeholders`. The facade does not collapse these — only the compose primitive is unified.
+The build surface stays runtime-specific per П2: `WrapRunner` builds session argv+env+materialized-text via `build_session_prompt` (3-tuple since HATS-523 — the third element is the exact bytes the provider sees as system-prompt override, persisted by the caller via `Session.save_meta_prompt` to `<session_dir>/meta_prompt.txt` for post-hoc audit, symmetric with the Automate path), `SubAgentRunner` builds a sub-agent meta-prompt via `_build_meta_prompt`, `MaterializeSystemPrompt` builds preview text via `build_system_prompt`, `Assembler.set_role` builds the on-disk file via `build_system_prompt` + `expand_path_placeholders`. The facade does not collapse these — only the compose primitive is unified.
 
 One pattern was intentionally **not** migrated to the facade:
 
@@ -119,4 +119,5 @@ HATS-505 also tightened П2's Automate-side reading. The override channel on `Su
 - HATS-501 — Automate-path regression of the П1-meta class (`pipeline/steps/compose.py` was direct-composing without overlays; routed through the facade).
 - HATS-505 — Phase-3 closure: pipeline-scoped no-overlay drift guard + override-channel discipline (pipeline no longer pre-fills `system_prompt_override`).
 - HATS-506 — umbrella epic for role-delivery harness contracts (sister to HATS-499 which owns library / content side).
+- HATS-523 — П4 application: HITL audit-persistence symmetry. `WrapRunner` now saves the materialized system prompt to `<session_dir>/meta_prompt.txt` (already done by `SubAgentRunner`). `Provider.build_session_prompt` extended to 3-tuple to surface the bytes through to the runner. Contracts П1–П4 unchanged.
 - ADR-0001 / ADR-0002 — pipeline / step contracts. П3 is a refinement of the existing funnel semantics, not a new mechanism.
