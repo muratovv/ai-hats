@@ -39,23 +39,32 @@ def test_compose_role_omits_key_when_role_none(tmp_path: Path):
     )
 
 
-def test_compose_role_calls_composer(tmp_path: Path):
+def test_compose_role_routes_through_facade(tmp_path: Path):
+    """HATS-501: ``ComposeRole`` MUST route through the ``compose_for_role``
+    facade so the emitted ``system_prompt`` reflects the *layered*
+    composition (built-in + global overlay + project overlay) — matching
+    every other composition consumer (HATS-456 single-derivation-point
+    invariant). Going directly through ``composer.compose(role)`` (no
+    overlays) is the bug that HATS-501 fixed: see
+    ``tests/pipeline/test_compose_overlay_propagation.py`` for the
+    end-to-end regression catcher.
+    """
     step = ComposeRole()
     fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
     fake_assembler = MagicMock()
-    fake_assembler.composer.compose.return_value = fake_result
-    with patch("ai_hats.assembler.Assembler", return_value=fake_assembler):
+    with patch("ai_hats.assembler.Assembler", return_value=fake_assembler), \
+         patch("ai_hats.materialize.compose_for_role",
+               return_value=fake_result) as facade:
         out = step.run(project_dir=tmp_path, role="judge")
     assert out == {"system_prompt": "ROLE PROMPT"}
-    fake_assembler.composer.compose.assert_called_once_with("judge")
+    facade.assert_called_once_with(fake_assembler, "judge")
 
 
 def test_compose_role_raises_on_compose_errors(tmp_path: Path):
     step = ComposeRole()
     fake_result = MagicMock(errors=["role not found"])
-    fake_assembler = MagicMock()
-    fake_assembler.composer.compose.return_value = fake_result
-    with patch("ai_hats.assembler.Assembler", return_value=fake_assembler):
+    with patch("ai_hats.assembler.Assembler", return_value=MagicMock()), \
+         patch("ai_hats.materialize.compose_for_role", return_value=fake_result):
         with pytest.raises(RuntimeError, match="failed to resolve role"):
             step.run(project_dir=tmp_path, role="ghost")
 
