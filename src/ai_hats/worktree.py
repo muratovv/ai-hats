@@ -78,6 +78,39 @@ April-2026 incident). Defense is layered:
   ``review``. **Data-integrity guarantee — L4' alone is sufficient
   to close the silent-loss class; L1' + L3' are UX-optimization.**
 
+Lifecycle concurrency (HATS-480)
+--------------------------------
+``wt merge`` and ``wt discard`` (or two parallel ``wt discard``) on the
+*same* worktree branch race outside the HATS-121 state-JSON lock: that
+lock is held only across millisecond-scoped JSON I/O and does NOT cover
+the surrounding git operations. Repro (R-03 in HATS-476):
+
+* A: ``wt merge task/hats-X`` → ``_check_clean`` → ``_check_drift`` →
+  ``_fast_forward_merge`` (HATS-481 base-lock acquired only inside the
+  ``git merge`` call, not around the whole lifecycle).
+* B: ``wt discard task/hats-X`` in parallel → ``_remove_worktree`` deletes
+  the dir mid-merge → either A's merge fails ("branch deleted") or B's
+  ``branch -D`` silently swallows "not fully merged" at DEBUG.
+* Either way: half-merged commit on ``master`` or branch graveyard,
+  state JSON cleared exactly once (second ``_clear_state`` no-ops).
+
+* **LC** — :func:`_acquire_lifecycle_lock` (per-wt-branch filelock at
+  ``<state>.json.lifecycle.lock``) wraps the entire ``merge()`` /
+  ``discard()`` / ``cleanup()`` body. After acquisition, ``merge()`` /
+  ``discard()`` re-read the state JSON: if a peer already cleared it,
+  the caller no-ops idempotently. Separate file from
+  :func:`_lock_path` so a long lifecycle op does NOT block
+  millisecond-scoped state-JSON I/O on peers (``wt list`` /
+  ``load_for_branch`` stay snappy).
+
+Lock ordering hierarchy across HATS-121/479/480/481 (always outer →
+inner, no inversion → no deadlock):
+
+1. ``<state>.json.lifecycle.lock``       — HATS-480 (per wt branch)
+2. ``<state_dir>/.base-<base>.lock``     — HATS-481 (per base ref)
+3. ``<state_dir>/.git-worktree-create.lock`` — HATS-479 (repo-wide, create-only)
+4. ``<state>.json.lock``                  — HATS-121 (per state JSON, I/O only)
+
 The lock file ``<state_dir>``  **must reside on a local filesystem**.
 ``filelock.FileLock`` (``fcntl`` advisory) is unreliable on NFS / SMB.
 """
@@ -119,6 +152,9 @@ MERGE_RETRY_BASE_DELAY = 0.1       # 100 ms — matches git's core.*LockTimeout 
 MERGE_RETRY_MAX_DELAY = 5.0        # 5 s cap; longer wait = real work, not contention
 REF_LOCK_TIMEOUT_MS = 5000         # passed to git as core.filesRefLockTimeout — covers
                                    # ref-lock contention for free (no index.lock equivalent)
+
+# HATS-480 — per-branch lifecycle serialization (see module docstring "Lifecycle concurrency")
+LIFECYCLE_LOCK_TIMEOUT = 60.0     # covers fetch + merge + remove + branch -D end-to-end
 
 
 def _state_key(branch_name: str) -> str:
@@ -257,6 +293,92 @@ def _acquire_base_branch_lock(
             f"process for >{timeout:.1f}s.\n"
             f"  Lock file: {lock_path}\n"
             f"  Likely a stuck ai-hats process — check: ps aux | grep ai-hats"
+        ) from exc
+
+
+def _lifecycle_lock_path(state_path: Path) -> Path:
+    """Sibling lifecycle-lock file for a worktree state JSON (HATS-480).
+
+    ``<state>.json`` → ``<state>.json.lifecycle.lock``. Distinct from
+    :func:`_lock_path` (``.lock``) so a long ``merge()`` / ``discard()``
+    body does not block millisecond-scoped state-JSON I/O on peer
+    processes (``wt list`` / ``load_for_branch``).
+    """
+    return state_path.with_name(state_path.name + ".lifecycle.lock")
+
+
+def _load_state_or_none(state_path: Path) -> dict[str, Any] | None:
+    """Read state JSON under :func:`_acquire`; return ``None`` if missing.
+
+    Helper for the post-acquire re-check inside
+    :meth:`WorktreeManager.merge` / :meth:`WorktreeManager.discard`: once
+    the lifecycle lock is held, a ``None`` return means a peer (parallel
+    merge or discard) already completed the destructive ops on this
+    branch — caller should no-op idempotently. Distinct from
+    :meth:`WorktreeManager._load_by_key` which also prunes stale
+    ``worktree_path``; here we only need the existence check.
+
+    Corrupted JSON is treated as missing (same policy as ``_load_by_key``).
+    """
+    with _acquire(state_path):
+        try:
+            return json.loads(state_path.read_text())
+        except FileNotFoundError:
+            return None
+        except json.JSONDecodeError:
+            return None
+
+
+@contextmanager
+def _acquire_lifecycle_lock(
+    state_path: Path, *, timeout: float = LIFECYCLE_LOCK_TIMEOUT
+) -> Iterator[None]:
+    """Serialize destructive lifecycle ops (merge/discard) on one wt branch.
+
+    HATS-480 closes R-03: ``wt merge`` and ``wt discard`` (or two parallel
+    ``wt discard``) on the same worktree branch contend on the worktree
+    dir, branch ref, and state JSON. The existing state-JSON lock
+    (:func:`_acquire`) is held only across millisecond-scoped I/O and does
+    NOT cover the surrounding git operations
+    (``_check_clean → _check_drift → merge → _remove_worktree →
+    _delete_branch → _clear_state``).
+
+    Granularity: one writer per ``(project, wt_branch)``. Two different
+    worktree branches lifecycle-operate in parallel.
+
+    Lock ordering hierarchy (no inversion → no deadlock):
+      1. ``<state>.json.lifecycle.lock`` — this lock (HATS-480, per wt branch)
+      2. ``<state_dir>/.base-<base>.lock``     — HATS-481 (per base ref)
+      3. ``<state>.json.lock``                 — HATS-121 (per state JSON)
+
+    :param state_path: path to the worktree's state JSON. The lifecycle
+        lock sits at ``<state_path>.lifecycle.lock``.
+    :param timeout: lock acquisition timeout. Defaults to
+        :data:`LIFECYCLE_LOCK_TIMEOUT` (60 s — covers ``fetch origin`` +
+        merge + remove + ``branch -D`` end-to-end). Tests override with a
+        small value to provoke the timeout path deterministically.
+    :raises WorktreeLockError: lock not acquired within ``timeout`` seconds.
+    """
+    lock_path = _lifecycle_lock_path(state_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock = filelock.FileLock(str(lock_path), timeout=timeout)
+    t0 = time.monotonic()
+    try:
+        with lock:
+            waited = time.monotonic() - t0
+            if waited > CREATE_LOCK_CONTENTION_WARN:
+                logger.warning(
+                    "wt lifecycle lock acquired after %.2fs (contention on '%s')",
+                    waited, state_path.name,
+                )
+            yield
+    except filelock.Timeout as exc:
+        raise WorktreeLockError(
+            f"wt lifecycle lock for '{state_path.stem}' held by another "
+            f"process for >{timeout:.1f}s.\n"
+            f"  Lock file: {lock_path}\n"
+            f"  Likely a concurrent `wt merge`/`wt discard` — "
+            f"check: ps aux | grep ai-hats"
         ) from exc
 
 

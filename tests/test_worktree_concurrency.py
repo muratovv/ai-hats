@@ -31,11 +31,15 @@ from ai_hats.worktree import (
     WorktreeManager,
     _acquire,
     _acquire_base_branch_lock,
+    _acquire_lifecycle_lock,
     _base_lock_key,
     _base_lock_path,
     _format_git_create_error,
     _is_retriable_git_error,
     _is_retriable_merge_error,
+    _lifecycle_lock_path,
+    _load_state_or_none,
+    _lock_path,
     _retry_git_merge,
     _retry_worktree_add,
     _state_key,
@@ -814,3 +818,91 @@ def test_parallel_merges_into_same_base_both_succeed(git_project: Path) -> None:
     # Both unique files on the base branch.
     assert (git_project / "file-a.txt").read_text() == "alpha\n"
     assert (git_project / "file-b.txt").read_text() == "beta\n"
+
+
+# ---------------------------------------------------------------------------
+# TC-N14..N16 — HATS-480 lifecycle-lock helpers (pure unit, no real git)
+# ---------------------------------------------------------------------------
+
+
+def test_lifecycle_lock_path_is_sibling_of_state(tmp_path: Path) -> None:
+    """TC-N14: lifecycle lock filename = <state>.json.lifecycle.lock — and is
+    DISTINCT from the HATS-121 state-lock (``<state>.json.lock``).
+
+    Distinct lock files matter: state-lock is held only across millisecond-
+    scoped JSON I/O, lifecycle-lock spans tens of seconds (merge + fetch +
+    remove). Reusing the same lock would block ``wt list`` / ``load_for_branch``
+    on peers throughout a merge.
+    """
+    state = tmp_path / "task-hats-480.json"
+    lc = _lifecycle_lock_path(state)
+    assert lc.name == "task-hats-480.json.lifecycle.lock"
+    assert lc.parent == state.parent
+    # Must NOT collide with the HATS-121 state-lock.
+    assert lc != _lock_path(state)
+
+
+def test_acquire_lifecycle_lock_timeout_raises(tmp_path: Path) -> None:
+    """TC-N15: a held lifecycle lock makes the second acquire raise
+    WorktreeLockError after the timeout elapses.
+
+    Mirrors the existing HATS-121 / HATS-481 timeout tests — uses a child
+    process to hold the lock so the second acquire actually sees fcntl
+    contention (in-process re-entry would succeed under filelock's reentrant
+    semantics).
+    """
+    state = tmp_path / "state.json"
+    ready = tmp_path / "ready.flag"
+    holder = multiprocessing.Process(
+        target=_hold_lifecycle_lock,
+        args=(str(state), 0.5, str(ready)),
+    )
+    holder.start()
+    try:
+        for _ in range(50):
+            if ready.exists():
+                break
+            time.sleep(0.02)
+        assert ready.exists(), "holder failed to grab lifecycle lock"
+
+        with pytest.raises(WorktreeLockError) as exc_info:
+            with _acquire_lifecycle_lock(state, timeout=0.1):
+                pass  # pragma: no cover
+        # Error message points at the lock file for manual recovery (479/481 pattern).
+        assert str(_lifecycle_lock_path(state)) in str(exc_info.value)
+    finally:
+        holder.join(timeout=5)
+        assert holder.exitcode == 0
+
+
+def _hold_lifecycle_lock(state_path_str: str, hold_s: float, ready: str) -> None:
+    """Child-process worker — must be top-level for multiprocessing pickling."""
+    state = Path(state_path_str)
+    state.parent.mkdir(parents=True, exist_ok=True)
+    with _acquire_lifecycle_lock(state):
+        Path(ready).write_text("ready")
+        time.sleep(hold_s)
+
+
+def test_load_state_or_none_handles_missing_and_corrupted(tmp_path: Path) -> None:
+    """TC-N16: helper returns None for missing OR corrupted state JSON.
+
+    Used in the post-acquire idempotency re-check inside merge()/discard().
+    Both branches matter: a peer who completed cleanup unlinks the file
+    (FileNotFoundError); a half-written file from a SIGKILL'd writer would
+    decode-fail (JSONDecodeError). Both must surface as None so the caller
+    no-ops cleanly instead of crashing.
+    """
+    state = tmp_path / "state.json"
+
+    # Missing file → None.
+    assert _load_state_or_none(state) is None
+
+    # Corrupted JSON → None (same policy as _load_by_key).
+    state.write_text("{not valid json")
+    assert _load_state_or_none(state) is None
+
+    # Well-formed JSON → dict.
+    state.write_text('{"branch": "task/hats-480", "worktree_path": "/tmp/x"}')
+    loaded = _load_state_or_none(state)
+    assert loaded == {"branch": "task/hats-480", "worktree_path": "/tmp/x"}
