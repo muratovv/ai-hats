@@ -121,6 +121,7 @@ def _launch_session(
 ):
     """Launch a wrapped provider CLI session via the ``human`` pipeline."""
     from ..pipeline.harness import PipelineHarness
+    from ..pipeline.steps.compose import RoleNotFoundError
     from ._helpers import _project_dir
 
     project_dir = _project_dir()
@@ -130,17 +131,31 @@ def _launch_session(
     # override path with redundant compose work — keep behaviour identical
     # to pre-migration.
 
-    with PipelineHarness("human", project_dir) as h:
-        final = h.run(
-            {
-                "role": role,
-                "interactive": True,
-                "project_dir": project_dir,
-                "provider": provider,
-                "extra_args": list(extra_args or []),
-                "tags": tags,
-            }
+    try:
+        with PipelineHarness("human", project_dir) as h:
+            final = h.run(
+                {
+                    "role": role,
+                    "interactive": True,
+                    "project_dir": project_dir,
+                    "provider": provider,
+                    "extra_args": list(extra_args or []),
+                    "tags": tags,
+                }
+            )
+    except RoleNotFoundError as exc:
+        # HATS-507: friendly error for `--role <bogus>`. The compose step
+        # raises this typed exception with the sorted list of available
+        # role names; render without a traceback and exit 2 (Click usage
+        # error convention).
+        click.echo(f"Error: Role {exc.role!r} not found.\n", err=True)
+        click.echo("Available roles:", err=True)
+        for name in exc.available:
+            click.echo(f"  - {name}", err=True)
+        click.echo(
+            "\nHint: 'ai-hats list roles' shows the full table.", err=True,
         )
+        sys.exit(2)
     sys.exit(int(final.get("exit_code", 1)))
 
 
