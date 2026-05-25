@@ -906,3 +906,152 @@ def test_load_state_or_none_handles_missing_and_corrupted(tmp_path: Path) -> Non
     state.write_text('{"branch": "task/hats-480", "worktree_path": "/tmp/x"}')
     loaded = _load_state_or_none(state)
     assert loaded == {"branch": "task/hats-480", "worktree_path": "/tmp/x"}
+
+
+# ---------------------------------------------------------------------------
+# TC-N17 — parallel merge + discard on the SAME branch (HATS-480 R-03)
+# ---------------------------------------------------------------------------
+
+
+def _setup_wt_for_lifecycle_race(
+    project_dir: Path, branch: str, payload_file: str
+) -> None:
+    """Create + populate a worktree, save state, leave it ready for merge/discard.
+
+    Shared setup for TC-N17/N18: the race test only exercises merge()/discard(),
+    NOT create(). Doing setup in the parent process keeps the race timeline
+    tight (no fork/exec overhead between create and the lifecycle op).
+    """
+    mgr = WorktreeManager(project_dir, branch_name=branch)
+    wt_path = mgr.create()
+    mgr.save_state()
+    subprocess.run(["git", "config", "user.email", "tc@n17.test"],
+                   cwd=str(wt_path), check=True)
+    subprocess.run(["git", "config", "user.name", "TC-N17"],
+                   cwd=str(wt_path), check=True)
+    (wt_path / payload_file).write_text("payload\n")
+    subprocess.run(["git", "add", payload_file], cwd=str(wt_path), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", f"wt: {payload_file}"],
+        cwd=str(wt_path), check=True, capture_output=True,
+    )
+
+
+def _merge_worker(
+    project_dir: str, branch: str, results: dict, key: str, barrier
+) -> None:
+    """Child process: load worktree by branch, sync on barrier, merge it.
+
+    Loading BEFORE the barrier ensures both workers have a valid manager
+    instance and reach the race window simultaneously — without this, a
+    fast peer could fully complete before the slow peer even loads state,
+    bypassing the R-03 race we're trying to exercise.
+    """
+    project = Path(project_dir)
+    try:
+        mgr = WorktreeManager.load_for_branch(project, branch)
+        if mgr is None:
+            results[key] = {"error": "state was None at pre-race load"}
+            return
+        barrier.wait(timeout=10)
+        mgr.merge()
+        results[key] = {"error": None, "op": "merge"}
+    except Exception as exc:
+        results[key] = {"error": f"{type(exc).__name__}: {exc}", "op": "merge"}
+
+
+def _discard_worker(
+    project_dir: str, branch: str, results: dict, key: str, barrier
+) -> None:
+    """Child process: load worktree by branch, sync on barrier, discard it."""
+    project = Path(project_dir)
+    try:
+        mgr = WorktreeManager.load_for_branch(project, branch)
+        if mgr is None:
+            results[key] = {"error": "state was None at pre-race load"}
+            return
+        barrier.wait(timeout=10)
+        mgr.discard()
+        results[key] = {"error": None, "op": "discard"}
+    except Exception as exc:
+        results[key] = {"error": f"{type(exc).__name__}: {exc}", "op": "discard"}
+
+
+def test_parallel_merge_and_discard_same_branch_consistent_outcome(
+    git_project: Path,
+) -> None:
+    """TC-N17: parallel ``merge()`` + ``discard()`` on the same wt branch
+    → one wins cleanly, the other no-ops idempotently. NO half-merged state.
+
+    R-03 from HATS-476: without the lifecycle lock, the second op walks
+    into the middle of the first (``_remove_worktree`` mid-merge, or
+    ``branch -D`` while merge is still resolving refs). Outcome was
+    non-deterministic — either half-merged commit on master, or opaque
+    ``CalledProcessError``, or branch graveyard.
+
+    Under the lifecycle lock, two outcomes are valid and consistent:
+      * Merge wins: file present on base branch, HEAD advanced, branch
+        deleted, state cleared.
+      * Discard wins: file absent on base, HEAD unchanged, branch
+        deleted, state cleared.
+
+    Either way: NO half-state, BOTH workers return error=None, branch
+    deleted exactly once, state cleared exactly once.
+    """
+    branch = "task/hats-480-n17"
+    _setup_wt_for_lifecycle_race(git_project, branch, "feature.txt")
+
+    # Snapshot the base branch — used to decide which side won.
+    initial_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(git_project), check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+    manager = multiprocessing.Manager()
+    results = manager.dict()
+    barrier = manager.Barrier(2)
+
+    p_merge = multiprocessing.Process(
+        target=_merge_worker,
+        args=(str(git_project), branch, results, "merge", barrier),
+    )
+    p_discard = multiprocessing.Process(
+        target=_discard_worker,
+        args=(str(git_project), branch, results, "discard", barrier),
+    )
+    p_merge.start()
+    p_discard.start()
+    p_merge.join(timeout=60)
+    p_discard.join(timeout=60)
+    assert p_merge.exitcode == 0, "merge worker died"
+    assert p_discard.exitcode == 0, "discard worker died"
+
+    o_m = dict(results["merge"])
+    o_d = dict(results["discard"])
+    assert o_m["error"] is None, f"merge raised: {o_m}"
+    assert o_d["error"] is None, f"discard raised: {o_d}"
+
+    # State cleared exactly once — both finished, no leftover JSON.
+    assert WorktreeManager.load_for_branch(git_project, branch) is None
+
+    # Branch deleted exactly once (whichever winner reached _delete_branch).
+    branch_ls = subprocess.run(
+        ["git", "branch", "--list", branch],
+        cwd=str(git_project), check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert branch_ls == "", f"branch should be deleted, got: {branch_ls!r}"
+
+    # Final base-branch state: either merge won (file present + HEAD advanced)
+    # or discard won (no file + HEAD unchanged). NEVER half-merged.
+    feature_path = git_project / "feature.txt"
+    final_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(git_project), check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    if feature_path.exists():
+        assert final_head != initial_head, "file present but HEAD didn't advance"
+    else:
+        assert final_head == initial_head, (
+            f"file absent but HEAD advanced ({initial_head[:8]} -> {final_head[:8]}) "
+            f"— half-merged state!"
+        )

@@ -734,49 +734,93 @@ class WorktreeManager:
         Raises OriginalBranchMissingError if the original branch was deleted
         while the worktree was active. Worktree dir is removed but the
         worktree branch is preserved for manual rebase + merge (HATS-253).
+
+        HATS-480: holds a per-wt-branch lifecycle lock through the entire
+        body. A concurrent ``discard()`` (or another ``merge()``) on the
+        same branch waits for the lock; on acquisition we re-read the
+        state JSON and no-op idempotently if a peer already cleared it.
         """
         if not self._is_git or self.worktree_path is None:
             return
-        if not force:
-            self._check_clean()
-        if not accept_drift:
-            self._check_drift()
-        if self._original_branch and not self._branch_exists(self._original_branch):
+
+        state_path = (
+            worktrees_dir(self.project_dir)
+            / f"{_state_key(self.branch_name)}.json"
+        )
+        with _acquire_lifecycle_lock(state_path):
+            # HATS-480 idempotency re-check: a peer (parallel discard or
+            # another merge) finishing first would have run _remove_worktree
+            # (dir gone) AND _clear_state (state.json gone). The worktree
+            # dir is the primary signal because not all callers persist
+            # state (e.g. direct WorktreeManager().create() in tests goes
+            # through merge() without a save_state()). Exit cleanly so the
+            # caller sees exit 0.
+            if not self.worktree_path.exists():
+                logger.info(
+                    "Worktree '%s' already torn down by a peer — no-op",
+                    self.branch_name,
+                )
+                return
+
+            if not force:
+                self._check_clean()
+            if not accept_drift:
+                self._check_drift()
+            if self._original_branch and not self._branch_exists(self._original_branch):
+                self._remove_worktree()
+                self._clear_state()
+                raise OriginalBranchMissingError(
+                    f"Original branch '{self._original_branch}' no longer exists. "
+                    f"Worktree branch '{self.branch_name}' preserved — rebase onto "
+                    f"the current default branch and merge manually."
+                )
+            try:
+                if squash:
+                    self._squash_merge()
+                else:
+                    self._fast_forward_merge()
+            except Exception:
+                logger.warning("Merge failed, branch %s preserved", self.branch_name, exc_info=True)
+                self._remove_worktree()
+                self._clear_state()
+                raise
             self._remove_worktree()
+            self._delete_branch()
             self._clear_state()
-            raise OriginalBranchMissingError(
-                f"Original branch '{self._original_branch}' no longer exists. "
-                f"Worktree branch '{self.branch_name}' preserved — rebase onto "
-                f"the current default branch and merge manually."
-            )
-        try:
-            if squash:
-                self._squash_merge()
-            else:
-                self._fast_forward_merge()
-        except Exception:
-            logger.warning("Merge failed, branch %s preserved", self.branch_name, exc_info=True)
-            self._remove_worktree()
-            self._clear_state()
-            raise
-        self._remove_worktree()
-        self._delete_branch()
-        self._clear_state()
 
     def discard(self, *, force: bool = False) -> None:
         """Remove worktree and branch without merging.
 
         Raises WorktreeDirtyError if the worktree has uncommitted changes
         unless force=True (HATS-062).
+
+        HATS-480: holds the per-wt-branch lifecycle lock through the
+        entire body. Parallel ``discard()`` or ``merge()`` on the same
+        branch serializes; the second one observes the worktree dir
+        already gone and no-ops idempotently.
         """
         if not self._is_git or self.worktree_path is None:
             return
-        if not force:
-            self._check_clean()
-        self._remove_worktree()
-        self._delete_branch()
-        self.worktree_path = None
-        self._clear_state()
+
+        state_path = (
+            worktrees_dir(self.project_dir)
+            / f"{_state_key(self.branch_name)}.json"
+        )
+        with _acquire_lifecycle_lock(state_path):
+            # HATS-480 idempotency re-check — see merge() for the rationale.
+            if not self.worktree_path.exists():
+                logger.info(
+                    "Worktree '%s' already torn down by a peer — no-op",
+                    self.branch_name,
+                )
+                return
+
+            if not force:
+                self._check_clean()
+            self._remove_worktree()
+            self._delete_branch()
+            self.worktree_path = None
+            self._clear_state()
 
     def cleanup(self, *, force_discard: bool = False) -> None:
         """Clean up worktree. Merges changes based on isolation_mode."""
