@@ -9,8 +9,10 @@ time. Failure surface = silent stale-baseline post-merge breakage
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -315,6 +317,204 @@ class TestRichMarkupSafety:
         # Message body keeps the filename verbatim (escaping happens at the
         # CLI render boundary, not in the exception payload).
         assert evil in str(exc.value)
+
+
+class TestUnpushedLocalWorkNotDrift:
+    """HATS-487: local-ahead-of-remote must NOT be flagged as remote drift.
+
+    Pre-487 `_check_drift` flagged any ``current_remote != current_local``
+    as "remote drift, 0 commits ahead of local" with a nonsense diff list
+    of files going the WRONG direction (local→remote treated as
+    remote→local). Caught live during HATS-482 transition done with
+    10 unpushed commits on master.
+    """
+
+    def _setup_origin(self, git_project: Path, tmp_path: Path) -> Path:
+        """Mirror of TestRemoteDrift._setup_origin — kept local so the two
+        classes can evolve independently."""
+        origin = tmp_path / "origin.git"
+        subprocess.run(
+            ["git", "clone", "--bare", str(git_project), str(origin)],
+            capture_output=True, text=True, check=True,
+        )
+        _git(git_project, "remote", "add", "origin", str(origin))
+        _git(git_project, "fetch", "origin")
+        head = _git(git_project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        _git(git_project, "branch", "--set-upstream-to", f"origin/{head}", head)
+        return origin
+
+    def test_local_ahead_of_remote_is_not_drift(
+        self, git_project: Path, tmp_path: Path
+    ) -> None:
+        """Local has unpushed commits + worktree merge → must NOT raise.
+
+        Reproduces the HATS-482 incident exactly: origin is behind local,
+        we create a worktree, do work, merge. Pre-487 raised
+        WorktreeDriftError; post-487 succeeds.
+        """
+        self._setup_origin(git_project, tmp_path)
+
+        # Push the worktree forward: create wt FIRST, then advance local
+        # master past origin via a regular commit (mirrors "unpushed work
+        # accumulated on master while a worktree was open").
+        mgr = WorktreeManager(git_project, branch_name="task/unpushed-ok")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        # Unpushed local commits on master (NOT touched in wt).
+        _make_main_commit(git_project, "unpushed-a.txt")
+        _make_main_commit(git_project, "unpushed-b.txt")
+
+        # `base_sha_at_create` matches the master SHA AT create time, so
+        # local IS drifted (real local drift) — that's a SEPARATE
+        # condition we still want to raise on. The HATS-487 contract is
+        # narrower: the *remote* side must not trigger when remote is an
+        # ancestor of local.
+        with pytest.raises(WorktreeDriftError) as exc:
+            mgr.merge()
+        msg = str(exc.value)
+        # Local drift section IS expected (master moved post-create).
+        assert "local:" in msg, f"expected local-drift section:\n{msg}"
+        # Critical: NO remote-drift section (remote is ancestor of local).
+        assert "remote:" not in msg, (
+            f"HATS-487 regression: unpushed-local-work triggered a "
+            f"phantom remote-drift section:\n{msg}"
+        )
+
+    def test_local_ahead_no_local_drift_merges_clean(
+        self, git_project: Path, tmp_path: Path
+    ) -> None:
+        """Unpushed local work that happened BEFORE create → no drift at all.
+
+        The base SHA captured at create-time IS the post-unpushed master,
+        so local_drifted == False AND remote_drifted == False (remote is
+        ancestor). Pre-487 still raised because of the simple
+        ``current_remote != current_local`` check.
+        """
+        self._setup_origin(git_project, tmp_path)
+
+        # Unpushed commits BEFORE creating the worktree.
+        _make_main_commit(git_project, "unpushed-pre.txt")
+
+        mgr = WorktreeManager(git_project, branch_name="task/unpushed-pre-create")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        # Should merge cleanly: local == base_sha_at_create, remote is
+        # ancestor of local.
+        mgr.merge()
+        listing = _git(git_project, "branch", "--list", "task/unpushed-pre-create").stdout
+        assert listing.strip() == "", "branch should be deleted on clean merge"
+
+    def test_diverged_remote_and_local_is_drift(
+        self, git_project: Path, tmp_path: Path
+    ) -> None:
+        """Local and remote both have unique commits → real drift.
+
+        Mirror image of test_local_ahead: remote is NOT an ancestor of
+        local (because both moved independently) → must raise.
+        """
+        origin = self._setup_origin(git_project, tmp_path)
+
+        mgr = WorktreeManager(git_project, branch_name="task/diverged")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        # Local advances.
+        _make_main_commit(git_project, "local-diverged.txt")
+
+        # Remote advances via coworker (push commits origin didn't have).
+        coworker = tmp_path / "coworker-diverged"
+        subprocess.run(
+            ["git", "clone", str(origin), str(coworker)],
+            capture_output=True, text=True, check=True,
+        )
+        _git(coworker, "config", "user.email", "co@test")
+        _git(coworker, "config", "user.name", "Co")
+        (coworker / "remote-diverged.txt").write_text("from remote\n")
+        _git(coworker, "add", "remote-diverged.txt")
+        _git(coworker, "commit", "-m", "remote: diverged")
+        _git(coworker, "push", "origin", "HEAD")
+
+        with pytest.raises(WorktreeDriftError) as exc:
+            mgr.merge()
+        msg = str(exc.value)
+        assert "local:" in msg, msg
+        assert "remote:" in msg, msg
+        assert "remote-diverged.txt" in msg, msg
+
+
+class TestFetchFailureBehaviour:
+    """HATS-489 / B-04 + B-05: fetch errors and missing git binary."""
+
+    def test_fetch_failure_logs_warning_proceeds(
+        self, git_project: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Fetch CalledProcessError → WARNING (not DEBUG) + merge proceeds.
+
+        Pre-489 these were DEBUG-only — invisible to operators running at
+        default log level, so a concurrent push that lands during merge
+        would silently bypass remote-drift detection.
+        """
+        mgr = WorktreeManager(git_project, branch_name="task/fetch-warn")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        # No 'origin' configured → real fetch would CalledProcessError.
+        # Sanity-check that this is the path we're exercising by capturing
+        # at WARNING level.
+        with caplog.at_level(logging.WARNING, logger="ai_hats.worktree"):
+            mgr.merge()  # must proceed (offline-merge contract)
+
+        warnings = [
+            r for r in caplog.records
+            if r.levelno == logging.WARNING and "fetch origin" in r.message
+        ]
+        assert warnings, (
+            f"expected a fetch-failure WARNING; got records: "
+            f"{[(r.levelname, r.message) for r in caplog.records]}"
+        )
+        # Worktree was deleted on successful merge → contract held.
+        assert not wt_path.exists()
+
+    def test_fetch_filenotfounderror_handled(
+        self, git_project: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Git binary missing during fetch → no traceback, fallthrough.
+
+        Pre-489 only CalledProcessError was caught — FileNotFoundError
+        from a missing git would crash the merge with an unhandled
+        exception. Now consistent with is_inside_linked_worktree /
+        list_worktrees handlers.
+        """
+        mgr = WorktreeManager(git_project, branch_name="task/git-missing")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        real_git = mgr._git
+
+        def selective_git(*args, **kwargs):
+            # Only the fetch call raises FileNotFoundError; rev-parse and
+            # the actual merge call go through real git.
+            if args[:2] == ("fetch", "origin"):
+                raise FileNotFoundError(2, "No such file or directory: 'git'")
+            return real_git(*args, **kwargs)
+
+        with patch.object(mgr, "_git", side_effect=selective_git), \
+             caplog.at_level(logging.WARNING, logger="ai_hats.worktree"):
+            mgr.merge()  # must not raise FileNotFoundError
+
+        # Warning emitted for the simulated missing git.
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("fetch origin" in r.message for r in warnings), (
+            f"expected fetch-failure WARNING for FileNotFoundError; "
+            f"records: {[(r.levelname, r.message) for r in caplog.records]}"
+        )
 
 
 class TestStateRoundtrip:

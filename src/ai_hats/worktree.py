@@ -1283,6 +1283,26 @@ class WorktreeManager:
         except subprocess.CalledProcessError:
             return False
 
+    def _is_ancestor(self, maybe_ancestor: str, descendant: str) -> bool:
+        """True iff ``maybe_ancestor`` is an ancestor of ``descendant`` per git.
+
+        Wraps ``git merge-base --is-ancestor`` — exit 0 = is ancestor,
+        exit 1 = not ancestor, exit ≥2 = git error (broken ref, missing
+        binary, etc.). Falls back to ``False`` on any error so callers
+        treat "can't tell" the same as "not ancestor" (safer default for
+        drift-style checks: if we can't prove the ref relationship, do
+        NOT silently suppress the drift signal).
+
+        HATS-487: used by :meth:`_check_drift` to distinguish real remote
+        drift (remote has commits local doesn't) from unpushed local work
+        (local has commits remote doesn't — remote IS ancestor of local).
+        """
+        try:
+            self._git("merge-base", "--is-ancestor", maybe_ancestor, descendant)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
+
     # ------------------------------------------------------------------
     # Drift detection (HATS-457 / HYP-017)
     # ------------------------------------------------------------------
@@ -1296,11 +1316,16 @@ class WorktreeManager:
           * local: another worktree's `wt merge` advanced the local
             original branch.
           * remote: someone pushed commits to ``origin/<base>`` that the
-            local branch has not pulled.
+            local branch has not pulled — i.e. ``origin/<base>`` is NOT
+            an ancestor of local. ``current_remote != current_local`` is
+            insufficient: that condition also fires for normal unpushed
+            local work (HATS-487 false-positive).
 
-        Best-effort ``git fetch origin <base>`` runs first to surface
-        remote drift. Network/no-remote failures are swallowed so an
-        offline merge still proceeds with the local check.
+        ``git fetch origin <base>`` runs first to surface remote drift.
+        Failures are logged at WARNING (HATS-489 / B-04): merge follows
+        immediately, so a swallowed fetch error can hide a real
+        remote-side push that we'd otherwise catch. Not raise — offline
+        / no-remote setups must still be able to merge.
 
         Skips silently when the saved ``base_sha_at_create`` is missing
         (legacy state file from before HATS-457).
@@ -1308,20 +1333,27 @@ class WorktreeManager:
         if self._base_sha_at_create is None or self._original_branch is None:
             return
 
-        # Best-effort fetch — silent on failure (no remote, offline, etc.).
+        # HATS-489 / B-04: fetch failure escalated DEBUG → WARNING.
+        # HATS-489 / B-05: FileNotFoundError (git binary missing) caught
+        # consistently with CalledProcessError (mirrors
+        # is_inside_linked_worktree / list_worktrees).
         try:
             self._git("fetch", "origin", self._original_branch)
-        except subprocess.CalledProcessError:
-            logger.debug(
-                "Drift check: fetch origin %s failed, falling back to local-only check",
-                self._original_branch,
+        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+            stderr = (getattr(exc, "stderr", "") or "").strip()
+            tail = stderr.splitlines()[-1] if stderr else "<no stderr>"
+            logger.warning(
+                "Drift check: fetch origin %s failed (%s); proceeding with "
+                "local-only check — remote-side drift will NOT be detected "
+                "this run",
+                self._original_branch, tail,
             )
 
         try:
             current_local = self._git(
                 "rev-parse", self._original_branch
             ).stdout.strip()
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, FileNotFoundError):
             # Can't read the original branch SHA — let the missing-branch
             # path in merge() handle it.
             return
@@ -1331,13 +1363,20 @@ class WorktreeManager:
             current_remote = self._git(
                 "rev-parse", "--verify", "--quiet", f"origin/{self._original_branch}"
             ).stdout.strip()
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, FileNotFoundError):
             current_remote = None
 
         local_drifted = current_local != self._base_sha_at_create
+        # HATS-487: real remote drift means remote has commits NOT in
+        # local — equivalent to "remote is NOT an ancestor of local".
+        # Unpushed local work (local is ancestor of remote? — no, the
+        # other way: remote IS ancestor of local) was previously
+        # false-positiv'd as "remote drift, 0 commits ahead" with a
+        # nonsense diff list.
         remote_drifted = (
             current_remote is not None
             and current_remote != current_local
+            and not self._is_ancestor(current_remote, current_local)
         )
 
         if not local_drifted and not remote_drifted:
