@@ -104,6 +104,31 @@ the surrounding git operations. Repro (R-03 in HATS-476):
   lifecycle op does NOT block millisecond-scoped state-JSON I/O on
   peers (``wt list`` / ``load_for_branch`` stay snappy).
 
+Operator-error guards (HATS-482)
+--------------------------------
+Concurrency hardening (HATS-479/480/481) closed the data-loss class.
+HATS-482 layers a set of operator-visibility guards on top, so that
+remaining single-actor mistakes fail loud instead of corrupting state:
+
+* **B-02** — :meth:`WorktreeManager._delete_branch` classifies known
+  ``git branch -D`` failures (``not fully merged``, ``used by worktree``,
+  ``cannot lock ref``) and raises :class:`WorktreePartialCleanupError`.
+  CLI handlers convert this to ``exit 2`` with manual-cleanup guidance.
+  Unclassified stderr stays silent at DEBUG (regression-safe).
+* **B-07** — :func:`_state_key` is case-preserving. Pre-482 keys were
+  lowercased, collapsing distinct git refs (``Task/X`` ↔ ``task/x``)
+  onto one state file. Legacy lowercased files migrate one-shot in
+  :meth:`WorktreeManager._load_by_key` under the state lock.
+* **B-08** — :func:`ai_hats.cli._helpers._guard_not_inside_linked_worktree`
+  is wired into ``wt create / merge / discard / list``. Refuses to
+  resolve ``_project_dir`` upward through ``/tmp`` when CWD is inside
+  a linked worktree, preventing state writes to a tmp tree.
+  ``wt exec`` / ``wt env`` are intentionally exempt (designed to run
+  from inside the worktree).
+* **R-08** — :func:`ai_hats.cli.worktree._resolve_worktree` raises
+  :class:`click.UsageError` when no branch is given AND ``>1`` worktree
+  is tracked, instead of silently picking alphabetical first.
+
 Lock ordering hierarchy across HATS-121/479/480/481 (always outer →
 inner, no inversion → no deadlock):
 
@@ -162,9 +187,15 @@ def _state_key(branch_name: str) -> str:
     """Derive the state file key from a branch name.
 
     task/hats-086 → task-hats-086
-    feat/HATS-060-foo → feat-hats-060-foo
+    feat/HATS-060-foo → feat-HATS-060-foo
+
+    HATS-482 (B-07): case-preserving. Pre-482 keys were lowercased, which
+    collided distinct git refs (``Task/X`` ↔ ``task/x``) onto one state
+    file. Git refs are case-sensitive (modulo filesystem); state keys must
+    match git reality. Legacy lowercased state files on disk are migrated
+    on first lookup — see :meth:`WorktreeManager._load_by_key`.
     """
-    return branch_name.replace("/", "-").lower()
+    return branch_name.replace("/", "-")
 
 
 def _lock_path(state_path: Path) -> Path:
@@ -532,6 +563,36 @@ class WorktreeCreateError(Exception):
     :class:`WorktreeLockError` (L1 mutex timeout) and
     :class:`WorktreeDirtyError` (pre-check failure).
     """
+
+
+class WorktreePartialCleanupError(Exception):
+    """Raised when ``_delete_branch`` cannot delete the worktree branch and
+    the failure has a known, operator-actionable cause (HATS-482 / B-02).
+
+    Pre-482 ``_delete_branch`` swallowed every ``CalledProcessError`` at
+    DEBUG level, producing a silent "branch graveyard" (especially for
+    "not fully merged" — a data-loss WARNING). Now classified causes are
+    surfaced so the CLI can exit non-zero with guidance.
+
+    Carries:
+      * ``branch_name`` — the branch git refused to delete.
+      * ``reason`` — one of ``"not_fully_merged"``, ``"checked_out"``,
+        ``"locked"``. Unknown stderr stays silent at DEBUG (regression-safe).
+      * ``stderr_tail`` — last line of git's stderr for diagnostics.
+
+    Lifecycle contract: ``_delete_branch`` runs AFTER ``_remove_worktree``
+    and BEFORE ``_clear_state`` in merge()/discard()/cleanup(). Raising
+    here leaves worktree dir gone, branch alive, state JSON intact — the
+    operator can re-attempt cleanup after addressing the underlying cause.
+    """
+
+    def __init__(self, branch_name: str, reason: str, stderr_tail: str) -> None:
+        self.branch_name = branch_name
+        self.reason = reason
+        self.stderr_tail = stderr_tail
+        super().__init__(
+            f"Branch '{branch_name}' could not be deleted ({reason}): {stderr_tail}"
+        )
 
 
 class OriginalBranchMissingError(Exception):
@@ -902,9 +963,65 @@ class WorktreeManager:
         key = _state_key(branch)
         return cls._load_by_key(project_dir, key)
 
+    @staticmethod
+    def _migrate_legacy_lowercase_state(state_path: Path, key: str) -> None:
+        """One-shot rename of pre-HATS-482 lowercased state file (B-07).
+
+        Pre-482 ``_state_key`` lowercased its output, so `Task/HATS-X`'s
+        state lived at `task-hats-x.json`. Post-482 the same branch
+        resolves to key `task-HATS-X`. If we're looking up the new key but
+        only the old file exists, migrate it in place under the state
+        lock.
+
+        No-ops when:
+          * the primary key file already exists, OR
+          * the legacy lowercase variant doesn't exist, OR
+          * primary key is already all-lowercase (no migration possible).
+
+        Concurrency: both source and target acquire ``_acquire`` locks
+        before mutation; second concurrent caller observes the rename
+        already done and skips.
+        """
+        if state_path.exists():
+            return
+        lower_key = key.lower()
+        if lower_key == key:
+            return
+        legacy_path = state_path.with_name(f"{lower_key}.json")
+        if not legacy_path.exists():
+            return
+        # Lock-order: legacy (outer) → target (inner). Matches
+        # _migrate_singleton's ordering convention (HATS-121 / R-07).
+        with _acquire(legacy_path):
+            if not legacy_path.exists() or state_path.exists():
+                return
+            with _acquire(state_path):
+                try:
+                    legacy_path.rename(state_path)
+                except OSError as exc:
+                    # rename failed for an unexpected reason (perm, FS race)
+                    # — leave legacy file in place and let caller treat key
+                    # as missing. Loud log so this isn't silent.
+                    logger.warning(
+                        "Failed to migrate legacy state %s → %s: %s",
+                        legacy_path, state_path, exc,
+                    )
+                    return
+                logger.info(
+                    "Migrated legacy lowercase worktree state %s → %s "
+                    "(HATS-482 case-preserving keys)",
+                    legacy_path.name, state_path.name,
+                )
+
     @classmethod
     def _load_by_key(cls, project_dir: Path, key: str) -> WorktreeManager | None:
         state_path = worktrees_dir(project_dir) / f"{key}.json"
+        # HATS-482 (B-07): one-shot migration of legacy lowercase state file.
+        # Pre-482 `_state_key` lowercased its output; an upgrade may leave
+        # `task-hats-x.json` on disk while the caller now queries with
+        # case-preserving key `task-HATS-X`. If primary key missing AND a
+        # lowercase variant exists AND it's not the same path, rename.
+        cls._migrate_legacy_lowercase_state(state_path, key)
         with _acquire(state_path):
             try:
                 raw = state_path.read_text()
@@ -939,7 +1056,18 @@ class WorktreeManager:
 
     @classmethod
     def list_active(cls, project_dir: Path) -> list[WorktreeManager]:
-        """Load all active worktree states. Prunes stale entries."""
+        """Load all active worktree states. Prunes stale entries.
+
+        HATS-482 (R-05): best-effort under concurrent ``_clear_state``.
+        We glob ``*.json`` once and then call :meth:`_load_by_key` per
+        entry; between scan and load, a peer's ``discard()`` /
+        ``cleanup()`` may unlink a file. ``_load_by_key`` returns ``None``
+        on ``FileNotFoundError`` (no exception leaks), so the result list
+        omits the racing entry — a transient lie, not corruption. Snapshot
+        semantics would require holding a directory-wide lock for the
+        duration of the iteration, which is heavier than the cost of an
+        occasional missing row in ``wt list``.
+        """
         states_dir = worktrees_dir(project_dir)
         if not states_dir.exists():
             return []
@@ -972,6 +1100,15 @@ class WorktreeManager:
         ``<ai_hats_dir>/sessions/worktree.json`` and per-key files under
         ``<ai_hats_dir>/sessions/worktrees/`` — the filesystem move from
         ``.agent/`` is handled separately by ``Assembler._migrate_layout_v4_sessions``.
+
+        HATS-482 (R-07): nested-lock ordering is **outer = legacy
+        singleton, inner = new per-key path** — the only place where
+        per-key lock is acquired while another worktree state lock is
+        already held. Any future extension of singleton-path logic
+        (additional read-then-write under the outer lock) MUST preserve
+        this ordering: outer = singleton, inner = per-key. Inverting the
+        order in another code path (per-key outer, then singleton inner)
+        would re-introduce the deadlock window this comment prevents.
         """
         old = worktree_state_path(project_dir)
         with _acquire(old):
@@ -1314,9 +1451,60 @@ class WorktreeManager:
             except subprocess.CalledProcessError:
                 pass
 
+    # HATS-482 (B-02): stderr substrings → classified causes for
+    # `_delete_branch` failures. Matched case-insensitively.
+    # "not fully merged" — git's exact phrasing for unmerged-branch refusal.
+    # "checkout" / "used by worktree" — branch checked out elsewhere
+    #   (covers both pre-2.21 and post-2.21 git phrasings).
+    # "cannot lock ref" / "unable to lock" — ref-lock contention; usually
+    #   transient but worth surfacing if it persists past the L1' / L3'
+    #   retries (HATS-481).
+    _DELETE_BRANCH_REASONS = (
+        ("not fully merged", "not_fully_merged"),
+        ("used by worktree", "checked_out"),
+        ("checkout", "checked_out"),
+        ("cannot lock ref", "locked"),
+        ("unable to lock", "locked"),
+    )
+
+    def _classify_delete_branch_error(
+        self, stderr: str
+    ) -> tuple[str, str] | None:
+        """Return ``(reason, stderr_tail)`` for known causes, None otherwise."""
+        s = (stderr or "").lower()
+        tail = (stderr or "").strip().splitlines()[-1] if stderr.strip() else ""
+        for needle, reason in self._DELETE_BRANCH_REASONS:
+            if needle in s:
+                return reason, tail
+        return None
+
     def _delete_branch(self) -> None:
-        """Delete the worktree branch."""
+        """Delete the worktree branch.
+
+        HATS-482 (B-02): pre-482 swallowed all errors at DEBUG, hiding
+        "not fully merged" (data-loss WARNING) and "used by worktree"
+        (operator-actionable). Classified causes now raise
+        :class:`WorktreePartialCleanupError` so the CLI surfaces them with
+        guidance and a non-zero exit code. Unknown stderr stays silent at
+        DEBUG (regression-safe — pre-482 success path unchanged).
+        """
         try:
             self._git("branch", "-D", self.branch_name)
-        except subprocess.CalledProcessError:
-            logger.debug("Could not delete branch %s", self.branch_name)
+        except subprocess.CalledProcessError as exc:
+            classified = self._classify_delete_branch_error(exc.stderr or "")
+            if classified is None:
+                logger.debug(
+                    "Could not delete branch %s (unclassified): %s",
+                    self.branch_name,
+                    (exc.stderr or "").strip().splitlines()[-1]
+                    if (exc.stderr or "").strip() else "<no stderr>",
+                )
+                return
+            reason, tail = classified
+            logger.warning(
+                "Branch '%s' preserved (%s): %s",
+                self.branch_name, reason, tail,
+            )
+            raise WorktreePartialCleanupError(
+                self.branch_name, reason, tail,
+            ) from exc
