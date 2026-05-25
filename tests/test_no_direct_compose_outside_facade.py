@@ -15,18 +15,16 @@ Allowed exception: the **no-overlay** form (``compose(role)`` without
   overlay layering. The semantic difference is the whole point of the
   command and is documented at the call site.
 
-The regex below only catches the ``overlays=`` form so deliberate
-no-overlay calls don't trip the guard. **However** — the regex is a
-*loose* guard: it doesn't catch drift introduced by a new file calling
-``composer.compose(role)`` *intending* layered composition but
-forgetting ``overlays=``. That class of drift slipped past this test
-once (HATS-501: ``pipeline/steps/compose.py`` was calling
-``composer.compose(role)`` without overlays for a production funnel
-value and the doc here previously whitelisted it as "audit-only"; it
-isn't, and the step now routes through ``compose_for_role`` like every
-other consumer). Strengthening the regex to flag direct
-``composer.compose(role)`` calls inside ``pipeline/`` is tracked in
-HATS-505.
+The first test below (overlays= form) only catches drift where a file
+*meant* to compose with overlays but did so outside the facade.
+
+The second test (HATS-505) closes the other half: any
+``composer.compose(...)`` call inside ``src/ai_hats/pipeline/`` — with
+or without ``overlays=`` — is a drift signal, because pipeline steps
+deliver composition to live agents and MUST route through
+``compose_for_role`` so the layered composition reaches the runner.
+HATS-501 slipped past the original test precisely because the
+no-overlay form wasn't flagged inside pipeline/.
 """
 
 from __future__ import annotations
@@ -81,6 +79,87 @@ def test_compose_with_overlays_only_in_facade():
         "outside the materialize.py facade. Route through "
         "compose_for_role(assembler, role) instead.\n"
         + "\n".join(f"  {p}: …{snip}…" for p, snip in offenders)
+    )
+
+
+# HATS-505: any ``composer.compose(...)`` call, regardless of whether
+# ``overlays=`` is present, with or without ``self.`` qualifier.
+ANY_COMPOSE_CALL_RE = re.compile(
+    r"\bcomposer\.compose\s*\(",
+)
+
+# Whitelist for the pipeline-scoped guard. Files inside ``src/ai_hats/
+# pipeline/`` are NOT allowed; the canonical role-delivery path is the
+# ``compose_for_role`` facade. The only project-wide deliberate
+# no-overlay site (``cli/reflect.py``) is OUTSIDE ``pipeline/`` and
+# therefore not in scope here — its justification lives at the call.
+NO_DIRECT_COMPOSE_IN_PIPELINE_ALLOWED: set[Path] = set()
+
+
+def _strip_docstrings_and_comments(text: str) -> str:
+    """Crude stripper: drop ``#``-comment-only lines and lines inside a
+    triple-double-quoted block. Sufficient for this test's purpose
+    (false-positive prevention on prose mentioning ``composer.compose``
+    inside docstrings / RST backticks)."""
+    out: list[str] = []
+    in_doc = False
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if stripped.startswith('"""') and not (
+            stripped.endswith('"""') and len(stripped) > 3
+        ):
+            in_doc = not in_doc
+            continue
+        if stripped.startswith('"""') and stripped.endswith('"""'):
+            # one-line docstring
+            continue
+        if in_doc:
+            continue
+        if stripped.startswith("#"):
+            continue
+        # Skip lines where the pattern appears only inside backticks
+        # (rst / docstring references that survived the docstring strip
+        # because they're at module-body level in code comments).
+        if "``" in stripped and stripped.count("`") >= 4:
+            # Likely an inline rst/backtick reference; drop the line.
+            continue
+        out.append(raw)
+    return "\n".join(out)
+
+
+def test_no_direct_compose_inside_pipeline_subtree():
+    """HATS-505 drift guard: any ``composer.compose(...)`` call inside
+    ``src/ai_hats/pipeline/`` MUST route through ``compose_for_role``
+    (materialize.py facade). Direct calls bypass overlay layering and
+    are the HATS-501 root-cause pattern.
+    """
+    pipeline_dir = SRC_DIR / "pipeline"
+    assert pipeline_dir.is_dir(), pipeline_dir
+
+    offenders: list[tuple[Path, str]] = []
+    for py_file in pipeline_dir.rglob("*.py"):
+        if py_file in NO_DIRECT_COMPOSE_IN_PIPELINE_ALLOWED:
+            continue
+        try:
+            text = py_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        cleaned = _strip_docstrings_and_comments(text)
+        for match in ANY_COMPOSE_CALL_RE.finditer(cleaned):
+            line_start = cleaned.rfind("\n", 0, match.start()) + 1
+            line_end = cleaned.find("\n", match.end())
+            line = cleaned[
+                line_start: line_end if line_end > 0 else None
+            ].strip()
+            offenders.append((py_file.relative_to(REPO_ROOT), line))
+
+    assert not offenders, (
+        "HATS-505 drift: composer.compose(...) appears inside "
+        "src/ai_hats/pipeline/ — pipeline steps must route through "
+        "compose_for_role(assembler, role) (materialize.py facade) "
+        "so layered composition (project + global overlays) is "
+        "preserved. HATS-501 was caused by exactly this pattern.\n"
+        + "\n".join(f"  {p}: {line}" for p, line in offenders)
     )
 
 

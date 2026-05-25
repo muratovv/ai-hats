@@ -226,6 +226,14 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
 
     assembler = Assembler(project_dir)
     composer = assembler.composer
+    # HATS-505: deliberately no ``overlays=`` — ``reflect`` shows the
+    # role's BUILT-IN composition for inspection (what the library
+    # ships), excluding the project / global overlay layering that
+    # runtime consumers apply. This is the whole point of ``reflect``;
+    # using ``compose_for_role`` here would conflate "what does the
+    # role contain" with "what would my project see after overlays".
+    # Whitelisted in
+    # ``tests/test_no_direct_compose_outside_facade.py:NO_OVERLAY_ALLOWED_FILES``.
     composition = composer.compose(target_role)
     if composition.errors:
         raise click.ClickException(

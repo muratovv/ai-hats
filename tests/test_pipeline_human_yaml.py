@@ -73,7 +73,15 @@ def test_human_pipeline_e2e(tmp_path: Path):
     # forced by the pipeline.
     assert "review_pid" not in final
 
-    fake_assembler.composer.compose.assert_called_once_with("assistant")
+    # HATS-501: ``ComposeRole`` now routes through the
+    # ``compose_for_role`` facade so the layered composition (built-in
+    # + global + project overlays) reaches the funnel value. The
+    # mocked assembler's ``_get_overlays`` returns a MagicMock; what
+    # matters here is that overlays= is on the call (not omitted).
+    fake_assembler.composer.compose.assert_called_once()
+    _args, kwargs = fake_assembler.composer.compose.call_args
+    assert _args == ("assistant",)
+    assert "overlays" in kwargs
     fake_runner.run.assert_called_once()
     call_kwargs = fake_runner.run.call_args.kwargs
     assert call_kwargs["role_override"] == "assistant"
