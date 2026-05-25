@@ -96,12 +96,13 @@ the surrounding git operations. Repro (R-03 in HATS-476):
 
 * **LC** — :func:`_acquire_lifecycle_lock` (per-wt-branch filelock at
   ``<state>.json.lifecycle.lock``) wraps the entire ``merge()`` /
-  ``discard()`` / ``cleanup()`` body. After acquisition, ``merge()`` /
-  ``discard()`` re-read the state JSON: if a peer already cleared it,
-  the caller no-ops idempotently. Separate file from
-  :func:`_lock_path` so a long lifecycle op does NOT block
-  millisecond-scoped state-JSON I/O on peers (``wt list`` /
-  ``load_for_branch`` stay snappy).
+  ``discard()`` / ``cleanup()`` body. After acquisition the caller
+  checks ``self.worktree_path.exists()`` — peer's ``_remove_worktree``
+  is the irreversible event, and the directory's absence is the cheap,
+  reliable signal that the lifecycle is already done; late arrival
+  no-ops idempotently. Separate file from :func:`_lock_path` so a long
+  lifecycle op does NOT block millisecond-scoped state-JSON I/O on
+  peers (``wt list`` / ``load_for_branch`` stay snappy).
 
 Lock ordering hierarchy across HATS-121/479/480/481 (always outer →
 inner, no inversion → no deadlock):
@@ -307,28 +308,6 @@ def _lifecycle_lock_path(state_path: Path) -> Path:
     return state_path.with_name(state_path.name + ".lifecycle.lock")
 
 
-def _load_state_or_none(state_path: Path) -> dict[str, Any] | None:
-    """Read state JSON under :func:`_acquire`; return ``None`` if missing.
-
-    Helper for the post-acquire re-check inside
-    :meth:`WorktreeManager.merge` / :meth:`WorktreeManager.discard`: once
-    the lifecycle lock is held, a ``None`` return means a peer (parallel
-    merge or discard) already completed the destructive ops on this
-    branch — caller should no-op idempotently. Distinct from
-    :meth:`WorktreeManager._load_by_key` which also prunes stale
-    ``worktree_path``; here we only need the existence check.
-
-    Corrupted JSON is treated as missing (same policy as ``_load_by_key``).
-    """
-    with _acquire(state_path):
-        try:
-            return json.loads(state_path.read_text())
-        except FileNotFoundError:
-            return None
-        except json.JSONDecodeError:
-            return None
-
-
 @contextmanager
 def _acquire_lifecycle_lock(
     state_path: Path, *, timeout: float = LIFECYCLE_LOCK_TIMEOUT
@@ -346,10 +325,13 @@ def _acquire_lifecycle_lock(
     Granularity: one writer per ``(project, wt_branch)``. Two different
     worktree branches lifecycle-operate in parallel.
 
-    Lock ordering hierarchy (no inversion → no deadlock):
+    Lock ordering hierarchy (no inversion → no deadlock). The full 4-tier
+    model lives in the module docstring; locally we co-hold layers 1, 2,
+    and 4 — layer 3 (create-lock) is never co-held with the lifecycle
+    layer because ``create()`` runs before any persisted state exists.
       1. ``<state>.json.lifecycle.lock`` — this lock (HATS-480, per wt branch)
       2. ``<state_dir>/.base-<base>.lock``     — HATS-481 (per base ref)
-      3. ``<state>.json.lock``                 — HATS-121 (per state JSON)
+      4. ``<state>.json.lock``                 — HATS-121 (per state JSON)
 
     :param state_path: path to the worktree's state JSON. The lifecycle
         lock sits at ``<state_path>.lifecycle.lock``.
@@ -787,6 +769,9 @@ class WorktreeManager:
             self._remove_worktree()
             self._delete_branch()
             self._clear_state()
+            # Match discard() / cleanup() teardown contract: a successful
+            # merge invalidates self for any further lifecycle ops.
+            self.worktree_path = None
 
     def discard(self, *, force: bool = False) -> None:
         """Remove worktree and branch without merging.
