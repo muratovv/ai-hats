@@ -265,7 +265,7 @@ def test_hitl_session_prompt_carries_all_overlay_content(
 
     asm = Assembler(project)
     result = compose_for_role(asm, "maintainer")
-    args, _env = ClaudeProvider().build_session_prompt(
+    args, _env, _ = ClaudeProvider().build_session_prompt(
         project, result, "test-sid-501",
     )
     prompt_md = Path(args[1]).read_text()

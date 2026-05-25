@@ -77,10 +77,10 @@ def test_build_session_prompt_byte_stable_across_two_calls(project_with_library)
     provider = ClaudeProvider()
     result = asm.composer.compose("test-role")
 
-    args1, _ = provider.build_session_prompt(project, result, "stable-sid")
+    args1, _, _ = provider.build_session_prompt(project, result, "stable-sid")
     bytes1 = Path(args1[1]).read_bytes()
 
-    args2, _ = provider.build_session_prompt(project, result, "stable-sid")
+    args2, _, _ = provider.build_session_prompt(project, result, "stable-sid")
     bytes2 = Path(args2[1]).read_bytes()
 
     assert bytes1 == bytes2, "prompt.md must be byte-stable across two calls"
@@ -95,8 +95,8 @@ def test_build_session_prompt_byte_stable_distinct_session_ids(project_with_libr
     provider = ClaudeProvider()
     result = asm.composer.compose("test-role")
 
-    args_a, _ = provider.build_session_prompt(project, result, "sid-a")
-    args_b, _ = provider.build_session_prompt(project, result, "sid-b")
+    args_a, _, _ = provider.build_session_prompt(project, result, "sid-a")
+    args_b, _, _ = provider.build_session_prompt(project, result, "sid-b")
 
     path_a = Path(args_a[1])
     path_b = Path(args_b[1])
@@ -168,7 +168,7 @@ def test_build_session_prompt_writes_under_cache_dir(project_with_library):
     provider = ClaudeProvider()
     result = asm.composer.compose("test-role")
 
-    args, _ = provider.build_session_prompt(project, result, "my-sid")
+    args, _, _ = provider.build_session_prompt(project, result, "my-sid")
     prompt_path = Path(args[1])
     plugin_idx = args.index("--plugin-dir")
     plugin_path = Path(args[plugin_idx + 1])
@@ -269,7 +269,7 @@ def test_build_session_prompt_recovers_from_stale_cache_dir(project_with_library
     plugin_dir.mkdir()
     (plugin_dir / "leftover.txt").write_text("stale")
 
-    args, _ = provider.build_session_prompt(project, result, "stale-sid")
+    args, _, _ = provider.build_session_prompt(project, result, "stale-sid")
     plugin_idx = args.index("--plugin-dir")
     plugin_path = Path(args[plugin_idx + 1])
 

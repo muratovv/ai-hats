@@ -154,7 +154,7 @@ def _run_probe(
     asm = Assembler(project)
     result = asm.composer.compose(role, overlay=asm._get_overlay(role))
     provider = ClaudeProvider()
-    args, env = provider.build_session_prompt(project, result, session_id)
+    args, env, _ = provider.build_session_prompt(project, result, session_id)
 
     cmd = [
         "claude", "--print", "--model", PROBE_MODEL, "-p", PROBE_PROMPT, *args,
