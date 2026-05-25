@@ -94,12 +94,19 @@ The sites were *accidentally* aligned — they all spelled the call the same way
 
 The build surface stays runtime-specific per П2: `WrapRunner` builds session argv+env via `build_session_prompt`, `SubAgentRunner` builds a sub-agent meta-prompt via `_build_meta_prompt`, `MaterializeSystemPrompt` builds preview text via `build_system_prompt`, `Assembler.set_role` builds the on-disk file via `build_system_prompt` + `expand_path_placeholders`. The facade does not collapse these — only the compose primitive is unified.
 
-Two patterns were intentionally **not** migrated:
+One pattern was intentionally **not** migrated to the facade:
 
-- `pipeline/steps/compose.py` — `compose(role)` *without* overlays (audit-only step, П4).
-- `cli/reflect.py` — `compose(target_role)` *without* overlays (reflect a role in isolation).
+- `cli/reflect.py` — `compose(target_role)` *without* overlays (reflect a role in isolation, showing the library's built-in composition for inspection).
 
-Both have different semantics from "compose role X for this project" and would change behavior if force-fitted onto the facade. The drift guard's regex narrowed accordingly: it matches the `overlays=` form only.
+This has a different semantic from "compose role X for this project" and would change behavior if force-fitted onto the facade. The Phase-2 drift guard's regex narrowed accordingly: it matches the `overlays=` form only.
+
+> **HATS-501 retrospective (2026-05-25):** `pipeline/steps/compose.py` was *also* on this list as "audit-only, П4" — that classification was wrong. The step's funnel output (`system_prompt`) was a *production* role-delivery value consumed by `LaunchProvider` on the sub-agent path, which fed it into `SubAgentRunner.run` as `system_prompt_override`. The no-overlay form silently dropped global + project overlay content from the SDK system_prompt (HATS-501). HATS-501 routed the step through the facade; HATS-505 then removed the redundant pipeline-side override pass-through entirely (override channel reserved for explicit HATS-267 callers — see Phase-3 below).
+
+### Phase 3 — pipeline-scoped drift guard + override-channel discipline (HATS-505)
+
+The Phase-2 drift guard caught the *with-overlays* drift outside the facade. It missed the *no-overlays* drift inside the pipeline subtree — exactly the shape HATS-501 took. HATS-505 adds a second guard test, `test_no_direct_compose_inside_pipeline_subtree`, that flags any `composer.compose(...)` call (with or without `overlays=`) inside `src/ai_hats/pipeline/`. The whitelist is a `dict[Path, str]` requiring a justification per entry; empty by design today. The `cli/reflect.py` exception lives outside `pipeline/` and is not affected.
+
+HATS-505 also tightened П2's Automate-side reading. The override channel on `SubAgentRunner.run` (and the multi-turn `SubAgentRunner.session()` twin) is reserved for **explicit caller use** — HATS-267 sub-agent callers (`subagent_session.py`, future direct API consumers). The pipeline does **not** pre-fill it: the runner's own `compose_for_role(self.assembler, role_name)` call applies overlays. A pipeline-side pre-fill is, at best, a redundant re-composition; at worst (HATS-501 shape) a partial composition that silently replaces the runner's correctly-composed `injections` list via `with_injection_override`. Warning comments at both runtime call sites tell future HATS-267 callers to *augment*, not *replace*.
 
 **Out of scope (deferred):** a `materialize_system_prompt(asm, role, provider) -> str` helper for callers that need only the agent-visible text was proposed in the plan (F1) and removed during execution — every real consumer needs the intermediate `CompositionResult` for hooks install / audit snapshot / stats / override. Re-introduce when a real text-only consumer appears.
 
@@ -109,4 +116,7 @@ Both have different semantics from "compose role X for this project" and would c
 - HATS-267 — sub-agent custom prompt (legitimate use of the override channel, on the Automate path).
 - HATS-442 — record role composition snapshot per session (existing audit-side surface that П4 preserves).
 - HATS-456 — П1-meta closure: the materialization facade described in Phase 2 above.
+- HATS-501 — Automate-path regression of the П1-meta class (`pipeline/steps/compose.py` was direct-composing without overlays; routed through the facade).
+- HATS-505 — Phase-3 closure: pipeline-scoped no-overlay drift guard + override-channel discipline (pipeline no longer pre-fills `system_prompt_override`).
+- HATS-506 — umbrella epic for role-delivery harness contracts (sister to HATS-499 which owns library / content side).
 - ADR-0001 / ADR-0002 — pipeline / step contracts. П3 is a refinement of the existing funnel semantics, not a new mechanism.

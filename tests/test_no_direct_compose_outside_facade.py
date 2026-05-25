@@ -15,22 +15,21 @@ Allowed exception: the **no-overlay** form (``compose(role)`` without
   overlay layering. The semantic difference is the whole point of the
   command and is documented at the call site.
 
-The regex below only catches the ``overlays=`` form so deliberate
-no-overlay calls don't trip the guard. **However** — the regex is a
-*loose* guard: it doesn't catch drift introduced by a new file calling
-``composer.compose(role)`` *intending* layered composition but
-forgetting ``overlays=``. That class of drift slipped past this test
-once (HATS-501: ``pipeline/steps/compose.py`` was calling
-``composer.compose(role)`` without overlays for a production funnel
-value and the doc here previously whitelisted it as "audit-only"; it
-isn't, and the step now routes through ``compose_for_role`` like every
-other consumer). Strengthening the regex to flag direct
-``composer.compose(role)`` calls inside ``pipeline/`` is tracked in
-HATS-505.
+The first test below (overlays= form) only catches drift where a file
+*meant* to compose with overlays but did so outside the facade.
+
+The second test (HATS-505) closes the other half: any
+``composer.compose(...)`` call inside ``src/ai_hats/pipeline/`` — with
+or without ``overlays=`` — is a drift signal, because pipeline steps
+deliver composition to live agents and MUST route through
+``compose_for_role`` so the layered composition reaches the runner.
+HATS-501 slipped past the original test precisely because the
+no-overlay form wasn't flagged inside pipeline/.
 """
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -82,6 +81,106 @@ def test_compose_with_overlays_only_in_facade():
         "compose_for_role(assembler, role) instead.\n"
         + "\n".join(f"  {p}: …{snip}…" for p, snip in offenders)
     )
+
+
+# HATS-505 — whitelist for the pipeline-scoped guard. Each entry maps
+# the file to a non-empty justification. The single project-wide
+# deliberate no-overlay site (``cli/reflect.py``) is OUTSIDE
+# ``pipeline/`` and therefore not in scope here — its justification
+# lives at the call. The dict is empty by design; adding an entry
+# requires a one-line justification asserting why a pipeline step
+# legitimately wants the no-overlay form.
+NO_DIRECT_COMPOSE_IN_PIPELINE_ALLOWED: dict[Path, str] = {}
+
+
+def _find_composer_compose_calls(text: str) -> list[tuple[int, str]]:
+    """AST-based detector for ``composer.compose(...)`` calls.
+
+    Walks the module AST, returns ``(lineno, source_segment)`` for every
+    ``Call`` whose ``func`` is an ``Attribute`` named ``compose`` on a
+    ``Name`` or ``Attribute`` ending in ``composer``. This handles
+    ``composer.compose(...)``, ``self.composer.compose(...)``, and the
+    ``asm.composer.compose(...)`` spelling, and is immune to all the
+    false-positive traps a regex-based scanner has (docstrings,
+    comments, RST backtick prose, string literals).
+
+    Returns ``[]`` for files that fail to parse — those are not our
+    concern (other tests catch syntax errors).
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr != "compose":
+            continue
+        # ``composer.compose(...)`` — the recipient attribute must end
+        # in ``composer``. Accept ``composer`` as a Name (``composer.
+        # compose(...)``) or any Attribute access whose final attr is
+        # ``composer`` (``self.composer.compose(...)``,
+        # ``assembler.composer.compose(...)``).
+        recipient = func.value
+        recipient_tail: str | None = None
+        if isinstance(recipient, ast.Name):
+            recipient_tail = recipient.id
+        elif isinstance(recipient, ast.Attribute):
+            recipient_tail = recipient.attr
+        if recipient_tail != "composer":
+            continue
+        # Crude rendering of the call site for the failure message.
+        try:
+            segment = ast.unparse(node)
+        except Exception:  # noqa: BLE001 — defensive; ast.unparse is reliable on 3.11+
+            segment = "composer.compose(...)"
+        found.append((node.lineno, segment))
+    return found
+
+
+def test_no_direct_compose_inside_pipeline_subtree():
+    """HATS-505 drift guard: any ``composer.compose(...)`` call inside
+    ``src/ai_hats/pipeline/`` MUST route through ``compose_for_role``
+    (materialize.py facade). Direct calls bypass overlay layering and
+    are the HATS-501 root-cause pattern.
+    """
+    pipeline_dir = SRC_DIR / "pipeline"
+    assert pipeline_dir.is_dir(), pipeline_dir
+
+    offenders: list[tuple[Path, int, str]] = []
+    for py_file in pipeline_dir.rglob("*.py"):
+        if py_file in NO_DIRECT_COMPOSE_IN_PIPELINE_ALLOWED:
+            continue
+        try:
+            text = py_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for lineno, segment in _find_composer_compose_calls(text):
+            offenders.append((py_file.relative_to(REPO_ROOT), lineno, segment))
+
+    assert not offenders, (
+        "HATS-505 drift: composer.compose(...) appears inside "
+        "src/ai_hats/pipeline/ — pipeline steps must route through "
+        "compose_for_role(assembler, role) (materialize.py facade) "
+        "so layered composition (project + global overlays) is "
+        "preserved. HATS-501 was caused by exactly this pattern.\n"
+        + "\n".join(f"  {p}:{ln}: {seg}" for p, ln, seg in offenders)
+    )
+
+
+def test_no_direct_compose_in_pipeline_whitelist_has_justifications():
+    """Convention enforcement: every entry in the whitelist must carry
+    a non-empty justification. Keeps the whitelist from drifting into a
+    silent escape hatch.
+    """
+    for path, justification in NO_DIRECT_COMPOSE_IN_PIPELINE_ALLOWED.items():
+        assert justification.strip(), (
+            f"Whitelist entry {path} has no justification — every "
+            "entry must explain why a pipeline step legitimately "
+            "calls ``composer.compose(role)`` directly."
+        )
 
 
 def test_facade_itself_contains_one_compose_call():
