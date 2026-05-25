@@ -14,6 +14,21 @@ from typing import Any, Mapping
 from ..step import Step, StepIO
 
 
+class RoleNotFoundError(Exception):
+    """Raised by ``ComposeRole`` when the requested role is unknown.
+
+    Carries the requested name plus the sorted list of available role
+    names so the CLI handler can render a friendly error without
+    re-querying the resolver. Defined in this module so the pipeline
+    step has no ``click`` dependency.
+    """
+
+    def __init__(self, role: str, available: list[str]) -> None:
+        self.role = role
+        self.available = available
+        super().__init__(f"Role {role!r} not found")
+
+
 class ComposeRole(Step):
     failure_policy = "halt"
 
@@ -71,6 +86,14 @@ class ComposeRole(Step):
         # regression catchers: ``tests/pipeline/
         # test_compose_overlay_propagation.py``.
         asm = Assembler(project_dir)
+        # Pre-check role existence so we can raise a typed exception the
+        # CLI converts into a friendly "Available roles:" message. Cheap
+        # — just enumerates role dirs across library_paths.
+        from ...models import ComponentType
+
+        available = asm.resolver.list_components(ComponentType.ROLE)
+        if role not in available:
+            raise RoleNotFoundError(role, available)
         result = compose_for_role(asm, role)
         if result.errors:
             raise RuntimeError(

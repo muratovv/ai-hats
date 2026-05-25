@@ -84,6 +84,14 @@ line-length = 100
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# HATS-508: prepend ./src to sys.path so ``python -m pytest`` from a
+# linked worktree imports the worktree's own ``ai_hats`` package
+# rather than the editable install pointing at the main checkout.
+# Pytest resolves the path relative to ``rootdir`` (the worktree root
+# when running from inside it). Zero behavioural change for the main
+# checkout — both the worktree's ``src/ai_hats`` and the installed
+# editable point at the same files there.
+pythonpath = ["src"]
 filterwarnings = [
     # Python 3.14 deprecates forkpty() in multi-threaded processes.
     # ptyprocess (used by WrapRunner._pty_spawn and exercised in test_observe.py)
