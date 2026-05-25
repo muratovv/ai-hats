@@ -78,6 +78,40 @@ April-2026 incident). Defense is layered:
   ``review``. **Data-integrity guarantee — L4' alone is sufficient
   to close the silent-loss class; L1' + L3' are UX-optimization.**
 
+Lifecycle concurrency (HATS-480)
+--------------------------------
+``wt merge`` and ``wt discard`` (or two parallel ``wt discard``) on the
+*same* worktree branch race outside the HATS-121 state-JSON lock: that
+lock is held only across millisecond-scoped JSON I/O and does NOT cover
+the surrounding git operations. Repro (R-03 in HATS-476):
+
+* A: ``wt merge task/hats-X`` → ``_check_clean`` → ``_check_drift`` →
+  ``_fast_forward_merge`` (HATS-481 base-lock acquired only inside the
+  ``git merge`` call, not around the whole lifecycle).
+* B: ``wt discard task/hats-X`` in parallel → ``_remove_worktree`` deletes
+  the dir mid-merge → either A's merge fails ("branch deleted") or B's
+  ``branch -D`` silently swallows "not fully merged" at DEBUG.
+* Either way: half-merged commit on ``master`` or branch graveyard,
+  state JSON cleared exactly once (second ``_clear_state`` no-ops).
+
+* **LC** — :func:`_acquire_lifecycle_lock` (per-wt-branch filelock at
+  ``<state>.json.lifecycle.lock``) wraps the entire ``merge()`` /
+  ``discard()`` / ``cleanup()`` body. After acquisition the caller
+  checks ``self.worktree_path.exists()`` — peer's ``_remove_worktree``
+  is the irreversible event, and the directory's absence is the cheap,
+  reliable signal that the lifecycle is already done; late arrival
+  no-ops idempotently. Separate file from :func:`_lock_path` so a long
+  lifecycle op does NOT block millisecond-scoped state-JSON I/O on
+  peers (``wt list`` / ``load_for_branch`` stay snappy).
+
+Lock ordering hierarchy across HATS-121/479/480/481 (always outer →
+inner, no inversion → no deadlock):
+
+1. ``<state>.json.lifecycle.lock``       — HATS-480 (per wt branch)
+2. ``<state_dir>/.base-<base>.lock``     — HATS-481 (per base ref)
+3. ``<state_dir>/.git-worktree-create.lock`` — HATS-479 (repo-wide, create-only)
+4. ``<state>.json.lock``                  — HATS-121 (per state JSON, I/O only)
+
 The lock file ``<state_dir>``  **must reside on a local filesystem**.
 ``filelock.FileLock`` (``fcntl`` advisory) is unreliable on NFS / SMB.
 """
@@ -119,6 +153,9 @@ MERGE_RETRY_BASE_DELAY = 0.1       # 100 ms — matches git's core.*LockTimeout 
 MERGE_RETRY_MAX_DELAY = 5.0        # 5 s cap; longer wait = real work, not contention
 REF_LOCK_TIMEOUT_MS = 5000         # passed to git as core.filesRefLockTimeout — covers
                                    # ref-lock contention for free (no index.lock equivalent)
+
+# HATS-480 — per-branch lifecycle serialization (see module docstring "Lifecycle concurrency")
+LIFECYCLE_LOCK_TIMEOUT = 60.0     # covers fetch + merge + remove + branch -D end-to-end
 
 
 def _state_key(branch_name: str) -> str:
@@ -257,6 +294,73 @@ def _acquire_base_branch_lock(
             f"process for >{timeout:.1f}s.\n"
             f"  Lock file: {lock_path}\n"
             f"  Likely a stuck ai-hats process — check: ps aux | grep ai-hats"
+        ) from exc
+
+
+def _lifecycle_lock_path(state_path: Path) -> Path:
+    """Sibling lifecycle-lock file for a worktree state JSON (HATS-480).
+
+    ``<state>.json`` → ``<state>.json.lifecycle.lock``. Distinct from
+    :func:`_lock_path` (``.lock``) so a long ``merge()`` / ``discard()``
+    body does not block millisecond-scoped state-JSON I/O on peer
+    processes (``wt list`` / ``load_for_branch``).
+    """
+    return state_path.with_name(state_path.name + ".lifecycle.lock")
+
+
+@contextmanager
+def _acquire_lifecycle_lock(
+    state_path: Path, *, timeout: float = LIFECYCLE_LOCK_TIMEOUT
+) -> Iterator[None]:
+    """Serialize destructive lifecycle ops (merge/discard) on one wt branch.
+
+    HATS-480 closes R-03: ``wt merge`` and ``wt discard`` (or two parallel
+    ``wt discard``) on the same worktree branch contend on the worktree
+    dir, branch ref, and state JSON. The existing state-JSON lock
+    (:func:`_acquire`) is held only across millisecond-scoped I/O and does
+    NOT cover the surrounding git operations
+    (``_check_clean → _check_drift → merge → _remove_worktree →
+    _delete_branch → _clear_state``).
+
+    Granularity: one writer per ``(project, wt_branch)``. Two different
+    worktree branches lifecycle-operate in parallel.
+
+    Lock ordering hierarchy (no inversion → no deadlock). The full 4-tier
+    model lives in the module docstring; locally we co-hold layers 1, 2,
+    and 4 — layer 3 (create-lock) is never co-held with the lifecycle
+    layer because ``create()`` runs before any persisted state exists.
+      1. ``<state>.json.lifecycle.lock`` — this lock (HATS-480, per wt branch)
+      2. ``<state_dir>/.base-<base>.lock``     — HATS-481 (per base ref)
+      4. ``<state>.json.lock``                 — HATS-121 (per state JSON)
+
+    :param state_path: path to the worktree's state JSON. The lifecycle
+        lock sits at ``<state_path>.lifecycle.lock``.
+    :param timeout: lock acquisition timeout. Defaults to
+        :data:`LIFECYCLE_LOCK_TIMEOUT` (60 s — covers ``fetch origin`` +
+        merge + remove + ``branch -D`` end-to-end). Tests override with a
+        small value to provoke the timeout path deterministically.
+    :raises WorktreeLockError: lock not acquired within ``timeout`` seconds.
+    """
+    lock_path = _lifecycle_lock_path(state_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock = filelock.FileLock(str(lock_path), timeout=timeout)
+    t0 = time.monotonic()
+    try:
+        with lock:
+            waited = time.monotonic() - t0
+            if waited > CREATE_LOCK_CONTENTION_WARN:
+                logger.warning(
+                    "wt lifecycle lock acquired after %.2fs (contention on '%s')",
+                    waited, state_path.name,
+                )
+            yield
+    except filelock.Timeout as exc:
+        raise WorktreeLockError(
+            f"wt lifecycle lock for '{state_path.stem}' held by another "
+            f"process for >{timeout:.1f}s.\n"
+            f"  Lock file: {lock_path}\n"
+            f"  Likely a concurrent `wt merge`/`wt discard` — "
+            f"check: ps aux | grep ai-hats"
         ) from exc
 
 
@@ -612,72 +716,138 @@ class WorktreeManager:
         Raises OriginalBranchMissingError if the original branch was deleted
         while the worktree was active. Worktree dir is removed but the
         worktree branch is preserved for manual rebase + merge (HATS-253).
+
+        HATS-480: holds a per-wt-branch lifecycle lock through the entire
+        body. A concurrent ``discard()`` (or another ``merge()``) on the
+        same branch waits for the lock; on acquisition we re-read the
+        state JSON and no-op idempotently if a peer already cleared it.
         """
         if not self._is_git or self.worktree_path is None:
             return
-        if not force:
-            self._check_clean()
-        if not accept_drift:
-            self._check_drift()
-        if self._original_branch and not self._branch_exists(self._original_branch):
+
+        state_path = (
+            worktrees_dir(self.project_dir)
+            / f"{_state_key(self.branch_name)}.json"
+        )
+        with _acquire_lifecycle_lock(state_path):
+            # HATS-480 idempotency re-check: a peer (parallel discard or
+            # another merge) finishing first would have run _remove_worktree
+            # (dir gone) AND _clear_state (state.json gone). The worktree
+            # dir is the primary signal because not all callers persist
+            # state (e.g. direct WorktreeManager().create() in tests goes
+            # through merge() without a save_state()). Exit cleanly so the
+            # caller sees exit 0.
+            if not self.worktree_path.exists():
+                logger.info(
+                    "Worktree '%s' already torn down by a peer — no-op",
+                    self.branch_name,
+                )
+                return
+
+            if not force:
+                self._check_clean()
+            if not accept_drift:
+                self._check_drift()
+            if self._original_branch and not self._branch_exists(self._original_branch):
+                self._remove_worktree()
+                self._clear_state()
+                raise OriginalBranchMissingError(
+                    f"Original branch '{self._original_branch}' no longer exists. "
+                    f"Worktree branch '{self.branch_name}' preserved — rebase onto "
+                    f"the current default branch and merge manually."
+                )
+            try:
+                if squash:
+                    self._squash_merge()
+                else:
+                    self._fast_forward_merge()
+            except Exception:
+                logger.warning("Merge failed, branch %s preserved", self.branch_name, exc_info=True)
+                self._remove_worktree()
+                self._clear_state()
+                raise
             self._remove_worktree()
+            self._delete_branch()
             self._clear_state()
-            raise OriginalBranchMissingError(
-                f"Original branch '{self._original_branch}' no longer exists. "
-                f"Worktree branch '{self.branch_name}' preserved — rebase onto "
-                f"the current default branch and merge manually."
-            )
-        try:
-            if squash:
-                self._squash_merge()
-            else:
-                self._fast_forward_merge()
-        except Exception:
-            logger.warning("Merge failed, branch %s preserved", self.branch_name, exc_info=True)
-            self._remove_worktree()
-            self._clear_state()
-            raise
-        self._remove_worktree()
-        self._delete_branch()
-        self._clear_state()
+            # Match discard() / cleanup() teardown contract: a successful
+            # merge invalidates self for any further lifecycle ops.
+            self.worktree_path = None
 
     def discard(self, *, force: bool = False) -> None:
         """Remove worktree and branch without merging.
 
         Raises WorktreeDirtyError if the worktree has uncommitted changes
         unless force=True (HATS-062).
+
+        HATS-480: holds the per-wt-branch lifecycle lock through the
+        entire body. Parallel ``discard()`` or ``merge()`` on the same
+        branch serializes; the second one observes the worktree dir
+        already gone and no-ops idempotently.
         """
         if not self._is_git or self.worktree_path is None:
             return
-        if not force:
-            self._check_clean()
-        self._remove_worktree()
-        self._delete_branch()
-        self.worktree_path = None
-        self._clear_state()
+
+        state_path = (
+            worktrees_dir(self.project_dir)
+            / f"{_state_key(self.branch_name)}.json"
+        )
+        with _acquire_lifecycle_lock(state_path):
+            # HATS-480 idempotency re-check — see merge() for the rationale.
+            if not self.worktree_path.exists():
+                logger.info(
+                    "Worktree '%s' already torn down by a peer — no-op",
+                    self.branch_name,
+                )
+                return
+
+            if not force:
+                self._check_clean()
+            self._remove_worktree()
+            self._delete_branch()
+            self.worktree_path = None
+            self._clear_state()
 
     def cleanup(self, *, force_discard: bool = False) -> None:
-        """Clean up worktree. Merges changes based on isolation_mode."""
+        """Clean up worktree. Merges changes based on isolation_mode.
+
+        HATS-480: holds the per-wt-branch lifecycle lock through the
+        entire body. A concurrent direct ``wt discard``/``wt merge`` on
+        the same branch (issued by another agent / CLI while the
+        context-manager is winding down) serializes against this call.
+        """
         if not self._is_git or self.worktree_path is None:
             return
 
-        mode = IsolationMode.DISCARD if force_discard else self.isolation_mode
+        state_path = (
+            worktrees_dir(self.project_dir)
+            / f"{_state_key(self.branch_name)}.json"
+        )
+        with _acquire_lifecycle_lock(state_path):
+            # HATS-480 idempotency re-check — see merge() / discard().
+            if not self.worktree_path.exists():
+                logger.info(
+                    "Worktree '%s' already torn down by a peer — no-op",
+                    self.branch_name,
+                )
+                return
 
-        try:
-            if mode == IsolationMode.SQUASH:
-                self._squash_merge()
-        except Exception:
-            logger.warning("Merge failed, falling back to branch mode", exc_info=True)
-            mode = IsolationMode.BRANCH
+            mode = IsolationMode.DISCARD if force_discard else self.isolation_mode
 
-        # Remove worktree directory
-        self._remove_worktree()
+            try:
+                if mode == IsolationMode.SQUASH:
+                    self._squash_merge()
+            except Exception:
+                logger.warning("Merge failed, falling back to branch mode", exc_info=True)
+                mode = IsolationMode.BRANCH
 
-        # Delete branch unless mode is BRANCH
-        if mode != IsolationMode.BRANCH:
-            self._delete_branch()
+            # Remove worktree directory
+            self._remove_worktree()
 
-        self.worktree_path = None
+            # Delete branch unless mode is BRANCH
+            if mode != IsolationMode.BRANCH:
+                self._delete_branch()
+
+            self.worktree_path = None
 
     def __enter__(self) -> Path:
         return self.create()

@@ -256,10 +256,36 @@ rm <ai_hats_dir>/sessions/worktree.json   # if ai-hats state is stale
 
 Rule of thumb: one task, one worktree, one `<ai_hats_dir>/sessions/worktree.json` (in the main repo).
 
-### 2.7 See also
+### 2.7 Concurrency model
+
+ai-hats hardens the worktree subsystem against four classes of race that show up once two agents (or one agent + an IDE / manual `git`) operate on the same repo. What's guaranteed:
+
+| Scenario                                                                           | Outcome                                                                                            |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Parallel `wt merge X` and `wt discard X` on the **same** branch                    | Serialized; one wins, the other no-ops with `INFO: Worktree '<branch>' already torn down by a peer`. **No half-merged commit, no branch graveyard.** |
+| Two parallel `task transition <id> done` on tasks sharing the **same base** ref     | Serialized at the base-branch merge layer; both DONE, both commits land. On a real merge failure the task **stays in `review`** instead of silently going DONE (fail-loud). |
+| Parallel `wt create` of the **same** branch                                         | Exactly one winner; the loser sees `WorktreeCreateError: branch already exists`. No leaked `/tmp/ai-hats-wt-*` dir. |
+| Parallel `wt create` of **different** branches                                      | Both succeed; the create-time `.git/config` contention is absorbed silently.                       |
+| Long-running IDE / manual `git commit` briefly holding `.git/index.lock`            | ai-hats retries with full-jitter backoff (≤8 attempts, ≤5 s cap); user-facing operation succeeds.  |
+
+Lock files live under `<ai_hats_dir>/sessions/worktrees/`:
+
+```
+<key>.json.lifecycle.lock       per (project, wt branch) — 60s timeout
+.base-<ref>.lock                per (project, base ref)  — 15s timeout
+.git-worktree-create.lock       repo-wide, create-only   — 10s timeout
+<key>.json.lock                 per state JSON I/O       — 10s timeout
+```
+
+Stale files on disk are harmless — the kernel releases the underlying `fcntl` advisory lock on process death. If a timeout error points you at a lock file and `ps aux | grep ai-hats` shows no live holder, removing the file by hand is safe.
+
+Full architectural picture, including lock-ordering hierarchy and rationale for each layer: **ADR-0006 `Worktree concurrency — layered defense`**.
+
+### 2.8 See also
 
 - [8] — `worktree-isolation` skill — in-session checklist composed into every role that owns a lifecycle.
 - [2] — `task transition execute` and `task close` lifecycle (the most common worktree entry/exit points).
+- **ADR-0006** — `docs/adr/0006-worktree-concurrency-layered-defense.md`.
 
 ---
 
