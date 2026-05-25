@@ -91,9 +91,11 @@ def wt():
 def wt_create(branch: str):
     """Create an isolated worktree on a new branch."""
     from ..worktree import (
+        WorktreeBaseBranchError,
         WorktreeCreateError,
         WorktreeLockError,
         WorktreeManager,
+        _assert_head_is_canonical_base,
     )
 
     project_dir = _project_dir()
@@ -101,6 +103,15 @@ def wt_create(branch: str):
     # HATS-060: refuse to create from inside a linked worktree
     # (helper-extracted in HATS-482 / B-08 so merge/discard/list share it).
     _guard_not_inside_linked_worktree(project_dir)
+
+    # HATS-518: refuse if main-repo HEAD is not on a canonical base branch.
+    # Otherwise the worktree captures the feature branch as its merge target
+    # and `wt merge` silently lands on the feature branch, not master.
+    try:
+        _assert_head_is_canonical_base(project_dir)
+    except WorktreeBaseBranchError as exc:
+        console.print(f"[red]{exc}[/]")
+        sys.exit(1)
 
     # HATS-479: the previous pre-check (load_for_branch outside any lock) was
     # the TOCTOU surface — two concurrent `wt create <same-branch>` callers
