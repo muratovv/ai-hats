@@ -1055,3 +1055,59 @@ def test_parallel_merge_and_discard_same_branch_consistent_outcome(
             f"file absent but HEAD advanced ({initial_head[:8]} -> {final_head[:8]}) "
             f"— half-merged state!"
         )
+
+
+# ---------------------------------------------------------------------------
+# TC-N18 — parallel discard + discard on the SAME branch (idempotency)
+# ---------------------------------------------------------------------------
+
+
+def test_parallel_discard_same_branch_idempotent(git_project: Path) -> None:
+    """TC-N18: two parallel ``discard()`` calls on the same wt branch both
+    exit cleanly; neither raises despite only one of them actually doing
+    the destructive work.
+
+    Without the lifecycle lock, the second discard hits a partially
+    torn-down state: ``_remove_worktree`` fails because the dir is gone,
+    falls back to ``shutil.rmtree(ignore_errors=True)``; ``branch -D``
+    fails (already deleted), swallowed at DEBUG (B-02). The user sees
+    inconsistent CLI exit codes and silent failures in the log — a
+    discoverability bug.
+
+    Under the lock + idempotency check, the second worker observes
+    ``worktree_path`` gone and no-ops with a single INFO log line.
+    """
+    branch = "task/hats-480-n18"
+    _setup_wt_for_lifecycle_race(git_project, branch, "discardable.txt")
+
+    manager = multiprocessing.Manager()
+    results = manager.dict()
+    barrier = manager.Barrier(2)
+
+    p1 = multiprocessing.Process(
+        target=_discard_worker,
+        args=(str(git_project), branch, results, "d1", barrier),
+    )
+    p2 = multiprocessing.Process(
+        target=_discard_worker,
+        args=(str(git_project), branch, results, "d2", barrier),
+    )
+    p1.start()
+    p2.start()
+    p1.join(timeout=60)
+    p2.join(timeout=60)
+    assert p1.exitcode == 0, "discard p1 worker died"
+    assert p2.exitcode == 0, "discard p2 worker died"
+
+    o1 = dict(results["d1"])
+    o2 = dict(results["d2"])
+    assert o1["error"] is None, f"discard p1 raised: {o1}"
+    assert o2["error"] is None, f"discard p2 raised: {o2}"
+
+    # State + branch cleaned up exactly once.
+    assert WorktreeManager.load_for_branch(git_project, branch) is None
+    branch_ls = subprocess.run(
+        ["git", "branch", "--list", branch],
+        cwd=str(git_project), check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert branch_ls == "", f"branch should be deleted, got: {branch_ls!r}"
