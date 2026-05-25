@@ -38,7 +38,6 @@ from ai_hats.worktree import (
     _is_retriable_git_error,
     _is_retriable_merge_error,
     _lifecycle_lock_path,
-    _load_state_or_none,
     _lock_path,
     _retry_git_merge,
     _retry_worktree_add,
@@ -884,28 +883,11 @@ def _hold_lifecycle_lock(state_path_str: str, hold_s: float, ready: str) -> None
         time.sleep(hold_s)
 
 
-def test_load_state_or_none_handles_missing_and_corrupted(tmp_path: Path) -> None:
-    """TC-N16: helper returns None for missing OR corrupted state JSON.
-
-    Used in the post-acquire idempotency re-check inside merge()/discard().
-    Both branches matter: a peer who completed cleanup unlinks the file
-    (FileNotFoundError); a half-written file from a SIGKILL'd writer would
-    decode-fail (JSONDecodeError). Both must surface as None so the caller
-    no-ops cleanly instead of crashing.
-    """
-    state = tmp_path / "state.json"
-
-    # Missing file → None.
-    assert _load_state_or_none(state) is None
-
-    # Corrupted JSON → None (same policy as _load_by_key).
-    state.write_text("{not valid json")
-    assert _load_state_or_none(state) is None
-
-    # Well-formed JSON → dict.
-    state.write_text('{"branch": "task/hats-480", "worktree_path": "/tmp/x"}')
-    loaded = _load_state_or_none(state)
-    assert loaded == {"branch": "task/hats-480", "worktree_path": "/tmp/x"}
+# TC-N16 (helper `_load_state_or_none`) was dropped in review: the
+# idempotency gate inside merge()/discard()/cleanup() uses
+# ``worktree_path.exists()`` directly — cheaper and matches the actual
+# semantic ("peer's _remove_worktree happened"). The helper was an
+# orphan; deleted alongside this test.
 
 
 # ---------------------------------------------------------------------------
