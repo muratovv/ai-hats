@@ -12,17 +12,18 @@ Two tests in this file, complementary surface:
   (``SubAgentRunner`` vs ``WrapRunner``). Anything that breaks bare
   ``ai-hats`` from a composition / library / provider regression
   also breaks this test. Stable, deterministic, structured JSON +
-  ``trace.jsonl`` + ``audit.md`` assertions.
+  ``trace.jsonl`` + ``audit.md`` + explicit cost cap assertions.
 
 * ``test_hitl_banners_via_bare_ai_hats`` — the HITL probe. Drives
-  bare ``ai-hats`` as a subprocess to verify
-  ``runtime._print_session_start`` and ``runtime._print_session_end``
-  banners surface in the parent stdout. Both are plain ``print()``
-  calls in ``WrapRunner.run`` (before / after the PTY proxy), NOT
-  claude output — they SHOULD be capturable, but real claude on a
-  child PTY with parent's stdin set to ``DEVNULL`` is undefined
-  territory. The test is isolated so its potential flakiness doesn't
-  taint the smoke above.
+  bare ``ai-hats`` as a subprocess via :func:`_helpers.hitl.drive_bare_hitl`
+  and verifies that ``runtime._print_session_start`` /
+  ``runtime._print_session_end`` banners surface in parent stdout.
+  Both are plain ``print()`` calls in ``WrapRunner.run`` (before /
+  after the PTY proxy), NOT claude output — capturable via
+  subprocess. The driver helper (``_helpers/hitl.py``) encapsulates
+  the stdin-payload trick, ANSI stripping, env allowlist, and banner
+  assertion verbs so future tests can reuse the surface without
+  re-deriving the empirical workarounds.
 
 Layer-by-layer regression coverage from the smoke test:
 
@@ -38,11 +39,18 @@ Layer-by-layer regression coverage from the smoke test:
   asserted via ``AI_HATS_PIPELINE_TRACE`` JSONL output
 * SubAgentRunner → ``execute --batch`` SDK call
 * observe.Session + audit.md writer → audit.md inspection
-* metrics aggregator → ``--json`` final output
+* metrics aggregator → ``--json`` final output + cost cap assertion
+
+Layer coverage added by the HITL probe (bare ``ai-hats`` only):
+
+* ``WrapRunner.run`` outer envelope (before / after PTY)
+* ``_print_session_start`` / ``_print_session_end`` console banners
+* PTY proxy round-trip (stdin payload → child PTY → exit)
 
 Cost shape: ~46s venv build (amortised) + ~5-10s ``self init`` +
 ~10-20s SDK turn = ~60-90s wall-clock. Capped at $0.10; actual
-~$0.02 on haiku-4-5.
+~$0.02 on haiku-4-5. Cost cap is now ALSO asserted post-run from
+the ``--json`` envelope, so a runaway turn fails the test loud.
 
 Verification of plan-stage assumption (decisions §2):
 ``Reliability`` / ``Cleanliness`` / ``Velocity`` are the literal
@@ -54,24 +62,45 @@ rendered verbatim into the materialised system prompt by the composer
 from __future__ import annotations
 
 import json
-import os
-import re
-import subprocess
 from pathlib import Path
 
 import pytest
 
-
-# Strips CSI / OSC / common ANSI escape sequences. Banners use bold +
-# colour SGR; stripping these lets us match on plain text markers.
-_ANSI_RE = re.compile(r"\x1b\[[0-9;?>=]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
-
-
-def _strip_ansi(text: str) -> str:
-    return _ANSI_RE.sub("", text)
+from _helpers.hitl import drive_bare_hitl
 
 
 pytestmark = pytest.mark.integration
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _extract_json_envelope(stdout: str) -> dict:
+    """Find the ``execute --batch --json`` envelope in ``stdout``.
+
+    Iterates lines in reverse and returns the first that parses as a
+    JSON object with an ``exit_code`` key. Tolerates trailing output
+    from ``render_update_banner`` (which runs AFTER the json write in
+    the pipeline order per ``library/core/pipelines/execute.yaml``).
+    """
+    for raw in reversed(stdout.splitlines()):
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(obj, dict) and "exit_code" in obj:
+            return obj
+    raise AssertionError(
+        "no JSON envelope with 'exit_code' key found in stdout — "
+        "is ``execute --batch --json`` still emitting one line via "
+        "``click.echo(json.dumps(payload))`` in cli/execute.py?\n"
+        f"stdout (tail 800):\n{stdout[-800:]}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +140,10 @@ def test_golden_path_install_init_execute_batch(
     result = tmp_venv_project.run(
         "execute", "--batch",
         "-r", "assistant", "-p", "claude",
+        # Explicit cheapest tier — without ``--model`` the provider
+        # default kicks in (sonnet on current builds), which roughly
+        # 5x's the per-turn cost. Tests must be predictable on $.
+        "--model", "claude-haiku-4-5",
         "--prompt", "Reply with exactly: OK. No other text.",
         "--json",
         timeout=120,
@@ -118,18 +151,20 @@ def test_golden_path_install_init_execute_batch(
     ).expect_ok()
 
     # ---- 4. --json output = machine-readable "final line" ----
-    #
-    # ``execute --batch --json`` emits one JSON object on stdout with
-    # session_id, exit_code, duration_s, session_dir, etc. The line
-    # may be preceded by misc output, so we parse the LAST non-empty
-    # line as the JSON envelope.
-    json_line = next(
-        line for line in reversed(result.stdout.splitlines()) if line.strip()
-    )
-    data = json.loads(json_line)
+    data = _extract_json_envelope(result.stdout)
     assert data["exit_code"] == 0, data
     assert data["session_id"], data
     session_dir = Path(data["session_dir"])
+
+    # ---- 4a. Explicit cost cap from the JSON envelope. ----
+    #
+    # Defensive — actual cost on haiku-4-5 with a brief prompt is
+    # ~$0.02. A runaway role config, retry loop, or a model-default
+    # drift (e.g. sonnet kicked in unexpectedly) would push the cost
+    # past the cap. This assertion fails loud before $ vanishes.
+    cost = data.get("total_cost_usd")
+    assert cost is not None, f"total_cost_usd missing from envelope: {data}"
+    assert cost < 0.05, f"cost overrun: ${cost} >= $0.05 (envelope: {data})"
 
     # ---- 5. trace.jsonl proves the expected steps fired ----
     #
@@ -176,31 +211,11 @@ def test_golden_path_install_init_execute_batch(
 def test_hitl_banners_via_bare_ai_hats(
     tmp_venv_project, requires_claude_auth,
 ) -> None:
-    """Bare ``ai-hats`` HITL — do the start/end banners survive
-    subprocess capture?
+    """Bare ``ai-hats`` HITL — start/end banners survive subprocess capture.
 
-    ``_print_session_start`` and ``_print_session_end`` are plain
-    Python ``print()`` calls in ``runtime.WrapRunner.run`` (before
-    and after ``_pty_spawn``), NOT claude TUI output. They SHOULD
-    land in the parent ai-hats process's stdout, capturable via
-    ``subprocess.run(capture_output=True)``.
-
-    The unknown: claude TUI's behaviour when its child-PTY stdin
-    sees EOF because the parent's stdin is ``DEVNULL``. Possible
-    outcomes:
-
-    * Clean exit → both banners captured, exit_code likely non-zero
-      but that's fine.
-    * Hang → ``timeout=30s`` triggers ``TimeoutExpired`` and the
-      test fails loud.
-    * Error then exit → start banner captured, end banner present
-      because the ``finally`` block in ``WrapRunner.run`` still
-      runs ``_finalize_session``.
-
-    This is a PROBE — we record what actually happens. If it proves
-    unreliable, we can mark ``@pytest.mark.xfail`` or move to a
-    separate quarantine file. The stable smoke above is the actual
-    sentry; this one explores HITL coverage opportunistically.
+    The driver lives at :mod:`tests.e2e._helpers.hitl`; this test only
+    composes its verbs. See that module's docstring for the empirical
+    workarounds (stdin payload, ANSI stripping, env allowlist).
     """
     # Set up the project (same provider/role as the smoke test).
     tmp_venv_project.run(
@@ -208,63 +223,9 @@ def test_hitl_banners_via_bare_ai_hats(
         "--no-update", timeout=120,
     ).expect_ok()
 
-    # Drive bare ``ai-hats``. We want claude to spawn AND exit quickly,
-    # so we feed a slash command + double Ctrl-C through the parent's
-    # stdin → PTY proxy → claude's pty. The proxy in
-    # ``WrapRunner._pty_spawn`` reads parent stdin via ``os.read(0, ...)``
-    # and writes to ``master_fd``; claude's TUI sees that as keyboard
-    # input. Empirically (probe iteration):
-    #
-    # * ``stdin=DEVNULL`` → 30s+ hang. claude ignores EOF on its pty stdin.
-    # * ``input="/exit\n"`` + ``\x03\x03`` → tested below.
-    env = {**os.environ, **tmp_venv_project.env}
-    stdin_payload = "/exit\n\x03\x03"
-    try:
-        cp = subprocess.run(
-            [str(tmp_venv_project.ai_hats_binary)],
-            cwd=str(tmp_venv_project.path),
-            env=env,
-            input=stdin_payload,
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-    except subprocess.TimeoutExpired as exc:
-        # Surface partial stdout — start banner should be there even
-        # if we couldn't get claude to exit cleanly.
-        partial = exc.stdout or ""
-        if isinstance(partial, bytes):
-            partial = partial.decode(errors="replace")
-        pytest.xfail(
-            "bare ``ai-hats`` hung past 20s despite stdin payload — "
-            "claude TUI not exiting on /exit + Ctrl-C through PTY proxy. "
-            f"Start banner observed: {'[*] Role:' in partial}. "
-            f"Stdout tail (500):\n{partial[-500:]}"
-        )
-
-    # Strip ANSI escapes — banners use bold + colour SGR so plain
-    # substring matching on the raw stdout misses ``Role: assistant``
-    # (the SGR open code sits between the colon and the role name).
-    plain = _strip_ansi(cp.stdout)
-
-    # Start banner — printed BEFORE _pty_spawn, should always land.
-    # Format: ``[*] Role: <role> | Provider: <provider> | Session: <sid>``
-    assert "[*] Role: assistant" in plain, (
-        f"start banner '[*] Role: assistant' missing.\n"
-        f"exit: {cp.returncode}\n"
-        f"plain stdout (tail 800):\n{plain[-800:]}\n"
-        f"stderr (tail 400):\n{cp.stderr[-400:]}"
-    )
-    assert "Provider: claude" in plain, (
-        f"provider segment missing from start banner.\n"
-        f"plain stdout (tail 800):\n{plain[-800:]}"
-    )
-
-    # End banner — printed in the ``finally`` block of WrapRunner.run.
-    # If claude crashed mid-startup, the banner still fires because
-    # ``_finalize_session`` always runs. Format: ``✨ Session <sid> complete!``
-    assert "✨ Session" in plain and "complete!" in plain, (
-        f"end banner '✨ Session ... complete!' not observed.\n"
-        f"exit: {cp.returncode}\n"
-        f"plain stdout (tail 800):\n{plain[-800:]}"
+    (
+        drive_bare_hitl(tmp_venv_project, role="assistant")
+        .expect_no_hang()
+        .expect_start_banner(role="assistant", provider="claude")
+        .expect_end_banner()
     )
