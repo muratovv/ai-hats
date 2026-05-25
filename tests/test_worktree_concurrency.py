@@ -30,6 +30,9 @@ from ai_hats.worktree import (
     WorktreeLockError,
     WorktreeManager,
     _acquire,
+    _acquire_base_branch_lock,
+    _base_lock_key,
+    _base_lock_path,
     _format_git_create_error,
     _is_retriable_git_error,
     _is_retriable_merge_error,
@@ -645,3 +648,169 @@ def test_is_retriable_merge_error_classification() -> None:
         assert _is_retriable_merge_error(_make_called_process_error(s)), s
     for s in non_retriable:
         assert not _is_retriable_merge_error(_make_called_process_error(s)), s
+
+
+# ---------------------------------------------------------------------------
+# HATS-481 L1' — _acquire_base_branch_lock
+# ---------------------------------------------------------------------------
+
+
+def test_base_lock_key_sanitization() -> None:
+    """TC-N11: branch names sanitized consistently with _state_key."""
+    assert _base_lock_key("master") == "master"
+    assert _base_lock_key("main") == "main"
+    assert _base_lock_key("feat/foo") == "feat-foo"
+    assert _base_lock_key("Develop") == "develop"
+    assert _base_lock_key("release/2026-Q2") == "release-2026-q2"
+
+
+def test_base_lock_path_under_state_dir(git_project: Path) -> None:
+    """Lock file lives next to other worktree state, under .agent."""
+    path = _base_lock_path(git_project, "master")
+    assert path.name == ".base-master.lock"
+    assert path.parent == worktrees_dir(git_project)
+
+
+def _hold_base_lock(project_dir_str: str, base: str, hold_s: float, ready: str) -> None:
+    """Acquire L1' for ``base`` and hold for ``hold_s`` seconds."""
+    with _acquire_base_branch_lock(Path(project_dir_str), base):
+        Path(ready).write_text("ready")
+        time.sleep(hold_s)
+
+
+def test_base_lock_serializes_same_base(git_project: Path, tmp_path: Path) -> None:
+    """A held base lock makes the second acquire wait until the first releases.
+
+    Sanity for L1' — without filelock semantics on the right key,
+    concurrent merges into the same base would race on .git/index.lock.
+    """
+    ready = tmp_path / "ready.flag"
+    holder = multiprocessing.Process(
+        target=_hold_base_lock, args=(str(git_project), "master", 0.5, str(ready))
+    )
+    holder.start()
+    try:
+        for _ in range(50):
+            if ready.exists():
+                break
+            time.sleep(0.02)
+        assert ready.exists(), "holder failed to grab base lock"
+
+        # Second acquire with a short timeout MUST raise — holder is still active.
+        with pytest.raises(WorktreeLockError):
+            with _acquire_base_branch_lock(git_project, "master", timeout=0.1):
+                pass  # pragma: no cover
+    finally:
+        holder.join(timeout=5)
+        assert holder.exitcode == 0
+
+
+def test_base_lock_independent_per_base(git_project: Path, tmp_path: Path) -> None:
+    """Locks on different base refs do NOT serialize each other."""
+    ready = tmp_path / "ready.flag"
+    holder = multiprocessing.Process(
+        target=_hold_base_lock, args=(str(git_project), "master", 1.0, str(ready))
+    )
+    holder.start()
+    try:
+        for _ in range(50):
+            if ready.exists():
+                break
+            time.sleep(0.02)
+        assert ready.exists()
+
+        # Different base → must NOT block.
+        t0 = time.monotonic()
+        with _acquire_base_branch_lock(git_project, "develop"):
+            assert time.monotonic() - t0 < 0.2, "different-base lock blocked"
+    finally:
+        holder.join(timeout=5)
+        assert holder.exitcode == 0
+
+
+# ---------------------------------------------------------------------------
+# TC-N12: parallel merge into same base — both succeed under L1'
+# ---------------------------------------------------------------------------
+
+
+def _create_and_merge_worker(
+    project_dir: str,
+    branch: str,
+    payload_file: str,
+    payload_content: str,
+    result_dict: dict,
+    key: str,
+) -> None:
+    """Child process: create worktree, commit a unique file, merge.
+
+    Exercises the full L1'+L3' merge path. Result captures whether the
+    merge raised and what HEAD looks like afterwards.
+    """
+    project = Path(project_dir)
+    mgr = WorktreeManager(project, branch_name=branch)
+    try:
+        wt_path = mgr.create()
+        mgr.save_state()
+        # Use raw git (no commit hooks in this test fixture).
+        subprocess.run(
+            ["git", "config", "user.email", "tc@n12.test"],
+            cwd=str(wt_path), check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "TC-N12"],
+            cwd=str(wt_path), check=True,
+        )
+        (wt_path / payload_file).write_text(payload_content)
+        subprocess.run(
+            ["git", "add", payload_file], cwd=str(wt_path), check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", f"wt: {payload_file}"],
+            cwd=str(wt_path), check=True,
+            capture_output=True,
+        )
+        mgr.merge()
+        result_dict[key] = {"error": None}
+    except Exception as exc:
+        result_dict[key] = {"error": f"{type(exc).__name__}: {exc}"}
+
+
+def test_parallel_merges_into_same_base_both_succeed(git_project: Path) -> None:
+    """TC-N12: two parallel `WorktreeManager.merge` into the same base ref
+    both succeed and both commits land in master.
+
+    Without L1' this would race on `.git/index.lock` — L3' retry covers
+    short windows but is not a guarantee under multi-second hold; L1'
+    provides the guarantee."""
+    branch_a = "task/hats-481-n12-a"
+    branch_b = "task/hats-481-n12-b"
+
+    manager = multiprocessing.Manager()
+    results = manager.dict()
+
+    p1 = multiprocessing.Process(
+        target=_create_and_merge_worker,
+        args=(
+            str(git_project), branch_a, "file-a.txt", "alpha\n", results, "p1",
+        ),
+    )
+    p2 = multiprocessing.Process(
+        target=_create_and_merge_worker,
+        args=(
+            str(git_project), branch_b, "file-b.txt", "beta\n", results, "p2",
+        ),
+    )
+    p1.start()
+    p2.start()
+    p1.join(timeout=60)
+    p2.join(timeout=60)
+    assert p1.exitcode == 0 and p2.exitcode == 0
+
+    o1 = dict(results["p1"])
+    o2 = dict(results["p2"])
+    assert o1["error"] is None, o1
+    assert o2["error"] is None, o2
+
+    # Both unique files on the base branch.
+    assert (git_project / "file-a.txt").read_text() == "alpha\n"
+    assert (git_project / "file-b.txt").read_text() == "beta\n"
