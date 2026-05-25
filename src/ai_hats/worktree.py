@@ -78,6 +78,14 @@ GIT_RETRY_BASE_DELAY = 0.05       # 50 ms, exponential up to GIT_RETRY_MAX_DELAY
 GIT_RETRY_MAX_DELAY = 0.8         # cap per-attempt delay so 5 retries finish < 4 s
 CREATE_LOCK_CONTENTION_WARN = 1.0  # log at WARNING if acquisition took longer
 
+# HATS-481 — base-branch merge serialization (see module docstring "Merge-time concurrency")
+BASE_LOCK_TIMEOUT = 15.0          # L1' acquisition cap — covers a ~20-way pile-up
+MERGE_RETRY_MAX = 8                # AWS canonical at our scale
+MERGE_RETRY_BASE_DELAY = 0.1       # 100 ms — matches git's core.*LockTimeout default
+MERGE_RETRY_MAX_DELAY = 5.0        # 5 s cap; longer wait = real work, not contention
+REF_LOCK_TIMEOUT_MS = 5000         # passed to git as core.filesRefLockTimeout — covers
+                                   # ref-lock contention for free (no index.lock equivalent)
+
 
 def _state_key(branch_name: str) -> str:
     """Derive the state file key from a branch name.
@@ -242,6 +250,74 @@ def _format_git_create_error(
         f"git worktree add failed for branch '{branch}'.\n"
         f"  git: {head}"
     )
+
+
+# HATS-481 L3' — git stderr substrings during `git merge` that indicate
+# transient contention on shared lock files (index.lock, config.lock,
+# HEAD.lock, packed-refs.lock — git uses the same "Unable to create" message
+# for all of them). Broader than HATS-479's set because merge touches more
+# refs / files than `worktree add`. Compared case-insensitively.
+_RETRIABLE_MERGE_STDERR_PATTERNS = (
+    "unable to create",
+    "index.lock",
+    "another git process",
+    "could not lock",
+)
+
+
+def _is_retriable_merge_error(exc: subprocess.CalledProcessError) -> bool:
+    """True iff the merge stderr matches a known transient-contention pattern."""
+    stderr = (exc.stderr or "").lower()
+    return any(p in stderr for p in _RETRIABLE_MERGE_STDERR_PATTERNS)
+
+
+def _retry_git_merge(
+    git_runner,
+    *git_args: str,
+    sleep=time.sleep,
+) -> None:
+    """Run a git command (typically ``merge``) with AWS full-jitter
+    exponential backoff. HATS-481 L3'.
+
+    AWS canonical full-jitter formula:
+        ``sleep_for = random.uniform(0, min(cap, base * 2 ** attempt))``
+
+    Why full jitter (vs the equal-jitter `base + uniform(0, base)` used by
+    HATS-479 :func:`_retry_worktree_add`): under heavy contention 20 agents
+    all wake from index.lock release within the same millisecond. Equal
+    jitter still leaves a deterministic floor; full jitter spreads them
+    across the entire interval, breaking the thundering herd cleanly.
+
+    :param git_runner: callable like :meth:`WorktreeManager._git`. Called as
+        ``git_runner(*git_args)``.
+    :param sleep: injected for tests; defaults to :func:`time.sleep`.
+    :raises subprocess.CalledProcessError: on non-retriable error or after
+        exhausting :data:`MERGE_RETRY_MAX` retriable attempts.
+    """
+    delay = MERGE_RETRY_BASE_DELAY
+    last_exc: subprocess.CalledProcessError | None = None
+    for attempt in range(1, MERGE_RETRY_MAX + 1):
+        try:
+            git_runner(*git_args)
+            return
+        except subprocess.CalledProcessError as exc:
+            if not _is_retriable_merge_error(exc):
+                raise
+            last_exc = exc
+            if attempt == MERGE_RETRY_MAX:
+                break
+            ceiling = min(MERGE_RETRY_MAX_DELAY, delay)
+            wait = random.uniform(0, ceiling)
+            cmd_label = git_args[0] if git_args else "<no-cmd>"
+            logger.info(
+                "git %s transient lock contention (attempt %d/%d), waiting %.2fs: %s",
+                cmd_label, attempt, MERGE_RETRY_MAX, wait,
+                (exc.stderr or "").strip().splitlines()[-1] if exc.stderr else "<no stderr>",
+            )
+            sleep(wait)
+            delay = min(delay * 2, MERGE_RETRY_MAX_DELAY)
+    assert last_exc is not None
+    raise last_exc
 
 
 class WorktreeDirtyError(Exception):
@@ -741,6 +817,27 @@ class WorktreeManager:
             check=True,
         )
 
+    def _git_with_ref_lock_wait(
+        self, *args: str, cwd: Path | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        """Run git with ``core.filesRefLockTimeout`` / ``core.packedRefsTimeout``
+        set (HATS-481 free win).
+
+        Lets git wait for ref-lock contention internally (up to
+        :data:`REF_LOCK_TIMEOUT_MS`) without burning a userspace retry
+        attempt. Has no effect on ``.git/index.lock`` — that file has no
+        wait-flag in git; index contention is handled by
+        :func:`_retry_git_merge`.
+
+        Requires git ≥ 2.31 (older versions ignore the ``-c`` flags silently,
+        which means no help but no harm).
+        """
+        return self._git(
+            "-c", f"core.filesRefLockTimeout={REF_LOCK_TIMEOUT_MS}",
+            "-c", f"core.packedRefsTimeout={REF_LOCK_TIMEOUT_MS}",
+            *args, cwd=cwd,
+        )
+
     def _check_clean(self) -> None:
         """Raise WorktreeDirtyError if the worktree has uncommitted changes."""
         if self.worktree_path is None:
@@ -896,27 +993,45 @@ class WorktreeManager:
         return sha[:8] if sha else "?"
 
     def _squash_merge(self) -> None:
-        """Squash-merge worktree branch into original branch."""
+        """Squash-merge worktree branch into original branch.
+
+        HATS-481: ``git merge`` and the follow-up ``git commit`` both touch
+        repo-shared locks (``.git/index.lock``, ``.git/refs/...``). We pass
+        ``core.filesRefLockTimeout`` to absorb ref-lock contention for free
+        and wrap the calls in :func:`_retry_git_merge` for ``index.lock``
+        (which has no wait-flag).
+        """
         head_main = self._git("rev-parse", self._original_branch).stdout.strip()
         head_wt = self._git("rev-parse", self.branch_name).stdout.strip()
         if head_main == head_wt:
             return
 
-        self._git("merge", "--squash", self.branch_name)
-        self._git(
-            "commit", "-m",
-            f"feat(agent): {self.branch_name}",
+        _retry_git_merge(
+            self._git_with_ref_lock_wait,
+            "merge", "--squash", self.branch_name,
+        )
+        _retry_git_merge(
+            self._git_with_ref_lock_wait,
+            "commit", "-m", f"feat(agent): {self.branch_name}",
         )
         logger.info("Squash-merged %s into %s", self.branch_name, self._original_branch)
 
     def _fast_forward_merge(self) -> None:
-        """Merge worktree branch with --no-ff to preserve commit history."""
+        """Merge worktree branch with --no-ff to preserve commit history.
+
+        HATS-481: ref-lock contention handled by git itself (via
+        ``core.filesRefLockTimeout``); index-lock contention handled by
+        :func:`_retry_git_merge`.
+        """
         head_main = self._git("rev-parse", self._original_branch).stdout.strip()
         head_wt = self._git("rev-parse", self.branch_name).stdout.strip()
         if head_main == head_wt:
             return
 
-        self._git("merge", "--no-ff", self.branch_name)
+        _retry_git_merge(
+            self._git_with_ref_lock_wait,
+            "merge", "--no-ff", self.branch_name,
+        )
         logger.info("Merged %s into %s", self.branch_name, self._original_branch)
 
     def _remove_worktree(self) -> None:
