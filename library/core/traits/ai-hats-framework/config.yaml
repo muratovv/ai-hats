@@ -1,8 +1,11 @@
 name: ai-hats-framework
 composition:
   traits: []
-  rules:
-    - rule_core_vs_usage_split
+  # rule_core_vs_usage_split is owned by `library-curator` trait (role-curator
+  # domain). Roles that compose ai-hats-framework get framework-awareness
+  # injection but no formal constraint — non-trivial library work hands off
+  # to role-curator.
+  rules: []
   skills: []
   hooks: {}
 injection: |
@@ -19,4 +22,6 @@ injection: |
   project-specific?** Universal → `core/` (attach to a base trait).
   Project-specific → `core/` for the rule (if the concept is reusable across
   projects) + dedicated `usage/` trait that bundles it + role wiring in
-  `usage/roles/`. See rule `rule_core_vs_usage_split` for the full decision tree.
+  `usage/roles/`. The formal decision tree (`rule_core_vs_usage_split`) and
+  ownership of library curation live with the `role-curator` role — hand off
+  non-trivial library changes there.

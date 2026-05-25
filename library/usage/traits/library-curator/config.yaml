@@ -5,8 +5,6 @@ composition:
     - rule_core_vs_usage_split
     - dev_rule_e2e_gate
   skills:
-    - review-role
-    - role-coherence-protocol
     - doc-protocol
   hooks: {}
 injection: |

@@ -6,7 +6,6 @@ composition:
     - review-hypothesis
     - review-proposal
     - review-session
-    - review-role
   hooks: {}
 injection: |
   ## REFLECT MODE
@@ -19,7 +18,10 @@ injection: |
   Sub-procedures (role-agnostic):
   - One verdict per active HYP — see **review-hypothesis**.
   - Vote / create / triage on PROP — see **review-proposal**.
-  - Audit a role composition for coherence — see **review-role**.
+
+  Role-composition audits (`review-role`) are NOT bundled here — they
+  live with `role-curator`, not in reflect-mode (reflect = backlog
+  triage; role coherence is a separate domain).
 
   How the verdicts are *reported* depends on your role:
   - `reflect-session` / `session-reviewer` → emit a single
