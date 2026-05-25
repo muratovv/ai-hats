@@ -47,9 +47,33 @@ class ComposeRole(Step):
         if not role:
             return {}
         from ...assembler import Assembler
+        from ...materialize import compose_for_role
 
-        composer = Assembler(project_dir).composer
-        result = composer.compose(role)
+        # HATS-501: route through the ``compose_for_role`` facade so the
+        # funnel value reflects the *layered* composition (built-in role
+        # + global overlay + project overlay), matching every other
+        # composition consumer (HATS-456). The previous direct
+        # ``composer.compose(role)`` call skipped overlays, so global /
+        # project ``injection_append`` and ``add_traits`` injection
+        # bodies were dropped from the funnel — and then propagated
+        # through ``LaunchProvider`` as ``system_prompt_override`` into
+        # ``SubAgentRunner._run_attempt``'s
+        # ``result.with_injection_override(...)``, replacing the
+        # correctly-composed list wholesale. Sister contract:
+        # ``test_funnel_value_contract.py``; regression catcher:
+        # ``tests/pipeline/test_compose_overlay_propagation.py``.
+        #
+        # Note: after this fix, the funnel text emitted here is
+        # identical to what ``SubAgentRunner._run_attempt`` re-composes
+        # internally — i.e. the override applied at ``launch.py:109``
+        # (sub-agent branch) is a redundant pass-through that re-applies
+        # the same composition. Removing that pass-through and reserving
+        # ``system_prompt_override`` for genuine HATS-267 caller
+        # overrides is tracked in HATS-505 (under epic HATS-506). Until
+        # that lands, this step's output MUST match ``SubAgentRunner``'s
+        # internal composition to keep the no-op override harmless.
+        asm = Assembler(project_dir)
+        result = compose_for_role(asm, role)
         if result.errors:
             raise RuntimeError(
                 f"compose_role: failed to resolve role {role!r}: {result.errors}"
