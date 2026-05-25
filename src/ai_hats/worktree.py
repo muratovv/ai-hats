@@ -129,6 +129,26 @@ remaining single-actor mistakes fail loud instead of corrupting state:
   :class:`click.UsageError` when no branch is given AND ``>1`` worktree
   is tracked, instead of silently picking alphabetical first.
 
+Teardown hardening (HATS-488)
+-----------------------------
+* **B-03** — :meth:`WorktreeManager._remove_worktree` no longer falls
+  back to ``shutil.rmtree(ignore_errors=True)`` when ``git worktree
+  remove --force`` fails. Default raises :class:`WorktreeRemoveError`
+  (data preservation); ``wt discard --force-remove`` opts in to the
+  rmtree path explicitly. ``wt merge`` propagates the exception so
+  the operator sees the residual dir.
+* **R-04** — auto-``git worktree prune`` in the same fallback was
+  dropped. Pruning could race with concurrent ``wt create`` (admin
+  entry unlinked before target dir materializes); the trade is
+  occasional orphan ``.git/worktrees/<name>/`` admin entries that
+  ``wt list`` surfaces and operators clean with manual
+  ``git worktree prune``.
+* **B-06** — :meth:`WorktreeManager.is_inside_linked_worktree` now
+  runs ONE ``git rev-parse --git-dir --git-common-dir`` instead of
+  two separate ``subprocess.run`` calls. Closes the race window
+  between the two forks (path comparison saw mismatched paths if
+  ``.git`` was renamed between calls) and is incidentally faster.
+
 Lock ordering hierarchy across HATS-121/479/480/481 (always outer →
 inner, no inversion → no deadlock):
 
@@ -595,6 +615,31 @@ class WorktreePartialCleanupError(Exception):
         )
 
 
+class WorktreeRemoveError(Exception):
+    """``_remove_worktree`` could not delete the worktree directory.
+
+    HATS-488 / B-03: pre-488 the rmtree fallback ran with
+    ``ignore_errors=True`` whenever ``git worktree remove --force``
+    failed — silently nuking uncommitted work the operator hadn't
+    explicitly OK'd. Post-488 the rmtree path is opt-in via
+    ``force_rmtree=True`` (CLI flag ``--force-remove`` on
+    ``wt discard``); the default path raises this exception so the
+    caller (and ultimately the operator) knows the worktree dir is
+    still on disk.
+
+    Carries ``path`` (the directory still on disk) and ``stderr_tail``
+    (last line of git's error output).
+    """
+
+    def __init__(self, path: Path, stderr_tail: str) -> None:
+        self.path = path
+        self.stderr_tail = stderr_tail
+        super().__init__(
+            f"git worktree remove failed and the directory is still on disk: "
+            f"{path}\n  git: {stderr_tail}"
+        )
+
+
 class OriginalBranchMissingError(Exception):
     """Raised when worktree merge target (original branch) no longer exists.
 
@@ -834,16 +879,27 @@ class WorktreeManager:
             # merge invalidates self for any further lifecycle ops.
             self.worktree_path = None
 
-    def discard(self, *, force: bool = False) -> None:
+    def discard(self, *, force: bool = False, force_remove: bool = False) -> None:
         """Remove worktree and branch without merging.
 
         Raises WorktreeDirtyError if the worktree has uncommitted changes
         unless force=True (HATS-062).
 
+        Raises WorktreeRemoveError if ``git worktree remove --force``
+        fails AND the directory is still on disk AND ``force_remove``
+        was not passed (HATS-488 / B-03 — pre-488 path silently nuked
+        data).
+
         HATS-480: holds the per-wt-branch lifecycle lock through the
         entire body. Parallel ``discard()`` or ``merge()`` on the same
         branch serializes; the second one observes the worktree dir
         already gone and no-ops idempotently.
+
+        :param force: bypass the uncommitted-changes check (HATS-062).
+        :param force_remove: bypass the data-preservation guard around
+            the rmtree fallback (HATS-488 / B-03). Independent of
+            ``force`` — uncommitted-changes check and on-disk cleanup
+            are separate concerns.
         """
         if not self._is_git or self.worktree_path is None:
             return
@@ -863,7 +919,7 @@ class WorktreeManager:
 
             if not force:
                 self._check_clean()
-            self._remove_worktree()
+            self._remove_worktree(force_rmtree=force_remove)
             self._delete_branch()
             self.worktree_path = None
             self._clear_state()
@@ -1153,26 +1209,28 @@ class WorktreeManager:
 
         Fail-safe: returns False on any subprocess error or non-git path.
         Caller is responsible for not blocking on this signal.
+
+        HATS-490: single ``git rev-parse`` invocation with both flags —
+        git emits one line per ref-info flag. Closes the race window
+        between two separate subprocesses (e.g. ``.git`` rename in the
+        middle would have given mismatched paths from the two calls)
+        and saves a fork.
         """
         try:
-            git_dir = subprocess.run(
-                ["git", "rev-parse", "--path-format=absolute", "--git-dir"],
+            result = subprocess.run(
+                ["git", "rev-parse", "--path-format=absolute",
+                 "--git-dir", "--git-common-dir"],
                 cwd=str(path),
                 capture_output=True,
                 text=True,
                 check=True,
-            ).stdout.strip()
-            common_dir = subprocess.run(
-                ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                cwd=str(path),
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout.strip()
+            )
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
-        if not git_dir or not common_dir:
+        lines = [line for line in result.stdout.splitlines() if line.strip()]
+        if len(lines) != 2:
             return False
+        git_dir, common_dir = lines
         return Path(git_dir).resolve() != Path(common_dir).resolve()
 
     @staticmethod
@@ -1478,23 +1536,70 @@ class WorktreeManager:
             )
         logger.info("Merged %s into %s", self.branch_name, self._original_branch)
 
-    def _remove_worktree(self) -> None:
-        """Remove the worktree from git and filesystem."""
+    def _remove_worktree(self, *, force_rmtree: bool = False) -> None:
+        """Remove the worktree from git and filesystem.
+
+        HATS-488 (B-03 + R-04) — pre-488 fallback path silently
+        ``shutil.rmtree(ignore_errors=True)`` + auto-``git worktree
+        prune``. Two problems:
+
+        * **B-03**: rmtree ignoring errors nuked uncommitted work that
+          ``git worktree remove --force`` had refused to delete (e.g.
+          held-open files) → silent data loss.
+        * **R-04**: ``git worktree prune`` walks all
+          ``.git/worktrees/`` admin entries; a concurrent ``wt create``
+          peer that hasn't yet materialized its target dir can have
+          its admin entry unlinked.
+
+        Post-488 contract:
+
+        * Default ``force_rmtree=False``: if ``git worktree remove
+          --force`` fails AND the dir is still on disk, raise
+          :class:`WorktreeRemoveError`. Operator's call whether to
+          ``rm -rf`` manually or re-invoke ``wt discard --force-remove``.
+        * Opt-in ``force_rmtree=True`` (CLI flag ``--force-remove``):
+          best-effort ``shutil.rmtree`` is permitted; logs at WARNING.
+          A residual dir after rmtree still raises (broken symlinks,
+          perm).
+        * Auto-prune is gone unconditionally; orphan admin entries are
+          surfaced via ``wt list`` and cleaned by manual ``git worktree
+          prune``.
+        """
         if self.worktree_path is None:
             return
         try:
             self._git("worktree", "remove", str(self.worktree_path), "--force")
-        except subprocess.CalledProcessError:
-            if self.worktree_path.exists():
-                # Worktree removal fallback: git failed, we force-clean.
-                # Worktree contents are user code, but the worktree was
-                # already meant to be torn down via `git worktree remove`
-                # which would have nuked it anyway. Whitelist.
-                shutil.rmtree(self.worktree_path, ignore_errors=True)  # safe-delete: ok git-worktree-teardown
+            return
+        except subprocess.CalledProcessError as exc:
+            if not self.worktree_path.exists():
+                # Dir already gone (concurrent external removal / cleanup
+                # by a peer post-HATS-480 lifecycle lock release). git's
+                # bookkeeping might be stale; do NOT auto-prune (R-04).
+                logger.info(
+                    "Worktree dir already absent (%s); git removal failed "
+                    "harmlessly",
+                    self.worktree_path,
+                )
+                return
+            stderr = (exc.stderr or "").strip()
+            tail = stderr.splitlines()[-1] if stderr else "<no stderr>"
+            if not force_rmtree:
+                raise WorktreeRemoveError(self.worktree_path, tail) from exc
+            # Opt-in path: --force-remove explicit consent.
+            logger.warning(
+                "force-removing worktree dir after git failure: %s (git: %s)",
+                self.worktree_path, tail,
+            )
             try:
-                self._git("worktree", "prune")
-            except subprocess.CalledProcessError:
-                pass
+                shutil.rmtree(self.worktree_path)  # safe-delete: ok force-remove opt-in (HATS-488)
+            except OSError as rmtree_exc:
+                # Even force-rmtree couldn't clean (broken symlink, perm,
+                # ENOTEMPTY race). Surface; operator may need elevated
+                # access or external cleanup.
+                raise WorktreeRemoveError(
+                    self.worktree_path,
+                    f"rmtree: {rmtree_exc}; git: {tail}",
+                ) from rmtree_exc
 
     # HATS-482 (B-02): stderr substrings → classified causes for
     # `_delete_branch` failures. Matched case-insensitively.
