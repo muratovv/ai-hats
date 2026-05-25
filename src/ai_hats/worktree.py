@@ -823,27 +823,46 @@ class WorktreeManager:
             self._clear_state()
 
     def cleanup(self, *, force_discard: bool = False) -> None:
-        """Clean up worktree. Merges changes based on isolation_mode."""
+        """Clean up worktree. Merges changes based on isolation_mode.
+
+        HATS-480: holds the per-wt-branch lifecycle lock through the
+        entire body. A concurrent direct ``wt discard``/``wt merge`` on
+        the same branch (issued by another agent / CLI while the
+        context-manager is winding down) serializes against this call.
+        """
         if not self._is_git or self.worktree_path is None:
             return
 
-        mode = IsolationMode.DISCARD if force_discard else self.isolation_mode
+        state_path = (
+            worktrees_dir(self.project_dir)
+            / f"{_state_key(self.branch_name)}.json"
+        )
+        with _acquire_lifecycle_lock(state_path):
+            # HATS-480 idempotency re-check — see merge() / discard().
+            if not self.worktree_path.exists():
+                logger.info(
+                    "Worktree '%s' already torn down by a peer — no-op",
+                    self.branch_name,
+                )
+                return
 
-        try:
-            if mode == IsolationMode.SQUASH:
-                self._squash_merge()
-        except Exception:
-            logger.warning("Merge failed, falling back to branch mode", exc_info=True)
-            mode = IsolationMode.BRANCH
+            mode = IsolationMode.DISCARD if force_discard else self.isolation_mode
 
-        # Remove worktree directory
-        self._remove_worktree()
+            try:
+                if mode == IsolationMode.SQUASH:
+                    self._squash_merge()
+            except Exception:
+                logger.warning("Merge failed, falling back to branch mode", exc_info=True)
+                mode = IsolationMode.BRANCH
 
-        # Delete branch unless mode is BRANCH
-        if mode != IsolationMode.BRANCH:
-            self._delete_branch()
+            # Remove worktree directory
+            self._remove_worktree()
 
-        self.worktree_path = None
+            # Delete branch unless mode is BRANCH
+            if mode != IsolationMode.BRANCH:
+                self._delete_branch()
+
+            self.worktree_path = None
 
     def __enter__(self) -> Path:
         return self.create()
