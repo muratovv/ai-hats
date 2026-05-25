@@ -1,4 +1,4 @@
-"""HATS-518: ``_assert_head_is_canonical_base`` guard for ``wt create``.
+"""HATS-518: ``assert_head_is_canonical_base`` guard for ``wt create``.
 
 Covers the guard's pure semantics:
 
@@ -23,7 +23,7 @@ import pytest
 from ai_hats.worktree import (
     CANONICAL_BASE_BRANCHES,
     WorktreeBaseBranchError,
-    _assert_head_is_canonical_base,
+    assert_head_is_canonical_base,
 )
 
 
@@ -74,24 +74,24 @@ class TestPasses:
         # Sanity: HEAD is exactly "master".
         head = _git(master_project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
         assert head == "master"
-        _assert_head_is_canonical_base(master_project)  # no raise
+        assert_head_is_canonical_base(master_project)  # no raise
 
     def test_passes_on_main_when_no_master(self, main_project: Path) -> None:
         head = _git(main_project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
         assert head == "main"
         # No `master` branch exists — `main` is the sole canonical.
-        _assert_head_is_canonical_base(main_project)  # no raise
+        assert_head_is_canonical_base(main_project)  # no raise
 
     def test_passes_on_master_when_both_exist(self, master_project: Path) -> None:
         # Create `main` alongside `master`. HEAD still on master → pass.
         _git(master_project, "branch", "main")
-        _assert_head_is_canonical_base(master_project)  # no raise
+        assert_head_is_canonical_base(master_project)  # no raise
 
     def test_passes_on_main_when_both_exist(self, master_project: Path) -> None:
         # Both branches exist, HEAD on `main` → pass.
         _git(master_project, "branch", "main")
         _git(master_project, "checkout", "main")
-        _assert_head_is_canonical_base(master_project)  # no raise
+        assert_head_is_canonical_base(master_project)  # no raise
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +103,7 @@ class TestRefuses:
     def test_raises_on_feature_branch(self, master_project: Path) -> None:
         _git(master_project, "checkout", "-b", "feat/foo")
         with pytest.raises(WorktreeBaseBranchError) as excinfo:
-            _assert_head_is_canonical_base(master_project)
+            assert_head_is_canonical_base(master_project)
         exc = excinfo.value
         assert exc.current == "feat/foo"
         assert exc.canonical == ["master"]
@@ -118,10 +118,12 @@ class TestRefuses:
         _git(master_project, "branch", "main")
         _git(master_project, "checkout", "-b", "task/hats-007")
         with pytest.raises(WorktreeBaseBranchError) as excinfo:
-            _assert_head_is_canonical_base(master_project)
+            assert_head_is_canonical_base(master_project)
         exc = excinfo.value
         assert exc.current == "task/hats-007"
         # Canonical list reflects what actually exists, in priority order.
+        # Order mirrors `CANONICAL_BASE_BRANCHES` — if you reorder the
+        # tuple (e.g. project-wide switch to main-first), update here too.
         assert exc.canonical == ["master", "main"]
 
 
@@ -136,7 +138,7 @@ class TestNoopEdgeCases:
         # returns the literal "HEAD" — guard should pass through, not raise.
         sha = _git(master_project, "rev-parse", "HEAD").stdout.strip()
         _git(master_project, "checkout", sha)
-        _assert_head_is_canonical_base(master_project)  # no raise
+        assert_head_is_canonical_base(master_project)  # no raise
 
     def test_noop_when_no_canonical_exists(self, tmp_path: Path) -> None:
         # Repo with only a `develop` branch — no `master`, no `main`.
@@ -149,12 +151,12 @@ class TestNoopEdgeCases:
         (project / "README.md").write_text("# Test\n")
         _git(project, "add", ".")
         _git(project, "commit", "-m", "init")
-        _assert_head_is_canonical_base(project)  # no raise
+        assert_head_is_canonical_base(project)  # no raise
 
     def test_noop_on_non_git_dir(self, tmp_path: Path) -> None:
         plain = tmp_path / "not-a-repo"
         plain.mkdir()
-        _assert_head_is_canonical_base(plain)  # no raise
+        assert_head_is_canonical_base(plain)  # no raise
 
 
 # ---------------------------------------------------------------------------
@@ -224,52 +226,69 @@ class TestCliWtCreate:
 class TestTransitionExecute:
     """`task transition <ID> execute` must refuse and keep the card unchanged."""
 
-    def _seed_task_in_plan(self, project: Path, task_id: str = "T-1") -> None:
-        from ai_hats.state import TaskManager
+    @pytest.fixture
+    def task_mgr(self, master_project: Path):
+        """Project with `.agent/` layout + a task seeded directly in PLAN.
 
-        mgr = TaskManager(project, prefix="T", strict_plan_check=False)
-        mgr.create_task(task_id, "HATS-518 probe")
-        mgr.transition(task_id, __import__("ai_hats.models", fromlist=["TaskState"]).TaskState.PLAN)
-        # Fill scaffold so EXECUTE doesn't trip the empty-plan guard if
-        # strict mode ever re-enables — content arbitrary.
-        plan_path = mgr.tasks_dir / task_id / "plan.md"
-        if plan_path.exists():
-            plan_path.write_text("# Plan\n\nNon-empty plan body for tests.\n")
-
-    def test_refuses_and_leaves_card_in_plan(
-        self, master_project: Path
-    ) -> None:
+        Seeds via ``create_task`` + direct file write rather than walking
+        ``transition(BRAINSTORM → PLAN)`` so the test isn't coupled to the
+        scaffold-creation side effect of that transition (which could
+        gain refusal semantics later for unrelated reasons).
+        """
         from ai_hats.models import TaskState
         from ai_hats.state import TaskManager
 
-        # Project needs the .agent layout for TaskManager.
         (master_project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
         (master_project / ".agent" / "STATE.md").write_text("")
 
-        self._seed_task_in_plan(master_project, "T-1")
+        mgr = TaskManager(master_project, prefix="T", strict_plan_check=False)
+        mgr.create_task("T-1", "HATS-518 probe")
+        # Promote the seeded card to PLAN by direct file mutation — avoids
+        # the BRAINSTORM→PLAN transition path entirely.
+        card = mgr.get_task("T-1")
+        card.state = TaskState.PLAN
+        mgr._save_task(card)
+        return master_project, mgr
+
+    def test_refuses_and_leaves_card_in_plan(self, task_mgr) -> None:
+        from ai_hats.models import TaskState
+
+        master_project, mgr = task_mgr
         # Park HEAD on a feature branch.
         _git(master_project, "checkout", "-b", "feat/parking")
 
-        mgr = TaskManager(master_project, prefix="T", strict_plan_check=False)
         with pytest.raises(WorktreeBaseBranchError):
             mgr.transition("T-1", TaskState.EXECUTE)
 
         # Card stays in PLAN — _save_task was never reached.
-        t = mgr.get_task("T-1")
-        assert t.state == TaskState.PLAN
+        assert mgr.get_task("T-1").state == TaskState.PLAN
 
-    def test_succeeds_when_head_is_master(
-        self, master_project: Path
-    ) -> None:
+    def test_refuses_even_with_force(self, task_mgr) -> None:
+        """`--force` overrides the FSM, NOT the safety contract (HATS-518).
+
+        Same precedent as merge / discard refusals (HATS-481): destructive
+        overrides bypass the state-machine arrow, not the underlying
+        invariant. If the operator genuinely wants a non-canonical merge
+        target, they must checkout that branch in the main repo first.
+        """
         from ai_hats.models import TaskState
-        from ai_hats.state import TaskManager
+
+        master_project, mgr = task_mgr
+        _git(master_project, "checkout", "-b", "feat/parking")
+
+        with pytest.raises(WorktreeBaseBranchError):
+            mgr.transition(
+                "T-1", TaskState.EXECUTE,
+                force=True, reason="trying to bypass HATS-518 (must fail)",
+            )
+
+        assert mgr.get_task("T-1").state == TaskState.PLAN
+
+    def test_succeeds_when_head_is_master(self, task_mgr) -> None:
+        from ai_hats.models import TaskState
         from ai_hats.worktree import WorktreeManager
 
-        (master_project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
-        (master_project / ".agent" / "STATE.md").write_text("")
-
-        self._seed_task_in_plan(master_project, "T-1")
-        mgr = TaskManager(master_project, prefix="T", strict_plan_check=False)
+        master_project, mgr = task_mgr
         try:
             t = mgr.transition("T-1", TaskState.EXECUTE)
             assert t.state == TaskState.EXECUTE
