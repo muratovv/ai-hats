@@ -106,6 +106,10 @@ def test_execute_pipeline_io_shape():
 
 
 def test_execute_pipeline_skeleton():
+    # HATS-535: ``launch_provider`` renamed to ``provider``. The class
+    # is the same (``Provider``), ``LaunchProvider`` is retained as a
+    # backwards-compat alias; the step's ``io.name`` is the new
+    # canonical ``"provider"``.
     assert execute_pipeline.pipeline_name == "execute"
     names = [s.io.name for s in execute_pipeline.steps]
     assert names == [
@@ -113,7 +117,7 @@ def test_execute_pipeline_skeleton():
         "compose_role",
         "resolve_prompt",
         "pre_log",
-        "launch_provider",
+        "provider",
         "spawn_session_review",
         "post_log",
         "render_update_banner",

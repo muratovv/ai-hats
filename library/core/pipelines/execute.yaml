@@ -1,8 +1,12 @@
 name: execute
+# `ai-hats execute` Automate flow. SubAgentRunner drives claude SDK.
+# Post-run finalization (audit derivation only — SESSION_END hooks +
+# retro are HITL-only) lives in the `finalize-subagent` sub-pipeline,
+# invoked by the runner from its finalize site (HATS-535).
 steps:
   - id: check_update_async
   - id: compose_role
   - id: resolve_prompt
     params: {default_text: ""}
-  - id: launch_provider
+  - id: provider
   - id: render_update_banner

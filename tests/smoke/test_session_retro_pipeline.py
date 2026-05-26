@@ -1,20 +1,22 @@
-"""Smoke test for the session-retro pipeline dispatch (HATS-418).
+"""Smoke test for the session-retro pipeline dispatch (HATS-418, HATS-535).
 
-Locks the in-process dispatch added in ``_finalize_session`` after the
-HATS-294 install-step regression silently broke the
-``session_end_auto-retro.sh`` shell hook (see ``HATS-418`` plan).
+Locks the in-process session-reviewer dispatch. Originally added in
+HATS-418 inside ``runtime._finalize_session`` after HATS-294's
+install-step regression silently broke the legacy
+``session_end_auto-retro.sh`` shell hook. HATS-535 split the dispatch
+out into the ``RunSessionEnd`` step of the ``finalize-hitl`` sub-
+pipeline — the contract is unchanged, only the invocation surface
+moved.
 
 Coverage:
 
 * Happy path — ``action == "run"`` invokes
   ``_spawn_session_reviewer_background`` with the session id.
-* Recursion guard — ``HATS_SKIP_RETRO=1`` in the env suppresses spawn so
-  the reviewer's own sub-Claude session does not re-fire dispatch.
+* Recursion guard — ``HATS_SKIP_RETRO=1`` in the env suppresses spawn
+  so the reviewer's own sub-Claude session does not re-fire dispatch.
 * Skip / hint actions do not spawn.
 * Spawner itself uses ``start_new_session=True`` so the child survives
-  parent-shell ``SIGHUP`` (lifecycle assumption locked at the unit
-  boundary; the full terminal-detach proof is the manual e2e step in the
-  task plan).
+  parent-shell ``SIGHUP``.
 """
 
 from __future__ import annotations
@@ -27,27 +29,8 @@ import yaml
 
 from ai_hats.observe import Session
 from ai_hats.paths import runs_dir
+from ai_hats.pipeline.steps.run_session_end import RunSessionEnd
 from ai_hats.retro import auto_retro
-from ai_hats.runtime import _finalize_session
-
-
-# ---------------------------------------------------------------------------
-# Minimal stubs (kept self-contained — tests/smoke/ has no shared conftest).
-# ---------------------------------------------------------------------------
-
-
-class _StubHooksRunner:
-    def __init__(self) -> None:
-        self.calls: list = []
-
-    def run(self, event, env=None):
-        self.calls.append(event)
-        return []
-
-
-class _StubTracer:
-    def flush_response(self) -> None:
-        return None
 
 
 def _make_session(tmp_path: Path) -> Session:
@@ -57,13 +40,7 @@ def _make_session(tmp_path: Path) -> Session:
 
 
 def _write_run_policy_yaml(tmp_path: Path) -> None:
-    """Force the policy decision to ``run`` so the dispatch branch fires.
-
-    `_finalize_session` re-reads yaml via ``make_decision``; without a
-    metrics.json file the policy short-circuits to ``skip`` (HATS-418
-    plan rejects the foreground/`background=False` branch as dead, so we
-    only need the ``always`` policy to land on ``run``).
-    """
+    """Force the policy decision to ``run`` so the dispatch branch fires."""
     (tmp_path / "ai-hats.yaml").write_text(yaml.dump({
         "schema_version": 2,
         "provider": "claude",
@@ -78,20 +55,32 @@ def _write_run_policy_yaml(tmp_path: Path) -> None:
     }))
 
 
-def _finalize_kwargs(tmp_path: Path) -> dict:
+def _stub_hooks_runner(monkeypatch) -> None:
+    """No-op HooksRunner stub so the smoke tests don't touch real hooks."""
+    from ai_hats import runtime as runtime_module
+
+    class _StubHooksRunner:
+        def __init__(self, hooks_dir, project_dir):
+            pass
+
+        def run(self, event, env=None):
+            return []
+
+    monkeypatch.setattr(runtime_module, "HooksRunner", _StubHooksRunner)
+
+
+def _run_step(tmp_path: Path) -> None:
     session = _make_session(tmp_path)
     session.init_audit(role="primary", provider="claude")
-    return {
-        "session": session,
-        "exit_code": 0,
-        "active_role": "primary",
-        "provider_name": "claude",
-        "claude_session_id": "abc-123",
-        "project_dir": tmp_path,
-        "env": {},
-        "hooks_runner": _StubHooksRunner(),
-        "tracer": _StubTracer(),
-    }
+    step = RunSessionEnd()
+    step.run(
+        session_id=session.session_id,
+        session_dir=session.session_dir,
+        project_dir=tmp_path,
+        exit_code=0,
+        audit_path=session.audit_path,
+        hooks_env={},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -103,31 +92,27 @@ def _finalize_kwargs(tmp_path: Path) -> dict:
 def test_run_action_dispatches_session_reviewer(tmp_path, monkeypatch, capsys):
     """`action == "run"` → `_spawn_session_reviewer_background(...)` invoked."""
     _write_run_policy_yaml(tmp_path)
+    _stub_hooks_runner(monkeypatch)
     spawned: list[tuple[Path, str]] = []
     monkeypatch.setattr(
         auto_retro, "_spawn_session_reviewer_background",
         lambda pd, sid: spawned.append((pd, sid)),
     )
-    # Ensure no stale recursion guard from outer env leaks in.
     monkeypatch.delenv("HATS_SKIP_RETRO", raising=False)
 
-    _finalize_session(**_finalize_kwargs(tmp_path))
+    _run_step(tmp_path)
 
     assert spawned == [(tmp_path, "test")], (
         f"expected one spawn call with (project_dir, session_id), got {spawned}"
     )
-    # Discard the session-end summary box — keeps test output clean.
     capsys.readouterr()
 
 
 @pytest.mark.smoke
 def test_recursion_guard_suppresses_dispatch(tmp_path, monkeypatch, capsys):
-    """`HATS_SKIP_RETRO=1` in env must skip the in-process spawn.
-
-    The reviewer's sub-Claude session inherits this env var; without the
-    guard the runtime would spawn a new reviewer ad-infinitum (HATS-252).
-    """
+    """`HATS_SKIP_RETRO=1` in env must skip the in-process spawn (HATS-252)."""
     _write_run_policy_yaml(tmp_path)
+    _stub_hooks_runner(monkeypatch)
     spawned: list[tuple[Path, str]] = []
     monkeypatch.setattr(
         auto_retro, "_spawn_session_reviewer_background",
@@ -135,7 +120,7 @@ def test_recursion_guard_suppresses_dispatch(tmp_path, monkeypatch, capsys):
     )
     monkeypatch.setenv("HATS_SKIP_RETRO", "1")
 
-    _finalize_session(**_finalize_kwargs(tmp_path))
+    _run_step(tmp_path)
 
     assert spawned == [], (
         "HATS_SKIP_RETRO=1 must short-circuit dispatch to avoid spawn-loop"
@@ -158,6 +143,7 @@ def test_skip_action_does_not_dispatch(tmp_path, monkeypatch, capsys):
             },
         },
     }))
+    _stub_hooks_runner(monkeypatch)
     spawned: list[tuple[Path, str]] = []
     monkeypatch.setattr(
         auto_retro, "_spawn_session_reviewer_background",
@@ -165,7 +151,7 @@ def test_skip_action_does_not_dispatch(tmp_path, monkeypatch, capsys):
     )
     monkeypatch.delenv("HATS_SKIP_RETRO", raising=False)
 
-    _finalize_session(**_finalize_kwargs(tmp_path))
+    _run_step(tmp_path)
 
     assert spawned == []
     capsys.readouterr()
@@ -175,13 +161,9 @@ def test_skip_action_does_not_dispatch(tmp_path, monkeypatch, capsys):
 def test_spawner_uses_start_new_session(tmp_path, monkeypatch):
     """`_spawn_session_reviewer_background` must set ``start_new_session=True``.
 
-    This is the kernel-level reason the spawned reviewer survives the
-    parent-shell ``SIGHUP`` when the user closes their terminal —
-    ``setsid()`` detaches the child from the controlling TTY. Without
-    this kwarg the entire pipeline regresses to "auto-retro dies when
-    user closes shell". The full terminal-detach behaviour is verified
-    by hand (see HATS-418 plan, Verification > Manual e2e), but the
-    kwarg presence is locked here so a refactor cannot silently drop it.
+    Kernel-level guarantee that the reviewer survives parent-shell SIGHUP.
+    Locked at the unit boundary; full terminal-detach proof is the manual
+    e2e step (HATS-418 plan).
     """
     captured: dict = {}
 
