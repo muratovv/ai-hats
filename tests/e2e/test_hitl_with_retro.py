@@ -1,24 +1,40 @@
-"""E2E test of the bare ``ai-hats`` HITL flow + auto-retro session-reviewer.
+"""E2E test of the ai-hats role+composition+auto-retro vertical.
 
 Validates five orthogonal claims (HATS-498):
 
-1. The right role is composed into the HITL child claude process.
+1. The right role is composed into the child claude process.
 2. Customization layering works end-to-end — BOTH global-layer
    (``~/.ai-hats/customizations.yaml``) AND project-layer
    (``<project>/ai-hats.yaml``) entries reach the materialized prompt
    with correct ``provenance`` tagging.
 3. The composed prompt actually reaches the child claude (magic-word
    proxy — HATS-452 / HATS-501 regression guard).
-4. After the HITL session, the auto-retro session-reviewer spawns
-   with the correct role and emits draft HYP verdicts + PROP actions
-   into the tracker.
+4. After the session, the session-reviewer runs with the correct role
+   and emits draft HYP verdicts + PROP actions into the tracker.
 
 Implementation as five composable phases, each a helper function with
 an explicit dataclass contract — extension points marked per phase.
 
-Cost shape: ~46s shared venv (amortised) + ~5s Phase 1 + ~10-15s HITL
-turn + ~15-25s reviewer subagent = ~60-90s post-venv. ~$0.04 per run
-on haiku-4-5; cost cap asserted at $0.10 envelope (Phase 5).
+**Driver is ``execute --batch`` (SubAgent / SDK), NOT bare ``ai-hats``
+HITL** — temporary workaround for two harness asymmetries discovered
+during HATS-498 implementation:
+
+- HATS-529 — HITL audit.md doesn't capture assistant responses, so
+  the magic-word proxy for claim #3 (echo verification) is impossible
+  via audit. Without this fix the behavioural turn cannot be asserted.
+- HATS-530 — auto-retro spawn lives only in WrapRunner finalize, not
+  in SubAgent finalize. With this workaround, Phase 5 invokes
+  ``ai-hats session retro <sid>`` manually instead of relying on
+  auto-spawn.
+
+TODO(HATS-529, HATS-530): swap drive_bare_hitl + auto-spawn assertion
+in once both harness fixes land. The TRUE user-facing flow this test
+guards is bare ``ai-hats`` HITL; the current shape exercises the same
+composition + reviewer machinery via the cleanest available channel.
+
+Cost shape: ~46s shared venv (amortised) + ~5s Phase 1 + ~5-10s
+SDK turn + ~10-15s reviewer subagent = ~50-80s post-venv. ~$0.05
+per run on sonnet-4-5; cost cap asserted at $0.10 envelope (Phase 5).
 """
 
 from __future__ import annotations
@@ -31,7 +47,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from _helpers.project import Project
+from _helpers.project import Project, RunResult
+from _helpers.sessions import (
+    read_metrics,
+    snapshot_session_dirs,
+    wait_for_new_session_dir,
+)
 
 
 pytestmark = pytest.mark.integration
@@ -95,6 +116,65 @@ REVIEW_MODEL = "claude-haiku-4-5"
 SELF_INIT_TIMEOUT = 15.0
 CMD_TIMEOUT = 5.0
 
+# SDK drive (workaround for HATS-529/HATS-530 — see module docstring).
+# Sonnet — strong instruction following (Opus skipped magic-word
+# injection in HITL pre-freeze; haiku is more obedient but sonnet is
+# the operational sweet spot — and HITL TODO swap will need it too).
+DRIVE_MODEL = "claude-sonnet-4-5"
+# Directive user prompt — the maintainer role's injection_append
+# (magic-word forcing function) prepends RESPONSE-{random} regardless
+# of prompt content; user text just makes the turn well-defined.
+DRIVE_PROMPT = "Reply with just: ok"
+DRIVE_TIMEOUT = 90.0  # SDK turn ~5-10s; envelope buffer for slow networks
+# Auto-retro (manual fallback per HATS-530) runs another SDK turn in a
+# subprocess. Sonnet review_model pinned in Phase 1 ai-hats.yaml.
+RETRO_TIMEOUT = 120.0
+# Cost cap asserted post-run. Two LLM turns at sonnet — drive turn
+# against maintainer (~5-10K token prompt; observed ~$0.06) +
+# session-reviewer turn (similarly sized; observed ~$0.05). $0.20
+# envelope covers normal variance with 2× headroom. A runaway prompt
+# (e.g. exploded composition due to a regression) trips this cap
+# before $ vanishes.
+COST_CAP_USD = 0.20
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def isolated_global_customizations():
+    """Back up ``~/.ai-hats/customizations.yaml`` at entry, restore at exit.
+
+    Required because HATS-498 needs to seed a global-layer
+    customization (``config customize --global``) but cannot isolate
+    HOME (macOS Keychain ACLs for claude credentials are scoped per
+    real HOME — isolated HOME breaks claude SDK auth, verified
+    empirically). Tests therefore mutate the developer's real
+    ``~/.ai-hats/customizations.yaml`` and this fixture guarantees the
+    original is restored even on test failure / interrupt.
+
+    Race-aware caveat: if a concurrent claude/ai-hats session reads
+    ``~/.ai-hats/customizations.yaml`` mid-test it sees the seeded
+    overlays. Acceptable for the integration-tier ``pytest -m
+    integration`` run cadence; not safe for parallel test execution
+    on the same developer machine.
+
+    TODO(HATS-532): replace with ``AI_HATS_USER_HOME=<tmp>`` env
+    override once that lands — proper isolation, no real-state
+    pollution, no race window.
+    """
+    customizations = Path.home() / ".ai-hats" / "customizations.yaml"
+    backup = customizations.read_bytes() if customizations.exists() else None
+    try:
+        yield customizations
+    finally:
+        if backup is None:
+            customizations.unlink(missing_ok=True)
+        else:
+            customizations.write_bytes(backup)
+
 
 # ---------------------------------------------------------------------------
 # Phase contracts (dataclasses)
@@ -105,13 +185,25 @@ CMD_TIMEOUT = 5.0
 class SetupContext:
     """Static fixture state produced by Phase 1 — passed to all later phases.
 
-    ``env`` carries the HOME-isolation env entry that MUST be threaded
-    through every subsequent ``Project.run()`` invocation; otherwise
-    a stray subprocess would see the developer's real
-    ``~/.ai-hats/customizations.yaml`` and contaminate the test.
+    ``env`` carries env-var overrides threaded into every subsequent
+    ``Project.run()`` invocation — currently just
+    ``HATS_SKIP_RETRO=""`` to defuse the auto-retro recursion guard.
+
+    NOTE: The test uses the developer's REAL ``HOME`` rather than an
+    isolated ``tmp_home``. Reason: claude credentials live in macOS
+    Keychain entries keyed by the real HOME path; an isolated HOME
+    breaks Keychain ACL lookup and claude SDK reports ``Not logged in
+    · Please run /login`` (verified empirically during HATS-498).
+    Global-layer customization is therefore seeded into the real
+    ``~/.ai-hats/customizations.yaml`` and backed up / restored
+    around the test via the ``isolated_global_customizations``
+    pytest fixture.
+    TODO(HATS-532): when ``AI_HATS_USER_HOME`` env override lands,
+    swap real-HOME workaround for proper tmp-home isolation — claude
+    auth stays via real HOME, ai-hats global customizations resolve
+    under ``AI_HATS_USER_HOME``.
     """
 
-    tmp_home: Path
     env: dict[str, str]
     hyp_id: str
     prop_id: str
@@ -126,15 +218,17 @@ class SetupContext:
 # ---------------------------------------------------------------------------
 
 
-def phase_setup(project: Project, tmp_path: Path) -> SetupContext:
+def phase_setup(project: Project) -> SetupContext:
     """Initialise project + seed customizations + tracker fixtures.
 
     Side effects on disk:
 
     - ``<project>/ai-hats.yaml`` — created by ``self init``; mutated by
       project-layer customizations + reviewer_model yaml edit.
-    - ``<tmp_home>/.ai-hats/customizations.yaml`` — created by
-      ``config customize ... --global`` under the isolated HOME.
+    - ``~/.ai-hats/customizations.yaml`` — created/mutated by
+      ``config customize ... --global``. The
+      ``isolated_global_customizations`` pytest fixture backs up the
+      original (if any) and restores it post-test.
     - ``<project>/.agent/ai-hats/tracker/hypotheses/HYP-NNN.yaml`` and
       ``.../backlog/proposals/PROP-NNN.yaml`` — seeded so the auto-retro
       reviewer has something to vote on (Phase 5 forcing function).
@@ -152,10 +246,7 @@ def phase_setup(project: Project, tmp_path: Path) -> SetupContext:
     SetupContext
         The fixture handle threaded through Phases 2-5.
     """
-    tmp_home = tmp_path / "home"
-    tmp_home.mkdir()
     env = {
-        "HOME": str(tmp_home),
         # Explicit recursion-guard reset: if the dev runs the test inside
         # a session that itself spawned ai-hats with HATS_SKIP_RETRO=1
         # (auto-retro recursion guard from auto_retro.py:283), the var
@@ -251,7 +342,6 @@ def phase_setup(project: Project, tmp_path: Path) -> SetupContext:
     )
 
     return SetupContext(
-        tmp_home=tmp_home,
         env=env,
         hyp_id=hyp_id,
         prop_id=prop_id,
@@ -273,27 +363,356 @@ def _set_review_model(yaml_path: Path, model: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2 — Drive HITL session (TODO — separate phase commit)
+# Phase 2 — Drive an SDK session under the test fixture
 # ---------------------------------------------------------------------------
-# def phase_drive_hitl(project, ctx) -> HitlDriveResult: ...
+
+
+@dataclass(frozen=True)
+class DriveResult:
+    """Outcome of phase_drive — fields parsed from the ``--json`` envelope.
+
+    ``session_dir`` is the absolute path to
+    ``<ai_hats_dir>/sessions/runs/session_<id>/`` where Phase 3
+    artefacts (audit.md, metrics.json, meta_prompt.txt, transcript.txt)
+    live.
+    """
+
+    session_id: str
+    session_dir: Path
+    total_cost_usd: float
+    raw: RunResult
+
+
+def phase_drive(project: Project, ctx: SetupContext) -> DriveResult:
+    """[Phase 2] Drive one SDK session under the test fixture.
+
+    Currently uses ``ai-hats execute --batch`` (SubAgentRunner / SDK
+    path) as a WORKAROUND for two harness asymmetries discovered during
+    HATS-498 implementation:
+
+    - HATS-529 — HITL ``audit.md`` doesn't capture assistant responses,
+      making the magic-word echo proxy for claim #3 unverifiable when
+      driving via bare ``ai-hats``.
+    - HATS-530 — auto-retro spawn isn't symmetric across finalizers;
+      Phase 5 below invokes ``session retro`` manually instead.
+
+    TODO(HATS-529, HATS-530): swap to ``_helpers.hitl.drive_bare_hitl``
+    + remove the manual ``session retro`` invocation in Phase 5 once
+    both harness fixes land. The TRUE user-facing flow this test
+    exists to guard is bare-``ai-hats`` HITL; the current shape
+    exercises the same composition + reviewer machinery via the
+    cleanest available channel.
+
+    Persistent artefacts produced (asserted in Phase 3):
+
+    - ``<session_dir>/audit.md`` — composition snapshot + metrics.
+    - ``<session_dir>/metrics.json`` — structured composition + cost.
+    - ``<session_dir>/meta_prompt.txt`` — materialized SDK prompt
+      (claim #2 / #3 structural source of truth).
+    - ``<session_dir>/transcript.txt`` — clean claude response stream
+      (claim #3 behavioural source of truth — magic-word echo).
+    """
+    result = project.run(
+        "execute", "--batch",
+        "-r", "maintainer", "-p", "claude",
+        "--model", DRIVE_MODEL,
+        "--prompt", DRIVE_PROMPT,
+        "--json",
+        timeout=DRIVE_TIMEOUT,
+        extra_env=ctx.env,
+    ).expect_ok()
+    envelope = _extract_json_envelope(result.stdout)
+    return DriveResult(
+        session_id=envelope["session_id"],
+        session_dir=Path(envelope["session_dir"]),
+        total_cost_usd=envelope.get("total_cost_usd", 0.0),
+        raw=result,
+    )
+
+
+def _extract_json_envelope(stdout: str) -> dict:
+    """Find the ``execute --batch --json`` envelope (one-line dict
+    with ``exit_code``) in ``stdout``.
+
+    Iterates lines in reverse and returns the first that parses as a
+    JSON object with an ``exit_code`` key. Tolerates surrounding
+    pipeline output (``render_update_banner`` etc.) which may print
+    extra lines after the JSON write. Mirror of the helper in
+    ``test_golden_path.py`` — kept local until a second consumer
+    justifies extraction (design-minimalism §).
+    """
+    for raw in reversed(stdout.splitlines()):
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(obj, dict) and "exit_code" in obj:
+            return obj
+    raise AssertionError(
+        "no JSON envelope with 'exit_code' key found in stdout — "
+        "is ``execute --batch --json`` still emitting one line via "
+        "``click.echo(json.dumps(payload))`` in cli/execute.py?\n"
+        f"stdout (tail 800):\n{stdout[-800:]}"
+    )
 
 
 # ---------------------------------------------------------------------------
-# Phase 3 — Identify HITL session_dir + assert HITL claims (TODO)
+# Phase 3 — Assert drive session artefacts (composition + materialization)
 # ---------------------------------------------------------------------------
-# def phase_assert_hitl_session(project, ctx) -> HitlSession: ...
+
+
+@dataclass(frozen=True)
+class DriveSession:
+    """Drive-session artefacts loaded for Phase 3 assertions."""
+
+    session_id: str
+    session_dir: Path
+    metrics: dict             # parsed metrics.json
+    meta_prompt: str          # meta_prompt.txt content
+    transcript: str           # transcript.txt content
+    audit_md: str             # audit.md content
+
+
+def phase_assert_drive_session(
+    drive: DriveResult, ctx: SetupContext,
+) -> DriveSession:
+    """[Phase 3] Verify role + customization layering + prompt-reaches-claude.
+
+    Claims pinned here:
+
+    - #1 (right role): ``metrics.composition.role == "maintainer"``.
+    - #2 (global layer): ``metrics.composition.provenance.traits[GLOBAL_TRAIT]
+      == "global"`` — proves ``~/.ai-hats/customizations.yaml`` was
+      resolved.
+    - #2 (project trait): ``metrics.composition.provenance.traits
+      [PROJECT_TRAIT] == "project"`` — proves project layer wins.
+    - #2 (project injection_append): ``ctx.magic_token in meta_prompt``
+      — proves composer + materializer didn't drop the injection_append
+      string (HATS-501 regression guard).
+    - #3 (behavioural): ``ctx.magic_token in transcript`` — proves the
+      composed system_prompt actually reached the claude SDK AND claude
+      applied it (HATS-452 regression guard via response echo).
+    """
+    sd = drive.session_dir
+    # All four files MUST exist post-session — these are the persistent
+    # artefacts (HATS-523 for meta_prompt; _finalize_sub_agent for
+    # transcript / metrics / audit).
+    metrics = read_metrics(sd)
+    meta_prompt = (sd / "meta_prompt.txt").read_text()
+    transcript = (sd / "transcript.txt").read_text()
+    audit_md = (sd / "audit.md").read_text()
+
+    composition = metrics["composition"]
+    # Claim #1 — role lives at top level of metrics (verified at pre-freeze;
+    # composition dict only carries traits/rules/skills/provenance).
+    assert metrics["role"] == "maintainer", (
+        f"metrics.role={metrics['role']!r} (expected 'maintainer')"
+    )
+    # Claim #2 — provenance per layer
+    prov = composition.get("provenance", {}).get("traits", {})
+    assert prov.get(ctx.global_trait) == "global", (
+        f"trait {ctx.global_trait!r} not tagged as 'global' in provenance: "
+        f"{prov}"
+    )
+    assert prov.get(ctx.project_trait) == "project", (
+        f"trait {ctx.project_trait!r} not tagged as 'project' in provenance: "
+        f"{prov}"
+    )
+    # Claim #2 — injection_append landed in materialized prompt
+    assert ctx.magic_token in meta_prompt, (
+        f"magic_token {ctx.magic_token!r} missing from meta_prompt.txt "
+        f"({len(meta_prompt)} bytes) — HATS-501 regression?"
+    )
+    # Claim #3 — claude echoed magic_token
+    assert ctx.magic_token in transcript, (
+        f"magic_token {ctx.magic_token!r} missing from transcript "
+        f"({len(transcript)} bytes) — composition did not reach claude or "
+        f"model ignored the injection. Transcript tail:\n"
+        f"{transcript[-500:]}"
+    )
+
+    return DriveSession(
+        session_id=drive.session_id,
+        session_dir=sd,
+        metrics=metrics,
+        meta_prompt=meta_prompt,
+        transcript=transcript,
+        audit_md=audit_md,
+    )
 
 
 # ---------------------------------------------------------------------------
-# Phase 4 — Identify reviewer session_dir + assert role (TODO)
+# Phase 4 — Invoke reviewer + assert reviewer composition
 # ---------------------------------------------------------------------------
-# def phase_assert_reviewer_session(project, ctx, hitl) -> ReviewerSession: ...
+
+
+@dataclass(frozen=True)
+class ReviewerSession:
+    """Reviewer session artefacts loaded for Phase 4 / 5 assertions."""
+
+    session_id: str
+    session_dir: Path
+    metrics: dict
+    meta_prompt: str
+
+
+# Stable markers from ``library/core/roles/session-reviewer/config.yaml``
+# (priorities header rendered into the system_prompt). If the role's
+# priorities change, this list must follow.
+_REVIEWER_PROMPT_MARKERS = (
+    "Completeness", "Hypothesis-fidelity", "Format-strictness",
+)
+
+
+def phase_invoke_reviewer(
+    project: Project, ctx: SetupContext, drive: DriveResult,
+) -> ReviewerSession:
+    """[Phase 4] Manually invoke session-reviewer + assert correct role.
+
+    Claims pinned here:
+
+    - #6 (config layer): reviewer subprocess composed with
+      ``role == "session-reviewer"``.
+    - #6 (prompt layer): reviewer's ``meta_prompt.txt`` contains
+      session-reviewer priorities markers, proving the composer +
+      materializer chain works for non-maintainer roles too.
+
+    TODO(HATS-530): replace the explicit ``session retro`` invocation
+    with reliance on auto-retro spawn after ``phase_drive`` —
+    auto-retro currently lives only in ``_finalize_session`` (HITL /
+    WrapRunner), not ``_finalize_sub_agent`` (SubAgent / batch). Once
+    HATS-530 lands, ``phase_drive`` triggers reviewer spawn organically
+    and this manual call becomes redundant. The reviewer artefacts
+    asserted in Phase 5 are identical either way.
+    """
+    snapshot = snapshot_session_dirs(project.path)
+    # max-retries=3 — default 1 leaves reviewer LLM one second chance,
+    # and sonnet occasionally emits a malformed observations entry
+    # (dict in place of string) that needs a retry. Three attempts
+    # keeps the test deterministic without exploding cost (each retry
+    # is one cheap reviewer turn).
+    project.run(
+        "session", "retro", drive.session_id,
+        "--max-retries", "3",
+        timeout=RETRO_TIMEOUT, extra_env=ctx.env,
+    ).expect_ok()
+
+    reviewer_dir = wait_for_new_session_dir(
+        snapshot, role="session-reviewer",
+        timeout=5.0, interval=0.2,  # session retro is synchronous; dir exists immediately on return
+    )
+    metrics = read_metrics(reviewer_dir)
+    meta_prompt = (reviewer_dir / "meta_prompt.txt").read_text()
+    # Claim #6 — config layer (role at top-level of metrics, see Phase 3 note)
+    assert metrics["role"] == "session-reviewer", (
+        f"reviewer metrics.role={metrics['role']!r}"
+    )
+    # Claim #6 — prompt layer (priorities markers reached child SDK)
+    for marker in _REVIEWER_PROMPT_MARKERS:
+        assert marker in meta_prompt, (
+            f"reviewer meta_prompt.txt missing marker {marker!r} — "
+            f"composer / materializer regression for non-maintainer roles?"
+        )
+
+    return ReviewerSession(
+        session_id=reviewer_dir.name.removeprefix("session_"),
+        session_dir=reviewer_dir,
+        metrics=metrics,
+        meta_prompt=meta_prompt,
+    )
 
 
 # ---------------------------------------------------------------------------
-# Phase 5 — Assert retro.md + draft artefacts (TODO)
+# Phase 5 — Assert retro.md + draft artefacts + cost cap
 # ---------------------------------------------------------------------------
-# def phase_assert_retro_artefacts(project, ctx, hitl) -> None: ...
+
+
+def phase_assert_retro_artefacts(
+    project: Project,
+    ctx: SetupContext,
+    drive: DriveResult,
+    reviewer: ReviewerSession,
+) -> None:
+    """[Phase 5] Verify retro.md content + cost cap.
+
+    Claims pinned here:
+
+    - #4 (file existence): ``<retros_dir>/sessions/<drive.session_id>.md``
+      exists with non-empty parsable YAML frontmatter (HATS contract:
+      reviewer writes retro keyed by the REVIEWED session's id).
+    - #4 (HYP verdict): reviewer emitted a vote on the pre-seeded
+      ``ctx.hyp_id`` — proves the active-hypotheses forcing function
+      in ``SessionReviewRunner._render_active_hypotheses`` works.
+    - #4 (PROP action): reviewer emitted an action on the pre-seeded
+      ``ctx.prop_id`` — proves the open-proposals forcing function.
+    - #4 defensive: if reviewer YAML somehow validates without HYP /
+      PROP refs, a meta-proposal SHOULD be filed by
+      ``reflect_session_main._harness_check`` — surface it in the
+      failure message rather than silently passing.
+    - Cost cap: combined ``drive.total_cost_usd`` +
+      ``reviewer.metrics.total_cost_usd`` stays under ``COST_CAP_USD``.
+    """
+    retro_path = (
+        project.path / ".agent" / "ai-hats" / "sessions" / "retros"
+        / "sessions" / f"{drive.session_id}.md"
+    )
+    assert retro_path.exists() and retro_path.stat().st_size > 0, (
+        f"retro.md missing or empty at {retro_path}"
+    )
+
+    raw = retro_path.read_text()
+    frontmatter = yaml.safe_load(_extract_frontmatter(raw))
+    assert isinstance(frontmatter, dict), (
+        f"retro.md frontmatter is not a YAML mapping: {type(frontmatter)}"
+    )
+
+    # Claim #4 — HYP verdict
+    verdicts = frontmatter.get("hypothesis_verdicts") or []
+    verdict_hyp_ids = {
+        v.get("hyp_id") for v in verdicts if isinstance(v, dict)
+    }
+    assert ctx.hyp_id in verdict_hyp_ids, (
+        f"reviewer did not emit a verdict for seeded hyp {ctx.hyp_id!r}; "
+        f"verdicts: {verdicts}"
+    )
+
+    # Claim #4 — PROP action
+    actions = frontmatter.get("proposal_actions") or []
+    action_prop_ids = {
+        a.get("prop_id") for a in actions if isinstance(a, dict)
+    }
+    assert ctx.prop_id in action_prop_ids, (
+        f"reviewer did not emit an action for seeded prop {ctx.prop_id!r}; "
+        f"actions: {actions}"
+    )
+
+    # Cost cap
+    reviewer_cost = float(reviewer.metrics.get("total_cost_usd", 0.0) or 0.0)
+    total = drive.total_cost_usd + reviewer_cost
+    assert total < COST_CAP_USD, (
+        f"combined cost ${total:.4f} >= cap ${COST_CAP_USD} "
+        f"(drive=${drive.total_cost_usd:.4f}, reviewer=${reviewer_cost:.4f})"
+    )
+
+
+def _extract_frontmatter(text: str) -> str:
+    """Pull the YAML frontmatter block out of a retro.md (between ``---``s).
+
+    Mirror of ``reflect_session_main._extract_frontmatter`` — kept local
+    until the second test consumer (design-minimalism §).
+    """
+    if not text.startswith("---\n"):
+        return text
+    rest = text[len("---\n"):]
+    end = rest.find("\n---\n")
+    if end == -1:
+        if rest.endswith("\n---"):
+            return rest[:-len("\n---")]
+        raise ValueError("retro.md: malformed frontmatter (missing closing ---)")
+    return rest[:end]
 
 
 # ---------------------------------------------------------------------------
@@ -304,13 +723,23 @@ def _set_review_model(yaml_path: Path, model: str) -> None:
 def test_hitl_role_overlay_prompt_then_auto_retro_spawns_auditor(
     tmp_venv_project: Project,
     requires_claude_auth,  # noqa: ARG001 — skip-marker fixture
-    tmp_path: Path,
+    isolated_global_customizations: Path,
 ) -> None:
-    """Bare HITL flow + auto-retro auditor (claim mapping in module docstring)."""
+    """HITL-equivalent flow + auto-retro auditor (claim mapping in module docstring)."""
 
-    ctx = phase_setup(tmp_venv_project, tmp_path)
-
-    # ----- Phase 2-5 — TODO, separate commits per HATS-498 plan -----
+    ctx = phase_setup(tmp_venv_project)
     assert ctx.hyp_id.startswith("HYP-"), ctx
     assert ctx.prop_id.startswith("PROP-"), ctx
-    assert (ctx.tmp_home / ".ai-hats" / "customizations.yaml").exists(), ctx
+    assert isolated_global_customizations.exists(), (
+        f"global trait seeding didn't land at {isolated_global_customizations}"
+    )
+
+    drive = phase_drive(tmp_venv_project, ctx)
+    # Phase 2 mini-asserts — envelope sanity. Content-level claims
+    # (composition, magic-word, retro artefacts) belong to Phase 3+.
+    assert drive.session_id, drive
+    assert drive.session_dir.is_dir(), drive
+
+    phase_assert_drive_session(drive, ctx)
+    reviewer = phase_invoke_reviewer(tmp_venv_project, ctx, drive)
+    phase_assert_retro_artefacts(tmp_venv_project, ctx, drive, reviewer)
