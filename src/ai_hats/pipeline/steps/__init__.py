@@ -13,10 +13,12 @@ from .compose import ComposeRole
 from .emit import EmitStdout
 from .extract import ExtractMarker
 from .handoff import BuildHandoff
-from .launch import LaunchProvider
+from .launch import LaunchProvider, Provider
 from .log import PostLog, PreLog
+from .make_audit import MakeAudit
 from .materialize import MaterializeSystemPrompt
 from .prompt import ResolvePrompt
+from .run_session_end import RunSessionEnd
 from .save import SaveArtifact
 from .session_review import RunSessionReview
 from .spawn_review import SpawnSessionReview
@@ -30,7 +32,14 @@ _BUILTINS = {
     "resolve_prompt": ResolvePrompt,
     "build_handoff": BuildHandoff,
     "pre_log": PreLog,
+    # HATS-535: ``launch_provider`` retained as a deprecated alias for
+    # ``provider`` so externally-loaded YAML pipelines that pre-date the
+    # split keep loading. Both resolve to the same class; the new YAML
+    # convention is ``provider``.
     "launch_provider": LaunchProvider,
+    "provider": Provider,
+    "make_audit": MakeAudit,
+    "run_session_end": RunSessionEnd,
     "spawn_session_review": SpawnSessionReview,
     "extract_marker": ExtractMarker,
     "save_artifact": SaveArtifact,
@@ -58,11 +67,14 @@ __all__ = [
     "EmitStdout",
     "ExtractMarker",
     "LaunchProvider",
+    "MakeAudit",
     "MaterializeSystemPrompt",
     "PostLog",
     "PreLog",
+    "Provider",
     "RenderUpdateBanner",
     "ResolvePrompt",
+    "RunSessionEnd",
     "RunSessionReview",
     "SaveArtifact",
     "SpawnSessionReview",

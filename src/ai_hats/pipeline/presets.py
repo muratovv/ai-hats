@@ -11,7 +11,7 @@ from __future__ import annotations
 from .pipeline import build
 from .steps.check_update import CheckUpdateAsync
 from .steps.compose import ComposeRole
-from .steps.launch import LaunchProvider
+from .steps.launch import Provider
 from .steps.log import PostLog, PreLog
 from .steps.prompt import ResolvePrompt
 from .steps.spawn_review import SpawnSessionReview
@@ -23,7 +23,7 @@ execute_pipeline = build(
     ComposeRole(),
     ResolvePrompt({"default_text": ""}),
     PreLog({"keys": ["role", "system_prompt", "prompt_text"]}),
-    LaunchProvider(),
+    Provider(),
     SpawnSessionReview({"max_retries": 1}),
     PostLog({"keys": ["session_id", "exit_code", "review_pid"]}),
     RenderUpdateBanner(),

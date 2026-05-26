@@ -36,10 +36,11 @@ def test_execute_yaml_ends_with_render_update_banner():
 
 
 def test_execute_yaml_check_before_launch():
+    # HATS-535: ``launch_provider`` step renamed to ``provider``.
     pipeline = load_pipeline(PIPELINES_DIR / "execute.yaml")
     step_names = [s.io.name for s in pipeline.steps]
-    assert step_names.index("check_update_async") < step_names.index("launch_provider")
-    assert step_names.index("launch_provider") < step_names.index("render_update_banner")
+    assert step_names.index("check_update_async") < step_names.index("provider")
+    assert step_names.index("provider") < step_names.index("render_update_banner")
 
 
 def test_human_yaml_starts_with_check_update_async():

@@ -1,0 +1,14 @@
+name: finalize-subagent
+# SubAgent (SubAgentRunner) post-run finalize sub-pipeline (HATS-535).
+# Invoked by SubAgentRunner from its terminal-path finalizer. Symmetric
+# to `finalize-hitl` but intentionally OMITS `run_session_end`: the
+# pre-HATS-535 SubAgent path never fired SESSION_END hooks or retro
+# decisions, and HATS-535 preserves that contract bit-for-bit. The
+# user-visible win is structured `audit.md` parity (👤/👾/🔧/💭)
+# previously available only in HITL.
+#
+# If SubAgent SESSION_END hooks become desired later, append
+# `- id: run_session_end` — the runner already wires hooks_env into
+# the finalize initial state, no Python change required.
+steps:
+  - id: make_audit

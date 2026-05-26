@@ -21,7 +21,7 @@ from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
 from .materialize import compose_for_role
 from .models import LifecycleEvent
-from .observe import AuditWriter, Session, SessionManager, SidecarTracer, TraceTag
+from .observe import Session, SessionManager, SidecarTracer, TraceTag
 from .paths import hooks_dir as _hooks_dir
 from .providers import get_provider
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
@@ -136,6 +136,7 @@ def _finalize_sub_agent(
     tags: dict[str, str] | None = None,
     duration_s: float | None = None,
     extra_metrics: dict | None = None,
+    work_dir: Path | None = None,
 ) -> None:
     """Save transcripts and finalize audit with structured metrics.
 
@@ -151,6 +152,17 @@ def _finalize_sub_agent(
     ``None`` values inside are skipped so legacy subprocess callers
     (Gemini) that have no such telemetry keep producing the same
     metrics.json shape they always did.
+
+    ``work_dir`` (HATS-535): cwd the SDK ran under — encoded as
+    claude's project_key when locating ``~/.claude/projects/<key>/
+    <claude_session_id>.jsonl``. When provided alongside a
+    ``claude_session_id`` in ``extra_metrics``, the
+    ``finalize-subagent`` sub-pipeline runs and produces a structured
+    ``audit.md`` (👤/👾/🔧/💭) for the SubAgent path — closing the
+    HITL/Automate asymmetry that motivated HATS-535. Callers without
+    ``work_dir`` (multi-turn ``SubAgentSession`` flow, legacy paths)
+    keep producing the meta-only ``audit.md`` they always did — opt-in
+    enrichment, no behaviour change for the unfixed callsites.
     """
     if stdout:
         (session.session_dir / "transcript.txt").write_text(stdout)
@@ -177,6 +189,24 @@ def _finalize_sub_agent(
                 metrics[k] = v
 
     session.finalize_audit(metrics)
+
+    # HATS-535: opt-in structured audit.md via finalize-subagent
+    # sub-pipeline. Requires both work_dir (for JSONL project_key
+    # encoding) and a claude_session_id (no claude jsonl without it —
+    # e.g. Gemini provider has neither).
+    claude_session_id = None
+    if extra_metrics:
+        claude_session_id = extra_metrics.get("claude_session_id")
+    if work_dir is not None and claude_session_id:
+        try:
+            _run_finalize_subagent(
+                session,
+                claude_session_id=claude_session_id,
+                project_dir=work_dir,
+                exit_code=exit_code,
+            )
+        except (Exception, KeyboardInterrupt):
+            logger.warning("finalize-subagent pipeline failed", exc_info=True)
 
 
 class HooksRunner:
@@ -378,6 +408,18 @@ def _print_session_end(
     trace_stats: dict | None = None,
     retro: dict | None = None,
 ) -> None:
+    """Render the green ``✨ Session <id> complete!`` summary.
+
+    HATS-535: the **retro reminder banner** lines (cyan
+    "Reflect through N sessions" + wrap-up nudge) used to print inline
+    here. They now print at the tail of ``RunSessionEnd`` (in the
+    ``finalize-hitl`` sub-pipeline), AFTER ``SESSION_END`` hooks fire.
+    The ``retro`` parameter is retained for the one-line
+    ``📝 Retro: <decision>`` summary that still belongs with the
+    session-end banner — callers that have a retro decision in hand
+    (e.g. the auto-retro reviewer's own banner) pass it; the standard
+    HITL flow calls this with ``retro=None`` and the line is omitted.
+    """
     if trace_stats is None:
         trace_stats = _collect_trace_stats(session)
 
@@ -405,188 +447,159 @@ def _print_session_end(
             print(f"  📝 Retro: {describe_decision(retro)}")
         except Exception:
             logger.warning("retro banner line failed", exc_info=True)
-
-        rem = retro.get("reminder")
-        if rem:
-            # Yellow lead-line + cyan command — visually distinct from the green ✨ banner.
-            print(
-                f"\033[33m  Reflect the project through {rem['count']} sessions:\033[0m"
-            )
-            print(f"     \033[36m{rem['command']}\033[0m")
-
-        wrap = retro.get("wrap_up")
-        if wrap:
-            # Wrap-up nudge (HATS-214): long multi-task sessions risk masking
-            # mistakes under green metrics — Goodhart guardrail.
-            print(
-                f"\033[33m  Wrap up before next task — "
-                f"{wrap['tasks_closed']} tasks closed in "
-                f"{wrap['duration_min']}min, cache {wrap['cache_read_mb']}MB\033[0m"
-            )
-            print("     \033[36m/clear\033[0m before starting fresh work")
     print(f"  {_format_tokens(session)}")
     print(f"  📂 {session.session_dir}")
     print("━" * 52 + "\n")
 
 
-def _finalize_session(
+def _finalize_session_basic(
     session: "Session",
     *,
     exit_code: int,
     active_role: str | None,
     provider_name: str,
+    tracer: "SidecarTracer",
+    tags: dict[str, str] | None = None,
+) -> dict:
+    """Per-runner minimal HITL finalize: log + metrics.json + smoke test.
+
+    HATS-535: split from the legacy ``_finalize_session`` megafunction.
+    Audit derivation (``AuditWriter``) + retro decision + SESSION_END
+    hooks + reviewer spawn moved to the ``finalize-hitl`` sub-pipeline
+    (``MakeAudit`` + ``RunSessionEnd``), invoked by the caller AFTER
+    this function returns. ``_print_session_end`` is also caller-driven
+    (must run in outer ``finally`` to surface the session id even on
+    SIGINT).
+
+    Each phase is wrapped in ``try/except (Exception, KeyboardInterrupt)``
+    per the HATS-086 invariant — a second Ctrl+C must not kill cleanup
+    partway. Returns ``trace_stats`` so the caller can thread it into
+    ``_print_session_end`` without re-reading ``trace.log``.
+    """
+    trace_stats: dict = {}
+    try:
+        tracer.flush_response()
+    except (Exception, KeyboardInterrupt):
+        logger.warning("trace flush failed", exc_info=True)
+
+    try:
+        session.log_trace(TraceTag.SYS, f"Session ended: exit_code={exit_code}")
+        session.append_audit(f"Session ended with code {exit_code}")
+    except (Exception, KeyboardInterrupt):
+        logger.warning("session trace/audit append failed", exc_info=True)
+
+    try:
+        metrics: dict = {
+            "exit_code": exit_code,
+            "role": active_role,
+            "provider": provider_name,
+        }
+        if tags:
+            metrics["tags"] = tags
+        session.finalize_audit(metrics)
+    except (Exception, KeyboardInterrupt):
+        logger.warning("audit finalization failed", exc_info=True)
+
+    try:
+        trace_stats = _collect_trace_stats(session)
+    except (Exception, KeyboardInterrupt):
+        logger.warning("trace stats collection failed", exc_info=True)
+
+    # Smoke-test: non-error session should have turns after enrichment.
+    # NB: enrichment now happens in ``MakeAudit`` (downstream); this
+    # smoke test fires before that, so the warning is a no-op until the
+    # finalize-hitl pipeline runs. Kept here for parity with the
+    # pre-HATS-535 placement; the meaningful check is the metrics.json
+    # state at session-end print time.
+    try:
+        if exit_code == 0 and session.metrics_path.exists():
+            metrics = json.loads(session.metrics_path.read_text())
+            if metrics.get("turns", 0) == 0:
+                logger.debug(
+                    "session %s: exit_code=0 but turns=0 pre-enrichment — "
+                    "expected; MakeAudit will populate from JSONL",
+                    session.session_id,
+                )
+    except (Exception, KeyboardInterrupt):
+        pass
+
+    return trace_stats
+
+
+def _log_pipeline_errors(pipeline_name: str, final_state: dict) -> None:
+    """Surface per-step errors swallowed by ``failure_policy=continue``.
+
+    Pipeline runner records continue-policy failures in
+    ``state["errors"]`` and proceeds to the next step (no exception
+    raised). Without this hook the only visible signal is the outer
+    catch's ``finalize-* pipeline failed`` line, which fires for
+    HALT-policy crashes only. For continue-policy regressions (a step
+    silently no-opping due to a fresh bug) we'd see nothing — hence the
+    explicit drain.
+    """
+    errors = final_state.get("errors") or {}
+    for step_name, exc in errors.items():
+        logger.warning(
+            "%s step %s failed: %s: %s",
+            pipeline_name, step_name, type(exc).__name__, exc,
+        )
+
+
+def _run_finalize_hitl(
+    session: "Session",
+    *,
     claude_session_id: str,
     project_dir: Path,
     env: dict[str, str],
-    hooks_runner: "HooksRunner",
-    tracer: "SidecarTracer",
-    tags: dict[str, str] | None = None,
+    exit_code: int,
 ) -> None:
-    """Run all post-pty cleanup steps with per-step isolation. ALWAYS
-    calls _print_session_end at the end, even when individual steps fail
-    or are interrupted by SIGINT mid-cleanup. HATS-086.
+    """Invoke the ``finalize-hitl`` sub-pipeline (HATS-535).
 
-    Each step catches both ``Exception`` and ``KeyboardInterrupt`` so a
-    second Ctrl+C cannot kill cleanup partway. Errors are logged at WARN
-    level. The summary print is the last step and is itself wrapped — if
-    even that fails, we fall back to a bare-bones session-id line so the
-    user never loses the id.
+    The pipeline runs ``make_audit`` then ``run_session_end``. Caller
+    (WrapRunner.run's finally) wraps this in its own try/except so a
+    finalize-pipeline crash never blocks the outer
+    ``_print_session_end``.
     """
-    trace_stats: dict | None = None
-    retro_decision: dict | None = None
+    from .pipeline.loader import load_core_pipeline
+    from .pipeline.pipeline import run as run_pipeline
 
-    try:
-        try:
-            tracer.flush_response()
-        except (Exception, KeyboardInterrupt):
-            logger.warning("trace flush failed", exc_info=True)
+    pipeline = load_core_pipeline("finalize-hitl")
+    final_state = run_pipeline(pipeline, initial={
+        "session_id": session.session_id,
+        "session_dir": session.session_dir,
+        "claude_session_id": claude_session_id,
+        "project_dir": project_dir,
+        "exit_code": exit_code,
+        "hooks_env": env,
+    })
+    _log_pipeline_errors("finalize-hitl", final_state)
 
-        try:
-            session.log_trace(TraceTag.SYS, f"Session ended: exit_code={exit_code}")
-            session.append_audit(f"Session ended with code {exit_code}")
-        except (Exception, KeyboardInterrupt):
-            logger.warning("session trace/audit append failed", exc_info=True)
 
-        # Finalize metrics and build enriched audit BEFORE hooks, so
-        # session_end hooks can read metrics.json (e.g. auto-retro).
-        try:
-            metrics: dict = {
-                "exit_code": exit_code,
-                "role": active_role,
-                "provider": provider_name,
-            }
-            if tags:
-                metrics["tags"] = tags
-            session.finalize_audit(metrics)
-        except (Exception, KeyboardInterrupt):
-            logger.warning("audit finalization failed", exc_info=True)
+def _run_finalize_subagent(
+    session: "Session",
+    *,
+    claude_session_id: str,
+    project_dir: Path,
+    exit_code: int,
+) -> None:
+    """Invoke the ``finalize-subagent`` sub-pipeline (HATS-535).
 
-        try:
-            trace_stats = _collect_trace_stats(session)
-        except (Exception, KeyboardInterrupt):
-            logger.warning("trace stats collection failed", exc_info=True)
+    Pipeline runs ``make_audit`` only — SubAgent path intentionally
+    omits ``run_session_end`` to preserve pre-HATS-535 behaviour
+    (no SESSION_END hooks, no auto-retro for sub-agents).
+    """
+    from .pipeline.loader import load_core_pipeline
+    from .pipeline.pipeline import run as run_pipeline
 
-        try:
-            jsonl_path = _claude_jsonl_path(project_dir, claude_session_id)
-            if jsonl_path is None or not jsonl_path.exists():
-                discovered = _discover_claude_jsonl(project_dir, session.session_id)
-                if discovered is not None:
-                    session.log_trace(
-                        TraceTag.SYS,
-                        f"JSONL discovered via mtime fallback: {discovered.name}",
-                    )
-                    jsonl_path = discovered
-            AuditWriter().build(session, jsonl_path=jsonl_path)
-        except (Exception, KeyboardInterrupt):
-            logger.warning("audit writer failed", exc_info=True)
-
-        # Smoke-test: non-error session should have turns after enrichment
-        try:
-            if exit_code == 0 and session.metrics_path.exists():
-                metrics = json.loads(session.metrics_path.read_text())
-                if metrics.get("turns", 0) == 0:
-                    logger.warning(
-                        "session %s: exit_code=0 but turns=0 — metrics may be incomplete",
-                        session.session_id,
-                    )
-        except (Exception, KeyboardInterrupt):
-            pass
-
-        # Pre-compute retro decision synchronously BEFORE hooks fire.
-        # Why: runtime must surface the outcome (path or skip reason) in
-        # the banner even if the hook crashes or the harness is SIGKILLed.
-        # The hook re-evaluates the same pure function independently.
-        try:
-            from .retro.auto_retro import make_decision, write_retro_log
-
-            retro_decision = make_decision(project_dir, session.session_id)
-            write_retro_log(
-                project_dir, session.session_id,
-                "runtime", "decision",
-                f"{retro_decision['action']}: {retro_decision['reason']}",
-            )
-        except (Exception, KeyboardInterrupt):
-            logger.warning("retro decision/log failed", exc_info=True)
-
-        # HATS-418: in-process dispatch for session-reviewer spawn.
-        # HATS-294 dropped the install step that populated
-        # ``<ai_hats_dir>/library/hooks/``, so the shell-hook path
-        # ``session_end_auto-retro.sh`` no longer fires. Spawn the
-        # reviewer directly here for the auto-retro flow. The
-        # ``hooks_runner.run()`` call below stays intact for any
-        # user-authored hooks that may land in ``library/hooks/`` later
-        # (Approach A — out of scope for this task).
-        #
-        # Recursion guard mirrors ``auto_retro.main()``: the sub-Claude
-        # session spawned by the reviewer sets ``HATS_SKIP_RETRO=1`` in
-        # its env, so we bail without re-spawning.
-        #
-        # Both ``sr.background = True/False`` legacy branches in
-        # ``auto_retro.main()`` converged on
-        # ``_spawn_session_reviewer_background`` (the ``False`` branch
-        # only added an extra Python intermediate process via
-        # ``_run_background`` → ``auto_retro --foreground``). We collapse
-        # that here — the flag has no behavioural effect on the spawned
-        # reviewer process itself.
-        if (
-            retro_decision is not None
-            and retro_decision.get("action") == "run"
-            and os.environ.get("HATS_SKIP_RETRO") != "1"
-        ):
-            try:
-                from .retro.auto_retro import (
-                    _spawn_session_reviewer_background,
-                )
-
-                _spawn_session_reviewer_background(
-                    project_dir, session.session_id,
-                )
-            except (Exception, KeyboardInterrupt):
-                logger.warning(
-                    "session-reviewer spawn failed", exc_info=True,
-                )
-
-        # Run session_end hooks AFTER metrics.json and enriched audit
-        # are written, so hooks (e.g. auto-retro) can read them.
-        try:
-            hook_results = hooks_runner.run(LifecycleEvent.SESSION_END, env=env)
-            for hr in hook_results:
-                if hr.get("stderr"):
-                    print(hr["stderr"], end="", file=sys.stderr)
-        except (Exception, KeyboardInterrupt):
-            logger.warning("session_end hook failed", exc_info=True)
-    finally:
-        # The summary print is the only thing that surfaces the session id
-        # to the user. It MUST run, even on second SIGINT, even if every
-        # step above failed.
-        try:
-            _print_session_end(session, trace_stats=trace_stats, retro=retro_decision)
-        except (Exception, KeyboardInterrupt):
-            logger.warning("session-end print failed", exc_info=True)
-            try:
-                print(f"\n✨ Session {session.session_id} complete!")
-            except (BrokenPipeError, OSError):
-                pass
+    pipeline = load_core_pipeline("finalize-subagent")
+    final_state = run_pipeline(pipeline, initial={
+        "session_id": session.session_id,
+        "session_dir": session.session_dir,
+        "claude_session_id": claude_session_id,
+        "project_dir": project_dir,
+        "exit_code": exit_code,
+    })
+    _log_pipeline_errors("finalize-subagent", final_state)
 
 
 class WrapRunner:
@@ -723,9 +736,16 @@ class WrapRunner:
 
         # PTY proxy via pty.spawn with sidecar trace.
         # HATS-086: wrap _pty_spawn so SIGINT during the interactive part
-        # routes through _finalize_session in the finally block, ensuring
+        # routes through the finalize chain in the finally block, ensuring
         # the session-end summary (with the all-important session id) is
         # always printed.
+        #
+        # HATS-535: finalize is now a three-step chain:
+        #   1. _finalize_session_basic — metrics.json, trace stats, smoke
+        #   2. finalize-hitl pipeline — make_audit + run_session_end
+        #   3. _print_session_end — green summary (outer finally; SIGINT-safe)
+        # Each layer's exceptions are isolated so a downstream crash
+        # never prevents the session-id print (HATS-086 invariant).
         tracer = SidecarTracer(session)
         exit_code = 130  # canonical SIGINT default if _pty_spawn raises pre-assignment
         try:
@@ -733,18 +753,39 @@ class WrapRunner:
         except KeyboardInterrupt:
             exit_code = 130
         finally:
-            _finalize_session(
-                session,
-                exit_code=exit_code,
-                active_role=active_role,
-                provider_name=provider_name,
-                claude_session_id=claude_session_id,
-                project_dir=self.project_dir,
-                env=env,
-                hooks_runner=hooks_runner,
-                tracer=tracer,
-                tags=tags,
-            )
+            trace_stats: dict = {}
+            try:
+                trace_stats = _finalize_session_basic(
+                    session,
+                    exit_code=exit_code,
+                    active_role=active_role,
+                    provider_name=provider_name,
+                    tracer=tracer,
+                    tags=tags,
+                )
+                try:
+                    _run_finalize_hitl(
+                        session,
+                        claude_session_id=claude_session_id,
+                        project_dir=self.project_dir,
+                        env=env,
+                        exit_code=exit_code,
+                    )
+                except (Exception, KeyboardInterrupt):
+                    logger.warning("finalize-hitl pipeline failed", exc_info=True)
+            finally:
+                # The summary print is the only thing that surfaces the
+                # session id to the user. It MUST run, even on second
+                # SIGINT, even if every step above failed.
+                try:
+                    _print_session_end(session, trace_stats=trace_stats)
+                except (Exception, KeyboardInterrupt):
+                    logger.warning("session-end print failed", exc_info=True)
+                    try:
+                        print(f"\n✨ Session {session.session_id} complete!")
+                    except (BrokenPipeError, OSError):
+                        pass
+
             # HATS-294: drop the per-session cache dir (prompt + plugin/).
             # SIGKILL-orphans are accepted — TTL sweep mops them up on the
             # next session_start.
@@ -1184,6 +1225,7 @@ class SubAgentRunner:
                             "num_turns": run_result.num_turns,
                             "stop_reason": run_result.stop_reason,
                         },
+                        work_dir=work_dir,
                     )
                 else:
                     # Legacy subprocess path (Gemini and future non-SDK providers).
@@ -1209,6 +1251,7 @@ class SubAgentRunner:
                         stderr=proc.stderr or "",
                         tags=tags,
                         duration_s=time.monotonic() - t0,
+                        work_dir=work_dir,
                     )
 
             except subprocess.TimeoutExpired as exc:
@@ -1227,6 +1270,7 @@ class SubAgentRunner:
                     timed_out=True,
                     tags=tags,
                     duration_s=time.monotonic() - t0,
+                    work_dir=work_dir,
                 )
             except Exception as e:
                 # Catches any unanticipated SDK-path exception too — defence
@@ -1243,6 +1287,7 @@ class SubAgentRunner:
                     error=str(e),
                     tags=tags,
                     duration_s=time.monotonic() - t0,
+                    work_dir=work_dir,
                 )
             finally:
                 _cleanup_session_cache(self.project_dir, session.session_id)
@@ -1508,11 +1553,17 @@ class SubAgentRunner:
         t0 = time.monotonic()
         sub: SubAgentSession | None = None
         yield_error: BaseException | None = None
+        # HATS-535: latch work_dir so `_finalize_session_audit` can pass
+        # it through to ``_finalize_sub_agent`` for ``finalize-subagent``
+        # JSONL discovery — closing the multi-turn SubAgent audit parity
+        # gap (single-turn `_run_attempt` callers already wire it).
+        captured_work_dir: Path | None = None
 
         try:
             with WorktreeManager(
                 self.project_dir, role, session.session_id, mode,
             ) as work_dir:
+                captured_work_dir = work_dir
                 session.log_trace(
                     TraceTag.SUB, f"Working directory: {work_dir}",
                 )
@@ -1569,6 +1620,7 @@ class SubAgentRunner:
                 yield_error=yield_error,
                 tags=tags,
                 duration_s=time.monotonic() - t0,
+                work_dir=captured_work_dir,
             )
             _cleanup_session_cache(self.project_dir, session.session_id)
 
@@ -1583,6 +1635,7 @@ class SubAgentRunner:
         yield_error: BaseException | None,
         tags: dict[str, str] | None,
         duration_s: float,
+        work_dir: Path | None = None,
     ) -> None:
         """Emit the per-session ``transcript.txt`` / ``reasoning.log`` /
         ``metrics.json`` once a multi-turn session has finished.
@@ -1610,6 +1663,7 @@ class SubAgentRunner:
                 error=error_text,
                 tags=tags,
                 duration_s=duration_s,
+                work_dir=work_dir,
             )
             return
 
@@ -1640,4 +1694,5 @@ class SubAgentRunner:
                 "send_count": sub.send_count,
                 "stop_reason": sub.last_stop_reason,
             },
+            work_dir=work_dir,
         )
