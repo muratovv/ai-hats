@@ -28,13 +28,14 @@ supervisor, ack'd CLI mutations from a whitelist (see §CLI whitelist),
 no source-file edits without L2 activation, single report artifact at
 exit.
 
-## Step 1 — Read the draft from handoff
+## Step 1 — Read the first user message
 
-The first user message contains the Phase 1 `judge-auditor` draft. Its
-sections — `## Deliverables since prior report`, `## Hypotheses`,
-`## Proposals`, `## Counter-claims`, `## Notes`, `## Proposed
-mutations` — are your starting analysis. Treat them as **proposals**,
-not facts:
+The first user message is one of three shapes. Detect which and adapt:
+
+### Shape A — Phase 1 draft from `judge-auditor` (default for `reflect hypothesis`)
+
+The body contains a `## Proposed mutations` section. This is your
+starting analysis from the headless auditor pass:
 
 - Read the draft cover-to-cover before mutating anything.
 - The `## Proposed mutations` section is a CLI checklist. Each line is
@@ -44,10 +45,26 @@ not facts:
   `keep` but recent evidence indicates `extend_window`), say so and
   ask the supervisor.
 
-If launched standalone (no draft in handoff), use the **Glob** tool
-on `<ai_hats_dir>/sessions/retros/judge/*-draft.md`, read the
-lexicographically latest, and proceed from there — or ask the
-supervisor for ad-hoc context.
+### Shape B — Active-HYP / open-PROP inventory (legacy `reflect all`)
+
+The body has `## Active hypotheses` / `## Open proposals` sections but
+NO `## Proposed mutations` section. This is the legacy single-phase
+invocation that has not yet migrated to `reflect hypothesis`. Run the
+audit yourself before dialoguing — walk the inventory, draft verdicts
+mentally, then proceed to Step 2 with the supervisor. There is no
+auditor draft to validate; you are doing both phases in one session.
+
+> The legacy `reflect all` pipeline is deprecated (HATS-540) but kept
+> for one bake cycle. Don't refuse — supervisor may invoke it
+> intentionally during transition. Apply the same Steps 2 → 3 → 3.5 →
+> 4 flow; just skip the "validate auditor proposals" framing.
+
+### Shape C — Free-form supervisor prompt (`ai-hats execute --role judge`)
+
+The body is an ad-hoc question, not a structured handoff. Glob
+`<ai_hats_dir>/sessions/retros/judge/*-draft.md`, read the
+lexicographically latest if present, and proceed — or ask the
+supervisor for context up front.
 
 ## Step 2 — Walk hypotheses with supervisor
 

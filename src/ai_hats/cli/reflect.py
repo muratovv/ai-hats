@@ -234,9 +234,12 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
             "extra_args": [],
         })
 
-    # Fail closed: Phase 1 errored or did not produce a draft.
-    # Opening Phase 2 on a missing/partial artifact would mislead the
-    # supervisor — abort with a non-zero exit instead.
+    # Fail closed: Phase 1 errored OR did not produce a usable draft.
+    # `save_artifact` always emits `saved_path` (even on empty content),
+    # so we additionally assert the draft file is non-empty — extract_marker
+    # silently returns "" when BEGIN_JUDGE_DRAFT/END_JUDGE_DRAFT are missing
+    # from the transcript, which would leave a zero-byte draft on disk and
+    # mislead a Phase 2 session into discussing nothing.
     if int(r1.get("exit_code", 1)) != 0 or "saved_path" not in r1:
         console.print(
             "[red]✗[/] Phase 1 (judge-auditor) failed — Phase 2 aborted."
@@ -244,6 +247,13 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
         sys.exit(int(r1.get("exit_code", 1)) or 1)
 
     draft_path = Path(r1["saved_path"])
+    if not draft_path.exists() or draft_path.stat().st_size == 0:
+        console.print(
+            "[red]✗[/] Phase 1 produced an empty draft "
+            f"({draft_path}) — markers missing from transcript. "
+            "Phase 2 aborted."
+        )
+        sys.exit(1)
     console.print(f"[green]✓[/] Phase 1 draft: {draft_path}")
     if headless:
         sys.exit(0)
