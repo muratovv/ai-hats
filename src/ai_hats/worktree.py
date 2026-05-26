@@ -755,6 +755,102 @@ class WorktreeDriftError(Exception):
     """
 
 
+class WorktreeBaseBranchError(Exception):
+    """Raised when ``wt create`` is invoked with main-repo HEAD not on a
+    canonical base branch (``master`` / ``main``).
+
+    HATS-518: ``WorktreeManager.create()`` captures the main repo's current
+    branch as ``_original_branch`` — which becomes the merge target of
+    ``wt merge``. If the operator parked the main repo on a feature branch
+    (e.g. ``task/hats-510``) before invoking ``wt create`` or
+    ``task transition <ID> execute``, subsequent merges silently land on
+    that feature branch instead of master. See incident report on HATS-486.
+
+    Recovery: ``git checkout <canonical-base>`` in the main repo, then
+    re-run the command.
+
+    **`--force` does NOT bypass this guard.** ``task transition --force``
+    overrides the FSM (state-machine arrow), not the safety contract —
+    same as merge / discard refusals (HATS-481). If the operator genuinely
+    wants the worktree to merge into a non-canonical branch, they checkout
+    that branch in the main repo first; ``--force`` is not the lever.
+    """
+
+    def __init__(self, current: str, canonical: list[str]) -> None:
+        self.current = current
+        self.canonical = canonical
+        super().__init__(
+            f"Refused: main repo HEAD is '{current}', not a canonical base "
+            f"branch ({', '.join(canonical)}). Worktrees inherit their merge "
+            f"target from the current branch — creating one from a feature "
+            f"branch leads to merges landing on that feature branch, not "
+            f"master (HATS-518). Run `git checkout <base>` in the main repo "
+            f"first, then retry."
+        )
+
+
+#: Branch names considered "canonical bases" for worktree creation. The
+#: first one that actually exists in the repo is the comparison target.
+#: Hardcoded by design (HATS-518): 99% repo coverage, no new config
+#: primitive until a second use case appears (YAGNI / design-minimalism).
+CANONICAL_BASE_BRANCHES: tuple[str, ...] = ("master", "main")
+
+
+def assert_head_is_canonical_base(project_dir: Path) -> None:
+    """Refuse if main-repo HEAD is not on a canonical base branch.
+
+    No-op when:
+      * not a git repo (no ``.git`` dir — caller has its own short-circuit);
+      * HEAD is detached (no branch name to compare against);
+      * none of :data:`CANONICAL_BASE_BRANCHES` exist in this repo
+        (exotic naming — no canon to compare against, pass through rather
+        than block valid workflows).
+
+    :raises WorktreeBaseBranchError: HEAD is on a named branch, at least
+        one canonical base exists, and HEAD is not one of them.
+    """
+    if not (project_dir / ".git").exists():
+        return
+
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return  # Can't introspect — fall through to existing behavior.
+
+    # Detached HEAD: `rev-parse --abbrev-ref HEAD` returns the literal
+    # string "HEAD". No branch name to compare; skip the guard rather
+    # than block (operator on a SHA knows what they're doing).
+    if head == "HEAD":
+        return
+
+    existing_canonical: list[str] = []
+    for name in CANONICAL_BASE_BRANCHES:
+        try:
+            subprocess.run(
+                ["git", "rev-parse", "--verify", "--quiet", name],
+                cwd=str(project_dir),
+                capture_output=True,
+                check=True,
+            )
+            existing_canonical.append(name)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+
+    if not existing_canonical:
+        return  # No canon in this repo — nothing to compare against.
+
+    if head in existing_canonical:
+        return
+
+    raise WorktreeBaseBranchError(current=head, canonical=existing_canonical)
+
+
 class IsolationMode(str, Enum):
     DISCARD = "discard"
     SQUASH = "squash"

@@ -10,6 +10,22 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+- **`ai-hats wt create` / `ai-hats task transition <ID> execute` now
+  refuse when main-repo HEAD is not on a canonical base branch
+  (`master` / `main`)** (HATS-518). Previously `WorktreeManager.create()`
+  silently captured whatever branch was current as the worktree's merge
+  target — if the operator parked the main repo on a feature branch
+  (e.g. `task/hats-510`) before invoking `transition execute`, subsequent
+  `ai-hats wt merge --accept-drift` happily merged INTO that feature
+  branch instead of master. The CLI reported "merged" while master
+  stayed untouched (live incident: HATS-486 session, recovered manually
+  via `git checkout master && git merge --ff-only task/hats-510`). New
+  guard `assert_head_is_canonical_base()` fires at both call sites
+  before any `git worktree add` runs. Recovery: `git checkout <base>`
+  in the main repo, then re-run. No-op on detached HEAD, non-git dirs,
+  and exotic repos that have neither `master` nor `main`.
+
 ### Added
 - **Install diagnostics in `ai-hats config status` Health section**
   (HATS-497). `config status` now prints install-level fields

@@ -746,7 +746,11 @@ class TaskManager:
         (HATS-060 short-circuit), the existing / created / adopted worktree
         path on the happy path, or None for non-git projects.
         """
-        from .worktree import WorktreeCreateError, WorktreeManager
+        from .worktree import (
+            WorktreeCreateError,
+            WorktreeManager,
+            assert_head_is_canonical_base,
+        )
 
         # HATS-060: invoked from inside a linked worktree → adopt it.
         if WorktreeManager.is_inside_linked_worktree(self.project_dir):
@@ -758,6 +762,11 @@ class TaskManager:
         existing = WorktreeManager.load_for_task(self.project_dir, task.id)
         if existing is not None:
             return existing.worktree_path
+
+        # HATS-518: only fires on a fresh create, not on the two adopt paths
+        # above (no new branch capture happens in either). Raises
+        # WorktreeBaseBranchError → caller translates to red exit.
+        assert_head_is_canonical_base(self.project_dir)
 
         # No existing worktree for this task — create one.
         branch = f"task/{task.id.lower()}"
