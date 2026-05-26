@@ -7,11 +7,46 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, NoReturn
 
+import click
 from rich.console import Console
+
+if TYPE_CHECKING:
+    from ..pipeline.steps.compose import RoleNotFoundError
 
 console = Console()
 logger = logging.getLogger(__name__)
+
+
+def _handle_role_not_found(exc: "RoleNotFoundError") -> NoReturn:
+    """Render a `RoleNotFoundError` as a friendly stderr message and exit 2.
+
+    Single source of truth for the unknown-role UX shared by every CLI
+    entry-point that runs the ``compose_role`` pipeline step (bare
+    ``ai-hats``, ``ai-hats execute``, ``ai-hats agent``, ``ai-hats
+    reflect *``). Before HATS-547 only ``_launch_session`` handled the
+    typed exception; ``execute_cmd`` let it bubble up as a 9-frame
+    traceback (S-CLI-20 — Wave 2 e2e gap).
+
+    Output contract (asserted by
+    ``tests/e2e/test_unknown_role_friendly_error.py``):
+
+    - Names the typo'd role on stderr.
+    - Lists every available role one-per-line under an
+      ``Available roles:`` header.
+    - Hints at ``ai-hats list roles`` for the full table.
+    - Exits 2 (Click's UsageError convention; HATS-507 mirror).
+
+    No ``Traceback`` ever reaches the user — that's the whole point of
+    the typed-exception design and this helper.
+    """
+    click.echo(f"Error: Role {exc.role!r} not found.\n", err=True)
+    click.echo("Available roles:", err=True)
+    for name in exc.available:
+        click.echo(f"  - {name}", err=True)
+    click.echo("\nHint: 'ai-hats list roles' shows the full table.", err=True)
+    sys.exit(2)
 
 
 def exec_claude_with_retro(retro_path: Path, kind: str = "session") -> None:

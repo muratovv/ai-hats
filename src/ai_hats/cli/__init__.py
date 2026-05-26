@@ -122,7 +122,7 @@ def _launch_session(
     """Launch a wrapped provider CLI session via the ``human`` pipeline."""
     from ..pipeline.harness import PipelineHarness
     from ..pipeline.steps.compose import RoleNotFoundError
-    from ._helpers import _project_dir
+    from ._helpers import _handle_role_not_found, _project_dir
 
     project_dir = _project_dir()
     # NB: role=None is intentional when --role is omitted. WrapRunner
@@ -144,18 +144,10 @@ def _launch_session(
                 }
             )
     except RoleNotFoundError as exc:
-        # HATS-507: friendly error for `--role <bogus>`. The compose step
-        # raises this typed exception with the sorted list of available
-        # role names; render without a traceback and exit 2 (Click usage
-        # error convention).
-        click.echo(f"Error: Role {exc.role!r} not found.\n", err=True)
-        click.echo("Available roles:", err=True)
-        for name in exc.available:
-            click.echo(f"  - {name}", err=True)
-        click.echo(
-            "\nHint: 'ai-hats list roles' shows the full table.", err=True,
-        )
-        sys.exit(2)
+        # HATS-507 contract, HATS-547 shared helper. Friendly stderr +
+        # exit 2; no traceback. See ``_handle_role_not_found`` for the
+        # full output shape.
+        _handle_role_not_found(exc)
     sys.exit(int(final.get("exit_code", 1)))
 
 
