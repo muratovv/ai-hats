@@ -184,6 +184,14 @@ def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
         # the operator's terminal.
         from rich.markup import escape as _escape
         console.print(f"[red]Refused (drift)[/]:\n{_escape(str(e))}")
+        # HATS-509: the recipe (full command form) lives here, not in the
+        # exception body, so the sibling `task transition done` handler
+        # can name its own surface without inheriting a misleading
+        # `--accept-drift` hint that points at the wrong command.
+        console.print(
+            "Re-verify your changes against the new base, "
+            "then re-run with [cyan]ai-hats wt merge --accept-drift[/]."
+        )
         sys.exit(1)
     except WorktreeRemoveError as e:
         # HATS-488 / B-03: merge committed, but worktree dir cleanup

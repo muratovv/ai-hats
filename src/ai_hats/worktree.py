@@ -1763,10 +1763,12 @@ class WorktreeManager:
             if paths_r:
                 lines.append("  affected paths (remote drift):")
                 lines.extend(f"    {p}" for p in paths_r)
-        lines.append(
-            "Re-verify your changes against the new base, then re-run with --accept-drift."
-        )
-
+        # HATS-509: the exception body carries facts only (drift summary).
+        # The user-facing "re-run with `ai-hats wt merge --accept-drift`"
+        # recipe is added by CLI handlers (cli/worktree.py wt_merge,
+        # cli/task.py task_transition) so each command names the correct
+        # surface — historically the literal trailer leaked into
+        # `task transition done`, where the flag does NOT exist.
         raise WorktreeDriftError("\n".join(lines))
 
     def _drift_summary(self, base: str, head: str) -> tuple[int, list[str]]:
