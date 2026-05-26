@@ -766,6 +766,16 @@ class WorktreeDriftError(Exception):
 
     Default ``wt merge`` refuses to proceed; the user re-verifies against
     the new base and re-runs with ``--accept-drift``.
+
+    **Body contract (HATS-509)**: the exception message carries
+    **facts only** — the drift summary built by ``_check_drift``
+    (header, ``local:`` / ``remote:`` sections, ``affected paths:``
+    listings). It MUST NOT include user-facing recipe text such as
+    "re-run with ``--accept-drift``". The recipe is owned by CLI
+    handlers (``cli/worktree.py wt_merge``, ``cli/task.py
+    task_transition``) so each command surface can name its own flags
+    — historically the literal trailer leaked into ``task transition
+    done``, where the flag does NOT exist.
     """
 
 

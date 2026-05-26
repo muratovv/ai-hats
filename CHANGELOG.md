@@ -11,6 +11,18 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Fixed
+- **`ai-hats task transition <ID> done` no longer leaks a misleading
+  `--accept-drift` hint** (HATS-509). When the internal `wt merge`
+  failed on drift, the `WorktreeDriftError` body ended with "re-run
+  with `--accept-drift`" — but that flag exists on `wt merge`, not on
+  `task transition`. Users copy-pasted the suggestion and hit
+  `No such option`. The recipe now lives in CLI handlers, not in the
+  exception body: `task transition done` catches the error and emits a
+  copy-pasteable two-step path (`cd <main-repo>; ai-hats wt merge
+  --accept-drift; ai-hats task transition <ID> done`) with an explicit
+  note that the flag belongs to `wt merge`. Direct `ai-hats wt merge`
+  callers keep equivalent UX — their CLI handler appends the recipe
+  with the full command form. Origin: HATS-505 retrospective.
 - **`ai-hats wt create` / `ai-hats task transition <ID> execute` now
   refuse when main-repo HEAD is not on a canonical base branch
   (`master` / `main`)** (HATS-518). Previously `WorktreeManager.create()`
