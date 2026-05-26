@@ -1,0 +1,33 @@
+name: reflect-hypothesis-phase2
+# Phase 2 of 2-phase judge split (HATS-513 / ADR-0007). HITL session
+# with judge role (L1 / base-judge): supervisor discusses the draft
+# inlined in the preamble, ack's mutations, judge executes CLI ops
+# and writes the final report.
+#
+# `launch_provider` is a deprecated alias for `provider` (HATS-535);
+# the explicit name signals the HITL branch even though the funnel
+# `interactive: true` is what actually selects WrapRunner.
+#
+# Initial funnel (set by CLI after Phase 1):
+#   role:           "judge"
+#   interactive:    true            # → WrapRunner branch in launch_provider
+#   project_dir:    <Path>
+#   prompt_path:    <materialized: preamble + draft body inline>
+#   extra_args:     []
+steps:
+  - id: compose_role
+  - id: resolve_prompt
+    params: {default_text: ""}
+  - id: launch_provider
+    harness:
+      reporting: true
+      on_zero_output: harness_incident
+  - id: extract_marker
+    params:
+      start: BEGIN_JUDGE
+      end: END_JUDGE
+      out_key: judge_report
+  - id: save_artifact
+    params:
+      key: judge_report
+      out_path_template: "<ai_hats_dir>/sessions/retros/judge/{ts}-report.md"

@@ -5,6 +5,8 @@ Guide to setting up and using the retrospective pipeline. Two flows:
 - **`ai-hats reflect session`** — per-session retrospective run by the `session-reviewer` role (automatic after every session, or runnable by hand). Votes on every active hypothesis it can test [3] and, on self-problem, files a proposal for the maintainer.
 - **`ai-hats reflect all`** — manual triage of the accumulated HYP / PROP backlog, driven by the `judge` role.
 
+> **Deprecation note (HATS-513 / ADR-0007).** `ai-hats reflect all` is being replaced by `ai-hats reflect hypothesis`, a two-phase pipeline: Phase 1 (`judge-auditor`, headless, read-only) produces a draft → Phase 2 (`judge`, HITL) discusses and ack's mutations. `--headless` runs Phase 1 only (CI / cron-safe). The recipes below still use `reflect all`; the new command has the same purpose with stronger contracts. Removal of `reflect all` is tracked as a follow-up.
+
 Filing a new HYP yourself while a symptom is fresh is a session-driven flow — see [Quick start (d)](#d-file-a-new-hypothesis-from-a-session).
 
 The session-end retrospective is **a single LLM call** under the `session-reviewer` role. Architectural reference — see [1]. Full CLI reference with flags — `ai-hats --tree reflect`. This doc — practical recipes.
@@ -213,7 +215,7 @@ Useful when:
 
 ## Flow 2: `ai-hats reflect all` — manual backlog triage
 
-Once HYPs and PROPs pile up — time to walk the backlog by hand and close / accept / reject in a batch. This subcommand spawns the `judge` role (autopilot or interactive mode, set by `judge-protocol` Step 0).
+Once HYPs and PROPs pile up — time to walk the backlog by hand and close / accept / reject in a batch. This subcommand spawns the `judge` role interactively against a HYP/PROP inventory (legacy single-phase shape; cf. the two-phase `reflect hypothesis` flow described in the deprecation banner up top).
 
 ### Command lifecycle
 
