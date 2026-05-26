@@ -1,13 +1,30 @@
-"""``launch_provider`` step — allocate session + spawn provider + finalize.
+"""``provider`` step — allocate session + spawn provider.
+
+Renamed from ``launch_provider`` in HATS-535 alongside the split that
+extracted audit derivation into the dedicated ``make_audit`` step and
+session-end hooks/retro into ``run_session_end`` (both invoked via the
+``finalize-hitl`` / ``finalize-subagent`` sub-pipelines from the
+runner's ``finally``). Post-split, this step is responsible for spawn
++ per-runner basic finalize (metrics.json, transcripts, cache cleanup)
++ the SIGINT-safe session-end summary print. Audit + lifecycle hooks
+live downstream.
 
 ADR-0002 §Step inventory: produces flat keys
 ``{session_id, session_dir, transcript_path, exit_code}`` so post-steps
 (``extract_marker``, ``save_artifact``, ``spawn_session_review``) depend
-on path strings, not Session-objects.
+on path strings, not Session-objects. ``claude_session_id`` and
+``hooks_env`` are NOT in the main funnel — the runner passes them
+directly into ``PipelineHarness.run("finalize-hitl"|"finalize-subagent",
+initial=...)`` from its ``finally`` block.
 
 The step calls ``WrapRunner``/``SubAgentRunner`` directly rather than
 going through ``cli.execute._do_execute`` — keeping the pipeline path
 decoupled from the legacy CLI dispatch (per ADR-0002 §Decoupling).
+
+``LaunchProvider`` is retained as a deprecated alias for backwards
+compatibility with externally-loaded YAML pipelines that still
+reference ``id: launch_provider``. Prefer ``Provider`` / ``id:
+provider`` in new code.
 """
 
 from __future__ import annotations
@@ -19,7 +36,7 @@ from typing import Any, Mapping
 from ..step import Step, StepIO
 
 
-class LaunchProvider(Step):
+class Provider(Step):
     failure_policy = "halt"
 
     def __init__(self, params: Mapping[str, Any] | None = None) -> None:
@@ -28,7 +45,7 @@ class LaunchProvider(Step):
     @property
     def io(self) -> StepIO:
         return StepIO(
-            name="launch_provider",
+            name="provider",
             requires=frozenset({"interactive", "project_dir"}),
             # HATS-505: ``system_prompt`` is no longer in the optional set.
             # ``ComposeRole`` still emits it for ``PreLog`` (observability),
@@ -148,3 +165,10 @@ class LaunchProvider(Step):
             "transcript_path": transcript_path,
             "exit_code": exit_code,
         }
+
+
+# HATS-535: ``LaunchProvider`` kept as a deprecated alias so external YAML
+# pipelines referencing ``id: launch_provider`` keep loading. The class
+# is identical to ``Provider`` (just a re-export); the registry maps both
+# names to it. Prefer ``Provider`` / ``id: provider`` in new code.
+LaunchProvider = Provider

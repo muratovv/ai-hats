@@ -41,6 +41,23 @@ class PipelineYamlError(ValueError):
     """Malformed pipeline YAML or unresolvable step reference."""
 
 
+def load_core_pipeline(name: str) -> Pipeline:
+    """Load a pipeline by name from ``ai_hats.library/core/pipelines/``.
+
+    Convenience wrapper around :func:`load_pipeline` for the common case
+    of loading built-in pipelines (``human``, ``execute``,
+    ``finalize-hitl``, ``finalize-subagent``, …). Used by runtime
+    finalization to invoke sub-pipelines without going through the
+    :class:`PipelineHarness` (which creates a per-session namespace dir
+    + retention sweep — overkill for an inline sub-pipeline).
+    """
+    from importlib.resources import as_file, files
+
+    res = files("ai_hats.library") / "core" / "pipelines" / f"{name}.yaml"
+    with as_file(res) as yaml_path:
+        return load_pipeline(yaml_path)
+
+
 def load_pipeline(yaml_path: Path) -> Pipeline:
     raw = Path(yaml_path).read_text()
     try:

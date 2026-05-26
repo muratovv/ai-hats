@@ -1,6 +1,10 @@
 name: human
+# Bare `ai-hats` HITL flow. WrapRunner spawns claude TUI on a PTY.
+# Post-spawn finalization (audit derivation + SESSION_END hooks +
+# auto-retro) lives in the `finalize-hitl` sub-pipeline, which the
+# runner invokes from its `finally` block (HATS-535).
 steps:
   - id: check_update_async
   - id: compose_role
-  - id: launch_provider
+  - id: provider
   - id: render_update_banner
