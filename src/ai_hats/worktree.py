@@ -1188,10 +1188,25 @@ class WorktreeManager:
             # has wandered (manual checkout, peer agent operating directly
             # in main repo, IDE branch-switch) would silently merge into the
             # current branch — same wrong-branch-merge class as HATS-486.
-            # Placed BEFORE drift / clean checks: drift answers "did base
-            # move?", but with HEAD wrong that's the wrong question. Skip
-            # for legacy states where _original_branch is None (symmetric
-            # with the OriginalBranchMissing guard below).
+            #
+            # Ordering invariants (do not flip without re-thinking):
+            #   1. AFTER `_acquire_lifecycle_lock` + the worktree-exists
+            #      peer no-op (line ~1178) — a parallel discard that has
+            #      already torn the dir down MUST short-circuit cleanly,
+            #      regardless of HEAD position. A spurious mismatch
+            #      refusal on top of a peer's completed teardown would
+            #      surface as a confusing user-visible error for what is
+            #      really a no-op.
+            #   2. BEFORE `_check_clean`, `_check_drift`, the
+            #      OriginalBranchMissing / `_branch_exists` check, and
+            #      the merge mechanics themselves. With HEAD wrong, all
+            #      of those answer the wrong question — drift = "did the
+            #      base move?", clean = "is the wt tree dirty against
+            #      its branch?". Refusing here keeps the user-visible
+            #      message focused on the actionable root cause.
+            #
+            # Skip for legacy states where _original_branch is None
+            # (symmetric with the OriginalBranchMissing guard below).
             if self._original_branch is not None:
                 head = self._git(
                     "rev-parse", "--abbrev-ref", "HEAD"

@@ -18,6 +18,7 @@ import pytest
 
 from ai_hats.paths import worktrees_dir
 from ai_hats.worktree import (
+    OriginalBranchMissingError,
     WorktreeBaseBranchMismatchError,
     WorktreeDriftError,
     WorktreeManager,
@@ -649,6 +650,13 @@ class TestBaseBranchMismatch:
         # No WorktreeBaseBranchMismatchError. Whether the merge then
         # succeeds or fails downstream is not this test's concern — we
         # only assert that the new guard does NOT fire for legacy state.
+        # Narrow `except` list (no bare Exception): each clause is an
+        # explicitly-acceptable downstream consequence of having
+        # `_original_branch=None`. An UNEXPECTED type — e.g. an
+        # AttributeError from a future guard regression that drops the
+        # `is not None` check — IS the regression this test catches:
+        # such an exception falls through, pytest reports an ERROR, and
+        # the contract violation is visible.
         try:
             mgr.merge()
         except WorktreeBaseBranchMismatchError:
@@ -656,9 +664,19 @@ class TestBaseBranchMismatch:
                 "mismatch guard fired for legacy state "
                 "(_original_branch=None) — must be a no-op"
             )
-        except Exception:
-            # Downstream OriginalBranchMissingError / merge mechanics are
-            # fine — this test asserts only the guard's no-op contract.
+        except OriginalBranchMissingError:
+            # Expected: legacy state path resolves `_original_branch` as
+            # None / missing; the existing `_branch_exists` check raises
+            # this. Pre-HATS-533 behavior preserved.
+            pass
+        except (subprocess.CalledProcessError, TypeError):
+            # Expected downstream from `_check_drift` (worktree.py)
+            # invoking ``self._git("rev-parse", None)`` — TypeError from
+            # subprocess args validation, OR CalledProcessError if git
+            # is reached. Both confirm only that the GUARD itself
+            # short-circuited; downstream merge mechanics on legacy
+            # state were never made to work end-to-end. Out of scope
+            # for HATS-533, separate concern.
             pass
 
     def test_force_does_not_bypass_mismatch(self, git_project: Path) -> None:
@@ -700,3 +718,31 @@ class TestBaseBranchMismatch:
 
         with pytest.raises(WorktreeBaseBranchMismatchError):
             mgr.merge(accept_drift=True)
+
+    def test_mismatch_wins_over_dirty_worktree(
+        self, git_project: Path
+    ) -> None:
+        """Mismatch surfaces BEFORE the dirty-worktree error.
+
+        Pins the documented ordering invariant (worktree.py: HATS-533
+        guard runs ahead of ``_check_clean``). Without this test, a
+        future re-ordering that surfaces ``WorktreeDirtyError`` first
+        would slip through — confusing the operator about the actual
+        root cause (HEAD wandering, not their uncommitted edit).
+        """
+        mgr = WorktreeManager(
+            git_project, branch_name="task/dirty-and-wandered"
+        )
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        # Make the worktree dirty (would normally trip WorktreeDirtyError).
+        (wt_path / "uncommitted.txt").write_text("dirty\n")
+
+        # And move main-repo HEAD off the merge target.
+        _git(git_project, "checkout", "-b", "wandered-too")
+
+        # Mismatch wins.
+        with pytest.raises(WorktreeBaseBranchMismatchError):
+            mgr.merge()
