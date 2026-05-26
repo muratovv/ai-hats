@@ -181,10 +181,15 @@ steps:
   - id: compose_role
   - id: resolve_prompt
     params: {default_text: "ping"}
-  - id: launch_provider
+  - id: provider
 ```
 
 Available step IDs match the registry under `src/ai_hats/pipeline/steps/`.
+The post-spawn lifecycle (`make_audit` + `run_session_end`) is invoked by
+the runner from its `finally` block via the `finalize-hitl` /
+`finalize-subagent` sub-pipelines (HATS-535) — do NOT add those steps to
+your top-level pipeline. `launch_provider` survives as a deprecated
+alias for `provider`, but new pipelines should use the canonical name.
 
 > **Limitation today**: there is no public CLI flag to invoke an arbitrary
 > custom pipeline by name. Custom pipelines can only be launched from Python

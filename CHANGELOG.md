@@ -10,6 +10,46 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Changed
+- **Pipeline subsystem: `launch_provider` megastep split** (HATS-535).
+  The single `launch_provider` step that pre-HATS-535 owned spawn + audit
+  derivation + SESSION_END hooks + auto-retro was structurally honest in
+  YAML only down to "one step does everything" — masking the asymmetry
+  where SubAgent's `audit.md` was meta-only despite claude SDK persisting
+  the same JSONL HITL used. Refactor:
+  - Step renamed `launch_provider` → `provider` (id and class).
+    `LaunchProvider` is retained as a deprecated class alias so external
+    YAMLs referencing `id: launch_provider` keep loading.
+  - New `make_audit` step (`src/ai_hats/pipeline/steps/make_audit.py`) —
+    sole `AuditWriter` invocation surface; reads claude JSONL via
+    `_claude_jsonl_path` + `_discover_claude_jsonl` mtime fallback.
+  - New `run_session_end` step (`src/ai_hats/pipeline/steps/run_session_end.py`)
+    — retro decision + `write_retro_log` + `_spawn_session_reviewer_background`
+    + SESSION_END hooks + cyan retro reminder banner.
+  - Two new sub-pipelines `library/core/pipelines/finalize-hitl.yaml`
+    (`make_audit + run_session_end`) and `finalize-subagent.yaml`
+    (`make_audit` only). Invoked by `WrapRunner.run` /
+    `_finalize_sub_agent` from their `finally` blocks via
+    `pipeline.run(..., initial={...})` — `claude_session_id` and
+    `hooks_env` flow as initial state, NOT through the main pipeline
+    funnel.
+  - `runtime._finalize_session` shrunk to `_finalize_session_basic`
+    (per-runner cleanup only: metrics.json + trace stats + smoke).
+    `_print_session_end` stays in `WrapRunner.run`'s outer `finally`
+    so the session-id is SIGINT-safe (HATS-086 preserved); the inline
+    retro reminder banner moved to `RunSessionEnd._print_retro_banner`.
+  - **SubAgent gains structured `audit.md`** — single-turn `_run_attempt`
+    callers and multi-turn `_finalize_session_audit` thread `work_dir`
+    through to `_finalize_sub_agent`, which invokes `finalize-subagent`
+    when both `work_dir` and `claude_session_id` are known. Pre-HATS-535
+    SubAgent `audit.md` was meta-only; post-HATS-535 it carries
+    `👤`/`👾`/🔧/💭 markers like HITL. Mirror of HATS-523 (which brought
+    `meta_prompt.txt` to HITL parity with SubAgent).
+  - YAML pipeline `human` and `execute` updated to `id: provider`.
+    Compatibility: `id: launch_provider` still resolves (via alias),
+    but `step.io.name` returns `"provider"` regardless of which id was
+    used in the YAML.
+
 ### Fixed
 - **`ai-hats wt merge` / `ai-hats task transition <ID> done` refuse
   when main-repo HEAD has wandered off the worktree's merge target**
