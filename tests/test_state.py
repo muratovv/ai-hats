@@ -1008,3 +1008,153 @@ def test_teardown_worktree_swallows_discard_failure(mgr, monkeypatch):
 
     reloaded = mgr.get_task("T-2")
     assert reloaded.state == TaskState.CANCELLED
+
+
+# ---------------------------------------------------------------------------
+# HATS-541 — defensive raise when worktree state is lost mid-lifecycle
+# ---------------------------------------------------------------------------
+
+
+def test_teardown_worktree_raises_when_state_lost_but_branch_exists(
+    git_mgr, monkeypatch
+):
+    """HATS-541: a SECOND ``transition done`` after a failed first attempt
+    must NOT silently mark the task DONE.
+
+    Pre-HATS-541 path: ``Worktree.merge()`` failure cleans up state.json
+    AND removes the worktree dir, but preserves the branch. The next
+    ``load_for_task`` returns ``None``, ``_teardown_worktree`` silently
+    returned, ``_save_task`` stamped DONE → master never advanced,
+    tracker lied. Same silent-data-loss class as HATS-481.
+
+    Repro contract: walk task to REVIEW on a real git repo (so the
+    branch ``task/t-1`` actually exists), then stub ``load_for_task``
+    twice: first call returns the failing merge manager (attempt 1
+    raises ``CalledProcessError``, task stays REVIEW); second call
+    returns ``None`` (mimicking the post-failure cleanup). Second
+    attempt MUST raise ``WorktreeStateLostError`` because
+    ``branch_exists("task/t-1")`` is True.
+    """
+    from ai_hats import worktree as worktree_module
+    from ai_hats.worktree import WorktreeStateLostError
+
+    git_mgr.create_task("T-1", "HATS-541 regression")
+    git_mgr.transition("T-1", TaskState.PLAN)
+    git_mgr.transition("T-1", TaskState.EXECUTE)  # creates task/t-1 branch
+    git_mgr.transition("T-1", TaskState.DOCUMENT)
+    git_mgr.transition("T-1", TaskState.REVIEW)
+
+    # Attempt 1: load_for_task returns a manager whose merge() raises.
+    monkeypatch.setattr(
+        worktree_module.WorktreeManager,
+        "load_for_task",
+        staticmethod(
+            lambda *_a, **_kw: _FailingMergeManager(branch_name="task/t-1")
+        ),
+    )
+    with pytest.raises(subprocess.CalledProcessError):
+        git_mgr.transition("T-1", TaskState.DONE)
+    assert git_mgr.get_task("T-1").state == TaskState.REVIEW
+
+    # Attempt 2: state.json gone — load_for_task returns None.
+    # Branch is still there (we never deleted it in this test stub) so
+    # branch_exists returns True, and HATS-541's defensive raise fires.
+    monkeypatch.setattr(
+        worktree_module.WorktreeManager,
+        "load_for_task",
+        staticmethod(lambda *_a, **_kw: None),
+    )
+    with pytest.raises(WorktreeStateLostError) as exc_info:
+        git_mgr.transition("T-1", TaskState.DONE)
+
+    # Exception carries the data the CLI handler needs.
+    assert exc_info.value.task_id == "T-1"
+    assert exc_info.value.branch_name == "task/t-1"
+
+    # Task must still be in REVIEW (NOT silently bumped to DONE).
+    reloaded = git_mgr.get_task("T-1")
+    assert reloaded.state == TaskState.REVIEW, (
+        f"task moved to {reloaded.state} despite worktree state loss — "
+        f"HATS-541 silent-data-loss regression"
+    )
+    assert reloaded.completed_at == "", (
+        "completed_at must not be persisted when the merge never happened"
+    )
+
+
+def test_teardown_worktree_silent_when_state_and_branch_both_gone(
+    git_mgr, monkeypatch
+):
+    """HATS-541 carve-out: when both ``state.json`` AND the
+    ``task/<id>`` branch are absent, ``transition done`` is a
+    legitimate admin no-op — silently complete.
+
+    Distinguishes the silent-data-loss case (branch preserved, state
+    lost) from the truly-empty case (nothing ever existed, or both
+    were intentionally cleaned). The latter must remain permissive
+    because admin closes via ``task close`` and similar paths legitimately
+    reach this branch with no underlying worktree state.
+    """
+    from ai_hats import worktree as worktree_module
+
+    # Walk through review on the real git_mgr fixture, then drop the
+    # worktree + branch — mimicking the "no worktree state, branch
+    # already cleaned" admin-close starting condition. Direct
+    # subprocess + WorktreeManager teardown so we don't touch the
+    # TaskManager state (which would mark task DONE prematurely).
+    git_mgr.create_task("T-1", "no worktree branch surviving")
+    git_mgr.transition("T-1", TaskState.PLAN)
+    git_mgr.transition("T-1", TaskState.EXECUTE)
+    git_mgr.transition("T-1", TaskState.DOCUMENT)
+    git_mgr.transition("T-1", TaskState.REVIEW)
+
+    # Force-discard the worktree (removes dir, deletes branch, clears
+    # state) so the carve-out's preconditions hold: no state, no
+    # branch. Matches what `task transition failed` would have done.
+    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    if active is not None:
+        active.discard(force=True)
+
+    # Sanity: branch is gone.
+    assert not WorktreeManager.branch_exists(git_mgr.project_dir, "task/t-1")
+
+    # Stub load_for_task to return None — state is gone too.
+    monkeypatch.setattr(
+        worktree_module.WorktreeManager,
+        "load_for_task",
+        staticmethod(lambda *_a, **_kw: None),
+    )
+
+    # MUST NOT raise — branch doesn't exist, no recovery is needed.
+    git_mgr.transition("T-1", TaskState.DONE)
+    assert git_mgr.get_task("T-1").state == TaskState.DONE
+
+
+def test_teardown_worktree_silent_on_discard_path_when_state_lost(
+    git_mgr, monkeypatch
+):
+    """HATS-541 carve-out: the ``merge=False`` discard path
+    (``transition failed`` / ``transition cancelled``) keeps silent
+    return even when the branch still exists.
+
+    Discard is intentionally lossy by design — refusing it would
+    block admin closes. The defensive raise applies only to the
+    ``merge=True`` DONE path where silent success would be data loss.
+    """
+    from ai_hats import worktree as worktree_module
+
+    git_mgr.create_task("T-1", "discard with orphan branch")
+    git_mgr.transition("T-1", TaskState.PLAN)
+    git_mgr.transition("T-1", TaskState.EXECUTE)  # creates task/t-1
+
+    # Mimic lost state on the discard path.
+    monkeypatch.setattr(
+        worktree_module.WorktreeManager,
+        "load_for_task",
+        staticmethod(lambda *_a, **_kw: None),
+    )
+
+    # MUST NOT raise even though branch task/t-1 still exists —
+    # discard is the admin-close path.
+    git_mgr.transition("T-1", TaskState.FAILED)
+    assert git_mgr.get_task("T-1").state == TaskState.FAILED
