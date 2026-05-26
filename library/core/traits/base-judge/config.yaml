@@ -4,12 +4,11 @@ composition:
   rules:
     - rule_backlog_discipline
     - dev_rule_tool_call_hygiene
-  # Global hygiene/destructive rules are deliberately NOT bundled here:
-  # (a) project overlays import them for every session, so the role-level
-  # duplicate is redundant; (b) their concrete surfaces (.db, volumes/,
-  # terraform.tfstate) do not intersect any analyst L2 fix surface
-  # (libraries .yaml/.md). Add them per-role only if the role's L2 scope
-  # touches protected paths.
+  # Global hygiene/destructive rules are bundled by `trait-analyst-base`
+  # (composed by every judge variant — see HATS-514 / HYP-014). No need
+  # to duplicate here; the symmetric attachment lives in the analyst base
+  # so both L0 (`base-auditor`) and L1 (`base-judge`) inherit it
+  # consistently.
   skills:
     - tool-call-hygiene
     - request-supervisor
