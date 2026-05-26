@@ -27,11 +27,49 @@ Pay attention to `success_criterion`, `observation_window`, `exit_criteria`,
 `expected_outcome`, and `freshness_rule` — these define what
 `confirmed` / `refuted` / `inconclusive` / `n/a` mean for *this* hypothesis.
 
+### Step 1.5 — Read the HYP's `verification_protocol` (HATS-528)
+
+If the HYP YAML contains a **`verification_protocol`** field, your
+`--evidence` string MUST follow that protocol — verbatim if it
+prescribes a literal format, near-verbatim if it prescribes a shape.
+The protocol is the HYP author's contract with future auditors:
+"this is how I want you to report on this specific hypothesis".
+
+The field is free-form text written by the HYP author at plan-stage
+(see **library-change-hypothesis-protocol**). It is stored under
+`Hypothesis.extra` (the schema is permissive) — `ai-hats task hyp show`
+prints it verbatim; do not silently drop it.
+
+**If `verification_protocol` is absent** — proceed with free-form
+evidence per the original convention. Legacy HYPs (001–015) have no
+protocol field; their verdicts continue to look the way they always
+have.
+
+**Examples in the wild:**
+
+- HYP-016 (under HATS-527) carries a *strict* three-line protocol:
+  `CRITERION: <verbatim>` / `OBSERVED: <verbatim or NOT OBSERVED>` /
+  `VERDICT_REASON: satisfies | fails | silent`. Your `--evidence`
+  string for HYP-016 MUST be exactly those three lines, joined by `\n`.
+- HYP-017 (under HATS-528) carries a *loose* paragraph protocol:
+  "one paragraph addressing (a) criterion, (b) session observation,
+  (c) whether (b) satisfies (a)". Your `--evidence` for HYP-017 is a
+  short prose paragraph; verbatim quotes encouraged but not required.
+
+**Format check before persist.** Before calling `append-verdict`, eyeball
+your evidence string against the protocol. If they don't match — fix
+the evidence (not the protocol; protocols are only refined via a new
+task, never silently). If the protocol is ambiguous or untestable
+against the available session evidence, raise it via
+**review-proposal** with `--category process --target <hyp-id>` rather
+than guess.
+
 ### Step 2 — Gather session evidence
 
 The session's audit and metrics live in `<ai_hats_dir>/sessions/runs/session_<session_id>/`.
 Cite specific lines or metric values; verdicts without traceable evidence
-are noise.
+are noise. **If the HYP carries a `verification_protocol`, the gather
+phase is constrained by it** — Step 1.5 tells you what to extract.
 
 ### Step 3 — Choose verdict
 
@@ -125,3 +163,30 @@ write `inconclusive` for HYP-005 citing the meta-proposal id in evidence.
 A sweep that omits one or more active HYPs. The runtime post-validator
 (or the judge) rejects this and files an automatic meta-proposal.
 **Always emit one verdict per active HYP**, even when the answer is `n/a`.
+
+### ✓ Good: protocol-anchored verdict (HATS-528 PoC)
+
+HYP-016 carries the strict three-line `verification_protocol`. Session
+evidence: a HATS-499 child task transitioned plan→execute and filed
+HYP-NNN with a `verification_protocol` field. Verdict:
+
+```bash
+"$AH" task hyp append-verdict \
+  --hyp HYP-016 --session "$SID" \
+  --verdict confirmed \
+  --evidence "CRITERION: ≥3 of next 4 HATS-499 child tasks land with either a companion HYP that has verification_protocol filled, or a work_log entry no behavior change — pure refactor: <reason>.
+OBSERVED: HATS-543 plan→execute transition; HYP-019 filed with verification_protocol set; commit body references HATS-543/HYP-019.
+VERDICT_REASON: satisfies" \
+  --recommendation keep
+```
+
+Three lines, joined with newlines, each prefixed exactly as the
+protocol demands. A future auditor sweeping HYP-016 will see the same
+shape and can compare across the window.
+
+### ✗ Bad: ignoring `verification_protocol`
+
+HYP-016 (strict protocol). Auditor emits free-form prose:
+`evidence: "saw HATS-543 file a HYP, looks good"`. Wrong — the
+HYP's protocol demanded three labeled lines. Fix by reshaping the
+evidence string; do NOT alter the HYP's protocol mid-sweep.
