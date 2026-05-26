@@ -116,6 +116,7 @@ def task_transition(
     from ..worktree import WorktreeBaseBranchMismatchError  # HATS-533
     from ..worktree import WorktreeCreateError  # HATS-517
     from ..worktree import WorktreeDriftError  # HATS-509
+    from ..worktree import WorktreeStateLostError  # HATS-541
 
     mgr = _task_manager(_project_dir())
     try:
@@ -229,6 +230,48 @@ def task_transition(
         )
         console.print(
             f"  [cyan]ai-hats task transition {task_id} done[/]",
+            soft_wrap=True,
+        )
+        sys.exit(1)
+    except WorktreeStateLostError as e:
+        # HATS-541: a prior failed merge orphaned the worktree state
+        # (state.json + dir cleared by Worktree.merge() on failure),
+        # but the branch is still preserved. _teardown_worktree refused
+        # to silently mark the task DONE without merging. Card stays in
+        # `review` (HATS-481 fail-loud propagation).
+        from rich.markup import escape as _escape
+
+        project_dir = _project_dir()
+        console.print(
+            f"[red]Refused (worktree state lost)[/] — task {task_id} "
+            f"cannot be silently marked DONE."
+        )
+        console.print(
+            f"Branch '{_escape(e.branch_name)}' is preserved with "
+            f"un-merged commits."
+        )
+        console.print(
+            "Likely cause: an earlier `task transition <id> done` "
+            "attempt's merge failed (conflict, lock contention, "
+            "untracked file collision)."
+        )
+        console.print("")
+        console.print("Recover manually:")
+        # soft_wrap=True keeps each recipe line intact for copy-paste.
+        console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
+        console.print(
+            "  [cyan]git merge --abort[/]  "
+            "[dim]# if main repo is mid-merge[/]",
+            soft_wrap=True,
+        )
+        console.print(
+            f"  [cyan]git merge --no-ff {_escape(e.branch_name)}[/]  "
+            "[dim]# apply the un-merged work[/]",
+            soft_wrap=True,
+        )
+        console.print(
+            f"  [cyan]ai-hats task transition {task_id} done[/]  "
+            "[dim]# update tracker[/]",
             soft_wrap=True,
         )
         sys.exit(1)

@@ -346,3 +346,47 @@ def test_unlink_removes_relation(cli, project_dir):
     assert r.exit_code == 0, r.output
     assert mgr.get_task("T-1").related == []
     assert mgr.get_task("T-2").related == []
+
+
+# ---------------------------------------------------------------------------
+# HATS-541 — `transition done` recovery-hint when worktree state is lost
+# ---------------------------------------------------------------------------
+
+
+def test_transition_done_lost_state_prints_recovery_hint(
+    cli, project_dir, monkeypatch
+):
+    """HATS-541: the CLI handler must surface a recovery recipe instead of
+    leaking a raw stack trace when ``WorktreeStateLostError`` fires.
+
+    Exercises the cli/task.py exception handler in isolation by raising
+    ``WorktreeStateLostError`` directly from a monkeypatched
+    ``TaskManager.transition`` — avoids dragging the full worktree
+    lifecycle into a CLI-layer test.
+    """
+    from ai_hats import state as state_module
+    from ai_hats.worktree import WorktreeStateLostError
+
+    _seed_task(project_dir)
+    real_transition = state_module.TaskManager.transition
+
+    def fake_transition(self, task_id, new_state, **kwargs):
+        if new_state == TaskState.DONE:
+            raise WorktreeStateLostError(task_id, f"task/{task_id.lower()}")
+        return real_transition(self, task_id, new_state, **kwargs)
+
+    monkeypatch.setattr(state_module.TaskManager, "transition", fake_transition)
+
+    result = cli.invoke(main, ["task", "transition", "T-1", "done"])
+
+    assert result.exit_code == 1, result.output
+    # Refusal banner.
+    assert "Refused" in result.output
+    assert "worktree state lost" in result.output.lower()
+    # Branch name + recovery commands present.
+    assert "task/t-1" in result.output
+    assert "git merge --abort" in result.output
+    assert "git merge --no-ff task/t-1" in result.output
+    assert "ai-hats task transition T-1 done" in result.output
+    # Friendly cause hint.
+    assert "earlier" in result.output.lower() and "merge failed" in result.output.lower()

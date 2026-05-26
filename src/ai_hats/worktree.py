@@ -756,6 +756,33 @@ class OriginalBranchMissingError(Exception):
     """
 
 
+class WorktreeStateLostError(Exception):
+    """Raised by ``_teardown_worktree`` when a ``transition done`` would
+    silently no-op despite an un-merged worktree branch still existing.
+
+    HATS-541: a prior failed ``Worktree.merge()`` removes the worktree
+    directory and clears ``state.json`` per its failure-cleanup
+    contract, but leaves the worktree branch intact for manual recovery.
+    A subsequent ``task transition <id> done`` would then resolve
+    ``WorktreeManager.load_for_task`` to ``None`` and silently mark the
+    task DONE without performing any merge — a silent-data-loss class
+    of bug (same shape as the GitHub Merge Queue Apr-2026 incident
+    that HATS-481 fixed in a sibling code path).
+
+    Carries ``task_id`` + ``branch_name`` so the CLI handler can build
+    a recovery-hint message. The exception itself does NOT mutate any
+    state — caller decides how to surface it.
+    """
+
+    def __init__(self, task_id: str, branch_name: str) -> None:
+        self.task_id = task_id
+        self.branch_name = branch_name
+        super().__init__(
+            f"Worktree state for {task_id} is missing, but branch "
+            f"'{branch_name}' still exists with un-merged commits."
+        )
+
+
 class WorktreeDriftError(Exception):
     """Raised when the worktree's original branch moved between create and merge.
 
@@ -1390,6 +1417,40 @@ class WorktreeManager:
         """Load worktree state by branch name."""
         key = _state_key(branch)
         return cls._load_by_key(project_dir, key)
+
+    @classmethod
+    def branch_exists(cls, project_dir: Path, branch: str) -> bool:
+        """Check whether ``branch`` exists as a local ref in ``project_dir``.
+
+        Probe-only — does NOT touch worktree state. Used by
+        ``state.py:_teardown_worktree`` to distinguish:
+
+        * "no worktree, no branch" → legitimate admin no-op (return
+          silently from teardown).
+        * "no worktree state, but branch still exists" → previous
+          merge failure orphaned the branch; teardown must fail loud
+          to prevent a silent DONE transition (HATS-541).
+
+        Uses ``git branch --list <branch>`` rather than ``git rev-parse``
+        because we only care about local-ref existence; an upstream-only
+        ref shouldn't satisfy the "branch is preserved" condition.
+        Returns ``False`` if ``project_dir`` isn't a git repo.
+        """
+        try:
+            result = subprocess.run(
+                ["git", "branch", "--list", branch],
+                cwd=str(project_dir),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            return False
+        if result.returncode != 0:
+            return False
+        # `git branch --list` exits 0 even when no match — empty stdout
+        # is the "branch absent" signal.
+        return bool(result.stdout.strip())
 
     @staticmethod
     def _migrate_legacy_lowercase_state(state_path: Path, key: str) -> None:

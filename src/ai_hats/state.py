@@ -810,10 +810,33 @@ class TaskManager:
           administratively, so an orphaned worktree dir is a minor sin
           compared to refusing the admin close.
         """
-        from .worktree import OriginalBranchMissingError, WorktreeManager
+        from .worktree import (
+            OriginalBranchMissingError,
+            WorktreeManager,
+            WorktreeStateLostError,
+        )
 
         active = WorktreeManager.load_for_task(self.project_dir, task.id)
         if active is None:
+            # HATS-541 fail-loud: state.json may have been unlinked by a
+            # prior failed ``Worktree.merge()`` (which clears state +
+            # removes the worktree dir, but preserves the branch). A
+            # silent return here on the ``merge=True`` path would let
+            # ``_save_task`` stamp DONE without any merge ever
+            # happening — same silent-data-loss class as HATS-481.
+            #
+            # If a ``task/<id>`` branch still exists in the repo, refuse
+            # the transition and point the user at manual recovery.
+            # If the branch is also absent (true admin no-op, or
+            # legitimately never had a worktree), keep silent return.
+            #
+            # merge=False (discard) path: stay silent — discard is
+            # intentionally lossy by design, and refusing it would
+            # block admin closes.
+            if merge:
+                branch_name = f"task/{task.id.lower()}"
+                if WorktreeManager.branch_exists(self.project_dir, branch_name):
+                    raise WorktreeStateLostError(task.id, branch_name)
             return
 
         try:
