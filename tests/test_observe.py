@@ -109,62 +109,11 @@ def test_stdin_read_strips_zellij_prefix(tmp_path):
     assert "Zellij" not in trace
 
 
-# --- model response buffering ---
-
-def test_master_read_captures_pio_response(tmp_path):
-    session = make_test_session(tmp_path)
-    tracer = SidecarTracer(session)
-    fd = pipe_with("⏺Привет! Я твой ассистент.".encode())
-
-    tracer.make_master_read()(fd)
-
-    assert tracer._res_buf == ["Привет! Я твой ассистент."]
-
-
-def test_master_read_last_pio_wins(tmp_path):
-    """Tool calls (earlier ⏺) are replaced by final text response (later ⏺)."""
-    session = make_test_session(tmp_path)
-    tracer = SidecarTracer(session)
-    master_read = tracer.make_master_read()
-
-    master_read(pipe_with("⏺Searching for 1 pattern…".encode()))
-    master_read(pipe_with("⏺Вот ответ модели.".encode()))
-
-    assert tracer._res_buf == ["Вот ответ модели."]
-
-
-def test_flush_response_writes_bot_emoji(tmp_path):
-    session = make_test_session(tmp_path)
-    session.init_audit(role="test", provider="claude")
-    tracer = SidecarTracer(session)
-    tracer._res_buf = ["Привет! Я твой ассистент."]
-
-    tracer.flush_response()
-
-    assert "👾 Привет! Я твой ассистент." in session.audit_path.read_text()
-    assert tracer._res_buf == []
-
-
-def test_flush_response_noop_if_empty(tmp_path):
-    session = make_test_session(tmp_path)
-    session.init_audit(role="test", provider="claude")
-    tracer = SidecarTracer(session)
-
-    tracer.flush_response()  # should not raise, should not write
-
-    assert "👾" not in session.audit_path.read_text()
-
-
-def test_stdin_read_flushes_response_on_req(tmp_path):
-    session = make_test_session(tmp_path)
-    session.init_audit(role="test", provider="claude")
-    tracer = SidecarTracer(session)
-    tracer._res_buf = ["ответ модели"]
-
-    fd = pipe_with("следующий вопрос\n".encode())
-    tracer.make_stdin_read()(fd)
-
-    assert "👾 ответ модели" in session.audit_path.read_text()
+# NOTE: HATS-529 — the live PTY ⏺-marker accumulator ("Path A") was
+# removed. The 5 tests that exercised ``_res_buf`` / ``flush_response``
+# semantics here have no replacement; ``AuditWriter._parse_jsonl`` is
+# now the canonical audit source and is regression-guarded by
+# ``tests/test_audit_writer_parse_jsonl_fixture.py``.
 
 
 # --- integration test ---

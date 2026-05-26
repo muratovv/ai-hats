@@ -289,7 +289,6 @@ class SidecarTracer:
     def __init__(self, session: Session) -> None:
         self.session = session
         self._req_buf = bytearray()
-        self._res_buf: list[str] = []
         # Raw byte dump is opt-in: tens of MB per long session and may capture
         # sensitive content. Set AI_HATS_PTY_RAW_DUMP=1 to enable when
         # diagnosing PTY/terminal issues like HATS-220.
@@ -326,17 +325,14 @@ class SidecarTracer:
     def strip_noise(self, data: bytes) -> bytes:
         return self.ZELLIJ_NOISE.sub(b"", data)
 
-    def flush_response(self) -> None:
-        """Flush accumulated model response to audit. Call before REQ or on session end."""
-        if self._res_buf:
-            text = " ".join(self._res_buf)
-            if len(text) > 300:
-                text = text[:300] + "…"
-            self.session.append_audit(f"👾 {text}")
-            self._res_buf.clear()
-
     def make_master_read(self) -> Callable[[int], bytes]:
-        """Returns master_read callback for pty.spawn — logs CLI output as [RES]."""
+        """Returns master_read callback for pty.spawn — logs CLI output as [RES].
+
+        Feeds ``trace.log`` only. The canonical audit source post-HATS-535
+        is ``AuditWriter._parse_jsonl`` over the ``claude`` JSONL session
+        log; ``trace.log`` is the JSONL-missing fallback parsed by
+        ``AuditWriter._extract_turns`` / ``_extract_pio_content``.
+        """
         def master_read(fd: int) -> bytes:
             data = os.read(fd, 1024)
             self._raw_dump(b"<<", data)
@@ -344,10 +340,6 @@ class SidecarTracer:
             if cleaned:
                 text = cleaned.decode("utf-8", errors="replace")
                 self.session.log_trace(TraceTag.RES, text)
-                if text.startswith("⏺"):
-                    content = text[1:].strip()
-                    if content:
-                        self._res_buf = [content]  # last wins — skips tool calls, keeps final response
             return data
         return master_read
 
@@ -364,7 +356,6 @@ class SidecarTracer:
                 line = self.strip_noise(self.strip_ansi(bytes(self._req_buf))).strip()
                 if line:
                     text = line.decode("utf-8", errors="replace")
-                    self.flush_response()
                     self.session.log_trace(TraceTag.REQ, text)
                     # Detect context-changing slash commands
                     if self._CONTEXT_CLEAR_RE.match(text):
@@ -448,7 +439,13 @@ class AuditWriter:
 
     @staticmethod
     def _extract_pio_content(text: str) -> str | None:
-        """Extract text after ⏺, trimming TUI chrome and noise. Returns None if no ⏺ found."""
+        """Extract text after ⏺, trimming TUI chrome and noise. Returns None if no ⏺ found.
+
+        Trace-fallback path only — used by ``_extract_turns`` when the
+        canonical ``claude`` JSONL session log is not available and we
+        have to reconstruct turns from ``trace.log``. Unrelated to the
+        removed live-PTY ⏺-marker accumulator (Path A, HATS-529).
+        """
         if "⏺" not in text:
             return None
         idx = text.index("⏺")

@@ -478,9 +478,16 @@ def _finalize_session_basic(
     """
     trace_stats: dict = {}
     try:
-        tracer.flush_response()
+        # HATS-529: Path A (live PTY ⏺-marker audit) removed. The
+        # surrounding try/except is reserved as a scaffold for future
+        # finalize-time tracer cleanup hooks — the HATS-086 SIGINT-safety
+        # pattern (catch both Exception and KeyboardInterrupt so a second
+        # Ctrl+C does not kill cleanup partway) is uniform across every
+        # phase in this function, and re-introducing it later by hand is
+        # error-prone. Leave the frame in place.
+        _ = tracer  # silence unused-arg lint until a real cleanup lands
     except (Exception, KeyboardInterrupt):
-        logger.warning("trace flush failed", exc_info=True)
+        logger.warning("tracer cleanup failed", exc_info=True)
 
     try:
         session.log_trace(TraceTag.SYS, f"Session ended: exit_code={exit_code}")
