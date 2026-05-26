@@ -17,7 +17,11 @@ from unittest.mock import patch
 import pytest
 
 from ai_hats.paths import worktrees_dir
-from ai_hats.worktree import WorktreeDriftError, WorktreeManager
+from ai_hats.worktree import (
+    WorktreeBaseBranchMismatchError,
+    WorktreeDriftError,
+    WorktreeManager,
+)
 
 
 pytestmark = pytest.mark.integration
@@ -539,3 +543,160 @@ class TestStateRoundtrip:
         reloaded = WorktreeManager.load_for_branch(git_project, "task/persist")
         assert reloaded is not None
         assert reloaded._base_sha_at_create == data["base_sha_at_create"]
+
+
+class TestBaseBranchMismatch:
+    """HATS-533: refuse ``merge()`` when main-repo HEAD wandered off
+    ``_original_branch`` between create and merge.
+
+    Semantic peer of :class:`TestDriftDetection` — both test the gap
+    between "what worktree captured at create time" and "what main repo
+    looks like at merge time", but along different axes:
+
+    * Drift = base branch tip moved (someone merged into it).
+    * Mismatch = main-repo HEAD itself moved to a different branch.
+
+    Both are silent-wrong-branch-merge precursors (HATS-486 class).
+    """
+
+    def test_head_wandered_raises(self, git_project: Path) -> None:
+        """master at create → checkout different branch → merge refuses."""
+        mgr = WorktreeManager(git_project, branch_name="task/head-wandered")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        original = mgr._original_branch
+        assert original is not None  # sanity
+
+        # Simulate "HEAD moved to a feature branch between create and merge"
+        # — e.g. operator manually checked out, or a peer agent committed
+        # directly in main repo without using a linked worktree.
+        _git(git_project, "checkout", "-b", "wandered-feature")
+
+        with pytest.raises(WorktreeBaseBranchMismatchError) as exc:
+            mgr.merge()
+
+        assert exc.value.current == "wandered-feature"
+        assert exc.value.expected == original
+
+        # Critical safety assertion: no merge happened on EITHER branch.
+        # `wandered-feature` MUST NOT carry the worktree commit (that would
+        # be the silent-wrong-branch-merge we're guarding against). And
+        # `original` (master) MUST be unchanged.
+        wandered_log = _git(
+            git_project, "log", "--oneline", "wandered-feature"
+        ).stdout
+        assert "wt-work" not in wandered_log, (
+            f"wandered branch must not have received the worktree commit:\n"
+            f"{wandered_log}"
+        )
+        original_log = _git(git_project, "log", "--oneline", original).stdout
+        assert "wt-work" not in original_log, (
+            f"original branch must be unchanged after refusal:\n{original_log}"
+        )
+
+        # Worktree branch preserved — refusal is recoverable by
+        # `git checkout <original>` + retry.
+        listing = _git(
+            git_project, "branch", "--list", "task/head-wandered"
+        ).stdout
+        assert "task/head-wandered" in listing
+
+    def test_head_on_original_branch_passes(self, git_project: Path) -> None:
+        """Inverse: when HEAD matches `_original_branch`, merge proceeds.
+
+        Pinning the happy path against accidental over-restriction in the
+        guard (e.g. comparing against the wrong field).
+        """
+        mgr = WorktreeManager(git_project, branch_name="task/matched-head")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        # HEAD already on `_original_branch` (default for the fixture).
+        mgr.merge()  # no exception
+
+        listing = _git(
+            git_project, "branch", "--list", "task/matched-head"
+        ).stdout
+        assert listing.strip() == "", "branch should be cleaned up on merge"
+
+    def test_legacy_state_no_original_branch_skips_guard(
+        self, git_project: Path
+    ) -> None:
+        """Legacy state with ``_original_branch=None`` bypasses the guard.
+
+        Symmetric to the existing ``OriginalBranchMissingError`` short-
+        circuit at worktree.py:1189 (``if self._original_branch and not
+        self._branch_exists(...)``). A legacy state JSON without the
+        ``original_branch`` field must not crash with mismatch — it falls
+        through to whatever the merge naturally does, preserving the
+        pre-HATS-533 behavior for migration paths.
+        """
+        mgr = WorktreeManager(git_project, branch_name="task/legacy-state")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        # Hand-clear the field to simulate legacy state.
+        mgr._original_branch = None
+
+        # Move HEAD off the original branch to ensure we'd trip the guard
+        # if it ran.
+        _git(git_project, "checkout", "-b", "any-feature")
+
+        # No WorktreeBaseBranchMismatchError. Whether the merge then
+        # succeeds or fails downstream is not this test's concern — we
+        # only assert that the new guard does NOT fire for legacy state.
+        try:
+            mgr.merge()
+        except WorktreeBaseBranchMismatchError:
+            pytest.fail(
+                "mismatch guard fired for legacy state "
+                "(_original_branch=None) — must be a no-op"
+            )
+        except Exception:
+            # Downstream OriginalBranchMissingError / merge mechanics are
+            # fine — this test asserts only the guard's no-op contract.
+            pass
+
+    def test_force_does_not_bypass_mismatch(self, git_project: Path) -> None:
+        """``--force`` (uncommitted-bypass) does NOT bypass the HEAD guard.
+
+        Same architectural decision as drift (HATS-457): ``force``
+        addresses dirty-worktree, not wrong-branch safety. Mixing them
+        would let an operator who only meant "I know about uncommitted
+        changes" silently merge to the wrong branch.
+        """
+        mgr = WorktreeManager(
+            git_project, branch_name="task/force-not-mismatch"
+        )
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+        _git(git_project, "checkout", "-b", "another-feature")
+
+        with pytest.raises(WorktreeBaseBranchMismatchError):
+            mgr.merge(force=True)
+
+    def test_accept_drift_does_not_bypass_mismatch(
+        self, git_project: Path
+    ) -> None:
+        """``--accept-drift`` does NOT bypass the HEAD guard either.
+
+        ``accept-drift`` is a deliberate consent to a moved base; it
+        doesn't grant consent to merge into a DIFFERENT branch entirely.
+        Mismatch guard runs before drift check (worktree.py order) and is
+        not gated by ``accept_drift``.
+        """
+        mgr = WorktreeManager(
+            git_project, branch_name="task/accept-not-mismatch"
+        )
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+        _git(git_project, "checkout", "-b", "yet-another-feature")
+
+        with pytest.raises(WorktreeBaseBranchMismatchError):
+            mgr.merge(accept_drift=True)
