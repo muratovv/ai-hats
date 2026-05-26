@@ -93,7 +93,12 @@ class TestDriftDetection:
         assert "drifted" in msg
         assert "other-agent.txt" in msg
         assert "1 commit" in msg
-        assert "--accept-drift" in msg
+        # HATS-509: the user-facing recipe ("re-run with
+        # `ai-hats wt merge --accept-drift`") lives in CLI handlers
+        # (cli/worktree.py wt_merge, cli/task.py task_transition), not
+        # in the exception body. The body is facts-only so distinct
+        # callers can phrase the recipe for their own surface.
+        assert "--accept-drift" not in msg
 
         # Worktree branch is preserved on drift refusal — user can re-verify
         # and re-run with --accept-drift.
@@ -255,7 +260,8 @@ class TestRemoteDrift:
         # Remote section MUST appear with the colleague's path.
         assert "remote:" in msg, f"remote-drift section missing:\n{msg}"
         assert "remote-only.txt" in msg, f"affected path missing:\n{msg}"
-        assert "--accept-drift" in msg
+        # HATS-509: recipe lives in CLI layer, see TestLocalDrift comment.
+        assert "--accept-drift" not in msg
 
     def test_local_and_remote_drift_both_listed(
         self, git_project: Path, tmp_path: Path

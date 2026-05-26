@@ -114,6 +114,7 @@ def task_transition(
     from ..models import TaskState
     from ..worktree import WorktreeBaseBranchError  # HATS-518
     from ..worktree import WorktreeCreateError  # HATS-517
+    from ..worktree import WorktreeDriftError  # HATS-509
 
     mgr = _task_manager(_project_dir())
     try:
@@ -202,6 +203,45 @@ def task_transition(
         # to create the execute worktree. Card stays in its prior state —
         # the transition's _save_task was never reached.
         console.print(f"[red]{e}[/]")
+        sys.exit(1)
+    except WorktreeDriftError as e:
+        # HATS-509: translate the inner `wt merge` drift error for
+        # `task transition <ID> done` callers. The raw message ends with
+        # "re-run with `ai-hats wt merge --accept-drift`" (HATS-509 Step 2),
+        # but users were copy-pasting that as a flag on `task transition`,
+        # which does NOT accept it. Re-emit with an explicit two-step
+        # recipe pointing at the main-repo path and clarifying the flag
+        # belongs to `wt merge`, not the current command.
+        #
+        # Card stays in `review`: HATS-481 fail-loud guarantees the
+        # `_teardown_worktree` raise propagates before `_save_task`.
+        project_dir = _project_dir()
+        console.print(
+            f"[red]Worktree drifted vs original branch[/] — "
+            f"cannot merge for {task_id}."
+        )
+        # Preserve the drift summary verbatim (commits + affected paths
+        # from WorktreeManager._drift_summary) — it's informational.
+        console.print(str(e))
+        console.print("")
+        console.print(
+            "Re-verify your changes against the new base, then run:"
+        )
+        # soft_wrap=True keeps each recipe line intact for copy-paste
+        # even on narrow terminals (default Rich console width when
+        # stdout is a pipe is 80 cols, which truncates long project paths).
+        console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
+        console.print(
+            "  [cyan]ai-hats wt merge --accept-drift[/]", soft_wrap=True
+        )
+        console.print(
+            f"  [cyan]ai-hats task transition {task_id} done[/]",
+            soft_wrap=True,
+        )
+        console.print(
+            "[dim]Note: --accept-drift belongs to `wt merge`, "
+            "not `task transition`.[/]"
+        )
         sys.exit(1)
     except WorktreeCreateError as e:
         # HATS-517: defense-in-depth handler for the branch-exists
