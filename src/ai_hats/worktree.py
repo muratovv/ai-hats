@@ -813,6 +813,48 @@ class WorktreeBaseBranchError(Exception):
         )
 
 
+class WorktreeBaseBranchMismatchError(Exception):
+    """Raised when ``wt merge`` runs with main-repo HEAD on a branch other
+    than ``_original_branch`` (the merge target captured at ``wt create``).
+
+    HATS-533: ``WorktreeManager._fast_forward_merge`` / ``_squash_merge``
+    invoke ``git merge`` in the main-repo cwd without first checking out
+    ``self._original_branch``. If main-repo HEAD moved between
+    ``wt create`` and ``wt merge`` (manual ``git checkout``, a peer agent
+    operating directly in main repo without a linked worktree, an IDE
+    branch-switch, etc.), the merge silently lands on whatever branch is
+    currently checked out — same silent-wrong-branch-merge class as
+    HATS-486. This guard refuses BEFORE any mutation. The recipe is owned
+    by CLI handlers (``cli/worktree.py wt_merge``, ``cli/task.py
+    task_transition``) — exception body is facts-only (HATS-509 contract).
+
+    Recovery: ``git checkout <expected>`` in the main repo, then re-run.
+    The original branch is preserved unchanged either way.
+
+    Live incident motivating the guard: HATS-509 session (2026-05-26).
+    Worktree created from master (HATS-518 passed). Between create and
+    merge a peer agent committed directly on ``task/hats-514`` in main
+    repo, leaving HEAD wandered. ``task transition done`` merged
+    ``task/hats-509`` into ``task/hats-514`` instead of master. Recovered
+    via ``git cherry-pick``.
+
+    **``--force`` does NOT bypass this guard.** Symmetric to
+    :class:`WorktreeBaseBranchError`: ``--force`` overrides the FSM
+    arrow, not safety contracts. Operator checks out the right branch
+    explicitly.
+    """
+
+    def __init__(self, current: str, expected: str) -> None:
+        self.current = current
+        self.expected = expected
+        super().__init__(
+            f"main repo HEAD is on '{current}', not '{expected}' — the "
+            f"worktree was created from '{expected}' and `wt merge` would "
+            f"otherwise land on the current branch instead of the merge "
+            f"target."
+        )
+
+
 #: Branch names considered "canonical bases" for worktree creation. The
 #: first one that actually exists in the repo is the comparison target.
 #: Hardcoded by design (HATS-518): 99% repo coverage, no new config
@@ -1139,6 +1181,40 @@ class WorktreeManager:
                     self.branch_name,
                 )
                 return
+
+            # HATS-533: refuse if main-repo HEAD is no longer on the merge
+            # target captured at create time. _fast_forward_merge /
+            # _squash_merge run `git merge` in main-repo cwd, so a HEAD that
+            # has wandered (manual checkout, peer agent operating directly
+            # in main repo, IDE branch-switch) would silently merge into the
+            # current branch — same wrong-branch-merge class as HATS-486.
+            #
+            # Ordering invariants (do not flip without re-thinking):
+            #   1. AFTER `_acquire_lifecycle_lock` + the worktree-exists
+            #      peer no-op (line ~1178) — a parallel discard that has
+            #      already torn the dir down MUST short-circuit cleanly,
+            #      regardless of HEAD position. A spurious mismatch
+            #      refusal on top of a peer's completed teardown would
+            #      surface as a confusing user-visible error for what is
+            #      really a no-op.
+            #   2. BEFORE `_check_clean`, `_check_drift`, the
+            #      OriginalBranchMissing / `_branch_exists` check, and
+            #      the merge mechanics themselves. With HEAD wrong, all
+            #      of those answer the wrong question — drift = "did the
+            #      base move?", clean = "is the wt tree dirty against
+            #      its branch?". Refusing here keeps the user-visible
+            #      message focused on the actionable root cause.
+            #
+            # Skip for legacy states where _original_branch is None
+            # (symmetric with the OriginalBranchMissing guard below).
+            if self._original_branch is not None:
+                head = self._git(
+                    "rev-parse", "--abbrev-ref", "HEAD"
+                ).stdout.strip()
+                if head != self._original_branch:
+                    raise WorktreeBaseBranchMismatchError(
+                        current=head, expected=self._original_branch
+                    )
 
             if not force:
                 self._check_clean()
