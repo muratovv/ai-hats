@@ -113,6 +113,7 @@ def task_transition(
     """Transition a task to a new state."""
     from ..models import TaskState
     from ..worktree import WorktreeBaseBranchError  # HATS-518
+    from ..worktree import WorktreeBaseBranchMismatchError  # HATS-533
     from ..worktree import WorktreeCreateError  # HATS-517
     from ..worktree import WorktreeDriftError  # HATS-509
 
@@ -203,6 +204,33 @@ def task_transition(
         # to create the execute worktree. Card stays in its prior state —
         # the transition's _save_task was never reached.
         console.print(f"[red]{e}[/]")
+        sys.exit(1)
+    except WorktreeBaseBranchMismatchError as e:
+        # HATS-533: main-repo HEAD wandered off the merge target captured
+        # at create time. The internal `wt merge` would otherwise land on
+        # the current branch — same wrong-branch-merge class as HATS-486.
+        # Card stays in `review` (HATS-481 fail-loud).
+        from rich.markup import escape as _escape
+
+        project_dir = _project_dir()
+        console.print(
+            f"[red]Refused (base branch mismatch)[/] — "
+            f"cannot merge for {task_id}."
+        )
+        console.print(_escape(str(e)))
+        console.print("")
+        console.print("Switch the main repo to the merge target, then retry:")
+        # soft_wrap=True so long main-repo paths stay on one line for
+        # copy-paste (HATS-509 precedent).
+        console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
+        console.print(
+            f"  [cyan]git checkout {_escape(e.expected)}[/]",
+            soft_wrap=True,
+        )
+        console.print(
+            f"  [cyan]ai-hats task transition {task_id} done[/]",
+            soft_wrap=True,
+        )
         sys.exit(1)
     except WorktreeDriftError as e:
         # HATS-509: translate the inner `wt merge` drift error for
