@@ -264,6 +264,49 @@ def test_phase1_failure_aborts_phase2(
     assert "Phase 2 aborted" in res.output
 
 
+# --- fail-closed: Phase 1 succeeded but produced empty draft -------------
+
+
+def test_phase1_empty_draft_aborts_phase2(
+    project_dir: Path, mock_runners
+):
+    """Phase 1 exits clean but transcript has no BEGIN_JUDGE_DRAFT markers
+    → `extract_marker` returns "" → `save_artifact` writes a zero-byte
+    draft file. CLI must detect this and abort Phase 2 (otherwise a
+    HITL session opens against an empty draft).
+
+    This guards the structural gap reviewer flagged: `"saved_path" not
+    in r1` is unreachable in normal flow because `save_artifact` always
+    emits `saved_path` even for empty content.
+    """
+    _make_hyp(project_dir, "HYP-001")
+    _make_prop(project_dir, "PROP-001")
+
+    # Seed the sub-agent session output WITHOUT the BEGIN_JUDGE_DRAFT
+    # markers. extract_marker → "", save_artifact writes empty file.
+    from ai_hats.paths import runs_dir
+    sub_session_dir = runs_dir(project_dir) / "session_sub-1"
+    sub_session_dir.mkdir(parents=True, exist_ok=True)
+    (sub_session_dir / "transcript.txt").write_text(
+        "(judge-auditor produced free-form text without markers)\n"
+    )
+    (sub_session_dir / "trace.log").write_text("(trace)")
+
+    res = CliRunner().invoke(main, ["reflect", "hypothesis"])
+    assert res.exit_code != 0, (
+        f"empty-draft Phase 1 must abort Phase 2 (output={res.output!r})"
+    )
+
+    # Phase 1 ran; Phase 2 did NOT.
+    assert len(mock_runners["sub_calls"]) == 1
+    assert mock_runners["wrap_calls"] == []
+    # Rich-console may word-wrap; normalize whitespace before substring check.
+    flat_output = " ".join(res.output.split())
+    assert "empty draft" in flat_output
+    assert "markers missing" in flat_output
+    assert "Phase 2 aborted" in flat_output
+
+
 # --- observable UX ---------------------------------------------------------
 
 

@@ -10,8 +10,11 @@ Apply **judge-auditor-protocol** end-to-end:
 - No CLI mutations (`base-auditor` L0 contract). Record proposed
   invocations in the draft's `## Proposed mutations` section — Phase
   2 will execute them after supervisor ack.
-- Emit the draft as a single block between `BEGIN_JUDGE_DRAFT` /
-  `END_JUDGE_DRAFT` markers. The pipeline persists it to
+- Emit the draft as a single block wrapped between the start/end
+  markers documented in **judge-auditor-protocol** Step 4 — copy them
+  verbatim from the protocol skill, do NOT improvise (the marker
+  strings are load-bearing for pipeline extraction). The pipeline
+  persists the block to
   `<ai_hats_dir>/sessions/retros/judge/<ts>-draft.md`. Do NOT use the
   `Write` tool.
 

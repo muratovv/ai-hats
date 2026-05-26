@@ -215,7 +215,7 @@ Useful when:
 
 ## Flow 2: `ai-hats reflect all` — manual backlog triage
 
-Once HYPs and PROPs pile up — time to walk the backlog by hand and close / accept / reject in a batch. This subcommand spawns the `judge` role (autopilot or interactive mode, set by `judge-protocol` Step 0).
+Once HYPs and PROPs pile up — time to walk the backlog by hand and close / accept / reject in a batch. This subcommand spawns the `judge` role interactively against a HYP/PROP inventory (legacy single-phase shape; cf. the two-phase `reflect hypothesis` flow described in the deprecation banner up top).
 
 ### Command lifecycle
 

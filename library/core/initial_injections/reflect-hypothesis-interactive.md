@@ -15,8 +15,10 @@ Apply **judge-protocol** end-to-end:
   that emerge from dialogue.
 - Step 4: write the final report at
   `<ai_hats_dir>/sessions/retros/judge/<UTC-ISO-ts>-report.md`
-  using the `Write` tool, with body wrapped in `BEGIN_JUDGE` /
-  `END_JUDGE` markers.
+  using the `Write` tool. Wrap the body between the start/end markers
+  documented in **judge-protocol** Step 4 (the marker strings are
+  load-bearing for pipeline extraction — copy them verbatim from the
+  protocol skill, do NOT improvise).
 
 ---
 

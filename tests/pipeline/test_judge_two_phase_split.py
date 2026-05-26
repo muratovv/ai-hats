@@ -180,3 +180,28 @@ def test_initial_injections_exist() -> None:
     # Phase 2 preamble must carry the {draft_body} placeholder the CLI
     # substitutes.
     assert "{draft_body}" in p2.read_text()
+
+
+def test_preambles_do_not_contain_marker_literals() -> None:
+    """Marker-collision defense (reviewer nit #4).
+
+    `extract_marker` uses ``str.find`` — a substring match. If a
+    preamble contains the literal marker string ``BEGIN_JUDGE`` or
+    ``BEGIN_JUDGE_DRAFT`` and the LLM echoes the preamble in its
+    transcript, the extractor will lock onto the echoed marker
+    position instead of the real one. Defense: don't put literal
+    marker strings in preambles — point at the protocol skill for
+    the verbatim source.
+    """
+    for stem in ("reflect-hypothesis", "reflect-hypothesis-interactive"):
+        path = LIBRARY / "core" / "initial_injections" / f"{stem}.md"
+        body = path.read_text()
+        for marker in (
+            "BEGIN_JUDGE_DRAFT", "END_JUDGE_DRAFT",
+            "BEGIN_JUDGE", "END_JUDGE",
+        ):
+            assert marker not in body, (
+                f"{path.name} contains literal marker {marker!r} — "
+                "transcript echo could poison extract_marker. Refer to "
+                "the protocol skill instead."
+            )
