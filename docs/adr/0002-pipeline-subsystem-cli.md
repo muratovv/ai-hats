@@ -4,6 +4,22 @@
 
 Proposed (HATS-273, 2026-05-09). Дополняет ADR-0001 (не отменяет его).
 
+> **HATS-535 update (2026-05-26).** The `launch_provider` step described
+> below is **renamed** to `provider` (`LaunchProvider` retained as a
+> deprecated class alias). The audit-derivation + SESSION_END hook
+> responsibilities are **extracted** out of that megastep into two new
+> steps `make_audit` and `run_session_end`, composed via two new
+> sub-pipelines `finalize-hitl` (`make_audit + run_session_end`) and
+> `finalize-subagent` (`make_audit` only). The sub-pipelines are
+> invoked by `WrapRunner.run` / `_finalize_sub_agent` from their
+> `finally` blocks — `claude_session_id` and `hooks_env` flow via
+> `pipeline.run(..., initial=...)` rather than through the main funnel.
+> The §Step inventory tables and YAML examples below describe the
+> pre-HATS-535 shape; the post-refactor canonical reference lives in
+> [glossary.md §Pipeline steps & sub-pipelines](../glossary.md#pipeline-steps--sub-pipelines).
+> Decision rationale and forks (A1 vs A2, two-pipelines vs single
+> finalize) are recorded in `<ai_hats_dir>/tracker/backlog/tasks/HATS-535/plan.md`.
+
 ## Context
 
 ADR-0001 (HATS-261) утвердил **контракт** typed-dataflow pipeline: `StepIO` (frozen), `Step` ABC (`run(**inputs) → dict`), `Pipeline` (build/run с projection-based threading + `failure_policy`). Phase 1 эпика HATS-259 (HATS-265, commit `e92ae6b`) реализовал ядро + `LaunchProvider` (обёртка над `_do_execute`) + лог-стабы; `ai-hats execute` после HATS-265 идёт через `execute_pipeline`.

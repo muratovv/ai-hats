@@ -1,0 +1,10 @@
+name: finalize-hitl
+# HITL (WrapRunner) post-spawn finalize sub-pipeline (HATS-535).
+# Invoked by WrapRunner.run() from its `finally` block via the
+# `PipelineHarness.run("finalize-hitl", initial=...)` surface. Runner
+# passes session_id, session_dir, claude_session_id, project_dir,
+# exit_code, hooks_env as initial state — they do NOT appear in the
+# main `human` pipeline funnel.
+steps:
+  - id: make_audit
+  - id: run_session_end

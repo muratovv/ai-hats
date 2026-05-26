@@ -1,4 +1,15 @@
-"""Tests for _format_tokens (HATS-057) and _finalize_session (HATS-086)."""
+"""Tests for ``_format_tokens`` (HATS-057), ``_finalize_session_basic``
+(HATS-086 cleanup invariants), and ``_discover_claude_jsonl`` (HATS-272
+resume-mode JSONL discovery).
+
+HATS-535: the legacy ``_finalize_session`` megafunction was split into
+``_finalize_session_basic`` (this file) + the ``finalize-hitl``
+sub-pipeline (``MakeAudit`` + ``RunSessionEnd`` — tested separately in
+``test_make_audit_step.py`` and ``test_run_session_end_step.py``).
+This file covers the subset of pre-HATS-535 behaviour that remains in
+``runtime.py``: trace flush + metrics.json + trace stats + the
+SIGINT-safe ``_print_session_end`` outer-``finally`` contract.
+"""
 
 from __future__ import annotations
 
@@ -9,14 +20,13 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats import runtime as runtime_module
-from ai_hats.models import LifecycleEvent
 from ai_hats.observe import Session
 from ai_hats.paths import runs_dir
 from ai_hats.runtime import (
     _discover_claude_jsonl,
-    _finalize_session,
+    _finalize_session_basic,
     _format_tokens,
+    _print_session_end,
 )
 
 
@@ -24,6 +34,11 @@ def make_session(tmp_path) -> Session:
     session_dir = tmp_path / "session_test"
     session_dir.mkdir()
     return Session(session_id="test", session_dir=session_dir)
+
+
+# ---------------------------------------------------------------------------
+# _format_tokens
+# ---------------------------------------------------------------------------
 
 
 def test_format_tokens_happy_path(tmp_path):
@@ -51,11 +66,7 @@ def test_format_tokens_zero_cache(tmp_path):
     """Cache fields default to 0 when missing."""
     session = make_session(tmp_path)
     session.metrics_path.write_text(
-        json.dumps(
-            {
-                "tokens": {"input": 100, "output": 50},
-            }
-        )
+        json.dumps({"tokens": {"input": 100, "output": 50}})
     )
 
     line = _format_tokens(session)
@@ -75,13 +86,7 @@ def test_format_tokens_missing_tokens_block(tmp_path):
     """metrics.json exists but no 'tokens' key (gemini provider) → fallback."""
     session = make_session(tmp_path)
     session.metrics_path.write_text(
-        json.dumps(
-            {
-                "exit_code": 0,
-                "role": "primary",
-                "provider": "gemini",
-            }
-        )
+        json.dumps({"exit_code": 0, "role": "primary", "provider": "gemini"})
     )
 
     assert _format_tokens(session) == "🪙 Tokens: n/a"
@@ -100,27 +105,12 @@ def test_format_tokens_empty_tokens_dict(tmp_path):
     session = make_session(tmp_path)
     session.metrics_path.write_text(json.dumps({"tokens": {}}))
 
-    # Empty dict is falsy → fallback
     assert _format_tokens(session) == "🪙 Tokens: n/a"
 
 
 # ---------------------------------------------------------------------------
-# _finalize_session — guaranteed cleanup + session-end print (HATS-086)
+# _finalize_session_basic — per-runner cleanup (HATS-086 invariants)
 # ---------------------------------------------------------------------------
-
-
-class _StubHooksRunner:
-    """Minimal HooksRunner stub. If `exc` is set, .run() raises it."""
-
-    def __init__(self, exc: BaseException | None = None) -> None:
-        self.exc = exc
-        self.calls: list = []
-
-    def run(self, event, env=None):
-        self.calls.append(event)
-        if self.exc is not None:
-            raise self.exc
-        return []
 
 
 class _StubTracer:
@@ -137,12 +127,8 @@ class _StubTracer:
 
 
 @pytest.fixture
-def finalize_kwargs(tmp_path):
-    """Build keyword args for `_finalize_session(...)` with sensible defaults.
-
-    Test-specific behavior is injected by overriding `hooks_runner` or
-    monkeypatching `runtime_module.AuditWriter`.
-    """
+def basic_kwargs(tmp_path):
+    """Default keyword args for ``_finalize_session_basic(...)``."""
     session = make_session(tmp_path)
     session.init_audit(role="primary", provider="claude")
     return {
@@ -150,90 +136,81 @@ def finalize_kwargs(tmp_path):
         "exit_code": 0,
         "active_role": "primary",
         "provider_name": "claude",
-        "claude_session_id": "abc-123",
-        "project_dir": tmp_path,
-        "env": {},
-        "hooks_runner": _StubHooksRunner(),
         "tracer": _StubTracer(),
     }
 
 
-def test_finalize_session_prints_summary_on_clean_run(finalize_kwargs, capsys):
-    """Happy path: every cleanup step succeeds, summary box prints."""
-    _finalize_session(**finalize_kwargs)
+def test_basic_writes_metrics_json(basic_kwargs):
+    """Happy path writes metrics.json with exit_code + role + provider."""
+    _finalize_session_basic(**basic_kwargs)
 
-    out = capsys.readouterr().out
-    assert "Session test complete!" in out
-    # The session-end hook ran (proves we got past tracer flush).
-    assert finalize_kwargs["hooks_runner"].calls == [LifecycleEvent.SESSION_END]
-    assert finalize_kwargs["tracer"].flushed
-
-
-def test_finalize_session_prints_summary_when_hooks_runner_fails(finalize_kwargs, capsys):
-    """A SESSION_END hook raising RuntimeError must NOT skip the summary."""
-    finalize_kwargs["hooks_runner"] = _StubHooksRunner(exc=RuntimeError("hook boom"))
-
-    _finalize_session(**finalize_kwargs)
-
-    out = capsys.readouterr().out
-    assert "Session test complete!" in out
+    metrics = json.loads(basic_kwargs["session"].metrics_path.read_text())
+    assert metrics["exit_code"] == 0
+    assert metrics["role"] == "primary"
+    assert metrics["provider"] == "claude"
 
 
-def test_finalize_session_prints_summary_when_audit_writer_fails(
-    finalize_kwargs, capsys, monkeypatch
-):
-    """AuditWriter.build raising must NOT skip the summary."""
+def test_basic_returns_trace_stats_shape(basic_kwargs):
+    """``trace_stats`` return is a dict with ``req_count`` + ``trace_size`` keys.
 
-    class _ExplodingAuditWriter:
-        def build(self, *args, **kwargs):
-            raise RuntimeError("audit boom")
+    ``_finalize_session_basic`` itself appends a ``[SYS] Session ended``
+    line to trace.log before calling ``_collect_trace_stats``, so
+    ``trace_size`` is non-zero by then. The req_count remains 0 because
+    no real user turns happened in the stub.
+    """
+    stats = _finalize_session_basic(**basic_kwargs)
 
-    monkeypatch.setattr(runtime_module, "AuditWriter", _ExplodingAuditWriter)
-
-    _finalize_session(**finalize_kwargs)
-
-    out = capsys.readouterr().out
-    assert "Session test complete!" in out
+    assert isinstance(stats, dict)
+    assert stats.get("req_count", 0) == 0
+    assert stats.get("trace_size", 0) >= 0  # SYS line was appended; just shape check
 
 
-def test_finalize_session_prints_summary_on_keyboard_interrupt_in_step(finalize_kwargs, capsys):
-    """A SECOND Ctrl+C raised during a cleanup step (here: from the hook
-    runner) must still let _finalize_session run to completion and print
-    the summary. KeyboardInterrupt MUST NOT propagate out of finalize."""
-    finalize_kwargs["hooks_runner"] = _StubHooksRunner(exc=KeyboardInterrupt())
+def test_basic_swallows_tracer_flush_exception(basic_kwargs):
+    """``tracer.flush_response()`` raising MUST NOT propagate."""
+    basic_kwargs["tracer"] = _StubTracer(exc=RuntimeError("flush boom"))
 
-    # Must not raise.
-    _finalize_session(**finalize_kwargs)
-
-    out = capsys.readouterr().out
-    assert "Session test complete!" in out
+    # Must not raise — KeyboardInterrupt and Exception both caught (HATS-086).
+    _finalize_session_basic(**basic_kwargs)
+    assert basic_kwargs["tracer"].flushed
 
 
-def test_finalize_session_prints_summary_when_finalize_audit_fails(
-    finalize_kwargs, capsys, monkeypatch
-):
-    """Session.finalize_audit raising must NOT skip the summary."""
+def test_basic_swallows_tracer_flush_keyboard_interrupt(basic_kwargs):
+    """A second Ctrl+C during ``tracer.flush_response()`` MUST NOT propagate."""
+    basic_kwargs["tracer"] = _StubTracer(exc=KeyboardInterrupt())
+
+    _finalize_session_basic(**basic_kwargs)
+    assert basic_kwargs["tracer"].flushed
+
+
+def test_basic_swallows_finalize_audit_exception(basic_kwargs, monkeypatch):
+    """``Session.finalize_audit`` raising MUST NOT propagate."""
 
     def _explode(*args, **kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr(finalize_kwargs["session"], "finalize_audit", _explode)
+    monkeypatch.setattr(basic_kwargs["session"], "finalize_audit", _explode)
 
-    _finalize_session(**finalize_kwargs)
+    # Must not raise.
+    _finalize_session_basic(**basic_kwargs)
 
-    out = capsys.readouterr().out
-    assert "Session test complete!" in out
+
+def test_basic_appends_tags_to_metrics(basic_kwargs):
+    """``tags`` kwarg lands in metrics.json under the ``tags`` key."""
+    basic_kwargs["tags"] = {"ticket": "HATS-535", "scope": "test"}
+
+    _finalize_session_basic(**basic_kwargs)
+
+    metrics = json.loads(basic_kwargs["session"].metrics_path.read_text())
+    assert metrics["tags"] == {"ticket": "HATS-535", "scope": "test"}
 
 
 # ---------------------------------------------------------------------------
-# HATS-158 — retro line in session-end banner + persistent retro.log
+# _print_session_end — banner contract (HATS-158 retro line + HATS-535 banner split)
 # ---------------------------------------------------------------------------
 
 
 def test_print_session_end_without_retro(tmp_path, capsys):
-    """Legacy call (retro=None) → no retro line in banner."""
-    from ai_hats.runtime import _print_session_end
-
+    """``retro=None`` → no ``📝 Retro`` line in banner."""
     session = make_session(tmp_path)
     _print_session_end(session, trace_stats={"trace_size": 0, "req_count": 0}, retro=None)
 
@@ -247,10 +224,10 @@ def test_print_session_end_without_retro(tmp_path, capsys):
     ("skip", "skipped"),
     ("hint", "hint — ai-hats session retro"),
 ])
-def test_print_session_end_with_retro(tmp_path, capsys, action, expected_fragment):
-    """Each action yields a dedicated retro line with the right phrasing."""
-    from ai_hats.runtime import _print_session_end
-
+def test_print_session_end_with_retro_one_line(tmp_path, capsys, action, expected_fragment):
+    """``retro=<decision>`` → one ``📝 Retro:`` line per action; the
+    reminder/wrap-up banner LINES no longer print here (moved to
+    ``RunSessionEnd`` step in HATS-535)."""
     session = make_session(tmp_path)
     decision = {
         "action": action,
@@ -268,34 +245,28 @@ def test_print_session_end_with_retro(tmp_path, capsys, action, expected_fragmen
     assert expected_fragment in out
 
 
-def test_finalize_session_writes_runtime_decision_line(finalize_kwargs, tmp_path, monkeypatch):
-    """_finalize_session must write a 'runtime decision' line to retro.log
-    BEFORE the hook fires — so even a hook crash leaves a trace."""
-    # Write a minimal ai-hats.yaml so should_run reads it.
-    import yaml
-    (tmp_path / "ai-hats.yaml").write_text(yaml.dump({
-        "schema_version": 2,
-        "provider": "claude",
-        "active_role": "primary",
-        "feedback": {"session_retro": {"policy": "smart",
-                     "smart_threshold": {"min_turns": 1, "min_tool_calls": 1},
-                     "mode": "programmatic", "background": True}},
-    }))
-    # Force the hook to blow up after runtime writes its decision line.
-    finalize_kwargs["hooks_runner"] = _StubHooksRunner(exc=RuntimeError("hook boom"))
+def test_print_session_end_does_not_emit_reminder_banner(tmp_path, capsys):
+    """HATS-535: even when a ``reminder`` is present in the retro decision,
+    ``_print_session_end`` no longer renders the cyan banner — that
+    moved to ``RunSessionEnd._print_retro_banner``."""
+    session = make_session(tmp_path)
+    decision = {
+        "action": "run",
+        "reason": "ok",
+        "mode": "llm",
+        "background": True,
+        "reminder": {"count": 5, "command": "ai-hats reflect all"},
+    }
+    _print_session_end(session, trace_stats={"trace_size": 0, "req_count": 0}, retro=decision)
 
-    _finalize_session(**finalize_kwargs)
-
-    log = runs_dir(tmp_path) / "session_test" / "retro.log"
-    assert log.exists(), "retro.log must be created by runtime before hooks fire"
-    content = log.read_text()
-    assert "runtime\tdecision" in content
-    # Short session (no metrics → turns=0) → skip with threshold reason.
-    assert "skip" in content
+    out = capsys.readouterr().out
+    assert "📝 Retro:" in out  # one-liner kept
+    assert "Reflect the project through" not in out  # banner moved
+    assert "ai-hats reflect all" not in out
 
 
 # ---------------------------------------------------------------------------
-# HATS-272 — JSONL discovery fallback for resume mode
+# HATS-272 — JSONL discovery fallback for resume mode (unchanged by HATS-535)
 # ---------------------------------------------------------------------------
 
 
@@ -322,12 +293,10 @@ def test_discover_claude_jsonl_picks_most_recent_after_session_start(
     claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
 
     session_id = "20260507-154102-1"
-    # Stale JSONL pre-dating session — must be ignored.
     stale = claude_dir / "stale.jsonl"
     stale.write_text("{}")
     _set_mtime(stale, calendar.timegm((2026, 5, 7, 14, 0, 0, 0, 0, 0)))
 
-    # Active JSONL written during session — must win.
     active = claude_dir / "active.jsonl"
     active.write_text("{}")
     _set_mtime(active, calendar.timegm((2026, 5, 7, 16, 0, 0, 0, 0, 0)))
@@ -362,41 +331,141 @@ def test_discover_claude_jsonl_returns_none_when_dir_missing(tmp_path, monkeypat
     assert found is None
 
 
-def test_finalize_session_uses_discovered_jsonl_when_configured_path_missing(
-    finalize_kwargs, tmp_path, monkeypatch,
+# ---------------------------------------------------------------------------
+# HATS-535 integration: WrapRunner.run finally chain (HATS-086 contract)
+# ---------------------------------------------------------------------------
+#
+# These tests pin the 3-layer try/finally structure of WrapRunner.run's
+# finally block:
+#
+#   1. _finalize_session_basic — metrics + trace_stats
+#   2. _run_finalize_hitl — finalize-hitl sub-pipeline
+#   3. _print_session_end — green summary (HATS-086 invariant: ALWAYS fires)
+#
+# Component-level tests cover each layer in isolation; these tests verify
+# that a crash in layer 2 does NOT prevent layer 3 from firing — the
+# session-id MUST always reach stdout. Without this gate, a future refactor
+# could silently regress the SIGINT-safety chain (e.g. by re-introducing
+# a bare `raise` in _run_finalize_hitl that escapes the per-step wrap).
+
+
+@pytest.fixture
+def wrap_runner_factory(tmp_path, monkeypatch):
+    """Build a WrapRunner with stubs so .run() exercises the finally
+    chain without touching real PTY / real claude / real composition.
+
+    Returns a callable: (pty_exit_code=0, finalize_hitl_exc=None) →
+    (runner, project_dir). The caller invokes runner.run("claude") and
+    asserts on captured stdout / artefacts.
+    """
+
+    from ai_hats.assembler import Assembler
+    from ai_hats.models import ProjectConfig
+    from ai_hats.runtime import WrapRunner
+
+    # Real project with maintainer role wired in (the assembler walks
+    # the live library/). We need a real project to exercise
+    # WrapRunner.run's composition path — but with _pty_spawn stubbed,
+    # no claude process actually starts.
+    project = tmp_path / "proj"
+    project.mkdir()
+    repo_root = Path(__file__).resolve().parent.parent
+    library = repo_root / "library"
+    ProjectConfig(
+        provider="claude",
+        library_paths=[str(library)],
+        ai_hats_dir=".agent/ai-hats",
+        active_role="maintainer",
+        default_role="maintainer",
+    ).save(project / "ai-hats.yaml")
+    asm = Assembler(project, library_paths=[library])
+    asm.init()
+    asm.set_role("maintainer", provider_name="claude")
+
+    monkeypatch.setenv("AI_HATS_QUIET", "1")
+
+    def make(pty_exit_code: int = 0, finalize_hitl_exc: BaseException | None = None):
+        runner = WrapRunner(project)
+
+        def _stub_spawn(self, cmd, env, tracer):
+            return pty_exit_code
+
+        monkeypatch.setattr(WrapRunner, "_pty_spawn", _stub_spawn)
+
+        # Stub hooks so SESSION_START hooks don't try to exec anything.
+        class _NoopHooks:
+            def run(self, event, env=None):
+                return []
+
+        monkeypatch.setattr(
+            WrapRunner, "_make_session_hooks_runner",
+            lambda self: _NoopHooks(),
+        )
+
+        if finalize_hitl_exc is not None:
+            def _exploding_finalize_hitl(*args, **kwargs):
+                raise finalize_hitl_exc
+
+            monkeypatch.setattr(
+                "ai_hats.runtime._run_finalize_hitl",
+                _exploding_finalize_hitl,
+            )
+
+        return runner, project
+
+    return make
+
+
+def test_wrap_runner_finally_prints_summary_on_happy_path(
+    wrap_runner_factory, capsys,
 ):
-    """Resume mode regression: configured ``--session-id`` path doesn't exist
-    on disk (because Claude used its own uuid). The finalize fallback must
-    discover the real JSONL and pass it to ``AuditWriter.build`` so token
-    metrics get populated instead of staying zero."""
-    # Use a real session_id with a parseable timestamp prefix so the
-    # discoverer's datetime parsing succeeds.
-    session = finalize_kwargs["session"]
-    session.session_id = "20260507-154102-1"
+    """Happy path: _pty_spawn returns 0, finalize-hitl runs cleanly,
+    _print_session_end fires the green summary."""
+    runner, project = wrap_runner_factory(pty_exit_code=0)
 
-    # Fake ~/.claude project dir with one JSONL whose mtime sits inside
-    # the session lifetime — discoverer should pick it up.
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
-    project_dir = finalize_kwargs["project_dir"]
-    claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
-    real_jsonl = claude_dir / "real-claude-uuid.jsonl"
-    real_jsonl.write_text("{}")
-    _set_mtime(real_jsonl, calendar.timegm((2026, 5, 7, 16, 0, 0, 0, 0, 0)))
+    exit_code, session = runner.run("claude")
 
-    captured: dict = {}
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert f"✨ Session {session.session_id} complete!" in out
 
-    class _CapturingAuditWriter:
-        def build(self, session, jsonl_path=None, keep_raw=False):
-            captured["jsonl_path"] = jsonl_path
 
-    monkeypatch.setattr(runtime_module, "AuditWriter", _CapturingAuditWriter)
-
-    # claude_session_id = our generated uuid that NEVER reached Claude.
-    finalize_kwargs["claude_session_id"] = "dead-uuid-never-passed-to-claude"
-
-    _finalize_session(**finalize_kwargs)
-
-    assert captured["jsonl_path"] == real_jsonl, (
-        "Expected discovered JSONL to be passed to AuditWriter "
-        "(HATS-272 — resume-mode fallback)."
+def test_wrap_runner_finally_prints_summary_when_finalize_hitl_raises(
+    wrap_runner_factory, capsys,
+):
+    """HATS-086 invariant (HATS-535 refactor preserves it): a crash inside
+    the finalize-hitl sub-pipeline MUST NOT prevent _print_session_end
+    from firing. The session-id is the single source of recovery for the
+    user — losing it on a downstream crash is the regression class this
+    test guards against."""
+    runner, project = wrap_runner_factory(
+        pty_exit_code=0,
+        finalize_hitl_exc=RuntimeError("finalize-hitl boom"),
     )
+
+    exit_code, session = runner.run("claude")
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert f"✨ Session {session.session_id} complete!" in out, (
+        f"HATS-086 regression: finalize-hitl crash suppressed the "
+        f"session-end summary. stdout tail:\n{out[-800:]}"
+    )
+
+
+def test_wrap_runner_finally_prints_summary_when_finalize_hitl_keyboard_interrupt(
+    wrap_runner_factory, capsys,
+):
+    """A second Ctrl+C raised from inside finalize-hitl (modelling SIGINT
+    landing in the sub-pipeline run) MUST NOT escape the runner — the
+    print still fires."""
+    runner, project = wrap_runner_factory(
+        pty_exit_code=130,
+        finalize_hitl_exc=KeyboardInterrupt(),
+    )
+
+    exit_code, session = runner.run("claude")
+
+    assert exit_code == 130
+    out = capsys.readouterr().out
+    assert f"✨ Session {session.session_id} complete!" in out
