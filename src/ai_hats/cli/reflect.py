@@ -752,6 +752,16 @@ def _build_handoff(project_dir: Path) -> Path:
                 f"- last_rule_revision_date: {h.last_rule_revision_date}\n"
                 f"- validation_log entries: {len(h.validation_log)}\n"
             )
+            # HATS-534 — surface verification_protocol when present (stored
+            # via Hypothesis.extra="allow"). Literal block scalar so
+            # multi-line protocols stay verbatim for judge / review-hypothesis
+            # Step 1.5 consumption.
+            vp = getattr(h, "verification_protocol", None)
+            if vp:
+                indented = "\n".join(
+                    f"    {line}" for line in str(vp).splitlines()
+                )
+                parts.append(f"- verification_protocol: |\n{indented}")
             recent = h.validation_log[-3:]
             if recent:
                 parts.append("  Recent verdicts:")

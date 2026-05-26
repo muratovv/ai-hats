@@ -6,6 +6,7 @@ composition:
     - dev_rule_e2e_gate
   skills:
     - doc-protocol
+    - library-change-hypothesis-protocol
   hooks: {}
 injection: |
   ## LIBRARY CURATOR

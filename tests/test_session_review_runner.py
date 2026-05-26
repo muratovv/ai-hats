@@ -463,3 +463,73 @@ def test_render_composition_provenance_defaults_to_built_in():
     }
     out = SessionReviewRunner._render_composition(facts)
     assert "unmapped (built-in)" in out
+
+
+# ---- HATS-534: verification_protocol surfacing ----
+
+
+def _write_hyp_with_extras(project_dir: Path, hyp_id: str, **extras) -> None:
+    """Write a HYP yaml carrying arbitrary extra fields (via extra='allow').
+
+    Used by HATS-534 tests to verify the renderer surfaces fields stored
+    outside the typed schema (verification_protocol in particular).
+    """
+    hyps_dir = hypotheses_dir(project_dir)
+    hyps_dir.mkdir(parents=True, exist_ok=True)
+    body = {
+        "id": hyp_id,
+        "title": f"t-{hyp_id}",
+        "status": "active",
+        "created": "2026-05-26",
+        "source_task": "HATS-001",
+        "hypothesis": "test hypothesis",
+        "success_criterion": "criterion text",
+        "observation_window": "4 sessions",
+        "validation_log": [],
+    }
+    body.update(extras)
+    (hyps_dir / f"{hyp_id}.yaml").write_text(yaml.safe_dump(body))
+
+
+def test_render_active_hypotheses_surfaces_verification_protocol(tmp_path: Path):
+    """HATS-534 — verification_protocol on a HYP must render into the
+    session-reviewer handoff so the auditor can follow Step 1.5."""
+    from ai_hats.retro.session_review_runner import SessionReviewRunner
+
+    protocol = (
+        "STRICT — auditor evidence MUST be exactly three lines:\n"
+        "Line 1: CRITERION: <verbatim>\n"
+        "Line 2: OBSERVED: <verbatim or NOT OBSERVED>\n"
+        "Line 3: VERDICT_REASON: satisfies | fails | silent"
+    )
+    _write_hyp_with_extras(
+        tmp_path, "HYP-501", verification_protocol=protocol
+    )
+
+    runner = SessionReviewRunner(tmp_path)
+    out = runner._render_active_hypotheses()
+
+    assert "verification_protocol: |" in out, (
+        "expected literal-block-scalar header for verification_protocol"
+    )
+    # Verbatim body indented under the block scalar.
+    assert "    STRICT — auditor evidence MUST be exactly three lines:" in out
+    assert "    Line 1: CRITERION: <verbatim>" in out
+    assert "    Line 3: VERDICT_REASON: satisfies | fails | silent" in out
+
+
+def test_render_active_hypotheses_omits_verification_protocol_when_absent(
+    tmp_path: Path,
+):
+    """HATS-534 — HYPs without verification_protocol must not gain a stray
+    label (no `verification_protocol: None` leftovers). Legacy HYPs render
+    identically to before."""
+    from ai_hats.retro.session_review_runner import SessionReviewRunner
+
+    _write_hyp_with_extras(tmp_path, "HYP-502")  # no verification_protocol
+
+    runner = SessionReviewRunner(tmp_path)
+    out = runner._render_active_hypotheses()
+
+    assert "HYP-502" in out
+    assert "verification_protocol" not in out
