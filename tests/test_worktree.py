@@ -10,6 +10,7 @@ import pytest
 from ai_hats.worktree import (
     IsolationMode,
     OriginalBranchMissingError,
+    WorktreeCreateError,
     WorktreeManager,
 )
 
@@ -333,3 +334,144 @@ class TestParallel:
         finally:
             mgr1.cleanup()
             mgr2.cleanup()
+
+
+# ---------------------------------------------------------------------------
+# HATS-517 — branch-exists classifier (Case A / B / C)
+# ---------------------------------------------------------------------------
+
+class TestBranchExistsClassifier:
+    """`WorktreeManager.create()` must handle the three sub-cases where
+    the target branch already exists, instead of failing the original
+    happy path with "branch already exists".
+
+    Case A — branch exists, no worktree owns it → attach to a new linked
+             worktree (positional `git worktree add <path> <branch>`).
+    Case B — branch is checked out in the MAIN worktree (project_dir) →
+             refuse with actionable hint.
+    Case C — branch is already a LINKED worktree, state JSON missing →
+             adopt the existing path, persist a fresh state.
+    """
+
+    def test_case_a_attach_existing_branch(self, git_project: Path) -> None:
+        """Case A: `git branch task/foo` then create() must attach, not fail.
+
+        State persistence is the caller's responsibility (mirrors the
+        original happy path — `_setup_worktree` calls `save_state()` after
+        `create()`); we only assert that the worktree exists on the
+        pre-existing branch.
+        """
+        _git(git_project, "branch", "task/foo")
+        mgr = WorktreeManager(git_project, branch_name="task/foo")
+        wt = mgr.create()
+        try:
+            # Worktree on the pre-existing branch.
+            result = _git(wt, "rev-parse", "--abbrev-ref", "HEAD")
+            assert result.stdout.strip() == "task/foo"
+            assert wt != git_project
+            assert wt.is_dir()
+        finally:
+            mgr.cleanup()
+
+    def test_case_a_lifecycle_merge_works(self, git_project: Path) -> None:
+        """Case A: full lifecycle — attach, commit, merge back into master."""
+        _git(git_project, "branch", "task/bar")
+        mgr = WorktreeManager(git_project, branch_name="task/bar")
+        wt = mgr.create()
+        # Make a commit in the worktree.
+        (wt / "feature.txt").write_text("hello")
+        _git(wt, "add", "feature.txt")
+        _git(wt, "-c", "user.email=t@t.com", "-c", "user.name=T",
+             "commit", "-m", "feat")
+        # Merge — must succeed (Case A lifecycle parity with happy path).
+        mgr.merge()
+        # File is now on master, branch is gone, worktree dir is gone.
+        assert (git_project / "feature.txt").read_text() == "hello"
+        result = _git(git_project, "branch", "--list", "task/bar")
+        assert result.stdout.strip() == ""
+
+    def test_case_a_failure_does_not_delete_user_branch(
+        self, git_project: Path, monkeypatch
+    ) -> None:
+        """L4 rollback must NOT delete a pre-existing user branch on failure."""
+        _git(git_project, "branch", "task/keep")
+        mgr = WorktreeManager(git_project, branch_name="task/keep")
+
+        # Force `git worktree add` to fail (non-retriable error).
+        import ai_hats.worktree as wtmod
+        real_retry = wtmod._retry_worktree_add
+
+        def boom(*args, **kwargs):
+            raise subprocess.CalledProcessError(
+                1, ["git", "worktree", "add"], stderr="fatal: boom\n"
+            )
+
+        monkeypatch.setattr(wtmod, "_retry_worktree_add", boom)
+        with pytest.raises(WorktreeCreateError):
+            mgr.create()
+        monkeypatch.setattr(wtmod, "_retry_worktree_add", real_retry)
+
+        # Pre-existing branch must still be there.
+        result = _git(git_project, "branch", "--list", "task/keep")
+        assert "task/keep" in result.stdout
+
+    def test_case_b_refuse_when_checked_out_in_main(
+        self, git_project: Path
+    ) -> None:
+        """Case B: branch is currently HEAD of main worktree → refuse."""
+        _git(git_project, "checkout", "-b", "task/main-collision")
+        mgr = WorktreeManager(git_project, branch_name="task/main-collision")
+        with pytest.raises(WorktreeCreateError) as exc_info:
+            mgr.create()
+        msg = str(exc_info.value)
+        # Hint content — both actionable alternatives surfaced.
+        assert "checked out in the main worktree" in msg
+        assert "git switch" in msg
+        assert "task close" in msg
+
+    def test_case_c_adopt_orphaned_linked_worktree(
+        self, git_project: Path, tmp_path: Path
+    ) -> None:
+        """Case C: linked worktree exists, state JSON missing → adopt + restore."""
+        # Create a linked worktree the manual way.
+        linked_path = tmp_path / "manual-linked"
+        _git(git_project, "worktree", "add", "-b", "task/orphan", str(linked_path))
+        # No state JSON exists for it (we never went through ai-hats).
+        from ai_hats.worktree import _state_key
+        from ai_hats.paths import worktrees_dir
+        state = worktrees_dir(git_project) / f"{_state_key('task/orphan')}.json"
+        assert not state.exists()
+
+        # Now call create() — should adopt, not fail.
+        mgr = WorktreeManager(git_project, branch_name="task/orphan")
+        wt = mgr.create()
+        assert wt.resolve() == linked_path.resolve()
+        # State JSON re-created.
+        assert state.exists()
+
+    def test_case_c_refuse_when_directory_missing(
+        self, git_project: Path, tmp_path: Path
+    ) -> None:
+        """Case C subtlety: linked admin entry exists but dir is rmtree'd."""
+        import shutil
+        linked_path = tmp_path / "ghost"
+        _git(git_project, "worktree", "add", "-b", "task/ghost", str(linked_path))
+        # Nuke the dir without `git worktree remove` — orphan admin entry.
+        shutil.rmtree(linked_path)
+
+        mgr = WorktreeManager(git_project, branch_name="task/ghost")
+        with pytest.raises(WorktreeCreateError) as exc_info:
+            mgr.create()
+        msg = str(exc_info.value)
+        assert "git worktree prune" in msg
+
+    def test_happy_path_unchanged(self, git_project: Path) -> None:
+        """Branch does NOT exist → classifier must fall through unchanged."""
+        mgr = WorktreeManager(git_project, branch_name="task/fresh")
+        wt = mgr.create()
+        try:
+            assert wt != git_project
+            result = _git(wt, "rev-parse", "--abbrev-ref", "HEAD")
+            assert result.stdout.strip() == "task/fresh"
+        finally:
+            mgr.cleanup()
