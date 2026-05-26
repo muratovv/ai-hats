@@ -177,6 +177,14 @@ class SessionReviewRunner:
                 f"  success_criterion: {h.success_criterion!r}\n"
                 f"  observation_window: {h.observation_window!r}"
             )
+            # HATS-534 — surface verification_protocol when the HYP carries one
+            # (stored via Hypothesis.extra="allow"). Renders as a YAML literal
+            # block scalar so multi-line protocols stay verbatim and the auditor
+            # can quote from them per review-hypothesis Step 1.5.
+            vp = getattr(h, "verification_protocol", None)
+            if vp:
+                indented = "\n".join(f"    {line}" for line in str(vp).splitlines())
+                lines.append(f"  verification_protocol: |\n{indented}")
         return "\n".join(lines)
 
     @staticmethod

@@ -45,6 +45,13 @@ evidence per the original convention. Legacy HYPs (001–015) have no
 protocol field; their verdicts continue to look the way they always
 have.
 
+**If your verdict is `n/a`** — protocol-shape compliance is OPTIONAL.
+`n/a` means "session physically cannot test this HYP", so there is no
+observation to map to the criterion. A short free-form rationale
+(`"session has no <relevant phase>"`) is acceptable even when the HYP
+carries a `verification_protocol`. The protocol is for verdicts that
+carry signal (`confirmed` / `refuted` / `inconclusive`).
+
 **Examples in the wild:**
 
 - HYP-016 (under HATS-527) carries a *strict* three-line protocol:
