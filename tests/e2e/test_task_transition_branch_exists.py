@@ -5,13 +5,18 @@ Three sub-cases (see plan + task card):
 
 * **Case A** — branch exists, no worktree owns it. Transition must
   attach the existing branch to a new linked worktree → exit 0.
+  Exercised here at the CLI boundary.
 * **Case B** — branch is currently checked out in the MAIN worktree.
-  Transition must refuse with an actionable hint → exit 2 (distinct
-  from generic ``ValueError`` exit 1).
-* **Case C** is exercised at unit-test level
-  (``tests/test_worktree.py::TestBranchExistsClassifier``) — it
-  requires a manual linked-worktree setup that doesn't add coverage
-  at the subprocess boundary.
+  After HATS-518 landed on master, ``_setup_worktree`` calls
+  ``assert_head_is_canonical_base()`` BEFORE ``WorktreeManager.create()``,
+  so this path is intercepted with ``WorktreeBaseBranchError`` (exit 1)
+  long before the HATS-517 classifier runs. The classifier remains as
+  defense-in-depth for direct ``WorktreeManager().create()`` callers
+  (Python API, tests) — exercised at unit level in
+  ``tests/test_worktree.py::TestBranchExistsClassifier``.
+* **Case C** is exercised at unit-test level (same class) — it requires
+  a manual linked-worktree setup that doesn't add coverage at the
+  subprocess boundary.
 
 Pattern (subprocess + ``python -m ai_hats``) mirrors
 ``tests/e2e/test_wt_merge_ambiguity_guard.py`` — keeps the test
@@ -21,7 +26,7 @@ installed ``ai-hats`` binary required).
 dev_rule_e2e_gate (HATS-517 touches ``src/ai_hats/worktree.py`` +
 ``src/ai_hats/cli/task.py``): this file is the gated test. Sanity:
 under ``git stash`` of the HATS-517 classifier in
-``WorktreeManager.create()``, both tests fail with the original
+``WorktreeManager.create()``, Case A fails with the original
 ``WorktreeCreateError: branch already exists`` from
 ``git worktree add -b ...``.
 """
@@ -136,30 +141,11 @@ def test_case_a_pre_existing_branch_attaches(
     )
 
 
-def test_case_b_branch_checked_out_in_main_refuses(
-    initialised_git_project: Path,
-) -> None:
-    """Case B: main worktree already on the target branch → refuse + hint."""
-    proj = initialised_git_project
-    task_id = "HATS-517B"
-    _create_and_plan(proj, task_id)
-
-    # Check out the target branch in the main worktree (the repro).
-    _git(proj, "checkout", "-b", "task/hats-517b")
-
-    r = _run_hats(proj, "task", "transition", task_id, "execute")
-    assert r.returncode == 2, (
-        f"Case B must exit 2 (worktree refusal), got {r.returncode}\n"
-        f"STDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
-    )
-    combined = r.stdout + r.stderr
-    # Actionable hint surface — message body from WorktreeCreateError.
-    assert "checked out in the main worktree" in combined, (
-        f"expected Case B hint, got:\n{combined}"
-    )
-    assert "git switch" in combined, (
-        f"expected git-switch alternative in hint, got:\n{combined}"
-    )
-    assert "task close" in combined, (
-        f"expected task-close alternative in hint, got:\n{combined}"
-    )
+# NOTE: Case B at the CLI boundary is covered by HATS-518's
+# `assert_head_is_canonical_base()` guard inside `state._setup_worktree`
+# — that guard fires BEFORE `WorktreeManager.create()`, so the HATS-517
+# Case B classifier inside `create()` is never reached via the
+# `task transition execute` path. The HATS-517 Case B classifier remains
+# in place as defense-in-depth for direct Python-API callers; coverage
+# lives at unit level in
+# `tests/test_worktree.py::TestBranchExistsClassifier::test_case_b_refuse_when_checked_out_in_main`.

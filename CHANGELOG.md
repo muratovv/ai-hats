@@ -100,6 +100,23 @@ since the latest tag lives under **Unreleased** until the next release.
   auto-trigger but via init directly.
 
 ### Fixed
+- **`task transition <ID> execute` no longer fails when the target
+  branch already exists** (HATS-517). Three-way classifier inside
+  `WorktreeManager.create()` under the HATS-479 create-lock:
+  (A) branch exists, no worktree owns it → attach to a fresh linked
+  worktree via positional `git worktree add <path> <branch>`, normal
+  lifecycle proceeds; (B) branch is checked out in the MAIN worktree
+  (`project_dir`) → refuse with an actionable hint pointing at
+  `git switch` or `ai-hats task close` (CLI exit 2). At the CLI
+  boundary, the HATS-518 canonical-base guard fires earlier and
+  reports its own `WorktreeBaseBranchError` (exit 1) — the
+  classifier's Case B stays as defense-in-depth for direct Python-API
+  callers (`WorktreeManager().create()` in tests / external scripts);
+  (C) branch is already a linked worktree but its ai-hats state JSON
+  was lost (manual delete, backup restore) → adopt the existing path
+  and re-persist state. Pre-fix workaround was `task close` which
+  skipped the `document → review` walk. `--force --reason` only
+  bypassed the FSM guard, not the worktree side-effect.
 - **PreToolUse hook safety net restored** (HATS-437 + HATS-467). Post
   HATS-294 `.claude/settings.json`'s PreToolUse entry pointed at
   `<ai_hats_dir>/library/hooks/pre_bash_shared_state_guard.sh` but
