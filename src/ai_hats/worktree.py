@@ -508,24 +508,38 @@ def _retry_worktree_add(
     branch: str,
     worktree_path: Path,
     *,
+    create_branch: bool = True,
     sleep=time.sleep,
 ) -> None:
-    """Run ``git worktree add -b <branch> <path>`` with bounded retry.
+    """Run ``git worktree add [-b] <branch> <path>`` with bounded retry.
 
     HATS-479 L3. Retries only on stderr patterns from
     :data:`_RETRIABLE_STDERR_PATTERNS`. Any other error fails fast.
 
     :param git_runner: callable like :meth:`WorktreeManager._git`. Called as
-        ``git_runner("worktree", "add", "-b", branch, str(path))``.
+        ``git_runner("worktree", "add", "-b", branch, str(path))`` when
+        ``create_branch`` is ``True`` (default — the original happy path,
+        branch does not exist yet), or
+        ``git_runner("worktree", "add", str(path), branch)`` when
+        ``create_branch`` is ``False`` (HATS-517 Case A — branch already
+        exists and we attach it to a new linked worktree).
+    :param create_branch: ``True`` to pass ``-b <branch>`` (creates the
+        branch). ``False`` to attach an existing branch to a new worktree
+        (positional ``<path> <branch>``).
     :param sleep: injected for tests; defaults to :func:`time.sleep`.
     :raises subprocess.CalledProcessError: on non-retriable error, or after
         exhausting :data:`GIT_RETRY_MAX` retriable attempts.
     """
+    if create_branch:
+        cmd_args = ("worktree", "add", "-b", branch, str(worktree_path))
+    else:
+        # `git worktree add <path> <branch>` — attaches the existing branch.
+        cmd_args = ("worktree", "add", str(worktree_path), branch)
     delay = GIT_RETRY_BASE_DELAY
     last_exc: subprocess.CalledProcessError | None = None
     for attempt in range(1, GIT_RETRY_MAX + 1):
         try:
-            git_runner("worktree", "add", "-b", branch, str(worktree_path))
+            git_runner(*cmd_args)
             return
         except subprocess.CalledProcessError as exc:
             if not _is_retriable_git_error(exc):
@@ -964,13 +978,90 @@ class WorktreeManager:
             # branch in cleanup.
             branch_existed_before = self._branch_exists(self.branch_name)
 
+            # HATS-517 — branch-exists classifier. Three sub-cases share the
+            # symptom "git worktree add -b … fails with 'already exists'":
+            #
+            #   Case C  branch is already a LINKED worktree, state JSON is
+            #           missing (manual delete, backup restore). Adopt the
+            #           existing linked path and persist a fresh state.
+            #   Case B  branch is checked out in the MAIN worktree
+            #           (project_dir). Adopting project_dir would silently
+            #           disable auto-merge in _teardown_worktree — FSM
+            #           contract divergence. Refuse with actionable hint.
+            #   Case A  branch exists but no worktree owns it (e.g. user ran
+            #           `git branch …` ahead of time). Attach to a new
+            #           linked worktree via `git worktree add <path> <branch>`
+            #           (positional, no -b). Normal lifecycle proceeds.
+            #
+            # Order matters: Case C / Case B are detected via
+            # `git worktree list`; Case A is the residual (branch exists but
+            # is not in `list_worktrees`). The classifier sits inside L1, so
+            # HATS-479 mutex invariants are preserved.
+            existing_wt_path = (
+                self._find_linked_worktree_for_branch(
+                    self.project_dir, self.branch_name
+                )
+                if branch_existed_before
+                else None
+            )
+            attach_existing_branch = False
+            if existing_wt_path is not None:
+                # Case B: same branch is checked out in the main worktree.
+                if existing_wt_path.resolve() == self.project_dir.resolve():
+                    raise WorktreeCreateError(
+                        f"Cannot create worktree on '{self.branch_name}': "
+                        f"branch is currently checked out in the main "
+                        f"worktree ({self.project_dir}).\n"
+                        f"  The execute transition needs an isolated "
+                        f"worktree, but adopting the main project tree "
+                        f"would silently disable auto-merge on `task "
+                        f"transition done`.\n"
+                        f"  Resolve by either:\n"
+                        f"    - switch off the branch: "
+                        f"`git switch <other-branch>` (e.g. master), or\n"
+                        f"    - if the work is already shipped on main: "
+                        f"`ai-hats task close <ID> --resolution \"shipped on "
+                        f"main\"`."
+                    )
+                # Case C subtlety: linked-worktree admin entry exists but
+                # the directory was rmtree'd without `git worktree remove`.
+                # We refuse rather than auto-pruning (HATS-488 / R-04
+                # explicitly dropped auto-prune to avoid racing with
+                # concurrent wt create).
+                if not existing_wt_path.exists():
+                    raise WorktreeCreateError(
+                        f"Cannot create worktree on '{self.branch_name}': "
+                        f"git tracks a linked worktree at "
+                        f"{existing_wt_path}, but the directory is gone.\n"
+                        f"  Clean the orphan admin entry manually: "
+                        f"`git worktree prune` (review with "
+                        f"`git worktree list` first)."
+                    )
+                # Case C happy path: adopt the existing linked worktree.
+                self.worktree_path = existing_wt_path
+                self.save_state()
+                logger.info(
+                    "Adopted existing linked worktree %s for branch %s "
+                    "(state JSON re-created — HATS-517 Case C)",
+                    existing_wt_path, self.branch_name,
+                )
+                return self.worktree_path
+            if branch_existed_before:
+                # Case A: branch exists, no worktree owns it. Attach.
+                attach_existing_branch = True
+                logger.info(
+                    "Branch %s already exists; attaching to a new linked "
+                    "worktree (HATS-517 Case A)", self.branch_name,
+                )
+
             prefix = self.branch_name.replace("/", "-")
             tmpdir = tempfile.mkdtemp(prefix=f"ai-hats-wt-{prefix}-")
             self.worktree_path = Path(tmpdir)
 
             try:
                 _retry_worktree_add(
-                    self._git, self.branch_name, self.worktree_path
+                    self._git, self.branch_name, self.worktree_path,
+                    create_branch=not attach_existing_branch,
                 )
             except subprocess.CalledProcessError as exc:
                 # L4: cleanup leaked tempdir + (only-our) branch.
@@ -1421,6 +1512,27 @@ class WorktreeManager:
             return False
         git_dir, common_dir = lines
         return Path(git_dir).resolve() != Path(common_dir).resolve()
+
+    @classmethod
+    def _find_linked_worktree_for_branch(
+        cls, project_dir: Path, branch: str
+    ) -> Path | None:
+        """Return the on-disk worktree path that currently has ``branch``
+        checked out, or ``None`` if no git worktree owns it.
+
+        HATS-517 Case C helper: when the ai-hats state JSON is missing but a
+        linked worktree for the branch already exists (manual JSON delete,
+        backup restore, machine migration), we adopt the existing path
+        instead of failing with "branch already exists".
+
+        Returns the path for both the **main** worktree (`project_dir`)
+        and **linked** worktrees — callers MUST distinguish the two when
+        deciding what to do (Case B refuses main; Case C adopts linked).
+        """
+        for entry in cls.list_worktrees(project_dir):
+            if entry.get("branch") == branch and "path" in entry:
+                return Path(entry["path"])
+        return None
 
     @staticmethod
     def list_worktrees(project_dir: Path) -> list[dict[str, str]]:

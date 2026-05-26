@@ -113,6 +113,7 @@ def task_transition(
     """Transition a task to a new state."""
     from ..models import TaskState
     from ..worktree import WorktreeBaseBranchError  # HATS-518
+    from ..worktree import WorktreeCreateError  # HATS-517
 
     mgr = _task_manager(_project_dir())
     try:
@@ -202,6 +203,20 @@ def task_transition(
         # the transition's _save_task was never reached.
         console.print(f"[red]{e}[/]")
         sys.exit(1)
+    except WorktreeCreateError as e:
+        # HATS-517: defense-in-depth handler for the branch-exists
+        # classifier inside WorktreeManager.create() — Case B (branch
+        # checked out in MAIN worktree). In practice HATS-518's
+        # canonical-base guard fires earlier when the operator is on
+        # `task/<id>`; this handler catches Case B residuals (non-base
+        # branches not covered by HATS-518) and any other create-time
+        # refusal the classifier might raise.
+        #
+        # Distinct exit code 2 separates "worktree setup refused with
+        # actionable hint" from FSM / validation exit 1. The exception
+        # message already carries multi-line guidance — print verbatim.
+        console.print(f"[red]Cannot create worktree[/]: {e}")
+        sys.exit(2)
     except ValueError as e:
         console.print(f"[red]Error[/]: {e}")
         sys.exit(1)
