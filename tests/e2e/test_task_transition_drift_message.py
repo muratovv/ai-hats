@@ -226,6 +226,15 @@ def test_e2e_task_transition_done_drift_message(tmp_path):
         f"{combined}"
     )
 
+    # Positive: the disambiguation Note must be present so the operator
+    # who skims the recipe still gets a direct callout that
+    # `--accept-drift` belongs to a sibling command. Pins the
+    # clarification in place against future copy edits.
+    assert "belongs to `wt merge`" in combined, (
+        f"disambiguation note missing — operator may still try the flag "
+        f"on `task transition`:\n{combined}"
+    )
+
     # ---- 7. card remains in `review` (HATS-481 fail-loud) ----
     show = ai_hats("task", "show", task_id)
     assert "state: review" in show.stdout, (

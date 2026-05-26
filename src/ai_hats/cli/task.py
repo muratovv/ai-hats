@@ -206,15 +206,19 @@ def task_transition(
         sys.exit(1)
     except WorktreeDriftError as e:
         # HATS-509: translate the inner `wt merge` drift error for
-        # `task transition <ID> done` callers. The raw message ends with
-        # "re-run with `ai-hats wt merge --accept-drift`" (HATS-509 Step 2),
-        # but users were copy-pasting that as a flag on `task transition`,
-        # which does NOT accept it. Re-emit with an explicit two-step
-        # recipe pointing at the main-repo path and clarifying the flag
-        # belongs to `wt merge`, not the current command.
+        # `task transition <ID> done` callers. After HATS-509 Step 2 the
+        # exception body carries facts only (drift summary, commits,
+        # paths); the user-facing recipe is owned by CLI handlers. We
+        # re-emit with an explicit two-step recipe pointing at the
+        # main-repo path and clarifying the flag belongs to `wt merge`,
+        # not the current command — the original "re-run with
+        # --accept-drift" wording would have been copy-pasted as a
+        # `task transition` flag, which does NOT exist.
         #
         # Card stays in `review`: HATS-481 fail-loud guarantees the
         # `_teardown_worktree` raise propagates before `_save_task`.
+        from rich.markup import escape as _escape
+
         project_dir = _project_dir()
         console.print(
             f"[red]Worktree drifted vs original branch[/] — "
@@ -222,7 +226,10 @@ def task_transition(
         )
         # Preserve the drift summary verbatim (commits + affected paths
         # from WorktreeManager._drift_summary) — it's informational.
-        console.print(str(e))
+        # Escape: drift summary embeds filenames, and a hostile filename
+        # like `[red]boom[/]` would inject Rich markup into the
+        # operator's terminal. Mirrors cli/worktree.py wt_merge handler.
+        console.print(_escape(str(e)))
         console.print("")
         console.print(
             "Re-verify your changes against the new base, then run:"
