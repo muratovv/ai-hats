@@ -62,6 +62,57 @@ def test_dry_run_builds_handoff(project_dir: Path):
     assert "PROP-001" in text
 
 
+def _make_hyp_with_protocol(pd: Path, hyp_id: str, protocol: str):
+    """HATS-534 — make a HYP carrying verification_protocol via extra='allow'."""
+    body = {
+        "id": hyp_id, "title": f"hyp-{hyp_id}",
+        "status": "active", "created": "2026-05-26",
+        "source_task": "HATS-001", "hypothesis": "h",
+        "validation_log": [],
+        "success_criterion": "x",
+        "observation_window": "5 sessions",
+        "verification_protocol": protocol,
+    }
+    (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(yaml.safe_dump(body))
+
+
+def test_dry_run_handoff_surfaces_verification_protocol(project_dir: Path):
+    """HATS-534 — verification_protocol on a HYP must render into the
+    `reflect all` judge handoff so the auditor can follow Step 1.5."""
+    protocol = (
+        "STRICT — auditor evidence MUST be exactly three lines:\n"
+        "Line 1: CRITERION: <verbatim>"
+    )
+    _make_hyp_with_protocol(project_dir, "HYP-501", protocol)
+    res = CliRunner().invoke(reflect, ["all", "--dry-run"])
+    assert res.exit_code == 0, res.output
+    text = list(
+        (retros_dir(project_dir) / "reflect-all").glob("*-handoff.md")
+    )[0].read_text()
+    assert "verification_protocol: |" in text, (
+        "judge handoff missing verification_protocol literal-block header"
+    )
+    assert (
+        "    STRICT — auditor evidence MUST be exactly three lines:" in text
+    )
+    assert "    Line 1: CRITERION: <verbatim>" in text
+
+
+def test_dry_run_handoff_omits_verification_protocol_when_absent(
+    project_dir: Path,
+):
+    """HATS-534 — HYPs without verification_protocol must not gain a stray
+    label (no `verification_protocol: None` leftovers)."""
+    _make_hyp(project_dir, "HYP-001")
+    res = CliRunner().invoke(reflect, ["all", "--dry-run"])
+    assert res.exit_code == 0
+    text = list(
+        (retros_dir(project_dir) / "reflect-all").glob("*-handoff.md")
+    )[0].read_text()
+    assert "HYP-001" in text
+    assert "verification_protocol" not in text
+
+
 def test_dry_run_handles_empty_inbox(project_dir: Path):
     res = CliRunner().invoke(reflect, ["all", "--dry-run"])
     assert res.exit_code == 0
