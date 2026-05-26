@@ -78,6 +78,12 @@ The field is unrecognized by the framework's typed schema but
 `Hypothesis` carries `extra="allow"`, so it round-trips through YAML
 load/save with no engine change.
 
+> **Picking the data shape.** Apply `design-minimalism`'s
+> behavioral-delivery escalation ladder. Text-in-YAML under
+> `extra="allow"` (rung 1) is almost always sufficient; lift to typed
+> schema (rung 6) only after a sweep shows the loose shape produces
+> unreadable verdicts.
+
 #### `verification_protocol` examples
 
 **Strict format** (auditor evidence is a tight machine-readable block):
