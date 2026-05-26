@@ -327,12 +327,25 @@ Draft an implementation plan. Attach to task directory as `plan.md`.
   If rejected, document the specific reason.
 - Break large tasks into subtasks with delegation recommendations
 - Before delegating → **context-handoff**: summarize context for sub-agent
-- **Plan file location:** write plans to `<project>/.claude/plans/<NN>-<slug>.md`
-  (or `<prefix-lower>-<NN>-<slug>.md`). On `transition <ID> plan` the CLI moves
-  the matching file into `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md` (the canonical
-  location). For ambiguous matches or unconventional paths use
-  `ai-hats task plan-sync <ID> [--from-file <path>]`. `transition <ID> execute`
-  is blocked until `plan.md` is no longer the empty scaffold.
+- **Plan file location:** write plans **directly into**
+  `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md` — the empty scaffold
+  created by `transition <ID> plan`. Use the Write or Edit tool. The
+  tracker `plan.md` is the canonical location; no sync step is needed.
+  `transition <ID> execute` is blocked until `plan.md` is no longer the
+  empty scaffold. Example end-to-end:
+  ```
+  ai-hats task transition HATS-NNN plan        # scaffolds tracker plan.md
+  # Write tool → .agent/ai-hats/tracker/backlog/tasks/HATS-NNN/plan.md
+  ai-hats task transition HATS-NNN execute     # reads plan.md, advances FSM
+  ```
+  **Editable-scratch alternative (opt-in).** If the plan needs heavy
+  cross-session iteration before settling, write to
+  `<project>/.claude/plans/<NN>-<slug>.md` (or `<prefix-lower>-<NN>-<slug>.md`)
+  and let `transition <ID> plan` auto-pick the matching file into the tracker.
+  For ambiguous matches or unconventional paths, use
+  `ai-hats task plan-sync <ID> [--from-file <path>]`. Choose this route only
+  when the cross-session scratch is the actual goal; otherwise direct write
+  to the tracker is shorter and leaves no orphan files.
 - **Plan → subtasks:** once the plan has `## Subtasks`, `## Steps`, or numbered
   `### N. …` / `### Phase N: …` headings, run
   `ai-hats task plan-extract <ID>` to surface candidates and create child

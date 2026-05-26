@@ -14,7 +14,7 @@ Detail — see [1].
 
 ## Session
 
-One invocation of the provider CLI under a chosen role. Entry points: `ai-hats` (no subcommand), `ai-hats agent <role>`, `ai-hats execute …`. Per-session artefacts land in `<ai_hats_dir>/sessions/runs/session_<id>/` (`audit.md`, `metrics.json`, transcript). The runtime ends a session with a `session_end` event that may trigger a per-session retrospective — see [Reflect](#reflect).
+One invocation of the provider CLI under a chosen role. Entry points: `ai-hats` (no subcommand), `ai-hats agent <role>`, `ai-hats execute …`. Per-session artefacts land in `<ai_hats_dir>/sessions/runs/session_<id>/` (`audit.md`, `metrics.json`, `transcript.txt`, `meta_prompt.txt` — the exact bytes the provider saw as system-prompt override, HATS-523). The runtime ends a session with a `session_end` event that may trigger a per-session retrospective — see [Reflect](#reflect).
 
 Lifecycle diagram — see [2].
 
