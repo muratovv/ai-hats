@@ -20,13 +20,13 @@ Lifecycle diagram — see [2].
 
 ## Role
 
-A root composition that the agent wears during a session — bundles traits, rules, skills, and an injection block into one config. The shipped library splits into two layers: `library/core/roles/` (engine-internal: `initial-wizard`, `session-reviewer`, `judge`, `judge-for-role`, `auditor-for-role`, `hypothesis-intake`, `test-agent`) and `library/usage/roles/` (curated user-facing: `assistant`, `dev-python`, `maintainer`, `architect`, `sre`, `go-dev`, `go-dev-full`). Catalog — `ai-hats list roles`; layered structure and override precedence — see [9]. Example: [`library/usage/roles/assistant/config.yaml`](../library/usage/roles/assistant/config.yaml). Customization (add / remove / override) — see [6].
+A root composition that the agent wears during a session — bundles traits, rules, skills, and an injection block into one config. The shipped library splits into two layers: `library/core/roles/` (engine-internal: `initial-wizard`, `session-reviewer`, `judge-auditor`, `judge`, `judge-for-role`, `auditor-for-role`, `hypothesis-intake`, `test-agent`) and `library/usage/roles/` (curated user-facing: `assistant`, `dev-python`, `maintainer`, `architect`, `sre`, `go-dev`, `go-dev-full`). Catalog — `ai-hats list roles`; layered structure and override precedence — see [9]. Example: [`library/usage/roles/assistant/config.yaml`](../library/usage/roles/assistant/config.yaml). Customization (add / remove / override) — see [6].
 
 Key system roles you will meet in cross-doc prose:
 
 - `initial-wizard` — interactive setup that runs on `ai-hats self init`. See [6].
 - `session-reviewer` — per-session retrospective; votes on active HYPs and files a PROP on self-problem. Triggered by `ai-hats reflect session` (auto on `session_end` per policy, or manual). See [5].
-- `judge` / `judge-for-role` / `auditor-for-role` — the reflection-loop roles for backlog triage (`ai-hats reflect all`) and role-coherence audits (`ai-hats reflect role`). See [5].
+- `judge-auditor` / `judge` / `judge-for-role` / `auditor-for-role` — the reflection-loop roles. Backlog triage runs two-phase: `judge-auditor` (Phase 1, headless, read-only audit) → `judge` (Phase 2, HITL, ack'd mutations) via `ai-hats reflect hypothesis`. Role-coherence audits use `auditor-for-role` → `judge-for-role` via `ai-hats reflect role`. See [5].
 
 ## Trait
 
@@ -76,12 +76,17 @@ The feedback loop that turns session evidence plus active HYP / open PROP into a
 | CLI subcommand | Spawned role | Mode | Purpose |
 | --- | --- | --- | --- |
 | `ai-hats reflect session` | `session-reviewer` | non-interactive | Per-session retrospective: HYP verdicts + PROP-on-self-problem. Auto on `session_end` (policy `always` / `smart`) or on demand. |
-| `ai-hats reflect all` | `judge` | interactive (HITL) | Bulk triage: close HYPs and decide PROPs in the inbox. |
+| `ai-hats reflect hypothesis` | `judge-auditor` then `judge` | autopilot + HITL (two-phase) | Bulk triage: Phase 1 (`judge-auditor`, headless, read-only) produces a draft; Phase 2 (`judge`, HITL) discusses + ack's mutations. `--headless` runs Phase 1 only (CI / cron-safe). HATS-513 / ADR-0007. |
+| `ai-hats reflect all` | `judge` | interactive (HITL) | Deprecated — single-phase bulk triage with runtime mode-switch in the protocol skill. Kept for one bake cycle while `reflect hypothesis` rolls out; removal tracked as a follow-up task. |
 | `ai-hats reflect role <target>` | `auditor-for-role` then `judge-for-role` | autopilot + optional HITL | Coherence audit of a single role: autopilot pass first, then interactive review. |
 | `ai-hats reflect roles` | `judge-for-role` * | per-role HITL | Bulk role audit — spawns one session per project role. |
 | `ai-hats reflect issue` | (no role) | non-interactive | Log a supervisor observation as a new HYP, or merge into an active one. |
 
-**Naming note:** `auditor-for-role` and `judge-for-role` are distinct — `auditor-for-role` is the non-interactive coherence pass; `judge-for-role` is the interactive review. They co-exist; one does not replace the other. `hypothesis-intake` exists for Haiku-class observation classification but is **not** wired into `reflect *` directly.
+**Naming note:** Two-phase pairs are symmetric:
+- Backlog triage: `judge-auditor` (L0, read-only audit) → `judge` (L1, HITL + ack'd mutations). Entry: `ai-hats reflect hypothesis`.
+- Role coherence: `auditor-for-role` (L0, non-interactive coherence pass) → `judge-for-role` (L1, interactive review). Entry: `ai-hats reflect role`.
+
+L0 baselines (`base-auditor`) forbid CLI mutations and source-file edits; L1 baselines (`base-judge`) permit ack'd CLI from a whitelist. See [`library/core/traits/base-auditor/`](../library/core/traits/base-auditor/) and [`base-judge/`](../library/core/traits/base-judge/). `hypothesis-intake` exists for Haiku-class observation classification but is **not** wired into `reflect *` directly.
 
 Practical recipes — see [5]. Pipeline architecture — see [8].
 
@@ -91,7 +96,8 @@ What ai-hats persists on disk during normal use.
 
 - **`ai-hats.yaml`** — project config. Fields: `schema_version`, `migration_step`, `provider`, `active_role`, `default_role`, `task_prefix`, `customizations`, `feedback`, `library_paths`, `venv_path`. `schema_version` describes the yaml format; `migration_step` (HATS-471) is a monotonic counter for one-shot migrations replayed at bump time — each entry runs once per project, then the gate short-circuits. Source of truth for composition. Apply changes by re-running `ai-hats self init` (idempotent) or `ai-hats self update` (which folds bump in); verify with `ai-hats config status`. Full walkthrough — see [6].
 - **SessionReview** — `<ai_hats_dir>/sessions/retros/sessions/<id>.md`. Output of `session-reviewer`: `summary`, `observations`, `hypothesis_verdicts`, `proposal_actions`. Schema `hats-session-review/v1`. Consumed by the next reflect cycle. Detail — see [5].
-- **JudgeReport** — `<ai_hats_dir>/sessions/retros/judge/<UTC-ts>-report.md`. Output of `ai-hats reflect all` — HYP closures plus PROP decisions for one triage session. Detail — see [5].
+- **JudgeReport** — `<ai_hats_dir>/sessions/retros/judge/<UTC-ts>-report.md`. Output of `ai-hats reflect hypothesis` Phase 2 (or the legacy `ai-hats reflect all`) — HYP closures plus PROP decisions for one triage session. Detail — see [5].
+- **JudgeDraft** — `<ai_hats_dir>/sessions/retros/judge/<UTC-ts>-draft.md`. Output of `ai-hats reflect hypothesis` Phase 1 (`judge-auditor`, headless). Carries proposed verdicts + a `## Proposed mutations` CLI checklist that Phase 2 executes after supervisor ack. With `--headless` this is the only artifact (no Phase 2). HATS-513 / ADR-0007.
 - **RoleCoherenceReport** — `<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ts>-<target>.md`. Output of `ai-hats reflect role` — findings on internal contradictions in a role composition. Detail — see [8].
 
 ## Composition & pipeline internals

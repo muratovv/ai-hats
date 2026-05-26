@@ -176,6 +176,103 @@ def reflect_all_cmd(dry_run: bool):
     sys.exit(int(final.get("exit_code", 1)))
 
 
+# ---- reflect hypothesis (HATS-513: 2-phase judge split) ----
+
+
+@reflect.command("hypothesis")
+@click.option(
+    "--headless", is_flag=True,
+    help="Phase 1 only — produce draft, exit. No HITL session.",
+)
+@click.option(
+    "--dry-run", is_flag=True,
+    help="Build pre-flight handoff but do not exec.",
+)
+def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
+    """Two-phase HYP closure + PROP triage (HATS-513 / ADR-0007).
+
+    Phase 1 (`judge-auditor`, headless, read-only via SubAgentRunner)
+    produces a draft with proposed verdicts and proposed CLI mutations.
+    Phase 2 (`judge`, HITL via WrapRunner) consumes the draft, supervisor
+    ack's mutations, judge executes them via CLI and writes the final
+    report.
+
+    With ``--headless``: only Phase 1 runs (CI / cron-safe, no
+    state-mutating CLI calls possible by L0 contract).
+    """
+    from ..assembler import Assembler
+    from ..pipeline.harness import PipelineHarness
+
+    project_dir = _project_dir()
+    handoff_path = _build_handoff(project_dir)
+    console.print(f"[green]✓[/green] Handoff written: {handoff_path}")
+    if dry_run:
+        return
+
+    resolver = Assembler(project_dir).resolver
+
+    # ── Phase 1 — judge-auditor (read-only audit) ─────────────────
+    preamble1_path = resolver.resolve_injection("reflect-hypothesis")
+    if preamble1_path is None:
+        raise click.ClickException(
+            "built-in initial_injection 'reflect-hypothesis' not found in any "
+            "library_path — ai-hats packaging is broken"
+        )
+    preamble1 = preamble1_path.read_text()
+    handoff_text = handoff_path.read_text()
+    combined1 = f"{preamble1}\n\n---\n\n{handoff_text}"
+
+    console.print(
+        "[cyan]→ Phase 1 — judge-auditor (headless audit)[/]"
+    )
+    with PipelineHarness("reflect-hypothesis-phase1", project_dir) as h1:
+        r1 = h1.run({
+            "role": "judge-auditor",
+            "interactive": False,
+            "project_dir": project_dir,
+            "prompt_path": h1.materialize_prompt(combined1),
+            "extra_args": [],
+        })
+
+    # Fail closed: Phase 1 errored or did not produce a draft.
+    # Opening Phase 2 on a missing/partial artifact would mislead the
+    # supervisor — abort with a non-zero exit instead.
+    if int(r1.get("exit_code", 1)) != 0 or "saved_path" not in r1:
+        console.print(
+            "[red]✗[/] Phase 1 (judge-auditor) failed — Phase 2 aborted."
+        )
+        sys.exit(int(r1.get("exit_code", 1)) or 1)
+
+    draft_path = Path(r1["saved_path"])
+    console.print(f"[green]✓[/] Phase 1 draft: {draft_path}")
+    if headless:
+        sys.exit(0)
+
+    # ── Phase 2 — judge (HITL session with draft inlined) ─────────
+    # Empty draft (only "(none)" sections) is fine — supervisor
+    # decides nothing-to-do in 1 turn. No auto-skip on success.
+    preamble2_path = resolver.resolve_injection("reflect-hypothesis-interactive")
+    if preamble2_path is None:
+        raise click.ClickException(
+            "built-in initial_injection 'reflect-hypothesis-interactive' not found"
+        )
+    preamble2 = preamble2_path.read_text()
+    combined2 = preamble2.replace("{draft_body}", draft_path.read_text())
+
+    console.print(
+        "[cyan]→ Phase 2 — judge (HITL session with draft inlined)[/]"
+    )
+    with PipelineHarness("reflect-hypothesis-phase2", project_dir) as h2:
+        r2 = h2.run({
+            "role": "judge",
+            "interactive": True,
+            "project_dir": project_dir,
+            "prompt_path": h2.materialize_prompt(combined2),
+            "extra_args": [],
+        })
+    sys.exit(int(r2.get("exit_code", 1)))
+
+
 # ---- reflect role / reflect roles ----
 
 
