@@ -56,8 +56,19 @@ injection: |
       wt = Path('.').resolve()
       a = Assembler(wt, library_paths=[wt / 'library' / 'core',
                                        wt / 'library' / 'usage'])
-      result = a.composer.compose('role-curator')
+      # ALWAYS pass overlays — without them, user-global customizations
+      # (~/.ai-hats/customizations.yaml) and project ai-hats.yaml overlays
+      # are silently skipped, leading to false "rule absent" diagnoses.
+      overlays = a._get_overlays('role-curator')
+      result = a.composer.compose('role-curator', overlays=overlays)
       assert result.errors == []
+
+  **Positive-control discipline.** When verifying that a NEW rule/skill
+  is now present, also assert that an EXISTING rule/skill from the same
+  trait still composes. If both come out "MISSING", the verification
+  method is broken (e.g. overlays not passed). If only the new one is
+  missing, the implementation is broken. Without the positive control,
+  the two failure modes are indistinguishable.
 
   ### Workflow
   1. Identify the change shape: new component vs refactor vs audit.
