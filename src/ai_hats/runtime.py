@@ -669,7 +669,7 @@ class WrapRunner:
         # HATS-452 (П2): no override channel on WrapRunner — the composition
         # produced here flows straight into ``build_session_prompt``.
         result = compose_for_role(self.assembler, effective_role)
-        session_args, session_env = provider.build_session_prompt(
+        session_args, session_env, meta_prompt = provider.build_session_prompt(
             self.project_dir, result, session.session_id,
         )
         session.init_audit(
@@ -677,6 +677,12 @@ class WrapRunner:
             provider=provider_name,
             composition=_composition_snapshot(self.assembler, effective_role, result),
         )
+        # HATS-523: persist materialized system prompt to
+        # <session_dir>/meta_prompt.txt — symmetric with SubAgentRunner
+        # (runtime.py ~1091). Exact bytes that reached the provider (post
+        # HATS-380 placeholder expansion). Saved before hooks / _pty_spawn so
+        # the artefact survives early failures.
+        session.save_meta_prompt(meta_prompt)
         session.log_trace(TraceTag.SYS, f"Session started: role={active_role}")
 
         # Log CLI restart gap from previous session (helps judge distinguish

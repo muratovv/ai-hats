@@ -181,7 +181,7 @@ Full guide (policies, session-reviewer, manual triage, hypothesis workflow) — 
   retrospectives/
     sessions/<id>.md                   # SessionReviewV1 (facts + narrative + HYP verdicts + PROP actions)
 <ai_hats_dir>/sessions/runs/
-  session_<ID>/                        # trace.log, audit.md, metrics.json, transcript.txt
+  session_<ID>/                        # trace.log, audit.md, metrics.json, transcript.txt, meta_prompt.txt
 ai-hats.yaml                           # Project config + role + feedback
 GEMINI.md / CLAUDE.md                  # System prompt
 ```
