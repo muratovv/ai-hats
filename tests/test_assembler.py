@@ -580,7 +580,7 @@ def test_claude_build_session_prompt_creates_temp_file(project_with_library):
     # Build override for other-role
     provider = ClaudeProvider()
     result = asm.composer.compose("other-role")
-    args, env = provider.build_session_prompt(project, result, "test-sid")
+    args, env, _ = provider.build_session_prompt(project, result, "test-sid")
 
     # HATS-307: args now include --system-prompt-file AND --plugin-dir
     assert args[0] == "--system-prompt-file"
@@ -618,7 +618,7 @@ def test_claude_build_session_prompt_materializes_role_skills_in_plugin_dir(proj
 
     provider = ClaudeProvider()
     result = asm.composer.compose("test-role")
-    args, _ = provider.build_session_prompt(project, result, "test-sid")
+    args, _, _ = provider.build_session_prompt(project, result, "test-sid")
 
     assert "--plugin-dir" in args
     plugin_dir = Path(args[args.index("--plugin-dir") + 1])
@@ -643,7 +643,7 @@ def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_w
 
     provider = ClaudeProvider()
     result = asm.composer.compose("other-role")
-    args, _ = provider.build_session_prompt(project, result, "test-sid")
+    args, _, _ = provider.build_session_prompt(project, result, "test-sid")
 
     # CLAUDE.md unchanged
     assert (project / "CLAUDE.md").read_text() == original_content
@@ -666,7 +666,7 @@ def test_gemini_build_session_prompt_creates_rules_dir(project_with_library):
 
     provider = GeminiProvider()
     result = asm.composer.compose("other-role")
-    args, env = provider.build_session_prompt(project, result, "test-sid")
+    args, env, _ = provider.build_session_prompt(project, result, "test-sid")
 
     assert args == []
     assert "GEMINI_CLI_PROJECT_RULES_PATH" in env
@@ -1184,7 +1184,7 @@ def test_gemini_build_session_prompt_has_no_literal_placeholder(
     asm.init()
     result = Composer(LibraryResolver([lib])).compose("ph-role")
 
-    _, env = GeminiProvider().build_session_prompt(project, result, "test-sid")
+    _, env, _ = GeminiProvider().build_session_prompt(project, result, "test-sid")
     override = Path(env["GEMINI_CLI_PROJECT_RULES_PATH"]) / "00_MANDATORY_ROLE.md"
     content = override.read_text()
     assert "<ai_hats_dir>" not in content
@@ -1205,7 +1205,7 @@ def test_claude_build_session_prompt_has_no_literal_placeholder(
     asm.set_role("ph-role", provider_name="claude")
     result = Composer(LibraryResolver([lib])).compose("ph-role")
 
-    args, _ = ClaudeProvider().build_session_prompt(project, result, "test-sid")
+    args, _, _ = ClaudeProvider().build_session_prompt(project, result, "test-sid")
     # build_session_prompt returns ["--system-prompt-file", <path>]
     prompt_file = Path(args[args.index("--system-prompt-file") + 1])
     content = prompt_file.read_text()
