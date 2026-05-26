@@ -134,6 +134,7 @@ This re-copies all skills to `.claude/skills/` and `.agent/ai-hats/library/skill
 - Multiple active worktrees without tracking — leads to forgotten branches
 - Running `ai-hats wt create` from inside a linked worktree — blocked with an error. Always `cd` back to the main repo first.
 - Mixing manual `wt create` with `task transition execute` from the main repo — if you created a worktree manually and want the task to use it, `cd` into the worktree first, then transition. Otherwise the transition errors out with a clear remediation message.
+- Invoking `ai-hats wt create` (or `task transition <ID> execute`) while the main repo's HEAD is on a feature branch — blocked with a "Refused: HEAD is not a canonical base" error (HATS-518). Worktrees inherit their merge target from the current branch, so creating from a feature branch causes `wt merge` to silently land on it instead of master. Recovery: `git checkout master` in the main repo, then retry.
 - **Working without committing inside a worktree** — uncommitted work in a worktree is NOT protected. The worktree is a filesystem directory that parallel sessions, cleanup hooks, or `git worktree remove --force` can destroy without warning, and there is **no recovery** for uncommitted changes. Commit at every meaningful checkpoint (every passing test run, every completed sub-task). If a step could be reverted with `git checkout HEAD -- .`, you've waited too long to commit.
 
 ## If You End Up With a Stray Worktree
