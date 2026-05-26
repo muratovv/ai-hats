@@ -156,6 +156,7 @@ def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
     drift (use --accept-drift to override after re-verifying).
     """
     from ..worktree import (
+        WorktreeBaseBranchMismatchError,  # HATS-533
         WorktreeDirtyError,
         WorktreeDriftError,
         WorktreePartialCleanupError,
@@ -177,6 +178,27 @@ def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
         mgr.merge(squash=squash, force=force, accept_drift=accept_drift)
     except WorktreeDirtyError as e:
         console.print(f"[red]Refused[/]: {e}")
+        sys.exit(1)
+    except WorktreeBaseBranchMismatchError as e:
+        # HATS-533: main-repo HEAD wandered off `_original_branch` between
+        # `wt create` and `wt merge`. The merge would otherwise silently
+        # land on `e.current` instead of `e.expected` — same wrong-branch
+        # class as HATS-486. Refuse before any mutation; surface a
+        # copy-pasteable recipe naming the right branch and the main-repo
+        # path. Escape current/expected defensively (branch names can in
+        # principle contain Rich-markup characters).
+        from rich.markup import escape as _escape
+        project_dir = _project_dir()
+        console.print(
+            f"[red]Refused (base branch mismatch)[/]: {_escape(str(e))}"
+        )
+        console.print("Resolve:")
+        console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
+        console.print(
+            f"  [cyan]git checkout {_escape(e.expected)}[/]",
+            soft_wrap=True,
+        )
+        console.print("  [cyan]ai-hats wt merge[/]", soft_wrap=True)
         sys.exit(1)
     except WorktreeDriftError as e:
         # Drift message embeds filenames from the diverged commits — escape

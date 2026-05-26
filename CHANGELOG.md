@@ -11,6 +11,26 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Fixed
+- **`ai-hats wt merge` / `ai-hats task transition <ID> done` refuse
+  when main-repo HEAD has wandered off the worktree's merge target**
+  (HATS-533). `WorktreeManager._fast_forward_merge` and `_squash_merge`
+  ran `git merge` in the main-repo cwd without first verifying main-repo
+  HEAD was still on `self._original_branch` (the branch captured at
+  `wt create` time). If HEAD moved between create and merge — manual
+  `git checkout`, an IDE branch-switch, a peer agent operating directly
+  in the main repo without a linked worktree — the merge silently landed
+  on whatever branch was currently checked out. Same silent-wrong-branch
+  class as HATS-486; bug existed since the original `feat(runtime): add
+  git worktree isolation` (2026-03-27, present in v0.3.0 through v0.7.0).
+  Live trigger: HATS-509's own session — worktree from master, peer
+  agent committed directly on `task/hats-514` in main repo, `transition
+  done` merged into the wrong branch; recovered via `git cherry-pick`.
+  New `WorktreeBaseBranchMismatchError` raised BEFORE any mutation; CLI
+  handlers on both surfaces emit a copy-pasteable recipe (`cd <main-repo>;
+  git checkout <expected>; ai-hats wt merge` for direct callers; same
+  shape with `task transition <ID> done` for the transition surface).
+  Symmetric with HATS-518 (create-time twin). `--force` / `--accept-drift`
+  do NOT bypass — those override different safety contracts.
 - **`ai-hats task transition <ID> done` no longer leaks a misleading
   `--accept-drift` hint** (HATS-509). When the internal `wt merge`
   failed on drift, the `WorktreeDriftError` body ended with "re-run
