@@ -1,0 +1,33 @@
+name: reflect-hypothesis-phase1
+# Phase 1 of 2-phase judge split (HATS-513 / ADR-0007). Headless auditor
+# pass: judge-auditor role (L0 / base-auditor) produces a draft-report
+# with proposed verdicts and proposed mutations — no CLI side-effects.
+# CLI (`ai-hats reflect hypothesis [--headless]`) reads `saved_path`
+# from the result and either exits (--headless) or feeds the draft body
+# into the Phase 2 preamble.
+#
+# Initial funnel (set by CLI):
+#   role:           "judge-auditor"
+#   interactive:    false           # → SubAgentRunner branch in `provider`
+#   project_dir:    <Path>
+#   prompt_text:    <preamble + handoff inventory>
+steps:
+  - id: compose_role
+  - id: resolve_prompt
+    params: {default_text: ""}
+  - id: provider
+    # HATS-378: reporting role — apply zero-output guard. A judge-auditor
+    # session that emits no BEGIN_JUDGE_DRAFT marker is a harness
+    # incident, not a silent success.
+    harness:
+      reporting: true
+      on_zero_output: harness_incident
+  - id: extract_marker
+    params:
+      start: BEGIN_JUDGE_DRAFT
+      end: END_JUDGE_DRAFT
+      out_key: judge_draft
+  - id: save_artifact
+    params:
+      key: judge_draft
+      out_path_template: "<ai_hats_dir>/sessions/retros/judge/{ts}-draft.md"
