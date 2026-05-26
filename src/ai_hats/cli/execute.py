@@ -120,7 +120,9 @@ def execute_cmd(
 ):
     """Launch a provider session with a composed role + optional initial prompt."""
     from ..pipeline.harness import PipelineHarness
+    from ..pipeline.steps.compose import RoleNotFoundError
     from ..tags import TagValidationError, parse_tags
+    from ._helpers import _handle_role_not_found
 
     try:
         tags = parse_tags(tags_raw)
@@ -130,24 +132,31 @@ def execute_cmd(
     project_dir = _project_dir()
     prompt_text = _resolve_prompt(prompt_arg, project_dir)
 
-    with PipelineHarness("execute", project_dir) as h:
-        # Interactive mode: provider CLI receives prompt as the first
-        # positional arg in extra_args. The pipeline's resolve_prompt
-        # step reads prompt_path → prompt_text and launch_provider then
-        # prepends prompt_text to extra_args. We materialize the prompt
-        # here so the harness contract (Path-only inputs) is preserved.
-        final = h.run({
-            "role": role,
-            "interactive": interactive,
-            "project_dir": project_dir,
-            "prompt_path": h.materialize_prompt(prompt_text),
-            "provider": provider,
-            "model": model,
-            "isolation": isolation,
-            "ticket": ticket,
-            "tags": tags or None,
-            "extra_args": list(extra_args),
-        })
+    try:
+        with PipelineHarness("execute", project_dir) as h:
+            # Interactive mode: provider CLI receives prompt as the first
+            # positional arg in extra_args. The pipeline's resolve_prompt
+            # step reads prompt_path → prompt_text and launch_provider then
+            # prepends prompt_text to extra_args. We materialize the prompt
+            # here so the harness contract (Path-only inputs) is preserved.
+            final = h.run({
+                "role": role,
+                "interactive": interactive,
+                "project_dir": project_dir,
+                "prompt_path": h.materialize_prompt(prompt_text),
+                "provider": provider,
+                "model": model,
+                "isolation": isolation,
+                "ticket": ticket,
+                "tags": tags or None,
+                "extra_args": list(extra_args),
+            })
+    except RoleNotFoundError as exc:
+        # HATS-547 / S-CLI-20: same friendly handler as ``_launch_session``;
+        # pre-fix this exception bubbled up as a 9-frame traceback. Both
+        # ``--interactive`` and ``--batch`` reach this catch because
+        # ``compose_role`` runs before either runner branches.
+        _handle_role_not_found(exc)
 
     if interactive:
         sys.exit(int(final.get("exit_code", 1)))
