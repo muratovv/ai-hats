@@ -114,16 +114,13 @@ def test_format_tokens_empty_tokens_dict(tmp_path):
 
 
 class _StubTracer:
-    """Minimal SidecarTracer stub. flush_response() is a no-op unless `exc` set."""
+    """Minimal SidecarTracer stub.
 
-    def __init__(self, exc: BaseException | None = None) -> None:
-        self.exc = exc
-        self.flushed = False
-
-    def flush_response(self) -> None:
-        self.flushed = True
-        if self.exc is not None:
-            raise self.exc
+    HATS-529: ``flush_response`` was removed along with Path A. The stub
+    is now an inert placeholder — ``_finalize_session_basic`` no longer
+    calls any method on the tracer, but the parameter is still passed
+    (reserved scaffold for future finalize-time tracer cleanup hooks).
+    """
 
 
 @pytest.fixture
@@ -163,23 +160,6 @@ def test_basic_returns_trace_stats_shape(basic_kwargs):
     assert isinstance(stats, dict)
     assert stats.get("req_count", 0) == 0
     assert stats.get("trace_size", 0) >= 0  # SYS line was appended; just shape check
-
-
-def test_basic_swallows_tracer_flush_exception(basic_kwargs):
-    """``tracer.flush_response()`` raising MUST NOT propagate."""
-    basic_kwargs["tracer"] = _StubTracer(exc=RuntimeError("flush boom"))
-
-    # Must not raise — KeyboardInterrupt and Exception both caught (HATS-086).
-    _finalize_session_basic(**basic_kwargs)
-    assert basic_kwargs["tracer"].flushed
-
-
-def test_basic_swallows_tracer_flush_keyboard_interrupt(basic_kwargs):
-    """A second Ctrl+C during ``tracer.flush_response()`` MUST NOT propagate."""
-    basic_kwargs["tracer"] = _StubTracer(exc=KeyboardInterrupt())
-
-    _finalize_session_basic(**basic_kwargs)
-    assert basic_kwargs["tracer"].flushed
 
 
 def test_basic_swallows_finalize_audit_exception(basic_kwargs, monkeypatch):
