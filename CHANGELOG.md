@@ -10,6 +10,73 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+- **Migration safety chain — backup-first + smoke-assert + user-hooks
+  namespace** (HATS-549). Hardens `ai-hats self update` /
+  non-greenfield `self init` against data-loss regressions of the
+  class that produced the proxmox failure mode (user-authored
+  `.agent/hooks/pre_bash_secret_guard.py` silently deleted by an
+  older bump codepath, healer auto-rewriting the orphan ref in
+  `.claude/settings.json`, every Bash tool call thereafter printing
+  `/bin/sh: <path>: No such file or directory`). Four phases:
+  - **Phase 1 — pre-bump snapshot** (`src/ai_hats/migration_backup.py`).
+    Before any destructive step runs, snapshots the ai-hats-managed
+    surface (`.agent/`, `.claude/settings*.json`, `ai-hats.yaml`,
+    `CLAUDE.md` / `GEMINI.md`, `.githooks/`, `.gitignore`) to
+    `/tmp/ai-hats/bump-backups/<utc-ts>-<slug>-<label>.tar.gz`.
+    Path printed to stderr with `Recovery: tar -xzf <path> -C
+    <project>` one-liner BEFORE any work starts. Retention sweep
+    keeps last 10 per project-slug. Excludes `.venv` /
+    `__pycache__` / `.cache` / `node_modules` / `*.pyc` / symlinks
+    (regenerable / safety risks). Hard-fail on
+    `BackupError`: proceeding without a snapshot defeats the
+    safety guarantee. Env knobs: `AI_HATS_BUMP_BACKUP_DIR=<path>`
+    overrides base dir; `AI_HATS_BUMP_BACKUP_DIR=-` hard-disables
+    (one stderr WARN per call, for CI / sandbox).
+  - **Phase 4 — `user-hooks/` namespace + disable-vs-rewrite**
+    (`paths.user_hooks_dir`,
+    `Assembler._migrate_layout_v4_hooks_partition`,
+    `migration_healer._disable_user_hooks_in_settings`).
+    Project-authored files under legacy `.agent/hooks/` (anything
+    whose basename is NOT in `_ai_hats_owned_hook_basenames()`)
+    relocate to `<ai_hats_dir>/user-hooks/` — disjoint from the
+    managed `library/hooks/` namespace. The matching
+    `.claude/settings.json` PreToolUse entry is REMOVED (not
+    auto-rewritten); Stage B inventory carries a copy-paste JSON
+    re-enable snippet. A second reconciliation pass walks
+    `library/hooks/` for foreign content that landed there via a
+    pre-HATS-549 auto-heal and relocates it to `user-hooks/` —
+    next bump heals stuck states inherited from prior versions
+    transparently.
+
+### Fixed
+- **Migration healer auto-rewrites to missing destinations** (HATS-549
+  Phase 2). `migration_healer` Stage A1 / A2 substitutions previously
+  rewrote legacy `.agent/<stem>/` refs in user files to the new layout
+  without checking the new path existed on disk — masking historical
+  data-loss as "successful self-heal". Per-file gate now refuses to
+  heal a file if ANY ref inside it has BOTH legacy source and new
+  destination missing; the ref lands in Stage B inventory with
+  `reason="dst-missing"` and a `tar -xzf` recovery hint pointing at
+  the Phase 1 backup. Empty legacy + empty destination is the data-loss
+  signal; leaving the legacy path in place preserves the user's
+  visibility into the failure.
+- **`ai-hats self update` end-of-bump smoke-assert** (HATS-549
+  Phase 3, `src/ai_hats/migration_assert.py`). Walks
+  `.claude/settings.json{,.local}` PreToolUse / PostToolUse /
+  SessionStart / SessionEnd / UserPromptSubmit / Stop / SubagentStop /
+  Notification / PreCompact hook commands; for each path-like
+  `command` value (expands `$CLAUDE_PROJECT_DIR/`) verifies on-disk
+  existence. On any broken ref → `AssemblyError` with per-entry
+  diagnosis + recovery one-liner pointing at the Phase 1 backup.
+  Wired at three CLI sites: `cli/assembly.py::do_bump` (direct +
+  `_bump_internal` subprocess path), `cli/assembly.py::self_init`
+  (re-init only), `cli/maintenance.py` self-update in-process branch.
+  The in-process branch additionally surfaces bump failure as a
+  non-zero exit via a new flag — pre-fix this path swallowed
+  `AssemblyError` and reported failure on stdout but exited 0,
+  silently violating the safety contract.
+
 ### Changed
 - **Pipeline subsystem: `launch_provider` megastep split** (HATS-535).
   The single `launch_provider` step that pre-HATS-535 owned spawn + audit
