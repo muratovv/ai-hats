@@ -137,6 +137,18 @@ def test_e2e_self_update_skips_pip_when_in_sync(tmp_path: Path) -> None:
         f"editable conversion did not take effect: ai_hats.__file__={where!r}"
     )
 
+    # ----- give the project a default_role so the in-sync ``self update``
+    # below actually re-assembles (HATS-407: the post-pip bump path skips
+    # ``Re-assembling`` when both ``active_role`` and ``default_role`` are
+    # empty — which they would be after a bare bootstrap install). Using
+    # ``config set`` is the lightweight surface; no session start needed,
+    # writes ``default_role`` into ai-hats.yaml, ``active_role`` stays
+    # empty until first real session. -----
+    _run(
+        [str(launcher_dest), "config", "set", "-r", "assistant"],
+        cwd=project, env=env, timeout=30,
+    )
+
     # ----- swap probe target to the fake remote (master == src-repo HEAD) -----
     env["AI_HATS_REPO_URL"] = f"git+file://{fake_remote}"
 
