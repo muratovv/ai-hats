@@ -110,6 +110,40 @@ HATS-505 also tightened П2's Automate-side reading. The override channel on `Su
 
 **Out of scope (deferred):** a `materialize_system_prompt(asm, role, provider) -> str` helper for callers that need only the agent-visible text was proposed in the plan (F1) and removed during execution — every real consumer needs the intermediate `CompositionResult` for hooks install / audit snapshot / stats / override. Re-introduce when a real text-only consumer appears.
 
+### Phase 4 — silent-key sibling (HATS-515)
+
+П3 names *silent-None*: emitting `""` to mean "absent" is a trap because
+consumer guards on `is not None`. HATS-515 surfaced the sibling class —
+*silent-key*: pydantic's default `extra="ignore"` on `_YamlModel` (the
+common base for all YAML round-trippable models) means a typo'd key in
+a YAML dict is dropped at parse time, never reaches the Python object,
+and never raises. The exact instance: `composition.hooks.sesion_start:`
+(typo) in a role's `config.yaml` was silently discarded; the hook never
+fired and no diagnostic surfaced. `composer._merge_hooks` reinforced the
+silence by iterating a hardcoded 6-string event tuple parallel to
+`LifecycleEvent` — even if the key had survived parse, the merge loop
+would not have seen it.
+
+**Closure.** `HooksConfig` gets a `@model_validator(mode="before")` that
+diffs incoming dict keys against `LifecycleEvent` and raises
+`ValueError("unknown hook event(s): <list>; allowed: ...")`. The default
+`extra="ignore"` on `_YamlModel` is **not** flipped — many subclasses
+(`ComponentConfig`, `RuleMetadata`, `OverlayConfig`, `SkillMetadata`,
+`TaskCard`-extras path) legitimately tolerate or round-trip extras.
+Validation lives at the boundary where the silent drop hurts.
+`_merge_hooks` is refactored to iterate `LifecycleEvent` directly, so a
+future event added to the enum auto-propagates to the merge loop and
+the two stop drifting.
+
+**Invariant added to the contract.** When a model's field set is the
+*authoritative* enumeration of allowed keys for a YAML block (not a
+schema-evolution surface for round-trip extras), the model must override
+the base `extra="ignore"` with explicit validation — either
+`model_config = ConfigDict(extra="forbid")` or a `mode="before"`
+validator that produces a domain-clear error. The silent-key class
+recurs anywhere a YAML dict feeds a model that *intends* to enumerate
+all valid keys but inherits the permissive default.
+
 ## Related
 
 - HATS-294 — per-session cache + override mechanism (introduced the HATS-267 channel that was later misused).
@@ -118,6 +152,7 @@ HATS-505 also tightened П2's Automate-side reading. The override channel on `Su
 - HATS-456 — П1-meta closure: the materialization facade described in Phase 2 above.
 - HATS-501 — Automate-path regression of the П1-meta class (`pipeline/steps/compose.py` was direct-composing without overlays; routed through the facade).
 - HATS-505 — Phase-3 closure: pipeline-scoped no-overlay drift guard + override-channel discipline (pipeline no longer pre-fills `system_prompt_override`).
+- HATS-515 — Phase-4 closure: silent-key sibling; `HooksConfig` validates lifecycle event keys at parse, `_merge_hooks` derives event list from `LifecycleEvent`.
 - HATS-506 — umbrella epic for role-delivery harness contracts (sister to HATS-499 which owns library / content side).
 - HATS-523 — П4 application: HITL audit-persistence symmetry. `WrapRunner` now saves the materialized system prompt to `<session_dir>/meta_prompt.txt` (already done by `SubAgentRunner`). `Provider.build_session_prompt` extended to 3-tuple to surface the bytes through to the runner. Contracts П1–П4 unchanged.
 - ADR-0001 / ADR-0002 — pipeline / step contracts. П3 is a refinement of the existing funnel semantics, not a new mechanism.
