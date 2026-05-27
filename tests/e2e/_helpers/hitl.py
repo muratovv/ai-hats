@@ -200,17 +200,19 @@ def _build_env(
 def drive_bare_hitl(
     project: "Project",
     *,
+    subcommand_args: tuple[str, ...] = (),
     role: str | None = None,
     extra_args: tuple[str, ...] = (),
     stdin_payload: str = DEFAULT_EXIT_PAYLOAD,
     timeout: float = 20.0,
     env_allowlist: tuple[str, ...] = DEFAULT_ENV_ALLOWLIST,
 ) -> HitlResult:
-    """Drive bare ``ai-hats`` (no subcommand) via subprocess.
+    """Drive an HITL ai-hats invocation (bare or subcommand) via subprocess.
 
-    The bare invocation goes through the ``human`` YAML pipeline, which
-    ultimately spawns the provider CLI on a PTY (``WrapRunner._pty_spawn``).
-    To keep the test bounded we feed ``stdin_payload`` (default:
+    The bare invocation goes through the ``human`` YAML pipeline; HITL
+    subcommands (``reflect all``, ``reflect role <name>``, etc.) take a
+    Python pre-flight then ``WrapRunner._pty_spawn`` the provider CLI.
+    Same PTY teardown contract — we feed ``stdin_payload`` (default
     :data:`DEFAULT_EXIT_PAYLOAD`) so the provider exits promptly.
 
     Returns a :class:`HitlResult` with the captured stdout + an
@@ -223,24 +225,36 @@ def drive_bare_hitl(
         A :class:`tests.e2e._helpers.project.Project` providing
         ``ai_hats_binary`` (launcher) and ``env`` (project-specific
         keys like ``AI_HATS_VENV``).
+    subcommand_args
+        Click subcommand path inserted BEFORE ``-r <role>`` (HATS-546).
+        Default ``()`` = bare ``ai-hats`` invocation. Examples:
+        ``("reflect", "all")``, ``("reflect", "role", "maintainer")``.
+        Position matters: Click resolves group → subcommand argv
+        left-to-right, so the subcommand path must precede any options.
     role
-        Optional ``-r <role>`` override. ``None`` uses the project's
-        ``default_role`` from ``ai-hats.yaml``.
+        Optional ``-r <role>`` override on the bare path. ``None`` uses
+        the project's ``default_role`` from ``ai-hats.yaml``. Some HITL
+        subcommands (e.g. ``reflect all``) ignore ``-r`` — pass
+        ``None`` in that case.
     extra_args
         Extra positional / option args appended after the role flag.
-        Forwarded to the provider CLI per the bare-``ai-hats`` contract.
+        For bare ai-hats: forwarded to the provider CLI. For HITL
+        subcommands: subcommand-specific flags.
     stdin_payload
         Bytes (as str) written to subprocess stdin. The PTY proxy
         forwards this to claude's child-PTY stdin. See module docstring
         for empirical findings.
     timeout
         Hard cap on the subprocess. ``20s`` is enough for claude TUI
-        to spawn + exit on the default payload.
+        to spawn + exit on the default payload; HITL subcommands with
+        Python pre-flight (handoff build / composition materialize)
+        may want ``30s+``.
     env_allowlist
         Keys forwarded from ``os.environ`` to the subprocess. Anything
         outside this list (plus ``project.env``) is dropped.
     """
     cmd: tuple[str, ...] = (str(project.ai_hats_binary),)
+    cmd += tuple(subcommand_args)
     if role is not None:
         cmd += ("-r", role)
     cmd += tuple(extra_args)
