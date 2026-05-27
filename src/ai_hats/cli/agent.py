@@ -57,8 +57,9 @@ def run_subagent(
     - other non-zero — forwarded verbatim from provider CLI
     """
     from ..pipeline.harness import PipelineHarness
+    from ..pipeline.steps.compose import RoleNotFoundError
     from ..tags import TagValidationError, parse_tags
-    from ._helpers import _project_dir
+    from ._helpers import _handle_role_not_found, _project_dir
 
     try:
         tags = parse_tags(tags_raw)
@@ -66,17 +67,24 @@ def run_subagent(
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
     project_dir = _project_dir()
-    with PipelineHarness("execute", project_dir) as h:
-        final = h.run({
-            "role": role,
-            "interactive": False,
-            "project_dir": project_dir,
-            "prompt_path": h.materialize_prompt(task),
-            "model": model or "",
-            "isolation": isolation,
-            "ticket": ticket or "",
-            "tags": tags or None,
-        })
+    try:
+        with PipelineHarness("execute", project_dir) as h:
+            final = h.run({
+                "role": role,
+                "interactive": False,
+                "project_dir": project_dir,
+                "prompt_path": h.materialize_prompt(task),
+                "model": model or "",
+                "isolation": isolation,
+                "ticket": ticket or "",
+                "tags": tags or None,
+            })
+    except RoleNotFoundError as exc:
+        # HATS-545 / S-CLI-05: same friendly handler as ``_launch_session``
+        # and ``execute_cmd``; pre-fix this exception bubbled up as a
+        # 9-frame traceback. Third "compose-then-run" entry-point to
+        # share the helper (HATS-547 set the precedent).
+        _handle_role_not_found(exc)
 
     session_id = final["session_id"]
     session_dir = final["session_dir"]
