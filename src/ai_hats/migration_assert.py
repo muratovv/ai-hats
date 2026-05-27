@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .assembler import AssemblyError
+from .paths import CLAUDE_PROJECT_DIR_VAR, strip_claude_project_dir
 
 __all__ = [
     "assert_runtime_hooks_resolve",
@@ -72,8 +73,9 @@ _HOOK_EVENT_KEYS: frozenset[str] = frozenset({
 })
 
 # Variable prefix Claude Code expands at hook-execution time. Stripped
-# during the on-disk existence check.
-_CLAUDE_PROJECT_DIR_VAR = "$CLAUDE_PROJECT_DIR/"
+# during the on-disk existence check. Canonical definition lives in
+# ``paths`` (HATS-549 Q.1); local alias kept for self-documentation.
+_CLAUDE_PROJECT_DIR_VAR = CLAUDE_PROJECT_DIR_VAR
 
 
 @dataclass(frozen=True)
@@ -113,8 +115,8 @@ def _resolve(command: str, project_dir: Path) -> Path:
     Relative paths are joined onto ``project_dir`` (mirroring Claude
     Code's working-directory semantics for hooks).
     """
-    if command.startswith(_CLAUDE_PROJECT_DIR_VAR):
-        rel = command[len(_CLAUDE_PROJECT_DIR_VAR):]
+    rel = strip_claude_project_dir(command)
+    if rel != command:
         return (project_dir / rel).resolve()
     p = Path(command)
     if p.is_absolute():

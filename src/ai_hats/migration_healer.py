@@ -35,7 +35,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .paths import LEGACY_PATH_MAP, ai_hats_dir, audits_dir
+from .paths import (
+    CLAUDE_PROJECT_DIR_VAR,
+    LEGACY_PATH_MAP,
+    ai_hats_dir,
+    audits_dir,
+    strip_claude_project_dir,
+)
 
 # ---------- Data model ----------
 
@@ -545,22 +551,27 @@ def _render_reenable_snippet(ref: LegacyRef) -> list[str]:
     entry under the appropriate hook event (the original event name
     is not preserved by the disable step, intentionally: forces a
     review-pass on what the hook actually does before re-enabling).
+
+    Uses ``json.dumps`` + ``textwrap.indent`` so the rendered snippet
+    survives future schema additions for free (HATS-549 review Q.3).
     """
-    block = (
-        "{\n"
-        '      "matcher": "Bash",\n'
-        '      "hooks": [\n'
-        f'        {{"type": "command", "command": "{ref.full_new_path}"}}\n'
-        "      ]\n"
-        "    }"
-    )
+    import textwrap
+
+    entry = {
+        "matcher": "Bash",
+        "hooks": [
+            {"type": "command", "command": ref.full_new_path},
+        ],
+    }
+    snippet = json.dumps(entry, indent=2, ensure_ascii=False)
+    indented = textwrap.indent(snippet, "    ")
     return [
         "",
         "    Re-enable snippet — add under `hooks.PreToolUse[]` (or the"
         " appropriate event) in `.claude/settings.json`:",
         "",
         "    ```json",
-        "    " + block.replace("\n", "\n    "),
+        indented,
         "    ```",
     ]
 
@@ -623,21 +634,10 @@ def write_inventory(project_dir: Path, refs: list[LegacyRef]) -> Path | None:
 
 # ---------- Phase 2 (HATS-549) — destination-existence check ----------
 
-# Variable prefix that Claude Code expands at hook-execution time. The
-# healer treats it as a project-dir alias so existence checks resolve
-# correctly.
-_CLAUDE_PROJECT_DIR_VAR = "$CLAUDE_PROJECT_DIR/"
-
-
-def _strip_project_dir_var(s: str) -> str:
-    """Remove the ``$CLAUDE_PROJECT_DIR/`` prefix if present.
-
-    Settings.json hook command paths typically prefix with
-    ``$CLAUDE_PROJECT_DIR/`` so the hook script resolves regardless of
-    the cwd Claude Code spawns the hook from. For existence checks we
-    treat the prefix as project-dir-relative.
-    """
-    return s[len(_CLAUDE_PROJECT_DIR_VAR):] if s.startswith(_CLAUDE_PROJECT_DIR_VAR) else s
+# Local aliases — shared canonical definitions live in ``paths`` so
+# the healer / asserter / future callers stay in sync (HATS-549 Q.1).
+_CLAUDE_PROJECT_DIR_VAR = CLAUDE_PROJECT_DIR_VAR
+_strip_project_dir_var = strip_claude_project_dir
 
 
 def is_ref_safe_to_heal(ref: LegacyRef, project_dir: Path) -> tuple[bool, str]:
@@ -682,21 +682,54 @@ def _retag(ref: LegacyRef, reason: str) -> LegacyRef:
 # ---------- Phase 4 (HATS-549) — disable user-owned hook entries ----------
 
 
+# Path prefixes the Phase 4 disable pre-pass treats as candidate
+# user-owned-hook locations. Both forms need detection so the
+# REPEAT-bump path heals stuck projects that were already auto-healed
+# by a pre-HATS-549 version:
+#
+#   1. Fresh v3: settings.json still has the legacy ``.agent/hooks/``
+#      prefix. File is at legacy location; step 6 partitions it.
+#   2. Stuck-state: a previous bump auto-healed the path to the
+#      managed namespace ``.agent/ai-hats/library/hooks/``, file got
+#      moved to that managed location, BUT it's user-owned (not in
+#      the ai-hats whitelist). The reconciliation pass in
+#      ``Assembler._migrate_layout_v4_hooks_partition`` moves the
+#      file to ``user-hooks/``; this list lets the healer disable
+#      the matching settings.json entry in the same bump.
+_USER_HOOK_DETECT_PREFIXES: tuple[str, ...] = (
+    ".agent/hooks/",
+    ".agent/ai-hats/library/hooks/",
+)
+
+
 def _split_user_hook_command(command: str) -> str | None:
-    """Return the basename if ``command`` references a legacy
-    ``.agent/hooks/<basename>`` path; ``None`` otherwise.
+    """Return the basename if ``command`` references a path under either
+    the legacy ``.agent/hooks/`` or the post-heal
+    ``.agent/ai-hats/library/hooks/`` location; ``None`` otherwise.
 
     Strips the optional ``$CLAUDE_PROJECT_DIR/`` prefix. The path tail
     is everything after the prefix up to the first ``/`` (so subdirs
     like ``tests/smoke.sh`` resolve to basename ``tests``).
+
+    Covers two timelines:
+
+    * Fresh v3 → v4: the ``.agent/hooks/`` form. Step 6 moves the
+      file from legacy to ``user-hooks/`` and the healer disables the
+      entry.
+    * Stuck state inherited from a pre-HATS-549 bump that auto-healed
+      to ``library/hooks/``: the reconciliation pass moves the file
+      back out of the managed namespace and the healer disables here
+      as well.
     """
     s = _strip_project_dir_var(command)
-    if not s.startswith(".agent/hooks/"):
-        return None
-    tail = s[len(".agent/hooks/"):]
-    if not tail:
-        return None
-    return tail.split("/", 1)[0]
+    for prefix in _USER_HOOK_DETECT_PREFIXES:
+        if not s.startswith(prefix):
+            continue
+        tail = s[len(prefix):]
+        if not tail:
+            continue
+        return tail.split("/", 1)[0]
+    return None
 
 
 def _disable_user_hooks_in_settings(

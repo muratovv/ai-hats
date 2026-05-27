@@ -434,3 +434,28 @@ def test_exclusion_does_not_drop_legitimate_dotfiles(
     assert ".agent/ai-hats/library/hooks/.manifest" in names
     assert ".agent/ai-hats/library/hooks/.ai-hats-managed" in names
     assert ".gitignore" in names
+
+
+def test_snapshot_drops_symlinks_from_tarball(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HATS-549 review S.1: symlinks pointing outside project_dir
+    must not survive the snapshot — otherwise extract would silently
+    follow them and violate the safety contract."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    _seed_project(project)
+    # Symlink inside .agent/ pointing somewhere outside project_dir
+    outside = tmp_path / "outside-the-project.txt"
+    outside.write_text("attacker-controlled\n")
+    link = project / ".agent" / "external-link"
+    link.symlink_to(outside)
+    _isolate_backup_dir(monkeypatch, tmp_path)
+
+    snap = snapshot_pre_bump(project)
+    assert snap is not None
+    with tarfile.open(snap, "r:gz") as tar:
+        names = set(tar.getnames())
+    assert ".agent/external-link" not in names
+    # Sanity: non-symlink content still captured.
+    assert "ai-hats.yaml" in names
