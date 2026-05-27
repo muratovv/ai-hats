@@ -6,25 +6,27 @@ had no special handling for it, so users saw a 9-frame Python traceback
 and an exit code from Python's unhandled-exception path. No
 discoverability for the typo.
 
-HATS-507 fixed the bare-``ai-hats`` path. HATS-547 (S-CLI-20) closes the
-same asymmetry for ``ai-hats execute`` (both ``--batch`` and
-``--interactive``): pre-fix, ``execute_cmd`` did NOT catch
-``RoleNotFoundError`` and re-leaked the traceback. The fix extracted
-the renderer into ``cli/_helpers._handle_role_not_found`` and wired it
-into ``execute_cmd`` too.
+HATS-507 fixed the bare-``ai-hats`` path. HATS-547 (S-CLI-20) closed
+the same asymmetry for ``ai-hats execute`` (both ``--batch`` and
+``--interactive``). HATS-545 (S-CLI-05) closes it for ``ai-hats agent``
+— the third "compose-then-run" entry-point. All three now share the
+``cli/_helpers._handle_role_not_found`` renderer.
 
 Setup contract (real subprocess + real ``ai-hats`` binary — satisfies
 ``dev_rule_e2e_gate`` for changes under ``src/ai_hats/cli/``):
 
 1. ``tmp_project`` fixture bootstraps a role-less project pointed at the
    dev-venv ``ai-hats`` binary.
-2. We invoke ``ai-hats <argv>`` for three CLI surfaces:
+2. We invoke ``ai-hats <argv>`` for four CLI surfaces:
    - ``bare`` — ``--role <bogus>`` (HATS-507 regression guard).
    - ``execute-batch`` — ``execute --batch -r <bogus> --prompt ok``.
    - ``execute-interactive`` — ``execute -r <bogus> --prompt ok``
      (interactive is default; the exception fires in ``compose_role``
      BEFORE ``WrapRunner`` PTY-attaches, so this runs cleanly in a
      non-TTY subprocess — no provider binary is ever spawned).
+   - ``agent`` — ``agent <bogus> --task ok`` (HATS-545 — orchestration
+     surface per ``docs/how-to-orchestration.md``; same
+     ``compose_role`` raise point, same handler).
 3. Assertions per surface (identical contract):
    - exit code == 2 (Click's UsageError convention)
    - stderr names the bogus role
@@ -35,12 +37,13 @@ Setup contract (real subprocess + real ``ai-hats`` binary — satisfies
 Fail-under-revert:
 
 - Removing the typed raise in ``pipeline/steps/compose.py`` makes ALL
-  three params fail (bare ``RuntimeError`` leaks).
+  four params fail (bare ``RuntimeError`` leaks).
 - Removing the ``try/except`` in ``cli/__init__.py:_launch_session``
   makes only the ``bare`` param fail.
 - Removing the ``try/except`` in ``cli/execute.py:execute_cmd`` makes
-  only the ``execute-*`` params fail — exactly the surface HATS-547
-  added.
+  only the ``execute-*`` params fail (HATS-547 surface).
+- Removing the ``try/except`` in ``cli/agent.py:run_subagent`` makes
+  only the ``agent`` param fail (HATS-545 surface).
 """
 
 from __future__ import annotations
@@ -66,15 +69,16 @@ _BOGUS = "definitely-not-a-real-role"
             "execute-interactive",
             ("execute", "-r", _BOGUS, "--prompt", "ok"),
         ),
+        ("agent", ("agent", _BOGUS, "--task", "ok")),
     ],
-    ids=("bare", "execute-batch", "execute-interactive"),
+    ids=("bare", "execute-batch", "execute-interactive", "agent"),
 )
 def test_e2e_unknown_role_exits_clean_with_role_list(
     tmp_project, case_id: str, argv: tuple[str, ...],
 ) -> None:
     """``ai-hats <argv-with-bogus-role>`` → exit 2, friendly message, no traceback.
 
-    Same contract across three CLI surfaces; see module docstring for
+    Same contract across four CLI surfaces; see module docstring for
     the per-param revert-check expectation.
     """
     result = tmp_project.run(*argv, timeout=10.0)
