@@ -47,14 +47,29 @@ class LegacyRef:
     Attributes:
         file: Absolute path to the file containing the ref.
         line: 1-based line number (0 for whole-file matches from JSON walk).
-        legacy_substr: Exact substring that matched the legacy pattern.
+        legacy_substr: Exact substring that matched the legacy pattern
+            (the prefix, e.g. ``.agent/hooks/``).
         new_substr: Replacement substring under the new layout.
+        full_legacy_path: Full path including the tail after the prefix
+            (e.g. ``.agent/hooks/pre_bash_secret_guard.py``). Used by the
+            Phase 2 dst-existence check (HATS-549) to verify the
+            substitution would land somewhere meaningful.
+        full_new_path: Full post-substitution path (legacy tail appended
+            to ``new_substr``). Compared against on-disk state to decide
+            whether to heal or inventory.
+        reason: Why this ref ended up where it did. Default ``auto-heal``
+            (would-be-healed); set to ``"dst-missing"`` when both legacy
+            source and new destination are absent on disk (data-loss
+            signal). Stage B inventory prints this verbatim.
     """
 
     file: Path
     line: int
     legacy_substr: str
     new_substr: str
+    full_legacy_path: str = ""
+    full_new_path: str = ""
+    reason: str = "auto-heal"
 
 
 @dataclass
@@ -255,6 +270,55 @@ def _is_json_target(path: Path, project_dir: Path) -> bool:
     return rel in JSON_TARGETS
 
 
+# Characters that terminate a path-like token in a surrounding string.
+# Used to extract the "tail" after the legacy prefix so we can build the
+# full pre-substitution path for the HATS-549 dst-existence check.
+_PATH_TERMINATORS: frozenset[str] = frozenset(
+    {" ", "\t", "\n", "\r", '"', "'", "`", "<", ">", "(", ")", "[", "]"}
+)
+
+
+def _extract_tail(source: str, end: int) -> str:
+    """Return the substring of ``source`` starting at ``end`` until the
+    first path-terminator character (or end of string).
+
+    The tail is the path-segment-suffix that follows the legacy prefix
+    inside a containing string (e.g. ``pre_bash_secret_guard.py`` from
+    ``$CLAUDE_PROJECT_DIR/.agent/hooks/pre_bash_secret_guard.py``).
+    """
+    cur = end
+    while cur < len(source) and source[cur] not in _PATH_TERMINATORS:
+        cur += 1
+    return source[end:cur]
+
+
+def _make_ref(
+    *,
+    file: Path,
+    line: int,
+    legacy: str,
+    new: str,
+    source: str,
+    end: int,
+) -> LegacyRef:
+    """Build a LegacyRef enriched with full legacy + new path strings.
+
+    ``source`` is the containing string (JSON value or text line);
+    ``end`` is ``match.end()`` for the legacy prefix. The function
+    extracts the trailing path token and appends it to both substrings
+    so the orchestrator can probe on-disk state at either side.
+    """
+    tail = _extract_tail(source, end)
+    return LegacyRef(
+        file=file,
+        line=line,
+        legacy_substr=legacy,
+        new_substr=new,
+        full_legacy_path=legacy + tail,
+        full_new_path=new + tail,
+    )
+
+
 def _scan_text_file(path: Path, project_dir: Path) -> list[LegacyRef]:
     """Line-by-line scan of a text file for legacy substrings."""
     out: list[LegacyRef] = []
@@ -268,8 +332,9 @@ def _scan_text_file(path: Path, project_dir: Path) -> list[LegacyRef]:
             new = _resolve_new_substr(legacy, project_dir)
             if new is None:
                 continue
-            out.append(LegacyRef(
-                file=path, line=lineno, legacy_substr=legacy, new_substr=new,
+            out.append(_make_ref(
+                file=path, line=lineno, legacy=legacy, new=new,
+                source=line, end=match.end(),
             ))
     return out
 
@@ -283,8 +348,9 @@ def _scan_json_strings(value, path: Path, project_dir: Path) -> list[LegacyRef]:
             new = _resolve_new_substr(legacy, project_dir)
             if new is None:
                 continue
-            out.append(LegacyRef(
-                file=path, line=0, legacy_substr=legacy, new_substr=new,
+            out.append(_make_ref(
+                file=path, line=0, legacy=legacy, new=new,
+                source=value, end=match.end(),
             ))
     elif isinstance(value, dict):
         for v in value.values():
@@ -447,10 +513,32 @@ def heal_text_file(path: Path, project_dir: Path) -> int:
 # ---------- Inventory — Stage B ----------
 
 
+# Diagnosis text shown next to each ref in the inventory output.
+_REASON_TEXT: dict[str, str] = {
+    "git-dirty":
+        "File had uncommitted changes; left intact so your in-flight "
+        "diff isn't clobbered.",
+    "unsupported-ext":
+        "File extension not in the auto-heal allowlist "
+        "(`.md` / `.txt` / `.j2` / `.sh` / `.envrc`).",
+    "dst-missing":
+        "**Possible data loss.** Neither the legacy source nor the new "
+        "destination exists on disk. The substitution was NOT applied — "
+        "review whether the referenced file should still exist and "
+        "either restore it (e.g. `tar -xzf <pre-bump-backup>.tar.gz`) "
+        "or delete the broken entry.",
+    "auto-heal":
+        "Auto-heal candidate that was not applied (mixed-state file).",
+}
+
+
 def write_inventory(project_dir: Path, refs: list[LegacyRef]) -> Path | None:
     """Write an audit-log of un-healed refs. Returns the path, or None if empty.
 
     Output lands under ``<ai_hats_dir>/sessions/audits/<utc_ts>-legacy-refs.md``.
+    Entries are grouped by file then by reason — the ``dst-missing``
+    diagnosis (HATS-549 Phase 2) carries the data-loss callout so users
+    notice it before the broken hook fires.
     """
     if not refs:
         return None
@@ -469,12 +557,12 @@ def write_inventory(project_dir: Path, refs: list[LegacyRef]) -> Path | None:
         f"Found {len(refs)} legacy-path ref(s) across {len(by_file)} file(s) "
         "that were not auto-healed.",
         "",
-        "Reasons a ref is inventoried instead of auto-fixed:",
+        "Each ref carries a `reason` tag explaining why it was held back. "
+        "`dst-missing` is the data-loss signal — neither side of the "
+        "substitution exists on disk and proceeding would silently "
+        "rewrite the path to nowhere.",
         "",
-        "- File had uncommitted changes (git-dirty) — to keep your in-flight diff intact.",
-        "- File extension not in auto-heal allowlist (`.md` / `.txt` / `.j2` / `.sh` / `.envrc`).",
-        "",
-        "Apply the substitutions below manually, then commit.",
+        "Apply the substitutions below manually after reviewing, then commit.",
         "",
     ]
     for file_path in sorted(by_file, key=lambda p: str(p)):
@@ -487,11 +575,73 @@ def write_inventory(project_dir: Path, refs: list[LegacyRef]) -> Path | None:
         for ref in sorted(by_file[file_path], key=lambda r: r.line):
             loc = f"L{ref.line}" if ref.line > 0 else "(json)"
             lines.append(
-                f"- {loc} | `{ref.legacy_substr}` → `{ref.new_substr}`"
+                f"- {loc} `{ref.legacy_substr}` → `{ref.new_substr}` "
+                f"_(reason: `{ref.reason}`)_"
             )
+            diag = _REASON_TEXT.get(ref.reason)
+            if diag:
+                lines.append(f"  - {diag}")
         lines.append("")
     out_path.write_text("\n".join(lines), encoding="utf-8")
     return out_path
+
+
+# ---------- Phase 2 (HATS-549) — destination-existence check ----------
+
+# Variable prefix that Claude Code expands at hook-execution time. The
+# healer treats it as a project-dir alias so existence checks resolve
+# correctly.
+_CLAUDE_PROJECT_DIR_VAR = "$CLAUDE_PROJECT_DIR/"
+
+
+def _strip_project_dir_var(s: str) -> str:
+    """Remove the ``$CLAUDE_PROJECT_DIR/`` prefix if present.
+
+    Settings.json hook command paths typically prefix with
+    ``$CLAUDE_PROJECT_DIR/`` so the hook script resolves regardless of
+    the cwd Claude Code spawns the hook from. For existence checks we
+    treat the prefix as project-dir-relative.
+    """
+    return s[len(_CLAUDE_PROJECT_DIR_VAR):] if s.startswith(_CLAUDE_PROJECT_DIR_VAR) else s
+
+
+def is_ref_safe_to_heal(ref: LegacyRef, project_dir: Path) -> tuple[bool, str]:
+    """Decide whether ``ref`` should be auto-healed.
+
+    HATS-549 Phase 2: refuse to rewrite a legacy → new substitution when
+    NEITHER the legacy source file NOR the new destination file exists
+    on disk. That state is the data-loss signal — blindly rewriting the
+    path produces a settings.json that points at nowhere and corrupts
+    the recovery trail.
+
+    Returns ``(safe, reason)``:
+
+    - ``(True,  "auto-heal")``  — at least one side exists on disk;
+      proceeding either moves the file (step 6) or matches an
+      already-migrated state.
+    - ``(False, "dst-missing")`` — neither side exists; inventory
+      instead.
+
+    Empty ``full_legacy_path`` / ``full_new_path`` (LegacyRef built by
+    older code without enriched fields) is treated as safe — preserves
+    pre-Phase-2 behaviour for any constructor that doesn't populate
+    the new fields.
+    """
+    if not ref.full_legacy_path or not ref.full_new_path:
+        return True, "auto-heal"
+    legacy_rel = _strip_project_dir_var(ref.full_legacy_path)
+    new_rel = _strip_project_dir_var(ref.full_new_path)
+    if (project_dir / legacy_rel).exists():
+        return True, "auto-heal"
+    if (project_dir / new_rel).exists():
+        return True, "auto-heal"
+    return False, "dst-missing"
+
+
+def _retag(ref: LegacyRef, reason: str) -> LegacyRef:
+    """Return a copy of ``ref`` with ``reason`` overridden."""
+    from dataclasses import replace as _dc_replace
+    return _dc_replace(ref, reason=reason)
 
 
 # ---------- Orchestration ----------
@@ -519,6 +669,25 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
         by_file.setdefault(ref.file, []).append(ref)
 
     for file_path, file_refs in by_file.items():
+        # HATS-549 Phase 2: per-file dst-existence gate. If ANY ref in
+        # this file points at a substitution where both legacy source
+        # and new destination are absent from disk, refuse to heal the
+        # whole file — the file may carry a mix of healthy and stale
+        # refs, but the regex-substitution path can't address them
+        # one-at-a-time. Inventory all refs with the failing ones tagged
+        # ``dst-missing`` so the user sees exactly which side is gone.
+        unsafe_refs = [
+            r for r in file_refs
+            if not is_ref_safe_to_heal(r, project_dir)[0]
+        ]
+        if unsafe_refs:
+            for r in file_refs:
+                if r in unsafe_refs:
+                    report.inventoried.append(_retag(r, "dst-missing"))
+                else:
+                    report.inventoried.append(r)
+            continue
+
         if _is_json_target(file_path, project_dir):
             # Stage A1 — always-on
             count = heal_json_file(file_path, project_dir)
@@ -531,7 +700,9 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
         if _is_text_candidate(file_path):
             # Stage A2 — gated by git-clean
             if not is_file_git_clean(file_path, project_dir):
-                report.inventoried.extend(file_refs)
+                report.inventoried.extend(
+                    _retag(r, "git-dirty") for r in file_refs
+                )
                 continue
             count = heal_text_file(file_path, project_dir)
             if count > 0:
@@ -541,7 +712,9 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
             continue
 
         # Defensive — shouldn't happen given the scanner allowlist
-        report.inventoried.extend(file_refs)
+        report.inventoried.extend(
+            _retag(r, "unsupported-ext") for r in file_refs
+        )
 
     if report.inventoried:
         report.inventory_path = write_inventory(project_dir, report.inventoried)
@@ -581,8 +754,22 @@ def _print_summary(report: HealReport, project_dir: Path) -> None:
             rel = report.inventory_path.relative_to(project_dir).as_posix()
         except ValueError:
             rel = str(report.inventory_path)
-        print(
-            f"[heal] Manual fixes required for {len(report.inventoried)} "
-            f"ref(s) — see {rel}",
-            file=sys.stderr,
+        # HATS-549 Phase 2: data-loss callout — surface ``dst-missing``
+        # count separately so users notice the bad case in the noise.
+        dst_missing = sum(
+            1 for r in report.inventoried if r.reason == "dst-missing"
         )
+        if dst_missing:
+            print(
+                f"[heal] ⚠️  {dst_missing} ref(s) point at files missing "
+                f"from BOTH legacy and new locations (possible data loss). "
+                f"See {rel}",
+                file=sys.stderr,
+            )
+        other = len(report.inventoried) - dst_missing
+        if other:
+            print(
+                f"[heal] Manual fixes required for {other} other ref(s) "
+                f"— see {rel}",
+                file=sys.stderr,
+            )
