@@ -16,9 +16,15 @@ in real subprocess invocations:
   user-rule files; no role-content materialization, no ``.last_backup/``.
 
 Per ``dev_rule_e2e_gate``: real subprocess chain (real bash, real
-``ai-hats`` binary already on PATH), ``@pytest.mark.integration``. No
-pip install — we exercise the locally-installed binary directly so the
-turnaround stays cheap.
+``ai-hats`` binary from the dev venv at ``<repo>/.venv/bin/ai-hats``),
+``@pytest.mark.integration``. No pip install — we exercise the
+locally-installed binary directly so the turnaround stays cheap.
+
+NB: we deliberately bypass the host launcher (``$HOME/.local/bin/ai-hats``,
+HATS-339), which since HATS-337 refuses to run without a pre-existing
+``<project>/.agent/ai-hats/.venv``. These tests target the surface of
+``self init`` / ``config set`` / ``self bump`` against an empty project,
+so the launcher's venv precondition is not the contract under test.
 
 Fail-under-revert (dev_rule_e2e_gate §4): reverting the HATS-407 commits
 makes ``set_role`` repopulate ``library/rules/*`` and emit
@@ -28,8 +34,8 @@ makes ``set_role`` repopulate ``library/rules/*`` and emit
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -39,17 +45,22 @@ pytestmark = pytest.mark.integration
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+# Dev-venv binary path resolved through ``sys.executable`` — works
+# from both the main checkout and from linked git worktrees (where
+# ``<worktree>/.venv`` does not exist). Bypassing the host launcher
+# is intentional — see module docstring for rationale (HATS-337/339/552).
+AI_HATS = str(Path(sys.executable).parent / "ai-hats")
 
 
 def _ai_hats_available() -> bool:
-    return shutil.which("ai-hats") is not None
+    return Path(AI_HATS).is_file() and os.access(AI_HATS, os.X_OK)
 
 
 @pytest.fixture
 def fresh_project(tmp_path):
     """Empty project dir + git init (so HATS-088 hook install path is exercisable)."""
     if not _ai_hats_available():
-        pytest.skip("ai-hats binary not on PATH")
+        pytest.skip(f"ai-hats dev-venv binary missing: {AI_HATS}")
     project = tmp_path / "proj"
     project.mkdir()
     subprocess.run(
@@ -89,7 +100,7 @@ def test_init_writes_yaml_scaffold_and_user_rules_aggregator_only(fresh_project)
     project = fresh_project
 
     _run(
-        ["ai-hats", "self", "init", "-p", "claude", "-r", "assistant",
+        [AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
          "--no-wizard", "--no-update"],
         cwd=project,
     )
@@ -146,7 +157,7 @@ def test_config_set_role_is_yaml_only(fresh_project):
     in ai-hats.yaml without touching the canonical tree or .last_backup."""
     project = fresh_project
     _run(
-        ["ai-hats", "self", "init", "-p", "claude", "-r", "assistant",
+        [AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
          "--no-wizard", "--no-update"],
         cwd=project,
     )
@@ -156,7 +167,7 @@ def test_config_set_role_is_yaml_only(fresh_project):
     initial_imports = (canon / "imports.md").read_text()
 
     res = _run(
-        ["ai-hats", "config", "set", "-r", "sre"],
+        [AI_HATS, "config", "set", "-r", "sre"],
         cwd=project,
     )
     # CLI surfaces the new contract banner.
@@ -191,7 +202,7 @@ def test_bump_regenerates_user_rules_aggregator_only(fresh_project):
     """
     project = fresh_project
     _run(
-        ["ai-hats", "self", "init", "-p", "claude", "-r", "assistant",
+        [AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
          "--no-wizard", "--no-update"],
         cwd=project,
     )
@@ -234,13 +245,13 @@ def test_self_rollback_command_removed(fresh_project):
     must surface a 'no such command' error from click."""
     project = fresh_project
     _run(
-        ["ai-hats", "self", "init", "-p", "claude", "-r", "assistant",
+        [AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
          "--no-wizard", "--no-update"],
         cwd=project,
     )
 
     res = _run(
-        ["ai-hats", "self", "rollback"],
+        [AI_HATS, "self", "rollback"],
         cwd=project, expect_exit=None,
     )
     assert res.returncode != 0, "self rollback should not exist post-HATS-407"
