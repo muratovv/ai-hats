@@ -27,6 +27,7 @@ injection: |
   - Given-When-Then structure: setup → action → assertion.
   - Always test edge cases, error conditions, and empty/null states. Not just happy path.
   - Integration tests over excessive mocking for critical paths.
+  - **Vertical slicing only.** Write ONE test, get it to GREEN, then the next test. Do NOT write all tests first then all implementation — bulk-written tests verify shape, not behavior, and are insensitive to real changes. Never refactor while RED.
 
   ### Debugging
   Evidence-first; isolate bugs with a failing test before fixing — full protocol in skill **systematic-debugging**.
