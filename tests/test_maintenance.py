@@ -359,10 +359,10 @@ def test_update_skips_pip_when_installed_sha_matches_remote(tmp_path: Path) -> N
     """installed_sha == latest_sha → pip install short-circuited, bump still runs.
 
     HATS-follow-up: when ``run_check`` confirms the installed SHA matches
-    remote ``master``, the unconditional ``pip install --force-reinstall
-    --no-cache-dir`` is a 10-15s no-op (~minute on slow links) that users
-    have mistaken for a hang. Reuse the probe entry to short-circuit pip;
-    bump still runs so any pending in-process migrations apply.
+    remote ``master``, the unconditional ``pip install --force-reinstall``
+    is a 10-15s no-op (~minute on slow links) that users have mistaken
+    for a hang. Reuse the probe entry to short-circuit pip; bump still
+    runs so any pending in-process migrations apply.
     """
     same_sha = "deadbeefcafe1234"
     exit_code, output, captured = _invoke_update(
