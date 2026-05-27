@@ -267,6 +267,25 @@ def hooks_dir(project_dir: Path) -> Path:
     return library_dir(project_dir) / "hooks"
 
 
+def user_hooks_dir(project_dir: Path) -> Path:
+    """User-owned hooks sibling: ``<ai_hats_dir>/user-hooks/`` (HATS-549).
+
+    Sibling of :func:`hooks_dir` but EXPLICITLY outside the
+    ai-hats-managed namespace. Files relocated here by the v4 migration
+    are project-authored; ai-hats does not sweep, materialize, or
+    auto-wire them. Re-enabling a relocated hook is a manual
+    user action — see the Stage B inventory entry written at migration
+    time for the copy-paste snippet.
+
+    The separation prevents the failure class observed in the proxmox
+    regression: a user-authored ``.py`` cohabited with managed ``.sh``
+    files under ``library/hooks/`` and got swept by a manifest-driven
+    cleanup pass in an older ai-hats codepath. With the namespaces
+    cleanly split, no managed sweep can ever touch user content.
+    """
+    return ai_hats_dir(project_dir) / "user-hooks"
+
+
 # ---------- Framework-root artefacts ----------
 
 

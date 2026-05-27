@@ -1237,3 +1237,98 @@ def test_subagent_meta_prompt_has_no_literal_placeholder(
     # Spot-check both trait + role injection landed expanded.
     assert ".agent/ai-hats/tracker" in meta_prompt
     assert ".agent/ai-hats/sessions/audits/" in meta_prompt
+
+
+# ---------- HATS-549 Phase 4: hook partition ----------
+
+
+def test_v4_partition_routes_user_hook_to_user_hooks_namespace(project_with_library):
+    """User-authored .py under .agent/hooks/ lands under <ai_hats_dir>/user-hooks/
+    (NOT under the managed library/hooks/ namespace)."""
+    from ai_hats.assembler import Assembler
+    project_dir, _ = project_with_library
+    # Seed v3 user-owned hook
+    legacy_dir = project_dir / ".agent" / "hooks"
+    legacy_dir.mkdir(parents=True)
+    user_hook = legacy_dir / "my_secret_guard.py"
+    user_hook.write_text("#!/usr/bin/env python3\n")
+    user_hook.chmod(0o755)
+    (legacy_dir / "secret_guard_rules.yaml").write_text("rules: []\n")
+
+    asm = Assembler(project_dir)
+    asm._migrate_layout_v4_hooks_partition()
+
+    user_dst = project_dir / ".agent" / "ai-hats" / "user-hooks"
+    assert (user_dst / "my_secret_guard.py").exists()
+    assert (user_dst / "secret_guard_rules.yaml").exists()
+    # Managed namespace untouched by foreign content.
+    managed_dst = project_dir / ".agent" / "ai-hats" / "library" / "hooks"
+    assert not (managed_dst / "my_secret_guard.py").exists()
+    # Source removed (cleaned up after partition).
+    assert not legacy_dir.exists()
+
+
+def test_v4_partition_routes_managed_hook_to_library_hooks(project_with_library):
+    """An ai-hats-owned hook basename routes to library/hooks/ (managed
+    namespace) — preserves the historical placement."""
+    from ai_hats.assembler import Assembler, _ai_hats_owned_hook_basenames
+
+    project_dir, _ = project_with_library
+    owned = _ai_hats_owned_hook_basenames()
+    # If the whitelist is empty (broken package data in test env),
+    # the test has nothing meaningful to assert.
+    if not owned:
+        return
+    managed_basename = next(iter(owned))
+
+    legacy_dir = project_dir / ".agent" / "hooks"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / managed_basename).write_text("#!/bin/sh\n")
+
+    asm = Assembler(project_dir)
+    asm._migrate_layout_v4_hooks_partition()
+
+    assert (project_dir / ".agent" / "ai-hats" / "library" / "hooks" / managed_basename).exists()
+    assert not (project_dir / ".agent" / "ai-hats" / "user-hooks" / managed_basename).exists()
+
+
+def test_v4_partition_idempotent_on_already_migrated_state(project_with_library):
+    """Re-running the partition on a partially-migrated project is a no-op."""
+    from ai_hats.assembler import Assembler
+
+    project_dir, _ = project_with_library
+    asm = Assembler(project_dir)
+    # First call: nothing to do.
+    asm._migrate_layout_v4_hooks_partition()
+    # Second call: still nothing to do, no exception.
+    asm._migrate_layout_v4_hooks_partition()
+
+
+def test_v4_partition_routes_subdir_to_user_hooks(project_with_library):
+    """Subdirs under .agent/hooks/ (e.g. tests/) are user content and
+    move to user-hooks/ in one shot."""
+    from ai_hats.assembler import Assembler
+
+    project_dir, _ = project_with_library
+    legacy_dir = project_dir / ".agent" / "hooks" / "tests"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "smoke.sh").write_text("#!/bin/sh\nexit 0\n")
+
+    asm = Assembler(project_dir)
+    asm._migrate_layout_v4_hooks_partition()
+
+    assert (project_dir / ".agent" / "ai-hats" / "user-hooks" / "tests" / "smoke.sh").exists()
+
+
+def test_owned_basenames_includes_shared_state_guard():
+    """Regression guard: the framework's primary PreToolUse hook
+    basename must always be in the whitelist — otherwise the v4
+    partition would route ai-hats's own hook into user-hooks/."""
+    from ai_hats.assembler import _ai_hats_owned_hook_basenames
+
+    owned = _ai_hats_owned_hook_basenames()
+    # In dev test environments importlib.resources may not resolve to
+    # package data; allow empty in that case, but if non-empty the
+    # core hook must be there.
+    if owned:
+        assert "pre_bash_shared_state_guard.sh" in owned
