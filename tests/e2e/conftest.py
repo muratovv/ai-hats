@@ -56,6 +56,29 @@ def repo_root() -> Path:
     return REPO_ROOT
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _clean_repo_build_dir(repo_root: Path) -> None:
+    """Remove stale wheel-build artefacts from ``<repo_root>/build/``.
+
+    HATS-568: worktree-tier e2e tests run ``pip install`` against
+    ``AI_HATS_REPO_URL=<repo_root>``; pip's bdist_wheel writes into
+    ``<repo_root>/build/``. A leftover ``ai_hats-X.Y.devN.dist-info``
+    directory from a prior (often interrupted) wheel build causes
+    ``[Errno 17] File exists: build/bdist...dist-info`` across ~5
+    worktree tests on the next run.
+
+    Session-scoped + autouse so manual ``pytest -m integration ...``
+    invocations from the main checkout are protected the same way the
+    HATS-550 pre-push hook protects ``git push origin master``.
+    Idempotent; cost is one ``rmtree`` per suite (typically <50ms).
+    """
+    import shutil
+
+    build_dir = repo_root / "build"
+    if build_dir.exists():
+        shutil.rmtree(build_dir, ignore_errors=True)
+
+
 @pytest.fixture
 def requires_claude_auth() -> None:
     """Skip if ``claude`` binary missing or unauthenticated.
