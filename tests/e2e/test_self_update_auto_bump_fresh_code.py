@@ -141,17 +141,21 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
         cwd=project, env=env, timeout=180,
     )
 
-    # File migrated under the managed namespace.
-    assert (project / ".agent" / "ai-hats" / "library" / "hooks" / "guard.sh").is_file(), \
-        f"hook not migrated. stdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+    # HATS-549 Phase 4: ``guard.sh`` is user-owned (basename NOT in
+    # the ai-hats whitelist) — partition routes it to user-hooks/,
+    # healer Phase 4 pre-pass disables the settings.json entry.
+    assert (project / ".agent" / "ai-hats" / "user-hooks" / "guard.sh").is_file(), \
+        f"hook not relocated to user-hooks/. stdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+    assert not (project / ".agent" / "ai-hats" / "library" / "hooks" / "guard.sh").exists(), \
+        "user-owned hook must not land in managed library/hooks/ namespace"
 
-    # settings.json command rewritten to new path — the proxmox-fix smoke.
-    settings_data = json.loads(settings.read_text())
-    cmd = settings_data["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-    assert ".agent/hooks/" not in cmd, \
-        f"settings.json hook command not healed in single update: {cmd!r}"
-    assert "library/hooks/guard.sh" in cmd, \
-        f"new path missing from healed command: {cmd!r}"
+    # settings.json no longer carries the user-owned hook entry —
+    # disable behavior (explicit re-enable required).
+    raw_settings = settings.read_text()
+    assert ".agent/hooks/guard.sh" not in raw_settings
+    assert "library/hooks/guard.sh" not in raw_settings
+    assert "user-hooks/guard.sh" not in raw_settings, \
+        "Phase 4 disables; entry must be REMOVED, not auto-rewritten"
 
 
 @pytest.mark.integration
