@@ -581,15 +581,23 @@ class AuditWriter:
         total_in = sum(s["in"] for s in (model_stats or {}).values())
         total_out = sum(s["out"] for s in (model_stats or {}).values())
 
-        header_parts = [f"Role: {role}", f"Provider: {provider}", f"Duration: {duration}"]
-        if total_in or total_out:
-            header_parts.append(f"Tokens: {total_in:,} in / {total_out:,} out")
-
+        # HATS-561: emit the header as a list-item block matching the
+        # pre-HATS-529 ``init_audit`` + ``finalize_audit`` shape that
+        # downstream tooling (golden-path e2e, retro readers, humans
+        # scanning the doc) expects. The previous pipe-separated form
+        # ``Role: X | Provider: Y | Duration: Zs`` was harder to grep
+        # and dropped during the Path-A removal without an explicit
+        # replacement contract.
         lines = [
             f"# Session Audit: {session.session_id}",
-            " | ".join(header_parts),
             "",
+            f"- **Role**: {role}",
+            f"- **Provider**: {provider}",
+            f"- **Duration**: {duration}",
         ]
+        if total_in or total_out:
+            lines.append(f"- **Tokens**: {total_in:,} in / {total_out:,} out")
+        lines.append("")
 
         # HATS-442: preserve composition snapshot through the post-session
         # audit rebuild. The init_audit path wrote a `## Composition` section
@@ -624,9 +632,25 @@ class AuditWriter:
                 lines.append(f"👾 {resp}")
             lines.append("")
 
+        # HATS-561: emit ALL metric keys (not just ``exit_code`` + ``turns``)
+        # as bold list items, mirroring the pre-HATS-529 ``finalize_audit``
+        # body. Keys already rendered in the header are skipped to avoid
+        # duplication; ``composition`` is its own section above; ``models``
+        # is folded into the dedicated ``## Model Usage`` block below.
+        # This restores the ``**total_cost_usd**`` / ``**claude_session_id**``
+        # markers the golden-path test asserts and the
+        # `_finalize_sub_agent` extra_metrics keys (claude SDK telemetry).
         lines.append("## Metrics")
-        lines.append(f"- exit_code: {exit_code}")
-        lines.append(f"- turns: {len(turns)}")
+        lines.append(f"- **exit_code**: {exit_code}")
+        lines.append(f"- **turns**: {len(turns)}")
+        _header_keys = {
+            "role", "provider", "exit_code", "duration",
+            "composition", "models",
+        }
+        for k, v in metrics.items():
+            if k in _header_keys:
+                continue
+            lines.append(f"- **{k}**: {v}")
 
         if model_stats:
             lines.append("")

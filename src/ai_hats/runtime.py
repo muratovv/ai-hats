@@ -129,6 +129,14 @@ def _finalize_sub_agent(
     model: str,
     isolation_mode: str,
     exit_code: int,
+    # HATS-561: ``provider`` is keyword-only with a sentinel default so
+    # legacy unit tests that exercise the function in isolation (and
+    # don't care about provider — e.g. timeout / error / tags plumbing
+    # tests) keep working without churn. EVERY production call site in
+    # ``SubAgentRunner`` passes the real provider name explicitly; the
+    # default is only the safety net for tests, NOT a fallback the
+    # production code is allowed to rely on.
+    provider: str = "unknown",
     stdout: str = "",
     stderr: str = "",
     timed_out: bool = False,
@@ -172,6 +180,15 @@ def _finalize_sub_agent(
     metrics: dict = {
         "exit_code": exit_code,
         "role": role,
+        # HATS-561: provider was previously omitted from the SubAgent
+        # finalize path's base metrics dict (only the HITL counterpart
+        # `_finalize_session_basic` wrote it). The downstream
+        # `AuditWriter._render_audit` then read `metrics.get("provider",
+        # "unknown")` → audit.md said `Provider: unknown` for every
+        # SubAgent / `execute --batch` session. Provider is known by
+        # `SubAgentRunner` (`self.assembler.project_config.provider`)
+        # and is threaded through here.
+        "provider": provider,
         "model": model,
         "isolation_mode": isolation_mode,
     }
@@ -1217,6 +1234,7 @@ class SubAgentRunner:
                     _finalize_sub_agent(
                         session,
                         role=role_name,
+                        provider=provider_name,
                         model=model,
                         isolation_mode=mode.value,
                         exit_code=run_result.exit_code,
@@ -1251,6 +1269,7 @@ class SubAgentRunner:
                     _finalize_sub_agent(
                         session,
                         role=role_name,
+                        provider=provider_name,
                         model=model,
                         isolation_mode=mode.value,
                         exit_code=proc.returncode,
@@ -1269,6 +1288,7 @@ class SubAgentRunner:
                 _finalize_sub_agent(
                     session,
                     role=role_name,
+                    provider=provider_name,
                     model=model,
                     isolation_mode=mode.value,
                     exit_code=SUBAGENT_EXIT_TIMEOUT,
@@ -1288,6 +1308,7 @@ class SubAgentRunner:
                 _finalize_sub_agent(
                     session,
                     role=role_name,
+                    provider=provider_name,
                     model=model,
                     isolation_mode=mode.value,
                     exit_code=SUBAGENT_EXIT_ERROR,
@@ -1664,6 +1685,7 @@ class SubAgentRunner:
             _finalize_sub_agent(
                 session,
                 role=role,
+                provider=self.assembler.project_config.provider,
                 model=model,
                 isolation_mode=mode.value,
                 exit_code=SUBAGENT_EXIT_ERROR,
@@ -1686,6 +1708,7 @@ class SubAgentRunner:
         _finalize_sub_agent(
             session,
             role=role,
+            provider=self.assembler.project_config.provider,
             model=model,
             isolation_mode=mode.value,
             exit_code=exit_code,
