@@ -6,7 +6,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .resolver import LibraryResolver
-from .models import ComponentConfig, ComponentType, HooksConfig, OverlayConfig
+from .models import (
+    ComponentConfig,
+    ComponentType,
+    HooksConfig,
+    LifecycleEvent,
+    OverlayConfig,
+)
 
 
 @dataclass(frozen=True)
@@ -387,15 +393,16 @@ class Composer:
 
     @staticmethod
     def _merge_hooks(target: HooksConfig, source: HooksConfig) -> None:
-        """Merge source hooks into target (appending scripts)."""
-        for event_name in (
-            "session_start",
-            "session_end",
-            "task_start",
-            "task_complete",
-            "task_failed",
-            "error",
-        ):
+        """Merge source hooks into target (appending scripts).
+
+        HATS-515: the event list is derived from :class:`LifecycleEvent`
+        instead of a hardcoded tuple so the catalog stays in one place.
+        Unknown event keys cannot reach this loop because the validator
+        on :class:`HooksConfig` (also HATS-515) rejects them at load
+        time; this iteration is purely structural.
+        """
+        for event in LifecycleEvent:
+            event_name = event.value
             target_list = getattr(target, event_name)
             source_list = getattr(source, event_name)
             for script in source_list:

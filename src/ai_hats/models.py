@@ -123,12 +123,45 @@ class _YamlModel(BaseModel):
 
 
 class HooksConfig(_YamlModel):
+    # HATS-515: strict — unknown event keys raise instead of being silently
+    # dropped. The base ``_YamlModel`` defaults to ``extra="ignore"`` so most
+    # YAML round-trips tolerate forward-compat keys; hooks are the
+    # exception because a typo there silently drops a hook script (same
+    # anti-pattern family as HATS-452 silent-None composition loss).
+    model_config = ConfigDict(extra="forbid")
+
     session_start: list[str] = Field(default_factory=list)
     session_end: list[str] = Field(default_factory=list)
     task_start: list[str] = Field(default_factory=list)
     task_complete: list[str] = Field(default_factory=list)
     task_failed: list[str] = Field(default_factory=list)
     error: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _check_event_keys(cls, data: Any) -> Any:
+        """Reject unknown hook event keys with a domain-specific diagnostic.
+
+        Pydantic's ``extra="forbid"`` would already raise on unknown keys,
+        but its default message ("Extra inputs are not permitted") doesn't
+        name the allowed set. This pre-validator runs first and emits a
+        message tied to the ``LifecycleEvent`` catalog — the canonical
+        source of truth — so the user immediately sees what they meant
+        to type. Only fires for dict input; direct kwarg construction
+        (``HooksConfig(session_start=[...])``) is unaffected.
+        """
+        if not isinstance(data, dict):
+            return data
+        allowed = {ev.value for ev in LifecycleEvent}
+        unknown = [k for k in data.keys() if k not in allowed]
+        if unknown:
+            allowed_sorted = ", ".join(sorted(allowed))
+            unknown_sorted = ", ".join(sorted(unknown))
+            raise ValueError(
+                f"unknown hook event(s): {unknown_sorted}; "
+                f"allowed: {allowed_sorted}"
+            )
+        return data
 
     def get_scripts(self, event: LifecycleEvent) -> list[str]:
         return getattr(self, event.value, [])

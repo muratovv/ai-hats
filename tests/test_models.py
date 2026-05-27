@@ -305,6 +305,64 @@ def test_hooks_config_get_scripts():
     assert hooks.get_scripts(LifecycleEvent.SESSION_END) == []
 
 
+# ---- HATS-515: unknown hook event keys must raise, not silently drop ----
+
+
+def test_hooks_config_unknown_event_key_raises():
+    """HATS-515: typo'd event key surfaces a clear error at load time."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as excinfo:
+        HooksConfig.model_validate({"sesion_start": ["x.sh"]})  # typo
+    msg = str(excinfo.value)
+    # Domain message names the bad key and the allowed catalog.
+    assert "sesion_start" in msg
+    assert "session_start" in msg
+    assert "task_complete" in msg
+
+
+def test_hooks_config_unknown_event_key_lists_all_allowed():
+    """The diagnostic must enumerate every LifecycleEvent value, not a subset."""
+    from pydantic import ValidationError
+    from ai_hats.models import LifecycleEvent
+
+    with pytest.raises(ValidationError) as excinfo:
+        HooksConfig.model_validate({"on_session_start": ["x.sh"]})
+    msg = str(excinfo.value)
+    for ev in LifecycleEvent:
+        assert ev.value in msg, f"{ev.value} missing from diagnostic: {msg}"
+
+
+def test_hooks_config_kwarg_construction_still_works():
+    """Regression guard: kwarg construction must bypass the dict validator."""
+    # Direct kwarg construction is the dominant path inside the composer
+    # and many tests (composer.py:149, 164; tests/test_*). HATS-515 must
+    # not break it.
+    hooks = HooksConfig(session_start=["a.sh"], task_complete=["b.sh"])
+    assert hooks.session_start == ["a.sh"]
+    assert hooks.task_complete == ["b.sh"]
+
+
+def test_composition_from_dict_propagates_hook_validation():
+    """HATS-515 fires through nested model load (Composition → hooks)."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as excinfo:
+        Composition.from_dict({"hooks": {"task_done": ["x.sh"]}})
+    assert "task_done" in str(excinfo.value)
+    assert "task_complete" in str(excinfo.value)  # allowed list present
+
+
+def test_hooks_config_all_known_keys_accepted():
+    """Sanity: every LifecycleEvent value parses cleanly via model_validate."""
+    from ai_hats.models import LifecycleEvent
+
+    payload = {ev.value: [f"{ev.value}.sh"] for ev in LifecycleEvent}
+    hooks = HooksConfig.model_validate(payload)
+    for ev in LifecycleEvent:
+        assert getattr(hooks, ev.value) == [f"{ev.value}.sh"]
+
+
 def test_component_config_from_yaml(tmp_path):
     config_file = tmp_path / "config.yaml"
     config_file.write_text("""
