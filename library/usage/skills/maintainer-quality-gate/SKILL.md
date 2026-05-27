@@ -26,7 +26,14 @@ fast-paths to exit 0 — pytest is never invoked in those cases.
 
 ## What it runs
 
-When triggered, from the repo root:
+When triggered, from the repo root, the hook first sweeps the dev
+checkout's `build/` directory (HATS-568 — stale wheel-build artefacts
+from prior `pip install` runs cause "File exists: build/bdist...dist-info"
+collisions across ~5 worktree-tier e2e tests). The sweep is idempotent
+`rm -rf build/` and emits a one-line stderr note when something was
+actually removed.
+
+Then:
 
     pytest -m "integration or smoke" tests/e2e/ tests/smoke/ \
            -q --tb=line --no-header -p no:cacheprovider
