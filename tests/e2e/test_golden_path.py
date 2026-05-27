@@ -177,7 +177,12 @@ def test_golden_path_install_init_execute_batch(
     step_names = [e["step"] for e in events]
     expected_steps = {
         "check_update_async", "compose_role", "resolve_prompt",
-        "launch_provider", "render_update_banner",
+        # HATS-535: step renamed ``launch_provider`` → ``provider``;
+        # the legacy id is kept as a registry alias in
+        # ``pipeline/steps/__init__.py`` for back-compat with any
+        # external pipeline YAML, but trace.jsonl emits the canonical
+        # name.
+        "provider", "render_update_banner",
     }
     assert expected_steps.issubset(set(step_names)), (
         f"missing pipeline steps; got {step_names}, "

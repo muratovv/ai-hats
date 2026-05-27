@@ -36,6 +36,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+# Dev-venv ``ai-hats`` binary resolved via ``sys.executable``. Works
+# from both the main checkout and from linked git worktrees (where
+# ``<worktree>/.venv`` does not exist) — pytest is always launched by
+# the dev venv's python, so its sibling ``ai-hats`` binary is the same
+# editable build we're testing. HATS-552: previously hardcoded as
+# ``repo_root / ".venv" / "bin" / "ai-hats"`` which silently broke
+# every ``tmp_project``-using e2e when run from a worktree.
+AI_HATS_BINARY = Path(sys.executable).parent / "ai-hats"
 
 
 @pytest.fixture(scope="session")
@@ -103,7 +111,7 @@ def probe_project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def tmp_project(tmp_path: Path, repo_root: Path):
+def tmp_project(tmp_path: Path):
     """Role-less ai-hats project + Project driver for CLI subprocess tests.
 
     Contract:
@@ -114,8 +122,8 @@ def tmp_project(tmp_path: Path, repo_root: Path):
       No role set — keeps the project deterministic for tests that
       exercise the CLI surface without an active role.
     * Project's ``ai_hats_binary`` points at the dev venv binary
-      (``<repo_root>/.venv/bin/ai-hats``) so tests invoke the local
-      checkout, not whatever happens to be on PATH.
+      (resolved via ``sys.executable``'s sibling, NOT the launcher on
+      PATH) so tests invoke the local checkout. Worktree-portable.
 
     Returns a :class:`tests.e2e._helpers.project.Project`. Use
     :meth:`Project.run` for one-shot ``ai-hats <cmd>`` invocations and
@@ -134,7 +142,7 @@ def tmp_project(tmp_path: Path, repo_root: Path):
     Assembler(project_path).init()
     return Project(
         path=project_path,
-        ai_hats_binary=repo_root / ".venv" / "bin" / "ai-hats",
+        ai_hats_binary=AI_HATS_BINARY,
     )
 
 

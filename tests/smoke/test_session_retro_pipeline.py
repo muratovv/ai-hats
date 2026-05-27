@@ -1,12 +1,19 @@
-"""Smoke test for the session-retro pipeline dispatch (HATS-418, HATS-535).
+"""Smoke test for the session-retro pipeline dispatch (HATS-418, HATS-535, HATS-530).
 
 Locks the in-process session-reviewer dispatch. Originally added in
 HATS-418 inside ``runtime._finalize_session`` after HATS-294's
 install-step regression silently broke the legacy
 ``session_end_auto-retro.sh`` shell hook. HATS-535 split the dispatch
 out into the ``RunSessionEnd`` step of the ``finalize-hitl`` sub-
-pipeline — the contract is unchanged, only the invocation surface
-moved.
+pipeline. HATS-530 then **extracted the decision+spawn block again**
+into its own ``MaybeSpawnSessionReviewer`` step, so both
+``finalize-hitl`` (HITL) and ``finalize-subagent`` (SubAgent) can
+share it — closing the asymmetry where SubAgent sessions never auto-
+retroed. Contract is still unchanged; only the step boundary moved.
+
+These tests therefore drive ``MaybeSpawnSessionReviewer.run(...)``
+directly, NOT ``RunSessionEnd`` — the latter retained only SESSION_END
+hooks and the retro banner UI after the HATS-530 split.
 
 Coverage:
 
@@ -29,7 +36,9 @@ import yaml
 
 from ai_hats.observe import Session
 from ai_hats.paths import runs_dir
-from ai_hats.pipeline.steps.run_session_end import RunSessionEnd
+from ai_hats.pipeline.steps.maybe_spawn_session_reviewer import (
+    MaybeSpawnSessionReviewer,
+)
 from ai_hats.retro import auto_retro
 
 
@@ -55,31 +64,20 @@ def _write_run_policy_yaml(tmp_path: Path) -> None:
     }))
 
 
-def _stub_hooks_runner(monkeypatch) -> None:
-    """No-op HooksRunner stub so the smoke tests don't touch real hooks."""
-    from ai_hats import runtime as runtime_module
-
-    class _StubHooksRunner:
-        def __init__(self, hooks_dir, project_dir):
-            pass
-
-        def run(self, event, env=None):
-            return []
-
-    monkeypatch.setattr(runtime_module, "HooksRunner", _StubHooksRunner)
-
-
 def _run_step(tmp_path: Path) -> None:
+    """Drive the auto-retro decision + spawn step in isolation.
+
+    Post-HATS-530 surface: spawning lives in
+    ``MaybeSpawnSessionReviewer``. This helper exists so the three
+    dispatch-shape tests below share an identical setup and only the
+    monkeypatched spawner / env differs between them.
+    """
     session = _make_session(tmp_path)
     session.init_audit(role="primary", provider="claude")
-    step = RunSessionEnd()
+    step = MaybeSpawnSessionReviewer()
     step.run(
         session_id=session.session_id,
-        session_dir=session.session_dir,
         project_dir=tmp_path,
-        exit_code=0,
-        audit_path=session.audit_path,
-        hooks_env={},
     )
 
 
@@ -92,7 +90,6 @@ def _run_step(tmp_path: Path) -> None:
 def test_run_action_dispatches_session_reviewer(tmp_path, monkeypatch, capsys):
     """`action == "run"` → `_spawn_session_reviewer_background(...)` invoked."""
     _write_run_policy_yaml(tmp_path)
-    _stub_hooks_runner(monkeypatch)
     spawned: list[tuple[Path, str]] = []
     monkeypatch.setattr(
         auto_retro, "_spawn_session_reviewer_background",
@@ -112,7 +109,6 @@ def test_run_action_dispatches_session_reviewer(tmp_path, monkeypatch, capsys):
 def test_recursion_guard_suppresses_dispatch(tmp_path, monkeypatch, capsys):
     """`HATS_SKIP_RETRO=1` in env must skip the in-process spawn (HATS-252)."""
     _write_run_policy_yaml(tmp_path)
-    _stub_hooks_runner(monkeypatch)
     spawned: list[tuple[Path, str]] = []
     monkeypatch.setattr(
         auto_retro, "_spawn_session_reviewer_background",
@@ -143,7 +139,6 @@ def test_skip_action_does_not_dispatch(tmp_path, monkeypatch, capsys):
             },
         },
     }))
-    _stub_hooks_runner(monkeypatch)
     spawned: list[tuple[Path, str]] = []
     monkeypatch.setattr(
         auto_retro, "_spawn_session_reviewer_background",
