@@ -95,15 +95,39 @@ def _write_child(tmp_path: Path, name: str, source: str) -> Path:
 @pytest.fixture
 def _import_pty_shutdown(monkeypatch):
     """Insert worktree src/ onto sys.path so we exercise THIS branch's code,
-    not whatever the editable install at /Users/.../ai-hats points at."""
+    not whatever the editable install at /Users/.../ai-hats points at.
+
+    HATS-562: snapshot + restore sys.modules entries we evict so subsequent
+    tests (which captured module-level references at collection time) do not
+    end up monkeypatching a stale module object while production code
+    re-imports a fresh one. Without restoration, every smoke/integration test
+    that does ``monkeypatch.setattr(auto_retro, ...)`` after this fixture
+    runs silently patches a dead module and the production code path keeps
+    using the original function.
+    """
     src = Path(__file__).resolve().parent.parent.parent / "src"
     monkeypatch.syspath_prepend(str(src))
-    # Drop any cached import from the global editable install.
-    for mod in list(sys.modules):
-        if mod == "ai_hats" or mod.startswith("ai_hats."):
-            del sys.modules[mod]
-    from ai_hats import pty_shutdown
-    return pty_shutdown
+    # Snapshot the cached imports we are about to drop so we can put the
+    # ORIGINAL module objects back on teardown — other tests still hold
+    # references to them.
+    snapshot = {
+        name: mod
+        for name, mod in sys.modules.items()
+        if name == "ai_hats" or name.startswith("ai_hats.")
+    }
+    for name in snapshot:
+        del sys.modules[name]
+    try:
+        from ai_hats import pty_shutdown
+        yield pty_shutdown
+    finally:
+        # Drop whatever the fixture's body imported, then restore the
+        # original cache so module-level references in other tests stay
+        # valid.
+        for name in list(sys.modules):
+            if name == "ai_hats" or name.startswith("ai_hats."):
+                del sys.modules[name]
+        sys.modules.update(snapshot)
 
 
 @pytest.mark.integration

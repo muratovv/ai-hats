@@ -24,6 +24,20 @@ Coverage:
 * Skip / hint actions do not spawn.
 * Spawner itself uses ``start_new_session=True`` so the child survives
   parent-shell ``SIGHUP``.
+
+Monkeypatch invocation style — HATS-562: the three dispatch-shape tests
+patch ``_spawn_session_reviewer_background`` via the **string form**
+(``"ai_hats.retro.auto_retro._spawn_session_reviewer_background"``)
+rather than the object form ``(auto_retro, "...")``. String form
+resolves the module via ``importlib.import_module`` at patch time, so
+it reads ``sys.modules`` NOW and patches the live module the step will
+see. The object form binds a module reference at test-module import
+time; if any earlier fixture (notably ``_import_pty_shutdown`` in
+``tests/e2e/test_pty_shutdown_bounded.py``) evicts ``ai_hats.*`` from
+``sys.modules``, the bound reference becomes stale, the patch silently
+lands on a dead module, and production code re-imports the original
+function — leaving ``spawned`` empty in the full suite while passing in
+isolation.
 """
 
 from __future__ import annotations
@@ -92,7 +106,7 @@ def test_run_action_dispatches_session_reviewer(tmp_path, monkeypatch, capsys):
     _write_run_policy_yaml(tmp_path)
     spawned: list[tuple[Path, str]] = []
     monkeypatch.setattr(
-        auto_retro, "_spawn_session_reviewer_background",
+        "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         lambda pd, sid: spawned.append((pd, sid)),
     )
     monkeypatch.delenv("HATS_SKIP_RETRO", raising=False)
@@ -111,7 +125,7 @@ def test_recursion_guard_suppresses_dispatch(tmp_path, monkeypatch, capsys):
     _write_run_policy_yaml(tmp_path)
     spawned: list[tuple[Path, str]] = []
     monkeypatch.setattr(
-        auto_retro, "_spawn_session_reviewer_background",
+        "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         lambda pd, sid: spawned.append((pd, sid)),
     )
     monkeypatch.setenv("HATS_SKIP_RETRO", "1")
@@ -141,7 +155,7 @@ def test_skip_action_does_not_dispatch(tmp_path, monkeypatch, capsys):
     }))
     spawned: list[tuple[Path, str]] = []
     monkeypatch.setattr(
-        auto_retro, "_spawn_session_reviewer_background",
+        "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         lambda pd, sid: spawned.append((pd, sid)),
     )
     monkeypatch.delenv("HATS_SKIP_RETRO", raising=False)
