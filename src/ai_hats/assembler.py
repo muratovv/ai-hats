@@ -34,6 +34,7 @@ from .paths import (
     legacy_paths_by_class,
     rules_dir as _lib_rules_dir,
     skills_dir as _lib_skills_dir,
+    user_home,
 )
 from .placeholders import expand_path_placeholders
 from .safe_delete import discard as _safe_discard
@@ -121,8 +122,9 @@ class Assembler:
         for layer in _builtin_library_layers():
             paths.append(layer)
 
-        # Global user libraries
-        global_lib = Path.home() / ".ai-hats"
+        # Global user libraries — ``user_home()`` honours
+        # ``AI_HATS_USER_HOME`` (HATS-532) for e2e isolation.
+        global_lib = user_home() / ".ai-hats"
         if global_lib.is_dir():
             paths.append(global_lib)
 
