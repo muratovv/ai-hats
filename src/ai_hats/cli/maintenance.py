@@ -848,6 +848,7 @@ def update(
                 # the bump pipeline is now an explicit composition (same
                 # as ``cli/assembly.py::do_bump``).
                 from ..materialize import compose_for_role
+                from ..migration_assert import assert_runtime_hooks_resolve
                 from ..migration_backup import snapshot_pre_bump
 
                 # HATS-549: pre-bump snapshot for the no-version-change
@@ -861,7 +862,7 @@ def update(
                 # outer ``except (AssemblyError, ValueError, OSError)``
                 # which renders "Bump failed:" and preserves
                 # before_rules/before_skills as the after-state.
-                snapshot_pre_bump(project_dir, label="bump")
+                inproc_backup = snapshot_pre_bump(project_dir, label="bump")
 
                 with console.status(
                     f"[cyan]Migrating / refreshing[/] {active_role} …",
@@ -877,6 +878,14 @@ def update(
                     )
                     asm._refresh(install_time=True, result=bump_result)
                     asm._run_diagnostics()
+                    # HATS-549 Phase 3: end-of-bump smoke-assert.
+                    # Mirrors do_bump's final step. Failure surfaces
+                    # via the outer AssemblyError/OSError except handler
+                    # which renders "Bump failed:" — composition diff
+                    # below shows no changes.
+                    assert_runtime_hooks_resolve(
+                        project_dir, backup_path=inproc_backup,
+                    )
                 if bump_result:
                     after_rules = {r.name for r in bump_result.rules}
                     after_skills = {s.name for s in bump_result.skills}
