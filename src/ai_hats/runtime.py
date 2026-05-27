@@ -756,6 +756,24 @@ class WrapRunner:
         session.log_trace(TraceTag.SYS, f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")
 
+        # HATS-566: eager-load finalize pipeline NOW so its YAML is
+        # parsed against the step registry that's currently in memory.
+        # If we deferred this to the `finally` block (where
+        # ``_run_finalize_hitl`` lives), a long-running session that
+        # straddles a working-tree update (editable install + ``git
+        # pull`` mid-session) would read the *new* YAML against the
+        # *old* registry — see the StepRegistryError observed in
+        # session 20260527-085647-1 after the HATS-530 merge landed
+        # while the wrap was still alive. The cache in
+        # ``loader._CORE_PIPELINE_CACHE`` makes the later
+        # ``load_core_pipeline`` call inside ``_run_finalize_hitl`` a
+        # no-op lookup.
+        try:
+            from .pipeline.loader import load_core_pipeline
+            load_core_pipeline("finalize-hitl")
+        except Exception:
+            logger.warning("finalize-hitl preload failed", exc_info=True)
+
         _print_session_start(active_role, provider_name, session.session_id)
 
         # PTY proxy via pty.spawn with sidecar trace.

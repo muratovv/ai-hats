@@ -41,7 +41,21 @@ class PipelineYamlError(ValueError):
     """Malformed pipeline YAML or unresolvable step reference."""
 
 
-def load_core_pipeline(name: str) -> Pipeline:
+# HATS-566: memoize core pipelines to guard against editable-install
+# YAML drift. When the ai-hats source tree is updated mid-session
+# (``git pull`` / merge during a long-running ``WrapRunner`` PTY
+# session), ``importlib.resources.files("ai_hats.library")`` resolves
+# to the live working tree — so a fresh ``load_core_pipeline`` call at
+# session-end reads the *new* YAML against the *old* step registry
+# that was imported at process start. Memoizing the parsed Pipeline at
+# first access (combined with eager preload from ``WrapRunner.run``
+# before PTY spawn) freezes the YAML against the matching registry
+# snapshot. Wheel/site-packages installs are immutable so unaffected;
+# the cache is harmless there.
+_CORE_PIPELINE_CACHE: dict[str, Pipeline] = {}
+
+
+def load_core_pipeline(name: str, *, use_cache: bool = True) -> Pipeline:
     """Load a pipeline by name from ``ai_hats.library/core/pipelines/``.
 
     Convenience wrapper around :func:`load_pipeline` for the common case
@@ -50,12 +64,30 @@ def load_core_pipeline(name: str) -> Pipeline:
     finalization to invoke sub-pipelines without going through the
     :class:`PipelineHarness` (which creates a per-session namespace dir
     + retention sweep — overkill for an inline sub-pipeline).
+
+    Memoized by default (HATS-566); pass ``use_cache=False`` for tests
+    that rebuild the registry between calls.
     """
+    if use_cache and name in _CORE_PIPELINE_CACHE:
+        return _CORE_PIPELINE_CACHE[name]
+
     from importlib.resources import as_file, files
 
     res = files("ai_hats.library") / "core" / "pipelines" / f"{name}.yaml"
     with as_file(res) as yaml_path:
-        return load_pipeline(yaml_path)
+        pipeline = load_pipeline(yaml_path)
+    if use_cache:
+        _CORE_PIPELINE_CACHE[name] = pipeline
+    return pipeline
+
+
+def clear_core_pipeline_cache() -> None:
+    """Drop the memoized core-pipeline cache (HATS-566).
+
+    Intended for tests that swap the step registry or monkey-patch
+    pipeline YAMLs between cases; production code never needs this.
+    """
+    _CORE_PIPELINE_CACHE.clear()
 
 
 def load_pipeline(yaml_path: Path) -> Pipeline:

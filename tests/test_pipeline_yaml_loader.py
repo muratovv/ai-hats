@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.pipeline.loader import PipelineYamlError, load_pipeline
+from ai_hats.pipeline.loader import (
+    PipelineYamlError,
+    clear_core_pipeline_cache,
+    load_core_pipeline,
+    load_pipeline,
+)
 
 
 _BUILTIN_DIR = (
@@ -125,6 +130,45 @@ def test_load_step_with_invalid_harness_block_raises(tmp_path: Path):
     )
     with pytest.raises(PipelineYamlError, match="harness:.*reporting must be bool"):
         load_pipeline(f)
+
+
+# ---- load_core_pipeline cache (HATS-566) ----
+
+
+def test_load_core_pipeline_memoizes_first_call():
+    """HATS-566: ``load_core_pipeline`` returns the same Pipeline object
+    on repeated calls so its YAML is parsed against the step registry
+    in memory at first access, not at each call.
+
+    Regression guard for editable-install drift: a long-running session
+    that straddles a working-tree update would otherwise read updated
+    YAML at session-end against the stale module-loaded registry, hit
+    ``StepRegistryError``, and lose ``run_session_end`` + auto-retro
+    spawn from the ``finalize-hitl`` pipeline.
+    """
+    clear_core_pipeline_cache()
+    try:
+        first = load_core_pipeline("finalize-hitl")
+        second = load_core_pipeline("finalize-hitl")
+        assert first is second
+    finally:
+        clear_core_pipeline_cache()
+
+
+def test_load_core_pipeline_use_cache_false_bypasses_memo():
+    """``use_cache=False`` skips the memo for tests that swap the
+    registry between cases.
+    """
+    clear_core_pipeline_cache()
+    try:
+        cached = load_core_pipeline("finalize-hitl")
+        fresh = load_core_pipeline("finalize-hitl", use_cache=False)
+        # Same pipeline definition, but distinct Pipeline objects when
+        # cache is bypassed — proves the path is hot.
+        assert fresh is not cached
+        assert fresh.io.name == cached.io.name
+    finally:
+        clear_core_pipeline_cache()
 
 
 # ---- __main__ dry-run inspector ----
