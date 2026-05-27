@@ -177,6 +177,7 @@ def test_timeout_finalize_is_provider_agnostic(tmp_path, provider):
     _finalize_sub_agent(
         session,
         role="primary",
+        provider=provider,
         model="",
         isolation_mode="discard",
         exit_code=SUBAGENT_EXIT_TIMEOUT,
@@ -186,9 +187,12 @@ def test_timeout_finalize_is_provider_agnostic(tmp_path, provider):
     )
 
     m = _read_metrics(session)
+    # HATS-561: ``provider`` lands in metrics so post-session audit
+    # rebuild stops emitting ``Provider: unknown``.
     assert m == {
         "exit_code": 124,
         "role": "primary",
+        "provider": provider,
         "model": "",
         "isolation_mode": "discard",
         "timed_out": True,
@@ -206,6 +210,7 @@ def test_success_finalize_is_provider_agnostic(tmp_path, provider):
     _finalize_sub_agent(
         session,
         role="primary",
+        provider=provider,
         model="sonnet",
         isolation_mode="discard",
         exit_code=0,
@@ -214,9 +219,12 @@ def test_success_finalize_is_provider_agnostic(tmp_path, provider):
     )
 
     m = _read_metrics(session)
+    # HATS-561: ``provider`` lands in metrics so post-session audit
+    # rebuild stops emitting ``Provider: unknown``.
     assert m == {
         "exit_code": 0,
         "role": "primary",
+        "provider": provider,
         "model": "sonnet",
         "isolation_mode": "discard",
     }
