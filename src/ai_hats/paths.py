@@ -76,6 +76,36 @@ def _read_venv_path_from_yaml(project_dir: Path) -> str | None:
     return val if isinstance(val, str) and val else None
 
 
+def user_home() -> Path:
+    """User home for ai-hats-managed global artefacts (HATS-532).
+
+    Precedence:
+      1. ``AI_HATS_USER_HOME`` env var — runtime override, ``~`` expanded.
+      2. Default ``Path.home()``.
+
+    Why a dedicated knob (vs. just letting tests set ``HOME``): on
+    macOS, claude-cli auth lives in the Keychain entry
+    ``Claude Code-credentials``, scoped per the real ``HOME``. Setting
+    ``HOME=<tmp>`` for an e2e test cascades into the spawned claude
+    binary and produces ``Not logged in``. ``AI_HATS_USER_HOME``
+    intercepts ONLY the ai-hats-managed `~/.ai-hats/` resolution,
+    leaving ``HOME`` (and therefore claude auth) intact.
+
+    Sanctioned call sites — and these are the ONLY places that should
+    bypass ``Path.home()`` for the global ai-hats slice:
+      - :meth:`UserConfig.default_path`
+      - :class:`Assembler` global library layer
+      - ``cli.maintenance._snapshot_library``
+
+    Other ``Path.home()`` usages in the codebase (e.g. ``~/.claude/``
+    skills marker, expanding user-supplied ``~`` in CLI paths) are
+    NOT covered by this override — they're not ai-hats-managed global
+    state.
+    """
+    raw = os.environ.get("AI_HATS_USER_HOME")
+    return Path(raw).expanduser() if raw else Path.home()
+
+
 def ai_hats_dir(project_dir: Path) -> Path:
     """Base dir for ai-hats managed artefacts.
 
