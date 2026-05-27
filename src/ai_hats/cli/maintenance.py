@@ -679,6 +679,10 @@ def update(
     active_role = None
     before_rules: set[str] = set()
     before_skills: set[str] = set()
+    # HATS-549 Phase 3: flag for in-process bump failure (smoke-assert
+    # raise or any AssemblyError/OSError from the bump pipeline).
+    # Used at the bottom of the function to surface a non-zero exit.
+    bump_in_process_failed = False
 
     if config_path.exists():
         # HATS-408 review (R1): we used to call ``ProjectConfig.from_yaml``
@@ -897,6 +901,14 @@ def update(
             except (AssemblyError, ValueError, OSError) as e:
                 console.print(f"  [red]Bump failed[/]: {e}")
                 after_rules, after_skills = before_rules, before_skills
+                # HATS-549 Phase 3 wiring: surface the failure as a
+                # non-zero CLI exit so callers (CI, scripts, hooks)
+                # detect the bump didn't complete. Pre-fix this branch
+                # swallowed AssemblyError and reported "Bump failed:"
+                # on stdout but returned exit 0 — defeating the
+                # safety-net contract end-of-bump smoke-assert
+                # established.
+                bump_in_process_failed = True
 
         added_r = sorted(after_rules - before_rules)
         removed_r = sorted(before_rules - after_rules)
@@ -914,6 +926,13 @@ def update(
                 console.print(f"  [red]-[/] skill: {s}", highlight=False)
         else:
             console.print("  [dim]No composition changes[/]")
+
+        # HATS-549 Phase 3: propagate in-process bump failure as a
+        # non-zero exit so the safety-net contract holds for the
+        # no-version-change path too (`do_bump` already does this
+        # natively via the AssemblyError-return-1 branch).
+        if bump_in_process_failed:
+            sys.exit(1)
 
 
 # HATS-285: `ai-hats self migrate` removed. Migration is transparent inside
