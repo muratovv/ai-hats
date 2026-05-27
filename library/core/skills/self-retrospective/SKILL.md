@@ -38,38 +38,104 @@ Analyze completed or failed work to identify systemic improvements.
     into the hypothesis backlog, not the task tracker. The supervisor
     chooses what to record.
 
-    **Classify each finding:**
-    - **Pattern** — phrased as "<actor> <systematically does/skips/forgets>
-      <what>". Reproducible across sessions. → `ai-hats reflect issue`.
-    - **Fix** — phrased as "change / add / remove <a concrete artifact>".
-      One-shot, doesn't recur in the same form. → task card (step 7).
+    Run the 5 sub-steps in order. Do not skip ahead — each gate exists
+    because skipping it produced a real class of HYP-backlog noise
+    (audit of HYP-001..026 found ~50% drop+merge waste, baseline for
+    HATS-548).
 
-    **Reformulate** each pattern as a one-line observation in
-    **actor + behaviour** form, NOT imperative. Example:
-    - ✓ "agent skips supervisor comments left in plan.md during plan
-      iteration"
-    - ✗ "make agent re-read plan.md before editing" (that's a fix)
+    #### 4.5.a Filter — drop noise BEFORE formulating
 
-    **Present** the candidates to the supervisor as a numbered list:
+    Apply each criterion. The candidate survives only if ALL hold:
+
+    - **Recurrence or cost:** observed ≥2 times in this session, OR
+      cost ≥5 minutes wasted, OR has at least one named adjacent
+      flavor (sibling failure mode with the same shape).
+    - **Not already covered:** run `ai-hats task hyp list --status
+      active --json` and verify no active HYP describes the same
+      mechanism. If one does, the finding becomes evidence for that
+      HYP via `ai-hats reflect issue` — but presented as a verdict
+      contribution, not a new candidate.
+    - **Cause is hypothesised, not known:** if you can name the
+      mechanism AND the fix with confidence, it belongs in the task
+      tracker (step 7), not in HYP — HYP is for behavioural patterns
+      whose cause is uncertain enough to need observation across
+      sessions.
+
+    A finding that fails any criterion is **not** a HYP. Either drop
+    it, route it to step 7 (task card), or attach it as evidence to an
+    existing HYP. Single-instance one-off contexts almost always fail
+    the recurrence gate — most of the dropped HYPs in the HATS-548
+    baseline were single-context (HYP-023, 024, 026).
+
+    #### 4.5.b Root-cause — chain to Step 3, do not restate
+
+    For every surviving candidate, take the 5 Whys output from Step 3
+    and walk it down until the answer is a **behaviour mechanism**,
+    not a behaviour description. Stop when the next "why?" would name
+    an environmental / system constraint outside the agent's control.
+
+    Mechanism = "rule X fires only in context Y because…",
+                "agent generalises from prior Z without re-reading…",
+                "agent treats each flavor as a one-shot lesson…"
+    NOT mechanism = "agent forgot to do X",
+                    "agent assumed X" (assumed *why*? keep asking).
+
+    Sanity check: if your CAUSE sentence is the same content as the
+    OBSERVATION sentence with different wording, you have not reached
+    the mechanism. Go one level deeper. (HYP-023 is the negative
+    example: cause text "agent assumes transition requires pre-merge"
+    sounded like a mechanism but was actually surface — the HYP was
+    refuted because the real mechanism was muscle-memory git-merge
+    reflex unrelated to FSM assumptions.)
+
+    #### 4.5.c Generalize — collapse to class
+
+    Lay all surviving candidates side-by-side. For any two (or more)
+    that share a mechanism, fold them into ONE class-level HYP that
+    names both contexts as flavors. Reference HYP-022 as the model:
+    one HYP, four named flavors of the same shell-quoting class.
+
+    Also re-scan active HYPs for class-level overlap — if your new
+    class-HYP is a generalisation of an existing narrow HYP, propose
+    superseding the narrow one rather than adding a third HYP.
+
+    #### 4.5.d Frame — present with concrete trace, not a one-liner
+
+    For each surviving candidate, write a block in this shape:
+
     ```
-    Candidate hypotheses from this retro:
-      [1] agent skips supervisor comments left in plan.md during plan iteration
-      [2] agent over-elaborates plan before approach confirmation
+    [N] OBSERVATION
+        <one-line symptom — what the supervisor would see at a glance>
+
+        WHAT WENT WRONG (concrete trace, 3-7 lines)
+        - <what the agent did, with specific commands / files / cites>
+        - <what was expected instead>
+        - <how it surfaced: error message, supervisor pushback, lost time>
+        - <if class-level: name 2+ flavors observed or named>
+
+        HYPOTHESISED CAUSE
+        <mechanism from 4.5.b — one or two sentences>
+
+        SCOPE
+        single | class (list adjacent flavors)
+
+        WHY RECORD
+        <what evidence the observation window collects;
+         what changes if confirmed vs refuted>
     ```
 
-    **Ask:** "Record as hypotheses? (all / 1,3 / none)".
+    One-liner candidate lists are forbidden — the supervisor needs the
+    trace to decide keep/drop without re-reading the session log.
 
-    **Act** on the confirmed set — one call per item, in background:
-    ```
-    ai-hats reflect issue "agent skips supervisor comments..." --bg
-    ```
+    #### 4.5.e Confirm — supervisor decides, then act
 
-    The intake pipeline will dedup against existing active HYPs and
-    either merge as fresh evidence or open a new one. Do NOT call
-    `reflect issue` without the supervisor's confirmation — the HYP
-    backlog is their source of truth, not an agentic auto-flush.
+    Present the framed blocks. Ask: "Record as hypotheses? (all /
+    1,3 / none / discuss)". On confirmation, call `ai-hats reflect
+    issue` (one per item, `--bg` ok). Do NOT call before confirmation
+    — the HYP backlog is the supervisor's source of truth, not an
+    agentic auto-flush.
 
-    Skip this step entirely if no findings classify as patterns.
+    Skip 4.5 entirely if no findings survive 4.5.a.
 
 5. **Quantify:** "7 iterations wasted", "3 failed attempts before pivot" —
    numbers make the impact visible.
@@ -98,3 +164,15 @@ Analyze completed or failed work to identify systemic improvements.
 - Calling `ai-hats reflect issue` without the supervisor's confirmation —
   the hypothesis backlog is their source of truth, not an agentic
   auto-flush. Always present the candidate list and wait.
+- **Skipping the 4.5.a filter** and dumping every candidate at the
+  supervisor — when the agent retracts after pushback ("на самом деле
+  это шум"), the candidate failed the filter and should never have been
+  presented. Run the filter first.
+- **Restating the observation as the cause** in 4.5.b — if your CAUSE
+  sentence paraphrases the OBSERVATION, you stopped one "why?" short.
+- **One-liner candidate presentation** — Frame (4.5.d) demands a
+  concrete trace. A line like "agent omits paths in tracker references"
+  forces the supervisor to reconstruct context; the trace block makes
+  the keep/drop call obvious.
+- **Filing N narrow HYPs that share a mechanism** — collapse to one
+  class HYP at 4.5.c. HYP-022 is the model (one HYP, four flavors).
