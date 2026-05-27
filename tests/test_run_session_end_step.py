@@ -1,19 +1,20 @@
-"""Tests for the ``RunSessionEnd`` pipeline step (HATS-535).
+"""Tests for the ``RunSessionEnd`` pipeline step (HATS-535, HATS-530).
 
-Covers retro decision/write-log, SESSION_END hooks dispatch, and the
-HATS-086 SIGINT-safety invariants previously enforced inside the
-``_finalize_session`` megafunction.
+Post-HATS-530 this step owns SESSION_END hooks + retro reminder banner
+only — auto-retro decision/spawn moved to
+``MaybeSpawnSessionReviewer`` (see
+``tests/test_maybe_spawn_session_reviewer_step.py``). The HATS-086
+SIGINT-safety invariants previously enforced inside the
+``_finalize_session`` megafunction are still pinned here on the
+hooks path.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
-
 from ai_hats.models import LifecycleEvent
 from ai_hats.observe import Session
-from ai_hats.paths import runs_dir
 from ai_hats.pipeline.steps.run_session_end import RunSessionEnd
 
 
@@ -36,6 +37,9 @@ def test_io_contract():
         "session_id", "session_dir", "project_dir",
         "exit_code", "audit_path", "hooks_env",
     })
+    # HATS-530: retro_decision is produced upstream by
+    # MaybeSpawnSessionReviewer; absent it the banner is silently skipped.
+    assert io.optional == frozenset({"retro_decision"})
     assert io.produces == frozenset()
 
 
@@ -44,52 +48,10 @@ def test_failure_policy_continue():
 
 
 # ---------------------------------------------------------------------------
-# Retro decision is logged before hooks fire (HATS-158 invariant)
+# Retro decision write-log is now MaybeSpawnSessionReviewer's responsibility
+# (HATS-530) — see tests/test_maybe_spawn_session_reviewer_step.py.
+# RunSessionEnd here covers hooks + banner only.
 # ---------------------------------------------------------------------------
-
-
-def test_writes_runtime_decision_line(tmp_path, monkeypatch):
-    """The step writes a ``runtime\\tdecision`` line to retro.log BEFORE
-    hooks fire — so even a hook crash leaves a trace."""
-    session = make_session(tmp_path)
-    session.init_audit(role="primary", provider="claude")
-    (tmp_path / "ai-hats.yaml").write_text(yaml.dump({
-        "schema_version": 2,
-        "provider": "claude",
-        "active_role": "primary",
-        "feedback": {"session_retro": {"policy": "smart",
-                     "smart_threshold": {"min_turns": 1, "min_tool_calls": 1},
-                     "mode": "programmatic", "background": True}},
-    }))
-
-    # Force the hook runner to blow up after runtime writes its decision.
-    from ai_hats import runtime as runtime_module
-
-    class _ExplodingHooksRunner:
-        def __init__(self, hooks_dir, project_dir):
-            pass
-
-        def run(self, event, env=None):
-            raise RuntimeError("hook boom")
-
-    monkeypatch.setattr(runtime_module, "HooksRunner", _ExplodingHooksRunner)
-
-    step = RunSessionEnd()
-    step.run(
-        session_id=session.session_id,
-        session_dir=session.session_dir,
-        project_dir=tmp_path,
-        exit_code=0,
-        audit_path=session.audit_path,
-        hooks_env={},
-    )
-
-    log = runs_dir(tmp_path) / "session_test" / "retro.log"
-    assert log.exists(), "retro.log must be created BEFORE hooks fire"
-    content = log.read_text()
-    assert "runtime\tdecision" in content
-    # Short session (no metrics → turns=0) → skip with threshold reason.
-    assert "skip" in content
 
 
 # ---------------------------------------------------------------------------

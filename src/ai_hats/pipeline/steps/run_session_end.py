@@ -1,49 +1,38 @@
-"""``run_session_end`` step — auto-retro decision + spawn + SESSION_END hooks.
+"""``run_session_end`` step — SESSION_END hooks + retro reminder banner.
 
-Final stage of the ``finalize-hitl`` sub-pipeline (HATS-535). Runs after
-``make_audit`` so hooks and the auto-retro reviewer can read the
-structured ``audit.md`` (👤/👾/🔧/💭) instead of the incremental
-skeleton.
+Final HITL-only stage of the ``finalize-hitl`` sub-pipeline. Runs
+after ``make_audit`` and ``maybe_spawn_session_reviewer`` so hooks
+see the structured ``audit.md`` (👤/👾/🔧/💭) AND so the banner
+prints the retro decision already taken by the upstream step.
 
-Pre-refactor this logic lived inline in ``runtime._finalize_session`` —
-extraction here serves three goals: (1) test seam (instantiate
-``RunSessionEnd`` with a known session-dir + hooks_env), (2)
-pipeline-level visibility (``finalize-hitl.yaml`` shows the lifecycle
-explicitly), (3) future SubAgent parity is a one-line YAML change if
-ever desired (currently SubAgent's ``finalize-subagent.yaml`` omits
-this step to preserve pre-HATS-535 behaviour).
+Pre-HATS-530 this step also owned the auto-retro decision/spawn
+block. HATS-530 extracted that block into
+``maybe_spawn_session_reviewer`` so the SubAgent pipeline can share
+it; what remains here is HITL-specific: SESSION_END hooks dispatch
+and the cyan retro reminder banner. SubAgent's ``finalize-subagent``
+pipeline does NOT include this step — it intentionally omits
+SESSION_END hooks (pre-HATS-535 contract) and has no TTY for the
+banner.
 
-Three sub-phases, each wrapped in ``try/except (Exception,
-KeyboardInterrupt)`` per the HATS-086 invariant — a second Ctrl+C must
-not kill cleanup partway:
+Two sub-phases, each wrapped in ``try/except (Exception,
+KeyboardInterrupt)`` per the HATS-086 invariant — a second Ctrl+C
+must not kill cleanup partway:
 
-1. **Retro decision** — pure ``make_decision(project_dir, session_id)``
-   + ``write_retro_log`` so the decision survives even if the spawn
-   or hooks crash.
-2. **Session-reviewer spawn** — when ``retro.action == "run"`` AND not
-   recursion-guarded by ``HATS_SKIP_RETRO``, fire
-   ``_spawn_session_reviewer_background``.
-3. **SESSION_END hooks** — ``HooksRunner(hooks_dir, project_dir).run(
+1. **SESSION_END hooks** — ``HooksRunner(hooks_dir, project_dir).run(
    SESSION_END, env=hooks_env)``; reconstructs ``HooksRunner`` from
    ``project_dir`` rather than threading the runner instance through
    the funnel (stateless class, cheap to rebuild).
+2. **Retro reminder banner** — the cyan "Reflect through N sessions"
+   + wrap-up nudge lines. Reads ``retro_decision`` (optional input)
+   produced by ``maybe_spawn_session_reviewer``; absent
+   ``retro_decision`` → no banner (silent no-op).
 
-Plus a **retro reminder banner** at the tail (the cyan "Reflect through
-N sessions" + wrap-up nudge lines). Pre-refactor these printed inline
-inside ``_print_session_end`` BEFORE this step's logic ran; they now
-print AFTER hooks fire, which preserves visual ordering since
-``_print_session_end`` already fired in the ``Provider``'s ``finally``
-before the finalize pipeline ran.
-
-``failure_policy = "continue"`` — same rationale as ``make_audit``:
-finalization is best-effort; the pipeline runner stays oblivious to
-per-step failures (they get logged).
+``failure_policy = "continue"`` — finalization is best-effort.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from pathlib import Path
 from typing import Any, Mapping
@@ -67,6 +56,12 @@ class RunSessionEnd(Step):
                 "session_id", "session_dir", "project_dir",
                 "exit_code", "audit_path", "hooks_env",
             }),
+            # HATS-530: ``retro_decision`` is produced by
+            # ``maybe_spawn_session_reviewer`` upstream. It's optional
+            # so a finalize pipeline that skips that step (or where
+            # the decision crashed) still runs hooks cleanly — the
+            # banner just gets silently skipped.
+            optional=frozenset({"retro_decision"}),
             produces=frozenset(),
         )
 
@@ -79,41 +74,14 @@ class RunSessionEnd(Step):
         exit_code: int,
         audit_path: Path,
         hooks_env: dict[str, str],
+        retro_decision: dict | None = None,
         **_: Any,
     ) -> dict[str, Any]:
         from ...models import LifecycleEvent
         from ...paths import hooks_dir as _hooks_dir
-        from ...retro.auto_retro import (
-            _spawn_session_reviewer_background,
-            make_decision,
-            write_retro_log,
-        )
         from ...runtime import HooksRunner
 
-        del session_dir, exit_code, audit_path  # contract-required; consumed implicitly by hooks/retro readers
-
-        retro_decision: dict | None = None
-        try:
-            retro_decision = make_decision(project_dir, session_id)
-            write_retro_log(
-                project_dir, session_id,
-                "runtime", "decision",
-                f"{retro_decision['action']}: {retro_decision['reason']}",
-            )
-        except (Exception, KeyboardInterrupt):
-            logger.warning("retro decision/log failed", exc_info=True)
-
-        if (
-            retro_decision is not None
-            and retro_decision.get("action") == "run"
-            and os.environ.get("HATS_SKIP_RETRO") != "1"
-        ):
-            try:
-                _spawn_session_reviewer_background(project_dir, session_id)
-            except (Exception, KeyboardInterrupt):
-                logger.warning(
-                    "session-reviewer spawn failed", exc_info=True,
-                )
+        del session_id, session_dir, exit_code, audit_path  # contract-required; consumed implicitly by hooks readers
 
         try:
             hooks_runner = HooksRunner(_hooks_dir(project_dir), project_dir)
