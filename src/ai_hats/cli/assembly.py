@@ -183,6 +183,19 @@ def init(
     project_dir = _project_dir()
     already = (project_dir / "ai-hats.yaml").exists()
 
+    # HATS-549: pre-bump snapshot for re-init paths (non-greenfield).
+    # Greenfield init has nothing to back up — the project tree is
+    # empty from ai-hats's POV. Re-init reruns the v07 migration +
+    # registry, both of which can mutate user-managed state.
+    if already:
+        from ..migration_backup import BackupError, snapshot_pre_bump
+
+        try:
+            snapshot_pre_bump(project_dir, label="init")
+        except BackupError as be:
+            console.print(f"[red]Pre-init backup failed[/]: {be}")
+            raise SystemExit(1)
+
     # Wizard runs only when stdin is a TTY and the user did NOT supply
     # both -p and -r (which we treat as a fully-scripted invocation).
     use_wizard = (
@@ -877,9 +890,21 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
     """
     from ..assembler import AssemblyError
     from ..materialize import compose_for_role
+    from ..migration_backup import BackupError, snapshot_pre_bump
 
     asm = _assembler()
     try:
+        # 0. HATS-549: pre-bump snapshot BEFORE any destructive step.
+        # _run_v07_migration / registry healer / _migrate_layout_v4 all
+        # mutate the project tree; the tarball under /tmp is the
+        # always-on recovery handle. Hard-fail on BackupError —
+        # proceeding without a snapshot defeats the safety guarantee.
+        try:
+            snapshot_pre_bump(asm.project_dir, label="bump")
+        except BackupError as be:
+            console.print(f"[red]Pre-bump backup failed[/]: {be}")
+            return 1
+
         # 1. v0.6→v0.7 layout heal — must run BEFORE registry (step 6
         # = _migrate_layout_v4 expects v0.7 tree).
         asm._run_v07_migration(force=migrate_force, check_branches=check_branches)
