@@ -15,7 +15,11 @@ composition:
     - dev::python
     - dev::shell
   rules: []
-  skills: []
+  skills:
+    # HATS-550 — installs a pre-push hook that runs e2e+smoke when the
+    # push target is refs/heads/master. Pure infrastructure (no agent-side
+    # decision logic); hard gate, no env-var bypass.
+    - maintainer-quality-gate
   hooks:
     session_start: []
     session_end: []
