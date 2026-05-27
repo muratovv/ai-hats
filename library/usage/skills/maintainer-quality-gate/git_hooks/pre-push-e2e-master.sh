@@ -62,6 +62,18 @@ fi
 
 echo "[e2e-gate] master push detected — running e2e+smoke suite (no bypass)" >&2
 
+# HATS-568: clean stale wheel-build artefacts from the dev checkout's
+# build/ dir. Worktree-tier e2e tests run `pip install` against
+# AI_HATS_REPO_URL=<repo_root>; pip's bdist_wheel writes to
+# <repo_root>/build/. A leftover ``ai_hats-X.Y.devN.dist-info``
+# directory from an earlier (possibly interrupted) build causes
+# ``[Errno 17] File exists: build/bdist...dist-info`` failures
+# across 5 worktree tests on the next run. Idempotent rm.
+if [[ -d "$repo_root/build" ]]; then
+    echo "[e2e-gate] cleaning stale $repo_root/build/ (HATS-568)" >&2
+    rm -rf "$repo_root/build" 2>/dev/null || true
+fi
+
 output=$(
     cd "$repo_root" && \
     pytest -m "integration or smoke" tests/e2e/ tests/smoke/ \
