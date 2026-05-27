@@ -260,7 +260,19 @@ def snapshot_pre_bump(
     # consistent return type and the user has proof a bump ran. The
     # tarball will be ~empty but valid.
     def _filter(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
-        return None if _should_exclude(info.name) else info
+        # Drop symlinks (HATS-549 review S.1): preserves backup
+        # restorability — a symlink pointing outside project_dir would
+        # be archived as-is and silently violate the safety contract
+        # on extract. On macOS APFS a symlink to an absolute path can
+        # also surface OSError(EINVAL) on tarball write; dropping
+        # them avoids the failure mode entirely. Symlinks are rare
+        # under .agent/ and the user can recreate them post-restore
+        # if they relied on one.
+        if info.issym() or info.islnk():
+            return None
+        if _should_exclude(info.name):
+            return None
+        return info
 
     try:
         with tarfile.open(target, mode="w:gz") as tar:

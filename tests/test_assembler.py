@@ -1332,3 +1332,71 @@ def test_owned_basenames_includes_shared_state_guard():
     # core hook must be there.
     if owned:
         assert "pre_bash_shared_state_guard.sh" in owned
+
+
+def test_v4_partition_reconciles_stuck_state_in_managed_namespace(project_with_library):
+    """HATS-549 review fix: a user-owned hook that landed in
+    library/hooks/ via a pre-Phase-4 auto-heal must be moved out to
+    user-hooks/ on the next bump — otherwise it stays in the managed
+    namespace where future framework sweeps could discard it."""
+    from ai_hats.assembler import Assembler
+
+    project_dir, _ = project_with_library
+    # Simulate stuck-state: foreign .py already sitting in managed
+    # namespace (no legacy .agent/hooks/ to partition this time).
+    managed = project_dir / ".agent" / "ai-hats" / "library" / "hooks"
+    managed.mkdir(parents=True)
+    (managed / "stuck.py").write_text("#!/usr/bin/env python3\n")
+    # Also: a framework bookkeeping file that must survive.
+    (managed / ".manifest").write_text("pre_bash_shared_state_guard.sh\n")
+
+    asm = Assembler(project_dir)
+    asm._migrate_layout_v4_hooks_partition()
+
+    # User-owned file relocated to user-hooks/.
+    assert (project_dir / ".agent" / "ai-hats" / "user-hooks" / "stuck.py").exists()
+    assert not (managed / "stuck.py").exists()
+    # Framework bookkeeping preserved.
+    assert (managed / ".manifest").exists()
+
+
+def test_v4_partition_reconcile_preserves_managed_hook(project_with_library):
+    """Reconciliation pass MUST NOT touch ai-hats-owned hooks already
+    in library/hooks/ — they belong there."""
+    from ai_hats.assembler import Assembler, _ai_hats_owned_hook_basenames
+
+    project_dir, _ = project_with_library
+    owned = _ai_hats_owned_hook_basenames()
+    if not owned:
+        return
+    managed_name = next(iter(owned))
+    managed = project_dir / ".agent" / "ai-hats" / "library" / "hooks"
+    managed.mkdir(parents=True)
+    (managed / managed_name).write_text("#!/bin/sh\n")
+
+    asm = Assembler(project_dir)
+    asm._migrate_layout_v4_hooks_partition()
+
+    # Managed file stays put.
+    assert (managed / managed_name).exists()
+    # user-hooks not created for this scenario.
+    assert not (project_dir / ".agent" / "ai-hats" / "user-hooks" / managed_name).exists()
+
+
+def test_split_user_hook_command_recognises_post_heal_form():
+    """Phase 4 pre-pass must also detect post-heal
+    .agent/ai-hats/library/hooks/<x> form so REPEAT-bumps on
+    pre-HATS-549 stuck states heal cleanly (review fix A.4)."""
+    from ai_hats.migration_healer import _split_user_hook_command
+
+    assert _split_user_hook_command(
+        "$CLAUDE_PROJECT_DIR/.agent/ai-hats/library/hooks/foreign.py"
+    ) == "foreign.py"
+    assert _split_user_hook_command(
+        ".agent/ai-hats/library/hooks/foreign.py"
+    ) == "foreign.py"
+    # Legacy form still works.
+    assert _split_user_hook_command(".agent/hooks/foreign.py") == "foreign.py"
+    # Non-hook paths return None.
+    assert _split_user_hook_command("echo hello") is None
+    assert _split_user_hook_command(".agent/ai-hats/library/rules/x.md") is None
