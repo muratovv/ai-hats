@@ -1,6 +1,6 @@
 ---
 name: library-change-hypothesis-protocol
-description: At plan-stage of a library-curation task, file a companion HYP with an explicit verification_protocol — or record an explicit "no behavior change" note for refactors.
+description: After execute-stage commits land (diff finalized) and BEFORE the task transitions to done, file a companion HYP with an explicit verification_protocol — or record an explicit "no behavior change" note for refactors at plan-stage. NEVER file the HYP at plan-stage (precommitment anti-pattern, HATS-567).
 ---
 
 # Library-Change Hypothesis Protocol
@@ -15,18 +15,57 @@ description: At plan-stage of a library-curation task, file a companion HYP with
 > AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
 > ```
 
+## Timing — read this first
+
+Two checkpoints, NOT one:
+
+| Stage          | What you do here                                                                 |
+|----------------|----------------------------------------------------------------------------------|
+| **plan**       | Behavior-delta check only. Decide *whether* a HYP will be needed. Record decision in `plan.md`. **Do NOT create the HYP yet.** |
+| **document**   | Diff is final on `task/<id>` branch. **Now** create the HYP (`ai-hats task hyp create`), cross-link, commit. |
+
+Filing the HYP at plan-stage is a **precommitment anti-pattern**
+(HATS-567 repro). The HYP must describe what shipped — not what was
+*planned* to ship.
+
+### Why post-ship, not plan-stage
+
+1. **Falsifiability is bound to the real diff.** At plan stage the
+   final shape of the change is not yet known: scope can drift,
+   alternatives can be rejected mid-execute, wording can be rewritten.
+   A plan-stage HYP describes *intent*, not *shipment*.
+2. **Observation window opens at merge.** Until the change is on
+   `master` (or at minimum frozen on the task branch), `validation_log`
+   has nothing to accumulate. A plan-stage HYP sits `active` with no
+   evidence — noise in `ai-hats task hyp list`.
+3. **Precommitment bias.** A plan-stage HYP starts pulling the
+   implementation toward its own framing: «we already said
+   Vertical-slicing-directive will reduce bulk-tests» makes it harder
+   in execute to honestly say «this isn't enough — promote to a full
+   skill». Post-ship HYPs are observers, not advocates.
+4. **Orphan HYPs from cancelled tasks.** If a task dies in execute
+   (cancelled, scope shifted to another card), a plan-stage HYP
+   becomes a sibling artefact needing cleanup. Post-ship HYPs only
+   exist when there's a real change to observe.
+5. **Supervisor citation (HATS-567 repro).** *«Зачем нам сейчас
+   гипотезы? Их же надо завести после того как задачку сделаем.»* —
+   incident in HATS-560 closure thread, repeated in HATS-555 closure.
+
 ## When to Use
 
-Triggered at plan-stage of any task parented to **HATS-499** (the
-agent-behavior library-curation epic) — that is, any change to
+Triggered when transitioning a library-curation task from **execute**
+to **document** (i.e. after the implementing commits exist on
+`task/<id>` and diff is final). Library-curation = any change to
 `library/{core,usage}/roles/`, `library/{core,usage}/traits/`,
-`library/{core,usage}/skills/`, or `library/core/rules/`.
+`library/{core,usage}/skills/`, or `library/core/rules/`. Typically
+parented to **HATS-499**.
 
 Skip when: harness-only edits (`src/ai_hats/`, `cli/`, `scripts/`,
-`_bootstrap.py`, `cli/maintenance.py`), tasks outside HATS-499, or pure
-refactors with no observable behavior delta.
+`_bootstrap.py`, `cli/maintenance.py`), tasks outside HATS-499, or
+changes already declared "no behavior change — pure refactor" at the
+plan-stage check (see Step 1).
 
-## Why
+## Why companion HYPs at all
 
 Without a companion HYP, library-curation changes ship blind:
 
@@ -48,22 +87,27 @@ consumer side (auditor follows the protocol) lives in
 
 ## Procedure
 
-### Step 1 — Behavior delta check
+### Step 1 — Behavior delta check (plan-stage)
 
-In your task's `plan.md` (or work_log if you skipped a plan-md), answer
-two questions explicitly:
+In your task's `plan.md`, answer two questions explicitly:
 
 1. **Prior behavior?** What did agents observably do before this edit?
 2. **Post-change behavior?** What should they observably do after?
 
 Both "no observable change" → **pure refactor**. Record the decision
-explicitly in `plan.md` or via `ai-hats task work-log` (one line:
+explicitly in `plan.md` or via `ai-hats task log` (one line:
 "no behavior change — pure refactor: <reason>"). Skip the rest of this
-skill.
+skill — no HYP needed, now or later.
 
-Otherwise → continue to Step 2.
+Otherwise → continue to Step 2 **at document-stage**, not now.
 
-### Step 2 — Author the HYP
+### Step 2 — Author the HYP (document-stage, AFTER final commit)
+
+**Precondition:** the final implementing commit exists on
+`task/<id>` and the task has been transitioned `execute → document`.
+If you find yourself reaching for `hyp create` while the task is still
+`plan` or `execute`, **stop** — you're committing the HATS-567
+precommitment anti-pattern.
 
 Use `ai-hats task hyp create` (or hand-write the YAML; both routes
 work). Required fields per the existing `Hypothesis` schema:
@@ -119,36 +163,56 @@ Pick whichever protocol matches the kind of verdict you actually want
 to be able to read back in 4 weeks. Write the protocol so an auditor
 who has never seen the task can comply.
 
-### Step 3 — Cross-link
+### Step 3 — Cross-link (document-stage)
 
-- Task description references the new `HYP-NNN`.
+- Task description (or work_log entry) references the new `HYP-NNN`.
 - HYP `source_task` points back to this task.
-- Final commit body includes both IDs: e.g. `HATS-527 / HYP-016`.
+- The HYP-creation commit body (or the immediately-preceding ship
+  commit body) carries both IDs: e.g. `HATS-527 / HYP-016`.
 
-## Acceptance for this skill's own run (dogfood)
+## Anti-Patterns
 
-This very skill ships under HATS-527 alongside HYP-016. HYP-016's
-`verification_protocol` is the strict-three-line format above. HATS-528
-ships in the same PR with HYP-017 carrying the loose-paragraph format.
-The next 4 reflect-session / judge sweeps will tell us which protocol
-auditors comply with.
+### ✗ Plan-stage HYP filing (precommitment)
+
+Creating `HYP-NNN` while the task is still in `plan` or early `execute`.
+The HYP locks in framing that the diff may diverge from; rollback later
+requires `set-status stalled` + a re-creation. See HATS-567 repro.
+
+### ✗ HYP with empty baseline / observation_window
+
+A HYP whose `baseline` is "agents do X" without specifying *which
+sessions* count as the baseline, or whose `observation_window` says
+"a few sessions" — both produce unfalsifiable verdicts. The fields
+exist because they constrain the auditor. If you can't fill them
+concretely, the HYP isn't ready.
+
+### ✗ HYP filed for an unobservable change
+
+If the diff has no behavior delta visible to a future agent session
+(e.g. doc-only typo fix, comment rewording), there's nothing to
+observe. Mark as refactor at plan-stage and skip.
 
 ## Examples
 
-### ✓ Good
+### ✓ Good (post-ship discipline)
 
 Task: rewrite `review-session` skill to add a new output field.
-Plan-stage: prior behavior = "output has N fields", post-change =
-"output has N+1 fields". File HYP-NNN with
-`verification_protocol: "Evidence MUST quote the field name from the
-session retro YAML and confirm it appears under hypothesis_verdicts[*]"`.
+
+- **Plan-stage:** prior = "output has N fields", post = "N+1 fields".
+  Recorded in `plan.md`. **No HYP yet.**
+- **Execute:** edit skill, run composition smoke, commit on
+  `task/<id>`.
+- **Document-stage:** diff final. `ai-hats task hyp create
+  --source-task HATS-XXX …` with `verification_protocol: "Evidence
+  MUST quote the field name from session retro YAML and confirm it
+  appears under hypothesis_verdicts[*]"`.
 
 ### ✓ Good (refactor exemption)
 
 Task: dedup identical injection text between `trait-base` and
 `trait-analyst-base`. Plan-stage: prior = post = same observable
 behavior. Record "no behavior change — pure refactor: shared injection
-text deduplicated, semantics unchanged". No HYP filed.
+text deduplicated, semantics unchanged". No HYP filed — now or later.
 
 ### ✗ Bad
 
@@ -156,13 +220,23 @@ Task: add a new rule to `trait-base`. Ship without companion HYP. No
 record of expected behavior shift. Two weeks later, no way to tell if
 the rule worked.
 
-**Correct response:** file a HYP at plan-stage with
-`verification_protocol` describing what audit.md should show; refer to
-the HYP in the commit.
+**Correct response:** at document-stage (after the rule is committed),
+file a HYP with `verification_protocol` describing what audit.md
+should show; mention both IDs in the next commit body.
+
+### ✗ Bad (precommitment)
+
+Task: same as above, but the agent files `HYP-XXX` at plan-stage
+before any edit exists. Execute reveals that the rule alone is
+insufficient; scope shifts to a new skill. The pre-filed HYP now
+describes a change that never shipped — must be `set-status stalled`,
+re-created post-ship. Wastes a HYP slot and produces a confusing
+audit trail.
 
 ## Scope
 
 This skill describes a **discipline**, not a gate. Nothing in the
-framework rejects a merge that lacks a companion HYP. If discipline
-slips repeatedly (track via HYP-016), a follow-up task may add CI
-enforcement.
+framework rejects a merge that lacks a companion HYP, nor rejects a
+HYP filed too early. If post-ship discipline slips repeatedly, a
+follow-up task may add CI enforcement (reject `hyp create` when source
+task is not yet in `document`/`review`/`done`).
