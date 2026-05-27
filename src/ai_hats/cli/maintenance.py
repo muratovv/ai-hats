@@ -848,6 +848,20 @@ def update(
                 # the bump pipeline is now an explicit composition (same
                 # as ``cli/assembly.py::do_bump``).
                 from ..materialize import compose_for_role
+                from ..migration_backup import snapshot_pre_bump
+
+                # HATS-549: pre-bump snapshot for the no-version-change
+                # in-process branch. The version-change branch above
+                # delegates to ``_bump_internal``, which itself calls
+                # ``do_bump`` and snapshots there. Without the explicit
+                # call here, no-op self-update on a stuck project would
+                # skip the safety net entirely.
+                #
+                # BackupError extends OSError → falls through to the
+                # outer ``except (AssemblyError, ValueError, OSError)``
+                # which renders "Bump failed:" and preserves
+                # before_rules/before_skills as the after-state.
+                snapshot_pre_bump(project_dir, label="bump")
 
                 with console.status(
                     f"[cyan]Migrating / refreshing[/] {active_role} …",

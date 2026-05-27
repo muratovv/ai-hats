@@ -64,6 +64,7 @@ __all__ = [
     "HARD_DISABLE_SENTINEL",
     "MAX_RETENTION",
     "BACKUP_SCOPE_PATHS",
+    "EXCLUDED_BASENAMES",
 ]
 
 
@@ -87,6 +88,41 @@ BACKUP_SCOPE_PATHS: tuple[str, ...] = (
     ".githooks",
     ".gitignore",
 )
+
+# Directory / file basenames pruned at ANY depth inside the scope.
+# These are regenerable derived state — including them would inflate
+# the tarball by 100×+ (the ai-hats venv alone is ~85 MB) and offer no
+# recovery value (rebuilt by `pip install -e` / bytecode recompile).
+#
+# - ``.venv`` — framework venv lives under ``<ai_hats_dir>/.venv`` by
+#   default; user-pointed venvs reachable via ``venv_path`` config
+#   land at the same basename.
+# - ``__pycache__`` / ``*.pyc`` — Python bytecode.
+# - ``.cache`` — ai-hats per-session cache dir
+#   (``<ai_hats_dir>/.cache/`` per HATS-294-ish).
+# - ``node_modules`` — defensive; some projects mount node tooling
+#   under ``.agent/`` and we don't want to capture it either.
+EXCLUDED_BASENAMES: frozenset[str] = frozenset({
+    ".venv",
+    "__pycache__",
+    ".cache",
+    "node_modules",
+})
+
+
+def _should_exclude(arcname: str) -> bool:
+    """True when any path segment of ``arcname`` is in EXCLUDED_BASENAMES
+    or matches a bytecode pattern (``*.pyc``).
+
+    Uses POSIX-style ``/`` segmentation — tarfile always normalises to
+    forward slashes regardless of host OS.
+    """
+    segments = arcname.split("/")
+    if any(s in EXCLUDED_BASENAMES for s in segments):
+        return True
+    if arcname.endswith(".pyc"):
+        return True
+    return False
 
 
 class BackupError(OSError):
@@ -223,11 +259,19 @@ def snapshot_pre_bump(
     # ai-hats.yaml) — write a marker tarball anyway so the caller has a
     # consistent return type and the user has proof a bump ran. The
     # tarball will be ~empty but valid.
+    def _filter(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
+        return None if _should_exclude(info.name) else info
+
     try:
         with tarfile.open(target, mode="w:gz") as tar:
             for entry in scope:
                 arcname = str(entry.relative_to(project_dir))
-                tar.add(str(entry), arcname=arcname, recursive=True)
+                tar.add(
+                    str(entry),
+                    arcname=arcname,
+                    recursive=True,
+                    filter=_filter,
+                )
     except OSError as e:
         # Clean up partial file before re-raising.
         try:

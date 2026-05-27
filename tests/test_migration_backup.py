@@ -373,3 +373,64 @@ def test_scope_paths_includes_critical_files() -> None:
     assert ".agent" in BACKUP_SCOPE_PATHS
     assert ".claude/settings.json" in BACKUP_SCOPE_PATHS
     assert "ai-hats.yaml" in BACKUP_SCOPE_PATHS
+
+
+# ---------- Exclusions (.venv, __pycache__, bytecode) ----------
+
+
+def test_venv_and_pycache_excluded_from_tarball(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The framework venv lives at <ai_hats_dir>/.venv and is regenerable
+    via pip install — 85 MB of irrelevance if included. __pycache__ and
+    .pyc are bytecode. .cache is per-session ephemera. None of these
+    enter the tarball."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    _seed_project(project)
+    venv = project / ".agent" / "ai-hats" / ".venv" / "bin"
+    venv.mkdir(parents=True)
+    (venv / "python").write_text("#!/bin/sh\n")
+    pycache = project / ".agent" / "ai-hats" / "__pycache__"
+    pycache.mkdir()
+    (pycache / "x.pyc").write_text("bytecode")
+    cache = project / ".agent" / "ai-hats" / ".cache" / "session-123"
+    cache.mkdir(parents=True)
+    (cache / "scratch.log").write_text("ephemeral")
+    # Loose .pyc file (not under __pycache__)
+    (project / ".agent" / "stale.pyc").write_text("loose")
+    _isolate_backup_dir(monkeypatch, tmp_path)
+
+    snap = snapshot_pre_bump(project)
+    assert snap is not None
+    with tarfile.open(snap, "r:gz") as tar:
+        names = set(tar.getnames())
+    assert not any(".venv" in n.split("/") for n in names)
+    assert not any("__pycache__" in n.split("/") for n in names)
+    assert not any(".cache" in n.split("/") for n in names)
+    assert not any(n.endswith(".pyc") for n in names)
+    # Sanity: non-excluded content still present.
+    assert "ai-hats.yaml" in names
+    assert ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh" in names
+
+
+def test_exclusion_does_not_drop_legitimate_dotfiles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Don't over-prune: .manifest, .ai-hats-managed, .gitignore are
+    framework bookkeeping that MUST survive."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    _seed_project(project)
+    hooks = project / ".agent" / "ai-hats" / "library" / "hooks"
+    (hooks / ".manifest").write_text("pre_bash_shared_state_guard.sh\n")
+    (hooks / ".ai-hats-managed").write_text("legacy\n")
+    _isolate_backup_dir(monkeypatch, tmp_path)
+
+    snap = snapshot_pre_bump(project)
+    assert snap is not None
+    with tarfile.open(snap, "r:gz") as tar:
+        names = set(tar.getnames())
+    assert ".agent/ai-hats/library/hooks/.manifest" in names
+    assert ".agent/ai-hats/library/hooks/.ai-hats-managed" in names
+    assert ".gitignore" in names
