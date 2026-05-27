@@ -527,9 +527,42 @@ _REASON_TEXT: dict[str, str] = {
         "review whether the referenced file should still exist and "
         "either restore it (e.g. `tar -xzf <pre-bump-backup>.tar.gz`) "
         "or delete the broken entry.",
+    "user-hook-disabled":
+        "User-owned hook **disabled** in settings.json by the v4 "
+        "migration. The script file was preserved under `user-hooks/` "
+        "(see ``new_substr``). Re-enable by re-adding the hook entry "
+        "with the new path — copy-paste snippet below.",
     "auto-heal":
         "Auto-heal candidate that was not applied (mixed-state file).",
 }
+
+
+def _render_reenable_snippet(ref: LegacyRef) -> list[str]:
+    """Emit a fenced JSON block showing how to re-enable a disabled hook.
+
+    The Phase 4 pre-pass removes the matching settings.json entry —
+    if the user wants the hook back, they need to add an equivalent
+    entry under the appropriate hook event (the original event name
+    is not preserved by the disable step, intentionally: forces a
+    review-pass on what the hook actually does before re-enabling).
+    """
+    block = (
+        "{\n"
+        '      "matcher": "Bash",\n'
+        '      "hooks": [\n'
+        f'        {{"type": "command", "command": "{ref.full_new_path}"}}\n'
+        "      ]\n"
+        "    }"
+    )
+    return [
+        "",
+        "    Re-enable snippet — add under `hooks.PreToolUse[]` (or the"
+        " appropriate event) in `.claude/settings.json`:",
+        "",
+        "    ```json",
+        "    " + block.replace("\n", "\n    "),
+        "    ```",
+    ]
 
 
 def write_inventory(project_dir: Path, refs: list[LegacyRef]) -> Path | None:
@@ -581,6 +614,8 @@ def write_inventory(project_dir: Path, refs: list[LegacyRef]) -> Path | None:
             diag = _REASON_TEXT.get(ref.reason)
             if diag:
                 lines.append(f"  - {diag}")
+            if ref.reason == "user-hook-disabled":
+                lines.extend(_render_reenable_snippet(ref))
         lines.append("")
     out_path.write_text("\n".join(lines), encoding="utf-8")
     return out_path
@@ -644,6 +679,147 @@ def _retag(ref: LegacyRef, reason: str) -> LegacyRef:
     return _dc_replace(ref, reason=reason)
 
 
+# ---------- Phase 4 (HATS-549) — disable user-owned hook entries ----------
+
+
+def _split_user_hook_command(command: str) -> str | None:
+    """Return the basename if ``command`` references a legacy
+    ``.agent/hooks/<basename>`` path; ``None`` otherwise.
+
+    Strips the optional ``$CLAUDE_PROJECT_DIR/`` prefix. The path tail
+    is everything after the prefix up to the first ``/`` (so subdirs
+    like ``tests/smoke.sh`` resolve to basename ``tests``).
+    """
+    s = _strip_project_dir_var(command)
+    if not s.startswith(".agent/hooks/"):
+        return None
+    tail = s[len(".agent/hooks/"):]
+    if not tail:
+        return None
+    return tail.split("/", 1)[0]
+
+
+def _disable_user_hooks_in_settings(
+    settings_path: Path,
+    project_dir: Path,
+    owned_basenames: frozenset[str],
+) -> list[LegacyRef]:
+    """Phase 4 pre-pass for ``.claude/settings.json{,.local}``.
+
+    Walks the structured ``hooks: {event: [{matcher, hooks: [{command}]}]}``
+    shape and REMOVES every hook entry whose ``command`` points at
+    ``.agent/hooks/<basename>`` where ``<basename>`` is NOT in the
+    ai-hats-owned whitelist. Cascade-drops empty ``hooks[]`` arrays,
+    empty matcher blocks, and empty hook-event keys.
+
+    Returns a list of :class:`LegacyRef` (with ``reason="user-hook-disabled"``)
+    for the Stage B inventory — that's where the user gets the
+    re-enable copy-paste snippet pointing at the new ``user-hooks/``
+    location.
+
+    Idempotent: if no candidate entry is found, returns ``[]`` and
+    leaves the file untouched. Settings.json that fails to parse is
+    silently skipped — not Phase 4's responsibility to surface JSON
+    syntax errors.
+    """
+    from .safe_delete import replace as _safe_replace
+
+    try:
+        raw = settings_path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return []
+
+    if not isinstance(data, dict):
+        return []
+    hooks = data.get("hooks")
+    if not isinstance(hooks, dict):
+        return []
+
+    removed: list[LegacyRef] = []
+    for event in list(hooks.keys()):
+        matchers = hooks[event]
+        if not isinstance(matchers, list):
+            continue
+        new_matchers: list = []
+        for matcher in matchers:
+            if not isinstance(matcher, dict):
+                new_matchers.append(matcher)
+                continue
+            entries = matcher.get("hooks")
+            if not isinstance(entries, list):
+                new_matchers.append(matcher)
+                continue
+            new_entries: list = []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    new_entries.append(entry)
+                    continue
+                command = entry.get("command")
+                if not isinstance(command, str):
+                    new_entries.append(entry)
+                    continue
+                basename = _split_user_hook_command(command)
+                if basename is None or basename in owned_basenames:
+                    new_entries.append(entry)
+                    continue
+                # User-owned legacy hook — drop the entry and inventory.
+                new_target = f".agent/ai-hats/user-hooks/{basename}"
+                if command.startswith(_CLAUDE_PROJECT_DIR_VAR):
+                    new_target = _CLAUDE_PROJECT_DIR_VAR + new_target
+                removed.append(LegacyRef(
+                    file=settings_path,
+                    line=0,
+                    legacy_substr=command,
+                    new_substr=new_target,
+                    full_legacy_path=command,
+                    full_new_path=new_target,
+                    reason="user-hook-disabled",
+                ))
+            if new_entries:
+                # Preserve original matcher metadata (matcher, _ai_hats_managed),
+                # swap hooks[] for the filtered list.
+                shrunk = dict(matcher)
+                shrunk["hooks"] = new_entries
+                new_matchers.append(shrunk)
+            # else: drop the whole matcher block (empty hooks[])
+        if new_matchers:
+            hooks[event] = new_matchers
+        else:
+            del hooks[event]
+
+    if not removed:
+        return []
+    # Cascade-drop the parent ``hooks`` key if all events were emptied.
+    if not hooks:
+        data.pop("hooks", None)
+
+    new_text = json.dumps(data, indent=2, ensure_ascii=False)
+    if raw.endswith("\n"):
+        new_text += "\n"
+    _safe_replace(
+        settings_path,
+        new_text.encode("utf-8"),
+        reason="disable-user-hooks",
+        project_dir=project_dir,
+    )
+    return removed
+
+
+def _owned_hook_basenames() -> frozenset[str]:
+    """Resolve the ai-hats-owned hook whitelist via a lazy import.
+
+    Lazy to keep ``migration_healer`` free of a module-load cycle
+    with :mod:`ai_hats.assembler` (which already lazy-imports
+    ``migration_healer`` via the registry runner).
+    """
+    try:
+        from .assembler import _ai_hats_owned_hook_basenames
+        return _ai_hats_owned_hook_basenames()
+    except (ImportError, AttributeError):
+        return frozenset()
+
+
 # ---------- Orchestration ----------
 
 
@@ -659,8 +835,27 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
         ``HealReport`` summarizing healed and inventoried refs.
     """
     report = HealReport()
+
+    # HATS-549 Phase 4 pre-pass: structurally walk settings.json and
+    # REMOVE hook entries pointing at user-owned legacy hooks
+    # (basename NOT in the ai-hats whitelist). This must run BEFORE
+    # ``scan_external_refs`` so the disabled entries don't get rescued
+    # by the regex-substitution heal that follows — the explicit
+    # disable is the load-bearing behaviour per the HATS-549 user
+    # contract ("user must re-enable manually").
+    owned = _owned_hook_basenames()
+    for json_rel in JSON_TARGETS:
+        path = project_dir / json_rel
+        if not path.is_file():
+            continue
+        disabled = _disable_user_hooks_in_settings(path, project_dir, owned)
+        if disabled:
+            report.inventoried.extend(disabled)
+            if verbose:
+                _print_disabled(disabled, project_dir)
+
     refs = scan_external_refs(project_dir)
-    if not refs:
+    if not refs and not report.inventoried:
         return report
 
     # Group refs by file to amortize file rewrite (one read+write per file).
@@ -723,6 +918,21 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
         _print_summary(report, project_dir)
 
     return report
+
+
+def _print_disabled(refs: list[LegacyRef], project_dir: Path) -> None:
+    """Emit per-entry 'Disabled:' lines to stderr for Phase 4 pre-pass."""
+    for ref in refs:
+        try:
+            rel = ref.file.relative_to(project_dir).as_posix()
+        except ValueError:
+            rel = str(ref.file)
+        print(
+            f"[heal] Disabled user hook in {rel}: '{ref.legacy_substr}'. "
+            f"File preserved at {ref.full_new_path}; re-enable snippet in "
+            f"inventory.",
+            file=sys.stderr,
+        )
 
 
 def _print_healed(file_path: Path, refs: list[LegacyRef], project_dir: Path) -> None:
