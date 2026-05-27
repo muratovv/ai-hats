@@ -137,3 +137,56 @@ def test_rendered_audit_contains_user_bot_and_tool_markers(tmp_path):
     # the separator (e.g. comma → slash) fails this guard, not
     # downstream consumers.
     assert "180 in / 43 out" in rendered
+
+
+def test_rendered_audit_header_and_metrics_markers(tmp_path):
+    """HATS-561: rebuilt audit.md must carry the list-item header
+    (``- **Role**``, ``- **Provider**``, ``- **Duration**``) AND emit
+    every non-header key from ``metrics.json`` in bold list form in the
+    ``## Metrics`` section.
+
+    Locked because the golden-path e2e test
+    (``test_golden_path_install_init_execute_batch``) asserts exactly
+    these markers as the durable contract a session retro / post-hoc
+    grep reaches for. The pre-HATS-561 ``_format_audit`` emitted a
+    pipe-separated header and only ``exit_code`` + ``turns`` in
+    Metrics — silently dropping the SDK telemetry that
+    ``_finalize_sub_agent`` had already written to ``metrics.json``.
+    """
+    session = Session(session_id="t", session_dir=tmp_path)
+    # Seeded metrics mirror the shape ``_finalize_sub_agent`` produces
+    # after a real Claude SDK run.
+    session.metrics_path.write_text(
+        '{"role": "assistant", "provider": "claude", '
+        '"model": "claude-haiku-4-5", "isolation_mode": "discard", '
+        '"exit_code": 0, "claude_session_id": "abc-123", '
+        '"total_cost_usd": 0.012, "num_turns": 2, '
+        '"stop_reason": "end_turn", "duration_s": 4.2}'
+    )
+
+    writer = AuditWriter()
+    rendered = writer._format_audit(session, turns=[], model_stats={})
+
+    # List-item header — the test contract HATS-529 dropped.
+    assert "- **Role**: assistant" in rendered
+    assert "- **Provider**: claude" in rendered
+    assert "- **Duration**:" in rendered
+    # No pipe-separated header line — guard against regression to the
+    # post-HATS-529 form.
+    assert "Role: assistant |" not in rendered
+
+    # Metrics body — every non-header key must appear in bold.
+    assert "**exit_code**" in rendered
+    assert "**turns**" in rendered
+    assert "**claude_session_id**" in rendered
+    assert "abc-123" in rendered
+    assert "**total_cost_usd**" in rendered
+    assert "0.012" in rendered
+    assert "**num_turns**" in rendered
+    assert "**stop_reason**" in rendered
+    assert "**duration_s**" in rendered
+    # ``model`` and ``isolation_mode`` are NOT header keys but DO get
+    # bold-rendered into the Metrics block — they are valuable for
+    # retros and were silently dropped pre-HATS-561.
+    assert "**model**" in rendered
+    assert "**isolation_mode**" in rendered
