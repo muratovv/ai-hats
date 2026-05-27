@@ -35,7 +35,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .paths import LEGACY_PATH_MAP, ai_hats_dir, audits_dir
+from .paths import (
+    CLAUDE_PROJECT_DIR_VAR,
+    LEGACY_PATH_MAP,
+    ai_hats_dir,
+    audits_dir,
+    strip_claude_project_dir,
+)
 
 # ---------- Data model ----------
 
@@ -47,14 +53,29 @@ class LegacyRef:
     Attributes:
         file: Absolute path to the file containing the ref.
         line: 1-based line number (0 for whole-file matches from JSON walk).
-        legacy_substr: Exact substring that matched the legacy pattern.
+        legacy_substr: Exact substring that matched the legacy pattern
+            (the prefix, e.g. ``.agent/hooks/``).
         new_substr: Replacement substring under the new layout.
+        full_legacy_path: Full path including the tail after the prefix
+            (e.g. ``.agent/hooks/pre_bash_secret_guard.py``). Used by the
+            Phase 2 dst-existence check (HATS-549) to verify the
+            substitution would land somewhere meaningful.
+        full_new_path: Full post-substitution path (legacy tail appended
+            to ``new_substr``). Compared against on-disk state to decide
+            whether to heal or inventory.
+        reason: Why this ref ended up where it did. Default ``auto-heal``
+            (would-be-healed); set to ``"dst-missing"`` when both legacy
+            source and new destination are absent on disk (data-loss
+            signal). Stage B inventory prints this verbatim.
     """
 
     file: Path
     line: int
     legacy_substr: str
     new_substr: str
+    full_legacy_path: str = ""
+    full_new_path: str = ""
+    reason: str = "auto-heal"
 
 
 @dataclass
@@ -255,6 +276,55 @@ def _is_json_target(path: Path, project_dir: Path) -> bool:
     return rel in JSON_TARGETS
 
 
+# Characters that terminate a path-like token in a surrounding string.
+# Used to extract the "tail" after the legacy prefix so we can build the
+# full pre-substitution path for the HATS-549 dst-existence check.
+_PATH_TERMINATORS: frozenset[str] = frozenset(
+    {" ", "\t", "\n", "\r", '"', "'", "`", "<", ">", "(", ")", "[", "]"}
+)
+
+
+def _extract_tail(source: str, end: int) -> str:
+    """Return the substring of ``source`` starting at ``end`` until the
+    first path-terminator character (or end of string).
+
+    The tail is the path-segment-suffix that follows the legacy prefix
+    inside a containing string (e.g. ``pre_bash_secret_guard.py`` from
+    ``$CLAUDE_PROJECT_DIR/.agent/hooks/pre_bash_secret_guard.py``).
+    """
+    cur = end
+    while cur < len(source) and source[cur] not in _PATH_TERMINATORS:
+        cur += 1
+    return source[end:cur]
+
+
+def _make_ref(
+    *,
+    file: Path,
+    line: int,
+    legacy: str,
+    new: str,
+    source: str,
+    end: int,
+) -> LegacyRef:
+    """Build a LegacyRef enriched with full legacy + new path strings.
+
+    ``source`` is the containing string (JSON value or text line);
+    ``end`` is ``match.end()`` for the legacy prefix. The function
+    extracts the trailing path token and appends it to both substrings
+    so the orchestrator can probe on-disk state at either side.
+    """
+    tail = _extract_tail(source, end)
+    return LegacyRef(
+        file=file,
+        line=line,
+        legacy_substr=legacy,
+        new_substr=new,
+        full_legacy_path=legacy + tail,
+        full_new_path=new + tail,
+    )
+
+
 def _scan_text_file(path: Path, project_dir: Path) -> list[LegacyRef]:
     """Line-by-line scan of a text file for legacy substrings."""
     out: list[LegacyRef] = []
@@ -268,8 +338,9 @@ def _scan_text_file(path: Path, project_dir: Path) -> list[LegacyRef]:
             new = _resolve_new_substr(legacy, project_dir)
             if new is None:
                 continue
-            out.append(LegacyRef(
-                file=path, line=lineno, legacy_substr=legacy, new_substr=new,
+            out.append(_make_ref(
+                file=path, line=lineno, legacy=legacy, new=new,
+                source=line, end=match.end(),
             ))
     return out
 
@@ -283,8 +354,9 @@ def _scan_json_strings(value, path: Path, project_dir: Path) -> list[LegacyRef]:
             new = _resolve_new_substr(legacy, project_dir)
             if new is None:
                 continue
-            out.append(LegacyRef(
-                file=path, line=0, legacy_substr=legacy, new_substr=new,
+            out.append(_make_ref(
+                file=path, line=0, legacy=legacy, new=new,
+                source=value, end=match.end(),
             ))
     elif isinstance(value, dict):
         for v in value.values():
@@ -447,10 +519,70 @@ def heal_text_file(path: Path, project_dir: Path) -> int:
 # ---------- Inventory — Stage B ----------
 
 
+# Diagnosis text shown next to each ref in the inventory output.
+_REASON_TEXT: dict[str, str] = {
+    "git-dirty":
+        "File had uncommitted changes; left intact so your in-flight "
+        "diff isn't clobbered.",
+    "unsupported-ext":
+        "File extension not in the auto-heal allowlist "
+        "(`.md` / `.txt` / `.j2` / `.sh` / `.envrc`).",
+    "dst-missing":
+        "**Possible data loss.** Neither the legacy source nor the new "
+        "destination exists on disk. The substitution was NOT applied — "
+        "review whether the referenced file should still exist and "
+        "either restore it (e.g. `tar -xzf <pre-bump-backup>.tar.gz`) "
+        "or delete the broken entry.",
+    "user-hook-disabled":
+        "User-owned hook **disabled** in settings.json by the v4 "
+        "migration. The script file was preserved under `user-hooks/` "
+        "(see ``new_substr``). Re-enable by re-adding the hook entry "
+        "with the new path — copy-paste snippet below.",
+    "auto-heal":
+        "Auto-heal candidate that was not applied (mixed-state file).",
+}
+
+
+def _render_reenable_snippet(ref: LegacyRef) -> list[str]:
+    """Emit a fenced JSON block showing how to re-enable a disabled hook.
+
+    The Phase 4 pre-pass removes the matching settings.json entry —
+    if the user wants the hook back, they need to add an equivalent
+    entry under the appropriate hook event (the original event name
+    is not preserved by the disable step, intentionally: forces a
+    review-pass on what the hook actually does before re-enabling).
+
+    Uses ``json.dumps`` + ``textwrap.indent`` so the rendered snippet
+    survives future schema additions for free (HATS-549 review Q.3).
+    """
+    import textwrap
+
+    entry = {
+        "matcher": "Bash",
+        "hooks": [
+            {"type": "command", "command": ref.full_new_path},
+        ],
+    }
+    snippet = json.dumps(entry, indent=2, ensure_ascii=False)
+    indented = textwrap.indent(snippet, "    ")
+    return [
+        "",
+        "    Re-enable snippet — add under `hooks.PreToolUse[]` (or the"
+        " appropriate event) in `.claude/settings.json`:",
+        "",
+        "    ```json",
+        indented,
+        "    ```",
+    ]
+
+
 def write_inventory(project_dir: Path, refs: list[LegacyRef]) -> Path | None:
     """Write an audit-log of un-healed refs. Returns the path, or None if empty.
 
     Output lands under ``<ai_hats_dir>/sessions/audits/<utc_ts>-legacy-refs.md``.
+    Entries are grouped by file then by reason — the ``dst-missing``
+    diagnosis (HATS-549 Phase 2) carries the data-loss callout so users
+    notice it before the broken hook fires.
     """
     if not refs:
         return None
@@ -469,12 +601,12 @@ def write_inventory(project_dir: Path, refs: list[LegacyRef]) -> Path | None:
         f"Found {len(refs)} legacy-path ref(s) across {len(by_file)} file(s) "
         "that were not auto-healed.",
         "",
-        "Reasons a ref is inventoried instead of auto-fixed:",
+        "Each ref carries a `reason` tag explaining why it was held back. "
+        "`dst-missing` is the data-loss signal — neither side of the "
+        "substitution exists on disk and proceeding would silently "
+        "rewrite the path to nowhere.",
         "",
-        "- File had uncommitted changes (git-dirty) — to keep your in-flight diff intact.",
-        "- File extension not in auto-heal allowlist (`.md` / `.txt` / `.j2` / `.sh` / `.envrc`).",
-        "",
-        "Apply the substitutions below manually, then commit.",
+        "Apply the substitutions below manually after reviewing, then commit.",
         "",
     ]
     for file_path in sorted(by_file, key=lambda p: str(p)):
@@ -487,11 +619,238 @@ def write_inventory(project_dir: Path, refs: list[LegacyRef]) -> Path | None:
         for ref in sorted(by_file[file_path], key=lambda r: r.line):
             loc = f"L{ref.line}" if ref.line > 0 else "(json)"
             lines.append(
-                f"- {loc} | `{ref.legacy_substr}` → `{ref.new_substr}`"
+                f"- {loc} `{ref.legacy_substr}` → `{ref.new_substr}` "
+                f"_(reason: `{ref.reason}`)_"
             )
+            diag = _REASON_TEXT.get(ref.reason)
+            if diag:
+                lines.append(f"  - {diag}")
+            if ref.reason == "user-hook-disabled":
+                lines.extend(_render_reenable_snippet(ref))
         lines.append("")
     out_path.write_text("\n".join(lines), encoding="utf-8")
     return out_path
+
+
+# ---------- Phase 2 (HATS-549) — destination-existence check ----------
+
+# Local aliases — shared canonical definitions live in ``paths`` so
+# the healer / asserter / future callers stay in sync (HATS-549 Q.1).
+_CLAUDE_PROJECT_DIR_VAR = CLAUDE_PROJECT_DIR_VAR
+_strip_project_dir_var = strip_claude_project_dir
+
+
+def is_ref_safe_to_heal(ref: LegacyRef, project_dir: Path) -> tuple[bool, str]:
+    """Decide whether ``ref`` should be auto-healed.
+
+    HATS-549 Phase 2: refuse to rewrite a legacy → new substitution when
+    NEITHER the legacy source file NOR the new destination file exists
+    on disk. That state is the data-loss signal — blindly rewriting the
+    path produces a settings.json that points at nowhere and corrupts
+    the recovery trail.
+
+    Returns ``(safe, reason)``:
+
+    - ``(True,  "auto-heal")``  — at least one side exists on disk;
+      proceeding either moves the file (step 6) or matches an
+      already-migrated state.
+    - ``(False, "dst-missing")`` — neither side exists; inventory
+      instead.
+
+    Empty ``full_legacy_path`` / ``full_new_path`` (LegacyRef built by
+    older code without enriched fields) is treated as safe — preserves
+    pre-Phase-2 behaviour for any constructor that doesn't populate
+    the new fields.
+    """
+    if not ref.full_legacy_path or not ref.full_new_path:
+        return True, "auto-heal"
+    legacy_rel = _strip_project_dir_var(ref.full_legacy_path)
+    new_rel = _strip_project_dir_var(ref.full_new_path)
+    if (project_dir / legacy_rel).exists():
+        return True, "auto-heal"
+    if (project_dir / new_rel).exists():
+        return True, "auto-heal"
+    return False, "dst-missing"
+
+
+def _retag(ref: LegacyRef, reason: str) -> LegacyRef:
+    """Return a copy of ``ref`` with ``reason`` overridden."""
+    from dataclasses import replace as _dc_replace
+    return _dc_replace(ref, reason=reason)
+
+
+# ---------- Phase 4 (HATS-549) — disable user-owned hook entries ----------
+
+
+# Path prefixes the Phase 4 disable pre-pass treats as candidate
+# user-owned-hook locations. Both forms need detection so the
+# REPEAT-bump path heals stuck projects that were already auto-healed
+# by a pre-HATS-549 version:
+#
+#   1. Fresh v3: settings.json still has the legacy ``.agent/hooks/``
+#      prefix. File is at legacy location; step 6 partitions it.
+#   2. Stuck-state: a previous bump auto-healed the path to the
+#      managed namespace ``.agent/ai-hats/library/hooks/``, file got
+#      moved to that managed location, BUT it's user-owned (not in
+#      the ai-hats whitelist). The reconciliation pass in
+#      ``Assembler._migrate_layout_v4_hooks_partition`` moves the
+#      file to ``user-hooks/``; this list lets the healer disable
+#      the matching settings.json entry in the same bump.
+_USER_HOOK_DETECT_PREFIXES: tuple[str, ...] = (
+    ".agent/hooks/",
+    ".agent/ai-hats/library/hooks/",
+)
+
+
+def _split_user_hook_command(command: str) -> str | None:
+    """Return the basename if ``command`` references a path under either
+    the legacy ``.agent/hooks/`` or the post-heal
+    ``.agent/ai-hats/library/hooks/`` location; ``None`` otherwise.
+
+    Strips the optional ``$CLAUDE_PROJECT_DIR/`` prefix. The path tail
+    is everything after the prefix up to the first ``/`` (so subdirs
+    like ``tests/smoke.sh`` resolve to basename ``tests``).
+
+    Covers two timelines:
+
+    * Fresh v3 → v4: the ``.agent/hooks/`` form. Step 6 moves the
+      file from legacy to ``user-hooks/`` and the healer disables the
+      entry.
+    * Stuck state inherited from a pre-HATS-549 bump that auto-healed
+      to ``library/hooks/``: the reconciliation pass moves the file
+      back out of the managed namespace and the healer disables here
+      as well.
+    """
+    s = _strip_project_dir_var(command)
+    for prefix in _USER_HOOK_DETECT_PREFIXES:
+        if not s.startswith(prefix):
+            continue
+        tail = s[len(prefix):]
+        if not tail:
+            continue
+        return tail.split("/", 1)[0]
+    return None
+
+
+def _disable_user_hooks_in_settings(
+    settings_path: Path,
+    project_dir: Path,
+    owned_basenames: frozenset[str],
+) -> list[LegacyRef]:
+    """Phase 4 pre-pass for ``.claude/settings.json{,.local}``.
+
+    Walks the structured ``hooks: {event: [{matcher, hooks: [{command}]}]}``
+    shape and REMOVES every hook entry whose ``command`` points at
+    ``.agent/hooks/<basename>`` where ``<basename>`` is NOT in the
+    ai-hats-owned whitelist. Cascade-drops empty ``hooks[]`` arrays,
+    empty matcher blocks, and empty hook-event keys.
+
+    Returns a list of :class:`LegacyRef` (with ``reason="user-hook-disabled"``)
+    for the Stage B inventory — that's where the user gets the
+    re-enable copy-paste snippet pointing at the new ``user-hooks/``
+    location.
+
+    Idempotent: if no candidate entry is found, returns ``[]`` and
+    leaves the file untouched. Settings.json that fails to parse is
+    silently skipped — not Phase 4's responsibility to surface JSON
+    syntax errors.
+    """
+    from .safe_delete import replace as _safe_replace
+
+    try:
+        raw = settings_path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return []
+
+    if not isinstance(data, dict):
+        return []
+    hooks = data.get("hooks")
+    if not isinstance(hooks, dict):
+        return []
+
+    removed: list[LegacyRef] = []
+    for event in list(hooks.keys()):
+        matchers = hooks[event]
+        if not isinstance(matchers, list):
+            continue
+        new_matchers: list = []
+        for matcher in matchers:
+            if not isinstance(matcher, dict):
+                new_matchers.append(matcher)
+                continue
+            entries = matcher.get("hooks")
+            if not isinstance(entries, list):
+                new_matchers.append(matcher)
+                continue
+            new_entries: list = []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    new_entries.append(entry)
+                    continue
+                command = entry.get("command")
+                if not isinstance(command, str):
+                    new_entries.append(entry)
+                    continue
+                basename = _split_user_hook_command(command)
+                if basename is None or basename in owned_basenames:
+                    new_entries.append(entry)
+                    continue
+                # User-owned legacy hook — drop the entry and inventory.
+                new_target = f".agent/ai-hats/user-hooks/{basename}"
+                if command.startswith(_CLAUDE_PROJECT_DIR_VAR):
+                    new_target = _CLAUDE_PROJECT_DIR_VAR + new_target
+                removed.append(LegacyRef(
+                    file=settings_path,
+                    line=0,
+                    legacy_substr=command,
+                    new_substr=new_target,
+                    full_legacy_path=command,
+                    full_new_path=new_target,
+                    reason="user-hook-disabled",
+                ))
+            if new_entries:
+                # Preserve original matcher metadata (matcher, _ai_hats_managed),
+                # swap hooks[] for the filtered list.
+                shrunk = dict(matcher)
+                shrunk["hooks"] = new_entries
+                new_matchers.append(shrunk)
+            # else: drop the whole matcher block (empty hooks[])
+        if new_matchers:
+            hooks[event] = new_matchers
+        else:
+            del hooks[event]
+
+    if not removed:
+        return []
+    # Cascade-drop the parent ``hooks`` key if all events were emptied.
+    if not hooks:
+        data.pop("hooks", None)
+
+    new_text = json.dumps(data, indent=2, ensure_ascii=False)
+    if raw.endswith("\n"):
+        new_text += "\n"
+    _safe_replace(
+        settings_path,
+        new_text.encode("utf-8"),
+        reason="disable-user-hooks",
+        project_dir=project_dir,
+    )
+    return removed
+
+
+def _owned_hook_basenames() -> frozenset[str]:
+    """Resolve the ai-hats-owned hook whitelist via a lazy import.
+
+    Lazy to keep ``migration_healer`` free of a module-load cycle
+    with :mod:`ai_hats.assembler` (which already lazy-imports
+    ``migration_healer`` via the registry runner).
+    """
+    try:
+        from .assembler import _ai_hats_owned_hook_basenames
+        return _ai_hats_owned_hook_basenames()
+    except (ImportError, AttributeError):
+        return frozenset()
 
 
 # ---------- Orchestration ----------
@@ -509,8 +868,27 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
         ``HealReport`` summarizing healed and inventoried refs.
     """
     report = HealReport()
+
+    # HATS-549 Phase 4 pre-pass: structurally walk settings.json and
+    # REMOVE hook entries pointing at user-owned legacy hooks
+    # (basename NOT in the ai-hats whitelist). This must run BEFORE
+    # ``scan_external_refs`` so the disabled entries don't get rescued
+    # by the regex-substitution heal that follows — the explicit
+    # disable is the load-bearing behaviour per the HATS-549 user
+    # contract ("user must re-enable manually").
+    owned = _owned_hook_basenames()
+    for json_rel in JSON_TARGETS:
+        path = project_dir / json_rel
+        if not path.is_file():
+            continue
+        disabled = _disable_user_hooks_in_settings(path, project_dir, owned)
+        if disabled:
+            report.inventoried.extend(disabled)
+            if verbose:
+                _print_disabled(disabled, project_dir)
+
     refs = scan_external_refs(project_dir)
-    if not refs:
+    if not refs and not report.inventoried:
         return report
 
     # Group refs by file to amortize file rewrite (one read+write per file).
@@ -519,6 +897,25 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
         by_file.setdefault(ref.file, []).append(ref)
 
     for file_path, file_refs in by_file.items():
+        # HATS-549 Phase 2: per-file dst-existence gate. If ANY ref in
+        # this file points at a substitution where both legacy source
+        # and new destination are absent from disk, refuse to heal the
+        # whole file — the file may carry a mix of healthy and stale
+        # refs, but the regex-substitution path can't address them
+        # one-at-a-time. Inventory all refs with the failing ones tagged
+        # ``dst-missing`` so the user sees exactly which side is gone.
+        unsafe_refs = [
+            r for r in file_refs
+            if not is_ref_safe_to_heal(r, project_dir)[0]
+        ]
+        if unsafe_refs:
+            for r in file_refs:
+                if r in unsafe_refs:
+                    report.inventoried.append(_retag(r, "dst-missing"))
+                else:
+                    report.inventoried.append(r)
+            continue
+
         if _is_json_target(file_path, project_dir):
             # Stage A1 — always-on
             count = heal_json_file(file_path, project_dir)
@@ -531,7 +928,9 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
         if _is_text_candidate(file_path):
             # Stage A2 — gated by git-clean
             if not is_file_git_clean(file_path, project_dir):
-                report.inventoried.extend(file_refs)
+                report.inventoried.extend(
+                    _retag(r, "git-dirty") for r in file_refs
+                )
                 continue
             count = heal_text_file(file_path, project_dir)
             if count > 0:
@@ -541,7 +940,9 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
             continue
 
         # Defensive — shouldn't happen given the scanner allowlist
-        report.inventoried.extend(file_refs)
+        report.inventoried.extend(
+            _retag(r, "unsupported-ext") for r in file_refs
+        )
 
     if report.inventoried:
         report.inventory_path = write_inventory(project_dir, report.inventoried)
@@ -550,6 +951,21 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
         _print_summary(report, project_dir)
 
     return report
+
+
+def _print_disabled(refs: list[LegacyRef], project_dir: Path) -> None:
+    """Emit per-entry 'Disabled:' lines to stderr for Phase 4 pre-pass."""
+    for ref in refs:
+        try:
+            rel = ref.file.relative_to(project_dir).as_posix()
+        except ValueError:
+            rel = str(ref.file)
+        print(
+            f"[heal] Disabled user hook in {rel}: '{ref.legacy_substr}'. "
+            f"File preserved at {ref.full_new_path}; re-enable snippet in "
+            f"inventory.",
+            file=sys.stderr,
+        )
 
 
 def _print_healed(file_path: Path, refs: list[LegacyRef], project_dir: Path) -> None:
@@ -581,8 +997,22 @@ def _print_summary(report: HealReport, project_dir: Path) -> None:
             rel = report.inventory_path.relative_to(project_dir).as_posix()
         except ValueError:
             rel = str(report.inventory_path)
-        print(
-            f"[heal] Manual fixes required for {len(report.inventoried)} "
-            f"ref(s) — see {rel}",
-            file=sys.stderr,
+        # HATS-549 Phase 2: data-loss callout — surface ``dst-missing``
+        # count separately so users notice the bad case in the noise.
+        dst_missing = sum(
+            1 for r in report.inventoried if r.reason == "dst-missing"
         )
+        if dst_missing:
+            print(
+                f"[heal] ⚠️  {dst_missing} ref(s) point at files missing "
+                f"from BOTH legacy and new locations (possible data loss). "
+                f"See {rel}",
+                file=sys.stderr,
+            )
+        other = len(report.inventoried) - dst_missing
+        if other:
+            print(
+                f"[heal] Manual fixes required for {other} other ref(s) "
+                f"— see {rel}",
+                file=sys.stderr,
+            )

@@ -679,6 +679,10 @@ def update(
     active_role = None
     before_rules: set[str] = set()
     before_skills: set[str] = set()
+    # HATS-549 Phase 3: flag for in-process bump failure (smoke-assert
+    # raise or any AssemblyError/OSError from the bump pipeline).
+    # Used at the bottom of the function to surface a non-zero exit.
+    bump_in_process_failed = False
 
     if config_path.exists():
         # HATS-408 review (R1): we used to call ``ProjectConfig.from_yaml``
@@ -848,6 +852,21 @@ def update(
                 # the bump pipeline is now an explicit composition (same
                 # as ``cli/assembly.py::do_bump``).
                 from ..materialize import compose_for_role
+                from ..migration_assert import assert_runtime_hooks_resolve
+                from ..migration_backup import snapshot_pre_bump
+
+                # HATS-549: pre-bump snapshot for the no-version-change
+                # in-process branch. The version-change branch above
+                # delegates to ``_bump_internal``, which itself calls
+                # ``do_bump`` and snapshots there. Without the explicit
+                # call here, no-op self-update on a stuck project would
+                # skip the safety net entirely.
+                #
+                # BackupError extends OSError → falls through to the
+                # outer ``except (AssemblyError, ValueError, OSError)``
+                # which renders "Bump failed:" and preserves
+                # before_rules/before_skills as the after-state.
+                inproc_backup = snapshot_pre_bump(project_dir, label="bump")
 
                 with console.status(
                     f"[cyan]Migrating / refreshing[/] {active_role} …",
@@ -863,6 +882,14 @@ def update(
                     )
                     asm._refresh(install_time=True, result=bump_result)
                     asm._run_diagnostics()
+                    # HATS-549 Phase 3: end-of-bump smoke-assert.
+                    # Mirrors do_bump's final step. Failure surfaces
+                    # via the outer AssemblyError/OSError except handler
+                    # which renders "Bump failed:" — composition diff
+                    # below shows no changes.
+                    assert_runtime_hooks_resolve(
+                        project_dir, backup_path=inproc_backup,
+                    )
                 if bump_result:
                     after_rules = {r.name for r in bump_result.rules}
                     after_skills = {s.name for s in bump_result.skills}
@@ -874,6 +901,14 @@ def update(
             except (AssemblyError, ValueError, OSError) as e:
                 console.print(f"  [red]Bump failed[/]: {e}")
                 after_rules, after_skills = before_rules, before_skills
+                # HATS-549 Phase 3 wiring: surface the failure as a
+                # non-zero CLI exit so callers (CI, scripts, hooks)
+                # detect the bump didn't complete. Pre-fix this branch
+                # swallowed AssemblyError and reported "Bump failed:"
+                # on stdout but returned exit 0 — defeating the
+                # safety-net contract end-of-bump smoke-assert
+                # established.
+                bump_in_process_failed = True
 
         added_r = sorted(after_rules - before_rules)
         removed_r = sorted(before_rules - after_rules)
@@ -891,6 +926,13 @@ def update(
                 console.print(f"  [red]-[/] skill: {s}", highlight=False)
         else:
             console.print("  [dim]No composition changes[/]")
+
+        # HATS-549 Phase 3: propagate in-process bump failure as a
+        # non-zero exit so the safety-net contract holds for the
+        # no-version-change path too (`do_bump` already does this
+        # natively via the AssemblyError-return-1 branch).
+        if bump_in_process_failed:
+            sys.exit(1)
 
 
 # HATS-285: `ai-hats self migrate` removed. Migration is transparent inside

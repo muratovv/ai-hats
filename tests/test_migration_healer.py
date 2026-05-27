@@ -345,6 +345,15 @@ def test_heal_external_refs_full_clean_git_tree(tmp_path: Path) -> None:
     (p / "CLAUDE.md").write_text("see `.agent/hooks/g.py`\n")
     (p / "docs.md").write_text("retro at `.agent/retrospectives/r.md`\n")
 
+    # HATS-549 Phase 2: seed legacy sources so dst-existence gate
+    # passes (representing the realistic v3 → v4 migration path where
+    # the user's files live at legacy locations and will be moved by
+    # registry step 6).
+    (p / ".agent" / "hooks").mkdir(parents=True)
+    (p / ".agent" / "hooks" / "g.py").write_text("#!/usr/bin/env python3\n")
+    (p / ".agent" / "retrospectives").mkdir(parents=True)
+    (p / ".agent" / "retrospectives" / "r.md").write_text("retro body\n")
+
     _commit_all(p)
 
     report = heal_external_refs(p, verbose=False)
@@ -387,6 +396,9 @@ def test_heal_external_refs_json_heals_even_when_other_files_dirty(tmp_path: Pat
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"x": "clean"}, indent=2))
     (p / "CLAUDE.md").write_text("clean\n")
+    # Seed legacy source so HATS-549 dst-gate passes.
+    (p / ".agent" / "hooks").mkdir(parents=True)
+    (p / ".agent" / "hooks" / "g.py").write_text("#!/usr/bin/env python3\n")
     _commit_all(p)
     # Modify both — markdown dirty, json dirty
     settings.write_text(json.dumps({"x": ".agent/hooks/g.py"}, indent=2))
@@ -406,6 +418,9 @@ def test_heal_external_refs_idempotent(tmp_path: Path) -> None:
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"cmd": ".agent/hooks/g.py"}, indent=2))
     (p / "CLAUDE.md").write_text("see `.agent/hooks/g.py`\n")
+    # Seed legacy source so HATS-549 dst-gate passes on first heal.
+    (p / ".agent" / "hooks").mkdir(parents=True)
+    (p / ".agent" / "hooks" / "g.py").write_text("#!/usr/bin/env python3\n")
     _commit_all(p)
 
     heal_external_refs(p, verbose=False)
@@ -413,3 +428,402 @@ def test_heal_external_refs_idempotent(tmp_path: Path) -> None:
     _commit_all(p, msg="post-heal")
     report = heal_external_refs(p, verbose=False)
     assert report.total == 0
+
+
+# ---------- HATS-549 Phase 2: destination-existence gate ----------
+
+
+def test_heal_refuses_when_legacy_and_new_both_missing(tmp_path: Path) -> None:
+    """The proxmox failure mode: settings.json references a hook whose
+    file is gone from both the legacy location AND the new location.
+    Healer must NOT silently rewrite to a path that won't resolve —
+    inventory with reason=dst-missing instead.
+    """
+    p = _init_project(tmp_path)
+    _init_git_repo(p)
+    settings = p / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps(
+        {"cmd": "$CLAUDE_PROJECT_DIR/.agent/hooks/lost.py"},
+        indent=2,
+    ))
+    _commit_all(p)
+    # Note: NO .agent/hooks/lost.py on disk anywhere.
+
+    report = heal_external_refs(p, verbose=False)
+
+    assert len(report.healed_json) == 0
+    assert len(report.inventoried) == 1
+    assert report.inventoried[0].reason == "dst-missing"
+    # settings.json must be UNCHANGED — refusing to rewrite preserves
+    # the broken-but-honest state.
+    assert ".agent/hooks/lost.py" in settings.read_text()
+    assert ".agent/ai-hats/library/hooks" not in settings.read_text()
+
+
+def test_heal_proceeds_when_legacy_source_exists(tmp_path: Path) -> None:
+    """The realistic v3→v4 case: legacy source on disk, new dst empty.
+    The healer rewrites anticipating that registry step 6 will move
+    the file shortly. Verified separately by end-of-bump smoke-assert
+    that the final state actually resolves.
+    """
+    p = _init_project(tmp_path)
+    _init_git_repo(p)
+    settings = p / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps(
+        {"cmd": ".agent/hooks/x.py"},
+        indent=2,
+    ))
+    (p / ".agent" / "hooks").mkdir(parents=True)
+    (p / ".agent" / "hooks" / "x.py").write_text("#!/usr/bin/env python3\n")
+    _commit_all(p)
+
+    report = heal_external_refs(p, verbose=False)
+
+    assert len(report.healed_json) == 1
+    assert report.inventoried == []
+    assert ".agent/hooks/" not in settings.read_text()
+
+
+def test_heal_proceeds_when_new_destination_exists(tmp_path: Path) -> None:
+    """The repeat-bump idempotency case: someone migrated the file
+    manually OR a previous bump put it under the new layout. Source
+    no longer exists, but destination does. Healer rewrites because
+    the post-substitution path is valid."""
+    p = _init_project(tmp_path)
+    _init_git_repo(p)
+    settings = p / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps(
+        {"cmd": ".agent/hooks/y.py"},
+        indent=2,
+    ))
+    new_loc = p / ".agent" / "ai-hats" / "library" / "hooks"
+    new_loc.mkdir(parents=True)
+    (new_loc / "y.py").write_text("#!/usr/bin/env python3\n")
+    _commit_all(p)
+    # Note: legacy .agent/hooks/y.py absent — only new dst exists.
+
+    report = heal_external_refs(p, verbose=False)
+
+    assert len(report.healed_json) == 1
+    assert report.inventoried == []
+
+
+def test_mixed_state_file_invents_whole_file(tmp_path: Path) -> None:
+    """A single file with two refs, one safe and one dst-missing:
+    the per-file gate refuses to heal the whole file (per-match
+    substitution can't address them independently with the regex
+    approach). Both refs go to inventory; only the unsafe one gets
+    the dst-missing tag."""
+    p = _init_project(tmp_path)
+    _init_git_repo(p)
+    settings = p / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({
+        "a": "$CLAUDE_PROJECT_DIR/.agent/hooks/safe.py",
+        "b": "$CLAUDE_PROJECT_DIR/.agent/hooks/lost.py",
+    }, indent=2))
+    (p / ".agent" / "hooks").mkdir(parents=True)
+    (p / ".agent" / "hooks" / "safe.py").write_text("#!/usr/bin/env python3\n")
+    # lost.py NOT created
+    _commit_all(p)
+
+    report = heal_external_refs(p, verbose=False)
+
+    assert len(report.healed_json) == 0
+    assert len(report.inventoried) == 2
+    reasons = sorted(r.reason for r in report.inventoried)
+    assert reasons == ["auto-heal", "dst-missing"]
+    # Original content untouched
+    assert ".agent/hooks/safe.py" in settings.read_text()
+    assert ".agent/hooks/lost.py" in settings.read_text()
+
+
+def test_inventory_carries_dst_missing_diagnosis(tmp_path: Path) -> None:
+    """The audit-md output must include the data-loss callout for
+    dst-missing refs — that's the user's only signal that a hook is
+    silently broken."""
+    p = _init_project(tmp_path)
+    _init_git_repo(p)
+    settings = p / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps(
+        {"cmd": ".agent/hooks/lost.py"},
+        indent=2,
+    ))
+    _commit_all(p)
+
+    report = heal_external_refs(p, verbose=False)
+    assert report.inventory_path is not None
+    body = report.inventory_path.read_text()
+    assert "dst-missing" in body
+    assert "data loss" in body.lower()
+
+
+def test_full_legacy_and_new_paths_captured_during_scan(tmp_path: Path) -> None:
+    """LegacyRef carries full pre/post paths so dst-existence checks
+    can resolve to a real filesystem location."""
+    p = _init_project(tmp_path)
+    settings = p / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps(
+        {"cmd": "$CLAUDE_PROJECT_DIR/.agent/hooks/x.py"},
+        indent=2,
+    ))
+
+    refs = scan_external_refs(p)
+    assert len(refs) == 1
+    r = refs[0]
+    # full_legacy_path stitches prefix + tail
+    assert r.full_legacy_path == ".agent/hooks/x.py"
+    # full_new_path resolves through LEGACY_PATH_MAP
+    assert r.full_new_path == ".agent/ai-hats/library/hooks/x.py"
+
+
+def test_is_ref_safe_to_heal_handles_claude_project_dir_prefix(tmp_path: Path) -> None:
+    """Substitutions inside hook command values are typically prefixed
+    with $CLAUDE_PROJECT_DIR/. The dst-existence helper strips the var
+    so the on-disk check resolves under project_dir."""
+    from ai_hats.migration_healer import LegacyRef, is_ref_safe_to_heal
+
+    p = _init_project(tmp_path)
+    (p / ".agent" / "hooks").mkdir(parents=True)
+    (p / ".agent" / "hooks" / "real.py").write_text("body\n")
+    ref = LegacyRef(
+        file=p / ".claude" / "settings.json",
+        line=0,
+        legacy_substr=".agent/hooks/",
+        new_substr=".agent/ai-hats/library/hooks/",
+        full_legacy_path="$CLAUDE_PROJECT_DIR/.agent/hooks/real.py",
+        full_new_path="$CLAUDE_PROJECT_DIR/.agent/ai-hats/library/hooks/real.py",
+    )
+    safe, reason = is_ref_safe_to_heal(ref, p)
+    assert safe is True
+    assert reason == "auto-heal"
+
+
+def test_legacyref_without_full_paths_treated_as_safe(tmp_path: Path) -> None:
+    """Back-compat: LegacyRef constructed by callers that don't
+    populate the HATS-549 fields (empty full_legacy_path /
+    full_new_path) must default to ``safe=True`` so we don't regress
+    callers that pre-date Phase 2."""
+    from ai_hats.migration_healer import LegacyRef, is_ref_safe_to_heal
+
+    p = _init_project(tmp_path)
+    ref = LegacyRef(
+        file=p / "x", line=0,
+        legacy_substr=".agent/hooks/",
+        new_substr=".agent/ai-hats/library/hooks/",
+        # full_legacy_path / full_new_path default to "" → safe
+    )
+    safe, reason = is_ref_safe_to_heal(ref, p)
+    assert safe is True
+    assert reason == "auto-heal"
+
+
+# ---------- HATS-549 Phase 4: user-hook disable pre-pass ----------
+
+
+def test_phase4_disables_user_owned_hook_in_settings(tmp_path: Path) -> None:
+    """User-authored hook script (basename NOT in ai-hats whitelist):
+    its settings.json entry is REMOVED rather than path-rewritten.
+    File preserved under user-hooks/ for re-enable."""
+    p = _init_project(tmp_path)
+    _init_git_repo(p)
+    settings = p / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({
+        "hooks": {"PreToolUse": [{
+            "matcher": "Bash",
+            "hooks": [{
+                "type": "command",
+                "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/my_secret_guard.py",
+            }],
+        }]},
+    }, indent=2))
+    # User-owned file present (so the disable pre-pass triggers on a
+    # basename that's NOT in the package-data whitelist).
+    (p / ".agent" / "hooks").mkdir(parents=True)
+    (p / ".agent" / "hooks" / "my_secret_guard.py").write_text("#!/usr/bin/env python3\n")
+    _commit_all(p)
+
+    report = heal_external_refs(p, verbose=False)
+
+    payload = json.loads(settings.read_text())
+    # The PreToolUse list should no longer contain any matcher entry —
+    # the lone hook was disabled, the matcher cascade-dropped.
+    assert payload.get("hooks", {}).get("PreToolUse", []) == [] or \
+        "PreToolUse" not in payload.get("hooks", {})
+    # Inventory carries the disable record + re-enable snippet.
+    assert len(report.inventoried) == 1
+    assert report.inventoried[0].reason == "user-hook-disabled"
+    assert "user-hooks" in report.inventoried[0].full_new_path
+
+
+def test_phase4_leaves_ai_hats_owned_hook_alone(tmp_path: Path) -> None:
+    """ai-hats-owned hook (basename in the package whitelist):
+    NOT disabled — normal heal proceeds as before."""
+    p = _init_project(tmp_path)
+    _init_git_repo(p)
+    settings = p / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({
+        "hooks": {"PreToolUse": [{
+            "matcher": "Bash",
+            "hooks": [{
+                "type": "command",
+                "command": ".agent/hooks/pre_bash_shared_state_guard.sh",
+            }],
+        }]},
+    }, indent=2))
+    # Legacy source AND new dst both exist (so the dst-missing gate
+    # doesn't fire and the normal rewrite path is exercised).
+    (p / ".agent" / "hooks").mkdir(parents=True)
+    (p / ".agent" / "hooks" / "pre_bash_shared_state_guard.sh").write_text("#!/bin/sh\n")
+    new_loc = p / ".agent" / "ai-hats" / "library" / "hooks"
+    new_loc.mkdir(parents=True)
+    (new_loc / "pre_bash_shared_state_guard.sh").write_text("#!/bin/sh\n")
+    _commit_all(p)
+
+    report = heal_external_refs(p, verbose=False)
+
+    payload = json.loads(settings.read_text())
+    cmd = payload["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    # Path rewritten to new location, entry NOT dropped.
+    assert "ai-hats/library/hooks" in cmd
+    # Inventory empty (no disable + no dst-missing on a healthy path).
+    assert report.inventoried == []
+    assert len(report.healed_json) == 1
+
+
+def test_phase4_cascade_drops_empty_hooks_array(tmp_path: Path) -> None:
+    """When the only entry under a matcher is disabled, the matcher
+    block itself is dropped (cascade)."""
+    p = _init_project(tmp_path)
+    _init_git_repo(p)
+    settings = p / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({
+        "hooks": {"PreToolUse": [
+            {"matcher": "Bash", "hooks": [{
+                "type": "command",
+                "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/foreign.py",
+            }]},
+            {"matcher": "Edit", "hooks": [{
+                "type": "command",
+                "command": ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh",
+            }]},
+        ]},
+    }, indent=2))
+    (p / ".agent" / "hooks").mkdir(parents=True)
+    (p / ".agent" / "hooks" / "foreign.py").write_text("#!/usr/bin/env python3\n")
+    new_loc = p / ".agent" / "ai-hats" / "library" / "hooks"
+    new_loc.mkdir(parents=True)
+    (new_loc / "pre_bash_shared_state_guard.sh").write_text("#!/bin/sh\n")
+    _commit_all(p)
+
+    heal_external_refs(p, verbose=False)
+
+    payload = json.loads(settings.read_text())
+    matchers = payload["hooks"]["PreToolUse"]
+    # Bash matcher cascade-dropped; Edit matcher (ai-hats-owned) stays.
+    assert len(matchers) == 1
+    assert matchers[0]["matcher"] == "Edit"
+
+
+def test_phase4_preserves_managed_marker_on_remaining_matcher(tmp_path: Path) -> None:
+    """When a user-owned hook entry is REMOVED from a matcher whose
+    other hooks survive, the matcher's metadata
+    (matcher/_ai_hats_managed/timeout) is preserved."""
+    p = _init_project(tmp_path)
+    _init_git_repo(p)
+    settings = p / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({
+        "hooks": {"PreToolUse": [{
+            "matcher": "Bash",
+            "_ai_hats_managed": "ai-hats:hats-437",
+            "hooks": [
+                {"type": "command", "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/foreign.py"},
+                {"type": "command", "command": ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh"},
+            ],
+        }]},
+    }, indent=2))
+    (p / ".agent" / "hooks").mkdir(parents=True)
+    (p / ".agent" / "hooks" / "foreign.py").write_text("#!/usr/bin/env python3\n")
+    new_loc = p / ".agent" / "ai-hats" / "library" / "hooks"
+    new_loc.mkdir(parents=True)
+    (new_loc / "pre_bash_shared_state_guard.sh").write_text("#!/bin/sh\n")
+    _commit_all(p)
+
+    heal_external_refs(p, verbose=False)
+
+    payload = json.loads(settings.read_text())
+    matcher = payload["hooks"]["PreToolUse"][0]
+    assert matcher["_ai_hats_managed"] == "ai-hats:hats-437"
+    assert matcher["matcher"] == "Bash"
+    assert len(matcher["hooks"]) == 1
+    # The remaining entry is the ai-hats-owned one (which the normal
+    # heal pass may have rewritten — either form is acceptable).
+    surviving = matcher["hooks"][0]["command"]
+    assert "shared_state_guard" in surviving
+
+
+def test_phase4_inventory_includes_reenable_snippet(tmp_path: Path) -> None:
+    """The inventory file must carry a JSON copy-paste snippet
+    pointing at the new user-hooks/ location — that's the whole UX
+    contract of explicit-disable."""
+    p = _init_project(tmp_path)
+    _init_git_repo(p)
+    settings = p / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({
+        "hooks": {"PreToolUse": [{
+            "matcher": "Bash",
+            "hooks": [{
+                "type": "command",
+                "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/foo.py",
+            }],
+        }]},
+    }, indent=2))
+    (p / ".agent" / "hooks").mkdir(parents=True)
+    (p / ".agent" / "hooks" / "foo.py").write_text("#!/usr/bin/env python3\n")
+    _commit_all(p)
+
+    report = heal_external_refs(p, verbose=False)
+    assert report.inventory_path is not None
+    body = report.inventory_path.read_text()
+    assert "Re-enable snippet" in body
+    assert "user-hooks/foo.py" in body
+    assert "```json" in body
+
+
+def test_phase4_idempotent_no_op_when_no_user_hooks(tmp_path: Path) -> None:
+    """A settings.json that only references managed hooks (or none)
+    must not be touched by the Phase 4 pre-pass."""
+    p = _init_project(tmp_path)
+    _init_git_repo(p)
+    settings = p / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    payload = {"hooks": {"PreToolUse": [{
+        "matcher": "Bash",
+        "hooks": [{
+            "type": "command",
+            "command": ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh",
+        }],
+    }]}}
+    settings.write_text(json.dumps(payload, indent=2))
+    new_loc = p / ".agent" / "ai-hats" / "library" / "hooks"
+    new_loc.mkdir(parents=True)
+    (new_loc / "pre_bash_shared_state_guard.sh").write_text("#!/bin/sh\n")
+    _commit_all(p)
+
+    before = settings.read_text()
+    report = heal_external_refs(p, verbose=False)
+    after = settings.read_text()
+
+    # No-op: settings unchanged, no inventoried disables.
+    assert before == after
+    assert all(r.reason != "user-hook-disabled" for r in report.inventoried)

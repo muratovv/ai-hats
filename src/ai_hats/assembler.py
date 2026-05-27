@@ -35,6 +35,7 @@ from .paths import (
     rules_dir as _lib_rules_dir,
     skills_dir as _lib_skills_dir,
     user_home,
+    user_hooks_dir as _user_hooks_dir,
 )
 from .placeholders import expand_path_placeholders
 from .safe_delete import discard as _safe_discard
@@ -64,6 +65,44 @@ MANAGED_SKILLS_MARKER = ".ai-hats-managed"
 CANONICAL_DIR = "ai-hats"
 CANONICAL_MANIFEST = "MANAGED"
 USER_RULES_SUBDIR = "user-rules"
+
+
+def _ai_hats_owned_hook_basenames() -> frozenset[str]:
+    """Return basenames of hooks shipped inside the ai-hats package.
+
+    Sourced from ``importlib.resources.files("ai_hats.library") /
+    "hooks"`` so the whitelist tracks package contents automatically
+    when new managed hooks are added. The result is cached (functools
+    not used to keep import-time imports minimal — re-walking the
+    package data is cheap on every call).
+
+    Used by:
+
+    - :meth:`Assembler._migrate_layout_v4_hooks_partition` — entries
+      in this set move to ``library/hooks/``; everything else goes
+      to ``user-hooks/``.
+    - :mod:`ai_hats.migration_healer` — Stage A1 disable-vs-rewrite
+      decision: user-owned hooks (basename NOT in whitelist) have
+      their settings.json entry removed (HATS-549 Phase 4); managed
+      hooks pass through to the normal rewrite path.
+
+    On a broken install (package data missing) returns an empty set —
+    callers degrade gracefully, treating every legacy hook as
+    user-owned (worst case: a managed file ends up under user-hooks/,
+    which the next clean install can re-materialize under library/hooks/).
+    """
+    from importlib.resources import files
+
+    try:
+        source_root = files("ai_hats.library") / "hooks"
+        root_path = Path(str(source_root))
+        if not root_path.is_dir():
+            return frozenset()
+        return frozenset(
+            entry.name for entry in root_path.iterdir() if entry.is_file()
+        )
+    except (ModuleNotFoundError, FileNotFoundError, OSError):
+        return frozenset()
 
 
 def _builtin_library_layers() -> list[Path]:
@@ -959,9 +998,166 @@ class Assembler:
         Moves `.agent/{rules,skills,hooks}/` → `<ai_hats_dir>/library/...`.
         `.claude/skills/` and `.githooks/` are NOT touched — they stay as
         copy-publish targets owned by external tooling.
+
+        HATS-549 Phase 4: the ``.agent/hooks/`` entry is partitioned
+        before the generic move — managed files (basename in the
+        ai-hats-owned whitelist) head to ``<ai_hats_dir>/library/hooks/``
+        as before; foreign files (anything else, including subdirs)
+        head to ``<ai_hats_dir>/user-hooks/``. Keeps user-owned content
+        out of the managed namespace where future sweep passes could
+        delete it.
         """
+        self._migrate_layout_v4_hooks_partition()
         for old_abs, new_abs in legacy_paths_by_class(self.project_dir, "library"):
+            # The hooks pair was handled by the partition step; skip
+            # so ``_idempotent_move`` doesn't run on the now-empty
+            # ``.agent/hooks/`` directory (the partition leaves it
+            # cleaned up).
+            if old_abs.name == "hooks" and old_abs.parent.name == AGENT_DIR:
+                continue
             self._idempotent_move(old_abs, new_abs)
+
+    def _migrate_layout_v4_hooks_partition(self) -> None:
+        """HATS-549 Phase 4: partition legacy ``.agent/hooks/`` contents
+        AND reconcile pre-Phase-4 stuck states.
+
+        Two passes:
+
+        1. **Legacy partition** — walks ``.agent/hooks/``, routes each
+           entry by basename whitelist:
+
+           - basename in :func:`_ai_hats_owned_hook_basenames` →
+             moved to ``<ai_hats_dir>/library/hooks/<name>``.
+           - everything else (including subdirs like ``tests/``,
+             arbitrary ``.py`` / ``.yaml`` / ``.log`` files) →
+             moved to ``<ai_hats_dir>/user-hooks/<name>``.
+
+        2. **Managed-namespace reconciliation** — walks
+           ``<ai_hats_dir>/library/hooks/`` for foreign files left
+           there by a pre-HATS-549 bump that auto-healed
+           ``.agent/hooks/X`` → ``.agent/ai-hats/library/hooks/X``
+           for user-owned content. Anything NOT in the whitelist
+           (and not framework bookkeeping like ``.manifest``) is
+           relocated to ``user-hooks/`` — getting user content out of
+           the managed namespace before any future sweep could touch
+           it. Combined with the healer Phase 4 pre-pass (which now
+           also recognises the post-heal path prefix), the next bump
+           cleanly heals stuck states from prior versions.
+
+        Per-entry move preserves mode (``shutil.move`` is rename-based
+        on the same filesystem, copytree-based across filesystems).
+        Idempotent: a fully-partitioned project is a no-op on re-entry.
+        Collisions on the destination side route through
+        ``_safe_discard`` so the user can recover from trash. Discard
+        failures emit a stderr WARN — silence here would mask a
+        partial-state limbo (HATS-549 review S.4).
+
+        On a fully-partitioned state, ``.agent/hooks/`` is empty;
+        ``_safe_discard`` drops the empty directory so the legacy
+        namespace doesn't linger.
+        """
+        managed_dst = _lib_hooks_dir(self.project_dir)
+        user_dst = _user_hooks_dir(self.project_dir)
+        whitelist = _ai_hats_owned_hook_basenames()
+
+        # --- Pass 1: legacy partition ---
+        legacy = self.project_dir / AGENT_DIR / "hooks"
+        if legacy.is_dir():
+            managed_dst.mkdir(parents=True, exist_ok=True)
+            try:
+                entries = list(legacy.iterdir())
+            except OSError:
+                entries = []
+
+            for entry in entries:
+                if entry.name in whitelist:
+                    target = managed_dst / entry.name
+                else:
+                    user_dst.mkdir(parents=True, exist_ok=True)
+                    target = user_dst / entry.name
+                if target.exists():
+                    self._safe_discard_with_warn(
+                        entry, reason="hooks-partition-collision",
+                    )
+                    continue
+                shutil.move(str(entry), str(target))
+
+            try:
+                if not any(legacy.iterdir()):
+                    _safe_discard(
+                        legacy, reason="hooks-partition-cleanup",
+                        project_dir=self.project_dir,
+                    )
+            except OSError as e:
+                print(
+                    f"[ai-hats] WARN: hooks-partition: could not clean up "
+                    f"empty {legacy}: {e}", file=sys.stderr,
+                )
+
+        # --- Pass 2: managed-namespace reconciliation ---
+        # If a previous-version bump auto-healed settings.json to point
+        # at .agent/ai-hats/library/hooks/<x> AND moved the file there,
+        # the file is currently sitting in the managed namespace where
+        # any future framework-side sweep could mistake it for managed
+        # content and discard it. Move it out NOW, while we're already
+        # in a "rearrange hooks" frame.
+        if managed_dst.is_dir():
+            try:
+                managed_entries = list(managed_dst.iterdir())
+            except OSError:
+                managed_entries = []
+            for entry in managed_entries:
+                # Skip framework bookkeeping and whitelisted basenames.
+                if entry.name == ".manifest":
+                    continue
+                if entry.name in whitelist:
+                    continue
+                user_dst.mkdir(parents=True, exist_ok=True)
+                target = user_dst / entry.name
+                if target.exists():
+                    self._safe_discard_with_warn(
+                        entry, reason="hooks-reconcile-collision",
+                    )
+                    continue
+                shutil.move(str(entry), str(target))
+
+    def _safe_discard_with_warn(self, path: Path, *, reason: str) -> None:
+        """Wrap :func:`_safe_discard` with a stderr WARN on failure.
+
+        HATS-549 review S.4: on a read-only filesystem (some CI gates)
+        ``_safe_discard`` fails silently, leaving the caller's flow
+        in partial-state limbo. The WARN ensures the user sees the
+        problem instead of triaging mysterious downstream errors.
+        """
+        try:
+            _safe_discard(
+                path, reason=reason, project_dir=self.project_dir,
+            )
+        except OSError as e:
+            try:
+                rel = path.relative_to(self.project_dir).as_posix()
+            except ValueError:
+                rel = str(path)
+            print(
+                f"[ai-hats] WARN: {reason}: could not safe-discard {rel}: "
+                f"{e}", file=sys.stderr,
+            )
+
+    @staticmethod
+    def _ai_hats_owned_hook_basenames() -> frozenset[str]:
+        """Set of hook basenames the framework itself ships.
+
+        Sourced from ``importlib.resources.files("ai_hats.library") /
+        "hooks"`` at import time — same surface as
+        :meth:`_materialize_pretooluse_hooks`. Anything not in this set
+        is treated as user-owned content by the v4 hooks-partition step
+        (HATS-549 Phase 4).
+
+        Exposed as a public-ish static so :mod:`ai_hats.migration_healer`
+        can read the same whitelist when deciding whether to auto-disable
+        vs. heal a settings.json hook entry.
+        """
+        return _ai_hats_owned_hook_basenames()
 
     def _migrate_layout_v4_tracker(self) -> None:
         """One-shot migration of tracker + root-class artefacts (HATS-313).

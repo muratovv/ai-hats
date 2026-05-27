@@ -267,6 +267,45 @@ def hooks_dir(project_dir: Path) -> Path:
     return library_dir(project_dir) / "hooks"
 
 
+# Claude Code expands ``$CLAUDE_PROJECT_DIR`` at hook-execution time
+# to the project root. Migration callers (healer / asserter) strip the
+# prefix to resolve hook command paths against the project dir
+# statically. HATS-549 review Q.1 — single source of truth, shared
+# across migration_healer / migration_assert / future callers.
+CLAUDE_PROJECT_DIR_VAR: str = "$CLAUDE_PROJECT_DIR/"
+
+
+def strip_claude_project_dir(s: str) -> str:
+    """Remove a leading ``$CLAUDE_PROJECT_DIR/`` placeholder if present.
+
+    Idempotent; non-prefixed strings pass through unchanged. Use when
+    converting a hook command value into a project-relative path for
+    on-disk existence checks.
+    """
+    if s.startswith(CLAUDE_PROJECT_DIR_VAR):
+        return s[len(CLAUDE_PROJECT_DIR_VAR):]
+    return s
+
+
+def user_hooks_dir(project_dir: Path) -> Path:
+    """User-owned hooks sibling: ``<ai_hats_dir>/user-hooks/`` (HATS-549).
+
+    Sibling of :func:`hooks_dir` but EXPLICITLY outside the
+    ai-hats-managed namespace. Files relocated here by the v4 migration
+    are project-authored; ai-hats does not sweep, materialize, or
+    auto-wire them. Re-enabling a relocated hook is a manual
+    user action — see the Stage B inventory entry written at migration
+    time for the copy-paste snippet.
+
+    The separation prevents the failure class observed in the proxmox
+    regression: a user-authored ``.py`` cohabited with managed ``.sh``
+    files under ``library/hooks/`` and got swept by a manifest-driven
+    cleanup pass in an older ai-hats codepath. With the namespaces
+    cleanly split, no managed sweep can ever touch user content.
+    """
+    return ai_hats_dir(project_dir) / "user-hooks"
+
+
 # ---------- Framework-root artefacts ----------
 
 
