@@ -402,11 +402,14 @@ def _snapshot_dep_versions() -> dict[str, str]:
 def _snapshot_library() -> dict[str, set[str]]:
     """Snapshot available component names from built-in + global library paths."""
     from ..assembler import _builtin_library_layers
+    from ..paths import user_home
     from ..resolver import LibraryResolver
     from ..models import ComponentType
 
     paths = list(_builtin_library_layers())
-    global_lib = Path.home() / ".ai-hats"
+    # HATS-532: ``user_home()`` honours ``AI_HATS_USER_HOME`` so the
+    # snapshot reflects the same global slice the assembler resolved.
+    global_lib = user_home() / ".ai-hats"
     if global_lib.is_dir():
         paths.append(global_lib)
     resolver = LibraryResolver(paths)

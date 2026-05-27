@@ -153,6 +153,25 @@ export AI_HATS_DIR=/team/shared-ai-hats
 
 The override applies to **every** ai-hats artefact (traces, future pipelines), so use it when you want to isolate a whole environment, not just step code.
 
+### 1.7a `AI_HATS_USER_HOME` override — isolated global customizations
+
+The global customization overlay (`~/.ai-hats/customizations.yaml`) is
+resolved through `Path.home()` by default. To point that resolution
+elsewhere — typically for e2e tests that need to seed a global
+customization without touching the developer's real file — set
+`AI_HATS_USER_HOME`:
+
+```bash
+export AI_HATS_USER_HOME=/tmp/sandbox-home
+# resolves to /tmp/sandbox-home/.ai-hats/customizations.yaml
+```
+
+The override is **surgical**: it intercepts only the ai-hats-managed
+global slice. `HOME` itself stays intact, so claude-cli auth (macOS
+Keychain) and any other home-resolved state are unaffected — the
+difference that makes `AI_HATS_USER_HOME` useful where plain `HOME=`
+overrides break the auth chain.
+
 ### 1.8 Conventions
 
 - **Files starting with `_`** (e.g. `_helpers.py`) are skipped by the loader. Use them for shared helpers between user steps.

@@ -683,8 +683,14 @@ class UserConfig(_YamlModel):
 
     @classmethod
     def default_path(cls) -> Path:
-        """Canonical location: ``~/.ai-hats/customizations.yaml``."""
-        return Path.home() / ".ai-hats" / "customizations.yaml"
+        """Canonical location: ``<user_home>/.ai-hats/customizations.yaml``.
+
+        ``user_home`` honours the ``AI_HATS_USER_HOME`` env override
+        (HATS-532) so e2e tests can isolate the global-layer file
+        without overriding ``HOME`` (which would break claude auth).
+        """
+        from .paths import user_home
+        return user_home() / ".ai-hats" / "customizations.yaml"
 
     @classmethod
     def from_yaml(cls, path: Path) -> UserConfig:
