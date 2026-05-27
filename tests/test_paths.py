@@ -31,6 +31,7 @@ from ai_hats.paths import (
     tasks_dir,
     tracker_dir,
     traces_dir,
+    user_home,
     venv_path,
     worktree_state_path,
     worktrees_dir,
@@ -386,3 +387,40 @@ def test_normalize_venv_path_allows_absolute_unlike_ai_hats_dir():
     assert normalize_venv_path("/opt/venv") == "/opt/venv"
     with pytest.raises(ValueError):
         normalize_ai_hats_dir("/opt/venv")
+
+
+# ---------- user_home (HATS-532) ----------
+
+
+def test_user_home_default(monkeypatch):
+    """Env unset → falls through to ``Path.home()``."""
+    from pathlib import Path
+
+    monkeypatch.delenv("AI_HATS_USER_HOME", raising=False)
+    assert user_home() == Path.home()
+
+
+def test_user_home_env_override(tmp_path, monkeypatch):
+    """AI_HATS_USER_HOME points the resolver at an isolated dir.
+
+    Sanity for HATS-532's primary motivation: e2e tests can isolate
+    ``~/.ai-hats/`` without touching ``HOME`` (which breaks claude
+    auth on macOS).
+    """
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(tmp_path))
+    assert user_home() == tmp_path
+
+
+def test_user_home_env_expands_user(tmp_path, monkeypatch):
+    """AI_HATS_USER_HOME with leading ``~`` gets expanded."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("AI_HATS_USER_HOME", "~/fake-home")
+    assert user_home() == tmp_path / "fake-home"
+
+
+def test_user_home_env_empty_string_falls_back(monkeypatch):
+    """Empty ``AI_HATS_USER_HOME`` is treated as unset."""
+    from pathlib import Path
+
+    monkeypatch.setenv("AI_HATS_USER_HOME", "")
+    assert user_home() == Path.home()
