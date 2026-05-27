@@ -57,13 +57,17 @@ def _build_update_cmd(ref: str | None = None) -> list[str]:
         target = f"{url}@{ref}"
     else:
         target = f"ai-hats @ {url}" if "://" in url else url
+    # HATS-563: dropped --no-cache-dir. --force-reinstall already re-installs
+    # the named target unconditionally; transitive deps (click, pydantic,
+    # rich, pyyaml, ...) are safe to serve from the local wheel cache. Keeps
+    # `self update` fast even when the host has a warm pip cache. UX bonus
+    # to all users; also unlocks ~100s on the e2e+smoke gate (HATS-550).
     return [
         sys.executable,
         "-m",
         "pip",
         "install",
         "--force-reinstall",
-        "--no-cache-dir",
         target,
     ]
 
@@ -706,9 +710,9 @@ def update(
     # SHA detection returns identical garbage on both sides (e.g.,
     # subprocess.run mocks that yield ``stdout=""`` for every git call);
     # ahead/behind only resolve to (0, 0) when ``git rev-list`` actually
-    # walked real commits. No point paying ``pip install --force-reinstall
-    # --no-cache-dir``'s 10-15s re-download for a no-op; bump() below
-    # still runs to apply any pending migrations.
+    # walked real commits. No point paying ``pip install --force-reinstall``'s
+    # 10-15s re-download for a no-op; bump() below still runs to apply
+    # any pending migrations.
     # HATS-496: --revision always re-installs. The user asked for a specific
     # ref; even if the resolved SHA happens to equal the installed SHA, force
     # the pip call so direct_url.json.vcs_info.requested_revision is rewritten

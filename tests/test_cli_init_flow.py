@@ -536,12 +536,26 @@ def test_migrate_cleanup_ignores_non_tmp_pointer_target(tmp_path):
 
 
 def test_update_command_uses_force_reinstall():
-    """Update command must use --force-reinstall to bypass pip cache."""
+    """Update command must use --force-reinstall and MUST NOT disable cache.
+
+    HATS-563: ``--no-cache-dir`` was dropped from the production pip
+    command. ``--force-reinstall`` already re-installs the target
+    unconditionally, so the extra flag only defeated pip's local wheel
+    cache for transitive deps (click, pydantic, rich, pyyaml, ...). The
+    negative assertion below is the fail-under-revert canary for
+    ``cli/maintenance.py:_build_update_cmd``; the full pipeline is
+    covered by ``tests/e2e/test_self_update_pip_cache.py``.
+    """
     from ai_hats.cli.maintenance import _build_update_cmd
 
     cmd = _build_update_cmd()
     assert "--force-reinstall" in cmd, "pip caches git installs; --force-reinstall is required"
-    assert "--no-cache-dir" in cmd, "pip caches wheels; --no-cache-dir forces fresh git clone"
+    assert "--no-cache-dir" not in cmd, (
+        "HATS-563: --no-cache-dir was dropped — --force-reinstall already "
+        "re-installs the target, --no-cache-dir only blocks pip's local "
+        "wheel cache for transitive deps and wastes ~100s on the HATS-550 "
+        "e2e+smoke gate"
+    )
     assert "--no-deps" not in cmd, (
         "must NOT pass --no-deps: new deps in pyproject.toml (e.g. ptyprocess in HATS-207) "
         "would otherwise be skipped on update and crash at runtime"
