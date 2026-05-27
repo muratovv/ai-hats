@@ -17,6 +17,7 @@ from .launch import LaunchProvider, Provider
 from .log import PostLog, PreLog
 from .make_audit import MakeAudit
 from .materialize import MaterializeSystemPrompt
+from .maybe_spawn_session_reviewer import MaybeSpawnSessionReviewer
 from .prompt import ResolvePrompt
 from .run_session_end import RunSessionEnd
 from .save import SaveArtifact
@@ -39,6 +40,8 @@ _BUILTINS = {
     "launch_provider": LaunchProvider,
     "provider": Provider,
     "make_audit": MakeAudit,
+    # HATS-530: shared by both finalize-hitl and finalize-subagent.
+    "maybe_spawn_session_reviewer": MaybeSpawnSessionReviewer,
     "run_session_end": RunSessionEnd,
     "spawn_session_review": SpawnSessionReview,
     "extract_marker": ExtractMarker,
@@ -69,6 +72,7 @@ __all__ = [
     "LaunchProvider",
     "MakeAudit",
     "MaterializeSystemPrompt",
+    "MaybeSpawnSessionReviewer",
     "PostLog",
     "PreLog",
     "Provider",
