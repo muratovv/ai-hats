@@ -110,7 +110,7 @@ Every behavioral-delivery `plan.md` states the chosen rung explicitly:
 > measured&gt;.*
 
 This sentence is the artefact the auditor sweep reads (see the companion
-HYP authored at plan-stage per `library-change-hypothesis-protocol`).
+HYP authored at document-stage per `library-change-hypothesis-protocol`).
 
 ### Case study — HATS-527 / 528 / 534
 
