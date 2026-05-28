@@ -170,12 +170,20 @@ def tmp_project(tmp_path: Path):
 
 
 @pytest.fixture(scope="module")
-def _shared_launcher_venv(tmp_path_factory, repo_root: Path):
+def _shared_launcher_venv(tmp_path_factory, repo_root: Path, request):
     """Module-scoped venv build — internal helper for :func:`tmp_venv_project`.
 
     Builds the launcher + a shared ai-hats venv ONCE per test module
     via :func:`tests.e2e._helpers.venv.build_launcher_venv` (~30-60s on
     cold pip cache). Returns ``(launcher_path, shared_venv_path)``.
+
+    HATS-570: the ``hats-venv-tier`` work dir holds a full venv (heavy)
+    and pytest's default retention keeps only the last few runs, so the
+    rest leak (16GB observed). A pass-only finalizer ``rmtree``s the work
+    dir when the module had no failures; a module with failures keeps the
+    venv for triage (mirrors the :func:`tests.conftest._wt_sandbox`
+    contract). Registered via ``addfinalizer`` BEFORE the skip paths so
+    the empty ``mktemp`` dir is reclaimed on skip too.
 
     Skips the whole module when:
 
@@ -191,6 +199,18 @@ def _shared_launcher_venv(tmp_path_factory, repo_root: Path):
     from _helpers.venv import build_launcher_venv, network_available
 
     work = tmp_path_factory.mktemp("hats-venv-tier")
+    failed_before = request.session.testsfailed
+
+    def _finalize() -> None:
+        # Pass-only: reclaim the venv work dir iff no test in this module
+        # failed. A failed module keeps it for triage.
+        if request.session.testsfailed == failed_before:
+            shutil.rmtree(work, ignore_errors=True)
+        else:
+            print(f"\n[venv-tier] module had failures — venv preserved: {work}")
+
+    request.addfinalizer(_finalize)
+
     if not network_available():
         pytest.skip("pip not on PATH — cannot build launcher venv")
     try:
