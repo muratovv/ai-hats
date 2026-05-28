@@ -21,7 +21,9 @@ Every SKILL.md follows this layout:
 <One-line purpose.>
 
 ## When to Use
-<Trigger conditions — when the agent should activate this skill.>
+<Boundaries & disambiguation the one-line description can't carry:
+when NOT to use, which sibling skill to prefer, scope edges.
+Complements the description's triggers — does not restate them.>
 
 ## <Main Section>
 <Core content. Section name depends on pattern (see below).>
@@ -32,6 +34,19 @@ Every SKILL.md follows this layout:
 ## Anti-Patterns             ← recommended
 <Common mistakes, 2-5 bullets.>
 ```
+
+### `description` vs `## When to Use` — two lifecycle stages
+
+They are read at different moments, so they carry different content:
+
+- **`description`** is in the always-on skill index (selection-time). It
+  is the *only* thing the selector sees, so it holds the **triggers** —
+  "what it does. Use when <X>".
+- **`## When to Use`** loads only *after* the skill is invoked
+  (post-load). The "should I use this" call is already made by then, so
+  restating triggers adds nothing. Use it for **boundaries &
+  disambiguation**: when NOT to use, which sibling skill to prefer,
+  scope edges — the nuance a one-line description can't hold.
 
 ## Patterns
 
@@ -59,7 +74,9 @@ or judgment-heavy steps as prose.
 - [ ] **Description includes BOTH capability AND trigger conditions** — it
   is the *only* thing the skill selector sees. "What it does. Use when
   <specific triggers>."
-- [ ] `## When to Use` section with concrete trigger conditions
+- [ ] `## When to Use` adds boundary/disambiguation value beyond the
+  description (when NOT to use, sibling-skill preference, scope edges) —
+  not a restatement of the description's triggers
 - [ ] Main body uses the correct heading for its pattern
 - [ ] `## Completion` present (unless reference/template pattern)
 - [ ] `## Anti-Patterns` present (unless trivially small)
@@ -81,6 +98,9 @@ see `references/external-skill-frameworks.md`.
 
 ## Anti-Patterns
 - Dumping hundreds of lines into one SKILL.md — split heavy content into `references/`
-- Vague "When to Use" that triggers on everything — be specific
+- `## When to Use` that merely restates the description — once the skill
+  is loaded the selection decision is already made; give boundaries /
+  disambiguation / when-NOT instead
+- Vague triggers in the `description` that match everything — be specific
 - Mixing multiple domains in one skill — split into focused skills
 - Omitting completion criteria — the agent won't know when to stop
