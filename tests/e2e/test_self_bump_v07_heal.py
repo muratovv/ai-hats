@@ -16,15 +16,13 @@ Covers the four contracts (was HATS-408 P4 — relocated from
 Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
 ``ai-hats`` binary, marked ``@pytest.mark.integration``.
 
-Fixture strategy follows ``tests/e2e/test_self_update_heals_legacy_refs.py``:
-one ``installed_launcher`` per *module* (cost: ~60s pip install + ~30s
-self-update); every test pins to the shared venv via ``AI_HATS_VENV``.
-Per-test cost stays under ~3s.
+Fixture strategy (HATS-582): reuses the session-scoped shared venv via
+:func:`tests.e2e.conftest.shared_launcher` — no per-module venv build;
+every test pins to it via ``AI_HATS_VENV``. Per-test cost stays under ~3s.
 """
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -32,7 +30,6 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
@@ -150,33 +147,18 @@ def _seed_v06_project(project_dir: Path) -> dict[str, Path]:
     return paths
 
 
-@pytest.fixture(scope="module")
-def installed_launcher(tmp_path_factory):
-    """Install ai-hats once per module (~60s pip + ~30s self-update).
+@pytest.fixture
+def installed_launcher(shared_launcher):
+    """Delegate to the session-scoped shared venv (HATS-582).
 
-    Every test in this module pins to the same venv via ``AI_HATS_VENV`` so
-    the per-test cost stays in the ~1–3s range.
+    Was a module-scoped builder (~90s) — now reuses the single session venv
+    from :func:`tests.e2e.conftest.shared_launcher`. Every test here is
+    read-only on the venv (works in a fresh ``tmp_path`` project). Returns
+    the ``(launcher, env)`` 2-tuple this module's tests unpack (the shared
+    venv path is dropped — tests here don't need it).
     """
-    tmp = tmp_path_factory.mktemp("launcher")
-    launcher_dest = tmp / "bin" / "ai-hats"
-    launcher_dest.parent.mkdir(parents=True)
-
-    env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(REPO_ROOT)
-    env.pop("AI_HATS_VENV", None)
-
-    _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp, env=env, timeout=30)
-    bootstrap_proj = tmp / "_bootstrap_proj"
-    bootstrap_proj.mkdir()
-    _run(
-        [str(launcher_dest), "self", "update"],
-        cwd=bootstrap_proj, env=env, timeout=180,
-    )
-    shared_venv = bootstrap_proj / ".agent" / "ai-hats" / ".venv"
-    assert shared_venv.is_dir(), "bootstrap did not create shared venv"
-    env["AI_HATS_VENV"] = str(shared_venv)
-    return launcher_dest, env
+    launcher, env, _shared_venv = shared_launcher
+    return launcher, env
 
 
 # ----- Test 1: default behaviour refuses, makes no changes -----

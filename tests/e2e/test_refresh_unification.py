@@ -30,13 +30,12 @@ Five contracts a reviewer can refute by reverting the relevant code:
 
 Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
 ``ai-hats`` binary, marked ``@pytest.mark.integration``. Cost
-amortization: module-scoped ``installed_launcher`` (~60s pip + ~30s
-self-update) shared across all tests in this module.
+amortization (HATS-582): reuses the session-scoped shared venv via
+:func:`tests.e2e.conftest.shared_launcher` — no per-module venv build.
 """
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -45,7 +44,6 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 MIGRATION_BANNER = "[ai-hats] running migration"
 ORPHAN_WARN_FRAGMENT = "Orphan ai-hats marker"
 EMPTY_AGENT_NOTE_FRAGMENT = ".agent/ holds only the managed ai-hats/ namespace"
@@ -64,33 +62,18 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-@pytest.fixture(scope="module")
-def installed_launcher(tmp_path_factory):
-    """Install ai-hats once per module; pin via ``AI_HATS_VENV``.
+@pytest.fixture
+def installed_launcher(shared_launcher):
+    """Delegate to the session-scoped shared venv (HATS-582).
 
-    Same shape as ``test_migration_registry_gate.py`` /
-    ``test_safe_delete_and_bump_internal.py``.
+    Was a module-scoped builder that ran ``install-launcher.sh`` +
+    ``self update`` (~90s) once per module. Every test here is read-only on
+    the venv (each works in a fresh ``tmp_path`` project), so they now reuse
+    the single session venv from
+    :func:`tests.e2e.conftest.shared_launcher`. Returns the same
+    ``(launcher, env, shared_venv)`` tuple the old fixture did.
     """
-    tmp = tmp_path_factory.mktemp("launcher")
-    launcher_dest = tmp / "bin" / "ai-hats"
-    launcher_dest.parent.mkdir(parents=True)
-
-    env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(REPO_ROOT)
-    env.pop("AI_HATS_VENV", None)
-
-    _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp, env=env, timeout=30)
-    bootstrap_proj = tmp / "_bootstrap_proj"
-    bootstrap_proj.mkdir()
-    _run(
-        [str(launcher_dest), "self", "update"],
-        cwd=bootstrap_proj, env=env, timeout=180,
-    )
-    shared_venv = bootstrap_proj / ".agent" / "ai-hats" / ".venv"
-    assert shared_venv.is_dir(), "bootstrap did not create shared venv"
-    env["AI_HATS_VENV"] = str(shared_venv)
-    return launcher_dest, env, shared_venv
+    return shared_launcher
 
 
 def _init(launcher: Path, project: Path, env: dict[str, str], *args: str):

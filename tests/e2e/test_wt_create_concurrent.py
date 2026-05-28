@@ -23,7 +23,6 @@ the loser exits 1 with an opaque ``CalledProcessError`` lacking the
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -31,7 +30,6 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
@@ -55,22 +53,12 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 @pytest.mark.integration
-def test_e2e_wt_create_concurrent_same_branch(tmp_path):
+def test_e2e_wt_create_concurrent_same_branch(shared_launcher, tmp_path):
     """Two parallel ``ai-hats wt create task/race`` processes converge on
     exactly one winner with no leaked state."""
-    launcher_dest = tmp_path / "bin" / "ai-hats"
+    launcher_dest, env, _venv = shared_launcher
     project = tmp_path / "project"
-    launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
-
-    env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(REPO_ROOT)
-    env.pop("AI_HATS_VENV", None)
-
-    # ---- install launcher ----
-    _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
-    assert launcher_dest.is_file()
 
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
@@ -86,7 +74,6 @@ def test_e2e_wt_create_concurrent_same_branch(tmp_path):
     _git(project, "add", "README.md")
     _git(project, "commit", "-m", "init")
 
-    ai_hats("self", "update")
     ai_hats(
         "self", "init",
         "-r", "assistant", "-p", "claude",
