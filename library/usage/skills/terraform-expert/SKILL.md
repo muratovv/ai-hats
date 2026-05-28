@@ -1,6 +1,6 @@
 ---
 name: terraform-expert
-description: Terraform/OpenTofu IaC — state management, DRY modules, safety practices
+description: Terraform/OpenTofu IaC covering state management, DRY modules, and safety practices. Use when writing or reviewing Terraform/OpenTofu configurations, planning infrastructure changes, or managing state and provider versions.
 ---
 # Terraform/OpenTofu Expert
 

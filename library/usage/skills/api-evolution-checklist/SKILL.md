@@ -1,6 +1,6 @@
 ---
 name: api-evolution-checklist
-description: Audit public-API/contract changes against Hyrum, Tesler, Leaky Abstractions, Lehman
+description: Audit public-API/contract changes against Hyrum, Tesler, Leaky Abstractions, and Lehman laws. Use when changing a public API signature, response shape, or error contract, refactoring a shared interface used by two or more callers, drafting an interface ADR, or reviewing a PR touching api/, proto/, or OpenAPI specs.
 ---
 # API Evolution Checklist
 

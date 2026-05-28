@@ -1,6 +1,6 @@
 ---
 name: system-design-verifier
-description: Audit architectures against failure modes (resilience, scalability, consistency, security)
+description: Audit architectures against failure modes (resilience, scalability, consistency, security). Use when reviewing a new system design or architecture proposal, before major infrastructure changes, or during post-incident analysis of architectural weaknesses.
 ---
 # System Design Verifier
 

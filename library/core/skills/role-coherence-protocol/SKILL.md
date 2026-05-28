@@ -1,6 +1,6 @@
 ---
 name: role-coherence-protocol
-description: Audit a composed role against the user's project context for contradictions and interference; produce free-form findings with proposed fixes
+description: "Audit a composed role against the user's project context for contradictions and interference, producing free-form findings with proposed fixes. Use when launched as a role-auditing role (auditor-for-role, judge-for-role, or sibling) whose first user message contains the target role's composed text plus the project context to audit against it."
 ---
 
 # Role Coherence Protocol

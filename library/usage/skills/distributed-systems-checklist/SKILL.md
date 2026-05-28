@@ -1,6 +1,6 @@
 ---
 name: distributed-systems-checklist
-description: Audit distributed services against the 8 fallacies + CAP trade-off
+description: Audit distributed services against the 8 fallacies and the CAP trade-off. Use during design review for any service that crosses a network boundary, during incident triage when root cause is unclear and a network or IPC layer is involved, or when drafting an architectural ADR for new distributed components.
 ---
 # Distributed Systems Checklist
 

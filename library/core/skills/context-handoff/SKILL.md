@@ -1,6 +1,6 @@
 ---
 name: context-handoff
-description: Summarize critical context (decisions, forks, pitfalls) into a handoff file for the next agent
+description: Summarize critical context (decisions, forks, pitfalls) into a handoff file for the next agent. Use before a context reset (invoked by context-reset), when explicitly asked to save current context, or before delegating work to a sub-agent that needs background.
 ---
 # Context Handoff
 
