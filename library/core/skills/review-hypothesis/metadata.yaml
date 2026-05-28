@@ -1,5 +1,5 @@
 name: review-hypothesis
-description: Vote on one active hypothesis — pick verdict + recommendation, persist via CLI
+description: Vote on one active hypothesis (HYP-NNN) against session evidence — pick confirmed/refuted/inconclusive/n-a + a recommendation and persist via ai-hats task hyp. Use when sweeping active hypotheses during a session review (reflect-session, session-reviewer, or judge).
 author: ai-hats
 tags: [review, hypothesis, feedback-loop]
 pattern: protocol
