@@ -760,14 +760,20 @@ class WorktreeStateLostError(Exception):
     """Raised by ``_teardown_worktree`` when a ``transition done`` would
     silently no-op despite an un-merged worktree branch still existing.
 
-    HATS-541: a prior failed ``Worktree.merge()`` removes the worktree
-    directory and clears ``state.json`` per its failure-cleanup
-    contract, but leaves the worktree branch intact for manual recovery.
-    A subsequent ``task transition <id> done`` would then resolve
-    ``WorktreeManager.load_for_task`` to ``None`` and silently mark the
-    task DONE without performing any merge — a silent-data-loss class
-    of bug (same shape as the GitHub Merge Queue Apr-2026 incident
+    HATS-541: whenever the worktree ``state.json`` is gone but the
+    worktree branch still exists, a ``task transition <id> done`` would
+    resolve ``WorktreeManager.load_for_task`` to ``None`` and silently
+    mark the task DONE without performing any merge — a silent-data-loss
+    class of bug (same shape as the GitHub Merge Queue Apr-2026 incident
     that HATS-481 fixed in a sibling code path).
+
+    HATS-587 note: the original trigger was ``Worktree.merge()`` clearing
+    state + removing the worktree dir on merge failure. F5 changed that —
+    a failed merge now preserves worktree + state + branch for a clean
+    retry, so this guard is no longer reachable via the failed-merge path.
+    It remains as defense-in-depth for the residual orphan causes: manual
+    deletion of the state JSON, a crash between ``_remove_worktree`` and
+    ``_clear_state`` on the SUCCESS path, and pre-587 orphans.
 
     Carries ``task_id`` + ``branch_name`` so the CLI handler can build
     a recovery-hint message. The exception itself does NOT mutate any
@@ -879,6 +885,34 @@ class WorktreeBaseBranchMismatchError(Exception):
             f"worktree was created from '{expected}' and `wt merge` would "
             f"otherwise land on the current branch instead of the merge "
             f"target."
+        )
+
+
+class WorktreeMainRepoMidMergeError(Exception):
+    """Raised when ``wt merge`` runs while the main repo already has an
+    unfinished merge in progress (``MERGE_HEAD`` present).
+
+    HATS-587 / F4: ``_fast_forward_merge`` / ``_squash_merge`` invoke
+    ``git merge`` in the main-repo cwd. If a *foreign* merge is already
+    underway there (a conflicting peer merge left mid-resolution, an IDE
+    "merge branch" the operator never finished, a prior aborted run), git
+    refuses with ``exit 128`` and a raw ``CalledProcessError`` reaches the
+    CLI as an unhandled traceback. This guard refuses BEFORE any mutation
+    so the worktree and branch are left untouched and the operator gets an
+    actionable hint instead of a stack trace.
+
+    The recipe (``git merge --abort`` / resolve, then re-run) is owned by
+    the CLI handlers — the exception body is facts-only (HATS-509 contract).
+
+    Live incident motivating the guard: 2026-05-28 session — ``wt merge``
+    ran while the main repo was mid-merge of an unrelated HATS-570 branch.
+    """
+
+    def __init__(self, project_dir: Path) -> None:
+        self.project_dir = project_dir
+        super().__init__(
+            f"main repo at '{project_dir}' is mid-merge (MERGE_HEAD present) "
+            f"— refusing to start another merge on top of an unfinished one."
         )
 
 
@@ -1243,6 +1277,20 @@ class WorktreeManager:
                         current=head, expected=self._original_branch
                     )
 
+            # HATS-587 / F4: refuse if the main repo already has an
+            # unfinished merge in progress. _fast_forward_merge /
+            # _squash_merge run `git merge` in the main-repo cwd; on top of
+            # a pre-existing MERGE_HEAD git exits 128 with a raw
+            # CalledProcessError that would surface as an unhandled
+            # traceback. Refuse here — BEFORE _check_clean / _check_drift /
+            # the OriginalBranchMissing teardown and the merge mechanics —
+            # so the worktree and branch are left fully untouched and the
+            # operator gets an actionable hint (CLI owns the recipe). Place
+            # alongside the HEAD-mismatch guard: both are main-repo
+            # preconditions that must short-circuit before any mutation.
+            if self._main_repo_mid_merge():
+                raise WorktreeMainRepoMidMergeError(self.project_dir)
+
             if not force:
                 self._check_clean()
             if not accept_drift:
@@ -1261,9 +1309,18 @@ class WorktreeManager:
                 else:
                     self._fast_forward_merge()
             except Exception:
-                logger.warning("Merge failed, branch %s preserved", self.branch_name, exc_info=True)
-                self._remove_worktree()
-                self._clear_state()
+                # HATS-587 / F5: a failed merge (conflict, mid-resolution
+                # git error) must leave BOTH the worktree dir and the
+                # branch intact so the operator can resolve and re-run.
+                # Pre-587 this block tore the worktree down and cleared
+                # state, leaving an orphaned branch with no worktree —
+                # recovery then required a manual `git merge --no-ff`.
+                # Teardown happens ONLY on the success path below.
+                logger.warning(
+                    "Merge of %s failed; worktree and branch left intact for retry",
+                    self.branch_name,
+                    exc_info=True,
+                )
                 raise
             self._remove_worktree()
             self._delete_branch()
@@ -1787,6 +1844,22 @@ class WorktreeManager:
             self._git("rev-parse", "--verify", "--quiet", name)
             return True
         except subprocess.CalledProcessError:
+            return False
+
+    def _main_repo_mid_merge(self) -> bool:
+        """True iff the main repo has an unfinished merge in progress.
+
+        HATS-587 / F4: probes ``MERGE_HEAD`` in the main-repo cwd (where
+        ``_fast_forward_merge`` / ``_squash_merge`` run ``git merge``).
+        ``git rev-parse --verify --quiet MERGE_HEAD`` exits 0 only while a
+        merge is mid-resolution. Any git error (not a repo, exotic state)
+        falls back to ``False`` — the guard is a courtesy refusal, not a
+        correctness gate, so "can't tell" must not block a valid merge.
+        """
+        try:
+            self._git("rev-parse", "--verify", "--quiet", "MERGE_HEAD")
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
             return False
 
     def _is_ancestor(self, maybe_ancestor: str, descendant: str) -> bool:
