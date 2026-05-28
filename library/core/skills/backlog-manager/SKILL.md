@@ -1,6 +1,6 @@
 ---
 name: backlog-manager
-description: Backlog lifecycle orchestration for tasks, hypotheses, and proposals via the ai-hats CLI
+description: Backlog lifecycle orchestration for tasks, hypotheses, and proposals via the ai-hats CLI. Use when starting any new task, hypothesis, or proposal, managing state transitions on any of the three types, coordinating sub-agent delegation, or recording verdicts on hypotheses or votes on proposals.
 ---
 # Backlog Manager
 

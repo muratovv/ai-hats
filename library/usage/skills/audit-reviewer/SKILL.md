@@ -1,6 +1,6 @@
 ---
 name: audit-reviewer
-description: Triple-perspective code review (architect, security, quality)
+description: Triple-perspective code review (architect, security, quality). Use before finalizing any non-trivial code change, for self-review when no human reviewer is available, or when evaluating third-party code or pull requests.
 ---
 # Audit Reviewer
 

@@ -1,6 +1,6 @@
 ---
 name: scope-guard
-description: Enforce user-defined task boundaries, prevent scope creep and over-implementation
+description: "Enforce user-defined task boundaries to prevent scope creep and over-implementation. Use after receiving a task with explicit constraints (\"only X\", \"don't do Y\", \"focus on Z\"), before starting each new sub-step during execution, or when tempted to add helpful work not explicitly requested."
 ---
 # Scope Guard
 

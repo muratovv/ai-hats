@@ -1,6 +1,6 @@
 ---
 name: tool-evaluation-protocol
-description: Time-bounded protocol for evaluating new tools, libraries, or methodologies before adoption
+description: Time-bounded protocol for evaluating new tools, libraries, or methodologies before adoption. Use when evaluating a candidate dependency for the project, researching a methodology (e.g. ML/LLM frameworks, testing approaches), or following up on a hype-driven recommendation.
 ---
 # Tool Evaluation Protocol
 

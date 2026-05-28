@@ -1,6 +1,6 @@
 ---
 name: git-mastery
-description: Advanced git operations — branches, conventional commits, worktrees, rebasing
+description: Advanced git operations covering branches, conventional commits, worktrees, and rebasing. Use for any git operation beyond basic add/commit/push, for branch management, rebasing, and conflict resolution, or when setting up commit conventions for a project.
 ---
 # Git Mastery
 
