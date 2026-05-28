@@ -232,6 +232,20 @@ def _shared_launcher_venv(tmp_path_factory, repo_root: Path, request):
         return build_launcher_venv(work, repo_root)
     except FileNotFoundError as exc:
         pytest.skip(f"install-launcher.sh missing: {exc}")
+    except _subprocess.TimeoutExpired as exc:
+        # HATS-582: the venv build exceeded its (generous) window — almost
+        # always a degraded host (offline mid-build, or a corrupted pip
+        # cache refetching every dep with retry backoff). Skip the venv
+        # tier gracefully rather than ERROR-ing every dependent test: the
+        # shared venv is now a single point of failure for ~17 files, so a
+        # stuck build must degrade, not cascade.
+        detail = getattr(exc, "stderr", None) or str(exc)
+        if isinstance(detail, bytes):
+            detail = detail.decode(errors="replace")
+        pytest.skip(
+            "launcher venv build timed out (degraded host / corrupted pip "
+            f"cache); detail tail:\n{detail[-400:]}"
+        )
     except (_subprocess.CalledProcessError, RuntimeError) as exc:
         detail = getattr(exc, "stderr", None) or str(exc)
         pytest.skip(
