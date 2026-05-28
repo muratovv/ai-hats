@@ -7,15 +7,21 @@ Public API:
   projection-based state threading.
 - ``build`` / ``run`` — constructor and executor.
 - ``StepError`` / ``BuildError`` — contract violations.
+- ``CancelToken`` / ``CancelReason`` — cooperative cancellation primitive
+  (HATS-584); threaded by ``run`` for per-step timeout / external cancel.
 """
 
-from .pipeline import BuildError, Pipeline, build, run
+from .cancel import CancelReason, CancelToken
+from .pipeline import BuildError, Pipeline, PipelineCancelled, build, run
 from .step import FailurePolicy, Step, StepError, StepIO
 
 __all__ = [
     "BuildError",
+    "CancelReason",
+    "CancelToken",
     "FailurePolicy",
     "Pipeline",
+    "PipelineCancelled",
     "Step",
     "StepError",
     "StepIO",
