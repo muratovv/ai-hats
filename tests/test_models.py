@@ -423,15 +423,86 @@ def test_project_config_empty_customizations_not_serialized(tmp_path):
 # -- ProjectConfig schema validation (HATS-126) --
 
 
-def test_project_config_rejects_unknown_top_level_key(tmp_path):
+# -- HATS-581: forward-compat strip of unknown keys --
+
+
+def test_from_yaml_strips_unknown_future_key(tmp_path, capsys):
+    """HATS-581: an unknown top-level key no longer hard-crashes. It is
+    stripped with a stderr WARN so an OLDER binary survives a yaml a NEWER
+    binary wrote (the recovery command must keep working)."""
     path = tmp_path / "ai-hats.yaml"
-    path.write_text("provider: claude\nschema_version: 2\nmystery_flag: true\n")
+    path.write_text(
+        "provider: claude\nschema_version: 4\n"
+        "ai_hats_dir: .agent/ai-hats\nfuture_field: 7\n"
+    )
+
+    cfg = ProjectConfig.from_yaml(path)
+
+    assert cfg.provider == "claude"
+    assert not hasattr(cfg, "future_field")
+    err = capsys.readouterr().err
+    assert "dropping unknown field 'future_field'" in err
+
+
+def test_from_yaml_strips_migration_step_on_old_schema(tmp_path, capsys, monkeypatch):
+    """HATS-581 regression mirror of the live proxmox bug: an older binary
+    (model without ``migration_step``) loading a yaml that a newer binary
+    wrote with ``migration_step: 6`` must not crash."""
+    # Simulate an OLDER binary whose schema predates the field.
+    old_fields = dict(ProjectConfig.model_fields)
+    old_fields.pop("migration_step")
+    monkeypatch.setattr(ProjectConfig, "model_fields", old_fields)
+
+    path = tmp_path / "ai-hats.yaml"
+    path.write_text(
+        "provider: claude\nschema_version: 4\n"
+        "ai_hats_dir: .agent/ai-hats\nmigration_step: 6\n"
+    )
+
+    cfg = ProjectConfig.from_yaml(path)
+
+    assert cfg.provider == "claude"
+    err = capsys.readouterr().err
+    assert "dropping unknown field 'migration_step'" in err
+
+
+def test_from_yaml_deprecated_field_keeps_specific_message(tmp_path, capsys):
+    """HATS-581: deprecated ghosts are stripped FIRST, so they keep the
+    'deprecated' message and never fall through to the generic 'unknown' one."""
+    path = tmp_path / "ai-hats.yaml"
+    path.write_text(
+        "provider: claude\nschema_version: 4\n"
+        "ai_hats_dir: .agent/ai-hats\nimports_order: []\n"
+    )
+
+    ProjectConfig.from_yaml(path)
+
+    err = capsys.readouterr().err
+    assert "dropping deprecated field 'imports_order'" in err
+    assert "dropping unknown field 'imports_order'" not in err
+
+
+def test_from_yaml_missing_ai_hats_dir_still_hard_errors(tmp_path):
+    """HATS-581: the unknown-key strip must NOT weaken the required-field gate."""
+    path = tmp_path / "ai-hats.yaml"
+    path.write_text("provider: claude\nschema_version: 4\n")
 
     with pytest.raises(ProjectConfigError) as exc:
         ProjectConfig.from_yaml(path)
-    msg = str(exc.value)
-    assert str(path) in msg
-    assert "mystery_flag" in msg
+    assert "ai_hats_dir" in str(exc.value)
+
+
+def test_from_yaml_wrong_type_still_hard_errors(tmp_path):
+    """HATS-581: stripping unknown keys must not mask genuine type errors —
+    those are Fix #1 (config-tolerant update) territory, not Fix #2's."""
+    path = tmp_path / "ai-hats.yaml"
+    path.write_text(
+        "provider: claude\nschema_version: 4\n"
+        "ai_hats_dir: .agent/ai-hats\nmanage_gitignore: not-a-bool\n"
+    )
+
+    with pytest.raises(ProjectConfigError):
+        ProjectConfig.from_yaml(path)
 
 
 def test_project_config_rejects_unknown_provider(tmp_path):

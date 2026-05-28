@@ -492,6 +492,11 @@ class ProjectConfig(_YamlModel):
         # ``Assembler.bump``) gets a chance. Mutates ``data`` in-place
         # (the healed shape is what we'd want to persist on a save anyway).
         cls._strip_deprecated_fields(data, path)
+        # HATS-581: forward-compat — drop unknown keys (warn, don't crash) so
+        # an OLDER binary survives a yaml a NEWER binary wrote (e.g.
+        # ``migration_step``, added without a schema_version bump). Runs AFTER
+        # the deprecated strip so known ghosts keep their specific message.
+        cls._strip_unknown_fields(data, path)
         # HATS-408: heal empty default_role from active_role on load. Any
         # ai-hats command that needs an "effective role" already falls back
         # to (active_role or default_role); persisting the heal makes the
@@ -520,6 +525,34 @@ class ProjectConfig(_YamlModel):
                     f"(no longer supported; remove from yaml to silence).",
                     file=sys.stderr,
                 )
+
+    @classmethod
+    def _strip_unknown_fields(cls, data: dict[str, Any], path: Path) -> None:
+        """Drop keys not in the model schema; one stderr WARN per key.
+
+        HATS-581 forward-compat seam. A NEWER ai-hats may add a field to
+        ai-hats.yaml without bumping ``schema_version`` (``migration_step``
+        did exactly this — orthogonal to schema_version by design). An OLDER
+        binary that doesn't know the field must not hard-crash on it: strip
+        it with a visible WARN so the load succeeds and a subsequent
+        ``ai-hats self update`` can deliver code that understands the field.
+
+        Must run AFTER ``_strip_deprecated_fields`` so known ghosts keep their
+        specific message instead of falling through to the generic one here.
+        ``extra="forbid"`` stays as a backstop for nested models / direct
+        ``model_validate`` callers; after this pre-strip it is unreachable
+        from ``from_yaml``.
+
+        Channel: plain stderr (fires at yaml-load, before logging config).
+        """
+        for field in sorted(set(data) - set(cls.model_fields)):
+            data.pop(field)
+            print(
+                f"WARN: {path}: dropping unknown field {field!r} "
+                "(not in this ai-hats version's schema — written by a newer "
+                "ai-hats? run 'ai-hats self update' to use it).",
+                file=sys.stderr,
+            )
 
     @staticmethod
     def _heal_default_role(data: dict[str, Any], path: Path) -> None:
