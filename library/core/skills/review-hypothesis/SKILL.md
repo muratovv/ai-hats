@@ -1,3 +1,7 @@
+---
+name: review-hypothesis
+description: Vote on one active hypothesis (HYP-NNN) against session evidence — pick confirmed/refuted/inconclusive/n-a + a recommendation and persist via ai-hats task hyp. Use when sweeping active hypotheses during a session review (reflect-session, session-reviewer, or judge).
+---
 # Review Hypothesis
 
 Vote on one active hypothesis (`HYP-NNN`). Role-agnostic: same procedure
@@ -11,9 +15,16 @@ or any other reviewer.
 
 ## When to Use
 
-You are evaluating one HYP-NNN against session evidence (`audit.md`,
-`metrics.json`, session retro) — typically as part of a sweep over all
-active hypotheses (one verdict per HYP, no skipping).
+Boundaries & disambiguation (the description already states the trigger):
+
+- **One verdict per active HYP — no skipping.** A sweep that omits a HYP
+  is rejected by the post-validator.
+- **`n/a` is narrow** — reserved for sessions that *physically cannot*
+  test the HYP. If you are merely unsure whether it applies, write
+  `inconclusive`, not `n/a`.
+- **Meta-problems go to `review-proposal`**, not into the verdict. If the
+  HYP is ambiguous/untestable, file a meta-proposal and write
+  `inconclusive` citing it — do not guess a verdict.
 
 ## Procedure
 
@@ -35,8 +46,9 @@ prescribes a literal format, near-verbatim if it prescribes a shape.
 The protocol is the HYP author's contract with future auditors:
 "this is how I want you to report on this specific hypothesis".
 
-The field is free-form text written by the HYP author at plan-stage
-(see **library-change-hypothesis-protocol**). It is stored under
+The field is free-form text written by the HYP author at document-stage,
+after the diff is final (see **library-change-hypothesis-protocol**;
+HYPs are filed post-ship, not at plan — HATS-567). It is stored under
 `Hypothesis.extra` (the schema is permissive) — `ai-hats task hyp show`
 prints it verbatim; do not silently drop it.
 
@@ -45,23 +57,13 @@ evidence per the original convention. Legacy HYPs (001–015) have no
 protocol field; their verdicts continue to look the way they always
 have.
 
-**If your verdict is `n/a`** — protocol-shape compliance is OPTIONAL.
-`n/a` means "session physically cannot test this HYP", so there is no
-observation to map to the criterion. A short free-form rationale
-(`"session has no <relevant phase>"`) is acceptable even when the HYP
-carries a `verification_protocol`. The protocol is for verdicts that
-carry signal (`confirmed` / `refuted` / `inconclusive`).
+**If your verdict is `n/a`** — protocol-shape compliance is OPTIONAL: a
+short free-form rationale (`"session has no <relevant phase>"`) is fine
+even when the HYP carries a `verification_protocol`. The protocol is for
+signal-bearing verdicts (`confirmed` / `refuted` / `inconclusive`).
 
-**Examples in the wild:**
-
-- HYP-016 (under HATS-527) carries a *strict* three-line protocol:
-  `CRITERION: <verbatim>` / `OBSERVED: <verbatim or NOT OBSERVED>` /
-  `VERDICT_REASON: satisfies | fails | silent`. Your `--evidence`
-  string for HYP-016 MUST be exactly those three lines, joined by `\n`.
-- HYP-017 (under HATS-528) carries a *loose* paragraph protocol:
-  "one paragraph addressing (a) criterion, (b) session observation,
-  (c) whether (b) satisfies (a)". Your `--evidence` for HYP-017 is a
-  short prose paragraph; verbatim quotes encouraged but not required.
+Strict vs loose protocol examples (HYP-016 / HYP-017) →
+[`references/examples.md`](references/examples.md).
 
 **Format check before persist.** Before calling `append-verdict`, eyeball
 your evidence string against the protocol. If they don't match — fix
@@ -143,57 +145,6 @@ the wrapper artifact differs.
 
 ## Examples
 
-### ✓ Good: confirmed verdict
-
-HYP-008 success_criterion: "bash_anti_count == 0 in ≥4 of 5 sessions".
-Session metrics: `bash_anti_count: 0`. → `confirmed`,
-`evidence: "metrics.json:bash_anti_count=0"`, `recommendation: keep`
-(need 4 more).
-
-### ✓ Good: inconclusive with cited evidence
-
-HYP-003 about over-engineering. Session is a planning-only session with no
-implementation. → `inconclusive`,
-`evidence: "session has no implementation phase to evaluate"`,
-`recommendation: keep`.
-
-### ✗ Bad: silent n/a
-
-HYP-005 about neutral example prefixes. You don't understand what the
-hypothesis means. Filing `n/a` "to be safe" hides a knowledge gap.
-
-**Correct response**: file a meta-proposal via **review-proposal**, then
-write `inconclusive` for HYP-005 citing the meta-proposal id in evidence.
-
-### ✗ Bad: missing verdict
-
-A sweep that omits one or more active HYPs. The runtime post-validator
-(or the judge) rejects this and files an automatic meta-proposal.
-**Always emit one verdict per active HYP**, even when the answer is `n/a`.
-
-### ✓ Good: protocol-anchored verdict (HATS-528 PoC)
-
-HYP-016 carries the strict three-line `verification_protocol`. Session
-evidence: a HATS-499 child task transitioned plan→execute and filed
-HYP-NNN with a `verification_protocol` field. Verdict:
-
-```bash
-"$AH" task hyp append-verdict \
-  --hyp HYP-016 --session "$SID" \
-  --verdict confirmed \
-  --evidence "CRITERION: ≥3 of next 4 HATS-499 child tasks land with either a companion HYP that has verification_protocol filled, or a work_log entry no behavior change — pure refactor: <reason>.
-OBSERVED: HATS-543 plan→execute transition; HYP-019 filed with verification_protocol set; commit body references HATS-543/HYP-019.
-VERDICT_REASON: satisfies" \
-  --recommendation keep
-```
-
-Three lines, joined with newlines, each prefixed exactly as the
-protocol demands. A future auditor sweeping HYP-016 will see the same
-shape and can compare across the window.
-
-### ✗ Bad: ignoring `verification_protocol`
-
-HYP-016 (strict protocol). Auditor emits free-form prose:
-`evidence: "saw HATS-543 file a HYP, looks good"`. Wrong — the
-HYP's protocol demanded three labeled lines. Fix by reshaping the
-evidence string; do NOT alter the HYP's protocol mid-sweep.
+Worked examples — confirmed / inconclusive / silent-n/a / missing-verdict,
+plus `verification_protocol`-anchored verdicts (HATS-528 PoC) — live in
+[`references/examples.md`](references/examples.md).
