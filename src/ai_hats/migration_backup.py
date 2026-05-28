@@ -177,7 +177,7 @@ def _sweep_retention(base: Path, slug: str, keep: int = MAX_RETENTION) -> None:
         return
     for old in candidates[:excess]:
         try:
-            old.unlink()
+            old.unlink()  # safe-delete: ok retention prune of own migration backups
         except OSError:
             # Concurrent unlink, permission flap, etc. The next sweep
             # will retry. Not a safety issue — retention is purely
@@ -287,7 +287,7 @@ def snapshot_pre_bump(
     except OSError as e:
         # Clean up partial file before re-raising.
         try:
-            target.unlink()
+            target.unlink()  # safe-delete: ok cleanup of partial file on write failure
         except OSError:
             pass
         if e.errno in (errno.ENOSPC, errno.EACCES, errno.EROFS):

@@ -132,7 +132,7 @@ remaining single-actor mistakes fail loud instead of corrupting state:
 Teardown hardening (HATS-488)
 -----------------------------
 * **B-03** — :meth:`WorktreeManager._remove_worktree` no longer falls
-  back to ``shutil.rmtree(ignore_errors=True)`` when ``git worktree
+  back to ``shutil.rmtree`` (``ignore_errors=True``) when ``git worktree
   remove --force`` fails. Default raises :class:`WorktreeRemoveError`
   (data preservation); ``wt discard --force-remove`` opts in to the
   rmtree path explicitly. ``wt merge`` propagates the exception so
@@ -1144,7 +1144,7 @@ class WorktreeManager:
                 )
             except subprocess.CalledProcessError as exc:
                 # L4: cleanup leaked tempdir + (only-our) branch.
-                shutil.rmtree(self.worktree_path, ignore_errors=True)
+                shutil.rmtree(self.worktree_path, ignore_errors=True)  # safe-delete: ok L4 cleanup of leaked mkdtemp on create failure
                 self.worktree_path = None
                 if not branch_existed_before:
                     try:
@@ -1993,7 +1993,7 @@ class WorktreeManager:
         """Remove the worktree from git and filesystem.
 
         HATS-488 (B-03 + R-04) — pre-488 fallback path silently
-        ``shutil.rmtree(ignore_errors=True)`` + auto-``git worktree
+        ``shutil.rmtree`` (``ignore_errors=True``) + auto-``git worktree
         prune``. Two problems:
 
         * **B-03**: rmtree ignoring errors nuked uncommitted work that
