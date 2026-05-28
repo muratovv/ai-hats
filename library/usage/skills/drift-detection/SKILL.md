@@ -1,6 +1,6 @@
 ---
 name: drift-detection
-description: Compare implementation diff against task acceptance criteria and ADRs to surface drift
+description: Compare implementation diff against task acceptance criteria and ADRs to surface drift. Use when a task is in review state before transitioning to done, when integrating a worktree spanning two or more sessions, during a pre-merge audit when the diff exceeds the task description, or after a sub-agent reports completion.
 ---
 # Drift Detection
 

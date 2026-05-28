@@ -1,6 +1,6 @@
 ---
 name: self-retrospective
-description: Post-work analysis to identify systemic improvements (5 Whys, classify, archive)
+description: Post-work analysis to identify systemic improvements (5 Whys, classify, archive). Use after task completion (especially with failures or backtracks), after a failed task (mandatory), or when backlog-manager transitions to the review or failed state.
 ---
 # Self-Retrospective
 

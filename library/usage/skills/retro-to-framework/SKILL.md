@@ -1,6 +1,6 @@
 ---
 name: retro-to-framework
-description: Convert project retrospective findings into framework-level improvements (rules, skills, skill updates)
+description: Convert project retrospective findings into framework-level improvements (rules, skills, skill updates). Use after a retrospective identifies problems that are not project-specific, when CLAUDE.md band-aids accumulate (more than 3 per-project rules that could be generic), or when the same problem recurs across multiple projects.
 ---
 # Retro-to-Framework
 

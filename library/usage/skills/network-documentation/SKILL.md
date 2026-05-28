@@ -1,6 +1,6 @@
 ---
 name: network-documentation
-description: Maintain network topology and DNS documentation as source of truth
+description: Maintain network topology and DNS documentation as source of truth. Use after any network topology change (new service, port, tunnel, route), when onboarding a new service or domain, or during periodic accuracy audits of network docs.
 ---
 # Network Documentation
 
