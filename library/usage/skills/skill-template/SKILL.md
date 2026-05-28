@@ -1,6 +1,6 @@
 ---
 name: skill-template
-description: Canonical template and validation guide for creating ai-hats skills
+description: Canonical template and validation guide for ai-hats skills. Use when creating a new skill, reviewing an existing one for structural compliance, or deciding which pattern fits a new behavior.
 ---
 # Skill Template
 
@@ -45,15 +45,31 @@ Choose the main section heading by pattern:
 | reference | Conventions | Declarative guidelines, no procedure |
 | template | Format | Prescribes a specific output structure |
 
+## Scripts vs prose
+
+Add a `scripts/` utility (rather than prose the agent re-generates) when
+the operation is **deterministic, repeatable, and benefits from explicit
+error handling**. A committed script saves tokens and is more reliable
+than code regenerated from a description each time. Keep ad-hoc, one-off,
+or judgment-heavy steps as prose.
+
 ## Validation Checklist
 
 - [ ] H1 + one-liner present
+- [ ] **Description includes BOTH capability AND trigger conditions** — it
+  is the *only* thing the skill selector sees. "What it does. Use when
+  <specific triggers>."
 - [ ] `## When to Use` section with concrete trigger conditions
 - [ ] Main body uses the correct heading for its pattern
 - [ ] `## Completion` present (unless reference/template pattern)
 - [ ] `## Anti-Patterns` present (unless trivially small)
 - [ ] `metadata.yaml` exists alongside SKILL.md
-- [ ] Total length ≤ 50 lines (orchestrators may exceed)
+- [ ] **References one level deep** — `SKILL.md → references/*.md`, never
+  `references/*.md → references/sub/*.md`. No reference pyramids.
+- [ ] **Length policy:** `≤50` lines ideal · `50–150` warning (justify in
+  the skill or split) · `>150` must split — move content into
+  `references/` or sibling skills. If a skill cleanly divides into two
+  domains, split it.
 
 ## References
 
