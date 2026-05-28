@@ -116,6 +116,7 @@ def task_transition(
     from ..worktree import WorktreeBaseBranchMismatchError  # HATS-533
     from ..worktree import WorktreeCreateError  # HATS-517
     from ..worktree import WorktreeDriftError  # HATS-509
+    from ..worktree import WorktreeMainRepoMidMergeError  # HATS-587 / F4
     from ..worktree import WorktreeStateLostError  # HATS-541
 
     mgr = _task_manager(_project_dir())
@@ -226,6 +227,33 @@ def task_transition(
         console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
         console.print(
             f"  [cyan]git checkout {_escape(e.expected)}[/]",
+            soft_wrap=True,
+        )
+        console.print(
+            f"  [cyan]ai-hats task transition {task_id} done[/]",
+            soft_wrap=True,
+        )
+        sys.exit(1)
+    except WorktreeMainRepoMidMergeError as e:
+        # HATS-587 / F4: the main repo already has an unfinished merge in
+        # progress (foreign MERGE_HEAD). The internal `wt merge` refuses
+        # BEFORE any mutation, so the worktree and branch are untouched and
+        # the card stays in `review` (HATS-481 fail-loud). Surface a clean
+        # resolve recipe instead of a raw exit-128 traceback.
+        from rich.markup import escape as _escape
+
+        project_dir = _project_dir()
+        console.print(
+            f"[red]Refused (main repo mid-merge)[/] — "
+            f"cannot merge for {task_id}."
+        )
+        console.print(_escape(str(e)))
+        console.print("")
+        console.print("Resolve the in-progress merge first, then retry:")
+        console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
+        console.print(
+            "  [cyan]git merge --abort[/]  [dim]# or resolve conflicts + "
+            "git commit[/]",
             soft_wrap=True,
         )
         console.print(
