@@ -601,6 +601,7 @@ def update(
     """
     from .. import __version__ as old_version
     from ..assembler import AssemblyError
+    from ..models import ProjectConfigError
 
     console.print(f"Current version: [bold]{old_version}[/]")
     # HATS-318: surface which interpreter we're updating. When the wrapper has
@@ -687,22 +688,40 @@ def update(
     # raise or any AssemblyError/OSError from the bump pipeline).
     # Used at the bottom of the function to surface a non-zero exit.
     bump_in_process_failed = False
+    # HATS-581: set when the INSTALLED code can't parse ai-hats.yaml. The
+    # recovery command (``self update``) must not be blocked by a config the
+    # current code rejects — degrade and let the fresh-interpreter bump (new
+    # code) heal it.
+    config_unreadable = False
 
     if config_path.exists():
         # HATS-408 review (R1): we used to call ``ProjectConfig.from_yaml``
         # AND ``_assembler`` (which itself calls ``from_yaml``), firing the
         # yaml-load WARNs (deprecated-field strip, default_role heal) twice
         # per ``self update``. Build the Assembler once and read its config.
-        asm = _assembler(project_dir)
-        cfg = asm.project_config
-        # HATS-407: active_role is the runtime cache (empty until first
-        # session). For a freshly-installed project where only default_role
-        # is set, we still want auto-bump to run so migrations and the
-        # canonical aggregator refresh. Fall back to default_role for the
-        # bump-trigger decision.
-        active_role = cfg.active_role or cfg.default_role or None
-        if active_role:
-            before_rules, before_skills = _snapshot_composition(asm)
+        try:
+            asm = _assembler(project_dir)
+        except ProjectConfigError as e:
+            # HATS-581: degrade instead of crashing. Install the new package,
+            # then force the fresh-interpreter bump below — new code may heal
+            # the config (forward-compat strip) or report it cleanly.
+            console.print(
+                "  [yellow]ai-hats.yaml not parseable by the installed "
+                f"version[/]:\n  [dim]{e}[/]\n"
+                "  [dim]Proceeding with update; the new version will attempt "
+                "to heal the config during bump.[/]"
+            )
+            config_unreadable = True
+        else:
+            cfg = asm.project_config
+            # HATS-407: active_role is the runtime cache (empty until first
+            # session). For a freshly-installed project where only default_role
+            # is set, we still want auto-bump to run so migrations and the
+            # canonical aggregator refresh. Fall back to default_role for the
+            # bump-trigger decision.
+            active_role = cfg.active_role or cfg.default_role or None
+            if active_role:
+                before_rules, before_skills = _snapshot_composition(asm)
 
     # 2. Install — short-circuited when the probe confirms installed SHA
     # already matches remote master AND the ahead/behind axes resolved to
@@ -808,10 +827,16 @@ def update(
     # user manually re-runs the bump-internal entry. HATS-470: the
     # subprocess entry-point moved from `ai-hats self bump` (CLI command
     # removed) to `python -m ai_hats._bump_internal` (hidden module).
-    if active_role:
-        console.print(f"\n[bold]Re-assembling:[/] {active_role}")
+    # HATS-581: also run the bump when the pre-install config read failed —
+    # the fresh-interpreter bump (new code) is exactly what heals the config.
+    if active_role or config_unreadable:
+        role_label = active_role or "(config unreadable — healing)"
+        console.print(f"\n[bold]Re-assembling:[/] {role_label}")
         version_changed = new_version != old_version
-        if version_changed:
+        # HATS-581: force the fresh-interpreter subprocess whenever the config
+        # was unreadable in-process — the in-process branch would re-run
+        # ``_assembler`` with the same un-parsing code and re-crash.
+        if version_changed or config_unreadable:
             # Fresh interpreter → new code (healer, migrations, etc.).
             # Stdout/stderr passthrough so [heal] lines / spinners stream live.
             bump_cmd = [sys.executable, "-m", "ai_hats._bump_internal"]
@@ -841,8 +866,15 @@ def update(
                         "stalled.[/]"
                     )
             # Snapshot composition AFTER bump to compute rule/skill diff.
-            asm = _assembler(project_dir)
-            after_rules, after_skills = _snapshot_composition(asm)
+            # HATS-581: the bump may not have healed a non-strippable error
+            # (e.g. a wrong-type value, not an unknown key). The package is
+            # already installed; tolerate the re-read failure and report no
+            # diff rather than crashing the recovery command.
+            try:
+                asm = _assembler(project_dir)
+                after_rules, after_skills = _snapshot_composition(asm)
+            except ProjectConfigError:
+                after_rules, after_skills = before_rules, before_skills
         else:
             # No version change → no chicken-and-egg risk; in-process is fine
             # and avoids ~150ms subprocess overhead. Wrapped in a spinner so
