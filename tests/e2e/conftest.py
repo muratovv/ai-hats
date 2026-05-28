@@ -170,7 +170,7 @@ def tmp_project(tmp_path: Path):
 
 
 @pytest.fixture(scope="session")
-def _shared_launcher_venv(tmp_path_factory, repo_root: Path):
+def _shared_launcher_venv(tmp_path_factory, repo_root: Path, request):
     """Session-scoped venv build — internal helper for :func:`tmp_venv_project`.
 
     Builds the launcher + a shared ai-hats venv ONCE per test session
@@ -188,6 +188,16 @@ def _shared_launcher_venv(tmp_path_factory, repo_root: Path):
     :func:`test_wave1_venv_tier.test_shared_venv_reused_across_tests`,
     which fails loudly if any test poisons the shared venv.
 
+    HATS-570: the ``hats-venv-tier`` work dir holds a full venv (heavy)
+    and pytest's default retention keeps only the last few runs, so the
+    rest leak (16GB observed). A pass-only finalizer ``rmtree``s the work
+    dir when no test failed after the venv was built (session-scoped
+    delta — robust to unrelated pre-existing failures); a run with
+    venv-tier failures keeps the venv for triage (mirrors the
+    :func:`tests.conftest._wt_sandbox` contract). Registered via
+    ``addfinalizer`` BEFORE the skip paths so the empty ``mktemp`` dir is
+    reclaimed on skip too.
+
     Skips the whole session when:
 
     * ``scripts/install-launcher.sh`` is missing (untrusted checkout)
@@ -202,6 +212,19 @@ def _shared_launcher_venv(tmp_path_factory, repo_root: Path):
     from _helpers.venv import build_launcher_venv, network_available
 
     work = tmp_path_factory.mktemp("hats-venv-tier")
+    failed_before = request.session.testsfailed
+
+    def _finalize() -> None:
+        # Pass-only: reclaim the venv work dir iff no test failed after the
+        # venv was built (session-scoped delta — ignores unrelated
+        # pre-existing failures). A venv-tier failure keeps it for triage.
+        if request.session.testsfailed == failed_before:
+            shutil.rmtree(work, ignore_errors=True)
+        else:
+            print(f"\n[venv-tier] failures after build — venv preserved: {work}")
+
+    request.addfinalizer(_finalize)
+
     if not network_available():
         pytest.skip("pip not on PATH — cannot build launcher venv")
     try:
