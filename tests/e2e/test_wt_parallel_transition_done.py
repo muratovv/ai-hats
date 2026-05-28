@@ -38,7 +38,6 @@ verifies L4' in isolation. Together they cover the whole stack.
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -46,7 +45,6 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
@@ -129,21 +127,12 @@ def _walk_task_to_review(
 
 
 @pytest.mark.integration
-def test_e2e_parallel_transition_done_no_data_loss(tmp_path):
+def test_e2e_parallel_transition_done_no_data_loss(shared_launcher, tmp_path):
     """Two `transition done` on tasks sharing a base ref both succeed
     cleanly under L1' + L3' — no silent data loss, no flake."""
-    launcher_dest = tmp_path / "bin" / "ai-hats"
+    launcher_dest, env, _venv = shared_launcher
     project = tmp_path / "project"
-    launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
-
-    env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(REPO_ROOT)
-    env.pop("AI_HATS_VENV", None)
-
-    _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
-    assert launcher_dest.is_file()
 
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
@@ -159,7 +148,6 @@ def test_e2e_parallel_transition_done_no_data_loss(tmp_path):
     _git(project, "add", "README.md")
     _git(project, "commit", "-m", "init")
 
-    ai_hats("self", "update")
     ai_hats(
         "self", "init",
         "-r", "assistant", "-p", "claude",
