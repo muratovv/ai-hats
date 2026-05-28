@@ -1018,22 +1018,22 @@ def test_teardown_worktree_swallows_discard_failure(mgr, monkeypatch):
 def test_teardown_worktree_raises_when_state_lost_but_branch_exists(
     git_mgr, monkeypatch
 ):
-    """HATS-541: a SECOND ``transition done`` after a failed first attempt
-    must NOT silently mark the task DONE.
+    """HATS-541: a ``transition done`` whose worktree state JSON is gone
+    while the branch still exists must NOT silently mark the task DONE.
 
-    Pre-HATS-541 path: ``Worktree.merge()`` failure cleans up state.json
-    AND removes the worktree dir, but preserves the branch. The next
-    ``load_for_task`` returns ``None``, ``_teardown_worktree`` silently
-    returned, ``_save_task`` stamped DONE → master never advanced,
-    tracker lied. Same silent-data-loss class as HATS-481.
+    The orphan state — ``load_for_task`` returns ``None`` but the
+    ``task/<id>`` branch persists — must trigger ``WorktreeStateLostError``
+    so ``_save_task`` never stamps DONE without a merge (same
+    silent-data-loss class as HATS-481).
 
-    Repro contract: walk task to REVIEW on a real git repo (so the
-    branch ``task/t-1`` actually exists), then stub ``load_for_task``
-    twice: first call returns the failing merge manager (attempt 1
-    raises ``CalledProcessError``, task stays REVIEW); second call
-    returns ``None`` (mimicking the post-failure cleanup). Second
-    attempt MUST raise ``WorktreeStateLostError`` because
-    ``branch_exists("task/t-1")`` is True.
+    HATS-587 note: post-F5 a *failed* merge no longer produces this orphan
+    (the worktree dir + state + branch are all preserved for a clean
+    retry). This test exercises the guard as **defense-in-depth** for the
+    residual causes (manual state deletion, crash on the success path,
+    pre-587 orphans) by stubbing the orphan directly: ``load_for_task``
+    returns ``None`` on a real git repo where ``branch_exists("task/t-1")``
+    is True. The first stub (failing merge → task stays REVIEW) still
+    pins the HATS-481 fail-loud contract.
     """
     from ai_hats import worktree as worktree_module
     from ai_hats.worktree import WorktreeStateLostError

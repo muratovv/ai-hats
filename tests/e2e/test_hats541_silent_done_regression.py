@@ -1,26 +1,30 @@
-"""End-to-end coverage for HATS-541 — `transition done` must NOT
-silently mark a task DONE on a SECOND attempt after the first attempt's
-merge failed and orphaned the worktree state.
+"""End-to-end coverage for `transition done` under a failed merge —
+the HATS-481/541 silent-DONE protection PLUS the HATS-587/F5 clean-retry.
 
-Sibling to ``test_wt_merge_conflict_preserves_review.py`` (HATS-481).
-HATS-481 fixed the FIRST-attempt swallow. HATS-541 fixes the
-SECOND-attempt silent-no-op: after the first failure, ``Worktree.merge()``
-clears ``state.json`` AND removes the worktree dir but PRESERVES the
-branch. ``WorktreeManager.load_for_task`` then returns ``None`` and the
-pre-541 ``_teardown_worktree`` silently returned → ``_save_task``
-stamped DONE without any merge.
+HATS-481 fixed the first-attempt swallow: a merge failure must NOT
+silently stamp the task DONE. HATS-541 added a defensive guard for the
+orphan that a failed merge USED to leave behind (worktree dir + state
+cleared, branch preserved → second `transition done` silently no-oped).
 
-Per ``dev_rule_e2e_gate``: the change touches ``state.py`` + adds a new
-exception type, NOT ``cli/`` / ``scripts/`` / ``_bootstrap.py``. The
-gate doesn't strictly require an e2e — but the bug WAS reproduced via
-the CLI binary in the originating session, so this e2e is the strongest
-fail-under-revert and the only test that catches a CLI-handler
-regression.
+HATS-587 / F5 removed that orphan at the source: a failed merge now
+PRESERVES the worktree dir + branch + state, so the second
+`transition done` (after the operator resolves the cause) is a clean
+RETRY that succeeds — no manual `git merge --no-ff` recovery. The
+WorktreeStateLostError guard survives as defense-in-depth for residual
+orphan causes (manual deletion, crash on the success path); it is
+exercised at the unit level in
+`tests/test_state.py::test_teardown_worktree_raises_when_state_lost_but_branch_exists`.
 
-**Fail-under-revert** (mandatory): remove the ``WorktreeStateLostError``
-raise in ``state.py:_teardown_worktree``'s ``active is None`` branch.
-Step (8) below observes ``state == "done"`` instead of ``"review"`` and
-the assertion fails. Verified locally before commit.
+Per `dev_rule_e2e_gate`: HATS-587 touches `src/ai_hats/cli/` +
+`src/ai_hats/worktree.py`, so a real-launcher + real-binary e2e is
+mandatory. CliRunner / pipeline tests do NOT satisfy the gate.
+
+**Fail-under-revert** (HATS-587/F5): restore the
+`self._remove_worktree()` + `self._clear_state()` calls in
+`WorktreeManager.merge`'s `except` block. Attempt 2 then finds the state
+gone, the merge never re-runs, and step (7) observes the task stuck in
+`review` (WorktreeStateLostError) instead of advancing to `done` — the
+final assertion fails.
 """
 
 from __future__ import annotations
@@ -69,14 +73,14 @@ def _task_state(project: Path, task_id: str) -> str:
 
 
 @pytest.mark.integration
-def test_e2e_second_done_attempt_after_failed_merge_does_not_silently_succeed(tmp_path):
+def test_e2e_failed_done_stays_review_then_retry_succeeds(tmp_path):
     """Two-attempt `transition done` flow under a forced merge conflict.
 
-    Attempt 1: merge conflict → exit non-zero, task stays in `review`.
-    Attempt 2: state.json + worktree dir are gone (cleared by attempt
-    1's `Worktree.merge()` failure path), but the branch is preserved.
-    The HATS-541 defensive raise MUST fire — exit non-zero, task STILL
-    in `review`, recovery hint surfaced.
+    Attempt 1: merge conflict → exit non-zero, task stays in `review`,
+    and the worktree + branch are PRESERVED (HATS-587/F5).
+    Attempt 2: after the operator resolves the collision, the worktree is
+    still present, so `transition done` re-runs the merge cleanly and the
+    task advances to `done`.
     """
     launcher_dest = tmp_path / "bin" / "ai-hats"
     project = tmp_path / "project"
@@ -117,8 +121,8 @@ def test_e2e_second_done_attempt_after_failed_merge_does_not_silently_succeed(tm
     task_id = "TST-001"
     branch_ref = f"task/{task_id.lower()}"
     ai_hats(
-        "task", "create", "Silent-done regression",
-        "-d", "Used to verify HATS-541 defensive raise on retry.",
+        "task", "create", "Failed-merge retry regression",
+        "-d", "Used to verify HATS-481/541 silent-done + HATS-587/F5 retry.",
         "--id", task_id,
     )
     ai_hats("task", "transition", task_id, "plan")
@@ -127,7 +131,7 @@ def test_e2e_second_done_attempt_after_failed_merge_does_not_silently_succeed(tm
     plans_dir.mkdir(parents=True, exist_ok=True)
     plan_path = plans_dir / "001-conflict.md"
     plan_path.write_text(
-        f"# {task_id} plan\n\nWrite to CONFLICT.txt and try to merge twice.\n"
+        f"# {task_id} plan\n\nWrite to COLLIDE.txt and try to merge twice.\n"
     )
     ai_hats("task", "plan-sync", task_id, "--from-file", str(plan_path))
 
@@ -154,20 +158,20 @@ def test_e2e_second_done_attempt_after_failed_merge_does_not_silently_succeed(tm
     # passes because master HEAD doesn't move below.
     _git(wt_path, "config", "user.email", "e2e@test")
     _git(wt_path, "config", "user.name", "E2E")
-    (wt_path / "ADDED.txt").write_text("from-worktree\n")
-    _git(wt_path, "add", "ADDED.txt")
+    (wt_path / "COLLIDE.txt").write_text("from-worktree\n")
+    _git(wt_path, "add", "COLLIDE.txt")
     _git(
         wt_path, "-c", "core.hooksPath=/dev/null",
         "-c", "commit.gpgsign=false",
-        "commit", "-m", "worktree adds ADDED.txt",
+        "commit", "-m", "worktree adds COLLIDE.txt",
     )
 
     # Main side: place an UNTRACKED file at the same path. Drift check
     # is satisfied (no commits on main since worktree create). But
     # `git merge --no-ff` exits 2 with "untracked working tree files
     # would be overwritten by merge" — exactly the failure that
-    # triggered HATS-541 in the originating session.
-    (project / "ADDED.txt").write_text("untracked-on-main\n")
+    # orphaned a branch in the originating session.
+    (project / "COLLIDE.txt").write_text("untracked-on-main\n")
     # Intentionally NOT staged / committed.
 
     ai_hats("task", "transition", task_id, "document")
@@ -186,53 +190,50 @@ def test_e2e_second_done_attempt_after_failed_merge_does_not_silently_succeed(tm
         "attempt 1: task moved out of `review` despite merge failure"
     )
 
-    # ---- Sanity: worktree branch preserved, state.json gone. ----
+    # ---- HATS-587/F5: worktree dir + branch PRESERVED on failure. ----
     branches = _git(project, "branch", "--list", branch_ref).stdout
     assert branch_ref in branches, (
-        f"attempt 1: worktree branch missing — repro premise broken:\n"
-        f"{branches}"
+        f"attempt 1: worktree branch must be preserved:\n{branches}"
+    )
+    assert wt_path.is_dir(), (
+        "🐛 F5 REGRESSION: a failed merge tore down the worktree directory — "
+        "the next `transition done` can no longer be a clean retry"
     )
 
-    # ---- Resolve the underlying untracked-file collision ----
-    # (the original HATS-529 recovery user action). Mirrors what an
-    # operator would do between attempts. Also abort any stray MERGING
-    # state defensively.
-    (project / "ADDED.txt").unlink()
+    # ---- Resolve the underlying untracked-file collision. ----
+    # Mirrors what an operator does between attempts; also abort any stray
+    # MERGING state left by the conflicting merge.
+    (project / "COLLIDE.txt").unlink()
     subprocess.run(
         ["git", "merge", "--abort"], cwd=str(project),
         capture_output=True, check=False,
     )
 
-    # ---- Attempt 2: the HATS-541 defensive raise MUST fire. ----
+    # ---- Attempt 2: clean retry → task advances to `done`. ----
     res2 = ai_hats(
         "task", "transition", task_id, "done",
         expect_exit=None, timeout=90,
     )
-    assert res2.returncode != 0, (
-        f"🐛 HATS-541 REGRESSION: attempt 2 silently succeeded despite "
-        f"orphaned worktree branch.\n"
+    assert res2.returncode == 0, (
+        f"🐛 attempt 2 should be a clean retry now that the worktree is "
+        f"preserved (HATS-587/F5)\n"
         f"stdout:\n{res2.stdout}\nstderr:\n{res2.stderr}"
     )
-    combined = res2.stdout + res2.stderr
-    assert "worktree state lost" in combined.lower(), (
-        f"attempt 2: refusal banner missing\n{combined}"
-    )
-    assert branch_ref in combined, (
-        f"attempt 2: branch name missing from recovery hint\n{combined}"
-    )
-    assert "git merge --no-ff" in combined, (
-        f"attempt 2: manual recovery recipe missing\n{combined}"
-    )
 
-    # ---- Task state must STILL be `review`. ----
-    assert _task_state(project, task_id) == "review", (
-        "🐛 HATS-541 REGRESSION: task moved to DONE on attempt 2 "
-        "without a real merge — silent-data-loss class."
+    # ---- Task state must now be `done`, with a real merge behind it. ----
+    assert _task_state(project, task_id) == "done", (
+        f"attempt 2: task should advance to `done` after a clean retry\n"
+        f"stdout:\n{res2.stdout}\nstderr:\n{res2.stderr}"
     )
-
-    # ---- Branch still preserved for actual manual recovery. ----
+    # The worktree commit actually landed on the base branch.
+    log = _git(project, "log", "--all", "--pretty=%s", "-n", "10").stdout
+    assert "worktree adds COLLIDE.txt" in log, (
+        f"worktree commit missing from history — merge did not really "
+        f"happen:\n{log}"
+    )
+    # Worktree branch cleaned up after the successful merge.
     branches_final = _git(project, "branch", "--list", branch_ref).stdout
-    assert branch_ref in branches_final, (
-        f"attempt 2: branch must remain preserved across the refusal\n"
-        f"{branches_final}"
+    assert branches_final.strip() == "", (
+        f"worktree branch should be deleted after the successful retry:\n"
+        f"{branches_final!r}"
     )

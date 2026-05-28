@@ -818,12 +818,18 @@ class TaskManager:
 
         active = WorktreeManager.load_for_task(self.project_dir, task.id)
         if active is None:
-            # HATS-541 fail-loud: state.json may have been unlinked by a
-            # prior failed ``Worktree.merge()`` (which clears state +
-            # removes the worktree dir, but preserves the branch). A
-            # silent return here on the ``merge=True`` path would let
-            # ``_save_task`` stamp DONE without any merge ever
-            # happening — same silent-data-loss class as HATS-481.
+            # HATS-541 fail-loud, defense-in-depth: a worktree state may be
+            # gone while a ``task/<id>`` branch still exists. Post-HATS-587
+            # a *failed* ``Worktree.merge()`` no longer produces this orphan
+            # (F5: merge failure preserves worktree + state + branch for a
+            # clean retry). The guard still covers the residual causes:
+            # manual ``rm`` of the state JSON, a crash between
+            # ``_remove_worktree`` and ``_clear_state`` on the SUCCESS path,
+            # and pre-587 orphans created before that fix landed.
+            #
+            # A silent return here on the ``merge=True`` path would let
+            # ``_save_task`` stamp DONE without any merge ever happening —
+            # the silent-data-loss class HATS-481/541 exist to prevent.
             #
             # If a ``task/<id>`` branch still exists in the repo, refuse
             # the transition and point the user at manual recovery.
@@ -853,12 +859,15 @@ class TaskManager:
         except Exception:
             if merge:
                 # HATS-481 fail-loud: re-raise so `transition` aborts before
-                # `_save_task` marks the task DONE. The worktree branch is
-                # preserved by the caller (WorktreeManager.merge cleans up
-                # on exception path).
+                # `_save_task` marks the task DONE. Post-HATS-587 (F5) the
+                # worktree dir, branch AND state JSON are all preserved by
+                # WorktreeManager.merge on the exception path — the next
+                # `transition done` is a clean retry once the operator
+                # resolves the conflict (no manual `git merge --no-ff`).
                 logger.error(
-                    "Worktree merge failed for task %s, branch '%s' "
-                    "preserved. Task NOT marked done — resolve and retry.",
+                    "Worktree merge failed for task %s, branch '%s' and "
+                    "worktree preserved. Task NOT marked done — resolve and "
+                    "retry.",
                     task.id, active.branch_name,
                 )
                 raise
