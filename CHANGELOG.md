@@ -50,6 +50,21 @@ since the latest tag lives under **Unreleased** until the next release.
     transparently.
 
 ### Fixed
+- **`self update` forward-compat deadlock on a newer-written
+  `ai-hats.yaml`** (HATS-581). An older installed binary hard-crashed on
+  a config field a newer binary had written (e.g. `migration_step`, added
+  without a `schema_version` bump): `ProjectConfig`'s `extra="forbid"`
+  raised at the pre-install config read, blocking the very `self update`
+  that would have delivered code able to parse it. Two layers:
+  - `ProjectConfig.from_yaml` now strips unknown top-level keys with a
+    stderr WARN (`dropping unknown field '<key>'`) instead of raising —
+    forward-compat, mirroring the existing deprecated-field strip.
+    `extra="forbid"` stays as a backstop for nested models.
+  - `ai-hats self update` tolerates an unparseable config: it degrades
+    (prints a graceful "not parseable by the installed version" message,
+    skips the composition snapshot) and forces the fresh-interpreter bump
+    so the newly installed code heals the config — rather than aborting
+    with a traceback before the package install.
 - **Migration healer auto-rewrites to missing destinations** (HATS-549
   Phase 2). `migration_healer` Stage A1 / A2 substitutions previously
   rewrote legacy `.agent/<stem>/` refs in user files to the new layout

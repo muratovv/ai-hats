@@ -24,6 +24,7 @@ from ai_hats.cli.maintenance import (
     _get_changelog,
     update,
 )
+from ai_hats.models import ProjectConfigError
 from ai_hats.update_check.cache import CacheEntry
 from datetime import datetime, timezone
 
@@ -224,6 +225,103 @@ def test_update_runs_bump_in_process_when_version_unchanged(tmp_path: Path) -> N
     # in-process pipeline fired exactly once (signal = _refresh call)
     assert mock_asm._refresh.call_count == 1, \
         f"in-process _refresh call count: {mock_asm._refresh.call_count}"
+
+
+# ---------- HATS-581: config-tolerant self update ----------
+
+
+def _run_degraded_update(tmp_path, *, version_changed, assembler_side_effect):
+    """Invoke ``update`` on the degraded path; return (result, captured_calls)."""
+    project = _setup_update_test_env(tmp_path)
+    installed = "new-version-X" if version_changed else "same-version"
+    old_version = "old-v" if version_changed else "same-version"
+    captured: list[tuple] = []
+
+    def fake_run(args, **kwargs):
+        captured.append((tuple(args), kwargs))
+        return _make_completed(args, returncode=0, stdout="ok")
+
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project), \
+         patch("ai_hats.cli.maintenance._get_installed_version",
+               side_effect=[installed]), \
+         patch("ai_hats.cli.maintenance._snapshot_library", return_value={}), \
+         patch("ai_hats.cli.maintenance._snapshot_dep_versions", return_value={}), \
+         patch("ai_hats.cli.maintenance._snapshot_composition",
+               return_value=(set(), set())), \
+         patch("ai_hats.cli.maintenance._format_component_diff", return_value=False), \
+         patch("ai_hats.cli.maintenance._build_update_cmd",
+               return_value=["pip", "install", "ai-hats"]), \
+         patch("ai_hats.cli.maintenance._get_changelog", return_value=""), \
+         patch("ai_hats.cli.maintenance._assembler",
+               side_effect=assembler_side_effect), \
+         patch("ai_hats.cli.maintenance._probe_remote_state", return_value=None), \
+         patch("subprocess.run", side_effect=fake_run), \
+         patch("ai_hats.__version__", old_version):
+        result = CliRunner().invoke(update, [])
+    return result, captured
+
+
+def _bump_subprocess_calls(captured: list[tuple]) -> list[tuple]:
+    return [
+        c for c in captured
+        if len(c[0]) >= 3 and c[0][1:3] == ("-m", "ai_hats._bump_internal")
+    ]
+
+
+def test_update_degrades_on_unparseable_config(tmp_path: Path) -> None:
+    """HATS-581 Fix #1: a config the INSTALLED code can't parse must not block
+    ``self update``. The pre-install read raises ProjectConfigError; update
+    degrades, installs, and forces the fresh-interpreter bump to heal it."""
+    mock_asm = MagicMock()
+    result, captured = _run_degraded_update(
+        tmp_path,
+        version_changed=True,
+        # 1st call (pre-install) raises; 2nd (post-bump re-read) succeeds.
+        assembler_side_effect=[ProjectConfigError("unknown key 'x'"), mock_asm],
+    )
+
+    assert result.exit_code == 0, f"update crashed: {result.output}"
+    assert "not parseable by the installed version" in result.output
+    assert _bump_subprocess_calls(captured), (
+        f"expected heal bump subprocess, got: {[c[0] for c in captured]}"
+    )
+
+
+def test_update_forces_subprocess_bump_when_config_unreadable(tmp_path: Path) -> None:
+    """HATS-581 Fix #1: even when versions match, an unreadable config forces
+    the SUBPROCESS bump (in-process would re-run the un-parsing code)."""
+    mock_asm = MagicMock()
+    result, captured = _run_degraded_update(
+        tmp_path,
+        version_changed=False,
+        assembler_side_effect=[ProjectConfigError("unknown key 'x'"), mock_asm],
+    )
+
+    assert result.exit_code == 0, f"update crashed: {result.output}"
+    assert _bump_subprocess_calls(captured), (
+        "config_unreadable must force the subprocess bump even with no "
+        f"version change; calls: {[c[0] for c in captured]}"
+    )
+    # in-process pipeline must NOT have fired
+    assert not mock_asm._refresh.called, "in-process _refresh fired on degraded path"
+
+
+def test_update_postbump_snapshot_tolerates_unhealed_config(tmp_path: Path) -> None:
+    """HATS-581 Fix #1: if the bump can't heal (non-strippable error), the
+    post-bump re-read still raises — update must finish cleanly, no traceback."""
+    result, captured = _run_degraded_update(
+        tmp_path,
+        version_changed=True,
+        # Both pre-install and post-bump reads raise (config stays broken).
+        assembler_side_effect=[
+            ProjectConfigError("schema_version: int required"),
+            ProjectConfigError("schema_version: int required"),
+        ],
+    )
+
+    assert result.exit_code == 0, f"update crashed: {result.output}"
+    assert "Traceback" not in result.output
+    assert _bump_subprocess_calls(captured)
 
 
 # ---------- HATS-441: refuse silent downgrade ----------
