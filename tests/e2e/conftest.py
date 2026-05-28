@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -231,6 +232,20 @@ def _shared_launcher_venv(tmp_path_factory, repo_root: Path, request):
         return build_launcher_venv(work, repo_root)
     except FileNotFoundError as exc:
         pytest.skip(f"install-launcher.sh missing: {exc}")
+    except _subprocess.TimeoutExpired as exc:
+        # HATS-582: the venv build exceeded its (generous) window — almost
+        # always a degraded host (offline mid-build, or a corrupted pip
+        # cache refetching every dep with retry backoff). Skip the venv
+        # tier gracefully rather than ERROR-ing every dependent test: the
+        # shared venv is now a single point of failure for ~17 files, so a
+        # stuck build must degrade, not cascade.
+        detail = getattr(exc, "stderr", None) or str(exc)
+        if isinstance(detail, bytes):
+            detail = detail.decode(errors="replace")
+        pytest.skip(
+            "launcher venv build timed out (degraded host / corrupted pip "
+            f"cache); detail tail:\n{detail[-400:]}"
+        )
     except (_subprocess.CalledProcessError, RuntimeError) as exc:
         detail = getattr(exc, "stderr", None) or str(exc)
         pytest.skip(
@@ -270,3 +285,38 @@ def tmp_venv_project(tmp_path: Path, _shared_launcher_venv, repo_root: Path):
             "AI_HATS_VENV": str(shared_venv),
         },
     )
+
+
+@pytest.fixture(scope="session")
+def shared_launcher(_shared_launcher_venv, repo_root: Path):
+    """Session-scoped ``(launcher, env, shared_venv)`` for raw-subprocess tests.
+
+    HATS-582: the read-only own-venv-builder e2e tests used to each build
+    their own launcher venv — either in a module-scoped ``installed_launcher``
+    fixture (~165s across 6 files in SETUP) or inline in the test body (~240s
+    across ~11 task/wt/config files in CALL). All were audited READ-ONLY on
+    the venv (HATS-574): their bump/migrate/task/wt ops target fresh
+    ``tmp_path`` project dirs, never the venv. This fixture consolidates them
+    onto the single session venv from :func:`_shared_launcher_venv`.
+
+    Returns ``(launcher, env, shared_venv)`` — the exact shape the migrated
+    tests' local fixtures returned, so test bodies keep their
+    ``launcher, env, venv = ...`` unpacking and their raw ``subprocess``
+    helpers. ``env`` is a NEUTRAL copy of ``os.environ`` with
+    ``AI_HATS_REPO_URL`` + ``AI_HATS_VENV`` set (no HOME isolation /
+    PYTHONPATH pop — matches the prior behaviour of the 5 simple module
+    fixtures and :func:`tmp_venv_project`). Tests that need extra env hygiene
+    (e.g. ``test_pretooluse_hook_materialization``) copy this dict and add
+    their own keys.
+
+    The ``env`` dict is shared across the whole session — consumers MUST
+    treat it as read-only and copy before mutating. The shared venv MUST NOT
+    be mutated destructively; the no-mutation contract is guarded by
+    :func:`test_wave1_venv_tier.test_shared_venv_reused_across_tests`.
+    """
+    launcher, shared_venv = _shared_launcher_venv
+    env = os.environ.copy()
+    env["AI_HATS_REPO_URL"] = str(repo_root)
+    env["AI_HATS_VENV"] = str(shared_venv)
+    env.pop("AI_HATS_LAUNCHER_DEST", None)
+    return launcher, env, shared_venv

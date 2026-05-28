@@ -20,7 +20,6 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
@@ -37,10 +36,10 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 
 @pytest.mark.integration
-def test_e2e_task_attach_full_lifecycle(tmp_path):
+def test_e2e_task_attach_full_lifecycle(shared_launcher, tmp_path):
     """HATS-402 attachments CLI + pre-commit hook, real subprocess.
 
-    1. Bootstrap: launcher + self update + self init (git-init'd project).
+    1. Bootstrap: session-shared venv + self init (git-init'd project).
     2. Create TST-001, attach a file (move + manifest entry).
     3. Idempotency: second `attach add` of identical content → noop, no
        work_log diff.
@@ -56,9 +55,8 @@ def test_e2e_task_attach_full_lifecycle(tmp_path):
        via `attach add` clears the divergence.
     8. Remove untracked → exit 2 without --yes; exit 0 with --yes.
     """
-    launcher_dest = tmp_path / "bin" / "ai-hats"
+    launcher_dest, env, _venv = shared_launcher
     project = tmp_path / "project"
-    launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
     # git init so the assembler wires .githooks and ai-hats has a real
     # repo to interrogate (is_git_tracked needs one).
@@ -66,25 +64,13 @@ def test_e2e_task_attach_full_lifecycle(tmp_path):
     subprocess.run(["git", "config", "user.email", "t@t"], cwd=project, check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=project, check=True)
 
-    env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(REPO_ROOT)
-    env.pop("AI_HATS_VENV", None)
-
-    _run(
-        ["bash", str(INSTALL_LAUNCHER)],
-        cwd=tmp_path, env=env, timeout=30,
-    )
-    assert launcher_dest.is_file()
-
     def ai_hats(*args, expect_exit=0, timeout=180):
         return _run(
             [str(launcher_dest), *args],
             cwd=project, env=env, timeout=timeout, expect_exit=expect_exit,
         )
 
-    # ---- bootstrap project ----
-    ai_hats("self", "update")
+    # ---- bootstrap project (venv is the session-shared build) ----
     ai_hats(
         "self", "init",
         "-r", "assistant", "-p", "claude",
