@@ -169,15 +169,26 @@ def tmp_project(tmp_path: Path):
     )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def _shared_launcher_venv(tmp_path_factory, repo_root: Path):
-    """Module-scoped venv build — internal helper for :func:`tmp_venv_project`.
+    """Session-scoped venv build — internal helper for :func:`tmp_venv_project`.
 
-    Builds the launcher + a shared ai-hats venv ONCE per test module
+    Builds the launcher + a shared ai-hats venv ONCE per test session
     via :func:`tests.e2e._helpers.venv.build_launcher_venv` (~30-60s on
     cold pip cache). Returns ``(launcher_path, shared_venv_path)``.
 
-    Skips the whole module when:
+    HATS-569: promoted from module scope to session scope. The 8
+    consumers of :func:`tmp_venv_project` were audited and none mutate
+    the shared venv (no ``rm -rf`` / ``pip uninstall`` / ``self bump``
+    to a different version) — each test works in its own
+    function-scoped ``project_path`` and only reads/executes the shared
+    venv. Building once per session instead of once per module
+    eliminates ~7 redundant ~30-60s builds. The no-mutation contract
+    is guarded by
+    :func:`test_wave1_venv_tier.test_shared_venv_reused_across_tests`,
+    which fails loudly if any test poisons the shared venv.
+
+    Skips the whole session when:
 
     * ``scripts/install-launcher.sh`` is missing (untrusted checkout)
     * the launcher install or ``self update`` raises
@@ -207,13 +218,13 @@ def _shared_launcher_venv(tmp_path_factory, repo_root: Path):
 
 @pytest.fixture
 def tmp_venv_project(tmp_path: Path, _shared_launcher_venv, repo_root: Path):
-    """Function-scoped launcher-tier project on a module-shared venv.
+    """Function-scoped launcher-tier project on a session-shared venv.
 
     Each test gets a fresh project directory; the underlying
-    ai-hats venv is built once per module (see
+    ai-hats venv is built once per session (see
     :func:`_shared_launcher_venv`) and reached via the
     ``AI_HATS_VENV`` env knob, so tests can mutate their project
-    freely without poisoning siblings in the same module.
+    freely without poisoning siblings across the session.
 
     The shared venv MUST NOT be mutated destructively — no
     ``rm -rf <venv>``, no ``pip uninstall``, no ``self bump`` to a
