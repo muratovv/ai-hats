@@ -1,11 +1,11 @@
 name: library-change-hypothesis-protocol
-description: At plan-stage of a library-curation task, file a companion HYP with an explicit verification_protocol — or record an explicit "no behavior change" note for refactors.
+description: After execute-stage commits land and BEFORE a library-curation task transitions to done, file a companion HYP with an explicit verification_protocol — or record an explicit "no behavior change" note for refactors. NEVER file the HYP at plan-stage (precommitment anti-pattern, HATS-567).
 author: ai-hats
 tags: [library, governance, hypothesis, protocol]
 pattern: protocol
 
 triggers:
-  - "plan-stage transition of a task parented to HATS-499 (library curation)"
+  - "document-stage transition of a task parented to HATS-499 (library curation)"
   - "editing files under library/{core,usage}/ that change agent behavior"
   - "adding, removing, or rewriting a rule/skill/trait/role"
 skip:
