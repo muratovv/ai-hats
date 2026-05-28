@@ -72,10 +72,25 @@ def build_launcher_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
     # Bootstrap the inner venv via the launcher in a DEDICATED dir,
     # NOT a project that tests will use — tests get fresh project
     # paths and reach the venv via AI_HATS_VENV env override.
+    #
+    # Timeout budget (HATS-582): a healthy build is ~7s of pip +
+    # venv-create overhead (~24s total). The generous 600s ceiling
+    # absorbs two slow cases without tripping:
+    #   * cold pip cache / first run on a fresh host — ~35 transitive
+    #     deps (ai-hats → claude-agent-sdk → mcp → starlette, uvicorn,
+    #     httpx, jsonschema, …) downloaded over the network;
+    #   * a *corrupted* pip HTTP cache — if a prior run's pip was
+    #     SIGKILL'd mid-download (e.g. by a too-tight timeout), its cache
+    #     entries deserialize-fail and pip refetches everything with retry
+    #     backoff (observed ~10min). A tight timeout here SIGKILLs pip
+    #     again → re-corrupts the cache → death spiral. The wide window
+    #     lets one slow build COMPLETE and self-heal the cache instead.
+    # ``subprocess.TimeoutExpired`` still propagates so the session-scoped
+    # fixture can skip the venv tier gracefully on a genuinely stuck host.
     subprocess.run(
         [str(launcher), "self", "update"],
         cwd=str(bootstrap), env=env,
-        capture_output=True, text=True, timeout=180, check=True,
+        capture_output=True, text=True, timeout=600, check=True,
     )
     shared_venv = bootstrap / ".agent" / "ai-hats" / ".venv"
     if not (shared_venv / "bin" / "python").is_file():
