@@ -18,7 +18,6 @@ on a warm pip cache). Marked `integration`.
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -26,7 +25,6 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
@@ -43,32 +41,19 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 
 @pytest.mark.integration
-def test_e2e_task_close_link_force(tmp_path):
+def test_e2e_task_close_link_force(shared_launcher, tmp_path):
     """HATS-371 task CLI surface, real subprocess.
 
-    1. Bootstrap: launcher + self update + self init (TST- prefix).
+    1. Bootstrap: session-shared venv + self init (TST- prefix).
     2. Create two tasks via `task create`.
     3. `task close TST-001 --resolution "..."` — fast-close brainstorm → done.
     4. `task link TST-002 TST-001 --type related` — symmetric cross-ref.
     5. `task unlink TST-002 TST-001` — removes the link.
     6. `task transition TST-001 brainstorm --force --reason "..."` — bypass FSM.
     """
-    launcher_dest = tmp_path / "bin" / "ai-hats"
+    launcher_dest, env, _venv = shared_launcher
     project = tmp_path / "project"
-    launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
-
-    env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(REPO_ROOT)
-    env.pop("AI_HATS_VENV", None)
-
-    # ---- install launcher ----
-    _run(
-        ["bash", str(INSTALL_LAUNCHER)],
-        cwd=tmp_path, env=env, timeout=30,
-    )
-    assert launcher_dest.is_file()
 
     def ai_hats(*args, expect_exit=0, timeout=180):
         return _run(
@@ -76,8 +61,7 @@ def test_e2e_task_close_link_force(tmp_path):
             cwd=project, env=env, timeout=timeout, expect_exit=expect_exit,
         )
 
-    # ---- bootstrap project ----
-    ai_hats("self", "update")
+    # ---- bootstrap project (venv is the session-shared build) ----
     ai_hats(
         "self", "init",
         "-r", "assistant", "-p", "claude",

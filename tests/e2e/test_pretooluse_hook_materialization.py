@@ -48,11 +48,48 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-@pytest.fixture(scope="module")
-def installed_launcher(tmp_path_factory):
-    """Install ai-hats once per module; pin via AI_HATS_VENV.
+@pytest.fixture
+def installed_launcher(shared_launcher, tmp_path_factory):
+    """Read-only tests (A/B/D) on the session-scoped shared venv (HATS-582).
 
-    Same pattern as ``test_safe_delete_and_bump_internal.py``.
+    Tests A (init materializes), B (idempotent re-init) and D (safety net
+    live) only ``self init`` into a fresh ``tmp_path`` project and read the
+    materialized hooks back — they never mutate the venv, so they reuse the
+    single session venv from :func:`tests.e2e.conftest.shared_launcher`.
+
+    The shared ``env`` is NEUTRAL; this module needs two extra hygiene knobs
+    that the old module fixture applied, so we layer them on a COPY:
+
+    * pop ``PYTHONPATH`` — ``ai-hats wt exec`` sets ``PYTHONPATH=src`` which
+      shadows the installed ``ai_hats`` package with the source tree (which
+      lacks the ``library`` subpackage) → "no roles found".
+    * isolate ``HOME`` to an empty tmpdir — otherwise the dev user's
+      ``~/.ai-hats/`` customizations (personal-workflow trait, custom roles)
+      bleed into composition and shadow framework roles.
+
+    Returns ``(launcher, env, shared_venv)`` — the same shape Test C's
+    :func:`private_launcher` returns.
+
+    Test C (``test_e2e_self_update_refreshes_hook_after_drift``) runs
+    ``self update --force-downgrade`` which REINSTALLS into the pinned venv —
+    it is the lone mutator and keeps a private builder (:func:`private_launcher`).
+    """
+    launcher, base_env, shared_venv = shared_launcher
+    env = dict(base_env)
+    env.pop("PYTHONPATH", None)
+    isolated_home = tmp_path_factory.mktemp("pretooluse-home")
+    env["HOME"] = str(isolated_home)
+    return launcher, env, shared_venv
+
+
+@pytest.fixture(scope="module")
+def private_launcher(tmp_path_factory):
+    """Private module-scoped builder for the LONE venv-mutating test (HATS-582).
+
+    Test C runs ``self update --force-downgrade``, which reinstalls ai-hats
+    into the pinned venv — a destructive mutation that would poison the
+    session-shared venv. So this test keeps its own private build (the old
+    module fixture, unchanged).
     """
     tmp = tmp_path_factory.mktemp("launcher")
     launcher_dest = tmp / "bin" / "ai-hats"
@@ -191,15 +228,19 @@ def test_e2e_init_materialize_is_idempotent(installed_launcher, tmp_path):
 
 @pytest.mark.integration
 def test_e2e_self_update_refreshes_hook_after_drift(
-    installed_launcher, tmp_path
+    private_launcher, tmp_path
 ):
     """Hand-edit a materialized hook → ``self update`` restores it.
 
     Drives the ``Assembler.bump`` → ``_materialize_pretooluse_hooks``
     refresh path. Fail-under-revert: drop the call in
     ``Assembler.bump`` and this stays drifted.
+
+    LONE MUTATOR (HATS-582): runs ``self update --force-downgrade`` which
+    reinstalls into the pinned venv, so it uses :func:`private_launcher`
+    (its own build) instead of the session-shared venv.
     """
-    launcher, env, venv = installed_launcher
+    launcher, env, venv = private_launcher
     project = tmp_path / "proj_self_update_refresh"
     _init_minimal_project(launcher, env, project)
 

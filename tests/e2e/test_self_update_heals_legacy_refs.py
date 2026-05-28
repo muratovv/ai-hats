@@ -14,7 +14,6 @@ and in-process ``CliRunner`` tests do NOT satisfy the gate.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from pathlib import Path
 
@@ -22,7 +21,6 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
@@ -103,34 +101,18 @@ def _git_init_commit(project_dir: Path, env: dict[str, str]) -> None:
     _git(project_dir, "commit", "-q", "-m", "seed", env=env)
 
 
-@pytest.fixture(scope="module")
-def installed_launcher(tmp_path_factory):
-    """Install ai-hats once per module — pip install is slow (~60s).
+@pytest.fixture
+def installed_launcher(shared_launcher):
+    """Delegate to the session-scoped shared venv (HATS-582).
 
-    Bootstraps a single shared venv (under ``_bootstrap_proj/``) and pins
-    every test invocation to it via ``AI_HATS_VENV``. Avoids paying the
-    ~30s ``self update`` cost in every test fixture.
+    Was a module-scoped builder (~90s) — now reuses the single session venv
+    from :func:`tests.e2e.conftest.shared_launcher`. Every test here is
+    read-only on the venv (works in a fresh ``tmp_path`` project). Returns
+    the ``(launcher, env)`` 2-tuple this module's tests unpack (the shared
+    venv path is dropped — tests here don't need it).
     """
-    tmp = tmp_path_factory.mktemp("launcher")
-    launcher_dest = tmp / "bin" / "ai-hats"
-    launcher_dest.parent.mkdir(parents=True)
-
-    env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(REPO_ROOT)
-    env.pop("AI_HATS_VENV", None)
-
-    _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp, env=env, timeout=30)
-    bootstrap_proj = tmp / "_bootstrap_proj"
-    bootstrap_proj.mkdir()
-    _run(
-        [str(launcher_dest), "self", "update"],
-        cwd=bootstrap_proj, env=env, timeout=180,
-    )
-    shared_venv = bootstrap_proj / ".agent" / "ai-hats" / ".venv"
-    assert shared_venv.is_dir(), "bootstrap did not create shared venv"
-    env["AI_HATS_VENV"] = str(shared_venv)
-    return launcher_dest, env
+    launcher, env, _shared_venv = shared_launcher
+    return launcher, env
 
 
 @pytest.mark.integration

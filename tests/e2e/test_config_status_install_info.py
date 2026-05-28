@@ -27,7 +27,6 @@ return restored, sub-case 1 misses install fields too.
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -35,7 +34,6 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=None, check=False):
@@ -58,29 +56,24 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=None, check=False):
 
 
 @pytest.mark.integration
-def test_e2e_config_status_install_diagnostics(tmp_path: Path) -> None:
+def test_e2e_config_status_install_diagnostics(
+    shared_launcher, tmp_path: Path
+) -> None:
     """End-to-end: install Health fields appear with and without an active role.
 
-    Both sub-cases amortize the ~60s bootstrap (launcher install + pip
-    install ai-hats from local repo).
+    HATS-582: reuses the session-shared venv (no per-test launcher install +
+    self update). Read-only on the venv — only ``config status`` / ``self
+    init`` against a fresh ``tmp_path`` project.
     """
-    launcher_dest = tmp_path / "bin" / "ai-hats"
+    launcher_dest, base_env, _venv = shared_launcher
     project = tmp_path / "project"
-    launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
 
-    env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(REPO_ROOT)
-    env.pop("AI_HATS_VENV", None)
+    # Copy the session-shared env before mutating it.
+    env = dict(base_env)
     # PYTHONPATH from the test runner can shadow the venv install by
     # adding the worktree's ``src/`` to sys.path ahead of site-packages.
     env.pop("PYTHONPATH", None)
-
-    _run(["bash", str(INSTALL_LAUNCHER)],
-         cwd=tmp_path, env=env, timeout=30, check=True)
-    _run([str(launcher_dest), "self", "update"],
-         cwd=project, env=env, timeout=240, check=True)
 
     # ----- sub-case 1: role-less project -----
     sc1 = _run([str(launcher_dest), "config", "status"],
