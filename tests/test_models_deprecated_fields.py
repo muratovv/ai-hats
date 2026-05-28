@@ -5,15 +5,14 @@ ProjectConfig.from_yaml must:
     validation, emitting one stderr WARN per stripped key.
   * Heal empty `default_role` from `active_role` on load, emitting one
     stderr WARN.
-  * Stay backward-compatible with clean yaml (no spurious WARNs) and still
-    refuse unknown non-deprecated keys.
+  * Stay backward-compatible with clean yaml (no spurious WARNs).
+  * HATS-581: strip unknown non-deprecated keys with a WARN (forward-compat),
+    rather than raising on them.
 """
 
 from __future__ import annotations
 
-import pytest
-
-from ai_hats.models import ProjectConfig, ProjectConfigError, _DEPRECATED_PROJECT_FIELDS
+from ai_hats.models import ProjectConfig, _DEPRECATED_PROJECT_FIELDS
 
 
 # -- Deprecated-field stripping --
@@ -84,8 +83,12 @@ def test_idempotent_rerun_no_warn(tmp_path, capsys):
     assert captured.err == ""
 
 
-def test_unknown_non_deprecated_key_still_raises(tmp_path):
-    """Truly unknown keys must still hit `extra="forbid"` — strip is a narrow allow-list."""
+def test_unknown_non_deprecated_key_stripped_with_warn(tmp_path, capsys):
+    """HATS-581: truly unknown keys are now stripped with a WARN instead of
+    crashing (forward-compat — an older binary must survive a yaml a newer
+    binary wrote). Previously these hit ``extra="forbid"`` and raised; the
+    forward-compat strip supersedes that for top-level keys.
+    """
     path = tmp_path / "ai-hats.yaml"
     path.write_text(
         "schema_version: 4\n"
@@ -94,9 +97,12 @@ def test_unknown_non_deprecated_key_still_raises(tmp_path):
         "mystery_flag: true\n"
     )
 
-    with pytest.raises(ProjectConfigError) as exc:
-        ProjectConfig.from_yaml(path)
-    assert "mystery_flag" in str(exc.value)
+    cfg = ProjectConfig.from_yaml(path)
+
+    assert cfg.provider == "claude"
+    assert not hasattr(cfg, "mystery_flag")
+    err = capsys.readouterr().err
+    assert "dropping unknown field 'mystery_flag'" in err
 
 
 def test_deprecated_constant_is_frozen():
