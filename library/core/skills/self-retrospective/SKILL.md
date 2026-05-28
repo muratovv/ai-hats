@@ -1,15 +1,25 @@
 ---
 name: self-retrospective
-description: Post-work analysis to identify systemic improvements (5 Whys, classify, archive). Use after task completion (especially with failures or backtracks), after a failed task (mandatory), or when backlog-manager transitions to the review or failed state.
+description: Post-work analysis to identify systemic improvements (5 Whys, classify, archive). Use when the supervisor asks to "write a retro" / "do a retrospective", at the end of a multi-task work session (wrap-up across several closed tasks), after task completion (especially with failures or backtracks), after a failed task (mandatory), or when backlog-manager transitions to the review or failed state. NOT the automated session-review loop — that is reflect-session.
 ---
 # Self-Retrospective
 
 Analyze completed or failed work to identify systemic improvements.
 
 ## When to Use
+- When the supervisor explicitly asks to "write a retro" / "do a
+  retrospective" — follow THIS protocol (4.5 filter, step-7 backlog gates);
+  do not free-form a retro file by pattern-matching an existing one.
+- At the end of a multi-task work session (wrap-up across several closed
+  tasks) — not only single-task completion.
 - After task completion (especially with failures or backtracks)
 - After a failed task (mandatory)
 - When backlog-manager transitions to `review` or `failed` state
+
+**Not** the automated session-review loop. `reflect-session`
+(`hats-reflect-session/v1`) is a pipeline the harness runs to triage
+hypotheses/proposals; `self-retrospective` is the personal agent reflection
+you run by hand (free-form markdown, archived under `sessions/retros/`).
 
 ## Procedure
 
