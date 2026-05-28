@@ -159,6 +159,7 @@ def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
         WorktreeBaseBranchMismatchError,  # HATS-533
         WorktreeDirtyError,
         WorktreeDriftError,
+        WorktreeMainRepoMidMergeError,  # HATS-587 / F4
         WorktreePartialCleanupError,
         WorktreeRemoveError,
     )
@@ -196,6 +197,23 @@ def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
         console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
         console.print(
             f"  [cyan]git checkout {_escape(e.expected)}[/]",
+            soft_wrap=True,
+        )
+        console.print("  [cyan]ai-hats wt merge[/]", soft_wrap=True)
+        sys.exit(1)
+    except WorktreeMainRepoMidMergeError as e:
+        # HATS-587 / F4: main repo already mid-merge (foreign MERGE_HEAD).
+        # Refuse cleanly with the resolve recipe — no traceback. Worktree
+        # and branch are untouched (guard runs before any mutation), so
+        # the operator can clean up the main repo and re-run unchanged.
+        from rich.markup import escape as _escape
+        project_dir = _project_dir()
+        console.print(f"[red]Refused (main repo mid-merge)[/]: {_escape(str(e))}")
+        console.print("Resolve the in-progress merge first:")
+        console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
+        console.print(
+            "  [cyan]git merge --abort[/]  [dim]# or resolve conflicts + "
+            "git commit[/]",
             soft_wrap=True,
         )
         console.print("  [cyan]ai-hats wt merge[/]", soft_wrap=True)
