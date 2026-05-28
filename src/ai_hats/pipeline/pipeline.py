@@ -17,9 +17,12 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from .cancel import CancelReason, CancelToken
 from .step import FailurePolicy, Step, StepError, StepIO
 from .trace import TraceHook, make_event
 
@@ -28,6 +31,34 @@ logger = logging.getLogger(__name__)
 
 class BuildError(ValueError):
     """Build-time contract violation (e.g. undeclared requires)."""
+
+
+class PipelineCancelled(RuntimeError):
+    """Raised when a pipeline run is cancelled before completing (HATS-584).
+
+    Cause is either a per-step ``timeout`` (``CancelReason.TIMEOUT``) or an
+    external caller flipping the supplied ``cancel_token``
+    (``CancelReason.EXTERNAL``). Carries the partial ``state`` accumulated up
+    to the cancellation point — including any ``on_cancel`` deltas — so the
+    caller can surface partial work. Distinct from ``StepError`` / a re-raised
+    step exception so a deadline/cancel is never mistaken for a logic failure.
+    """
+
+    def __init__(
+        self, message: str, *, reason: CancelReason, state: dict[str, Any]
+    ) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.state = state
+
+
+class _StepTimeout(Exception):
+    """Internal marker: a step blew its ``timeout``. Never escapes the module."""
+
+    def __init__(self, step_name: str, timeout: float) -> None:
+        super().__init__(f"step {step_name!r} exceeded timeout of {timeout}s")
+        self.step_name = step_name
+        self.timeout = timeout
 
 
 @dataclass(frozen=True)
@@ -75,6 +106,7 @@ def run(
     *,
     on_step: TraceHook | None = None,
     trace_values: bool = False,
+    cancel_token: CancelToken | None = None,
 ) -> dict[str, Any]:
     """Execute pipeline against ``initial`` state, threading projections.
 
@@ -84,6 +116,10 @@ def run(
     ``trace_values``: when True, events carry truncated repr's of the
     actual key values (not just their names). Off by default — keys
     only — to avoid leaking prompt contents to disk.
+    ``cancel_token`` (HATS-584): optional caller-supplied cancellation
+    signal. An external thread may flip it to cancel the run at the next
+    step boundary; the runner also creates one implicitly when a step
+    times out. Either way a cancelled run raises ``PipelineCancelled``.
     """
     available = set(initial.keys())
     produced: set[str] = set()
@@ -101,6 +137,7 @@ def run(
         parent_policy=pipeline.failure_policy,
         on_step=on_step,
         trace_values=trace_values,
+        cancel_token=cancel_token,
     )
 
 
@@ -139,15 +176,43 @@ def _run_steps(
     parent_policy: FailurePolicy,
     on_step: TraceHook | None = None,
     trace_values: bool = False,
+    cancel_token: CancelToken | None = None,
 ) -> dict[str, Any]:
-    """Sequential execution with projection→step.run→delta-merge."""
+    """Sequential execution with projection→step.run→delta-merge.
+
+    HATS-584: a step that declares a ``timeout`` is bounded in a worker
+    thread. On the deadline the shared ``cancel_token`` is flipped
+    (creating one if the caller supplied none), the step's ``on_cancel``
+    cleanup runs, remaining steps are skipped, and ``PipelineCancelled`` is
+    raised carrying the partial state. A caller-supplied ``cancel_token``
+    that an external thread flips is observed at the next step boundary and
+    cancels cooperatively the same way.
+    """
     del parent_policy  # reserved for nested composites; not used in Phase 1
+    token = cancel_token
     for s in steps:
+        if token is not None and token.cancelled:
+            # Cooperative propagation: external cancel observed at a step
+            # boundary. The step never starts — nothing to clean up — so we
+            # simply stop and let the post-loop guard raise.
+            break
         kwargs = {k: state[k] for k in s.io.requires}
         kwargs.update({k: state[k] for k in s.io.optional if k in state})
         t0 = time.perf_counter()
         try:
-            delta = s.run(**kwargs)
+            delta = _run_one(s, kwargs)
+        except _StepTimeout as to:
+            duration_ms = (time.perf_counter() - t0) * 1000
+            if token is None:
+                token = CancelToken()
+            token.cancel(CancelReason.TIMEOUT)
+            if on_step is not None:
+                _emit(
+                    on_step, s.io.name, kwargs, {}, duration_ms,
+                    error=to, include_values=trace_values,
+                )
+            _run_on_cancel(s, kwargs, state)
+            break
         except Exception as e:
             duration_ms = (time.perf_counter() - t0) * 1000
             if on_step is not None:
@@ -171,18 +236,79 @@ def _run_steps(
                 on_step, s.io.name, kwargs, delta, duration_ms,
                 error=None, include_values=trace_values,
             )
-        # HATS-452 (П3 in ADR-0005): pipeline funnel value contract.
-        # Drop keys whose value is ``None`` at the merge boundary so a
-        # consumer cannot distinguish "the step did not emit the key" from
-        # "the step emitted the key with value None". This makes the
-        # funnel single-meaning and prevents the empty-Optional-as-absent
-        # trap that broke HATS-452 (compose_role returned
-        # ``{"system_prompt": ""}`` for a missing role; downstream
-        # consumed ``""`` as a legitimate override).
-        #
-        # ``""`` (and other falsy values like ``0``, ``False``, ``[]``)
-        # are intentionally NOT filtered — they are valid non-absent
-        # values whose semantics differ from "key absent". Steps that
-        # need "absent" must emit ``None`` (or omit the key entirely).
-        state.update({k: v for k, v in delta.items() if v is not None})
+        _merge_none_filtered(state, delta)
+
+    if token is not None and token.cancelled:
+        reason = token.reason or CancelReason.EXTERNAL
+        raise PipelineCancelled(
+            f"pipeline cancelled ({reason.value})",
+            reason=reason,
+            state=state,
+        )
     return state
+
+
+def _run_one(step: Step, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Run a step, bounding it in a worker thread iff it declares a timeout.
+
+    The ``ThreadPoolExecutor`` is used WITHOUT its context manager on
+    purpose: ``__exit__`` calls ``shutdown(wait=True)`` which would block on
+    a hung step. ``shutdown(wait=False)`` lets the orphaned worker thread
+    finish on its own — the step keeps running until it returns or its
+    resource is released by ``on_cancel`` (e.g. a process-group kill). This
+    orphan is an accepted limitation of bounding synchronous code (ADR-0008).
+    """
+    timeout = step.timeout
+    if timeout is None:
+        return step.run(**kwargs)
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(step.run, **kwargs)
+    try:
+        return future.result(timeout=timeout)
+    except FutureTimeout:
+        raise _StepTimeout(step.io.name, timeout) from None
+    finally:
+        pool.shutdown(wait=False)
+
+
+def _run_on_cancel(
+    step: Step, kwargs: dict[str, Any], state: dict[str, Any]
+) -> None:
+    """Invoke a step's ``on_cancel`` cleanup and merge its partial delta.
+
+    Cleanup must never abort the cancellation path: a raising ``on_cancel``
+    is logged and swallowed. Only keys the step declared in ``produces`` are
+    merged (others dropped) so cleanup cannot smuggle undeclared keys into
+    the funnel; the None-filter rule still applies.
+    """
+    try:
+        delta = step.on_cancel(**kwargs)
+    except Exception:  # noqa: BLE001 — cleanup must not crash cancellation
+        logger.warning(
+            "on_cancel for step %r raised; ignoring", step.io.name,
+            exc_info=True,
+        )
+        return
+    if not delta:
+        return
+    allowed = {k: v for k, v in delta.items() if k in step.io.produces}
+    _merge_none_filtered(state, allowed)
+
+
+def _merge_none_filtered(state: dict[str, Any], delta: Mapping[str, Any]) -> None:
+    """Merge a step delta into state, dropping keys whose value is ``None``.
+
+    HATS-452 (П3 in ADR-0005): pipeline funnel value contract. A ``None``
+    value is indistinguishable from an absent key in the funnel, so it is
+    filtered at the merge boundary — a consumer cannot then distinguish "the
+    step did not emit the key" from "the step emitted the key with value
+    None". This prevents the empty-Optional-as-absent trap that broke
+    HATS-452 (``compose_role`` returned ``{"system_prompt": ""}`` for a
+    missing role; downstream consumed ``""`` as a legitimate override).
+
+    ``""`` (and other falsy values like ``0``, ``False``, ``[]``) are
+    intentionally NOT filtered — they are valid non-absent values whose
+    semantics differ from "key absent". Steps that need "absent" must emit
+    ``None`` (or omit the key entirely).
+    """
+    state.update({k: v for k, v in delta.items() if v is not None})

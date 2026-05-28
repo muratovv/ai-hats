@@ -39,6 +39,14 @@ class Step(ABC):
     # attribute and propagate it into their inner runner.
     harness_policy: HarnessPolicy | None = None
 
+    # HATS-584: optional per-step wall-clock timeout in seconds. ``None``
+    # (default) keeps current behaviour — no bound. When set, ``run`` bounds
+    # the step in a worker thread and raises ``PipelineCancelled`` on the
+    # deadline. This is the OUTER pipeline-level net; it is orthogonal to the
+    # harness-level subprocess timeout (HATS-378), which stays authoritative
+    # for sub-agent subprocesses.
+    timeout: float | None = None
+
     @property
     @abstractmethod
     def io(self) -> StepIO: ...
@@ -46,3 +54,19 @@ class Step(ABC):
     @abstractmethod
     def run(self, **inputs: Any) -> dict[str, Any]:
         """Returns a dict whose keys are a subset of ``self.io.produces``."""
+
+    def on_cancel(self, **inputs: Any) -> dict[str, Any] | None:
+        """HATS-584: cleanup hook the runner invokes on timeout/cancel.
+
+        Default is a no-op. A step that owns a cancellable resource (e.g. a
+        live subprocess) overrides this to release it — typically a
+        process-group kill — and may return a partial-result delta whose keys
+        are a subset of ``io.produces`` (merged via the None-filter funnel
+        rule). It receives the same projected inputs ``run`` would have.
+
+        MUST be safe to call concurrently with an in-flight ``run`` left
+        running in the orphaned worker thread after a timeout: snapshot /
+        release only, guarded by the step's own synchronization.
+        """
+        del inputs
+        return None
