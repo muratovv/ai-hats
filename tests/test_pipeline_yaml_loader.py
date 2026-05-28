@@ -171,6 +171,63 @@ def test_load_core_pipeline_use_cache_false_bypasses_memo():
         clear_core_pipeline_cache()
 
 
+def test_core_pipeline_cache_absorbs_on_disk_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Faithful reproduction of HATS-566: an editable-install YAML rewrite
+    mid-session must NOT crash the finalize pipeline.
+
+    Scenario: a long-running ``WrapRunner`` session preloads
+    ``finalize-hitl`` (eager preload in ``runtime.py`` before ``_pty_spawn``),
+    then a ``git pull`` / merge lands a new step into the on-disk YAML
+    against the registry already loaded at process start. The memoized
+    cache must serve the preloaded Pipeline so ``_run_finalize_hitl``
+    (``run_session_end`` + auto-retro spawn) survives the drift instead of
+    dying on ``StepRegistryError``.
+
+    Unlike the identity tests above, this one actually rewrites the YAML on
+    disk between calls — proving the cache *absorbs* drift, not merely that
+    repeated calls return the same object.
+    """
+    import importlib.resources as ir
+
+    # Tmp library layout that ``load_core_pipeline`` resolves through.
+    pipelines_dir = tmp_path / "core" / "pipelines"
+    pipelines_dir.mkdir(parents=True)
+    yaml_file = pipelines_dir / "finalize-hitl.yaml"
+    yaml_file.write_text("name: finalize-hitl\nsteps:\n  - id: pre_log\n")
+
+    real_files = ir.files
+
+    def fake_files(package: str):
+        if package == "ai_hats.library":
+            return tmp_path
+        return real_files(package)  # pragma: no cover
+
+    monkeypatch.setattr(ir, "files", fake_files)
+
+    clear_core_pipeline_cache()
+    try:
+        # 1. Eager preload — mirrors WrapRunner.run() before _pty_spawn.
+        preloaded = load_core_pipeline("finalize-hitl")
+
+        # 2. Mid-session working-tree update introduces a step the
+        #    in-memory registry has never heard of.
+        yaml_file.write_text(
+            "name: finalize-hitl\nsteps:\n  - id: nonexistent_step\n"
+        )
+
+        # 3. Cache absorbs the drift — same object, NO exception.
+        assert load_core_pipeline("finalize-hitl") is preloaded
+
+        # 4. Sanity: the drift is real. Bypassing the cache reads the
+        #    rewritten YAML and would have crashed _run_finalize_hitl.
+        with pytest.raises(PipelineYamlError, match="unknown step"):
+            load_core_pipeline("finalize-hitl", use_cache=False)
+    finally:
+        clear_core_pipeline_cache()
+
+
 # ---- __main__ dry-run inspector ----
 
 
