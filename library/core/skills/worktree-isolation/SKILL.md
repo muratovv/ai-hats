@@ -1,6 +1,6 @@
 ---
 name: worktree-isolation
-description: Isolated development using git worktrees — main branch stays clean
+description: Isolated development using git worktrees so the main branch stays clean. Use when starting any non-trivial task (execute state), doing parallel work on multiple tasks, making risky changes you might want to discard, or delegating to a sub-agent (automatic via ai-hats agent --isolation).
 ---
 # Worktree Isolation
 

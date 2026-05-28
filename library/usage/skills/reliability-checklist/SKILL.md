@@ -1,6 +1,6 @@
 ---
 name: reliability-checklist
-description: Production readiness verification for services and infrastructure
+description: Production readiness verification for services and infrastructure. Use before promoting a service to production, after significant infrastructure changes, or during periodic production readiness reviews.
 ---
 # Reliability Checklist
 

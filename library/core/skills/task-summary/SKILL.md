@@ -1,6 +1,6 @@
 ---
 name: task-summary
-description: Focused post-task summary — architectural decisions, decision forks, pitfalls, plan deviations
+description: Focused post-task summary covering architectural decisions, decision forks, pitfalls, and plan deviations. Use after backlog-manager transitions a task to done or failed, when handing off a completed task for review, or when the supervisor asks what happened with a task.
 ---
 # Task Summary
 

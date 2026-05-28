@@ -1,6 +1,6 @@
 ---
 name: network-change-verification
-description: Pre/post verification checklist for network and routing changes
+description: Pre/post verification checklist for network and routing changes. Use before and after any DNS, routing, tunnel, or proxy change, when exposing a new service externally, or when troubleshooting connectivity issues.
 ---
 # Network Change Verification
 
