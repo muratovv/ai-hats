@@ -26,6 +26,7 @@ from .models import (
     ComponentType,
     OverlayConfig,
     ProjectConfig,
+    RuntimeHook,
     SkillMetadata,
     UserConfig,
 )
@@ -1542,6 +1543,31 @@ class Assembler:
                 continue
             for event, scripts in metadata.git_hooks.items():
                 collected.setdefault(event, []).extend((skill.name, script) for script in scripts)
+        return collected
+
+    def _collect_skill_runtime_hooks(
+        self,
+        result: CompositionResult,
+    ) -> dict[str, list[tuple[str, RuntimeHook]]]:
+        """Walk composed skills and collect their declared runtime hooks (HATS-597).
+
+        Mirrors :meth:`_collect_skill_git_hooks` but for provider runtime
+        hooks (PreToolUse / PostToolUse). Validation (unknown event, malformed
+        row) already happened at ``SkillMetadata.from_yaml`` time and fails
+        loud there.
+
+        Returns: {event_name: [(skill_name, RuntimeHook), ...]}
+        """
+        collected: dict[str, list[tuple[str, RuntimeHook]]] = {}
+        for skill in result.skills:
+            metadata_path = skill.source_path / "metadata.yaml"
+            metadata = SkillMetadata.from_yaml(metadata_path)
+            if not metadata.runtime_hooks:
+                continue
+            for event, hooks in metadata.runtime_hooks.items():
+                collected.setdefault(event, []).extend(
+                    (skill.name, hook) for hook in hooks
+                )
         return collected
 
     @staticmethod
