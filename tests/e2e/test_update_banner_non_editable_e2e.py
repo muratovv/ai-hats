@@ -175,7 +175,7 @@ def test_e2e_update_banner_fires_for_non_editable_install(tmp_path: Path) -> Non
     mirror = project / ".agent" / "ai-hats" / ".cache" / "probe-mirror"
     assert mirror.is_dir(), f"probe-mirror directory missing at {mirror}"
     assert (mirror / "HEAD").is_file(), \
-        f"probe-mirror was not initialized (HEAD missing)"
+        "probe-mirror was not initialized (HEAD missing)"
 
     cache_path = project / ".agent" / "ai-hats" / ".cache" / "update-check.json"
     assert cache_path.is_file(), f"cache file missing at {cache_path}"
