@@ -97,3 +97,65 @@ class TestCollectSkillRuntimeHooks:
             _result([_skill("plain", plain)])
         )
         assert collected == {}
+
+
+class TestMaterializeRuntimeHooks:
+    """Materialization of skill-declared runtime-hook scripts (HATS-597 step 3).
+
+    The script declared in a skill's ``runtime_hooks:`` lands under
+    :func:`hooks_dir` at the collision-free
+    :func:`managed_runtime_hook_filename` path — the SAME path the provider
+    writes into settings.json — ``0o755``, tracked in ``.manifest``, swept
+    when the skill leaves the composition. The hard-coded HATS-437 guard
+    scripts (package data) stay materialized throughout.
+    """
+
+    def test_materializes_skill_script_alongside_package_guards(
+        self, assembler, tmp_path
+    ):
+        from ai_hats.paths import hooks_dir, managed_runtime_hook_filename
+
+        s = _make_skill_with_runtime_hooks(
+            tmp_path / "skills",
+            "skill-a",
+            {"PreToolUse": [("Bash", "hooks/guard.sh")]},
+        )
+        assembler._materialize_pretooluse_hooks(_result([s]))
+
+        target = hooks_dir(assembler.project_dir)
+        dest = target / managed_runtime_hook_filename("skill-a", "hooks/guard.sh")
+        assert dest.is_file()
+        assert dest.read_text() == "#!/usr/bin/env bash\nexit 0\n"
+        assert dest.stat().st_mode & 0o777 == 0o755
+        manifest = (target / ".manifest").read_text()
+        assert dest.name in manifest
+        # HATS-437 guard (package data) materialized as before.
+        assert (target / "pre_bash_shared_state_guard.sh").is_file()
+
+    def test_removing_skill_sweeps_its_runtime_hook(self, assembler, tmp_path):
+        from ai_hats.paths import hooks_dir, managed_runtime_hook_filename
+
+        s = _make_skill_with_runtime_hooks(
+            tmp_path / "skills",
+            "skill-a",
+            {"PreToolUse": [("Bash", "hooks/guard.sh")]},
+        )
+        target = hooks_dir(assembler.project_dir)
+        dest = target / managed_runtime_hook_filename("skill-a", "hooks/guard.sh")
+
+        assembler._materialize_pretooluse_hooks(_result([s]))
+        assert dest.is_file()
+
+        # Skill leaves the composition → its script is swept; guard survives.
+        assembler._materialize_pretooluse_hooks(_result([]))
+        assert not dest.exists()
+        assert (target / "pre_bash_shared_state_guard.sh").is_file()
+
+    def test_none_result_materializes_only_package_guards(self, assembler):
+        from ai_hats.paths import hooks_dir
+
+        # Legacy bare-bump path (no active role) — guards only, no crash.
+        assembler._materialize_pretooluse_hooks(None)
+        assert (
+            hooks_dir(assembler.project_dir) / "pre_bash_shared_state_guard.sh"
+        ).is_file()
