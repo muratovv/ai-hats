@@ -11,6 +11,13 @@
 #     tests/smoke/` from the repo root. Exit 0 → allow push. pytest
 #     exit 5 (no tests collected) → allow push. Anything else → block
 #     with stderr tail.
+#   * HATS-589: parallelises with pytest-xdist when present (~706s serial
+#     → ~240s on -n4 across 3 measured runs, zero flakes). `--dist=loadgroup`
+#     keeps each test file on one worker (module-scoped venv-build fixture
+#     coherence) and pins all live-claude tests onto a single worker — see
+#     the `pytest_collection_modifyitems` group hook in tests/e2e/conftest.py
+#     — so a parallel run never opens N concurrent SDK sessions. Falls back
+#     to serial when xdist is absent so a lean dev env never hard-fails.
 #   * pytest not on PATH → BLOCK (silent skip would let
 #     `pip uninstall pytest` bypass the gate).
 #   * No env-var bypass. `git push --no-verify` is the only escape and
@@ -74,9 +81,21 @@ if [[ -d "$repo_root/build" ]]; then
     rm -rf "$repo_root/build" 2>/dev/null || true
 fi
 
+# HATS-589: opt into pytest-xdist when the installed pytest reports the
+# plugin. Empty-array expansion is written bash-3.2-safe (macOS system bash)
+# so `set -u` doesn't trip on the no-xdist fallback path.
+xdist_args=()
+if pytest -VV 2>/dev/null | grep -qi xdist; then
+    echo "[e2e-gate] pytest-xdist detected — running -n4 --dist=loadgroup" >&2
+    xdist_args=(-n4 --dist=loadgroup)
+else
+    echo "[e2e-gate] pytest-xdist absent — running serial" >&2
+fi
+
 output=$(
     cd "$repo_root" && \
     pytest -m "integration or smoke" tests/e2e/ tests/smoke/ \
+           ${xdist_args[@]+"${xdist_args[@]}"} \
            -q --tb=line --no-header -p no:cacheprovider 2>&1
 )
 rc=$?
