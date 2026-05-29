@@ -316,6 +316,32 @@ def init(
         _launch_wizard_session()
 
 
+@click.command("sync-hooks")
+def sync_hooks():
+    """Re-materialize ai-hats-managed git hooks if they have drifted (HATS-593).
+
+    Cheap, idempotent no-op when the hooks already match the composed source.
+    Invoked by the post-merge / post-checkout git hooks and at session start so
+    ``.githooks/`` never goes stale after a merge / pull / checkout. Fail-open:
+    any error is surfaced loudly but never aborts the calling git operation.
+    """
+    project_dir = _project_dir()
+    try:
+        res = _assembler(project_dir).sync_hooks()
+    except Exception as e:  # noqa: BLE001 — fail-open by design (HATS-593)
+        console.print(
+            "[yellow]ai-hats: git hooks may be stale[/] "
+            f"(sync failed: {e}) — run [bold]ai-hats self init[/]",
+        )
+        return
+    if res.status == "synced":
+        console.print("[green]ai-hats:[/] git hooks re-materialized (were drifted)")
+    elif res.status == "in-sync":
+        console.print("[dim]ai-hats: git hooks in sync[/]")
+    else:
+        console.print(f"[dim]ai-hats: hook sync skipped[/] ({res.detail})")
+
+
 @click.command("set")
 @click.option("--provider", "-p", default=None, help="Provider (gemini/claude)")
 @click.option("--role", "-r", default=None, help="Role to apply")

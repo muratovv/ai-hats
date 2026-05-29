@@ -340,3 +340,79 @@ def test_dispatcher_propagates_failure(project_with_hook_skill):
     res = subprocess.run([str(dispatcher)], capture_output=True, text=True)
     assert res.returncode == 7
     assert "boom" in res.stderr
+
+
+# ----- HATS-593: sync_hooks drift-detecting re-materialization -----
+
+
+def test_sync_hooks_noop_when_in_sync(project_with_hook_skill):
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
+    before = installed.stat().st_mtime_ns
+
+    res = asm.sync_hooks()
+    assert res.status == "in-sync"
+    # No rewrite when already consistent with source.
+    assert installed.stat().st_mtime_ns == before
+
+
+def test_sync_hooks_heals_corrupted_hook(project_with_hook_skill):
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
+    installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")  # simulate drift
+
+    res = asm.sync_hooks()
+    assert res.status == "synced"
+    body = installed.read_text()
+    assert "check ran" in body
+    assert "DRIFTED" not in body
+
+
+def test_sync_hooks_heals_deleted_hook(project_with_hook_skill):
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
+    installed.unlink()
+
+    res = asm.sync_hooks()
+    assert res.status == "synced"
+    assert installed.is_file()
+    assert "check ran" in installed.read_text()
+
+
+def test_sync_hooks_skips_non_git_project(tmp_path):
+    """No .git/ → skipped, never raises."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    lib = tmp_path / "lib"
+    skill_dir = lib / "skills" / "plain"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("# Plain")
+    (skill_dir / "metadata.yaml").write_text("name: plain\ndescription: x\n")
+    trait_dir = lib / "traits" / "trait-base"
+    trait_dir.mkdir(parents=True)
+    (trait_dir / "config.yaml").write_text(
+        "name: trait-base\ncomposition:\n  skills:\n    - plain\ninjection: B.\n"
+    )
+    role_dir = lib / "roles" / "test-role"
+    role_dir.mkdir(parents=True)
+    (role_dir / "config.yaml").write_text(
+        "name: test-role\npriorities: [Quality]\n"
+        "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
+    )
+    ProjectConfig(provider="gemini", library_paths=[str(lib)]).save(project / "ai-hats.yaml")
+
+    asm = Assembler(project, library_paths=[lib])
+    res = asm.sync_hooks()
+    assert res.status == "skipped"

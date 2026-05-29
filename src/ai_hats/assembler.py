@@ -14,6 +14,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -125,6 +126,20 @@ def _builtin_library_layers() -> list[Path]:
         if p.is_dir():
             out.append(p)
     return out
+
+
+@dataclass(frozen=True)
+class HookSyncResult:
+    """Outcome of :meth:`Assembler.sync_hooks` (HATS-593).
+
+    status:
+        ``"synced"``   — managed git hooks were drifted and re-materialized.
+        ``"in-sync"``  — already consistent with the composed source; no-op.
+        ``"skipped"``  — nothing to do (not a git repo / no active role).
+    """
+
+    status: str
+    detail: str = ""
 
 
 class Assembler:
@@ -1627,6 +1642,86 @@ class Assembler:
             )
         except subprocess.CalledProcessError as e:
             warnings.append(f"failed to set core.hooksPath: {e.stderr.strip() or e}")
+
+    # ----- HATS-593: drift-detecting hook re-materialization -----
+
+    def sync_hooks(self) -> HookSyncResult:
+        """Re-materialize ONLY the git-hook surface if it has drifted.
+
+        Idempotent no-op when on-disk hooks already match the composed source.
+        Unlike ``init`` / ``_refresh`` this runs NO migrations, scaffold,
+        provider hooks, or prompt recomposition — just the
+        :meth:`_install_git_hooks` surface. Invoked by the post-merge /
+        post-checkout git hooks and the ``session_start`` lifecycle hook so
+        ``.githooks/`` never goes stale after a merge / pull / checkout.
+        """
+        if not (self.project_dir / ".git").exists():
+            return HookSyncResult(status="skipped", detail="not a git repo")
+        cfg = self.project_config
+        effective_role = cfg.active_role or cfg.default_role
+        if not effective_role:
+            return HookSyncResult(status="skipped", detail="no active role")
+        result = compose_for_role(self, effective_role)
+        if not self._git_hooks_drift(result):
+            return HookSyncResult(status="in-sync")
+        self._install_git_hooks(result)
+        return HookSyncResult(status="synced")
+
+    def _expected_git_hook_files(self, result: CompositionResult) -> dict[str, bytes]:
+        """Managed ``.githooks/`` relpath -> expected bytes for ``result``.
+
+        Mirrors :meth:`_install_git_hooks` WITHOUT writing, so drift can be
+        detected cheaply. Keys: ``<event>.d/<skill>-<basename>`` per declared
+        script, plus ``<event>`` per dispatcher.
+        """
+        declared = self._collect_skill_git_hooks(result)
+        expected: dict[str, bytes] = {}
+        for event, entries in declared.items():
+            has_entry = False
+            for skill_name, script_path in entries:
+                src = self._resolve_skill_script(skill_name, script_path, result)
+                if src is None:
+                    continue
+                expected[f"{event}.d/{skill_name}-{src.name}"] = src.read_bytes()
+                has_entry = True
+            if has_entry and GITHOOKS_DISPATCHER_TEMPLATE.exists():
+                expected[event] = GITHOOKS_DISPATCHER_TEMPLATE.read_bytes()
+        return expected
+
+    def _git_hooks_drift(self, result: CompositionResult) -> bool:
+        """True if managed git hooks on disk diverge from ``result``.
+
+        Compares the expected managed file set (content + exec-bit + presence)
+        and the manifest against disk. A foreign (non-marker) dispatcher is
+        left to the install policy and is never counted as drift here.
+        """
+        githooks_dir = self.project_dir / GITHOOKS_DIR
+        manifest_path = githooks_dir / GITHOOKS_MANIFEST
+        expected = self._expected_git_hook_files(result)
+        if not expected:
+            # Nothing should be installed → drift iff a stale manifest lingers.
+            return self._read_canonical_manifest(manifest_path) != set()
+        if self._read_canonical_manifest(manifest_path) != set(expected):
+            return True
+        for rel, content in expected.items():
+            target = githooks_dir / rel
+            if not target.is_file():
+                return True
+            # Top-level dispatcher with a foreign body → leave alone (not drift).
+            if "/" not in rel:
+                try:
+                    if GITHOOKS_DISPATCHER_MARKER not in target.read_text():
+                        continue
+                except OSError:
+                    return True
+            try:
+                if target.read_bytes() != content:
+                    return True
+            except OSError:
+                return True
+            if not target.stat().st_mode & 0o100:  # owner-exec bit lost
+                return True
+        return False
 
     def _build_tree(self, result: CompositionResult) -> dict:
         """Build a dependency tree representation.
