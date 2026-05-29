@@ -451,49 +451,15 @@ def test_parallel_create_different_branches_both_succeed(
     assert (worktrees_dir(git_project) / f"{_state_key(branch_b)}.json").exists()
 
 
-def test_create_failure_cleans_tempdir_preserves_pre_existing_branch(
-    git_project: Path,
-) -> None:
-    """TC-N3: pre-create the branch externally → create() raises
-    WorktreeCreateError, tempdir is cleaned, pre-existing branch SURVIVES."""
-    from ai_hats.worktree import WorktreeCreateError
-
-    branch = "task/hats-479-n3"
-    prefix = f"ai-hats-wt-{branch.replace('/', '-')}-"
-
-    # Pre-create branch externally so L2 (load_for_branch) sees no state but
-    # `git worktree add -b` will fail with "already exists".
-    _git(git_project, "branch", branch)
-    # Confirm git sees it.
-    branches_before = subprocess.run(
-        ["git", "branch", "--list", branch],
-        cwd=str(git_project),
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-
-    pre_existing_dirs = {p.name for p in _list_leftover_tempdirs(prefix)}
-
-    mgr = WorktreeManager(git_project, branch_name=branch)
-    with pytest.raises(WorktreeCreateError) as ei:
-        mgr.create()
-    assert "already exists" in str(ei.value).lower()
-
-    # No leaked tempdirs.
-    after = {p.name for p in _list_leftover_tempdirs(prefix)}
-    assert after == pre_existing_dirs, f"leaked: {after - pre_existing_dirs}"
-
-    # Pre-existing branch UNCHANGED — L4 must not have deleted it.
-    branches_after = subprocess.run(
-        ["git", "branch", "--list", branch],
-        cwd=str(git_project),
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    assert branches_after == branches_before
-    assert branch in branches_after
+# TC-N3 (test_create_failure_cleans_tempdir_preserves_pre_existing_branch)
+# was deleted in HATS-603. It asserted the pre-HATS-517 contract — that
+# `create()` RAISES on a pre-existing branch. HATS-517 Case A changed that:
+# a branch with no owning worktree is now ATTACHED to a new linked worktree
+# (`git worktree add <path> <branch>`, no `-b`), so create() succeeds. The
+# current contract is covered by tests/test_worktree.py::
+# TestBranchExistsClassifier (Case A attach + full lifecycle) and the e2e
+# Case A test; L4 tempdir-cleanup-on-failure is covered by TC-N1
+# (test_parallel_create_same_branch_exactly_one_winner).
 
 
 # ---------------------------------------------------------------------------
