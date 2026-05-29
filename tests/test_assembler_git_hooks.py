@@ -1,5 +1,6 @@
 """Tests for skill-contributed git hooks (HATS-088)."""
 
+import shutil
 import stat
 import subprocess
 from pathlib import Path
@@ -598,3 +599,76 @@ def test_post_checkout_noops_on_file_checkout(project_with_self_heal_skill):
     )
     assert res.returncode == 0
     assert "HEALED:post-checkout" in res.stdout
+
+
+# ----- HATS-593 Phase 2: dispatcher fail-closed backstop -----
+
+
+def test_dispatcher_blocks_when_managed_hook_deleted(project_with_hook_skill):
+    """A manifest-expected managed .d/ hook gone → dispatcher fails closed."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    githooks = project / GITHOOKS_DIR
+    managed = githooks / "pre-commit.d" / "hook_skill-check.sh"
+    assert managed.is_file()
+    managed.unlink()  # the worst case: self-heal failed AND the hook is gone
+
+    res = subprocess.run([str(githooks / "pre-commit")], capture_output=True, text=True)
+    assert res.returncode == 1
+    assert "corrupt" in res.stderr
+    assert "ai-hats self init" in res.stderr
+
+
+def test_dispatcher_blocks_when_managed_hook_non_executable(project_with_hook_skill):
+    """A manifest-expected managed hook that lost its exec bit → fail closed."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    githooks = project / GITHOOKS_DIR
+    managed = githooks / "pre-commit.d" / "hook_skill-check.sh"
+    managed.chmod(0o644)  # strip exec bit
+
+    res = subprocess.run([str(githooks / "pre-commit")], capture_output=True, text=True)
+    assert res.returncode == 1
+    assert "corrupt" in res.stderr
+
+
+def test_dispatcher_runs_clean_when_all_managed_hooks_present(project_with_hook_skill):
+    """Counter-test: nothing missing → dispatcher runs the hook, exits 0."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    githooks = project / GITHOOKS_DIR
+    res = subprocess.run([str(githooks / "pre-commit")], capture_output=True, text=True)
+    assert res.returncode == 0
+    assert "check ran" in res.stdout
+    assert "corrupt" not in res.stderr
+
+
+def test_dispatcher_does_not_block_event_with_no_managed_entries(project_with_hook_skill):
+    """Counter-test (scope): an event whose .d/ holds no MANAGED entries is
+    NOT blocked by the backstop — only manifest-listed managed hooks gate."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    githooks = project / GITHOOKS_DIR
+    # Hand-install a dispatcher for an event with NO managed .d/ entries
+    # (manifest lists only pre-commit hooks). The dispatcher is event-agnostic;
+    # copy the real one and name it for an unmanaged event.
+    pre_push = githooks / "pre-push"
+    shutil.copy2(githooks / "pre-commit", pre_push)
+    pre_push.chmod(0o755)
+
+    res = subprocess.run([str(pre_push)], capture_output=True, text=True)
+    # No pre-push.d/* in the manifest → backstop inert → normal empty-.d/ no-op.
+    assert res.returncode == 0
+    assert "corrupt" not in res.stderr
