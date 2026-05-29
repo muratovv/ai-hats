@@ -202,3 +202,61 @@ def test_mixed_payload_with_master_triggers(tmp_path: Path):
 
     assert res.returncode == 0, res.stderr
     assert (bindir / "last_argv").exists(), "pytest should be invoked"
+
+
+# --- HATS-589: xdist opt-in vs serial fallback ----------------------------
+
+
+def _make_xdist_aware_stub(bindir: Path, *, has_xdist: bool) -> Path:
+    """Fake ``pytest`` whose ``-VV`` banner advertises (or hides) xdist.
+
+    The hook probes ``pytest -VV | grep -qi xdist`` to decide whether to
+    add ``-n4 --dist=loadgroup``. This stub answers that probe, and on the
+    real run records argv to ``bindir/last_argv`` and exits 0.
+    """
+    bindir.mkdir(parents=True, exist_ok=True)
+    stub = bindir / "pytest"
+    banner = "plugins: xdist-3.8.0, cov-4.0\n" if has_xdist else "plugins: cov-4.0\n"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == "-VV" ]]; then\n'
+        f'  printf "%s" "{banner}"\n'
+        "  exit 0\n"
+        "fi\n"
+        f'printf "%s\\n" "$@" > "{bindir}/last_argv"\n'
+        "exit 0\n"
+    )
+    stub.chmod(0o755)
+    return stub
+
+
+@pytest.mark.integration
+def test_master_push_uses_xdist_when_available(tmp_path: Path):
+    """xdist present → gate runs ``-n4 --dist=loadgroup`` (HATS-589)."""
+    bindir = tmp_path / "bin"
+    _make_xdist_aware_stub(bindir, has_xdist=True)
+    stdin = f"refs/heads/master {NEW_SHA} refs/heads/master {OLD_SHA}\n"
+
+    res = _run_hook(stdin, bindir)
+
+    assert res.returncode == 0, res.stderr
+    argv = (bindir / "last_argv").read_text()
+    assert "-n4" in argv, argv
+    assert "--dist=loadgroup" in argv, argv
+    assert "integration or smoke" in argv
+
+
+@pytest.mark.integration
+def test_master_push_falls_back_to_serial_without_xdist(tmp_path: Path):
+    """xdist absent → gate runs serial (no ``-n`` flag), still green (HATS-589)."""
+    bindir = tmp_path / "bin"
+    _make_xdist_aware_stub(bindir, has_xdist=False)
+    stdin = f"refs/heads/master {NEW_SHA} refs/heads/master {OLD_SHA}\n"
+
+    res = _run_hook(stdin, bindir)
+
+    assert res.returncode == 0, res.stderr
+    argv = (bindir / "last_argv").read_text()
+    assert "-n4" not in argv, argv
+    assert "--dist" not in argv, argv
+    assert "integration or smoke" in argv

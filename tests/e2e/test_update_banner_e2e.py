@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -33,6 +33,9 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
+
+# HATS-589: per-xdist-worker private build source (no-op on serial run).
+from _helpers.repo_src import build_src  # noqa: E402
 
 INSTALLED_SHA = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 LATEST_SHA = "9876543210fedcba9876543210fedcba98765432"
@@ -108,7 +111,7 @@ def test_update_banner_e2e(tmp_path):
 
     env = os.environ.copy()
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(REPO_ROOT)
+    env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))
     env.pop("AI_HATS_VENV", None)
     env.pop("AI_HATS_NO_UPDATE_CHECK", None)
 
