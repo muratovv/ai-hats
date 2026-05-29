@@ -43,16 +43,46 @@ jobs:
           cache: pip
       - name: Install package + dev deps
         run: pip install -e ".[dev]"
-      - name: Run pytest with coverage gate
+      - name: Run unit suite across versions
+        run: pytest -m "not integration" -q
+
+  coverage:
+    # Authoritative coverage gate. Runs the unit suite PLUS the real-git
+    # integration tests (excluding the e2e tier, which builds per-session
+    # venvs and would add ~15min). Those integration tests exercise
+    # worktree.py / state.py — modules barely touched by the unit suite —
+    # lifting total coverage from ~76% (unit-only) to ~83% (HATS-600).
+    name: coverage (py3.13, unit + real-git integration)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install package + dev deps
+        run: pip install -e ".[dev]"
+      - name: Configure git identity (integration tests commit/merge)
         run: |
-          pytest -m "not integration" \
+          git config --global user.email "ci@ai-hats.test"
+          git config --global user.name "ai-hats CI"
+          git config --global init.defaultBranch main
+      - name: Run unit + non-e2e integration with coverage gate
+        # Deselected (HATS-600):
+        #   - test_create_failure_..._pre_existing_branch — macOS-only red;
+        #     CI-behaviour on Linux git unverified, resolution deferred.
+        #   - test_parallel_merges_..._both_succeed — multiprocessing drift
+        #     flake; follow-up ticket to investigate race vs test artefact.
+        run: |
+          pytest --ignore=tests/e2e/ \
+            --deselect tests/test_worktree_concurrency.py::test_create_failure_cleans_tempdir_preserves_pre_existing_branch \
+            --deselect tests/test_worktree_concurrency.py::test_parallel_merges_into_same_base_both_succeed \
             --cov=ai_hats \
             --cov-report=term-missing \
             --cov-report=xml \
             --cov-fail-under=78 \
             -q
       - name: Upload coverage artifact
-        if: matrix.python-version == '3.13'
         uses: actions/upload-artifact@v7
         with:
           name: coverage-xml
