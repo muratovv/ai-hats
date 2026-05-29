@@ -5,7 +5,14 @@ composition:
     - dev_rule_e2e_gate
   skills:
     - doc-protocol
-  hooks: {}
+  hooks:
+    # HATS-593 layer B (defense-in-depth): re-check git-hook freshness when an
+    # `ai-hats execute` session starts. Layer A (post-merge/post-checkout in
+    # the git-mastery skill) is the root-cause heal and covers bare-terminal
+    # pushes; this session-start hook is the in-session safety net. Idempotent
+    # no-op when hooks are already in sync; fail-open on any error.
+    session_start:
+      - ai-hats self sync-hooks
 injection: |
   ## AI-HATS MAINTAINER
 
