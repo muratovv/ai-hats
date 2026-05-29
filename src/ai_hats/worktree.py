@@ -1243,6 +1243,48 @@ class WorktreeManager:
                 )
                 return
 
+            # HATS-596: checkout-independent already-merged short-circuit.
+            # The worktree-isolation contract: the task lives on its own
+            # branch; the main checkout may legitimately be on ANY branch.
+            # If the task-branch tip is already an ancestor of the recorded
+            # base ref, the work is fully integrated — `git merge` would be a
+            # no-op. (`_fast_forward_merge` / `_squash_merge` already
+            # short-circuit `head_main == head_wt`, but that path is (a)
+            # unreachable past the HEAD-mismatch guard below and (b) blind to
+            # the `--no-ff` case where the base tip is a merge commit, not the
+            # branch tip.)
+            #
+            # Because NO `git merge` runs here, the main-repo HEAD position is
+            # irrelevant: refusing on a wandered HEAD (HATS-533) or a foreign
+            # MERGE_HEAD (HATS-587 / F4) would be a FALSE refusal — the exact
+            # bug HATS-596 fixes (work merged into master + pushed, but the
+            # main checkout sat on a concurrent feature branch). So this MUST
+            # precede both of those guards.
+            #
+            # `_check_clean` is still honored (force-bypassable, matching the
+            # _check_clean contract) so uncommitted worktree edits are not
+            # silently dropped. Drift is skipped: once the work is integrated,
+            # base movement no longer matters. Uses the recorded refs only
+            # (local base) — origin/<base> is out of scope (HATS-596 decision).
+            if (
+                self._original_branch is not None
+                and self._branch_exists(self._original_branch)
+                and self._is_ancestor(self.branch_name, self._original_branch)
+            ):
+                if not force:
+                    self._check_clean()
+                self._remove_worktree()
+                self._delete_branch()
+                self._clear_state()
+                self.worktree_path = None
+                logger.info(
+                    "Worktree '%s' already merged into '%s' — torn down "
+                    "without re-merge (HATS-596)",
+                    self.branch_name,
+                    self._original_branch,
+                )
+                return
+
             # HATS-533: refuse if main-repo HEAD is no longer on the merge
             # target captured at create time. _fast_forward_merge /
             # _squash_merge run `git merge` in main-repo cwd, so a HEAD that
@@ -1265,6 +1307,10 @@ class WorktreeManager:
             #      base move?", clean = "is the wt tree dirty against
             #      its branch?". Refusing here keeps the user-visible
             #      message focused on the actionable root cause.
+            #   3. AFTER the HATS-596 already-merged short-circuit above —
+            #      when the work is already integrated no `git merge` runs,
+            #      so a wandered HEAD is not a wrong-branch-merge risk and
+            #      refusing here would be a false positive.
             #
             # Skip for legacy states where _original_branch is None
             # (symmetric with the OriginalBranchMissing guard below).
