@@ -190,6 +190,35 @@ GIT_HOOK_EVENTS: tuple[str, ...] = (
 )
 
 
+# Provider runtime-hook events recognized by the framework (HATS-597).
+# Skills declare hooks under one of these keys in metadata.yaml's
+# `runtime_hooks:` block. Names match Claude Code's native hook event names
+# so the provider can wire them into `.claude/settings.json` verbatim. v1
+# implements PreToolUse + PostToolUse; the set is open — adding an event is a
+# one-line data change here plus provider support, no structural edit.
+RUNTIME_HOOK_EVENTS: tuple[str, ...] = (
+    "PreToolUse",
+    "PostToolUse",
+)
+
+
+class RuntimeHook(_YamlModel):
+    """A single provider runtime hook declared by a skill (HATS-597).
+
+    Unlike ``git_hooks`` (a bare ``list[str]`` of script paths), a runtime
+    hook carries two fields — the provider tool ``matcher`` and the ``script``
+    path relative to the skill directory — so it is modeled as a typed record
+    rather than positional dict access (project default: strict typed
+    contracts > loose dict access). Frozen so collected hooks are safe to pass
+    around and dedupe.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    matcher: str
+    script: str
+
+
 class SkillMetadata(_YamlModel):
     """Parsed metadata.yaml for a skill.
 
@@ -197,6 +226,12 @@ class SkillMetadata(_YamlModel):
     the project's `.githooks/<event>.d/` during composition. Keys are git
     hook event names (see GIT_HOOK_EVENTS); values are lists of script
     paths relative to the skill directory.
+
+    `runtime_hooks` (HATS-597) lets a skill declare provider runtime hooks
+    (e.g. Claude Code PreToolUse / PostToolUse). Keys are runtime hook event
+    names (see RUNTIME_HOOK_EVENTS); values are lists of RuntimeHook records
+    `{matcher, script}`. The assembler materializes the scripts and the
+    provider wires them into the native hook channel.
 
     `triggers` / `skip` (HATS-264): activation hints used to render the
     canonical `routing.md` trigger→skill table. Each item is a short phrase
@@ -212,6 +247,7 @@ class SkillMetadata(_YamlModel):
     tags: list[str] = Field(default_factory=list)
     pattern: str = ""
     git_hooks: dict[str, list[str]] = Field(default_factory=dict)
+    runtime_hooks: dict[str, list[RuntimeHook]] = Field(default_factory=dict)
     triggers: list[str] = Field(default_factory=list)
     skip: list[str] = Field(default_factory=list)
 
@@ -233,6 +269,52 @@ class SkillMetadata(_YamlModel):
                 normalized[key] = [str(s) for s in scripts]
             # Unknown events silently skipped — surfaces upstream via tests.
         data["git_hooks"] = normalized
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_runtime_hooks(cls, data: Any) -> Any:
+        """Parse + validate the ``runtime_hooks:`` block (HATS-597).
+
+        Unlike ``git_hooks`` (which silently skips unknown events), runtime
+        hooks **fail loud** on an unknown event or a malformed row: a dropped
+        runtime hook can be a silent safety hole (a guard that never fires),
+        so a config typo must surface at load, naming the skill + event.
+        """
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("runtime_hooks")
+        if not raw:
+            data["runtime_hooks"] = {}
+            return data
+        skill_name = data.get("name", "<unknown>")
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"skill {skill_name!r}: runtime_hooks must be a mapping of "
+                f"event -> [{{matcher, script}}], got {type(raw).__name__}"
+            )
+        normalized: dict[str, list[dict[str, str]]] = {}
+        for ev, rows in raw.items():
+            if ev not in RUNTIME_HOOK_EVENTS:
+                raise ValueError(
+                    f"skill {skill_name!r}: unknown runtime_hooks event {ev!r} "
+                    f"(allowed: {', '.join(RUNTIME_HOOK_EVENTS)})"
+                )
+            if not isinstance(rows, list):
+                raise ValueError(
+                    f"skill {skill_name!r}: runtime_hooks[{ev!r}] must be a list "
+                    f"of {{matcher, script}} entries, got {type(rows).__name__}"
+                )
+            parsed: list[dict[str, str]] = []
+            for row in rows:
+                if not isinstance(row, dict) or "matcher" not in row or "script" not in row:
+                    raise ValueError(
+                        f"skill {skill_name!r}: runtime_hooks[{ev!r}] entry must "
+                        f"have both 'matcher' and 'script' — got {row!r}"
+                    )
+                parsed.append({"matcher": str(row["matcher"]), "script": str(row["script"])})
+            normalized[ev] = parsed
+        data["runtime_hooks"] = normalized
         return data
 
     @classmethod

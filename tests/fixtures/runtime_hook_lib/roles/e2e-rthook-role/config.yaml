@@ -1,0 +1,16 @@
+name: e2e-rthook-role
+priorities:
+  - Correctness
+composition:
+  traits: []
+  rules: []
+  skills:
+    - e2e-rthook
+  hooks: {}
+injection: |
+  # ROLE: E2E-RTHOOK-ROLE
+
+  E2E fixture role (HATS-601). Bundles the `e2e-rthook` skill so a real
+  `ai-hats self init -r e2e-rthook-role` composes a skill that declares
+  provider `runtime_hooks:`. Used only by the runtime-hook propagation
+  e2e; not shipped.
