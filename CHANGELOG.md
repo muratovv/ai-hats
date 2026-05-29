@@ -50,6 +50,27 @@ since the latest tag lives under **Unreleased** until the next release.
     transparently.
 
 ### Fixed
+- **master CI was red on four independent counts** (HATS-600). None were a
+  regression from a single change — source had moved on without its tests,
+  plus two latent gate failures:
+  - **6 stale tests** realigned with intentional, reviewed source changes:
+    HATS-510 dropped `integration::google` from the `assistant` role and
+    moved `rule_core_vs_usage_split` ownership to the `library-curator`
+    trait; HATS-501/505/507 added a `RoleNotFoundError` pre-check in
+    `ComposeRole.run`; HATS-549 Phase 4 routes non-owned hooks
+    (`pre-commit.sh`) to `user-hooks/` instead of `library/hooks/`.
+  - **py3.11 collection `SyntaxError`** — two `tests/e2e/` files reused
+    double quotes inside double-quoted f-strings (PEP-701, 3.12+ only);
+    switched the inner `env[...]` subscript to single quotes.
+  - **`lint (ruff)` job** — 20 pre-existing violations (F401/E401/F541)
+    cleared via `ruff check --fix` (behaviour-preserving).
+  - **coverage gate (76% < 78%)** — the unit suite (`-m 'not integration'`)
+    barely touches `worktree.py`/`state.py`, which are exercised by
+    integration tests CI deselected. A new `coverage` job runs unit +
+    non-e2e real-git integration tests and owns the gate (`worktree.py`
+    26%→90%, total ~83%); the `test` matrix now validates the unit suite
+    across versions without a gate. The e2e tier (per-session venv builds)
+    stays out of CI's hot path.
 - **Done-guard / `wt merge` refused an already-merged task when the main
   checkout HEAD had wandered** (HATS-596). `Worktree.merge()` decided
   "is this merged?" from the main checkout's current HEAD branch
