@@ -6,7 +6,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .resolver import LibraryResolver
-from .models import ComponentConfig, ComponentType, HooksConfig, OverlayConfig
+from .models import (
+    ComponentConfig,
+    ComponentType,
+    HooksConfig,
+    OverlayConfig,
+    RuntimeHook,
+    SkillMetadata,
+)
 
 
 @dataclass(frozen=True)
@@ -401,3 +408,53 @@ class Composer:
             for script in source_list:
                 if script not in target_list:
                     target_list.append(script)
+
+
+# ---------------------------------------------------------------------------
+# Skill-declared provider runtime hooks (HATS-597)
+#
+# Pure derivations over a CompositionResult. They live here — not on the
+# Assembler — because both the assembler (materialize side) and the
+# ClaudeProvider (settings.json wiring side) consume them, and the assembler
+# already imports providers at module load (so providers cannot import the
+# assembler at module level). composer is the neutral, acyclic home both reach.
+# ---------------------------------------------------------------------------
+
+
+def collect_runtime_hooks(
+    result: CompositionResult,
+) -> dict[str, list[tuple[str, RuntimeHook]]]:
+    """Walk composed skills and group their declared runtime hooks by event.
+
+    Returns ``{event_name: [(skill_name, RuntimeHook), ...]}``. Validation
+    (unknown event, malformed row) already happened at
+    :meth:`SkillMetadata.from_yaml` time and fails loud there.
+    """
+    collected: dict[str, list[tuple[str, RuntimeHook]]] = {}
+    for skill in result.skills:
+        metadata = SkillMetadata.from_yaml(skill.source_path / "metadata.yaml")
+        if not metadata.runtime_hooks:
+            continue
+        for event, hooks in metadata.runtime_hooks.items():
+            collected.setdefault(event, []).extend(
+                (skill.name, hook) for hook in hooks
+            )
+    return collected
+
+
+def resolve_skill_script(
+    result: CompositionResult, skill_name: str, script_path: str
+) -> Path | None:
+    """Resolve a script declared in a skill's metadata to an absolute path.
+
+    Returns ``None`` when the declaring skill is absent from ``result`` or the
+    file does not exist — callers (materialize, provider wiring) MUST skip such
+    a hook so a settings.json entry never points at a non-existent script.
+    """
+    for skill in result.skills:
+        if skill.name != skill_name:
+            continue
+        candidate = (skill.source_path / script_path).resolve()
+        if candidate.exists():
+            return candidate
+    return None

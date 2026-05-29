@@ -19,7 +19,12 @@ from pathlib import Path
 
 import yaml
 
-from .composer import Composer, CompositionResult
+from .composer import (
+    Composer,
+    CompositionResult,
+    collect_runtime_hooks as _collect_runtime_hooks,
+    resolve_skill_script as _resolve_runtime_script,
+)
 from .materialize import compose_for_role
 from .resolver import LibraryResolver
 from .models import (
@@ -937,7 +942,7 @@ class Assembler:
         # REQUIRED on set_role first-session bootstrap (without them,
         # Claude fires PreToolUse against a non-existent script on
         # the very first Bash call).
-        provider.ensure_runtime_hooks(self.project_dir)
+        provider.ensure_runtime_hooks(self.project_dir, result)
         self._materialize_pretooluse_hooks(result)
 
         # 4. Role-specific git hooks — only if role active AND .git/
@@ -1583,24 +1588,11 @@ class Assembler:
     ) -> dict[str, list[tuple[str, RuntimeHook]]]:
         """Walk composed skills and collect their declared runtime hooks (HATS-597).
 
-        Mirrors :meth:`_collect_skill_git_hooks` but for provider runtime
-        hooks (PreToolUse / PostToolUse). Validation (unknown event, malformed
-        row) already happened at ``SkillMetadata.from_yaml`` time and fails
-        loud there.
-
-        Returns: {event_name: [(skill_name, RuntimeHook), ...]}
+        Thin delegate to :func:`composer.collect_runtime_hooks` — the shared
+        derivation the provider also consumes (see that module's note on why it
+        lives in composer, not here).
         """
-        collected: dict[str, list[tuple[str, RuntimeHook]]] = {}
-        for skill in result.skills:
-            metadata_path = skill.source_path / "metadata.yaml"
-            metadata = SkillMetadata.from_yaml(metadata_path)
-            if not metadata.runtime_hooks:
-                continue
-            for event, hooks in metadata.runtime_hooks.items():
-                collected.setdefault(event, []).extend(
-                    (skill.name, hook) for hook in hooks
-                )
-        return collected
+        return _collect_runtime_hooks(result)
 
     @staticmethod
     def _resolve_skill_script(
@@ -1609,13 +1601,7 @@ class Assembler:
         result: CompositionResult,
     ) -> Path | None:
         """Resolve a script path declared in a skill's metadata to an absolute path."""
-        for skill in result.skills:
-            if skill.name != skill_name:
-                continue
-            candidate = (skill.source_path / script_path).resolve()
-            if candidate.exists():
-                return candidate
-        return None
+        return _resolve_runtime_script(result, skill_name, script_path)
 
     def _install_dispatcher(self, dispatcher_path: Path) -> bool:
         """Write the dispatcher script. Returns True if installed/updated, False on conflict."""

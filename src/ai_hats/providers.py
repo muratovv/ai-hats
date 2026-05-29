@@ -7,8 +7,14 @@ import json
 import shutil
 from pathlib import Path
 
-from .composer import CompositionResult, ResolvedComponent
+from .composer import (
+    CompositionResult,
+    ResolvedComponent,
+    collect_runtime_hooks,
+    resolve_skill_script,
+)
 from .paths import hooks_dir as _lib_hooks_dir
+from .paths import managed_runtime_hook_filename
 from .paths import session_cache_dir
 from .placeholders import expand_path_placeholders
 
@@ -158,20 +164,26 @@ class Provider(abc.ABC):
         """
         return None
 
-    def ensure_runtime_hooks(self, project_dir: Path) -> None:
+    def ensure_runtime_hooks(
+        self, project_dir: Path, result: CompositionResult | None = None
+    ) -> None:
         """Install provider-specific runtime hooks (e.g. Claude Code PreToolUse).
 
-        Called by ``Assembler.set_role`` after skill-contributed git hooks
-        are installed. Idempotent — safe to invoke on every role apply.
+        Called by ``Assembler._refresh`` after the provider scaffold is
+        ensured. Idempotent — safe to invoke on every role apply.
+
+        ``result`` is the active role's composition (``None`` on the legacy
+        bare-bump path with no active role); ``ClaudeProvider`` reads the
+        skills' ``runtime_hooks:`` declarations from it (HATS-597).
 
         Default: no-op. Providers without a runtime-hook channel (Gemini)
         rely on the rule layer plus skill-contributed git hooks.
 
         HATS-437: ClaudeProvider overrides to write a PreToolUse entry
         for ``library/hooks/pre_bash_shared_state_guard.sh`` into
-        ``.claude/settings.json``.
+        ``.claude/settings.json``, plus any skill-declared runtime hooks.
         """
-        del project_dir
+        del project_dir, result
         return None
 
     def update_system_prompt(self, project_dir: Path, content: str) -> None:
@@ -509,42 +521,39 @@ class ClaudeProvider(Provider):
     # a duplicate. User-authored entries (without the tag) are never touched.
     _MANAGED_HOOK_TAG = "ai-hats:hats-437"
 
-    def ensure_runtime_hooks(self, project_dir: Path) -> None:
-        """Install / refresh the shared-state-guard PreToolUse hook in
+    def ensure_runtime_hooks(
+        self, project_dir: Path, result: CompositionResult | None = None
+    ) -> None:
+        """Install / refresh ai-hats-managed runtime-hook entries in
         ``.claude/settings.json``. Idempotent.
 
-        Layout written:
+        Writes two kinds of managed entry, keyed by the native Claude event:
 
-            {
-              "hooks": {
-                "PreToolUse": [
-                  {
-                    "matcher": "Bash",
-                    "_ai_hats_managed": "ai-hats:hats-437",
-                    "hooks": [
-                      {"type": "command",
-                       "command": "<project>/.agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh"}
-                    ]
-                  }
-                ]
-              }
-            }
+        * the HATS-437 shared-state guard (PreToolUse, tag
+          ``ai-hats:hats-437``) — always, until HATS-598 migrates it onto the
+          registry;
+        * one entry per ``(event, skill, matcher)`` a composed skill declares
+          under ``runtime_hooks:`` (HATS-597), tag
+          ``ai-hats:<skill>:<event>:<matcher>``, ``command`` = the
+          :func:`managed_runtime_hook_filename` path the assembler
+          materializes.
 
-        Path strategy: write the relative path from ``project_dir`` so the
-        config survives ``project_dir`` moves but stays anchored to the
-        Claude session's CWD. ``ai-hats self update``'s migration_healer
-        owns the case where the hooks dir physically moves.
+        Each managed entry is located by its tag and updated in place; a
+        user-authored entry already wiring the same script is respected (no
+        dup); managed entries no longer desired (e.g. a skill left the role)
+        are swept. User-authored entries (no ``ai-hats:`` tag) are never
+        touched. Commands are written project-relative so the config survives
+        ``project_dir`` moves; ``ai-hats self update``'s migration_healer owns
+        the physical-move case.
         """
         settings_path = project_dir / ".claude" / "settings.json"
-        hook_path = _lib_hooks_dir(project_dir) / "pre_bash_shared_state_guard.sh"
 
-        # Resolve the relative form. If the resolved hook lives outside
-        # project_dir (unusual — only happens when ``ai_hats_dir`` is set
-        # to an absolute path outside the project), fall back to absolute.
-        try:
-            rel_command = str(hook_path.relative_to(project_dir))
-        except ValueError:
-            rel_command = str(hook_path)
+        desired = self._desired_runtime_entries(project_dir, result)
+        desired_tags = {
+            entry["_ai_hats_managed"]
+            for entries in desired.values()
+            for entry in entries
+        }
 
         # Read existing settings, tolerating missing file / malformed JSON.
         data: dict = {}
@@ -563,41 +572,126 @@ class ClaudeProvider(Provider):
         hooks_root = data.setdefault("hooks", {})
         if not isinstance(hooks_root, dict):
             return  # user-shaped — do not clobber
-        pretool_list = hooks_root.setdefault("PreToolUse", [])
-        if not isinstance(pretool_list, list):
-            return  # user-shaped — do not clobber
 
-        managed_entry = {
+        changed = False
+        for event, want_entries in desired.items():
+            event_list = hooks_root.setdefault(event, [])
+            if not isinstance(event_list, list):
+                continue  # user-shaped event — leave alone
+            for want in want_entries:
+                if self._upsert_managed_entry(event_list, want):
+                    changed = True
+
+        # Sweep managed entries no longer desired (across every event, so a
+        # PostToolUse skill hook is swept too when its skill leaves).
+        if self._sweep_stale_managed(hooks_root, desired_tags):
+            changed = True
+
+        if changed:
+            self._write_settings(settings_path, data, project_dir)
+
+    def _desired_runtime_entries(
+        self, project_dir: Path, result: CompositionResult | None
+    ) -> dict[str, list[dict]]:
+        """``{event: [managed entry, ...]}`` the composition should produce.
+
+        The guard is unconditional; skill hooks are added only when ``result``
+        is present and the declared script resolves (a hook whose script
+        cannot be found is skipped — the materialize step skips it too, so
+        settings.json never points at a file that will not exist).
+        """
+        def rel(path: Path) -> str:
+            try:
+                return str(path.relative_to(project_dir))
+            except ValueError:
+                return str(path)
+
+        lib = _lib_hooks_dir(project_dir)
+        desired: dict[str, list[dict]] = {}
+
+        guard = lib / "pre_bash_shared_state_guard.sh"
+        desired.setdefault("PreToolUse", []).append({
             "matcher": "Bash",
             "_ai_hats_managed": self._MANAGED_HOOK_TAG,
-            "hooks": [{"type": "command", "command": rel_command}],
-        }
+            "hooks": [{"type": "command", "command": rel(guard)}],
+        })
 
-        # Look for an existing managed entry by tag; update in place.
-        for i, entry in enumerate(pretool_list):
-            if (
-                isinstance(entry, dict)
-                and entry.get("_ai_hats_managed") == self._MANAGED_HOOK_TAG
-            ):
-                if entry == managed_entry:
-                    return  # already correct — no write
-                pretool_list[i] = managed_entry
-                self._write_settings(settings_path, data, project_dir)
-                return
+        if result is None:
+            return desired
 
-        # No managed entry yet. Also dedupe against user-authored entries
-        # that happen to point at the same script (avoid double-firing).
-        for entry in pretool_list:
-            if not isinstance(entry, dict):
+        for event, entries in collect_runtime_hooks(result).items():
+            for skill_name, hook in entries:
+                if resolve_skill_script(result, skill_name, hook.script) is None:
+                    continue
+                command = rel(lib / managed_runtime_hook_filename(skill_name, hook.script))
+                desired.setdefault(event, []).append({
+                    "matcher": hook.matcher,
+                    "_ai_hats_managed": f"ai-hats:{skill_name}:{event}:{hook.matcher}",
+                    "hooks": [{"type": "command", "command": command}],
+                })
+        return desired
+
+    @staticmethod
+    def _upsert_managed_entry(event_list: list, want: dict) -> bool:
+        """Insert / update one managed entry in ``event_list``. Returns True
+        if the list changed.
+
+        1. An existing entry carrying the same managed tag → update in place
+           (or no-op if already identical).
+        2. Else, if a user-authored entry already wires the same script
+           basename → respect it (no managed dup, avoid double-firing).
+        3. Else append.
+        """
+        tag = want["_ai_hats_managed"]
+        for i, entry in enumerate(event_list):
+            if isinstance(entry, dict) and entry.get("_ai_hats_managed") == tag:
+                if entry == want:
+                    return False
+                event_list[i] = want
+                return True
+
+        want_basename = want["hooks"][0]["command"].rsplit("/", 1)[-1]
+        for entry in event_list:
+            if not isinstance(entry, dict) or entry.get("_ai_hats_managed"):
                 continue
-            for h in entry.get("hooks", []) or []:
-                if isinstance(h, dict) and h.get("command", "").endswith(
-                    "pre_bash_shared_state_guard.sh"
+            for hook in entry.get("hooks", []) or []:
+                if isinstance(hook, dict) and str(hook.get("command", "")).endswith(
+                    want_basename
                 ):
-                    return  # user already wired it manually — respect that
+                    return False  # user already wired it manually — respect that
 
-        pretool_list.append(managed_entry)
-        self._write_settings(settings_path, data, project_dir)
+        event_list.append(want)
+        return True
+
+    @staticmethod
+    def _sweep_stale_managed(hooks_root: dict, desired_tags: set[str]) -> bool:
+        """Drop ai-hats-managed entries no longer in ``desired_tags`` from every
+        event list. Preserves user-authored entries and still-desired managed
+        ones; cascade-drops an event key whose list becomes empty. Returns True
+        if anything was removed.
+        """
+        changed = False
+        for event in list(hooks_root.keys()):
+            event_list = hooks_root[event]
+            if not isinstance(event_list, list):
+                continue
+            kept = [
+                entry
+                for entry in event_list
+                if not (
+                    isinstance(entry, dict)
+                    and isinstance(entry.get("_ai_hats_managed"), str)
+                    and entry["_ai_hats_managed"].startswith("ai-hats:")
+                    and entry["_ai_hats_managed"] not in desired_tags
+                )
+            ]
+            if len(kept) != len(event_list):
+                changed = True
+                if kept:
+                    hooks_root[event] = kept
+                else:
+                    del hooks_root[event]
+        return changed
 
     @staticmethod
     def _write_settings(settings_path: Path, data: dict, project_dir: Path) -> None:
