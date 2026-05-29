@@ -181,6 +181,12 @@ GIT_HOOK_EVENTS: tuple[str, ...] = (
     "post-commit",
     "pre-push",
     "pre-rebase",
+    # HATS-593: drift-introducing events. A merge / pull / branch checkout
+    # rewrites tracked files, leaving the (untracked, generated) .githooks/
+    # stale. These hooks re-materialize the hook surface at the moment drift
+    # is introduced via `ai-hats self sync-hooks`.
+    "post-merge",
+    "post-checkout",
 )
 
 

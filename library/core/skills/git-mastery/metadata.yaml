@@ -22,6 +22,15 @@ git_hooks:
   # this pre-push hook protects Gemini sessions and direct-terminal pushes.
   pre-push:
     - git_hooks/pre-push-shared-state.sh
+  # HATS-593: self-heal the (untracked, generated) .githooks/ surface at the
+  # moment drift is introduced. merge / pull / branch-checkout rewrite tracked
+  # files and leave hooks stale; these re-run `ai-hats self sync-hooks`.
+  # Same script for both events — it branches on $0's basename and on the
+  # post-checkout branch-flag ($3). Always exits 0 (fail-open).
+  post-merge:
+    - git_hooks/self-heal-hooks.sh
+  post-checkout:
+    - git_hooks/self-heal-hooks.sh
 
 triggers:
   - "managing feature branches with conventional commits"

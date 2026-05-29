@@ -14,6 +14,10 @@ fi
 
 # Run scripts in lexicographic order. First non-zero exit aborts the chain
 # (matches git's expectation that a failed pre-commit blocks the commit).
+# Export the resolved event name: a managed `.d/` script's own $0 is its
+# renamed path (e.g. <skill>-<basename>), so it cannot recover the git event
+# from $0 — AI_HATS_HOOK_EVENT carries it (HATS-593).
+export AI_HATS_HOOK_EVENT="$EVENT"
 shopt -s nullglob
 for script in "$EVENT_D"/*; do
     [[ -f "$script" && -x "$script" ]] || continue

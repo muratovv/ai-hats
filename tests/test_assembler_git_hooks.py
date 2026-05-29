@@ -12,7 +12,7 @@ from ai_hats.assembler import (
     GITHOOKS_MANIFEST,
     Assembler,
 )
-from ai_hats.models import ProjectConfig
+from ai_hats.models import GIT_HOOK_EVENTS, ProjectConfig
 
 
 pytestmark = pytest.mark.integration
@@ -487,3 +487,114 @@ def test_sync_hooks_skips_non_git_project(tmp_path):
     asm = Assembler(project, library_paths=[lib])
     res = asm.sync_hooks()
     assert res.status == "skipped"
+
+
+# ----- HATS-593 Phase 1.4: post-merge / post-checkout self-heal events -----
+
+
+def test_post_merge_and_post_checkout_are_registered_events():
+    """The drift-introducing events are recognized by the framework."""
+    assert "post-merge" in GIT_HOOK_EVENTS
+    assert "post-checkout" in GIT_HOOK_EVENTS
+
+
+@pytest.fixture
+def project_with_self_heal_skill(tmp_path):
+    """Project + library with a skill that declares the self-heal hooks
+    for both post-merge and post-checkout (mirrors the real git-mastery
+    declaration)."""
+    project = tmp_path / "project"
+    project.mkdir()
+    _git_init(project)
+
+    lib = tmp_path / "lib"
+    skill_dir = lib / "skills" / "healer_skill"
+    (skill_dir / "git_hooks").mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("# Healer")
+    (skill_dir / "metadata.yaml").write_text(
+        "name: healer_skill\n"
+        "description: ships post-merge/post-checkout self-heal hooks\n"
+        "git_hooks:\n"
+        "  post-merge:\n"
+        "    - git_hooks/self-heal.sh\n"
+        "  post-checkout:\n"
+        "    - git_hooks/self-heal.sh\n"
+    )
+    # A self-heal script that mirrors the real one's branch-flag guard so the
+    # behavioural test below is meaningful.
+    script = skill_dir / "git_hooks" / "self-heal.sh"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        'set -uo pipefail\n'
+        'EVENT="${AI_HATS_HOOK_EVENT:-$(basename "$0")}"\n'
+        'if [[ "$EVENT" == "post-checkout" ]]; then\n'
+        '    flag="${3:-0}"\n'
+        '    [[ "$flag" != "1" ]] && exit 0\n'
+        'fi\n'
+        'echo "HEALED:$EVENT"\n'
+        "exit 0\n"
+    )
+    script.chmod(0o755)
+
+    trait_dir = lib / "traits" / "trait-base"
+    trait_dir.mkdir(parents=True)
+    (trait_dir / "config.yaml").write_text(
+        "name: trait-base\ncomposition:\n  skills:\n    - healer_skill\ninjection: B.\n"
+    )
+    role_dir = lib / "roles" / "test-role"
+    role_dir.mkdir(parents=True)
+    (role_dir / "config.yaml").write_text(
+        "name: test-role\npriorities: [Quality]\n"
+        "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
+    )
+    ProjectConfig(provider="gemini", library_paths=[str(lib)]).save(project / "ai-hats.yaml")
+    return project, lib
+
+
+def test_composition_installs_both_self_heal_hooks(project_with_self_heal_skill):
+    """Composition installs dispatcher + .d/ script for BOTH events."""
+    project, lib = project_with_self_heal_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    githooks = project / GITHOOKS_DIR
+    for event in ("post-merge", "post-checkout"):
+        dispatcher = githooks / event
+        assert dispatcher.is_file(), f"{event} dispatcher not installed"
+        assert GITHOOKS_DISPATCHER_MARKER in dispatcher.read_text()
+        assert dispatcher.stat().st_mode & stat.S_IXUSR
+        script = githooks / f"{event}.d" / "healer_skill-self-heal.sh"
+        assert script.is_file(), f"{event}.d script not installed"
+        assert script.stat().st_mode & stat.S_IXUSR
+
+    manifest = (githooks / GITHOOKS_MANIFEST).read_text()
+    assert "post-merge.d/healer_skill-self-heal.sh" in manifest
+    assert "post-checkout.d/healer_skill-self-heal.sh" in manifest
+
+
+def test_post_checkout_noops_on_file_checkout(project_with_self_heal_skill):
+    """post-checkout with branch-flag 0 (file checkout) must NOT self-heal."""
+    project, lib = project_with_self_heal_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    dispatcher = project / GITHOOKS_DIR / "post-checkout"
+    # git passes: prev_head new_head branch_flag. flag 0 = file checkout.
+    res = subprocess.run(
+        [str(dispatcher), "abc", "def", "0"],
+        capture_output=True,
+        text=True,
+    )
+    assert res.returncode == 0
+    assert "HEALED" not in res.stdout
+
+    # flag 1 = branch checkout → self-heal fires.
+    res = subprocess.run(
+        [str(dispatcher), "abc", "def", "1"],
+        capture_output=True,
+        text=True,
+    )
+    assert res.returncode == 0
+    assert "HEALED:post-checkout" in res.stdout
