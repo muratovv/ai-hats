@@ -196,6 +196,7 @@ def self_group():
 
 self_group.add_command(assembly.init)
 self_group.add_command(assembly.clean)
+self_group.add_command(assembly.sync_hooks)  # HATS-593
 self_group.add_command(maintenance.update)
 # HATS-415: ``self migrate-v07`` removed — migration is inline in ``bump``.
 # HATS-470: ``self bump`` removed from CLI surface; the operation now runs
