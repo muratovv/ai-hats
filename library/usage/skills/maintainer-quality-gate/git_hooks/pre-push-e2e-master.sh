@@ -11,8 +11,10 @@
 #     tests/smoke/` from the repo root. Exit 0 → allow push. pytest
 #     exit 5 (no tests collected) → allow push. Anything else → block
 #     with stderr tail.
-#   * HATS-589: parallelises with pytest-xdist when present (~706s serial
-#     → ~240s on -n4 across 3 measured runs, zero flakes). `--dist=loadgroup`
+#   * HATS-589/592: parallelises with pytest-xdist when present (~706s
+#     serial → ~200s on a many-core host). Worker count is adaptive —
+#     `min(logical_cpus, 8)` (HATS-592) — so the gate scales to the
+#     contributor's machine instead of a hardcoded -n4. `--dist=loadgroup`
 #     keeps each test file on one worker (module-scoped venv-build fixture
 #     coherence) and pins all live-claude tests onto a single worker — see
 #     the `pytest_collection_modifyitems` group hook in tests/e2e/conftest.py
@@ -84,10 +86,31 @@ fi
 # HATS-589: opt into pytest-xdist when the installed pytest reports the
 # plugin. Empty-array expansion is written bash-3.2-safe (macOS system bash)
 # so `set -u` doesn't trip on the no-xdist fallback path.
+#
+# HATS-592: worker count is adaptive — `min(logical_cpus, ceiling)` — so the
+# gate scales to the contributor's machine instead of a hardcoded -n4 (the
+# gate runs LOCALLY on every master push, on hosts from 4-core laptops to
+# many-core workstations). `getconf _NPROCESSORS_ONLN` is POSIX, lives in
+# /usr/bin (reachable under a minimal PATH), and works on both macOS and
+# Linux; `nproc` / `sysctl` are fallbacks; `4` is the floor default if every
+# probe fails. Ceiling caps the win past the point where the suite stops
+# being sum-bound (the ~107s single-worker `live_claude` floor binds first)
+# and limits pip-cache contention under the venv-tier `--force-reinstall`
+# builds.
 xdist_args=()
 if pytest -VV 2>/dev/null | grep -qi xdist; then
-    echo "[e2e-gate] pytest-xdist detected — running -n4 --dist=loadgroup" >&2
-    xdist_args=(-n4 --dist=loadgroup)
+    cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null \
+             || nproc 2>/dev/null \
+             || sysctl -n hw.logicalcpu 2>/dev/null \
+             || echo 4)"
+    # Guard the arithmetic: a probe that prints non-digits (or nothing)
+    # must not break `$(( ))`. Fall back to the conservative default.
+    [[ "$cores" =~ ^[0-9]+$ ]] || cores=4
+    ceiling=8
+    n=$(( cores < ceiling ? cores : ceiling ))
+    (( n < 1 )) && n=1
+    echo "[e2e-gate] pytest-xdist detected — running -n$n --dist=loadgroup (cores=$cores, cap=$ceiling)" >&2
+    xdist_args=(-n"$n" --dist=loadgroup)
 else
     echo "[e2e-gate] pytest-xdist absent — running serial" >&2
 fi
