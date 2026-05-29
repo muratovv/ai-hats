@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-import pytest
 
 from ai_hats.pipeline.steps.check_update import CheckUpdateAsync
 from ai_hats.update_check.cache import CacheEntry, write_cache

@@ -13,7 +13,6 @@ Covers:
 import json
 from pathlib import Path
 
-import pytest
 
 from ai_hats.providers import ClaudeProvider, GeminiProvider
 

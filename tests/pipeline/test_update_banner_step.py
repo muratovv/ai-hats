@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
 
 from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner
 from ai_hats.update_check.cache import CacheEntry, write_cache

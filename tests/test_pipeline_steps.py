@@ -53,6 +53,10 @@ def test_compose_role_routes_through_facade(tmp_path: Path):
     step = ComposeRole()
     fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
     fake_assembler = MagicMock()
+    # HATS-507: ComposeRole pre-checks role existence via
+    # resolver.list_components(ROLE); the mock must report it as available
+    # so the test reaches the facade rather than RoleNotFoundError.
+    fake_assembler.resolver.list_components.return_value = ["judge"]
     with patch("ai_hats.assembler.Assembler", return_value=fake_assembler), \
          patch("ai_hats.materialize.compose_for_role",
                return_value=fake_result) as facade:
@@ -64,7 +68,11 @@ def test_compose_role_routes_through_facade(tmp_path: Path):
 def test_compose_role_raises_on_compose_errors(tmp_path: Path):
     step = ComposeRole()
     fake_result = MagicMock(errors=["role not found"])
-    with patch("ai_hats.assembler.Assembler", return_value=MagicMock()), \
+    fake_assembler = MagicMock()
+    # HATS-507: pass the existence pre-check so the test exercises the
+    # downstream ``compose_for_role`` errors branch (not RoleNotFoundError).
+    fake_assembler.resolver.list_components.return_value = ["ghost"]
+    with patch("ai_hats.assembler.Assembler", return_value=fake_assembler), \
          patch("ai_hats.materialize.compose_for_role", return_value=fake_result):
         with pytest.raises(RuntimeError, match="failed to resolve role"):
             step.run(project_dir=tmp_path, role="ghost")

@@ -28,7 +28,6 @@ from .models import (
     ProjectConfig,
     SkillMetadata,
     UserConfig,
-    UserConfigError,
 )
 from .paths import (
     hooks_dir as _lib_hooks_dir,

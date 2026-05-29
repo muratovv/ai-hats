@@ -17,7 +17,7 @@ import yaml as _yaml
 from click.testing import CliRunner
 
 from ai_hats.cli.assembly import customize
-from ai_hats.models import OverlayConfig, ProjectConfig, UserConfig
+from ai_hats.models import ProjectConfig, UserConfig
 
 
 @pytest.fixture

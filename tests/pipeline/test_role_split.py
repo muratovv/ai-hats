@@ -143,12 +143,19 @@ def test_ai_hats_maintainer_keeps_e2e_gate_rule() -> None:
     assert "dev_rule_e2e_gate" in trait.composition.rules
 
 
-# --- ai-hats-framework trait — wraps the new rule --------------------------
+# --- ai-hats-framework trait — injection only, rule lives on library-curator --
 
 
-def test_ai_hats_framework_attaches_core_vs_usage_rule() -> None:
-    trait = _load("library/core/traits/ai-hats-framework/config.yaml")
-    assert "rule_core_vs_usage_split" in trait.composition.rules
+def test_ai_hats_framework_does_not_carry_core_vs_usage_rule() -> None:
+    """HATS-510 (B): ``rule_core_vs_usage_split`` ownership moved to the
+    ``library-curator`` trait (role-curator domain). ``ai-hats-framework``
+    keeps the framework-awareness *injection* but carries no formal
+    constraint — non-trivial library work hands off to role-curator."""
+    framework = _load("library/core/traits/ai-hats-framework/config.yaml")
+    assert "rule_core_vs_usage_split" not in framework.composition.rules
+
+    curator = _load("library/usage/traits/library-curator/config.yaml")
+    assert "rule_core_vs_usage_split" in curator.composition.rules
 
 
 def test_ai_hats_framework_injection_mentions_layered_library() -> None:
@@ -227,14 +234,14 @@ def test_contributing_has_maintainer_pointer() -> None:
 
 
 def test_assistant_has_expected_traits() -> None:
-    """HATS-433: personal-workflow removed; assistant now bundles 7 traits."""
+    """HATS-433: personal-workflow removed. HATS-510 (5a): integration::google
+    dropped (opinionated default did not fit non-Google users) → 6 traits."""
     role = _load("library/usage/roles/assistant/config.yaml")
     expected = {
         "trait-base",
         "trait-agent",
         "trait-se-mindset",
         "trait-researcher-mindset",
-        "integration::google",
         "dev::python",
         "dev::shell",
     }
