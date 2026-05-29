@@ -48,7 +48,8 @@ def test_detect_installed_sha_skips_foreign_git(monkeypatch):
     the tracked-check, git walks up from site-packages and returns the user's
     project HEAD as ai-hats's installed SHA.
     """
-    import sys, types
+    import sys
+    import types
     sys.modules["ai_hats._version"] = types.SimpleNamespace(__commit__="cafebabe")
     try:
         # ls-files returns non-zero (foreign repo doesn't track pkg's __init__.py).
@@ -62,7 +63,8 @@ def test_detect_installed_sha_skips_foreign_git(monkeypatch):
 
 def test_detect_installed_sha_falls_back_to_version_module():
     fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="not a repo")
-    import sys, types
+    import sys
+    import types
     # HATS-458: setuptools-scm 8+ writes ``__commit_id__`` (with leading
     # ``g`` prefix per git-describe convention). ``detect_installed_sha``
     # must strip the prefix.
@@ -78,7 +80,8 @@ def test_detect_installed_sha_falls_back_to_version_module():
 def test_detect_installed_sha_accepts_legacy_commit_attr():
     """Legacy ``__commit__`` (older setuptools-scm) still works."""
     fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
-    import sys, types
+    import sys
+    import types
     sys.modules["ai_hats._version"] = types.SimpleNamespace(__commit__="deadbeef")
     try:
         with patch.object(subprocess, "run", return_value=fail):
@@ -90,7 +93,8 @@ def test_detect_installed_sha_accepts_legacy_commit_attr():
 def test_detect_installed_sha_prefers_commit_id_over_commit():
     """When both attrs exist, prefer the modern ``__commit_id__``."""
     fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
-    import sys, types
+    import sys
+    import types
     sys.modules["ai_hats._version"] = types.SimpleNamespace(
         __commit_id__="gnewer123",
         __commit__="legacy456",
@@ -104,7 +108,8 @@ def test_detect_installed_sha_prefers_commit_id_over_commit():
 
 def test_detect_installed_sha_returns_none_when_both_fail():
     fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
-    import sys, types
+    import sys
+    import types
     sys.modules["ai_hats._version"] = types.SimpleNamespace(__commit__="unknown")
     try:
         with patch.object(subprocess, "run", return_value=fail):

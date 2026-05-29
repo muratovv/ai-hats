@@ -172,8 +172,8 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
 
     # ---- on-disk task state must remain `review` ----
     assert _task_state(project, task_id) == "review", (
-        f"task moved out of `review` despite merge failure — "
-        f"silent data loss regression"
+        "task moved out of `review` despite merge failure — "
+        "silent data loss regression"
     )
 
     # ---- worktree branch preserved for retry ----

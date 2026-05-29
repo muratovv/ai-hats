@@ -317,7 +317,7 @@ def test_audit_writer_preserves_composition_after_rebuild(tmp_path, monkeypatch)
     survive the rebuild (read back from metrics.json which preserves
     existing keys via existing.update)."""
     import json
-    from ai_hats.observe import AuditWriter, Session
+    from ai_hats.observe import AuditWriter
 
     session = make_test_session(tmp_path)
     composition = _sample_composition()

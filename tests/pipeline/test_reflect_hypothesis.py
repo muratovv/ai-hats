@@ -10,7 +10,6 @@ and Phase 2 is what we're testing.
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -237,7 +236,6 @@ def test_phase1_failure_aborts_phase2(
     # Re-bind SubAgentRunner to a failing stub for this test. The default
     # `mock_runners` stub returns exit_code=0; we need exit_code=1 to
     # exercise the fail-closed branch.
-    from ai_hats.paths import runs_dir
     from tests.pipeline.conftest import _StubSession
     import ai_hats.runtime as rt
 
