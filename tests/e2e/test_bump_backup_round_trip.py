@@ -12,6 +12,15 @@ Validates the load-bearing safety net:
 
 Per ``dev_rule_e2e_gate``: real ``ai-hats`` binary, real subprocess.
 Fail-under-revert against commit ``fac79c0`` / ``0eab1c5`` (Phase 1).
+
+HATS-592 (gate-wall perf): the four checks below are all facets of the
+SAME pre-bump backup. Each used to rebuild the (proxmox seed →
+``self update``) cycle independently — 4× a ~13-21s bump dominated the
+file's wall (the binding floor under ``--dist=loadgroup``, where the
+whole file pins to one worker). They now share ONE module-scoped bump
+(:func:`bumped`); each test is a cheap assertion on its tarball /
+post-bump tree. The only mutating check extracts into a fresh dir, never
+the shared project, so the module fixture stays immutable across tests.
 """
 from __future__ import annotations
 
@@ -20,8 +29,12 @@ import json
 import subprocess
 import tarfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+
+# Load-bearing files whose pre-bump bytes the round-trip check restores.
+_ROUND_TRIP_FILES = ("ai-hats.yaml", ".claude/settings.json", ".agent/hooks/guard.py")
 
 
 def _sha256(path: Path) -> str:
@@ -74,52 +87,100 @@ def _seed_proxmox_shape(project_path: Path) -> None:
     )
 
 
-@pytest.mark.integration
-def test_bump_produces_backup_with_recovery_banner(
-    tmp_venv_project, tmp_path: Path,
-) -> None:
-    """AC1: backup tarball written BEFORE migration runs, path
-    printed to stderr with a recovery one-liner."""
-    _seed_proxmox_shape(tmp_venv_project.path)
-    backup_dir = tmp_path / "backups"
+@pytest.fixture(scope="module")
+def bumped(tmp_path_factory, _shared_launcher_venv, repo_root: Path):
+    """One shared ``self update`` run — the four checks are facets of it.
 
-    res = tmp_venv_project.run(
+    Builds a SUPERSET pre-bump seed so a single bump satisfies every
+    assertion in this module:
+
+    * proxmox shape (``ai-hats.yaml`` + legacy ``.agent/hooks/guard.py`` +
+      ``.claude/settings.json``) — banner / round-trip / scoped-surface;
+    * ``CLAUDE.md`` — scoped-surface capture;
+    * planted ``.agent/ai-hats/.venv`` + ``.agent/__pycache__`` — derived
+      state that the exclusion check expects to be filtered out.
+
+    The extra files are added AFTER the seed commit (dirty tree) — matching
+    the original per-test ordering. The backup runs FIRST, before any
+    migration step, so it is produced regardless of the bump's exit code or
+    a dirty tree.
+
+    Reuses the session-shared venv (``_shared_launcher_venv``) — no new venv
+    build. Module scope is coherent under ``--dist=loadgroup``: the whole
+    file is one xdist group → one worker, so the fixture runs exactly once.
+
+    Returns a namespace: ``project_path``, ``backup_dir``, ``res``
+    (the ``RunResult``), ``pre_hashes`` (pre-bump sha256 of the round-trip
+    files).
+    """
+    from _helpers.project import Project
+    from _helpers.repo_src import build_src
+
+    launcher, shared_venv = _shared_launcher_venv
+    project_path = tmp_path_factory.mktemp("bump-backup") / "project"
+    project_path.mkdir()
+    project = Project(
+        path=project_path,
+        ai_hats_binary=launcher,
+        env={
+            # HATS-589: per-worker private build source (no-op on serial).
+            "AI_HATS_REPO_URL": str(build_src(repo_root)),
+            "AI_HATS_VENV": str(shared_venv),
+        },
+    )
+
+    _seed_proxmox_shape(project_path)
+    (project_path / "CLAUDE.md").write_text("# Project\n")
+    # Plant derived state the snapshot must EXCLUDE. The shared venv lives
+    # outside <project>/.agent/ (reached via AI_HATS_VENV); this fake one
+    # exercises the exclusion codepath.
+    fake_venv = project_path / ".agent" / "ai-hats" / ".venv" / "bin"
+    fake_venv.mkdir(parents=True)
+    (fake_venv / "python").write_text("#!/bin/sh\n")
+    pycache = project_path / ".agent" / "__pycache__"
+    pycache.mkdir(parents=True)
+    (pycache / "x.cpython-314.pyc").write_text("bytecode")
+
+    # Snapshot pre-bump hashes BEFORE the bump rewrites the surface.
+    pre_hashes = {rel: _sha256(project_path / rel) for rel in _ROUND_TRIP_FILES}
+
+    backup_dir = tmp_path_factory.mktemp("bump-backup-out")
+    res = project.run(
         "self", "update",
         timeout=180,
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(backup_dir)},
     )
-
-    # Banner present (regardless of bump exit code — backup runs FIRST).
-    assert "[ai-hats] migration backup →" in res.stderr, (
-        f"backup banner missing from stderr:\n{res.stderr[-500:]}"
+    return SimpleNamespace(
+        project_path=project_path,
+        backup_dir=backup_dir,
+        res=res,
+        pre_hashes=pre_hashes,
     )
-    assert "Recovery: tar -xzf" in res.stderr, (
-        f"recovery hint missing:\n{res.stderr[-500:]}"
+
+
+@pytest.mark.integration
+def test_bump_produces_backup_with_recovery_banner(bumped) -> None:
+    """AC1: backup tarball written BEFORE migration runs, path
+    printed to stderr with a recovery one-liner."""
+    # Banner present (regardless of bump exit code — backup runs FIRST).
+    assert "[ai-hats] migration backup →" in bumped.res.stderr, (
+        f"backup banner missing from stderr:\n{bumped.res.stderr[-500:]}"
+    )
+    assert "Recovery: tar -xzf" in bumped.res.stderr, (
+        f"recovery hint missing:\n{bumped.res.stderr[-500:]}"
     )
     # Tarball materialised on disk under our isolated backup dir.
-    tarballs = list(backup_dir.glob("*.tar.gz"))
+    tarballs = list(bumped.backup_dir.glob("*.tar.gz"))
     assert len(tarballs) == 1, (
         f"expected exactly one tarball, found: {tarballs}"
     )
 
 
 @pytest.mark.integration
-def test_backup_captures_scoped_surface(
-    tmp_venv_project, tmp_path: Path,
-) -> None:
+def test_backup_captures_scoped_surface(bumped) -> None:
     """AC2 part 1: tarball contains the declared scope
     (.agent/, ai-hats.yaml, .claude/settings.json, CLAUDE.md, ...)."""
-    _seed_proxmox_shape(tmp_venv_project.path)
-    (tmp_venv_project.path / "CLAUDE.md").write_text("# Project\n")
-    backup_dir = tmp_path / "backups"
-
-    tmp_venv_project.run(
-        "self", "update",
-        timeout=180,
-        extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(backup_dir)},
-    )
-
-    tarball = next(backup_dir.glob("*.tar.gz"))
+    tarball = next(bumped.backup_dir.glob("*.tar.gz"))
     with tarfile.open(tarball, "r:gz") as tar:
         names = set(tar.getnames())
 
@@ -142,41 +203,24 @@ def test_backup_captures_scoped_surface(
 
 @pytest.mark.integration
 def test_backup_round_trip_restores_state_byte_for_byte(
-    tmp_venv_project, tmp_path: Path,
+    bumped, tmp_path: Path,
 ) -> None:
-    """AC2 part 2: ``tar -xzf <backup> -C <project>`` restores
-    byte-identical state for scoped paths."""
-    _seed_proxmox_shape(tmp_venv_project.path)
-    backup_dir = tmp_path / "backups"
+    """AC2 part 2: ``tar -xzf <backup>`` restores byte-identical state
+    for scoped paths."""
+    tarball = next(bumped.backup_dir.glob("*.tar.gz"))
 
-    # Snapshot pre-bump hashes for the load-bearing files.
-    pre = {
-        "ai-hats.yaml": _sha256(tmp_venv_project.path / "ai-hats.yaml"),
-        ".claude/settings.json": _sha256(
-            tmp_venv_project.path / ".claude" / "settings.json"
-        ),
-        ".agent/hooks/guard.py": _sha256(
-            tmp_venv_project.path / ".agent" / "hooks" / "guard.py"
-        ),
-    }
-
-    tmp_venv_project.run(
-        "self", "update",
-        timeout=180,
-        extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(backup_dir)},
-    )
-
-    tarball = next(backup_dir.glob("*.tar.gz"))
-
-    # Restore over the post-bump tree.
+    # Extract into a FRESH dir — never the shared module-scoped project —
+    # so the other assertions still see the post-bump tree untouched.
+    restore = tmp_path / "restore"
+    restore.mkdir()
     subprocess.run(
-        ["tar", "-xzf", str(tarball), "-C", str(tmp_venv_project.path)],
+        ["tar", "-xzf", str(tarball), "-C", str(restore)],
         check=True,
     )
 
     # Post-restore hashes match pre-bump for every scoped file.
-    for rel, expected in pre.items():
-        actual = _sha256(tmp_venv_project.path / rel)
+    for rel, expected in bumped.pre_hashes.items():
+        actual = _sha256(restore / rel)
         assert actual == expected, (
             f"{rel} not byte-identical after restore: "
             f"expected sha256 {expected}, got {actual}"
@@ -184,31 +228,10 @@ def test_backup_round_trip_restores_state_byte_for_byte(
 
 
 @pytest.mark.integration
-def test_backup_excludes_venv_and_pycache(
-    tmp_venv_project, tmp_path: Path,
-) -> None:
+def test_backup_excludes_venv_and_pycache(bumped) -> None:
     """Tarball must NOT include regenerable derived state. Without
     exclusions the framework venv alone inflates the tarball ~100×."""
-    _seed_proxmox_shape(tmp_venv_project.path)
-    # The tmp_venv_project fixture's shared venv is reached via
-    # AI_HATS_VENV — it doesn't live under <project>/.agent/. To
-    # exercise the EXCLUSION codepath we plant a fake venv inside
-    # .agent/ai-hats/.venv/ that the snapshot would otherwise capture.
-    fake_venv = tmp_venv_project.path / ".agent" / "ai-hats" / ".venv" / "bin"
-    fake_venv.mkdir(parents=True)
-    (fake_venv / "python").write_text("#!/bin/sh\n")
-    pycache = tmp_venv_project.path / ".agent" / "__pycache__"
-    pycache.mkdir(parents=True)
-    (pycache / "x.cpython-314.pyc").write_text("bytecode")
-    backup_dir = tmp_path / "backups"
-
-    tmp_venv_project.run(
-        "self", "update",
-        timeout=180,
-        extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(backup_dir)},
-    )
-
-    tarball = next(backup_dir.glob("*.tar.gz"))
+    tarball = next(bumped.backup_dir.glob("*.tar.gz"))
     with tarfile.open(tarball, "r:gz") as tar:
         names = set(tar.getnames())
 
