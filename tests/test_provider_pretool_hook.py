@@ -14,6 +14,9 @@ import json
 from pathlib import Path
 
 
+from ai_hats.composer import CompositionResult, ResolvedComponent
+from ai_hats.models import ComponentType, HooksConfig
+from ai_hats.paths import hooks_dir, managed_runtime_hook_filename
 from ai_hats.providers import ClaudeProvider, GeminiProvider
 
 
@@ -23,6 +26,44 @@ EXPECTED_REL = ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh"
 
 def _settings(project: Path) -> dict:
     return json.loads((project / SETTINGS).read_text())
+
+
+def _skill_with_runtime_hooks(
+    base: Path, name: str, hooks: dict[str, list[tuple[str, str]]]
+) -> ResolvedComponent:
+    """Skill dir with metadata.yaml declaring runtime_hooks + real scripts.
+
+    ``hooks`` maps event -> list of (matcher, script_relpath).
+    """
+    skill_dir = base / name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    lines = [f"name: {name}", "runtime_hooks:"]
+    for event, rows in hooks.items():
+        lines.append(f"  {event}:")
+        for matcher, script in rows:
+            lines.append(f"    - matcher: {matcher}")
+            lines.append(f"      script: {script}")
+            sp = skill_dir / script
+            sp.parent.mkdir(parents=True, exist_ok=True)
+            sp.write_text("#!/usr/bin/env bash\nexit 0\n")
+    (skill_dir / "metadata.yaml").write_text("\n".join(lines) + "\n")
+    return ResolvedComponent(
+        name=name, component_type=ComponentType.SKILL, source_path=skill_dir
+    )
+
+
+def _result(skills: list[ResolvedComponent]) -> CompositionResult:
+    return CompositionResult(
+        name="r", priorities=[], rules=[], skills=skills,
+        hooks=HooksConfig(), injections=[],
+    )
+
+
+def _managed_command(project: Path, skill: str, script: str) -> str:
+    return str(
+        (hooks_dir(project) / managed_runtime_hook_filename(skill, script))
+        .relative_to(project)
+    )
 
 
 def test_claude_writes_fresh_settings(tmp_path: Path) -> None:
@@ -151,3 +192,123 @@ def test_pretool_list_user_shaped_object_left_alone(tmp_path: Path) -> None:
     ClaudeProvider().ensure_runtime_hooks(tmp_path)
     data = _settings(tmp_path)
     assert data["hooks"]["PreToolUse"] == {"unexpected": "shape"}
+
+
+# ----- HATS-597: skill-declared runtime hooks -----
+
+
+def test_claude_wires_skill_runtime_hooks_under_each_event(tmp_path: Path) -> None:
+    """A skill declaring PreToolUse + PostToolUse hooks gets one managed entry
+    per (event, skill, matcher), tagged distinctly, alongside the hats-437
+    guard."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills",
+        "skill-x",
+        {
+            "PreToolUse": [("Bash", "hooks/pre.sh")],
+            "PostToolUse": [("Edit|Write", "hooks/post.sh")],
+        },
+    )
+    ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
+    data = _settings(proj)
+
+    # hats-437 guard still present under PreToolUse.
+    pre = data["hooks"]["PreToolUse"]
+    guard = [e for e in pre if e.get("_ai_hats_managed") == "ai-hats:hats-437"]
+    assert len(guard) == 1
+
+    # Skill PreToolUse entry.
+    sp = [e for e in pre if e.get("_ai_hats_managed") == "ai-hats:skill-x:PreToolUse:Bash"]
+    assert len(sp) == 1
+    assert sp[0]["matcher"] == "Bash"
+    assert sp[0]["hooks"] == [
+        {"type": "command", "command": _managed_command(proj, "skill-x", "hooks/pre.sh")}
+    ]
+
+    # Skill PostToolUse entry under the PostToolUse event.
+    post = data["hooks"]["PostToolUse"]
+    pe = [
+        e for e in post
+        if e.get("_ai_hats_managed") == "ai-hats:skill-x:PostToolUse:Edit|Write"
+    ]
+    assert len(pe) == 1
+    assert pe[0]["matcher"] == "Edit|Write"
+    assert pe[0]["hooks"] == [
+        {"type": "command", "command": _managed_command(proj, "skill-x", "hooks/post.sh")}
+    ]
+
+
+def test_claude_skill_hooks_idempotent(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills", "skill-x", {"PreToolUse": [("Bash", "hooks/pre.sh")]}
+    )
+    ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
+    first = _settings(proj)
+    ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
+    assert _settings(proj) == first
+
+
+def test_claude_removing_skill_sweeps_entries_keeps_guard_and_user(
+    tmp_path: Path,
+) -> None:
+    proj = tmp_path / "proj"
+    (proj / ".claude").mkdir(parents=True)
+    # A user-authored PostToolUse entry must survive the sweep.
+    (proj / SETTINGS).write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PostToolUse": [
+                        {"matcher": "Bash", "hooks": [{"type": "command", "command": "user/p.sh"}]}
+                    ]
+                }
+            }
+        )
+    )
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills",
+        "skill-x",
+        {"PreToolUse": [("Bash", "hooks/pre.sh")], "PostToolUse": [("Write", "hooks/post.sh")]},
+    )
+    ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
+    # Skill leaves the composition → re-apply with no skills.
+    ClaudeProvider().ensure_runtime_hooks(proj, _result([]))
+    data = _settings(proj)
+
+    tags = [
+        e.get("_ai_hats_managed")
+        for entries in data["hooks"].values()
+        if isinstance(entries, list)
+        for e in entries
+    ]
+    # All skill-x managed entries swept; guard survives.
+    assert "ai-hats:hats-437" in tags
+    assert not any(t and t.startswith("ai-hats:skill-x") for t in tags)
+    # User PostToolUse entry preserved.
+    post_cmds = [e["hooks"][0]["command"] for e in data["hooks"]["PostToolUse"]]
+    assert "user/p.sh" in post_cmds
+
+
+def test_claude_two_matchers_same_event_no_tag_collision(tmp_path: Path) -> None:
+    """Fix #4: two hooks for the same (skill, event) but different matchers
+    yield two distinct managed entries — the matcher is part of the tag."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills",
+        "skill-x",
+        {"PreToolUse": [("Bash", "hooks/a.sh"), ("Edit", "hooks/b.sh")]},
+    )
+    ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
+    pre = _settings(proj)["hooks"]["PreToolUse"]
+    skill_tags = {
+        e["_ai_hats_managed"] for e in pre if e.get("_ai_hats_managed", "").startswith("ai-hats:skill-x")
+    }
+    assert skill_tags == {
+        "ai-hats:skill-x:PreToolUse:Bash",
+        "ai-hats:skill-x:PreToolUse:Edit",
+    }
