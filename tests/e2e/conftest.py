@@ -47,6 +47,29 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 AI_HATS_BINARY = Path(sys.executable).parent / "ai-hats"
 
 
+def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
+    """HATS-589: assign xdist scheduling groups for ``--dist=loadgroup``.
+
+    Two goals under parallel runs:
+
+    * **live-claude (cohort B) → one worker.** Every live test gates on the
+      ``requires_claude_auth`` fixture; we pin them all to a single
+      ``live_claude`` group so a parallel run never opens N concurrent SDK
+      sessions (cost / rate-limit hazard flagged in HATS-589).
+    * **everything else → grouped by file.** Mirrors ``--dist=loadfile``
+      semantics so module-scoped venv fixtures stay coherent per worker.
+
+    Markers are only consulted by the ``loadgroup`` scheduler — under
+    ``loadfile``, ``-n0`` (serial), or no xdist they are inert, so this hook
+    is safe in every run mode.
+    """
+    for item in items:
+        if "requires_claude_auth" in getattr(item, "fixturenames", ()):
+            item.add_marker(pytest.mark.xdist_group("live_claude"))
+        else:
+            item.add_marker(pytest.mark.xdist_group(item.nodeid.split("::", 1)[0]))
+
+
 @pytest.fixture(scope="session")
 def repo_root() -> Path:
     """Repo checkout root — single source of truth for path math.
@@ -57,25 +80,31 @@ def repo_root() -> Path:
     return REPO_ROOT
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _clean_repo_build_dir(repo_root: Path) -> None:
-    """Remove stale wheel-build artefacts from ``<repo_root>/build/``.
+def pytest_configure(config):  # noqa: ANN001, ANN201
+    """Remove stale wheel-build artefacts from ``<REPO_ROOT>/build/`` once.
 
     HATS-568: worktree-tier e2e tests run ``pip install`` against
     ``AI_HATS_REPO_URL=<repo_root>``; pip's bdist_wheel writes into
     ``<repo_root>/build/``. A leftover ``ai_hats-X.Y.devN.dist-info``
     directory from a prior (often interrupted) wheel build causes
-    ``[Errno 17] File exists: build/bdist...dist-info`` across ~5
-    worktree tests on the next run.
+    ``[Errno 17] File exists: build/bdist...dist-info`` on the next run.
 
-    Session-scoped + autouse so manual ``pytest -m integration ...``
-    invocations from the main checkout are protected the same way the
-    HATS-550 pre-push hook protects ``git push origin master``.
-    Idempotent; cost is one ``rmtree`` per suite (typically <50ms).
+    HATS-589: this MUST be a ``pytest_configure`` hook, not a session-autouse
+    fixture. Under ``pytest -n>1`` the xdist controller never executes test
+    items, so a session fixture only ever fires on the *workers* — which now
+    build in private clones (:func:`_helpers.repo_src.build_src`) and must NOT
+    concurrently rmtree the shared dir. ``pytest_configure`` runs on the
+    controller (and on the serial process) BEFORE any worker spawns, so the
+    shared ``build/`` is cleaned exactly once, by the one process that should
+    do it. Workers (``PYTEST_XDIST_WORKER`` set) skip — they own no shared
+    state. Idempotent; cost is one ``rmtree`` (<50ms).
     """
+    import os
     import shutil
 
-    build_dir = repo_root / "build"
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        return
+    build_dir = REPO_ROOT / "build"
     if build_dir.exists():
         shutil.rmtree(build_dir, ignore_errors=True)
 
@@ -274,6 +303,7 @@ def tmp_venv_project(tmp_path: Path, _shared_launcher_venv, repo_root: Path):
     :func:`tmp_project`).
     """
     from _helpers.project import Project
+    from _helpers.repo_src import build_src
 
     launcher, shared_venv = _shared_launcher_venv
     project_path = tmp_path / "project"
@@ -281,7 +311,8 @@ def tmp_venv_project(tmp_path: Path, _shared_launcher_venv, repo_root: Path):
     return Project(
         path=project_path, ai_hats_binary=launcher,
         env={
-            "AI_HATS_REPO_URL": str(repo_root),
+            # HATS-589: per-worker private build source (no-op on serial).
+            "AI_HATS_REPO_URL": str(build_src(repo_root)),
             "AI_HATS_VENV": str(shared_venv),
         },
     )
@@ -314,9 +345,12 @@ def shared_launcher(_shared_launcher_venv, repo_root: Path):
     be mutated destructively; the no-mutation contract is guarded by
     :func:`test_wave1_venv_tier.test_shared_venv_reused_across_tests`.
     """
+    from _helpers.repo_src import build_src
+
     launcher, shared_venv = _shared_launcher_venv
     env = os.environ.copy()
-    env["AI_HATS_REPO_URL"] = str(repo_root)
+    # HATS-589: per-worker private build source (no-op on serial).
+    env["AI_HATS_REPO_URL"] = str(build_src(repo_root))
     env["AI_HATS_VENV"] = str(shared_venv)
     env.pop("AI_HATS_LAUNCHER_DEST", None)
     return launcher, env, shared_venv

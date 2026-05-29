@@ -33,6 +33,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
+# HATS-589: per-xdist-worker private build source (no-op on serial run).
+from _helpers.repo_src import build_src  # noqa: E402
+
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
@@ -63,7 +66,7 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
 
     env = os.environ.copy()
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(REPO_ROOT)
+    env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))
     env.pop("AI_HATS_VENV", None)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
@@ -173,7 +176,7 @@ def test_e2e_python_dash_m_ai_hats_self_bump_invokable(tmp_path: Path) -> None:
 
     env = os.environ.copy()
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(REPO_ROOT)
+    env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))
     env.pop("AI_HATS_VENV", None)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
