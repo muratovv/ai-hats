@@ -10,7 +10,9 @@ import pytest
 from ai_hats.worktree import (
     IsolationMode,
     OriginalBranchMissingError,
+    WorktreeBaseBranchMismatchError,
     WorktreeCreateError,
+    WorktreeDirtyError,
     WorktreeManager,
 )
 
@@ -475,3 +477,109 @@ class TestBranchExistsClassifier:
             assert result.stdout.strip() == "task/fresh"
         finally:
             mgr.cleanup()
+
+
+# ---------------------------------------------------------------------------
+# Already-merged short-circuit (HATS-596)
+# ---------------------------------------------------------------------------
+
+class TestAlreadyMergedShortCircuit:
+    """HATS-596: ``merge()`` is checkout-independent when the branch is
+    already an ancestor of the recorded base — no ``git merge`` runs, so the
+    main-repo HEAD position (wandered or not) is irrelevant; the worktree is
+    torn down cleanly instead of refusing with
+    :class:`WorktreeBaseBranchMismatchError`."""
+
+    @staticmethod
+    def _setup_already_merged(git_project: Path, sess: str):
+        """Create a worktree, commit work, merge the branch into base, then
+        wander the main-repo HEAD to a foreign branch.
+
+        Returns ``(mgr, wt, base_branch, base_sha_after_merge)``.
+        """
+        base_branch = _git(
+            git_project, "rev-parse", "--abbrev-ref", "HEAD"
+        ).stdout.strip()
+        mgr = WorktreeManager(git_project, "tester", sess)
+        wt = mgr.create()
+        (wt / "feature.txt").write_text("wip")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "wip")
+        # Integrate the branch into base (as if already merged + pushed).
+        _git(git_project, "merge", "--no-ff", "--no-edit", mgr.branch_name)
+        base_sha = _git(git_project, "rev-parse", base_branch).stdout.strip()
+        # Main-repo HEAD wanders to a foreign branch.
+        _git(git_project, "checkout", "-b", "wandered")
+        return mgr, wt, base_branch, base_sha
+
+    def test_already_merged_wandered_head_tears_down(
+        self, git_project: Path
+    ) -> None:
+        mgr, wt, base_branch, base_sha = self._setup_already_merged(
+            git_project, "sess-596a"
+        )
+        # No exception despite main-repo HEAD on `wandered` (not base).
+        mgr.merge()
+        assert not wt.exists(), "worktree dir should be removed"
+        branches = _git(
+            git_project, "branch", "--list", mgr.branch_name
+        ).stdout.strip()
+        assert branches == "", "task branch should be deleted"
+        # No double-merge: base ref untouched.
+        assert _git(
+            git_project, "rev-parse", base_branch
+        ).stdout.strip() == base_sha
+        # Main-repo HEAD untouched.
+        assert _git(
+            git_project, "rev-parse", "--abbrev-ref", "HEAD"
+        ).stdout.strip() == "wandered"
+
+    def test_already_merged_dirty_no_force_raises_dirty(
+        self, git_project: Path
+    ) -> None:
+        mgr, wt, _base, _sha = self._setup_already_merged(
+            git_project, "sess-596b"
+        )
+        # Uncommitted edit in the worktree → short-circuit honors _check_clean.
+        (wt / "feature.txt").write_text("uncommitted change")
+        with pytest.raises(WorktreeDirtyError):
+            mgr.merge()
+        # Worktree + branch preserved for the operator.
+        assert wt.exists()
+        assert _git(
+            git_project, "branch", "--list", mgr.branch_name
+        ).stdout.strip() != ""
+
+    def test_already_merged_dirty_force_tears_down(
+        self, git_project: Path
+    ) -> None:
+        mgr, wt, _base, _sha = self._setup_already_merged(
+            git_project, "sess-596c"
+        )
+        (wt / "feature.txt").write_text("uncommitted change")
+        # force bypasses _check_clean → clean teardown of the already-merged wt.
+        mgr.merge(force=True)
+        assert not wt.exists()
+        assert _git(
+            git_project, "branch", "--list", mgr.branch_name
+        ).stdout.strip() == ""
+
+    def test_not_merged_wandered_head_still_refuses(
+        self, git_project: Path
+    ) -> None:
+        """Guard intact: a NOT-merged branch + wandered HEAD still raises the
+        HATS-533 mismatch — the short-circuit must not mask the real
+        wrong-branch-merge risk."""
+        mgr = WorktreeManager(git_project, "tester", "sess-596d")
+        wt = mgr.create()
+        (wt / "feature.txt").write_text("wip")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "wip")
+        # NOT merged into base; just wander the main-repo HEAD.
+        _git(git_project, "checkout", "-b", "wandered")
+        with pytest.raises(WorktreeBaseBranchMismatchError):
+            mgr.merge()
+        # Branch preserved.
+        assert _git(
+            git_project, "branch", "--list", mgr.branch_name
+        ).stdout.strip() != ""
