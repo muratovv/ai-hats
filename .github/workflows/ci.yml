@@ -69,13 +69,10 @@ jobs:
           git config --global init.defaultBranch main
       - name: Run unit + non-e2e integration with coverage gate
         # Deselected (HATS-600):
-        #   - test_create_failure_..._pre_existing_branch — macOS-only red;
-        #     CI-behaviour on Linux git unverified, resolution deferred.
         #   - test_parallel_merges_..._both_succeed — multiprocessing drift
         #     flake; follow-up ticket to investigate race vs test artefact.
         run: |
           pytest --ignore=tests/e2e/ \
-            --deselect tests/test_worktree_concurrency.py::test_create_failure_cleans_tempdir_preserves_pre_existing_branch \
             --deselect tests/test_worktree_concurrency.py::test_parallel_merges_into_same_base_both_succeed \
             --cov=ai_hats \
             --cov-report=term-missing \
