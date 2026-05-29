@@ -13,10 +13,11 @@ Per ``dev_rule_e2e_gate``: change to ``src/ai_hats/cli/worktree.py`` +
 ``src/ai_hats/worktree.py`` requires a real-launcher + real-binary e2e.
 CliRunner / pipeline tests do NOT satisfy the gate.
 
-**Fail-under-revert**: remove the ``_main_repo_mid_merge()`` guard block
-in ``WorktreeManager.merge`` → step (5) below crashes with a raw exit-128
-``CalledProcessError`` (or completes the foreign merge), and the
-no-traceback / refusal assertions fail.
+**Fail-under-revert**: remove the ``_refuse_if_mid_merge()`` call from
+``_fast_forward_merge`` / ``_squash_merge`` (HATS-602 moved the guard there
+from ``WorktreeManager.merge``, inside the base-branch lock) → step (5)
+below crashes with a raw exit-128 ``CalledProcessError`` (or completes the
+foreign merge), and the no-traceback / refusal assertions fail.
 
 Modelled on ``tests/e2e/test_wt_merge_head_wandered.py``.
 """

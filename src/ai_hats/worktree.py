@@ -904,6 +904,15 @@ class WorktreeMainRepoMidMergeError(Exception):
     The recipe (``git merge --abort`` / resolve, then re-run) is owned by
     the CLI handlers — the exception body is facts-only (HATS-509 contract).
 
+    HATS-602: the guard is evaluated INSIDE the base-branch lock (via
+    :meth:`WorktreeManager._refuse_if_mid_merge`, called from
+    ``_fast_forward_merge`` / ``_squash_merge``), NOT in ``merge()`` before
+    the lock. A concurrent peer ai-hats merge holds that lock across its
+    ``git merge``, so the pre-602 placement saw the peer's *transient*
+    ``MERGE_HEAD`` and spuriously refused (two parallel merges into the same
+    base flaked). Inside the lock only a genuinely-stuck FOREIGN
+    ``MERGE_HEAD`` remains. The raise still precedes any mutation.
+
     Live incident motivating the guard: 2026-05-28 session — ``wt merge``
     ran while the main repo was mid-merge of an unrelated HATS-570 branch.
     """
@@ -1334,19 +1343,20 @@ class WorktreeManager:
                         current=head, expected=self._original_branch
                     )
 
-            # HATS-587 / F4: refuse if the main repo already has an
-            # unfinished merge in progress. _fast_forward_merge /
-            # _squash_merge run `git merge` in the main-repo cwd; on top of
-            # a pre-existing MERGE_HEAD git exits 128 with a raw
-            # CalledProcessError that would surface as an unhandled
-            # traceback. Refuse here — BEFORE _check_clean / _check_drift /
-            # the OriginalBranchMissing teardown and the merge mechanics —
-            # so the worktree and branch are left fully untouched and the
-            # operator gets an actionable hint (CLI owns the recipe). Place
-            # alongside the HEAD-mismatch guard: both are main-repo
-            # preconditions that must short-circuit before any mutation.
-            if self._main_repo_mid_merge():
-                raise WorktreeMainRepoMidMergeError(self.project_dir)
+            # HATS-587 / F4 mid-merge guard moved (HATS-602): the
+            # MERGE_HEAD check now runs INSIDE the base-branch lock, in
+            # _fast_forward_merge / _squash_merge (via _refuse_if_mid_merge),
+            # not here. A concurrent peer ai-hats merge holds the base lock
+            # across its `git merge`, so checking outside the lock here
+            # false-positived on the peer's *transient* MERGE_HEAD — two
+            # parallel merges into the same base would spuriously refuse
+            # (the HATS-602 flake). Inside the lock the peer's merge has
+            # already completed, so only a genuinely-stuck FOREIGN MERGE_HEAD
+            # trips the guard. It still refuses before any mutation (git
+            # merge has not run yet), preserving the untouched-worktree
+            # contract. The HEAD-mismatch guard above stays here: a peer
+            # merge never moves the main-repo branch pointer, so it has no
+            # concurrency false-positive.
 
             if not force:
                 self._check_clean()
@@ -1365,6 +1375,16 @@ class WorktreeManager:
                     self._squash_merge()
                 else:
                     self._fast_forward_merge()
+            except WorktreeMainRepoMidMergeError:
+                # HATS-602: this is a *precondition* refusal raised inside
+                # the base lock (_refuse_if_mid_merge) — no `git merge` ran,
+                # so it is NOT a merge failure. Propagate cleanly so the CLI
+                # surfaces the actionable hint; skip the F5 "merge failed,
+                # left intact for retry" + exc_info traceback below, which is
+                # reserved for genuine merge failures (conflicts, git errors)
+                # and would otherwise dump a misleading stack trace
+                # (regression caught by test_wt_merge_mid_merge_refusal).
+                raise
             except Exception:
                 # HATS-587 / F5: a failed merge (conflict, mid-resolution
                 # git error) must leave BOTH the worktree dir and the
@@ -1919,6 +1939,24 @@ class WorktreeManager:
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
 
+    def _refuse_if_mid_merge(self) -> None:
+        """Raise :class:`WorktreeMainRepoMidMergeError` if the main repo is
+        mid-merge. **Call only while holding the base-branch lock.**
+
+        HATS-587 / F4 + HATS-602. A concurrent peer ai-hats merge holds the
+        base-branch lock for the duration of its ``git merge``; once we own
+        that lock the peer's *transient* ``MERGE_HEAD`` is already gone, so
+        only a genuinely-stuck FOREIGN ``MERGE_HEAD`` (an operator's
+        half-finished IDE merge, an aborted run) trips the guard. The
+        pre-HATS-602 placement checked this in :meth:`merge` OUTSIDE the
+        lock, which false-positived on a peer's in-flight merge during two
+        parallel merges into the same base (the HATS-602 flake). The raise
+        still happens before any mutation (``git merge`` has not run yet),
+        so the untouched-worktree contract holds.
+        """
+        if self._main_repo_mid_merge():
+            raise WorktreeMainRepoMidMergeError(self.project_dir)
+
     def _is_ancestor(self, maybe_ancestor: str, descendant: str) -> bool:
         """True iff ``maybe_ancestor`` is an ancestor of ``descendant`` per git.
 
@@ -2089,6 +2127,8 @@ class WorktreeManager:
             return
 
         with _acquire_base_branch_lock(self.project_dir, self._original_branch):
+            # HATS-602: authoritative mid-merge guard, inside the base lock.
+            self._refuse_if_mid_merge()
             _retry_git_merge(
                 self._git_with_ref_lock_wait,
                 "merge", "--squash", self.branch_name,
@@ -2112,6 +2152,8 @@ class WorktreeManager:
             return
 
         with _acquire_base_branch_lock(self.project_dir, self._original_branch):
+            # HATS-602: authoritative mid-merge guard, inside the base lock.
+            self._refuse_if_mid_merge()
             _retry_git_merge(
                 self._git_with_ref_lock_wait,
                 "merge", "--no-ff", self.branch_name,

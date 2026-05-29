@@ -714,6 +714,22 @@ def _create_and_merge_worker(
 
     Exercises the full L1'+L3' merge path. Result captures whether the
     merge raised and what HEAD looks like afterwards.
+
+    ``accept_drift=True`` (HATS-602): both workers branch off the same base
+    tip, so whichever merges SECOND legitimately sees the base advance
+    under it and the HATS-457 drift guard refuses by default — a real,
+    correct refusal, not a race we want to test here. Accepting drift
+    models the post-457 workflow (the second agent re-verified against the
+    moved base) so the test can isolate the property it actually asserts:
+    the L1' base lock lets two index.lock-contending merges into the same
+    base BOTH complete with both commits landing — no corruption, no lost
+    merge.
+
+    No retry is needed on ``WorktreeMainRepoMidMergeError``: HATS-602 moved
+    that guard INSIDE the base lock (``_refuse_if_mid_merge``), so the
+    second merger no longer observes the first's transient ``MERGE_HEAD``.
+    This test is the regression guard for that move — revert it (check back
+    in ``merge()`` outside the lock) and this test flakes again.
     """
     project = Path(project_dir)
     mgr = WorktreeManager(project, branch_name=branch)
@@ -738,7 +754,7 @@ def _create_and_merge_worker(
             cwd=str(wt_path), check=True,
             capture_output=True,
         )
-        mgr.merge()
+        mgr.merge(accept_drift=True)  # HATS-602: see worker docstring
         result_dict[key] = {"error": None}
     except Exception as exc:
         result_dict[key] = {"error": f"{type(exc).__name__}: {exc}"}
@@ -750,7 +766,13 @@ def test_parallel_merges_into_same_base_both_succeed(git_project: Path) -> None:
 
     Without L1' this would race on `.git/index.lock` — L3' retry covers
     short windows but is not a guarantee under multi-second hold; L1'
-    provides the guarantee."""
+    provides the guarantee.
+
+    Workers pass ``accept_drift=True`` (HATS-602): both branch off the same
+    base tip, so the second merge legitimately drifts (the HATS-457 guard
+    correctly refuses by default). Drift is orthogonal to the L1' property
+    under test; accepting it lets the test assert that property cleanly.
+    See `_create_and_merge_worker` for the full rationale."""
     branch_a = "task/hats-481-n12-a"
     branch_b = "task/hats-481-n12-b"
 
