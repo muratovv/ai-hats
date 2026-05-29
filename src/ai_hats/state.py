@@ -8,10 +8,18 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from filelock import FileLock
 
 from .models import TaskCard, TaskState
+
+if TYPE_CHECKING:
+    # Annotation-only import for attach_add's return type. A runtime import
+    # would risk a circular dependency (attachments → state); the
+    # TYPE_CHECKING guard keeps the name available to type-checkers / ruff
+    # (resolves F821) without importing at module load.
+    from .attachments import ReconcileResult
 
 logger = logging.getLogger(__name__)
 

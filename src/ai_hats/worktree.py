@@ -1314,7 +1314,18 @@ class WorktreeManager:
             #
             # Skip for legacy states where _original_branch is None
             # (symmetric with the OriginalBranchMissing guard below).
-            if self._original_branch is not None:
+            #
+            # Also skip when the recorded base branch no longer EXISTS: a
+            # deleted base can never equal HEAD, so an un-gated comparison
+            # always trips a misleading "base branch mismatch" and masks the
+            # real diagnosis. That case is owned by the OriginalBranchMissing
+            # guard below (it preserves the worktree branch for a manual
+            # rebase). Gating here restores the pre-HATS-533 fall-through and
+            # keeps `test_merge_raises_when_original_branch_deleted` green
+            # (HATS-596: HATS-533 vs HATS-253 reconciliation).
+            if self._original_branch is not None and self._branch_exists(
+                self._original_branch
+            ):
                 head = self._git(
                     "rev-parse", "--abbrev-ref", "HEAD"
                 ).stdout.strip()
