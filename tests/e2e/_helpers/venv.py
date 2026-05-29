@@ -56,9 +56,14 @@ def build_launcher_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
     bootstrap = work_dir / "bootstrap"
     bootstrap.mkdir(exist_ok=True)
 
+    # HATS-589: build from a per-xdist-worker private clone so concurrent
+    # workers don't race the shared <repo>/build/ wheel dir. No-op (returns
+    # repo_root) on a serial run.
+    from _helpers.repo_src import build_src
+
     env = os.environ.copy()
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher)
-    env["AI_HATS_REPO_URL"] = str(repo_root)
+    env["AI_HATS_REPO_URL"] = str(build_src(repo_root))
     env.pop("AI_HATS_VENV", None)
 
     subprocess.run(
