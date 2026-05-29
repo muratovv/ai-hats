@@ -918,7 +918,7 @@ class _FailingMergeManager:
     def __init__(self, branch_name: str = "task/t-1") -> None:
         self.branch_name = branch_name
 
-    def merge(self) -> None:
+    def merge(self, *, force: bool = False) -> None:
         raise subprocess.CalledProcessError(
             returncode=128,
             cmd=["git", "merge", "--no-ff", self.branch_name],
@@ -979,6 +979,47 @@ def test_teardown_worktree_reraises_on_merge_failure(mgr, monkeypatch):
     )
 
 
+def test_done_force_forwards_to_merge(mgr, monkeypatch):
+    """HATS-596: ``transition done --force`` must forward ``force=True`` into
+    ``Worktree.merge()`` so a corrective override reaches the merge guards.
+
+    Pre-596 ``_teardown_worktree`` called ``active.merge()`` with no args, so
+    ``--force`` never reached the merge — the git-integration check could not
+    be overridden at all.
+    """
+    from ai_hats import worktree as worktree_module
+
+    captured: dict[str, bool] = {}
+
+    class _SpyManager:
+        branch_name = "task/t-1"
+
+        def merge(self, *, force: bool = False) -> None:
+            captured["force"] = force
+
+        def discard(self, *, force: bool = False) -> None:  # pragma: no cover
+            pass
+
+    mgr.create_task("T-1", "force plumbing")
+    mgr.transition("T-1", TaskState.PLAN)
+    mgr.transition("T-1", TaskState.EXECUTE)
+    mgr.transition("T-1", TaskState.DOCUMENT)
+    mgr.transition("T-1", TaskState.REVIEW)
+
+    monkeypatch.setattr(
+        worktree_module.WorktreeManager,
+        "load_for_task",
+        staticmethod(lambda *_a, **_kw: _SpyManager()),
+    )
+
+    mgr.transition(
+        "T-1", TaskState.DONE, force=True, reason="corrective finalize"
+    )
+    assert captured.get("force") is True, (
+        "transition done --force must forward force=True to Worktree.merge()"
+    )
+
+
 def test_teardown_worktree_swallows_discard_failure(mgr, monkeypatch):
     """L4' must not regress discard semantics: ``transition failed`` /
     ``transition cancelled`` (merge=False) keep the swallowing behavior,
@@ -988,7 +1029,7 @@ def test_teardown_worktree_swallows_discard_failure(mgr, monkeypatch):
     class _FailingDiscardManager:
         branch_name = "task/t-2"
 
-        def merge(self):  # pragma: no cover
+        def merge(self, *, force: bool = False):  # pragma: no cover
             pass
 
         def discard(self, *, force: bool = False):
