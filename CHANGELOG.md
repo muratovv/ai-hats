@@ -11,6 +11,20 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Added
+- **Skills can declare provider runtime hooks** (`runtime_hooks:` in a
+  skill's `metadata.yaml`, HATS-597 / HATS-601). Mirrors the `git_hooks`
+  open registry: a composed skill declares hooks keyed by Claude event
+  (v1: `PreToolUse`, `PostToolUse`), each row `{matcher, script}`. On
+  `self init` / `self update` the assembler materializes each declared
+  script to `<ai_hats_dir>/library/hooks/<skill>-<basename>.sh` (`0o755`,
+  manifest-tracked, swept when the skill leaves the role) and
+  `ClaudeProvider` wires one managed `.claude/settings.json` entry per
+  `(event, skill, matcher)`, tagged `ai-hats:<skill>:<event>:<matcher>`.
+  A hook whose script cannot be resolved is skipped on both sides, so
+  settings.json never points at a missing file. User-authored hook
+  entries are never touched; Gemini is a no-op. The hard-coded HATS-437
+  shared-state guard path is unchanged (its migration onto the registry
+  is HATS-598).
 - **Migration safety chain — backup-first + smoke-assert + user-hooks
   namespace** (HATS-549). Hardens `ai-hats self update` /
   non-greenfield `self init` against data-loss regressions of the
