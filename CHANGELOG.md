@@ -50,6 +50,27 @@ since the latest tag lives under **Unreleased** until the next release.
     transparently.
 
 ### Fixed
+- **Done-guard / `wt merge` refused an already-merged task when the main
+  checkout HEAD had wandered** (HATS-596). `Worktree.merge()` decided
+  "is this merged?" from the main checkout's current HEAD branch
+  (HATS-533 guard), so finalizing a task whose branch was already merged
+  into its base — while the main checkout sat on a concurrent feature
+  branch — emitted a false "base branch mismatch" and refused, even
+  though the work was fully in `master`. Now merge-verification is
+  **checkout-independent**: when the task branch tip is already an
+  ancestor of the recorded base ref (`git merge-base --is-ancestor`,
+  local base only), no `git merge` runs — the worktree is torn down
+  cleanly regardless of where the main checkout points. `_check_clean`
+  is still honored (force-bypassable). Two adjacent fixes:
+  - `transition done` now plumbs `--force` into the merge so a corrective
+    override reaches the merge guards (previously `--force` only relaxed
+    the FSM state guard, never the git-integration check). `--force` does
+    **not** relax the HEAD-mismatch guard — that stays a correctness gate
+    against wrong-branch merges.
+  - The HEAD-mismatch guard is gated on base-branch existence, reconciling
+    HATS-533 with HATS-253: a deleted base now falls through to the
+    `OriginalBranchMissing` path (which preserves the worktree branch for
+    manual rebase) instead of a misleading mismatch refusal.
 - **`self update` forward-compat deadlock on a newer-written
   `ai-hats.yaml`** (HATS-581). An older installed binary hard-crashed on
   a config field a newer binary had written (e.g. `migration_step`, added
