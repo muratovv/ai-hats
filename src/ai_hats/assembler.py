@@ -133,9 +133,14 @@ class HookSyncResult:
     """Outcome of :meth:`Assembler.sync_hooks` (HATS-593).
 
     status:
-        ``"synced"``   — managed git hooks were drifted and re-materialized.
-        ``"in-sync"``  — already consistent with the composed source; no-op.
-        ``"skipped"``  — nothing to do (not a git repo / no active role).
+        ``"synced"``        — managed git hooks were drifted and re-materialized.
+        ``"in-sync"``       — already consistent with the composed source; no-op.
+        ``"skipped"``       — nothing to do (not a git repo / no active role).
+        ``"version-skew"``  — the installed ``ai-hats`` binary is strictly
+            behind upstream master (failure-mode #5). Materializing from a
+            stale binary could write hooks that don't match the merged source,
+            so we refuse and recommend ``ai-hats self update`` instead of
+            healing blind.
     """
 
     status: str
@@ -1664,8 +1669,36 @@ class Assembler:
         result = compose_for_role(self, effective_role)
         if not self._git_hooks_drift(result):
             return HookSyncResult(status="in-sync")
+        # Failure-mode #5: refuse to heal from a stale binary. If the installed
+        # ai-hats is strictly behind upstream master (reuse of the update-banner
+        # drift signal), the composed-source the hooks would be derived from may
+        # not match what the merged repo actually expects — recommend
+        # ``self update`` rather than materialize blind.
+        if self._binary_behind_source():
+            return HookSyncResult(
+                status="version-skew",
+                detail="installed ai-hats is behind upstream — run 'ai-hats self update'",
+            )
         self._install_git_hooks(result)
         return HookSyncResult(status="synced")
+
+    def _binary_behind_source(self) -> bool:
+        """True if the installed ai-hats binary is strictly behind upstream.
+
+        Reuses the existing update-check cache (the same signal that drives the
+        update banner): ``has_update`` is True only when the installed SHA is
+        strictly *behind* the cached upstream master and not ahead/diverged.
+        Best-effort — a missing/corrupt cache or any read error means "unknown",
+        which we treat as "not behind" so a healthy heal is never blocked by a
+        cold cache (cases #1/#6: bootstrap stays fail-open).
+        """
+        try:
+            from .update_check import read_cache
+
+            entry = read_cache(self.project_dir)
+        except Exception:  # noqa: BLE001 — version-skew detection is best-effort
+            return False
+        return bool(entry is not None and entry.has_update)
 
     def _expected_git_hook_files(self, result: CompositionResult) -> dict[str, bytes]:
         """Managed ``.githooks/`` relpath -> expected bytes for ``result``.

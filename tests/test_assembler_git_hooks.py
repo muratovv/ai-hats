@@ -391,6 +391,77 @@ def test_sync_hooks_heals_deleted_hook(project_with_hook_skill):
     assert "check ran" in installed.read_text()
 
 
+# ----- HATS-593 Phase 1.3: version-skew guard (failure-mode #5) -----
+
+
+def _write_update_cache(project, *, behind, ahead):
+    """Seed the update-check cache so sync_hooks' version-skew guard reads it."""
+    from datetime import datetime, timezone
+
+    from ai_hats.update_check.cache import CacheEntry, write_cache
+
+    write_cache(
+        project,
+        CacheEntry(
+            checked_at=datetime.now(timezone.utc),
+            installed_sha="a" * 40,
+            latest_sha="b" * 40,
+            remote_url="https://example.git",
+            behind=behind,
+            ahead=ahead,
+        ),
+    )
+
+
+def test_sync_hooks_refuses_heal_when_binary_behind(project_with_hook_skill):
+    """Installed binary strictly behind upstream → version-skew, no heal."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
+    installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")  # plant drift
+    _write_update_cache(project, behind=7, ahead=0)  # binary is behind upstream
+
+    res = asm.sync_hooks()
+    assert res.status == "version-skew"
+    # Refused to materialize blind — the drifted content is left untouched.
+    assert "DRIFTED" in installed.read_text()
+    assert "self update" in res.detail
+
+
+def test_sync_hooks_heals_when_binary_in_sync_with_upstream(project_with_hook_skill):
+    """Cache says not-behind (ahead==0,behind==0) → normal heal proceeds."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
+    installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")
+    _write_update_cache(project, behind=0, ahead=0)
+
+    res = asm.sync_hooks()
+    assert res.status == "synced"
+    assert "check ran" in installed.read_text()
+
+
+def test_sync_hooks_heals_when_no_update_cache(project_with_hook_skill):
+    """No cache (cold/bootstrap) → unknown skew → fail-open, heal proceeds."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
+    installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")
+
+    res = asm.sync_hooks()
+    assert res.status == "synced"
+    assert "check ran" in installed.read_text()
+
+
 def test_sync_hooks_skips_non_git_project(tmp_path):
     """No .git/ → skipped, never raises."""
     project = tmp_path / "proj"

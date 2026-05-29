@@ -338,6 +338,12 @@ def sync_hooks():
         console.print("[green]ai-hats:[/] git hooks re-materialized (were drifted)")
     elif res.status == "in-sync":
         console.print("[dim]ai-hats: git hooks in sync[/]")
+    elif res.status == "version-skew":
+        console.print(
+            "[yellow]ai-hats: git hooks are stale but the installed binary is "
+            "behind upstream[/] — not healing from an old version. "
+            "Run [bold]ai-hats self update[/] then [bold]ai-hats self init[/].",
+        )
     else:
         console.print(f"[dim]ai-hats: hook sync skipped[/] ({res.detail})")
 
