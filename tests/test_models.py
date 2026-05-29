@@ -12,6 +12,7 @@ from ai_hats.models import (
     OverlayConfig,
     ProjectConfig,
     ProjectConfigError,
+    RuntimeHook,
     SessionRetroConfig,
     SkillMetadata,
     SmartThreshold,
@@ -831,6 +832,71 @@ def test_skill_metadata_missing_yaml_returns_empty_lists(tmp_path):
     meta = SkillMetadata.from_yaml(tmp_path / "absent.yaml")
     assert meta.triggers == []
     assert meta.skip == []
+
+
+# ---------- HATS-597: SkillMetadata.runtime_hooks ----------
+
+
+def test_runtime_hooks_default_empty():
+    meta = SkillMetadata()
+    assert meta.runtime_hooks == {}
+
+
+def test_runtime_hooks_absent_in_yaml_is_empty(tmp_path):
+    path = tmp_path / "metadata.yaml"
+    path.write_text("name: no-hooks\n")
+    meta = SkillMetadata.from_yaml(path)
+    assert meta.runtime_hooks == {}
+
+
+def test_runtime_hooks_parses_pre_and_post_tool_use(tmp_path):
+    path = tmp_path / "metadata.yaml"
+    path.write_text(
+        "name: test-skill\n"
+        "runtime_hooks:\n"
+        "  PreToolUse:\n"
+        "    - matcher: Bash\n"
+        "      script: hooks/guard.sh\n"
+        "  PostToolUse:\n"
+        "    - matcher: Edit|Write\n"
+        "      script: hooks/after.sh\n"
+    )
+    meta = SkillMetadata.from_yaml(path)
+    assert meta.runtime_hooks == {
+        "PreToolUse": [RuntimeHook(matcher="Bash", script="hooks/guard.sh")],
+        "PostToolUse": [RuntimeHook(matcher="Edit|Write", script="hooks/after.sh")],
+    }
+
+
+def test_runtime_hook_is_frozen():
+    hook = RuntimeHook(matcher="Bash", script="hooks/g.sh")
+    with pytest.raises(Exception):
+        hook.matcher = "Edit"  # type: ignore[misc]
+
+
+def test_runtime_hooks_unknown_event_rejected(tmp_path):
+    path = tmp_path / "metadata.yaml"
+    path.write_text(
+        "name: bad-event\n"
+        "runtime_hooks:\n"
+        "  NotAnEvent:\n"
+        "    - matcher: Bash\n"
+        "      script: hooks/g.sh\n"
+    )
+    with pytest.raises(Exception, match="NotAnEvent"):
+        SkillMetadata.from_yaml(path)
+
+
+def test_runtime_hooks_missing_field_fails_loud(tmp_path):
+    path = tmp_path / "metadata.yaml"
+    path.write_text(
+        "name: bad-skill\n"
+        "runtime_hooks:\n"
+        "  PreToolUse:\n"
+        "    - matcher: Bash\n"
+    )
+    with pytest.raises(Exception, match="script"):
+        SkillMetadata.from_yaml(path)
 
 
 # ---------- Attachment / TaskCard.attachments (HATS-402) ----------
