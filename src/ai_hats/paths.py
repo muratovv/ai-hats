@@ -267,6 +267,20 @@ def hooks_dir(project_dir: Path) -> Path:
     return library_dir(project_dir) / "hooks"
 
 
+def managed_runtime_hook_filename(skill_name: str, script: str) -> str:
+    """Collision-free on-disk filename for a skill-declared runtime-hook script.
+
+    Single source of truth shared by the assembler (which materializes the
+    file under :func:`hooks_dir`) and ``ClaudeProvider.ensure_runtime_hooks``
+    (which writes the same path as the settings.json ``command``). The two
+    sides MUST agree byte-for-byte — any drift means settings.json points at a
+    script that was never written (the e2e catches this as an ``exit 127``).
+    Mirrors the ``git_hooks`` dest convention (``<skill>-<basename>``);
+    ``script`` may be a relpath — only its basename is used.
+    """
+    return f"{skill_name}-{Path(script).name}"
+
+
 # Claude Code expands ``$CLAUDE_PROJECT_DIR`` at hook-execution time
 # to the project root. Migration callers (healer / asserter) strip the
 # prefix to resolve hook command paths against the project dir

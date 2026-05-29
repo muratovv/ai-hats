@@ -33,6 +33,7 @@ from .models import (
 from .paths import (
     hooks_dir as _lib_hooks_dir,
     legacy_paths_by_class,
+    managed_runtime_hook_filename as _managed_runtime_hook_filename,
     rules_dir as _lib_rules_dir,
     skills_dir as _lib_skills_dir,
     user_home,
@@ -937,7 +938,7 @@ class Assembler:
         # Claude fires PreToolUse against a non-existent script on
         # the very first Bash call).
         provider.ensure_runtime_hooks(self.project_dir)
-        self._materialize_pretooluse_hooks()
+        self._materialize_pretooluse_hooks(result)
 
         # 4. Role-specific git hooks — only if role active AND .git/
         # exists. ``.git/`` guard lives here (was inline in init); other
@@ -1371,22 +1372,34 @@ class Assembler:
 
     # ----- Skill-contributed git hooks (HATS-088) -----
 
-    def _materialize_pretooluse_hooks(self) -> None:
-        """Copy ``library/hooks/*.sh`` from package data to ``<ai_hats_dir>/library/hooks/``.
+    def _materialize_pretooluse_hooks(
+        self, result: "CompositionResult | None" = None
+    ) -> None:
+        """Materialize runtime-hook scripts to ``<ai_hats_dir>/library/hooks/``.
 
-        HATS-467: restores the HATS-437 safety net.
-        ``.claude/settings.json``'s PreToolUse entry (written by
-        :meth:`ClaudeProvider.ensure_runtime_hooks`) expects a real
-        script at ``<ai_hats_dir>/library/hooks/<name>.sh``. Post-HATS-294
-        framework content is composed in memory and not materialized on
-        disk — but PreToolUse hooks are the exception: Claude Code's
-        hook channel calls ``/bin/sh <path>`` and so the file must exist.
+        Two sources, one managed namespace + manifest:
+
+        * **Package-data guards** (HATS-467 / HATS-437): the hard-coded
+          ``library/hooks/*.sh`` set restores the shared-state-guard safety
+          net. ``.claude/settings.json``'s PreToolUse entry (written by
+          :meth:`ClaudeProvider.ensure_runtime_hooks`) expects a real script
+          at ``<ai_hats_dir>/library/hooks/<name>.sh``. Post-HATS-294
+          framework content is composed in memory and not materialized on
+          disk — but PreToolUse hooks are the exception: Claude Code's hook
+          channel calls ``/bin/sh <path>`` and so the file must exist.
+        * **Skill-declared runtime hooks** (HATS-597): each script a composed
+          skill declares under ``runtime_hooks:`` is materialized to the
+          collision-free :func:`managed_runtime_hook_filename` path — the same
+          path the provider writes as the settings.json ``command``. ``result``
+          is ``None`` on the legacy bare-bump path (no active role); then only
+          the package-data guards are materialized.
 
         Idempotent. Uses :func:`safe_delete.replace` (bytes-compare
         no-op, ``mode=0o755`` set atomically) for writes and
-        :func:`safe_delete.discard` for sweep of files no longer in
-        package source. Manifest at ``<target>/.manifest`` tracks
-        managed names across runs.
+        :func:`safe_delete.discard` for sweep of files no longer managed.
+        Manifest at ``<target>/.manifest`` tracks managed names across runs
+        — skill scripts ride the same manifest, so a skill leaving the
+        composition sweeps its script on the next pass.
 
         Fails loudly (``AssemblyError``) if the package data hook root
         cannot be resolved — a broken install is not a state we'd want
@@ -1432,6 +1445,25 @@ class Assembler:
                 project_dir=self.project_dir,
                 mode=0o755,
             )
+
+        # Skill-declared runtime-hook scripts (HATS-597). Same managed dir +
+        # manifest as the package guards, so the sweep below removes a skill's
+        # script once the skill leaves the composition.
+        if result is not None:
+            for _event, entries in self._collect_skill_runtime_hooks(result).items():
+                for skill_name, hook in entries:
+                    src = self._resolve_skill_script(skill_name, hook.script, result)
+                    if src is None:
+                        continue
+                    dest_name = _managed_runtime_hook_filename(skill_name, hook.script)
+                    new_names.add(dest_name)
+                    _safe_replace(
+                        target_dir / dest_name,
+                        src.read_bytes(),
+                        reason="materialize-runtime-hook",
+                        project_dir=self.project_dir,
+                        mode=0o755,
+                    )
 
         # Sweep entries managed previously but no longer in source.
         for stale in previous - new_names:
