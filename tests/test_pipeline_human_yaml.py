@@ -44,6 +44,9 @@ def test_human_pipeline_e2e(tmp_path: Path):
     fake_assembler.composer.compose.return_value = MagicMock(
         errors=[], merged_injection="ROLE PROMPT",
     )
+    # HATS-507: ComposeRole pre-checks role existence via
+    # resolver.list_components(ROLE) before composing.
+    fake_assembler.resolver.list_components.return_value = ["assistant"]
 
     fake_proc = MagicMock(pid=42)
 

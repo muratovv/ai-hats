@@ -178,7 +178,7 @@ def test_e2e_refuse_on_user_edit_default_behavior(installed_launcher, tmp_path):
     before_commits = _git_log_count(project, env)
 
     res = _run(
-        [f"{env["AI_HATS_VENV"]}/bin/python", "-m", "ai_hats._bump_internal"],
+        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal"],
         cwd=project, env=env, timeout=60, expect_exit=1,
     )
 
@@ -229,7 +229,7 @@ def test_e2e_migrate_force_bypass_sweeps_without_commit(installed_launcher, tmp_
     before_commits = _git_log_count(project, env)
 
     res = _run(
-        [f"{env["AI_HATS_VENV"]}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
+        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
         cwd=project, env=env, timeout=60, expect_exit=0,
     )
 
@@ -291,7 +291,7 @@ def test_e2e_idempotent_rerun(installed_launcher, tmp_path):
     _git_init_commit(project, env)
 
     _run(
-        [f"{env["AI_HATS_VENV"]}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
+        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
         cwd=project, env=env, timeout=60, expect_exit=0,
     )
     # Snapshot the canonical dir after first run.
@@ -303,7 +303,7 @@ def test_e2e_idempotent_rerun(installed_launcher, tmp_path):
     }
 
     res = _run(
-        [f"{env["AI_HATS_VENV"]}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
+        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
         cwd=project, env=env, timeout=60, expect_exit=0,
     )
 
@@ -344,7 +344,7 @@ def test_e2e_check_branches_warns(installed_launcher, tmp_path):
     _git(project, "checkout", "-q", "main", env=env)
 
     res = _run(
-        [f"{env["AI_HATS_VENV"]}/bin/python", "-m", "ai_hats._bump_internal", "--check-branches"],
+        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal", "--check-branches"],
         cwd=project, env=env, timeout=60, expect_exit=1,
     )
 
