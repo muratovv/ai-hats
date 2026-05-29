@@ -107,6 +107,56 @@ def test_resolves_absolute_path(tmp_path: Path) -> None:
     assert find_broken_hook_refs(tmp_path) == []
 
 
+def test_resolves_home_relative_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HATS-594: a ``~/...`` hook command is expanded to the user's home
+    dir (mirroring shell tilde expansion at hook-execution time), NOT
+    joined onto project_dir. Regression for the false-positive that
+    refused bumps whose settings.json carried a home-relative hook
+    (e.g. ``~/.tmux/.../claude-stop-hook.sh``)."""
+    # Redirect $HOME into the sandbox so expanduser() never touches the
+    # real home dir. USERPROFILE keeps Windows parity (no-op on POSIX).
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    _seed_hook(tmp_path, ".tmux/plugins/totify/claude-stop-hook.sh")
+    _write_settings(tmp_path, {
+        "hooks": {"Stop": [{
+            "hooks": [{
+                "type": "command",
+                "command": "~/.tmux/plugins/totify/claude-stop-hook.sh",
+            }],
+        }]},
+    })
+
+    assert find_broken_hook_refs(tmp_path) == []
+
+
+def test_detects_missing_home_relative_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ``~`` expansion must not over-correct: a home-relative hook
+    whose target genuinely does not exist is still reported broken, with
+    the resolved path under home (not under project_dir)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    _write_settings(tmp_path, {
+        "hooks": {"Notification": [{
+            "hooks": [{
+                "type": "command",
+                "command": "~/.tmux/plugins/totify/gone.sh",
+            }],
+        }]},
+    })
+
+    broken = find_broken_hook_refs(tmp_path)
+    assert len(broken) == 1
+    assert broken[0].event == "Notification"
+    assert "gone.sh" in broken[0].command
+    # Resolved under the (sandboxed) home dir, never <project>/~/...
+    assert broken[0].resolved_path == tmp_path / ".tmux/plugins/totify/gone.sh"
+
+
 # ---------- Detection of broken refs ----------
 
 
