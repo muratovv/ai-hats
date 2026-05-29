@@ -211,7 +211,7 @@ def _make_xdist_aware_stub(bindir: Path, *, has_xdist: bool) -> Path:
     """Fake ``pytest`` whose ``-VV`` banner advertises (or hides) xdist.
 
     The hook probes ``pytest -VV | grep -qi xdist`` to decide whether to
-    add ``-n4 --dist=loadgroup``. This stub answers that probe, and on the
+    add ``-n<N> --dist=loadgroup``. This stub answers that probe, and on the
     real run records argv to ``bindir/last_argv`` and exits 0.
     """
     bindir.mkdir(parents=True, exist_ok=True)
@@ -230,9 +230,43 @@ def _make_xdist_aware_stub(bindir: Path, *, has_xdist: bool) -> Path:
     return stub
 
 
+def _xdist_n(argv: str) -> int | None:
+    """Return N from the ``-nN`` worker-count flag in recorded argv, or None.
+
+    The pytest stub records each arg on its own line, so the worker-count
+    flag appears as a standalone ``-n<digits>`` token.
+    """
+    for line in argv.splitlines():
+        if line.startswith("-n") and line[2:].isdigit():
+            return int(line[2:])
+    return None
+
+
+def _make_getconf_stub(bindir: Path, count: int) -> Path:
+    """Shim ``getconf`` so ``_NPROCESSORS_ONLN`` reports a fixed core count.
+
+    Lets the cap test force a high core count deterministically without
+    depending on the host's real CPU count. Other ``getconf`` queries
+    delegate to the real binary.
+    """
+    bindir.mkdir(parents=True, exist_ok=True)
+    stub = bindir / "getconf"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == "_NPROCESSORS_ONLN" ]]; then\n'
+        f"  echo {count}\n"
+        "  exit 0\n"
+        "fi\n"
+        'exec /usr/bin/getconf "$@"\n'
+    )
+    stub.chmod(0o755)
+    return stub
+
+
 @pytest.mark.integration
 def test_master_push_uses_xdist_when_available(tmp_path: Path):
-    """xdist present → gate runs ``-n4 --dist=loadgroup`` (HATS-589)."""
+    """xdist present → gate runs ``-n<N> --dist=loadgroup`` with an adaptive,
+    host-derived worker count (HATS-589, HATS-592)."""
     bindir = tmp_path / "bin"
     _make_xdist_aware_stub(bindir, has_xdist=True)
     stdin = f"refs/heads/master {NEW_SHA} refs/heads/master {OLD_SHA}\n"
@@ -241,9 +275,29 @@ def test_master_push_uses_xdist_when_available(tmp_path: Path):
 
     assert res.returncode == 0, res.stderr
     argv = (bindir / "last_argv").read_text()
-    assert "-n4" in argv, argv
+    # Count is host-adaptive (min(cores, ceiling)), not a literal -n4.
+    n = _xdist_n(argv)
+    assert n is not None and n >= 1, argv
     assert "--dist=loadgroup" in argv, argv
     assert "integration or smoke" in argv
+
+
+@pytest.mark.integration
+def test_master_push_caps_worker_count_to_ceiling(tmp_path: Path):
+    """A many-core host is capped at the ceiling, not handed ``-n<cores>``
+    (HATS-592). Proves the ``min(cores, ceiling)`` cap, not just "some -n"."""
+    bindir = tmp_path / "bin"
+    _make_xdist_aware_stub(bindir, has_xdist=True)
+    _make_getconf_stub(bindir, count=64)
+    stdin = f"refs/heads/master {NEW_SHA} refs/heads/master {OLD_SHA}\n"
+
+    res = _run_hook(stdin, bindir)
+
+    assert res.returncode == 0, res.stderr
+    argv = (bindir / "last_argv").read_text()
+    # 64 cores capped down to the ceiling (8), never -n64.
+    assert _xdist_n(argv) == 8, argv
+    assert "--dist=loadgroup" in argv, argv
 
 
 @pytest.mark.integration
@@ -257,6 +311,6 @@ def test_master_push_falls_back_to_serial_without_xdist(tmp_path: Path):
 
     assert res.returncode == 0, res.stderr
     argv = (bindir / "last_argv").read_text()
-    assert "-n4" not in argv, argv
+    assert _xdist_n(argv) is None, argv
     assert "--dist" not in argv, argv
     assert "integration or smoke" in argv
