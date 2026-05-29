@@ -110,15 +110,23 @@ def _looks_like_path(command: str) -> bool:
 
 
 def _resolve(command: str, project_dir: Path) -> Path:
-    """Expand ``$CLAUDE_PROJECT_DIR/`` and resolve to an absolute path.
+    """Expand ``$CLAUDE_PROJECT_DIR/`` / ``~`` and resolve to an absolute path.
 
-    Relative paths are joined onto ``project_dir`` (mirroring Claude
-    Code's working-directory semantics for hooks).
+    Mirrors how Claude Code resolves a hook command path at execution
+    time: ``$CLAUDE_PROJECT_DIR`` → project root; a leading ``~`` → the
+    user's home dir (the shell expands tilde when it runs the hook);
+    absolute paths as-is; a bare relative path joined onto ``project_dir``.
+
+    HATS-594: a home-relative command (``~/.tmux/.../hook.sh``) is NOT
+    absolute, so without :meth:`~pathlib.Path.expanduser` it was joined
+    onto ``project_dir`` (``<project>/~/...``), which never exists — a
+    false "not found" that refused otherwise-valid bumps. Expanding ``~``
+    here makes the guard agree with the runtime.
     """
     rel = strip_claude_project_dir(command)
     if rel != command:
         return (project_dir / rel).resolve()
-    p = Path(command)
+    p = Path(command).expanduser()
     if p.is_absolute():
         return p
     return (project_dir / command).resolve()
