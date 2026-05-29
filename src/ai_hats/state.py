@@ -240,7 +240,11 @@ class TaskManager:
                 self._setup_worktree(task)
             elif new_state == TaskState.DONE:
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                self._teardown_worktree(task, merge=True)
+                # HATS-596: plumb `force` so a corrective `transition done
+                # --force` reaches the merge guards (e.g. bypass _check_clean
+                # on an already-merged worktree). force does NOT relax the
+                # HEAD-mismatch guard — that stays a correctness gate.
+                self._teardown_worktree(task, merge=True, force=force)
             elif new_state == TaskState.FAILED:
                 self._teardown_worktree(task, merge=False)
             elif new_state == TaskState.CANCELLED:
@@ -791,7 +795,9 @@ class TaskManager:
             return path
         return None
 
-    def _teardown_worktree(self, task: TaskCard, *, merge: bool = True) -> None:
+    def _teardown_worktree(
+        self, task: TaskCard, *, merge: bool = True, force: bool = False
+    ) -> None:
         """Merge or discard the worktree for a specific task (HATS-061).
 
         HATS-481 — fail-loud for merge failures. Previously this method
@@ -809,6 +815,13 @@ class TaskManager:
           keeps the swallowing behavior — the user is dropping the work
           administratively, so an orphaned worktree dir is a minor sin
           compared to refusing the admin close.
+
+        HATS-596 — ``force`` is forwarded into :meth:`Worktree.merge` on the
+        ``merge=True`` path so a corrective ``transition done --force`` can
+        bypass the uncommitted-changes (``_check_clean``) gate, mirroring
+        ``wt merge --force``. It does NOT relax the HEAD-mismatch guard —
+        that stays a correctness gate against wrong-branch merges. The
+        ``merge=False`` path already discards with ``force=True``.
         """
         from .worktree import (
             OriginalBranchMissingError,
@@ -847,7 +860,7 @@ class TaskManager:
 
         try:
             if merge:
-                active.merge()
+                active.merge(force=force)  # HATS-596: force reaches merge guards
             else:
                 active.discard(force=True)  # failed → intentional discard
         except OriginalBranchMissingError as exc:
