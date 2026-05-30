@@ -196,10 +196,20 @@ user-authored entries are never touched.
 
 Two behaviours worth knowing:
 
-- **Fail-loud.** An unknown event name or a malformed row aborts the load,
-  naming the offending skill — a silently dropped runtime hook could be a
-  safety hole (a guard that never fires). (`git_hooks` skips unknown events
-  silently.)
+- **Fail-loud validation.** The `runtime_hooks` block is validated at load and
+  rejects (naming the offending skill) any of:
+    - an unknown event — only `PreToolUse` / `PostToolUse` are allowed;
+    - a row missing `matcher` or `script`;
+    - the same `matcher` declared twice in one event — only one script per
+      `(event, matcher)` is supported, so a duplicate would collapse onto a
+      single hook entry and silently drop one;
+    - two *distinct* scripts whose filenames share a basename — they would
+      collide on the materialized `<skill>-<basename>` name (reusing the *same*
+      script across events is fine).
+
+  A silently dropped runtime hook could be a safety hole (a guard that never
+  fires), so these are hard errors — unlike `git_hooks`, which skips unknown
+  events silently.
 - **Provider asymmetry.** Claude Code consumes runtime hooks; the Gemini
   provider is a no-op (no native `PreToolUse` channel), so do not rely on a
   `runtime_hooks` guard under Gemini.
