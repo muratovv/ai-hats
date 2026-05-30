@@ -262,7 +262,7 @@ autonomous invocations in two layers:
    - `library/hooks/pre_bash_shared_state_guard.sh` — Claude Code
      PreToolUse hook. Wired into `.claude/settings.json` idempotently by
      `ClaudeProvider.ensure_runtime_hooks()` during `self init` and
-     `self init`. Blocks `gh pr merge` and `git push --force` when run
+     `self update`. Blocks `gh pr merge` and `git push --force` when run
      without a controlling TTY (i.e. agent context).
    - `library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`
      — git pre-push hook installed via the HATS-088 mechanism. Detects
@@ -277,6 +277,11 @@ Gemini sessions get the rule + the git pre-push hook only — the
 `gh pr merge` deterministic block is Claude-only. `ClaudeProvider`
 overrides `Provider.ensure_runtime_hooks()` to perform the auto-wire;
 `GeminiProvider` keeps the default no-op.
+
+**Skill-declared runtime hooks.** Beyond the built-in guard, any skill can
+declare its own `PreToolUse` / `PostToolUse` hooks via `runtime_hooks:` in
+`metadata.yaml`; `ensure_runtime_hooks()` materializes and wires them through
+the same path (HATS-597/601). See [how-to-extend.md](how-to-extend.md).
 
 ### Sample role config.yaml
 
