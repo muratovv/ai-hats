@@ -45,6 +45,8 @@ In scope:
   (`scripts/install-launcher.sh`).
 - Pre-commit hooks shipped under `library/{core,usage}/skills/*/git_hooks/`
   — particularly the privacy hook.
+- Provider runtime hooks a skill declares via `runtime_hooks:` — materialized
+  scripts wired into `.claude/settings.json` that execute on Claude Code tool use.
 - The skill library packaged with ai-hats (anything under `library/`).
 
 Out of scope:

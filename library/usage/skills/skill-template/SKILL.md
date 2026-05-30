@@ -68,6 +68,10 @@ error handling**. A committed script saves tokens and is more reliable
 than code regenerated from a description each time. Keep ad-hoc, one-off,
 or judgment-heavy steps as prose.
 
+A skill's `metadata.yaml` can also declare **hooks** — `git_hooks` (git events)
+and `runtime_hooks` (Claude Code `PreToolUse` / `PostToolUse`). See
+`docs/how-to-extend.md`.
+
 ## Validation Checklist
 
 - [ ] H1 + one-liner present
