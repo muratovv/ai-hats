@@ -115,6 +115,41 @@ def test_claude_preserves_user_authored_entries(tmp_path: Path) -> None:
     assert EXPECTED_REL in commands
 
 
+def test_claude_lookalike_user_hook_does_not_suppress_managed_guard(tmp_path: Path) -> None:
+    """HATS-607: a user hook whose name merely ENDS WITH the guard basename
+    (a different script) must NOT suppress the managed HATS-437 guard.
+
+    Regression for the `endswith` → exact-basename fix: previously
+    `my_pre_bash_shared_state_guard.sh` matched `pre_bash_shared_state_guard.sh`
+    and the guard was silently never installed.
+    """
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / SETTINGS).write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {"type": "command",
+                                 "command": "hooks/my_pre_bash_shared_state_guard.sh"}
+                            ],
+                        }
+                    ]
+                }
+            }
+        )
+    )
+    ClaudeProvider().ensure_runtime_hooks(tmp_path)
+    entries = _settings(tmp_path)["hooks"]["PreToolUse"]
+    tags = [e.get("_ai_hats_managed") for e in entries]
+    assert "ai-hats:hats-437" in tags, "managed guard suppressed by a look-alike user hook"
+    commands = [e["hooks"][0]["command"] for e in entries]
+    assert "hooks/my_pre_bash_shared_state_guard.sh" in commands  # user entry kept
+    assert EXPECTED_REL in commands  # managed guard installed alongside
+
+
 def test_claude_respects_existing_manual_wiring(tmp_path: Path) -> None:
     """If user already wired the same hook by hand, do not add a managed dup."""
     (tmp_path / ".claude").mkdir()
