@@ -16,8 +16,20 @@ import json
 import shutil
 from pathlib import Path
 
+import filelock
+
 from .composer import ResolvedComponent
 from .placeholders import expand_path_placeholders
+
+# HATS-604: two callers can resolve the SAME per-session plugin dir (a
+# session_id collision under high parallel load — see HATS-605 for the
+# upstream fix). The rebuild below is multi-step and non-atomic
+# (rmtree -> mkdir -> per-skill copytree); without serialisation concurrent
+# processes shred each other (ENOTEMPTY / EEXIST / ENOENT). A per-dir
+# advisory filelock makes the critical section mutually exclusive across
+# processes (the worktree.py idiom). 30s is generous — the build is a
+# sub-second filesystem op, so a timeout means a stuck/dead lock holder.
+_LOCK_TIMEOUT = 30.0
 
 
 def materialize_plugin_dir(
@@ -31,8 +43,37 @@ def materialize_plugin_dir(
     HATS-294: caller provides the target ``plugin_dir`` (per-session cache).
     Directory is recreated from scratch — any prior contents are wiped so
     the result is byte-stable for given inputs (Fork E determinism).
+
+    HATS-604: the rebuild runs under a per-dir ``filelock`` so concurrent
+    callers sharing one ``plugin_dir`` serialise instead of racing. The lock
+    file (``<plugin_dir>.lock``) lives beside the target — never inside it —
+    so the ``rmtree`` cannot remove the lock, and it is swept with the rest
+    of the session cache tree at session end.
+
     Returns ``plugin_dir`` for caller convenience.
     """
+    plugin_dir.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = plugin_dir.parent / f"{plugin_dir.name}.lock"
+    lock = filelock.FileLock(str(lock_path), timeout=_LOCK_TIMEOUT)
+    try:
+        with lock:
+            _rebuild_plugin_dir(role_name, skills, project_dir, plugin_dir)
+    except filelock.Timeout as exc:
+        raise RuntimeError(
+            f"plugin-dir materialization blocked >{_LOCK_TIMEOUT:.0f}s on "
+            f"lock {lock_path} — a stuck ai-hats process likely holds it. "
+            f"If safe, remove the lock file and retry."
+        ) from exc
+    return plugin_dir
+
+
+def _rebuild_plugin_dir(
+    role_name: str,
+    skills: list[ResolvedComponent],
+    project_dir: Path,
+    plugin_dir: Path,
+) -> None:
+    """Wipe-and-rebuild the plugin dir from scratch. Caller holds the lock."""
     if plugin_dir.exists():
         # Per-session plugin dir: rebuilt every session_start from compose.
         # Whitelist.
@@ -61,5 +102,3 @@ def materialize_plugin_dir(
             expanded = expand_path_placeholders(original, project_dir)
             if expanded != original:
                 skill_md.write_text(expanded)
-
-    return plugin_dir

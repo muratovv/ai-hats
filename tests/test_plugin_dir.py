@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import multiprocessing as mp
 from pathlib import Path
+
+import pytest
 
 from ai_hats.composer import ResolvedComponent
 from ai_hats.models import ComponentType
@@ -128,3 +131,71 @@ def test_parallel_invocations_with_distinct_targets(tmp_path: Path) -> None:
     assert (out_b / "skills" / "beta").is_dir()
     assert not (out_a / "skills" / "beta").exists()
     assert not (out_b / "skills" / "alpha").exists()
+
+
+# Module-level so it is picklable under the multiprocessing "spawn" start
+# method (the default on macOS; forced explicitly below for determinism).
+def _hammer_materialize(args: tuple) -> list[str]:
+    plugin_dir, project_dir, skills, iters, barrier = args
+    barrier.wait()  # release all workers into the critical section together
+    errors: list[str] = []
+    for _ in range(iters):
+        try:
+            materialize_plugin_dir("stress-role", skills, project_dir, plugin_dir)
+        except Exception as exc:  # noqa: BLE001 — record every failure mode
+            errors.append(f"{type(exc).__name__}: {exc}")
+    return errors
+
+
+@pytest.mark.integration
+def test_concurrent_same_target_is_safe(tmp_path: Path) -> None:
+    """HATS-604: concurrent materialize on ONE shared target must be safe.
+
+    ``materialize_plugin_dir`` was a non-atomic
+    ``rmtree -> mkdir -> per-skill copytree``. Under process contention two
+    callers that share a per-session plugin dir shredded each other
+    (``ENOTEMPTY`` / ``EEXIST`` / ``ENOENT``). A per-dir ``filelock``
+    serialises the rebuild.
+
+    Fails-under-revert: on the pre-fix body the baseline errors on ~all of
+    ``n_procs * iters`` calls, so the zero-errors assertion is reliably RED.
+
+    Real subprocesses (``multiprocessing`` spawn) — faithful to the
+    cross-process fcntl-advisory lock contract that same-process threads
+    would NOT exercise; hence ``@pytest.mark.integration``.
+    """
+    src = tmp_path / "src"
+    src.mkdir()
+    # A handful of non-trivial skills so each copytree takes long enough to
+    # widen the race window.
+    skills = [
+        _make_skill(f"skill-{i}", src, body="x" * 400 + f"\n# skill {i}\n")
+        for i in range(6)
+    ]
+    # ALL workers target this ONE dir — models the per-session plugin-dir
+    # collision (two processes that resolved the same session_id).
+    target = tmp_path / "cache" / "sid" / "plugin"
+
+    n_procs, iters = 6, 15
+    ctx = mp.get_context("spawn")
+    with ctx.Manager() as mgr:
+        barrier = mgr.Barrier(n_procs)
+        with ctx.Pool(n_procs) as pool:
+            results = pool.map(
+                _hammer_materialize,
+                [(target, tmp_path, skills, iters, barrier) for _ in range(n_procs)],
+            )
+
+    errors = [e for sub in results for e in sub]
+    assert not errors, (
+        f"{len(errors)}/{n_procs * iters} concurrent materialize calls raced — "
+        f"sample: {errors[:3]}"
+    )
+    # Crash-free is necessary but not sufficient — the final dir must be a
+    # VALID plugin (byte-stable-rebuild contract holds under contention).
+    manifest = target / ".claude-plugin" / "plugin.json"
+    assert manifest.is_file(), "final plugin dir missing manifest"
+    got = sorted(p.name for p in (target / "skills").iterdir())
+    assert got == sorted(s.name for s in skills), (
+        f"final skills set {got} != expected {sorted(s.name for s in skills)}"
+    )
