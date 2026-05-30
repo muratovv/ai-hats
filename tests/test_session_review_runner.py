@@ -210,6 +210,49 @@ def test_validate_analysis_shape_passes_with_full_coverage(tmp_path: Path) -> No
     )
 
 
+# ---- _coerce_observations (HATS-610) ----
+#
+# The session-reviewer LLM occasionally emits an observation bullet as a
+# single-key mapping ({title: detail}) instead of a string. observations is
+# list[str] with extra=forbid, so a dict entry crashes _merge OUTSIDE the
+# retry loop — un-recoverable. Coerce (non-critical narrative) rather than
+# crash; HYP/PROP refs stay strict.
+
+
+def test_coerce_observations_passes_strings_through() -> None:
+    runner = SessionReviewRunner  # static method — no instance needed
+    assert runner._coerce_observations(["a", "b"]) == ["a", "b"]
+
+
+def test_coerce_observations_flattens_single_key_dict() -> None:
+    out = SessionReviewRunner._coerce_observations(
+        [{"Session exited normally": "composition initialization"}]
+    )
+    assert out == ["Session exited normally: composition initialization"]
+
+
+def test_coerce_observations_flattens_multi_key_dict() -> None:
+    out = SessionReviewRunner._coerce_observations([{"a": 1, "b": 2}])
+    assert out == ["a: 1, b: 2"]
+
+
+def test_coerce_observations_stringifies_other_scalars() -> None:
+    out = SessionReviewRunner._coerce_observations([42, None, ["x"]])
+    assert out == ["42", "None", "['x']"]
+
+
+def test_coerce_observations_mixed_list() -> None:
+    out = SessionReviewRunner._coerce_observations(
+        ["plain bullet", {"dict obs": "detail"}]
+    )
+    assert out == ["plain bullet", "dict obs: detail"]
+
+
+def test_coerce_observations_empty_and_none_return_empty_list() -> None:
+    assert SessionReviewRunner._coerce_observations([]) == []
+    assert SessionReviewRunner._coerce_observations(None) == []
+
+
 # ---- _merge ----
 
 
@@ -321,6 +364,43 @@ def test_run_writes_artifact_and_round_trips(tmp_path: Path, monkeypatch) -> Non
     assert isinstance(loaded, SessionReviewV1)
     assert loaded.summary == "what happened"
     assert loaded.metrics.turns == 4  # facts merged in
+
+
+def test_run_coerces_dict_observation_instead_of_crashing(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """HATS-610 regression: a dict-shaped observation entry must NOT crash
+    the retro. Before the fix this passed _validate_analysis_shape (IS-A-LIST
+    only) then died terminally in _merge (list[str], extra=forbid), with the
+    failure landing OUTSIDE the retry loop. The runner must coerce it to a
+    string and persist a valid review."""
+    _stub_facts(monkeypatch, tmp_path)
+    transcript = (
+        "BEGIN_REFLECT_SESSION_RETRO\n"
+        + yaml.safe_dump({
+            "summary": "what happened",
+            "observations": [
+                "a plain bullet",
+                {"Session exited normally": "composition initialization"},
+            ],
+            "hypothesis_verdicts": [],
+            "proposal_actions": [],
+            "self_problems": [],
+        })
+        + "\nEND_REFLECT_SESSION_RETRO\n"
+    )
+    fake_runner = _FakeSubAgentRunner(transcript, tmp_path)
+    runner = SessionReviewRunner(tmp_path, subagent_runner=fake_runner)
+    # max_retries=0 — the coercion fix must succeed on the FIRST attempt,
+    # proving the failure mode is gone (it was never retry-recoverable).
+    path = runner.run(SID, max_retries=0)
+
+    loaded, _body = load(path)
+    assert isinstance(loaded, SessionReviewV1)
+    assert loaded.observations == [
+        "a plain bullet",
+        "Session exited normally: composition initialization",
+    ]
 
 
 def test_run_raises_session_review_error_on_invalid_llm_output(
