@@ -323,14 +323,47 @@ class SkillMetadata(_YamlModel):
                     f"of {{matcher, script}} entries, got {type(rows).__name__}"
                 )
             parsed: list[dict[str, str]] = []
+            seen_matchers: set[str] = set()
             for row in rows:
                 if not isinstance(row, dict) or "matcher" not in row or "script" not in row:
                     raise ValueError(
                         f"skill {skill_name!r}: runtime_hooks[{ev!r}] entry must "
                         f"have both 'matcher' and 'script' — got {row!r}"
                     )
-                parsed.append({"matcher": str(row["matcher"]), "script": str(row["script"])})
+                matcher = str(row["matcher"])
+                # The provider keys a managed settings.json entry by
+                # (event, skill, matcher); a duplicate matcher in one event
+                # would collapse onto a single entry and silently drop a hook
+                # (the exact safety hole this validator exists to prevent).
+                # v1: one script per (event, matcher) — fail loud instead.
+                if matcher in seen_matchers:
+                    raise ValueError(
+                        f"skill {skill_name!r}: runtime_hooks[{ev!r}] declares "
+                        f"matcher {matcher!r} more than once — only one script "
+                        f"per (event, matcher) is supported"
+                    )
+                seen_matchers.add(matcher)
+                parsed.append({"matcher": matcher, "script": str(row["script"])})
             normalized[ev] = parsed
+
+        # Materialized filename is ``<skill>-<basename>`` (managed_runtime_hook_
+        # filename), so two DISTINCT scripts sharing a basename would overwrite
+        # each other on disk and cross-wire their settings entries. The same
+        # script reused across events is fine (one file, several entries).
+        basename_source: dict[str, str] = {}
+        for rows in normalized.values():
+            for row in rows:
+                base = Path(row["script"]).name
+                prior = basename_source.get(base)
+                if prior is not None and prior != row["script"]:
+                    raise ValueError(
+                        f"skill {skill_name!r}: runtime_hooks scripts {prior!r} "
+                        f"and {row['script']!r} share basename {base!r} — they "
+                        f"would collide on the materialized filename; give them "
+                        f"distinct basenames"
+                    )
+                basename_source[base] = row["script"]
+
         data["runtime_hooks"] = normalized
         return data
 
