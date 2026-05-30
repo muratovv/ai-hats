@@ -31,7 +31,7 @@ tool when a question goes beyond built-in instructions.
 | File | Topic | When to read |
 |---|---|---|
 | [how-to-configure.md](how-to-configure.md) | Full configuration walkthrough — fields, paths, customization, feedback, verification | Steps 2, 4, 5, 6, 7 |
-| [how-to-extend.md](how-to-extend.md) | Bring-your-own roles / traits / skills / rules; layered library precedence; custom verbs via shell aliases | Step 3, 4; custom-component work |
+| [how-to-extend.md](how-to-extend.md) | Bring-your-own roles / traits / skills / rules; layered library precedence; skill-declared git/runtime hooks; custom verbs via shell aliases | Step 3, 4; custom-component work |
 | [how-to.md](how-to.md) | Overlay cookbook — 7 recipes for adjusting a role on the fly | Step 4 |
 | [how-to-feedback-loop.md](how-to-feedback-loop.md) | Feedback policies (off / hint / smart / always) + reflection internals | Step 6 |
 | [glossary.md](glossary.md) | Core terminology — role, provider, session, trait, skill, rule | Any step where a term is unclear |
