@@ -10,6 +10,7 @@ from .models import (
     ComponentConfig,
     ComponentType,
     HooksConfig,
+    LifecycleEvent,
     OverlayConfig,
     RuntimeHook,
     SkillMetadata,
@@ -395,16 +396,9 @@ class Composer:
     @staticmethod
     def _merge_hooks(target: HooksConfig, source: HooksConfig) -> None:
         """Merge source hooks into target (appending scripts)."""
-        for event_name in (
-            "session_start",
-            "session_end",
-            "task_start",
-            "task_complete",
-            "task_failed",
-            "error",
-        ):
-            target_list = getattr(target, event_name)
-            source_list = getattr(source, event_name)
+        for event in LifecycleEvent:
+            target_list = getattr(target, event.value)
+            source_list = getattr(source, event.value)
             for script in source_list:
                 if script not in target_list:
                     target_list.append(script)
