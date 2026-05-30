@@ -306,6 +306,58 @@ def test_hooks_config_get_scripts():
     assert hooks.get_scripts(LifecycleEvent.SESSION_END) == []
 
 
+def test_hooks_config_rejects_unknown_event_key():
+    """HATS-515: typo'd event key in YAML dict must fail-fast, not silently drop."""
+    import pytest
+
+    with pytest.raises(ValueError, match="unknown hook event.*sesion_start"):
+        HooksConfig.model_validate({"sesion_start": ["x.sh"]})
+
+
+def test_hooks_config_unknown_event_message_lists_allowed():
+    """Error message must include the allowed events for actionable diagnostics."""
+    import pytest
+
+    with pytest.raises(ValueError, match="allowed:.*session_start.*error"):
+        HooksConfig.model_validate({"bogus_event": ["x.sh"]})
+
+
+def test_hooks_config_multiple_unknown_events_reported():
+    """All unknown keys surface in a single error, not one-at-a-time."""
+    import pytest
+
+    with pytest.raises(ValueError, match="alpha.*beta"):
+        HooksConfig.model_validate({"alpha": [], "beta": []})
+
+
+def test_hooks_config_accepts_all_known_events():
+    hooks = HooksConfig.model_validate(
+        {
+            "session_start": ["a.sh"],
+            "session_end": ["b.sh"],
+            "task_start": ["c.sh"],
+            "task_complete": ["d.sh"],
+            "task_failed": ["e.sh"],
+            "error": ["f.sh"],
+        }
+    )
+    assert hooks.session_start == ["a.sh"]
+    assert hooks.error == ["f.sh"]
+
+
+def test_hooks_config_kwarg_construction_unaffected():
+    """Direct HooksConfig(**fields) construction must continue to work
+    (used widely in composer.py and existing tests)."""
+    hooks = HooksConfig(session_start=["a.sh"], task_failed=["b.sh"])
+    assert hooks.session_start == ["a.sh"]
+    assert hooks.task_failed == ["b.sh"]
+
+
+def test_hooks_config_empty_dict_ok():
+    hooks = HooksConfig.model_validate({})
+    assert hooks.session_start == []
+
+
 def test_component_config_from_yaml(tmp_path):
     config_file = tmp_path / "config.yaml"
     config_file.write_text("""

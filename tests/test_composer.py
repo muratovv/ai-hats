@@ -503,3 +503,29 @@ def test_real_maintainer_trait_declares_session_start_sync_hooks():
     data = yaml.safe_load(trait_cfg.read_text())
     hooks = (data.get("composition") or {}).get("hooks") or {}
     assert "ai-hats self sync-hooks" in (hooks.get("session_start") or [])
+
+
+def test_compose_role_with_bogus_hook_event_fails_fast(tmp_path):
+    """HATS-515: a role whose config.yaml declares an unknown hook event
+    must fail-fast at parse time with a clear message, not silently drop
+    the hook block."""
+    from pydantic import ValidationError
+
+    lib = tmp_path / "lib"
+    role_dir = lib / "roles" / "bad-hooks-role"
+    role_dir.mkdir(parents=True)
+    (role_dir / "config.yaml").write_text("""
+name: bad-hooks-role
+composition:
+  hooks:
+    session_start:
+      - good.sh
+    sesion_start:   # typo — must fail
+      - typo.sh
+injection: |
+  Role with a typo'd hook event.
+""")
+
+    composer = Composer(LibraryResolver([lib]))
+    with pytest.raises(ValidationError, match="unknown hook event.*sesion_start"):
+        composer.compose("bad-hooks-role")

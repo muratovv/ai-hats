@@ -130,6 +130,23 @@ class HooksConfig(_YamlModel):
     task_failed: list[str] = Field(default_factory=list)
     error: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_unknown_events(cls, data: Any) -> Any:
+        # Only validate dict input (YAML load path). Direct kwarg construction
+        # (HooksConfig(session_start=[...])) is type-checked by pydantic itself
+        # and cannot carry unknown event keys.
+        if not isinstance(data, dict):
+            return data
+        allowed = {e.value for e in LifecycleEvent}
+        unknown = sorted(set(data) - allowed)
+        if unknown:
+            raise ValueError(
+                f"unknown hook event(s): {', '.join(unknown)}; "
+                f"allowed: {', '.join(e.value for e in LifecycleEvent)}"
+            )
+        return data
+
     def get_scripts(self, event: LifecycleEvent) -> list[str]:
         return getattr(self, event.value, [])
 

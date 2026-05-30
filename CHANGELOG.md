@@ -64,6 +64,17 @@ since the latest tag lives under **Unreleased** until the next release.
     transparently.
 
 ### Fixed
+- **Typo'd lifecycle hook event keys are now rejected at YAML load**
+  (HATS-515). `composition.hooks` previously inherited `_YamlModel`'s
+  `extra="ignore"`, so a misspelled event (e.g. `sesion_start:`) was
+  silently dropped and the hook never ran. `HooksConfig` now carries a
+  `model_validator(mode="before")` that fails fast with
+  `unknown hook event(s): <name>; allowed: …`. `_merge_hooks` derives its
+  event list from the `LifecycleEvent` enum instead of a hardcoded
+  6-string tuple, removing the parallel-list drift vector. Direct kwarg
+  construction is unaffected — the validator only triggers on dict (YAML)
+  input. Silent-key sibling of HATS-452's silent-None; ADR-0005 gains the
+  invariant for future model authors.
 - **master CI was red on four independent counts** (HATS-600). None were a
   regression from a single change — source had moved on without its tests,
   plus two latent gate failures:
