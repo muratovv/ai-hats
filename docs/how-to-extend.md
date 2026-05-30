@@ -165,6 +165,50 @@ MD
 
 Attach via `composition.skills` in a role or trait.
 
+## Declaring hooks from a skill (advanced)
+
+Beyond prose, a skill can declare two kinds of hook in its `metadata.yaml`,
+both materialized during `ai-hats self init`:
+
+- **`git_hooks`** — scripts installed into the project's `.githooks/<event>.d/`
+  (e.g. `pre-commit`, `post-merge`). The value is a bare list of script paths.
+- **`runtime_hooks`** — provider runtime hooks (Claude Code `PreToolUse` /
+  `PostToolUse`). Each entry carries a tool `matcher` and a `script`:
+
+```yaml
+# libraries/skills/my-skill/metadata.yaml
+runtime_hooks:
+  PreToolUse:
+    - matcher: Bash            # Claude tool name or regex (e.g. Edit|Write)
+      script: hooks/guard.sh   # path relative to the skill directory
+  PostToolUse:
+    - matcher: Edit|Write
+      script: hooks/audit.sh
+```
+
+On `self init` the assembler copies each script to
+`<ai_hats_dir>/library/hooks/` under a collision-free `<skill>-<basename>` name
+(basename = the script's filename) and
+`ClaudeProvider` wires one managed entry per `(event, matcher)` into
+`.claude/settings.json`, tagged `ai-hats:<skill>:<event>:<matcher>`. Managed
+entries are refreshed in place and swept when the skill leaves the role;
+user-authored entries are never touched.
+
+Two behaviours worth knowing:
+
+- **Fail-loud.** An unknown event name or a malformed row aborts the load,
+  naming the offending skill — a silently dropped runtime hook could be a
+  safety hole (a guard that never fires). (`git_hooks` skips unknown events
+  silently.)
+- **Provider asymmetry.** Claude Code consumes runtime hooks; the Gemini
+  provider is a no-op (no native `PreToolUse` channel), so do not rely on a
+  `runtime_hooks` guard under Gemini.
+
+Events recognised today are `PreToolUse` and `PostToolUse` (the set is open).
+Materialized scripts run on tool use — treat them as a security surface (see
+`SECURITY.md`). The shipped HATS-437 shared-state guard is the canonical
+example of a wired `PreToolUse` hook.
+
 ## Custom pipelines (advanced)
 
 Pipelines are YAML graphs of steps that wire together composition, prompt
