@@ -8,7 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli import main
-from ai_hats.cli.assembly import _detect_provider_default
+from ai_hats.cli.assembly import _detected_providers, _wizard_provider_prompt
 
 
 @pytest.fixture()
@@ -19,30 +19,98 @@ def fresh_project(tmp_path, monkeypatch):
     return project
 
 
-# ---------- _detect_provider_default ----------
+# ---------- _detected_providers ----------
 
 
-def test_detect_default_claude_when_dotclaude_exists(tmp_path, monkeypatch):
+def test_detect_lists_claude_when_dotclaude_exists(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     (fake_home / ".claude").mkdir()
     monkeypatch.setattr("ai_hats.cli.assembly.Path.home", lambda: fake_home)
-    assert _detect_provider_default() == "claude"
+    assert _detected_providers() == ["claude"]
 
 
-def test_detect_default_gemini_when_only_dotgemini_exists(tmp_path, monkeypatch):
+def test_detect_lists_gemini_when_only_dotgemini_exists(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     (fake_home / ".gemini").mkdir()
     monkeypatch.setattr("ai_hats.cli.assembly.Path.home", lambda: fake_home)
-    assert _detect_provider_default() == "gemini"
+    assert _detected_providers() == ["gemini"]
 
 
-def test_detect_default_none_when_neither(tmp_path, monkeypatch):
+def test_detect_empty_when_neither(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     monkeypatch.setattr("ai_hats.cli.assembly.Path.home", lambda: fake_home)
-    assert _detect_provider_default() is None
+    assert _detected_providers() == []
+
+
+def test_detect_lists_both_when_both_present(tmp_path, monkeypatch):
+    """Both home dirs present → BOTH detected, in PROVIDERS order (HATS-613).
+
+    Pre-HATS-613 the helper returned a single string (the dict-first match,
+    gemini), hiding that claude was also installed.
+    """
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    (fake_home / ".claude").mkdir()
+    (fake_home / ".gemini").mkdir()
+    monkeypatch.setattr("ai_hats.cli.assembly.Path.home", lambda: fake_home)
+    assert _detected_providers() == ["gemini", "claude"]
+
+
+# ---------- _wizard_provider_prompt: marker + default policy ----------
+
+
+def test_wizard_prompt_no_default_when_multiple_detected(monkeypatch):
+    """2+ detected → ambiguous → no pre-filled click default (HATS-613)."""
+    captured = {}
+
+    def fake_prompt(text, default=None, show_default=False):
+        captured["default"] = default
+        captured["show_default"] = show_default
+        return "claude"
+
+    monkeypatch.setattr("ai_hats.cli.assembly.click.prompt", fake_prompt)
+    assert _wizard_provider_prompt(["gemini", "claude"]) == "claude"
+    assert captured["default"] is None
+    assert captured["show_default"] is False
+
+
+def test_wizard_prompt_preselects_when_single_detected(monkeypatch):
+    """Exactly one detected → that provider is the pre-filled default."""
+    captured = {}
+
+    def fake_prompt(text, default=None, show_default=False):
+        captured["default"] = default
+        captured["show_default"] = show_default
+        return default  # simulate the user pressing Enter
+
+    monkeypatch.setattr("ai_hats.cli.assembly.click.prompt", fake_prompt)
+    # claude is index 2 in PROVIDERS order (gemini, claude).
+    assert _wizard_provider_prompt(["claude"]) == "claude"
+    assert captured["default"] == "2"
+    assert captured["show_default"] is True
+
+
+def test_init_wizard_marks_every_detected_provider(fresh_project, monkeypatch):
+    """Menu marks BOTH detected providers `detected`; never `recommended`."""
+    fake_home = fresh_project.parent / "home"
+    fake_home.mkdir()
+    (fake_home / ".claude").mkdir()
+    (fake_home / ".gemini").mkdir()
+    monkeypatch.setattr("ai_hats.cli.assembly.Path.home", lambda: fake_home)
+    monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
+    runner = CliRunner()
+    with (
+        patch("ai_hats.cli.assembly._launch_wizard_session"),
+        patch("ai_hats.cli.assembly._run_self_update"),
+    ):
+        result = runner.invoke(main, ["self", "init", "--no-update"], input="claude\n")
+    assert result.exit_code == 0, result.output
+    assert "detected — found ~/.gemini" in result.output
+    assert "detected — found ~/.claude" in result.output
+    assert "recommended" not in result.output
 
 
 # ---------- init() flag-only paths (no wizard) ----------
