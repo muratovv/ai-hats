@@ -64,6 +64,23 @@ since the latest tag lives under **Unreleased** until the next release.
     transparently.
 
 ### Fixed
+- **Session-reviewer no longer crashes on dict-shaped observations**
+  (HATS-610). The reviewer LLM occasionally emits an `observations`
+  bullet as a single-key mapping (`{'<title>': '<detail>'}`) instead of
+  a string. `SessionReviewV1.observations` is `list[str]` (`extra=
+  "forbid"`), so such an entry passed the lenient IS-A-LIST shape check
+  in `_validate_analysis_shape`, returned from `_run_and_validate`, then
+  crashed terminally in `_merge` — *outside* the retry loop, so retries
+  could never recover it (`SessionReviewError`, reviewer exit≠0;
+  model-agnostic, the root cause of the flaky e2e
+  `test_role_session_retro_vertical`). `observations` are non-critical
+  narrative, so `_run_and_validate` now coerces non-string entries
+  (`{title: detail}` → `'title: detail'`) at a single point before the
+  strict merge, rather than crash; HYP/PROP refs stay strict. The e2e
+  test's deterministic PROP-wiring is asserted via `_render_open_proposals`
+  injection (over the prior soft "reviewer acted on the seed" assertion).
+  A separate residual reviewer-retry-stacking timeout flake is tracked by
+  HATS-614 / HYP-055.
 - **`ai-hats self init` provider menu marks every detected provider**
   (HATS-613). The wizard menu marked only the dict-first provider whose
   `~/.<name>` config dir existed (gemini) as `(recommended)` and
