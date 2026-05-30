@@ -951,6 +951,60 @@ def test_runtime_hooks_missing_field_fails_loud(tmp_path):
         SkillMetadata.from_yaml(path)
 
 
+def test_runtime_hooks_duplicate_matcher_in_event_rejected(tmp_path):
+    """HATS-607: two rows with the same (event, matcher) would collapse onto one
+    managed settings.json entry and silently drop a hook → fail loud."""
+    path = tmp_path / "metadata.yaml"
+    path.write_text(
+        "name: dup-matcher\n"
+        "runtime_hooks:\n"
+        "  PreToolUse:\n"
+        "    - matcher: Bash\n"
+        "      script: hooks/a.sh\n"
+        "    - matcher: Bash\n"
+        "      script: hooks/b.sh\n"
+    )
+    with pytest.raises(Exception, match="more than once"):
+        SkillMetadata.from_yaml(path)
+
+
+def test_runtime_hooks_distinct_scripts_same_basename_rejected(tmp_path):
+    """HATS-607: two DISTINCT scripts sharing a basename collide on the
+    materialized filename ``<skill>-<basename>`` → fail loud."""
+    path = tmp_path / "metadata.yaml"
+    path.write_text(
+        "name: base-collide\n"
+        "runtime_hooks:\n"
+        "  PreToolUse:\n"
+        "    - matcher: Bash\n"
+        "      script: hooks/a/probe.sh\n"
+        "  PostToolUse:\n"
+        "    - matcher: Edit\n"
+        "      script: hooks/b/probe.sh\n"
+    )
+    with pytest.raises(Exception, match="basename"):
+        SkillMetadata.from_yaml(path)
+
+
+def test_runtime_hooks_same_script_across_events_ok(tmp_path):
+    """The fixture pattern: one script wired on both events is legitimate — one
+    materialized file, two settings entries. Must NOT trip the basename guard."""
+    path = tmp_path / "metadata.yaml"
+    path.write_text(
+        "name: shared-script\n"
+        "runtime_hooks:\n"
+        "  PreToolUse:\n"
+        "    - matcher: Bash\n"
+        "      script: hooks/probe.sh\n"
+        "  PostToolUse:\n"
+        "    - matcher: Edit|Write\n"
+        "      script: hooks/probe.sh\n"
+    )
+    meta = SkillMetadata.from_yaml(path)
+    assert meta.runtime_hooks["PreToolUse"][0].script == "hooks/probe.sh"
+    assert meta.runtime_hooks["PostToolUse"][0].script == "hooks/probe.sh"
+
+
 # ---------- Attachment / TaskCard.attachments (HATS-402) ----------
 
 

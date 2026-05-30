@@ -655,10 +655,15 @@ class ClaudeProvider(Provider):
             if not isinstance(entry, dict) or entry.get("_ai_hats_managed"):
                 continue
             for hook in entry.get("hooks", []) or []:
-                if isinstance(hook, dict) and str(hook.get("command", "")).endswith(
-                    want_basename
-                ):
-                    return False  # user already wired it manually — respect that
+                if not isinstance(hook, dict):
+                    continue
+                # Exact basename match — NOT endswith. A user file whose name
+                # merely ends with ours (e.g. ``my_pre_bash_shared_state_guard.sh``)
+                # is a DIFFERENT script and must not suppress our managed entry
+                # (that would silently drop the HATS-437 guard). rsplit drops any
+                # ``$CLAUDE_PROJECT_DIR/`` / directory prefix.
+                if str(hook.get("command", "")).rsplit("/", 1)[-1] == want_basename:
+                    return False  # user already wired this exact script — respect it
 
         event_list.append(want)
         return True

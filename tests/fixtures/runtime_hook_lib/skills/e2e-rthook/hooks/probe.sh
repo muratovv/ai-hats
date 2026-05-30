@@ -17,7 +17,9 @@ event="$(printf '%s' "$payload" \
   | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]+"' \
   | sed -E 's/.*:[[:space:]]*"([^"]+)"$/\1/' || true)"
 [ -n "$event" ] || event="unknown"
-printf '%s\n' "$event" >> "${RTHOOK_MARKER:-$PWD/.rthook-marker}"
+# Best-effort side-effect: never let a marker-write failure (e.g. read-only
+# dir) abort under `set -e` and downgrade the deny decision below.
+printf '%s\n' "$event" >> "${RTHOOK_MARKER:-$PWD/.rthook-marker}" 2>/dev/null || true
 
 if printf '%s' "$payload" | grep -q 'RTHOOK_DENY'; then
   echo "e2e-rthook: denied (sentinel matched)" >&2
