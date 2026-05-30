@@ -64,6 +64,16 @@ since the latest tag lives under **Unreleased** until the next release.
     transparently.
 
 ### Fixed
+- **`ai-hats self init` works as the first command in a fresh project**
+  (HATS-612). The host launcher only healed the per-project venv for
+  `self update`, so a fresh-project `ai-hats self init` was rejected with
+  `Run: ai-hats self update` — the user trying to *init* was told to
+  *update*. `heal_if_needed` now also fires on `self init`, so a single
+  command creates the default venv and configures the project. The
+  venv-missing hint is context-aware: a fresh project (no `ai-hats.yaml`)
+  is pointed at `self init`; an already-initialized project whose venv
+  broke (e.g. a host python upgrade) keeps `self update` for heal-recovery.
+  `install-launcher.sh`'s post-install "Next" hint leads with `self init`.
 - **Typo'd lifecycle hook event keys are now rejected at YAML load**
   (HATS-515). `composition.hooks` previously inherited `_YamlModel`'s
   `extra="ignore"`, so a misspelled event (e.g. `sesion_start:`) was
