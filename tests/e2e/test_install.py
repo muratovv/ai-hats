@@ -127,3 +127,52 @@ def test_e2e_install_init_break_heal(tmp_path):
     # ---- 8. composition restored ----
     res = ai_hats("config", "status")
     assert "system_prompt: OK" in res.stdout
+
+
+@pytest.mark.integration
+def test_e2e_fresh_init_heals(tmp_path):
+    """Fresh project: `ai-hats self init` works as the FIRST command, with no
+    prior `self update` (HATS-612).
+
+    Before HATS-612 the launcher only healed the default venv for `self
+    update`; a fresh-project `self init` was rejected with `Run: ai-hats self
+    update`. Now `self init` triggers the same heal, so a single command
+    creates the venv + configures the project.
+
+    Real launcher + real pip (local repo) + real ai-hats binary. Fail-under-
+    revert: with the launcher heal-on-init edit removed, step 2 exits 1 with
+    the venv-missing rejection instead of writing ai-hats.yaml.
+    """
+    launcher_dest = tmp_path / "bin" / "ai-hats"
+    project = tmp_path / "project"
+    launcher_dest.parent.mkdir(parents=True)
+    project.mkdir()
+
+    env = os.environ.copy()
+    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
+    env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))  # local install, no network
+    env.pop("AI_HATS_VENV", None)
+
+    # ---- 1. install launcher ----
+    _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
+    assert launcher_dest.is_file() and os.access(launcher_dest, os.X_OK)
+
+    # ---- 2. self init as the first command — no `self update` first ----
+    venv = project / ".agent" / "ai-hats" / ".venv"
+    assert not venv.exists(), "precondition: fresh project has no venv yet"
+    res = _run(
+        [str(launcher_dest), "self", "init", "-r", "assistant", "-p", "claude"],
+        cwd=project, env=env, timeout=180, expect_exit=0,
+    )
+
+    # Heal ran (launcher recreated the default venv before delegating to init).
+    assert "recreating" in res.stderr, f"heal-on-init did not run:\n{res.stderr}"
+    assert (venv / "bin" / "python").is_file(), "venv python missing after self init"
+    assert (venv / "bin" / "ai-hats").is_file(), "ai-hats binary missing after self init"
+
+    # Init configured the project in the same command.
+    assert (project / "ai-hats.yaml").is_file()
+    assert (project / "CLAUDE.md").is_file()
+    yaml_text = (project / "ai-hats.yaml").read_text()
+    assert "default_role: assistant" in yaml_text
+    assert "provider: claude" in yaml_text
