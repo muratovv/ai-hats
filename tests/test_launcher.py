@@ -124,12 +124,28 @@ def _run(args, *, cwd, env=None):
 
 
 def test_resolve_default_no_yaml_no_env_missing_venv(tmp_path):
-    """Empty project, default venv missing → exit 1 with hint."""
+    """Fresh project (no ai-hats.yaml), default venv missing → exit 1 with a
+    bootstrap hint pointing at `self init` (which now creates the venv +
+    configures), NOT `self update` (HATS-612)."""
     res = _run(["status"], cwd=tmp_path)
     assert res.returncode == 1
     assert "venv missing at" in res.stderr
     assert ".agent/ai-hats/.venv" in res.stderr
+    assert "ai-hats self init" in res.stderr
+    assert "self update" not in res.stderr
+
+
+def test_fallback_hint_is_update_when_yaml_present(tmp_path):
+    """Initialized project (ai-hats.yaml present) whose default venv is missing
+    → heal-recovery hint stays `self update`, not a re-init (HATS-612)."""
+    (tmp_path / "ai-hats.yaml").write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+    )
+    res = _run(["status"], cwd=tmp_path)
+    assert res.returncode == 1
+    assert "venv missing at" in res.stderr
     assert "ai-hats self update" in res.stderr
+    assert "self init" not in res.stderr
 
 
 def test_resolve_default_with_healthy_venv_execs_stub(tmp_path):
@@ -219,6 +235,26 @@ def test_self_update_creates_default_when_missing(tmp_path):
     assert "venv-ai-hats: self update" in res.stdout
 
 
+def test_self_init_creates_default_when_missing(tmp_path):
+    """Fresh project, default venv missing → `self init` heals (creates venv +
+    bare-installs ai-hats), then delegates to <venv>/bin/ai-hats so init can
+    configure the project in one command — no separate `self update` first
+    (HATS-612)."""
+    stub_dir = _fake_python3_with_venv_creator(tmp_path / "fake-bin")
+    env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
+    res = _run(["self", "init", "-r", "assistant", "-p", "claude"], cwd=tmp_path, env=env)
+    assert res.returncode == 0, f"rc={res.returncode}\nstderr={res.stderr}\nstdout={res.stdout}"
+
+    default_venv = tmp_path / ".agent" / "ai-hats" / ".venv"
+    assert (default_venv / "bin" / "python").is_file()
+    # Heal phase: bare pip install (no --upgrade).
+    pip_marker = default_venv / "pip_called"
+    assert pip_marker.is_file()
+    assert "install" in pip_marker.read_text()
+    # Delegate phase: <venv>/bin/ai-hats called with the original `self init` argv.
+    assert "venv-ai-hats: self init -r assistant -p claude" in res.stdout
+
+
 def test_self_update_recreates_broken_default(tmp_path):
     """Default venv dir exists but bin/python missing → heal recreates +
     bare-installs, then delegates to python self update."""
@@ -298,4 +334,5 @@ def test_exec_fails_when_ai_hats_binary_missing(tmp_path):
     res = _run(["status"], cwd=tmp_path)
     assert res.returncode == 1
     assert "ai-hats binary is missing" in res.stderr
-    assert "ai-hats self update" in res.stderr
+    # Fresh project (no ai-hats.yaml) → bootstrap hint is `self init` (HATS-612).
+    assert "ai-hats self init" in res.stderr
