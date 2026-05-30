@@ -351,6 +351,15 @@ class SessionReviewRunner:
                 # Light shape validation only — full SessionReviewV1 happens
                 # after merging facts.
                 self._validate_analysis_shape(raw, session_id)
+                # HATS-610: normalise non-string observation entries BEFORE
+                # the strict list[str] validation in _merge (which runs
+                # outside this retry loop). A dict-shaped observation would
+                # otherwise pass the lenient shape check, return here, then
+                # crash terminally in _merge with no chance to retry.
+                if "observations" in raw:
+                    raw["observations"] = self._coerce_observations(
+                        raw["observations"]
+                    )
                 return raw
             except (ValidationError, ValueError, yaml.YAMLError) as e:
                 last_error = e
@@ -433,6 +442,42 @@ class SessionReviewRunner:
                 "hypothesis_verdicts missing entries for active HYPs: "
                 f"{sorted(missing)}"
             )
+
+    @staticmethod
+    def _coerce_observations(observations: Any) -> list[str]:
+        """Coerce observation entries to strings (HATS-610).
+
+        The session-reviewer LLM occasionally emits an ``observations``
+        bullet as a single-key mapping (``{'<title>': '<detail>'}``)
+        instead of a plain string. ``SessionReviewV1.observations`` is
+        ``list[str]`` (``extra="forbid"``), so such an entry crashes
+        ``_merge`` *outside* the retry loop — un-recoverable, killing the
+        whole retro (root cause of the flaky e2e in HATS-610).
+
+        ``observations`` are non-critical narrative, so coerce rather than
+        crash (HYP/PROP refs stay strict — those mutate the tracker):
+
+        - ``str``  → kept verbatim
+        - ``dict`` → ``"k: v, ..."`` (e.g. ``{title: detail}`` → ``"title: detail"``)
+        - other    → ``str(entry)``
+
+        By the time this runs ``_validate_analysis_shape`` has already
+        guaranteed ``observations`` is a list (or absent); the falsy guard
+        also covers ``None``/``[]``.
+        """
+        if not observations:
+            return []
+        coerced: list[str] = []
+        for entry in observations:
+            if isinstance(entry, str):
+                coerced.append(entry)
+            elif isinstance(entry, dict):
+                coerced.append(
+                    ", ".join(f"{k}: {v}" for k, v in entry.items())
+                )
+            else:
+                coerced.append(str(entry))
+        return coerced
 
     def _retry_prompt(self, original: str, bad_output: str, error: str) -> str:
         return (
