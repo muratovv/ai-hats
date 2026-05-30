@@ -49,8 +49,8 @@ is_default_venv() { [[ "$VENV" == "$DEFAULT_VENV" ]]; }
 
 # --- Idempotent heal: no-op if healthy, recreate if default broken,
 #     refuse if override broken (user-owned). Called from `self update`
-#     before delegating, so the user only ever needs one command for
-#     install + heal + update. (HATS-337)
+#     and `self init` before delegating, so the user only ever needs one
+#     command for install + heal + (update|init). (HATS-337, HATS-612)
 heal_if_needed() {
     if [[ -x "$VENV/bin/python" && -x "$VENV/bin/ai-hats" ]]; then
         return 0
@@ -70,22 +70,39 @@ heal_if_needed() {
     "$VENV/bin/pip" install --quiet "$PIP_TARGET"
 }
 
-# --- Self update: heal-then-delegate. Never bypass python self update —
-#     it owns snapshot/diff/auto-bump/changelog rendering (HATS-337). ---
-if [[ "${1:-}" == "self" && "${2:-}" == "update" ]]; then
+# --- Self update / self init: heal-then-delegate. Never bypass the python
+#     command — `self update` owns snapshot/diff/auto-bump/changelog
+#     rendering (HATS-337); `self init` needs the venv to exist before it
+#     can configure the project, so a fresh-project `self init` heals the
+#     default venv here instead of forcing a separate `self update` first
+#     (HATS-612). ---
+if [[ "${1:-}" == "self" && ( "${2:-}" == "update" || "${2:-}" == "init" ) ]]; then
     heal_if_needed
-    # Fall through to default exec below — python rich self update runs there.
+    # Fall through to default exec below — python self update / init runs there.
 fi
+
+# --- Missing/broken-venv hint: bootstrap vs heal. A fresh project (no
+#     ai-hats.yaml) is told to run `self init` — which now creates the venv
+#     and configures in one step. An already-initialized project whose venv
+#     broke (e.g. a host python upgrade) keeps `self update` for heal-
+#     recovery, not a re-init. (HATS-612)
+missing_venv_hint() {
+    if [[ -f "$PROJECT/ai-hats.yaml" ]]; then
+        echo "  Run: ai-hats self update" >&2
+    else
+        echo "  Run: ai-hats self init -r <role> -p <provider>" >&2
+    fi
+}
 
 # --- Default fall-through: exec into venv-installed ai-hats ---
 if [[ ! -x "$VENV/bin/python" ]]; then
     echo "ai-hats: venv missing at $VENV" >&2
-    echo "  Run: ai-hats self update" >&2
+    missing_venv_hint
     exit 1
 fi
 if [[ ! -x "$VENV/bin/ai-hats" ]]; then
     echo "ai-hats: venv exists at $VENV but ai-hats binary is missing." >&2
-    echo "  Run: ai-hats self update" >&2
+    missing_venv_hint
     exit 1
 fi
 exec "$VENV/bin/ai-hats" "$@"
