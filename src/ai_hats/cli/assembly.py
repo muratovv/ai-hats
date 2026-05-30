@@ -25,28 +25,35 @@ def _stdin_is_tty() -> bool:
     return sys.stdin.isatty()
 
 
-def _detect_provider_default() -> str | None:
-    """Smart default for provider — based on existence of ~/.<provider>.
+def _detected_providers() -> list[str]:
+    """Providers whose home-config directory (``~/.<provider>``) exists.
 
-    Returns the first provider whose home-config directory exists. Order
-    matches PROVIDERS dict iteration (deterministic via insertion order).
-    Returns ``None`` if no provider home directory is present.
+    Returns EVERY match in PROVIDERS insertion order (deterministic), not
+    just the first — the wizard marks each as ``detected`` and refuses to
+    silently prefer one when several are present (HATS-613). Empty list
+    when no provider home directory is found.
     """
     home = Path.home()
-    for name in PROVIDERS:
-        if (home / f".{name}").is_dir():
-            return name
-    return None
+    return [name for name in PROVIDERS if (home / f".{name}").is_dir()]
 
 
-def _wizard_provider_prompt(default: str | None) -> str:
-    """Interactive numbered menu for provider selection."""
+def _wizard_provider_prompt(detected: list[str]) -> str:
+    """Interactive numbered menu for provider selection.
+
+    Every provider whose ``~/.<name>`` config dir exists is marked
+    ``detected``. A click default is pre-selected ONLY when exactly one
+    provider is detected — when zero or several are present the choice is
+    ambiguous, so the user picks explicitly rather than silently inheriting
+    the dict-first provider (HATS-613).
+    """
     names = list(PROVIDERS.keys())
     console.print("[bold]Choose provider:[/]")
     for idx, name in enumerate(names, start=1):
-        marker = f" [dim](recommended — found ~/.{name})[/]" if name == default else ""
+        marker = f" [dim](detected — found ~/.{name})[/]" if name in detected else ""
         console.print(f"  {idx}) {name}{marker}")
-    default_idx = names.index(default) + 1 if default else None
+    # Pre-select a default only when detection is unambiguous (exactly one).
+    default_name = detected[0] if len(detected) == 1 else None
+    default_idx = names.index(default_name) + 1 if default_name else None
     while True:
         raw = click.prompt(
             f"Provider [1-{len(names)}]",
@@ -227,8 +234,8 @@ def init(
         _run_self_update()
 
     if use_wizard and provider is None:
-        default = _detect_provider_default()
-        provider = _wizard_provider_prompt(default)
+        detected = _detected_providers()
+        provider = _wizard_provider_prompt(detected)
 
     # HATS-366: the wizard no longer asks for ai_hats_dir / venv / gitignore
     # at the CLI prompt — initial-wizard handles those inside the LLM session

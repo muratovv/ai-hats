@@ -64,6 +64,17 @@ since the latest tag lives under **Unreleased** until the next release.
     transparently.
 
 ### Fixed
+- **`ai-hats self init` provider menu marks every detected provider**
+  (HATS-613). The wizard menu marked only the dict-first provider whose
+  `~/.<name>` config dir existed (gemini) as `(recommended)` and
+  pre-selected it. A user with both `~/.claude` and `~/.gemini` saw gemini
+  recommended and claude unmarked — as if claude were undetected — and
+  pressing Enter silently picked gemini. `_detect_provider_default()` (one
+  string) is replaced by `_detected_providers()` (the full list); the menu
+  now marks **every** detected provider `(detected — found ~/.<name>)`, and
+  pre-selects a click default ONLY when exactly one provider is detected —
+  zero or several is ambiguous, so the user picks explicitly instead of
+  inheriting the dict-first bias.
 - **Typo'd lifecycle hook event keys are now rejected at YAML load**
   (HATS-515). `composition.hooks` previously inherited `_YamlModel`'s
   `extra="ignore"`, so a misspelled event (e.g. `sesion_start:`) was
