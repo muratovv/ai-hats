@@ -1,3 +1,7 @@
+---
+name: review-role
+description: Audit a role composition for coherence — injection/skill/rule mismatches and composer gaps
+---
 # Review Role
 
 Audit a role composition for internal coherence — find injection ↔ skill
