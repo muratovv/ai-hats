@@ -1,18 +1,22 @@
 ---
 name: requirements-interview
-description: Structured Q&A to extract clear requirements before transitioning brainstorm → plan. For each question, agent first explores code/docs and proposes a best-guess answer with a source citation (path:line); supervisor reviews instead of answering from scratch.
+description: The Requirements stage of the plan-gate — fills plan.md's Requirements section via structured Q&A where the agent proposes a cited best-guess per question and the supervisor reviews. Reached through plan-gate (which owns the brainstorm→plan entry), not as an independent trigger.
 ---
 # Requirements Interview
 
-Structured Q&A to clarify requirements before a task moves out of brainstorm.
+The **Requirements stage of `plan-gate`**: structured Q&A that fills the
+`Requirements` section of `plan.md` before a task leaves brainstorm.
 **The interview is review-shaped, not interrogation-shaped:** for every
 question, the agent proposes a best-guess answer grounded in the
 codebase/docs and the supervisor confirms or overrides.
 
 ## When to Use
-- During `brainstorm` state when the user describes a task in 1-2 sentences
-- Before `task transition <ID> plan` — verify scope is fleshed out
-- When you catch yourself making >2 independent assumptions about user intent
+Reach this stage through `plan-gate`, not as a standalone brainstorm→plan
+trigger — `plan-gate` is the single entry point and routes here to fill the
+`Requirements` section.
+- Run it when that section is empty and the request leaves >2 independent assumptions about user intent.
+- Skip when requirements are already unambiguous from the request — fill the section directly.
+- Sibling stage: `design-minimalism` owns the adjacent `Scope & Out-of-scope` section — don't do scope-justification here.
 
 ## Checklist
 

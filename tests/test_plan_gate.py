@@ -105,3 +105,48 @@ def test_missing_plan_file_flags_every_required_section(mgr: TaskManager) -> Non
     if plan_path.exists():
         plan_path.unlink()
     assert mgr._unfilled_sections(task) == ALL_REQUIRED
+
+
+# --- plan-gate orchestrator ↔ engine sync (HATS-636) ----------------------
+# The `plan-gate` skill is a table of contents: its section→skill table must
+# list exactly the engine's PLAN_SECTIONS, in order. If the engine adds /
+# renames / reorders a section without the skill following (or vice-versa),
+# the gate's documented contract drifts from what it enforces. Fail loudly.
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PLAN_GATE_SKILL = REPO_ROOT / "library" / "core" / "skills" / "plan-gate" / "SKILL.md"
+
+
+def _plan_gate_section_names() -> list[str]:
+    """First-column entries of the plan-gate section→skill markdown table."""
+    names: list[str] = []
+    in_table = False
+    for line in PLAN_GATE_SKILL.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("| Plan section"):
+            in_table = True
+            continue
+        if not in_table:
+            continue
+        if not stripped.startswith("|"):
+            break  # table ended
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if not cells or set(cells[0]) <= set("-: "):
+            continue  # separator row (|---|---|)
+        names.append(cells[0])
+    return names
+
+
+def test_plan_gate_skill_table_matches_engine_sections() -> None:
+    engine = [s.name for s in PLAN_SECTIONS]
+    assert engine, "positive control: PLAN_SECTIONS must be non-empty"
+
+    skill = _plan_gate_section_names()
+    assert skill, (
+        "parser found no rows in the plan-gate section table — check the "
+        f"table header/format in {PLAN_GATE_SKILL}"
+    )
+    assert skill == engine, (
+        "plan-gate SKILL.md section table drifted from engine PLAN_SECTIONS.\n"
+        f"  engine: {engine}\n  skill:  {skill}"
+    )
