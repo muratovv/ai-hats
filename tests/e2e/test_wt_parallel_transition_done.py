@@ -88,7 +88,11 @@ def _walk_task_to_review(
 
     plan_path = plans_dir / f"{task_id.lower()}.md"
     plan_path.write_text(
-        f"# {task_id} plan\n\nWrite to {payload_file} and merge into base.\n"
+        f"# {task_id} plan\n\n"
+        f"## Requirements\nWrite to {payload_file} and merge into base.\n\n"
+        "## Scope & Out-of-scope\nin/out\n\n"
+        "## Steps\n- [ ] write\n\n"
+        "## Verification Protocol\nmerge\n"
     )
     ai_hats(
         "task", "plan-sync", task_id, "--from-file", str(plan_path),
