@@ -1,25 +1,27 @@
 ---
 name: design-minimalism
-description: At plan stage, every primitive (class, abstraction, option, new step) must be justified by a concrete use case in the current epic — speculative additions go to Out of scope
+description: The Scope & Out-of-scope stage of the plan-gate — every primitive (class, abstraction, option, new step) in plan.md must be justified by a concrete current-epic use case; speculative additions go to Out of scope. Reached through plan-gate, not as an independent trigger.
 ---
 # Design Minimalism
 
-Plan-stage discipline: each primitive (class, abstraction, option, new step,
-new dependency) in a design plan must be justified by a **concrete use case
-in the current epic**. Speculative additions ("may be useful for X later",
-"central registry for future keys", "pre-listed child tasks for unbuilt
-features") belong in **Out of scope** with an explicit activation trigger,
-or are dropped.
+The **Scope & Out-of-scope stage of `plan-gate`**: each primitive (class,
+abstraction, option, new step, new dependency) in a design plan must be
+justified by a **concrete use case in the current epic**. Speculative additions
+("may be useful for X later", "central registry for future keys", "pre-listed
+child tasks for unbuilt features") belong in **Out of scope** with an explicit
+activation trigger, or are dropped.
 
 This complements `trait-se-mindset`'s "Simplicity first" — that rule is about
 **code**; this skill is about the **design phase** of a task.
 
 ## When to Use
 
-- Transitioning `brainstorm → plan` for a non-trivial task.
-- Writing or revising `plan.md` for any task.
-- Reviewing a plan that proposes new abstractions, options, or sub-systems.
-- Noticing the urge to "future-proof" or "add for completeness".
+Reach this stage through `plan-gate`, not as a standalone brainstorm→plan
+trigger — `plan-gate` is the single entry point and routes here to fill the
+`Scope & Out-of-scope` section of `plan.md`.
+- Run it when that section is being written, or a plan proposes new abstractions, options, or sub-systems.
+- Trigger inside it: noticing the urge to "future-proof" or "add for completeness".
+- Sibling stage: `requirements-interview` owns the adjacent `Requirements` section — clarify *what* to build there, *how much* here.
 
 ## Checklist
 

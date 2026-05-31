@@ -1,14 +1,13 @@
 name: design-minimalism
-description: At plan stage, every primitive must be justified by a concrete use case in the current epic — speculative additions go to Out of scope
+description: The Scope & Out-of-scope stage of the plan-gate — every primitive must be justified by a concrete current-epic use case; speculative additions go to Out of scope
 author: ai-hats
-tags: [agent-protocol, planning, design, scope]
+tags: [agent-protocol, planning, design, scope, plan-gate-stage]
 pattern: checklist
 
 triggers:
-  - "transitioning a task from brainstorm to plan"
-  - "writing or revising plan.md"
+  - "plan-gate routed you to fill the Scope & Out-of-scope section of plan.md"
+  - "a plan being drafted proposes classes/options/steps without a current-epic use case"
   - "noticing urge to future-proof or add for completeness"
-  - "proposed design contains classes/options/steps without current-epic use case"
 
 skip:
   - "trivial single-file edit with no design surface"
