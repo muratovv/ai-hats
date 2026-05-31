@@ -21,7 +21,13 @@ from ai_hats.providers import ClaudeProvider, GeminiProvider
 
 
 SETTINGS = Path(".claude") / "settings.json"
-EXPECTED_REL = ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh"
+# HATS-615: managed hook commands are emitted with a literal
+# $CLAUDE_PROJECT_DIR/ prefix (Claude Code expands it at hook-execution time)
+# so they resolve regardless of the agent cwd. Hard-coded literal here — NOT
+# imported from paths.CLAUDE_PROJECT_DIR_VAR — so this test fails if the
+# emitted contract drifts from the documented placeholder.
+PREFIX = "$CLAUDE_PROJECT_DIR/"
+EXPECTED_REL = PREFIX + ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh"
 
 
 def _settings(project: Path) -> dict:
@@ -60,7 +66,7 @@ def _result(skills: list[ResolvedComponent]) -> CompositionResult:
 
 
 def _managed_command(project: Path, skill: str, script: str) -> str:
-    return str(
+    return PREFIX + str(
         (hooks_dir(project) / managed_runtime_hook_filename(skill, script))
         .relative_to(project)
     )
@@ -75,6 +81,21 @@ def test_claude_writes_fresh_settings(tmp_path: Path) -> None:
     assert entry["matcher"] == "Bash"
     assert entry["_ai_hats_managed"] == "ai-hats:hats-437"
     assert entry["hooks"] == [{"type": "command", "command": EXPECTED_REL}]
+
+
+def test_guard_command_uses_claude_project_dir_prefix(tmp_path: Path) -> None:
+    """HATS-615: the managed guard command MUST be $CLAUDE_PROJECT_DIR-prefixed.
+
+    Claude Code resolves a relative PreToolUse command against the agent's cwd,
+    not the project root — a bare relative path fails (exit 127) when a session
+    or sub-agent starts in a subdirectory. The $CLAUDE_PROJECT_DIR var is
+    expanded at hook-execution time and resolves regardless of cwd. Fails under
+    the bare-relative revert.
+    """
+    ClaudeProvider().ensure_runtime_hooks(tmp_path)
+    cmd = _settings(tmp_path)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert cmd.startswith("$CLAUDE_PROJECT_DIR/")
+    assert cmd.endswith("/pre_bash_shared_state_guard.sh")
 
 
 def test_claude_double_apply_is_idempotent(tmp_path: Path) -> None:
