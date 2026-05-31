@@ -30,6 +30,11 @@ Triggered by `ai-hats reflect role <role-name>` or invoked manually.
    - injection ↔ skill statements (do they agree?)
    - skill ↔ skill (any role-binding mismatch?)
    - rule ↔ rule (duplication of constraints?)
+   - injection ordering (attention placement) — high-signal constraints
+     (`## Guardrails`, critical rules) must sit early or late, not buried in
+     the middle of a long injection where recall degrades ("lost-in-the-middle"
+     / U-shaped attention, Liu et al. 2023, arXiv:2307.03172). Flag any
+     guardrail or critical constraint stranded mid-prompt.
    - composer artifacts (double ROLE injection, missing priority injection,
      skip-routing gaps for the active role)
    - tool-call hygiene (any banned bash patterns in skill bodies?)
