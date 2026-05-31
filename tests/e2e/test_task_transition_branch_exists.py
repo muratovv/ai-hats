@@ -105,7 +105,11 @@ def _create_and_plan(project: Path, task_id: str) -> None:
         / "tasks" / task_id / "plan.md"
     )
     plan_path.write_text(
-        "# Plan\n\n## Objective\nE2E\n\n## Steps\n- [ ] do thing\n"
+        "# Plan\n\n"
+        "## Requirements\nE2E\n\n"
+        "## Scope & Out-of-scope\nin/out\n\n"
+        "## Steps\n- [ ] do thing\n\n"
+        "## Verification Protocol\npytest\n"
     )
 
 

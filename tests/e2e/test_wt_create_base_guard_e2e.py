@@ -129,14 +129,20 @@ def test_task_transition_execute_refuses_on_feature_branch(tmp_venv_project) -> 
     proj.run("task", "transition", "TASK-001", "plan").expect_ok()
     # The PLAN scaffold is empty; `transition execute` defaults to
     # strict_plan_check=True and would raise EmptyPlanError BEFORE our
-    # guard fires. Fill the scaffold with arbitrary non-empty content so
-    # the empty-plan check passes and execution proceeds to the guard.
+    # guard fires. Fill every required section so the per-section gate
+    # passes and execution proceeds to the guard (HATS-635).
     plan_path = (
         project / ".agent" / "ai-hats" / "tracker" / "backlog"
         / "tasks" / "TASK-001" / "plan.md"
     )
     assert plan_path.exists(), f"expected plan scaffold at {plan_path}"
-    plan_path.write_text("# Plan\n\nNon-empty plan body for e2e.\n")
+    plan_path.write_text(
+        "# Plan\n\n"
+        "## Requirements\nprobe\n\n"
+        "## Scope & Out-of-scope\nin/out\n\n"
+        "## Steps\n- [ ] do thing\n\n"
+        "## Verification Protocol\npytest\n"
+    )
 
     # Park HEAD on a feature branch and try to execute.
     _git(project, "checkout", "-b", "feat/parking")
