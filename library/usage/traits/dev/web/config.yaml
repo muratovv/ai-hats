@@ -1,0 +1,34 @@
+name: dev::web
+composition:
+  traits: []
+  rules: []
+  skills:
+    - ui-ux-review
+    - webapp-testing
+  hooks: {}
+injection: |
+  ## WEB DEVELOPMENT (JS/TS + REACT)
+
+  ### Language & framework
+  - TypeScript in strict mode; no implicit `any`. `satisfies` for config
+    objects; discriminated unions over loose optionals.
+  - React: function components + hooks only. Co-locate state; lift only
+    when shared. Keys stable, never the array index. Effects are for
+    synchronizing with the outside world, NOT for derived state — compute
+    derived values in render / `useMemo`.
+  - Data fetching through a cache layer (TanStack Query / RSC), not raw
+    `useEffect`+`fetch`. Treat loading / error / empty as first-class states.
+
+  ### Accessibility (non-negotiable)
+  - Semantic HTML first; ARIA only to fill genuine gaps. Every input has a
+    label. Keyboard-reachable, visible focus, no keyboard traps. Respect
+    `prefers-reduced-motion`.
+
+  ### Tooling
+  - eslint + prettier; typecheck in CI. Use the package manager the repo's
+    lockfile already implies (npm / pnpm / yarn) — match it, don't switch.
+
+  ### Two loaded skills
+  - `ui-ux-review` — UI *quality*: cognitive UX rules + P0/P1/P2 review.
+  - `webapp-testing` — UI *correctness* in a real browser (Playwright); the
+    task_complete gate for UI changes. Compiling is not working.
