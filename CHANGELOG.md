@@ -11,6 +11,19 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Added
+- **`dev-web` role — web/frontend development (JS/TS + React)** (HATS-616).
+  Fills the one real library gap from the awesome-claude-skills review (no
+  web role; Go had 40+ skills). Shape mirrors `dev-python` + `dev::python`:
+  a single role `dev-web` over one gear `dev::web` (not a `go-dev`-style
+  multi-gear split). The gear carries JS/TS + React + a11y + tooling
+  conventions and bundles two seed skills: `ui-ux-review` (two-mode —
+  guide + P0/P1/P2 review — cognitive UX rules, distilled from
+  oil-oil/oiloil-ui-ux-guide [Apache-2.0] and wondelai/skills [MIT]) and
+  `webapp-testing` (Playwright recon→act→assert browser verification,
+  distilled from anthropics/skills [Apache-2.0]). `task_complete` gates:
+  `npm run lint/test/build` + `npx playwright test`. Companion HYP-056
+  tracks the expected behavior shift. Per-source licenses + attribution
+  recorded in each skill's `metadata.yaml` `upstream:` block.
 - **Skills can declare provider runtime hooks** (`runtime_hooks:` in a
   skill's `metadata.yaml`, HATS-597 / HATS-601). Mirrors the `git_hooks`
   open registry: a composed skill declares hooks keyed by Claude event
