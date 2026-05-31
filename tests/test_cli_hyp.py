@@ -169,6 +169,89 @@ def test_create_with_optional_fields(project_dir: Path):
     assert data["observation_window"] == "4 sessions"
 
 
+def test_create_with_verification_protocol(project_dir: Path):
+    """HATS-623: --verification-protocol round-trips into the YAML (extra field)."""
+    res = _invoke(
+        [
+            "create",
+            "--title",
+            "lib-change",
+            "--hypothesis",
+            "h",
+            "--source-task",
+            "HATS-001",
+            "--verification-protocol",
+            "Run suite X, observe metric Y unchanged",
+        ]
+    )
+    assert res.exit_code == 0, res.output
+    p = hypotheses_dir(project_dir) / "HYP-001.yaml"
+    data = yaml.safe_load(p.read_text())
+    assert data["verification_protocol"] == "Run suite X, observe metric Y unchanged"
+
+
+def test_create_without_verification_protocol_omits_key(project_dir: Path):
+    """HATS-623: absent flag → key not written (exclude_none, no magic empty)."""
+    res = _invoke(
+        [
+            "create",
+            "--title",
+            "no-vp",
+            "--hypothesis",
+            "h",
+            "--source-task",
+            "HATS-001",
+        ]
+    )
+    assert res.exit_code == 0, res.output
+    p = hypotheses_dir(project_dir) / "HYP-001.yaml"
+    data = yaml.safe_load(p.read_text())
+    assert "verification_protocol" not in data
+
+
+def test_create_verification_protocol_multiline_roundtrip(project_dir: Path):
+    """HATS-623: a multi-line protocol survives the YAML round-trip verbatim
+    (the reflect.py consumer renders it as a literal block scalar)."""
+    vp = "Step 1: run suite X\nStep 2: observe metric Y unchanged"
+    res = _invoke(
+        [
+            "create",
+            "--title",
+            "multiline",
+            "--hypothesis",
+            "h",
+            "--source-task",
+            "HATS-001",
+            "--verification-protocol",
+            vp,
+        ]
+    )
+    assert res.exit_code == 0, res.output
+    p = hypotheses_dir(project_dir) / "HYP-001.yaml"
+    assert yaml.safe_load(p.read_text())["verification_protocol"] == vp
+
+
+def test_create_verification_protocol_empty_string_is_written(project_dir: Path):
+    """HATS-623: an explicit empty value writes an empty string (consistent
+    with the sibling optionals' is-not-None semantics) — pins the behaviour."""
+    res = _invoke(
+        [
+            "create",
+            "--title",
+            "empty-vp",
+            "--hypothesis",
+            "h",
+            "--source-task",
+            "HATS-001",
+            "--verification-protocol",
+            "",
+        ]
+    )
+    assert res.exit_code == 0, res.output
+    p = hypotheses_dir(project_dir) / "HYP-001.yaml"
+    assert yaml.safe_load(p.read_text())["verification_protocol"] == ""
+
+
 def test_set_status_flips(project_dir: Path):
     _write_hyp(project_dir, "HYP-001", status="active")
     res = _invoke(["set-status", "--hyp", "HYP-001", "--status", "confirmed"])
