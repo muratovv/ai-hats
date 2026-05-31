@@ -105,7 +105,11 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
     plans_dir.mkdir(parents=True, exist_ok=True)
     plan_path = plans_dir / "001-conflict.md"
     plan_path.write_text(
-        "# TST-001 plan\n\nWrite to CONFLICT.txt and try to merge.\n"
+        "# TST-001 plan\n\n"
+        "## Requirements\nWrite to CONFLICT.txt and try to merge.\n\n"
+        "## Scope & Out-of-scope\nin/out\n\n"
+        "## Steps\n- [ ] write\n\n"
+        "## Verification Protocol\nmerge\n"
     )
     ai_hats("task", "plan-sync", task_id, "--from-file", str(plan_path))
 

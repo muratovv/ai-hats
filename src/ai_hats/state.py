@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import shutil
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -24,22 +25,45 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-PLAN_SCAFFOLD = """\
-# Plan for {task_id}: {title}
+@dataclass(frozen=True)
+class Section:
+    """One section of the plan template.
 
-## Objective
+    `required=True` sections are enforced by the plan→execute gate (see
+    `TaskManager._unfilled_sections`). The flag is carried now (all True in
+    M1 / HATS-635) so M3 can add a `required=False` "Approach & counter"
+    section without restructuring the schema or the gate.
+    """
+
+    name: str
+    required: bool = True
 
 
-## Architecture Changes
+# Single source of truth for the plan template. The scaffold (what the agent
+# starts from) and the gate (what `_unfilled_sections` enforces) both read
+# THIS list, so contract and enforcement can never drift (HATS-635).
+PLAN_SECTIONS: list[Section] = [
+    Section(name="Requirements"),
+    Section(name="Scope & Out-of-scope"),
+    Section(name="Steps"),
+    Section(name="Verification Protocol"),
+]
 
 
-## Steps
-- [ ] Step 1
+def render_plan_scaffold(sections: list[Section]) -> str:
+    """Render the plan.md scaffold from the section schema.
+
+    Each section is a level-2 heading with an EMPTY body. The empty body is
+    deliberate: the per-section gate treats any pre-filled placeholder text as
+    "filled", which would silently defeat the gate (HATS-635). The returned
+    string still carries `{task_id}` / `{title}` placeholders for `.format()`.
+    """
+    parts = ["# Plan for {task_id}: {title}\n"]
+    parts.extend(f"## {section.name}\n" for section in sections)
+    return "\n".join(parts) + "\n"
 
 
-## Verification Protocol
-
-"""
+PLAN_SCAFFOLD = render_plan_scaffold(PLAN_SECTIONS)
 
 
 class PlanSyncAmbiguousError(Exception):
@@ -52,10 +76,26 @@ class PlanSyncAmbiguousError(Exception):
 
 
 class EmptyPlanError(Exception):
-    """transition → execute is blocked because plan.md is the empty scaffold."""
+    """transition → execute is blocked: required plan sections are empty.
 
-    def __init__(self, task_id: str, plan_path: Path) -> None:
-        super().__init__(f"Plan is empty scaffold for {task_id}")
+    `empty_sections` names the required sections that lack body content, so
+    callers (the CLI) can tell the user exactly what to fill (HATS-635).
+    """
+
+    def __init__(
+        self,
+        task_id: str,
+        plan_path: Path,
+        empty_sections: list[str] | None = None,
+    ) -> None:
+        self.empty_sections = empty_sections or []
+        if self.empty_sections:
+            joined = ", ".join(self.empty_sections)
+            super().__init__(
+                f"Plan for {task_id} has empty required section(s): {joined}"
+            )
+        else:
+            super().__init__(f"Plan is empty scaffold for {task_id}")
         self.task_id = task_id
         self.plan_path = plan_path
 
@@ -242,9 +282,11 @@ class TaskManager:
                 if old_state == TaskState.DONE:
                     task.completed_at = ""
                     task.log_work("Reopened from done")
-                elif self.strict_plan_check and self._is_empty_scaffold(task):
-                    plan_path = self.tasks_dir / task.id / "plan.md"
-                    raise EmptyPlanError(task.id, plan_path)
+                elif self.strict_plan_check:
+                    unfilled = self._unfilled_sections(task)
+                    if unfilled:
+                        plan_path = self.tasks_dir / task.id / "plan.md"
+                        raise EmptyPlanError(task.id, plan_path, unfilled)
                 self._setup_worktree(task)
             elif new_state == TaskState.DONE:
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -946,6 +988,47 @@ class TaskManager:
             return plan_path.read_text() == expected
         except OSError:
             return False
+
+    def _unfilled_sections(self, task: TaskCard) -> list[str]:
+        """Names of REQUIRED plan sections that have no body content.
+
+        A section is "filled" if there is at least one non-whitespace line
+        between its `## <name>` heading and the next level-2 heading (or EOF).
+        A required section whose heading is absent counts as unfilled. The
+        plan→execute gate (see `transition`) blocks while this is non-empty.
+
+        Reads the SAME `PLAN_SECTIONS` schema the scaffold renders from, so the
+        template the agent fills and the gate that checks it cannot drift.
+        """
+        plan_path = self.tasks_dir / task.id / "plan.md"
+        try:
+            text = plan_path.read_text()
+        except OSError:
+            # No readable plan → every required section is unfilled.
+            return [s.name for s in PLAN_SECTIONS if s.required]
+
+        # Bucket body lines under their owning level-2 heading. `^##\s+`
+        # matches a level-2 heading only: a level-3 `### x` fails (its third
+        # char is `#`, not whitespace), and the H1 title fails too — so neither
+        # opens a section.
+        bodies: dict[str, list[str]] = {}
+        current: str | None = None
+        for line in text.splitlines():
+            m = re.match(r"^##\s+(.+?)\s*$", line)
+            if m:
+                current = m.group(1)
+                bodies.setdefault(current, [])
+            elif current is not None:
+                bodies[current].append(line)
+
+        unfilled: list[str] = []
+        for section in PLAN_SECTIONS:
+            if not section.required:
+                continue
+            body = bodies.get(section.name)
+            if body is None or not "".join(body).strip():
+                unfilled.append(section.name)
+        return unfilled
 
     def _sync_plan_from_claude_plans(self, task: TaskCard) -> Path | None:
         """At transition→plan: move .claude/plans/<NN>-*.md into task tree.

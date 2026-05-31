@@ -192,11 +192,16 @@ def task_transition(
         sys.exit(2)
     except EmptyPlanError as e:
         console.print(
-            f"[red]Plan is empty[/] — cannot transition {e.task_id} to execute."
+            f"[red]Plan is incomplete[/] — cannot transition {e.task_id} to execute."
         )
+        if e.empty_sections:
+            console.print(
+                "  Empty required section(s): "
+                f"[yellow]{', '.join(e.empty_sections)}[/]"
+            )
         console.print(f"  Plan path: {e.plan_path}")
         console.print(
-            "  Either fill in the plan, or run "
+            "  Fill the named section(s), or run "
             f"[cyan]ai-hats task plan-sync {e.task_id}[/] "
             "to import from .claude/plans/."
         )

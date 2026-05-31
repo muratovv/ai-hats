@@ -98,6 +98,22 @@ def test_transition_execute_blocks_on_empty_scaffold(mgr: TaskManager) -> None:
     with pytest.raises(EmptyPlanError) as exc:
         mgr.transition("HATS-230", TaskState.EXECUTE)
     assert exc.value.task_id == "HATS-230"
+    # The error must NAME every empty required section (HATS-635).
+    assert exc.value.empty_sections == [
+        "Requirements",
+        "Scope & Out-of-scope",
+        "Steps",
+        "Verification Protocol",
+    ]
+
+
+_FILLED_PLAN = (
+    "# Plan for HATS-230: Test plan-sync\n\n"
+    "## Requirements\nShip it.\n\n"
+    "## Scope & Out-of-scope\nIn: gate. Out: skill.\n\n"
+    "## Steps\n- [x] do thing\n\n"
+    "## Verification Protocol\npytest -q\n"
+)
 
 
 def test_transition_execute_proceeds_on_populated_plan(
@@ -105,10 +121,10 @@ def test_transition_execute_proceeds_on_populated_plan(
 ) -> None:
     mgr.create_task("HATS-230", "Test plan-sync")
     src = project / ".claude" / "plans" / "230-foo.md"
-    src.write_text("# Real plan content")
+    src.write_text(_FILLED_PLAN)  # all required sections filled
     mgr.transition("HATS-230", TaskState.PLAN)
 
-    # execute should not raise
+    # execute should not raise — every required section has content.
     t = mgr.transition("HATS-230", TaskState.EXECUTE)
     assert t.state == TaskState.EXECUTE
 
