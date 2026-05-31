@@ -6,6 +6,10 @@ composition:
     - skill-optimization
     - skill-template
     - retro-to-framework
+    # HATS-617 — pre-commit agnix gate over staged library SKILL.md. Pure
+    # infrastructure (hook carrier); scopes to maintainer + role-curator (the
+    # only composers of this trait).
+    - skill-lint-gate
   hooks: {}
 injection: |
   ## SKILL ENGINEER
