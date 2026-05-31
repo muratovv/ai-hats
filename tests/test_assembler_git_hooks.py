@@ -672,3 +672,43 @@ def test_dispatcher_does_not_block_event_with_no_managed_entries(project_with_ho
     # No pre-push.d/* in the manifest → backstop inert → normal empty-.d/ no-op.
     assert res.returncode == 0
     assert "corrupt" not in res.stderr
+
+
+# ----- HATS-617: skill-lint-gate is scoped to skill-authoring roles --------
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _composed_skill_names(role: str) -> set[str]:
+    """Skills resolved for `role` against THIS checkout's library.
+
+    Explicit `library_paths` (not the builtin install location) so the test
+    reads the library it ships with — correct under an editable install made
+    from a different checkout (e.g. a worktree) as well as in CI.
+    """
+    asm = Assembler(
+        _REPO_ROOT,
+        library_paths=[_REPO_ROOT / "library" / "core", _REPO_ROOT / "library" / "usage"],
+    )
+    result = asm.composer.compose(role, overlay=asm._get_overlay(role))
+    assert result.errors == [], result.errors
+    return {s.name for s in result.skills}
+
+
+def test_skill_lint_gate_present_for_skill_authoring_roles():
+    """maintainer + role-curator carry the `skill-engineer` trait, so the
+    pre-commit gate composes into both."""
+    for role in ("maintainer", "role-curator"):
+        names = _composed_skill_names(role)
+        assert "skill-lint-gate" in names, f"{role} missing skill-lint-gate"
+        # Positive control: an existing skill-engineer skill resolves too, so a
+        # False above would mean "absent", not "composition short-circuited".
+        assert "skill-template" in names, f"{role} pos-control skill-template missing"
+
+
+def test_skill_lint_gate_absent_from_non_authoring_roles():
+    """A role without the `skill-engineer` trait must NOT receive the gate."""
+    for role in ("assistant", "architect"):
+        assert "skill-lint-gate" not in _composed_skill_names(role), (
+            f"{role} unexpectedly received skill-lint-gate"
+        )
