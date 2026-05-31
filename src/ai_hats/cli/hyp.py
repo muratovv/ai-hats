@@ -107,6 +107,11 @@ def hyp_show(hyp_id: str):
 @click.option("--observation-window", default=None, help="e.g., '4 sessions' or '2 weeks'")
 @click.option("--success-criterion", default=None, help="How a verdict is decided")
 @click.option("--rollback-condition", default=None, help="When to revert")
+@click.option(
+    "--verification-protocol",
+    default=None,
+    help="Verification protocol for library-change companion HYPs (HATS-623)",
+)
 @click.option("--json", "as_json", is_flag=True)
 def hyp_create(
     title: str,
@@ -117,6 +122,7 @@ def hyp_create(
     observation_window: str | None,
     success_criterion: str | None,
     rollback_condition: str | None,
+    verification_protocol: str | None,
     as_json: bool,
 ):
     """Create a new HYP-NNN. Auto-id; status=active; created=today (UTC)."""
@@ -134,6 +140,9 @@ def hyp_create(
         observation_window=observation_window,
         success_criterion=success_criterion,
         rollback_condition=rollback_condition,
+        # Extra field (model is extra="allow"); dropped from YAML when None
+        # via model_dump(exclude_none=True), same as the optionals above.
+        verification_protocol=verification_protocol,
     )
     try:
         store.create(h)
