@@ -18,6 +18,7 @@ from .paths import hooks_dir as _lib_hooks_dir
 from .paths import managed_runtime_hook_filename
 from .paths import session_cache_dir
 from .placeholders import expand_path_placeholders
+from .role_catalog import expand_role_catalog
 
 
 INJECTION_START = "<!-- AI-HATS:START -->"
@@ -309,6 +310,9 @@ class GeminiProvider(Provider):
         prompt_content = self.build_system_prompt(result)
         # HATS-380: expand placeholder before the prompt reaches the agent.
         prompt_content = expand_path_placeholders(prompt_content, project_dir)
+        # HATS-625: expand <available_roles> with the live role catalog
+        # (no-op unless the placeholder is present, e.g. the initial-wizard).
+        prompt_content = expand_role_catalog(prompt_content, project_dir)
 
         # Per-session cache dir (HATS-294): gitignored, swept by TTL.
         cache_dir = session_cache_dir(project_dir, session_id)
@@ -432,6 +436,9 @@ class ClaudeProvider(Provider):
         # HATS-380: expand placeholder before --system-prompt-file content
         # reaches the agent.
         prompt_content = expand_path_placeholders(prompt_content, project_dir)
+        # HATS-625: expand <available_roles> with the live role catalog
+        # (no-op unless the placeholder is present, e.g. the initial-wizard).
+        prompt_content = expand_role_catalog(prompt_content, project_dir)
 
         # Build full file content preserving project-local sections.
         # HATS-285: handle both legacy uppercase markers and the new lowercase
