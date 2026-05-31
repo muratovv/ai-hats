@@ -1,0 +1,21 @@
+# agnix config — SKILL.md validation for the ai-hats library (HATS-617).
+#
+# agnix (https://github.com/avifenesh/agnix) lints our library/**/SKILL.md
+# against the Claude Code skill spec. It is invoked:
+#   * locally  — by the `skill-lint-gate` pre-commit hook (maintainer /
+#                role-curator roles), over STAGED skills only;
+#   * in CI    — by the `lint-skills` job (HATS-627), over the whole library.
+# The target client is declared here via `tools` (agnix 0.29 deprecated the
+# `target` field / `--target` flag in favour of the `tools` array).
+tools = ["claude-code"]
+
+[rules]
+# Rules disabled as false positives under THIS project's SKILL.md convention
+# (PoC evidence: HATS-617). Re-evaluate if the convention changes.
+#   XML-001    — prose placeholders like <path> / <name> in examples are not
+#                real XML tags; we intentionally write them inline.
+#   XP-SK-001  — we target Claude Code; `user-invocable` and similar
+#                client-specific fields are intentional, not portability bugs.
+#   VER-001    — we do not pin tool/spec versions in [tool_versions]; the
+#                lint runs against a pinned agnix release instead.
+disabled_rules = ["XML-001", "XP-SK-001", "VER-001"]
