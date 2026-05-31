@@ -293,17 +293,15 @@ def test_initial_wizard_recommends_dev_python_for_pyproject() -> None:
     assert "**dev-python**" in body
 
 
-def test_initial_wizard_lists_dev_python_in_available_roles() -> None:
+def test_initial_wizard_uses_live_role_catalog_placeholder() -> None:
+    # HATS-625: the wizard no longer hand-maintains a role list (it drifted —
+    # missed dev-web, role-curator, project roles). The Available-roles section
+    # now injects the LIVE catalog via the <available_roles> placeholder,
+    # expanded at prompt-build time. The "dev-python is surfaced" runtime
+    # guarantee moved to tests/test_role_catalog.py.
     body = _read("library/core/roles/initial-wizard/config.yaml")
-    # The role description block surfaces dev-python as a distinct option.
-    # Anchor on the Available-roles section header so this test doesn't
-    # silently pass on the Step 3 mapping bullet (which uses the same string).
-    available_idx = body.index("## Available base roles")
-    step3_idx = body.index("### Step 3")
-    available_section = body[available_idx:step3_idx]
-    assert "**dev-python**" in available_section, (
-        "dev-python must appear in the Available-roles section, not only the Step 3 mapping"
-    )
+    assert "<available_roles>" in body, "wizard must inject the live role catalog"
+    assert "## Available base roles" not in body, "the baked role list must be gone"
 
 
 def test_initial_wizard_recommends_dev_python_for_setup_py() -> None:

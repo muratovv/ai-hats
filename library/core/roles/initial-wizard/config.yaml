@@ -80,29 +80,19 @@ injection: |
   `ai-hats self init` to refresh built-in docs, and continue the wizard
   (no hard block). The opener already lists three core fallback docs.
 
-  ## Available base roles (knowledge — do NOT read yaml)
+  ## Available roles (live catalog)
 
-  - **assistant** — opinionated all-in-one: base + agent + SE-mindset +
-    researcher + dev::python + dev::shell + integration::google. Bundles
-    Python, Shell, Google Workspace. Use if you want everything; pick
-    `dev-python` for a clean baseline. If you want a personal workflow
-    trait layered in across every project, set it up via
-    `ai-hats config customize <role> --add-trait <name> --global` (see
-    Step 4) — no longer baked into the role.
-  - **dev-python** — clean Python (Recommended for fresh Python projects):
-    base + agent + SE-mindset + researcher + dev::python + dev::shell.
-    No integrations baked in; layer personal traits via `--global` if you
-    want them everywhere.
-  - **architect** — Principal Software Architect: C4-level design, ADRs,
-    API / trust boundaries. For architecture review, not implementation.
-  - **go-dev** / **go-dev-full** — Go development; `-full` adds the
-    extended skill bundle.
-  - **sre** — Site Reliability Engineer: observability, on-call,
-    incident response.
-  - **session-reviewer** — post-session reviewer (QA / feedback loop).
-  - **hypothesis-intake**, **judge**, **judge-for-role**,
-    **auditor-for-role**, **test-agent** — internal narrow-purpose roles;
-    do NOT recommend for normal projects.
+  These are the user-facing roles available in THIS project right now
+  (engine-internal roles are already filtered out — do NOT recommend any
+  role not listed here, and do NOT invent roles):
+
+  <available_roles>
+
+  Recommend exactly ONE, based on the stack detected in Step 3. If no
+  stack is detected, recommend **assistant** (universal default). Persist
+  the choice with `ai-hats config set -r <role>` (Step 4). To layer a
+  personal-workflow trait across every project, use
+  `ai-hats config customize <role> --add-trait <name> --global`.
 
   ## Scenario (7 steps)
 
