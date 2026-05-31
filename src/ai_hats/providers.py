@@ -13,6 +13,7 @@ from .composer import (
     collect_runtime_hooks,
     resolve_skill_script,
 )
+from .paths import CLAUDE_PROJECT_DIR_VAR
 from .paths import hooks_dir as _lib_hooks_dir
 from .paths import managed_runtime_hook_filename
 from .paths import session_cache_dir
@@ -601,8 +602,14 @@ class ClaudeProvider(Provider):
         settings.json never points at a file that will not exist).
         """
         def rel(path: Path) -> str:
+            # Claude Code resolves a relative PreToolUse ``command`` against the
+            # agent's cwd, NOT the project root — a bare relative path fails
+            # (exit 127) when a session / sub-agent starts in a subdirectory.
+            # Prefix with $CLAUDE_PROJECT_DIR (expanded at hook-execution time)
+            # so the command resolves regardless of cwd. Absolute fallback for
+            # hooks that live outside the project tree.
             try:
-                return str(path.relative_to(project_dir))
+                return CLAUDE_PROJECT_DIR_VAR + str(path.relative_to(project_dir))
             except ValueError:
                 return str(path)
 
