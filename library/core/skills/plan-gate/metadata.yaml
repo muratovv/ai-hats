@@ -1,0 +1,13 @@
+name: plan-gate
+description: The single entry point for the brainstorm→plan quality gate — maps each required plan section to the skill that fills it
+author: ai-hats
+tags: [agent-protocol, planning, gate, orchestrator]
+pattern: orchestrator
+
+triggers:
+  - "a task transitions brainstorm to plan"
+  - "drafting or revising plan.md and deciding which skill fills which section"
+  - "before requesting plan→execute, to route each required section to its owner"
+skip:
+  - "task is already in execute or later — the gate has passed"
+  - "implementation-stage edit inside an already-approved plan"
