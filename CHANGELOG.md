@@ -89,6 +89,24 @@ since the latest tag lives under **Unreleased** until the next release.
     transparently.
 
 ### Fixed
+- **SKILL.md lint findings closed (agnix Phase 1)** (HATS-626 / HYP-059).
+  Three error classes the HATS-617 agnix PoC surfaced are now green:
+  (a) 5 protocol skills shipped with **no YAML frontmatter** — added
+  `name`+`description` to `judge-auditor-protocol`, `judge-protocol`,
+  `judge-role-protocol`, `review-role`, `maintainer-quality-gate` (the 3
+  with a `metadata.yaml` reuse its description verbatim). This also
+  un-degrades their Claude Code skill-catalog entries, which
+  `providers._extract_frontmatter_description` had been falling back to the
+  bare skill name for. (b) **34 broken `assets/*` links** across 5 golang
+  skills — re-vendored the 32 referenced asset files from the upstream
+  commit each skill's `metadata.yaml` already records (`b29499a`,
+  `samber/cc-skills-golang`), so the assets match the SKILL.md bodies.
+  (c) **`metadata.openclaw` nested-map** parse error in all 33 golang
+  frontmatters — stripped (kept `metadata.{author,version}`,
+  `user-invocable`, `license`, `compatibility`, `allowed-tools`). Removing
+  the openclaw parse error also unmasked a latent name/dir mismatch in
+  `golang-linter` (frontmatter `name: golang-lint` vs dir `golang-linter`),
+  now fixed. agnix reports 0 errors across all 89 library skills.
 - **Managed PreToolUse hook command resolves from any cwd**
   (HATS-615). `ClaudeProvider._desired_runtime_entries` wired the
   HATS-437 shared-state guard (and skill-declared runtime hooks) into
