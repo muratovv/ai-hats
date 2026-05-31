@@ -1,0 +1,27 @@
+name: webapp-testing
+description: "Verify a local web app actually renders and behaves in a real browser via Playwright — start the dev server, drive a headless browser, assert on DOM/visible text/navigation, check console errors, capture screenshots. Use as the task_complete gate for any UI change, or to debug 'it compiles but the page is broken'."
+author: ai-hats
+tags: [web, testing, playwright, frontend, verification]
+pattern: checklist
+
+triggers:
+  - "finished a UI change and need to confirm it works in a browser"
+  - "unit tests pass but the page may be visually or behaviorally broken"
+  - "debugging routing, event handlers, hydration, or console errors"
+  - "task_complete verification gate for a frontend task"
+skip:
+  - "backend/library code with no rendered surface"
+  - "a headless unit/integration test already exercises the exact behavior"
+
+# === upstream provenance — DISTILLED, not copied verbatim ===
+# License verified 2026-05-31 (WebFetch): anthropics/skills general skills
+# are Apache-2.0 (only docx/pdf/pptx/xlsx are source-available; webapp-testing
+# is open). Procedure-only distillation — upstream Playwright helper scripts
+# (with_server.py et al.) are NOT vendored.
+upstream:
+  - source: anthropics/skills (skills/webapp-testing)
+    url: https://github.com/anthropics/skills/tree/main/skills/webapp-testing
+    license: Apache-2.0
+    fetched_at: 2026-05-31
+    attribution: "webapp-testing skill by Anthropic"
+    note: "Distilled & adapted to ai-hats skill format; procedure only, no vendored scripts."

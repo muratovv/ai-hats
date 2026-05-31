@@ -1,0 +1,32 @@
+name: ui-ux-review
+description: "Two-mode UI/UX skill — guide mode applies cognitive UX rules while building (do/don't per page type), review mode audits an existing interface into P0/P1/P2 findings with executable fixes + acceptance criteria. Use when building or reviewing any web/app UI, when an LLM-generated interface 'works but looks like a prototype', or before shipping a user-facing screen."
+author: ai-hats
+tags: [web, ui, ux, review, frontend]
+pattern: checklist
+
+triggers:
+  - "building or styling a user-facing UI (form, dashboard, landing, table)"
+  - "reviewing or critiquing an existing interface"
+  - "UI works but looks generic / AI-generated / unpolished"
+  - "before shipping a user-facing screen"
+skip:
+  - "backend-only / API-only change with no rendered surface"
+  - "functional bugfix with no visual or interaction change"
+
+# === upstream provenance — DISTILLED, not copied verbatim ===
+# Per-source licenses verified 2026-05-31 (WebFetch). Distillation of
+# canonical UX knowledge into the ai-hats skill format; both licenses
+# permit attributed derivatives.
+upstream:
+  - source: oil-oil/oiloil-ui-ux-guide
+    url: https://github.com/oil-oil/oiloil-ui-ux-guide
+    license: Apache-2.0
+    fetched_at: 2026-05-31
+    attribution: "UI/UX guide + guide/review two-mode structure by oil-oil"
+    note: "Distilled & adapted to ai-hats skill format; not a verbatim copy."
+  - source: wondelai/skills
+    url: https://github.com/wondelai/skills
+    license: MIT
+    fetched_at: 2026-05-31
+    attribution: "Refactoring UI + UX-heuristics distillations by Wondel.ai"
+    note: "Distilled & adapted to ai-hats skill format; not a verbatim copy."
