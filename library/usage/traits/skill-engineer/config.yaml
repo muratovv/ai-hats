@@ -37,6 +37,7 @@ injection: |
   - Every trait used in at least one role
   - No redundancy between components
   - Injection text is minimal — details go into rules/skills
+  - When a role injection carries a `## Guardrails` section, its bullets are role-specific — not restatements of global rules or the role's own workflow (omit the section if the role has nothing role-specific to add)
 
   ### Obsolescence Criteria
   - Component references removed tools or workflows
