@@ -120,7 +120,11 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
     plans_dir.mkdir(parents=True, exist_ok=True)
     plan_path = plans_dir / "001-conflict.md"
     plan_path.write_text(
-        f"# {task_id} plan\n\nWrite to COLLIDE.txt and try to merge twice.\n"
+        f"# {task_id} plan\n\n"
+        "## Requirements\nWrite to COLLIDE.txt and try to merge twice.\n\n"
+        "## Scope & Out-of-scope\nin/out\n\n"
+        "## Steps\n- [ ] write\n\n"
+        "## Verification Protocol\nmerge twice\n"
     )
     ai_hats("task", "plan-sync", task_id, "--from-file", str(plan_path))
 

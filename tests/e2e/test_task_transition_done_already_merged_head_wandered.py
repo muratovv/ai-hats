@@ -121,8 +121,10 @@ def test_e2e_transition_done_already_merged_head_wandered(shared_launcher, tmp_p
     )
     assert plan_path.is_file(), f"plan scaffold missing: {plan_path}"
     plan_path.write_text(
-        "# Plan\n\n## Objective\nexercise already-merged short-circuit.\n\n"
-        "## Steps\n- [ ] do thing\n"
+        "# Plan\n\n## Requirements\nexercise already-merged short-circuit.\n\n"
+        "## Scope & Out-of-scope\nin/out\n\n"
+        "## Steps\n- [ ] do thing\n\n"
+        "## Verification Protocol\npytest\n"
     )
     ai_hats("task", "transition", task_id, "execute")
 

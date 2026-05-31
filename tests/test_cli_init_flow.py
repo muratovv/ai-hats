@@ -807,9 +807,15 @@ def test_task_list_table_filters(cli_project):
 
     # Transition third task to done (brainstorm → plan → execute → document → review → done)
     runner.invoke(main, ["task", "transition", "TASK-003", "plan"])
-    # Fill the scaffold so plan→execute guard passes (HATS-230).
+    # Fill every required section so the per-section plan→execute gate passes
+    # (HATS-230 created the gate; HATS-635 made it per-section).
     plan_path = tasks_dir(project) / "TASK-003" / "plan.md"
-    plan_path.write_text("# Plan\nfilled in for the test\n")
+    plan_path.write_text(
+        "# Plan\n\n## Requirements\nfilled in for the test\n\n"
+        "## Scope & Out-of-scope\nin/out\n\n"
+        "## Steps\n- [x] do thing\n\n"
+        "## Verification Protocol\npytest\n"
+    )
     for state in ["execute", "document", "review", "done"]:
         runner.invoke(main, ["task", "transition", "TASK-003", state])
 
