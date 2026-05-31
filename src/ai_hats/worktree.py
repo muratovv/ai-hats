@@ -1794,6 +1794,44 @@ class WorktreeManager:
         git_dir, common_dir = lines
         return Path(git_dir).resolve() != Path(common_dir).resolve()
 
+    @staticmethod
+    def main_worktree_root(path: Path) -> Path | None:
+        """Return the main worktree's root iff `path` is in a linked worktree.
+
+        Resolves through git's ``--git-common-dir``: a linked worktree's
+        ``--git-dir`` points at ``<main>/.git/worktrees/<name>`` while its
+        ``--git-common-dir`` points at the canonical ``<main>/.git``. When the
+        two differ (linked worktree) the main root is ``common_dir.parent``;
+        when they match (main worktree) or git can't tell, return ``None``.
+
+        HATS-524: ``_project_dir`` uses this to hop from a linked worktree
+        (whose checkout carries neither the gitignored ``.agent/`` nor the
+        untracked ``ai-hats.yaml``) back to the main checkout, where the live
+        tracker lives. Mirrors the single-``rev-parse`` invocation of
+        :meth:`is_inside_linked_worktree` (HATS-490).
+
+        Fail-safe: returns ``None`` on any subprocess error, non-git path, or
+        unexpected output — callers fall back to current behaviour, never worse.
+        """
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--path-format=absolute",
+                 "--git-dir", "--git-common-dir"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return None
+        lines = [line for line in result.stdout.splitlines() if line.strip()]
+        if len(lines) != 2:
+            return None
+        git_dir, common_dir = (Path(p).resolve() for p in lines)
+        if git_dir == common_dir:
+            return None  # main worktree — nothing to hop to
+        return common_dir.parent
+
     @classmethod
     def _find_linked_worktree_for_branch(
         cls, project_dir: Path, branch: str
