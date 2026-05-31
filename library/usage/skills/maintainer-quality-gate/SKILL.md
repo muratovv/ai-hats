@@ -1,3 +1,7 @@
+---
+name: maintainer-quality-gate
+description: Maintainer-only quality gates — pre-push e2e+smoke when pushing to master
+---
 # maintainer-quality-gate
 
 Maintainer-only quality gates for the ai-hats codebase, delivered as
