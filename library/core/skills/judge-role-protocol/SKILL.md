@@ -1,3 +1,7 @@
+---
+name: judge-role-protocol
+description: HITL dialogue + CLI ops contract for judge-for-role — file-fix tasks instead of editing role/skill/rule sources
+---
 # Judge Role Protocol
 
 HITL contract for **judge-for-role**. Use **role-coherence-protocol**
