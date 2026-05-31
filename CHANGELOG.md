@@ -23,6 +23,15 @@ since the latest tag lives under **Unreleased** until the next release.
   shared renderer is `ai_hats.role_catalog.render_role_catalog`.
 
 ### Added
+- **`ai-hats task hyp create --verification-protocol TEXT`** (HATS-623).
+  `library-change-hypothesis-protocol` mandates a `verification_protocol`
+  field on companion HYPs, but `hyp create` exposed no flag and
+  `rule_backlog_discipline` forbids editing `hypotheses/*.yaml` directly —
+  so HATS-616 had to fold the protocol text into `--success-criterion`. The
+  `Hypothesis` model is already `extra="allow"` and persists via
+  `model_dump(exclude_none=True)`, so the field round-trips with no model or
+  storage change; the flag is dropped from the YAML when omitted. Consumed
+  by `reflect`/session-reviewer handoff (HATS-534).
 - **`dev-web` role — web/frontend development (JS/TS + React)** (HATS-616).
   Fills the one real library gap from the awesome-claude-skills review (no
   web role; Go had 40+ skills). Shape mirrors `dev-python` + `dev::python`:
