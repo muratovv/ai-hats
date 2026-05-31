@@ -7,13 +7,6 @@ compatibility: Designed for Claude Code or similar AI coding agents, and for pro
 metadata:
   author: samber
   version: "1.1.4"
-  openclaw:
-    emoji: "📚"
-    homepage: https://github.com/samber/cc-skills-golang
-    requires:
-      bins:
-        - go
-    install: []
 allowed-tools: Read Edit Write Glob Grep Bash(go:*) Bash(golangci-lint:*) Bash(git:*) Agent WebFetch WebSearch AskUserQuestion
 ---
 
