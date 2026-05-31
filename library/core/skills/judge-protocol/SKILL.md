@@ -1,3 +1,7 @@
+---
+name: judge-protocol
+description: HITL protocol for the judge role (Phase 2 of the two-phase judge split) — discuss the Phase 1 draft with the supervisor, ack and execute proposed mutations via CLI, write the final report.
+---
 # Judge Protocol
 
 HITL protocol for the **judge** role: discuss the Phase 1 draft with
