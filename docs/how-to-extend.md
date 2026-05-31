@@ -88,7 +88,11 @@ Weak at…`).
 - **Role-level, not trait/skill.** Guardrails live in the role's own `injection`.
   They express the boundaries of *this role*, not behavior shared via traits/skills.
 - **Place it early** — right after the identity paragraph, before `## Workflow`.
-  Earlier instructions carry more weight, and guardrails should frame everything below.
+  LLMs attend most strongly to the start and end of the context and recall
+  middle content measurably worse — the "lost-in-the-middle" / U-shaped attention
+  effect (Liu et al. 2023, *Lost in the Middle: How Language Models Use Long
+  Contexts*, TACL; arXiv:2307.03172). Guardrails sit early so they frame
+  everything below instead of being buried mid-prompt where recall degrades.
 - **Role-specific only.** Do not restate global rules (destructive-action,
   shared-state) or paraphrase the role's own `## Workflow`. If a constraint is already
   enforced by a rule or skill, it does not belong here.
