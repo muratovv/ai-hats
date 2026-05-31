@@ -86,15 +86,23 @@ def _project_dir() -> Path:
     Order of preference:
       1. Nearest ancestor (incl. CWD itself) that contains `.agent/` —
          that ancestor IS the project root for this backlog.
-      2. Nearest ancestor that contains `.git` (file or dir) — standard
+      2. Nearest ancestor that contains a `.git` **directory** — standard
          git-root semantics, used when the project hasn't been onboarded
          to ai-hats yet but the user is initializing it.
-      3. Fallback: CWD (projects without VCS or pre-init scenarios).
+      3. Nearest ancestor whose `.git` is a **file** — a gitlink, typically a
+         linked git worktree (HATS-524; a submodule's `.git` is also a file).
+         The worktree checkout carries neither the gitignored `.agent/` nor the
+         untracked `ai-hats.yaml`, and the main checkout is NOT a filesystem
+         ancestor (worktrees live under /tmp), so pass 1 can never reach it.
+         Hop to the main worktree root via git's commondir so `ai-hats task`
+         ops route through the one live tracker. Anything that isn't a linked
+         worktree (submodule, malformed pointer, git error) yields no hop and
+         falls back to the dir holding the `.git` file.
+      4. Fallback: CWD (projects without VCS or pre-init scenarios).
 
-    `.agent/` takes precedence over `.git/` so linked git worktrees that
-    don't carry their own `.agent/` resolve up to the main project root,
-    matching the user expectation that the backlog lives in one place per
-    repo.
+    `.agent/` takes precedence over `.git/` so a main checkout always resolves
+    to itself without spawning git — the worktree hop in pass 3 only fires when
+    no `.agent/` ancestor exists.
     """
     cwd = Path.cwd()
     candidates = [cwd, *cwd.parents]
@@ -104,8 +112,17 @@ def _project_dir() -> Path:
             return d
 
     for d in candidates:
-        if (d / ".git").exists():
+        git = d / ".git"
+        if git.is_dir():
             return d
+        if git.is_file():
+            # Gitlink (linked worktree / submodule): for a linked worktree,
+            # route to the main checkout's live tracker; otherwise fall back
+            # to this dir (current behaviour, never worse).
+            from ..worktree import WorktreeManager
+
+            main_root = WorktreeManager.main_worktree_root(d)
+            return main_root if main_root is not None else d
 
     return cwd
 
