@@ -10,6 +10,18 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Changed
+- **The init wizard now lists the live role catalog** instead of a
+  hand-maintained list that drifted (HATS-625). The `initial-wizard`
+  injection carries a new `<available_roles>` placeholder, expanded at
+  prompt-build time (`build_session_prompt`, next to the HATS-380
+  `<ai_hats_dir>` expansion) with the user-facing roles the resolver
+  actually sees — so new roles (e.g. `dev-web`, `role-curator`) and
+  project-local roles appear automatically, while engine-internal
+  (`core`-layer) roles are filtered out. Layer is derived from the
+  resolved role path; the per-role summary from its injection H1. The
+  shared renderer is `ai_hats.role_catalog.render_role_catalog`.
+
 ### Added
 - **`dev-web` role — web/frontend development (JS/TS + React)** (HATS-616).
   Fills the one real library gap from the awesome-claude-skills review (no
