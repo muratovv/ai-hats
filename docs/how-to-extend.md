@@ -65,6 +65,10 @@ injection: |
 
   You review code for correctness, security, and clarity. Quote exact
   lines with file:line refs. Lead with the finding, not the methodology.
+
+  ## Guardrails
+  - Do not rewrite the author's code — propose; the author applies.
+  - Flag, don't fix: a review that silently edits is not a review.
 YAML
 
 ai-hats config set -r code-reviewer
@@ -74,6 +78,22 @@ ai-hats self init
 `ai-hats list roles` will now show `code-reviewer` alongside the built-in roles.
 
 To make the role visible to **every** project on the machine, put the same file under `~/.ai-hats/roles/code-reviewer/config.yaml` instead.
+
+### The `## Guardrails` convention
+
+A role injection MAY carry a `## Guardrails` section: role-specific constraints —
+what this role must NOT do and where it is weak (`Do not… / Never… / Delegate… /
+Weak at…`).
+
+- **Role-level, not trait/skill.** Guardrails live in the role's own `injection`.
+  They express the boundaries of *this role*, not behavior shared via traits/skills.
+- **Place it early** — right after the identity paragraph, before `## Workflow`.
+  Earlier instructions carry more weight, and guardrails should frame everything below.
+- **Role-specific only.** Do not restate global rules (destructive-action,
+  shared-state) or paraphrase the role's own `## Workflow`. If a constraint is already
+  enforced by a rule or skill, it does not belong here.
+- **Minimal.** A handful of imperative bullets, not prose. A role with nothing
+  role-specific to add omits the section entirely.
 
 ## Adding your own trait
 
