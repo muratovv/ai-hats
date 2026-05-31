@@ -64,6 +64,22 @@ since the latest tag lives under **Unreleased** until the next release.
     transparently.
 
 ### Fixed
+- **Managed PreToolUse hook command resolves from any cwd**
+  (HATS-615). `ClaudeProvider._desired_runtime_entries` wired the
+  HATS-437 shared-state guard (and skill-declared runtime hooks) into
+  `.claude/settings.json` with a **bare relative** command path
+  (`.agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh`).
+  Claude Code resolves a relative hook `command` against the agent's
+  **cwd**, not the project root, so a session / sub-agent starting in a
+  subdirectory invoked a path that did not exist — `/bin/sh` exited 127
+  and the shared-state safety net was silently disabled (reproduced:
+  cwd=root → exit 0; cwd=subdir → exit 127). The emitted command is now
+  prefixed with `$CLAUDE_PROJECT_DIR/` (the existing
+  `paths.CLAUDE_PROJECT_DIR_VAR` single-source-of-truth, which Claude
+  Code expands at hook-execution time), so it resolves regardless of
+  cwd. The migration healer / asserter already strip the prefix, and
+  `_upsert_managed_entry` overwrites the stale bare entry in place, so
+  existing projects self-heal on `ai-hats self update`.
 - **Session-reviewer no longer crashes on dict-shaped observations**
   (HATS-610). The reviewer LLM occasionally emits an `observations`
   bullet as a single-key mapping (`{'<title>': '<detail>'}`) instead of
