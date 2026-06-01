@@ -19,7 +19,11 @@ since the latest tag lives under **Unreleased** until the next release.
   per-section gate (HATS-635) remains the enforcement backstop. Wired into
   `trait-agent`. Closes the plan-mode→`.claude/plans` salvage loophole left after
   HATS-637 at the discipline layer. `backlog-manager` and `rule_backlog_discipline`
-  now point here instead of duplicating the flow.
+  now point here instead of duplicating the flow. Covers the Claude Code plan-mode
+  two-phase reality (HATS-644): plan mode is read-only, so the `.claude/plans`
+  draft is expected Phase-1 scratch and the mandatory first post-approval action is
+  to transfer it into the tracker `plan.md`; when plan mode isn't forced, plan
+  directly in the tracker.
 
 ### Removed
 - **The `.claude/plans → plan-sync` plan detour is gone** (HATS-637). A plan is
