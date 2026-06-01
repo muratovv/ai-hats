@@ -3,7 +3,7 @@
 These three tests exercise the role-less :func:`tmp_project` fixture
 against CLI commands that don't require an active agent (free-tier:
 no SDK calls, $0 quota, <5s wall-clock target). Each maps to a Core
-scenario from ``.claude/plans/466-scenarios-catalog-v1.md``:
+scenario from the HATS-466 scenarios catalog:
 
 * ``test_list_providers_includes_claude_and_gemini`` → S-CLI-22
 * ``test_list_roles_shows_bundled_defaults`` → S-CLI-23 (adjusted:
