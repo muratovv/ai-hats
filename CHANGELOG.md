@@ -10,6 +10,17 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+- **`plan-discipline` skill** (HATS-643) — the named discipline for the plan-home
+  invariant: a plan is always a task, authored directly into the canonical
+  `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md`, and never routed through
+  `.claude/plans` (inert plan-mode scratch ≠ the plan). Carries the draft→tracker
+  transfer procedure and hands off to `plan-gate` for section filling; the engine
+  per-section gate (HATS-635) remains the enforcement backstop. Wired into
+  `trait-agent`. Closes the plan-mode→`.claude/plans` salvage loophole left after
+  HATS-637 at the discipline layer. `backlog-manager` and `rule_backlog_discipline`
+  now point here instead of duplicating the flow.
+
 ### Removed
 - **The `.claude/plans → plan-sync` plan detour is gone** (HATS-637). A plan is
   always a task and always lives at the one canonical path

@@ -12,6 +12,7 @@ section. It does **not** re-implement those skills.
 
 ## When to Use
 - Read this FIRST at `brainstorm → plan`, then invoke the per-section skills below — it is the single entry point that replaces the rival triggers the stage skills used to carry.
+- Prerequisite: the plan already lives in the tracker `plan.md`. Getting it there (home + draft→tracker transport, never `.claude/plans`) is skill **plan-discipline**; this skill only fills the sections.
 - Not a quality oracle: it routes, the owning skill judges. Don't put requirements/scope logic here.
 - Trivial task: a section may be filled directly or marked `N/A — <reason>`; the engine gate enforces non-emptiness, not depth.
 

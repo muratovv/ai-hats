@@ -60,6 +60,14 @@ Three kinds of cards with strict state machines. **All operations go through the
 
 State-machine diagrams — see [4]. Day-to-day workflow — see [7] (HATS-358, not yet written).
 
+**Plan home.** A Task's plan lives at exactly one canonical path —
+`<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md` — authored directly there via
+Write/Edit after `task transition <ID> plan`. `.claude/plans` is **not** a plan
+home: ai-hats ignores it (the import path was removed in HATS-637), so any file
+there is inert plan-mode scratch, not the plan. Discipline + draft→tracker
+procedure — skill `plan-discipline`; readiness routing — skill `plan-gate`;
+per-section enforcement — the engine gate (HATS-635).
+
 ## Attachment
 
 A file attached to a Task via `ai-hats task attach add`. Blob lives in
