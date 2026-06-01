@@ -33,14 +33,17 @@ OLD_SHA = "2" * 40
 def _make_pytest_stub(bindir: Path, exit_code: int) -> Path:
     """Write a fake ``pytest`` on PATH that records argv and exits with ``exit_code``.
 
-    The stub also writes its argv to ``bindir/last_argv`` so cases can
-    assert whether pytest was invoked at all.
+    The stub writes its argv to ``bindir/last_argv`` (so cases can assert
+    whether pytest was invoked at all) and the value of
+    ``AI_HATS_E2E_REQUIRE_VENV`` to ``bindir/last_require_venv`` (HATS-645 — so
+    cases can assert the gate armed the tier-2 fail-closed env).
     """
     bindir.mkdir(parents=True, exist_ok=True)
     stub = bindir / "pytest"
     stub.write_text(
         "#!/usr/bin/env bash\n"
         f'printf "%s\\n" "$@" > "{bindir}/last_argv"\n'
+        f'printf "%s" "${{AI_HATS_E2E_REQUIRE_VENV:-<unset>}}" > "{bindir}/last_require_venv"\n'
         f"exit {exit_code}\n"
     )
     stub.chmod(0o755)
@@ -136,6 +139,31 @@ def test_master_push_invokes_pytest_and_passes(tmp_path: Path):
     assert "integration or smoke" in argv
     assert "tests/e2e/" in argv
     assert "tests/smoke/" in argv
+
+
+@pytest.mark.integration
+def test_master_push_arms_require_venv_strict_mode(tmp_path: Path):
+    """HATS-645: a master push exports ``AI_HATS_E2E_REQUIRE_VENV=1`` into the
+    pytest child env, arming the tier-2 venv fixture's fail-closed mode.
+
+    Without this the venv fixture *skips* (not fails) when it cannot build its
+    venv offline, pytest exits 0, and the gate green-lights a push whose tier-2
+    e2e never ran — the exact false-green that shipped master with real
+    failures. Fail-under-revert: drop the ``export`` from the hook → the stub
+    records ``<unset>`` → this assertion fails.
+    """
+    bindir = tmp_path / "bin"
+    _make_pytest_stub(bindir, exit_code=0)
+    stdin = f"refs/heads/master {NEW_SHA} refs/heads/master {OLD_SHA}\n"
+
+    res = _run_hook(stdin, bindir)
+
+    assert res.returncode == 0, res.stderr
+    captured = (bindir / "last_require_venv").read_text()
+    assert captured == "1", (
+        "gate must export AI_HATS_E2E_REQUIRE_VENV=1 so the venv tier "
+        f"fails-closed; stub saw {captured!r}"
+    )
 
 
 @pytest.mark.integration

@@ -239,7 +239,11 @@ def _shared_launcher_venv(tmp_path_factory, repo_root: Path, request):
     """
     import subprocess as _subprocess
 
-    from _helpers.venv import build_launcher_venv, network_available
+    from _helpers.venv import (
+        build_launcher_venv,
+        network_available,
+        venv_unavailable,
+    )
 
     work = tmp_path_factory.mktemp("hats-venv-tier")
     failed_before = request.session.testsfailed
@@ -255,29 +259,33 @@ def _shared_launcher_venv(tmp_path_factory, repo_root: Path, request):
 
     request.addfinalizer(_finalize)
 
+    # HATS-645: every "cannot build the venv" exit routes through
+    # ``venv_unavailable`` — a graceful ``skip`` locally, but a ``fail`` when the
+    # master gate exports AI_HATS_E2E_REQUIRE_VENV=1 (a silent skip there is the
+    # false-green that let master ship with real e2e failures).
     if not network_available():
-        pytest.skip("pip not on PATH — cannot build launcher venv")
+        venv_unavailable("pip not on PATH — cannot build launcher venv")
     try:
         return build_launcher_venv(work, repo_root)
     except FileNotFoundError as exc:
-        pytest.skip(f"install-launcher.sh missing: {exc}")
+        venv_unavailable(f"install-launcher.sh missing: {exc}")
     except _subprocess.TimeoutExpired as exc:
         # HATS-582: the venv build exceeded its (generous) window — almost
         # always a degraded host (offline mid-build, or a corrupted pip
-        # cache refetching every dep with retry backoff). Skip the venv
-        # tier gracefully rather than ERROR-ing every dependent test: the
-        # shared venv is now a single point of failure for ~17 files, so a
-        # stuck build must degrade, not cascade.
+        # cache refetching every dep with retry backoff). Degrade the venv
+        # tier rather than ERROR-ing every dependent test: the shared venv is
+        # now a single point of failure for ~17 files, so a stuck build must
+        # degrade, not cascade.
         detail = getattr(exc, "stderr", None) or str(exc)
         if isinstance(detail, bytes):
             detail = detail.decode(errors="replace")
-        pytest.skip(
+        venv_unavailable(
             "launcher venv build timed out (degraded host / corrupted pip "
             f"cache); detail tail:\n{detail[-400:]}"
         )
     except (_subprocess.CalledProcessError, RuntimeError) as exc:
         detail = getattr(exc, "stderr", None) or str(exc)
-        pytest.skip(
+        venv_unavailable(
             "launcher venv build failed (likely offline / no warm pip cache); "
             f"detail tail:\n{detail[-400:]}"
         )
