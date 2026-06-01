@@ -22,6 +22,11 @@
 #     to serial when xdist is absent so a lean dev env never hard-fails.
 #   * pytest not on PATH → BLOCK (silent skip would let
 #     `pip uninstall pytest` bypass the gate).
+#   * HATS-645: exports `AI_HATS_E2E_REQUIRE_VENV=1` so the tier-2 venv
+#     fixture fails-closed instead of skipping when it cannot build its
+#     venv (offline / cold pip cache). A silent skip there used to pass
+#     the gate green and let master ship with real e2e failures — the
+#     gate now treats "cannot verify" as "cannot push".
 #   * No env-var bypass. `git push --no-verify` is the only escape and
 #     it disables every other hook too — that's the accepted tradeoff
 #     (see SKILL.md "How to bypass").
@@ -115,6 +120,11 @@ else
     echo "[e2e-gate] pytest-xdist absent — running serial" >&2
 fi
 
+# HATS-645: arm the tier-2 venv fixture's fail-closed mode. Without this the
+# session venv build skips (not fails) when it can't reach the network, pytest
+# exits 0, and the gate green-lights a push whose tier-2 e2e never actually ran.
+export AI_HATS_E2E_REQUIRE_VENV=1
+
 output=$(
     cd "$repo_root" && \
     pytest -m "integration or smoke" tests/e2e/ tests/smoke/ \
@@ -136,6 +146,16 @@ fi
 
 echo "[e2e-gate] pytest FAILED (rc=$rc) — push to master BLOCKED:" >&2
 echo "$output" | tail -40 >&2
+if echo "$output" | grep -q "AI_HATS_E2E_REQUIRE_VENV"; then
+    cat >&2 <<'EOF'
+
+[e2e-gate] The failure above is a FAIL-CLOSED venv-tier skip (HATS-645): the
+tier-2 e2e venv could not be built (offline / cold pip cache), so the gate
+could not actually run those tests. A skip here used to pass the gate green and
+let master ship with real failures — it now blocks. Restore network / warm the
+pip cache and retry.
+EOF
+fi
 cat >&2 <<'EOF'
 
 Fix the failing tests before pushing to master, or use
