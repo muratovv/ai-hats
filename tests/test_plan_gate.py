@@ -107,6 +107,53 @@ def test_missing_plan_file_flags_every_required_section(mgr: TaskManager) -> Non
     assert mgr._unfilled_sections(task) == ALL_REQUIRED
 
 
+# --- conditional "Approach & counter" value-counter stage (HATS-621) -------
+# The devils-advocate stage is scaffolded and skill-routed but `required=False`:
+# the gate never blocks `execute` on it. An empty Approach & counter must NOT
+# appear in `_unfilled_sections` — the "non-trivial plans fill it" norm is
+# behavioural, not engine-enforced.
+
+
+def test_approach_and_counter_is_a_conditional_section() -> None:
+    by_name = {s.name: s for s in PLAN_SECTIONS}
+    assert "Approach & counter" in by_name, (
+        "M3 (HATS-621) must add the 'Approach & counter' section to PLAN_SECTIONS"
+    )
+    assert by_name["Approach & counter"].required is False, (
+        "'Approach & counter' must be conditional (required=False) — it never "
+        "blocks the gate; the fill-or-N/A norm is behavioural"
+    )
+
+
+def test_approach_and_counter_sits_after_requirements_before_scope() -> None:
+    # Order C (the agreed flow: interview ⇄ devils-advocate → design-minimalism).
+    names = [s.name for s in PLAN_SECTIONS]
+    assert names.index("Approach & counter") == names.index("Requirements") + 1
+    assert names.index("Approach & counter") < names.index("Scope & Out-of-scope")
+
+
+def test_blank_scaffold_does_not_flag_the_optional_section(mgr: TaskManager) -> None:
+    task = _write_plan(
+        mgr, PLAN_SCAFFOLD.format(task_id="HATS-001", title="Probe")
+    )
+    # The scaffold carries an empty `## Approach & counter`, but it is optional.
+    assert "Approach & counter" not in mgr._unfilled_sections(task)
+
+
+def test_all_required_filled_with_empty_optional_passes(mgr: TaskManager) -> None:
+    # Every required section filled; Approach & counter present but empty.
+    task = _write_plan(
+        mgr,
+        "# Plan for HATS-001: Probe\n\n"
+        "## Requirements\nShip the value-counter stage.\n\n"
+        "## Approach & counter\n\n"
+        "## Scope & Out-of-scope\nIn: section. Out: role.\n\n"
+        "## Steps\n- [x] do thing\n\n"
+        "## Verification Protocol\npytest -q\n",
+    )
+    assert mgr._unfilled_sections(task) == []
+
+
 # --- plan-gate orchestrator ↔ engine sync (HATS-636) ----------------------
 # The `plan-gate` skill is a table of contents: its section→skill table must
 # list exactly the engine's PLAN_SECTIONS, in order. If the engine adds /

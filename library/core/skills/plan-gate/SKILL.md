@@ -25,9 +25,19 @@ stays identical to it — see `tests/test_plan_gate.py`):
 | Plan section | Owning skill / how to fill |
 |---|---|
 | Requirements | `requirements-interview` — per question: collect context → propose a cited best-guess → supervisor reviews. |
+| Approach & counter | `devils-advocate` — *conditional* value-counter (explicit `N/A — <reason>` for trivial tasks): steelman the value → name its unstated assumption → counter it (needed? missed anything? another way?) → assess impact. |
 | Scope & Out-of-scope | `design-minimalism` — every primitive justified by a current-epic use case; speculative ideas → Out of scope. |
 | Steps | Self-authored ordered list; `backlog-manager` `plan-extract` to split into child tasks once headings stabilise. |
 | Verification Protocol | Self-authored — the concrete checks that prove the work (tests, in-process composition, lint). |
+
+The three challenge stages run as a chain, not in parallel:
+`requirements-interview` states the value → `devils-advocate` challenges it
+(loop until it settles: *is this needed? did we miss anything? is there another
+way?*) → `design-minimalism` then minimises the means of what survives. That is
+why `Approach & counter` sits **before** `Scope & Out-of-scope`. The
+`Approach & counter` row is conditional (`required=False`): the engine never
+blocks `execute` on it, but a non-trivial plan should carry a real counter or an
+explicit `N/A`.
 
 The gate fires on plan→execute and reopens nothing already passed. This skill's
 job is upstream: ensure each section has an owner so none is filled by guesswork

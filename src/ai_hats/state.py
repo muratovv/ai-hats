@@ -30,9 +30,12 @@ class Section:
     """One section of the plan template.
 
     `required=True` sections are enforced by the plan→execute gate (see
-    `TaskManager._unfilled_sections`). The flag is carried now (all True in
-    M1 / HATS-635) so M3 can add a `required=False` "Approach & counter"
-    section without restructuring the schema or the gate.
+    `TaskManager._unfilled_sections`). `required=False` sections (e.g. the
+    "Approach & counter" value-counter stage added in M3 / HATS-621) are
+    scaffolded and skill-routed but never block the transition — the
+    "non-trivial plans must fill it or write explicit N/A" norm is
+    behavioural (the `devils-advocate` skill + companion HYP), since the
+    engine cannot judge triviality.
     """
 
     name: str
@@ -44,6 +47,10 @@ class Section:
 # THIS list, so contract and enforcement can never drift (HATS-635).
 PLAN_SECTIONS: list[Section] = [
     Section(name="Requirements"),
+    # Conditional value-counter stage (M3 / HATS-621): challenge the value
+    # stated in Requirements *before* scoping. required=False → never blocks
+    # the gate; routed by the `devils-advocate` plan-gate stage.
+    Section(name="Approach & counter", required=False),
     Section(name="Scope & Out-of-scope"),
     Section(name="Steps"),
     Section(name="Verification Protocol"),
