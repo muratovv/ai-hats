@@ -1,15 +1,16 @@
 ---
 name: plan-discipline
-description: Get a plan into its one canonical home — the tracker plan.md — never .claude/plans. Run this skill the moment you enter plan mode (EnterPlanMode); also when you have a plan draft (incl. plan-mode / ExitPlanMode output) or a task enters brainstorm→plan. It walks task creation and draft→tracker authoring.
+description: Get a plan into its one canonical home — the tracker plan.md — never .claude/plans. Run this skill when you enter plan mode (EnterPlanMode), when you have a plan draft (incl. plan-mode / ExitPlanMode output), or when a task enters brainstorm→plan. It walks task creation and draft→tracker authoring, including the plan-mode two-phase flow.
 ---
 # Plan Discipline
 
-A plan is always a task, authored directly into `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md`. Nowhere else.
+A plan is always a task, authored into `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md`. Nowhere else.
 
 ## When to Use
-- **On `EnterPlanMode`, run this skill first** — before drafting. Plan mode is for
-  *designing*; the plan of record must still become a task in the tracker, not
-  loose plan-mode text or a `.claude/plans` file.
+- **On `EnterPlanMode`, recall this skill** — so you treat the plan-mode draft as
+  scratch and persist it into the tracker the moment you exit (see the two-phase
+  flow below). Plan mode is for *designing + approval*; the plan of record still
+  becomes a task in the tracker.
 - Also whenever a plan must be persisted — a draft in chat or a plan-mode
   artifact — even if no task exists yet.
 - This skill is the plan's **home and transport** (where the file lives, how the
@@ -25,23 +26,26 @@ A plan is always a task, authored directly into `<ai_hats_dir>/tracker/backlog/t
 Run all `task` / `wt` CLI from the **main repo** — the tracker lives under the
 gitignored `.agent/`, so a linked worktree has no real tracker.
 
-1. **Enter plan mode → start here.** Design freely, but treat any plan-mode chat
-   or `.claude/plans/<NN>-*.md` as throwaway scratch — not the plan of record.
-2. **Make the task.** If one doesn't exist yet, create it:
-   ```
-   ai-hats task create "<title>" -d "<one-line intent>" [-p high|medium|low] [--id PROJ-NNN]
-   ```
-   New tasks start in `brainstorm`; clarify scope there if it's fuzzy, then move on.
-3. **Scaffold the canonical file.** `ai-hats task transition <ID> plan` writes the
-   empty `tasks/<ID>/plan.md`.
-4. **Author the plan straight into it** with Write/Edit. If plan mode produced a
-   draft (chat, or a `.claude/plans/<NN>-*.md`), copy its content in — Read the
-   draft → Write the tracker `plan.md`. There is **no sync**: the `.claude/plans`
-   import path was removed (HATS-637), so a file there is inert.
-5. **Fill the required sections** (route each via `plan-gate`).
-   `ai-hats task transition <ID> execute` stays blocked until each is non-empty.
-6. **The `.claude/plans` draft is now scratch** — leave or delete it; it is never
-   the plan of record.
+### Preferred — plan directly in the tracker (no plan mode)
+When you control the flow, skip Claude Code plan mode and author straight into the
+tracker — zero round-trip, no `.claude/plans` file.
+1. **Make the task** (if none): `ai-hats task create "<title>" -d "<intent>" [-p high|medium|low] [--id PROJ-NNN]` — starts in `brainstorm`; clarify scope there if fuzzy.
+2. **Scaffold:** `ai-hats task transition <ID> plan` → empty `tasks/<ID>/plan.md`.
+3. **Author into it** (Write/Edit), filling the required sections (route each via
+   `plan-gate`). `transition <ID> execute` stays blocked until they're non-empty.
+
+### In Claude Code plan mode — two phases
+Plan mode is **read-only**: it blocks `task` CLI and every write except
+`.claude/plans/<slug>.md`, so the tracker flow is impossible *until you exit*.
+That's expected — don't fight it, and don't apologise for the draft.
+- **Phase 1 — in plan mode:** design; draft into `.claude/plans/<slug>.md`;
+  present via `ExitPlanMode`. Do **not** attempt `task create` / `transition` /
+  tracker writes — they are blocked. The draft is scratch, not the plan of record.
+- **Phase 2 — immediately on approval / exit:** your **first** action, before any
+  other execute work, is to persist into the tracker — `task create` (if needed)
+  → `transition <ID> plan` → Read the `.claude/plans` draft → Write it into
+  `tasks/<ID>/plan.md` → fill/confirm sections → `transition <ID> execute`. There
+  is no auto-sync (HATS-637); the `.claude/plans` file is now inert, leave or delete.
 
 ## Completion
 - `tasks/<ID>/plan.md` holds the real plan; no task-bearing file remains in
@@ -49,9 +53,12 @@ gitignored `.agent/`, so a linked worktree has no real tracker.
 - Handoff: plan in tracker → `plan-gate` (section quality) → engine gate → execute.
 
 ## Anti-Patterns
-- Treating a plan-mode `.claude/plans/<NN>-*.md` as the plan — it is inert scratch;
-  ai-hats does not read it.
+- Treating the plan-mode `.claude/plans/<slug>.md` as the plan — in plan mode it is
+  Phase-1 scratch; the plan isn't real until transferred to the tracker on exit.
+- Skipping the Phase-2 transfer (or deferring it behind other execute work) —
+  persisting into the tracker is the **first** post-approval action.
+- Fighting plan mode by trying `task` CLI / tracker writes while still in it — they
+  are blocked; draft, exit, then persist.
 - Drafting a plan without a task — if it's a plan, you made a task.
-- Expecting `plan-sync` / any auto-import — removed in HATS-637; author directly.
 - Running `task` / `transition` from inside a worktree — the gitignored tracker
   isn't there; ids and state desync. Use the main repo.
