@@ -17,6 +17,14 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import NoReturn
+
+import pytest
+
+
+# HATS-645: the master pre-push e2e gate sets this to "1" so a venv-tier that
+# cannot build fails-closed instead of skipping (see :func:`venv_unavailable`).
+REQUIRE_VENV_ENV = "AI_HATS_E2E_REQUIRE_VENV"
 
 
 def build_launcher_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
@@ -114,3 +122,28 @@ def network_available() -> bool:
     — the build itself will fail loudly if the assumption breaks.
     """
     return shutil.which("pip") is not None or shutil.which("pip3") is not None
+
+
+def venv_unavailable(reason: str) -> NoReturn:
+    """Fail-or-skip when the shared venv tier cannot build (HATS-645).
+
+    Normal (local) runs ``pytest.skip`` — an offline dev still gets a green
+    suite minus the venv tier, the "degrade, not cascade" contract that keeps a
+    stuck build from cascading into ERRORs across ~17 dependent files.
+
+    But when the master pre-push gate exports ``AI_HATS_E2E_REQUIRE_VENV=1``, a
+    venv build that cannot happen is a **failure**, not a skip. A silent skip
+    there is the false-green that let master ship with two real e2e failures
+    (HATS-645 Problem 2): the gate runs ``pytest -m "integration or smoke"`` and
+    treats a 0 exit as "suite passed", so skipped tier-2 tests pass the gate
+    even though they would FAIL if actually run. Fail-closed: cannot verify ⇒
+    cannot push (the gate's stated contract — ``--no-verify`` is the only
+    escape).
+    """
+    if os.environ.get(REQUIRE_VENV_ENV) == "1":
+        pytest.fail(
+            f"venv-tier required ({REQUIRE_VENV_ENV}=1) but unavailable — "
+            f"fail-closed (HATS-645): {reason}",
+            pytrace=False,
+        )
+    pytest.skip(reason)
