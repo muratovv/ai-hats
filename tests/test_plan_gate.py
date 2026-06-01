@@ -2,7 +2,7 @@
 
 Covers `TaskManager._unfilled_sections` in isolation — no subprocess, no git.
 The gate's integration behaviour (transition plan→execute) lives in
-`tests/test_plan_sync.py`; the real-binary path in `tests/e2e/`.
+`tests/test_plan_scaffold.py`; the real-binary path in `tests/e2e/`.
 """
 
 from __future__ import annotations
