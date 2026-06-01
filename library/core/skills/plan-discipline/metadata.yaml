@@ -1,0 +1,13 @@
+name: plan-discipline
+description: Author plans into the one canonical home (tracker plan.md), never .claude/plans — incl. the draft→tracker transfer procedure
+author: ai-hats
+tags: [agent-protocol, planning, discipline, backlog]
+pattern: protocol
+
+triggers:
+  - "you have a plan draft (chat or a plan-mode / ExitPlanMode artifact) to persist"
+  - "about to write a plan down, or a task enters brainstorm→plan"
+  - "a .claude/plans file exists and you must get the plan into the tracker"
+skip:
+  - "filling the quality of each plan section — use plan-gate + the per-section skills"
+  - "task already in execute or later — the plan is persisted and the gate has passed"

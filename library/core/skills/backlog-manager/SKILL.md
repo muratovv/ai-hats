@@ -390,18 +390,10 @@ Draft an implementation plan. Attach to task directory as `plan.md`.
 - Break large tasks into subtasks with delegation recommendations
 - Before delegating → **context-handoff**: summarize context for sub-agent
 - **Plan file location:** write plans **directly into**
-  `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md` — the empty scaffold
-  created by `transition <ID> plan`. Use the Write or Edit tool. The
-  tracker `plan.md` is the canonical location; no sync step is needed.
-  `transition <ID> execute` is blocked until `plan.md` is no longer the
-  empty scaffold. Example end-to-end:
-  ```
-  ai-hats task transition HATS-NNN plan        # scaffolds tracker plan.md
-  # Write tool → .agent/ai-hats/tracker/backlog/tasks/HATS-NNN/plan.md
-  ai-hats task transition HATS-NNN execute     # reads plan.md, advances FSM
-  ```
-  This is the only plan home. There is no `.claude/plans` round-trip and no
-  `plan-sync` step: if it's a plan, you made a task and wrote it here.
+  `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md` (the scaffold from
+  `transition <ID> plan`); `transition execute` is blocked until it is non-empty.
+  The full draft→tracker procedure and the `.claude/plans` ban live in skill
+  **plan-discipline** — that is the canonical authoring flow.
 - **Plan → subtasks:** once the plan has `## Subtasks`, `## Steps`, or numbered
   `### N. …` / `### Phase N: …` headings, run
   `ai-hats task plan-extract <ID>` to surface candidates and create child
