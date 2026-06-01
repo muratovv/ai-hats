@@ -391,14 +391,8 @@ Draft an implementation plan. Attach to task directory as `plan.md`.
   # Write tool → .agent/ai-hats/tracker/backlog/tasks/HATS-NNN/plan.md
   ai-hats task transition HATS-NNN execute     # reads plan.md, advances FSM
   ```
-  **Editable-scratch alternative (opt-in).** If the plan needs heavy
-  cross-session iteration before settling, write to
-  `<project>/.claude/plans/<NN>-<slug>.md` (or `<prefix-lower>-<NN>-<slug>.md`)
-  and let `transition <ID> plan` auto-pick the matching file into the tracker.
-  For ambiguous matches or unconventional paths, use
-  `ai-hats task plan-sync <ID> [--from-file <path>]`. Choose this route only
-  when the cross-session scratch is the actual goal; otherwise direct write
-  to the tracker is shorter and leaves no orphan files.
+  This is the only plan home. There is no `.claude/plans` round-trip and no
+  `plan-sync` step: if it's a plan, you made a task and wrote it here.
 - **Plan → subtasks:** once the plan has `## Subtasks`, `## Steps`, or numbered
   `### N. …` / `### Phase N: …` headings, run
   `ai-hats task plan-extract <ID>` to surface candidates and create child

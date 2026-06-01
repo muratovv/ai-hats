@@ -10,6 +10,18 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Removed
+- **The `.claude/plans → plan-sync` plan detour is gone** (HATS-637). A plan is
+  always a task and always lives at the one canonical path
+  `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md`. `transition <ID> plan` no
+  longer imports `.claude/plans/<NN>-*.md` (a stray file there is now inert),
+  and the `ai-hats task plan-sync` command is removed together with its engine
+  internals (`_sync_plan_from_claude_plans`, `find_claude_plan_for_task`,
+  `PlanSyncAmbiguousError`). Write plan content straight into the scaffold; the
+  per-section gate (HATS-635) still blocks `transition execute` on an empty
+  plan. Migration: replace `task plan-sync <id> --from-file <f>` with a direct
+  Write/Edit of the tracker `plan.md`.
+
 ### Changed
 - **The init wizard now lists the live role catalog** instead of a
   hand-maintained list that drifted (HATS-625). The `initial-wizard`

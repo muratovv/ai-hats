@@ -47,8 +47,8 @@ injection: |
     CLI — never direct file edits (see `rule_backlog_discipline §1`).
   - **Plan files:** edit `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md`
     directly via Write/Edit (scaffold created by `task transition <ID> plan`).
-    `.claude/plans/<NN>-*.md` + `task plan-sync` is opt-in for cross-session
-    editable scratch — see `backlog-manager` skill for the full flow.
+    This is the one canonical plan home — no `.claude/plans` round-trip, no
+    `plan-sync` step. See `backlog-manager` skill for the full flow.
 
   ### What NOT to commit
   - Real Claude / Gemini session recordings (JSONL dumps carry sessionId,
