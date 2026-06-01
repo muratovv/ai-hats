@@ -11,6 +11,19 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Added
+- **`devils-advocate` skill + conditional "Approach & counter" plan section**
+  (HATS-621, M3 of HATS-629) — the value-counter stage of the plan-gate. A new
+  `required=False` `Approach & counter` section sits between `Requirements` and
+  `Scope & Out-of-scope` (`PLAN_SECTIONS`); the engine never blocks `execute` on
+  it (the "non-trivial plans fill it or write explicit `N/A`" norm is behavioural,
+  carried by the skill + companion HYP). The `devils-advocate` skill ships the
+  4-step skeptic method — steelman the value → name the unstated assumption →
+  counter it (*needed? missed anything? another way?*) → assess impact — and is
+  wired into `trait-agent`. `plan-gate` documents the
+  `requirements-interview ⇄ devils-advocate → design-minimalism` flow, with
+  cross-refs in both sibling stages. Catches "right scope, wrong direction" — the
+  failure mode neither `requirements-interview` (WHAT) nor `design-minimalism`
+  (HOW MUCH) catches.
 - **`plan-discipline` skill** (HATS-643) — the named discipline for the plan-home
   invariant: a plan is always a task, authored directly into the canonical
   `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md`, and never routed through
