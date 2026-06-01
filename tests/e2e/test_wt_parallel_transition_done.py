@@ -80,22 +80,24 @@ def _task_state(project: Path, task_id: str) -> str:
 
 
 def _walk_task_to_review(
-    ai_hats, project: Path, task_id: str, plans_dir: Path,
+    ai_hats, project: Path, task_id: str,
     payload_file: str, payload_content: str,
 ) -> None:
     """plan → execute → write commit in worktree → document → review."""
     ai_hats("task", "transition", task_id, "plan")
 
-    plan_path = plans_dir / f"{task_id.lower()}.md"
+    # Plan content goes straight into the canonical task tree — no
+    # .claude/plans round-trip (HATS-637).
+    plan_path = (
+        project / ".agent" / "ai-hats" / "tracker" / "backlog"
+        / "tasks" / task_id / "plan.md"
+    )
     plan_path.write_text(
         f"# {task_id} plan\n\n"
         f"## Requirements\nWrite to {payload_file} and merge into base.\n\n"
         "## Scope & Out-of-scope\nin/out\n\n"
         "## Steps\n- [ ] write\n\n"
         "## Verification Protocol\nmerge\n"
-    )
-    ai_hats(
-        "task", "plan-sync", task_id, "--from-file", str(plan_path),
     )
     ai_hats("task", "transition", task_id, "execute")
 
@@ -158,15 +160,12 @@ def test_e2e_parallel_transition_done_no_data_loss(shared_launcher, tmp_path):
         "--task-prefix", "TST",
     )
 
-    plans_dir = project / ".claude" / "plans"
-    plans_dir.mkdir(parents=True, exist_ok=True)
-
     # ---- two tasks, both rooted in `main` ----
     task_a, task_b = "TST-001", "TST-002"
     ai_hats("task", "create", "Task A", "-d", "First", "--id", task_a)
     ai_hats("task", "create", "Task B", "-d", "Second", "--id", task_b)
-    _walk_task_to_review(ai_hats, project, task_a, plans_dir, "file-a.txt", "alpha\n")
-    _walk_task_to_review(ai_hats, project, task_b, plans_dir, "file-b.txt", "beta\n")
+    _walk_task_to_review(ai_hats, project, task_a, "file-a.txt", "alpha\n")
+    _walk_task_to_review(ai_hats, project, task_b, "file-b.txt", "beta\n")
 
     # Capture HEAD before the race for the merge-count assertion.
     head_before = _git(project, "rev-parse", "HEAD").stdout.strip()
