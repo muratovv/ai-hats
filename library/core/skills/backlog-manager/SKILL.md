@@ -31,6 +31,15 @@ CLI-only enforcement is owned by rule **rule_backlog_discipline**: never read or
 > ```
 > If neither works, the project's venv lives at `./.venv/bin/ai-hats`. Resolve the binary path explicitly — falling back blindly between `ai-hats` and the venv path wastes a turn.
 
+> **Run from the main repo, never a linked worktree.** The tracker
+> (`<ai_hats_dir>`, under the gitignored `.agent/`) is NOT version-controlled,
+> so a freshly-created worktree carries an empty tracker — its id counters
+> restart at `001` and collide with the real backlog. Run EVERY backlog CLI
+> write — `task create`/`transition`, `hyp create`, `proposal create` — from
+> the main repo. From inside a worktree they either fail (`task not found`) or
+> silently write to a throwaway tracker that never merges. The "edit work
+> happens in the worktree" rule applies to git-tracked source only.
+
 > **Note:** Task ID prefix is project-specific (e.g. `PROX-`, `INFRA-`). Examples below use `PROJ-` as a placeholder.
 
 ### Task ID prefix
