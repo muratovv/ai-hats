@@ -5,6 +5,7 @@ tags: [agent-protocol, planning, discipline, backlog]
 pattern: protocol
 
 triggers:
+  - "you enter plan mode (EnterPlanMode) — run first, before drafting"
   - "you have a plan draft (chat or a plan-mode / ExitPlanMode artifact) to persist"
   - "about to write a plan down, or a task enters brainstorm→plan"
   - "a .claude/plans file exists and you must get the plan into the tracker"
