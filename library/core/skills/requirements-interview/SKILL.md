@@ -17,6 +17,7 @@ trigger — `plan-gate` is the single entry point and routes here to fill the
 - Run it when that section is empty and the request leaves >2 independent assumptions about user intent.
 - Skip when requirements are already unambiguous from the request — fill the section directly.
 - Sibling stage: `design-minimalism` owns the adjacent `Scope & Out-of-scope` section — don't do scope-justification here.
+- Next stage: once you've stated the value (Q1 "Goal & user value"), `devils-advocate` challenges it in `Approach & counter` — *is it needed? did we miss anything? another way?* Loop with it until the value settles, then hand off to scope.
 
 ## Checklist
 

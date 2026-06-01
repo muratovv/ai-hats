@@ -22,6 +22,7 @@ trigger — `plan-gate` is the single entry point and routes here to fill the
 - Run it when that section is being written, or a plan proposes new abstractions, options, or sub-systems.
 - Trigger inside it: noticing the urge to "future-proof" or "add for completeness".
 - Sibling stage: `requirements-interview` owns the adjacent `Requirements` section — clarify *what* to build there, *how much* here.
+- Prior stage: `devils-advocate` (`Approach & counter`) runs first and challenges *whether the value holds*; this stage takes the surviving value as given and minimises the **means**. Don't re-litigate the value here — challenge scope, not direction.
 
 ## Checklist
 

@@ -1,0 +1,14 @@
+name: devils-advocate
+description: The Approach & counter stage of the plan-gate — a skeptic value-counter that challenges whether the work is worth doing (needed? missed anything? another way?) before scoping
+author: ai-hats
+tags: [agent-protocol, planning, approach, counter, plan-gate-stage]
+pattern: checklist
+
+triggers:
+  - "plan-gate routed you to fill the Approach & counter section of plan.md"
+  - "Requirements states a value/goal and the plan has not yet challenged whether it is worth doing"
+  - "a plan jumps from value straight to scope/steps with no counter-pass"
+
+skip:
+  - "trivial task with one obvious approach — write explicit N/A — <reason>"
+  - "implementation-stage edit inside an already-approved plan"
