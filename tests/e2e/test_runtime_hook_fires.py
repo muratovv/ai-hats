@@ -30,6 +30,8 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats.paths import strip_claude_project_dir
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURE_LIB = REPO_ROOT / "tests" / "fixtures" / "runtime_hook_lib"
@@ -96,7 +98,10 @@ def test_e2e_runtime_hook_body_runs_for_both_events(installed_launcher, tmp_path
     post_cmd = _managed_command(settings, "ai-hats:e2e-rthook:PostToolUse:Edit|Write")
     # Both events route to the same materialized script (one declared script).
     assert pre_cmd == post_cmd
-    script = project / pre_cmd
+    # The command carries the $CLAUDE_PROJECT_DIR/ runtime placeholder (HATS-615);
+    # strip it to get the on-disk, project-relative path.
+    rel_path = strip_claude_project_dir(pre_cmd)
+    script = project / rel_path
     assert script.is_file(), f"materialized script missing: {script}"
 
     marker = tmp_path / "marker.log"
@@ -111,7 +116,7 @@ def test_e2e_runtime_hook_body_runs_for_both_events(installed_launcher, tmp_path
             "tool_input": {"command": "ls -la"},
         })
         result = subprocess.run(
-            ["bash", str(project / command)],
+            ["bash", str(project / strip_claude_project_dir(command))],
             input=payload, cwd=str(project), env=hook_env,
             capture_output=True, text=True, timeout=10,
         )

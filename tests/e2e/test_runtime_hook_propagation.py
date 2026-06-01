@@ -34,11 +34,19 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats.paths import CLAUDE_PROJECT_DIR_VAR
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURE_LIB = REPO_ROOT / "tests" / "fixtures" / "runtime_hook_lib"
 MATERIALIZED_BASENAME = "e2e-rthook-probe.sh"
-REL_COMMAND = f".agent/ai-hats/library/hooks/{MATERIALIZED_BASENAME}"
+# On-disk location of the materialized script, project-root-relative.
+REL_PATH = f".agent/ai-hats/library/hooks/{MATERIALIZED_BASENAME}"
+# The command written into settings.json carries the ``$CLAUDE_PROJECT_DIR/``
+# prefix (HATS-615) so the hook resolves regardless of the agent's cwd. Derive it
+# from the SAME constant the impl uses (providers.py via paths.py) so this test
+# can never silently drift from the impl again — the drift that caused HATS-645.
+REL_COMMAND = CLAUDE_PROJECT_DIR_VAR + REL_PATH
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
@@ -124,8 +132,10 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
     assert pe[0]["matcher"] == "Edit|Write"
     assert pe[0]["hooks"] == [{"type": "command", "command": REL_COMMAND}]
 
-    # B. The script settings.json points at exists and is executable.
-    materialized = project / REL_COMMAND
+    # B. The script settings.json points at exists and is executable. The
+    # command carries the $CLAUDE_PROJECT_DIR/ prefix; the on-disk path is
+    # REL_PATH (the prefix is a Claude-Code runtime placeholder, not a real dir).
+    materialized = project / REL_PATH
     assert materialized.is_file(), f"materialized script missing: {materialized}"
     assert stat.S_IMODE(materialized.stat().st_mode) == 0o755
 
@@ -141,7 +151,7 @@ def test_e2e_materialized_runtime_hook_is_live(installed_launcher, tmp_path):
     project = tmp_path / "proj_rthook_live"
     _init_with_fixture_role(launcher, env, project)
 
-    script = project / REL_COMMAND
+    script = project / REL_PATH
     assert script.is_file(), "precondition: materialize must have run"
 
     deny = subprocess.run(
