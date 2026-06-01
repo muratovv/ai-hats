@@ -98,12 +98,13 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
     )
     ai_hats("task", "transition", task_id, "plan")
 
-    # Plan-sync requires a real plan file (the scaffold is rejected by
-    # strict_plan_check on transition execute). Write a minimal plan into
-    # .claude/plans/ and let plan-sync ingest it.
-    plans_dir = project / ".claude" / "plans"
-    plans_dir.mkdir(parents=True, exist_ok=True)
-    plan_path = plans_dir / "001-conflict.md"
+    # A real plan is required (the empty scaffold is rejected by
+    # strict_plan_check on transition execute). Write it straight into the
+    # canonical task tree — no .claude/plans round-trip (HATS-637).
+    plan_path = (
+        project / ".agent" / "ai-hats" / "tracker" / "backlog"
+        / "tasks" / task_id / "plan.md"
+    )
     plan_path.write_text(
         "# TST-001 plan\n\n"
         "## Requirements\nWrite to CONFLICT.txt and try to merge.\n\n"
@@ -111,7 +112,6 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
         "## Steps\n- [ ] write\n\n"
         "## Verification Protocol\nmerge\n"
     )
-    ai_hats("task", "plan-sync", task_id, "--from-file", str(plan_path))
 
     ai_hats("task", "transition", task_id, "execute")
 

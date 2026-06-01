@@ -116,9 +116,12 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
     )
     ai_hats("task", "transition", task_id, "plan")
 
-    plans_dir = project / ".claude" / "plans"
-    plans_dir.mkdir(parents=True, exist_ok=True)
-    plan_path = plans_dir / "001-conflict.md"
+    # Plan content goes straight into the canonical task tree — no
+    # .claude/plans round-trip (HATS-637).
+    plan_path = (
+        project / ".agent" / "ai-hats" / "tracker" / "backlog"
+        / "tasks" / task_id / "plan.md"
+    )
     plan_path.write_text(
         f"# {task_id} plan\n\n"
         "## Requirements\nWrite to COLLIDE.txt and try to merge twice.\n\n"
@@ -126,7 +129,6 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
         "## Steps\n- [ ] write\n\n"
         "## Verification Protocol\nmerge twice\n"
     )
-    ai_hats("task", "plan-sync", task_id, "--from-file", str(plan_path))
 
     ai_hats("task", "transition", task_id, "execute")
 
