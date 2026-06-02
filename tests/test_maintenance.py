@@ -502,3 +502,171 @@ def test_update_proceeds_when_ahead_behind_axes_none(tmp_path: Path) -> None:
     assert "Refusing to downgrade" not in output, \
         f"unexpected refusal on unresolved axes:\n{output}"
     assert _pip_called(captured), f"pip install missing: {captured}"
+
+
+# ---------- HATS-647: managed blue-green versioned install ----------
+
+from ai_hats.cli import maintenance as _mnt  # noqa: E402
+from ai_hats.cli.maintenance import (  # noqa: E402
+    _build_install_cmd,
+    _flip_current,
+    _is_managed_install,
+    _run_managed_versioned_update,
+)
+from ai_hats.paths import current_pointer, read_current_sha, version_dir  # noqa: E402
+
+
+def test_is_managed_editable_is_false(tmp_path, monkeypatch):
+    """Editable dev checkout never gets versioned."""
+    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (True, "file:///src"))
+    assert _is_managed_install(tmp_path) is False
+
+
+def test_is_managed_default_venv(tmp_path, monkeypatch):
+    """Active venv == <ai_hats_dir>/.venv → managed."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
+    exe = tmp_path / ".agent" / "ai-hats" / ".venv" / "bin" / "python"
+    monkeypatch.setattr(_mnt.sys, "executable", str(exe))
+    assert _is_managed_install(tmp_path) is True
+
+
+def test_is_managed_versioned_venv(tmp_path, monkeypatch):
+    """Active venv under versions/<sha>/ → managed."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
+    exe = tmp_path / ".agent" / "ai-hats" / "versions" / "deadbeef" / "bin" / "python"
+    monkeypatch.setattr(_mnt.sys, "executable", str(exe))
+    assert _is_managed_install(tmp_path) is True
+
+
+def test_is_managed_override_venv_is_false(tmp_path, monkeypatch):
+    """Active venv is a user-owned path elsewhere → not managed (HATS-339)."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
+    exe = tmp_path / "user-owned" / "bin" / "python"
+    monkeypatch.setattr(_mnt.sys, "executable", str(exe))
+    assert _is_managed_install(tmp_path) is False
+
+
+def test_build_install_cmd_url_and_local():
+    """Install target: PEP 508 `name @ url@ref` for URLs, bare path@ref otherwise."""
+    url_cmd = _build_install_cmd("/v/bin/python", "git+ssh://x/ai-hats.git", "abc")
+    assert url_cmd[:5] == ["/v/bin/python", "-m", "pip", "install", "--force-reinstall"]
+    assert url_cmd[-1] == "ai-hats @ git+ssh://x/ai-hats.git@abc"
+    local_cmd = _build_install_cmd("/v/bin/python", "/local/path", "abc")
+    assert local_cmd[-1] == "/local/path@abc"
+
+
+def test_flip_current_atomic_write(tmp_path, monkeypatch):
+    """_flip_current writes the sha to versions/current and is overwrite-safe."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    _flip_current(tmp_path, "aaaa1111")
+    assert current_pointer(tmp_path).read_text().strip() == "aaaa1111"
+    _flip_current(tmp_path, "bbbb2222")  # idempotent overwrite
+    assert current_pointer(tmp_path).read_text().strip() == "bbbb2222"
+
+
+def _versioned_fake_run(*, fail_at=None, bump_rec=None):
+    """subprocess.run side-effect for _run_managed_versioned_update.
+
+    Creates the venv dir on `-m venv`, succeeds for each phase unless
+    `fail_at` ('venv'|'install'|'verify') matches; records bump python.
+    """
+    def fake_run(args, **kwargs):
+        a = list(args)
+        if "venv" in a and "-m" in a:  # python -m venv <target>
+            if fail_at == "venv":
+                return _make_completed(a, returncode=1, stderr="venv boom")
+            target = Path(a[-1])
+            (target / "bin").mkdir(parents=True, exist_ok=True)
+            return _make_completed(a, returncode=0)
+        if "pip" in a:
+            return _make_completed(a, returncode=1 if fail_at == "install" else 0,
+                                   stderr="pip boom")
+        if any("_bootstrap" in x for x in a):
+            return _make_completed(a, returncode=1 if fail_at == "verify" else 0,
+                                   stderr="verify boom")
+        if "-c" in a:  # _version_string
+            return _make_completed(a, returncode=0, stdout="9.9.9\n")
+        if any("_bump_internal" in x for x in a):
+            if bump_rec is not None:
+                bump_rec.append(a[0])
+            return _make_completed(a, returncode=0)
+        return _make_completed(a, returncode=0)
+    return fake_run
+
+
+def test_managed_update_happy_path_flips_current(tmp_path, monkeypatch):
+    """Full managed update: installs into versions/<sha>, flips current, bumps
+    with the NEW venv python."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
+    bump_rec: list[str] = []
+    with patch("subprocess.run", side_effect=_versioned_fake_run(bump_rec=bump_rec)):
+        _run_managed_versioned_update(
+            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            old_version="1.0.0", active_role="assistant",
+            config_unreadable=False, migrate_force=False, check_branches=False,
+        )
+    assert read_current_sha(tmp_path) == "cafef00d"
+    # Bump ran with the NEW venv's python, not sys.executable.
+    expected_python = str(version_dir(tmp_path, "cafef00d") / "bin" / "python")
+    assert bump_rec == [expected_python]
+
+
+def test_managed_update_install_failure_does_not_flip(tmp_path, monkeypatch):
+    """pip install fails → current is NOT flipped (tool stays on old sha) and
+    no bump runs."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    bump_rec: list[str] = []
+    with patch("subprocess.run",
+               side_effect=_versioned_fake_run(fail_at="install", bump_rec=bump_rec)):
+        _run_managed_versioned_update(
+            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            old_version="1.0.0", active_role="assistant",
+            config_unreadable=False, migrate_force=False, check_branches=False,
+        )
+    assert read_current_sha(tmp_path) is None  # never flipped
+    assert not current_pointer(tmp_path).exists()
+    assert bump_rec == []  # bump skipped on failed install
+
+
+def test_managed_update_verify_failure_does_not_flip(tmp_path, monkeypatch):
+    """Post-install verify fails → current is NOT flipped."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    with patch("subprocess.run", side_effect=_versioned_fake_run(fail_at="verify")):
+        _run_managed_versioned_update(
+            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            old_version="1.0.0", active_role=None,
+            config_unreadable=False, migrate_force=False, check_branches=False,
+        )
+    assert read_current_sha(tmp_path) is None
+
+
+def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
+    """current already == target + dir present → no venv/pip/verify, bump only."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    # Pre-seed: versions/cafef00d/ exists and current points at it.
+    (version_dir(tmp_path, "cafef00d")).mkdir(parents=True, exist_ok=True)
+    _flip_current(tmp_path, "cafef00d")
+    calls: list[list[str]] = []
+
+    def rec_run(args, **kwargs):
+        calls.append(list(args))
+        return _make_completed(list(args), returncode=0)
+
+    with patch("subprocess.run", side_effect=rec_run):
+        _run_managed_versioned_update(
+            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            old_version="1.0.0", active_role="assistant",
+            config_unreadable=False, migrate_force=False, check_branches=False,
+        )
+    # No venv create / pip install / verify happened.
+    assert not any("venv" in c and "-m" in c for c in calls)
+    assert not any("pip" in c for c in calls)
+    # Bump ran with sys.executable (the live venv already IS the target).
+    assert any(
+        any("_bump_internal" in x for x in c) and c[0] == sys.executable
+        for c in calls
+    )
