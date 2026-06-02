@@ -522,6 +522,30 @@ def test_is_managed_editable_is_false(tmp_path, monkeypatch):
     assert _is_managed_install(tmp_path) is False
 
 
+def test_active_venv_root_uses_prefix_not_resolved_symlink(tmp_path, monkeypatch):
+    """Regression guard (HATS-647): a venv's ``bin/python`` is a symlink to the
+    base interpreter, so ``Path(sys.executable).resolve()`` escapes the venv.
+    ``_active_venv_root`` must use ``sys.prefix`` instead — this reproduces the
+    exact symlink mechanism with a real symlink, no subprocess/pip needed.
+
+    Fail-under-revert: switching back to
+    ``Path(sys.executable).resolve().parent.parent`` resolves the symlink to
+    ``<base>/bin/python`` → ``<base>`` ≠ the venv root, so the assert fails.
+    """
+    venv = tmp_path / "venv"
+    (venv / "bin").mkdir(parents=True)
+    base_python = tmp_path / "base" / "bin" / "python3"
+    base_python.parent.mkdir(parents=True)
+    base_python.write_text("#!/bin/sh\n")  # stand-in base interpreter
+    venv_python = venv / "bin" / "python"
+    venv_python.symlink_to(base_python)  # exactly what `python -m venv` does
+    monkeypatch.setattr(_mnt.sys, "prefix", str(venv))
+    monkeypatch.setattr(_mnt.sys, "executable", str(venv_python))
+    # Correct (sys.prefix) → the venv. Regressed (resolve executable) → base.
+    assert _mnt._active_venv_root() == venv
+    assert _mnt._active_venv_root() != base_python.parent.parent
+
+
 def test_is_managed_default_venv(tmp_path, monkeypatch):
     """Active venv (sys.prefix) == <ai_hats_dir>/.venv → managed."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
