@@ -523,29 +523,29 @@ def test_is_managed_editable_is_false(tmp_path, monkeypatch):
 
 
 def test_is_managed_default_venv(tmp_path, monkeypatch):
-    """Active venv == <ai_hats_dir>/.venv → managed."""
+    """Active venv (sys.prefix) == <ai_hats_dir>/.venv → managed."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
-    exe = tmp_path / ".agent" / "ai-hats" / ".venv" / "bin" / "python"
-    monkeypatch.setattr(_mnt.sys, "executable", str(exe))
+    venv = tmp_path / ".agent" / "ai-hats" / ".venv"
+    monkeypatch.setattr(_mnt.sys, "prefix", str(venv))
     assert _is_managed_install(tmp_path) is True
 
 
 def test_is_managed_versioned_venv(tmp_path, monkeypatch):
-    """Active venv under versions/<sha>/ → managed."""
+    """Active venv (sys.prefix) under versions/<sha>/ → managed."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
-    exe = tmp_path / ".agent" / "ai-hats" / "versions" / "deadbeef" / "bin" / "python"
-    monkeypatch.setattr(_mnt.sys, "executable", str(exe))
+    venv = tmp_path / ".agent" / "ai-hats" / "versions" / "deadbeef"
+    monkeypatch.setattr(_mnt.sys, "prefix", str(venv))
     assert _is_managed_install(tmp_path) is True
 
 
 def test_is_managed_override_venv_is_false(tmp_path, monkeypatch):
-    """Active venv is a user-owned path elsewhere → not managed (HATS-339)."""
+    """Active venv (sys.prefix) is a user-owned path elsewhere → not managed."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
-    exe = tmp_path / "user-owned" / "bin" / "python"
-    monkeypatch.setattr(_mnt.sys, "executable", str(exe))
+    venv = tmp_path / "user-owned"
+    monkeypatch.setattr(_mnt.sys, "prefix", str(venv))
     assert _is_managed_install(tmp_path) is False
 
 
@@ -554,8 +554,9 @@ def test_build_install_cmd_url_and_local():
     url_cmd = _build_install_cmd("/v/bin/python", "git+ssh://x/ai-hats.git", "abc")
     assert url_cmd[:5] == ["/v/bin/python", "-m", "pip", "install", "--force-reinstall"]
     assert url_cmd[-1] == "ai-hats @ git+ssh://x/ai-hats.git@abc"
+    # Local path: bare path (pip can't take @ref on a local path).
     local_cmd = _build_install_cmd("/v/bin/python", "/local/path", "abc")
-    assert local_cmd[-1] == "/local/path@abc"
+    assert local_cmd[-1] == "/local/path"
 
 
 def test_flip_current_atomic_write(tmp_path, monkeypatch):

@@ -158,10 +158,12 @@ def _resolve_ref(repo_url: str, ref: str) -> str | None:
 def _active_venv_root() -> Path:
     """Root of the venv the running interpreter belongs to.
 
-    ``sys.executable`` is ``<venv>/bin/python`` → ``parent.parent`` is the
-    venv root.
+    Uses ``sys.prefix`` — for a venv interpreter that IS the venv root.
+    ``Path(sys.executable)`` would be wrong: ``<venv>/bin/python`` is
+    typically a symlink to the base interpreter, so ``.resolve()`` escapes
+    the venv (this is the bug that left versioning silently disabled).
     """
-    return Path(sys.executable).resolve().parent.parent
+    return Path(sys.prefix)
 
 
 def _is_managed_install(project_dir: Path) -> bool:
@@ -180,7 +182,7 @@ def _is_managed_install(project_dir: Path) -> bool:
     from ..paths import ai_hats_dir, versions_root
 
     try:
-        venv_root = _active_venv_root()
+        venv_root = _active_venv_root().resolve()
         default_venv = (ai_hats_dir(project_dir) / ".venv").resolve()
         vroot = versions_root(project_dir).resolve()
     except OSError:
@@ -189,8 +191,16 @@ def _is_managed_install(project_dir: Path) -> bool:
 
 
 def _build_install_cmd(python_exe: str, url: str, ref: str) -> list[str]:
-    """pip-install ``ai-hats@<ref>`` into the venv owning ``python_exe``."""
-    target = f"ai-hats @ {url}@{ref}" if "://" in url else f"{url}@{ref}"
+    """pip-install ai-hats into the venv owning ``python_exe``.
+
+    URL source (``git+ssh://…``) → PEP 508 ``ai-hats @ url@ref`` so the exact
+    sha is installed. Local-path source (e.g. ``--local`` bootstrap, e2e
+    harness) → bare path: pip builds the working tree and does NOT support an
+    ``@ref`` suffix on local paths (the same reason ``--revision`` refuses
+    them). The version dir is named by the sha resolved separately, not by the
+    install spec.
+    """
+    target = f"ai-hats @ {url}@{ref}" if "://" in url else url
     return [python_exe, "-m", "pip", "install", "--force-reinstall", target]
 
 
