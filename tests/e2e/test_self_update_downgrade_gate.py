@@ -36,6 +36,7 @@ the refuse-case invocation succeeds (exit 0, silent downgrade) and the
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -159,6 +160,11 @@ def test_e2e_self_update_refuses_silent_downgrade(tmp_path: Path) -> None:
         [str(venv_pip), "install", "--quiet", "-e", str(src_repo)],
         env=env, check=True, timeout=120,
     )
+    # HATS-647: the non-editable bootstrap `self update` created a versions/<sha>/
+    # + current pointer; drop it so the launcher resolves the now-editable .venv
+    # via default precedence — otherwise the downgrade probe would run against
+    # the versioned (non-editable) venv and bypass the gate this test asserts.
+    shutil.rmtree(project / ".agent" / "ai-hats" / "versions", ignore_errors=True)
     # Sanity: ``ai_hats.__file__`` MUST resolve into src-repo's tree, else
     # the editable conversion is broken and the rest of the test would
     # silently exercise a non-editable install (which falls into the
