@@ -51,9 +51,14 @@ fi
 # default .venv (lazy migration — pre-versioning installs keep working until
 # the first managed `self update` populates versions/).
 if [[ -z "$VENV" && -f "$VERSIONS_DIR/current" ]]; then
-    sha="$(tr -d '[:space:]' < "$VERSIONS_DIR/current" 2>/dev/null || true)"
+    # First line only + strip surrounding whitespace (matches paths.read_current_sha;
+    # never squash a multi-line file into a fake single sha).
+    sha="$(head -1 "$VERSIONS_DIR/current" 2>/dev/null | tr -d '[:space:]' || true)"
+    # Require a COMPLETE versioned venv (bin/ai-hats present): a present-but-
+    # broken versions/<sha>/ (e.g. external corruption) falls through to the
+    # legacy default .venv rather than dead-ending, preserving self-heal.
     if [[ -n "$sha" && "$sha" != *"/"* && "$sha" != "." && "$sha" != ".." \
-          && -d "$VERSIONS_DIR/$sha" ]]; then
+          && -x "$VERSIONS_DIR/$sha/bin/ai-hats" ]]; then
         VENV="$VERSIONS_DIR/$sha"
     fi
 fi

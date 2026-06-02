@@ -433,12 +433,20 @@ def test_user_home_env_empty_string_falls_back(monkeypatch):
 # ---------- HATS-647: versioned install layout + lazy-migration resolve ----------
 
 
-def _seed_version(project_dir, sha, *, make_dir=True, pointer=True):
-    """Create versions/<sha>/ and/or versions/current under the default ai_hats_dir."""
+def _seed_version(project_dir, sha, *, make_dir=True, complete=True, pointer=True):
+    """Seed versions/<sha>/ (a fake venv) and/or versions/current.
+
+    ``complete`` controls whether the venv carries a ``bin/ai-hats`` marker —
+    read_current_sha only accepts a COMPLETE versioned venv.
+    """
     root = project_dir / ".agent" / "ai-hats" / "versions"
     root.mkdir(parents=True, exist_ok=True)
     if make_dir:
-        (root / sha).mkdir(parents=True, exist_ok=True)
+        vdir = root / sha
+        vdir.mkdir(parents=True, exist_ok=True)
+        if complete:
+            (vdir / "bin").mkdir(parents=True, exist_ok=True)
+            (vdir / "bin" / "ai-hats").write_text("#!/bin/sh\n", encoding="utf-8")
     if pointer:
         (root / "current").write_text(f"{sha}\n", encoding="utf-8")
     return root
@@ -470,6 +478,14 @@ def test_read_current_sha_dangling(tmp_path, monkeypatch):
     """Pointer present but versions/<sha>/ dir absent → None (dangling)."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     _seed_version(tmp_path, "deadbeef", make_dir=False)
+    assert read_current_sha(tmp_path) is None
+
+
+def test_read_current_sha_incomplete_venv(tmp_path, monkeypatch):
+    """Pointer + dir present but venv broken (no bin/ai-hats) → None, so callers
+    degrade to the self-healing legacy .venv instead of a dead versioned venv."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    _seed_version(tmp_path, "deadbeef", complete=False)
     assert read_current_sha(tmp_path) is None
 
 
