@@ -29,6 +29,7 @@ Fail-under-revert: if the short-circuit is removed from
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -128,6 +129,11 @@ def test_e2e_self_update_skips_pip_when_in_sync(tmp_path: Path) -> None:
         [str(venv_pip), "install", "--quiet", "-e", str(src_repo)],
         env=env, check=True, timeout=120,
     )
+    # HATS-647: the non-editable bootstrap `self update` above created a
+    # versions/<sha>/ + current pointer; drop it so the launcher resolves the
+    # now-editable .venv via default precedence. This test exercises the
+    # editable / legacy self-update path, not the versioned one.
+    shutil.rmtree(project / ".agent" / "ai-hats" / "versions", ignore_errors=True)
     where = subprocess.run(
         [str(venv_python), "-c",
          "import ai_hats, pathlib; print(pathlib.Path(ai_hats.__file__).resolve())"],

@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -141,6 +142,10 @@ def test_e2e_self_update_revision(tmp_path: Path) -> None:
         [str(venv_pip), "install", "--quiet", "-e", str(src_repo)],
         env=env, check=True, timeout=180,
     )
+    # HATS-647: the non-editable bootstrap `self update` created a versions/<sha>/
+    # + current pointer; drop it so the launcher resolves the now-editable .venv
+    # via default precedence (this test exercises the editable/legacy path).
+    shutil.rmtree(project / ".agent" / "ai-hats" / "versions", ignore_errors=True)
     initial = json.loads(_find_direct_url(venv_dir).read_text())
     assert initial.get("dir_info", {}).get("editable") is True, (
         f"editable conversion did not take effect; assertion 1 (D2) would "
