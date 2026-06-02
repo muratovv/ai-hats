@@ -369,6 +369,32 @@ def test_versions_dangling_pointer_falls_back_to_legacy(tmp_path):
     assert "legacy-stub: status" in res.stdout
 
 
+def test_versions_incomplete_venv_falls_back_to_legacy(tmp_path):
+    """current → versions/<sha>/ that exists but is broken (no bin/ai-hats) →
+    legacy .venv is used (self-heal preserved; does not dead-end)."""
+    versions = tmp_path / ".agent" / "ai-hats" / "versions"
+    (versions / "deadbeef" / "bin").mkdir(parents=True)  # dir present, no ai-hats
+    (versions / "current").write_text("deadbeef\n")
+    _fake_venv(tmp_path / ".agent" / "ai-hats" / ".venv", ai_hats_echo="legacy-stub")
+    res = _run(["status"], cwd=tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert "legacy-stub: status" in res.stdout
+
+
+def test_versions_multiline_pointer_does_not_forge_sha(tmp_path):
+    """A multi-line pointer must NOT be squashed into a single fake sha; the
+    first line ('cafe') has no matching dir → legacy .venv fallback."""
+    versions = tmp_path / ".agent" / "ai-hats" / "versions"
+    versions.mkdir(parents=True, exist_ok=True)
+    _fake_venv(versions / "cafef00d", ai_hats_echo="ver-stub")  # the squashed name
+    (versions / "current").write_text("cafe\nf00d\n")
+    _fake_venv(tmp_path / ".agent" / "ai-hats" / ".venv", ai_hats_echo="legacy-stub")
+    res = _run(["status"], cwd=tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert "legacy-stub: status" in res.stdout
+    assert "ver-stub" not in res.stdout
+
+
 def test_versions_corrupt_pointer_falls_back_to_legacy(tmp_path):
     """Pointer content with a path separator never escapes → legacy .venv."""
     versions = tmp_path / ".agent" / "ai-hats" / "versions"

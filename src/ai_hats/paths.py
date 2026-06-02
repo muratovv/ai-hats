@@ -406,9 +406,11 @@ def read_current_sha(project_dir: Path) -> str | None:
     """Resolve the active managed ``sha`` from ``versions/current``.
 
     Returns the ``sha`` only when the pointer exists, is well-formed, and
-    its ``versions/<sha>/`` dir is present. A missing/corrupt pointer or a
-    dangling ``sha`` returns ``None`` so callers fall back to the legacy
-    ``.venv`` (HATS-647 lazy-migration contract).
+    its ``versions/<sha>/`` venv is **complete** (``bin/ai-hats`` present). A
+    missing/corrupt pointer, a dangling ``sha``, or a present-but-broken venv
+    returns ``None`` so callers fall back to the legacy ``.venv`` (HATS-647
+    lazy-migration contract) — a corrupted versioned install degrades to the
+    self-healing default rather than dead-ending.
     """
     try:
         raw = current_pointer(project_dir).read_text(encoding="utf-8").strip()
@@ -416,7 +418,7 @@ def read_current_sha(project_dir: Path) -> str | None:
         return None
     if not _is_safe_sha_component(raw):
         return None
-    if not version_dir(project_dir, raw).is_dir():
+    if not (version_dir(project_dir, raw) / "bin" / "ai-hats").exists():
         return None
     return raw
 

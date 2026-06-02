@@ -605,6 +605,9 @@ def _versioned_fake_run(*, fail_at=None, bump_rec=None):
                 return _make_completed(a, returncode=1, stderr="venv boom")
             target = Path(a[-1])
             (target / "bin").mkdir(parents=True, exist_ok=True)
+            # pip install (next phase) drops the ai-hats entry-point; the venv
+            # is only "complete" (read_current_sha-acceptable) once it exists.
+            (target / "bin" / "ai-hats").write_text("#!/bin/sh\n")
             return _make_completed(a, returncode=0)
         if "pip" in a:
             return _make_completed(a, returncode=1 if fail_at == "install" else 0,
@@ -672,8 +675,10 @@ def test_managed_update_verify_failure_does_not_flip(tmp_path, monkeypatch):
 def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
     """current already == target + dir present → no venv/pip/verify, bump only."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    # Pre-seed: versions/cafef00d/ exists and current points at it.
-    (version_dir(tmp_path, "cafef00d")).mkdir(parents=True, exist_ok=True)
+    # Pre-seed: a COMPLETE versions/cafef00d/ venv and current → it.
+    vbin = version_dir(tmp_path, "cafef00d") / "bin"
+    vbin.mkdir(parents=True, exist_ok=True)
+    (vbin / "ai-hats").write_text("#!/bin/sh\n")
     _flip_current(tmp_path, "cafef00d")
     calls: list[list[str]] = []
 

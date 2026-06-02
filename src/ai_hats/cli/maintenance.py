@@ -272,7 +272,11 @@ def _run_managed_versioned_update(
     if not target_sha:
         target_sha = _resolve_ref(url, "HEAD")
     if not target_sha:
-        console.print("[red]Update failed[/]: could not resolve target revision.")
+        console.print(
+            "[red]Update failed[/]: could not resolve a target revision to "
+            "install (offline, or the remote/source is unreachable). A "
+            "versioned install needs a resolvable sha to name versions/<sha>/."
+        )
         sys.exit(2)
 
     vdir = version_dir(project_dir, target_sha)
@@ -356,7 +360,13 @@ def _run_managed_versioned_update(
             bump_cmd.append("--migrate-force")
         if check_branches:
             bump_cmd.append("--check-branches")
-        proc = subprocess.run(bump_cmd, cwd=str(project_dir), check=False)
+        # Pin the bump child to the venv it actually runs in (the new sha),
+        # not the old AI_HATS_VENV inherited from the launcher — so any
+        # venv_path() resolution inside the bump agrees with sys.prefix.
+        bump_env = {**os.environ, "AI_HATS_VENV": str(vdir)}
+        proc = subprocess.run(
+            bump_cmd, cwd=str(project_dir), env=bump_env, check=False,
+        )
         if proc.returncode != 0:
             console.print(
                 f"  [yellow]Bump (fresh interpreter) exited {proc.returncode} "
@@ -819,7 +829,7 @@ def update(
     # HATS-318: surface which interpreter we're updating. When the wrapper has
     # already re-exec'd into <ai_hats_dir>/.venv, the install goes to that env
     # by virtue of sys.executable; this banner makes the target unambiguous.
-    if "/.venv/bin/python" in sys.executable:
+    if "/.venv/bin/python" in sys.executable or "/versions/" in sys.executable:
         console.print(f"[dim]Target venv:[/] {sys.executable}")
 
     project_dir = _project_dir()
