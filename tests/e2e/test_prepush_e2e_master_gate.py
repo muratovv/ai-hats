@@ -13,6 +13,7 @@ hook's branching on stdin shape + child exit code.
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -44,6 +45,26 @@ def _make_pytest_stub(bindir: Path, exit_code: int) -> Path:
         "#!/usr/bin/env bash\n"
         f'printf "%s\\n" "$@" > "{bindir}/last_argv"\n'
         f'printf "%s" "${{AI_HATS_E2E_REQUIRE_VENV:-<unset>}}" > "{bindir}/last_require_venv"\n'
+        f"exit {exit_code}\n"
+    )
+    stub.chmod(0o755)
+    return stub
+
+
+def _make_pytest_stub_emitting(bindir: Path, exit_code: int, message: str) -> Path:
+    """Like :func:`_make_pytest_stub` but also prints ``message`` to stdout.
+
+    The gate captures ``output=$(pytest ... 2>&1)`` and conditionally prints the
+    fail-closed explanation when ``$output`` mentions ``AI_HATS_E2E_REQUIRE_VENV``
+    (HATS-645). This stub lets a case feed the gate a controlled ``$output`` so
+    that conditional can be exercised without a real venv-tier failure.
+    """
+    bindir.mkdir(parents=True, exist_ok=True)
+    stub = bindir / "pytest"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        f'printf "%s\\n" "$@" > "{bindir}/last_argv"\n'
+        f"printf '%s\\n' {shlex.quote(message)}\n"
         f"exit {exit_code}\n"
     )
     stub.chmod(0o755)
@@ -178,6 +199,51 @@ def test_master_push_blocks_on_pytest_failure(tmp_path: Path):
     assert res.returncode == 1
     assert "BLOCKED" in res.stderr
     assert "rc=1" in res.stderr
+
+
+@pytest.mark.integration
+def test_master_push_explains_fail_closed_venv_skip(tmp_path: Path):
+    """HATS-645: when the failure output mentions AI_HATS_E2E_REQUIRE_VENV, the
+    gate prints the explicit FAIL-CLOSED explanation (why blocked + how to fix).
+
+    Drives the conditional ``if echo "$output" | grep -q AI_HATS_E2E_REQUIRE_VENV``
+    branch. Fail-under-revert: drop that branch → the explanation vanishes → red.
+    """
+    bindir = tmp_path / "bin"
+    _make_pytest_stub_emitting(
+        bindir, exit_code=1,
+        message="E venv-tier required (AI_HATS_E2E_REQUIRE_VENV=1) but unavailable",
+    )
+    stdin = f"refs/heads/master {NEW_SHA} refs/heads/master {OLD_SHA}\n"
+
+    res = _run_hook(stdin, bindir)
+
+    assert res.returncode == 1
+    assert "BLOCKED" in res.stderr
+    assert "FAIL-CLOSED venv-tier skip (HATS-645)" in res.stderr, res.stderr
+
+
+@pytest.mark.integration
+def test_master_push_generic_failure_omits_fail_closed_explanation(tmp_path: Path):
+    """A generic test failure (output WITHOUT the env-var marker) must block but
+    NOT print the venv-specific FAIL-CLOSED explanation — only the generic footer.
+
+    Pins the conditional so the explanation can't regress into firing on every
+    failure (which would be misleading noise on unrelated test breakage).
+    """
+    bindir = tmp_path / "bin"
+    _make_pytest_stub_emitting(
+        bindir, exit_code=1, message="E   assert 1 == 2  # an unrelated test bug",
+    )
+    stdin = f"refs/heads/master {NEW_SHA} refs/heads/master {OLD_SHA}\n"
+
+    res = _run_hook(stdin, bindir)
+
+    assert res.returncode == 1
+    assert "BLOCKED" in res.stderr
+    assert "FAIL-CLOSED venv-tier skip" not in res.stderr, res.stderr
+    # The generic footer still guides the contributor.
+    assert "git push --no-verify" in res.stderr
 
 
 @pytest.mark.integration
