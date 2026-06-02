@@ -262,6 +262,13 @@ def _run_managed_versioned_update(
 
     from ..paths import read_current_sha, version_dir
 
+    if "://" not in url:
+        # Local-path source: pip installs the working tree, so identify the
+        # version by the local repo's HEAD — NOT the remote-master probe,
+        # which can point at a different branch (e.g. a worktree checked out
+        # off master). URL sources keep the probe / revision sha because pip
+        # installs that exact ref.
+        target_sha = _resolve_ref(url, "HEAD") or target_sha
     if not target_sha:
         target_sha = _resolve_ref(url, "HEAD")
     if not target_sha:
