@@ -11,7 +11,9 @@ set -euo pipefail
 
 PROJECT="$(pwd)"
 REPO_URL="${AI_HATS_REPO_URL:-git+ssh://git@github.com/muratovv/ai-hats.git}"
-DEFAULT_VENV="$PROJECT/.agent/ai-hats/.venv"
+AH_DIR="$PROJECT/.agent/ai-hats"
+DEFAULT_VENV="$AH_DIR/.venv"
+VERSIONS_DIR="$AH_DIR/versions"   # HATS-647: blue-green versioned venvs
 
 # pip install target — PEP 508 `name @ url` requires a URL scheme. For local
 # directory paths we pass the path directly (pip detects pyproject.toml).
@@ -43,7 +45,26 @@ elif [[ -f "$PROJECT/ai-hats.yaml" ]]; then
         fi
     fi
 fi
+# HATS-647: managed blue-green resolution. When neither an explicit
+# AI_HATS_VENV nor a yaml venv_path was set, prefer a valid versions/current
+# pointer (a single line of text holding the active sha); else the legacy
+# default .venv (lazy migration — pre-versioning installs keep working until
+# the first managed `self update` populates versions/).
+if [[ -z "$VENV" && -f "$VERSIONS_DIR/current" ]]; then
+    sha="$(tr -d '[:space:]' < "$VERSIONS_DIR/current" 2>/dev/null || true)"
+    if [[ -n "$sha" && "$sha" != *"/"* && "$sha" != "." && "$sha" != ".." \
+          && -d "$VERSIONS_DIR/$sha" ]]; then
+        VENV="$VERSIONS_DIR/$sha"
+    fi
+fi
 [[ -z "$VENV" ]] && VENV="$DEFAULT_VENV"
+
+# HATS-647: pin-at-spawn. Export the resolved venv so every descendant
+# (hooks, sub-agent child sessions, bash-chained `ai-hats … | ai-hats …`)
+# stays on this exact venv for the whole run — even if versions/current
+# flips mid-run. A child launcher sees AI_HATS_VENV set and honors it
+# verbatim instead of re-resolving the pointer.
+export AI_HATS_VENV="$VENV"
 
 is_default_venv() { [[ "$VENV" == "$DEFAULT_VENV" ]]; }
 
