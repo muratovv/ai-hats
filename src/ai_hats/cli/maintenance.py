@@ -152,6 +152,201 @@ def _resolve_ref(repo_url: str, ref: str) -> str | None:
     return out.splitlines()[0].split()[0]
 
 
+# ---------- HATS-647: managed blue-green versioned install ----------
+
+
+def _active_venv_root() -> Path:
+    """Root of the venv the running interpreter belongs to.
+
+    ``sys.executable`` is ``<venv>/bin/python`` → ``parent.parent`` is the
+    venv root.
+    """
+    return Path(sys.executable).resolve().parent.parent
+
+
+def _is_managed_install(project_dir: Path) -> bool:
+    """True when the active install is the ai-hats-managed default venv and is
+    therefore eligible for blue-green versioning (HATS-647).
+
+    Managed ⇔ NOT editable AND the active venv is either the legacy default
+    ``<ai_hats_dir>/.venv`` or a ``<ai_hats_dir>/versions/<sha>/`` dir. An
+    explicit user override (``AI_HATS_VENV`` / yaml ``venv_path`` pointing
+    elsewhere) or an editable dev checkout bypasses versioning — we never
+    manage a user-owned venv (HATS-339) nor rewrite a source checkout.
+    """
+    is_editable, _ = _is_editable_install()
+    if is_editable:
+        return False
+    from ..paths import ai_hats_dir, versions_root
+
+    try:
+        venv_root = _active_venv_root()
+        default_venv = (ai_hats_dir(project_dir) / ".venv").resolve()
+        vroot = versions_root(project_dir).resolve()
+    except OSError:
+        return False
+    return venv_root == default_venv or venv_root.parent == vroot
+
+
+def _build_install_cmd(python_exe: str, url: str, ref: str) -> list[str]:
+    """pip-install ``ai-hats@<ref>`` into the venv owning ``python_exe``."""
+    target = f"ai-hats @ {url}@{ref}" if "://" in url else f"{url}@{ref}"
+    return [python_exe, "-m", "pip", "install", "--force-reinstall", target]
+
+
+def _flip_current(project_dir: Path, sha: str) -> None:
+    """Atomically point ``versions/current`` at ``sha`` (tmp-write + replace).
+
+    The pointer is the single source of truth the launcher reads; the rename
+    is atomic on the same filesystem so a crash can never leave a torn
+    pointer. Flipped only after a fully-successful install (HATS-647) —
+    crash-during-install leaves ``current`` untouched (still the old sha), so
+    the tool never bricks.
+    """
+    from ..paths import current_pointer, versions_root
+
+    versions_root(project_dir).mkdir(parents=True, exist_ok=True)
+    ptr = current_pointer(project_dir)
+    tmp = ptr.with_name(f".current.{sha}.tmp")
+    tmp.write_text(f"{sha}\n", encoding="utf-8")
+    os.replace(tmp, ptr)
+
+
+def _version_string(python_exe: str) -> str:
+    """Read ``ai_hats.__version__`` from an arbitrary venv's interpreter."""
+    result = subprocess.run(
+        [python_exe, "-c", "from ai_hats import __version__; print(__version__)"],
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip() if result.returncode == 0 else "unknown"
+
+
+def _run_managed_versioned_update(
+    project_dir: Path,
+    *,
+    url: str,
+    target_sha: str | None,
+    old_version: str,
+    active_role: str | None,
+    config_unreadable: bool,
+    migrate_force: bool,
+    check_branches: bool,
+) -> None:
+    """Blue-green ``self update`` for the managed default venv (HATS-647).
+
+    Installs the new version into ``versions/<sha>/`` — never the live venv —
+    then atomically flips ``versions/current``. A concurrently-live run pinned
+    (via inherited ``AI_HATS_VENV``) to the old sha keeps its frozen env; the
+    next invocation resolves the new sha. The library/composition diff is
+    produced by the fresh-interpreter bump in the new venv; the rich
+    cross-venv diff is deferred (informational).
+
+    Crash-safety (R0): ``current`` flips only after a fully-successful
+    install+verify, so an interrupted update never bricks the tool — at worst
+    it leaves an unreferenced half-written ``versions/<sha>/`` dir. The proper
+    ``.tmp-<sha>`` staging + ``.complete`` sentinel + ``.tmp-*`` recovery sweep
+    is R1 (HATS-648); here we simply never trust a pre-existing dir.
+    """
+    import shutil
+
+    from ..paths import read_current_sha, version_dir
+
+    if not target_sha:
+        target_sha = _resolve_ref(url, "HEAD")
+    if not target_sha:
+        console.print("[red]Update failed[/]: could not resolve target revision.")
+        sys.exit(2)
+
+    vdir = version_dir(project_dir, target_sha)
+    already_current = read_current_sha(project_dir) == target_sha and vdir.is_dir()
+
+    if already_current:
+        console.print(
+            f"[green]Already up to date[/] ({old_version}) "
+            f"[dim]— current → {target_sha[:12]}[/]"
+        )
+        new_python = sys.executable
+    else:
+        # R0 crash-safety: never trust a pre-existing dir — it may be a
+        # half-written residue of a crashed install. Reinstall fresh.
+        if vdir.exists():
+            shutil.rmtree(vdir, ignore_errors=True)
+        vdir.parent.mkdir(parents=True, exist_ok=True)
+        with console.status(
+            f"[cyan]Creating versioned venv[/] versions/{target_sha[:12]} …",
+            spinner="dots",
+        ):
+            venv_proc = subprocess.run(
+                [sys.executable, "-m", "venv", str(vdir)],
+                capture_output=True,
+                text=True,
+            )
+        if venv_proc.returncode != 0:
+            console.print(f"[red]Update failed[/] (venv create): {venv_proc.stderr}")
+            return
+        new_python = str(vdir / "bin" / "python")
+        with console.status(
+            "[cyan]Downloading ai-hats from GitHub …[/] "
+            "[dim](pip install — may take a minute)[/]",
+            spinner="dots",
+        ):
+            install = subprocess.run(
+                _build_install_cmd(new_python, url, target_sha),
+                capture_output=True,
+                text=True,
+            )
+        if install.returncode != 0:
+            # current is untouched → the tool still runs on the old sha.
+            # The half-written dir is swept by R1 (HATS-648).
+            console.print(f"[red]Update failed[/]: {install.stderr}")
+            return
+        with console.status("[cyan]Verifying install …[/]", spinner="dots"):
+            verify = subprocess.run(
+                [new_python, "-m", "ai_hats._bootstrap", "verify"],
+                capture_output=True,
+                text=True,
+            )
+        if verify.returncode != 0:
+            warning = (verify.stderr or verify.stdout or "").strip() or "see logs"
+            console.print(f"[red]Update failed[/] (verify): {warning}")
+            return
+        # Atomic flip — only now does the new version become 'current'.
+        _flip_current(project_dir, target_sha)
+        new_version = _version_string(new_python)
+        console.print(
+            f"[green]Updated[/]: {old_version} → [bold]{new_version}[/] "
+            f"[dim](current → {target_sha[:12]})[/]"
+        )
+        changelog = _get_changelog()
+        if changelog:
+            console.print("\n[bold]Recent changes:[/]")
+            for line in changelog.splitlines()[:7]:
+                console.print(f"  {line}")
+        # No-silent-caps: prior version dirs are retained until R2 GC.
+        console.print(
+            "[dim]Note: previous version(s) kept under versions/; "
+            "reclaimed automatically by GC (R2 / HATS-649).[/]"
+        )
+
+    # Bump / re-assemble with the NEW code (fresh interpreter in the target
+    # venv) — mirrors the legacy HATS-400 fresh-interpreter bump.
+    if active_role or config_unreadable:
+        role_label = active_role or "(config unreadable — healing)"
+        console.print(f"\n[bold]Re-assembling:[/] {role_label}")
+        bump_cmd = [new_python, "-m", "ai_hats._bump_internal"]
+        if migrate_force:
+            bump_cmd.append("--migrate-force")
+        if check_branches:
+            bump_cmd.append("--check-branches")
+        proc = subprocess.run(bump_cmd, cwd=str(project_dir), check=False)
+        if proc.returncode != 0:
+            console.print(
+                f"  [yellow]Bump (fresh interpreter) exited {proc.returncode} "
+                f"— review output above[/]"
+            )
+
+
 # HATS-497: Install diagnostics for ``ai-hats config status`` Health section.
 # Helpers below produce a flat dict of display-key → display-value. Layer
 # boundary: install-level (interpreter, venv, source); does NOT touch the
@@ -618,6 +813,7 @@ def update(
     # pre-flight (steps 2-3 of plan) happen here, BEFORE the snapshot /
     # install path runs.
     probe = None
+    managed_target_sha: str | None = None  # HATS-647: resolved sha for versioned install
     if revision:
         url = _git_install_url()
         if "://" not in url:
@@ -655,6 +851,7 @@ def update(
             "guard. Installing arbitrary ref may downgrade your install."
         )
         console.print(f"  [dim]Resolved {revision} → {resolved}[/]")
+        managed_target_sha = resolved
     else:
         # HATS-441: refuse silent downgrade when installed HEAD is ahead of
         # remote master. ``--force-downgrade`` opts back into the destructive
@@ -663,6 +860,7 @@ def update(
         # Single probe — feeds both the downgrade gate and the no-op
         # short-circuit below. Avoids running run_check twice per invocation.
         probe = None if force_downgrade else _probe_remote_state(project_dir)
+        managed_target_sha = probe.latest_sha if probe is not None else None
 
         if force_downgrade:
             console.print(
@@ -722,6 +920,23 @@ def update(
             active_role = cfg.active_role or cfg.default_role or None
             if active_role:
                 before_rules, before_skills = _snapshot_composition(asm)
+
+    # HATS-647: managed default venv → blue-green versioned install. Install
+    # into versions/<sha>/ (never the live venv) + atomic current flip, so a
+    # concurrently-live run survives. Editable / override venvs fall through
+    # to the legacy in-place install path below.
+    if _is_managed_install(project_dir):
+        _run_managed_versioned_update(
+            project_dir,
+            url=_git_install_url(),
+            target_sha=managed_target_sha,
+            old_version=old_version,
+            active_role=active_role,
+            config_unreadable=config_unreadable,
+            migrate_force=migrate_force,
+            check_branches=check_branches,
+        )
+        return
 
     # 2. Install — short-circuited when the probe confirms installed SHA
     # already matches remote master AND the ahead/behind axes resolved to
