@@ -402,15 +402,40 @@ def current_pointer(project_dir: Path) -> Path:
     return versions_root(project_dir) / "current"
 
 
+def complete_sentinel(project_dir: Path, sha: str) -> Path:
+    """Completion marker for a managed venv: ``versions/<sha>/.complete``.
+
+    Written **last** by ``self update`` — only after a fully-successful
+    install+verify — so its presence is the authoritative "this install
+    finished" signal (HATS-648). Independent of pip's internal file-write
+    ordering, unlike the ``bin/ai-hats`` proxy: a build killed mid-pip can
+    leave ``bin/ai-hats`` present yet lack ``.complete``.
+    """
+    return version_dir(project_dir, sha) / ".complete"
+
+
+def is_complete(project_dir: Path, sha: str) -> bool:
+    """True iff ``versions/<sha>/`` carries the ``.complete`` sentinel.
+
+    The single completeness predicate (HATS-648): a ``<sha>`` dir without the
+    sentinel is crash residue — **never trust dir-presence alone.** Used by
+    :func:`read_current_sha` (completeness gate) and the recovery sweep
+    (`version_recovery`), which removes only incomplete residue and leaves
+    complete dirs to R2's liveness-based reclaim.
+    """
+    return complete_sentinel(project_dir, sha).is_file()
+
+
 def read_current_sha(project_dir: Path) -> str | None:
     """Resolve the active managed ``sha`` from ``versions/current``.
 
-    Returns the ``sha`` only when the pointer exists, is well-formed, and
-    its ``versions/<sha>/`` venv is **complete** (``bin/ai-hats`` present). A
-    missing/corrupt pointer, a dangling ``sha``, or a present-but-broken venv
-    returns ``None`` so callers fall back to the legacy ``.venv`` (HATS-647
-    lazy-migration contract) — a corrupted versioned install degrades to the
-    self-healing default rather than dead-ending.
+    Returns the ``sha`` only when the pointer exists, is well-formed, the
+    ``versions/<sha>/`` venv is **complete** (carries the ``.complete``
+    sentinel, HATS-648), and its ``bin/ai-hats`` is present. A
+    missing/corrupt pointer, a dangling ``sha``, an incomplete install, or a
+    present-but-broken venv returns ``None`` so callers fall back to the legacy
+    ``.venv`` (HATS-647 lazy-migration contract) — a corrupted versioned
+    install degrades to the self-healing default rather than dead-ending.
     """
     try:
         raw = current_pointer(project_dir).read_text(encoding="utf-8").strip()
@@ -418,6 +443,14 @@ def read_current_sha(project_dir: Path) -> str | None:
         return None
     if not _is_safe_sha_component(raw):
         return None
+    # HATS-648: the sentinel is the completeness authority (written last,
+    # post-verify) — supersedes the bin/ai-hats proxy. An install killed
+    # mid-pip lacks the sentinel and is never resolved as current.
+    if not is_complete(project_dir, raw):
+        return None
+    # Corruption guard (retained from HATS-647 review-finding #1): a
+    # complete-but-later-broken venv still degrades to the legacy .venv, a
+    # fallback HATS-649 GC relies on continuing to resolve.
     if not (version_dir(project_dir, raw) / "bin" / "ai-hats").exists():
         return None
     return raw

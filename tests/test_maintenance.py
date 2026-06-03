@@ -513,7 +513,13 @@ from ai_hats.cli.maintenance import (  # noqa: E402
     _is_managed_install,
     _run_managed_versioned_update,
 )
-from ai_hats.paths import current_pointer, read_current_sha, version_dir  # noqa: E402
+from ai_hats.paths import (  # noqa: E402
+    complete_sentinel,
+    current_pointer,
+    is_complete,
+    read_current_sha,
+    version_dir,
+)
 
 
 def test_is_managed_editable_is_false(tmp_path, monkeypatch):
@@ -638,6 +644,8 @@ def test_managed_update_happy_path_flips_current(tmp_path, monkeypatch):
             config_unreadable=False, migrate_force=False, check_branches=False,
         )
     assert read_current_sha(tmp_path) == "cafef00d"
+    # HATS-648: the .complete sentinel is written on a fully-successful install.
+    assert is_complete(tmp_path, "cafef00d")
     # Bump ran with the NEW venv's python, not sys.executable.
     expected_python = str(version_dir(tmp_path, "cafef00d") / "bin" / "python")
     assert bump_rec == [expected_python]
@@ -661,7 +669,9 @@ def test_managed_update_install_failure_does_not_flip(tmp_path, monkeypatch):
 
 
 def test_managed_update_verify_failure_does_not_flip(tmp_path, monkeypatch):
-    """Post-install verify fails → current is NOT flipped."""
+    """Post-install verify fails → current is NOT flipped, and the residual dir
+    carries NO .complete sentinel (HATS-648) so the recovery sweep reclaims it
+    and read_current_sha never trusts it."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     with patch("subprocess.run", side_effect=_versioned_fake_run(fail_at="verify")):
         _run_managed_versioned_update(
@@ -670,15 +680,20 @@ def test_managed_update_verify_failure_does_not_flip(tmp_path, monkeypatch):
             config_unreadable=False, migrate_force=False, check_branches=False,
         )
     assert read_current_sha(tmp_path) is None
+    # The half-written dir exists but is incomplete — no sentinel.
+    assert version_dir(tmp_path, "cafef00d").is_dir()
+    assert not is_complete(tmp_path, "cafef00d")
 
 
 def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
     """current already == target + dir present → no venv/pip/verify, bump only."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    # Pre-seed: a COMPLETE versions/cafef00d/ venv and current → it.
+    # Pre-seed: a COMPLETE versions/cafef00d/ venv (bin + .complete sentinel)
+    # and current → it. HATS-648: completeness now requires the sentinel.
     vbin = version_dir(tmp_path, "cafef00d") / "bin"
     vbin.mkdir(parents=True, exist_ok=True)
     (vbin / "ai-hats").write_text("#!/bin/sh\n")
+    complete_sentinel(tmp_path, "cafef00d").write_text("", encoding="utf-8")
     _flip_current(tmp_path, "cafef00d")
     calls: list[list[str]] = []
 
@@ -700,3 +715,62 @@ def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
         any("_bump_internal" in x for x in c) and c[0] == sys.executable
         for c in calls
     )
+
+
+def test_managed_update_sweeps_incomplete_residue_before_build(tmp_path, monkeypatch):
+    """HATS-648: a `self update` reclaims old incomplete residue from a prior
+    crashed update (eager sweep at self-update start) while installing the new
+    sha."""
+    import os
+    import time
+
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
+    monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
+    # Plant aged incomplete residue (no .complete sentinel) from a past crash.
+    residue = version_dir(tmp_path, "0ld0bad0")
+    (residue / "bin").mkdir(parents=True, exist_ok=True)
+    (residue / "bin" / "ai-hats").write_text("#!/bin/sh\n", encoding="utf-8")
+    old = time.time() - 48 * 3600
+    os.utime(residue, (old, old))
+
+    with patch("subprocess.run", side_effect=_versioned_fake_run()):
+        _run_managed_versioned_update(
+            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            old_version="1.0.0", active_role=None,
+            config_unreadable=False, migrate_force=False, check_branches=False,
+        )
+    assert not residue.exists()  # crash residue reclaimed
+    assert read_current_sha(tmp_path) == "cafef00d"  # new install is current
+
+
+def test_managed_update_reuses_complete_dir_without_reinstall(tmp_path, monkeypatch):
+    """HATS-648 safety guard: a COMPLETE versions/<sha>/ that is NOT current is
+    reused (current re-flips to it) WITHOUT rmtree+reinstall — a blind reinstall
+    would destroy a dir that may be a live pinned run's frozen env."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
+    # Pre-seed a complete versions/cafef00d/ (sentinel) but point current ELSEWHERE.
+    vbin = version_dir(tmp_path, "cafef00d") / "bin"
+    vbin.mkdir(parents=True, exist_ok=True)
+    (vbin / "ai-hats").write_text("#!/bin/sh\n")
+    (vbin / "python").write_text("#!/bin/sh\n")
+    complete_sentinel(tmp_path, "cafef00d").write_text("", encoding="utf-8")
+    _flip_current(tmp_path, "0ldc0de0")  # current points at a different sha
+    calls: list[list[str]] = []
+
+    def rec_run(args, **kwargs):
+        calls.append(list(args))
+        return _make_completed(list(args), returncode=0, stdout="9.9.9\n")
+
+    with patch("subprocess.run", side_effect=rec_run):
+        _run_managed_versioned_update(
+            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            old_version="1.0.0", active_role=None,
+            config_unreadable=False, migrate_force=False, check_branches=False,
+        )
+    # Reused: no rebuild, but current re-flipped to the complete dir.
+    assert not any("venv" in c and "-m" in c for c in calls)
+    assert not any("pip" in c for c in calls)
+    assert read_current_sha(tmp_path) == "cafef00d"
+    assert is_complete(tmp_path, "cafef00d")

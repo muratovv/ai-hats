@@ -698,6 +698,16 @@ class WrapRunner:
         # a new sid. Idempotent and cheap when cache root is empty.
         _sweep_orphan_session_caches(self.project_dir)
 
+        # HATS-648 (R1): reclaim incomplete versioned-install residue (a
+        # `self update` killed mid-pip) at the same chokepoint — converges on
+        # any invocation. Idempotent + TTL-guarded; complete dirs and `current`
+        # are never touched (those are R2). No-silent-caps: log any removals.
+        # WrapRunner-only today; the sub-agent seam is closed by R2 (HATS-649).
+        from .version_recovery import sweep_incomplete_versions
+
+        for _residue in sweep_incomplete_versions(self.project_dir):
+            logger.info("reclaimed incomplete version residue: %s", _residue.name)
+
         # Create session — must happen before build_session_prompt so we can
         # key the per-session cache dir on session.session_id (HATS-294).
         session = self.session_mgr.create_session()
