@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .environment_recovery import EnvironmentRecovery, RecoveryProtocol
 from .paths import runs_dir
 
 logger = logging.getLogger(__name__)
@@ -28,16 +29,31 @@ class TraceTag:
 class SessionManager:
     """Manages session lifecycle and directories."""
 
-    def __init__(self, project_dir: Path) -> None:
+    def __init__(
+        self,
+        project_dir: Path,
+        *,
+        recovery: RecoveryProtocol | None = None,
+    ) -> None:
         # HATS-312: session trace dirs live under <ai_hats_dir>/sessions/runs/.
         # The `gitlog_dir` attribute name is preserved for backwards source
         # compatibility; semantically it's the runs root now.
         self.gitlog_dir = runs_dir(project_dir)
         self.gitlog_dir.mkdir(parents=True, exist_ok=True)
         self._counter = 0
+        # HATS-649 (R2): convergent environment recovery runs at this universal
+        # chokepoint — both WrapRunner and SubAgentRunner traverse it. Injected
+        # so unit tests can swap a NoOpRecovery. Default = real recovery, which
+        # is a near-no-op when there is no versions/ layout (the common test
+        # case): it only stat-checks a few dirs and writes no ref unless this
+        # process actually runs from a managed versions/<sha>/.
+        self._recovery: RecoveryProtocol = recovery or EnvironmentRecovery(project_dir)
 
     def create_session(self, parent_session: str | None = None) -> Session:
         """Create a new session with a unique ID."""
+        # HATS-649: converge crash-recovery (ref write + cache/version sweeps +
+        # orphan-version reclaim) on every run, before allocating the session.
+        self._recovery.run()
         now = datetime.now(timezone.utc)
         self._counter += 1
         base_id = now.strftime("%Y%m%d-%H%M%S")

@@ -16,6 +16,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .assembler import Assembler
+# HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
+# beside the other recovery passes (bundled and run at the create_session
+# chokepoint). Re-exported so existing callers/tests keep importing it from
+# ``ai_hats.runtime``.
+from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .harness.diagnostic import diagnose_silent_session
 from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
@@ -87,28 +92,6 @@ def _cleanup_session_cache(project_dir: Path, session_id: str) -> None:
     shutil.rmtree(session_cache_dir(project_dir, session_id), ignore_errors=True)  # safe-delete: ok session-cache
 
 
-def _sweep_orphan_session_caches(project_dir: Path, ttl_hours: int = 24) -> None:
-    """Remove session cache dirs older than ttl_hours (HATS-294).
-
-    Idempotent. Called once per ``Runtime.run`` invocation on session_start.
-    Cheap when the cache root is empty or recent.
-    """
-    import time
-
-    from .paths import session_cache_root
-
-    root = session_cache_root(project_dir)
-    if not root.exists():
-        return
-    cutoff = time.time() - ttl_hours * 3600
-    for entry in root.iterdir():
-        if not entry.is_dir():
-            continue
-        try:
-            if entry.stat().st_mtime < cutoff:
-                shutil.rmtree(entry, ignore_errors=True)  # safe-delete: ok session-cache (TTL sweep)
-        except OSError:
-            pass
 
 
 def _session_timed_out(session: Session) -> bool:
@@ -694,22 +677,13 @@ class WrapRunner:
 
         active_role = role_override or cfg.active_role
 
-        # HATS-294: sweep stale session cache dirs (>24h old) before allocating
-        # a new sid. Idempotent and cheap when cache root is empty.
-        _sweep_orphan_session_caches(self.project_dir)
-
-        # HATS-648 (R1): reclaim incomplete versioned-install residue (a
-        # `self update` killed mid-pip) at the same chokepoint — converges on
-        # any invocation. Idempotent + TTL-guarded; complete dirs and `current`
-        # are never touched (those are R2). No-silent-caps: log any removals.
-        # WrapRunner-only today; the sub-agent seam is closed by R2 (HATS-649).
-        from .version_recovery import sweep_incomplete_versions
-
-        for _residue in sweep_incomplete_versions(self.project_dir):
-            logger.info("reclaimed incomplete version residue: %s", _residue.name)
-
-        # Create session — must happen before build_session_prompt so we can
-        # key the per-session cache dir on session.session_id (HATS-294).
+        # HATS-649 (R2): the session-cache sweep + incomplete-version sweep +
+        # orphan-version reclaim + this run's liveness-ref write now run inside
+        # `create_session` (EnvironmentRecovery), the universal seam both
+        # WrapRunner and SubAgentRunner traverse — so the previously
+        # WrapRunner-only inline sweeps are gone from here. Create the session
+        # before build_session_prompt so we can key the per-session cache dir on
+        # session.session_id (HATS-294).
         session = self.session_mgr.create_session()
 
         # HATS-456: single derivation point for "compose for role X".
