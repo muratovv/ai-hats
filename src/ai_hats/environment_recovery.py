@@ -103,7 +103,10 @@ class EnvironmentRecovery:
         # just to lock it. Opportunistic: on contention the lock is already held
         # by an installer or a peer GC, so we skip and let this session start —
         # the next invocation converges. The GC must NEVER block or break
-        # create_session, so a lock timeout is swallowed, not propagated.
+        # create_session: a lock timeout is swallowed (INFO), and an I/O error
+        # mid-sweep (a vanishing dir, permissions, a full disk) is swallowed too
+        # (WARNING — no-silent-caps) rather than propagated up through
+        # create_session; the next invocation retries.
         if versions_root(self.project_dir).exists():
             try:
                 with versions_lock(self.project_dir, timeout=GC_LOCK_TIMEOUT):
@@ -118,6 +121,8 @@ class EnvironmentRecovery:
                     "version GC skipped: lock held by another ai-hats process "
                     "(install or concurrent GC); next invocation will retry"
                 )
+            except OSError as exc:
+                logger.warning("version GC skipped on I/O error: %s", exc)
 
         # HATS-653 (Phase B): once we run from a complete versioned venv, the
         # orphaned pre-versioning legacy .venv is dead weight — reclaim it.
