@@ -99,6 +99,36 @@ def test_run_keeps_legacy_venv_on_legacy_run(tmp_path, monkeypatch):
     assert legacy.exists()
 
 
+# ---------- HATS-650 / R3: GC under the crash-safe lock ----------
+
+
+def test_run_skips_gc_when_version_lock_held(tmp_path, monkeypatch):
+    """Hot-path GC is opportunistic: a held version lock → GC is skipped, never
+    raises, and the orphan survives this pass (the next invocation converges)."""
+    import filelock
+
+    from ai_hats.version_lock import gc_lock_path
+
+    _mk_complete_version(tmp_path, "neWc0de0")
+    current_pointer(tmp_path).write_text("neWc0de0\n", encoding="utf-8")
+    orphan = _mk_complete_version(tmp_path, "0ldc0de0")
+    legacy = tmp_path / ".agent" / "ai-hats" / ".venv"
+    legacy.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(sys, "prefix", str(legacy))  # this run pins nothing
+    # Keep the test fast: a tiny timeout still proves the swallow path.
+    monkeypatch.setattr("ai_hats.environment_recovery.GC_LOCK_TIMEOUT", 0.2)
+
+    gc_lock_path(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    holder = filelock.FileLock(str(gc_lock_path(tmp_path)), timeout=1.0)
+    holder.acquire()
+    try:
+        EnvironmentRecovery(tmp_path).run()  # must not raise
+    finally:
+        holder.release()
+
+    assert orphan.exists(), "GC reclaimed under a held lock (should have skipped)"
+
+
 # ---------- moved session-cache sweep still works ----------
 
 
