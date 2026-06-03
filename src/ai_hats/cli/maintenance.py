@@ -260,7 +260,12 @@ def _run_managed_versioned_update(
     """
     import shutil
 
-    from ..paths import read_current_sha, version_dir
+    from ..paths import (
+        complete_sentinel,
+        is_complete,
+        read_current_sha,
+        version_dir,
+    )
 
     if "://" not in url:
         # Local-path source: pip installs the working tree, so identify the
@@ -279,8 +284,19 @@ def _run_managed_versioned_update(
         )
         sys.exit(2)
 
+    # HATS-648 (R1): clean incomplete residue from prior crashed updates before
+    # staging the new build. Same idempotent, TTL-guarded sweep as the
+    # create_session chokepoint (a *recent* incomplete dir may be a concurrent
+    # update in flight, so it is kept). No-silent-caps.
+    from ..version_recovery import sweep_incomplete_versions
+
+    for _residue in sweep_incomplete_versions(project_dir):
+        console.print(
+            f"[dim]Reclaimed incomplete residue: versions/{_residue.name}[/]"
+        )
+
     vdir = version_dir(project_dir, target_sha)
-    already_current = read_current_sha(project_dir) == target_sha and vdir.is_dir()
+    already_current = read_current_sha(project_dir) == target_sha
 
     if already_current:
         console.print(
@@ -288,9 +304,24 @@ def _run_managed_versioned_update(
             f"[dim]— current → {target_sha[:12]}[/]"
         )
         new_python = sys.executable
+    elif vdir.exists() and is_complete(project_dir, target_sha):
+        # A prior successful install of this exact sha (sentinel present):
+        # trust it and reuse — just (re)flip current below. A blind reinstall
+        # would rmtree a dir that may be a LIVE pinned run's frozen env
+        # (e.g. run still on sha A while current already moved to B, then a
+        # `self update --revision A`), so keying reuse on the sentinel is a
+        # safety guard, not only an optimisation (HATS-648).
+        new_python = str(vdir / "bin" / "python")
+        console.print(f"[cyan]Reusing complete[/] versions/{target_sha[:12]} …")
+        _flip_current(project_dir, target_sha)
+        new_version = _version_string(new_python)
+        console.print(
+            f"[green]Updated[/]: {old_version} → [bold]{new_version}[/] "
+            f"[dim](current → {target_sha[:12]})[/]"
+        )
     else:
-        # R0 crash-safety: never trust a pre-existing dir — it may be a
-        # half-written residue of a crashed install. Reinstall fresh.
+        # No dir, or incomplete crash residue (no .complete sentinel) — never
+        # trust it; rebuild fresh (HATS-648 build-in-place + sentinel).
         if vdir.exists():
             shutil.rmtree(vdir, ignore_errors=True)
         vdir.parent.mkdir(parents=True, exist_ok=True)
@@ -318,8 +349,8 @@ def _run_managed_versioned_update(
                 text=True,
             )
         if install.returncode != 0:
-            # current is untouched → the tool still runs on the old sha.
-            # The half-written dir is swept by R1 (HATS-648).
+            # current is untouched → the tool still runs on the old sha. The
+            # incomplete dir (no sentinel) is swept by version_recovery.
             console.print(f"[red]Update failed[/]: {install.stderr}")
             return
         with console.status("[cyan]Verifying install …[/]", spinner="dots"):
@@ -332,7 +363,10 @@ def _run_managed_versioned_update(
             warning = (verify.stderr or verify.stdout or "").strip() or "see logs"
             console.print(f"[red]Update failed[/] (verify): {warning}")
             return
-        # Atomic flip — only now does the new version become 'current'.
+        # Sentinel written LAST, only after a fully-successful install+verify —
+        # the authoritative completeness marker (HATS-648). Only then is the
+        # atomic flip allowed; current never points at a dir lacking .complete.
+        complete_sentinel(project_dir, target_sha).write_text("", encoding="utf-8")
         _flip_current(project_dir, target_sha)
         new_version = _version_string(new_python)
         console.print(
