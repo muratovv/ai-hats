@@ -11,7 +11,9 @@ set -euo pipefail
 
 PROJECT="$(pwd)"
 REPO_URL="${AI_HATS_REPO_URL:-git+ssh://git@github.com/muratovv/ai-hats.git}"
-DEFAULT_VENV="$PROJECT/.agent/ai-hats/.venv"
+AH_DIR="$PROJECT/.agent/ai-hats"
+DEFAULT_VENV="$AH_DIR/.venv"
+VERSIONS_DIR="$AH_DIR/versions"   # HATS-647: blue-green versioned venvs
 
 # pip install target — PEP 508 `name @ url` requires a URL scheme. For local
 # directory paths we pass the path directly (pip detects pyproject.toml).
@@ -43,7 +45,31 @@ elif [[ -f "$PROJECT/ai-hats.yaml" ]]; then
         fi
     fi
 fi
+# HATS-647: managed blue-green resolution. When neither an explicit
+# AI_HATS_VENV nor a yaml venv_path was set, prefer a valid versions/current
+# pointer (a single line of text holding the active sha); else the legacy
+# default .venv (lazy migration — pre-versioning installs keep working until
+# the first managed `self update` populates versions/).
+if [[ -z "$VENV" && -f "$VERSIONS_DIR/current" ]]; then
+    # First line only + strip surrounding whitespace (matches paths.read_current_sha;
+    # never squash a multi-line file into a fake single sha).
+    sha="$(head -1 "$VERSIONS_DIR/current" 2>/dev/null | tr -d '[:space:]' || true)"
+    # Require a COMPLETE versioned venv (bin/ai-hats present): a present-but-
+    # broken versions/<sha>/ (e.g. external corruption) falls through to the
+    # legacy default .venv rather than dead-ending, preserving self-heal.
+    if [[ -n "$sha" && "$sha" != *"/"* && "$sha" != "." && "$sha" != ".." \
+          && -x "$VERSIONS_DIR/$sha/bin/ai-hats" ]]; then
+        VENV="$VERSIONS_DIR/$sha"
+    fi
+fi
 [[ -z "$VENV" ]] && VENV="$DEFAULT_VENV"
+
+# HATS-647: pin-at-spawn. Export the resolved venv so every descendant
+# (hooks, sub-agent child sessions, bash-chained `ai-hats … | ai-hats …`)
+# stays on this exact venv for the whole run — even if versions/current
+# flips mid-run. A child launcher sees AI_HATS_VENV set and honors it
+# verbatim instead of re-resolving the pointer.
+export AI_HATS_VENV="$VENV"
 
 is_default_venv() { [[ "$VENV" == "$DEFAULT_VENV" ]]; }
 
