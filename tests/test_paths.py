@@ -9,6 +9,7 @@ from ai_hats.paths import (
     ai_hats_dir,
     audits_dir,
     backlog_dir,
+    complete_sentinel,
     current_pointer,
     decisions_dir,
     detect_legacy_state,
@@ -16,6 +17,7 @@ from ai_hats.paths import (
     handoffs_dir,
     hooks_dir,
     hypotheses_dir,
+    is_complete,
     last_backup_path,
     legacy_paths_by_class,
     library_dir,
@@ -433,20 +435,29 @@ def test_user_home_env_empty_string_falls_back(monkeypatch):
 # ---------- HATS-647: versioned install layout + lazy-migration resolve ----------
 
 
-def _seed_version(project_dir, sha, *, make_dir=True, complete=True, pointer=True):
+def _seed_version(
+    project_dir, sha, *, make_dir=True, complete=True, pointer=True, sentinel=None
+):
     """Seed versions/<sha>/ (a fake venv) and/or versions/current.
 
-    ``complete`` controls whether the venv carries a ``bin/ai-hats`` marker —
-    read_current_sha only accepts a COMPLETE versioned venv.
+    ``complete`` controls whether the venv carries a ``bin/ai-hats`` marker.
+    ``sentinel`` controls whether it carries the ``.complete`` marker; defaults
+    to ``complete`` when ``None`` (a fully-installed venv has both). The two
+    axes are independent so a test can seed crash residue (``bin/ai-hats`` but
+    no ``.complete``) or a corrupted-after-complete venv (``.complete`` but no
+    ``bin/ai-hats``). read_current_sha requires BOTH (HATS-648).
     """
     root = project_dir / ".agent" / "ai-hats" / "versions"
     root.mkdir(parents=True, exist_ok=True)
+    write_sentinel = complete if sentinel is None else sentinel
     if make_dir:
         vdir = root / sha
         vdir.mkdir(parents=True, exist_ok=True)
         if complete:
             (vdir / "bin").mkdir(parents=True, exist_ok=True)
             (vdir / "bin" / "ai-hats").write_text("#!/bin/sh\n", encoding="utf-8")
+        if write_sentinel:
+            (vdir / ".complete").write_text("", encoding="utf-8")
     if pointer:
         (root / "current").write_text(f"{sha}\n", encoding="utf-8")
     return root
@@ -481,12 +492,35 @@ def test_read_current_sha_dangling(tmp_path, monkeypatch):
     assert read_current_sha(tmp_path) is None
 
 
-def test_read_current_sha_incomplete_venv(tmp_path, monkeypatch):
-    """Pointer + dir present but venv broken (no bin/ai-hats) → None, so callers
-    degrade to the self-healing legacy .venv instead of a dead versioned venv."""
+def test_read_current_sha_corrupt_venv(tmp_path, monkeypatch):
+    """Complete (sentinel present) but venv later broken (no bin/ai-hats) → None,
+    so callers degrade to the self-healing legacy .venv. Corruption guard
+    (HATS-647 review-finding #1), distinct from the incompleteness gate."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    _seed_version(tmp_path, "deadbeef", complete=False)
+    _seed_version(tmp_path, "deadbeef", complete=False, sentinel=True)
     assert read_current_sha(tmp_path) is None
+
+
+def test_read_current_sha_no_sentinel(tmp_path, monkeypatch):
+    """HATS-648: bin/ai-hats present but no .complete sentinel (install killed
+    mid-pip) → None. The sentinel is the completeness authority; an incomplete
+    install is never resolved as current."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    _seed_version(tmp_path, "deadbeef", complete=True, sentinel=False)
+    assert read_current_sha(tmp_path) is None
+
+
+def test_is_complete_gates_on_sentinel(tmp_path, monkeypatch):
+    """is_complete is True iff the .complete sentinel is present — independent
+    of bin/ai-hats (HATS-648)."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    _seed_version(tmp_path, "deadbeef", complete=True, sentinel=False, pointer=False)
+    assert is_complete(tmp_path, "deadbeef") is False
+    assert complete_sentinel(tmp_path, "deadbeef") == version_dir(
+        tmp_path, "deadbeef"
+    ) / ".complete"
+    complete_sentinel(tmp_path, "deadbeef").write_text("", encoding="utf-8")
+    assert is_complete(tmp_path, "deadbeef") is True
 
 
 @pytest.mark.parametrize("corrupt", ["", "  ", "..", "a/b", "../escape", "x\ny"])
