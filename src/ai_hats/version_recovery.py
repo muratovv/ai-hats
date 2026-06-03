@@ -23,6 +23,12 @@ based reclaim of **complete** dirs that the incomplete sweep deliberately leaves
 alone. The two passes are complementary — incomplete residue is reclaimed by
 age (no liveness signal exists for a half-install), complete versions only when
 a liveness ref proves no live run pins them.
+
+Phase B (HATS-653) adds :func:`reclaim_legacy_venv`: once **this** process runs
+from a complete versioned venv, the orphaned pre-versioning
+``<ai_hats_dir>/.venv`` (outside ``versions/``, which both R1 and R2 leave
+alone) is dead weight and is reclaimed. Guarded by ``current_run_sha``; backed
+by the launcher's existing self-heal, so the reclaim is reversible.
 """
 
 from __future__ import annotations
@@ -31,8 +37,8 @@ import time
 from pathlib import Path
 
 from . import safe_delete
-from .paths import is_complete, read_current_sha, versions_root
-from .version_refs import load_refs, ref_is_live
+from .paths import ai_hats_dir, is_complete, read_current_sha, versions_root
+from .version_refs import current_run_sha, load_refs, ref_is_live
 
 # Reused from the HATS-294 session-cache sweep: conservative 24h window. The
 # risk an "incomplete" dir is actually an install in flight lasts seconds, so
@@ -145,3 +151,59 @@ def reclaim_orphan_versions(
         )
         removed.append(entry)
     return removed
+
+
+def reclaim_legacy_venv(project_dir: Path) -> Path | None:
+    """Reclaim the legacy ``<ai_hats_dir>/.venv`` once versioned is authoritative.
+
+    Phase B (HATS-653): after lazy migration to the versioned layout the
+    pre-versioning ``.venv`` only ever resolves as a *fallback* (the launcher /
+    :func:`ai_hats.paths.venv_path` precedence consults it solely when
+    ``versions/current`` is absent or broken). Once **this** process runs from a
+    complete versioned venv, ``.venv`` is dead weight whose fallback value only
+    decays — every ``self update`` it misses leaves it staler. Reclaim it.
+
+    The single guard is ``current_run_sha(project_dir) is not None``. A non-None
+    result proves the running interpreter's ``sys.prefix`` is ``versions/<sha>/``,
+    which in one predicate means:
+
+    * **(a)** we are *not* running from ``.venv`` — so discarding it cannot pull
+      the rug out from under the live interpreter (lazy imports / a cross-device
+      trash-move could otherwise crash the current command). This assumes
+      ``.venv`` is a real directory, the only state migration produces
+      (``python3 -m venv``); a hypothetical ``.venv`` symlinked *into*
+      ``versions/`` would resolve under ``versions/`` and is out of scope;
+    * **(b)** no ``AI_HATS_VENV`` / yaml ``venv_path`` override and no editable /
+      dev checkout is active — all of those resolve ``current_run_sha → None``
+      (:func:`ai_hats.version_refs.current_run_sha`), so a user-owned venv is
+      never touched;
+    * **(c)** we run from a ``versions/<sha>``-shaped prefix — which for a *live*
+      interpreter is necessarily a working venv (one cannot execute from a
+      non-existent prefix). The guard itself is a lexical ``sys.prefix`` check,
+      not a ``.complete`` attestation; completeness is incidental to being live.
+
+    When the guard fails, the legacy ``.venv`` is kept. This is *stronger* than a
+    bare ``read_current_sha`` check: running-from-versioned additionally proves
+    live-process safety and the absence of an override.
+
+    Reclaim is **reversible**, not a destructive last resort: if a versioned
+    install later breaks and ``.venv`` is gone, the launcher's ``heal_if_needed``
+    recreates the default ``.venv`` on the next ``ai-hats self update`` and the
+    python self-update rebuilds the versioned install. So this is bounded disk
+    hygiene backed by the existing self-heal. Removal goes through
+    :func:`safe_delete.discard` (idempotent — a missing ``.venv`` is a no-op).
+
+    Returns the reclaimed path (for no-silent-caps logging by the caller) or
+    ``None`` when the guard skips or ``.venv`` was already absent.
+    """
+    if current_run_sha(project_dir) is None:
+        return None  # running from .venv / override / editable → keep legacy venv
+    legacy = ai_hats_dir(project_dir) / ".venv"
+    if not (legacy.exists() or legacy.is_symlink()):
+        return None  # already reclaimed or never migrated → no-op
+    safe_delete.discard(
+        legacy,
+        reason="legacy .venv superseded by versioned install (HATS-653)",
+        project_dir=project_dir,
+    )
+    return legacy

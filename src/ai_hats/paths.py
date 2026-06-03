@@ -449,8 +449,14 @@ def read_current_sha(project_dir: Path) -> str | None:
     if not is_complete(project_dir, raw):
         return None
     # Corruption guard (retained from HATS-647 review-finding #1): a
-    # complete-but-later-broken venv still degrades to the legacy .venv, a
-    # fallback HATS-649 GC relies on continuing to resolve.
+    # complete-but-later-broken venv returns None so callers degrade to the
+    # legacy .venv when it still exists. NOTE (HATS-653 / Phase B): once a
+    # healthy versioned install is the authoritative venv, that legacy .venv is
+    # deliberately reclaimed (reclaim_legacy_venv) — so post-reclaim this degrade
+    # path has no fallback target and the launcher fails loud with
+    # "Run: ai-hats self update", which heal_if_needed then rebuilds. Dropping
+    # the silent stale-fallback is the intended value of Phase B, not a
+    # regression of the HATS-649 "preserve .venv" note (superseded).
     if not (version_dir(project_dir, raw) / "bin" / "ai-hats").exists():
         return None
     return raw
