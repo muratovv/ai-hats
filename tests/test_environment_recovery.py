@@ -129,6 +129,25 @@ def test_run_skips_gc_when_version_lock_held(tmp_path, monkeypatch):
     assert orphan.exists(), "GC reclaimed under a held lock (should have skipped)"
 
 
+def test_run_swallows_oserror_in_version_gc(tmp_path, monkeypatch):
+    """An I/O error mid-version-GC is swallowed (never breaks create_session);
+    the later legacy-.venv reclaim still runs."""
+    _mk_complete_version(tmp_path, "cafef00d")
+    current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
+    legacy = tmp_path / ".agent" / "ai-hats" / ".venv"
+    legacy.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(sys, "prefix", str(legacy))  # this run pins nothing
+
+    def _boom(*_a, **_k):
+        raise OSError("disk gone")
+
+    monkeypatch.setattr(
+        "ai_hats.environment_recovery.reclaim_orphan_versions", _boom
+    )
+
+    EnvironmentRecovery(tmp_path).run()  # must not raise
+
+
 # ---------- moved session-cache sweep still works ----------
 
 
