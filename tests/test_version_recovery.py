@@ -11,6 +11,7 @@ import pytest
 
 from ai_hats import version_recovery, version_refs
 from ai_hats.paths import (
+    ai_hats_dir,
     complete_sentinel,
     current_pointer,
     version_dir,
@@ -270,3 +271,61 @@ def test_reclaim_keep_shas_protects_target(tmp_path):
 
 def test_reclaim_no_versions_root(tmp_path):
     assert version_recovery.reclaim_orphan_versions(tmp_path) == []
+
+
+# ---- reclaim_legacy_venv (HATS-653 / Phase B) ----
+
+
+def _mk_legacy_venv(project_dir):
+    """Seed a plausible <ai_hats_dir>/.venv with bin/python."""
+    legacy = ai_hats_dir(project_dir) / ".venv"
+    (legacy / "bin").mkdir(parents=True, exist_ok=True)
+    (legacy / "bin" / "python").write_text("#!/bin/sh\n", encoding="utf-8")
+    return legacy
+
+
+def test_reclaim_legacy_venv_removed_when_running_from_versioned(
+    tmp_path, monkeypatch
+):
+    legacy = _mk_legacy_venv(tmp_path)
+    monkeypatch.setattr(version_recovery, "current_run_sha", lambda _p: "cafef00d")
+    reclaimed = version_recovery.reclaim_legacy_venv(tmp_path)
+    assert reclaimed == legacy
+    assert not legacy.exists()
+
+
+def test_reclaim_legacy_venv_kept_when_not_running_from_versioned(
+    tmp_path, monkeypatch
+):
+    """current_run_sha None (running from .venv / override / editable) → keep."""
+    legacy = _mk_legacy_venv(tmp_path)
+    monkeypatch.setattr(version_recovery, "current_run_sha", lambda _p: None)
+    assert version_recovery.reclaim_legacy_venv(tmp_path) is None
+    assert legacy.exists()
+
+
+def test_reclaim_legacy_venv_idempotent(tmp_path, monkeypatch):
+    legacy = _mk_legacy_venv(tmp_path)
+    monkeypatch.setattr(version_recovery, "current_run_sha", lambda _p: "cafef00d")
+    first = version_recovery.reclaim_legacy_venv(tmp_path)
+    second = version_recovery.reclaim_legacy_venv(tmp_path)
+    assert first == legacy
+    assert second is None
+    assert not legacy.exists()
+
+
+def test_reclaim_legacy_venv_missing_is_noop(tmp_path, monkeypatch):
+    monkeypatch.setattr(version_recovery, "current_run_sha", lambda _p: "cafef00d")
+    assert version_recovery.reclaim_legacy_venv(tmp_path) is None
+
+
+def test_reclaim_legacy_venv_never_touches_versions(tmp_path, monkeypatch):
+    """The versioned install we run from is left intact; only .venv goes."""
+    vdir = _mk_version(tmp_path, "cafef00d", complete=True)
+    current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
+    legacy = _mk_legacy_venv(tmp_path)
+    monkeypatch.setattr(version_recovery, "current_run_sha", lambda _p: "cafef00d")
+    version_recovery.reclaim_legacy_venv(tmp_path)
+    assert not legacy.exists()
+    assert vdir.is_dir()
+    assert current_pointer(tmp_path).read_text().strip() == "cafef00d"
