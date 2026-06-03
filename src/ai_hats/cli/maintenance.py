@@ -288,11 +288,22 @@ def _run_managed_versioned_update(
     # staging the new build. Same idempotent, TTL-guarded sweep as the
     # create_session chokepoint (a *recent* incomplete dir may be a concurrent
     # update in flight, so it is kept). No-silent-caps.
-    from ..version_recovery import sweep_incomplete_versions
+    from ..version_recovery import reclaim_orphan_versions, sweep_incomplete_versions
 
     for _residue in sweep_incomplete_versions(project_dir):
         console.print(
             f"[dim]Reclaimed incomplete residue: versions/{_residue.name}[/]"
+        )
+
+    # HATS-649 (R2): reclaim complete versions orphaned by earlier runs — `self
+    # update` is the canonical "next invocation" that converges crash residue.
+    # Reclaim-on-certain-death: only versions with no live liveness ref, never
+    # `current`. Runs BEFORE the flip below, so the still-`current` version this
+    # updater itself runs from is skipped; `target_sha` (the about-to-be-
+    # installed/reused dir, not yet `current`) is protected explicitly via keep.
+    for _orphan in reclaim_orphan_versions(project_dir, keep_shas={target_sha}):
+        console.print(
+            f"[dim]Reclaimed orphaned version: versions/{_orphan.name}[/]"
         )
 
     vdir = version_dir(project_dir, target_sha)
