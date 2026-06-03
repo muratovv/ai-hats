@@ -288,7 +288,11 @@ def _run_managed_versioned_update(
     # staging the new build. Same idempotent, TTL-guarded sweep as the
     # create_session chokepoint (a *recent* incomplete dir may be a concurrent
     # update in flight, so it is kept). No-silent-caps.
-    from ..version_recovery import reclaim_orphan_versions, sweep_incomplete_versions
+    from ..version_recovery import (
+        reclaim_legacy_venv,
+        reclaim_orphan_versions,
+        sweep_incomplete_versions,
+    )
 
     for _residue in sweep_incomplete_versions(project_dir):
         console.print(
@@ -305,6 +309,14 @@ def _run_managed_versioned_update(
         console.print(
             f"[dim]Reclaimed orphaned version: versions/{_orphan.name}[/]"
         )
+
+    # HATS-653 (Phase B): once this updater itself runs from a complete versioned
+    # venv (current_run_sha not None), the orphaned pre-versioning legacy .venv is
+    # dead weight — reclaim it. The first migration update runs FROM .venv
+    # (current_run_sha None) and is correctly skipped; the reclaim converges on a
+    # later update / session. Covers the update-only user the chokepoint misses.
+    if (_venv := reclaim_legacy_venv(project_dir)) is not None:
+        console.print(f"[dim]Reclaimed legacy venv: {_venv}[/]")
 
     vdir = version_dir(project_dir, target_sha)
     already_current = read_current_sha(project_dir) == target_sha

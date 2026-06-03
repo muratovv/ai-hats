@@ -774,3 +774,44 @@ def test_managed_update_reuses_complete_dir_without_reinstall(tmp_path, monkeypa
     assert not any("pip" in c for c in calls)
     assert read_current_sha(tmp_path) == "cafef00d"
     assert is_complete(tmp_path, "cafef00d")
+
+
+def test_managed_update_reclaims_legacy_venv_when_on_versioned(tmp_path, monkeypatch):
+    """HATS-653: an updater already running from a versioned venv (current_run_sha
+    not None) reclaims the orphaned legacy .venv during the update."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
+    monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
+    # This updater runs FROM versions/0ldc0de0 → current_run_sha resolves.
+    monkeypatch.setattr(sys, "prefix", str(version_dir(tmp_path, "0ldc0de0")))
+    legacy = tmp_path / ".agent" / "ai-hats" / ".venv"
+    (legacy / "bin").mkdir(parents=True, exist_ok=True)
+
+    with patch("subprocess.run", side_effect=_versioned_fake_run()):
+        _run_managed_versioned_update(
+            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            old_version="1.0.0", active_role=None,
+            config_unreadable=False, migrate_force=False, check_branches=False,
+        )
+    assert not legacy.exists()  # legacy .venv reclaimed
+    assert read_current_sha(tmp_path) == "cafef00d"
+
+
+def test_managed_update_keeps_legacy_venv_when_on_venv(tmp_path, monkeypatch):
+    """HATS-653: the first migration update runs FROM .venv (current_run_sha None)
+    → the legacy .venv is kept (never deleted out from under the live process)."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
+    monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
+    legacy = tmp_path / ".agent" / "ai-hats" / ".venv"
+    (legacy / "bin").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(sys, "prefix", str(legacy))  # running from .venv itself
+
+    with patch("subprocess.run", side_effect=_versioned_fake_run()):
+        _run_managed_versioned_update(
+            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            old_version="1.0.0", active_role=None,
+            config_unreadable=False, migrate_force=False, check_branches=False,
+        )
+    assert legacy.exists()  # kept — we ran from it
+    assert read_current_sha(tmp_path) == "cafef00d"

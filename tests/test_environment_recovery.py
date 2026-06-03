@@ -69,6 +69,36 @@ def test_run_reclaims_unpinned_orphan(tmp_path, monkeypatch):
     assert not orphan.exists()
 
 
+# ---------- legacy .venv reclaim wiring (HATS-653 / Phase B) ----------
+
+
+def test_run_reclaims_legacy_venv_when_running_from_versioned(tmp_path, monkeypatch):
+    """We run from a complete versioned venv → the orphaned .venv is reclaimed."""
+    pinned = _mk_complete_version(tmp_path, "cafef00d")
+    current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
+    legacy = tmp_path / ".agent" / "ai-hats" / ".venv"
+    (legacy / "bin").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(sys, "prefix", str(pinned))
+
+    EnvironmentRecovery(tmp_path).run()
+
+    assert not legacy.exists()
+    assert pinned.is_dir()  # the versioned venv we run from is untouched
+
+
+def test_run_keeps_legacy_venv_on_legacy_run(tmp_path, monkeypatch):
+    """A run from .venv itself (current_run_sha None) must keep .venv."""
+    _mk_complete_version(tmp_path, "cafef00d")
+    current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
+    legacy = tmp_path / ".agent" / "ai-hats" / ".venv"
+    (legacy / "bin").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(sys, "prefix", str(legacy))  # running from .venv
+
+    EnvironmentRecovery(tmp_path).run()
+
+    assert legacy.exists()
+
+
 # ---------- moved session-cache sweep still works ----------
 
 
