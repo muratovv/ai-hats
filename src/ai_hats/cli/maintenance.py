@@ -232,6 +232,29 @@ def _version_string(python_exe: str) -> str:
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 
+def _pause_after_complete_for_test() -> None:
+    """Test-only seam (HATS-650 e2e): block between the ``.complete`` write and
+    the ``current`` flip so an e2e can deterministically interleave a concurrent
+    GC — or a kill — while the install still holds the version lock. Gated by
+    ``AI_HATS_TEST_PAUSE_AFTER_COMPLETE=<gate>``; unset (a no-op) in production.
+
+    Signals readiness by touching ``<gate>.ready`` (the install is now paused,
+    ``.complete`` written, ``current`` not yet flipped, lock held), then blocks
+    until ``<gate>`` appears — the test creates it to release. Bounded so a buggy
+    test can never hang the process forever.
+    """
+    gate = os.environ.get("AI_HATS_TEST_PAUSE_AFTER_COMPLETE")
+    if not gate:
+        return
+    import time
+
+    Path(gate + ".ready").write_text("", encoding="utf-8")
+    gate_path = Path(gate)
+    deadline = time.monotonic() + 120
+    while not gate_path.exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+
+
 def _run_managed_versioned_update(
     project_dir: Path,
     *,
@@ -284,128 +307,153 @@ def _run_managed_versioned_update(
         )
         sys.exit(2)
 
-    # HATS-648 (R1): clean incomplete residue from prior crashed updates before
-    # staging the new build. Same idempotent, TTL-guarded sweep as the
-    # create_session chokepoint (a *recent* incomplete dir may be a concurrent
-    # update in flight, so it is kept). No-silent-caps.
+    # HATS-650 (R3): the whole acquire critical section — the GC at start, the
+    # install / reuse, and the atomic `current` flip — runs under the crash-safe
+    # version lock, serialized against a concurrent `self update` and against the
+    # opportunistic GC at the create_session chokepoint. The lock is an fcntl
+    # advisory lock (filelock); the kernel releases it on process death, so a
+    # kill mid-install never wedges future cleanup. Blocking with a generous
+    # timeout — a second concurrent update waits its turn rather than racing the
+    # `.complete → flip` window (which would otherwise let a peer GC reclaim the
+    # just-completed target out from under the flip). VersionLockError is caught
+    # at the call site and surfaced as a clean "another update in progress".
+    from ..version_lock import INSTALL_LOCK_TIMEOUT, versions_lock
     from ..version_recovery import (
         reclaim_legacy_venv,
         reclaim_orphan_versions,
         sweep_incomplete_versions,
     )
 
-    for _residue in sweep_incomplete_versions(project_dir):
-        console.print(
-            f"[dim]Reclaimed incomplete residue: versions/{_residue.name}[/]"
-        )
-
-    # HATS-649 (R2): reclaim complete versions orphaned by earlier runs — `self
-    # update` is the canonical "next invocation" that converges crash residue.
-    # Reclaim-on-certain-death: only versions with no live liveness ref, never
-    # `current`. Runs BEFORE the flip below, so the still-`current` version this
-    # updater itself runs from is skipped; `target_sha` (the about-to-be-
-    # installed/reused dir, not yet `current`) is protected explicitly via keep.
-    for _orphan in reclaim_orphan_versions(project_dir, keep_shas={target_sha}):
-        console.print(
-            f"[dim]Reclaimed orphaned version: versions/{_orphan.name}[/]"
-        )
-
-    # HATS-653 (Phase B): once this updater itself runs from a complete versioned
-    # venv (current_run_sha not None), the orphaned pre-versioning legacy .venv is
-    # dead weight — reclaim it. The first migration update runs FROM .venv
-    # (current_run_sha None) and is correctly skipped; the reclaim converges on a
-    # later update / session. Covers the update-only user the chokepoint misses.
-    if (_venv := reclaim_legacy_venv(project_dir)) is not None:
-        console.print(f"[dim]Reclaimed legacy venv: {_venv}[/]")
-
-    vdir = version_dir(project_dir, target_sha)
-    already_current = read_current_sha(project_dir) == target_sha
-
-    if already_current:
-        console.print(
-            f"[green]Already up to date[/] ({old_version}) "
-            f"[dim]— current → {target_sha[:12]}[/]"
-        )
-        new_python = sys.executable
-    elif vdir.exists() and is_complete(project_dir, target_sha):
-        # A prior successful install of this exact sha (sentinel present):
-        # trust it and reuse — just (re)flip current below. A blind reinstall
-        # would rmtree a dir that may be a LIVE pinned run's frozen env
-        # (e.g. run still on sha A while current already moved to B, then a
-        # `self update --revision A`), so keying reuse on the sentinel is a
-        # safety guard, not only an optimisation (HATS-648).
-        new_python = str(vdir / "bin" / "python")
-        console.print(f"[cyan]Reusing complete[/] versions/{target_sha[:12]} …")
-        _flip_current(project_dir, target_sha)
-        new_version = _version_string(new_python)
-        console.print(
-            f"[green]Updated[/]: {old_version} → [bold]{new_version}[/] "
-            f"[dim](current → {target_sha[:12]})[/]"
-        )
-    else:
-        # No dir, or incomplete crash residue (no .complete sentinel) — never
-        # trust it; rebuild fresh (HATS-648 build-in-place + sentinel).
-        if vdir.exists():
-            shutil.rmtree(vdir, ignore_errors=True)
-        vdir.parent.mkdir(parents=True, exist_ok=True)
-        with console.status(
-            f"[cyan]Creating versioned venv[/] versions/{target_sha[:12]} …",
-            spinner="dots",
-        ):
-            venv_proc = subprocess.run(
-                [sys.executable, "-m", "venv", str(vdir)],
-                capture_output=True,
-                text=True,
+    with versions_lock(project_dir, timeout=INSTALL_LOCK_TIMEOUT):
+        # HATS-648 (R1): clean incomplete residue from prior crashed updates
+        # before staging the new build. Same idempotent, TTL-guarded sweep as
+        # the create_session chokepoint (a *recent* incomplete dir may be a
+        # concurrent update in flight, so it is kept). No-silent-caps.
+        for _residue in sweep_incomplete_versions(project_dir):
+            console.print(
+                f"[dim]Reclaimed incomplete residue: versions/{_residue.name}[/]"
             )
-        if venv_proc.returncode != 0:
-            console.print(f"[red]Update failed[/] (venv create): {venv_proc.stderr}")
-            return
-        new_python = str(vdir / "bin" / "python")
-        with console.status(
-            "[cyan]Downloading ai-hats from GitHub …[/] "
-            "[dim](pip install — may take a minute)[/]",
-            spinner="dots",
-        ):
-            install = subprocess.run(
-                _build_install_cmd(new_python, url, target_sha),
-                capture_output=True,
-                text=True,
+
+        # HATS-649 (R2): reclaim complete versions orphaned by earlier runs —
+        # `self update` is the canonical "next invocation" that converges crash
+        # residue. Reclaim-on-certain-death: only versions with no live liveness
+        # ref, never `current`. Runs BEFORE the flip below, so the still-
+        # `current` version this updater itself runs from is skipped;
+        # `target_sha` (the about-to-be-installed/reused dir, not yet `current`)
+        # is protected explicitly via keep.
+        for _orphan in reclaim_orphan_versions(project_dir, keep_shas={target_sha}):
+            console.print(
+                f"[dim]Reclaimed orphaned version: versions/{_orphan.name}[/]"
             )
-        if install.returncode != 0:
-            # current is untouched → the tool still runs on the old sha. The
-            # incomplete dir (no sentinel) is swept by version_recovery.
-            console.print(f"[red]Update failed[/]: {install.stderr}")
-            return
-        with console.status("[cyan]Verifying install …[/]", spinner="dots"):
-            verify = subprocess.run(
-                [new_python, "-m", "ai_hats._bootstrap", "verify"],
-                capture_output=True,
-                text=True,
+
+        # HATS-653 (Phase B): once this updater itself runs from a complete
+        # versioned venv (current_run_sha not None), the orphaned pre-versioning
+        # legacy .venv is dead weight — reclaim it. The first migration update
+        # runs FROM .venv (current_run_sha None) and is correctly skipped; the
+        # reclaim converges on a later update / session. Inside the lock is
+        # harmless: .venv lives outside versions/ and reclaim_legacy_venv never
+        # re-enters the version lock.
+        if (_venv := reclaim_legacy_venv(project_dir)) is not None:
+            console.print(f"[dim]Reclaimed legacy venv: {_venv}[/]")
+
+        vdir = version_dir(project_dir, target_sha)
+        already_current = read_current_sha(project_dir) == target_sha
+
+        if already_current:
+            console.print(
+                f"[green]Already up to date[/] ({old_version}) "
+                f"[dim]— current → {target_sha[:12]}[/]"
             )
-        if verify.returncode != 0:
-            warning = (verify.stderr or verify.stdout or "").strip() or "see logs"
-            console.print(f"[red]Update failed[/] (verify): {warning}")
-            return
-        # Sentinel written LAST, only after a fully-successful install+verify —
-        # the authoritative completeness marker (HATS-648). Only then is the
-        # atomic flip allowed; current never points at a dir lacking .complete.
-        complete_sentinel(project_dir, target_sha).write_text("", encoding="utf-8")
-        _flip_current(project_dir, target_sha)
-        new_version = _version_string(new_python)
-        console.print(
-            f"[green]Updated[/]: {old_version} → [bold]{new_version}[/] "
-            f"[dim](current → {target_sha[:12]})[/]"
-        )
-        changelog = _get_changelog()
-        if changelog:
-            console.print("\n[bold]Recent changes:[/]")
-            for line in changelog.splitlines()[:7]:
-                console.print(f"  {line}")
-        # No-silent-caps: prior version dirs are retained until R2 GC.
-        console.print(
-            "[dim]Note: previous version(s) kept under versions/; "
-            "reclaimed automatically by GC (R2 / HATS-649).[/]"
-        )
+            new_python = sys.executable
+        elif vdir.exists() and is_complete(project_dir, target_sha):
+            # A prior successful install of this exact sha (sentinel present):
+            # trust it and reuse — just (re)flip current below. A blind
+            # reinstall would rmtree a dir that may be a LIVE pinned run's frozen
+            # env (e.g. run still on sha A while current already moved to B, then
+            # a `self update --revision A`), so keying reuse on the sentinel is a
+            # safety guard, not only an optimisation (HATS-648).
+            new_python = str(vdir / "bin" / "python")
+            console.print(f"[cyan]Reusing complete[/] versions/{target_sha[:12]} …")
+            _flip_current(project_dir, target_sha)
+            new_version = _version_string(new_python)
+            console.print(
+                f"[green]Updated[/]: {old_version} → [bold]{new_version}[/] "
+                f"[dim](current → {target_sha[:12]})[/]"
+            )
+        else:
+            # No dir, or incomplete crash residue (no .complete sentinel) — never
+            # trust it; rebuild fresh (HATS-648 build-in-place + sentinel).
+            if vdir.exists():
+                shutil.rmtree(vdir, ignore_errors=True)
+            vdir.parent.mkdir(parents=True, exist_ok=True)
+            with console.status(
+                f"[cyan]Creating versioned venv[/] versions/{target_sha[:12]} …",
+                spinner="dots",
+            ):
+                venv_proc = subprocess.run(
+                    [sys.executable, "-m", "venv", str(vdir)],
+                    capture_output=True,
+                    text=True,
+                )
+            if venv_proc.returncode != 0:
+                console.print(
+                    f"[red]Update failed[/] (venv create): {venv_proc.stderr}"
+                )
+                return
+            new_python = str(vdir / "bin" / "python")
+            with console.status(
+                "[cyan]Downloading ai-hats from GitHub …[/] "
+                "[dim](pip install — may take a minute)[/]",
+                spinner="dots",
+            ):
+                install = subprocess.run(
+                    _build_install_cmd(new_python, url, target_sha),
+                    capture_output=True,
+                    text=True,
+                )
+            if install.returncode != 0:
+                # current is untouched → the tool still runs on the old sha. The
+                # incomplete dir (no sentinel) is swept by version_recovery.
+                console.print(f"[red]Update failed[/]: {install.stderr}")
+                return
+            with console.status("[cyan]Verifying install …[/]", spinner="dots"):
+                verify = subprocess.run(
+                    [new_python, "-m", "ai_hats._bootstrap", "verify"],
+                    capture_output=True,
+                    text=True,
+                )
+            if verify.returncode != 0:
+                warning = (verify.stderr or verify.stdout or "").strip() or "see logs"
+                console.print(f"[red]Update failed[/] (verify): {warning}")
+                return
+            # Sentinel written LAST, only after a fully-successful install+verify
+            # — the authoritative completeness marker (HATS-648). Only then is
+            # the atomic flip allowed; current never points at a dir lacking
+            # .complete.
+            complete_sentinel(project_dir, target_sha).write_text(
+                "", encoding="utf-8"
+            )
+            # HATS-650 e2e seam — no-op unless AI_HATS_TEST_PAUSE_AFTER_COMPLETE
+            # is set. Lets a test freeze the install here (lock held, .complete
+            # written, current not yet flipped) to exercise the corruption window
+            # the lock closes.
+            _pause_after_complete_for_test()
+            _flip_current(project_dir, target_sha)
+            new_version = _version_string(new_python)
+            console.print(
+                f"[green]Updated[/]: {old_version} → [bold]{new_version}[/] "
+                f"[dim](current → {target_sha[:12]})[/]"
+            )
+            changelog = _get_changelog()
+            if changelog:
+                console.print("\n[bold]Recent changes:[/]")
+                for line in changelog.splitlines()[:7]:
+                    console.print(f"  {line}")
+            # No-silent-caps: prior version dirs are retained until R2 GC.
+            console.print(
+                "[dim]Note: previous version(s) kept under versions/; "
+                "reclaimed automatically by GC (R2 / HATS-649).[/]"
+            )
 
     # Bump / re-assemble with the NEW code (fresh interpreter in the target
     # venv) — mirrors the legacy HATS-400 fresh-interpreter bump.
@@ -1010,16 +1058,25 @@ def update(
     # concurrently-live run survives. Editable / override venvs fall through
     # to the legacy in-place install path below.
     if _is_managed_install(project_dir):
-        _run_managed_versioned_update(
-            project_dir,
-            url=_git_install_url(),
-            target_sha=managed_target_sha,
-            old_version=old_version,
-            active_role=active_role,
-            config_unreadable=config_unreadable,
-            migrate_force=migrate_force,
-            check_branches=check_branches,
-        )
+        from ..version_lock import VersionLockError
+
+        try:
+            _run_managed_versioned_update(
+                project_dir,
+                url=_git_install_url(),
+                target_sha=managed_target_sha,
+                old_version=old_version,
+                active_role=active_role,
+                config_unreadable=config_unreadable,
+                migrate_force=migrate_force,
+                check_branches=check_branches,
+            )
+        except VersionLockError as exc:
+            # A concurrent `self update` holds the acquire lock past the timeout.
+            # current is untouched → the tool still runs on the old sha; the
+            # other update converges. Clean exit, no traceback.
+            console.print(f"[red]Update failed[/] (another update in progress):\n{exc}")
+            sys.exit(2)
         return
 
     # 2. Install — short-circuited when the probe confirms installed SHA
