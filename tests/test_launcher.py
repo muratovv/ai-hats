@@ -336,3 +336,98 @@ def test_exec_fails_when_ai_hats_binary_missing(tmp_path):
     assert "ai-hats binary is missing" in res.stderr
     # Fresh project (no ai-hats.yaml) → bootstrap hint is `self init` (HATS-612).
     assert "ai-hats self init" in res.stderr
+
+
+# ---------- HATS-647: versioned blue-green resolution + pin-at-spawn ----------
+
+
+def _versions_layout(project_dir, sha, *, ai_hats_echo="ver-stub", make_dir=True, pointer=True):
+    """Seed <project>/.agent/ai-hats/versions/<sha>/ (a fake venv) + current pointer."""
+    versions = project_dir / ".agent" / "ai-hats" / "versions"
+    versions.mkdir(parents=True, exist_ok=True)
+    if make_dir:
+        _fake_venv(versions / sha, ai_hats_echo=ai_hats_echo)
+    if pointer:
+        (versions / "current").write_text(f"{sha}\n")
+    return versions
+
+
+def test_resolve_versions_current_pointer(tmp_path):
+    """Valid versions/current → launcher execs versions/<sha>/bin/ai-hats."""
+    _versions_layout(tmp_path, "cafef00d", ai_hats_echo="ver-stub")
+    res = _run(["status"], cwd=tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert "ver-stub: status" in res.stdout
+
+
+def test_versions_dangling_pointer_falls_back_to_legacy(tmp_path):
+    """current points at a missing versions/<sha>/ → legacy .venv is used."""
+    _versions_layout(tmp_path, "deadbeef", make_dir=False)  # pointer only, no dir
+    _fake_venv(tmp_path / ".agent" / "ai-hats" / ".venv", ai_hats_echo="legacy-stub")
+    res = _run(["status"], cwd=tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert "legacy-stub: status" in res.stdout
+
+
+def test_versions_incomplete_venv_falls_back_to_legacy(tmp_path):
+    """current → versions/<sha>/ that exists but is broken (no bin/ai-hats) →
+    legacy .venv is used (self-heal preserved; does not dead-end)."""
+    versions = tmp_path / ".agent" / "ai-hats" / "versions"
+    (versions / "deadbeef" / "bin").mkdir(parents=True)  # dir present, no ai-hats
+    (versions / "current").write_text("deadbeef\n")
+    _fake_venv(tmp_path / ".agent" / "ai-hats" / ".venv", ai_hats_echo="legacy-stub")
+    res = _run(["status"], cwd=tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert "legacy-stub: status" in res.stdout
+
+
+def test_versions_multiline_pointer_does_not_forge_sha(tmp_path):
+    """A multi-line pointer must NOT be squashed into a single fake sha; the
+    first line ('cafe') has no matching dir → legacy .venv fallback."""
+    versions = tmp_path / ".agent" / "ai-hats" / "versions"
+    versions.mkdir(parents=True, exist_ok=True)
+    _fake_venv(versions / "cafef00d", ai_hats_echo="ver-stub")  # the squashed name
+    (versions / "current").write_text("cafe\nf00d\n")
+    _fake_venv(tmp_path / ".agent" / "ai-hats" / ".venv", ai_hats_echo="legacy-stub")
+    res = _run(["status"], cwd=tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert "legacy-stub: status" in res.stdout
+    assert "ver-stub" not in res.stdout
+
+
+def test_versions_corrupt_pointer_falls_back_to_legacy(tmp_path):
+    """Pointer content with a path separator never escapes → legacy .venv."""
+    versions = tmp_path / ".agent" / "ai-hats" / "versions"
+    versions.mkdir(parents=True, exist_ok=True)
+    (versions / "current").write_text("../escape\n")
+    _fake_venv(tmp_path / ".agent" / "ai-hats" / ".venv", ai_hats_echo="legacy-stub")
+    res = _run(["status"], cwd=tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert "legacy-stub: status" in res.stdout
+
+
+def test_env_venv_beats_versions_current(tmp_path):
+    """Explicit AI_HATS_VENV wins over a valid versions/current (HATS-339 override)."""
+    _versions_layout(tmp_path, "cafef00d", ai_hats_echo="ver-stub")
+    env_venv = tmp_path / "user-owned"
+    _fake_venv(env_venv, ai_hats_echo="env-stub")
+    res = _run(["status"], cwd=tmp_path, env={"AI_HATS_VENV": str(env_venv)})
+    assert res.returncode == 0, res.stderr
+    assert "env-stub: status" in res.stdout
+
+
+def test_pin_exports_resolved_versioned_venv(tmp_path):
+    """pin-at-spawn: the resolved versions/<sha> path is exported as AI_HATS_VENV
+    so descendants inherit the exact same venv for the whole run."""
+    versions = tmp_path / ".agent" / "ai-hats" / "versions"
+    versions.mkdir(parents=True, exist_ok=True)
+    sha = "cafef00d"
+    _fake_venv(versions / sha)
+    # Overwrite the ai-hats stub to echo the inherited pin.
+    stub = versions / sha / "bin" / "ai-hats"
+    stub.write_text('#!/usr/bin/env bash\necho "PIN=$AI_HATS_VENV"\nexit 0\n')
+    _make_executable(stub)
+    (versions / "current").write_text(f"{sha}\n")
+    res = _run(["status"], cwd=tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert f"PIN={versions / sha}" in res.stdout

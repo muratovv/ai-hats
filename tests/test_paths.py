@@ -9,6 +9,7 @@ from ai_hats.paths import (
     ai_hats_dir,
     audits_dir,
     backlog_dir,
+    current_pointer,
     decisions_dir,
     detect_legacy_state,
     experiments_dir,
@@ -22,6 +23,7 @@ from ai_hats.paths import (
     normalize_venv_path,
     pipeline_steps_dir,
     proposals_dir,
+    read_current_sha,
     retros_dir,
     rules_dir,
     runs_dir,
@@ -33,6 +35,8 @@ from ai_hats.paths import (
     traces_dir,
     user_home,
     venv_path,
+    version_dir,
+    versions_root,
     worktree_state_path,
     worktrees_dir,
 )
@@ -424,3 +428,97 @@ def test_user_home_env_empty_string_falls_back(monkeypatch):
 
     monkeypatch.setenv("AI_HATS_USER_HOME", "")
     assert user_home() == Path.home()
+
+
+# ---------- HATS-647: versioned install layout + lazy-migration resolve ----------
+
+
+def _seed_version(project_dir, sha, *, make_dir=True, complete=True, pointer=True):
+    """Seed versions/<sha>/ (a fake venv) and/or versions/current.
+
+    ``complete`` controls whether the venv carries a ``bin/ai-hats`` marker —
+    read_current_sha only accepts a COMPLETE versioned venv.
+    """
+    root = project_dir / ".agent" / "ai-hats" / "versions"
+    root.mkdir(parents=True, exist_ok=True)
+    if make_dir:
+        vdir = root / sha
+        vdir.mkdir(parents=True, exist_ok=True)
+        if complete:
+            (vdir / "bin").mkdir(parents=True, exist_ok=True)
+            (vdir / "bin" / "ai-hats").write_text("#!/bin/sh\n", encoding="utf-8")
+    if pointer:
+        (root / "current").write_text(f"{sha}\n", encoding="utf-8")
+    return root
+
+
+def test_versions_layout_paths(tmp_path, monkeypatch):
+    """versions_root / version_dir / current_pointer compose under ai_hats_dir."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    base = tmp_path / ".agent" / "ai-hats" / "versions"
+    assert versions_root(tmp_path) == base
+    assert version_dir(tmp_path, "abc123") == base / "abc123"
+    assert current_pointer(tmp_path) == base / "current"
+
+
+def test_read_current_sha_present(tmp_path, monkeypatch):
+    """Pointer present + versions/<sha>/ dir present → returns the sha."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    _seed_version(tmp_path, "deadbeef")
+    assert read_current_sha(tmp_path) == "deadbeef"
+
+
+def test_read_current_sha_missing_pointer(tmp_path, monkeypatch):
+    """No pointer at all → None (legacy install, not yet versioned)."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    assert read_current_sha(tmp_path) is None
+
+
+def test_read_current_sha_dangling(tmp_path, monkeypatch):
+    """Pointer present but versions/<sha>/ dir absent → None (dangling)."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    _seed_version(tmp_path, "deadbeef", make_dir=False)
+    assert read_current_sha(tmp_path) is None
+
+
+def test_read_current_sha_incomplete_venv(tmp_path, monkeypatch):
+    """Pointer + dir present but venv broken (no bin/ai-hats) → None, so callers
+    degrade to the self-healing legacy .venv instead of a dead versioned venv."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    _seed_version(tmp_path, "deadbeef", complete=False)
+    assert read_current_sha(tmp_path) is None
+
+
+@pytest.mark.parametrize("corrupt", ["", "  ", "..", "a/b", "../escape", "x\ny"])
+def test_read_current_sha_corrupt(tmp_path, monkeypatch, corrupt):
+    """Empty / dotdot / path-separator pointer content → None (never escapes)."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    root = tmp_path / ".agent" / "ai-hats" / "versions"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "current").write_text(corrupt, encoding="utf-8")
+    assert read_current_sha(tmp_path) is None
+
+
+def test_venv_path_resolves_versioned(tmp_path, monkeypatch):
+    """No env/yaml override + valid versions/current → versions/<sha>/."""
+    monkeypatch.delenv("AI_HATS_VENV", raising=False)
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    _seed_version(tmp_path, "cafef00d")
+    assert venv_path(tmp_path) == version_dir(tmp_path, "cafef00d")
+
+
+def test_venv_path_dangling_pointer_falls_back_to_legacy(tmp_path, monkeypatch):
+    """Dangling versions/current → legacy .venv (lazy migration keeps working)."""
+    monkeypatch.delenv("AI_HATS_VENV", raising=False)
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    _seed_version(tmp_path, "deadbeef", make_dir=False)
+    assert venv_path(tmp_path) == tmp_path / ".agent" / "ai-hats" / ".venv"
+
+
+def test_venv_path_env_override_beats_versions(tmp_path, monkeypatch):
+    """Explicit AI_HATS_VENV wins over a valid versions/current (HATS-339 override)."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    _seed_version(tmp_path, "cafef00d")
+    override = tmp_path / "user-owned-venv"
+    monkeypatch.setenv("AI_HATS_VENV", str(override))
+    assert venv_path(tmp_path) == override

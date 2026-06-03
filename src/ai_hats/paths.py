@@ -348,7 +348,79 @@ def venv_path(project_dir: Path) -> Path:
     if raw_yaml:
         p = Path(raw_yaml).expanduser()
         return p if p.is_absolute() else (project_dir / p)
+    # HATS-647: managed blue-green resolution. When versions/current
+    # resolves to a present versions/<sha>/, that is the active venv;
+    # otherwise fall back to the legacy default .venv (lazy migration —
+    # existing single-venv installs keep working until the first managed
+    # `self update` populates versions/).
+    sha = read_current_sha(project_dir)
+    if sha is not None:
+        return version_dir(project_dir, sha)
     return ai_hats_dir(project_dir) / ".venv"
+
+
+# ---------- Versioned install layout (HATS-647) ----------
+
+
+def _is_safe_sha_component(raw: str) -> bool:
+    """True if ``raw`` is a single safe path component usable as a dir name.
+
+    A managed ``sha`` is the git commit the active ai-hats was installed
+    from (PEP 610 ``vcs_info.commit_id``) — hex, but we also tolerate
+    tag/branch-derived names, so the alphabet is ``[A-Za-z0-9._-]``. Reject
+    empty / dot / dotdot / anything with a path separator so a corrupt
+    pointer can never escape ``versions/`` or be treated as valid.
+    """
+    if not raw or raw in (".", ".."):
+        return False
+    return all(c.isalnum() or c in "._-" for c in raw)
+
+
+def versions_root(project_dir: Path) -> Path:
+    """Root of blue-green versioned venvs: ``<ai_hats_dir>/versions/``.
+
+    Pure path helper — no ``mkdir``. Directory creation is owned by
+    ``self update`` / the bash launcher (mirrors :func:`venv_path`'s
+    HATS-339 contract), not by read-side callers.
+    """
+    return ai_hats_dir(project_dir) / "versions"
+
+
+def version_dir(project_dir: Path, sha: str) -> Path:
+    """Per-``sha`` managed venv: ``<ai_hats_dir>/versions/<sha>/``."""
+    return versions_root(project_dir) / sha
+
+
+def current_pointer(project_dir: Path) -> Path:
+    """Active-version pointer file: ``<ai_hats_dir>/versions/current``.
+
+    Holds the active ``sha`` as a single line of text. A pointer-file (not
+    a symlink) is portable to Windows / Git-Bash, where symlink creation
+    needs elevated privileges. Flipped atomically (tmp+rename) by
+    ``self update`` only after a successful install.
+    """
+    return versions_root(project_dir) / "current"
+
+
+def read_current_sha(project_dir: Path) -> str | None:
+    """Resolve the active managed ``sha`` from ``versions/current``.
+
+    Returns the ``sha`` only when the pointer exists, is well-formed, and
+    its ``versions/<sha>/`` venv is **complete** (``bin/ai-hats`` present). A
+    missing/corrupt pointer, a dangling ``sha``, or a present-but-broken venv
+    returns ``None`` so callers fall back to the legacy ``.venv`` (HATS-647
+    lazy-migration contract) — a corrupted versioned install degrades to the
+    self-healing default rather than dead-ending.
+    """
+    try:
+        raw = current_pointer(project_dir).read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    if not _is_safe_sha_component(raw):
+        return None
+    if not (version_dir(project_dir, raw) / "bin" / "ai-hats").exists():
+        return None
+    return raw
 
 
 # ---------- Legacy migration helpers (consumed by HATS-312/313/314) ----------
