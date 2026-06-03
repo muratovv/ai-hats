@@ -56,8 +56,14 @@ def current_run_sha(project_dir: Path) -> str | None:
     Returns the version dir name when the running interpreter's prefix is
     ``versions/<sha>/``; ``None`` for the legacy ``.venv``, an editable / dev
     checkout, or any prefix outside ``versions/``. Those runs pin no managed
-    version, so they write no ref — and R2 never reclaims the legacy ``.venv``
-    (its reclaim is HATS-653).
+    version, so they write no ref.
+
+    Doubly load-bearing in Phase B (HATS-653): this same predicate guards
+    :func:`ai_hats.version_recovery.reclaim_legacy_venv` — a non-``None`` result
+    proves we run from a complete versioned venv (so the legacy ``.venv`` is
+    idle and safe to reclaim), while ``None`` (legacy / override / editable run)
+    keeps ``.venv`` untouched. R2's ``versions/<sha>/`` reclaim never touches
+    ``.venv``; B's reclaim does, but only under this guard.
     """
     try:
         prefix = Path(sys.prefix).resolve()

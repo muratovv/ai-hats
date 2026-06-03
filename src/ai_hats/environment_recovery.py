@@ -9,7 +9,9 @@ WrapRunner path:
      version *we* are pinned to);
   2. sweep stale session-cache dirs (HATS-294);
   3. sweep incomplete versioned-install residue (HATS-648 / R1);
-  4. reclaim orphaned complete versions with no live ref (HATS-649 / R2).
+  4. reclaim orphaned complete versions with no live ref (HATS-649 / R2);
+  5. reclaim the legacy pre-versioning ``.venv`` once we run from a complete
+     versioned venv (HATS-653 / Phase B).
 
 Recovery is injected into ``SessionManager`` as a mockable collaborator
 (:class:`EnvironmentRecovery` by default, :class:`NoOpRecovery` for unit tests
@@ -29,7 +31,11 @@ from pathlib import Path
 from typing import Protocol
 
 from .paths import session_cache_root
-from .version_recovery import reclaim_orphan_versions, sweep_incomplete_versions
+from .version_recovery import (
+    reclaim_legacy_venv,
+    reclaim_orphan_versions,
+    sweep_incomplete_versions,
+)
 from .version_refs import write_current_run_ref
 
 logger = logging.getLogger(__name__)
@@ -84,6 +90,13 @@ class EnvironmentRecovery:
             logger.info("reclaimed incomplete version residue: %s", residue.name)
         for orphan in reclaim_orphan_versions(self.project_dir):
             logger.info("reclaimed orphaned version: %s", orphan.name)
+        # HATS-653 (Phase B): once we run from a complete versioned venv, the
+        # orphaned pre-versioning legacy .venv is dead weight — reclaim it. The
+        # current_run_sha guard inside makes this a no-op on a legacy/override/
+        # editable run, so it is safe at this universal seam.
+        reclaimed_venv = reclaim_legacy_venv(self.project_dir)
+        if reclaimed_venv is not None:
+            logger.info("reclaimed legacy .venv: %s", reclaimed_venv)
 
 
 class NoOpRecovery:
