@@ -579,6 +579,80 @@ def test_is_managed_override_venv_is_false(tmp_path, monkeypatch):
     assert _is_managed_install(tmp_path) is False
 
 
+# ---- HATS-655: dormant-versioned-layout advisory ----
+
+
+def _on_venv(tmp_path, monkeypatch):
+    """Make sys.prefix the legacy default .venv (managed, current_run_sha None)."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
+    monkeypatch.setattr(
+        _mnt.sys, "prefix", str(tmp_path / ".agent" / "ai-hats" / ".venv")
+    )
+
+
+def test_dormant_true_when_versioned_exists_but_run_from_venv(tmp_path, monkeypatch):
+    _on_venv(tmp_path, monkeypatch)
+    assert _mnt._versioned_layout_dormant(
+        tmp_path, pre_existing_versioned=True
+    ) is True
+
+
+def test_dormant_false_on_first_migration(tmp_path, monkeypatch):
+    """No versioned install pre-existed → running from .venv is expected."""
+    _on_venv(tmp_path, monkeypatch)
+    assert _mnt._versioned_layout_dormant(
+        tmp_path, pre_existing_versioned=False
+    ) is False
+
+
+def test_dormant_false_when_running_from_versioned(tmp_path, monkeypatch):
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
+    monkeypatch.setattr(
+        _mnt.sys, "prefix",
+        str(tmp_path / ".agent" / "ai-hats" / "versions" / "deadbeef"),
+    )
+    assert _mnt._versioned_layout_dormant(
+        tmp_path, pre_existing_versioned=True
+    ) is False
+
+
+def test_dormant_false_on_override(tmp_path, monkeypatch):
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
+    monkeypatch.setattr(_mnt.sys, "prefix", str(tmp_path / "user-owned"))
+    assert _mnt._versioned_layout_dormant(
+        tmp_path, pre_existing_versioned=True
+    ) is False
+
+
+def test_dormant_false_on_editable(tmp_path, monkeypatch):
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (True, "file:///src"))
+    monkeypatch.setattr(
+        _mnt.sys, "prefix", str(tmp_path / ".agent" / "ai-hats" / ".venv")
+    )
+    assert _mnt._versioned_layout_dormant(
+        tmp_path, pre_existing_versioned=True
+    ) is False
+
+
+def test_installed_launcher_path_resolution(tmp_path, monkeypatch):
+    import shutil
+
+    # 1. AI_HATS_LAUNCHER_DEST wins.
+    monkeypatch.setenv("AI_HATS_LAUNCHER_DEST", str(tmp_path / "custom" / "ai-hats"))
+    assert _mnt._installed_launcher_path() == tmp_path / "custom" / "ai-hats"
+    # 2. unset + on PATH → which().
+    monkeypatch.delenv("AI_HATS_LAUNCHER_DEST", raising=False)
+    monkeypatch.setattr(shutil, "which", lambda _: "/opt/bin/ai-hats")
+    assert _mnt._installed_launcher_path() == Path("/opt/bin/ai-hats")
+    # 3. unset + not on PATH → documented default.
+    monkeypatch.setattr(shutil, "which", lambda _: None)
+    assert _mnt._installed_launcher_path() == Path.home() / ".local" / "bin" / "ai-hats"
+
+
 def test_build_install_cmd_url_and_local():
     """Install target: PEP 508 `name @ url@ref` for URLs, bare path@ref otherwise."""
     url_cmd = _build_install_cmd("/v/bin/python", "git+ssh://x/ai-hats.git", "abc")
@@ -815,3 +889,61 @@ def test_managed_update_keeps_legacy_venv_when_on_venv(tmp_path, monkeypatch):
         )
     assert legacy.exists()  # kept — we ran from it
     assert read_current_sha(tmp_path) == "cafef00d"
+
+
+def _capture_prints(monkeypatch):
+    printed: list[str] = []
+    monkeypatch.setattr(
+        _mnt.console, "print",
+        lambda *a, **k: printed.append(" ".join(str(x) for x in a)),
+    )
+    return printed
+
+
+def test_managed_update_warns_when_launcher_dormant(tmp_path, monkeypatch):
+    """HATS-655: a versioned install pre-existed AND this update ran from the
+    legacy .venv → the dormant-layout hint fires."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
+    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
+    monkeypatch.setattr(
+        sys, "prefix", str(tmp_path / ".agent" / "ai-hats" / ".venv")
+    )
+    # A complete versioned install already exists → pre_existing_versioned True.
+    vbin = version_dir(tmp_path, "0ldc0de0") / "bin"
+    vbin.mkdir(parents=True, exist_ok=True)
+    (vbin / "ai-hats").write_text("#!/bin/sh\n")
+    complete_sentinel(tmp_path, "0ldc0de0").write_text("", encoding="utf-8")
+    _flip_current(tmp_path, "0ldc0de0")
+    printed = _capture_prints(monkeypatch)
+
+    with patch("subprocess.run", side_effect=_versioned_fake_run()):
+        _run_managed_versioned_update(
+            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            old_version="1.0.0", active_role=None,
+            config_unreadable=False, migrate_force=False, check_branches=False,
+        )
+    assert any(
+        "host launcher is not using the versioned install" in p for p in printed
+    )
+    assert any("install-launcher.sh" in p for p in printed)
+
+
+def test_managed_update_no_dormant_hint_on_first_migration(tmp_path, monkeypatch):
+    """No versioned install pre-existed → running from .venv is expected, no hint."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
+    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
+    monkeypatch.setattr(
+        sys, "prefix", str(tmp_path / ".agent" / "ai-hats" / ".venv")
+    )
+    printed = _capture_prints(monkeypatch)
+
+    with patch("subprocess.run", side_effect=_versioned_fake_run()):
+        _run_managed_versioned_update(
+            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            old_version="1.0.0", active_role=None,
+            config_unreadable=False, migrate_force=False, check_branches=False,
+        )
+    assert read_current_sha(tmp_path) == "cafef00d"  # update succeeded
+    assert not any("host launcher is not using" in p for p in printed)
