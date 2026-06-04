@@ -33,6 +33,9 @@ def _mk_complete_version(project_dir, sha):
     vdir = version_dir(project_dir, sha)
     (vdir / "bin").mkdir(parents=True, exist_ok=True)
     (vdir / "bin" / "ai-hats").write_text("#!/bin/sh\n", encoding="utf-8")
+    # bin/python — read_current_sha requires a runnable interpreter (HATS-657),
+    # so a "complete version" the reclaim tests treat as `current` must have it.
+    (vdir / "bin" / "python").write_text("#!/bin/sh\n", encoding="utf-8")
     complete_sentinel(project_dir, sha).write_text("", encoding="utf-8")
     return vdir
 

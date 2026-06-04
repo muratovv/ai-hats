@@ -64,12 +64,12 @@ def test_e2e_install_init_break_heal(tmp_path):
        HATS-656), so the exec check reports the missing interpreter.
     7. ai-hats self update → heal-then-delegate: the launcher falls back to
        the (broken) default .venv, heal recreates it, and the python rich
-       self update + auto-bump restore the tool (it now runs from .venv).
+       self update + auto-bump restore the tool. HATS-657: read_current_sha
+       treats the python-broken versioned install as unusable, so the update
+       REBUILDS versions/<sha> (not already_current) AND stays silent on the
+       HATS-655 dormancy advisory (the launcher correctly skipped a broken
+       venv — it is not stale).
     8. ai-hats config status → smoke pass again, composition restored.
-
-    (The dormant-versioned-layout advisory from HATS-655 may also print in
-    step 7 — the recovered tool legitimately runs from .venv while the old
-    versioned install stays broken; that case is tracked separately.)
     """
     launcher_dest = tmp_path / "bin" / "ai-hats"
     project = tmp_path / "project"
@@ -164,6 +164,22 @@ def test_e2e_install_init_break_heal(tmp_path):
     # Full chain runs post-heal: rich UX from python self update + auto-bump.
     assert "Current version:" in res.stdout
     assert "Re-assembling: assistant" in res.stdout
+    # HATS-657 #1: the python-broken versioned install is unusable
+    # (read_current_sha → None), so the update is NOT already_current and the
+    # reuse gate refuses the broken dir — versions/<sha> is REBUILT with a fresh
+    # interpreter rather than skipped.
+    rebuilt_python = versions / (versions / "current").read_text().strip() / "bin" / "python"
+    assert rebuilt_python.is_file(), (
+        "HATS-657: versioned venv was not rebuilt after the python upgrade\n"
+        f"stdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+    )
+    # HATS-657 #2: the dormancy advisory must NOT false-fire here — the launcher
+    # correctly skipped a BROKEN versioned venv, it does not predate the layout.
+    combined = res.stdout + res.stderr
+    assert "host launcher is not using the versioned" not in combined, (
+        "HATS-657: dormancy advisory false-fired on a python-broken heal\n"
+        f"stdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+    )
 
     # ---- 8. tool restored — runs again (from the recreated .venv) ----
     res = ai_hats("config", "status")

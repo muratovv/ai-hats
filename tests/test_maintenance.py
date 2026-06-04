@@ -685,8 +685,11 @@ def _versioned_fake_run(*, fail_at=None, bump_rec=None):
                 return _make_completed(a, returncode=1, stderr="venv boom")
             target = Path(a[-1])
             (target / "bin").mkdir(parents=True, exist_ok=True)
-            # pip install (next phase) drops the ai-hats entry-point; the venv
-            # is only "complete" (read_current_sha-acceptable) once it exists.
+            # `python -m venv` lays down the interpreter; pip install (next phase)
+            # drops the ai-hats entry-point. The venv is only "usable"
+            # (read_current_sha-acceptable) once both bin/python and bin/ai-hats
+            # exist alongside the sentinel (HATS-657).
+            (target / "bin" / "python").write_text("#!/bin/sh\n")
             (target / "bin" / "ai-hats").write_text("#!/bin/sh\n")
             return _make_completed(a, returncode=0)
         if "pip" in a:
@@ -762,10 +765,12 @@ def test_managed_update_verify_failure_does_not_flip(tmp_path, monkeypatch):
 def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
     """current already == target + dir present → no venv/pip/verify, bump only."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    # Pre-seed: a COMPLETE versions/cafef00d/ venv (bin + .complete sentinel)
-    # and current → it. HATS-648: completeness now requires the sentinel.
+    # Pre-seed: a USABLE versions/cafef00d/ venv (bin/python + bin/ai-hats +
+    # .complete sentinel) and current → it. HATS-648: completeness requires the
+    # sentinel; HATS-657: read_current_sha additionally requires bin/python.
     vbin = version_dir(tmp_path, "cafef00d") / "bin"
     vbin.mkdir(parents=True, exist_ok=True)
+    (vbin / "python").write_text("#!/bin/sh\n")
     (vbin / "ai-hats").write_text("#!/bin/sh\n")
     complete_sentinel(tmp_path, "cafef00d").write_text("", encoding="utf-8")
     _flip_current(tmp_path, "cafef00d")
@@ -789,6 +794,58 @@ def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
         any("_bump_internal" in x for x in c) and c[0] == sys.executable
         for c in calls
     )
+
+
+def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
+    """HATS-657 (both consequences): current → a COMPLETE versioned venv whose
+    bin/python is gone (a host python upgrade dangled the interpreter), and this
+    update runs from the healed legacy .venv.
+
+    #1 The broken dir must be REBUILT, not reused: read_current_sha returns None
+       (not usable) → already_current False, and the reuse gate also requires
+       bin/python → the dir falls through to the rmtree+rebuild branch instead of
+       being reused with a dead interpreter (which would crash _version_string).
+    #2 The HATS-655 dormancy advisory must NOT false-fire: pre_existing_versioned
+       is False (the pre-existing versioned was not usable), so the heal is silent
+       — the launcher correctly skipped a BROKEN venv, it is not stale."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
+    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
+    # This run came from the (healed) legacy .venv — the post-HATS-656 reality.
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / ".agent" / "ai-hats" / ".venv"))
+    # Pre-seed a COMPLETE versioned venv (sentinel + bin/ai-hats) but NO bin/python
+    # — the host-python-upgrade symptom — and point current at it.
+    vbin = version_dir(tmp_path, "cafef00d") / "bin"
+    vbin.mkdir(parents=True, exist_ok=True)
+    (vbin / "ai-hats").write_text("#!/bin/sh\n")
+    complete_sentinel(tmp_path, "cafef00d").write_text("", encoding="utf-8")
+    _flip_current(tmp_path, "cafef00d")
+    assert read_current_sha(tmp_path) is None  # broken venv is not usable
+    printed = _capture_prints(monkeypatch)
+
+    # Record every subprocess call while delegating to the real fake (which
+    # rebuilds bin/python + bin/ai-hats on `python -m venv`).
+    fake = _versioned_fake_run()
+    calls: list[list[str]] = []
+
+    def rec_run(args, **kwargs):
+        calls.append(list(args))
+        return fake(args, **kwargs)
+
+    with patch("subprocess.run", side_effect=rec_run):
+        _run_managed_versioned_update(
+            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            old_version="1.0.0", active_role=None,
+            config_unreadable=False, migrate_force=False, check_branches=False,
+        )
+    # #1 REBUILT (not reused): a venv create + pip install ran for the target sha.
+    assert any("venv" in c and "-m" in c for c in calls)
+    assert any("pip" in c for c in calls)
+    # The interpreter is restored and the sha is usable / current again.
+    assert (version_dir(tmp_path, "cafef00d") / "bin" / "python").exists()
+    assert read_current_sha(tmp_path) == "cafef00d"
+    # #2 No false dormancy advisory — the broken versioned was correctly skipped.
+    assert not any("host launcher is not using" in p for p in printed)
 
 
 def test_managed_update_sweeps_incomplete_residue_before_build(tmp_path, monkeypatch):
@@ -909,10 +966,15 @@ def test_managed_update_warns_when_launcher_dormant(tmp_path, monkeypatch):
     monkeypatch.setattr(
         sys, "prefix", str(tmp_path / ".agent" / "ai-hats" / ".venv")
     )
-    # A complete versioned install already exists → pre_existing_versioned True.
+    # A USABLE versioned install already exists → pre_existing_versioned True.
+    # HATS-657: must carry bin/python too, else read_current_sha treats it as
+    # unusable and pre_existing_versioned would be False — that is the python-
+    # broken case (correctly silent), NOT the genuine stale-launcher dormancy
+    # this test exercises.
     vbin = version_dir(tmp_path, "0ldc0de0") / "bin"
     vbin.mkdir(parents=True, exist_ok=True)
     (vbin / "ai-hats").write_text("#!/bin/sh\n")
+    (vbin / "python").write_text("#!/bin/sh\n")
     complete_sentinel(tmp_path, "0ldc0de0").write_text("", encoding="utf-8")
     _flip_current(tmp_path, "0ldc0de0")
     printed = _capture_prints(monkeypatch)

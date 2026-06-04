@@ -18,6 +18,7 @@ from ai_hats.paths import (
     hooks_dir,
     hypotheses_dir,
     is_complete,
+    is_usable_version,
     last_backup_path,
     legacy_paths_by_class,
     library_dir,
@@ -436,26 +437,40 @@ def test_user_home_env_empty_string_falls_back(monkeypatch):
 
 
 def _seed_version(
-    project_dir, sha, *, make_dir=True, complete=True, pointer=True, sentinel=None
+    project_dir,
+    sha,
+    *,
+    make_dir=True,
+    complete=True,
+    pointer=True,
+    sentinel=None,
+    python=None,
 ):
     """Seed versions/<sha>/ (a fake venv) and/or versions/current.
 
     ``complete`` controls whether the venv carries a ``bin/ai-hats`` marker.
-    ``sentinel`` controls whether it carries the ``.complete`` marker; defaults
-    to ``complete`` when ``None`` (a fully-installed venv has both). The two
-    axes are independent so a test can seed crash residue (``bin/ai-hats`` but
-    no ``.complete``) or a corrupted-after-complete venv (``.complete`` but no
-    ``bin/ai-hats``). read_current_sha requires BOTH (HATS-648).
+    ``python`` controls whether it carries a ``bin/python`` marker; defaults to
+    ``complete`` when ``None`` (a fully-installed venv has both interpreter and
+    entry point). ``sentinel`` controls the ``.complete`` marker; defaults to
+    ``complete`` when ``None``. The three axes are independent so a test can seed
+    crash residue (``bin/ai-hats`` but no ``.complete``), a corrupted-after-
+    complete venv (``.complete`` but no ``bin/ai-hats``), or a python-broken venv
+    (``.complete`` + ``bin/ai-hats`` but no ``bin/python``, HATS-657).
+    read_current_sha requires ALL THREE (HATS-648/657).
     """
     root = project_dir / ".agent" / "ai-hats" / "versions"
     root.mkdir(parents=True, exist_ok=True)
     write_sentinel = complete if sentinel is None else sentinel
+    write_python = complete if python is None else python
     if make_dir:
         vdir = root / sha
         vdir.mkdir(parents=True, exist_ok=True)
-        if complete:
+        if complete or write_python:
             (vdir / "bin").mkdir(parents=True, exist_ok=True)
+        if complete:
             (vdir / "bin" / "ai-hats").write_text("#!/bin/sh\n", encoding="utf-8")
+        if write_python:
+            (vdir / "bin" / "python").write_text("#!/bin/sh\n", encoding="utf-8")
         if write_sentinel:
             (vdir / ".complete").write_text("", encoding="utf-8")
     if pointer:
@@ -508,6 +523,30 @@ def test_read_current_sha_no_sentinel(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     _seed_version(tmp_path, "deadbeef", complete=True, sentinel=False)
     assert read_current_sha(tmp_path) is None
+
+
+def test_read_current_sha_broken_python(tmp_path, monkeypatch):
+    """HATS-657: complete (sentinel) + bin/ai-hats present but bin/python gone (a
+    host python upgrade dangles the interpreter symlink) → None. The venv is
+    complete but NOT runnable, so self update must NOT see already_current and
+    must rebuild it; the HATS-655 dormancy advisory must not false-fire."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    _seed_version(tmp_path, "deadbeef", complete=True, sentinel=True, python=False)
+    assert read_current_sha(tmp_path) is None
+
+
+def test_is_usable_version_requires_python(tmp_path, monkeypatch):
+    """HATS-657: is_usable_version is True only when sentinel + bin/ai-hats +
+    bin/python are ALL present — stronger than is_complete (sentinel only)."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    # Fully usable venv.
+    _seed_version(tmp_path, "deadbeef", complete=True, sentinel=True, pointer=False)
+    assert is_complete(tmp_path, "deadbeef") is True
+    assert is_usable_version(tmp_path, "deadbeef") is True
+    # Drop only bin/python → complete but not usable.
+    (version_dir(tmp_path, "deadbeef") / "bin" / "python").unlink()
+    assert is_complete(tmp_path, "deadbeef") is True
+    assert is_usable_version(tmp_path, "deadbeef") is False
 
 
 def test_is_complete_gates_on_sentinel(tmp_path, monkeypatch):
