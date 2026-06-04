@@ -334,7 +334,7 @@ def _run_managed_versioned_update(
 
     from ..paths import (
         complete_sentinel,
-        is_complete,
+        is_usable_version,
         read_current_sha,
         version_dir,
     )
@@ -420,13 +420,18 @@ def _run_managed_versioned_update(
                 f"[dim]— current → {target_sha[:12]}[/]"
             )
             new_python = sys.executable
-        elif vdir.exists() and is_complete(project_dir, target_sha):
-            # A prior successful install of this exact sha (sentinel present):
-            # trust it and reuse — just (re)flip current below. A blind
-            # reinstall would rmtree a dir that may be a LIVE pinned run's frozen
-            # env (e.g. run still on sha A while current already moved to B, then
-            # a `self update --revision A`), so keying reuse on the sentinel is a
-            # safety guard, not only an optimisation (HATS-648).
+        elif is_usable_version(project_dir, target_sha):
+            # A prior successful install of this exact sha that is still USABLE
+            # (sentinel present AND bin/python + bin/ai-hats on disk): trust it
+            # and reuse — just (re)flip current below. A blind reinstall would
+            # rmtree a dir that may be a LIVE pinned run's frozen env (e.g. run
+            # still on sha A while current already moved to B, then a `self update
+            # --revision A`), so keying reuse on the sentinel is a safety guard,
+            # not only an optimisation (HATS-648). HATS-657: gate on usability,
+            # not bare completeness — a complete-but-python-broken dir (host python
+            # upgrade dangling bin/python) is NOT reused (that would run the build
+            # / bump with a dead interpreter); it falls through to the rebuild
+            # branch below, which rmtree+reinstalls it (the proper heal).
             new_python = str(vdir / "bin" / "python")
             console.print(f"[cyan]Reusing complete[/] versions/{target_sha[:12]} …")
             _flip_current(project_dir, target_sha)
