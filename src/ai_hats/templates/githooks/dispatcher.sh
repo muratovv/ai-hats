@@ -46,10 +46,51 @@ fi
 # renamed path (e.g. <skill>-<basename>), so it cannot recover the git event
 # from $0 — AI_HATS_HOOK_EVENT carries it (HATS-593).
 export AI_HATS_HOOK_EVENT="$EVENT"
+
+# --- STDIN fan-out (HATS-654) ----------------------------------------------
+# Some git events deliver a protocol on STDIN that EVERY .d/ script must see:
+#   pre-push / pre-receive / post-receive : <local_ref> <local_sha> <remote_ref> <remote_sha>
+#   post-rewrite                          : <old_sha> <new_sha> [extra]
+#   proc-receive / reference-transaction  : their own line protocols
+# The loop below runs each script sharing ONE stdin, so the first
+# stdin-consuming hook drains the protocol and every later hook reads EOF. For
+# pre-push that silently no-ops the e2e-master gate (empty stdin → fast-path
+# exit 0 → master push never gated). Capture the protocol ONCE and replay a
+# fresh copy into each script via `< "$STDIN_FILE"`.
+#
+# Scoped to events with a documented STDIN protocol by NAME (not a runtime
+# `[[ -t 0 ]]` probe): stdin-less events (pre-commit, post-checkout,
+# post-merge) must never `cat`, or a tty/open-pipe on fd 0 (e.g. inside an
+# agent harness) would block the hook forever. A tmpfile + `< file` preserves
+# bytes exactly and hands each script a fresh fd at offset 0.
+#
+# The list is the full git ref-protocol family on purpose, not just the one
+# event with a .d/ chain today (pre-push). It costs nothing: capture runs only
+# AFTER the `[[ ! -d "$EVENT_D" ]]` early-out above, so an event with no
+# installed `<event>.d/` hooks (every entry here except pre-push, currently)
+# never reaches the `cat`/`mktemp`. Listing the family keeps the dispatcher
+# correct-by-default the day a skill declares, say, a post-rewrite.d/ chain.
+STDIN_FILE=""
+case "$EVENT" in
+    pre-push|pre-receive|post-receive|post-rewrite|proc-receive|reference-transaction)
+        if STDIN_FILE="$(mktemp "${TMPDIR:-/tmp}/ai-hats-${EVENT}-stdin.XXXXXX")"; then
+            trap 'rm -f "$STDIN_FILE"' EXIT
+            cat > "$STDIN_FILE"
+        else
+            # mktemp failed — fall back to shared stdin (degraded but no crash).
+            STDIN_FILE=""
+        fi
+        ;;
+esac
+
 shopt -s nullglob
 for script in "$EVENT_D"/*; do
     [[ -f "$script" && -x "$script" ]] || continue
-    "$script" "$@"
+    if [[ -n "$STDIN_FILE" ]]; then
+        "$script" "$@" < "$STDIN_FILE"
+    else
+        "$script" "$@"
+    fi
     rc=$?
     if [[ $rc -ne 0 ]]; then
         echo "ai-hats: hook '$(basename "$script")' failed (exit $rc)" >&2
