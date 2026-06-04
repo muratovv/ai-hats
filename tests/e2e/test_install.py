@@ -55,21 +55,49 @@ def test_e2e_install_init_break_heal(tmp_path):
        from the local repo (AI_HATS_REPO_URL = repo root).
     3. ai-hats self init -r assistant -p claude → yaml + composition.
     4. ai-hats config status → smoke pass.
-    5. rm <venv>/bin/python → simulate proxmox python-upgrade case.
-    6. ai-hats config status → exit 1 + actionable hint.
-    7. ai-hats self update → heal-then-delegate: recreate venv + pip
-       install + python rich self update + auto-bump.
+    5. rm python from BOTH the active versions/<sha>/ venv AND .venv →
+       simulate a host python upgrade (proxmox case). Post-HATS-647 the
+       active venv is versions/<sha>, so breaking only .venv is a no-op;
+       a real python upgrade breaks every venv's hardcoded interpreter.
+    6. ai-hats config status → exit 1 + actionable hint. The launcher
+       routes the python-broken versioned venv to .venv (also broken,
+       HATS-656), so the exec check reports the missing interpreter.
+    7. ai-hats self update → heal-then-delegate: the launcher falls back to
+       the (broken) default .venv, heal recreates it, and the python rich
+       self update + auto-bump restore the tool (it now runs from .venv).
     8. ai-hats config status → smoke pass again, composition restored.
+
+    (The dormant-versioned-layout advisory from HATS-655 may also print in
+    step 7 — the recovered tool legitimately runs from .venv while the old
+    versioned install stays broken; that case is tracked separately.)
     """
     launcher_dest = tmp_path / "bin" / "ai-hats"
     project = tmp_path / "project"
+    src_repo = tmp_path / "src-repo"
     launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
 
+    # Install source: a standalone full clone of the repo under test (NOT
+    # build_src / REPO_ROOT directly). A standalone clone's HEAD is unresolvable
+    # against GitHub origin/master in the update-check probe, so the HATS-441
+    # ahead-of-origin downgrade guard stays inactive while these commits are
+    # unpushed — matching the sibling versioned e2e tests. build_src shares
+    # REPO_ROOT's object store, which lets the probe resolve "ahead" and refuse
+    # the step-7 heal self update. The per-test clone also owns its own build/
+    # dir, so concurrent xdist workers never race the in-tree wheel build.
+    subprocess.run(
+        ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)], check=True,
+    )
+    subprocess.run(["git", "-C", str(src_repo), "config", "user.email", "e2e@test"],
+                   check=True)
+    subprocess.run(["git", "-C", str(src_repo), "config", "user.name", "E2E"],
+                   check=True)
+
     env = os.environ.copy()
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))  # local install, no network for ai-hats itself
+    env["AI_HATS_REPO_URL"] = str(src_repo)  # local install, no network for ai-hats itself
     env.pop("AI_HATS_VENV", None)  # never leak from outer test runs
+    env.pop("PYTHONPATH", None)
 
     # ---- 1. install-launcher.sh ----
     res = _run(
@@ -107,24 +135,37 @@ def test_e2e_install_init_break_heal(tmp_path):
     res = ai_hats("config", "status")
     assert "system_prompt: OK" in res.stdout
 
-    # ---- 5. simulate broken venv (proxmox python-upgrade case) ----
+    # ---- 5. simulate a host python upgrade — breaks BOTH venvs ----
+    # Post-HATS-647 the active venv is versions/<sha>, not .venv. A python
+    # upgrade breaks every venv's hardcoded interpreter, so break python in
+    # the active versioned venv AND the legacy .venv (HATS-656 — breaking
+    # only .venv leaves the tool running fine from the versioned venv).
+    versions = project / ".agent" / "ai-hats" / "versions"
+    active_sha = (versions / "current").read_text().strip()
+    active_python = versions / active_sha / "bin" / "python"
+    assert active_python.is_file(), "expected an active versioned venv after step 2"
+    active_python.unlink()
     (venv / "bin" / "python").unlink()
+    assert not active_python.exists()
     assert not (venv / "bin" / "python").exists()
 
     # ---- 6. broken command — actionable hint to stderr ----
+    # HATS-656: the launcher requires bin/python (not just bin/ai-hats) to
+    # select a versioned venv, so the python-broken versioned venv routes to
+    # the (also broken) .venv and the exec check reports the missing interpreter.
     res = ai_hats("config", "status", expect_exit=1)
     assert "venv missing" in res.stderr
     assert "ai-hats self update" in res.stderr
 
-    # ---- 7. self heal ----
+    # ---- 7. self heal — fall back to .venv, recreate it, restore the tool ----
     res = ai_hats("self", "update")
     assert "venv missing or broken — recreating" in res.stderr
-    assert (venv / "bin" / "python").is_file(), "heal did not recreate python"
-    # Full chain still works post-heal: rich UX from python self update + auto-bump.
+    assert (venv / "bin" / "python").is_file(), "heal did not recreate .venv python"
+    # Full chain runs post-heal: rich UX from python self update + auto-bump.
     assert "Current version:" in res.stdout
     assert "Re-assembling: assistant" in res.stdout
 
-    # ---- 8. composition restored ----
+    # ---- 8. tool restored — runs again (from the recreated .venv) ----
     res = ai_hats("config", "status")
     assert "system_prompt: OK" in res.stdout
 

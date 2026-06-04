@@ -54,11 +54,18 @@ if [[ -z "$VENV" && -f "$VERSIONS_DIR/current" ]]; then
     # First line only + strip surrounding whitespace (matches paths.read_current_sha;
     # never squash a multi-line file into a fake single sha).
     sha="$(head -1 "$VERSIONS_DIR/current" 2>/dev/null | tr -d '[:space:]' || true)"
-    # Require a COMPLETE versioned venv (bin/ai-hats present): a present-but-
-    # broken versions/<sha>/ (e.g. external corruption) falls through to the
-    # legacy default .venv rather than dead-ending, preserving self-heal.
+    # Require a USABLE versioned venv — both bin/ai-hats AND bin/python
+    # executable. A present-but-broken versions/<sha>/ falls through to the
+    # legacy default .venv rather than dead-ending, preserving self-heal
+    # (HATS-656). The bin/python check is load-bearing: a host python upgrade
+    # leaves bin/ai-hats present yet its shebang interpreter (bin/python) gone,
+    # so an ai-hats-only check would select a venv that cannot actually run, and
+    # heal_if_needed would refuse it as a non-default ("user-owned") venv. With
+    # the python check, that broken venv routes to .venv, which heal recreates
+    # and the managed self update then rebuilds versions/<sha>.
     if [[ -n "$sha" && "$sha" != *"/"* && "$sha" != "." && "$sha" != ".." \
-          && -x "$VERSIONS_DIR/$sha/bin/ai-hats" ]]; then
+          && -x "$VERSIONS_DIR/$sha/bin/ai-hats" \
+          && -x "$VERSIONS_DIR/$sha/bin/python" ]]; then
         VENV="$VERSIONS_DIR/$sha"
     fi
 fi
