@@ -138,6 +138,21 @@ since the latest tag lives under **Unreleased** until the next release.
     transparently.
 
 ### Fixed
+- **`self update` rebuilds a python-broken versioned venv instead of skipping it**
+  (HATS-657). After a host python upgrade a `versions/<sha>/` venv is left
+  *complete* (`.complete` sentinel + `bin/ai-hats`) yet *unrunnable* — its
+  `bin/python` symlink dangles. The launcher already falls back to `.venv` in that
+  case (HATS-656), but `read_current_sha` and the `self update` reuse gate still
+  treated the broken venv as usable: the update saw `already_current` and skipped
+  the rebuild (the versioned install stayed broken), and the HATS-655 dormancy
+  advisory false-fired ("your launcher predates the versioned layout" — wrong; the
+  launcher is current and correctly skipping a broken venv). A single shared
+  `is_usable_version` predicate (sentinel **and** `bin/ai-hats` **and**
+  `bin/python` on disk) — mirroring the launcher's `-x bin/ai-hats && -x bin/python`
+  — now gates both `read_current_sha` and the reuse path, so a python-broken
+  versioned install resolves to "not current", routes to `.venv`, and the managed
+  `self update` rebuilds it (rmtree+reinstall) with the advisory silent. Covered by
+  an extended real-pip e2e (`test_e2e_install_init_break_heal`).
 - **git-hook dispatcher forwards STDIN to every `.d/` hook** (HATS-654). The
   `<event>` dispatcher ran each `<event>.d/*` script in a shared-stdin loop, so
   the first stdin-consuming hook drained the git protocol and every later hook
