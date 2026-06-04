@@ -190,6 +190,55 @@ def _is_managed_install(project_dir: Path) -> bool:
     return venv_root == default_venv or venv_root.parent == vroot
 
 
+def _versioned_layout_dormant(
+    project_dir: Path, *, pre_existing_versioned: bool
+) -> bool:
+    """True iff a usable versioned install is being ignored by a stale launcher.
+
+    The runtime symptom (HATS-655): a complete ``versions/<sha>/`` install already
+    existed at the start of this update, yet **this** managed process is running
+    from the legacy ``.venv`` (``current_run_sha → None``) rather than from the
+    versioned venv. On a managed install (``.venv`` or ``versions/<sha>/``, not an
+    override, not editable — :func:`_is_managed_install`) the only reasons to be on
+    ``.venv`` instead of the existing versioned install are (a) a host launcher
+    that predates ``versions/current`` resolution (HATS-647) and cannot select it,
+    or (b) the **first** migration update (no versioned install yet). The
+    ``pre_existing_versioned`` gate excludes (b), leaving (a): the launcher is
+    stale and the versioned layout — crash-safe blue-green updates, orphan-version
+    GC, legacy ``.venv`` reclaim — is silently dormant.
+
+    Pure: composes existing predicates, no marker / byte-compare / subprocess.
+    """
+    if not pre_existing_versioned:
+        return False  # first migration update — running from .venv is expected
+    if not _is_managed_install(project_dir):
+        return False  # override / editable — not our launcher's concern
+    from ..version_refs import current_run_sha
+
+    return current_run_sha(project_dir) is None  # on .venv despite versioned exists
+
+
+def _installed_launcher_path() -> Path:
+    """Best-effort path to the host launcher, for an accurate advisory hint.
+
+    Resolution: ``AI_HATS_LAUNCHER_DEST`` env override → ``ai-hats`` on ``PATH``
+    (``shutil.which`` — names the launcher that actually invoked this run) → the
+    documented default ``~/.local/bin/ai-hats``. The env-override and default
+    endpoints match ``install-launcher.sh``'s destination logic; the ``PATH``
+    step is an extra accuracy fallback the installer itself does not have.
+    Display-only; never written.
+    """
+    import shutil
+
+    dest = os.environ.get("AI_HATS_LAUNCHER_DEST")
+    if dest:
+        return Path(dest).expanduser()
+    found = shutil.which("ai-hats")
+    if found:
+        return Path(found)
+    return Path.home() / ".local" / "bin" / "ai-hats"
+
+
 def _build_install_cmd(python_exe: str, url: str, ref: str) -> list[str]:
     """pip-install ai-hats into the venv owning ``python_exe``.
 
@@ -306,6 +355,12 @@ def _run_managed_versioned_update(
             "versioned install needs a resolvable sha to name versions/<sha>/."
         )
         sys.exit(2)
+
+    # HATS-655: snapshot whether a complete versioned install already exists
+    # BEFORE this update builds one. This distinguishes a stale-launcher dormancy
+    # (a prior versioned install this run is still ignoring) from the first
+    # migration update (where running from .venv is expected, not a symptom).
+    pre_existing_versioned = read_current_sha(project_dir) is not None
 
     # HATS-650 (R3): the whole acquire critical section — the GC at start, the
     # install / reuse, and the atomic `current` flip — runs under the crash-safe
@@ -477,6 +532,36 @@ def _run_managed_versioned_update(
                 f"  [yellow]Bump (fresh interpreter) exited {proc.returncode} "
                 f"— review output above[/]"
             )
+
+    # HATS-655: if a versioned install already existed yet this managed update
+    # still ran from the legacy .venv, the host launcher predates versions/current
+    # resolution (HATS-647) and the versioned layout is silently dormant — name
+    # what's off and advise the one-time host-level launcher refresh. NEVER auto-
+    # write the launcher: it is host-global (one entry point for ALL projects); a
+    # per-project write risks cross-project breakage and a bootstrap-brick.
+    if _versioned_layout_dormant(
+        project_dir, pre_existing_versioned=pre_existing_versioned
+    ):
+        launcher = _installed_launcher_path()
+        sha = read_current_sha(project_dir) or target_sha
+        console.print(
+            "\n[yellow]Heads up:[/] your host launcher is not using the versioned "
+            "install."
+        )
+        console.print(
+            f"  [dim]versions/{sha[:12]} is active, but this run came from the "
+            f"legacy .venv — {launcher} predates versioned-layout resolution "
+            f"(HATS-647).[/]"
+        )
+        console.print(
+            "  [dim]Inactive: crash-safe blue-green updates, orphan-version GC, "
+            "legacy .venv reclaim.[/]"
+        )
+        console.print(
+            "  Refresh the host launcher (one-time): [bold]curl -sSL "
+            "https://github.com/muratovv/ai-hats/raw/master/scripts/"
+            "install-launcher.sh | bash[/]"
+        )
 
 
 # HATS-497: Install diagnostics for ``ai-hats config status`` Health section.
