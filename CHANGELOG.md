@@ -138,6 +138,19 @@ since the latest tag lives under **Unreleased** until the next release.
     transparently.
 
 ### Fixed
+- **git-hook dispatcher forwards STDIN to every `.d/` hook** (HATS-654). The
+  `<event>` dispatcher ran each `<event>.d/*` script in a shared-stdin loop, so
+  the first stdin-consuming hook drained the git protocol and every later hook
+  read EOF. For `pre-push` this silently no-opped the e2e+smoke master gate
+  (HATS-550): its `empty stdin → exit 0` fast-path fired because the
+  lexicographically-earlier shared-state hook had already consumed the ref list,
+  leaving master pushes ungated. The dispatcher now captures STDIN once for
+  events with a documented stdin protocol (`pre-push`/`pre-receive`/
+  `post-receive`/`post-rewrite`/`proc-receive`/`reference-transaction`) and
+  replays a fresh copy into each hook. Scoped by event name (not a runtime
+  `[[ -t 0 ]]` probe) so stdin-less events (`pre-commit`/`post-*`) never `cat`
+  and cannot hang on a tty/open pipe. Covered by a real-push e2e gate
+  (`tests/e2e/test_prepush_dispatcher_stdin_fanout.py`).
 - **SKILL.md lint findings closed (agnix Phase 1)** (HATS-626 / HYP-059).
   Three error classes the HATS-617 agnix PoC surfaced are now green:
   (a) 5 protocol skills shipped with **no YAML frontmatter** — added
