@@ -7,9 +7,12 @@ description: Triple-perspective code review (architect, security, quality). Use 
 Internal code review via triple-perspective debate before finalizing any non-trivial change.
 
 ## When to Use
-- Before finalizing any non-trivial code change
-- Self-review when no human reviewer is available
-- Evaluating third-party code or pull requests
+The *broad* pre-merge pass — three general lenses (architect, security, quality)
+over a whole change. Two siblings pull narrower:
+- **domain-reviewer** when one module needs *specialist* lenses at depth
+  (security + perf + correctness on a single domain), not a generalist sweep.
+- **review-role** when the artifact under review is a role *composition*
+  (injection/skill/rule coherence), not code.
 
 ## Three Perspectives
 

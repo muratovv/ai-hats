@@ -7,9 +7,11 @@ description: Coordinate deep-dive reviews via specialized sub-agents as critics.
 Coordinate deep-dive reviews of specific system domains or modules by engaging specialized sub-agents as critics.
 
 ## When to Use
-- Deep review of a specific module or domain (not general code review)
-- When multiple specialized perspectives are needed (e.g., security + performance + correctness)
-- Pre-release review of critical system components
+Reach here when *one* module or domain needs several specialist lenses at depth
+(security + performance + correctness), coordinated via sub-agent critics. For a
+*general* triple-lens pass over an ordinary change before merge, the lighter
+sibling is **audit-reviewer** — don't spin up domain-reviewer's sub-agents for a
+routine diff.
 
 ## Workflow
 

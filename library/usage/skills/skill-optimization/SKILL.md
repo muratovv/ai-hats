@@ -7,10 +7,11 @@ description: Audit and refactor library components to eliminate redundancy and s
 Audit and refactor library components (rules, skills, traits) to eliminate redundancy, verbosity, and stale instructions.
 
 ## When to Use
-- Periodic library maintenance
-- After adding multiple new skills or rules
-- When token budget for a role is too high
-- After retrospectives identify component issues
+Cross-component *audit* — dedup, staleness, and token-budget trimming across the
+whole rule/skill/trait library. Authoring or validating a *single* skill's
+structure is **skill-template**, not this. And the upstream act of turning a
+retro finding into a new framework component is **retro-to-framework**; this
+skill optimises what already exists.
 
 ## Procedure
 
