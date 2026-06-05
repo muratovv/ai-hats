@@ -7,9 +7,10 @@ description: Time-bounded protocol for evaluating new tools, libraries, or metho
 Decide whether to adopt an external tool, library, or methodology with bounded effort.
 
 ## When to Use
-- Evaluating a candidate dependency for the project
-- Researching a methodology (e.g. ML/LLM frameworks, testing approaches)
-- Following up on a hype-driven recommendation
+Only for a *candidate* — a tool/library/methodology not yet adopted, especially
+a hype-driven one. Not for tools already standard in the stack (just use them),
+and not a written feature-comparison essay — the protocol is a time-boxed PoC
+that ends in an adopt/reject call, not analysis for its own sake.
 
 ## Procedure
 

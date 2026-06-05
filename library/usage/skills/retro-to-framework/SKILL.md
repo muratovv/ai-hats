@@ -14,9 +14,11 @@ Convert project-level retrospective findings into framework-level improvements.
 > If neither works, the project's venv lives at `./.venv/bin/ai-hats`. Resolve the binary path explicitly — falling back blindly between `ai-hats` and the venv path wastes a turn.
 
 ## When to Use
-- After a retrospective identifies problems that are NOT project-specific
-- When CLAUDE.md band-aids accumulate (>3 per-project rules that could be generic)
-- When the same problem recurs across multiple projects
+Runs *downstream* of a retro: **self-retrospective** produces the findings, this
+skill promotes the generic ones into rules/skills. Two boundaries — the finding
+must be **cross-project generic** (a project-local fix stays in that project's
+CLAUDE.md), and trimming or dedup of components that already exist is
+**skill-optimization**, not this.
 
 ## Procedure
 
