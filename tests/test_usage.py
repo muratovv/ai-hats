@@ -26,6 +26,14 @@ def test_schema_and_source(normal: dict) -> None:
     assert normal["session_id"] == "sess-normal"
 
 
+def test_session_meta_null_in_pure_parser(normal: dict) -> None:
+    """role/provider/exit_code are ai-hats metadata — not transcript-derived,
+    so the pure parser leaves them null (the step fills them)."""
+    assert normal["role"] is None
+    assert normal["provider"] is None
+    assert normal["exit_code"] is None
+
+
 def test_usage_totals(normal: dict) -> None:
     # input: 100+200+300+350+360 ; output: 50+30+40+20+15
     assert normal["usage_totals"] == {

@@ -77,8 +77,9 @@ class ComputeUsage(Step):
                 return {}
 
             report = parse_session_usage(jsonl_path)
-            if role:
-                self._enrich_static(report, project_dir, role)
+            self._attach_session_meta(report, session_dir, role)
+            if report.get("role"):
+                self._enrich_static(report, project_dir, report["role"])
 
             usage_path.write_text(
                 json.dumps(report, ensure_ascii=False, indent=2, default=str),
@@ -88,6 +89,30 @@ class ComputeUsage(Step):
             return {}
 
         return {"usage_path": usage_path}
+
+    @staticmethod
+    def _attach_session_meta(
+        report: dict[str, Any], session_dir: Path, funnel_role: str | None,
+    ) -> None:
+        """Fill the report's ai-hats session metadata (role / provider / exit_code).
+
+        The transcript carries none of these — they are ai-hats concepts. Source
+        of truth is the session's ``metrics.json`` (written at session start by
+        ``init_audit``, refreshed by the upstream ``make_audit`` step, so it
+        exists by the time this step runs). A live ``role`` from the pipeline
+        funnel, when present, wins over the persisted value. Best-effort: on any
+        read error the placeholders stay ``None`` (absent, not a fake value).
+        """
+        meta: dict[str, Any] = {}
+        metrics_path = session_dir / "metrics.json"
+        if metrics_path.exists():
+            try:
+                meta = json.loads(metrics_path.read_text())
+            except (OSError, json.JSONDecodeError):
+                meta = {}
+        report["role"] = funnel_role or meta.get("role")
+        report["provider"] = meta.get("provider")
+        report["exit_code"] = meta.get("exit_code")
 
     @staticmethod
     def _enrich_static(report: dict[str, Any], project_dir: Path, role: str) -> None:
