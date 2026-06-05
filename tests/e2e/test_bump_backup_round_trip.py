@@ -202,6 +202,13 @@ def test_backup_captures_scoped_surface(bumped) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.quarantine(
+    reason="flaky under the -n8 pre-push gate: intermittent StopIteration on "
+    "`next(bumped.backup_dir.glob('*.tar.gz'))` — empty backup_dir (module-scoped "
+    "shared-venv bump produced no tarball under contention). Passed solo / gate "
+    "attempt-1, failed a later identical-code run. Quarantined HATS-676; "
+    "de-flake follow-up HATS-677."
+)
 def test_backup_round_trip_restores_state_byte_for_byte(
     bumped, tmp_path: Path,
 ) -> None:

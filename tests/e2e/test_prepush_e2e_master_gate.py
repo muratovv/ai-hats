@@ -163,6 +163,35 @@ def test_master_push_invokes_pytest_and_passes(tmp_path: Path):
 
 
 @pytest.mark.integration
+def test_master_push_deselects_quarantined_tests(tmp_path: Path):
+    """HATS-676: the gate filter subtracts ``@pytest.mark.quarantine`` tests via
+    ``-m "(integration or smoke) and not quarantine"``.
+
+    The quarantine marker is a concrete HYP-002 known-flaky registry — a handful
+    of stateful real-pip / shared-venv e2e tests fail intermittently under the
+    gate's ``-n8 --dist=loadgroup`` contention (a different one each run) and
+    would block clean master pushes despite a sound diff. They still run under a
+    normal/solo ``pytest`` invocation, so dev coverage is not lost.
+
+    Fail-under-revert: drop ``and not quarantine`` from the hook → the recorded
+    marker expression loses the clause → this assertion fails.
+    """
+    bindir = tmp_path / "bin"
+    _make_pytest_stub(bindir, exit_code=0)
+    stdin = f"refs/heads/master {NEW_SHA} refs/heads/master {OLD_SHA}\n"
+
+    res = _run_hook(stdin, bindir)
+
+    assert res.returncode == 0, res.stderr
+    argv = (bindir / "last_argv").read_text()
+    # Keep the integration/smoke selection AND subtract the quarantine set.
+    assert "not quarantine" in argv, (
+        f"gate must deselect quarantined known-flaky tests; argv:\n{argv}"
+    )
+    assert "integration or smoke" in argv, argv
+
+
+@pytest.mark.integration
 def test_master_push_arms_require_venv_strict_mode(tmp_path: Path):
     """HATS-645: a master push exports ``AI_HATS_E2E_REQUIRE_VENV=1`` into the
     pytest child env, arming the tier-2 venv fixture's fail-closed mode.

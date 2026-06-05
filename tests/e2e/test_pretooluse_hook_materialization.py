@@ -238,6 +238,16 @@ def test_e2e_init_materialize_is_idempotent(installed_launcher, tmp_path):
 
 
 @pytest.mark.integration
+@pytest.mark.quarantine(
+    reason="flaky under the -n8 pre-push gate: the private_launcher fixture's "
+    "real-pip `self update --force-downgrade` is contention-sensitive. Two "
+    "distinct failure modes observed — TimeoutExpired (addressed by HATS-673, "
+    "timeout->300) AND pip network reset under 8 concurrent installs "
+    "(RemoteDisconnected / ProtocolError aborting a wheel download -> exit 2, "
+    "discovery RUN 1). The network class is NOT fixable by a timeout bump; the "
+    "real fix is capping concurrent pip installs (HATS-673 options 2/3). "
+    "Quarantined HATS-676; de-flake follow-up HATS-677."
+)
 def test_e2e_self_update_refreshes_hook_after_drift(
     private_launcher, tmp_path
 ):
