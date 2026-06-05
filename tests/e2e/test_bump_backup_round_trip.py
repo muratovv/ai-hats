@@ -147,7 +147,7 @@ def bumped(tmp_path_factory, _shared_launcher_venv, repo_root: Path):
     backup_dir = tmp_path_factory.mktemp("bump-backup-out")
     res = project.run(
         "self", "update",
-        timeout=180,
+        timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(backup_dir)},
     )
     return SimpleNamespace(

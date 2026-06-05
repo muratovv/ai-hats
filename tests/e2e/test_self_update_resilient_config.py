@@ -92,7 +92,7 @@ def _bootstrap(tmp_path: Path) -> tuple[Path, Path, dict]:
     env["AI_HATS_BUMP_BACKUP_DIR"] = str(backups)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
-    _run([str(launcher_dest), "self", "update", "--force-downgrade"], cwd=project, env=env, timeout=240)
+    _run([str(launcher_dest), "self", "update", "--force-downgrade"], cwd=project, env=env, timeout=300)  # HATS-675: 300s = -n8 gate suite norm
     _run(
         [str(launcher_dest), "self", "init", "-r", "assistant", "-p", "claude"],
         cwd=project, env=env, timeout=60,
@@ -120,7 +120,7 @@ def test_update_survives_unknown_config_key(tmp_path: Path) -> None:
 
     res = _run(
         [str(launcher_dest), "self", "update", "--force-downgrade"],
-        cwd=project, env=env, timeout=240,
+        cwd=project, env=env, timeout=300,  # HATS-675: 300s = -n8 gate suite norm
     )
 
     combined = res.stdout + res.stderr
@@ -164,7 +164,7 @@ def test_update_survives_garbage_config_value(tmp_path: Path) -> None:
 
     res = _run(
         [str(launcher_dest), "self", "update", "--force-downgrade"],
-        cwd=project, env=env, timeout=240,
+        cwd=project, env=env, timeout=300,  # HATS-675: 300s = -n8 gate suite norm
     )
 
     assert res.returncode == 0, (

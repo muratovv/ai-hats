@@ -136,7 +136,7 @@ def test_e2e_self_update_refuses_silent_downgrade(tmp_path: Path) -> None:
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
     # First update populates the project venv with a working ai-hats install.
     _run([str(launcher_dest), "self", "update"],
-         cwd=project, env=env, timeout=180)
+         cwd=project, env=env, timeout=300)  # HATS-675: 300s = -n8 gate suite norm
 
     # ----- convert to editable install so the package dir carries .git -----
     # The ahead/behind probe (``_fetch_into_pkg`` / ``_count_ahead_behind``
