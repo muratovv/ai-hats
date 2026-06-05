@@ -8,12 +8,11 @@ Standardize documentation of architectural decisions for traceability.
 
 ## When to Use
 Records a decision *already made*, for traceability — it is not where you
-*explore* options (that is the plan stage / **devils-advocate**) and not general
-prose docs (→ **doc-protocol**). The architecture skills that end "→ draft an
-ADR" (clean-architecture-guide, api-evolution-checklist,
-distributed-systems-checklist, trust-boundary-mapping, agentic-topology-design)
-all feed *into* this format; this skill owns the record, not the analysis behind
-it.
+*explore* options (that is the plan stage) and not general prose docs (→
+**doc-protocol**). The architecture skills whose Completion step appends findings
+to an ADR (clean-architecture-guide, api-evolution-checklist,
+distributed-systems-checklist, trust-boundary-mapping) all feed *into* this
+format; this skill owns the record, not the analysis behind it.
 
 ## Format (Michael Nygard)
 - **Title:** Short noun phrase

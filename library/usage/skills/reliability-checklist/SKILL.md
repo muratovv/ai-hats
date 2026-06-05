@@ -8,10 +8,12 @@ Verify production readiness of a service or infrastructure change.
 
 ## When to Use
 The **production-readiness gate** before promoting a service — a pass/fail audit
-spanning SLOs, runbooks, capacity, rollback, observability. It *checks that*
-observability exists; actually building those logs/metrics/alerts is
-**observability-setup**. For the network-boundary correctness behind a
-distributed service, see **distributed-systems-checklist**.
+of operational readiness: resource limits, health/readiness probes, fault
+tolerance, graceful degradation, right-sizing. It does *not* instrument the
+service (building the logs/metrics/alerts is **observability-setup**) and does
+*not* cover network-boundary correctness (that's
+**distributed-systems-checklist**). This is the operational go/no-go, not the
+telemetry or the wire protocol.
 
 ## Checklist
 1. **Resource limits**: CPU and memory limits set on all containers/VMs. No unbounded resource consumption.
