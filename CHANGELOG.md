@@ -51,6 +51,17 @@ since the latest tag lives under **Unreleased** until the next release.
   Write/Edit of the tracker `plan.md`.
 
 ### Changed
+- **Skill-authoring discipline hardened from obra/superpowers (MIT)** (HATS-659,
+  child of HATS-499). Three mechanics harvested into existing components — no new
+  skill. `skill-template` + `skill-engineer` review checklist gain a **CSO
+  anti-summary** rule (a `description` carries triggers + one capability phrase
+  and never summarizes the procedure body — a body-summary is a shortcut the
+  selector acts on *instead of* loading the skill) and a **validation-scenario**
+  done-criterion (a skill is not done without one named RED baseline an agent
+  fails without it; prose-level RED→GREEN→REFACTOR, no eval harness).
+  `scope-guard` + `devils-advocate` gain a structural **rationalization red-flag
+  table** (catch the talked-into-it thought before the action). Two-stage
+  spec→quality review evaluated and skipped (no gain over `audit-reviewer`).
 - **The init wizard now lists the live role catalog** instead of a
   hand-maintained list that drifted (HATS-625). The `initial-wizard`
   injection carries a new `<available_roles>` placeholder, expanded at
