@@ -259,6 +259,10 @@ def test_save_artifact_expands_ai_hats_dir_placeholder(tmp_path: Path):
     saved = out["saved_path"]
     assert "<ai_hats_dir>" not in str(saved)
     assert ".agent/ai-hats/sessions/retros/judge/" in str(saved).replace("\\", "/")
+    # HATS-671: the write is anchored absolutely under ``project_dir`` and must
+    # never escape into the process CWD (the real repo's gitignored sessions/).
+    assert saved.is_absolute()
+    assert saved.resolve().is_relative_to(tmp_path.resolve())
     assert saved.exists()
     assert saved.read_text() == "payload"
 

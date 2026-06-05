@@ -10,6 +10,19 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+- **Judge reports no longer persist the literal `payload` stub** (HATS-671) —
+  reports under `sessions/retros/judge/` were occasionally written as a 7-byte
+  `payload` literal instead of the report body. Root cause was test pollution,
+  not the production `reflect all` pipeline: `test_save_artifact_expands_ai_hats_dir_placeholder`
+  escaped its `tmp_path` and wrote into the real (gitignored) `sessions/` dir via
+  two vectors — an ambient `AI_HATS_DIR` (env precedence over `project_dir`) and
+  a CWD-relative `<ai_hats_dir>` expansion. Fixed by an autouse
+  `_isolate_ai_hats_dir` fixture that clears ambient `AI_HATS_DIR` for every
+  test, and by anchoring a relative `<ai_hats_dir>` expansion to `project_dir`
+  in `SaveArtifact` so the write is CWD-independent (out-of-tree absolute
+  `AI_HATS_DIR` is untouched; production was already correct).
+
 ### Added
 - **`compute_usage` step + `usage.json` per-session context-cost report**
   (HATS-664, first child of HATS-663 session-observability epic) — a transcript-
