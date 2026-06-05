@@ -126,7 +126,7 @@ def reclaim_orphan_versions(
             if isinstance(sha, str):
                 live_shas.add(sha)
         else:
-            ref_path.unlink(missing_ok=True)  # dead run → drop its ref, no leak
+            ref_path.unlink(missing_ok=True)  # safe-delete: ok dead-ref (drop dead run's ref pointer, no leak)
 
     removed: list[Path] = []
     for entry in sorted(root.iterdir()):

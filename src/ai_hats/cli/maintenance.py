@@ -444,7 +444,7 @@ def _run_managed_versioned_update(
             # No dir, or incomplete crash residue (no .complete sentinel) — never
             # trust it; rebuild fresh (HATS-648 build-in-place + sentinel).
             if vdir.exists():
-                shutil.rmtree(vdir, ignore_errors=True)
+                shutil.rmtree(vdir, ignore_errors=True)  # safe-delete: ok incomplete-venv (crash residue, rebuilt fresh)
             vdir.parent.mkdir(parents=True, exist_ok=True)
             with console.status(
                 f"[cyan]Creating versioned venv[/] versions/{target_sha[:12]} …",

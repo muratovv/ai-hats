@@ -11,6 +11,33 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Added
+- **`compute_usage` step + `usage.json` per-session context-cost report**
+  (HATS-664, first child of HATS-663 session-observability epic) — a transcript-
+  first parser that turns one Claude Code JSONL session into a machine-readable
+  `usage/v1` report: measured always-on budget (first `cache_creation` proxy), an
+  ordered event timeline (skill-body loads via `Skill` tool_use, reference Reads
+  of `*/references/*.md` + `SKILL.md`, tool calls with `is_error`, stop-hook
+  firings), aggregates with tool success-rate, and sub-agent sidechain linkage
+  (detect + link by `sessionId`/`sourceToolAssistantUUID`, no per-event token
+  merge). The report also self-describes its ai-hats context — `role` /
+  `provider` / `exit_code` copied from the session's `metrics.json` (so the
+  comparison sibling pairs sessions by role and "what went wrong" debugging reads
+  it in one place); when `role` resolves, a static `costs.py` per-component
+  always-on breakdown is attached under `always_on.static` for a measured-vs-
+  static cross-check. The pure `parse_session_usage` (`src/ai_hats/usage.py`) is
+  transcript-only and fail-soft (malformed line / unknown entry type → `flags`,
+  never a crash — verified over all ~550 historical transcripts with zero
+  crashes) and
+  doubles as a bash-composable primitive (`python -m ai_hats.usage <jsonl>`,
+  JSON to stdout) for retroactive sweeps. The `ComputeUsage` step is the thin
+  live driver — sibling of `make_audit`, same post-session JSONL, wired right
+  after it in both `finalize-hitl` and `finalize-subagent` — so every new
+  session writes `<session_dir>/usage.json` alongside `audit.md`/`metrics.json`.
+  Reproduces the HATS-578 finding automatically (skill-BODY loads are rare —
+  ~20% of sessions; `backlog-manager` + `self-retrospective` dominate). Per-event
+  token attribution is a documented `reconstructed` heuristic (per-message usage
+  is a per-turn total); unattributable events keep `tokens_delta = null`, never a
+  magic `0` (honors `rule_composition_value_contract §3`).
 - **`devils-advocate` skill + conditional "Approach & counter" plan section**
   (HATS-621, M3 of HATS-629) — the value-counter stage of the plan-gate. A new
   `required=False` `Approach & counter` section sits between `Requirements` and
