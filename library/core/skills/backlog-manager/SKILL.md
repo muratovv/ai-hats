@@ -17,10 +17,13 @@ CLI-only enforcement is owned by rule **rule_backlog_discipline**: never read or
 This SKILL.md is the **index** (overview, core task CLI, FSM, state→skill routing); per-domain detail lives one level deep in `references/` — pull it only when you work in that domain.
 
 ## When to Use
-- Starting any new task, hypothesis, or proposal
-- Managing state transitions on any of the three types
-- Coordinating sub-agent delegation
-- Recording verdicts on hypotheses or votes on proposals
+This is the *full-lifecycle* backlog skill — transitions, hyp/proposal verbs,
+work-log cadence, `plan-extract`, sub-agent coordination. Two boundaries:
+- **Restricted L1 roles** that may only *file* tasks (no transitions, no
+  hyp/proposal mutation) compose **backlog-create** instead — the file-only
+  subset.
+- Filling a `plan.md`'s required sections at `brainstorm → plan` belongs to
+  **plan-gate**; this skill only drives the *state* transitions around it.
 
 ## CLI Interface
 
