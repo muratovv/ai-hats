@@ -7,9 +7,11 @@ description: Terraform/OpenTofu IaC covering state management, DRY modules, and 
 Maintain robust, DRY, and secure infrastructure as code.
 
 ## When to Use
-- Writing or reviewing Terraform/OpenTofu configurations
-- Planning infrastructure changes
-- Managing state and provider versions
+**Provisioning and declaring infrastructure** — resources, modules, state,
+provider versions. Its sibling **ansible-ops** owns the next layer: configuring
+and deploying onto the hosts Terraform created. Rule of thumb — if it changes
+*what exists*, it's here; if it changes *what runs on what exists*, it's
+ansible-ops.
 
 ## Conventions
 - **State**: `tofu plan` before `apply`. NEVER edit state manually. Pin provider versions.

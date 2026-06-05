@@ -7,9 +7,11 @@ description: Production readiness verification for services and infrastructure. 
 Verify production readiness of a service or infrastructure change.
 
 ## When to Use
-- Before promoting a service to production
-- After significant infrastructure changes
-- Periodic production readiness reviews
+The **production-readiness gate** before promoting a service — a pass/fail audit
+spanning SLOs, runbooks, capacity, rollback, observability. It *checks that*
+observability exists; actually building those logs/metrics/alerts is
+**observability-setup**. For the network-boundary correctness behind a
+distributed service, see **distributed-systems-checklist**.
 
 ## Checklist
 1. **Resource limits**: CPU and memory limits set on all containers/VMs. No unbounded resource consumption.

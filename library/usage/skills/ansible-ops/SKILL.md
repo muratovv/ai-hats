@@ -7,9 +7,11 @@ description: Ansible playbook management covering inventory, vault, syntax check
 Manage infrastructure using Ansible playbooks and roles.
 
 ## When to Use
-- Writing or running Ansible playbooks
-- Configuring servers, deploying services
-- Managing secrets with Ansible Vault
+**Config & app deployment onto hosts that already exist** — playbooks, roles,
+vault. The sibling for *provisioning the infrastructure itself* (creating hosts,
+networks, managed services + their state) is **terraform-expert**: declare the
+box with Terraform, configure what runs on it with Ansible. Don't reach here to
+stand up infrastructure.
 
 ## Conventions
 - **Inventory**: Always explicitly specify the inventory file with `-i`.

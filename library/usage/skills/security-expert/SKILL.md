@@ -7,10 +7,12 @@ description: Infrastructure security covering secrets, access control, and envir
 Maintain zero-trust environment and protect production data.
 
 ## When to Use
-- Configuring access control, SSH, or API keys
-- Reviewing infrastructure for security posture
-- Before committing code that touches secrets or credentials
-- Setting up new servers or services
+**Infrastructure hardening** — secrets, access control, SSH, env, server setup.
+Two siblings own adjacent surfaces: the trust model of an *AI agent* that can act
+on infra (where agent output meets privileged execution) is
+**trust-boundary-mapping**, and security review of *application code* is one lens
+of **audit-reviewer**. This skill is the infra/credential layer, not the agent
+design or the code diff.
 
 ## 1. Secret Management
 - **Scanning**: Before any commit, search for leaked keys/passwords/tokens.

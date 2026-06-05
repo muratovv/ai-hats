@@ -7,9 +7,11 @@ description: Structured procedure for investigating and resolving production inc
 Structured procedure for investigating and resolving production incidents.
 
 ## When to Use
-- A service or infrastructure component is down or degraded
-- Alerts fired for critical thresholds (disk, CPU, connectivity)
-- User reports a production issue
+**Live production degradation or outage** — the on-call path: stabilise,
+mitigate, communicate, then root-cause. A non-urgent code bug with no
+running-system pressure is **systematic-debugging** instead. During an incident
+you'll often *use* the observability signals (**observability-setup**) and reach
+for **rollback-plan** to revert the triggering change.
 
 ## Procedure
 1. **Triage**: Assess severity and blast radius. Who/what is affected?

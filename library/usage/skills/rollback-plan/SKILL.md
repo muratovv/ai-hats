@@ -7,9 +7,11 @@ description: Explicit revert paths for infrastructure and configuration changes.
 Ensure every infrastructure change has an explicit revert path.
 
 ## When to Use
-- Before applying any infrastructure or configuration change
-- Before database migrations
-- Any change with production impact
+The **pre-change revert path** for a config/infra change or migration — written
+*before* you apply, so a bad change can be walked back. Distinct from
+**backup-recovery**, which protects the *data itself*; rollback-plan reverts the
+*change*. A risky DB migration typically needs both: a backup (data) and a
+rollback plan (schema/app).
 
 ## Procedure
 1. **Capture state**: Before applying changes, record the current known-good state (snapshot, config backup, git SHA).
