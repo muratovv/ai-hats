@@ -94,7 +94,7 @@ def test_bump_fails_loud_when_settings_points_at_missing_hook(
     # into .agent/ai-hats/library/hooks/ as part of provider hook setup.
     ok = tmp_venv_project.run(
         "self", "update",
-        timeout=180,
+        timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(backup_dir)},
     )
     assert ok.exit_code == 0, (
@@ -123,7 +123,7 @@ def test_bump_fails_loud_when_settings_points_at_missing_hook(
 
     fail = tmp_venv_project.run(
         "self", "update",
-        timeout=180,
+        timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(backup_dir)},
     )
 
@@ -191,7 +191,7 @@ def test_bump_passes_smoke_assert_on_clean_state(
 
     res = tmp_venv_project.run(
         "self", "update",
-        timeout=180,
+        timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(tmp_path / "backups")},
     )
 

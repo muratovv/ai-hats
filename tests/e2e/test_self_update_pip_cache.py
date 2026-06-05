@@ -131,7 +131,7 @@ def test_e2e_self_update_completes_without_no_cache_dir(tmp_path: Path) -> None:
     # ----- bootstrap: install launcher + first self update -----
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
     _run([str(launcher_dest), "self", "update"],
-         cwd=project, env=env, timeout=240)
+         cwd=project, env=env, timeout=300)  # HATS-675: 300s = -n8 gate suite norm
 
     # Switch to git+file:// so --revision is reachable. Same rationale
     # as test_self_update_revision.py:150.
