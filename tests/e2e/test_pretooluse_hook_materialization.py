@@ -125,9 +125,17 @@ def private_launcher(tmp_path_factory):
     # origin/master (HATS-441 guard would otherwise refuse the install
     # of the local repo path). Safe in test: we own the bootstrap_proj
     # entirely. Same workaround used by long-running e2e fixtures.
+    # HATS-673: timeout 300 (not 180) — this is a REAL pip install of
+    # ai-hats into a fresh venv (~118s solo). Under the master gate's
+    # `-n8 --dist=loadgroup` run, concurrent pip installs across workers
+    # push a single build past 180s and FLAKE the gate. 300s is the
+    # suite-proven ceiling: ~10 sibling test_self_update_* tests do the
+    # same real-pip `self update` under the same -n8 contention at 300s
+    # and don't flake (crash_safety / orphan_gc / versioned). This call
+    # was the lone <300 outlier on the pip path.
     _run(
         [str(launcher_dest), "self", "update", "--force-downgrade"],
-        cwd=bootstrap_proj, env=env, timeout=180,
+        cwd=bootstrap_proj, env=env, timeout=300,
     )
     shared_venv = bootstrap_proj / ".agent" / "ai-hats" / ".venv"
     assert shared_venv.is_dir(), "bootstrap did not create shared venv"
@@ -262,9 +270,13 @@ def test_e2e_self_update_refreshes_hook_after_drift(
     # cli.maintenance.update. Bump still runs through _bump_internal
     # subprocess, exercising the refresh. --force-downgrade required
     # because this dev env is ahead of origin/master (see fixture).
+    # HATS-673: timeout 180 (not 120) — this is the no-op skip_install
+    # path (no pip), but the _bump_internal subprocess + composition
+    # still run under the gate's -n8 CPU contention, so widen the margin
+    # cheaply. Stays well under the pip-path 300s ceiling above.
     _run(
         [str(launcher), "self", "update", "--force-downgrade"],
-        cwd=project, env=env, timeout=120,
+        cwd=project, env=env, timeout=180,
     )
 
     restored = guard.read_bytes()
