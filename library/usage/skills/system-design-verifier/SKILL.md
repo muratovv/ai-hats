@@ -7,9 +7,11 @@ description: Audit architectures against failure modes (resilience, scalability,
 Audit proposed or existing architectures against common failure modes.
 
 ## When to Use
-- Reviewing a new system design or architecture proposal
-- Before major infrastructure changes
-- Post-incident analysis of architectural weaknesses
+Whole-system / proposal-level audit against failure modes (resilience,
+scalability, consistency, security). Narrower siblings: intra-service layering
+and dependency direction → **clean-architecture-guide**; the specific failure
+modes of crossing a network boundary → **distributed-systems-checklist**. Use
+this for the system silhouette, those for the pieces inside it.
 
 ## Procedure
 1. **Identify Interfaces:** Map all network boundaries (REST, gRPC, queues, DB connections).

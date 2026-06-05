@@ -7,10 +7,12 @@ description: Map trust boundaries and guardrails for AI-augmented systems (Tool 
 Design the architectural guardrails that keep an LLM agent from turning a stochastic decision into a destructive production action. Map every place agent-controlled data crosses into deterministic execution.
 
 ## When to Use
-- Drafting architecture for an agent that touches production (SRE agent, deploy bot, customer-data pipeline)
-- Reviewing a design that lets an agent shell out, call APIs, or modify infrastructure
-- Post-incident root-cause for prompt-injection or hallucination-driven outage
-- ADR for any new MCP server or tool integration
+Maps where **agent-controlled data crosses into privileged execution** — the
+guardrail surface of an AI system. Distinct from its neighbours: the *shape* of
+the multi-agent flow is **agentic-topology-design**, and hardening of concrete
+infra/credentials (SSH, secrets, server config) is **security-expert**. Reach
+here for the trust model of an agent that can shell out, deploy, or touch
+customer data.
 
 ## Checklist
 
