@@ -67,17 +67,19 @@ def _seed_project_with_retro_policy(
 
 
 def test_pipeline_wires_make_audit_then_spawn(tmp_path, monkeypatch):
-    """Step IDs in `finalize-subagent` are exactly [make_audit, maybe_spawn_session_reviewer].
+    """Step IDs in `finalize-subagent` are exactly
+    [make_audit, compute_usage, maybe_spawn_session_reviewer].
 
     Pins the wiring at the YAML level — any future drift (e.g. someone
-    re-adding `run_session_end` without considering SubAgent contract)
-    surfaces here.
+    re-adding `run_session_end` without considering SubAgent contract,
+    or dropping `compute_usage`) surfaces here. HATS-664 inserted
+    `compute_usage` right after `make_audit` (shared JSONL source).
     """
     pipe = load_pipeline(FINALIZE_SUBAGENT_YAML)
     step_names = [s.io.name for s in pipe.steps]
-    assert step_names == ["make_audit", "maybe_spawn_session_reviewer"], (
-        f"finalize-subagent step order drifted: {step_names}"
-    )
+    assert step_names == [
+        "make_audit", "compute_usage", "maybe_spawn_session_reviewer",
+    ], f"finalize-subagent step order drifted: {step_names}"
 
 
 def test_pipeline_run_spawns_reviewer_when_threshold_met(tmp_path, monkeypatch):
