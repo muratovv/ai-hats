@@ -104,6 +104,7 @@ markers = [
     "integration: tests that spawn real subprocesses or use real PTY",
     "smoke: lightweight real-path tests run by the pre-commit smoke gate on integration tasks",
     "external_env: tests that rely on real host environment (claude config, pip cache); candidates for sandboxing before xdist (HATS-464 R4)",
+    "quarantine: known-flaky under the -n8 pre-push gate — deselected by the gate via `-m \"... and not quarantine\"` (HATS-676 / HYP-002). Still COLLECTED and run by a normal/solo pytest invocation, so dev coverage is preserved. Each tagged test carries a reason naming its de-flake follow-up.",
 ]
 
 [tool.coverage.run]
