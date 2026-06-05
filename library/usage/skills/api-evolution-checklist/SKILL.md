@@ -7,10 +7,11 @@ description: Audit public-API/contract changes against Hyrum, Tesler, Leaky Abst
 Vet a public-API or cross-component contract change against four laws that describe how interfaces decay over time.
 
 ## When to Use
-- Changing a public API signature, response shape, or error contract
-- Replacing or refactoring a shared interface used by ≥2 callers
-- Drafting an ADR for an interface decision (versioning, deprecation, breaking change)
-- Reviewing a PR that touches `api/`, `proto/`, OpenAPI specs, or any module's public surface
+Specifically about the **compatibility** of a change to a shared/public
+interface — what breaks downstream callers, how the contract decays over time.
+The *decision record* for a versioning/deprecation choice is **adr-manager**
+(this checklist often feeds one). Not for internal-only refactors with a single
+caller — the cost is justified by ≥2 consumers of the surface.
 
 ## Checklist
 

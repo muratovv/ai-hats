@@ -7,9 +7,10 @@ description: Pre/post verification checklist for network and routing changes. Us
 Pre/post verification checklist for network and routing changes.
 
 ## When to Use
-- Before and after any DNS, routing, tunnel, or proxy change
-- When exposing a new service externally
-- Troubleshooting connectivity issues
+**Verifying connectivity around a change** — the before/after probes for a DNS,
+route, tunnel, or proxy edit. Its sibling **network-documentation** owns the
+*record* of the resulting topology: verify the change works here, then update the
+source-of-truth there. Verification is the test; documentation is the artifact.
 
 ## Before Change
 1. **Source Check**: Verify external DNS/Domain points to the correct IP.

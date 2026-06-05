@@ -7,8 +7,12 @@ description: Decision protocol for when to act autonomously vs escalate to super
 Protocol for deciding whether to request help from supervisor (user or parent-agent).
 
 ## When to Use
-- Before any communication with the user or parent-agent
-- When uncertain whether to act autonomously or escalate
+This is the *escalation gate*, and over-using it defeats the autonomy it guards.
+Do **not** invoke for decisions you can resolve yourself from the code, project
+conventions, or a sensible default — act, and note the choice. Reserve it for
+genuine forks: missing credentials/auth, approval for a destructive or
+irreversible action, or intent that stays ambiguous after you've exhausted the
+cheap ways to disambiguate.
 
 ## Before Making Any Request — Checklist
 

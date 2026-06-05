@@ -7,9 +7,11 @@ description: 4-phase bug-fix protocol (evidence, pattern, hypothesis, verify). U
 4-phase protocol for bug fixing and error investigation. No guess-and-check.
 
 ## When to Use
-- Investigating any error, failure, or unexpected behavior
-- Bug reports from users or monitoring
-- Test failures with non-obvious causes
+Code-level root-cause via a failing test — evidence before fixes, no
+guess-and-check. Its sibling for *production* trouble is **incident-response**: a
+live outage with an on-call / mitigation dimension starts there (stop the
+bleeding first) and only then drops into this protocol for the underlying bug.
+If there's no running-system urgency, you're in the right place.
 
 ## Phase 1: Evidence Gathering
 - Read full stack traces and error logs.

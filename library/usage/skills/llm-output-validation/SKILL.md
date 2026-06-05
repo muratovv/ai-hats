@@ -11,9 +11,11 @@ impossible values. Treat structured LLM output the same way you treat untrusted
 user input — validate **meaning**, not just shape.
 
 ## When to Use
-- Writing code that calls an LLM and parses the response into a data model
-- Reviewing code that consumes structured LLM output
-- Debugging cases where an LLM returned "valid" but wrong data
+The boundary here is *after the bytes parse*: schema/Pydantic validation already
+passed, now validate **meaning** (hallucinated ids, out-of-scope picks,
+impossible values). Not prompt design or model choice — for the Anthropic API
+surface (params, tool-use, streaming) see the `claude-api` reference. Not generic
+input validation either; this is specifically for output you got *from* an LLM.
 
 ## Validation Checklist
 

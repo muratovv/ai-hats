@@ -7,9 +7,11 @@ description: 3-2-1 backup strategy with verified restore procedures. Use when se
 Ensure data safety through verified backup strategy.
 
 ## When to Use
-- Setting up or reviewing backup infrastructure
-- Before risky data migrations or destructive operations
-- After adding new persistent storage (DB, volume)
+Protects and restores **persistent data** (databases, volumes) — 3-2-1, verified
+restores. Its sibling **rollback-plan** covers the *other* kind of undo: reverting
+a config/infra *change* to a prior known-good state. Data loss → backup-recovery;
+a bad deploy or migration to walk back → rollback-plan (a risky migration often
+wants both).
 
 ## Procedure
 1. **Identify targets**: List all persistent data (DBs, volumes, configs).
