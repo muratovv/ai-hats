@@ -23,4 +23,6 @@ name: finalize-subagent
 # the finalize initial state, no Python change required.
 steps:
   - id: make_audit
+  # HATS-664: sibling of make_audit — emits usage.json (usage/v1).
+  - id: compute_usage
   - id: maybe_spawn_session_reviewer
