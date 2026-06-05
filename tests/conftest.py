@@ -88,3 +88,24 @@ def _reset_safe_delete_session(monkeypatch):
     monkeypatch.delenv(safe_delete.ENV_TRASH_DIR, raising=False)
     yield
     safe_delete.reset_session()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ai_hats_dir(monkeypatch):
+    """Neutralize an ambient ``AI_HATS_DIR`` for EVERY test (HATS-671).
+
+    ``ai_hats_dir()`` gives the ``AI_HATS_DIR`` env var precedence over the
+    caller's ``project_dir`` (intended for out-of-tree data dirs, HATS-380/395).
+    A test that does not set the env explicitly therefore *escapes* its
+    ``tmp_path`` when pytest is launched in a shell that exports
+    ``AI_HATS_DIR`` — e.g. ``test_save_artifact_expands_ai_hats_dir_placeholder``
+    wrote the literal ``"payload"`` into the real
+    ``$AI_HATS_DIR/sessions/retros/judge/`` (5 corrupt 7-byte reports, HATS-671).
+
+    Clearing it autouse forces every test to resolve under its own
+    ``tmp_path`` / ``project_dir``. Tests that genuinely exercise the override
+    re-set it via ``monkeypatch.setenv`` (runs after this clear, undone at
+    teardown), so they are unaffected.
+    """
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    yield
