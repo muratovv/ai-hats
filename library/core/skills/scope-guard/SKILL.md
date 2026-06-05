@@ -7,9 +7,12 @@ description: "Enforce user-defined task boundaries to prevent scope creep and ov
 Enforce user-defined task boundaries. Prevent scope creep and over-implementation.
 
 ## When to Use
-- After receiving a task with explicit constraints ("only X", "don't do Y", "focus on Z")
-- Before starting each new sub-step during execution
-- When tempted to add "helpful" work not explicitly requested
+Execution-time guard against doing *more* than the user asked. Its sibling at
+plan stage is **design-minimalism**, which strips speculative primitives from a
+plan before any code exists; scope-guard instead holds the line on explicit user
+constraints ("only X", "don't touch Y") *while* you execute. If you're weighing
+whether an abstraction is justified, that's design-minimalism; if you're tempted
+to bolt on unrequested "helpful" work, that's this skill.
 
 ## Checklist
 

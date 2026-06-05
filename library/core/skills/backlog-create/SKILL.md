@@ -15,10 +15,12 @@ For the full backlog lifecycle (state machine, hyp / proposal verbs,
 
 ## When to Use
 
-Your role's mutation policy permits filing new tasks but explicitly forbids
-state transitions, hypothesis / proposal mutations, or direct edits to
-`<ai_hats_dir>/tracker/backlog/**`. You need to file a fix task or follow-up from a
-finding, and nothing more.
+**Prefer the sibling backlog-manager for anything past `ai-hats task create`** —
+a state transition, a work-log entry, a hyp/proposal verb, `plan-extract`. This
+skill is the file-only subset for L1 roles whose mutation policy whitelists
+task-create + read-only listing and nothing more (e.g. `judge-for-role`). The
+moment you want to *move* the task you just filed, you've left this skill's remit
+for backlog-manager's.
 
 ## CLI Interface
 

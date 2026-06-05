@@ -19,7 +19,9 @@ Analyze completed or failed work to identify systemic improvements.
 **Not** the automated session-review loop. `reflect-session`
 (`hats-reflect-session/v1`) is a pipeline the harness runs to triage
 hypotheses/proposals; `self-retrospective` is the personal agent reflection
-you run by hand (free-form markdown, archived under `sessions/retros/`).
+you run by hand (free-form markdown, archived under `sessions/retros/`). And
+**not** a factual outcome record — that is **task-summary**; this skill is the
+*improvement* analysis (why the work went as it did, what to change next time).
 
 ## Procedure
 
