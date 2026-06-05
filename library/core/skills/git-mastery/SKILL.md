@@ -8,8 +8,9 @@ Advanced git operations for development workflow.
 
 ## When to Use
 Basic add/commit/push needs no skill — reach here only for the harder operations:
-rebases, conflict resolution, branch strategy, conventional-commit setup, bisect.
-The git-*worktree* lifecycle (create/merge/discard a task worktree) is a sibling
+rebases, conflict resolution, branch strategy, conventional-commit setup,
+cherry-pick/backport. The git-*worktree* lifecycle (create/merge/discard a task
+worktree) is a sibling
 concern owned by **worktree-isolation** — use that for isolation, this for
 history and branch manipulation.
 

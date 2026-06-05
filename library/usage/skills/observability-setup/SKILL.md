@@ -8,11 +8,11 @@ Ensure every service is observable: logs, metrics, alerts.
 
 ## When to Use
 **Instrumenting** a service so it can be observed — logs, metrics, alerts,
-dashboards (RED method). Two neighbours: whether a service is *ready for
-production* (of which observability is one line item) is
-**reliability-checklist**, and *using* the signals during a live outage is
-**incident-response**. This skill builds the signals; those two gate on and
-consume them.
+dashboards (RED method). Two adjacent concerns are separate skills: the
+operational production-readiness gate (resource limits, health checks, fault
+tolerance) is **reliability-checklist**, and *using* the signals during a live
+outage is **incident-response**. This skill builds the telemetry; it does not
+gate readiness or run the incident.
 
 ## Procedure
 1. **Logging**: JSON format for applications, `logrotate` for system/container logs. Centralized collection where possible.
