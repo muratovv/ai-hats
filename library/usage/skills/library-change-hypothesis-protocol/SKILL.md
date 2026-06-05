@@ -109,7 +109,30 @@ If you find yourself reaching for `hyp create` while the task is still
 `plan` or `execute`, **stop** — you're committing the HATS-567
 precommitment anti-pattern.
 
-Use `ai-hats task hyp create` (or hand-write the YAML; both routes
+**First — is it already covered by an active HYP?** Run
+`ai-hats task hyp list --status active --json` and check whether an
+active HYP already describes this change's mechanism. If one does,
+**do not file a new HYP** — that duplicates the backlog (the same
+umbrella-first discipline as self-retrospective 4.5.a). Instead **fold
+into it**: append an intervention marker to that HYP's `validation_log`
+and cross-link both ways (task resolution names the HYP; the marker
+names the task + sha):
+
+```bash
+ai-hats task hyp append-verdict --hyp HYP-NNN --session <id> \
+  --verdict n/a --recommendation keep \
+  --evidence "INTERVENTION (not an audit): <task> (<sha>) <what shipped>."
+```
+
+Use `--recommendation extend_window` instead of `keep` when your change
+modifies the **very procedure/behavior the HYP is measuring** — its
+window now straddles a pre/post boundary and the reviewer must
+re-baseline. The `n/a` verdict + the `INTERVENTION (not an audit)`
+prefix stop the marker being read as an observation. Then **stop** — no
+new HYP.
+
+Otherwise (no active HYP covers the change) → author a new companion
+HYP. Use `ai-hats task hyp create` (or hand-write the YAML; both routes
 work). Required fields per the existing `Hypothesis` schema:
 `id`, `title`, `status: active`, `created`, `source_task`,
 `hypothesis`, `baseline`, `observation_window`, `success_criterion`.
@@ -191,6 +214,17 @@ concretely, the HYP isn't ready.
 If the diff has no behavior delta visible to a future agent session
 (e.g. doc-only typo fix, comment rewording), there's nothing to
 observe. Mark as refactor at plan-stage and skip.
+
+### ✗ Duplicate HYP when an active one already covers it
+
+Filing a fresh `HYP-NNN` whose mechanism is already the subject of an
+active HYP. Two failure shapes: (a) a near-duplicate that the supervisor
+must merge (the same churn self-retro 4.5.c prevents); (b) recording the
+cross-link only on the **task** side (resolution) and leaving the
+existing HYP's `validation_log` with no intervention marker — a
+one-sided link a future auditor of that HYP never sees. Fold instead:
+one `append-verdict` intervention marker, cross-linked both ways
+(Step 2, "already covered" branch).
 
 ## Examples
 
