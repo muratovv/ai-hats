@@ -37,6 +37,8 @@ injection: |
   - Every trait used in at least one role
   - No redundancy between components
   - Injection text is minimal — details go into rules/skills
+  - Skill `description` carries triggers + one capability phrase, never a procedure-body summary (a body-summary is a shortcut the selector acts on instead of loading the skill) — see **skill-template**
+  - New/edited skill ships a validation scenario (a RED baseline the skill fixes) — see **skill-template**
   - When a role injection carries a `## Guardrails` section, its bullets are role-specific — not restatements of global rules or the role's own workflow (omit the section if the role has nothing role-specific to add)
 
   ### Obsolescence Criteria
