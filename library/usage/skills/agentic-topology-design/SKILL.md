@@ -7,9 +7,11 @@ description: Choose a multi-agent topology and enforce structured contracts betw
 Pick the right multi-agent shape for a given task and enforce machine-parseable contracts between sub-agents. Treat sub-agents as microservices with tightly scoped prompts; coordination is the architect's responsibility.
 
 ## When to Use
-- Designing a flow that uses ≥2 sub-agents (code review pipeline, deep research, incident triage, batch refactor)
-- Replacing a "monolithic prompt" agent that has been showing interference / attention dilution
-- Drafting an ADR for an agentic feature
+Owns the *shape* of a multi-agent flow — how many agents, how they hand off,
+what contract passes between them. The orthogonal concern is the *trust surface*
+of those agents (where agent output crosses into privileged action) → that's
+**trust-boundary-mapping**. Design the topology here, then map its guardrails
+there; an agentic feature that touches production needs both.
 
 ## Topology Decision Matrix
 

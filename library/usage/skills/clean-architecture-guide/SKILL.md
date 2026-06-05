@@ -7,10 +7,11 @@ description: Audit a codebase for DDD/Hexagonal/Ports-and-Adapters compliance. U
 Verify a codebase or proposed design against the four invariants of Domain-Driven Design + Hexagonal Architecture. Use as an architectural lint before merge or as input to an ADR.
 
 ## When to Use
-- Reviewing a new module that owns business logic (not pure infra glue)
-- Pre-merge audit when a PR touches domain types, repositories, or transport layers
-- Drafting an ADR for a new bounded context
-- Triage when a codebase is drifting toward a Big Ball of Mud
+Scope is *inside one service* — layering, dependency direction, ports/adapters,
+keeping domain logic free of infra. Two siblings sit one level out: concerns that
+cross a **network boundary** (retries, partial failure, CAP) belong to
+**distributed-systems-checklist**, and whole-system failure-mode review belongs
+to **system-design-verifier**. This skill is the intra-process architectural lint.
 
 ## Checklist
 
