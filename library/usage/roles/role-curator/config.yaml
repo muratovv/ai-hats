@@ -45,6 +45,17 @@ injection: |
   the `dev::python` gear and the engine-internals map in the
   `library-curator` trait. Honor `dev_rule_e2e_gate` for harness paths.
 
+  ## Guardrails
+  - **Reading a test run — never mask the exit code.** Do not pipe the
+    runner through `tail` / `head` / `grep` / `tee`: a shell pipeline's
+    exit code (and a background run's exit code) is the *filter's*, not
+    the runner's, so a red gate reads green — a real incident reported a
+    gate "passed" that was actually `2 failed, 171 passed`. Redirect
+    instead: `pytest … > /tmp/gate.log 2>&1` keeps `$?` as pytest's,
+    then read the log with a separate command. (`set -o pipefail` or
+    `${PIPESTATUS[0]}` are equivalent fixes; plain `… | tee log` is NOT
+    — `tee` masks the code too.)
+
   ## What sets this role apart
   - Engine code edits permitted under `dev_rule_e2e_gate`; release flow /
     d2 / branch conventions stay with `maintainer`.
