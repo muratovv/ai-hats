@@ -141,7 +141,7 @@ def test_e2e_update_banner_fires_for_non_editable_install(tmp_path: Path) -> Non
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
     _run([str(launcher_dest), "self", "update"],
-         cwd=project, env=env, timeout=180)
+         cwd=project, env=env, timeout=300)  # HATS-675: 300s = -n8 gate suite norm
 
     venv_python = project / ".agent" / "ai-hats" / ".venv" / "bin" / "python"
     assert venv_python.is_file(), \

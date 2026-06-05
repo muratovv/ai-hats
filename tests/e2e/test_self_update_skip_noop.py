@@ -113,7 +113,7 @@ def test_e2e_self_update_skips_pip_when_in_sync(tmp_path: Path) -> None:
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
     _run([str(launcher_dest), "self", "update"],
-         cwd=project, env=env, timeout=180)
+         cwd=project, env=env, timeout=300)  # HATS-675: 300s = -n8 gate suite norm
 
     # ----- convert to editable install so the package dir carries .git -----
     # Required for the ahead/behind probe to find a usable git checkout

@@ -77,7 +77,7 @@ def test_user_owned_hook_relocates_to_user_hooks(
 
     tmp_venv_project.run(
         "self", "update",
-        timeout=180,
+        timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(tmp_path / "backups")},
     )
 
@@ -113,7 +113,7 @@ def test_user_owned_hook_not_in_managed_namespace(
 
     tmp_venv_project.run(
         "self", "update",
-        timeout=180,
+        timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(tmp_path / "backups")},
     )
 
@@ -138,7 +138,7 @@ def test_settings_json_entry_disabled_not_rewritten(
 
     tmp_venv_project.run(
         "self", "update",
-        timeout=180,
+        timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(tmp_path / "backups")},
     )
 
@@ -165,7 +165,7 @@ def test_stage_b_inventory_carries_reenable_snippet(
 
     tmp_venv_project.run(
         "self", "update",
-        timeout=180,
+        timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(tmp_path / "backups")},
     )
 
