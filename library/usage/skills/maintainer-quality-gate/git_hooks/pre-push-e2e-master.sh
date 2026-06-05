@@ -125,9 +125,16 @@ fi
 # exits 0, and the gate green-lights a push whose tier-2 e2e never actually ran.
 export AI_HATS_E2E_REQUIRE_VENV=1
 
+# HATS-676: deselect quarantined known-flaky tests. The gate runs under
+# `-n8 --dist=loadgroup`; a handful of stateful real-pip/shared-venv e2e tests
+# fail intermittently under that contention (different test each run) and would
+# block clean master pushes despite a sound diff. They are tagged
+# `@pytest.mark.quarantine` (a concrete HYP-002 known-flaky registry) and
+# excluded HERE only — a normal/solo `pytest` still collects & runs them, and
+# each carries a de-flake follow-up. Remove a test's marker once it is fixed.
 output=$(
     cd "$repo_root" && \
-    pytest -m "integration or smoke" tests/e2e/ tests/smoke/ \
+    pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ \
            ${xdist_args[@]+"${xdist_args[@]}"} \
            -q --tb=line --no-header -p no:cacheprovider 2>&1
 )
