@@ -51,6 +51,19 @@ since the latest tag lives under **Unreleased** until the next release.
   Write/Edit of the tracker `plan.md`.
 
 ### Changed
+- **`backlog-manager` skill split into a lean index + `references/`** (HATS-578,
+  child of HATS-499). The 512-line SKILL.md — the longest in the library, bundled
+  by `trait-agent` (reach 14 roles) — now violates nothing: a 133-line
+  orchestrator/index (overview, core task CLI, FSM diagram, state→skill routing)
+  with per-domain detail moved **verbatim** one level deep into `references/`
+  (`lifecycle.md`, `hypotheses.md`, `proposals.md`, `attachments.md`,
+  `relationships.md`), per the HATS-557 `>150` split policy. No behavior change:
+  content relocated, the `description` frontmatter untouched. Motivation is
+  policy-compliance + maintainability, **not** context savings — session-data
+  analysis showed the skill *body* loads ~once per 10 sessions (backlog discipline
+  rides the always-on `trait-agent` injection + `rule_backlog_discipline`, not the
+  body). The real always-on lever — `trait-agent`'s standing footprint — is spun
+  off to HATS-662.
 - **Skill-authoring discipline hardened from obra/superpowers (MIT)** (HATS-659,
   child of HATS-499). Three mechanics harvested into existing components — no new
   skill. `skill-template` + `skill-engineer` review checklist gain a **CSO
