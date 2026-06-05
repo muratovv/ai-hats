@@ -7,9 +7,12 @@ description: Clean context reset protocol covering commit work, write handoff, u
 Protocol for cleanly resetting agent context when the context window fills up or a fresh start is needed.
 
 ## When to Use
-- Context window approaching limit (system signals compression)
-- Switching to a fundamentally different task domain
-- Explicitly requested by supervisor
+The full *commit → handoff → card-update → clear* protocol, triggered by
+**context pressure or a domain switch** — not by finishing a task. For
+end-of-task wrap-up where context is still healthy, use **task-summary** (the
+record) or just transition the card; you don't need a reset. The handoff-file
+step itself is **context-handoff**, which this protocol invokes — call that one
+directly if you want a handoff without clearing context.
 
 ## Procedure
 

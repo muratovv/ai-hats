@@ -6,6 +6,17 @@ description: Google Workspace via the gws CLI (Drive/Sheets/Docs/Gmail/Calendar/
 
 Single-command access to Google Workspace APIs through one `gws` binary on `$PATH`. Use when the agent needs to read or write any Workspace data: Drive files, Sheets values, Docs content, Gmail messages, Calendar events, Chat messages, or Admin SDK objects.
 
+## When to Use
+
+This skill covers *using* `gws` to read/write Workspace data once it is
+installed and authenticated. The boundary cases worth flagging:
+- **Install / auth not done** (`gws` missing, or `gws auth status` reports no
+  creds) → don't improvise the setup; surface
+  `docs/integrations/gworkspace-cli-setup.md` and walk the user through it.
+- **The `admin` group** (users, groups, org units) needs Workspace-admin
+  credentials — out of reach for an ordinary delegated account; don't reach for
+  it on a normal user's behalf.
+
 ## Setup
 
 If `gws` is not installed, or `gws auth status` reports no active credentials — open [`docs/integrations/gworkspace-cli-setup.md`](../../../../docs/integrations/gworkspace-cli-setup.md) and walk the user through install, auth, and permission-allowlist steps. Do not try to install or authenticate without surfacing the guide.

@@ -7,9 +7,12 @@ description: Audit distributed services against the 8 fallacies and the CAP trad
 Surface unstated assumptions in distributed-system designs and incidents.
 
 ## When to Use
-- Design review for any service that crosses a network boundary
-- Incident triage when root cause is unclear and a network/IPC layer is involved
-- Architectural ADR drafting for new distributed components
+Fires specifically when a **network / IPC boundary** is in play — the 8
+fallacies, CAP trade-offs, partial failure. Single-process layering questions
+are **clean-architecture-guide**, and the operational "is it ready for
+production" gate (SLOs, runbooks, rollout) is **reliability-checklist**. This
+skill is about the *correctness* of crossing the wire, not the layering behind
+it or the ops in front of it.
 
 ## Fallacies Checklist
 For each, state the **assumption made** and the **mitigation in place**. Mark `N/A` only with explicit justification.

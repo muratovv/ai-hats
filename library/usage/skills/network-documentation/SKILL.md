@@ -7,9 +7,10 @@ description: Maintain network topology and DNS documentation as source of truth.
 Maintain the network source of truth throughout SRE tasks.
 
 ## When to Use
-- After any network topology change (new service, port, tunnel, route)
-- When onboarding a new service or domain
-- Periodic accuracy audits of network docs
+Keeping the **network source-of-truth accurate** after a topology change. The
+sibling **network-change-verification** is the *act of confirming the change
+works* (pre/post probes); this skill captures what the topology now *is* once it
+does. Don't conflate proving connectivity with recording it.
 
 ## Procedure
 1. **Locate index**: Find the project's infrastructure index (e.g., `INFRASTRUCTURE.md`).

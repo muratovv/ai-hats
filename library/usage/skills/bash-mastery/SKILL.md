@@ -7,9 +7,10 @@ description: Shell scripting, Makefile conventions, and modern CLI tooling. Use 
 Shell scripting, Makefile conventions, and modern CLI tooling.
 
 ## When to Use
-- Writing or reviewing shell scripts
-- Creating or modifying Makefiles
-- Choosing CLI tools for automation tasks
+Scripting, Makefile, and CLI-tooling *craft* — not git plumbing (→ **git-mastery**)
+and not the Bash-vs-dedicated-tool choice (→ **tool-call-hygiene**, which decides
+whether to shell out at all versus use Read/Grep/Edit). Reach here once you've
+decided a shell script is the right tool and need it to be correct and portable.
 
 ## Bash Scripts
 - Shebang: `#!/usr/bin/env bash`

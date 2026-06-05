@@ -17,6 +17,11 @@ Each check fires at a different lifecycle stage but shares one audience
 
 ## When to Use
 
+Scope is *prose docs a human reviews* — `docs/*.md`, `README`, `CONTRIBUTING`,
+how-to / architecture pages. **Not** code comments or docstrings (those ride
+along with the code change), and **not** recording an architecture decision —
+that's **adr-manager**. Fires when:
+
 - Task changes any `docs/*.md`, `README.md`, `CONTRIBUTING.md`.
 - Task lifts structure from a "precedent doc" ("I'll match the style from X").
 - Task description enumerates ≥6 items to document (components, sections, recipes).

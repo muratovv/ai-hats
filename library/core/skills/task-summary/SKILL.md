@@ -7,9 +7,13 @@ description: Focused post-task summary covering architectural decisions, decisio
 Produce a focused summary of a completed task, capturing only decision-critical knowledge.
 
 ## When to Use
-- After backlog-manager transitions a task to `done` or `failed`
-- When handing off a completed task for review
-- When supervisor asks "what happened with task X?"
+The backward-looking *factual record* of a finished task — what was decided and
+why. Two siblings to keep distinct:
+- **self-retrospective** is the *improvement* analysis (5-whys, systemic fixes)
+  of how the work went — run that when there were failures or backtracks; this
+  skill just records the outcome.
+- **context-handoff** is the *forward* brief for whoever continues the work —
+  task-summary looks back, handoff looks ahead.
 
 ## Procedure
 

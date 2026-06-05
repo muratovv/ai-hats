@@ -64,6 +64,19 @@ since the latest tag lives under **Unreleased** until the next release.
   rides the always-on `trait-agent` injection + `rule_backlog_discipline`, not the
   body). The real always-on lever — `trait-agent`'s standing footprint — is spun
   off to HATS-662.
+- **38 skill `## When to Use` sections rewritten to boundary/disambiguation**
+  (HATS-573, child of HATS-499) — applies the HATS-572 convention (the section
+  loads *after* skill selection, so it must add what the one-line `description`
+  can't) across the full restatement-only backlog the HATS-572 soft audit
+  surfaced. Each section now names a concrete sibling to prefer or a concrete
+  excluded case instead of re-listing the description's triggers — e.g.
+  `audit-reviewer`↔`domain-reviewer`↔`review-role`,
+  `incident-response`↔`systematic-debugging`, `backup-recovery` (data)↔
+  `rollback-plan` (change), `ansible-ops` (config)↔`terraform-expert`
+  (provisioning), `observability-setup`↔`reliability-checklist`. `gworkspace-cli`
+  gained a section it previously lacked. Bodies-only — `description` frontmatter
+  (owned by HATS-571) and `golang-*` left untouched; composition errors=0.
+  Confirming evidence for HYP-038.
 - **Skill-authoring discipline hardened from obra/superpowers (MIT)** (HATS-659,
   child of HATS-499). Three mechanics harvested into existing components — no new
   skill. `skill-template` + `skill-engineer` review checklist gain a **CSO

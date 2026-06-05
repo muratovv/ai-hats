@@ -7,9 +7,12 @@ description: Logging, metrics, alerting, and dashboards setup using the RED meth
 Ensure every service is observable: logs, metrics, alerts.
 
 ## When to Use
-- Deploying a new service or container
-- Reviewing observability gaps after an incident
-- Setting up monitoring infrastructure
+**Instrumenting** a service so it can be observed — logs, metrics, alerts,
+dashboards (RED method). Two adjacent concerns are separate skills: the
+operational production-readiness gate (resource limits, health checks, fault
+tolerance) is **reliability-checklist**, and *using* the signals during a live
+outage is **incident-response**. This skill builds the telemetry; it does not
+gate readiness or run the incident.
 
 ## Procedure
 1. **Logging**: JSON format for applications, `logrotate` for system/container logs. Centralized collection where possible.

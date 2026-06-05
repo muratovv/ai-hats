@@ -7,10 +7,12 @@ description: Compare implementation diff against task acceptance criteria and AD
 Verify that what was implemented matches what was asked. Surfaces silent scope creep, missing acceptance criteria, and architectural drift before a PR is merged or a long-running worktree is integrated.
 
 ## When to Use
-- Task in `review` state — before transitioning to `done`
-- Integrating a worktree that has lived through ≥2 sessions (memory loss risk)
-- Pre-merge audit when the diff touches more than the task description suggested
-- After a sub-agent reports completion — verify before trusting
+Compares **what was asked vs what was built** — the implementation diff against
+the task's acceptance criteria and ADRs — to catch silent scope creep at
+`review`, on long-lived worktrees, or after a sub-agent reports done. Distinct
+from **audit-reviewer**, which judges the quality of the code *as written*;
+drift-detection asks whether it's the *right scope at all*. (This is task-vs-impl
+drift, not IaC config drift.)
 
 ## Procedure
 

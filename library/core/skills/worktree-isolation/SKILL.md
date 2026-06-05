@@ -106,10 +106,12 @@ cd $WT
 
 ## When to Use
 
-- Starting any non-trivial task (execute state)
-- Parallel work on multiple tasks
-- Risky changes you might want to discard
-- Sub-agent delegation (automatic via `ai-hats agent --isolation`)
+The cost (a separate working copy) is justified by **parallelism, risky-discard,
+or sub-agent isolation** — not by every edit. Skip it for read-only exploration
+or a trivial single-file fix on a throwaway branch. The git operations *inside*
+the worktree (rebase, conflict resolution, commit conventions) are
+**git-mastery**'s remit; this skill owns the worktree's create → merge → discard
+lifecycle.
 
 ## Conventions
 
