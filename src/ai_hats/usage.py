@@ -50,6 +50,16 @@ def _empty_report(source: str) -> dict[str, Any]:
         "schema_version": SCHEMA_VERSION,
         "source": source,
         "session_id": None,
+        # ai-hats session metadata — NOT transcript-derived (the JSONL has no
+        # notion of an ai-hats role). The pure parser leaves these null; the
+        # ``compute_usage`` step fills them from the session's ``metrics.json``
+        # so the report self-describes which composition produced this cost
+        # (the comparison sibling pairs sessions by role; "what went wrong"
+        # debugging reads role/provider/exit_code without a second lookup).
+        # On a raw parser run / retroactive sweep they stay null.
+        "role": None,
+        "provider": None,
+        "exit_code": None,
         "entry_types_seen": {},
         "usage_totals": {
             "input_tokens": 0,

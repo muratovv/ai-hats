@@ -19,9 +19,15 @@ since the latest tag lives under **Unreleased** until the next release.
   of `*/references/*.md` + `SKILL.md`, tool calls with `is_error`, stop-hook
   firings), aggregates with tool success-rate, and sub-agent sidechain linkage
   (detect + link by `sessionId`/`sourceToolAssistantUUID`, no per-event token
-  merge). The pure `parse_session_usage` (`src/ai_hats/usage.py`) is transcript-
-  only and fail-soft (malformed line / unknown entry type → `flags`, never a
-  crash — verified over all ~550 historical transcripts with zero crashes) and
+  merge). The report also self-describes its ai-hats context — `role` /
+  `provider` / `exit_code` copied from the session's `metrics.json` (so the
+  comparison sibling pairs sessions by role and "what went wrong" debugging reads
+  it in one place); when `role` resolves, a static `costs.py` per-component
+  always-on breakdown is attached under `always_on.static` for a measured-vs-
+  static cross-check. The pure `parse_session_usage` (`src/ai_hats/usage.py`) is
+  transcript-only and fail-soft (malformed line / unknown entry type → `flags`,
+  never a crash — verified over all ~550 historical transcripts with zero
+  crashes) and
   doubles as a bash-composable primitive (`python -m ai_hats.usage <jsonl>`,
   JSON to stdout) for retroactive sweeps. The `ComputeUsage` step is the thin
   live driver — sibling of `make_audit`, same post-session JSONL, wired right

@@ -82,6 +82,86 @@ def test_writes_usage_json_from_configured_jsonl(tmp_path, monkeypatch):
     assert report["aggregates"]["tool_success_rate"] == 0.75
 
 
+def test_session_meta_filled_from_metrics_json(tmp_path, monkeypatch):
+    """role/provider/exit_code are copied from the session's metrics.json
+    (written upstream) so usage.json self-describes which composition ran."""
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    session = make_session(tmp_path)
+    (session.session_dir / "metrics.json").write_text(
+        json.dumps({"role": "maintainer", "provider": "claude", "exit_code": 0})
+    )
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
+    csid = "meta-uuid"
+    (claude_dir / f"{csid}.jsonl").write_text(
+        (TRANSCRIPTS / "normal.jsonl").read_text()
+    )
+
+    ComputeUsage().run(
+        session_id=session.session_id,
+        session_dir=session.session_dir,
+        claude_session_id=csid,
+        project_dir=project_dir,
+    )
+
+    report = json.loads((session.session_dir / "usage.json").read_text())
+    assert report["role"] == "maintainer"
+    assert report["provider"] == "claude"
+    assert report["exit_code"] == 0
+
+
+def test_funnel_role_overrides_metrics_json(tmp_path, monkeypatch):
+    """A live ``role`` from the pipeline funnel wins over the persisted value."""
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    session = make_session(tmp_path)
+    (session.session_dir / "metrics.json").write_text(
+        json.dumps({"role": "stale-role", "provider": "claude"})
+    )
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
+    csid = "override-uuid"
+    (claude_dir / f"{csid}.jsonl").write_text(
+        (TRANSCRIPTS / "normal.jsonl").read_text()
+    )
+
+    ComputeUsage().run(
+        session_id=session.session_id,
+        session_dir=session.session_dir,
+        claude_session_id=csid,
+        project_dir=project_dir,
+        role="live-role",
+    )
+
+    report = json.loads((session.session_dir / "usage.json").read_text())
+    assert report["role"] == "live-role"
+
+
+def test_session_meta_null_when_no_metrics(tmp_path, monkeypatch):
+    """No metrics.json → metadata stays null, no crash."""
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    session = make_session(tmp_path)
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
+    csid = "nometa-uuid"
+    (claude_dir / f"{csid}.jsonl").write_text(
+        (TRANSCRIPTS / "normal.jsonl").read_text()
+    )
+
+    ComputeUsage().run(
+        session_id=session.session_id,
+        session_dir=session.session_dir,
+        claude_session_id=csid,
+        project_dir=project_dir,
+    )
+
+    report = json.loads((session.session_dir / "usage.json").read_text())
+    assert report["role"] is None
+    assert report["provider"] is None
+
+
 def test_missing_jsonl_returns_empty_delta_no_crash(tmp_path, monkeypatch):
     """No JSONL anywhere → best-effort no-op, empty delta, no usage.json, no raise."""
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
