@@ -70,6 +70,22 @@ both or neither"), and assessed impact (**redirect**: ship section + method
 together). The split was refuted *before* execute — exactly the
 "right scope, wrong direction" save this stage exists for.
 
+## Rationalization red-flags
+
+The skeptic pass is the easiest stage to talk yourself out of. These are the
+rationalizations that precede a skipped or hollow counter:
+
+| Rationalization (what you tell yourself) | Why it's wrong |
+|---|---|
+| "This is obviously worth doing — write N/A" | Reflex `N/A` on a non-trivial plan is the exact failure this stage prevents; a steelman + one real counter costs little |
+| "I already know the answer is proceed" | Then *record* the counter you considered and why it fails — a resolution, not a skipped step |
+| "Questioning it now will just slow us down" | Redirecting before execute is cheap; rebuilding after shipping the wrong thing is not |
+
+**Red-flag words in your own reasoning:** "obviously", "clearly worth it", "no
+point questioning", "we already decided". Any of these → write a real steelman →
+assumption → counter → impact, even when the impact is *proceed*.
+(Rationalization-table discipline adapted from obra/superpowers, MIT.)
+
 ## Anti-Patterns
 
 - **Reflex `N/A` on a non-trivial plan.** The section is optional so the engine

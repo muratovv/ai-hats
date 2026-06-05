@@ -54,6 +54,27 @@ Enforce user-defined task boundaries. Prevent scope creep and over-implementatio
 - Every action within recorded constraints, or user approved the deviation
 - No unrequested work delivered without explicit approval
 
+## Rationalization red-flags
+
+Scope creep arrives as a thought you tell yourself *before* the action. Catch
+the rationalization, not just the regret:
+
+| Rationalization (what you tell yourself) | Why it's wrong |
+|---|---|
+| "I'll just add this helper while I'm here" | Not requested — the user scopes, your convenience doesn't |
+| "Skeleton/infra obviously means wire up everything" | Defaults to *only what was named*; ask with a concrete enumeration (HATS-265: switched 4 handlers, user rolled back 3) |
+| "It won't compile without this extra bit" | Maybe — but that is an escalation ("ASK first"), not a licence to expand silently |
+| "Faster to do it all now than to ask" | The ask round-trip is cheaper than the rollback |
+
+**Red-flag words in your own reasoning:** "while I'm here", "just also", "might
+as well", "obviously they'd want", "to be safe". Any of these → re-run the scope
+check (step 4) and escalate (step 5) instead of proceeding.
+
+**Forbidden workaround:** expanding scope and "flagging it" in the final summary
+is *not* consent — flagging after the fact does not substitute for asking
+before the action. (Rationalization-table discipline adapted from
+obra/superpowers, MIT.)
+
 ## Anti-Patterns
 - "I'll just add this helper since I'm here" — scope creep
 - Justifying scope expansion internally without asking — the user decides, not you
