@@ -10,6 +10,7 @@ from __future__ import annotations
 from .. import registry
 from .check_update import CheckUpdateAsync
 from .compose import ComposeRole
+from .compute_usage import ComputeUsage
 from .emit import EmitStdout
 from .extract import ExtractMarker
 from .handoff import BuildHandoff
@@ -40,6 +41,8 @@ _BUILTINS = {
     "launch_provider": LaunchProvider,
     "provider": Provider,
     "make_audit": MakeAudit,
+    # HATS-664: sibling of make_audit — emits usage.json (usage/v1).
+    "compute_usage": ComputeUsage,
     # HATS-530: shared by both finalize-hitl and finalize-subagent.
     "maybe_spawn_session_reviewer": MaybeSpawnSessionReviewer,
     "run_session_end": RunSessionEnd,
@@ -67,6 +70,7 @@ __all__ = [
     "BuildHandoff",
     "CheckUpdateAsync",
     "ComposeRole",
+    "ComputeUsage",
     "EmitStdout",
     "ExtractMarker",
     "LaunchProvider",

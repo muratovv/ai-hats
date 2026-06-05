@@ -4,3 +4,9 @@ tests/test_*.py
 tests/e2e/test_*.py
 tests/conftest.py
 tests/e2e/conftest.py
+
+# HATS-664: synthetic Claude-Code transcript fixtures for the usage parser.
+# Transcript-shaped JSON by construction (sessionId + JSONL schema) — that
+# shape is exactly what the privacy hook flags, but the values are fake
+# (sess-normal / sess-mal / sess-sub), no real session IDs or prompts.
+tests/fixtures/transcripts/*.jsonl

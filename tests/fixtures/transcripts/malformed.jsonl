@@ -1,0 +1,5 @@
+{"type":"user","sessionId":"sess-mal","timestamp":"2026-06-05T11:00:00Z","message":{"role":"user","content":[{"type":"text","text":"hi"}]}}
+this is not json at all
+{"type":"assistant","sessionId":"sess-mal","timestamp":"2026-06-05T11:00:01Z","message":{"model":"claude-x","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"cache_read_input_tokens":0},"content":[{"type":"text","text":"ok"}]}}
+{"type":"weird-new-type","sessionId":"sess-mal","timestamp":"2026-06-05T11:00:02Z","foo":"bar"}
+42
