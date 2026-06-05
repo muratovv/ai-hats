@@ -102,6 +102,13 @@ you run by hand (free-form markdown, archived under `sessions/retros/`). And
 
     #### 4.5.c Generalize — collapse to class
 
+    **Umbrella-first gate — ask this BEFORE you frame anything:**
+    do ≥2 surviving candidates share one root failure mode? If yes,
+    write **ONE** class-level HYP now that names each context as a
+    flavor. Do **not** file N atomic HYPs and leave the supervisor to
+    merge them (the HYP-043/044/045 → HYP-046 churn: three filings, all
+    stalled, replaced by one umbrella, two wasted CLI round-trips).
+
     Lay all surviving candidates side-by-side. For any two (or more)
     that share a mechanism, fold them into ONE class-level HYP that
     names both contexts as flavors. Reference HYP-022 as the model:
@@ -116,8 +123,8 @@ you run by hand (free-form markdown, archived under `sessions/retros/`). And
     For each surviving candidate, write a block in this shape:
 
     ```
-    [N] OBSERVATION
-        <one-line symptom — what the supervisor would see at a glance>
+    [N] OBSERVATION  (class-level: the behavioural pattern, NOT the instance)
+        <one line naming the pattern the agent systematically exhibits>
 
         WHAT WENT WRONG (concrete trace, 3-7 lines)
         - <what the agent did, with specific commands / files / cites>
@@ -125,7 +132,7 @@ you run by hand (free-form markdown, archived under `sessions/retros/`). And
         - <how it surfaced: error message, supervisor pushback, lost time>
         - <if class-level: name 2+ flavors observed or named>
 
-        HYPOTHESISED CAUSE
+        HYPOTHESISED CAUSE  (class-level mechanism)
         <mechanism from 4.5.b — one or two sentences>
 
         SCOPE
@@ -135,6 +142,18 @@ you run by hand (free-form markdown, archived under `sessions/retros/`). And
         <what evidence the observation window collects;
          what changes if confirmed vs refuted>
     ```
+
+    **Class-level framing rule.** The OBSERVATION (and the HYP title you
+    derive from it) and the HYPOTHESISED CAUSE must read as a *class* —
+    the pattern and its mechanism — never as the single trace you saw.
+    The concrete instance (this session's commands, files, the one
+    symptom) belongs ONLY in WHAT WENT WRONG. Litmus: if the OBSERVATION
+    line can be rewritten as "in <session/turn> the agent did <X>", it is
+    still instance-level — lift it one level before presenting.
+
+    - ✗ instance: «агент сообщил "zero blast radius" до конца прогона»
+    - ✓ class: «агент формулирует влияние изменения из guess, а не из
+      evidence» — the "zero blast radius" trace moves into WHAT WENT WRONG
 
     One-liner candidate lists are forbidden — the supervisor needs the
     trace to decide keep/drop without re-reading the session log.
@@ -187,4 +206,10 @@ you run by hand (free-form markdown, archived under `sessions/retros/`). And
   forces the supervisor to reconstruct context; the trace block makes
   the keep/drop call obvious.
 - **Filing N narrow HYPs that share a mechanism** — collapse to one
-  class HYP at 4.5.c. HYP-022 is the model (one HYP, four flavors).
+  class HYP at 4.5.c (umbrella-first gate). HYP-022 is the model (one
+  HYP, four flavors); HYP-043/044/045 → HYP-046 is the anti-model.
+- **Instance-level OBSERVATION / CAUSE** — framing the candidate as the
+  single trace you saw ("agent said 'zero blast radius' before the run
+  finished") instead of the class ("agent states change-impact from
+  guess, not evidence"). The instance belongs in WHAT WENT WRONG; the
+  OBSERVATION and HYPOTHESISED CAUSE must be class-level (4.5.d).
