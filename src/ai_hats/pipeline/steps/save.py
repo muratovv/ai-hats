@@ -63,6 +63,15 @@ class SaveArtifact(Step):
         if self._needs_project_dir:
             template = expand_path_placeholders(template, inputs["project_dir"])
         path = Path(template.format(ts=ts, **inputs))
+        if self._needs_project_dir and not path.is_absolute():
+            # ``<ai_hats_dir>`` expands to a *project-relative* path when the
+            # ai-hats dir lives under ``project_dir`` (the default). Anchor it
+            # to ``project_dir`` so the write never depends on the process CWD
+            # (HATS-671: a CWD/project_dir mismatch — as in tests passing
+            # ``project_dir=tmp_path`` — otherwise leaked the artefact into the
+            # real repo's gitignored ``sessions/`` dir). An absolute expansion
+            # (``AI_HATS_DIR`` set out-of-tree, HATS-380/395) is left untouched.
+            path = Path(inputs["project_dir"]) / path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content if isinstance(content, str) else str(content))
         return {"saved_path": path}
