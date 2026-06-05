@@ -124,7 +124,7 @@ def test_e2e_self_update_revision(tmp_path: Path) -> None:
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
     _run([str(launcher_dest), "self", "update"],
-         cwd=project, env=env, timeout=240)
+         cwd=project, env=env, timeout=300)  # HATS-675: 300s = -n8 gate suite norm
 
     venv_dir = project / ".agent" / "ai-hats" / ".venv"
     assert venv_dir.is_dir(), f"venv missing at {venv_dir}"

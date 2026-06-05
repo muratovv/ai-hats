@@ -114,7 +114,10 @@ def test_e2e_install_init_break_heal(tmp_path):
         )
 
     # ---- 2. self update — bootstrap path ----
-    res = ai_hats("self", "update")
+    # HATS-675: real-pip install via the generic helper — override the
+    # 180s default to the 300s -n8 gate suite norm (the helper default
+    # stays 180 for the no-pip self init / config status calls below).
+    res = ai_hats("self", "update", timeout=300)
     venv = project / ".agent" / "ai-hats" / ".venv"
     assert (venv / "bin" / "python").is_file(), "venv python missing after self update"
     assert (venv / "bin" / "ai-hats").is_file(), "ai-hats binary missing after install"
@@ -158,7 +161,9 @@ def test_e2e_install_init_break_heal(tmp_path):
     assert "ai-hats self update" in res.stderr
 
     # ---- 7. self heal — fall back to .venv, recreate it, restore the tool ----
-    res = ai_hats("self", "update")
+    # HATS-675: real-pip heal install — override the 180s helper default
+    # to the 300s -n8 gate suite norm (see step 2).
+    res = ai_hats("self", "update", timeout=300)
     assert "venv missing or broken — recreating" in res.stderr
     assert (venv / "bin" / "python").is_file(), "heal did not recreate .venv python"
     # Full chain runs post-heal: rich UX from python self update + auto-bump.

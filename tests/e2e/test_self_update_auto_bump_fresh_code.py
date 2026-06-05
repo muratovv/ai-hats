@@ -75,7 +75,7 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
     # project venv. No legacy refs yet — just establish the install.
     _run(
         [str(launcher_dest), "self", "update"],
-        cwd=project, env=env, timeout=180,
+        cwd=project, env=env, timeout=300,  # HATS-675: 300s = -n8 gate suite norm
     )
     _run(
         [str(launcher_dest), "self", "init", "-r", "assistant", "-p", "claude"],
@@ -141,7 +141,7 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
     # The actual test: ONE invocation of self update should fix everything.
     res = _run(
         [str(launcher_dest), "self", "update"],
-        cwd=project, env=env, timeout=180,
+        cwd=project, env=env, timeout=300,  # HATS-675: 300s = -n8 gate suite norm
     )
 
     # HATS-549 Phase 4: ``guard.sh`` is user-owned (basename NOT in
@@ -182,7 +182,7 @@ def test_e2e_python_dash_m_ai_hats_self_bump_invokable(tmp_path: Path) -> None:
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
     _run(
         [str(launcher_dest), "self", "update"],
-        cwd=project, env=env, timeout=180,
+        cwd=project, env=env, timeout=300,  # HATS-675: 300s = -n8 gate suite norm
     )
     _run(
         [str(launcher_dest), "self", "init", "-r", "assistant", "-p", "claude"],
