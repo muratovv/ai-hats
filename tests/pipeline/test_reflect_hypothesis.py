@@ -13,57 +13,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
 import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
-
-# The worktree's library/core. When tests run from a worktree, the
-# packaged `ai_hats.library` resolves to the MAIN repo's library, so the
-# new `reflect-hypothesis-*` files are invisible. Override the built-in
-# layer resolution to point at this worktree's library/core for the
-# duration of this test module.
-WORKTREE_LIBRARY_CORE = Path(__file__).resolve().parents[2] / "library" / "core"
-
-
-@pytest.fixture(autouse=True)
-def _use_worktree_library(monkeypatch):
-    """Force Assembler + PipelineHarness to see the worktree's library/core
-    ahead of the packaged built-ins, so new pipeline YAMLs /
-    initial-injection files introduced by this task are picked up under
-    pytest.
-
-    Two patches are needed:
-    1. ``assembler._builtin_library_layers`` — for resolver-based asset
-       lookup (initial injections, role/skill configs).
-    2. ``pipeline.harness.files`` — for the pipeline YAML loader, which
-       uses ``importlib.resources.files('ai_hats.library')`` directly
-       (bypasses Assembler).
-    """
-    from ai_hats import assembler as _asm
-    from ai_hats.pipeline import harness as _harness
-
-    original = _asm._builtin_library_layers
-
-    def _layers():
-        return [WORKTREE_LIBRARY_CORE] + list(original())
-
-    monkeypatch.setattr(_asm, "_builtin_library_layers", _layers)
-
-    # Wrap harness's `files()` so 'ai_hats.library' resolves to the
-    # worktree's library/ root (parent of `core/`).
-    worktree_library_root = WORKTREE_LIBRARY_CORE.parent
-    real_files = _harness.files
-
-    def _files(name: str):
-        if name == "ai_hats.library":
-            return worktree_library_root
-        return real_files(name)
-
-    monkeypatch.setattr(_harness, "files", _files)
-    yield
 
 
 def _make_hyp(pd: Path, hyp_id: str):
