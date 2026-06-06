@@ -163,7 +163,7 @@ def bumped(tmp_path_factory, _shared_launcher_venv, repo_root: Path):
     assert _tarballs, (
         "pre-bump backup tarball missing — `self update` produced no snapshot "
         f"under {backup_dir} (the round-trip safety net did not run).\n"
-        f"self update rc={res.returncode}\n"
+        f"self update rc={res.exit_code}\n"
         f"--- stdout tail ---\n{res.stdout[-1500:]}\n"
         f"--- stderr tail ---\n{res.stderr[-1500:]}"
     )
@@ -197,7 +197,8 @@ def test_bump_produces_backup_with_recovery_banner(bumped) -> None:
 def test_backup_captures_scoped_surface(bumped) -> None:
     """AC2 part 1: tarball contains the declared scope
     (.agent/, ai-hats.yaml, .claude/settings.json, CLAUDE.md, ...)."""
-    tarball = next(bumped.backup_dir.glob("*.tar.gz"))
+    # HATS-677: deterministic + guarded by the `bumped` fixture's setup assert.
+    tarball = sorted(bumped.backup_dir.glob("*.tar.gz"))[0]
     with tarfile.open(tarball, "r:gz") as tar:
         names = set(tar.getnames())
 
@@ -235,7 +236,7 @@ def test_backup_round_trip_restores_state_byte_for_byte(
     tarballs = sorted(bumped.backup_dir.glob("*.tar.gz"))
     assert tarballs, (  # HATS-677: diagnostic, not a bare StopIteration
         f"no backup tarball under {bumped.backup_dir} — see the `bumped` "
-        f"fixture setup output (self update rc={bumped.res.returncode})"
+        f"fixture setup output (self update rc={bumped.res.exit_code})"
     )
     tarball = tarballs[0]
 
@@ -261,7 +262,8 @@ def test_backup_round_trip_restores_state_byte_for_byte(
 def test_backup_excludes_venv_and_pycache(bumped) -> None:
     """Tarball must NOT include regenerable derived state. Without
     exclusions the framework venv alone inflates the tarball ~100×."""
-    tarball = next(bumped.backup_dir.glob("*.tar.gz"))
+    # HATS-677: deterministic + guarded by the `bumped` fixture's setup assert.
+    tarball = sorted(bumped.backup_dir.glob("*.tar.gz"))[0]
     with tarfile.open(tarball, "r:gz") as tar:
         names = set(tar.getnames())
 
