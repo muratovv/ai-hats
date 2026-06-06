@@ -339,6 +339,75 @@ def test_audit_writer_preserves_composition_after_rebuild(tmp_path, monkeypatch)
     assert "personal-workflow (global)" in rebuilt
 
 
+def test_build_folds_transcript_when_no_turns(tmp_path):
+    """HATS-682: SDK sub-agents (e.g. isolation=discard hypothesis-intake) leave
+    a non-empty transcript.txt (stdout) but no reachable JSONL and no trace.log,
+    so AuditWriter.build() parses zero structured turns. The real work must not
+    be lost — the transcript content is folded into the audit body."""
+    from ai_hats.observe import AuditWriter
+
+    session = make_test_session(tmp_path)
+    session.init_audit(role="hypothesis-intake", provider="claude")
+    session.finalize_audit({"role": "hypothesis-intake", "provider": "claude"})
+
+    draft = "BEGIN_INTAKE_RESULT\naction: create\ndraft: editable install mismatch\nEND_INTAKE_RESULT"
+    (session.session_dir / "transcript.txt").write_text(draft)
+    session.trace_path.write_text("")  # empty trace → no parseable turns
+
+    AuditWriter().build(session, jsonl_path=None, keep_raw=False)
+    audit = session.audit_path.read_text()
+
+    assert "## Transcript" in audit, "transcript fallback section missing"
+    assert "BEGIN_INTAKE_RESULT" in audit
+    assert "END_INTAKE_RESULT" in audit
+
+
+def test_build_skips_transcript_when_turns_present(tmp_path):
+    """HATS-682 R2: when the JSONL yields real structured turns, the transcript
+    fallback must NOT fire — no duplication of content already rendered as
+    👤/👾 turns."""
+    from ai_hats.observe import AuditWriter
+
+    session = make_test_session(tmp_path)
+    session.init_audit(role="assistant", provider="claude")
+    session.finalize_audit({"role": "assistant", "provider": "claude"})
+
+    jsonl = tmp_path / "conversation.jsonl"
+    jsonl.write_text(
+        '{"type": "user", "timestamp": "2026-06-06T00:00:00Z", '
+        '"message": {"role": "user", "content": [{"type": "text", "text": "real question"}]}}\n'
+        '{"type": "assistant", "timestamp": "2026-06-06T00:00:01Z", '
+        '"message": {"role": "assistant", "content": [{"type": "text", "text": "real answer"}], '
+        '"usage": {"input_tokens": 10, "output_tokens": 5}}}\n'
+    )
+
+    (session.session_dir / "transcript.txt").write_text("SHOULD_NOT_APPEAR_TWICE")
+
+    AuditWriter().build(session, jsonl_path=jsonl)
+    audit = session.audit_path.read_text()
+
+    assert "👤 real question" in audit
+    assert "## Transcript (raw" not in audit, "fallback fired despite parsed turns"
+    assert "SHOULD_NOT_APPEAR_TWICE" not in audit
+
+
+def test_build_no_turns_no_transcript_is_metaonly(tmp_path):
+    """HATS-682 R3: no turns AND no transcript.txt (genuinely empty/aborted) →
+    meta-only audit, no Transcript section, no crash."""
+    from ai_hats.observe import AuditWriter
+
+    session = make_test_session(tmp_path)
+    session.init_audit(role="maintainer", provider="claude")
+    session.finalize_audit({"role": "maintainer", "provider": "claude"})
+    session.trace_path.write_text("")  # empty trace, no transcript.txt
+
+    AuditWriter().build(session, jsonl_path=None, keep_raw=False)
+    audit = session.audit_path.read_text()
+
+    assert "## Transcript" not in audit
+    assert "## Metrics" in audit
+
+
 def test_extract_user_text_filters_skill_body_injection():
     """HATS-666: a Skill invocation re-injects the full SKILL.md as a user
     text message ("Base directory for this skill: …"). It is 100% redundant
