@@ -8,6 +8,7 @@ Umbrella for advanced ai-hats workflows beyond first-time setup. Each section is
 | 2 | **Worktree workflow** — isolate task work in a linked worktree, parallel sub-agents, merge / discard / recover | live           |
 | 3 | **Orchestration** — fan out sessions in parallel / CI, tag metadata, parse JSON, lean on exit codes            | TODO — see [4] |
 | 4 | **CLI integrations** — wire external services (Google, GitHub, BQ) as a regular skill                          | TODO — see [5] |
+| 5 | **Escape a wedged session** — force-exit an unresponsive interactive session with triple Ctrl-C                | live           |
 
 > Full CLI reference — `ai-hats --tree`. First-time setup → [1]. Day-to-day backlog CLI → [2]. Pipeline contract reference (`Step` / `StepIO`) → [3].
 
@@ -321,6 +322,16 @@ Full architectural picture, including lock-ordering hierarchy and rationale for 
 
 ---
 
+## 5. Escape a wedged interactive session
+
+An interactive `ai-hats` session proxies the provider (e.g. `claude`) through a PTY. Normally you quit the provider its own way — for claude, **Ctrl-C twice** — which ends the ai-hats session cleanly.
+
+If the provider ever **wedges** (stops responding to Ctrl-C and never exits), press **Ctrl-C three times in quick succession** (within ~1.5 s). ai-hats intercepts the third press, tears the session down via its bounded shutdown, and exits with code **130**.
+
+The gesture is dormant in healthy sessions: the first two Ctrl-C reach the provider unchanged, and a responsive provider exits on the second — so the third is never reached. Because a forced exit returns a non-zero code, a wedged session is no longer mis-reported as success. Mechanism: [9].
+
+---
+
 ## References
 
 **[1]** — [`docs/how-to-configure.md`](how-to-configure.md) — first-time setup, role pick, provider, feedback policy.
@@ -338,3 +349,5 @@ Full architectural picture, including lock-ordering hierarchy and rationale for 
 **[7]** — [`tests/test_user_steps.py`](../tests/test_user_steps.py) — `test_step_runs_in_pipeline_e2e` is the e2e fixture this guide tracks.
 
 **[8]** — [`library/core/skills/worktree-isolation/SKILL.md`](../library/core/skills/worktree-isolation/SKILL.md) — in-session skill for isolated work.
+
+**[9]** — [`src/ai_hats/runtime.py`](../src/ai_hats/runtime.py) — `_scan_escape` (escape-gesture counter) + `WrapRunner._pty_spawn` (the PTY passthrough loop and force-exit wire), HATS-679.
