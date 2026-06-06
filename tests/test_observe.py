@@ -355,21 +355,18 @@ def test_extract_user_text_filters_skill_body_injection():
     assert AuditWriter._extract_user_text("давай возьмем 666 задачку") == "давай возьмем 666 задачку"
 
 
-def test_format_audit_caps_huge_user_input(tmp_path):
-    """HATS-666: `_format_audit` renders `user_input` verbatim/uncapped while
-    `response` is capped at 500. For reviewer/judge roles the first user message
-    is huge ingested evidence → 90-125KB audits. Cap user_input (generously) so
-    real short turns survive but giant echoes are bounded."""
+def test_format_audit_preserves_full_user_input(tmp_path):
+    """HATS-683: audit generation is LOSSLESS — `_format_audit` renders
+    `user_input` in full, no per-turn cap. (Audit *size* is managed at the
+    delivery layer — `_truncate_audit`, HATS-684 — not by destroying the
+    canonical record. The skill-body filter, HATS-666, stays the lossless way
+    to drop pure noise.)"""
     from ai_hats.observe import AuditWriter, Turn
 
     session = make_test_session(tmp_path)
     big = "Z" * 50000
-    turns = [
-        Turn(timestamp="12:00:00", user_input=big, response="ok"),
-        Turn(timestamp="12:00:01", user_input="short real instruction", response="ok2"),
-    ]
+    turns = [Turn(timestamp="12:00:00", user_input=big, response="ok")]
     out = AuditWriter()._format_audit(session, turns)
 
-    assert ("Z" * 2100) not in out, "user_input not capped (~2KB)"
-    assert "chars truncated" in out, "missing truncation marker"
-    assert "short real instruction" in out, "short user turn must survive intact"
+    assert big in out, "user_input must be rendered in full (no cap)"
+    assert "chars truncated" not in out, "no truncation marker — generation is lossless"
