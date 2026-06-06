@@ -1445,7 +1445,6 @@ class SubAgentRunner:
         from .sdk_runner import run_claude_sdk_blocking
 
         ticket_context = self._load_ticket(ticket_id)
-        project_state = self._read_project_state()
 
         options = build_options(
             result,
@@ -1455,10 +1454,11 @@ class SubAgentRunner:
             model=model or "",
             extra_env=env or None,
         )
+        # HATS-681: PROJECT_STATE (the STATE.md backlog dump) is no longer
+        # injected — it was unused dead weight in every sub-agent run.
         initial_message = build_first_user_message(
             ticket_context=ticket_context,
             task=task,
-            project_state=project_state,
         )
         return run_claude_sdk_blocking(
             options=options,
@@ -1488,7 +1488,6 @@ class SubAgentRunner:
         initial_message = build_first_user_message(
             ticket_context=self._load_ticket(ticket_id),
             task=task,
-            project_state=self._read_project_state(),
         )
         return (
             "==== SDK system_prompt (preset=claude_code, append) ====\n"
@@ -1497,13 +1496,6 @@ class SubAgentRunner:
             "==== SDK first user message ====\n"
             f"{initial_message}\n"
         )
-
-    def _read_project_state(self) -> str:
-        """Read ``state.md`` for the SDK path's first user message."""
-        from .paths import state_md_path
-
-        state_md = state_md_path(self.project_dir)
-        return state_md.read_text() if state_md.exists() else ""
 
     def _build_meta_prompt(self, result, provider, task: str, ticket_id: str) -> str:
         """Build the meta-prompt for sub-agent execution."""
