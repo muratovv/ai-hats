@@ -124,6 +124,15 @@ _EPIC_RESOLVED_STATES: frozenset[TaskState] = frozenset(
     {TaskState.DONE, TaskState.CANCELLED}
 )
 
+# Child states that count as "work taken" for epic activation (HATS-692 D2).
+# A child in any of these means real work has started under the epic, so a
+# `plan`-state epic should be activated to `execute`. BRAINSTORM / PLAN are
+# pre-work; BLOCKED / FAILED are not "active progress"; DONE / CANCELLED are
+# handled by the advance branch.
+_EPIC_ACTIVE_STATES: frozenset[TaskState] = frozenset(
+    {TaskState.EXECUTE, TaskState.DOCUMENT, TaskState.REVIEW}
+)
+
 
 class TaskManager:
     """Manages task cards and state transitions with file-lock protection."""
@@ -849,24 +858,30 @@ class TaskManager:
         return children
 
     def _propagate_to_parent(self, child: TaskCard) -> list[TaskTransition]:
-        """Child-driven epic auto-transition (HATS-690 / Req 2 of HATS-688).
+        """Child-driven epic auto-transition (HATS-690 + HATS-692).
 
         Called *after* the child's own lock window closes (no nested locks).
-        Takes the parent epic's lock and, based on the child set, either:
+        Takes the parent epic's lock and, based on the child set, applies one of
+        the three epic-sync transitions:
 
-        * **advances** the epic to ``review`` when every child is resolved
-          (``{done, cancelled}``) with at least one ``done`` and the epic is in
-          ``execute`` / ``document`` (Q2 / Q2a); or
-        * **reopens** a ``done`` epic to ``execute`` when the just-mutated child
-          is live again (not in ``{done, cancelled}``) — WITHOUT
-          ``_setup_worktree`` (Q3 caveat: an epic worktree is unwanted); or
+        * **reopen** — a ``done`` epic with a live (not ``{done, cancelled}``)
+          just-mutated child ⟹ ``done → execute`` (HATS-690 Q3); or
+        * **advance** — every child resolved (``{done, cancelled}``) with ≥1
+          ``done`` and the epic in ``plan`` / ``execute`` / ``document`` ⟹
+          ``→ review`` via FSM-valid hops. The ``plan`` source is the HATS-692
+          advance-fallback: a planned epic whose children all closed without
+          ever entering ``execute`` (e.g. ``close_task`` fast-close) still
+          advances; or
+        * **activate** — a ``plan`` epic whose just-mutated child became active
+          (``{execute, document, review}``) ⟹ ``plan → execute`` (HATS-692);
+          ``brainstorm`` epics are left alone (not yet decomposed); or
         * **no-ops**.
 
         The epic is mutated *directly* (FSM-validated hops via
         :meth:`TaskCard.transition_to`) rather than through the public
-        :meth:`transition`: this skips ``_setup_worktree`` on reopen and keeps
-        grandparent cascade structurally impossible (no recursion). Returns a
-        list (empty, or one delta) so future propagations can extend it.
+        :meth:`transition`: epics never get a worktree in any auto-path, and
+        grandparent cascade stays structurally impossible (no recursion).
+        Returns a list (empty, or one delta) so future propagations can extend it.
         """
         epic_id = child.parent_task
         if not epic_id:
@@ -894,16 +909,24 @@ class TaskManager:
                 reason = f"reopened: live child {child.id} ({child.state.value})"
                 epic.log_work(f"Auto-reopened done → execute ({reason})")
                 # No _setup_worktree — auto-reopened epics get no worktree.
-            elif epic.state in (TaskState.EXECUTE, TaskState.DOCUMENT):
-                # Advance: all children resolved, >=1 done (Q2 / Q2a).
+            elif epic.state in (
+                TaskState.PLAN,
+                TaskState.EXECUTE,
+                TaskState.DOCUMENT,
+            ):
+                # Advance: all children resolved, >=1 done (Q2 / Q2a). The PLAN
+                # source is the HATS-692 fallback for the fast-close path.
                 children = self._children_of(epic_id)
                 resolved = bool(children) and all(
                     c.state in _EPIC_RESOLVED_STATES for c in children
                 )
                 has_done = any(c.state == TaskState.DONE for c in children)
                 if resolved and has_done:
-                    # Multi-hop: execute -> document -> review (review is only
-                    # reachable from document, models.py FSM).
+                    # Multi-hop to review via FSM-valid hops from the current
+                    # state (review is only reachable from document). Chained
+                    # `if`s let plan -> execute -> document -> review cascade.
+                    if epic.state == TaskState.PLAN:
+                        epic.transition_to(TaskState.EXECUTE)
                     if epic.state == TaskState.EXECUTE:
                         epic.transition_to(TaskState.DOCUMENT)
                     epic.transition_to(TaskState.REVIEW)
@@ -911,6 +934,17 @@ class TaskManager:
                     epic.log_work(
                         f"Auto-advanced {from_state.value} -> review ({reason})"
                     )
+                elif (
+                    epic.state == TaskState.PLAN
+                    and child.state in _EPIC_ACTIVE_STATES
+                ):
+                    # Activate (HATS-692): work has started under a planned epic.
+                    epic.transition_to(TaskState.EXECUTE)  # PLAN -> EXECUTE
+                    reason = (
+                        f"activated: child {child.id} ({child.state.value}) taken"
+                    )
+                    epic.log_work(f"Auto-activated plan -> execute ({reason})")
+                    # No _setup_worktree — epics never get a worktree here.
 
             if reason is None:
                 return []
