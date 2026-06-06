@@ -337,3 +337,19 @@ def test_audit_writer_preserves_composition_after_rebuild(tmp_path, monkeypatch)
     assert "## Composition" in rebuilt, "composition section lost during AuditWriter rebuild"
     assert "trait-base (built-in)" in rebuilt
     assert "personal-workflow (global)" in rebuilt
+
+
+def test_extract_user_text_filters_skill_body_injection():
+    """HATS-666: a Skill invocation re-injects the full SKILL.md as a user
+    text message ("Base directory for this skill: …"). It is 100% redundant
+    with the `🔧 Skill: <name>` tool line and must be filtered like a
+    tool_result, not rendered as a verbatim 👤 turn."""
+    from ai_hats.observe import AuditWriter
+
+    skill_body = (
+        "Base directory for this skill: /Users/x/.agent/ai-hats/skills/backlog-manager\n\n"
+        "# Backlog Manager\n\nOrchestrate the lifecycle ...\n" + ("blah " * 2000)
+    )
+    assert AuditWriter._extract_user_text(skill_body) is None
+    # A real user message is untouched.
+    assert AuditWriter._extract_user_text("давай возьмем 666 задачку") == "давай возьмем 666 задачку"
