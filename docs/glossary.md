@@ -18,6 +18,8 @@ One invocation of the provider CLI under a chosen role. Entry points: `ai-hats` 
 
 Lifecycle diagram — see [2].
 
+**Parent escape-hatch** — a deterministic way out of a *wedged* interactive (HITL) session. The provider runs under a PTY proxy whose stdin is in raw mode, so Ctrl-C is forwarded to the child as a byte; if the child stops honouring it and never exits, the user is otherwise trapped until an external kill. The runtime counts consecutive Ctrl-C (`0x03`) within a ~1.5 s sliding window: the first two are forwarded unchanged (dormant for healthy sessions, which exit on the second Ctrl-C via master EOF), and the third is intercepted — the parent runs its bounded shutdown and returns exit code **130** (so a wedged session is no longer mis-reported as success). Source: `runtime._scan_escape` + `WrapRunner._pty_spawn` (HATS-679).
+
 ## Role
 
 A root composition that the agent wears during a session — bundles traits, rules, skills, and an injection block into one config. The shipped library splits into two layers: `library/core/roles/` (engine-internal: `initial-wizard`, `session-reviewer`, `judge-auditor`, `judge`, `judge-for-role`, `auditor-for-role`, `hypothesis-intake`, `test-agent`) and `library/usage/roles/` (curated user-facing: `assistant`, `dev-python`, `dev-web`, `maintainer`, `architect`, `sre`, `go-dev`, `go-dev-full`). Catalog — `ai-hats list roles`; layered structure and override precedence — see [9]. Example: [`library/usage/roles/assistant/config.yaml`](../library/usage/roles/assistant/config.yaml). Customization (add / remove / override) — see [6].
