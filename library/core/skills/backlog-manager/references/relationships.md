@@ -44,3 +44,26 @@ ai-hats task list --search PROJ-105
 - Unknown reference IDs → **warning** (yellow), but the write succeeds. This
   allows forward-references during planning and lets you fix typos with a
   follow-up `task update`.
+
+## Child-driven epic auto-transitions
+
+`parent_task` is **behaviourally active** in the state machine: the harness
+keeps an epic's state in sync with its children, so you rarely transition an
+epic by hand. Every auto-transition prints a `Epic auto-transition: …` notice
+and records an audit entry in the epic's `work_log`.
+
+- **Auto-advance to `review`.** When *every* child of an epic is resolved
+  (`done` **or** `cancelled`) with **at least one** `done`, and the epic is in
+  `execute` or `document`, the epic auto-advances to `review`. The final
+  `review → done` gate is preserved — a human/reviewer still closes the epic.
+  `failed` / `blocked` children are outstanding work and keep the epic open; an
+  epic with zero children is never auto-advanced.
+- **Auto-reopen `done → execute`.** When new or reopened work appears under a
+  `done` epic — `task create --parent-task <epic>`, `task update --parent-task
+  <epic>` re-parenting a live task in, or a child reopened `done → execute` —
+  the epic auto-reopens to `execute` (no worktree is created for the epic).
+
+Fires on `task transition` / `create` / `update` / `close`. Scope: **one level
+only** — a grandparent epic is not cascaded. To advance an epic stuck in
+`brainstorm` / `plan`, transition it by hand (the auto-advance never forces
+`plan → execute`).
