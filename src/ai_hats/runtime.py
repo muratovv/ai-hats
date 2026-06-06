@@ -26,7 +26,7 @@ from .harness.diagnostic import diagnose_silent_session
 from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
 from .materialize import compose_for_role
-from .models import LifecycleEvent
+from .models import LifecycleEvent, TaskCard
 from .observe import Session, SessionManager, SidecarTracer, TraceTag
 from .paths import hooks_dir as _hooks_dir
 from .providers import get_provider
@@ -1445,6 +1445,7 @@ class SubAgentRunner:
         from .sdk_runner import run_claude_sdk_blocking
 
         ticket_context = self._load_ticket(ticket_id)
+        linked_context = self._load_linked_context(ticket_id)
 
         options = build_options(
             result,
@@ -1456,8 +1457,11 @@ class SubAgentRunner:
         )
         # HATS-681: PROJECT_STATE (the STATE.md backlog dump) is no longer
         # injected — it was unused dead weight in every sub-agent run.
+        # HATS-689: LINKED_CONTEXT carries the directly-linked cards (this is
+        # the live Claude channel for that section).
         initial_message = build_first_user_message(
             ticket_context=ticket_context,
+            linked_context=linked_context,
             task=task,
         )
         return run_claude_sdk_blocking(
@@ -1487,6 +1491,7 @@ class SubAgentRunner:
         system_text = sp.get("append", "")
         initial_message = build_first_user_message(
             ticket_context=self._load_ticket(ticket_id),
+            linked_context=self._load_linked_context(ticket_id),
             task=task,
         )
         return (
@@ -1527,6 +1532,13 @@ class SubAgentRunner:
             if ticket_context:
                 sections.append(f"# TICKET_CONTEXT\n{ticket_context}")
 
+            # LINKED_CONTEXT (HATS-689) — directly-linked cards (parent epic +
+            # plan.md, plus depends_on/related/see_also). Live Gemini channel;
+            # the Claude path mirrors this via build_first_user_message.
+            linked_context = self._load_linked_context(ticket_id)
+            if linked_context:
+                sections.append(f"# LINKED_CONTEXT\n{linked_context}")
+
         # TASK
         if task:
             sections.append(f"# TASK\n{task}")
@@ -1541,6 +1553,92 @@ class SubAgentRunner:
         if task_file.exists():
             return task_file.read_text()
         return ""
+
+    def _load_linked_context(self, ticket_id: str) -> str:
+        """Assemble the ``LINKED_CONTEXT`` body for a ticket's direct links.
+
+        HATS-689 (Req 1 of HATS-688): a sub-agent taking a task should see the
+        cards of all *directly-linked* tasks — the parent epic first (it answers
+        "why are we doing this"), then blocking / related / see-also links (each
+        carries real planning context). Today those links reach the prompt only
+        as bare IDs inside ``# TICKET_CONTEXT``; the agent has to chase them by
+        hand.
+
+        Links are pulled in salience order ``parent_task → depends_on → related
+        → see_also`` (deduped; self and missing targets skipped). Per linked
+        card: a trimmed view (id, title, state, description) plus only the
+        *latest* ``work_log`` entry (token hygiene — the same argument that
+        dropped ``PROJECT_STATE`` in HATS-681). The parent epic additionally
+        carries its ``plan.md`` body (the decomposition / design lives there);
+        other links are card-only.
+
+        Direct links only — one level, no recursion / transitive walk. Returns
+        ``""`` when there are no resolvable links (the caller then skips the
+        section). This is the single assembly seam HATS-558 later extends — not
+        a parallel "what context does a task see" code path.
+        """
+        from .paths import tasks_dir
+
+        if not ticket_id:
+            return ""
+        base = tasks_dir(self.project_dir)
+        card_path = base / ticket_id / "task.yaml"
+        if not card_path.exists():
+            return ""
+        try:
+            card = TaskCard.from_yaml(card_path)
+        except Exception:
+            return ""
+
+        # Salience order, parent first; dedup on id, never pull self.
+        ordered: list[tuple[str, str]] = []
+        seen: set[str] = {ticket_id}
+
+        def _add(kind: str, ids: list[str]) -> None:
+            for lid in ids:
+                if lid and lid not in seen:
+                    seen.add(lid)
+                    ordered.append((kind, lid))
+
+        if card.parent_task:
+            _add("parent_task", [card.parent_task])
+        _add("depends_on", card.depends_on)
+        _add("related", card.related)
+        _add("see_also", card.see_also)
+
+        blocks: list[str] = []
+        for kind, lid in ordered:
+            linked_path = base / lid / "task.yaml"
+            if not linked_path.exists():
+                continue  # graceful: dangling link, skip
+            try:
+                linked = TaskCard.from_yaml(linked_path)
+            except Exception:
+                continue
+            blocks.append(self._render_linked_card(kind, linked, base))
+        return "\n\n".join(blocks)
+
+    @staticmethod
+    def _render_linked_card(kind: str, card: TaskCard, base: Path) -> str:
+        """Render one trimmed linked-card block (see ``_load_linked_context``)."""
+        lines = [f"## {card.id} — {card.title}  [{kind}]", f"state: {card.state.value}"]
+        if card.description:
+            lines.append("")
+            lines.append(card.description.rstrip())
+        if card.work_log:
+            latest = card.work_log[-1]
+            ts = latest.timestamp or "?"
+            lines.append("")
+            lines.append(f"latest work_log ({ts}): {latest.message}")
+        block = "\n".join(lines)
+        # The parent epic additionally carries its plan.md (design lives there).
+        if kind == "parent_task":
+            plan_path = base / card.id / "plan.md"
+            if plan_path.exists():
+                plan_body = plan_path.read_text().rstrip()
+                if plan_body:
+                    block += f"\n\n### {card.id} plan.md\n{plan_body}"
+        return block
 
     # ----- HATS-474 Phase 3: multi-turn API -----
 
