@@ -1507,7 +1507,6 @@ class SubAgentRunner:
 
     def _build_meta_prompt(self, result, provider, task: str, ticket_id: str) -> str:
         """Build the meta-prompt for sub-agent execution."""
-        from .paths import state_md_path
         from .placeholders import expand_path_placeholders
 
         sections = []
@@ -1519,10 +1518,11 @@ class SubAgentRunner:
         merged = expand_path_placeholders(result.merged_injection, self.project_dir)
         sections.append(f"# SYSTEM_ROLE\n{merged}")
 
-        # PROJECT_STATE
-        state_md = state_md_path(self.project_dir)
-        if state_md.exists():
-            sections.append(f"# PROJECT_STATE\n{state_md.read_text()}")
+        # HATS-681: PROJECT_STATE (the STATE.md backlog dump) is intentionally
+        # NOT injected. On-data verification (154 prompts) showed it was ~5.4K
+        # tok of mostly-completed-task dead weight per sub-agent run, unused by
+        # the dominant consumer (session-reviewer). Sub-agents reach the backlog
+        # on-demand via the `ai-hats task` CLI.
 
         # CONSTRAINTS
         if result.priorities:
