@@ -51,8 +51,11 @@ work-log cadence, `plan-extract`, sub-agent coordination. Two boundaries:
 # Create task (ID auto-generated if omitted)
 ai-hats task create "Title" -d "Description" -p medium --tag dx --tag cleanup --id PROJ-042
 
-# Show task
+# Show task — by default appends a "Linked context" block with the bodies of
+# all linked tasks (parent epic + its plan.md, depends_on/related/see_also),
+# the same content a sub-agent gets. Add --short for the compact index only.
 ai-hats task show PROJ-042
+ai-hats task show PROJ-042 --short
 
 # Transition state
 ai-hats task transition PROJ-042 plan
