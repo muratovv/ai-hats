@@ -139,7 +139,7 @@ ai-hats task log HATS-NNN "abandoned overlay approach — replacing role wholesa
 
 ### `task sync` — STATE.md
 
-`<ai_hats_dir>/STATE.md` is a generated index of active cards used by every agent at session start. Run `ai-hats task sync` after a batch of state transitions; it's idempotent.
+`<ai_hats_dir>/STATE.md` is a generated, human- and CLI-facing index of active cards. Run `ai-hats task sync` after a batch of state transitions; it's idempotent. Agents are **not** handed STATE.md in their prompt — they read the backlog on demand via `ai-hats task list` / `ai-hats task show`.
 
 ### Ergonomics (HATS-371)
 
