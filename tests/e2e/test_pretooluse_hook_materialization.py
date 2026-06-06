@@ -238,6 +238,7 @@ def test_e2e_init_materialize_is_idempotent(installed_launcher, tmp_path):
 
 
 @pytest.mark.integration
+@pytest.mark.pip_heavy  # HATS-678: private_launcher build is a real pip install
 @pytest.mark.quarantine(
     reason="flaky under the -n8 pre-push gate: the private_launcher fixture's "
     "real-pip `self update --force-downgrade` is contention-sensitive. Two "

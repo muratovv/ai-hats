@@ -47,25 +47,87 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 AI_HATS_BINARY = Path(sys.executable).parent / "ai-hats"
 
 
-def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
-    """HATS-589: assign xdist scheduling groups for ``--dist=loadgroup``.
+# HATS-678: how many pip-heavy e2e tests may run concurrently under the gate's
+# ``-n8 --dist=loadgroup``. ~21 tests across 16 files do a real ``pip install``
+# at call time (own launcher build / ``self update --force-reinstall``).
+# Uncapped, up to ``nworkers`` (≤8) of them hit the package index at once →
+# intermittent network resets (RemoteDisconnected / ProtocolError → exit 2) or
+# TimeoutExpired — the flake class HATS-676 quarantined. Round-robining their
+# FILES into this many fixed xdist groups (see ``_pip_heavy_group_map``) means
+# ``loadgroup`` runs at most ``PIP_HEAVY_GROUPS`` of them concurrently; light
+# tests keep per-file groups and still use every worker.
+#
+# This is the speed/stability knob: higher K = faster (more concurrency) but
+# closer to the uncapped ~8 that flaked. K=4 halves peak concurrency — a strong
+# stability margin while keeping 4× parallelism on the pip tail (~21 tests ×
+# ~42s each ÷ 4 ≈ a 4-wave tail). Tune from real gate telemetry; the flake is
+# cold-network-contention dependent and does not reliably reproduce on a warm
+# local pip cache.
+PIP_HEAVY_GROUPS = 4
 
-    Two goals under parallel runs:
+
+def _pip_heavy_group_map(pip_heavy_files, k):  # noqa: ANN001, ANN202
+    """Round-robin sorted pip-heavy files into ``k`` fixed xdist groups.
+
+    Returns ``{file: "pip_heavy_<n>"}``. Pure + deterministic (``sorted`` →
+    stable order → ``i % k``; no clock/random) so it is unit-testable without
+    pytest internals — see ``tests/e2e/test_pip_heavy_sharding.py``. File
+    granularity (not per-test) keeps every test of a pip-heavy file in ONE
+    group, so a module-scoped own-build fixture (e.g. ``private_launcher``)
+    never rebuilds across workers.
+
+    Fail-under-revert: collapse this to per-file groups (drop the call in the
+    hook) → pip-heavy items fan back out to ``nworkers`` concurrent installs.
+    """
+    return {
+        f: f"pip_heavy_{i % k}" for i, f in enumerate(sorted(pip_heavy_files))
+    }
+
+
+def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
+    """Assign xdist scheduling groups for ``--dist=loadgroup``.
+
+    Three goals under parallel runs:
 
     * **live-claude (cohort B) → one worker.** Every live test gates on the
       ``requires_claude_auth`` fixture; we pin them all to a single
       ``live_claude`` group so a parallel run never opens N concurrent SDK
       sessions (cost / rate-limit hazard flagged in HATS-589).
+    * **pip-heavy → ``PIP_HEAVY_GROUPS`` capped groups.** Tests tagged
+      ``@pytest.mark.pip_heavy`` run a real ``pip install`` at call time;
+      round-robining their files into a small fixed set of groups caps how many
+      hit the package index concurrently (HATS-678 — root-fix for the flake
+      class HATS-676 quarantined).
     * **everything else → grouped by file.** Mirrors ``--dist=loadfile``
       semantics so module-scoped venv fixtures stay coherent per worker.
 
-    Markers are only consulted by the ``loadgroup`` scheduler — under
-    ``loadfile``, ``-n0`` (serial), or no xdist they are inert, so this hook
-    is safe in every run mode.
+    Precedence: live_claude → pip_heavy → per-file. Markers are only consulted
+    by the ``loadgroup`` scheduler — under ``loadfile``, ``-n0`` (serial), or no
+    xdist they are inert, so this hook is safe in every run mode.
+
+    NOTE (HATS-678 Category A): the session-shared ``_shared_launcher_venv``
+    build is ``scope="session"`` = per-worker under xdist, so up to ``nworkers``
+    venv builds still fire at session start. Those install ai-hats from the
+    LOCAL repo and warm the shared pip cache once, so they are a far narrower
+    network window than the ``--force-reinstall`` pip-heavy class capped here.
+    If real gate runs still flake on the session build, add a cross-worker
+    filelock semaphore around ``build_launcher_venv`` (deferred; not built).
     """
+    group_for_file = _pip_heavy_group_map(
+        {
+            item.nodeid.split("::", 1)[0]
+            for item in items
+            if item.get_closest_marker("pip_heavy")
+        },
+        PIP_HEAVY_GROUPS,
+    )
     for item in items:
         if "requires_claude_auth" in getattr(item, "fixturenames", ()):
             item.add_marker(pytest.mark.xdist_group("live_claude"))
+        elif item.get_closest_marker("pip_heavy"):
+            item.add_marker(
+                pytest.mark.xdist_group(group_for_file[item.nodeid.split("::", 1)[0]])
+            )
         else:
             item.add_marker(pytest.mark.xdist_group(item.nodeid.split("::", 1)[0]))
 
