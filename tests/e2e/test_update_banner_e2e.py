@@ -37,6 +37,8 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 # HATS-589: per-xdist-worker private build source (no-op on serial run).
 from _helpers.repo_src import build_src  # noqa: E402
 
+pytestmark = pytest.mark.pip_heavy  # HATS-678: real pip at call time → capped via conftest.PIP_HEAVY_GROUPS
+
 INSTALLED_SHA = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 LATEST_SHA = "9876543210fedcba9876543210fedcba98765432"
 

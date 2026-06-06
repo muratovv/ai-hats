@@ -105,6 +105,7 @@ markers = [
     "smoke: lightweight real-path tests run by the pre-commit smoke gate on integration tasks",
     "external_env: tests that rely on real host environment (claude config, pip cache); candidates for sandboxing before xdist (HATS-464 R4)",
     "quarantine: known-flaky under the -n8 pre-push gate — deselected by the gate via `-m \"... and not quarantine\"` (HATS-676 / HYP-002). Still COLLECTED and run by a normal/solo pytest invocation, so dev coverage is preserved. Each tagged test carries a reason naming its de-flake follow-up.",
+    "pip_heavy: e2e test that runs a real `pip install` at call time (own launcher build / `self update --force-reinstall`). Under `--dist=loadgroup` these are round-robined into PIP_HEAVY_GROUPS fixed xdist groups by tests/e2e/conftest.py so at most K hit the package index concurrently — capping the network-reset flake class (HATS-678 / HATS-676). Inert without loadgroup: still COLLECTED and run by a solo/serial pytest.",
 ]
 
 [tool.coverage.run]

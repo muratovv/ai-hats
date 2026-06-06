@@ -32,6 +32,8 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 # HATS-589: per-xdist-worker private build source (no-op on serial run).
 from _helpers.repo_src import build_src  # noqa: E402
 
+pytestmark = pytest.mark.pip_heavy  # HATS-678: real pip at call time → capped via conftest.PIP_HEAVY_GROUPS
+
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(

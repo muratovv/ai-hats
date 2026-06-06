@@ -18,8 +18,12 @@
 #     keeps each test file on one worker (module-scoped venv-build fixture
 #     coherence) and pins all live-claude tests onto a single worker — see
 #     the `pytest_collection_modifyitems` group hook in tests/e2e/conftest.py
-#     — so a parallel run never opens N concurrent SDK sessions. Falls back
-#     to serial when xdist is absent so a lean dev env never hard-fails.
+#     — so a parallel run never opens N concurrent SDK sessions. The same hook
+#     (HATS-678) round-robins the `@pytest.mark.pip_heavy` tests (real pip at
+#     call time) into `PIP_HEAVY_GROUPS` fixed groups so at most K hit the
+#     package index concurrently — root-fixing the network-reset flake class
+#     HATS-676 quarantined (no gate-arg change: `loadgroup` does the capping).
+#     Falls back to serial when xdist is absent so a lean dev env never hard-fails.
 #   * pytest not on PATH → BLOCK (silent skip would let
 #     `pip uninstall pytest` bypass the gate).
 #   * HATS-645: exports `AI_HATS_E2E_REQUIRE_VENV=1` so the tier-2 venv
