@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 import click
 
@@ -50,7 +49,7 @@ def task_create(
     if task_id is None:
         task_id = mgr.next_id()
     try:
-        t = mgr.create_task(
+        t, auto = mgr.create_task(
             task_id,
             title,
             description=description,
@@ -66,6 +65,21 @@ def task_create(
         sys.exit(1)
     _warn_missing_refs(mgr, parent_task, list(depends_on))
     console.print(f"[green]Created[/]: {t.id} — {t.title} [{t.state.value}] ({t.priority})")
+    _print_auto_transitions(auto)
+
+
+def _print_auto_transitions(transitions) -> None:
+    """Surface harness-driven epic auto-transitions (HATS-690).
+
+    The manager returns a list of :class:`TaskTransition` deltas alongside the
+    primary card; print one user-facing notice per delta so an auto-advance /
+    reopen of a parent epic is never silent.
+    """
+    for tr in transitions:
+        console.print(
+            f"  [cyan]Epic auto-transition[/]: {tr.ticket.id} "
+            f"{tr.from_state.value} → {tr.to_state.value} ({tr.reason})"
+        )
 
 
 def _warn_missing_refs(mgr, parent: str, depends: list[str]) -> None:
@@ -144,7 +158,7 @@ def task_transition(
     try:
         if final_state and state == TaskState.REVIEW:
             mgr.set_final_state(task_id, final_state)
-        t = mgr.transition(
+        t, auto = mgr.transition(
             task_id, state, resolution=resolution, force=force, reason=reason
         )
         prefix = "[yellow]Forced[/]" if force else "[green]Transitioned[/]"
@@ -174,6 +188,7 @@ def task_transition(
         elif state == TaskState.CANCELLED:
             console.print(f"  Resolution: {t.resolution}")
             console.print("  Worktree discarded")
+        _print_auto_transitions(auto)
     except EmptyPlanError as e:
         console.print(
             f"[red]Plan is incomplete[/] — cannot transition {e.task_id} to execute."
@@ -368,12 +383,13 @@ def task_close(task_id: str, resolution: str):
     """
     mgr = _task_manager(_project_dir())
     try:
-        t = mgr.close_task(task_id, resolution)
+        t, auto = mgr.close_task(task_id, resolution)
     except ValueError as e:
         console.print(f"[red]Error[/]: {e}")
         sys.exit(1)
     console.print(f"[green]Closed[/]: {t.id} → {t.state.value}")
     console.print(f"  Resolution: {t.resolution}")
+    _print_auto_transitions(auto)
 
 
 @task.command("link")
@@ -606,7 +622,7 @@ def task_update(
         return
 
     try:
-        t = mgr.update_task(
+        t, auto = mgr.update_task(
             task_id,
             title=title,
             description=description,
@@ -625,6 +641,7 @@ def task_update(
         sys.exit(1)
     _warn_missing_refs(mgr, parent_arg or "", list(add_depends))
     console.print(f"[green]Updated[/]: {t.id} — {t.title} [{t.priority}]")
+    _print_auto_transitions(auto)
 
 
 @task.command("log")

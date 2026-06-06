@@ -88,5 +88,5 @@ def test_transition_execute_proceeds_on_populated_plan(mgr: TaskManager) -> None
     (mgr.tasks_dir / "HATS-230" / "plan.md").write_text(_FILLED_PLAN)
 
     # execute should not raise — every required section has content.
-    t = mgr.transition("HATS-230", TaskState.EXECUTE)
+    t, _ = mgr.transition("HATS-230", TaskState.EXECUTE)
     assert t.state == TaskState.EXECUTE
