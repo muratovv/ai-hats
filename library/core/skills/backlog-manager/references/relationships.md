@@ -61,7 +61,20 @@ them with `task show`.
 - **Direct links only** — one level, no recursion / transitive walk.
 
 So a bug `related` to a release arrives with the release card as planning context.
-Interactive `ai-hats execute` (HITL) does not currently receive ticket links.
+
+## Inspecting linked context: `task show` (HATS-691)
+
+`ai-hats task show <id>` renders that **same** linked context by default — after
+the card and the compact cross-reference index it prints a `Linked context:`
+block with the linked cards' bodies (parent epic + its `plan.md`, plus
+`depends_on` / `related` / `see_also`). So a human — and an interactive (HITL)
+agent, which reads its task by running `task show` — sees exactly what a spawned
+sub-agent gets via `# LINKED_CONTEXT`, without chasing each link by hand.
+
+- **Default:** full linked bodies (same assembly as the sub-agent injection).
+- **`--short`:** the compact view only — card fields + `Blocked by` / `Related`
+  / `See also` as `id (state) — title`, no linked bodies. Use it for a quick
+  glance when you don't need the related content inline.
 
 ## Child-driven epic auto-transitions (HATS-690)
 
