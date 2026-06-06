@@ -44,3 +44,21 @@ ai-hats task list --search PROJ-105
 - Unknown reference IDs → **warning** (yellow), but the write succeeds. This
   allows forward-references during planning and lets you fix typos with a
   follow-up `task update`.
+
+## Harness behaviour: linked-context injection (HATS-689)
+
+Links are not just inert metadata. When a sub-agent takes a task non-interactively
+(`ai-hats agent --ticket <id>` or `ai-hats execute --batch --ticket <id>`), the
+harness auto-injects a `# LINKED_CONTEXT` section into the agent's first prompt —
+the **cards of all directly-linked tasks**, so the agent doesn't have to chase
+them with `task show`.
+
+- **Salience order:** `parent_task` (epic, first) → `depends_on` → `related` →
+  `see_also` (deduped; self / missing targets skipped).
+- **Per card:** a trimmed view (`id, title, state, description`) plus only the
+  **latest** `work_log` entry. The **parent epic** additionally carries its
+  `plan.md` (the decomposition / design lives there); other links are card-only.
+- **Direct links only** — one level, no recursion / transitive walk.
+
+So a bug `related` to a release arrives with the release card as planning context.
+Interactive `ai-hats execute` (HITL) does not currently receive ticket links.
