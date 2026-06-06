@@ -10,6 +10,23 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Changed
+- **Pre-push e2e gate decoupled from the push connection** (HATS-686)
+  — the maintainer master-push gate ran the ~27-min `pytest -m "(integration
+  or smoke) and not quarantine" tests/e2e/ tests/smoke/` suite *inside* the
+  pre-push hook. That is incompatible with pushing to GitHub over SSH: git
+  holds the connection open across the hook, and GitHub closes it after ~30s,
+  so the hook died with exit 141 before the suite finished (twice in HATS-684);
+  client-side `ServerAliveInterval` (15 and 60) did not help. The hook is now
+  **dual-mode**: `scripts/run-e2e-gate.sh` (or `… --run`) runs the suite *out
+  of band* and, on pass + a clean working tree, writes a pass-marker keyed to
+  HEAD's commit SHA under `<git-common-dir>/ai-hats/e2e-gate/`; the pre-push
+  hook itself just checks—instantly—that a green marker exists for the master
+  `local_sha` being pushed, and blocks otherwise. The HATS-550 "no-broken-
+  master, no-bypass" contract is preserved (a forged marker is the moral
+  equivalent of `git push --no-verify`). New maintainer flow:
+  `scripts/run-e2e-gate.sh` then `git push origin master`.
+
 ### Fixed
 - **e2e install tests are now hermetic against an inherited `PYTHONPATH`** (HATS-685)
   — `tests/e2e/` builds subprocess envs with `os.environ.copy()`. `src/ai_hats/`

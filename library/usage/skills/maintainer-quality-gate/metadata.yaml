@@ -4,13 +4,17 @@ author: ai-hats
 tags: [maintainer, quality-gate, hooks, testing]
 pattern: reference
 
-# HATS-550 — hook-carrier skill. The assembler installs the script below
-# into `.githooks/pre-push.d/` at composition time. When the push target
-# includes `refs/heads/master`, the hook runs:
-#   pytest -m "integration or smoke" tests/e2e/ tests/smoke/
-# and blocks the push on failure. Hard gate: no env-var bypass. The user
-# may still use `git push --no-verify` (which also disables every other
-# hook on the chain) for hot-path overrides — accepted tradeoff.
+# HATS-550 / HATS-686 — hook-carrier skill. The assembler installs the
+# dual-mode script below into `.githooks/pre-push.d/` at composition time.
+#
+# The ~27-min suite must NOT run inside pre-push (GitHub closes the SSH push
+# connection ~30s in → exit 141; HATS-684). So the script is decoupled:
+#   * default (git pre-push): INSTANT check that a green pass-marker keyed to
+#     the pushed master `local_sha` exists; block otherwise.
+#   * `--run` (via scripts/run-e2e-gate.sh): runs the suite out of band and,
+#     on pass + clean tree, writes the marker keyed to HEAD's SHA.
+# Hard gate: no env-var bypass. `git push --no-verify` (disables every other
+# hook on the chain too) stays the only normal escape — accepted tradeoff.
 git_hooks:
   pre-push:
     - git_hooks/pre-push-e2e-master.sh
