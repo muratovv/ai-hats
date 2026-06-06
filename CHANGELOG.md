@@ -11,6 +11,21 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Fixed
+- **e2e install tests are now hermetic against an inherited `PYTHONPATH`** (HATS-685)
+  — `tests/e2e/` builds subprocess envs with `os.environ.copy()`. `src/ai_hats/`
+  has no `library/` subdir (it maps to the `ai_hats.library` package only at
+  build time), so an inherited `PYTHONPATH=<repo>/src` — the worktree test
+  workaround, and exactly what `ai-hats wt exec` sets — leaked into the
+  launcher's `self init` subprocess, redirecting its `ai_hats` import to the
+  source tree where `files("ai_hats.library")` raises `ModuleNotFoundError` →
+  built-in roles vanished → "Role 'assistant' not found". `test_e2e_fresh_init_heals`
+  was false-RED from any worktree (the standard agent execute context) and ~15
+  other real-install e2e tests were latently exposed. An autouse fixture in
+  `tests/e2e/conftest.py` now strips a shared denylist (`PYTHONPATH` +
+  `PYTHONHOME`/`PYTHONSTARTUP`/`VIRTUAL_ENV`/`AI_HATS_DIR`/`AI_HATS_USER_HOME`)
+  from `os.environ` for every e2e test, so subprocess envs exercise the real
+  installed package. Deliberate `PYTHONPATH=src` tests re-set it explicitly and
+  are unaffected.
 - **SDK sub-agent transcript folded into audit when JSONL is absent** (HATS-682)
   — `AuditWriter.build()` parses structured turns from claude's JSONL (or the
   trace-log fallback). SDK sub-agents run with `isolation=discard` leave a
