@@ -136,41 +136,91 @@ def test_strip_code_fence_no_fence_returns_input(tmp_path: Path) -> None:
     assert runner._strip_code_fence(body) == body
 
 
-# ---- _truncate_audit (HATS-424) ----
+# ---- _truncate_audit (HATS-684: content-aware delivery) ----
 #
-# End-of-session events (self-retro Skill calls, final commits, transitions,
-# judge-report writes) live in the audit tail. Naive head-cut at 8KB made
-# them invisible to the reviewer. Head+tail biased trim keeps both ends so
-# late-session signal reaches the reviewer.
+# Delivery contract (supersedes the old 8KB head+tail squeeze):
+#   1. Bound the redundant first-turn 👤 ingested-evidence block (PROJECT_STATE /
+#      reflect-handoff / harness-context echo) — 64% of corpus bloat, redundant
+#      because the reviewer already has the target's real content.
+#   2. Keep ALL signal (🔧 tools / 👾 responses / real 👤 turns / tail) verbatim —
+#      no tight budget; capping signal was the original cause of "cannot cite
+#      evidence" → n/a verdicts.
+#   3. A high ~250KB safety-valve (head/tail trim, HATS-424 tail preserved) is the
+#      only hard ceiling; on the live corpus it never fires.
 
 
-def test_truncate_audit_short_passes_through_unchanged() -> None:
-    text = "audit content well under budget\n" * 50  # ~1.6 KB
-    assert SessionReviewRunner._truncate_audit(text) == text
-
-
-def test_truncate_audit_long_keeps_head_and_tail_sentinels() -> None:
-    head_sentinel = "HEAD_SENTINEL_VISIBLE_TO_REVIEWER"
-    tail_sentinel = "TAIL_SENTINEL_VISIBLE_TO_REVIEWER"
-    # Build a 20 KB audit: head sentinel at byte 0, tail sentinel near end.
-    body = "x" * 20000
-    text = head_sentinel + body + tail_sentinel
-    out = SessionReviewRunner._truncate_audit(text)
-    assert head_sentinel in out, "head sentinel must survive truncation"
-    assert tail_sentinel in out, "tail sentinel must survive truncation"
-    assert "truncated from middle" in out, "marker must announce gap"
-    # Sanity: prompt budget approximately preserved (head + tail + small marker).
-    assert len(out) < len(text), "truncation must shrink"
-    assert (
-        len(out)
-        < SessionReviewRunner._AUDIT_HEAD + SessionReviewRunner._AUDIT_TAIL + 200
+def _audit(first_user: str, *, role: str = "session-reviewer") -> str:
+    """Minimal audit mirroring observe.py rendering: header, turn-1 👤, signal, tail."""
+    return (
+        "# Session Audit: 20260506-100000-1\n"
+        f"- **Role**: {role}\n\n"
+        "## Turn 1 (10:00:00)\n"
+        f"👤 {first_user}\n\n"
+        "💭 Thinking 1s\n"
+        "🔧 Bash: ai-hats task show HATS-1\n"
+        "👾 done\n\n"
+        "## Metrics\n- **exit_code**: 0\n"
     )
 
 
-def test_truncate_audit_at_budget_boundary_no_truncation() -> None:
-    budget = SessionReviewRunner._AUDIT_HEAD + SessionReviewRunner._AUDIT_TAIL
-    text = "y" * budget  # exactly at budget — no truncation
+def test_truncate_audit_bounds_ingested_first_user_block() -> None:
+    # Reviewer/judge first turn = giant ingested PROJECT_STATE echo (redundant).
+    ingested = "# PROJECT_STATE\n" + ("- **HATS-999**: backlog dump line\n" * 2000)
+    text = _audit(ingested)
+    assert len(text) > 50_000
+    out = SessionReviewRunner._truncate_audit(text)
+    # Ingested block bounded near the cap (not the full 60KB+).
+    assert len(out) < SessionReviewRunner._INGESTED_CAP + 4000
+    assert "# PROJECT_STATE" in out, "head of ingested block (incl. any real ask) kept"
+    assert "elided" in out, "elision marker announces the bounded drop"
+    # Signal AFTER the ingested block survives verbatim.
+    assert "🔧 Bash: ai-hats task show HATS-1" in out
+    assert "👾 done" in out
+    assert "## Metrics" in out
+
+
+def test_truncate_audit_keeps_signal_verbatim() -> None:
+    # Signal-dense audit (300 real tool calls) under the valve must NOT be cut —
+    # no tight budget anymore; signal flows to the reviewer.
+    tools = "".join(f"🔧 Bash: command number {i}\n" for i in range(300))
+    text = (
+        "# Session Audit\n- **Role**: maintainer\n\n"
+        "## Turn 1 (10:00:00)\n👤 давай возьмем 684\n\n"
+        + tools
+        + "👾 SENTINEL_RESPONSE\n\n## Metrics\n- **exit_code**: 0\n"
+    )
+    assert 8000 < len(text) < SessionReviewRunner._SAFETY_VALVE
+    out = SessionReviewRunner._truncate_audit(text)
+    assert out == text, "signal-dense audit under the safety valve passes through uncut"
+
+
+def test_truncate_audit_short_passes_through_unchanged() -> None:
+    text = _audit("давай возьмем 684")  # small everywhere
     assert SessionReviewRunner._truncate_audit(text) == text
+
+
+def test_truncate_audit_preserves_real_request_head() -> None:
+    # Interactive target: real ask at the head, then giant harness-context echo.
+    real_ask = "давай посмотрим задачку HATS-524 и сделаем ревью"
+    harness = "\n" + ("CLAUDE.md injected line\n" * 2000)
+    text = _audit(real_ask + harness)
+    out = SessionReviewRunner._truncate_audit(text)
+    assert real_ask in out, "the real request at the head must survive bounding"
+    assert "🔧 Bash: ai-hats task show HATS-1" in out, "post-turn signal survives"
+    assert len(out) < SessionReviewRunner._INGESTED_CAP + 4000, "harness echo bounded"
+
+
+def test_truncate_audit_safety_valve_preserves_head_and_tail() -> None:
+    head_sentinel = "HEAD_SENTINEL_VISIBLE_TO_REVIEWER"
+    tail_sentinel = "TAIL_SENTINEL_END_OF_SESSION"  # HATS-424 tail
+    # No 👤 block to bound; pure size > valve → head/tail trim fires.
+    body = "z" * (SessionReviewRunner._SAFETY_VALVE + 50_000)
+    text = head_sentinel + body + tail_sentinel
+    out = SessionReviewRunner._truncate_audit(text)
+    assert head_sentinel in out, "head sentinel must survive the valve"
+    assert tail_sentinel in out, "HATS-424: end-of-session tail must survive"
+    assert "truncated from middle" in out, "marker must announce the gap"
+    assert len(out) < len(text), "valve must shrink"
 
 
 # ---- _validate_analysis_shape ----
