@@ -1047,13 +1047,19 @@ class WrapRunner:
                     forward, triggered = _scan_escape(
                         data, escape_presses, time.monotonic()
                     )
+                    # Latch forced_exit BEFORE any write: if the forward write
+                    # below raises OSError on the very chunk that trips the
+                    # hatch, breaking out must still return 130 — never let the
+                    # bounded-shutdown SIGKILL surface as 137/124 instead (the
+                    # exact mis-report this hatch exists to prevent).
+                    if triggered:
+                        forced_exit = True
                     if forward:
                         try:
                             os.write(master_fd, forward)
                         except OSError:
                             break
                     if triggered:
-                        forced_exit = True
                         try:
                             os.write(stdout_fd, _ESCAPE_NOTICE)
                         except OSError:
