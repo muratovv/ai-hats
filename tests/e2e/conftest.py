@@ -47,6 +47,27 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 AI_HATS_BINARY = Path(sys.executable).parent / "ai-hats"
 
 
+@pytest.fixture(autouse=True)
+def _scrub_redirect_env(monkeypatch):
+    """HATS-685: strip python/ai_hats *redirect* vars from ``os.environ`` for
+    every e2e test, so a subprocess env built via ``os.environ.copy()``
+    exercises the REAL installed ``ai_hats`` — not the source tree that an
+    inherited ``PYTHONPATH=<repo>/src`` (the worktree test workaround, and what
+    ``ai-hats wt exec`` sets) would redirect it to. Without this, the launcher's
+    ``self init`` subprocess imports ``ai_hats`` from ``src`` (which has no
+    ``library/`` subdir) → ``files("ai_hats.library")`` raises ModuleNotFoundError
+    → built-in roles vanish → "Role 'assistant' not found".
+
+    Deliberate ``PYTHONPATH=src`` tests are unaffected: they re-set ``PYTHONPATH``
+    explicitly after copying env, so a scrubbed ``os.environ`` yields exactly the
+    clean ``PYTHONPATH=src`` they want. Denylist + rationale: ``_helpers/env.py``.
+    """
+    from _helpers.env import ENV_DENYLIST
+
+    for key in ENV_DENYLIST:
+        monkeypatch.delenv(key, raising=False)
+
+
 # HATS-678: how many pip-heavy e2e tests may run concurrently under the gate's
 # ``-n8 --dist=loadgroup``. ~21 tests across 16 files do a real ``pip install``
 # at call time (own launcher build / ``self update --force-reinstall``).
