@@ -407,11 +407,6 @@ class AuditWriter:
     _LINE_RE = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{3})\s+\[(\w+)\]\s+(.*)$")
     _SPINNER_CHARS = set("✢✳✶✻*·⠐⠂⠁⠈⠌⠘⠠⠤⠸")
     _THINKING_WORDS = {"Pondering…", "Fermenting…", "Reticulating…", "Effecting…"}
-    # HATS-666: generous per-turn cap on rendered user_input. Real user turns are
-    # < 1-2KB; the giant 👤 blocks are ingested evidence (reviewer/judge first
-    # message) — bound them so the audit fits the reviewer's delivery budget.
-    # Larger than the 500-char ``response`` cap so genuine instructions survive whole.
-    _USER_INPUT_CAP = 2000
     _UI_CHARS = set("╭╮╰╯│─━┃┏┓┗┛┣┫")
     _TOOL_PATTERNS = [
         (re.compile(r"Searching for (\d+) pattern"), "Search: {0} pattern"),
@@ -640,11 +635,11 @@ class AuditWriter:
                 ts_display = ts_display[:8]
             lines.append(f"## Turn {i} ({ts_display})")
             if turn.user_input:
-                ui = turn.user_input
-                if len(ui) > self._USER_INPUT_CAP:
-                    dropped = len(ui) - self._USER_INPUT_CAP
-                    ui = ui[: self._USER_INPUT_CAP] + f"\n…[{dropped} chars truncated]"
-                lines.append(f"👤 {ui}")
+                # HATS-683: lossless — render user_input in full. Audit *size* is
+                # managed at the delivery layer (`_truncate_audit`, HATS-684), not
+                # by truncating the canonical record. Pure-noise skill bodies are
+                # already dropped upstream in `_extract_user_text` (HATS-666).
+                lines.append(f"👤 {turn.user_input}")
             lines.append("")
             if turn.thinking_secs:
                 lines.append(f"💭 Thinking {turn.thinking_secs}s")
