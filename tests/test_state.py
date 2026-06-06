@@ -23,7 +23,7 @@ def mgr(tmp_path):
 
 
 def test_create_task_with_priority(mgr):
-    t = mgr.create_task("T-1", "High priority task", priority="high", reviewer="agent")
+    t, _ = mgr.create_task("T-1", "High priority task", priority="high", reviewer="agent")
     assert t.priority == "high"
     assert t.reviewer == "agent"
     assert t.state == TaskState.BRAINSTORM
@@ -132,7 +132,7 @@ def test_reopen_done_to_execute(mgr):
     mgr.create_task("T-1", "Reopen me")
     _walk_to_done(mgr, "T-1")
 
-    t = mgr.transition("T-1", TaskState.EXECUTE)
+    t, _ = mgr.transition("T-1", TaskState.EXECUTE)
     assert t.state == TaskState.EXECUTE
 
 
@@ -213,7 +213,7 @@ def test_sync_removes_legacy_backlog_md(mgr):
 
 
 def test_tags_on_task(mgr):
-    t = mgr.create_task("T-1", "Tagged task", tags=["p0", "mvp"])
+    t, _ = mgr.create_task("T-1", "Tagged task", tags=["p0", "mvp"])
     assert t.tags == ["p0", "mvp"]
 
     t = mgr.get_task("T-1")
@@ -252,7 +252,7 @@ def test_full_lifecycle_with_logs(mgr):
 
 def test_update_priority(mgr):
     mgr.create_task("T-1", "Update me")
-    t = mgr.update_task("T-1", priority="high")
+    t, _ = mgr.update_task("T-1", priority="high")
     assert t.priority == "high"
     # Persists
     t = mgr.get_task("T-1")
@@ -261,20 +261,20 @@ def test_update_priority(mgr):
 
 def test_update_description_and_title(mgr):
     mgr.create_task("T-1", "Old title", description="old desc")
-    t = mgr.update_task("T-1", title="New title", description="new desc")
+    t, _ = mgr.update_task("T-1", title="New title", description="new desc")
     assert t.title == "New title"
     assert t.description == "new desc"
 
 
 def test_update_resolution(mgr):
     mgr.create_task("T-1", "Close me")
-    t = mgr.update_task("T-1", resolution="Closed: duplicate of T-2")
+    t, _ = mgr.update_task("T-1", resolution="Closed: duplicate of T-2")
     assert t.resolution == "Closed: duplicate of T-2"
 
 
 def test_update_tags(mgr):
     mgr.create_task("T-1", "Tag me", tags=["a", "b"])
-    t = mgr.update_task("T-1", add_tags=["c"], remove_tags=["a"])
+    t, _ = mgr.update_task("T-1", add_tags=["c"], remove_tags=["a"])
     assert "c" in t.tags
     assert "a" not in t.tags
     assert "b" in t.tags
@@ -291,7 +291,7 @@ def test_update_nonexistent_task(mgr):
 def test_create_with_parent_and_depends(mgr):
     mgr.create_task("T-0", "Epic")
     mgr.create_task("T-9", "Blocker")
-    t = mgr.create_task("T-1", "Child", parent_task="T-0", depends_on=["T-9"])
+    t, _ = mgr.create_task("T-1", "Child", parent_task="T-0", depends_on=["T-9"])
     assert t.parent_task == "T-0"
     assert t.depends_on == ["T-9"]
     # Persists
@@ -303,9 +303,9 @@ def test_create_with_parent_and_depends(mgr):
 def test_update_set_and_clear_parent(mgr):
     mgr.create_task("T-0", "Epic")
     mgr.create_task("T-1", "Child")
-    t = mgr.update_task("T-1", parent_task="T-0")
+    t, _ = mgr.update_task("T-1", parent_task="T-0")
     assert t.parent_task == "T-0"
-    t = mgr.update_task("T-1", parent_task="")
+    t, _ = mgr.update_task("T-1", parent_task="")
     assert t.parent_task == ""
 
 
@@ -314,7 +314,7 @@ def test_update_add_and_remove_depends(mgr):
     mgr.create_task("T-8", "Blocker B")
     mgr.create_task("T-7", "Blocker C")
     mgr.create_task("T-1", "Blocked", depends_on=["T-9", "T-8"])
-    t = mgr.update_task("T-1", add_depends=["T-7"], remove_depends=["T-9"])
+    t, _ = mgr.update_task("T-1", add_depends=["T-7"], remove_depends=["T-9"])
     assert "T-7" in t.depends_on
     assert "T-9" not in t.depends_on
     assert "T-8" in t.depends_on
@@ -353,7 +353,7 @@ def test_missing_refs_returns_unknown_ids(mgr):
 
 def test_create_does_not_block_on_missing_refs(mgr):
     """Forward-references and typos must NOT block writes — just be reported."""
-    t = mgr.create_task("T-1", "Forward ref", parent_task="T-NOT-YET", depends_on=["T-99"])
+    t, _ = mgr.create_task("T-1", "Forward ref", parent_task="T-NOT-YET", depends_on=["T-99"])
     assert t.parent_task == "T-NOT-YET"
     assert t.depends_on == ["T-99"]
     # And missing_refs reports them so the CLI can warn.
@@ -571,7 +571,7 @@ def test_no_worktree_in_non_git_project(mgr):
 def test_cancel_from_brainstorm_is_terminal(mgr):
     """Fresh card → cancelled with resolution recorded; completed_at stamped."""
     mgr.create_task("T-1", "Drop this")
-    t = mgr.transition("T-1", TaskState.CANCELLED, resolution="duplicate of T-99")
+    t, _ = mgr.transition("T-1", TaskState.CANCELLED, resolution="duplicate of T-99")
 
     assert t.state == TaskState.CANCELLED
     assert t.resolution == "duplicate of T-99"
@@ -601,7 +601,7 @@ def test_cancel_reachable_from_every_non_terminal_state(mgr, path):
     for state in path:
         mgr.transition("T-1", state)
 
-    t = mgr.transition("T-1", TaskState.CANCELLED, resolution="obsolete")
+    t, _ = mgr.transition("T-1", TaskState.CANCELLED, resolution="obsolete")
     assert t.state == TaskState.CANCELLED
     assert t.resolution == "obsolete"
     assert t.completed_at != ""
@@ -626,7 +626,7 @@ def test_cancel_resolution_optional_at_manager_level(mgr):
     sits at the user-facing edge, not duplicated in two places).
     """
     mgr.create_task("T-1", "No resolution here")
-    t = mgr.transition("T-1", TaskState.CANCELLED)  # no resolution kwarg
+    t, _ = mgr.transition("T-1", TaskState.CANCELLED)  # no resolution kwarg
     assert t.state == TaskState.CANCELLED
     assert t.resolution == ""
 
@@ -716,7 +716,7 @@ def test_execute_inside_linked_worktree_does_not_nest(tmp_path):
 
 def test_close_from_brainstorm_sets_done(mgr):
     mgr.create_task("T-1", "Shipped on master")
-    t = mgr.close_task("T-1", "shipped in 6e7ddd5")
+    t, _ = mgr.close_task("T-1", "shipped in 6e7ddd5")
     assert t.state == TaskState.DONE
     assert t.resolution == "shipped in 6e7ddd5"
     assert t.completed_at != ""
@@ -726,7 +726,7 @@ def test_close_from_brainstorm_sets_done(mgr):
 def test_close_from_plan_sets_done(mgr):
     mgr.create_task("T-1", "Plan then fast-close")
     mgr.transition("T-1", TaskState.PLAN)
-    t = mgr.close_task("T-1", "subsumed by T-2")
+    t, _ = mgr.close_task("T-1", "subsumed by T-2")
     assert t.state == TaskState.DONE
     assert any("Fast-closed from plan" in e.message for e in t.work_log)
 
@@ -762,7 +762,7 @@ def test_force_transition_skips_guard(mgr):
     mgr.create_task("T-1", "rollback me")
     mgr.transition("T-1", TaskState.PLAN)
     assert mgr.get_task("T-1").state == TaskState.PLAN
-    t = mgr.transition(
+    t, _ = mgr.transition(
         "T-1", TaskState.BRAINSTORM, force=True, reason="plan started by mistake"
     )
     assert t.state == TaskState.BRAINSTORM
@@ -1199,3 +1199,192 @@ def test_teardown_worktree_silent_on_discard_path_when_state_lost(
     # discard is the admin-close path.
     git_mgr.transition("T-1", TaskState.FAILED)
     assert git_mgr.get_task("T-1").state == TaskState.FAILED
+
+
+# -- Child-driven epic auto-transitions (HATS-690 / Req 2 of HATS-688) --
+
+
+def _epic_in(mgr, epic_id: str, state: TaskState) -> None:
+    """Create an epic and walk it to ``state`` (execute or document)."""
+    mgr.create_task(epic_id, "Epic")
+    mgr.transition(epic_id, TaskState.PLAN)
+    mgr.transition(epic_id, TaskState.EXECUTE)
+    if state == TaskState.DOCUMENT:
+        mgr.transition(epic_id, TaskState.DOCUMENT)
+
+
+def test_children_of_filters_by_parent(mgr):
+    mgr.create_task("EPIC", "Epic")
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    mgr.create_task("C2", "Child 2", parent_task="EPIC")
+    mgr.create_task("OTHER", "Unrelated")
+    mgr.create_task("GC", "Grandchild", parent_task="C1")
+
+    ids = {c.id for c in mgr._children_of("EPIC")}
+    assert ids == {"C1", "C2"}  # not OTHER, not the epic, not the grandchild
+
+
+def test_epic_auto_advances_to_review_when_all_children_done(mgr):
+    _epic_in(mgr, "EPIC", TaskState.EXECUTE)
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    mgr.create_task("C2", "Child 2", parent_task="EPIC")
+    _walk_to_done(mgr, "C1")
+
+    # Epic still execute while C2 is open.
+    assert mgr.get_task("EPIC").state == TaskState.EXECUTE
+
+    # Driving the LAST child to done returns the epic delta.
+    mgr.transition("C2", TaskState.PLAN)
+    mgr.transition("C2", TaskState.EXECUTE)
+    mgr.transition("C2", TaskState.DOCUMENT)
+    mgr.transition("C2", TaskState.REVIEW)
+    _card, auto = mgr.transition("C2", TaskState.DONE)
+
+    assert mgr.get_task("EPIC").state == TaskState.REVIEW
+    assert [(t.ticket.id, t.from_state, t.to_state) for t in auto] == [
+        ("EPIC", TaskState.EXECUTE, TaskState.REVIEW)
+    ]
+    assert any(
+        "Auto-advanced" in e.message for e in mgr.get_task("EPIC").work_log
+    )
+
+
+def test_epic_auto_advances_from_document_single_hop(mgr):
+    _epic_in(mgr, "EPIC", TaskState.DOCUMENT)
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    _walk_to_done(mgr, "C1")
+    assert mgr.get_task("EPIC").state == TaskState.REVIEW
+
+
+def test_cancelled_child_does_not_block_advance(mgr):
+    _epic_in(mgr, "EPIC", TaskState.EXECUTE)
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    mgr.create_task("C2", "Child 2", parent_task="EPIC")
+    mgr.transition("C2", TaskState.CANCELLED, resolution="scope dropped")
+    _walk_to_done(mgr, "C1")
+    assert mgr.get_task("EPIC").state == TaskState.REVIEW
+
+
+def test_failed_child_blocks_advance(mgr):
+    _epic_in(mgr, "EPIC", TaskState.EXECUTE)
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    mgr.create_task("C2", "Child 2", parent_task="EPIC")
+    mgr.transition("C2", TaskState.PLAN)
+    mgr.transition("C2", TaskState.EXECUTE)
+    mgr.transition("C2", TaskState.FAILED)
+    _walk_to_done(mgr, "C1")
+    assert mgr.get_task("EPIC").state == TaskState.EXECUTE  # not advanced
+
+
+def test_blocked_child_blocks_advance(mgr):
+    _epic_in(mgr, "EPIC", TaskState.EXECUTE)
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    mgr.create_task("C2", "Child 2", parent_task="EPIC")
+    mgr.transition("C2", TaskState.BLOCKED)
+    _walk_to_done(mgr, "C1")
+    assert mgr.get_task("EPIC").state == TaskState.EXECUTE
+
+
+def test_advance_requires_at_least_one_done(mgr):
+    _epic_in(mgr, "EPIC", TaskState.EXECUTE)
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    mgr.create_task("C2", "Child 2", parent_task="EPIC")
+    mgr.transition("C1", TaskState.CANCELLED, resolution="drop")
+    _card, auto = mgr.transition("C2", TaskState.CANCELLED, resolution="drop")
+    assert mgr.get_task("EPIC").state == TaskState.EXECUTE  # all cancelled, none done
+    assert auto == []
+
+
+def test_epic_in_plan_is_not_advanced(mgr):
+    mgr.create_task("EPIC", "Epic")
+    mgr.transition("EPIC", TaskState.PLAN)  # epic stays in plan
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    _walk_to_done(mgr, "C1")
+    assert mgr.get_task("EPIC").state == TaskState.PLAN  # guard: no force plan→execute
+
+
+def test_zero_children_epic_not_advanced(mgr):
+    _epic_in(mgr, "EPIC", TaskState.EXECUTE)
+    # No children created; an unrelated task reaching done must not touch EPIC.
+    mgr.create_task("SOLO", "Unrelated")
+    _walk_to_done(mgr, "SOLO")
+    assert mgr.get_task("EPIC").state == TaskState.EXECUTE
+
+
+def test_create_under_done_epic_reopens_without_worktree(mgr, monkeypatch):
+    _epic_in(mgr, "EPIC", TaskState.EXECUTE)
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    _walk_to_done(mgr, "C1")
+    assert mgr.get_task("EPIC").state == TaskState.REVIEW
+    mgr.transition("EPIC", TaskState.DONE)  # reviewer closes the epic
+    assert mgr.get_task("EPIC").completed_at != ""
+
+    setup_calls: list[str] = []
+    monkeypatch.setattr(mgr, "_setup_worktree", lambda task: setup_calls.append(task.id))
+
+    _card, auto = mgr.create_task("C2", "New child", parent_task="EPIC")
+
+    epic = mgr.get_task("EPIC")
+    assert epic.state == TaskState.EXECUTE  # reopened
+    assert epic.completed_at == ""  # completion cleared
+    assert "EPIC" not in setup_calls  # Q3 caveat: no worktree for the epic
+    assert [(t.ticket.id, t.to_state) for t in auto] == [("EPIC", TaskState.EXECUTE)]
+    assert any("Auto-reopened" in e.message for e in epic.work_log)
+
+
+def test_update_reparent_into_done_epic_reopens(mgr):
+    _epic_in(mgr, "EPIC", TaskState.EXECUTE)
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    _walk_to_done(mgr, "C1")
+    mgr.transition("EPIC", TaskState.DONE)
+
+    mgr.create_task("FREE", "Unparented live task")  # brainstorm
+    _card, auto = mgr.update_task("FREE", parent_task="EPIC")
+
+    assert mgr.get_task("EPIC").state == TaskState.EXECUTE
+    assert [t.ticket.id for t in auto] == ["EPIC"]
+
+
+def test_child_reopen_done_to_execute_reopens_epic(mgr):
+    _epic_in(mgr, "EPIC", TaskState.EXECUTE)
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    _walk_to_done(mgr, "C1")
+    mgr.transition("EPIC", TaskState.DONE)
+
+    _card, auto = mgr.transition("C1", TaskState.EXECUTE)  # child reopened
+
+    assert mgr.get_task("EPIC").state == TaskState.EXECUTE
+    assert [t.ticket.id for t in auto] == ["EPIC"]
+
+
+def test_close_task_child_advances_epic(mgr):
+    """D2: a child fast-closed to done completes its epic."""
+    _epic_in(mgr, "EPIC", TaskState.EXECUTE)
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    _card, auto = mgr.close_task("C1", "shipped on master")
+
+    assert mgr.get_task("EPIC").state == TaskState.REVIEW
+    assert [t.ticket.id for t in auto] == ["EPIC"]
+
+
+def test_return_contract_empty_for_parentless_task(mgr):
+    mgr.create_task("SOLO", "No parent")
+    card, auto = mgr.transition("SOLO", TaskState.PLAN)
+    assert card.state == TaskState.PLAN
+    assert auto == []
+
+
+def test_epic_already_in_review_is_noop(mgr):
+    _epic_in(mgr, "EPIC", TaskState.EXECUTE)
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    _walk_to_done(mgr, "C1")
+    assert mgr.get_task("EPIC").state == TaskState.REVIEW
+    log_len = len(mgr.get_task("EPIC").work_log)
+
+    # A second resolved child arriving while the epic is already in review
+    # must not re-fire (review is not execute/document, and not done).
+    mgr.create_task("C2", "Child 2", parent_task="EPIC")
+    _card, auto = mgr.close_task("C2", "also shipped")
+    assert mgr.get_task("EPIC").state == TaskState.REVIEW
+    assert auto == []
+    assert len(mgr.get_task("EPIC").work_log) == log_len

@@ -21,7 +21,7 @@ def mgr(tmp_path: Path) -> TaskManager:
 
 
 def _write_plan(mgr: TaskManager, body: str) -> object:
-    task = mgr.create_task("HATS-001", "Probe")
+    task, _ = mgr.create_task("HATS-001", "Probe")
     plan_path = mgr.tasks_dir / task.id / "plan.md"
     plan_path.parent.mkdir(parents=True, exist_ok=True)
     plan_path.write_text(body)
@@ -100,7 +100,7 @@ def test_subheadings_inside_a_section_do_not_break_fill(mgr: TaskManager) -> Non
 
 
 def test_missing_plan_file_flags_every_required_section(mgr: TaskManager) -> None:
-    task = mgr.create_task("HATS-001", "Probe")
+    task, _ = mgr.create_task("HATS-001", "Probe")
     plan_path = mgr.tasks_dir / task.id / "plan.md"
     if plan_path.exists():
         plan_path.unlink()
