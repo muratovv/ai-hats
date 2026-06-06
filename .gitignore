@@ -44,6 +44,7 @@ CLAUDE.md
 .claude/skills/
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
+.claude/settings.json
 .envrc
 .gemini/
 .agent/ai-hats/
