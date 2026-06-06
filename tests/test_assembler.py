@@ -1271,6 +1271,33 @@ def test_subagent_meta_prompt_omits_project_state(project_with_placeholder_libra
     assert "SENTINEL_DONE_TASK" not in meta_prompt
 
 
+def test_subagent_sdk_first_message_omits_project_state(project_with_placeholder_library):
+    """HATS-681: the SDK first-user-message (captured in the meta_prompt.txt
+    forensic audit) must not carry PROJECT_STATE either — same rationale as the
+    legacy path."""
+    from ai_hats.paths import state_md_path
+    from ai_hats.runtime import SubAgentRunner
+
+    project, lib = project_with_placeholder_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("ph-role", provider_name="claude")
+    result = asm.composer.compose("ph-role")
+
+    state_md_path(project).write_text(
+        "# Task State\n\n## DONE\n- **HATS-001**: SENTINEL_DONE_TASK\n"
+    )
+
+    runner = SubAgentRunner(project)
+    audit = runner._build_sdk_prompt_audit(
+        result=result, task="do the real thing", ticket_id="",
+    )
+
+    assert "# TASK" in audit  # the real task still lands
+    assert "# PROJECT_STATE" not in audit
+    assert "SENTINEL_DONE_TASK" not in audit
+
+
 # ---------- HATS-549 Phase 4: hook partition ----------
 
 
