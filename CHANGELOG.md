@@ -11,6 +11,21 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Fixed
+- **SDK sub-agent transcript folded into audit when JSONL is absent** (HATS-682)
+  — `AuditWriter.build()` parses structured turns from claude's JSONL (or the
+  trace-log fallback). SDK sub-agents run with `isolation=discard` leave a
+  non-empty `transcript.txt` (the LLM's final stdout) but no reachable JSONL
+  (tmp-worktree project_key mismatch) and no `trace.log`, so `build()` parsed
+  zero turns and emitted a `turns:0` stub — the real work (e.g. a full
+  hypothesis-intake draft) was silently dropped from `audit.md`. Re-measured
+  over 158 live sessions: ~15 of the 31 tiny (<2 KB) audits were this case, not
+  empty sessions. `build()` now folds `transcript.txt` into the audit body
+  (`## Transcript` section) **only when no structured turns were parsed** — so it
+  never duplicates content already rendered as turns. `metrics.json` counters
+  stay honest (no synthesized turns); `reasoning.log` is excluded (noisy/large);
+  oversize is still bounded downstream by `SessionReviewRunner._truncate_audit`
+  (HATS-684). Verified on `session_20260531-193008-1`: 561 B stub → 2.6 KB with
+  the recovered draft.
 - **Content-aware reviewer audit delivery** (HATS-684, supersedes the HATS-424
   squeeze) — `SessionReviewRunner._truncate_audit` was a blunt 8 KB head+tail
   middle-drop that cut the real evidence (🔧 tool-calls / 👾 responses) reviewers
