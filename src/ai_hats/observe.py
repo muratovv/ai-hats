@@ -844,6 +844,12 @@ class AuditWriter:
         # Filter Claude Code system messages
         if text.startswith(("<", "/")):
             return None
+        # HATS-666: a Skill invocation re-injects the full SKILL.md as a user
+        # text message ("Base directory for this skill: <path>"). That body is
+        # 100% redundant with the `🔧 Skill: <name>` tool line the audit already
+        # renders — filter it like a tool_result so it never becomes a 👤 turn.
+        if text.startswith("Base directory for this skill:"):
+            return None
         return text
 
     @staticmethod
