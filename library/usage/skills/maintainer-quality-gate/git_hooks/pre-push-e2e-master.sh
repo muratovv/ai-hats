@@ -7,8 +7,8 @@
 # Behavior:
 #   * Triggers iff at least one line targets refs/heads/master with a
 #     non-zero local_sha (i.e. not a branch deletion).
-#   * On trigger: runs `pytest -m "integration or smoke" tests/e2e/
-#     tests/smoke/` from the repo root. Exit 0 → allow push. pytest
+#   * On trigger: runs `pytest -m "(integration or smoke) and not quarantine"
+#     tests/e2e/ tests/smoke/` from the repo root. Exit 0 → allow push. pytest
 #     exit 5 (no tests collected) → allow push. Anything else → block
 #     with stderr tail.
 #   * HATS-589/592: parallelises with pytest-xdist when present (~706s
