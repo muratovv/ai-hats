@@ -748,10 +748,25 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
 
 @task.command("show")
 @click.argument("task_id")
-def task_show(task_id: str):
-    """Show task card details."""
+@click.option(
+    "--short",
+    is_flag=True,
+    default=False,
+    help="Compact view: card + link index (id/state/title) only, without the "
+    "full linked-task bodies. Default shows the linked context a sub-agent gets.",
+)
+def task_show(task_id: str, short: bool):
+    """Show task card details.
 
-    mgr = _task_manager(_project_dir())
+    By default (HATS-691) the card is followed by a ``Linked context`` block —
+    the trimmed cards of every direct link (parent epic + its ``plan.md``,
+    plus ``depends_on`` / ``related`` / ``see_also``), the same content a
+    sub-agent receives via the runtime ``LINKED_CONTEXT`` injection. Pass
+    ``--short`` for the compact id/state/title index only.
+    """
+
+    project_dir = _project_dir()
+    mgr = _task_manager(project_dir)
     t = mgr.get_task(task_id)
     if t is None:
         console.print(f"[red]Task not found[/]: {task_id}")
@@ -809,6 +824,22 @@ def task_show(task_id: str):
         console.print("\n  [bold]Work Log:[/]")
         for entry in t.work_log:
             console.print(f"    {entry.timestamp} — {entry.message}")
+
+    # Linked context (HATS-691): by default, append the full linked-task bodies
+    # — parity with the sub-agent's LINKED_CONTEXT (HATS-689). The link index
+    # above only names the cross-references; this block carries their content so
+    # the reader (human or interactive agent via `task show`) sees the same thing
+    # a spawned sub-agent gets. `--short` skips it.
+    if not short:
+        from ..linked_context import load_linked_context
+
+        linked = load_linked_context(project_dir, task_id)
+        if linked:
+            console.print("\n  [bold]Linked context:[/]")
+            # markup=False: the body carries literal `[parent_task]` / `[related]`
+            # tags and arbitrary card/plan text that rich would mis-parse as
+            # markup (same hazard the link index avoids with parens, above).
+            console.print(linked, markup=False, highlight=False)
 
 
 @task.command("sync")
