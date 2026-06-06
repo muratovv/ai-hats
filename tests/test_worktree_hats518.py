@@ -290,7 +290,7 @@ class TestTransitionExecute:
 
         master_project, mgr = task_mgr
         try:
-            t = mgr.transition("T-1", TaskState.EXECUTE)
+            t, _ = mgr.transition("T-1", TaskState.EXECUTE)
             assert t.state == TaskState.EXECUTE
         finally:
             wt = WorktreeManager.load_for_task(master_project, "T-1")
