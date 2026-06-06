@@ -76,25 +76,31 @@ sub-agent gets via `# LINKED_CONTEXT`, without chasing each link by hand.
   / `See also` as `id (state) — title`, no linked bodies. Use it for a quick
   glance when you don't need the related content inline.
 
-## Child-driven epic auto-transitions (HATS-690)
+## Child-driven epic auto-transitions (HATS-690, HATS-692)
 
 `parent_task` is **behaviourally active** in the state machine too: the harness
 keeps an epic's state in sync with its children, so you rarely transition an
 epic by hand. Every auto-transition prints a `Epic auto-transition: …` notice
-and records an audit entry in the epic's `work_log`.
+and records an audit entry in the epic's `work_log`. Three transitions:
 
+- **Auto-activate `plan → execute`.** When work is *taken* on a child (it enters
+  `execute` / `document` / `review`) while the epic is still in `plan`, the epic
+  auto-activates to `execute` — so a planned epic reflects that work has started.
 - **Auto-advance to `review`.** When *every* child of an epic is resolved
   (`done` **or** `cancelled`) with **at least one** `done`, and the epic is in
-  `execute` or `document`, the epic auto-advances to `review`. The final
+  `plan` / `execute` / `document`, the epic auto-advances to `review`. The final
   `review → done` gate is preserved — a human/reviewer still closes the epic.
   `failed` / `blocked` children are outstanding work and keep the epic open; an
-  epic with zero children is never auto-advanced.
+  epic with zero children is never auto-advanced. (The `plan` source is the
+  fallback for children **fast-closed** straight to `done` without ever entering
+  `execute`.)
 - **Auto-reopen `done → execute`.** When new or reopened work appears under a
   `done` epic — `task create --parent-task <epic>`, `task update --parent-task
   <epic>` re-parenting a live task in, or a child reopened `done → execute` —
-  the epic auto-reopens to `execute` (no worktree is created for the epic).
+  the epic auto-reopens to `execute`.
 
-Fires on `task transition` / `create` / `update` / `close`. Scope: **one level
-only** — a grandparent epic is not cascaded. To advance an epic stuck in
-`brainstorm` / `plan`, transition it by hand (the auto-advance never forces
-`plan → execute`).
+Fires on `task transition` / `create` / `update` / `close`. Invariants: epics
+**never** get a worktree in any auto-path; scope is **one level only** (a
+grandparent epic is not cascaded); and `brainstorm` epics are left alone — an
+undecomposed epic is a human's call to plan, so the harness never forces
+`brainstorm → plan`.

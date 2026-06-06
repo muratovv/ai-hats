@@ -1295,12 +1295,29 @@ def test_advance_requires_at_least_one_done(mgr):
     assert auto == []
 
 
-def test_epic_in_plan_is_not_advanced(mgr):
+def test_plan_epic_syncs_via_child_lifecycle(mgr, monkeypatch):
+    """HATS-692 changed HATS-690's behaviour: a `plan` epic is no longer left
+    untouched. Walking its child execute->done activates it (plan->execute) then
+    advances it (->review) — without ever creating a worktree for the epic."""
+    setup_calls: list[str] = []
+    monkeypatch.setattr(mgr, "_setup_worktree", lambda task: setup_calls.append(task.id))
+
     mgr.create_task("EPIC", "Epic")
-    mgr.transition("EPIC", TaskState.PLAN)  # epic stays in plan
+    mgr.transition("EPIC", TaskState.PLAN)
     mgr.create_task("C1", "Child 1", parent_task="EPIC")
     _walk_to_done(mgr, "C1")
-    assert mgr.get_task("EPIC").state == TaskState.PLAN  # guard: no force plan→execute
+
+    assert mgr.get_task("EPIC").state == TaskState.REVIEW
+    assert "EPIC" not in setup_calls  # invariant: epics never get a worktree
+
+
+def test_brainstorm_epic_not_advanced_on_completion(mgr):
+    """Brainstorm guard still holds (D1): a brainstorm epic with a done child is
+    NOT advanced (it isn't decomposed yet)."""
+    mgr.create_task("EPIC", "Epic")  # brainstorm
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    _walk_to_done(mgr, "C1")
+    assert mgr.get_task("EPIC").state == TaskState.BRAINSTORM
 
 
 def test_zero_children_epic_not_advanced(mgr):
@@ -1388,3 +1405,103 @@ def test_epic_already_in_review_is_noop(mgr):
     assert mgr.get_task("EPIC").state == TaskState.REVIEW
     assert auto == []
     assert len(mgr.get_task("EPIC").work_log) == log_len
+
+
+# -- Epic activation + plan advance-fallback (HATS-692) --
+
+
+def _epic_in_plan(mgr, epic_id: str) -> None:
+    """Create an epic and leave it in plan (decomposed, not yet active)."""
+    mgr.create_task(epic_id, "Epic")
+    mgr.transition(epic_id, TaskState.PLAN)
+
+
+def test_child_taken_activates_plan_epic(mgr):
+    _epic_in_plan(mgr, "EPIC")
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    mgr.transition("C1", TaskState.PLAN)
+    _card, auto = mgr.transition("C1", TaskState.EXECUTE)  # child taken
+
+    epic = mgr.get_task("EPIC")
+    assert epic.state == TaskState.EXECUTE  # activated
+    assert [(t.ticket.id, t.from_state, t.to_state) for t in auto] == [
+        ("EPIC", TaskState.PLAN, TaskState.EXECUTE)
+    ]
+    assert any("Auto-activated" in e.message for e in epic.work_log)
+
+
+def test_activation_is_idempotent(mgr):
+    _epic_in_plan(mgr, "EPIC")
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    mgr.transition("C1", TaskState.PLAN)
+    mgr.transition("C1", TaskState.EXECUTE)  # activates EPIC -> execute
+    assert mgr.get_task("EPIC").state == TaskState.EXECUTE
+    log_len = len(mgr.get_task("EPIC").work_log)
+
+    # Child moves further; epic already execute -> no second activation.
+    _card, auto = mgr.transition("C1", TaskState.DOCUMENT)
+    assert mgr.get_task("EPIC").state == TaskState.EXECUTE
+    assert auto == []
+    assert len(mgr.get_task("EPIC").work_log) == log_len
+
+
+def test_brainstorm_epic_not_activated(mgr):
+    mgr.create_task("EPIC", "Epic")  # stays in brainstorm
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    mgr.transition("C1", TaskState.PLAN)
+    _card, auto = mgr.transition("C1", TaskState.EXECUTE)
+    assert mgr.get_task("EPIC").state == TaskState.BRAINSTORM  # D1 guard
+    assert auto == []
+
+
+def test_reparent_active_child_into_plan_epic_activates(mgr):
+    _epic_in_plan(mgr, "EPIC")
+    mgr.create_task("FREE", "Live task")
+    mgr.transition("FREE", TaskState.PLAN)
+    mgr.transition("FREE", TaskState.EXECUTE)  # FREE is active, no parent yet
+    _card, auto = mgr.update_task("FREE", parent_task="EPIC")
+    assert mgr.get_task("EPIC").state == TaskState.EXECUTE
+    assert [t.ticket.id for t in auto] == ["EPIC"]
+
+
+def test_create_brainstorm_child_does_not_activate_plan_epic(mgr):
+    _epic_in_plan(mgr, "EPIC")
+    _card, auto = mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    assert mgr.get_task("EPIC").state == TaskState.PLAN  # brainstorm child, no work
+    assert auto == []
+
+
+def test_plan_epic_fast_close_advances_to_review(mgr):
+    """The HATS-688 stranding bug: children fast-closed while epic in plan."""
+    _epic_in_plan(mgr, "EPIC")
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    mgr.create_task("C2", "Child 2", parent_task="EPIC")
+    mgr.close_task("C1", "shipped on master")
+    _card, auto = mgr.close_task("C2", "shipped on master")
+
+    epic = mgr.get_task("EPIC")
+    assert epic.state == TaskState.REVIEW  # plan -> review fallback
+    assert [(t.ticket.id, t.from_state, t.to_state) for t in auto] == [
+        ("EPIC", TaskState.PLAN, TaskState.REVIEW)
+    ]
+    assert any("Auto-advanced" in e.message for e in epic.work_log)
+
+
+def test_plan_epic_fast_close_mixed_done_cancelled_advances(mgr):
+    _epic_in_plan(mgr, "EPIC")
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    mgr.create_task("C2", "Child 2", parent_task="EPIC")
+    mgr.close_task("C1", "shipped")  # done
+    _card, auto = mgr.transition("C2", TaskState.CANCELLED, resolution="drop")
+    assert mgr.get_task("EPIC").state == TaskState.REVIEW  # >=1 done holds
+    assert [t.ticket.id for t in auto] == ["EPIC"]
+
+
+def test_plan_epic_all_cancelled_not_advanced(mgr):
+    _epic_in_plan(mgr, "EPIC")
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    mgr.create_task("C2", "Child 2", parent_task="EPIC")
+    mgr.transition("C1", TaskState.CANCELLED, resolution="drop")
+    _card, auto = mgr.transition("C2", TaskState.CANCELLED, resolution="drop")
+    assert mgr.get_task("EPIC").state == TaskState.PLAN  # none done -> no advance
+    assert auto == []
