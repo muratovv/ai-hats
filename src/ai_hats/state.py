@@ -98,6 +98,33 @@ class EmptyPlanError(Exception):
         self.plan_path = plan_path
 
 
+@dataclass(frozen=True)
+class TaskTransition:
+    """A state change applied to a ticket as a side effect of a manager call.
+
+    Returned alongside the primary card by the mutating methods
+    (``transition`` / ``create_task`` / ``update_task`` / ``close_task``) so
+    callers — the CLI — can surface harness-driven transitions the user did
+    not ask for directly. Today the only producer is child-driven epic
+    auto-advance / reopen (HATS-690 / Req 2 of HATS-688); the methods return a
+    *list* of these so future non-epic propagations can be added without
+    another signature change.
+    """
+
+    ticket: TaskCard
+    from_state: TaskState
+    to_state: TaskState
+    reason: str
+
+
+# Child states that count as "resolved" for epic auto-advance (HATS-690 Q2a).
+# A child in any of these no longer blocks its epic; FAILED / BLOCKED are
+# outstanding work and keep the epic open.
+_EPIC_RESOLVED_STATES: frozenset[TaskState] = frozenset(
+    {TaskState.DONE, TaskState.CANCELLED}
+)
+
+
 class TaskManager:
     """Manages task cards and state transitions with file-lock protection."""
 
@@ -145,7 +172,7 @@ class TaskManager:
         parent_task: str = "",
         depends_on: list[str] | None = None,
         tags: list[str] | None = None,
-    ) -> TaskCard:
+    ) -> tuple[TaskCard, list[TaskTransition]]:
         """Create a new task card.
 
         ``parent_task`` and ``depends_on`` are validated for self-reference
@@ -176,7 +203,9 @@ class TaskManager:
         task_dir.mkdir(parents=True, exist_ok=True)
         self._save_task(task)
         self._update_indexes()
-        return task
+        # New work under a `done` epic auto-reopens it (HATS-690 Q3). create_task
+        # has no lock window, so this post-write call honours the "post-lock" rule.
+        return task, self._propagate_to_parent(task)
 
     def missing_refs(self, ids: list[str]) -> list[str]:
         """Return the subset of ``ids`` that do not exist as task cards.
@@ -225,7 +254,7 @@ class TaskManager:
         *,
         force: bool = False,
         reason: str | None = None,
-    ) -> TaskCard:
+    ) -> tuple[TaskCard, list[TaskTransition]]:
         """Transition a task to a new state with file-lock protection.
 
         ``resolution`` is written atomically alongside the state change so
@@ -303,7 +332,10 @@ class TaskManager:
             self._save_task(task)
             self._update_indexes()
 
-        return task
+        # Post-lock (no nested locks): a child reaching a terminal state may
+        # complete its epic; a child reopened to execute may reopen a done
+        # epic (HATS-690 Q2/Q3).
+        return task, self._propagate_to_parent(task)
 
     def log_work(self, task_id: str, message: str, session_id: str = "") -> TaskCard:
         """Append a work log entry to a task."""
@@ -339,7 +371,7 @@ class TaskManager:
         parent_task: str | None = None,
         add_depends: list[str] | None = None,
         remove_depends: list[str] | None = None,
-    ) -> TaskCard:
+    ) -> tuple[TaskCard, list[TaskTransition]]:
         """Update task card fields.
 
         ``parent_task=""`` clears the parent. Pass ``None`` to leave it
@@ -388,7 +420,8 @@ class TaskManager:
             self._save_task(task)
             self._update_indexes()
 
-        return task
+        # Re-parenting a live task into a `done` epic reopens it (HATS-690 Q3).
+        return task, self._propagate_to_parent(task)
 
     def set_final_state(self, task_id: str, final_state: str) -> TaskCard:
         """Record the final accomplished state before review."""
@@ -405,7 +438,9 @@ class TaskManager:
 
         return task
 
-    def close_task(self, task_id: str, resolution: str) -> TaskCard:
+    def close_task(
+        self, task_id: str, resolution: str
+    ) -> tuple[TaskCard, list[TaskTransition]]:
         """Fast-close: ``brainstorm | plan → done`` with mandatory resolution.
 
         Skips the worktree theatre — there is no worktree in brainstorm/plan,
@@ -444,7 +479,8 @@ class TaskManager:
             self._save_task(task)
             self._update_indexes()
 
-        return task
+        # A child fast-closed to done can complete its epic (HATS-690 D2).
+        return task, self._propagate_to_parent(task)
 
     # ----- Attachments (HATS-402) -----
 
@@ -781,6 +817,108 @@ class TaskManager:
     def _save_task(self, task: TaskCard) -> None:
         task_file = self.tasks_dir / task.id / "task.yaml"
         task.save(task_file)
+
+    def _children_of(self, epic_id: str) -> list[TaskCard]:
+        """Return the task cards whose ``parent_task`` is ``epic_id``.
+
+        Regex-prefilters the on-disk cards (mirrors :meth:`find_subsumed_by`)
+        so only cards that actually name ``epic_id`` as their parent are fully
+        parsed — the reverse ``parent_task`` scan, since ``subtasks`` is a dead
+        field (``models.py`` HATS-688 note).
+        """
+        if not self.tasks_dir.exists():
+            return []
+        pattern = re.compile(
+            rf"^parent_task:\s*['\"]?{re.escape(epic_id)}['\"]?\s*$",
+            re.MULTILINE,
+        )
+        children: list[TaskCard] = []
+        for task_dir in sorted(self.tasks_dir.iterdir()):
+            task_file = task_dir / "task.yaml"
+            if not task_file.exists():
+                continue
+            try:
+                text = task_file.read_text()
+            except OSError:
+                continue
+            if pattern.search(text):
+                try:
+                    children.append(TaskCard.from_yaml(task_file))
+                except (OSError, ValueError):
+                    continue
+        return children
+
+    def _propagate_to_parent(self, child: TaskCard) -> list[TaskTransition]:
+        """Child-driven epic auto-transition (HATS-690 / Req 2 of HATS-688).
+
+        Called *after* the child's own lock window closes (no nested locks).
+        Takes the parent epic's lock and, based on the child set, either:
+
+        * **advances** the epic to ``review`` when every child is resolved
+          (``{done, cancelled}``) with at least one ``done`` and the epic is in
+          ``execute`` / ``document`` (Q2 / Q2a); or
+        * **reopens** a ``done`` epic to ``execute`` when the just-mutated child
+          is live again (not in ``{done, cancelled}``) — WITHOUT
+          ``_setup_worktree`` (Q3 caveat: an epic worktree is unwanted); or
+        * **no-ops**.
+
+        The epic is mutated *directly* (FSM-validated hops via
+        :meth:`TaskCard.transition_to`) rather than through the public
+        :meth:`transition`: this skips ``_setup_worktree`` on reopen and keeps
+        grandparent cascade structurally impossible (no recursion). Returns a
+        list (empty, or one delta) so future propagations can extend it.
+        """
+        epic_id = child.parent_task
+        if not epic_id:
+            return []
+        if not (self.tasks_dir / epic_id / "task.yaml").exists():
+            return []
+
+        lock_path = self.tasks_dir / epic_id / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with FileLock(str(lock_path)):
+            epic = self.get_task(epic_id)
+            if epic is None:
+                return []
+
+            from_state = epic.state
+            reason: str | None = None
+
+            if (
+                epic.state == TaskState.DONE
+                and child.state not in _EPIC_RESOLVED_STATES
+            ):
+                # Reopen: live child work under a completed epic (Q3).
+                epic.transition_to(TaskState.EXECUTE)  # DONE → EXECUTE (FSM-valid)
+                epic.completed_at = ""
+                reason = f"reopened: live child {child.id} ({child.state.value})"
+                epic.log_work(f"Auto-reopened done → execute ({reason})")
+                # No _setup_worktree — auto-reopened epics get no worktree.
+            elif epic.state in (TaskState.EXECUTE, TaskState.DOCUMENT):
+                # Advance: all children resolved, >=1 done (Q2 / Q2a).
+                children = self._children_of(epic_id)
+                resolved = bool(children) and all(
+                    c.state in _EPIC_RESOLVED_STATES for c in children
+                )
+                has_done = any(c.state == TaskState.DONE for c in children)
+                if resolved and has_done:
+                    # Multi-hop: execute -> document -> review (review is only
+                    # reachable from document, models.py FSM).
+                    if epic.state == TaskState.EXECUTE:
+                        epic.transition_to(TaskState.DOCUMENT)
+                    epic.transition_to(TaskState.REVIEW)
+                    reason = "all children resolved (>=1 done)"
+                    epic.log_work(
+                        f"Auto-advanced {from_state.value} -> review ({reason})"
+                    )
+
+            if reason is None:
+                return []
+
+            epic.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            self._save_task(epic)
+            self._update_indexes()
+            return [TaskTransition(epic, from_state, epic.state, reason)]
 
     def _setup_worktree(self, task: TaskCard) -> Path | None:
         """Create or adopt an isolated worktree when task enters execute state.
