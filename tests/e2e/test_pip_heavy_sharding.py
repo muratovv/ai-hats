@@ -25,8 +25,10 @@ from pathlib import Path
 import pytest
 
 # Import the e2e conftest by path — tests/e2e/ is not a package, so a plain
-# ``import conftest`` is ambiguous with tests/conftest.py. Executing it in
-# isolation is side-effect-free (only path math + fixture/hook defs).
+# ``import conftest`` is ambiguous with tests/conftest.py. Its only load-time
+# side effect is a ``sys.path.insert(0, <tests/e2e>)`` — identical to (and
+# idempotent with) pytest's own conftest load; the rest is fixture/hook defs
+# and path math.
 _CONFTEST = Path(__file__).resolve().parent / "conftest.py"
 _spec = importlib.util.spec_from_file_location("e2e_conftest_under_test", _CONFTEST)
 _conftest = importlib.util.module_from_spec(_spec)
@@ -126,3 +128,16 @@ def test_hook_keeps_a_files_pip_heavy_tests_together() -> None:
     ]
     _modifyitems(None, items)
     assert len({it.group for it in items}) == 1
+
+
+def test_live_takes_precedence_over_pip_heavy() -> None:
+    """A test that is BOTH live and pip_heavy pins to live_claude.
+
+    Locks the documented precedence (live_claude > pip_heavy > per-file). The
+    case is currently vacuous (no live test is pip_heavy) and harmless either
+    way — live_claude already pins to one worker (effective concurrency 1 < K) —
+    but this guards the ordering against a future test that gates on both.
+    """
+    items = [_FakeItem("tests/e2e/test_x.py::test_a", pip_heavy=True, live=True)]
+    _modifyitems(None, items)
+    assert items[0].group == "live_claude"

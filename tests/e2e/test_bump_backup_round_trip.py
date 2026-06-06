@@ -150,6 +150,23 @@ def bumped(tmp_path_factory, _shared_launcher_venv, repo_root: Path):
         timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(backup_dir)},
     )
+    # HATS-677 hardening: fail FAST in fixture SETUP (with the bump's own
+    # output) if no snapshot landed, instead of a cryptic StopIteration deep in
+    # one consuming test. The pre-bump backup runs BEFORE any migration step and
+    # `snapshot_pre_bump` always writes a tarball (incl. an empty-scope marker)
+    # when a role is active — so an empty dir here means the bump never reached
+    # the snapshot (e.g. an early-exit / crash), which is exactly the signal the
+    # quarantined-flake investigation lacked. ``self update`` may legitimately
+    # exit non-zero (backup is captured first), so we assert on the ARTEFACT,
+    # not the return code.
+    _tarballs = sorted(backup_dir.glob("*.tar.gz"))
+    assert _tarballs, (
+        "pre-bump backup tarball missing — `self update` produced no snapshot "
+        f"under {backup_dir} (the round-trip safety net did not run).\n"
+        f"self update rc={res.exit_code}\n"
+        f"--- stdout tail ---\n{res.stdout[-1500:]}\n"
+        f"--- stderr tail ---\n{res.stderr[-1500:]}"
+    )
     return SimpleNamespace(
         project_path=project_path,
         backup_dir=backup_dir,
@@ -180,7 +197,8 @@ def test_bump_produces_backup_with_recovery_banner(bumped) -> None:
 def test_backup_captures_scoped_surface(bumped) -> None:
     """AC2 part 1: tarball contains the declared scope
     (.agent/, ai-hats.yaml, .claude/settings.json, CLAUDE.md, ...)."""
-    tarball = next(bumped.backup_dir.glob("*.tar.gz"))
+    # HATS-677: deterministic + guarded by the `bumped` fixture's setup assert.
+    tarball = sorted(bumped.backup_dir.glob("*.tar.gz"))[0]
     with tarfile.open(tarball, "r:gz") as tar:
         names = set(tar.getnames())
 
@@ -202,19 +220,25 @@ def test_backup_captures_scoped_surface(bumped) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.quarantine(
-    reason="flaky under the -n8 pre-push gate: intermittent StopIteration on "
-    "`next(bumped.backup_dir.glob('*.tar.gz'))` — empty backup_dir (module-scoped "
-    "shared-venv bump produced no tarball under contention). Passed solo / gate "
-    "attempt-1, failed a later identical-code run. Quarantined HATS-676; "
-    "de-flake follow-up HATS-677."
-)
 def test_backup_round_trip_restores_state_byte_for_byte(
     bumped, tmp_path: Path,
 ) -> None:
     """AC2 part 2: ``tar -xzf <backup>`` restores byte-identical state
-    for scoped paths."""
-    tarball = next(bumped.backup_dir.glob("*.tar.gz"))
+    for scoped paths.
+
+    HATS-677: un-quarantined. The HATS-676 quarantine reason (``next(glob)``
+    StopIteration on an empty backup_dir) could not be reproduced across 3× -n8
+    ``--dist=loadgroup`` stress runs once HATS-678's pip-heavy cap was in place,
+    and the ``bumped`` fixture now asserts the tarball at SETUP with the bump's
+    own output — so a genuine recurrence fails diagnostically there, not as a
+    cryptic StopIteration here.
+    """
+    tarballs = sorted(bumped.backup_dir.glob("*.tar.gz"))
+    assert tarballs, (  # HATS-677: diagnostic, not a bare StopIteration
+        f"no backup tarball under {bumped.backup_dir} — see the `bumped` "
+        f"fixture setup output (self update rc={bumped.res.exit_code})"
+    )
+    tarball = tarballs[0]
 
     # Extract into a FRESH dir — never the shared module-scoped project —
     # so the other assertions still see the post-bump tree untouched.
@@ -238,7 +262,8 @@ def test_backup_round_trip_restores_state_byte_for_byte(
 def test_backup_excludes_venv_and_pycache(bumped) -> None:
     """Tarball must NOT include regenerable derived state. Without
     exclusions the framework venv alone inflates the tarball ~100×."""
-    tarball = next(bumped.backup_dir.glob("*.tar.gz"))
+    # HATS-677: deterministic + guarded by the `bumped` fixture's setup assert.
+    tarball = sorted(bumped.backup_dir.glob("*.tar.gz"))[0]
     with tarfile.open(tarball, "r:gz") as tar:
         names = set(tar.getnames())
 
