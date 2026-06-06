@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import uuid
+from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -75,6 +76,68 @@ _TERM_RESET_PRELUDE = (
     "\x1b[?1l"
     "\x1b[?25h"
 )
+
+
+# HATS-679: parent escape-hatch for a wedged PTY provider.
+#
+# When the wrapped child (claude) wedges into an un-exitable error-loop — it
+# ignores Ctrl-C, keeps its master fd open, never EOFs — the PTY passthrough
+# loop in ``_pty_spawn`` has no parent-side exit (``tty.setraw`` forwards Ctrl-C
+# as a byte to the child). The user is trapped until an external kill. We can't
+# reliably *ask* whether the child is dead-or-working (every cheap liveness
+# signal is ambiguous between a wedged loop and a healthy-busy session), so we
+# use the only robust behavioural probe: "send the quit gesture; if the child
+# does not EOF, it is wedged". A healthy claude exits on the 2nd Ctrl-C
+# (→ master EOF → loop ends), so the 3rd is never reached — the hatch is dormant
+# for healthy sessions and only fires on a child that fails to honour the
+# standard double-Ctrl-C quit.
+_ESCAPE_CTRL_C = 0x03  # the Ctrl-C byte (VINTR) forwarded in raw mode
+_ESCAPE_COUNT = 3  # consecutive Ctrl-C presses that trip the hatch
+_ESCAPE_WINDOW_S = 1.5  # they must fall within this sliding window
+_ESCAPE_NOTICE = (
+    b"\r\n[ai-hats] provider not responding to Ctrl-C; forcing exit (code 130).\r\n"
+)
+
+
+def _scan_escape(
+    chunk: bytes,
+    presses: deque[float],
+    now: float,
+    *,
+    count: int = _ESCAPE_COUNT,
+    window_s: float = _ESCAPE_WINDOW_S,
+) -> tuple[bytes, bool]:
+    """Scan one stdin chunk for the triple-Ctrl-C escape gesture (HATS-679).
+
+    Pure function (no I/O) so the escalation logic is unit-testable without a
+    PTY. ``presses`` carries Ctrl-C timestamps across calls and is mutated in
+    place.
+
+    Returns ``(forward, triggered)``:
+      * ``forward`` — the bytes to write to the child: everything up to (but not
+        including) the byte that trips the hatch. The triggering byte and the
+        remainder of the chunk are withheld, so the 1st/2nd Ctrl-C still reach
+        the child (dormancy, R2) but the 3rd does not.
+      * ``triggered`` — ``True`` once ``count`` Ctrl-C bytes fall within
+        ``window_s``.
+
+    Counting is **per-byte**, not per-read: a batched chunk
+    (``b"\\x03\\x03\\x03"``) trips on its 3rd byte; any non-Ctrl-C byte clears
+    the streak (R2 "consecutive"); timestamps older than the window are dropped
+    so a slow drip never accumulates. The sliding window ("N within the window")
+    is deliberately stricter than a plain counter ("each gap < window").
+    """
+    for i, byte in enumerate(chunk):
+        if byte == _ESCAPE_CTRL_C:
+            presses.append(now)
+            while presses and now - presses[0] > window_s:
+                presses.popleft()
+            if len(presses) >= count:
+                presses.clear()
+                return chunk[:i], True
+        else:
+            presses.clear()
+    return chunk, False
 
 
 def _cleanup_session_cache(project_dir: Path, session_id: str) -> None:
@@ -921,6 +984,11 @@ class WrapRunner:
         # input) without breaking the loop — child may still be producing
         # output that we need to drain until master EOF.
         read_fds = [master_fd, stdin_fd]
+        # HATS-679: parent escape-hatch state — timestamps of consecutive
+        # Ctrl-C presses and the force-exit flag (checked after the finally so
+        # a hatch-triggered exit returns 130).
+        escape_presses: deque[float] = deque()
+        forced_exit = False
         try:
             while True:
                 try:
@@ -972,9 +1040,30 @@ class WrapRunner:
                     if not data:
                         read_fds = [master_fd]
                         continue
-                    try:
-                        os.write(master_fd, data)
-                    except OSError:
+                    # HATS-679: count consecutive Ctrl-C. Forward everything up
+                    # to the triggering byte (so the 1st/2nd still reach the
+                    # child); on the 3rd within the window, withhold it, print
+                    # the notice, and break out to the bounded shutdown.
+                    forward, triggered = _scan_escape(
+                        data, escape_presses, time.monotonic()
+                    )
+                    # Latch forced_exit BEFORE any write: if the forward write
+                    # below raises OSError on the very chunk that trips the
+                    # hatch, breaking out must still return 130 — never let the
+                    # bounded-shutdown SIGKILL surface as 137/124 instead (the
+                    # exact mis-report this hatch exists to prevent).
+                    if triggered:
+                        forced_exit = True
+                    if forward:
+                        try:
+                            os.write(master_fd, forward)
+                        except OSError:
+                            break
+                    if triggered:
+                        try:
+                            os.write(stdout_fd, _ESCAPE_NOTICE)
+                        except OSError:
+                            pass
                         break
         finally:
             if restore_attrs and old_attrs is not None:
@@ -998,6 +1087,13 @@ class WrapRunner:
             # shell when the child crashed without disabling them.
             emit_terminal_reset(stdout_fd)
 
+        # HATS-679: the parent escape-hatch fired (triple Ctrl-C against a
+        # wedged child). bounded_proc_shutdown (above) already killed the child,
+        # which would otherwise surface as signalstatus=SIGKILL → 137; check
+        # forced_exit FIRST so a hatch-triggered exit is the canonical 130
+        # (128 + SIGINT), not the shutdown's kill signal.
+        if forced_exit:
+            return 130
         if proc.exitstatus is not None:
             return int(proc.exitstatus)
         if proc.signalstatus is not None:
