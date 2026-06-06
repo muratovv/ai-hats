@@ -148,3 +148,72 @@ def test_load_linked_context_unknown_ticket_returns_empty(tmp_path: Path) -> Non
     project_dir.mkdir()
     assert SubAgentRunner(project_dir)._load_linked_context("HATS-999") == ""
     assert SubAgentRunner(project_dir)._load_linked_context("") == ""
+
+
+# --- wiring into the two live prompt channels ---
+
+
+def test_build_first_user_message_wires_linked_context_after_ticket() -> None:
+    """Claude live channel: LINKED_CONTEXT sits after TICKET_CONTEXT."""
+    from ai_hats.sdk_options import build_first_user_message
+
+    msg = build_first_user_message(
+        ticket_context="TICKET BODY",
+        linked_context="LINKED BODY",
+        task="do the thing",
+    )
+    assert "# LINKED_CONTEXT\nLINKED BODY" in msg
+    assert msg.index("# TICKET_CONTEXT") < msg.index("# LINKED_CONTEXT") < msg.index("# TASK")
+
+    # Empty linked_context emits no section.
+    msg_empty = build_first_user_message(ticket_context="T", task="t")
+    assert "# LINKED_CONTEXT" not in msg_empty
+
+
+def _stub_result():
+    class _Result:
+        merged_injection = "ROLE TEXT"
+        priorities: list[str] = []
+
+    return _Result()
+
+
+def test_build_meta_prompt_wires_linked_context_section(tmp_path: Path) -> None:
+    """Gemini live channel: _build_meta_prompt emits LINKED_CONTEXT after TICKET_CONTEXT."""
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    _write_card(
+        project_dir,
+        TaskCard(
+            id="HATS-900",
+            title="Epic",
+            state=TaskState.EXECUTE,
+            description="EPIC BODY FOR GEMINI",
+        ),
+    )
+    _write_card(
+        project_dir,
+        TaskCard(
+            id="HATS-902",
+            title="child",
+            state=TaskState.EXECUTE,
+            parent_task="HATS-900",
+        ),
+    )
+    out = SubAgentRunner(project_dir)._build_meta_prompt(
+        result=_stub_result(), provider=None, task="go", ticket_id="HATS-902"
+    )
+    assert "# TICKET_CONTEXT" in out
+    assert "# LINKED_CONTEXT" in out
+    assert "EPIC BODY FOR GEMINI" in out
+    assert out.index("# TICKET_CONTEXT") < out.index("# LINKED_CONTEXT")
+
+    # A ticket with no links → no LINKED_CONTEXT section.
+    _write_card(
+        project_dir,
+        TaskCard(id="HATS-903", title="lonely", state=TaskState.EXECUTE),
+    )
+    out_nolinks = SubAgentRunner(project_dir)._build_meta_prompt(
+        result=_stub_result(), provider=None, task="go", ticket_id="HATS-903"
+    )
+    assert "# LINKED_CONTEXT" not in out_nolinks

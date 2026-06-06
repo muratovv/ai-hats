@@ -191,14 +191,21 @@ def build_first_user_message(
     ticket_context: str = "",
     task: str = "",
     project_state: str = "",
+    linked_context: str = "",
 ) -> str:
     """Compose the first user message for a sub-agent session.
 
     ``PROJECT_STATE`` goes here (not in ``system_prompt``) because it is
     per-task runtime context rather than per-role composition.
-    ``TICKET_CONTEXT`` and ``TASK`` follow in that order. Empty inputs
-    are skipped; an all-empty result returns the empty string — callers
-    decide whether to skip sending a first turn at all.
+    ``TICKET_CONTEXT``, ``LINKED_CONTEXT`` and ``TASK`` follow in that order.
+    Empty inputs are skipped; an all-empty result returns the empty string —
+    callers decide whether to skip sending a first turn at all.
+
+    ``LINKED_CONTEXT`` (HATS-689) carries the cards of the ticket's directly-
+    linked tasks (parent epic + plan.md, plus depends_on/related/see_also
+    cards), assembled by ``SubAgentRunner._load_linked_context``. This is the
+    live Claude channel for that section; the Gemini path mirrors it in
+    ``SubAgentRunner._build_meta_prompt``.
 
     Reserved for Phase 2/3 callers (``SubAgentRunner._run_attempt`` and
     ``SubAgentRunner.session()``). Defined here so the structure is
@@ -210,6 +217,8 @@ def build_first_user_message(
         sections.append(f"# PROJECT_STATE\n{project_state}")
     if ticket_context:
         sections.append(f"# TICKET_CONTEXT\n{ticket_context}")
+    if linked_context:
+        sections.append(f"# LINKED_CONTEXT\n{linked_context}")
     if task:
         sections.append(f"# TASK\n{task}")
     return "\n\n".join(sections)

@@ -1445,6 +1445,7 @@ class SubAgentRunner:
         from .sdk_runner import run_claude_sdk_blocking
 
         ticket_context = self._load_ticket(ticket_id)
+        linked_context = self._load_linked_context(ticket_id)
 
         options = build_options(
             result,
@@ -1456,8 +1457,11 @@ class SubAgentRunner:
         )
         # HATS-681: PROJECT_STATE (the STATE.md backlog dump) is no longer
         # injected — it was unused dead weight in every sub-agent run.
+        # HATS-689: LINKED_CONTEXT carries the directly-linked cards (this is
+        # the live Claude channel for that section).
         initial_message = build_first_user_message(
             ticket_context=ticket_context,
+            linked_context=linked_context,
             task=task,
         )
         return run_claude_sdk_blocking(
@@ -1487,6 +1491,7 @@ class SubAgentRunner:
         system_text = sp.get("append", "")
         initial_message = build_first_user_message(
             ticket_context=self._load_ticket(ticket_id),
+            linked_context=self._load_linked_context(ticket_id),
             task=task,
         )
         return (
@@ -1526,6 +1531,13 @@ class SubAgentRunner:
             ticket_context = self._load_ticket(ticket_id)
             if ticket_context:
                 sections.append(f"# TICKET_CONTEXT\n{ticket_context}")
+
+            # LINKED_CONTEXT (HATS-689) — directly-linked cards (parent epic +
+            # plan.md, plus depends_on/related/see_also). Live Gemini channel;
+            # the Claude path mirrors this via build_first_user_message.
+            linked_context = self._load_linked_context(ticket_id)
+            if linked_context:
+                sections.append(f"# LINKED_CONTEXT\n{linked_context}")
 
         # TASK
         if task:
