@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -258,23 +259,66 @@ class SessionReviewRunner:
             parts.append(f"audit.md:\n```\n{audit_text}\n```")
         return "\n\n".join(parts)
 
-    # HATS-424: end-of-session events (self-retro Skill calls, final commits,
-    # transitions, judge-report writes) live in the audit tail. Naive head-cut
-    # at 8KB made them structurally invisible to the reviewer — verified on 8
-    # sessions where `🔧 Skill: self-retrospective` sat at bytes 22K-60K and the
-    # reviewer reported "no self-retro visible" with full conviction.
-    # Keep both ends; total budget unchanged.
-    _AUDIT_HEAD = 4000
-    _AUDIT_TAIL = 4000
+    # HATS-684: content-aware audit *delivery*. Generation is lossless
+    # (HATS-681/666/683); size is managed here, where audit.md is injected into
+    # the reviewer's prompt (`_render_session_evidence`).
+    #
+    # Re-measured on 155 live audits: 64% of corpus bytes are the first-turn 👤
+    # ingested-evidence echo (`# PROJECT_STATE` backlog dump / `# Reflect-all`
+    # handoff / harness-context injection) — redundant, since the reviewer already
+    # has the target's real content. The real signal (🔧 tools / 👾 responses /
+    # real 👤 turns / tail) is small (median 9.5KB). So:
+    #   1. bound the first-turn 👤 ingested block to a small cap (head-keep — any
+    #      real request sits at the block's head); and
+    #   2. keep ALL signal verbatim — NO tight budget. Capping signal was itself
+    #      the cause of "cannot cite evidence" → n/a verdicts (the HATS-666/680
+    #      chain).
+    # A high safety-valve catches pathological runaways only.
+    _INGESTED_CAP = 2000  # bound the first-turn 👤 ingested-evidence echo
+
+    # HATS-424 invariant: end-of-session events (self-retro Skill calls, final
+    # commits, transitions, judge-report writes) live in the audit tail. The
+    # safety-valve trim keeps both ends so late-session signal survives even a
+    # pathological-size audit.
+    _SAFETY_VALVE = 250_000  # absolute ceiling; never fires on the live corpus
+    _VALVE_HEAD = 8000
+    _VALVE_TAIL = 8000
 
     @classmethod
     def _truncate_audit(cls, text: str) -> str:
-        budget = cls._AUDIT_HEAD + cls._AUDIT_TAIL
-        if len(text) <= budget:
+        text = cls._bound_first_user_block(text)
+        if len(text) <= cls._SAFETY_VALVE:
             return text
-        dropped = len(text) - budget
+        dropped = len(text) - (cls._VALVE_HEAD + cls._VALVE_TAIL)
         marker = f"\n... ({dropped} bytes truncated from middle) ...\n"
-        return text[: cls._AUDIT_HEAD] + marker + text[-cls._AUDIT_TAIL :]
+        return text[: cls._VALVE_HEAD] + marker + text[-cls._VALVE_TAIL :]
+
+    @classmethod
+    def _bound_first_user_block(cls, text: str) -> str:
+        """Head-keep the first-turn 👤 block to ``_INGESTED_CAP`` bytes.
+
+        The block runs from the first ``👤`` line to the next signal marker
+        (``🔧``/``👾``/``💭``) or ``## Turn`` header. Conservative by design: when
+        ingested evidence embeds a nested audit (reviewer-as-target), the block is
+        delimited at the first nested marker — which only bounds *more* of the
+        redundant echo, never real signal. Real requests, when present, sit at the
+        block head and survive the head-keep.
+        """
+        m = re.search(r"^👤 ", text, re.M)
+        if not m:
+            return text
+        start = m.start()
+        nxt = re.search(r"^(?:🔧|👾|💭|## Turn \d+)", text[m.end() :], re.M)
+        end = m.end() + nxt.start() if nxt else len(text)
+        block = text[start:end]
+        if len(block) <= cls._INGESTED_CAP:
+            return text
+        elided = len(block) - cls._INGESTED_CAP
+        bounded = (
+            block[: cls._INGESTED_CAP]
+            + f"\n…[ingested-evidence bounded: {elided} bytes elided]…\n"
+        )
+        return text[:start] + bounded + text[end:]
 
     # ---- run + validate ----
 
