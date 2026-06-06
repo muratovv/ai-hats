@@ -32,6 +32,10 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 # HATS-589: per-xdist-worker private build source (no-op on serial run).
 from _helpers.repo_src import build_src  # noqa: E402
 
+# HATS-685: build the subprocess env without inherited PYTHONPATH/redirect vars
+# so the real-pip install is exercised, not the source tree.
+from _helpers.env import clean_env  # noqa: E402
+
 pytestmark = pytest.mark.pip_heavy  # HATS-678: real pip at call time → capped via conftest.PIP_HEAVY_GROUPS
 
 
@@ -95,11 +99,10 @@ def test_e2e_install_init_break_heal(tmp_path):
     subprocess.run(["git", "-C", str(src_repo), "config", "user.name", "E2E"],
                    check=True)
 
-    env = os.environ.copy()
+    env = clean_env()  # HATS-685: drop inherited PYTHONPATH/redirect vars
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
     env["AI_HATS_REPO_URL"] = str(src_repo)  # local install, no network for ai-hats itself
     env.pop("AI_HATS_VENV", None)  # never leak from outer test runs
-    env.pop("PYTHONPATH", None)
 
     # ---- 1. install-launcher.sh ----
     res = _run(
@@ -212,7 +215,7 @@ def test_e2e_fresh_init_heals(tmp_path):
     launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
 
-    env = os.environ.copy()
+    env = clean_env()  # HATS-685: drop inherited PYTHONPATH/redirect vars
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
     env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))  # local install, no network
     env.pop("AI_HATS_VENV", None)
