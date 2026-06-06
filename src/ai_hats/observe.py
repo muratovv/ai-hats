@@ -709,11 +709,44 @@ class AuditWriter:
                 agg_usage={"input_tokens": 0, "output_tokens": 0,
                            "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
             )
+        if not turns:
+            audit_content = self._with_transcript_fallback(session, audit_content)
         session.audit_path.write_text(audit_content)
 
         # Clean up raw trace — redundant after audit is written. Whitelist.
         if not keep_raw and session.trace_path.exists():
             session.trace_path.unlink()  # safe-delete: ok raw-trace (audit superseded)
+
+    @staticmethod
+    def _with_transcript_fallback(session: Session, audit_content: str) -> str:
+        """HATS-682: surface ``transcript.txt`` when no structured turns parsed.
+
+        SDK sub-agents (e.g. ``isolation=discard`` hypothesis-intake) leave a
+        non-empty ``transcript.txt`` (the LLM's final stdout) but no reachable
+        claude JSONL (tmp-worktree project_key mismatch) and no ``trace.log``
+        (SDK path doesn't write one). ``build()`` then parses zero turns and the
+        audit body is an empty ``turns:0`` stub — real work the reviewer needs to
+        cite is lost. Fold the already-captured transcript into the body.
+
+        Only invoked by ``build()`` when ``not turns`` — so it never duplicates
+        content already rendered as 👤/👾/🔧 turns. ``metrics.json`` counters stay
+        honest (no synthesized turns). ``reasoning.log`` is intentionally excluded
+        (noisy / large — would re-introduce the audit bloat HATS-684/666 fixed).
+        Oversize transcripts are still bounded downstream by
+        ``SessionReviewRunner._truncate_audit``.
+        """
+        transcript = session.session_dir / "transcript.txt"
+        if not transcript.exists():
+            return audit_content
+        text = transcript.read_text().strip()
+        if not text:
+            return audit_content
+        return (
+            audit_content.rstrip()
+            + "\n\n## Transcript (raw — structured turns unavailable)\n\n"
+            + text
+            + "\n"
+        )
 
     def _write_metrics(
         self,
