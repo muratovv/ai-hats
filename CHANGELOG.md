@@ -11,6 +11,20 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Fixed
+- **Content-aware reviewer audit delivery** (HATS-684, supersedes the HATS-424
+  squeeze) — `SessionReviewRunner._truncate_audit` was a blunt 8 KB head+tail
+  middle-drop that cut the real evidence (🔧 tool-calls / 👾 responses) reviewers
+  cite, while keeping the redundant first-turn ingested-evidence echo. Generation
+  is now lossless (HATS-681/666/683), so size is managed at delivery: the
+  first-turn 👤 ingested block (`# PROJECT_STATE` backlog dump / `# Reflect-all`
+  handoff — 64% of corpus bytes, redundant since the reviewer already has the
+  target's real content) is head-keep-bounded to 2 KB, and **all signal is kept
+  verbatim** — no tight budget (capping signal was itself the cause of "cannot
+  cite evidence" → `n/a` verdicts). A 250 KB safety-valve (head/tail trim,
+  HATS-424 tail invariant preserved) is the only hard ceiling and never fires on
+  the live corpus. Re-measured over 155 audits: median 40.6 KB → 11.5 KB;
+  session-reviewer −85%, judge −77%; interactive (maintainer/role-curator) signal
+  preserved in full (−0%, zero signal-loss).
 - **Judge reports no longer persist the literal `payload` stub** (HATS-671) —
   reports under `sessions/retros/judge/` were occasionally written as a 7-byte
   `payload` literal instead of the report body. Root cause was test pollution,
