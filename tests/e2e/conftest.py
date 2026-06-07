@@ -83,8 +83,11 @@ def _scrub_redirect_env(monkeypatch):
 # stability margin while keeping 4× parallelism on the pip tail (~21 tests ×
 # ~42s each ÷ 4 ≈ a 4-wave tail). Tune from real gate telemetry; the flake is
 # cold-network-contention dependent and does not reliably reproduce on a warm
-# local pip cache.
-PIP_HEAVY_GROUPS = 4
+# local pip cache. Override via AI_HATS_E2E_PIP_HEAVY_GROUPS=<int> on a
+# degraded/slow network (lower K = fewer concurrent index hits, so each download
+# gets more bandwidth and stays under the per-test 300s budget); the default of
+# 4 preserves the fast-network behaviour for everyone else.
+PIP_HEAVY_GROUPS = int(os.environ.get("AI_HATS_E2E_PIP_HEAVY_GROUPS", "4"))
 
 
 def _pip_heavy_group_map(pip_heavy_files, k):  # noqa: ANN001, ANN202
