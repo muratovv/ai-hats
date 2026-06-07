@@ -10,79 +10,7 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
-### Changed
-- **Pre-push e2e gate decoupled from the push connection** (HATS-686)
-  — the maintainer master-push gate ran the ~27-min `pytest -m "(integration
-  or smoke) and not quarantine" tests/e2e/ tests/smoke/` suite *inside* the
-  pre-push hook. That is incompatible with pushing to GitHub over SSH: git
-  holds the connection open across the hook, and GitHub closes it after ~30s,
-  so the hook died with exit 141 before the suite finished (twice in HATS-684);
-  client-side `ServerAliveInterval` (15 and 60) did not help. The hook is now
-  **dual-mode**: `scripts/run-e2e-gate.sh` (or `… --run`) runs the suite *out
-  of band* and, on pass + a clean working tree, writes a pass-marker keyed to
-  HEAD's commit SHA under `<git-common-dir>/ai-hats/e2e-gate/`; the pre-push
-  hook itself just checks—instantly—that a green marker exists for the master
-  `local_sha` being pushed, and blocks otherwise. The HATS-550 "no-broken-
-  master, no-bypass" contract is preserved (a forged marker is the moral
-  equivalent of `git push --no-verify`). New maintainer flow:
-  `scripts/run-e2e-gate.sh` then `git push origin master`.
-
-### Fixed
-- **e2e install tests are now hermetic against an inherited `PYTHONPATH`** (HATS-685)
-  — `tests/e2e/` builds subprocess envs with `os.environ.copy()`. `src/ai_hats/`
-  has no `library/` subdir (it maps to the `ai_hats.library` package only at
-  build time), so an inherited `PYTHONPATH=<repo>/src` — the worktree test
-  workaround, and exactly what `ai-hats wt exec` sets — leaked into the
-  launcher's `self init` subprocess, redirecting its `ai_hats` import to the
-  source tree where `files("ai_hats.library")` raises `ModuleNotFoundError` →
-  built-in roles vanished → "Role 'assistant' not found". `test_e2e_fresh_init_heals`
-  was false-RED from any worktree (the standard agent execute context) and ~15
-  other real-install e2e tests were latently exposed. An autouse fixture in
-  `tests/e2e/conftest.py` now strips a shared denylist (`PYTHONPATH` +
-  `PYTHONHOME`/`PYTHONSTARTUP`/`VIRTUAL_ENV`/`AI_HATS_DIR`/`AI_HATS_USER_HOME`)
-  from `os.environ` for every e2e test, so subprocess envs exercise the real
-  installed package. Deliberate `PYTHONPATH=src` tests re-set it explicitly and
-  are unaffected.
-- **SDK sub-agent transcript folded into audit when JSONL is absent** (HATS-682)
-  — `AuditWriter.build()` parses structured turns from claude's JSONL (or the
-  trace-log fallback). SDK sub-agents run with `isolation=discard` leave a
-  non-empty `transcript.txt` (the LLM's final stdout) but no reachable JSONL
-  (tmp-worktree project_key mismatch) and no `trace.log`, so `build()` parsed
-  zero turns and emitted a `turns:0` stub — the real work (e.g. a full
-  hypothesis-intake draft) was silently dropped from `audit.md`. Re-measured
-  over 158 live sessions: ~15 of the 31 tiny (<2 KB) audits were this case, not
-  empty sessions. `build()` now folds `transcript.txt` into the audit body
-  (`## Transcript` section) **only when no structured turns were parsed** — so it
-  never duplicates content already rendered as turns. `metrics.json` counters
-  stay honest (no synthesized turns); `reasoning.log` is excluded (noisy/large);
-  oversize is still bounded downstream by `SessionReviewRunner._truncate_audit`
-  (HATS-684). Verified on `session_20260531-193008-1`: 561 B stub → 2.6 KB with
-  the recovered draft.
-- **Content-aware reviewer audit delivery** (HATS-684, supersedes the HATS-424
-  squeeze) — `SessionReviewRunner._truncate_audit` was a blunt 8 KB head+tail
-  middle-drop that cut the real evidence (🔧 tool-calls / 👾 responses) reviewers
-  cite, while keeping the redundant first-turn ingested-evidence echo. Generation
-  is now lossless (HATS-681/666/683), so size is managed at delivery: the
-  first-turn 👤 ingested block (`# PROJECT_STATE` backlog dump / `# Reflect-all`
-  handoff — 64% of corpus bytes, redundant since the reviewer already has the
-  target's real content) is head-keep-bounded to 2 KB, and **all signal is kept
-  verbatim** — no tight budget (capping signal was itself the cause of "cannot
-  cite evidence" → `n/a` verdicts). A 250 KB safety-valve (head/tail trim,
-  HATS-424 tail invariant preserved) is the only hard ceiling and never fires on
-  the live corpus. Re-measured over 155 audits: median 40.6 KB → 11.5 KB;
-  session-reviewer −85%, judge −77%; interactive (maintainer/role-curator) signal
-  preserved in full (−0%, zero signal-loss).
-- **Judge reports no longer persist the literal `payload` stub** (HATS-671) —
-  reports under `sessions/retros/judge/` were occasionally written as a 7-byte
-  `payload` literal instead of the report body. Root cause was test pollution,
-  not the production `reflect all` pipeline: `test_save_artifact_expands_ai_hats_dir_placeholder`
-  escaped its `tmp_path` and wrote into the real (gitignored) `sessions/` dir via
-  two vectors — an ambient `AI_HATS_DIR` (env precedence over `project_dir`) and
-  a CWD-relative `<ai_hats_dir>` expansion. Fixed by an autouse
-  `_isolate_ai_hats_dir` fixture that clears ambient `AI_HATS_DIR` for every
-  test, and by anchoring a relative `<ai_hats_dir>` expansion to `project_dir`
-  in `SaveArtifact` so the write is CWD-independent (out-of-tree absolute
-  `AI_HATS_DIR` is untouched; production was already correct).
+## [0.8.0] - 2026-06-07
 
 ### Added
 - **`compute_usage` step + `usage.json` per-session context-cost report**
@@ -138,69 +66,6 @@ since the latest tag lives under **Unreleased** until the next release.
   draft is expected Phase-1 scratch and the mandatory first post-approval action is
   to transfer it into the tracker `plan.md`; when plan mode isn't forced, plan
   directly in the tracker.
-
-### Removed
-- **The `.claude/plans → plan-sync` plan detour is gone** (HATS-637). A plan is
-  always a task and always lives at the one canonical path
-  `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md`. `transition <ID> plan` no
-  longer imports `.claude/plans/<NN>-*.md` (a stray file there is now inert),
-  and the `ai-hats task plan-sync` command is removed together with its engine
-  internals (`_sync_plan_from_claude_plans`, `find_claude_plan_for_task`,
-  `PlanSyncAmbiguousError`). Write plan content straight into the scaffold; the
-  per-section gate (HATS-635) still blocks `transition execute` on an empty
-  plan. Migration: replace `task plan-sync <id> --from-file <f>` with a direct
-  Write/Edit of the tracker `plan.md`.
-
-### Changed
-- **`backlog-manager` skill split into a lean index + `references/`** (HATS-578,
-  child of HATS-499). The 512-line SKILL.md — the longest in the library, bundled
-  by `trait-agent` (reach 14 roles) — now violates nothing: a 133-line
-  orchestrator/index (overview, core task CLI, FSM diagram, state→skill routing)
-  with per-domain detail moved **verbatim** one level deep into `references/`
-  (`lifecycle.md`, `hypotheses.md`, `proposals.md`, `attachments.md`,
-  `relationships.md`), per the HATS-557 `>150` split policy. No behavior change:
-  content relocated, the `description` frontmatter untouched. Motivation is
-  policy-compliance + maintainability, **not** context savings — session-data
-  analysis showed the skill *body* loads ~once per 10 sessions (backlog discipline
-  rides the always-on `trait-agent` injection + `rule_backlog_discipline`, not the
-  body). The real always-on lever — `trait-agent`'s standing footprint — is spun
-  off to HATS-662.
-- **38 skill `## When to Use` sections rewritten to boundary/disambiguation**
-  (HATS-573, child of HATS-499) — applies the HATS-572 convention (the section
-  loads *after* skill selection, so it must add what the one-line `description`
-  can't) across the full restatement-only backlog the HATS-572 soft audit
-  surfaced. Each section now names a concrete sibling to prefer or a concrete
-  excluded case instead of re-listing the description's triggers — e.g.
-  `audit-reviewer`↔`domain-reviewer`↔`review-role`,
-  `incident-response`↔`systematic-debugging`, `backup-recovery` (data)↔
-  `rollback-plan` (change), `ansible-ops` (config)↔`terraform-expert`
-  (provisioning), `observability-setup`↔`reliability-checklist`. `gworkspace-cli`
-  gained a section it previously lacked. Bodies-only — `description` frontmatter
-  (owned by HATS-571) and `golang-*` left untouched; composition errors=0.
-  Confirming evidence for HYP-038.
-- **Skill-authoring discipline hardened from obra/superpowers (MIT)** (HATS-659,
-  child of HATS-499). Three mechanics harvested into existing components — no new
-  skill. `skill-template` + `skill-engineer` review checklist gain a **CSO
-  anti-summary** rule (a `description` carries triggers + one capability phrase
-  and never summarizes the procedure body — a body-summary is a shortcut the
-  selector acts on *instead of* loading the skill) and a **validation-scenario**
-  done-criterion (a skill is not done without one named RED baseline an agent
-  fails without it; prose-level RED→GREEN→REFACTOR, no eval harness).
-  `scope-guard` + `devils-advocate` gain a structural **rationalization red-flag
-  table** (catch the talked-into-it thought before the action). Two-stage
-  spec→quality review evaluated and skipped (no gain over `audit-reviewer`).
-- **The init wizard now lists the live role catalog** instead of a
-  hand-maintained list that drifted (HATS-625). The `initial-wizard`
-  injection carries a new `<available_roles>` placeholder, expanded at
-  prompt-build time (`build_session_prompt`, next to the HATS-380
-  `<ai_hats_dir>` expansion) with the user-facing roles the resolver
-  actually sees — so new roles (e.g. `dev-web`, `role-curator`) and
-  project-local roles appear automatically, while engine-internal
-  (`core`-layer) roles are filtered out. Layer is derived from the
-  resolved role path; the per-role summary from its injection H1. The
-  shared renderer is `ai_hats.role_catalog.render_role_catalog`.
-
-### Added
 - **`ai-hats task hyp create --verification-protocol TEXT`** (HATS-623).
   `library-change-hypothesis-protocol` mandates a `verification_protocol`
   field on companion HYPs, but `hyp create` exposed no flag and
@@ -274,8 +139,291 @@ since the latest tag lives under **Unreleased** until the next release.
     pre-HATS-549 auto-heal and relocates it to `user-hooks/` —
     next bump heals stuck states inherited from prior versions
     transparently.
+- **Install diagnostics in `ai-hats config status` Health section**
+  (HATS-497). `config status` now prints install-level fields
+  alongside the existing project-side health checks: `Version`,
+  `Interpreter` (Python executable + version), `Venv`, `Source`
+  (editable / pinned / git, with ref and short SHA where applicable),
+  `Library` path, `Resolved via` (heuristic over `AI_HATS_VENV` env >
+  `ai-hats.yaml` `venv_path` > default), and `Repo HEAD` (editable
+  installs only — short SHA + branch + clean/dirty). Pip-managed
+  `direct_url.json` (PEP 610) is the source of truth for `Source`;
+  HATS-496's `--revision` writes the ref that lights up the "pinned @"
+  display. Refactor: the Health block now prints regardless of whether
+  a role is active — install info is useful before init too (e.g.
+  troubleshooting "what version am I on, where does it live" on a
+  fresh checkout).
+- **Docs: dev-vs-runtime venv discipline in CONTRIBUTING.md**
+  (HATS-494). New `### Stable runtime vs editable dev install`
+  subsection under `## Development setup` codifies the
+  two-venv pattern (`AI_HATS_VENV` env override + `ai-hats self update
+  --revision <REF>` to pin the stable venv to a known-good tag), with
+  caveats about editable installs (frozen `pyproject.toml`, hardcoded
+  repo path in the meta-path finder, generated `_version.py`,
+  `direct_url.json` editable protection). Solves the dogfooding paradox
+  where the harness driving a Claude Code session and the install
+  under test are the same editable `.venv`.
+- **`ai-hats self update --revision <REF>`** for pinned installs
+  (HATS-496). Accepts a tag, branch, or commit SHA and installs ai-hats
+  at exactly that ref instead of remote master. Unblocks reproducible
+  QA, bisect, and "test against last known-good release" workflows
+  without manual `pip install --force-reinstall git+...@<ref>`
+  incantations. Bypasses the HATS-441 ahead/diverged downgrade guard
+  with an explicit yellow WARN (the user asked for an arbitrary ref, so
+  the guard would only obstruct). On an editable target venv — i.e. the
+  `pip install -e .` dev loop inside the ai-hats repo itself — refuses
+  unless `--force` is passed, with a message that points at the
+  `AI_HATS_VENV` env override as the non-destructive alternative.
+  Pre-flight `git ls-remote` validates the ref before any pip call so
+  typos fail fast (~1s) instead of after a 30s pip clone. Pip-managed
+  `direct_url.json` (PEP 610) records the literal ref and resolved SHA
+  for later introspection — no custom marker files. New flags:
+  `--revision REF`, `--force`.
+- **e2e framework Wave 1 — `tmp_project` + `tmp_venv_project` fixtures**
+  (HATS-478). Two reusable pytest fixtures plus a `tests/e2e/README.md`
+  unlock 51 of the 69 Core e2e scenarios (32 free-tier CLI + 19
+  venv-tier launcher) — contributors writing a new e2e test now pick a
+  tier and write ≤10 LOC of body, instead of plumbing ad-hoc setup per
+  PR. `tmp_project` is function-scoped, role-less, $0; `tmp_venv_project`
+  is module-scoped and amortises the ~30-60s launcher install. New
+  helper `tests/e2e/_helpers/venv.py` exposes `build_launcher_venv()`
+  for callers that want raw access.
+- **`safe_delete.replace(mode=...)` kwarg** (HATS-467) — optional
+  octal permission bits applied to the temp file BEFORE the atomic
+  rename, so executables (e.g. PreToolUse hooks) appear at the
+  destination already with the right bits — no window where the file
+  exists with default umask perms. Backward-compatible (`mode=None`
+  keeps current behaviour). Bytes-identical no-op explicitly does NOT
+  enforce the mode (skip path doesn't call `_write_atomic`).
+- **Safe-delete trash bin** for all destructive ops under `src/ai_hats/`.
+  New module `ai_hats.safe_delete` with `discard()` / `replace()`
+  module-level API: instead of `path.unlink()` / `shutil.rmtree()` /
+  in-place `path.write_text(new)`, victims are moved (or snapshotted,
+  for overwrites) to `$TMPDIR/ai-hats/trash-<utc-ts>-<pid>/<relpath>/`
+  before the original is touched. Recovery is `cp -r <session>/<rel>
+  <project>/<rel>`. Each session writes a `MANIFEST.md` listing every
+  op with timestamp + reason + original→trash mapping (HATS-470).
+- **`AI_HATS_TRASH_DIR`** env var to override the trash base directory.
+  Special sentinel `AI_HATS_TRASH_DIR=-` enables hard-delete mode (no
+  snapshots, WARN to stderr per op) — intended for CI / ephemeral
+  environments where snapshot value is zero. ENOSPC / read-only
+  filesystem on snapshot raises `TrashFullError` and aborts the
+  destructive operation rather than silently losing data (HATS-470).
+- **Pre-commit hook** (`git-mastery` skill,
+  `pre-commit-no-raw-destructive.sh`) forbidding raw `unlink` /
+  `rmtree` / `rmdir` under `src/ai_hats/` outside `safe_delete.py`.
+  Inline `# safe-delete: ok <reason>` markers on the offending line
+  act as reviewer-visible bypasses for ephemeral / framework-state
+  cases (git worktree state, session cache, empty-dir cleanup). No-op
+  on projects without `src/ai_hats/`. Override:
+  `AI_HATS_NO_RAW_DESTRUCTIVE_SKIP=1 git commit ...` (HATS-470).
+
+### Changed
+- **Pre-push e2e gate decoupled from the push connection** (HATS-686)
+  — the maintainer master-push gate ran the ~27-min `pytest -m "(integration
+  or smoke) and not quarantine" tests/e2e/ tests/smoke/` suite *inside* the
+  pre-push hook. That is incompatible with pushing to GitHub over SSH: git
+  holds the connection open across the hook, and GitHub closes it after ~30s,
+  so the hook died with exit 141 before the suite finished (twice in HATS-684);
+  client-side `ServerAliveInterval` (15 and 60) did not help. The hook is now
+  **dual-mode**: `scripts/run-e2e-gate.sh` (or `… --run`) runs the suite *out
+  of band* and, on pass + a clean working tree, writes a pass-marker keyed to
+  HEAD's commit SHA under `<git-common-dir>/ai-hats/e2e-gate/`; the pre-push
+  hook itself just checks—instantly—that a green marker exists for the master
+  `local_sha` being pushed, and blocks otherwise. The HATS-550 "no-broken-
+  master, no-bypass" contract is preserved (a forged marker is the moral
+  equivalent of `git push --no-verify`). New maintainer flow:
+  `scripts/run-e2e-gate.sh` then `git push origin master`.
+- **`backlog-manager` skill split into a lean index + `references/`** (HATS-578,
+  child of HATS-499). The 512-line SKILL.md — the longest in the library, bundled
+  by `trait-agent` (reach 14 roles) — now violates nothing: a 133-line
+  orchestrator/index (overview, core task CLI, FSM diagram, state→skill routing)
+  with per-domain detail moved **verbatim** one level deep into `references/`
+  (`lifecycle.md`, `hypotheses.md`, `proposals.md`, `attachments.md`,
+  `relationships.md`), per the HATS-557 `>150` split policy. No behavior change:
+  content relocated, the `description` frontmatter untouched. Motivation is
+  policy-compliance + maintainability, **not** context savings — session-data
+  analysis showed the skill *body* loads ~once per 10 sessions (backlog discipline
+  rides the always-on `trait-agent` injection + `rule_backlog_discipline`, not the
+  body). The real always-on lever — `trait-agent`'s standing footprint — is spun
+  off to HATS-662.
+- **38 skill `## When to Use` sections rewritten to boundary/disambiguation**
+  (HATS-573, child of HATS-499) — applies the HATS-572 convention (the section
+  loads *after* skill selection, so it must add what the one-line `description`
+  can't) across the full restatement-only backlog the HATS-572 soft audit
+  surfaced. Each section now names a concrete sibling to prefer or a concrete
+  excluded case instead of re-listing the description's triggers — e.g.
+  `audit-reviewer`↔`domain-reviewer`↔`review-role`,
+  `incident-response`↔`systematic-debugging`, `backup-recovery` (data)↔
+  `rollback-plan` (change), `ansible-ops` (config)↔`terraform-expert`
+  (provisioning), `observability-setup`↔`reliability-checklist`. `gworkspace-cli`
+  gained a section it previously lacked. Bodies-only — `description` frontmatter
+  (owned by HATS-571) and `golang-*` left untouched; composition errors=0.
+  Confirming evidence for HYP-038.
+- **Skill-authoring discipline hardened from obra/superpowers (MIT)** (HATS-659,
+  child of HATS-499). Three mechanics harvested into existing components — no new
+  skill. `skill-template` + `skill-engineer` review checklist gain a **CSO
+  anti-summary** rule (a `description` carries triggers + one capability phrase
+  and never summarizes the procedure body — a body-summary is a shortcut the
+  selector acts on *instead of* loading the skill) and a **validation-scenario**
+  done-criterion (a skill is not done without one named RED baseline an agent
+  fails without it; prose-level RED→GREEN→REFACTOR, no eval harness).
+  `scope-guard` + `devils-advocate` gain a structural **rationalization red-flag
+  table** (catch the talked-into-it thought before the action). Two-stage
+  spec→quality review evaluated and skipped (no gain over `audit-reviewer`).
+- **The init wizard now lists the live role catalog** instead of a
+  hand-maintained list that drifted (HATS-625). The `initial-wizard`
+  injection carries a new `<available_roles>` placeholder, expanded at
+  prompt-build time (`build_session_prompt`, next to the HATS-380
+  `<ai_hats_dir>` expansion) with the user-facing roles the resolver
+  actually sees — so new roles (e.g. `dev-web`, `role-curator`) and
+  project-local roles appear automatically, while engine-internal
+  (`core`-layer) roles are filtered out. Layer is derived from the
+  resolved role path; the per-role summary from its injection H1. The
+  shared renderer is `ai_hats.role_catalog.render_role_catalog`.
+- **Pipeline subsystem: `launch_provider` megastep split** (HATS-535).
+  The single `launch_provider` step that pre-HATS-535 owned spawn + audit
+  derivation + SESSION_END hooks + auto-retro was structurally honest in
+  YAML only down to "one step does everything" — masking the asymmetry
+  where SubAgent's `audit.md` was meta-only despite claude SDK persisting
+  the same JSONL HITL used. Refactor:
+  - Step renamed `launch_provider` → `provider` (id and class).
+    `LaunchProvider` is retained as a deprecated class alias so external
+    YAMLs referencing `id: launch_provider` keep loading.
+  - New `make_audit` step (`src/ai_hats/pipeline/steps/make_audit.py`) —
+    sole `AuditWriter` invocation surface; reads claude JSONL via
+    `_claude_jsonl_path` + `_discover_claude_jsonl` mtime fallback.
+  - New `run_session_end` step (`src/ai_hats/pipeline/steps/run_session_end.py`)
+    — retro decision + `write_retro_log` + `_spawn_session_reviewer_background`
+    + SESSION_END hooks + cyan retro reminder banner.
+  - Two new sub-pipelines `library/core/pipelines/finalize-hitl.yaml`
+    (`make_audit + run_session_end`) and `finalize-subagent.yaml`
+    (`make_audit` only). Invoked by `WrapRunner.run` /
+    `_finalize_sub_agent` from their `finally` blocks via
+    `pipeline.run(..., initial={...})` — `claude_session_id` and
+    `hooks_env` flow as initial state, NOT through the main pipeline
+    funnel.
+  - `runtime._finalize_session` shrunk to `_finalize_session_basic`
+    (per-runner cleanup only: metrics.json + trace stats + smoke).
+    `_print_session_end` stays in `WrapRunner.run`'s outer `finally`
+    so the session-id is SIGINT-safe (HATS-086 preserved); the inline
+    retro reminder banner moved to `RunSessionEnd._print_retro_banner`.
+  - **SubAgent gains structured `audit.md`** — single-turn `_run_attempt`
+    callers and multi-turn `_finalize_session_audit` thread `work_dir`
+    through to `_finalize_sub_agent`, which invokes `finalize-subagent`
+    when both `work_dir` and `claude_session_id` are known. Pre-HATS-535
+    SubAgent `audit.md` was meta-only; post-HATS-535 it carries
+    `👤`/`👾`/🔧/💭 markers like HITL. Mirror of HATS-523 (which brought
+    `meta_prompt.txt` to HITL parity with SubAgent).
+  - YAML pipeline `human` and `execute` updated to `id: provider`.
+    Compatibility: `id: launch_provider` still resolves (via alias),
+    but `step.io.name` returns `"provider"` regardless of which id was
+    used in the YAML.
+- **Unified `Assembler._refresh()` entry-point** (HATS-469). The
+  historical `init` / `set_role` / `bump` triple-dispatch is gone:
+  a single `_refresh(*, install_time, result)` method now drives
+  registry replay (`install_time=True` only — init and `do_bump`),
+  scaffold + canonical aggregator heal, provider runtime hooks
+  (`.claude/settings.json` + `_materialize_pretooluse_hooks`,
+  always-fire so first-session bootstrap on Claude works), and
+  role-specific git hooks. State-condition diagnostics
+  (orphan-skill warning, empty `.agent/` note) split into
+  `_run_diagnostics()` which fires ONLY on user-initiated paths
+  (`do_bump`, init re-init, `self update`) — runtime `set_role`
+  stays silent (no per-session orphan-warning spam). Internal
+  refactor: `Assembler.bump()` was removed; the `do_bump` CLI
+  composes `_run_v07_migration` + `compose_for_role` + `_refresh`
+  + `_run_diagnostics` inline. `cli/assembly.py`'s post-init
+  auto-bump block was removed (init itself is the refresh path).
+  Behaviour change on re-init: existing projects with
+  `migration_step=0` (pre-HATS-471 shape) now replay the registry
+  on `ai-hats self init` — same effect as the old `self bump`
+  auto-trigger but via init directly.
+- `self update`'s auto-bump now runs via `python -m
+  ai_hats._bump_internal` (new hidden module entry-point) instead of
+  `ai-hats self bump`. Behaviour is identical — same flags
+  (`--migrate-force` / `--check-branches`), same fresh-interpreter
+  semantics required by HATS-400 — but the entry-point is private and
+  not surfaced in `--help` / `--tree` (HATS-470).
+
+### Removed
+- **The `.claude/plans → plan-sync` plan detour is gone** (HATS-637). A plan is
+  always a task and always lives at the one canonical path
+  `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md`. `transition <ID> plan` no
+  longer imports `.claude/plans/<NN>-*.md` (a stray file there is now inert),
+  and the `ai-hats task plan-sync` command is removed together with its engine
+  internals (`_sync_plan_from_claude_plans`, `find_claude_plan_for_task`,
+  `PlanSyncAmbiguousError`). Write plan content straight into the scaffold; the
+  per-section gate (HATS-635) still blocks `transition execute` on an empty
+  plan. Migration: replace `task plan-sync <id> --from-file <f>` with a direct
+  Write/Edit of the tracker `plan.md` — see
+  [`docs/migration-v0.8.0.md`](docs/migration-v0.8.0.md).
+- **`ai-hats self bump` CLI command.** Bump functionality is preserved
+  and now runs only via the auto-bump path inside `ai-hats self
+  update` (fresh subprocess, HATS-400) and inline from `ai-hats self
+  init`. Direct user invocation of bump is rare in practice and the
+  new internal entry-point makes the "framework-internal" status
+  honest. The hidden `python -m ai_hats._bump_internal` remains for
+  the subprocess case (HATS-470). Migration: use `ai-hats self update`
+  (or `self init`) — see
+  [`docs/migration-v0.8.0.md`](docs/migration-v0.8.0.md).
 
 ### Fixed
+- **e2e install tests are now hermetic against an inherited `PYTHONPATH`** (HATS-685)
+  — `tests/e2e/` builds subprocess envs with `os.environ.copy()`. `src/ai_hats/`
+  has no `library/` subdir (it maps to the `ai_hats.library` package only at
+  build time), so an inherited `PYTHONPATH=<repo>/src` — the worktree test
+  workaround, and exactly what `ai-hats wt exec` sets — leaked into the
+  launcher's `self init` subprocess, redirecting its `ai_hats` import to the
+  source tree where `files("ai_hats.library")` raises `ModuleNotFoundError` →
+  built-in roles vanished → "Role 'assistant' not found". `test_e2e_fresh_init_heals`
+  was false-RED from any worktree (the standard agent execute context) and ~15
+  other real-install e2e tests were latently exposed. An autouse fixture in
+  `tests/e2e/conftest.py` now strips a shared denylist (`PYTHONPATH` +
+  `PYTHONHOME`/`PYTHONSTARTUP`/`VIRTUAL_ENV`/`AI_HATS_DIR`/`AI_HATS_USER_HOME`)
+  from `os.environ` for every e2e test, so subprocess envs exercise the real
+  installed package. Deliberate `PYTHONPATH=src` tests re-set it explicitly and
+  are unaffected.
+- **SDK sub-agent transcript folded into audit when JSONL is absent** (HATS-682)
+  — `AuditWriter.build()` parses structured turns from claude's JSONL (or the
+  trace-log fallback). SDK sub-agents run with `isolation=discard` leave a
+  non-empty `transcript.txt` (the LLM's final stdout) but no reachable JSONL
+  (tmp-worktree project_key mismatch) and no `trace.log`, so `build()` parsed
+  zero turns and emitted a `turns:0` stub — the real work (e.g. a full
+  hypothesis-intake draft) was silently dropped from `audit.md`. Re-measured
+  over 158 live sessions: ~15 of the 31 tiny (<2 KB) audits were this case, not
+  empty sessions. `build()` now folds `transcript.txt` into the audit body
+  (`## Transcript` section) **only when no structured turns were parsed** — so it
+  never duplicates content already rendered as turns. `metrics.json` counters
+  stay honest (no synthesized turns); `reasoning.log` is excluded (noisy/large);
+  oversize is still bounded downstream by `SessionReviewRunner._truncate_audit`
+  (HATS-684). Verified on `session_20260531-193008-1`: 561 B stub → 2.6 KB with
+  the recovered draft.
+- **Content-aware reviewer audit delivery** (HATS-684, supersedes the HATS-424
+  squeeze) — `SessionReviewRunner._truncate_audit` was a blunt 8 KB head+tail
+  middle-drop that cut the real evidence (🔧 tool-calls / 👾 responses) reviewers
+  cite, while keeping the redundant first-turn ingested-evidence echo. Generation
+  is now lossless (HATS-681/666/683), so size is managed at delivery: the
+  first-turn 👤 ingested block (`# PROJECT_STATE` backlog dump / `# Reflect-all`
+  handoff — 64% of corpus bytes, redundant since the reviewer already has the
+  target's real content) is head-keep-bounded to 2 KB, and **all signal is kept
+  verbatim** — no tight budget (capping signal was itself the cause of "cannot
+  cite evidence" → `n/a` verdicts). A 250 KB safety-valve (head/tail trim,
+  HATS-424 tail invariant preserved) is the only hard ceiling and never fires on
+  the live corpus. Re-measured over 155 audits: median 40.6 KB → 11.5 KB;
+  session-reviewer −85%, judge −77%; interactive (maintainer/role-curator) signal
+  preserved in full (−0%, zero signal-loss).
+- **Judge reports no longer persist the literal `payload` stub** (HATS-671) —
+  reports under `sessions/retros/judge/` were occasionally written as a 7-byte
+  `payload` literal instead of the report body. Root cause was test pollution,
+  not the production `reflect all` pipeline: `test_save_artifact_expands_ai_hats_dir_placeholder`
+  escaped its `tmp_path` and wrote into the real (gitignored) `sessions/` dir via
+  two vectors — an ambient `AI_HATS_DIR` (env precedence over `project_dir`) and
+  a CWD-relative `<ai_hats_dir>` expansion. Fixed by an autouse
+  `_isolate_ai_hats_dir` fixture that clears ambient `AI_HATS_DIR` for every
+  test, and by anchoring a relative `<ai_hats_dir>` expansion to `project_dir`
+  in `SaveArtifact` so the write is CWD-independent (out-of-tree absolute
+  `AI_HATS_DIR` is untouched; production was already correct).
 - **`self update` rebuilds a python-broken versioned venv instead of skipping it**
   (HATS-657). After a host python upgrade a `versions/<sha>/` venv is left
   *complete* (`.complete` sentinel + `bin/ai-hats`) yet *unrunnable* — its
@@ -470,48 +618,6 @@ since the latest tag lives under **Unreleased** until the next release.
   non-zero exit via a new flag — pre-fix this path swallowed
   `AssemblyError` and reported failure on stdout but exited 0,
   silently violating the safety contract.
-
-### Changed
-- **Pipeline subsystem: `launch_provider` megastep split** (HATS-535).
-  The single `launch_provider` step that pre-HATS-535 owned spawn + audit
-  derivation + SESSION_END hooks + auto-retro was structurally honest in
-  YAML only down to "one step does everything" — masking the asymmetry
-  where SubAgent's `audit.md` was meta-only despite claude SDK persisting
-  the same JSONL HITL used. Refactor:
-  - Step renamed `launch_provider` → `provider` (id and class).
-    `LaunchProvider` is retained as a deprecated class alias so external
-    YAMLs referencing `id: launch_provider` keep loading.
-  - New `make_audit` step (`src/ai_hats/pipeline/steps/make_audit.py`) —
-    sole `AuditWriter` invocation surface; reads claude JSONL via
-    `_claude_jsonl_path` + `_discover_claude_jsonl` mtime fallback.
-  - New `run_session_end` step (`src/ai_hats/pipeline/steps/run_session_end.py`)
-    — retro decision + `write_retro_log` + `_spawn_session_reviewer_background`
-    + SESSION_END hooks + cyan retro reminder banner.
-  - Two new sub-pipelines `library/core/pipelines/finalize-hitl.yaml`
-    (`make_audit + run_session_end`) and `finalize-subagent.yaml`
-    (`make_audit` only). Invoked by `WrapRunner.run` /
-    `_finalize_sub_agent` from their `finally` blocks via
-    `pipeline.run(..., initial={...})` — `claude_session_id` and
-    `hooks_env` flow as initial state, NOT through the main pipeline
-    funnel.
-  - `runtime._finalize_session` shrunk to `_finalize_session_basic`
-    (per-runner cleanup only: metrics.json + trace stats + smoke).
-    `_print_session_end` stays in `WrapRunner.run`'s outer `finally`
-    so the session-id is SIGINT-safe (HATS-086 preserved); the inline
-    retro reminder banner moved to `RunSessionEnd._print_retro_banner`.
-  - **SubAgent gains structured `audit.md`** — single-turn `_run_attempt`
-    callers and multi-turn `_finalize_session_audit` thread `work_dir`
-    through to `_finalize_sub_agent`, which invokes `finalize-subagent`
-    when both `work_dir` and `claude_session_id` are known. Pre-HATS-535
-    SubAgent `audit.md` was meta-only; post-HATS-535 it carries
-    `👤`/`👾`/🔧/💭 markers like HITL. Mirror of HATS-523 (which brought
-    `meta_prompt.txt` to HITL parity with SubAgent).
-  - YAML pipeline `human` and `execute` updated to `id: provider`.
-    Compatibility: `id: launch_provider` still resolves (via alias),
-    but `step.io.name` returns `"provider"` regardless of which id was
-    used in the YAML.
-
-### Fixed
 - **`ai-hats wt merge` / `ai-hats task transition <ID> done` refuse
   when main-repo HEAD has wandered off the worktree's merge target**
   (HATS-533). `WorktreeManager._fast_forward_merge` and `_squash_merge`
@@ -558,81 +664,6 @@ since the latest tag lives under **Unreleased** until the next release.
   before any `git worktree add` runs. Recovery: `git checkout <base>`
   in the main repo, then re-run. No-op on detached HEAD, non-git dirs,
   and exotic repos that have neither `master` nor `main`.
-
-### Added
-- **Install diagnostics in `ai-hats config status` Health section**
-  (HATS-497). `config status` now prints install-level fields
-  alongside the existing project-side health checks: `Version`,
-  `Interpreter` (Python executable + version), `Venv`, `Source`
-  (editable / pinned / git, with ref and short SHA where applicable),
-  `Library` path, `Resolved via` (heuristic over `AI_HATS_VENV` env >
-  `ai-hats.yaml` `venv_path` > default), and `Repo HEAD` (editable
-  installs only — short SHA + branch + clean/dirty). Pip-managed
-  `direct_url.json` (PEP 610) is the source of truth for `Source`;
-  HATS-496's `--revision` writes the ref that lights up the "pinned @"
-  display. Refactor: the Health block now prints regardless of whether
-  a role is active — install info is useful before init too (e.g.
-  troubleshooting "what version am I on, where does it live" on a
-  fresh checkout).
-- **Docs: dev-vs-runtime venv discipline in CONTRIBUTING.md**
-  (HATS-494). New `### Stable runtime vs editable dev install`
-  subsection under `## Development setup` codifies the
-  two-venv pattern (`AI_HATS_VENV` env override + `ai-hats self update
-  --revision <REF>` to pin the stable venv to a known-good tag), with
-  caveats about editable installs (frozen `pyproject.toml`, hardcoded
-  repo path in the meta-path finder, generated `_version.py`,
-  `direct_url.json` editable protection). Solves the dogfooding paradox
-  where the harness driving a Claude Code session and the install
-  under test are the same editable `.venv`.
-- **`ai-hats self update --revision <REF>`** for pinned installs
-  (HATS-496). Accepts a tag, branch, or commit SHA and installs ai-hats
-  at exactly that ref instead of remote master. Unblocks reproducible
-  QA, bisect, and "test against last known-good release" workflows
-  without manual `pip install --force-reinstall git+...@<ref>`
-  incantations. Bypasses the HATS-441 ahead/diverged downgrade guard
-  with an explicit yellow WARN (the user asked for an arbitrary ref, so
-  the guard would only obstruct). On an editable target venv — i.e. the
-  `pip install -e .` dev loop inside the ai-hats repo itself — refuses
-  unless `--force` is passed, with a message that points at the
-  `AI_HATS_VENV` env override as the non-destructive alternative.
-  Pre-flight `git ls-remote` validates the ref before any pip call so
-  typos fail fast (~1s) instead of after a 30s pip clone. Pip-managed
-  `direct_url.json` (PEP 610) records the literal ref and resolved SHA
-  for later introspection — no custom marker files. New flags:
-  `--revision REF`, `--force`.
-- **e2e framework Wave 1 — `tmp_project` + `tmp_venv_project` fixtures**
-  (HATS-478). Two reusable pytest fixtures plus a `tests/e2e/README.md`
-  unlock 51 of the 69 Core e2e scenarios (32 free-tier CLI + 19
-  venv-tier launcher) — contributors writing a new e2e test now pick a
-  tier and write ≤10 LOC of body, instead of plumbing ad-hoc setup per
-  PR. `tmp_project` is function-scoped, role-less, $0; `tmp_venv_project`
-  is module-scoped and amortises the ~30-60s launcher install. New
-  helper `tests/e2e/_helpers/venv.py` exposes `build_launcher_venv()`
-  for callers that want raw access.
-
-### Changed
-- **Unified `Assembler._refresh()` entry-point** (HATS-469). The
-  historical `init` / `set_role` / `bump` triple-dispatch is gone:
-  a single `_refresh(*, install_time, result)` method now drives
-  registry replay (`install_time=True` only — init and `do_bump`),
-  scaffold + canonical aggregator heal, provider runtime hooks
-  (`.claude/settings.json` + `_materialize_pretooluse_hooks`,
-  always-fire so first-session bootstrap on Claude works), and
-  role-specific git hooks. State-condition diagnostics
-  (orphan-skill warning, empty `.agent/` note) split into
-  `_run_diagnostics()` which fires ONLY on user-initiated paths
-  (`do_bump`, init re-init, `self update`) — runtime `set_role`
-  stays silent (no per-session orphan-warning spam). Internal
-  refactor: `Assembler.bump()` was removed; the `do_bump` CLI
-  composes `_run_v07_migration` + `compose_for_role` + `_refresh`
-  + `_run_diagnostics` inline. `cli/assembly.py`'s post-init
-  auto-bump block was removed (init itself is the refresh path).
-  Behaviour change on re-init: existing projects with
-  `migration_step=0` (pre-HATS-471 shape) now replay the registry
-  on `ai-hats self init` — same effect as the old `self bump`
-  auto-trigger but via init directly.
-
-### Fixed
 - **`task transition <ID> execute` no longer fails when the target
   branch already exists** (HATS-517). Three-way classifier inside
   `WorktreeManager.create()` under the HATS-479 create-lock:
@@ -662,56 +693,6 @@ since the latest tag lives under **Unreleased** until the next release.
   alongside the existing settings.json wiring. Idempotent
   (bytes-compare), stale files swept via `safe_delete.discard()`,
   manifest at `<target>/.manifest` tracks managed names.
-
-### Added
-- **`safe_delete.replace(mode=...)` kwarg** (HATS-467) — optional
-  octal permission bits applied to the temp file BEFORE the atomic
-  rename, so executables (e.g. PreToolUse hooks) appear at the
-  destination already with the right bits — no window where the file
-  exists with default umask perms. Backward-compatible (`mode=None`
-  keeps current behaviour). Bytes-identical no-op explicitly does NOT
-  enforce the mode (skip path doesn't call `_write_atomic`).
-- **Safe-delete trash bin** for all destructive ops under `src/ai_hats/`.
-  New module `ai_hats.safe_delete` with `discard()` / `replace()`
-  module-level API: instead of `path.unlink()` / `shutil.rmtree()` /
-  in-place `path.write_text(new)`, victims are moved (or snapshotted,
-  for overwrites) to `$TMPDIR/ai-hats/trash-<utc-ts>-<pid>/<relpath>/`
-  before the original is touched. Recovery is `cp -r <session>/<rel>
-  <project>/<rel>`. Each session writes a `MANIFEST.md` listing every
-  op with timestamp + reason + original→trash mapping (HATS-470).
-- **`AI_HATS_TRASH_DIR`** env var to override the trash base directory.
-  Special sentinel `AI_HATS_TRASH_DIR=-` enables hard-delete mode (no
-  snapshots, WARN to stderr per op) — intended for CI / ephemeral
-  environments where snapshot value is zero. ENOSPC / read-only
-  filesystem on snapshot raises `TrashFullError` and aborts the
-  destructive operation rather than silently losing data (HATS-470).
-- **Pre-commit hook** (`git-mastery` skill,
-  `pre-commit-no-raw-destructive.sh`) forbidding raw `unlink` /
-  `rmtree` / `rmdir` under `src/ai_hats/` outside `safe_delete.py`.
-  Inline `# safe-delete: ok <reason>` markers on the offending line
-  act as reviewer-visible bypasses for ephemeral / framework-state
-  cases (git worktree state, session cache, empty-dir cleanup). No-op
-  on projects without `src/ai_hats/`. Override:
-  `AI_HATS_NO_RAW_DESTRUCTIVE_SKIP=1 git commit ...` (HATS-470).
-
-### Changed
-- `self update`'s auto-bump now runs via `python -m
-  ai_hats._bump_internal` (new hidden module entry-point) instead of
-  `ai-hats self bump`. Behaviour is identical — same flags
-  (`--migrate-force` / `--check-branches`), same fresh-interpreter
-  semantics required by HATS-400 — but the entry-point is private and
-  not surfaced in `--help` / `--tree` (HATS-470).
-
-### Removed
-- **`ai-hats self bump` CLI command.** Bump functionality is preserved
-  and now runs only via the auto-bump path inside `ai-hats self
-  update` (fresh subprocess, HATS-400) and inline from `ai-hats self
-  init`. Direct user invocation of bump is rare in practice and the
-  new internal entry-point makes the "framework-internal" status
-  honest. The hidden `python -m ai_hats._bump_internal` remains for
-  the subprocess case (HATS-470).
-
-### Fixed
 - `self update` / `self init` bump path warns when an orphan
   `.ai-hats-managed` marker is detected under `~/.claude/skills/`
   (typically left by a manual `cp -r .claude/skills/
@@ -1398,7 +1379,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/muratovv/ai-hats/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/muratovv/ai-hats/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/muratovv/ai-hats/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/muratovv/ai-hats/compare/v0.4.0...v0.5.0
