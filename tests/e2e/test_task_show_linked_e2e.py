@@ -58,3 +58,16 @@ def test_task_show_renders_linked_context(tmp_project):
     assert "RELEASE BODY" not in short.stdout, short.stdout
     # Compact cross-reference index is still present.
     assert "HATS-901" in short.stdout, short.stdout
+
+
+def test_task_show_escapes_markup_in_title(tmp_project):
+    """HATS-693: a card title carrying rich markup renders literally, not eaten.
+
+    Fail-under-revert: before the markup-escape hardening, `task show` printed
+    the title with markup enabled, so `[bold]X[/]` was consumed by rich and the
+    literal tag never appeared in stdout.
+    """
+    proj = tmp_project
+    proj.run("task", "create", "[bold]INJECT[/] title", "--id", "HATS-700").expect_ok()
+    res = proj.run("task", "show", "HATS-700").expect_ok()
+    assert "[bold]INJECT[/]" in res.stdout, res.stdout
