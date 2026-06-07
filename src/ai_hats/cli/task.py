@@ -765,15 +765,20 @@ def task_show(task_id: str, short: bool):
     ``--short`` for the compact id/state/title index only.
     """
 
+    from rich.markup import escape as _escape
+
     project_dir = _project_dir()
     mgr = _task_manager(project_dir)
     t = mgr.get_task(task_id)
     if t is None:
         console.print(f"[red]Task not found[/]: {task_id}")
         sys.exit(1)
+    # markup=False: card field values (title / description / work_log …) are
+    # user-controlled; without it a card titled `[red]X[/]` would be eaten /
+    # recolored as Rich markup. The dump loop carries no intentional markup.
     for k, v in t.to_dict().items():
         if v:
-            console.print(f"  {k}: {v}")
+            console.print(f"  {k}: {v}", markup=False, highlight=False)
     # Resolve depends_on into "Blocked by:" with each blocker's current state.
     # The raw `depends_on: [PROJ-X, PROJ-Y]` line above is opaque on its own —
     # this section answers "is this task actually unblocked yet?".
@@ -785,8 +790,9 @@ def task_show(task_id: str, short: bool):
                 console.print(f"    {dep_id} [red](missing)[/]")
             else:
                 # Use parens around state — rich interprets `[brainstorm]` as a
-                # malformed markup tag and silently drops it.
-                console.print(f"    {dep_id} ({dep.state.value}) — {dep.title}")
+                # malformed markup tag and silently drops it. Escape the title:
+                # it is user-controlled and sits on an intentional-markup line.
+                console.print(f"    {dep_id} ({dep.state.value}) — {_escape(dep.title)}")
 
     # Link sections — render each outbound relation with the target's state
     # so the cross-reference answers "is this still relevant?" at a glance.
@@ -798,7 +804,7 @@ def task_show(task_id: str, short: bool):
                 console.print(f"    {ref_id} [red](missing)[/]")
             else:
                 console.print(
-                    f"    {ref_id} ({other.state.value}) — {other.title}"
+                    f"    {ref_id} ({other.state.value}) — {_escape(other.title)}"
                 )
 
     if t.related:
@@ -812,7 +818,7 @@ def task_show(task_id: str, short: bool):
             console.print(f"    {t.folded_into} [red](missing)[/]")
         else:
             console.print(
-                f"    {t.folded_into} ({target.state.value}) — {target.title}"
+                f"    {t.folded_into} ({target.state.value}) — {_escape(target.title)}"
             )
     # Inbound "Subsumed:" — scan all cards for folded_into pointing here.
     subsumed = mgr.find_subsumed_by(task_id)
@@ -840,6 +846,11 @@ def task_show(task_id: str, short: bool):
             # tags and arbitrary card/plan text that rich would mis-parse as
             # markup (same hazard the link index avoids with parens, above).
             console.print(linked, markup=False, highlight=False)
+            # A parent epic's plan.md can run to tens of KB; hint at the compact
+            # view when the block is long, without overriding the full-by-default
+            # contract (HATS-691 Q1).
+            if linked.count("\n") >= 30:
+                console.print("\n  [dim]tip: pass --short for the compact index only[/]")
 
 
 @task.command("sync")
