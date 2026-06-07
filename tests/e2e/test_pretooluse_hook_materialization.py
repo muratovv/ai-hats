@@ -237,6 +237,11 @@ def test_e2e_init_materialize_is_idempotent(installed_launcher, tmp_path):
 # ---------------------- Test C: self update refresh ----------------------
 
 
+# HATS-695: the --force-downgrade self update is a real pip install that times
+# out under the -n8 gate's 300s budget on a slow/degraded network. Quarantined
+# (HATS-694) to unblock the v0.8.0 gate; still runs solo and passes. Un-quarantine
+# once HATS-695 makes it network-resilient.
+@pytest.mark.quarantine
 @pytest.mark.integration
 @pytest.mark.pip_heavy  # HATS-678: private_launcher build is a real pip install
 def test_e2e_self_update_refreshes_hook_after_drift(
