@@ -113,10 +113,12 @@ def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
 
     Three goals under parallel runs:
 
-    * **live-claude (cohort B) → one worker.** Every live test gates on the
-      ``requires_claude_auth`` fixture; we pin them all to a single
-      ``live_claude`` group so a parallel run never opens N concurrent SDK
-      sessions (cost / rate-limit hazard flagged in HATS-589).
+    * **live-claude (cohort B) → one worker + a deselect marker.** Every live
+      test gates on the ``requires_claude_auth`` fixture; we (a) tag it with a
+      real ``live_claude`` marker so ``-m "not live_claude"`` yields a
+      deterministic offline / no-auth e2e run (HATS-583), and (b) pin the whole
+      cohort to a single ``live_claude`` xdist group so a parallel run never
+      opens N concurrent SDK sessions (cost / rate-limit hazard, HATS-589).
     * **pip-heavy → ``PIP_HEAVY_GROUPS`` capped groups.** Tests tagged
       ``@pytest.mark.pip_heavy`` run a real ``pip install`` at call time;
       round-robining their files into a small fixed set of groups caps how many
@@ -125,9 +127,12 @@ def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
     * **everything else → grouped by file.** Mirrors ``--dist=loadfile``
       semantics so module-scoped venv fixtures stay coherent per worker.
 
-    Precedence: live_claude → pip_heavy → per-file. Markers are only consulted
-    by the ``loadgroup`` scheduler — under ``loadfile``, ``-n0`` (serial), or no
-    xdist they are inert, so this hook is safe in every run mode.
+    Precedence (xdist groups): live_claude → pip_heavy → per-file. The
+    ``xdist_group`` assignments are consulted only by the ``loadgroup``
+    scheduler — under ``loadfile``, ``-n0`` (serial), or no xdist they are
+    inert, so this hook is safe in every run mode. The ``live_claude`` *deselect*
+    marker (HATS-583) is the exception: it is a normal marker, honoured by
+    ``-m`` selection in every run mode.
 
     NOTE (HATS-678 Category A): the session-shared ``_shared_launcher_venv``
     build is ``scope="session"`` = per-worker under xdist, so up to ``nworkers``
@@ -147,6 +152,12 @@ def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
     )
     for item in items:
         if "requires_claude_auth" in getattr(item, "fixturenames", ()):
+            # HATS-583: a real ``live_claude`` deselect marker, consulted in
+            # EVERY run mode (serial / loadfile / loadgroup), so a deterministic
+            # offline run is just ``-m "not live_claude"``...
+            item.add_marker(pytest.mark.live_claude)
+            # ...plus the xdist scheduling group (loadgroup-only) that pins the
+            # whole live cohort to ONE worker — no N concurrent SDK sessions.
             item.add_marker(pytest.mark.xdist_group("live_claude"))
         elif item.get_closest_marker("pip_heavy"):
             item.add_marker(
