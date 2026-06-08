@@ -78,6 +78,7 @@ class _FakeItem:
         self.fixturenames = ("requires_claude_auth",) if live else ()
         self._has_pip_heavy = pip_heavy
         self.group: str | None = None
+        self.markers: set[str] = set()
 
     def get_closest_marker(self, name: str):
         if name == "pip_heavy" and self._has_pip_heavy:
@@ -87,6 +88,8 @@ class _FakeItem:
     def add_marker(self, marker) -> None:
         if marker.name == "xdist_group":
             self.group = marker.args[0]
+        else:
+            self.markers.add(marker.name)
 
 
 def test_hook_routes_pip_heavy_within_cap() -> None:
@@ -117,6 +120,28 @@ def test_hook_routes_pip_heavy_within_cap() -> None:
     assert {it.group for it in items if it.fixturenames} == {"live_claude"}
     assert items[-2].group == "tests/e2e/test_plain_one.py"
     assert items[-1].group == "tests/e2e/test_plain_two.py"
+
+
+def test_hook_applies_live_claude_deselect_marker() -> None:
+    """Live tests get a real ``live_claude`` marker; nothing else does (HATS-583).
+
+    Unlike the ``xdist_group`` (loadgroup-only), this is a normal marker so
+    ``-m "not live_claude"`` deselects the live cohort in every run mode.
+
+    Fail-under-revert: drop ``item.add_marker(pytest.mark.live_claude)`` from
+    ``pytest_collection_modifyitems`` → the live item carries no ``live_claude``
+    marker and the first assertion fails.
+    """
+    items = [
+        _FakeItem("tests/e2e/test_live.py::test_a", live=True),
+        _FakeItem("tests/e2e/test_plain.py::test_a"),
+        _FakeItem("tests/e2e/test_ph.py::test_a", pip_heavy=True),
+    ]
+    _modifyitems(None, items)
+
+    assert "live_claude" in items[0].markers, "live test must carry the marker"
+    assert "live_claude" not in items[1].markers, "plain test must not"
+    assert "live_claude" not in items[2].markers, "pip_heavy test must not"
 
 
 def test_hook_keeps_a_files_pip_heavy_tests_together() -> None:
