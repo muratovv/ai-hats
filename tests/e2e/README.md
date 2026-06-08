@@ -70,7 +70,13 @@ handful live. Always prefer free over venv over live.
 
 5. **Run it.** `pytest tests/e2e/test_<your_file>.py -v`. To skip
    venv- and live-tier in fast iterations:
-   `pytest -m "not integration" tests/e2e/`.
+   `pytest -m "not integration" tests/e2e/`. For a deterministic
+   **offline / no-auth** run that keeps the rest of the e2e suite but
+   drops every test making a real `claude` call:
+   `pytest -m "not live_claude" tests/e2e/`. The `live_claude` marker is
+   auto-applied (no decorator needed) to any test gating on the
+   `requires_claude_auth` fixture; the pre-push gate intentionally does
+   **not** deselect it, so live coverage stays on for authed gate runs.
 
 ## Fixtures (`conftest.py`)
 
