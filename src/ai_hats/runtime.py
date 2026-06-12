@@ -922,8 +922,14 @@ class WrapRunner:
 
         from ptyprocess import PtyProcess
 
-        for k, v in env.items():
-            os.environ[k] = v
+        # HATS-713: pass the per-session env to the child via PtyProcess.spawn's
+        # env= rather than mutating os.environ. Mutating os.environ permanently
+        # polluted the PARENT process with per-session keys (AI_HATS_SESSION_ID,
+        # AI_HATS_ROLE, provider vars) that then leaked into the finalize
+        # pipeline, SESSION_END hooks, and any later WrapRunner.run in the same
+        # process. The {**os.environ, **env} merge keeps os.environ as the base
+        # (callers may pass a partial env), without writing back to it.
+        child_env = {**os.environ, **env}
 
         # HATS-215: defensive reset of DEC private modes that the previous
         # session may have leaked. Without this, leftover state (notably the
@@ -945,7 +951,7 @@ class WrapRunner:
             rows, cols = 24, 80
 
         try:
-            proc = PtyProcess.spawn(cmd, dimensions=(rows, cols))
+            proc = PtyProcess.spawn(cmd, dimensions=(rows, cols), env=child_env)
         except FileNotFoundError:
             print(f"Error: '{cmd[0]}' not found. Is it installed?", file=sys.stderr)
             return 127
