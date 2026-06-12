@@ -201,7 +201,7 @@ from typing import Any, Iterator
 
 import filelock
 
-from .paths import worktree_state_path, worktrees_dir
+from .paths import worktrees_dir
 
 logger = logging.getLogger(__name__)
 
@@ -1014,7 +1014,7 @@ class WorktreeManager:
         mgr.create()
         mgr.save_state()
         # ... later, in another CLI call ...
-        mgr = WorktreeManager.load_active(project_dir)
+        mgr = WorktreeManager.load_for_branch(project_dir, "feat/hats-004")
         mgr.merge()
     """
 
@@ -1613,8 +1613,8 @@ class WorktreeManager:
         legacy_path = state_path.with_name(f"{lower_key}.json")
         if not legacy_path.exists():
             return
-        # Lock-order: legacy (outer) → target (inner). Matches
-        # _migrate_singleton's ordering convention (HATS-121 / R-07).
+        # Lock-order: legacy (outer) → target (inner) — never invert
+        # (R-07 deadlock-avoidance for nested worktree-state locks).
         with _acquire(legacy_path):
             if not legacy_path.exists() or state_path.exists():
                 return
@@ -1701,63 +1701,6 @@ class WorktreeManager:
             if mgr is not None:
                 result.append(mgr)
         return result
-
-    @classmethod
-    def load_active(cls, project_dir: Path) -> WorktreeManager | None:
-        """DEPRECATED compat shim. Returns first active worktree or None.
-
-        Migrate callers to load_for_task / load_for_branch / list_active.
-        Auto-migrates singleton worktree.json under <ai_hats_dir>/sessions/ if present.
-        """
-        cls._migrate_singleton(project_dir)
-        active = cls.list_active(project_dir)
-        return active[0] if active else None
-
-    @classmethod
-    def _migrate_singleton(cls, project_dir: Path) -> None:
-        """One-shot migration: singleton worktree.json → per-key worktrees/<key>.json.
-
-        Locked + idempotent: concurrent callers will serialize on the
-        legacy file's lock; the second one finds the source already
-        unlinked and exits cleanly. After HATS-312 the singleton lives at
-        ``<ai_hats_dir>/sessions/worktree.json`` and per-key files under
-        ``<ai_hats_dir>/sessions/worktrees/`` — the filesystem move from
-        ``.agent/`` is handled separately by ``Assembler._migrate_layout_v4_sessions``.
-
-        HATS-482 (R-07): nested-lock ordering is **outer = legacy
-        singleton, inner = new per-key path** — the only place where
-        per-key lock is acquired while another worktree state lock is
-        already held. Any future extension of singleton-path logic
-        (additional read-then-write under the outer lock) MUST preserve
-        this ordering: outer = singleton, inner = per-key. Inverting the
-        order in another code path (per-key outer, then singleton inner)
-        would re-introduce the deadlock window this comment prevents.
-        """
-        old = worktree_state_path(project_dir)
-        with _acquire(old):
-            try:
-                raw = old.read_text()
-            except FileNotFoundError:
-                return
-            try:
-                data = json.loads(raw)
-            except json.JSONDecodeError:
-                logger.warning("Corrupted legacy worktree.json at %s — leaving in place", old)
-                return
-            branch = data.get("branch", "")
-            key = _state_key(branch)
-            new_dir = worktrees_dir(project_dir)
-            new_dir.mkdir(parents=True, exist_ok=True)
-            new_path = new_dir / f"{key}.json"
-            with _acquire(new_path):
-                if not new_path.exists():
-                    _atomic_write_json(new_path, data)
-            try:
-                # Data already preserved at new_path — duplicate cleanup,
-                # no recovery value in a snapshot. Whitelist.
-                old.unlink()  # safe-delete: ok layout-migration duplicate
-            except FileNotFoundError:
-                pass
 
     @staticmethod
     def is_inside_linked_worktree(path: Path) -> bool:
