@@ -10,6 +10,16 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+- **`_pty_spawn` no longer pollutes the parent process environment** (HATS-713,
+  child of HATS-699 / HATS-698 audit) — it looped `os.environ[k] = v` over the
+  per-session env, permanently leaking keys (`AI_HATS_SESSION_ID`,
+  `AI_HATS_ROLE`, provider vars) into the parent. Those stale keys reached the
+  finalize pipeline, `SESSION_END` hooks, and any later `WrapRunner.run` /
+  in-process test in the same process. The per-session env is now passed to the
+  child via `PtyProcess.spawn(..., env={**os.environ, **env})`; the child sees
+  the same effective environment, the parent `os.environ` is left untouched.
+
 ## [0.8.0] - 2026-06-07
 
 ### Added
