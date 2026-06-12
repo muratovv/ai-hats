@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 
 import pytest
 
@@ -157,6 +158,44 @@ def test_wrap_runner_pty_spawn_emits_term_reset_prelude(tmp_path, capsys):
 
     captured = capsys.readouterr().out
     assert _TERM_RESET_PRELUDE in captured
+
+
+@pytest.mark.integration
+def test_pty_spawn_does_not_pollute_parent_environ(tmp_path):
+    """HATS-713: _pty_spawn must pass per-session env to the child via
+    PtyProcess.spawn(env=...), NOT by mutating the parent os.environ.
+
+    Two guarantees in one slice:
+      - the child still receives the per-session env (guard against a regression
+        that deletes the mutation loop but forgets to pass env=);
+      - the parent os.environ is left untouched (the actual bug — stale keys
+        used to leak into the finalize pipeline, SESSION_END hooks, and the next
+        in-process session).
+    """
+    from ai_hats.runtime import WrapRunner
+
+    sentinel = "AI_HATS_HATS713_SENTINEL"
+    value = "leak-canary"
+    assert sentinel not in os.environ, "precondition: sentinel must start absent"
+
+    session_dir = tmp_path / "s"
+    session_dir.mkdir()
+    session = Session(session_id="t", session_dir=session_dir)
+    tracer = SidecarTracer(session)
+    runner = object.__new__(WrapRunner)
+
+    cmd = [sys.executable, "-c", f"import os;print(os.environ.get('{sentinel}',''))"]
+    try:
+        exit_code = runner._pty_spawn(cmd, {sentinel: value}, tracer)
+
+        assert exit_code == 0
+        # Child saw the per-session env.
+        assert value in session.trace_path.read_text()
+        # Parent env was NOT mutated (RED on the pre-fix code).
+        assert sentinel not in os.environ
+    finally:
+        # Defensive: if the fix regresses, don't leak the sentinel into siblings.
+        os.environ.pop(sentinel, None)
 
 
 def test_master_read_dumps_raw_bytes_pre_strip(tmp_path, monkeypatch):
