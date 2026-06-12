@@ -11,7 +11,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.worktree import WorktreeManager
-from ai_hats.paths import worktree_state_path, worktrees_dir
+from ai_hats.paths import worktrees_dir
 
 
 pytestmark = pytest.mark.integration
@@ -101,23 +101,7 @@ class TestStatePersistence:
         finally:
             loaded.cleanup()
 
-    def test_load_active_compat_shim(self, git_project: Path) -> None:
-        """Deprecated load_active still works via list_active."""
-        mgr = WorktreeManager(git_project, branch_name="feat/compat")
-        mgr.create()
-        mgr.save_state()
-
-        loaded = WorktreeManager.load_active(git_project)
-        try:
-            assert loaded is not None
-            assert loaded.branch_name == "feat/compat"
-        finally:
-            loaded.cleanup()
-
-    def test_load_active_returns_none_when_no_state(self, git_project: Path) -> None:
-        assert WorktreeManager.load_active(git_project) is None
-
-    def test_load_active_returns_none_when_stale(self, git_project: Path) -> None:
+    def test_load_for_branch_returns_none_when_stale(self, git_project: Path) -> None:
         """If worktree dir was deleted externally, load cleans up."""
         states_dir = worktrees_dir(git_project)
         states_dir.mkdir(parents=True, exist_ok=True)
@@ -423,58 +407,6 @@ class TestPerTaskRegistry:
         shutil.rmtree(mgr.worktree_path)
         active = WorktreeManager.list_active(git_project)
         assert len(active) == 0
-
-    def test_migrate_singleton(self, git_project: Path) -> None:
-        """Old worktree.json is auto-migrated to worktrees/ on load_active."""
-        mgr = WorktreeManager(git_project, branch_name="task/old")
-        wt = mgr.create()
-        # Write old-style singleton
-        old_path = worktree_state_path(git_project)
-        old_path.parent.mkdir(parents=True, exist_ok=True)
-        old_path.write_text(
-            json.dumps(
-                {
-                    "branch": "task/old",
-                    "worktree_path": str(wt),
-                    "original_branch": "master",
-                }
-            )
-        )
-
-        try:
-            loaded = WorktreeManager.load_active(git_project)
-            assert loaded is not None
-            assert loaded.branch_name == "task/old"
-            # Old file deleted
-            assert not old_path.exists()
-            # New file exists
-            assert (worktrees_dir(git_project) / "task-old.json").exists()
-        finally:
-            mgr.cleanup()
-
-    def test_migrate_idempotent(self, git_project: Path) -> None:
-        """Calling migration twice doesn't error."""
-        mgr = WorktreeManager(git_project, branch_name="task/idem")
-        wt = mgr.create()
-        old_path = worktree_state_path(git_project)
-        old_path.parent.mkdir(parents=True, exist_ok=True)
-        old_path.write_text(
-            json.dumps(
-                {
-                    "branch": "task/idem",
-                    "worktree_path": str(wt),
-                    "original_branch": "master",
-                }
-            )
-        )
-
-        try:
-            WorktreeManager.load_active(git_project)
-            # Second call — old file already gone
-            WorktreeManager.load_active(git_project)
-            assert not old_path.exists()
-        finally:
-            mgr.cleanup()
 
     def test_clear_state_per_key(self, git_project: Path) -> None:
         mgr1 = WorktreeManager(git_project, branch_name="task/keep")
