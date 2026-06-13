@@ -1118,13 +1118,6 @@ class TaskManager:
                 PLAN_SCAFFOLD.format(task_id=task.id, title=task.title)
             )
 
-    def is_empty_scaffold_for_id(self, task_id: str) -> bool:
-        """Public-friendly variant: load card and delegate to _is_empty_scaffold."""
-        task = self.get_task(task_id)
-        if task is None:
-            return False
-        return self._is_empty_scaffold(task)
-
     def _is_empty_scaffold(self, task: TaskCard) -> bool:
         plan_path = self.tasks_dir / task.id / "plan.md"
         if not plan_path.exists():
