@@ -615,6 +615,11 @@ def test_update_command_reports_failure(cli_project, monkeypatch):
     result = runner.invoke(main, ["self", "update"])
     assert "Update failed" in result.output
     assert "Connection refused" in result.output
+    # HATS-718: a failed install must be machine-detectable — exit non-zero so
+    # scripted chains (`self update && self init`) and CI stop instead of
+    # proceeding against a half-updated environment.
+    assert result.exit_code == 1, \
+        f"expected exit 1 on failed update, got {result.exit_code}; output:\n{result.output}"
 
 
 def test_update_shows_version_transition(cli_project, monkeypatch):
