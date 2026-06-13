@@ -1,66 +1,75 @@
 # Rule: Comment Discipline
 
-A comment is code you can't compile-check — it drifts silently and the reader
-trusts it anyway. So a comment must earn its place, and a wrong comment is worse
-than none.
+Default to **no comment**. Good names make the next line obvious; a comment is
+only for the WHY the code can't show — and then it's **one line**. Learn the
+boundary from the examples; match them.
 
-## What a comment is for
+> In the examples, `TASK-NNN` is a placeholder for a ticket id. Use whatever
+> prefix *this* repository uses (`PROX-`, `ACME-`, `JIRA-…`); never write the
+> literal string `TASK-NNN`.
 
-1. **WHY-now, not what.** A comment earns its place only by explaining what the
-   code cannot say itself: a non-obvious invariant, a trap, a contract, a reason
-   the obvious approach was rejected. Keep it to 1–3 lines. Never narrate what
-   the next line plainly does.
-2. **History is a pointer, not a retelling.** Provenance is a bare task-ID
-   reference (`# HATS-596: short-circuit on empty overlay`), not a paragraph
-   recounting what the task changed. The retelling lives in the task card and in
-   `git blame` / `git log` — link, don't paste.
-3. **Long rationale lives outside the code.** Multi-paragraph design narrative
-   belongs in an ADR (`docs/adr/`) or the task card, referenced by id/path. A
-   module/class docstring states the contract and usage, not the design essay.
-4. **No stale-able claims.** Do not write a comment you cannot keep true —
-   especially a quantified one (byte counts, "always", "the only caller",
-   benchmark numbers). The code changes; the number does not; the comment now
-   lies. If you can't guarantee it stays true, omit it.
-
-When in doubt, delete the comment and rename the thing it was explaining.
-
-## Contrastive example
-
-The pattern this rule exists to stop, drawn from a real drift
-(`providers.py` `ALWAYS_ON_RULES`): a comment that narrates the task *and* asserts
-a measured quantity. The quantity went stale — the claimed `~600 chars` is now
-1690 (2.8×), so the comment actively misleads.
-
-**Incorrect** — task retelling + a stale-able number (the rationalization:
-"documenting the budget trade-off helps the next maintainer"):
+## When NOT to write a comment — the common case (delete / skip)
 
 ```python
-# HATS-452: framework-invariant reminder for any agent that may
+i += 1                       # ❌ "increment i"  — restates the code
+total = price * qty          # ❌ "compute total" — restates the code
+
+# ----- helpers -----        # ❌ decorative banner — delete
+# load(cfg) -> dict          # ❌ docstring restating the signature — delete
+
+# legacy path, kept for ref:
+# rows = old_load(x)         # ❌ commented-out code — git remembers it; delete
+
+# TODO: clean this up         # ❌ ownerless TODO — delete, or pin it:
+# TODO(TASK-712): drop after the v0.8 migration lands
+```
+
+## When a comment earns its place — ONE line, the WHY
+
+Each ✅ is paired with the weak version it replaces.
+
+```python
+# ❌ acquire the lock
+# ✅ fcntl flock auto-releases on process death — no stale-lock cleanup
+lock = FileLock(path)
+
+# ❌ lock around the worktree add
+# ✅ git does NOT serialize `worktree add` across processes (TASK-479)
+with _create_lock():
+    ...
+
+# ❌ re-check the branch
+# ✅ caller must already hold _create_lock — TOCTOU re-check, not a public entry
+def _load_under_lock(branch): ...
+```
+
+## History is a pointer, never a retelling
+
+```python
+# ❌ four lines retelling the task + a number that rots:
+# TASK-452: framework-invariant reminder for any agent that may
 # touch composition / pipeline / runtime internals. Short body
 # (~600 chars); acceptable budget for an always-on architectural
 # guard. Full rationale: docs/adr/0005-*.md.
 "rule_composition_value_contract",
+
+# ✅ pointer + link; no retelling, no stale-able count:
+"rule_composition_value_contract",  # TASK-452: always-on; see docs/adr/0005
 ```
 
-**Correct** — smallest fix to the same line: keep the pointer + the link, drop
-the retelling and the number that can rot:
+That `~600 chars` is now **1690 (2.8×)** — the count rotted, the pointer wouldn't
+have. Long rationale → ADR / task card, linked by id — not pasted. A module
+docstring states the contract in a few lines, not the design history.
 
-```python
-"rule_composition_value_contract",  # HATS-452: always-on; see docs/adr/0005
-```
+## The 4-question test — run it before typing any comment
 
-The difference is visible in under five seconds, which is the bar: WHY-now +
-pointer survives; narration and unverifiable quantities go.
-
-## Scope
-
-Binds code-writing roles (composed via `trait-se-mindset`). Applies to inline
-comments and to module/class/function docstrings alike. It is **WHY-now-positive**
-— it does not cap comment count or strip a genuine invariant-explaining comment;
-it removes narration, archaeology, and stale-able claims.
+1. Does the code already say this?            → **delete.**
+2. Is it *what changed* / task history?       → **`# TASK-NNN` pointer**, not prose.
+3. Is it a count/claim that can go stale?     → **omit** ("~600 chars", "only caller", "always").
+4. Left with a non-obvious WHY in ≤1 line?    → **keep it.**
 
 ## Source
 
-HATS-752 (supervisor request, follow-up to the HATS-698 validation audit:
-findings 2a-F9 worktree.py 185-line docstring essay, 1-F3 providers.py stale
-rule-budget paragraph). Contrastive shape per the HATS-638 authoring canon.
+HATS-752 / HATS-754 (supervisor request, follow-up to the HATS-698 validation
+audit: findings 2a-F9 worktree.py module-docstring essay, 1-F3 providers.py
+stale rule-budget paragraph). Few-shot / contrastive shape per the HATS-638 canon.
