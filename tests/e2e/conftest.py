@@ -4,9 +4,6 @@
   ``claude --version`` exits 0. Mirrors the probe used by other e2e
   files (test_role_isolation.py, test_subagent_sdk_smoke.py).
 * ``repo_root`` — single source of truth for repo path math.
-* ``probe_project`` — minimal claude-provider project ready for
-  :func:`tests.e2e._helpers.live.live_session`. Function-scoped: tests
-  get a fresh tmp project each run. Bakes the ``probe`` role.
 * ``tmp_project`` — generic role-less project for subprocess-only
   tests against the ``ai-hats`` CLI. Function-scoped. Returns a
   :class:`tests.e2e._helpers.project.Project`.
@@ -224,40 +221,6 @@ def requires_claude_auth() -> None:
         pytest.skip(f"claude --version probe failed: {exc}")
     if cp.returncode != 0:
         pytest.skip(f"claude --version exit {cp.returncode}: {cp.stderr[:200]}")
-
-
-@pytest.fixture
-def probe_project(tmp_path: Path) -> Path:
-    """A minimal claude-provider ai-hats project ready for ``live_session``.
-
-    Role ``probe`` has no traits/skills/rules — keeps composition cheap
-    and the system prompt minimal so tests stay deterministic and cost
-    bounded. Tests that need a richer role override by composing one
-    inline rather than parametrising this fixture.
-    """
-    from ai_hats.assembler import Assembler
-    from ai_hats.models import ProjectConfig
-
-    project = tmp_path / "project"
-    project.mkdir()
-    lib = tmp_path / "lib"
-    role_dir = lib / "roles" / "probe"
-    role_dir.mkdir(parents=True)
-    (role_dir / "config.yaml").write_text(
-        "name: probe\n"
-        "priorities: []\n"
-        "composition:\n  traits: []\n  rules: []\n  skills: []\n"
-        "injection: |\n"
-        "  You are a precise, deterministic test agent. Follow the user's\n"
-        "  instructions exactly; do not editorialise.\n"
-    )
-    ProjectConfig(provider="claude", library_paths=[str(lib)]).save(
-        project / "ai-hats.yaml"
-    )
-    asm = Assembler(project)
-    asm.init()
-    asm.set_role("probe", provider_name="claude")
-    return project
 
 
 @pytest.fixture
