@@ -58,6 +58,18 @@ since the latest tag lives under **Unreleased** until the next release.
   former 3-way duplication. Role injection is now header + intro + `## Guardrails`
   (~0.5–1 KB/session saved). The three HATS-452 prompt-content e2e tests re-point
   their role-own-injection marker from `## Workflow` to the role intro string.
+- **Skill bodies are no longer eager-loaded on every compose** (HATS-706, child
+  of HATS-699 / HATS-698 audit). `Composer.compose` read each skill's full
+  `SKILL.md` into `ResolvedComponent.injection` for every session and both
+  providers, yet the *only* consumer of a skill's body is `ai-hats reflect`'s
+  role-mirror (`_materialize_target_composition`) — the Gemini `AVAILABLE
+  SKILLS` index reads its own single copy via `_extract_frontmatter_description`.
+  The eager read is removed; reflect now reads the body on demand from the
+  skill's `source_path`. Non-reflect sessions no longer pay one `SKILL.md` read
+  per skill for a body they never use, and the per-skill double read on Gemini
+  prompt builds collapses to one. No change to prompt output or reflect
+  artefacts. (The card's other half — hoisting the identical `build_system_prompt`
+  into the `Provider` base — was already delivered by HATS-701.)
 
 ### Removed
 - **Write-only `pipeline_metrics.json` telemetry** (HATS-736, child of
