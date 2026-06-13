@@ -15,11 +15,17 @@ Reused by:
 
 **Behaviour change** (documented in plan ``HATS-474``): the legacy
 sub-agent path built its prompt via ``_build_meta_prompt`` which omitted
-``ALWAYS_ON_RULES`` and the ``AVAILABLE SKILLS`` index. The new builder
-reuses :meth:`ClaudeProvider.build_system_prompt` so HITL (WrapRunner)
-and Automate (SubAgentRunner) paths get the same composition surface.
-Sub-agents now see the always-on safety rules and a skill discovery
-index they previously lacked.
+``ALWAYS_ON_RULES``. The new builder reuses
+:meth:`ClaudeProvider.build_system_prompt` so HITL (WrapRunner) and
+Automate (SubAgentRunner) paths get the same composition surface, and
+sub-agents now see the always-on safety rules they previously lacked.
+
+Skill discovery is NOT carried by the system prompt for Claude: HATS-701
+suppresses the ``AVAILABLE SKILLS`` index in
+:meth:`ClaudeProvider.build_system_prompt` because :func:`_build_plugins`
+materializes the composed skills as a native SDK plugin (the same
+``--plugin-dir`` registry HITL uses) that already lists every skill with
+its full description. The index would be a 2-3x duplicate.
 """
 
 from __future__ import annotations
@@ -47,10 +53,11 @@ def _build_system_prompt(
     """Return the ``system_prompt`` payload as the SDK's preset+append shape.
 
     Reuses :meth:`ClaudeProvider.build_system_prompt` so the structured
-    sections (PRIORITIES, merged role injection, always-on RULES,
-    AVAILABLE SKILLS index) match HITL exactly. The ``<ai_hats_dir>``
-    placeholder is expanded here so the agent never sees the literal
-    token in its system prompt.
+    sections (PRIORITIES, merged role injection, always-on RULES) match
+    HITL exactly. There is no AVAILABLE SKILLS index — Claude discovers
+    skills via the materialized SDK plugin (HATS-701); see
+    :func:`_build_plugins`. The ``<ai_hats_dir>`` placeholder is expanded
+    here so the agent never sees the literal token in its system prompt.
     """
     from .placeholders import expand_path_placeholders
     from .providers import ClaudeProvider

@@ -20,9 +20,10 @@ from pathlib import Path
 import pytest
 
 from ai_hats.assembler import Assembler
-from ai_hats.models import ProjectConfig
+from ai_hats.composer import CompositionResult, ResolvedComponent
+from ai_hats.models import ComponentType, HooksConfig, ProjectConfig
 from ai_hats.paths import session_cache_dir, session_cache_root
-from ai_hats.providers import ClaudeProvider
+from ai_hats.providers import ClaudeProvider, GeminiProvider
 from ai_hats.runtime import _cleanup_session_cache, _sweep_orphan_session_caches
 
 
@@ -276,3 +277,78 @@ def test_build_session_prompt_recovers_from_stale_cache_dir(project_with_library
     assert plugin_path == plugin_dir
     assert not (plugin_path / "leftover.txt").exists()
     assert (plugin_path / ".claude-plugin" / "plugin.json").exists()
+
+
+# --------------------------------------------------------------------- #
+# HATS-701 — AVAILABLE SKILLS index is provider-specific: Claude omits it
+# (skills reach the agent via the native --plugin-dir registry), Gemini
+# keeps it (no native registry — the index is the only discovery channel).
+# --------------------------------------------------------------------- #
+
+
+def _skill_composition(tmp_path: Path) -> CompositionResult:
+    """A CompositionResult carrying one on-disk skill with a frontmatter
+    description, so build_system_prompt's index would list it."""
+    skill_dir = tmp_path / "skills" / "doc-protocol"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\ndescription: doc-protocol skill\n---\n# body\n"
+    )
+    skill = ResolvedComponent(
+        name="doc-protocol",
+        component_type=ComponentType.SKILL,
+        source_path=skill_dir,
+        injection="# body",
+    )
+    rule = ResolvedComponent(
+        name="dev_rule_tool_call_hygiene",
+        component_type=ComponentType.RULE,
+        source_path=Path("/dev/null"),
+        injection="# Rule: Tool-Call Hygiene\nUse dedicated tools over Bash.",
+    )
+    return CompositionResult(
+        name="role",
+        priorities=["Reliability"],
+        rules=[rule],
+        skills=[skill],
+        hooks=HooksConfig(),
+        injections=[],
+    )
+
+
+def test_claude_omits_skills_index_gemini_keeps_it(tmp_path):
+    """HATS-701: the AVAILABLE SKILLS index diverges by provider.
+
+    Claude materializes skills as a native --plugin-dir registry (HITL) /
+    SDK plugin (sub-agent) that already lists every skill with its full
+    description, so re-emitting an index in the system prompt is a 2-3x
+    duplicate (~1.5k tok/session). Gemini has no such registry — its index
+    is the only discovery channel and must stay.
+
+    Fail-under-revert: reverting providers.py re-adds the index to Claude
+    and re-reds the first assertion.
+    """
+    result = _skill_composition(tmp_path)
+
+    claude_prompt = ClaudeProvider().build_system_prompt(result)
+    gemini_prompt = GeminiProvider().build_system_prompt(result)
+
+    # The divergence — the core of HATS-701.
+    assert "## AVAILABLE SKILLS" not in claude_prompt, (
+        "Claude must NOT emit the AVAILABLE SKILLS index — skills reach the "
+        "agent via the --plugin-dir native registry. Prompt:\n" + claude_prompt
+    )
+    assert "## AVAILABLE SKILLS" in gemini_prompt, (
+        "Gemini must keep the AVAILABLE SKILLS index (no native registry)."
+    )
+    # The skill name follows its section: absent from Claude, present in Gemini.
+    assert "doc-protocol" not in claude_prompt
+    assert "doc-protocol" in gemini_prompt
+
+    # Non-skill sections are unaffected for BOTH providers (shared helper
+    # must not drop priorities / always-on rules / their relocation).
+    for prompt in (claude_prompt, gemini_prompt):
+        assert "## PRIORITIES" in prompt
+        assert "Reliability" in prompt
+        assert "dev_rule_tool_call_hygiene" in prompt
+        assert "Tool-Call Hygiene" in prompt

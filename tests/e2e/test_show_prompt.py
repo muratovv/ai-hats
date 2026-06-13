@@ -67,7 +67,10 @@ def test_show_prompt_text_mode_active_role(project_with_maintainer):
     # Section header invariants.
     assert "## PRIORITIES" in out
     assert "## RULES" in out
-    assert "## AVAILABLE SKILLS" in out
+    # HATS-701: claude provider suppresses the AVAILABLE SKILLS index —
+    # show-prompt mirrors the real prompt (skills reach the agent via the
+    # native --plugin-dir registry, not the system prompt).
+    assert "## AVAILABLE SKILLS" not in out
     # Injection bodies between PRIORITIES and RULES (the HATS-452 fix).
     assert "E2E gate" in out, "ai-hats-maintainer trait injection missing"
     assert "Agent Protocol" in out, "trait-agent injection missing"
