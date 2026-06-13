@@ -10,7 +10,25 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+- **`ai-hats session show` renders a Usage section from `usage.json`** (HATS-734,
+  child of HATS-699 / HATS-698 audit) — the HATS-664 producer (`compute_usage`)
+  had zero in-src consumers, so a producer regression (the resume-mode discovery
+  bug fixed below) was invisible for months. `session show` now renders a
+  fail-soft Usage block (measured/static always-on, `skill_loads`, tool
+  success-rate, sidechain, parser flags) and lists `usage.json` among the
+  session artefacts, making the channel falsifiable.
+
 ### Fixed
+- **`compute_usage` no longer skips `usage.json` in resume/continue sessions**
+  (HATS-734, audit 2c-F3 of HATS-698). `ComputeUsage.run` passed
+  `claude_session_id` — a `uuid4` — to `_discover_claude_jsonl`, which parses
+  `session_id[:15]` with `strptime("%Y%m%d-%H%M%S")`; a uuid never parses, so the
+  JSONL discovery fallback returned `None` and the step silently exited — in
+  exactly the `--resume`/`--continue` scenario the fallback (HATS-272) exists
+  for. It now passes the ai-hats `session_id`, converging on the `make_audit`
+  sibling. The breakage stayed invisible because `usage.json` had no reader —
+  see the matching Added entry.
 - **`_pty_spawn` no longer pollutes the parent process environment** (HATS-713,
   child of HATS-699 / HATS-698 audit) — it looped `os.environ[k] = v` over the
   per-session env, permanently leaking keys (`AI_HATS_SESSION_ID`,
