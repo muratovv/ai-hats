@@ -77,7 +77,7 @@ _TIER2_PARENTS_FILE_MODE: dict[str, tuple[str, tuple[str, ...]]] = {
 # a user-edit flag because they are framework bookkeeping.
 _TIER2_BOOKKEEPING_NAMES: frozenset[str] = frozenset({
     ".library_rules",         # v0.6 marker (pre-HATS-294) listing library rules
-    ".ai-hats-managed",       # v0.6 marker (skills / hooks) — MANAGED_SKILLS_MARKER
+    ".ai-hats-managed",       # v0.6 marker (skills / hooks)
 })
 
 

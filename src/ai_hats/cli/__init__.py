@@ -191,11 +191,10 @@ main.add_command(config_mod.config)
 # path.
 @click.group("self")
 def self_group():
-    """Manage the ai-hats installation itself (init, clean, update)."""
+    """Manage the ai-hats installation itself (init, update)."""
 
 
 self_group.add_command(assembly.init)
-self_group.add_command(assembly.clean)
 self_group.add_command(assembly.sync_hooks)  # HATS-593
 self_group.add_command(maintenance.update)
 # HATS-415: ``self migrate-v07`` removed — migration is inline in ``bump``.
