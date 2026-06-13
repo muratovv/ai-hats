@@ -19,6 +19,20 @@ since the latest tag lives under **Unreleased** until the next release.
   success-rate, sidechain, parser flags) and lists `usage.json` among the
   session artefacts, making the channel falsifiable.
 
+### Removed
+- **Write-only `pipeline_metrics.json` telemetry** (HATS-736, child of
+  HATS-699 / HATS-698 audit — dead-delivery class #5). `PipelineHarness.__exit__`
+  wrote a per-run `pipeline_metrics.json` (terminal zero-output / timeout
+  incident counters) into a namespace GC'd after `AI_HATS_PIPELINE_KEEP_N`
+  (default 10) runs, with **zero readers** in `src/` — the data expired
+  unread. Folding it into the session `metrics.json` (read by
+  `session list --json`) was rejected: the harness has no map from its
+  `session_id` to a spawned session dir, and the signal is already
+  observable — per-session `timed_out` lives in session `metrics.json` and
+  `HarnessReliabilityError` is routed to a meta-PROP by reflect-session. The
+  writer, its dead imports, and its 5 unit tests are removed; `__exit__` is
+  now a no-op (artefacts are still kept and GC'd at the next `__enter__`).
+
 ### Fixed
 - **Pipeline engine raises a typed `StepError` for a required ctx key absent at
   runtime, instead of a bare `KeyError`** (HATS-739, audit 2c-F8 of HATS-698).
