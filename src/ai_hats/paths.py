@@ -173,11 +173,6 @@ def handoffs_dir(project_dir: Path) -> Path:
     return sessions_dir(project_dir) / "handoffs"
 
 
-def experiments_dir(project_dir: Path) -> Path:
-    """Experiment artefacts: ``<ai_hats_dir>/sessions/experiments/``."""
-    return sessions_dir(project_dir) / "experiments"
-
-
 def worktrees_dir(project_dir: Path) -> Path:
     """Per-task worktree metadata: ``<ai_hats_dir>/sessions/worktrees/``."""
     return sessions_dir(project_dir) / "worktrees"
@@ -512,27 +507,15 @@ LEGACY_PATH_MAP: dict[str, tuple[LegacyClass, str]] = {
 }
 
 
-def detect_legacy_state(project_dir: Path) -> list[tuple[Path, Path]]:
-    """Return ``[(old_abs, new_abs)]`` for every legacy path that exists.
-
-    Used by HATS-312/313/314 inside ``Assembler.bump`` to drive the
-    one-shot migration. Does NOT perform any move — callers do that for
-    their class.
-    """
-    base = ai_hats_dir(project_dir)
-    out: list[tuple[Path, Path]] = []
-    for legacy, (_, new_rel) in LEGACY_PATH_MAP.items():
-        old_abs = project_dir / legacy
-        if old_abs.exists():
-            out.append((old_abs, base / new_rel))
-    return out
-
-
 def legacy_paths_by_class(
     project_dir: Path,
     class_: LegacyClass,
 ) -> list[tuple[Path, Path]]:
-    """Filtered :func:`detect_legacy_state` — one class only."""
+    """Return ``[(old_abs, new_abs)]`` for legacy paths of one class only.
+
+    Used by HATS-312/313/314 inside ``Assembler.bump`` to drive the one-shot
+    migration: each caller pulls only its class. Does NOT perform any move.
+    """
     base = ai_hats_dir(project_dir)
     out: list[tuple[Path, Path]] = []
     for legacy, (c, new_rel) in LEGACY_PATH_MAP.items():
