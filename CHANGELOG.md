@@ -28,6 +28,17 @@ since the latest tag lives under **Unreleased** until the next release.
   in-process test in the same process. The per-session env is now passed to the
   child via `PtyProcess.spawn(..., env={**os.environ, **env})`; the child sees
   the same effective environment, the parent `os.environ` is left untouched.
+- **`wt merge` no longer hangs forever on an unreachable remote** (HATS-711,
+  audit 2a-F5 of HATS-698). `WorktreeManager._check_drift` runs a pre-merge
+  `git fetch origin <base>` — a network call — while holding the per-branch
+  lifecycle lock, but `_git` had no timeout. A hung fetch (dead VPN / DNS
+  blackhole) wedged `merge()` unboundedly; concurrent `wt merge` / `wt discard`
+  peers then timed out at the 60s lifecycle lock and failed with a
+  `WorktreeLockError` blaming a phantom "concurrent `wt merge`/`wt discard`".
+  The fetch is now bounded by `FETCH_TIMEOUT` (30s); a timeout is treated like
+  the existing fetch-failure path (WARN + local-only drift check, merge
+  proceeds) and named explicitly so triage starts at the network, not at
+  phantom concurrency. Other (local) `_git` calls are unchanged.
 
 ## [0.8.0] - 2026-06-07
 
