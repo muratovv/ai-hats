@@ -20,6 +20,18 @@ since the latest tag lives under **Unreleased** until the next release.
   session artefacts, making the channel falsifiable.
 
 ### Fixed
+- **Pipeline engine raises a typed `StepError` for a required ctx key absent at
+  runtime, instead of a bare `KeyError`** (HATS-739, audit 2c-F8 of HATS-698).
+  `_run_steps` projected `requires` (`kwargs = {k: state[k] for k in s.io.requires}`)
+  *before* the per-step `try`, so when a producer legally omitted a *declared*
+  `produces` key at runtime (None-filtered merge; `ComposeRole` emits `{}` for no
+  role — ADR-0005 value contract), the missing-key lookup raised a context-free
+  `KeyError` that bypassed both `failure_policy="continue"` and the `_emit` trace
+  event. The projection is now non-raising and an explicit presence check raises a
+  `StepError` naming the step + missing keys *inside* the `try`, so trace and
+  continue-policy semantics apply. Latent (no shipped pipeline pairs an omittable
+  produce with a downstream require) but the exact contract seam a custom-YAML
+  pipeline author would hit.
 - **`compute_usage` no longer skips `usage.json` in resume/continue sessions**
   (HATS-734, audit 2c-F3 of HATS-698). `ComputeUsage.run` passed
   `claude_session_id` — a `uuid4` — to `_discover_claude_jsonl`, which parses

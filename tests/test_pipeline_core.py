@@ -186,6 +186,44 @@ def test_run_failure_policy_continue_captures_and_advances() -> None:
     assert capture == [("b", {})]
 
 
+# ---------- runtime-absent required key (HATS-739) ----------
+# A producer may legally OMIT a declared ``produces`` key at runtime (ADR-0005
+# value contract: None-filtered merge, ``ComposeRole`` returns ``{}`` for no
+# role). Build-time validation trusts the *declared* produces, so it passes; the
+# downstream ``requires`` projection then hits a missing key. That must surface
+# as a typed ``StepError`` raised INSIDE the per-step try (so failure_policy and
+# the trace hook apply), never as a bare ``KeyError`` that escapes both.
+
+
+def test_run_missing_runtime_required_raises_step_error() -> None:
+    producer = _FakeStep("producer", produces=frozenset({"k"}), delta={})
+    consumer = _FakeStep("consumer", requires=frozenset({"k"}))
+    pipe = build(producer, consumer)
+    with pytest.raises(StepError) as exc:
+        run(pipe, {})
+    assert not isinstance(exc.value, KeyError)
+    assert "consumer" in str(exc.value)
+    assert "k" in str(exc.value)
+
+
+def test_run_missing_runtime_required_continue_records_and_advances() -> None:
+    events: list = []
+    capture: list = []
+    producer = _FakeStep("producer", produces=frozenset({"k"}), delta={})
+    consumer = _FakeStep(
+        "consumer", requires=frozenset({"k"}), failure_policy="continue"
+    )
+    tail = _FakeStep("tail", capture=capture)
+    pipe = build(producer, consumer, tail)
+    state = run(pipe, {}, on_step=lambda e: events.append(e))
+    # continue-policy: error recorded, pipeline advanced past the failing step.
+    assert isinstance(state["errors"]["consumer"], StepError)
+    assert capture == [("tail", {})]
+    # trace hook saw an error event for the consumer.
+    consumer_events = [e for e in events if e.step == "consumer"]
+    assert consumer_events and consumer_events[0].error is not None
+
+
 # ---------- Pipeline is a Step (recursive) ----------
 
 
