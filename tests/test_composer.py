@@ -101,8 +101,14 @@ def test_compose_deduplicates_rules(composer):
 def test_compose_resolves_skills(composer):
     result = composer.compose("test-role")
     assert len(result.skills) == 1
-    assert result.skills[0].name == "test_skill"
-    assert "Test Skill" in result.skills[0].injection
+    skill = result.skills[0]
+    assert skill.name == "test_skill"
+    # HATS-706: skill bodies are NOT eager-loaded into injection — the only
+    # consumer (reflect mode) reads the body on demand from source_path. A
+    # normal session must not pay a full SKILL.md read per skill for a body it
+    # never uses.
+    assert skill.injection == ""
+    assert "Test Skill" in (skill.source_path / "SKILL.md").read_text()
 
 
 def test_compose_missing_role(composer):
