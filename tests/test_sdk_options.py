@@ -158,10 +158,14 @@ def test_build_options_non_always_on_rule_not_inlined(
     assert "Optional rule body." not in append
 
 
-def test_build_options_skills_section_in_append(
+def test_build_options_skills_absent_from_append_but_materialized(
     project_dir: Path, tmp_path: Path,
 ) -> None:
-    """Skills surface as an AVAILABLE SKILLS index in the append text."""
+    """HATS-701: skills do NOT surface as an AVAILABLE SKILLS index in the
+    append text — Claude discovers them via the materialized SDK plugin, so
+    re-emitting the index would be a 2-3x duplicate. Discovery is preserved
+    because ``plugins`` still carries the per-session plugin-dir.
+    """
     skill = _make_skill(tmp_path / "skills", "doc-protocol")
     comp = CompositionResult(
         name="role",
@@ -171,11 +175,13 @@ def test_build_options_skills_section_in_append(
         hooks=HooksConfig(),
         injections=[],
     )
-    append = build_options(
-        comp, project_dir=project_dir, session_id="sid",
-    ).system_prompt["append"]  # type: ignore[index]
-    assert "## AVAILABLE SKILLS" in append
-    assert "doc-protocol" in append
+    opts = build_options(comp, project_dir=project_dir, session_id="sid")
+    append = opts.system_prompt["append"]  # type: ignore[index]
+    assert "## AVAILABLE SKILLS" not in append
+    assert "doc-protocol" not in append
+    # Discovery channel intact: the skill is materialized as an SDK plugin.
+    assert opts.plugins, "composed skill must still materialize as an SDK plugin"
+    assert opts.plugins[0]["type"] == "local"
 
 
 # ---------------------------------------------------------------------------
