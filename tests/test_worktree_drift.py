@@ -205,6 +205,71 @@ class TestNoRemoteSwallowed:
         assert "local:" in msg
         assert "remote:" not in msg
 
+    def test_fetch_timeout_swallowed(
+        self, git_project: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """HATS-711: a hung network ``fetch`` is bounded — ``TimeoutExpired``
+        is swallowed with a WARN and the local-only drift check still runs.
+        ``merge()`` must NOT propagate the timeout (which would wedge the
+        lifecycle lock and mis-blame phantom concurrency on peers)."""
+        mgr = WorktreeManager(git_project, branch_name="task/fetch-timeout")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+        _make_main_commit(git_project, "x.txt")
+
+        real_git = mgr._git
+
+        def fake_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess[str]:
+            if args and args[0] == "fetch":
+                raise subprocess.TimeoutExpired(cmd=["git", *args], timeout=30)
+            return real_git(*args, **kwargs)  # type: ignore[arg-type]
+
+        with patch.object(mgr, "_git", side_effect=fake_git):
+            with caplog.at_level(logging.WARNING):
+                # Local drift still surfaces — proving the fall-through ran
+                # rather than the timeout propagating.
+                with pytest.raises(WorktreeDriftError) as exc:
+                    mgr.merge()
+
+        msg = str(exc.value)
+        assert "local:" in msg
+        assert "remote:" not in msg
+        # WARN names the timeout so debugging starts at the network.
+        assert any(
+            "timed out" in r.message and "fetch" in r.message.lower()
+            for r in caplog.records
+        ), f"expected a fetch-timeout WARN, got: {[r.message for r in caplog.records]}"
+
+    def test_fetch_invoked_with_timeout(self, git_project: Path) -> None:
+        """HATS-711 wiring: the pre-merge ``fetch`` is the one ``_git`` call
+        that carries a finite ``timeout`` (``FETCH_TIMEOUT``); dropping it
+        would re-open the unbounded-hang regression."""
+        from ai_hats.worktree import FETCH_TIMEOUT
+
+        mgr = WorktreeManager(git_project, branch_name="task/fetch-timeout-arg")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)  # non-ancestor tip → _check_drift runs
+
+        real_git = mgr._git
+        calls: list[tuple[tuple[str, ...], dict[str, object]]] = []
+
+        def spy_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append((args, kwargs))
+            return real_git(*args, **kwargs)  # type: ignore[arg-type]
+
+        with patch.object(mgr, "_git", side_effect=spy_git):
+            mgr.merge()  # no remote → fetch fails (swallowed); no drift → merges
+
+        fetch_calls = [(a, k) for a, k in calls if a and a[0] == "fetch"]
+        assert fetch_calls, "expected a pre-merge fetch call"
+        assert fetch_calls[0][1].get("timeout") == FETCH_TIMEOUT
+        # No other _git call may carry a timeout — local plumbing stays unbounded.
+        assert all(
+            k.get("timeout") is None for a, k in calls if not (a and a[0] == "fetch")
+        )
+
 
 class TestRemoteDrift:
     """Remote-only drift: local base unchanged, ``origin/<base>`` advanced.
