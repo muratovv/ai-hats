@@ -109,10 +109,8 @@ def test_subagent_runner_via_sdk_smoke(
     # Inject a per-call budget via the build_options call site by
     # monkey-patching the wrapper's signature is fragile; instead we
     # rely on the SDK's max_budget_usd guard configured statically in
-    # the helper. For this probe, a $0.10 cap is enforced via SDK
-    # options once SubAgentRunner.session() lands (Phase 3). For Phase
-    # 2 we accept the small uncapped cost (~$0.001 with haiku and a
-    # 4-char response).
+    # the helper. For this probe a static cap is not wired; we accept
+    # the small uncapped cost (~$0.001 with haiku and a 4-char response).
     session = runner.run(
         role_name="probe",
         task=PROBE_TASK,

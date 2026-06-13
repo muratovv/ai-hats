@@ -55,8 +55,7 @@ class Provider(Step):
             # ``SubAgentRunner._run_attempt → compose_for_role``) needs a
             # funnel-supplied prompt. ``SubAgentRunner.run``'s
             # ``system_prompt_override`` parameter survives for explicit
-            # HATS-267 callers (e.g. ``subagent_session.py``); the pipeline
-            # is no longer one of them.
+            # HATS-267 callers; the pipeline is no longer one of them.
             optional=frozenset({
                 "role", "provider", "prompt_text",
                 "model", "isolation", "ticket", "tags", "extra_args",
@@ -102,8 +101,8 @@ class Provider(Step):
             # ``build_session_prompt`` inside ``run_session``. HATS-505:
             # the sub-agent branch below also no longer consumes a
             # funnel-supplied ``system_prompt`` — only explicit HATS-267
-            # callers (e.g. ``subagent_session.py``) use
-            # ``SubAgentRunner.run``'s ``system_prompt_override`` channel.
+            # callers use ``SubAgentRunner.run``'s
+            # ``system_prompt_override`` channel.
             exit_code, session = runner.run(
                 eff_provider,
                 role_override=role,

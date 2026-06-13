@@ -1,16 +1,9 @@
 """Project + RunResult — subprocess driver for e2e tests.
 
-Pair the :func:`live_session` (SDK-driven, in-process multi-turn) in
-``live.py`` with this surface (subprocess-driven, one-shot ``ai-hats
-<cmd>`` invocations). Both layers share the same fluent ``.expect_*``
-style: each verb is one assertion, returns ``self`` for chaining.
-
-Originally written for the W0 pilot (HATS-464). The PTY-based
-``Project.session`` method on the original is gone — HATS-474 Phase 4
-replaced PTY + idle-detection with SDK-based ``live_session``. The
-subprocess ``.run`` surface stayed because it has its own niche:
-testing CLI commands that don't spawn an agent (e.g. ``ai-hats task
-list``, ``ai-hats config ...``).
+A subprocess-driven, one-shot ``ai-hats <cmd>`` surface with a fluent
+``.expect_*`` style: each verb is one assertion, returns ``self`` for
+chaining. Its niche is testing CLI commands that don't spawn an agent
+(e.g. ``ai-hats task list``, ``ai-hats config ...``).
 """
 
 from __future__ import annotations
@@ -96,9 +89,7 @@ class RunResult:
 class Project:
     """One tmp project directory + an installed ``ai-hats`` binary.
 
-    Tests interact via :meth:`run` (subprocess one-shot). Multi-turn
-    agent dialogue lives in :func:`tests.e2e._helpers.live.live_session`
-    — call that directly with ``Project.path`` as the project dir.
+    Tests interact via :meth:`run` (subprocess one-shot).
     """
 
     path: Path

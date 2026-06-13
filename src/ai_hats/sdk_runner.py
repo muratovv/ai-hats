@@ -7,17 +7,16 @@ coverage and billing are identical to the legacy path — but we gain:
 
 * structured turn-completion (:class:`ResultMessage` with ``subtype``)
 * native cost / usage / num_turns telemetry
-* in-process bidirectional control protocol (sets up Phase 3 multi-turn)
+* in-process bidirectional control protocol
 * no fragile stdout-parsing for "is the agent done"
 
 The module is sync-on-the-outside via :func:`run_claude_sdk_blocking`
 (``asyncio.run`` plus ``asyncio.wait_for`` for wall-clock cap) so
 existing call-sites in :class:`SubAgentRunner._run_attempt` plug in
-without an async cascade. The internal ``_run_sdk`` coroutine is what
-:meth:`SubAgentRunner.session` (Phase 3) will reuse for multi-turn.
+without an async cascade.
 
 Formatters (:func:`format_transcript`, :func:`format_reasoning`) are
-exposed for tests and the multi-turn API. ``format_transcript`` produces
+exposed for tests and reuse. ``format_transcript`` produces
 the same shape as the legacy ``proc.stdout`` capture (so the existing
 ``transcript.txt`` consumers — audit-writer, judge — keep working).
 """
@@ -216,8 +215,7 @@ async def drain_one_turn(
 ) -> tuple[SdkRunResult, list]:
     """Send one user message to an open SDK client; drain until terminal.
 
-    Used by both the one-shot path (``_run_sdk``) and the multi-turn API
-    (:class:`SubAgentSession` — HATS-474 Phase 3). The client MUST
+    Used by the one-shot SDK path (``_run_sdk``). The client MUST
     already be inside its ``async with`` context — this helper neither
     enters nor exits it, so it can be called repeatedly against the
     same long-lived client without re-spawning ``claude``.
