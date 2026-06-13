@@ -451,7 +451,13 @@ def _materialize_target_composition(
         skills_dir = target_dir / "skills"
         skills_dir.mkdir()
         for s in composition.skills:
-            (skills_dir / f"{s.name}.md").write_text(s.injection or "")
+            # HATS-706: read the body on demand from source_path. The composer
+            # no longer eager-loads it into ``injection`` (reflect is its sole
+            # consumer), so reading ``s.injection`` here would write an empty
+            # file.
+            skill_md = s.source_path / "SKILL.md"
+            body = skill_md.read_text() if skill_md.exists() else ""
+            (skills_dir / f"{s.name}.md").write_text(body)
 
     return target_dir
 

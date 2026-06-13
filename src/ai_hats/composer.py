@@ -382,14 +382,17 @@ class Composer:
                 errors.append(f"Skill '{skill_name}' not found")
                 continue
 
-            skill_md = skill_dir / "SKILL.md"
-            injection = skill_md.read_text() if skill_md.exists() else ""
+            # HATS-706: do NOT eager-load the SKILL.md body here. The only
+            # consumer of a skill's body is reflect mode, which reads it on
+            # demand from ``source_path``; ``_extract_frontmatter_description``
+            # reads its own (single) copy for the Gemini index. Loading the
+            # full body for every skill on every compose was dead work for
+            # every non-reflect session.
             skills.append(
                 ResolvedComponent(
                     name=skill_name,
                     component_type=ComponentType.SKILL,
                     source_path=skill_dir,
-                    injection=injection,
                 )
             )
 
