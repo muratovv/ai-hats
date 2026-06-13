@@ -23,8 +23,8 @@ Fail-under-revert (per ``dev_rule_e2e_gate`` §4). Reverting any of:
 - ``runtime.py`` (drop of ``system_prompt_override`` from ``WrapRunner``)
 
 …makes ``test_bare_session_includes_full_role_injection`` fail — the
-prompt loses the unique trait markers (``E2E gate``, ``Agent Protocol``,
-``Workflow``).
+prompt loses the unique markers (``E2E gate``, ``Agent Protocol``,
+``primary development assistant for the``).
 """
 
 from __future__ import annotations
@@ -127,10 +127,11 @@ def _install_pty_capture(monkeypatch, sink: dict[str, Any]) -> None:
 # Unique substrings emitted by maintainer composition.
 # - "E2E gate"        — from trait ai-hats-maintainer
 # - "Agent Protocol"  — from trait trait-agent
-# - "Workflow"        — from role maintainer's own injection
+# - "primary development assistant for the" — from role maintainer's own
+#   injection intro (HATS-703 dropped the old "## Workflow" marker section).
 TRAIT_MARKER_E2E_GATE = "E2E gate"
 TRAIT_MARKER_AGENT_PROTOCOL = "Agent Protocol"
-ROLE_MARKER_WORKFLOW = "Workflow"
+ROLE_MARKER_INTRO = "primary development assistant for the"
 SECTION_HEADER_RULES = "## RULES"
 SECTION_HEADER_PRIORITIES = "## PRIORITIES"
 
@@ -173,9 +174,9 @@ def test_bare_session_includes_full_role_injection(
         f"HATS-452 regression: trait trait-agent injection missing "
         f"({TRAIT_MARKER_AGENT_PROTOCOL!r} not in prompt). Full prompt:\n{text}"
     )
-    assert ROLE_MARKER_WORKFLOW in text, (
+    assert ROLE_MARKER_INTRO in text, (
         f"HATS-452 regression: role maintainer's own injection missing "
-        f"({ROLE_MARKER_WORKFLOW!r} not in prompt). Full prompt:\n{text}"
+        f"({ROLE_MARKER_INTRO!r} not in prompt). Full prompt:\n{text}"
     )
 
     # Layout invariant: injection sits between PRIORITIES and RULES.
@@ -210,4 +211,4 @@ def test_explicit_role_session_includes_full_role_injection(
         f"--role maintainer regression: {TRAIT_MARKER_E2E_GATE!r} missing"
     )
     assert TRAIT_MARKER_AGENT_PROTOCOL in text
-    assert ROLE_MARKER_WORKFLOW in text
+    assert ROLE_MARKER_INTRO in text

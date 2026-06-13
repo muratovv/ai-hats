@@ -71,7 +71,9 @@ def test_show_prompt_text_mode_active_role(project_with_maintainer):
     # Injection bodies between PRIORITIES and RULES (the HATS-452 fix).
     assert "E2E gate" in out, "ai-hats-maintainer trait injection missing"
     assert "Agent Protocol" in out, "trait-agent injection missing"
-    assert "Workflow" in out, "role maintainer's own injection missing"
+    assert "primary development assistant for the" in out, (
+        "role maintainer's own injection missing"
+    )
     # Layout: injection sits in the PRIORITIES..RULES band.
     pri = out.find("## PRIORITIES")
     rules = out.find("## RULES")
