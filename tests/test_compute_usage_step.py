@@ -8,7 +8,9 @@ separately in ``test_usage.py``.
 
 from __future__ import annotations
 
+import calendar
 import json
+import os
 from pathlib import Path
 
 from ai_hats.observe import Session
@@ -28,6 +30,10 @@ def _claude_dir_for(home: Path, project_dir: Path) -> Path:
     d = home / ".claude" / "projects" / project_key
     d.mkdir(parents=True)
     return d
+
+
+def _set_mtime(path: Path, ts: float) -> None:
+    os.utime(path, (ts, ts))
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +86,52 @@ def test_writes_usage_json_from_configured_jsonl(tmp_path, monkeypatch):
     assert report["schema_version"] == "usage/v1"
     assert report["aggregates"]["skill_loads"] == {"backlog-manager": 1}
     assert report["aggregates"]["tool_success_rate"] == 0.75
+
+
+def test_falls_back_to_discovered_jsonl_when_configured_path_missing(
+    tmp_path, monkeypatch,
+):
+    """Resume-mode regression (HATS-272 / HATS-734): the configured
+    ``claude_session_id`` is a uuid4 that never reached Claude, so its path is
+    missing; ``_discover_claude_jsonl`` must pick the most-recent JSONL under
+    the project_key dir using the ai-hats ``session_id`` (NOT the uuid) for the
+    mtime-window start.
+
+    Before HATS-734 the step passed ``claude_session_id`` to discovery, which
+    fed a uuid to ``strptime("%Y%m%d-%H%M%S")`` → ValueError → None → the
+    fallback was permanently dead and ``usage.json`` was silently skipped in
+    exactly the resume scenario the fallback exists for. Sibling ``make_audit``
+    passes ``session_id`` correctly; this asserts ``compute_usage`` converged.
+
+    Fail-under-revert: pass the uuid back to ``_discover_claude_jsonl`` →
+    discovery returns None → no usage.json → both asserts below fail.
+    """
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    session = make_session(tmp_path)  # session_id = 20260605-100000-1
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
+
+    # JSONL lives under Claude's OWN uuid (foreign to claude_session_id), with
+    # mtime AFTER the session start so the discovery window accepts it.
+    real_jsonl = claude_dir / "real-claude-uuid.jsonl"
+    real_jsonl.write_text((TRANSCRIPTS / "normal.jsonl").read_text())
+    _set_mtime(real_jsonl, calendar.timegm((2026, 6, 5, 11, 0, 0, 0, 0, 0)))
+
+    delta = ComputeUsage().run(
+        session_id=session.session_id,
+        session_dir=session.session_dir,
+        claude_session_id="dead-uuid-never-passed-to-claude",
+        project_dir=project_dir,
+    )
+
+    usage_path = session.session_dir / "usage.json"
+    assert delta == {"usage_path": usage_path}, (
+        "HATS-734: discovery must run off session_id, not the claude uuid"
+    )
+    assert usage_path.exists()
+    report = json.loads(usage_path.read_text())
+    assert report["schema_version"] == "usage/v1"
 
 
 def test_session_meta_filled_from_metrics_json(tmp_path, monkeypatch):
