@@ -7,7 +7,6 @@ from pathlib import Path
 from ai_hats.assembler import Assembler
 from ai_hats.paths import (
     audits_dir,
-    experiments_dir,
     handoffs_dir,
     retros_dir,
     runs_dir,
@@ -75,7 +74,7 @@ def test_sessions_migration_moves_all_paths(tmp_path: Path) -> None:
     assert (retros_dir(tmp_path) / "2026-01-01-marker.md").exists()
     assert (audits_dir(tmp_path) / "2026-01-01-marker.md").exists()
     assert (handoffs_dir(tmp_path) / "2026-01-01-marker.md").exists()
-    assert (experiments_dir(tmp_path) / "lab-a" / "README.md").exists()
+    assert (sessions_dir(tmp_path) / "experiments" / "lab-a" / "README.md").exists()
     # Worktrees + singleton
     assert (worktrees_dir(tmp_path) / "task-hats-001.json").exists()
     assert (sessions_dir(tmp_path) / "worktree.json").exists()

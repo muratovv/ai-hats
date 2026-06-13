@@ -12,8 +12,6 @@ from ai_hats.paths import (
     complete_sentinel,
     current_pointer,
     decisions_dir,
-    detect_legacy_state,
-    experiments_dir,
     handoffs_dir,
     hooks_dir,
     hypotheses_dir,
@@ -164,7 +162,6 @@ def test_ai_hats_dir_handles_corrupt_yaml(tmp_path, monkeypatch):
         (retros_dir, "sessions/retros"),
         (audits_dir, "sessions/audits"),
         (handoffs_dir, "sessions/handoffs"),
-        (experiments_dir, "sessions/experiments"),
         (worktrees_dir, "sessions/worktrees"),
     ],
 )
@@ -247,23 +244,6 @@ def _seed_legacy_layout(project_dir):
             target.mkdir(parents=True, exist_ok=True)
 
 
-def test_detect_legacy_state_returns_all_pairs(tmp_path, monkeypatch):
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    _seed_legacy_layout(tmp_path)
-    pairs = detect_legacy_state(tmp_path)
-    assert len(pairs) == len(LEGACY_PATH_MAP)
-    # Sanity: every old path is absolute and exists; every new path is under ai_hats_dir.
-    base = tmp_path / ".agent" / "ai-hats"
-    for old, new in pairs:
-        assert old.is_absolute() and old.exists()
-        assert str(new).startswith(str(base))
-
-
-def test_detect_legacy_state_empty_project(tmp_path, monkeypatch):
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    assert detect_legacy_state(tmp_path) == []
-
-
 def test_legacy_paths_by_class_filters(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     _seed_legacy_layout(tmp_path)
@@ -271,10 +251,22 @@ def test_legacy_paths_by_class_filters(tmp_path, monkeypatch):
     tracker = legacy_paths_by_class(tmp_path, "tracker")
     library = legacy_paths_by_class(tmp_path, "library")
     root = legacy_paths_by_class(tmp_path, "root")
-    assert len(sessions) + len(tracker) + len(library) + len(root) == len(LEGACY_PATH_MAP)
-    # No overlap.
-    all_olds = {p[0] for p in sessions + tracker + library + root}
+    all_pairs = sessions + tracker + library + root
+    # Union across classes reproduces the full map, with no overlap.
+    assert len(all_pairs) == len(LEGACY_PATH_MAP)
+    all_olds = {p[0] for p in all_pairs}
     assert len(all_olds) == len(LEGACY_PATH_MAP)
+    # Sanity: every old path is absolute and exists; every new path is under ai_hats_dir.
+    base = tmp_path / ".agent" / "ai-hats"
+    for old, new in all_pairs:
+        assert old.is_absolute() and old.exists()
+        assert str(new).startswith(str(base))
+
+
+def test_legacy_paths_by_class_empty_project(tmp_path, monkeypatch):
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    for class_ in ("sessions", "tracker", "library", "root"):
+        assert legacy_paths_by_class(tmp_path, class_) == []
 
 
 # ---------- HATS-316: normalize_ai_hats_dir validation ----------
