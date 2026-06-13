@@ -1,4 +1,4 @@
-"""Role-assembly commands: init, set, customize, status, bump, clean.
+"""Role-assembly commands: init, set, customize, status, bump.
 
 HATS-407: ``rollback`` was removed — ``config set`` is yaml-only, ``init`` /
 ``bump`` only touch git-tracked scaffold files (``./CLAUDE.md`` / ``.gitignore``)
@@ -1008,13 +1008,5 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
     if banner:
         console.print(f"  [dim]{banner}[/]")
     return 0
-
-
-@click.command()
-def clean():
-    """Clean active directories."""
-    asm = _assembler()
-    asm.clean()
-    console.print("[green]Cleaned[/] .agent/ directories")
 
 

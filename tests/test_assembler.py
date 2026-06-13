@@ -152,18 +152,6 @@ def test_set_role_with_claude(project_with_library):
 # user-facing recovery path. Tests below were retired with the helpers.
 
 
-def test_clean(project_with_library):
-    project, lib = project_with_library
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    asm.set_role("test-role")
-
-    asm.clean()
-    # Rules dir is wiped by clean() — empty (no files) or absent.
-    rdir = rules_dir(project)
-    assert not rdir.exists() or list(rdir.iterdir()) == []
-
-
 def test_status(project_with_library):
     """HATS-407: status.health reflects on-disk artefacts only.
     With per-session compose, rules/skills are NOT materialized into the
