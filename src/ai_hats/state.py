@@ -261,6 +261,7 @@ class TaskManager:
         new_state: TaskState,
         resolution: str | None = None,
         *,
+        final_state: str | None = None,
         force: bool = False,
         reason: str | None = None,
     ) -> tuple[TaskCard, list[TaskTransition]]:
@@ -271,6 +272,13 @@ class TaskManager:
         enforces that ``resolution`` is provided when ``new_state`` is
         CANCELLED; the manager itself is permissive (policy stays at the
         edge, not duplicated here).
+
+        ``final_state`` (the accomplished-work summary) rides the same lock
+        window for the same reason — one write per user-visible operation, so
+        a transition that raises (FSM guard, ``EmptyPlanError``, worktree
+        errors) never leaves a half-applied ``final_state`` on the card
+        (HATS-723). The CLI restricts the flag to the ``review`` target; the
+        manager stays permissive, mirroring ``resolution``.
 
         ``force=True`` bypasses the FSM guard for corrective transitions
         (e.g. ``plan → brainstorm`` when planning was started by mistake).
@@ -305,6 +313,8 @@ class TaskManager:
             task.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             if resolution is not None:
                 task.resolution = resolution
+            if final_state is not None:
+                task.final_state = final_state
 
             # State-specific side effects
             if new_state == TaskState.PLAN:
@@ -431,21 +441,6 @@ class TaskManager:
 
         # Re-parenting a live task into a `done` epic reopens it (HATS-690 Q3).
         return task, self._propagate_to_parent(task)
-
-    def set_final_state(self, task_id: str, final_state: str) -> TaskCard:
-        """Record the final accomplished state before review."""
-        lock_path = self.tasks_dir / task_id / ".lock"
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-
-        with FileLock(str(lock_path)):
-            task = self.get_task(task_id)
-            if task is None:
-                raise ValueError(f"Task '{task_id}' not found")
-            task.final_state = final_state
-            task.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            self._save_task(task)
-
-        return task
 
     def close_task(
         self, task_id: str, resolution: str

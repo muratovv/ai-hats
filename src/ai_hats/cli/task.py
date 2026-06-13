@@ -155,11 +155,22 @@ def task_transition(
         )
         sys.exit(1)
 
+    # HATS-723: `--final-state` is the accomplished-work summary recorded for
+    # the review transition. Reject it loudly on any other target rather than
+    # parsing and silently dropping it (option-parsed-then-ignored class).
+    if final_state and state != TaskState.REVIEW:
+        console.print(
+            "[red]Error[/]: --final-state is only valid with the review "
+            f"transition (got target '{state.value}')"
+        )
+        sys.exit(1)
+
     try:
-        if final_state and state == TaskState.REVIEW:
-            mgr.set_final_state(task_id, final_state)
+        # final_state rides the transition's lock window (HATS-723) so a failed
+        # transition never leaves a half-applied summary on the card.
         t, auto = mgr.transition(
-            task_id, state, resolution=resolution, force=force, reason=reason
+            task_id, state, resolution=resolution, final_state=final_state,
+            force=force, reason=reason,
         )
         prefix = "[yellow]Forced[/]" if force else "[green]Transitioned[/]"
         console.print(f"{prefix}: {t.id} → {t.state.value}")

@@ -11,6 +11,15 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Fixed
+- **`task transition --final-state` refuses non-review targets and persists
+  atomically** (HATS-723, child of HATS-699 / HATS-698 audit) — the flag was
+  applied only for the `review` target; on any other target it was parsed and
+  silently dropped (option-parsed-then-ignored). It now exits 1 with a clear
+  error. Separately, the summary was written in its own lock *before* the
+  transition, so a transition that then raised (FSM guard, empty-plan, worktree
+  errors) left a half-applied card; `final_state` now rides the transition's
+  single lock window. The dead `TaskManager.set_final_state` (now without a
+  production caller) was removed.
 - **`_pty_spawn` no longer pollutes the parent process environment** (HATS-713,
   child of HATS-699 / HATS-698 audit) — it looped `os.environ[k] = v` over the
   per-session env, permanently leaking keys (`AI_HATS_SESSION_ID`,
