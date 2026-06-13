@@ -35,12 +35,10 @@ from .models import (
 )
 from .paths import (
     hooks_dir as _lib_hooks_dir,
-    legacy_paths_by_class,
     managed_runtime_hook_filename as _managed_runtime_hook_filename,
     rules_dir as _lib_rules_dir,
     skills_dir as _lib_skills_dir,
     user_home,
-    user_hooks_dir as _user_hooks_dir,
 )
 from .placeholders import expand_path_placeholders
 from .safe_delete import discard as _safe_discard
@@ -1004,151 +1002,22 @@ class Assembler:
         )
 
     def _migrate_layout_v4(self) -> None:
-        """HATS-471: unified v3→v4 layout migration entry-point.
+        """v4-layout migration step (logic in migrations.py, HATS-715)."""
+        from . import migrations
 
-        Consolidates the three historical splits — sessions / tracker / library —
-        into a single call site so the migration registry has one entry per
-        logical migration (not three for the same v4 layout move).
-
-        The three sub-methods stay as private helpers (they remain
-        independently testable and the split is convenient for narrow log
-        diagnostics), but no other caller invokes them directly.
-        """
-        self._migrate_layout_v4_sessions()
-        self._migrate_layout_v4_tracker()
-        self._migrate_layout_v4_library()
+        migrations.migrate_layout_v4(self)
 
     def _migrate_layout_v4_library(self) -> None:
-        """One-shot migration of library-mirror artefacts (HATS-314).
+        """v4-layout migration step (logic in migrations.py, HATS-715)."""
+        from . import migrations
 
-        Moves `.agent/{rules,skills,hooks}/` → `<ai_hats_dir>/library/...`.
-        `.claude/skills/` and `.githooks/` are NOT touched — they stay as
-        copy-publish targets owned by external tooling.
-
-        HATS-549 Phase 4: the ``.agent/hooks/`` entry is partitioned
-        before the generic move — managed files (basename in the
-        ai-hats-owned whitelist) head to ``<ai_hats_dir>/library/hooks/``
-        as before; foreign files (anything else, including subdirs)
-        head to ``<ai_hats_dir>/user-hooks/``. Keeps user-owned content
-        out of the managed namespace where future sweep passes could
-        delete it.
-        """
-        self._migrate_layout_v4_hooks_partition()
-        for old_abs, new_abs in legacy_paths_by_class(self.project_dir, "library"):
-            # The hooks pair was handled by the partition step; skip
-            # so ``_idempotent_move`` doesn't run on the now-empty
-            # ``.agent/hooks/`` directory (the partition leaves it
-            # cleaned up).
-            if old_abs.name == "hooks" and old_abs.parent.name == AGENT_DIR:
-                continue
-            self._idempotent_move(old_abs, new_abs)
+        migrations.migrate_layout_v4_library(self)
 
     def _migrate_layout_v4_hooks_partition(self) -> None:
-        """HATS-549 Phase 4: partition legacy ``.agent/hooks/`` contents
-        AND reconcile pre-Phase-4 stuck states.
+        """v4-layout migration step (logic in migrations.py, HATS-715)."""
+        from . import migrations
 
-        Two passes:
-
-        1. **Legacy partition** — walks ``.agent/hooks/``, routes each
-           entry by basename whitelist:
-
-           - basename in :func:`_ai_hats_owned_hook_basenames` →
-             moved to ``<ai_hats_dir>/library/hooks/<name>``.
-           - everything else (including subdirs like ``tests/``,
-             arbitrary ``.py`` / ``.yaml`` / ``.log`` files) →
-             moved to ``<ai_hats_dir>/user-hooks/<name>``.
-
-        2. **Managed-namespace reconciliation** — walks
-           ``<ai_hats_dir>/library/hooks/`` for foreign files left
-           there by a pre-HATS-549 bump that auto-healed
-           ``.agent/hooks/X`` → ``.agent/ai-hats/library/hooks/X``
-           for user-owned content. Anything NOT in the whitelist
-           (and not framework bookkeeping like ``.manifest``) is
-           relocated to ``user-hooks/`` — getting user content out of
-           the managed namespace before any future sweep could touch
-           it. Combined with the healer Phase 4 pre-pass (which now
-           also recognises the post-heal path prefix), the next bump
-           cleanly heals stuck states from prior versions.
-
-        Per-entry move preserves mode (``shutil.move`` is rename-based
-        on the same filesystem, copytree-based across filesystems).
-        Idempotent: a fully-partitioned project is a no-op on re-entry.
-        Collisions on the destination side route through
-        ``_safe_discard`` so the user can recover from trash. Discard
-        failures emit a stderr WARN — silence here would mask a
-        partial-state limbo (HATS-549 review S.4).
-
-        On a fully-partitioned state, ``.agent/hooks/`` is empty;
-        ``_safe_discard`` drops the empty directory so the legacy
-        namespace doesn't linger.
-        """
-        managed_dst = _lib_hooks_dir(self.project_dir)
-        user_dst = _user_hooks_dir(self.project_dir)
-        whitelist = _ai_hats_owned_hook_basenames()
-
-        # --- Pass 1: legacy partition ---
-        legacy = self.project_dir / AGENT_DIR / "hooks"
-        if legacy.is_dir():
-            managed_dst.mkdir(parents=True, exist_ok=True)
-            try:
-                entries = list(legacy.iterdir())
-            except OSError:
-                entries = []
-
-            for entry in entries:
-                if entry.name in whitelist:
-                    target = managed_dst / entry.name
-                else:
-                    user_dst.mkdir(parents=True, exist_ok=True)
-                    target = user_dst / entry.name
-                if target.exists():
-                    self._safe_discard_with_warn(
-                        entry,
-                        reason="hooks-partition-collision",
-                    )
-                    continue
-                shutil.move(str(entry), str(target))
-
-            try:
-                if not any(legacy.iterdir()):
-                    _safe_discard(
-                        legacy,
-                        reason="hooks-partition-cleanup",
-                        project_dir=self.project_dir,
-                    )
-            except OSError as e:
-                print(
-                    f"[ai-hats] WARN: hooks-partition: could not clean up empty {legacy}: {e}",
-                    file=sys.stderr,
-                )
-
-        # --- Pass 2: managed-namespace reconciliation ---
-        # If a previous-version bump auto-healed settings.json to point
-        # at .agent/ai-hats/library/hooks/<x> AND moved the file there,
-        # the file is currently sitting in the managed namespace where
-        # any future framework-side sweep could mistake it for managed
-        # content and discard it. Move it out NOW, while we're already
-        # in a "rearrange hooks" frame.
-        if managed_dst.is_dir():
-            try:
-                managed_entries = list(managed_dst.iterdir())
-            except OSError:
-                managed_entries = []
-            for entry in managed_entries:
-                # Skip framework bookkeeping and whitelisted basenames.
-                if entry.name == ".manifest":
-                    continue
-                if entry.name in whitelist:
-                    continue
-                user_dst.mkdir(parents=True, exist_ok=True)
-                target = user_dst / entry.name
-                if target.exists():
-                    self._safe_discard_with_warn(
-                        entry,
-                        reason="hooks-reconcile-collision",
-                    )
-                    continue
-                shutil.move(str(entry), str(target))
+        migrations.migrate_layout_v4_hooks_partition(self)
 
     def _safe_discard_with_warn(self, path: Path, *, reason: str) -> None:
         """Wrap :func:`_safe_discard` with a stderr WARN on failure.
@@ -1191,46 +1060,16 @@ class Assembler:
         return _ai_hats_owned_hook_basenames()
 
     def _migrate_layout_v4_tracker(self) -> None:
-        """One-shot migration of tracker + root-class artefacts (HATS-313).
+        """v4-layout migration step (logic in migrations.py, HATS-715)."""
+        from . import migrations
 
-        Moves backlog/, hypotheses/, decisions/, STATE.md, and .last_backup
-        from their legacy .agent/ locations to <ai_hats_dir>/tracker/* (and
-        the framework-root entries STATE.md / .last_backup directly under
-        <ai_hats_dir>/). Idempotent on a re-run after success.
-        """
-        for class_ in ("tracker", "root"):
-            for old_abs, new_abs in legacy_paths_by_class(self.project_dir, class_):
-                self._idempotent_move(old_abs, new_abs)
+        migrations.migrate_layout_v4_tracker(self)
 
     def _migrate_layout_v4_sessions(self) -> None:
-        """One-shot migration of session-class artefacts to <ai_hats_dir>/sessions/.
+        """v4-layout migration step (logic in migrations.py, HATS-715)."""
+        from . import migrations
 
-        Moves seven legacy locations (pipeline_runs, retrospectives, audits,
-        handoffs, experiments, worktrees, worktree.json) plus an orphan
-        handoff file. Idempotent: a no-op once every legacy path is gone.
-        See ADR `2026-05-13-hats-316-ai-hats-dir-layout.md`.
-        """
-        for old_abs, new_abs in legacy_paths_by_class(self.project_dir, "sessions"):
-            self._idempotent_move(old_abs, new_abs)
-        # Pick up the orphan handoff file lingering at .agent/ root.
-        orphan = self.project_dir / AGENT_DIR / "handoff-2026-04-09-hats-061.md"
-        if orphan.exists():
-            from .paths import handoffs_dir
-
-            dest_dir = handoffs_dir(self.project_dir)
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            dest = dest_dir / orphan.name
-            if not dest.exists():
-                shutil.move(str(orphan), str(dest))
-            else:
-                try:
-                    _safe_discard(
-                        orphan,
-                        reason="layout-v4-orphan",
-                        project_dir=self.project_dir,
-                    )
-                except OSError:
-                    pass
+        migrations.migrate_layout_v4_sessions(self)
 
     def _idempotent_move(self, old_abs: Path, new_abs: Path) -> None:
         """Move `old_abs` to `new_abs`, merging into existing dirs when needed.
