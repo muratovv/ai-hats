@@ -1,0 +1,666 @@
+"""Runtime helpers shared by wrap_runner (HITL) and subagent_runner (Automate):
+hooks execution, session finalize/print, escape-hatch + PTY-reset, and
+session-cache cleanup. Extracted from runtime.py (HATS-715)."""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import shutil
+import subprocess
+import sys
+from collections import deque
+from pathlib import Path
+
+from typing import TYPE_CHECKING
+
+from .assembler import Assembler
+
+# HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
+# beside the other recovery passes (bundled and run at the create_session
+# chokepoint). Re-exported so existing callers/tests keep importing it from
+# ``ai_hats.runtime``.
+from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
+from .models import LifecycleEvent
+from .observe import Session, SidecarTracer, TraceTag
+
+if TYPE_CHECKING:
+    pass
+
+logger = logging.getLogger(__name__)
+
+# Sub-agent subprocess wall-clock limit. Exceeding this raises TimeoutExpired,
+# which is handled by graceful finalize (partial transcript + exit_code=124).
+SUBAGENT_SUBPROCESS_TIMEOUT_S = 600
+
+# Exit code conventions for early termination. 124 matches GNU coreutils `timeout`.
+SUBAGENT_EXIT_TIMEOUT = 124
+SUBAGENT_EXIT_ERROR = 1
+
+# HATS-215 / HATS-220: emitted on stdout before each PTY child spawn to
+# neutralise terminal-emulator state that a prior TUI session may have leaked.
+# All sequences are idempotent on a clean terminal.
+#
+# HATS-220 evidence: Ghostty emitted `\n` for plain Enter in a session that
+# had modifyOtherKeys=2 active (verified: Ctrl+J came through as the xterm
+# extended-key form `\x1b[27;5;106~`). The original HATS-215 prelude did NOT
+# reset modifyOtherKeys, so this state survived across sessions in one pane.
+#
+#   \x1b[=0;1u    — kitty-keyboard ABSOLUTE set: flags=0, mode=1 (replace).
+#                   Replaces the relative `\x1b[<u` pop, which was unreliable
+#                   because the stack could already be at depth 0 or below.
+#   \x1b[>4;0m    — modifyOtherKeys=0 (reset to default). Was the leaking
+#                   mode in HATS-220 — leaves Enter→\r encoding intact.
+#   \x1b[20l      — LNM off (DEC ANSI mode 20). Defensive; some terminals
+#                   leak it from prior `\x1b[20h`.
+#   \x1b>         — DECKPNM (numeric keypad mode); ensures keypad Enter
+#                   sends \r, not \x1bOM (DECKPAM application form).
+#   \x1b[?2004l   — disable bracketed paste
+#   \x1b[?1l      — exit application cursor mode (DECCKM off)
+#   \x1b[?25h     — show cursor (in case prior TUI hid it and crashed)
+_TERM_RESET_PRELUDE = "\x1b[=0;1u\x1b[>4;0m\x1b[20l\x1b>\x1b[?2004l\x1b[?1l\x1b[?25h"
+
+
+# HATS-679: parent escape-hatch for a wedged PTY provider.
+#
+# When the wrapped child (claude) wedges into an un-exitable error-loop — it
+# ignores Ctrl-C, keeps its master fd open, never EOFs — the PTY passthrough
+# loop in ``_pty_spawn`` has no parent-side exit (``tty.setraw`` forwards Ctrl-C
+# as a byte to the child). The user is trapped until an external kill. We can't
+# reliably *ask* whether the child is dead-or-working (every cheap liveness
+# signal is ambiguous between a wedged loop and a healthy-busy session), so we
+# use the only robust behavioural probe: "send the quit gesture; if the child
+# does not EOF, it is wedged". A healthy claude exits on the 2nd Ctrl-C
+# (→ master EOF → loop ends), so the 3rd is never reached — the hatch is dormant
+# for healthy sessions and only fires on a child that fails to honour the
+# standard double-Ctrl-C quit.
+_ESCAPE_CTRL_C = 0x03  # the Ctrl-C byte (VINTR) forwarded in raw mode
+_ESCAPE_COUNT = 3  # consecutive Ctrl-C presses that trip the hatch
+_ESCAPE_WINDOW_S = 1.5  # they must fall within this sliding window
+_ESCAPE_NOTICE = b"\r\n[ai-hats] provider not responding to Ctrl-C; forcing exit (code 130).\r\n"
+
+
+def _scan_escape(
+    chunk: bytes,
+    presses: deque[float],
+    now: float,
+    *,
+    count: int = _ESCAPE_COUNT,
+    window_s: float = _ESCAPE_WINDOW_S,
+) -> tuple[bytes, bool]:
+    """Scan one stdin chunk for the triple-Ctrl-C escape gesture (HATS-679).
+
+    Pure function (no I/O) so the escalation logic is unit-testable without a
+    PTY. ``presses`` carries Ctrl-C timestamps across calls and is mutated in
+    place.
+
+    Returns ``(forward, triggered)``:
+      * ``forward`` — the bytes to write to the child: everything up to (but not
+        including) the byte that trips the hatch. The triggering byte and the
+        remainder of the chunk are withheld, so the 1st/2nd Ctrl-C still reach
+        the child (dormancy, R2) but the 3rd does not.
+      * ``triggered`` — ``True`` once ``count`` Ctrl-C bytes fall within
+        ``window_s``.
+
+    Counting is **per-byte**, not per-read: a batched chunk
+    (``b"\\x03\\x03\\x03"``) trips on its 3rd byte; any non-Ctrl-C byte clears
+    the streak (R2 "consecutive"); timestamps older than the window are dropped
+    so a slow drip never accumulates. The sliding window ("N within the window")
+    is deliberately stricter than a plain counter ("each gap < window").
+    """
+    for i, byte in enumerate(chunk):
+        if byte == _ESCAPE_CTRL_C:
+            presses.append(now)
+            while presses and now - presses[0] > window_s:
+                presses.popleft()
+            if len(presses) >= count:
+                presses.clear()
+                return chunk[:i], True
+        else:
+            presses.clear()
+    return chunk, False
+
+
+def _cleanup_session_cache(project_dir: Path, session_id: str) -> None:
+    """Remove the session's per-session cache dir (HATS-294).
+
+    Drops the whole ``<ai_hats_dir>/.cache/sessions/<session_id>/`` tree
+    (prompt.md + plugin/ + anything else providers stashed there).
+    ``ignore_errors`` keeps us robust against repeated cleanup attempts,
+    missing paths, and SIGKILL-orphans (TTL sweep mops those up later).
+    """
+    from .paths import session_cache_dir
+
+    # Per-session cache: ephemeral, swept at session_end + TTL on next start.
+    # Whitelist.
+    shutil.rmtree(
+        session_cache_dir(project_dir, session_id), ignore_errors=True
+    )  # safe-delete: ok session-cache
+
+
+def _session_timed_out(session: Session) -> bool:
+    """True iff the session's metrics.json records ``timed_out: True``."""
+    if not session.metrics_path.exists():
+        return False
+    try:
+        metrics = json.loads(session.metrics_path.read_text())
+    except (OSError, ValueError):
+        return False
+    return bool(metrics.get("timed_out"))
+
+
+def _finalize_sub_agent(
+    session: Session,
+    *,
+    role: str,
+    model: str,
+    isolation_mode: str,
+    exit_code: int,
+    # HATS-561: ``provider`` is keyword-only with a sentinel default so
+    # legacy unit tests that exercise the function in isolation (and
+    # don't care about provider — e.g. timeout / error / tags plumbing
+    # tests) keep working without churn. EVERY production call site in
+    # ``SubAgentRunner`` passes the real provider name explicitly; the
+    # default is only the safety net for tests, NOT a fallback the
+    # production code is allowed to rely on.
+    provider: str = "unknown",
+    stdout: str = "",
+    stderr: str = "",
+    timed_out: bool = False,
+    error: str | None = None,
+    tags: dict[str, str] | None = None,
+    duration_s: float | None = None,
+    extra_metrics: dict | None = None,
+    work_dir: Path | None = None,
+) -> None:
+    """Save transcripts and finalize audit with structured metrics.
+
+    Called from every sub-agent terminal path (success, timeout, error) so
+    session_dir is always consistently closed: transcript.txt + reasoning.log
+    written if we have any output, metrics.json written with exit_code and
+    optional timed_out/error/tags/duration_s fields. Provider-agnostic —
+    behaves identically for claude and gemini.
+
+    ``extra_metrics`` (HATS-474): provider-specific keys to merge into
+    the metrics dict — e.g. ``claude_session_id``, ``total_cost_usd``,
+    ``num_turns``, ``stop_reason`` from the Claude Agent SDK path.
+    ``None`` values inside are skipped so legacy subprocess callers
+    (Gemini) that have no such telemetry keep producing the same
+    metrics.json shape they always did.
+
+    ``work_dir`` (HATS-535): cwd the SDK ran under — encoded as
+    claude's project_key when locating ``~/.claude/projects/<key>/
+    <claude_session_id>.jsonl``. When provided alongside a
+    ``claude_session_id`` in ``extra_metrics``, the
+    ``finalize-subagent`` sub-pipeline runs and produces a structured
+    ``audit.md`` (👤/👾/🔧/💭) for the SubAgent path — closing the
+    HITL/Automate asymmetry that motivated HATS-535. Callers without
+    ``work_dir`` (legacy / non-Claude subprocess paths)
+    keep producing the meta-only ``audit.md`` they always did — opt-in
+    enrichment, no behaviour change for the unfixed callsites.
+    """
+    if stdout:
+        (session.session_dir / "transcript.txt").write_text(stdout)
+    if stderr:
+        (session.session_dir / "reasoning.log").write_text(stderr)
+
+    metrics: dict = {
+        "exit_code": exit_code,
+        "role": role,
+        # HATS-561: provider was previously omitted from the SubAgent
+        # finalize path's base metrics dict (only the HITL counterpart
+        # `_finalize_session_basic` wrote it). The downstream
+        # `AuditWriter._render_audit` then read `metrics.get("provider",
+        # "unknown")` → audit.md said `Provider: unknown` for every
+        # SubAgent / `execute --batch` session. Provider is known by
+        # `SubAgentRunner` (`self.assembler.project_config.provider`)
+        # and is threaded through here.
+        "provider": provider,
+        "model": model,
+        "isolation_mode": isolation_mode,
+    }
+    if timed_out:
+        metrics["timed_out"] = True
+    if error is not None:
+        metrics["error"] = error
+    if tags:
+        metrics["tags"] = tags
+    if duration_s is not None:
+        metrics["duration_s"] = round(duration_s, 3)
+    if extra_metrics:
+        for k, v in extra_metrics.items():
+            if v is not None:
+                metrics[k] = v
+
+    session.finalize_audit(metrics)
+
+    # HATS-535: opt-in structured audit.md via finalize-subagent
+    # sub-pipeline. Requires both work_dir (for JSONL project_key
+    # encoding) and a claude_session_id (no claude jsonl without it —
+    # e.g. Gemini provider has neither).
+    claude_session_id = None
+    if extra_metrics:
+        claude_session_id = extra_metrics.get("claude_session_id")
+    if work_dir is not None and claude_session_id:
+        try:
+            _run_finalize_subagent(
+                session,
+                claude_session_id=claude_session_id,
+                project_dir=work_dir,
+                exit_code=exit_code,
+            )
+        except (Exception, KeyboardInterrupt):
+            logger.warning("finalize-subagent pipeline failed", exc_info=True)
+
+
+class HooksRunner:
+    """Executes lifecycle hook scripts."""
+
+    def __init__(self, hooks_dir: Path, project_dir: Path) -> None:
+        self.hooks_dir = hooks_dir
+        self.project_dir = project_dir
+
+    def run(self, event: LifecycleEvent, env: dict[str, str] | None = None) -> list[dict]:
+        """Run all hook scripts for an event. Returns list of results."""
+        results = []
+        scripts = self._find_scripts(event)
+        for script in scripts:
+            result = self._execute(script, env or {})
+            results.append(result)
+        return results
+
+    def _find_scripts(self, event: LifecycleEvent) -> list[Path]:
+        """Find hook scripts in hooks dir matching the event pattern."""
+        scripts = []
+        if not self.hooks_dir.exists():
+            return scripts
+        # Convention: scripts starting with event name or in event subdir
+        for f in sorted(self.hooks_dir.iterdir()):
+            if f.is_file() and f.suffix in (".sh", ".py") and f.stem.startswith(event.value):
+                scripts.append(f)
+        event_dir = self.hooks_dir / event.value
+        if event_dir.is_dir():
+            for f in sorted(event_dir.iterdir()):
+                if f.is_file() and f.suffix in (".sh", ".py"):
+                    scripts.append(f)
+        return scripts
+
+    def _execute(self, script: Path, env: dict[str, str]) -> dict:
+        """Execute a single hook script."""
+        full_env = {**os.environ, **env}
+        try:
+            result = subprocess.run(
+                [str(script)],
+                cwd=str(self.project_dir),
+                env=full_env,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            return {
+                "script": str(script),
+                "returncode": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }
+        except subprocess.TimeoutExpired:
+            return {"script": str(script), "returncode": -1, "error": "timeout"}
+        except Exception as e:
+            return {"script": str(script), "returncode": -1, "error": str(e)}
+
+
+def _claude_jsonl_path(project_dir: Path, claude_session_id: str) -> Path | None:
+    """Resolve path to Claude Code's JSONL conversation file."""
+    project_key = str(project_dir).replace("/", "-")
+    return Path.home() / ".claude" / "projects" / project_key / f"{claude_session_id}.jsonl"
+
+
+def _discover_claude_jsonl(project_dir: Path, session_id: str) -> Path | None:
+    """Best-effort JSONL discovery when ``--session-id`` was not injected.
+
+    HATS-272: in ``--resume``/``--continue`` mode the wrapper skips
+    ``--session-id`` to avoid Claude CLI rejecting it. Our generated uuid
+    therefore never reaches Claude, and the JSONL lives under Claude's
+    own (different) uuid. Without this fallback ``AuditWriter`` walks
+    the trace branch and emits zero-token metrics.
+
+    Strategy: pick the most-recently-modified ``*.jsonl`` in the project's
+    Claude dir whose mtime is at or after our session start. Single
+    interactive session per project is the common case — heuristic is
+    safe there. Concurrent wraps in the same project may misattribute;
+    accepted limitation, single-session case is the fix target.
+    """
+    from datetime import datetime, timezone
+
+    project_key = str(project_dir).replace("/", "-")
+    jsonl_dir = Path.home() / ".claude" / "projects" / project_key
+    if not jsonl_dir.is_dir():
+        return None
+    try:
+        start_ts = (
+            datetime.strptime(session_id[:15], "%Y%m%d-%H%M%S")
+            .replace(
+                tzinfo=timezone.utc,
+            )
+            .timestamp()
+        )
+    except (ValueError, IndexError):
+        return None
+
+    best: tuple[float, Path] | None = None
+    for f in jsonl_dir.glob("*.jsonl"):
+        try:
+            mtime = f.stat().st_mtime
+        except OSError:
+            continue
+        if mtime < start_ts:
+            continue
+        if best is None or mtime > best[0]:
+            best = (mtime, f)
+    return best[1] if best else None
+
+
+def _print_session_start(role: str, provider: str, session_id: str) -> None:
+    role_info = f"\033[1;36m{role or 'none'}\033[0m"
+    provider_info = f"\033[1;35m{provider}\033[0m"
+    print(f"\n[*] Role: {role_info} | Provider: {provider_info} | Session: {session_id}\n")
+
+
+def _composition_snapshot(assembler: Assembler, role_name: str, result) -> dict:
+    """Build the composition snapshot dict for ``Session.init_audit`` (HATS-442).
+
+    Returns a dict with effective ``traits``/``rules``/``skills`` lists plus
+    a ``provenance`` map tagging each name with the contributing layer
+    (``built-in``/``global``/``project``). Used by session-reviewer and any
+    other post-session consumer to know what actually loaded in a session.
+
+    The traits list is computed by walking the role's base composition and
+    re-applying overlays (mirroring ``_build_tree``); composer's output
+    already has the resolved rules/skills.
+    """
+    try:
+        base_cfg = assembler.resolver.resolve_role_config(role_name)
+        effective_traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
+        for layer in (
+            assembler._get_global_overlay(role_name),
+            assembler._get_overlay(role_name),
+        ):
+            if layer is None:
+                continue
+            for name in layer.remove_traits:
+                if name in effective_traits:
+                    effective_traits.remove(name)
+            for name in layer.add_traits:
+                if name not in effective_traits:
+                    effective_traits.append(name)
+        provenance = assembler._get_overlay_provenance(role_name)
+    except Exception:
+        # Defensive: a broken overlay shouldn't kill session start. Fall
+        # back to "no snapshot" — audit.md just won't have the section.
+        return {}
+    return {
+        "traits": effective_traits,
+        "rules": [r.name for r in result.rules],
+        "skills": [s.name for s in result.skills],
+        "provenance": provenance,
+    }
+
+
+def _fmt_duration(session_id: str) -> str:
+    from datetime import datetime, timezone
+
+    try:
+        start = datetime.strptime(session_id[:15], "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
+        secs = int((datetime.now(timezone.utc) - start).total_seconds())
+        return f"{secs // 60}m {secs % 60}s" if secs >= 60 else f"{secs}s"
+    except Exception:
+        return "?"
+
+
+def _collect_trace_stats(session: "Session") -> dict:
+    """Collect trace stats before cleanup may delete the file."""
+    stats: dict = {"req_count": 0, "trace_size": 0}
+    if session.trace_path.exists():
+        text = session.trace_path.read_text()
+        stats["req_count"] = text.count("[REQ]")
+        stats["trace_size"] = session.trace_path.stat().st_size
+    return stats
+
+
+def _format_tokens(session: "Session") -> str:
+    """Format the aggregated token usage line from metrics.json.
+
+    Returns a single line with input/output tokens and cache hit/creation
+    counts. Falls back to ``🪙 Tokens: n/a`` when the metrics file is missing,
+    unreadable, or lacks a ``tokens`` block (e.g. non-Claude providers).
+    """
+    if not session.metrics_path.exists():
+        return "🪙 Tokens: n/a"
+    try:
+        metrics = json.loads(session.metrics_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return "🪙 Tokens: n/a"
+    tokens = metrics.get("tokens")
+    if not tokens:
+        return "🪙 Tokens: n/a"
+    tin = tokens.get("input", 0)
+    tout = tokens.get("output", 0)
+    cread = tokens.get("cache_read", 0)
+    cnew = tokens.get("cache_creation", 0)
+    return f"🪙 📥 {tin:,} in   📤 {tout:,} out   •   ♻️  {cread:,} hit   ✨ {cnew:,} new"
+
+
+def _print_session_end(
+    session: "Session",
+    trace_stats: dict | None = None,
+    retro: dict | None = None,
+) -> None:
+    """Render the green ``✨ Session <id> complete!`` summary.
+
+    HATS-535: the **retro reminder banner** lines (cyan
+    "Reflect through N sessions" + wrap-up nudge) used to print inline
+    here. They now print at the tail of ``RunSessionEnd`` (in the
+    ``finalize-hitl`` sub-pipeline), AFTER ``SESSION_END`` hooks fire.
+    The ``retro`` parameter is retained for the one-line
+    ``📝 Retro: <decision>`` summary that still belongs with the
+    session-end banner — callers that have a retro decision in hand
+    (e.g. the auto-retro reviewer's own banner) pass it; the standard
+    HITL flow calls this with ``retro=None`` and the line is omitted.
+    """
+    if trace_stats is None:
+        trace_stats = _collect_trace_stats(session)
+
+    audit_info = "—"
+    if session.audit_path.exists():
+        audit_info = f"{session.audit_path.stat().st_size / 1024:.1f}KB"
+
+    trace_size = trace_stats.get("trace_size", 0)
+    trace_info = f"{trace_size / 1024:.1f}KB" if trace_size else "cleaned"
+    req_count = trace_stats.get("req_count", 0)
+
+    duration = _fmt_duration(session.session_id)
+
+    # Clear any remnants of the CLI TUI (status bar, cursor position) before printing
+    sys.stdout.write("\r\033[J\033[0m\n")
+    sys.stdout.flush()
+    print(f"\033[1;32m✨ Session {session.session_id} complete!\033[0m")
+    print("━" * 52)
+    print(f"  ⏱  {duration}   💬 {req_count} turns")
+    print(f"  📄 Audit: {audit_info}   📊 Trace: {trace_info}")
+    if retro is not None:
+        try:
+            from .retro.auto_retro import describe_decision
+
+            print(f"  📝 Retro: {describe_decision(retro)}")
+        except Exception:
+            logger.warning("retro banner line failed", exc_info=True)
+    print(f"  {_format_tokens(session)}")
+    print(f"  📂 {session.session_dir}")
+    print("━" * 52 + "\n")
+
+
+def _finalize_session_basic(
+    session: "Session",
+    *,
+    exit_code: int,
+    active_role: str | None,
+    provider_name: str,
+    tracer: "SidecarTracer",
+    tags: dict[str, str] | None = None,
+) -> dict:
+    """Per-runner minimal HITL finalize: log + metrics.json + smoke test.
+
+    HATS-535: split from the legacy ``_finalize_session`` megafunction.
+    Audit derivation (``AuditWriter``) + retro decision + SESSION_END
+    hooks + reviewer spawn moved to the ``finalize-hitl`` sub-pipeline
+    (``MakeAudit`` + ``RunSessionEnd``), invoked by the caller AFTER
+    this function returns. ``_print_session_end`` is also caller-driven
+    (must run in outer ``finally`` to surface the session id even on
+    SIGINT).
+
+    Each phase is wrapped in ``try/except (Exception, KeyboardInterrupt)``
+    per the HATS-086 invariant — a second Ctrl+C must not kill cleanup
+    partway. Returns ``trace_stats`` so the caller can thread it into
+    ``_print_session_end`` without re-reading ``trace.log``.
+    """
+    trace_stats: dict = {}
+    try:
+        # HATS-529: Path A (live PTY ⏺-marker audit) removed. The
+        # surrounding try/except is reserved as a scaffold for future
+        # finalize-time tracer cleanup hooks — the HATS-086 SIGINT-safety
+        # pattern (catch both Exception and KeyboardInterrupt so a second
+        # Ctrl+C does not kill cleanup partway) is uniform across every
+        # phase in this function, and re-introducing it later by hand is
+        # error-prone. Leave the frame in place.
+        _ = tracer  # silence unused-arg lint until a real cleanup lands
+    except (Exception, KeyboardInterrupt):
+        logger.warning("tracer cleanup failed", exc_info=True)
+
+    try:
+        session.log_trace(TraceTag.SYS, f"Session ended: exit_code={exit_code}")
+        session.append_audit(f"Session ended with code {exit_code}")
+    except (Exception, KeyboardInterrupt):
+        logger.warning("session trace/audit append failed", exc_info=True)
+
+    try:
+        metrics: dict = {
+            "exit_code": exit_code,
+            "role": active_role,
+            "provider": provider_name,
+        }
+        if tags:
+            metrics["tags"] = tags
+        session.finalize_audit(metrics)
+    except (Exception, KeyboardInterrupt):
+        logger.warning("audit finalization failed", exc_info=True)
+
+    try:
+        trace_stats = _collect_trace_stats(session)
+    except (Exception, KeyboardInterrupt):
+        logger.warning("trace stats collection failed", exc_info=True)
+
+    # Smoke-test: non-error session should have turns after enrichment.
+    # NB: enrichment now happens in ``MakeAudit`` (downstream); this
+    # smoke test fires before that, so the warning is a no-op until the
+    # finalize-hitl pipeline runs. Kept here for parity with the
+    # pre-HATS-535 placement; the meaningful check is the metrics.json
+    # state at session-end print time.
+    try:
+        if exit_code == 0 and session.metrics_path.exists():
+            metrics = json.loads(session.metrics_path.read_text())
+            if metrics.get("turns", 0) == 0:
+                logger.debug(
+                    "session %s: exit_code=0 but turns=0 pre-enrichment — "
+                    "expected; MakeAudit will populate from JSONL",
+                    session.session_id,
+                )
+    except (Exception, KeyboardInterrupt):
+        pass
+
+    return trace_stats
+
+
+def _log_pipeline_errors(pipeline_name: str, final_state: dict) -> None:
+    """Surface per-step errors swallowed by ``failure_policy=continue``.
+
+    Pipeline runner records continue-policy failures in
+    ``state["errors"]`` and proceeds to the next step (no exception
+    raised). Without this hook the only visible signal is the outer
+    catch's ``finalize-* pipeline failed`` line, which fires for
+    HALT-policy crashes only. For continue-policy regressions (a step
+    silently no-opping due to a fresh bug) we'd see nothing — hence the
+    explicit drain.
+    """
+    errors = final_state.get("errors") or {}
+    for step_name, exc in errors.items():
+        logger.warning(
+            "%s step %s failed: %s: %s",
+            pipeline_name,
+            step_name,
+            type(exc).__name__,
+            exc,
+        )
+
+
+def _run_finalize_hitl(
+    session: "Session",
+    *,
+    claude_session_id: str,
+    project_dir: Path,
+    env: dict[str, str],
+    exit_code: int,
+) -> None:
+    """Invoke the ``finalize-hitl`` sub-pipeline (HATS-535).
+
+    The pipeline runs ``make_audit`` then ``run_session_end``. Caller
+    (WrapRunner.run's finally) wraps this in its own try/except so a
+    finalize-pipeline crash never blocks the outer
+    ``_print_session_end``.
+    """
+    from .pipeline.loader import load_core_pipeline
+    from .pipeline.pipeline import run as run_pipeline
+
+    pipeline = load_core_pipeline("finalize-hitl")
+    final_state = run_pipeline(
+        pipeline,
+        initial={
+            "session_id": session.session_id,
+            "session_dir": session.session_dir,
+            "claude_session_id": claude_session_id,
+            "project_dir": project_dir,
+            "exit_code": exit_code,
+            "hooks_env": env,
+        },
+    )
+    _log_pipeline_errors("finalize-hitl", final_state)
+
+
+def _run_finalize_subagent(
+    session: "Session",
+    *,
+    claude_session_id: str,
+    project_dir: Path,
+    exit_code: int,
+) -> None:
+    """Invoke the ``finalize-subagent`` sub-pipeline (HATS-535).
+
+    Pipeline runs ``make_audit`` only — SubAgent path intentionally
+    omits ``run_session_end`` to preserve pre-HATS-535 behaviour
+    (no SESSION_END hooks, no auto-retro for sub-agents).
+    """
+    from .pipeline.loader import load_core_pipeline
+    from .pipeline.pipeline import run as run_pipeline
+
+    pipeline = load_core_pipeline("finalize-subagent")
+    final_state = run_pipeline(
+        pipeline,
+        initial={
+            "session_id": session.session_id,
+            "session_dir": session.session_dir,
+            "claude_session_id": claude_session_id,
+            "project_dir": project_dir,
+            "exit_code": exit_code,
+        },
+    )
+    _log_pipeline_errors("finalize-subagent", final_state)

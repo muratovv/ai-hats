@@ -307,9 +307,10 @@ def test_e2e_pty_spawn_returns_124_when_shutdown_unresolved(
     in this branch (silent success masking a leaked zombie); post-fix,
     it returns 124 (GNU `timeout` convention).
     """
-    from ai_hats import runtime as runtime_mod
+    # HATS-715: WrapRunner moved to wrap_runner — patch there (where _pty_spawn looks).
+    from ai_hats import wrap_runner as runtime_mod
     from ai_hats.observe import Session, SidecarTracer
-    from ai_hats.runtime import WrapRunner
+    from ai_hats.wrap_runner import WrapRunner
 
     child_path = _write_child(tmp_path, "wired_child.py", WIRED_CHILD_SOURCE)
 
