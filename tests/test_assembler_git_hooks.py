@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.assembler import (
+from ai_hats.assembler import Assembler
+from ai_hats.githooks import (  # HATS-715: git-hook constants moved to githooks.py
     GITHOOKS_DIR,
     GITHOOKS_DISPATCHER_MARKER,
     GITHOOKS_MANIFEST,
-    Assembler,
 )
 from ai_hats.models import GIT_HOOK_EVENTS, ProjectConfig
 
