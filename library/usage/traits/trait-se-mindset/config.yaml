@@ -36,4 +36,4 @@ injection: |
   Secure coding — see rule `dev_rule_secure_coding` (already covers the 4 principles).
 
   ### Comments
-  Default to **no comment** — good names make code obvious. Add one only for a non-obvious WHY, in **one line**; history → `# HATS-NNN` pointer (not a retelling); long rationale → ADR/task card (linked); never a stale-able count. See rule `dev_rule_comment_discipline`.
+  Default to **no comment** — good names make code obvious. Add one only for a non-obvious WHY, in **one line**; history → a `# TASK-NNN` pointer (where `TASK-` is *this* repo's ticket prefix, not a literal), not a retelling; long rationale → ADR/task card (linked); never a stale-able count. See rule `dev_rule_comment_discipline`.
