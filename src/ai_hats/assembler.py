@@ -12,7 +12,6 @@ were removed — git owns user recovery.
 from __future__ import annotations
 
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,7 +31,6 @@ from .models import (
     OverlayConfig,
     ProjectConfig,
     RuntimeHook,
-    SkillMetadata,
     UserConfig,
 )
 from .paths import (
@@ -60,10 +58,6 @@ from .providers import (
 
 AGENT_DIR = ".agent"
 PROJECT_CONFIG = "ai-hats.yaml"
-GITHOOKS_DIR = ".githooks"
-GITHOOKS_MANIFEST = ".ai-hats-manifest"
-GITHOOKS_DISPATCHER_MARKER = "AI-HATS-DISPATCHER-MARKER"
-GITHOOKS_DISPATCHER_TEMPLATE = Path(__file__).parent / "templates" / "githooks" / "dispatcher.sh"
 GITIGNORE_FILE = ".gitignore"
 
 # HATS-282 — canonical layered layer
@@ -103,9 +97,7 @@ def _ai_hats_owned_hook_basenames() -> frozenset[str]:
         root_path = Path(str(source_root))
         if not root_path.is_dir():
             return frozenset()
-        return frozenset(
-            entry.name for entry in root_path.iterdir() if entry.is_file()
-        )
+        return frozenset(entry.name for entry in root_path.iterdir() if entry.is_file())
     except (ModuleNotFoundError, FileNotFoundError, OSError):
         return frozenset()
 
@@ -239,8 +231,10 @@ class Assembler:
         # routes through atomic write without taking a snapshot (no-op for
         # missing files).
         _safe_replace(
-            prompt_path, template.read_bytes(),
-            reason="scaffold", project_dir=self.project_dir,
+            prompt_path,
+            template.read_bytes(),
+            reason="scaffold",
+            project_dir=self.project_dir,
         )
 
     def _migrate_claude_md_to_v3(self, provider: Provider) -> None:
@@ -308,8 +302,10 @@ class Assembler:
             # (especially the no-markers branch above which prepends
             # blindly).
             _safe_replace(
-                prompt_path, new_content.encode("utf-8"),
-                reason="claude-md-migrate", project_dir=self.project_dir,
+                prompt_path,
+                new_content.encode("utf-8"),
+                reason="claude-md-migrate",
+                project_dir=self.project_dir,
             )
 
         # 3. Drop legacy `.claude/` publish artefacts.
@@ -344,14 +340,16 @@ class Assembler:
                 continue
             target = claude_dir / rel
             _safe_discard(
-                target, reason="claude-legacy-publish",
+                target,
+                reason="claude-legacy-publish",
                 project_dir=self.project_dir,
             )
 
         # Well-known publish artefacts as belt-and-suspenders.
         for rel in ("CLAUDE.md", "priorities.md", "role.md", "skills_index.md"):
             _safe_discard(
-                claude_dir / rel, reason="claude-legacy-publish",
+                claude_dir / rel,
+                reason="claude-legacy-publish",
                 project_dir=self.project_dir,
             )
         for sub in ("traits", "rules"):
@@ -361,14 +359,16 @@ class Assembler:
                 # original code chose best-effort cleanup for these dirs.
                 try:
                     _safe_discard(
-                        sub_dir, reason="claude-legacy-publish",
+                        sub_dir,
+                        reason="claude-legacy-publish",
                         project_dir=self.project_dir,
                     )
                 except OSError:
                     pass
 
         _safe_discard(
-            manifest, reason="claude-legacy-manifest",
+            manifest,
+            reason="claude-legacy-manifest",
             project_dir=self.project_dir,
         )
 
@@ -403,7 +403,9 @@ class Assembler:
             if not target.exists():
                 continue
             _safe_discard(
-                target, reason="obsolete-file", project_dir=project_dir,
+                target,
+                reason="obsolete-file",
+                project_dir=project_dir,
             )
             actions.append(reason)
 
@@ -413,7 +415,7 @@ class Assembler:
 
         for backup_ref in (
             project_dir / ".agent" / ".last_backup",  # pre-v4 location
-            _last_backup_path(project_dir),           # v4 location
+            _last_backup_path(project_dir),  # v4 location
         ):
             if not backup_ref.exists():
                 continue
@@ -436,7 +438,8 @@ class Assembler:
                     ):
                         try:
                             _safe_discard(
-                                tmp_target, reason="obsolete-backup-tmp",
+                                tmp_target,
+                                reason="obsolete-backup-tmp",
                                 project_dir=project_dir,
                             )
                         except OSError:
@@ -444,13 +447,15 @@ class Assembler:
                 except (OSError, ValueError):
                     pass
                 _safe_discard(
-                    backup_ref, reason="obsolete-backup-pointer",
+                    backup_ref,
+                    reason="obsolete-backup-pointer",
                     project_dir=project_dir,
                 )
             elif backup_ref.is_dir():
                 try:
                     _safe_discard(
-                        backup_ref, reason="obsolete-backup-dir",
+                        backup_ref,
+                        reason="obsolete-backup-dir",
                         project_dir=project_dir,
                     )
                 except OSError:
@@ -922,6 +927,7 @@ class Assembler:
         # 1. Migration registry — install_time only (HATS-471).
         if install_time:
             from .migrations import run_pending
+
             run_pending(self)
 
         # 2. Heal — always.
@@ -1097,7 +1103,8 @@ class Assembler:
                     target = user_dst / entry.name
                 if target.exists():
                     self._safe_discard_with_warn(
-                        entry, reason="hooks-partition-collision",
+                        entry,
+                        reason="hooks-partition-collision",
                     )
                     continue
                 shutil.move(str(entry), str(target))
@@ -1105,13 +1112,14 @@ class Assembler:
             try:
                 if not any(legacy.iterdir()):
                     _safe_discard(
-                        legacy, reason="hooks-partition-cleanup",
+                        legacy,
+                        reason="hooks-partition-cleanup",
                         project_dir=self.project_dir,
                     )
             except OSError as e:
                 print(
-                    f"[ai-hats] WARN: hooks-partition: could not clean up "
-                    f"empty {legacy}: {e}", file=sys.stderr,
+                    f"[ai-hats] WARN: hooks-partition: could not clean up empty {legacy}: {e}",
+                    file=sys.stderr,
                 )
 
         # --- Pass 2: managed-namespace reconciliation ---
@@ -1136,7 +1144,8 @@ class Assembler:
                 target = user_dst / entry.name
                 if target.exists():
                     self._safe_discard_with_warn(
-                        entry, reason="hooks-reconcile-collision",
+                        entry,
+                        reason="hooks-reconcile-collision",
                     )
                     continue
                 shutil.move(str(entry), str(target))
@@ -1151,7 +1160,9 @@ class Assembler:
         """
         try:
             _safe_discard(
-                path, reason=reason, project_dir=self.project_dir,
+                path,
+                reason=reason,
+                project_dir=self.project_dir,
             )
         except OSError as e:
             try:
@@ -1159,8 +1170,8 @@ class Assembler:
             except ValueError:
                 rel = str(path)
             print(
-                f"[ai-hats] WARN: {reason}: could not safe-discard {rel}: "
-                f"{e}", file=sys.stderr,
+                f"[ai-hats] WARN: {reason}: could not safe-discard {rel}: {e}",
+                file=sys.stderr,
             )
 
     @staticmethod
@@ -1214,7 +1225,8 @@ class Assembler:
             else:
                 try:
                     _safe_discard(
-                        orphan, reason="layout-v4-orphan",
+                        orphan,
+                        reason="layout-v4-orphan",
                         project_dir=self.project_dir,
                     )
                 except OSError:
@@ -1249,7 +1261,8 @@ class Assembler:
             # cleanup or read-only entry is benign.
             try:
                 _safe_discard(
-                    old_abs, reason="move-collision",
+                    old_abs,
+                    reason="move-collision",
                     project_dir=self.project_dir,
                 )
             except OSError:
@@ -1258,7 +1271,8 @@ class Assembler:
         # File-vs-file or type mismatch: trust new, drop old.
         try:
             _safe_discard(
-                old_abs, reason="move-collision",
+                old_abs,
+                reason="move-collision",
                 project_dir=self.project_dir,
             )
         except OSError:
@@ -1296,9 +1310,16 @@ class Assembler:
 
     # ----- Skill-contributed git hooks (HATS-088) -----
 
-    def _materialize_pretooluse_hooks(
-        self, result: "CompositionResult | None" = None
-    ) -> None:
+    @staticmethod
+    def _resolve_skill_script(
+        skill_name: str,
+        script_path: str,
+        result: CompositionResult,
+    ) -> Path | None:
+        """Resolve a script path declared in a skill's metadata to an absolute path."""
+        return _resolve_runtime_script(result, skill_name, script_path)
+
+    def _materialize_pretooluse_hooks(self, result: "CompositionResult | None" = None) -> None:
         """Materialize runtime-hook scripts to ``<ai_hats_dir>/library/hooks/``.
 
         Two sources, one managed namespace + manifest:
@@ -1335,15 +1356,12 @@ class Assembler:
             source_root = files("ai_hats.library") / "hooks"
         except (ModuleNotFoundError, FileNotFoundError) as e:
             raise AssemblyError(
-                "ai_hats.library.hooks not found in package data — "
-                "broken install"
+                "ai_hats.library.hooks not found in package data — broken install"
             ) from e
 
         source_root_path = Path(str(source_root))
         if not source_root_path.is_dir():
-            raise AssemblyError(
-                f"Hook source dir missing: {source_root_path}"
-            )
+            raise AssemblyError(f"Hook source dir missing: {source_root_path}")
 
         target_dir = _lib_hooks_dir(self.project_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -1397,11 +1415,7 @@ class Assembler:
                 project_dir=self.project_dir,
             )
 
-        body = (
-            "# ai-hats managed — do not edit\n"
-            + "\n".join(sorted(new_names))
-            + "\n"
-        )
+        body = "# ai-hats managed — do not edit\n" + "\n".join(sorted(new_names)) + "\n"
         _safe_replace(
             manifest_path,
             body.encode(),
@@ -1410,96 +1424,10 @@ class Assembler:
         )
 
     def _install_git_hooks(self, result: CompositionResult) -> None:
-        """Install git hooks declared by composed skills.
+        """Install git hooks declared by composed skills (delegates to githooks)."""
+        from .githooks import install_git_hooks
 
-        Skills declare hooks in their `metadata.yaml` under `git_hooks:`.
-        Each declared script is copied into `.githooks/<event>.d/<skill>-<basename>`,
-        a dispatcher script is generated at `.githooks/<event>`, and
-        `core.hooksPath` is set to `.githooks` (idempotently).
-
-        Conflict policy:
-        - If `.githooks/<event>` exists WITHOUT our marker → leave alone, warn.
-        - If `core.hooksPath` is set to a non-`.githooks` value → leave alone, warn.
-        - Files inside `<event>.d/` from previous installs are tracked via a
-          manifest at `.githooks/.ai-hats-manifest` and removed before re-install,
-          so stale hooks from removed skills don't linger.
-        """
-        declared = self._collect_skill_git_hooks(result)
-        if not declared:
-            # No skill declares git hooks. Don't touch user's repo.
-            # Still clean up our previously-installed managed files (in case the
-            # user removed all skills with git_hooks) so stale entries don't linger.
-            self._cleanup_managed_git_hooks()
-            return
-
-        githooks_dir = self.project_dir / GITHOOKS_DIR
-        githooks_dir.mkdir(exist_ok=True)
-
-        # Remove anything we previously owned, then re-install fresh.
-        self._cleanup_managed_git_hooks()
-
-        new_manifest: list[str] = []
-        warnings: list[str] = []
-
-        for event, entries in declared.items():
-            if not entries:
-                continue
-            event_d = githooks_dir / f"{event}.d"
-            event_d.mkdir(exist_ok=True)
-
-            for skill_name, script_path in entries:
-                src = self._resolve_skill_script(skill_name, script_path, result)
-                if src is None:
-                    warnings.append(
-                        f"git_hooks: skill '{skill_name}' declares script "
-                        f"'{script_path}' but file not found"
-                    )
-                    continue
-                dest_basename = f"{skill_name}-{src.name}"
-                dest = event_d / dest_basename
-                shutil.copy2(src, dest)
-                dest.chmod(0o755)
-                new_manifest.append(f"{event}.d/{dest_basename}")
-
-            # Generate dispatcher (or warn on conflict).
-            dispatcher_path = githooks_dir / event
-            installed = self._install_dispatcher(dispatcher_path)
-            if installed:
-                new_manifest.append(event)
-            else:
-                warnings.append(
-                    f"git_hooks: existing {dispatcher_path} is not managed by "
-                    f"ai-hats — left in place. Hooks for '{event}' will not run "
-                    f"unless you wire {event}.d/* into it manually."
-                )
-
-        # Persist manifest of files we own.
-        manifest_path = githooks_dir / GITHOOKS_MANIFEST
-        manifest_path.write_text("\n".join(new_manifest) + "\n")
-
-        # Configure core.hooksPath (idempotent + safe).
-        self._configure_hooks_path(warnings)
-
-        for w in warnings:
-            print(f"[ai-hats] WARNING: {w}")
-
-    def _collect_skill_git_hooks(
-        self,
-        result: CompositionResult,
-    ) -> dict[str, list[tuple[str, str]]]:
-        """Walk composed skills and collect their declared git hooks.
-
-        Returns: {event_name: [(skill_name, script_path), ...]}
-        """
-        collected: dict[str, list[tuple[str, str]]] = {}
-        for skill in result.skills:
-            metadata_path = skill.source_path / "metadata.yaml"
-            metadata = SkillMetadata.from_yaml(metadata_path)
-            if not metadata.git_hooks:
-                continue
-            for event, scripts in metadata.git_hooks.items():
-                collected.setdefault(event, []).extend((skill.name, script) for script in scripts)
-        return collected
+        install_git_hooks(self.project_dir, result)
 
     def _collect_skill_runtime_hooks(
         self,
@@ -1512,103 +1440,6 @@ class Assembler:
         lives in composer, not here).
         """
         return _collect_runtime_hooks(result)
-
-    @staticmethod
-    def _resolve_skill_script(
-        skill_name: str,
-        script_path: str,
-        result: CompositionResult,
-    ) -> Path | None:
-        """Resolve a script path declared in a skill's metadata to an absolute path."""
-        return _resolve_runtime_script(result, skill_name, script_path)
-
-    def _install_dispatcher(self, dispatcher_path: Path) -> bool:
-        """Write the dispatcher script. Returns True if installed/updated, False on conflict."""
-        if dispatcher_path.exists():
-            try:
-                existing = dispatcher_path.read_text()
-            except OSError:
-                return False
-            if GITHOOKS_DISPATCHER_MARKER not in existing:
-                return False  # Foreign file, leave it alone.
-        if not GITHOOKS_DISPATCHER_TEMPLATE.exists():
-            # Should never happen with package-data set, but defend against it.
-            return False
-        shutil.copy2(GITHOOKS_DISPATCHER_TEMPLATE, dispatcher_path)
-        dispatcher_path.chmod(0o755)
-        return True
-
-    def _cleanup_managed_git_hooks(self) -> None:
-        """Remove files listed in our manifest. Idempotent."""
-        githooks_dir = self.project_dir / GITHOOKS_DIR
-        manifest_path = githooks_dir / GITHOOKS_MANIFEST
-        if not manifest_path.exists():
-            return
-        try:
-            entries = manifest_path.read_text().splitlines()
-        except OSError:
-            return
-        for entry in entries:
-            entry = entry.strip()
-            if not entry:
-                continue
-            target = githooks_dir / entry
-            if target.is_file():
-                # For dispatcher files, only remove if the marker is still ours.
-                if "/" not in entry:
-                    try:
-                        if GITHOOKS_DISPATCHER_MARKER not in target.read_text():
-                            continue
-                    except OSError:
-                        continue
-                _safe_discard(
-                    target, reason="githook-dispatcher",
-                    project_dir=self.project_dir,
-                )
-        # Manifest itself is framework bookkeeping — whitelist.
-        manifest_path.unlink(missing_ok=True)  # safe-delete: ok framework-manifest
-        # Remove empty <event>.d/ subdirs.
-        for child in githooks_dir.iterdir():
-            if child.is_dir() and child.name.endswith(".d") and not any(child.iterdir()):
-                child.rmdir()  # safe-delete: ok empty-dir
-
-    def _configure_hooks_path(self, warnings: list[str]) -> None:
-        """Set git config core.hooksPath = .githooks if safe to do so."""
-        try:
-            current = subprocess.run(
-                ["git", "config", "--get", "core.hooksPath"],
-                cwd=str(self.project_dir),
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        except (OSError, FileNotFoundError):
-            warnings.append("git not found — cannot configure core.hooksPath")
-            return
-
-        existing = current.stdout.strip() if current.returncode == 0 else ""
-        target = GITHOOKS_DIR
-
-        if existing == target:
-            return  # Already correct.
-        if existing and existing != target:
-            warnings.append(
-                f"core.hooksPath is already set to '{existing}' — not "
-                f"overwriting. To enable ai-hats hooks, run: "
-                f"git config core.hooksPath {target}  (or merge dispatchers manually)"
-            )
-            return
-
-        try:
-            subprocess.run(
-                ["git", "config", "core.hooksPath", target],
-                cwd=str(self.project_dir),
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-        except subprocess.CalledProcessError as e:
-            warnings.append(f"failed to set core.hooksPath: {e.stderr.strip() or e}")
 
     # ----- HATS-593: drift-detecting hook re-materialization -----
 
@@ -1662,61 +1493,14 @@ class Assembler:
             return False
         return bool(entry is not None and entry.has_update)
 
-    def _expected_git_hook_files(self, result: CompositionResult) -> dict[str, bytes]:
-        """Managed ``.githooks/`` relpath -> expected bytes for ``result``.
-
-        Mirrors :meth:`_install_git_hooks` WITHOUT writing, so drift can be
-        detected cheaply. Keys: ``<event>.d/<skill>-<basename>`` per declared
-        script, plus ``<event>`` per dispatcher.
-        """
-        declared = self._collect_skill_git_hooks(result)
-        expected: dict[str, bytes] = {}
-        for event, entries in declared.items():
-            has_entry = False
-            for skill_name, script_path in entries:
-                src = self._resolve_skill_script(skill_name, script_path, result)
-                if src is None:
-                    continue
-                expected[f"{event}.d/{skill_name}-{src.name}"] = src.read_bytes()
-                has_entry = True
-            if has_entry and GITHOOKS_DISPATCHER_TEMPLATE.exists():
-                expected[event] = GITHOOKS_DISPATCHER_TEMPLATE.read_bytes()
-        return expected
-
     def _git_hooks_drift(self, result: CompositionResult) -> bool:
-        """True if managed git hooks on disk diverge from ``result``.
+        """True if managed git hooks on disk diverge from ``result`` (via githooks)."""
+        from .githooks import GITHOOKS_DIR, GITHOOKS_MANIFEST, git_hooks_drift
 
-        Compares the expected managed file set (content + exec-bit + presence)
-        and the manifest against disk. A foreign (non-marker) dispatcher is
-        left to the install policy and is never counted as drift here.
-        """
-        githooks_dir = self.project_dir / GITHOOKS_DIR
-        manifest_path = githooks_dir / GITHOOKS_MANIFEST
-        expected = self._expected_git_hook_files(result)
-        if not expected:
-            # Nothing should be installed → drift iff a stale manifest lingers.
-            return self._read_canonical_manifest(manifest_path) != set()
-        if self._read_canonical_manifest(manifest_path) != set(expected):
-            return True
-        for rel, content in expected.items():
-            target = githooks_dir / rel
-            if not target.is_file():
-                return True
-            # Top-level dispatcher with a foreign body → leave alone (not drift).
-            if "/" not in rel:
-                try:
-                    if GITHOOKS_DISPATCHER_MARKER not in target.read_text():
-                        continue
-                except OSError:
-                    return True
-            try:
-                if target.read_bytes() != content:
-                    return True
-            except OSError:
-                return True
-            if not target.stat().st_mode & 0o100:  # owner-exec bit lost
-                return True
-        return False
+        manifest = self._read_canonical_manifest(
+            self.project_dir / GITHOOKS_DIR / GITHOOKS_MANIFEST
+        )
+        return git_hooks_drift(self.project_dir, result, manifest)
 
     def _build_tree(self, result: CompositionResult) -> dict:
         """Build a dependency tree representation.
@@ -1819,9 +1603,7 @@ class Assembler:
         # HATS-380: expand `<ai_hats_dir>` placeholder before write so the
         # agent never sees the literal token (it would otherwise create a
         # bogus `./<ai_hats_dir>/` directory in the project root).
-        aggregator = expand_path_placeholders(
-            aggregator.decode(), self.project_dir
-        ).encode()
+        aggregator = expand_path_placeholders(aggregator.decode(), self.project_dir).encode()
         self._atomic_write_if_changed(canonical / "imports.md", aggregator)
 
         # Stale cleanup: remove previous-managed files no longer present.
@@ -1836,7 +1618,8 @@ class Assembler:
                 continue
             target = canonical / stale
             _safe_discard(
-                target, reason="canonical-stale",
+                target,
+                reason="canonical-stale",
                 project_dir=self.project_dir,
             )
             # Best-effort cleanup of empty parent dirs (stop at canonical root)
@@ -1862,10 +1645,7 @@ class Assembler:
         user_rules_dir = canonical_dir / USER_RULES_SUBDIR
         if not user_rules_dir.is_dir():
             return ""
-        paths = sorted(
-            f"@./{USER_RULES_SUBDIR}/{md.name}"
-            for md in user_rules_dir.glob("*.md")
-        )
+        paths = sorted(f"@./{USER_RULES_SUBDIR}/{md.name}" for md in user_rules_dir.glob("*.md"))
         if not paths:
             return ""
         return "\n".join(paths) + "\n"
@@ -1951,13 +1731,10 @@ class Assembler:
             return
 
         if check_branches and report.paths_to_delete:
-            warns = check_branches_modify_paths(
-                self.project_dir, report.paths_to_delete
-            )
+            warns = check_branches_modify_paths(self.project_dir, report.paths_to_delete)
             if warns:
                 print(
-                    "WARN: local branches modify v0.7-migration paths slated "
-                    "for deletion:",
+                    "WARN: local branches modify v0.7-migration paths slated for deletion:",
                     file=sys.stderr,
                 )
                 for branch, paths in warns:
@@ -1970,9 +1747,7 @@ class Assembler:
                 )
 
         if report.user_edits and not force:
-            raise AssemblyError(render_user_edits_refusal(
-                report.user_edits, self.project_dir
-            ))
+            raise AssemblyError(render_user_edits_refusal(report.user_edits, self.project_dir))
 
         if force and report.user_edits:
             for f in report.user_edits:
@@ -1985,9 +1760,7 @@ class Assembler:
                     file=sys.stderr,
                 )
 
-        execute_deletions(
-            report, self._canonical_dir, project_dir=self.project_dir
-        )
+        execute_deletions(report, self._canonical_dir, project_dir=self.project_dir)
 
     def _collect_v07_hook_source_dirs(self) -> list[Path]:
         """Return library hook root dirs from every layer of ``self.library_paths``.
@@ -2135,8 +1908,10 @@ class Assembler:
 
         if not gitignore.exists():
             _safe_replace(
-                gitignore, (line + "\n").encode("utf-8"),
-                reason="gitignore-init", project_dir=self.project_dir,
+                gitignore,
+                (line + "\n").encode("utf-8"),
+                reason="gitignore-init",
+                project_dir=self.project_dir,
             )
             return
         existing = gitignore.read_text()
@@ -2145,8 +1920,10 @@ class Assembler:
             return
         sep = "" if existing.endswith("\n") else "\n"
         _safe_replace(
-            gitignore, (existing + sep + line + "\n").encode("utf-8"),
-            reason="gitignore-append", project_dir=self.project_dir,
+            gitignore,
+            (existing + sep + line + "\n").encode("utf-8"),
+            reason="gitignore-append",
+            project_dir=self.project_dir,
         )
 
     def _strip_legacy_managed_block(self) -> bool:
@@ -2223,8 +2000,10 @@ class Assembler:
         if new_text == text:
             return False
         _safe_replace(
-            gitignore, new_text.encode("utf-8"),
-            reason="gitignore-strip", project_dir=self.project_dir,
+            gitignore,
+            new_text.encode("utf-8"),
+            reason="gitignore-strip",
+            project_dir=self.project_dir,
         )
         return True
 
@@ -2283,8 +2062,10 @@ class Assembler:
 
         if not gitignore.exists():
             _safe_replace(
-                gitignore, (new_line + "\n").encode("utf-8"),
-                reason="gitignore-swap", project_dir=self.project_dir,
+                gitignore,
+                (new_line + "\n").encode("utf-8"),
+                reason="gitignore-swap",
+                project_dir=self.project_dir,
             )
             return True
 
@@ -2310,8 +2091,10 @@ class Assembler:
         if body == text:
             return False
         _safe_replace(
-            gitignore, body.encode("utf-8"),
-            reason="gitignore-swap", project_dir=self.project_dir,
+            gitignore,
+            body.encode("utf-8"),
+            reason="gitignore-swap",
+            project_dir=self.project_dir,
         )
         return True
 
@@ -2393,7 +2176,8 @@ class Assembler:
             old_venv = old_abs / ".venv"
             if old_venv.exists():
                 _safe_discard(
-                    old_venv, reason="venv-relocate",
+                    old_venv,
+                    reason="venv-relocate",
                     project_dir=self.project_dir,
                 )
                 venv_removed = True
