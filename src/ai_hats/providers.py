@@ -41,9 +41,9 @@ ALWAYS_ON_RULES = {
     # The PreToolUse / pre-push hooks are a safety net for this rule.
     "rule_pause_before_shared_state_write",
     # HATS-452: framework-invariant reminder for any agent that may
-    # touch composition / pipeline / runtime internals. Short body
-    # (~600 chars); acceptable budget for an always-on architectural
-    # guard. Full rationale: docs/adr/0005-*.md.
+    # touch composition / pipeline / runtime internals. Compact body
+    # (~1.0 KB, HATS-702); acceptable budget for an always-on
+    # architectural guard. Full rationale: docs/adr/0005-*.md.
     "rule_composition_value_contract",
 }
 
