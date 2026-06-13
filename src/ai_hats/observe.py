@@ -156,6 +156,10 @@ class Session:
         self.audit_path = session_dir / "audit.md"
         self.reasoning_path = session_dir / "reasoning.log"
         self.metrics_path = session_dir / "metrics.json"
+        # HATS-664 producer / HATS-734 consumer: machine-readable usage/v1
+        # report (measured always-on, aggregates, timeline). Read by
+        # ``session show``'s Usage section.
+        self.usage_path = session_dir / "usage.json"
         self.meta_prompt_path = session_dir / "meta_prompt.txt"
         # HATS-220: pre-strip raw byte dump from PTY (master + stdin). Captures
         # CSI escapes (kitty-keyboard push/pop, DEC modes) that strip_ansi
