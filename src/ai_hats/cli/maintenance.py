@@ -459,7 +459,11 @@ def _run_managed_versioned_update(
                 console.print(
                     f"[red]Update failed[/] (venv create): {venv_proc.stderr}"
                 )
-                return
+                # HATS-718: non-zero exit so scripted chains
+                # (`self update && self init`), CI, and agents reading exit
+                # codes detect the install never completed — mirrors the
+                # HATS-549 contract (exit 1 == "failed"). current untouched.
+                sys.exit(1)
             new_python = str(vdir / "bin" / "python")
             with console.status(
                 "[cyan]Downloading ai-hats from GitHub …[/] "
@@ -475,7 +479,7 @@ def _run_managed_versioned_update(
                 # current is untouched → the tool still runs on the old sha. The
                 # incomplete dir (no sentinel) is swept by version_recovery.
                 console.print(f"[red]Update failed[/]: {install.stderr}")
-                return
+                sys.exit(1)  # HATS-718: failed install must be machine-detectable
             with console.status("[cyan]Verifying install …[/]", spinner="dots"):
                 verify = subprocess.run(
                     [new_python, "-m", "ai_hats._bootstrap", "verify"],
@@ -485,7 +489,10 @@ def _run_managed_versioned_update(
             if verify.returncode != 0:
                 warning = (verify.stderr or verify.stdout or "").strip() or "see logs"
                 console.print(f"[red]Update failed[/] (verify): {warning}")
-                return
+                # HATS-718: verify runs BEFORE the .complete sentinel + current
+                # flip, so a failure means the new version is abandoned (current
+                # still old). Exit non-zero so callers know it did not complete.
+                sys.exit(1)
             # Sentinel written LAST, only after a fully-successful install+verify
             # — the authoritative completeness marker (HATS-648). Only then is
             # the atomic flip allowed; current never points at a dir lacking
@@ -1208,7 +1215,11 @@ def update(
             result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             console.print(f"[red]Update failed[/]: {result.stderr}")
-            return
+            # HATS-718: legacy in-place install failed → exit non-zero so
+            # `self update && self init` stops instead of running init against a
+            # half-updated env. (The post-install verify below stays non-fatal:
+            # it heals via cli.main() layer A on the next invocation.)
+            sys.exit(1)
 
         # 2b. HATS-213 stage-2 verify: run a fresh interpreter against the
         # just-installed on-disk code, so any new declared runtime dep that

@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli.maintenance import (
@@ -344,13 +345,19 @@ def _entry(*, ahead: int | None, behind: int | None,
 
 
 def _invoke_update(args: list[str], *, run_check_return,
-                   tmp_path: Path) -> tuple[int, str, list[tuple]]:
-    """Invoke ``update`` with all heavy I/O patched; return (exit, output, subprocess calls)."""
+                   tmp_path: Path, fail_install: bool = False) -> tuple[int, str, list[tuple]]:
+    """Invoke ``update`` with all heavy I/O patched; return (exit, output, subprocess calls).
+
+    ``fail_install`` makes the legacy in-place ``pip install`` subprocess return
+    a non-zero code, exercising the HATS-718 failure branch (must exit 1).
+    """
     project = _setup_update_test_env(tmp_path)
     captured: list[tuple] = []
 
     def fake_run(cmd_args, **kwargs):
         captured.append((tuple(cmd_args), kwargs))
+        if fail_install and tuple(cmd_args)[:2] == ("pip", "install"):
+            return _make_completed(cmd_args, returncode=1, stderr="pip boom")
         return _make_completed(cmd_args, returncode=0, stdout="ok")
 
     with patch("ai_hats.cli.maintenance._project_dir", return_value=project), \
@@ -502,6 +509,20 @@ def test_update_proceeds_when_ahead_behind_axes_none(tmp_path: Path) -> None:
     assert "Refusing to downgrade" not in output, \
         f"unexpected refusal on unresolved axes:\n{output}"
     assert _pip_called(captured), f"pip install missing: {captured}"
+
+
+def test_update_legacy_install_failure_exits_1(tmp_path: Path) -> None:
+    """HATS-718: legacy in-place ``pip install`` failure → exit 1 (not 0).
+
+    Fail-under-revert: the pre-fix bare ``return`` after the red text leaves
+    click's exit code at 0, so the ``exit_code == 1`` assertion fails.
+    """
+    exit_code, output, captured = _invoke_update(
+        [], run_check_return=_entry(ahead=0, behind=4),
+        tmp_path=tmp_path, fail_install=True,
+    )
+    assert exit_code == 1, f"expected exit 1 on failed install, got {exit_code}; output:\n{output}"
+    assert "Update failed" in output, f"missing failure text:\n{output}"
 
 
 # ---------- HATS-647: managed blue-green versioned install ----------
@@ -728,34 +749,53 @@ def test_managed_update_happy_path_flips_current(tmp_path, monkeypatch):
     assert bump_rec == [expected_python]
 
 
+def test_managed_update_venv_create_failure_exits_1(tmp_path, monkeypatch):
+    """HATS-718: ``python -m venv`` failure → exit 1 (not a bare return/exit 0),
+    and current is NOT flipped."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    with patch("subprocess.run", side_effect=_versioned_fake_run(fail_at="venv")):
+        with pytest.raises(SystemExit) as exc:
+            _run_managed_versioned_update(
+                tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+                old_version="1.0.0", active_role=None,
+                config_unreadable=False, migrate_force=False, check_branches=False,
+            )
+    assert exc.value.code == 1, f"expected exit 1, got {exc.value.code!r}"
+    assert read_current_sha(tmp_path) is None  # never flipped
+
+
 def test_managed_update_install_failure_does_not_flip(tmp_path, monkeypatch):
-    """pip install fails → current is NOT flipped (tool stays on old sha) and
-    no bump runs."""
+    """pip install fails → exit 1 (HATS-718), current is NOT flipped (tool stays
+    on old sha) and no bump runs."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     bump_rec: list[str] = []
     with patch("subprocess.run",
                side_effect=_versioned_fake_run(fail_at="install", bump_rec=bump_rec)):
-        _run_managed_versioned_update(
-            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
-            old_version="1.0.0", active_role="assistant",
-            config_unreadable=False, migrate_force=False, check_branches=False,
-        )
+        with pytest.raises(SystemExit) as exc:
+            _run_managed_versioned_update(
+                tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+                old_version="1.0.0", active_role="assistant",
+                config_unreadable=False, migrate_force=False, check_branches=False,
+            )
+    assert exc.value.code == 1, f"expected exit 1, got {exc.value.code!r}"
     assert read_current_sha(tmp_path) is None  # never flipped
     assert not current_pointer(tmp_path).exists()
     assert bump_rec == []  # bump skipped on failed install
 
 
 def test_managed_update_verify_failure_does_not_flip(tmp_path, monkeypatch):
-    """Post-install verify fails → current is NOT flipped, and the residual dir
-    carries NO .complete sentinel (HATS-648) so the recovery sweep reclaims it
-    and read_current_sha never trusts it."""
+    """Post-install verify fails → exit 1 (HATS-718), current is NOT flipped, and
+    the residual dir carries NO .complete sentinel (HATS-648) so the recovery
+    sweep reclaims it and read_current_sha never trusts it."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     with patch("subprocess.run", side_effect=_versioned_fake_run(fail_at="verify")):
-        _run_managed_versioned_update(
-            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
-            old_version="1.0.0", active_role=None,
-            config_unreadable=False, migrate_force=False, check_branches=False,
-        )
+        with pytest.raises(SystemExit) as exc:
+            _run_managed_versioned_update(
+                tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+                old_version="1.0.0", active_role=None,
+                config_unreadable=False, migrate_force=False, check_branches=False,
+            )
+    assert exc.value.code == 1, f"expected exit 1, got {exc.value.code!r}"
     assert read_current_sha(tmp_path) is None
     # The half-written dir exists but is incomplete — no sentinel.
     assert version_dir(tmp_path, "cafef00d").is_dir()
