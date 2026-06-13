@@ -20,6 +20,14 @@ fixture is doing too little.
 
 from __future__ import annotations
 
+import pytest
+
+# HATS-746: real-subprocess tests (tmp_project spawns the real ai-hats binary).
+# Without this, the pre-push gate's `-m "(integration or smoke) and not
+# quarantine"` selection deselects the file — it survived only by accident in
+# CI Job 1's `not integration` pool.
+pytestmark = pytest.mark.integration
+
 
 def test_list_providers_includes_claude_and_gemini(tmp_project) -> None:
     """``ai-hats list providers`` enumerates the two bundled providers."""
