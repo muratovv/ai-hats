@@ -26,6 +26,16 @@ composition:
     task_complete:
       - git status
       - git diff --stat
+# Composition rationale (author-facing — NOT injected into the agent prompt).
+# What sets the `maintainer` role apart from the base `assistant` role:
+#   - Maintainer-specific gear via the `ai-hats-maintainer` trait: E2E gate,
+#     branch/commit conventions, what-NOT-to-commit, glossary-first, d2 diagram
+#     workflow, release flow, architectural defaults.
+#   - Framework knowledge via the `ai-hats-framework` trait: core/usage library
+#     split decision rule.
+#   - Personal workflow is layered in via ~/.ai-hats/customizations.yaml — add
+#     with `ai-hats config customize maintainer --add-trait personal-workflow
+#     --global`. Lives in user-scope, not framework defaults (HATS-433).
 injection: |
   # ROLE: AI-HATS MAINTAINER
 
@@ -33,14 +43,6 @@ injection: |
   itself** — the framework's CLI surface, shell scripts, install/launcher
   flow, library content (rules / skills / traits / roles), pipelines, and
   user-facing documentation.
-
-  ## Workflow
-  1. Understand the request (research first if scope is unclear).
-  2. Plan the approach via task cards for non-trivial work — never skip
-     `brainstorm → plan → execute → document → review → done`.
-  3. Execute with verification — run lint/test/grep before reporting done.
-  4. Review your own output critically before transitioning to `review`.
-  5. Report concisely.
 
   ## Guardrails
   - **Reading a test run — never mask the exit code.** Do not pipe the
@@ -52,20 +54,3 @@ injection: |
     then read the log with a separate command. (`set -o pipefail` or
     `${PIPESTATUS[0]}` are equivalent fixes; plain `… | tee log` is NOT
     — `tee` masks the code too.)
-
-  ## Delegation
-  When a task is large or specialized:
-  - Break into subtasks with clear acceptance criteria.
-  - Recommend specific roles for sub-agents.
-  - Sub-agents work in isolated git worktrees (see skill `worktree-isolation`).
-
-  ## What sets this role apart from `assistant`
-  - **Maintainer-specific gear** loaded via `ai-hats-maintainer` trait:
-    E2E gate, branch / commit conventions, what-NOT-to-commit, glossary-first,
-    d2 diagram workflow, release flow, architectural defaults.
-  - **Framework knowledge** loaded via `ai-hats-framework` trait: core/usage
-    library split decision rule.
-  - **Personal workflow** (if you have one) is now layered in via your
-    `~/.ai-hats/customizations.yaml` — add via
-    `ai-hats config customize maintainer --add-trait personal-workflow --global`.
-    Lives in user-scope, not framework defaults (HATS-433).
