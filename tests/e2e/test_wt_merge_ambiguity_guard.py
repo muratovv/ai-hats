@@ -36,6 +36,13 @@ from ai_hats.models import ProjectConfig
 from ai_hats.assembler import Assembler
 
 
+# HATS-746: real-git subprocess tests (the HATS-502 wt-merge foot-gun guard).
+# Without this, the pre-push gate's `-m "(integration or smoke) and not
+# quarantine"` selection deselects the file — a regression in the guard would
+# ship to master silently.
+pytestmark = pytest.mark.integration
+
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SRC = REPO_ROOT / "src"
 
