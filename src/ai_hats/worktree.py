@@ -225,6 +225,15 @@ REF_LOCK_TIMEOUT_MS = 5000         # passed to git as core.filesRefLockTimeout �
 # HATS-480 — per-branch lifecycle serialization (see module docstring "Lifecycle concurrency")
 LIFECYCLE_LOCK_TIMEOUT = 60.0     # covers fetch + merge + remove + branch -D end-to-end
 
+# HATS-711 — wall-clock cap on the pre-merge network `fetch` in _check_drift.
+# Held inside the lifecycle lock, so an unbounded fetch (dead VPN / DNS
+# blackhole; TCP stalls sit for minutes) would wedge merge() and make peers
+# time out at LIFECYCLE_LOCK_TIMEOUT with a misleading "concurrent
+# wt merge/discard" error. 30s sits comfortably inside the 60s lifecycle
+# budget (fetch + sub-second local merge/remove/branch-D) and mirrors the
+# network-fetch timeout already used in update_check/checker.py.
+FETCH_TIMEOUT = 30.0
+
 # HATS-486 — stale .git/index.lock observability (see module docstring
 # "Stale-lock observability"). Threshold above which the lock is treated
 # as evidence of a crashed git process (warn-only — no auto-delete in v1).
@@ -1832,13 +1841,24 @@ class WorktreeManager:
     # Git helpers
     # ------------------------------------------------------------------
 
-    def _git(self, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    def _git(
+        self,
+        *args: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        # ``timeout`` is opt-in (default ``None`` = unbounded, preserving
+        # behaviour for every local plumbing call). Only the network
+        # ``fetch`` in :meth:`_check_drift` sets it — see ``FETCH_TIMEOUT``
+        # (HATS-711). A bounded ``fetch`` cannot wedge the per-branch
+        # lifecycle lock and then mis-blame phantom concurrency on peers.
         return subprocess.run(
             ["git", *args],
             cwd=str(cwd or self.project_dir),
             capture_output=True,
             text=True,
             check=True,
+            timeout=timeout,
         )
 
     def _git_with_ref_lock_wait(
@@ -1993,7 +2013,18 @@ class WorktreeManager:
         # consistently with CalledProcessError (mirrors
         # is_inside_linked_worktree / list_worktrees).
         try:
-            self._git("fetch", "origin", self._original_branch)
+            self._git("fetch", "origin", self._original_branch, timeout=FETCH_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            # HATS-711: a hung fetch (dead VPN / DNS blackhole) must not wedge
+            # merge() — bound it and fall through to the local-only check,
+            # exactly like a fetch failure. Named explicitly so triage starts
+            # at the network, not at a phantom concurrent peer.
+            logger.warning(
+                "Drift check: fetch origin %s timed out after %.0fs "
+                "(slow/unreachable remote); proceeding with local-only check "
+                "— remote-side drift will NOT be detected this run",
+                self._original_branch, FETCH_TIMEOUT,
+            )
         except (subprocess.CalledProcessError, FileNotFoundError) as exc:
             stderr = (getattr(exc, "stderr", "") or "").strip()
             tail = stderr.splitlines()[-1] if stderr else "<no stderr>"
