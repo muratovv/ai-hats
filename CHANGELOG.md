@@ -19,6 +19,21 @@ since the latest tag lives under **Unreleased** until the next release.
   success-rate, sidechain, parser flags) and lists `usage.json` among the
   session artefacts, making the channel falsifiable.
 
+### Changed
+- **Claude system prompt no longer carries the `AVAILABLE SKILLS` index**
+  (HATS-701, audit F2 of HATS-698, child of HATS-699 — harness optimization).
+  `ClaudeProvider.build_system_prompt` appended a skills index built from
+  `SKILL.md` frontmatter (5,988 chars for the 22-skill maintainer role) while
+  the *same* session already passes the composed skills via `--plugin-dir`
+  (HITL) / SDK plugin (sub-agent) — Claude Code natively lists every plugin
+  skill with its full description, so the index was a 2-3x duplicate. It is
+  now suppressed for Claude (returning ~1.5k tokens to the context window on
+  every session and every sub-agent spawn, with less selector noise from the
+  duplicate qualified/unqualified listings) and kept for Gemini, which has no
+  native skill registry. The two near-identical `build_system_prompt` bodies
+  are de-duplicated into `Provider._compose_sections(result, *, include_skills)`;
+  `show-prompt` now mirrors the real (index-free) Claude prompt.
+
 ### Removed
 - **Write-only `pipeline_metrics.json` telemetry** (HATS-736, child of
   HATS-699 / HATS-698 audit — dead-delivery class #5). `PipelineHarness.__exit__`
