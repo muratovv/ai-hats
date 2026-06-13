@@ -196,10 +196,25 @@ def _run_steps(
             # boundary. The step never starts — nothing to clean up — so we
             # simply stop and let the post-loop guard raise.
             break
-        kwargs = {k: state[k] for k in s.io.requires}
+        # Project only keys actually present. ``requires`` is validated at build
+        # time against *declared* upstream produces, but a producer may legally
+        # omit a declared key at runtime (None-filtered merge; ComposeRole emits
+        # {} for no role — ADR-0005 value contract). A non-raising projection
+        # keeps ``kwargs`` defined for the ``except`` _emit calls; the presence
+        # check below raises a typed StepError INSIDE the try so failure_policy
+        # and the trace hook apply (HATS-739) — never a bare KeyError that
+        # escapes both.
+        kwargs = {k: state[k] for k in s.io.requires if k in state}
         kwargs.update({k: state[k] for k in s.io.optional if k in state})
         t0 = time.perf_counter()
         try:
+            missing = sorted(s.io.requires - state.keys())
+            if missing:
+                raise StepError(
+                    f"{s.io.name}: required context keys {missing} absent at "
+                    f"runtime (declared by an upstream produces but not emitted "
+                    f"— None-filtered or omitted per the ADR-0005 value contract)"
+                )
             delta = _run_one(s, kwargs)
         except _StepTimeout as to:
             duration_ms = (time.perf_counter() - t0) * 1000
