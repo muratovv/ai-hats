@@ -1,8 +1,9 @@
 """HATS-691: `ai-hats task show <id>` renders linked-task context by default.
 
-Supplementary in-process coverage (the gate artifact is the real-binary e2e in
-``tests/e2e/test_task_show_linked_e2e.py``). Default `show` appends the linked
-bodies; `--short` restores the compact id/state/title index.
+Owns the linked-context rendering semantics (HATS-745); the e2e gate keeps only
+the wiring marker in the ``ai-hats task`` surface sweep
+``tests/e2e/test_task_cli.py``. Default `show` appends the linked bodies;
+`--short` restores the compact id/state/title index.
 """
 
 from __future__ import annotations
