@@ -3,6 +3,7 @@ composition:
   traits: []
   rules:
     - dev_rule_secure_coding
+    - dev_rule_comment_discipline
   skills:
     - systematic-debugging
     - audit-reviewer
@@ -33,3 +34,6 @@ injection: |
   Evidence-first; isolate bugs with a failing test before fixing — full protocol in skill **systematic-debugging**.
 
   Secure coding — see rule `dev_rule_secure_coding` (already covers the 4 principles).
+
+  ### Comments
+  WHY-now in 1–3 lines; history → bare task-ID pointer (git blame, not inline retelling); long rationale → ADR/task card (linked, not pasted); never write a stale-able claim. A wrong comment is worse than none — see rule `dev_rule_comment_discipline`.
