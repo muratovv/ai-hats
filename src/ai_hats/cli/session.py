@@ -295,6 +295,74 @@ def _emit_sessions_json(sessions) -> None:
     click.echo(json.dumps(out, indent=2, sort_keys=True))
 
 
+def _render_usage(session) -> None:
+    """Render a compact Usage section from the session's ``usage.json``.
+
+    HATS-734 consumer for the HATS-664 producer (``compute_usage`` →
+    ``usage.json``). Before this, ``usage.json`` had zero in-src readers, so a
+    producer regression (the resume-mode discovery bug HATS-734 itself fixes)
+    was invisible. This is the human-facing reader that makes the channel
+    falsifiable.
+
+    Fail-soft: a missing or unreadable usage.json prints nothing (no section,
+    no crash) — the file is best-effort and absent for crashed / pre-664
+    sessions. Only fields actually present are shown, so the block carries no
+    ``None``/``?`` noise. Dynamic, transcript-derived values (skill / agent
+    names, parser flags) are printed with markup disabled so a stray ``[`` in
+    the data can never be mis-parsed as rich markup.
+    """
+    import json
+
+    if not session.usage_path.exists():
+        return
+    try:
+        u = json.loads(session.usage_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return
+
+    lines: list[str] = []
+
+    ao = u.get("always_on") or {}
+    measured = ao.get("first_cache_creation_input_tokens")
+    if isinstance(measured, int) and measured > 0:
+        lines.append(f"  always_on (measured): {measured:,} tok")
+    static = ao.get("static") or {}
+    static_total = static.get("total_tokens")
+    if isinstance(static_total, int):
+        role = static.get("role")
+        suffix = f" ({role})" if role else ""
+        lines.append(f"  always_on (static): {static_total:,} tok{suffix}")
+
+    agg = u.get("aggregates") or {}
+    skills = agg.get("skill_loads") or {}
+    if skills:
+        rendered = ", ".join(f"{k} x{v}" for k, v in skills.items())
+        lines.append(f"  skill_loads: {rendered}")
+    calls = agg.get("tool_calls") or 0
+    if calls:
+        errors = agg.get("tool_errors") or 0
+        rate = agg.get("tool_success_rate")
+        rate_str = str(rate) if rate is not None else "n/a"
+        lines.append(f"  tools: {calls} calls, {errors} err, success_rate {rate_str}")
+
+    sidechain = u.get("sidechain") or {}
+    if sidechain.get("is_sidechain"):
+        lines.append(f"  sidechain: {sidechain.get('agent_name') or '?'}")
+
+    flags = u.get("flags") or []
+    if flags:
+        lines.append(f"  flags: {flags}")
+
+    if not lines:
+        # usage.json present but nothing measured — still visible in Artifacts.
+        return
+
+    schema = u.get("schema_version", "usage/v1")
+    console.print(f"\n[bold]Usage[/] ([dim]{schema}[/]):")
+    for line in lines:
+        console.print(line, markup=False)
+
+
 @session.command("show")
 @click.argument("session_id")
 def session_show(session_id: str):
@@ -326,8 +394,10 @@ def session_show(session_id: str):
         except (json.JSONDecodeError, OSError) as e:
             console.print(f"[yellow]Cannot read metrics: {e}[/]")
 
+    _render_usage(s)
+
     artifacts = []
-    for name in ("audit.md", "metrics.json", "trace.log", "transcript.txt", "reasoning.log", "meta_prompt.txt"):
+    for name in ("audit.md", "metrics.json", "usage.json", "trace.log", "transcript.txt", "reasoning.log", "meta_prompt.txt"):
         p = s.session_dir / name
         if p.exists() and p.stat().st_size > 0:
             artifacts.append(f"{name} ({p.stat().st_size:,}b)")
