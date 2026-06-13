@@ -19,6 +19,20 @@ since the latest tag lives under **Unreleased** until the next release.
   success-rate, sidechain, parser flags) and lists `usage.json` among the
   session artefacts, making the channel falsifiable.
 
+### Changed
+- **Trimmed the always-on `## RULES` block ~2.1 KB** (HATS-702, child of
+  HATS-699 / HATS-698 audit). The block ships verbatim in every composed
+  prompt for every role and consuming project — the one cost nobody can opt
+  out of. `rule_pause_before_shared_state_write` (3,005 → 1,542 chars) drops
+  the incident-narrative rationale and worked example (→ HYP-026 / HYP-027 /
+  PROP-052 pointer) while keeping every behavioral clause, the command/
+  reversibility table, and the hook-backstop + ACK warning — enforcement is
+  unchanged (`pre_bash_shared_state_guard.sh` is wired unconditionally).
+  `rule_composition_value_contract` (1,690 → 1,064 chars) compresses its four
+  invariants to one-liners + ADR pointer, and its stale `providers.py` budget
+  comment is corrected (`~600` → `~1.0 KB`). Net: block 8,149 → 6,060 chars,
+  ~520 fewer tokens on every session and sub-agent.
+
 ### Removed
 - **Write-only `pipeline_metrics.json` telemetry** (HATS-736, child of
   HATS-699 / HATS-698 audit — dead-delivery class #5). `PipelineHarness.__exit__`
