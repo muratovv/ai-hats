@@ -133,7 +133,8 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(
     finalizes, the per-session cache (including the plugin-dir) is
     cleaned up by ``_cleanup_session_cache``.
     """
-    from ai_hats import runtime as runtime_mod
+    # HATS-715: SubAgentRunner moved to subagent_runner — patch there (where .run looks).
+    from ai_hats import subagent_runner as runtime_mod
     from ai_hats.sdk_runner import SdkRunResult
 
     project, _lib = project_with_two_roles
