@@ -32,6 +32,19 @@ since the latest tag lives under **Unreleased** until the next release.
   invariants to one-liners + ADR pointer, and its stale `providers.py` budget
   comment is corrected (`~600` → `~1.0 KB`). Net: block 8,149 → 6,060 chars,
   ~520 fewer tokens on every session and sub-agent.
+- **Maintainer role injection deduped against its traits** (HATS-703, child of
+  HATS-699 / HATS-698 audit — finding F4). The `maintainer` role injection
+  re-described its own traits and restated the `brainstorm→…→done` workflow that
+  `trait-agent` already delivers. Dropped the redundant `## Workflow` (covered by
+  `trait-agent` Agent Protocol + `trait-base` pessimistic-verification /
+  concise-communication) and `## Delegation` (near-verbatim `trait-agent`
+  `### Delegation`); moved the author-facing "what sets this role apart"
+  meta-section to a YAML comment so it no longer spends agent prompt budget. The
+  no-`Co-Authored-By` commit-trailer policy now has a single tracked home — the
+  `ai-hats-maintainer` trait — removing the contradictory-precedence risk of the
+  former 3-way duplication. Role injection is now header + intro + `## Guardrails`
+  (~0.5–1 KB/session saved). The three HATS-452 prompt-content e2e tests re-point
+  their role-own-injection marker from `## Workflow` to the role intro string.
 
 ### Removed
 - **Write-only `pipeline_metrics.json` telemetry** (HATS-736, child of
