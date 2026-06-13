@@ -34,6 +34,20 @@ since the latest tag lives under **Unreleased** until the next release.
   now a no-op (artefacts are still kept and GC'd at the next `__enter__`).
 
 ### Fixed
+- **Two real-subprocess e2e files now run in the pre-push gate that protects
+  master** (HATS-746, audit 4b-F4 of HATS-698). `tests/e2e/test_wave1_free_tier.py`
+  (3 free-tier pilots) and `tests/e2e/test_wt_merge_ambiguity_guard.py` (2 tests —
+  the HATS-502 `wt merge` ambiguity foot-gun guard) lacked
+  `pytestmark = pytest.mark.integration`, so the gate's
+  `-m "(integration or smoke) and not quarantine"` selection **deselected** them;
+  they survived only by accident in CI Job 1's `not integration` pool. Adding the
+  marker pulls all 5 into the gate (deliberate coverage increase) — a regression
+  in the foot-gun guard no longer ships to master silently. Also deleted the
+  dead `external_env` pytest marker (declared in `pyproject.toml`, zero uses
+  repo-wide), and recorded on HATS-695 that the two quarantined `self update`
+  pip tests have zero automated coverage (gate deselects via `quarantine`, CI
+  Job 1 via `integration`, CI Job 2 via `--ignore=tests/e2e/`) until that task
+  de-flakes and un-quarantines them.
 - **Pipeline engine raises a typed `StepError` for a required ctx key absent at
   runtime, instead of a bare `KeyError`** (HATS-739, audit 2c-F8 of HATS-698).
   `_run_steps` projected `requires` (`kwargs = {k: state[k] for k in s.io.requires}`)
