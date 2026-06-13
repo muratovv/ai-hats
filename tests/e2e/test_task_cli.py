@@ -1,19 +1,26 @@
-"""End-to-end coverage for task lifecycle CLI surface added in HATS-371.
+"""The single real-subprocess wiring sweep for the ``ai-hats task`` surface family.
 
-The unit suite covers the TaskCard model + state machine, but stubs the
-click wiring that users actually invoke. HATS-371 added four new contracts
-on `ai-hats task`:
+`dev_rule_e2e_gate §2` requires *a* real-subprocess test per CLI surface — a
+**wiring** check (the command resolves through the real binary; correct exit
+code; one stable output marker), not a full semantic re-run. The semantics
+(YAML roundtrip, link-body rendering, resolution text, required-flag rejection,
+state-after-force) are owned by the in-process CliRunner unit suites and are
+NOT re-asserted here:
 
-- `task close <id> --resolution "..."` — fast-close brainstorm/plan → done
-- `task link <FROM> <TO> [--type related|see-also|fold]`
-- `task unlink <FROM> <TO>`
-- `task transition --force --reason "..."`
+- `task close / link / unlink / transition --force`  → `tests/test_cli_task.py`
+- `task show <linked>` default vs `--short`           → `tests/test_cli_task_show_linked.py`
+- `task hyp create --verification-protocol`           → `tests/test_cli_hyp.py`
 
-Per `dev_rule_e2e_gate`, CLI surface additions require a real-subprocess
-test that would fail if the click wiring drifted (command moved between
-groups, option renamed, exit-code change). This test runs the **real**
-launcher + **real** pip install + **real** ai-hats binary. Slow (~60s
-on a warm pip cache). Marked `integration`.
+Precedent (HATS-745): **one wiring sweep per CLI surface family**, exit-code +
+marker only. `task`, `task hyp`, and `task show` all live under `ai-hats task`,
+so they share this one sweep instead of multiplying a micro-e2e file per
+incident — the growth pattern that pushed the gate 146→201 tests in two weeks.
+Folded in from the now-deleted `test_hyp_create_e2e.py` (HATS-623) and
+`test_task_show_linked_e2e.py` (HATS-691).
+
+Runs the **real** launcher + **real** pip install + **real** ai-hats binary
+(``shared_launcher`` tier — the only tier that satisfies §2's "real pip
+install"). Slow (~60s on a warm pip cache). Marked ``integration``.
 """
 
 from __future__ import annotations
@@ -41,15 +48,22 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 
 @pytest.mark.integration
-def test_e2e_task_close_link_force(shared_launcher, tmp_path):
-    """HATS-371 task CLI surface, real subprocess.
+def test_e2e_task_surface_wiring_sweep(shared_launcher, tmp_path):
+    """Wiring sweep for the whole ``ai-hats task`` surface, one real-binary chain.
 
-    1. Bootstrap: session-shared venv + self init (TST- prefix).
-    2. Create two tasks via `task create`.
-    3. `task close TST-001 --resolution "..."` — fast-close brainstorm → done.
-    4. `task link TST-002 TST-001 --type related` — symmetric cross-ref.
-    5. `task unlink TST-002 TST-001` — removes the link.
-    6. `task transition TST-001 brainstorm --force --reason "..."` — bypass FSM.
+    Each step asserts only the subprocess-boundary contract: the command
+    resolves and exits as expected, plus a stable output marker where the exit
+    code alone would not catch a feature revert. Semantics live in the CliRunner
+    units named in the module docstring.
+
+    Fail-under-revert per surface:
+    - `close` / `link` / `unlink` / `transition --force` (HATS-371): command or
+      flag removal → click exit 2 → step fails.
+    - `task show` linked context (HATS-691): the ``"Linked context:"`` marker is
+      produced only by the linked-context block — its presence (default) /
+      absence (``--short``) is the revert signal.
+    - `hyp create --verification-protocol` (HATS-623): flag removal → click
+      rejects the unknown option → exit 2.
     """
     launcher_dest, env, _venv = shared_launcher
     project = tmp_path / "project"
@@ -68,65 +82,47 @@ def test_e2e_task_close_link_force(shared_launcher, tmp_path):
         "--task-prefix", "TST",
     )
 
-    # ---- create two tasks ----
+    # ---- create two tasks + list roundtrip ----
     ai_hats("task", "create", "First", "-d", "first task", "-p", "medium")
     ai_hats("task", "create", "Second", "-d", "second task", "-p", "medium")
-
     res = ai_hats("task", "list", "--all")
     assert "TST-001" in res.stdout, f"TST-001 missing:\n{res.stdout}"
     assert "TST-002" in res.stdout, f"TST-002 missing:\n{res.stdout}"
 
-    # ---- 3. fast-close (HATS-371: ai-hats task close) ----
+    # ---- close (HATS-371): fast-close brainstorm → done ----
     ai_hats("task", "close", "TST-001", "--resolution", "shipped on master")
-    res = ai_hats("task", "show", "TST-001")
-    assert "state: done" in res.stdout, f"TST-001 not done:\n{res.stdout}"
-    assert "shipped on master" in res.stdout, (
-        f"resolution not recorded:\n{res.stdout}"
-    )
 
-    # close without --resolution must fail (required flag)
-    ai_hats(
-        "task", "close", "TST-002",
-        expect_exit=2,  # click missing-required-option
-    )
-
-    # ---- 4. link TST-002 → TST-001 (related, symmetric) ----
+    # ---- link related (HATS-371), then show its linked context (HATS-691) ----
     ai_hats("task", "link", "TST-002", "TST-001", "--type", "related")
-    res_from = ai_hats("task", "show", "TST-002")
-    res_to = ai_hats("task", "show", "TST-001")
-    # Both ends mention the peer id (related is symmetric).
-    assert "TST-001" in res_from.stdout, (
-        f"outbound link missing on TST-002:\n{res_from.stdout}"
+    # Default `show` renders the linked-task bodies under a "Linked context:"
+    # header — the HATS-691 revert signal (the link index alone has no header).
+    res = ai_hats("task", "show", "TST-002")
+    assert "Linked context:" in res.stdout, (
+        f"linked context missing on default show:\n{res.stdout}"
     )
-    assert "TST-002" in res_to.stdout, (
-        f"inbound link missing on TST-001:\n{res_to.stdout}"
+    # `--short` omits the bodies (flag wiring; revert → header reappears).
+    res_short = ai_hats("task", "show", "TST-002", "--short")
+    assert "Linked context:" not in res_short.stdout, (
+        f"--short did not omit linked context:\n{res_short.stdout}"
     )
 
-    # ---- 5. unlink ----
+    # ---- unlink (HATS-371) ----
     ai_hats("task", "unlink", "TST-002", "TST-001")
-    res_from = ai_hats("task", "show", "TST-002")
-    # After unlink, the outbound link section should not list TST-001.
-    # Heuristic: count peer mentions — should drop after unlink.
-    # Conservative check: any "related" rendering line should no longer
-    # carry TST-001 on TST-002's card.
-    lower = res_from.stdout.lower()
-    assert "related" not in lower or "tst-001" not in lower, (
-        f"unlink did not remove related link:\n{res_from.stdout}"
-    )
 
-    # ---- 6. force transition done → brainstorm ----
-    # Normal transition would be rejected by FSM guard.
+    # ---- force transition (HATS-371): bypass the FSM guard ----
     ai_hats(
         "task", "transition", "TST-001", "brainstorm",
         "--force", "--reason", "e2e reopen test",
     )
-    res = ai_hats("task", "show", "TST-001")
-    assert "state: brainstorm" in res.stdout, (
-        f"force transition did not apply:\n{res.stdout}"
-    )
 
-    # --force without --reason must be rejected (custom check → exit 1).
-    ai_hats(
-        "task", "transition", "TST-001", "plan", "--force",
-        expect_exit=1,
+    # ---- hyp create --verification-protocol (HATS-623) ----
+    # The flag is the revert signal: removing it → click rejects the unknown
+    # option (exit 2). The YAML roundtrip is owned by test_cli_hyp.py.
+    res = ai_hats(
+        "task", "hyp", "create",
+        "--title", "lib change",
+        "--hypothesis", "x causes y",
+        "--source-task", "TST-001",
+        "--verification-protocol", "Run suite X; observe metric Y unchanged",
     )
+    assert "HYP-001" in res.stdout, f"hyp create did not report HYP-001:\n{res.stdout}"
