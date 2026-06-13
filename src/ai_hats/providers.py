@@ -84,6 +84,51 @@ class Provider(abc.ABC):
     def build_system_prompt(self, result: CompositionResult) -> str:
         """Build the complete system prompt from composition result."""
 
+    def _compose_sections(
+        self, result: CompositionResult, *, include_skills: bool
+    ) -> str:
+        """Assemble the shared system-prompt sections.
+
+        Order: PRIORITIES → merged role/trait injection → always-on RULES →
+        optional AVAILABLE SKILLS index.
+
+        ``include_skills`` is the provider-specific toggle (HATS-701). Gemini
+        passes ``True`` — it has no native skill registry, so this index is
+        its only discovery channel. Claude passes ``False`` — it materializes
+        skills as a ``--plugin-dir`` (HITL) / SDK plugin (sub-agent) registry
+        that already lists every skill with its full description, so emitting
+        the index here would be a 2-3x duplicate (~1.5k tok/session).
+        """
+        sections: list[str] = []
+
+        if result.priorities:
+            sections.append(
+                "## PRIORITIES\n"
+                + "\n".join(f"{i + 1}. {p}" for i, p in enumerate(result.priorities))
+            )
+
+        if result.merged_injection:
+            sections.append(result.merged_injection)
+
+        # Only always-on rules in prompt
+        always_on = [r for r in result.rules if r.name in ALWAYS_ON_RULES]
+        if always_on:
+            rules_section = "## RULES\n"
+            for rule in always_on:
+                if rule.injection:
+                    rules_section += f"\n### {rule.name}\n{rule.injection}\n"
+            sections.append(rules_section)
+
+        # Skills: index only (body loaded on demand via native provider).
+        if include_skills and result.skills:
+            lines = ["## AVAILABLE SKILLS\n"]
+            for skill in result.skills:
+                desc = _extract_frontmatter_description(skill)
+                lines.append(f"- **{skill.name}** — {desc}")
+            sections.append("\n".join(lines))
+
+        return "\n\n".join(sections)
+
     @abc.abstractmethod
     def inject_rules(self, session_dir: Path, rules: list[ResolvedComponent]) -> None:
         """Copy rule files into the provider's expected location."""
@@ -250,35 +295,9 @@ class GeminiProvider(Provider):
         return session_dir / "rules"
 
     def build_system_prompt(self, result: CompositionResult) -> str:
-        sections = []
-
-        if result.priorities:
-            sections.append(
-                "## PRIORITIES\n"
-                + "\n".join(f"{i + 1}. {p}" for i, p in enumerate(result.priorities))
-            )
-
-        if result.merged_injection:
-            sections.append(result.merged_injection)
-
-        # Only always-on rules in prompt
-        always_on = [r for r in result.rules if r.name in ALWAYS_ON_RULES]
-        if always_on:
-            rules_section = "## RULES\n"
-            for rule in always_on:
-                if rule.injection:
-                    rules_section += f"\n### {rule.name}\n{rule.injection}\n"
-            sections.append(rules_section)
-
-        # Skills: index only (body loaded on demand via native provider)
-        if result.skills:
-            lines = ["## AVAILABLE SKILLS\n"]
-            for skill in result.skills:
-                desc = _extract_frontmatter_description(skill)
-                lines.append(f"- **{skill.name}** — {desc}")
-            sections.append("\n".join(lines))
-
-        return "\n\n".join(sections)
+        # Gemini has no native skill registry — keep the AVAILABLE SKILLS
+        # index as its only discovery channel (HATS-701).
+        return self._compose_sections(result, include_skills=True)
 
     def inject_rules(self, session_dir: Path, rules: list[ResolvedComponent]) -> None:
         rules_dir = self.rules_dir(session_dir)
@@ -370,35 +389,11 @@ class ClaudeProvider(Provider):
         return session_dir / "rules"
 
     def build_system_prompt(self, result: CompositionResult) -> str:
-        sections = []
-
-        if result.priorities:
-            sections.append(
-                "## PRIORITIES\n"
-                + "\n".join(f"{i + 1}. {p}" for i, p in enumerate(result.priorities))
-            )
-
-        if result.merged_injection:
-            sections.append(result.merged_injection)
-
-        # Only always-on rules in prompt
-        always_on = [r for r in result.rules if r.name in ALWAYS_ON_RULES]
-        if always_on:
-            rules_section = "## RULES\n"
-            for rule in always_on:
-                if rule.injection:
-                    rules_section += f"\n### {rule.name}\n{rule.injection}\n"
-            sections.append(rules_section)
-
-        # Skills: index only (body loaded on demand via native provider)
-        if result.skills:
-            lines = ["## AVAILABLE SKILLS\n"]
-            for skill in result.skills:
-                desc = _extract_frontmatter_description(skill)
-                lines.append(f"- **{skill.name}** — {desc}")
-            sections.append("\n".join(lines))
-
-        return "\n\n".join(sections)
+        # HATS-701: skills reach the agent via the native --plugin-dir (HITL)
+        # / SDK plugin (sub-agent) registry materialized in build_session_prompt
+        # / sdk_options. Suppress the AVAILABLE SKILLS index here to avoid the
+        # 2-3x duplicate listing (~1.5k tok/session).
+        return self._compose_sections(result, include_skills=False)
 
     def inject_rules(self, session_dir: Path, rules: list[ResolvedComponent]) -> None:
         rules_dir = self.rules_dir(session_dir)
