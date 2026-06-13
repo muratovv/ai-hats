@@ -183,11 +183,6 @@ def worktrees_dir(project_dir: Path) -> Path:
     return sessions_dir(project_dir) / "worktrees"
 
 
-def worktree_state_path(project_dir: Path) -> Path:
-    """Worktree state index: ``<ai_hats_dir>/sessions/worktree.json``."""
-    return sessions_dir(project_dir) / "worktree.json"
-
-
 # ---------- Tracker class ----------
 
 

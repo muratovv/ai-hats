@@ -11,7 +11,7 @@ from ai_hats.paths import (
     handoffs_dir,
     retros_dir,
     runs_dir,
-    worktree_state_path,
+    sessions_dir,
     worktrees_dir,
 )
 
@@ -78,7 +78,7 @@ def test_sessions_migration_moves_all_paths(tmp_path: Path) -> None:
     assert (experiments_dir(tmp_path) / "lab-a" / "README.md").exists()
     # Worktrees + singleton
     assert (worktrees_dir(tmp_path) / "task-hats-001.json").exists()
-    assert worktree_state_path(tmp_path).exists()
+    assert (sessions_dir(tmp_path) / "worktree.json").exists()
     # Orphan handoff picked up
     assert (handoffs_dir(tmp_path) / "handoff-2026-04-09-hats-061.md").exists()
     # All legacy roots gone (or empty)
