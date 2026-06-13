@@ -33,6 +33,18 @@ since the latest tag lives under **Unreleased** until the next release.
   native skill registry. The two near-identical `build_system_prompt` bodies
   are de-duplicated into `Provider._compose_sections(result, *, include_skills)`;
   `show-prompt` now mirrors the real (index-free) Claude prompt.
+- **Trimmed the always-on `## RULES` block ~2.1 KB** (HATS-702, child of
+  HATS-699 / HATS-698 audit). The block ships verbatim in every composed
+  prompt for every role and consuming project — the one cost nobody can opt
+  out of. `rule_pause_before_shared_state_write` (3,005 → 1,542 chars) drops
+  the incident-narrative rationale and worked example (→ HYP-026 / HYP-027 /
+  PROP-052 pointer) while keeping every behavioral clause, the command/
+  reversibility table, and the hook-backstop + ACK warning — enforcement is
+  unchanged (`pre_bash_shared_state_guard.sh` is wired unconditionally).
+  `rule_composition_value_contract` (1,690 → 1,064 chars) compresses its four
+  invariants to one-liners + ADR pointer, and its stale `providers.py` budget
+  comment is corrected (`~600` → `~1.0 KB`). Net: block 8,149 → 6,060 chars,
+  ~520 fewer tokens on every session and sub-agent.
 
 ### Removed
 - **Write-only `pipeline_metrics.json` telemetry** (HATS-736, child of
@@ -49,6 +61,20 @@ since the latest tag lives under **Unreleased** until the next release.
   now a no-op (artefacts are still kept and GC'd at the next `__enter__`).
 
 ### Fixed
+- **Two real-subprocess e2e files now run in the pre-push gate that protects
+  master** (HATS-746, audit 4b-F4 of HATS-698). `tests/e2e/test_wave1_free_tier.py`
+  (3 free-tier pilots) and `tests/e2e/test_wt_merge_ambiguity_guard.py` (2 tests —
+  the HATS-502 `wt merge` ambiguity foot-gun guard) lacked
+  `pytestmark = pytest.mark.integration`, so the gate's
+  `-m "(integration or smoke) and not quarantine"` selection **deselected** them;
+  they survived only by accident in CI Job 1's `not integration` pool. Adding the
+  marker pulls all 5 into the gate (deliberate coverage increase) — a regression
+  in the foot-gun guard no longer ships to master silently. Also deleted the
+  dead `external_env` pytest marker (declared in `pyproject.toml`, zero uses
+  repo-wide), and recorded on HATS-695 that the two quarantined `self update`
+  pip tests have zero automated coverage (gate deselects via `quarantine`, CI
+  Job 1 via `integration`, CI Job 2 via `--ignore=tests/e2e/`) until that task
+  de-flakes and un-quarantines them.
 - **Pipeline engine raises a typed `StepError` for a required ctx key absent at
   runtime, instead of a bare `KeyError`** (HATS-739, audit 2c-F8 of HATS-698).
   `_run_steps` projected `requires` (`kwargs = {k: state[k] for k in s.io.requires}`)
