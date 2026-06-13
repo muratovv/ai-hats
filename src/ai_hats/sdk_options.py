@@ -9,9 +9,7 @@ by ``runtime._cleanup_session_cache``).
 
 Reused by:
 
-- ``SubAgentRunner._run_attempt`` (Phase 2 — one-shot cutover)
-- ``SubAgentRunner.session()`` (Phase 3 — multi-turn first-class)
-- e2e helpers (Phase 4 — `tests/e2e/_helpers/live.py`)
+- ``SubAgentRunner._run_attempt`` (one-shot SDK path)
 
 **Behaviour change** (documented in plan ``HATS-474``): the legacy
 sub-agent path built its prompt via ``_build_meta_prompt`` which omitted
@@ -214,8 +212,7 @@ def build_first_user_message(
     live Claude channel for that section; the Gemini path mirrors it in
     ``SubAgentRunner._build_meta_prompt``.
 
-    Reserved for Phase 2/3 callers (``SubAgentRunner._run_attempt`` and
-    ``SubAgentRunner.session()``). Defined here so the structure is
+    Used by ``SubAgentRunner._run_attempt``. Defined here so the structure is
     auditable from the foundation phase and integration tests can pin
     section ordering before the migration commit lands.
     """

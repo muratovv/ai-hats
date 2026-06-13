@@ -87,8 +87,7 @@ class HitlResult:
 
     Fluent ``.expect_*()`` verbs (one verb = one assertion, each
     returns ``self``) mirror the idiom of
-    :class:`tests.e2e._helpers.project.RunResult` and
-    :class:`tests.e2e._helpers.live.LiveSession`.
+    :class:`tests.e2e._helpers.project.RunResult`.
 
     Use :attr:`stdout_plain` for assertions; raw :attr:`stdout` is kept
     for diagnostic dumps in failure messages.
