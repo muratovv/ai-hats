@@ -65,8 +65,6 @@ GITHOOKS_MANIFEST = ".ai-hats-manifest"
 GITHOOKS_DISPATCHER_MARKER = "AI-HATS-DISPATCHER-MARKER"
 GITHOOKS_DISPATCHER_TEMPLATE = Path(__file__).parent / "templates" / "githooks" / "dispatcher.sh"
 GITIGNORE_FILE = ".gitignore"
-LIBRARY_RULES_MARKER = ".library_rules"
-MANAGED_SKILLS_MARKER = ".ai-hats-managed"
 
 # HATS-282 — canonical layered layer
 CANONICAL_DIR = "ai-hats"
@@ -855,10 +853,6 @@ class Assembler:
 
         return result
 
-    def clean(self) -> None:
-        """Clean all active directories."""
-        self._clean(preserve_local=False)
-
     def status(self) -> dict:
         """Get current status: role, dependency tree, health.
 
@@ -1288,81 +1282,6 @@ class Assembler:
         raise ValueError(
             f"Unknown provider: {provider_name}. Available: {sorted(PROVIDERS.keys())}"
         )
-
-    def _clean(self, *, preserve_local: bool = False) -> None:
-        """Clean active directories.
-
-        Each subdir keeps a manifest of ai-hats-managed entries so that
-        user-authored files placed alongside survive re-assembly.
-        """
-        rules_dir = _lib_rules_dir(self.project_dir)
-        if rules_dir.exists():
-            if preserve_local:
-                self._clean_non_local(rules_dir)
-            else:
-                _safe_discard(
-                    rules_dir, reason="clean-rules",
-                    project_dir=self.project_dir,
-                )
-                rules_dir.mkdir(parents=True, exist_ok=True)
-
-        for subdir in ("skills", "hooks"):
-            target = self.agent_dir / subdir
-            if target.exists():
-                self._clean_managed_entries(target)
-
-    def _clean_non_local(self, rules_dir: Path) -> None:
-        """Remove only library-sourced rules, keep project-local ones."""
-        marker_file = rules_dir / ".library_rules"
-        if marker_file.exists():
-            library_rules = {r for r in marker_file.read_text().strip().split("\n") if r}
-            for rule_name in library_rules:
-                rule_path = rules_dir / rule_name
-                if rule_path.exists():
-                    _safe_discard(
-                        rule_path, reason="clean-rules",
-                        project_dir=self.project_dir,
-                    )
-            _safe_discard(
-                marker_file, reason="clean-marker",
-                project_dir=self.project_dir,
-            )
-
-    def _clean_managed_entries(self, target: Path) -> None:
-        """Remove only entries listed in the target's `.ai-hats-managed` manifest.
-
-        Without a manifest the directory is assumed to hold only user content,
-        so we leave it alone.
-
-        HATS-470: converted from ``@staticmethod`` so trash recording
-        gets ``self.project_dir`` for relpath preservation.
-        """
-        marker = target / MANAGED_SKILLS_MARKER
-        if not marker.exists():
-            return
-        managed = {n for n in marker.read_text().splitlines() if n.strip()}
-        for name in managed:
-            entry = target / name
-            if entry.exists():
-                _safe_discard(
-                    entry, reason="clean-managed",
-                    project_dir=self.project_dir,
-                )
-        _safe_discard(
-            marker, reason="clean-managed-marker",
-            project_dir=self.project_dir,
-        )
-
-    @staticmethod
-    def _write_managed_manifest(target: Path, names: list[str]) -> None:
-        """Write/remove `.ai-hats-managed` listing entries ai-hats owns in `target`."""
-        marker = target / MANAGED_SKILLS_MARKER
-        if names:
-            marker.write_text("\n".join(names) + "\n")
-        elif marker.exists():
-            # Manifest is framework bookkeeping — empty-state cleanup of
-            # our own marker, no user content. Whitelisted.
-            marker.unlink()  # safe-delete: ok framework-manifest
 
     def _find_hook_script(self, script_ref: str) -> Path | None:
         """Find a hook script across library paths."""

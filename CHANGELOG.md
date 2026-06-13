@@ -72,6 +72,17 @@ since the latest tag lives under **Unreleased** until the next release.
   into the `Provider` base — was already delivered by HATS-701.)
 
 ### Removed
+- **`ai-hats self clean` command** (HATS-709, child of HATS-699 / HATS-698
+  audit — finding 2a-F3). A total no-op on v4: framework content is composed
+  in memory (HATS-294), so the rules/skills mirrors it wiped are empty, the
+  legacy `.agent/{skills,hooks}` it swept don't exist, and the `.ai-hats-managed`
+  manifest its sweep read was never written (`_write_managed_manifest` had zero
+  callers). The only materialized managed content (`library/hooks`) is owned by
+  `_refresh`. The undocumented command and its dead helper chain
+  (`Assembler._clean` / `_clean_non_local` / `_clean_managed_entries` /
+  `_write_managed_manifest` + the unreachable `preserve_local` branch and
+  `.library_rules` marker protocol) are removed (~90 LOC). Re-materialize a
+  project's managed tree via `ai-hats self init` / `self update`.
 - **Write-only `pipeline_metrics.json` telemetry** (HATS-736, child of
   HATS-699 / HATS-698 audit — dead-delivery class #5). `PipelineHarness.__exit__`
   wrote a per-run `pipeline_metrics.json` (terminal zero-output / timeout
