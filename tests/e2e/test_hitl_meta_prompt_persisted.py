@@ -58,7 +58,8 @@ pytestmark = pytest.mark.integration
 # regression in role injection / trait injection / merge would drop one.
 TRAIT_MARKER_E2E_GATE = "E2E gate"          # trait ai-hats-maintainer
 TRAIT_MARKER_AGENT_PROTOCOL = "Agent Protocol"  # trait trait-agent
-ROLE_MARKER_WORKFLOW = "Workflow"           # role maintainer's own injection
+# role maintainer's own injection intro (HATS-703 dropped the "## Workflow" marker)
+ROLE_MARKER_INTRO = "primary development assistant for the"
 
 
 @pytest.fixture
@@ -160,7 +161,7 @@ def test_hitl_session_persists_meta_prompt_to_session_dir(
     for marker in (
         TRAIT_MARKER_E2E_GATE,
         TRAIT_MARKER_AGENT_PROTOCOL,
-        ROLE_MARKER_WORKFLOW,
+        ROLE_MARKER_INTRO,
     ):
         assert marker in text, (
             f"HATS-523 regression: meta_prompt.txt missing marker "
