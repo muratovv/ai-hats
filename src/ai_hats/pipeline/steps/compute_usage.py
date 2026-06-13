@@ -65,13 +65,18 @@ class ComputeUsage(Step):
         from ...runtime import _claude_jsonl_path, _discover_claude_jsonl
         from ...usage import parse_session_usage
 
-        del session_id  # contract-required; identity already in session_dir
-
         usage_path = session_dir / "usage.json"
         try:
             jsonl_path = _claude_jsonl_path(project_dir, claude_session_id)
             if jsonl_path is None or not jsonl_path.exists():
-                jsonl_path = _discover_claude_jsonl(project_dir, claude_session_id)
+                # HATS-734: discovery keys off the ai-hats ``session_id``
+                # (``YYYYMMDD-HHMMSS-N``), NOT ``claude_session_id``. In
+                # resume/continue mode the uuid never reached Claude, so its
+                # path is missing AND it cannot drive the mtime-window start —
+                # ``_discover_claude_jsonl`` parses ``session_id[:15]`` with
+                # strptime, which a uuid fails → None. Sibling ``make_audit``
+                # already passes ``session_id``; converge on that.
+                jsonl_path = _discover_claude_jsonl(project_dir, session_id)
             if jsonl_path is None or not jsonl_path.exists():
                 logger.debug("compute_usage: no JSONL for %s", claude_session_id)
                 return {}
