@@ -31,8 +31,6 @@ contents). ``AI_HATS_DIR`` overrides the runtime base namespace
 
 from __future__ import annotations
 
-import json
-import logging
 import os
 import secrets
 import shutil
@@ -42,14 +40,11 @@ from importlib.resources import as_file, files
 from pathlib import Path
 from typing import Any, Mapping
 
-from ..harness.errors import HarnessTimeoutError, HarnessZeroOutputError
 from ..paths import runs_dir, traces_dir
 from .loader import load_pipeline
 from .pipeline import run as run_pipeline
 from .trace import JsonlTraceWriter, TraceHook
 from .user_steps import load_user_steps
-
-logger = logging.getLogger(__name__)
 
 
 def _resolve_trace_path(value: str, project_dir: Path, name: str) -> Path:
@@ -126,48 +121,11 @@ class PipelineHarness:
         return self
 
     def __exit__(self, *exc: Any) -> None:
-        # HATS-378: write pipeline_metrics.json with harness incident
-        # counters before tearing down. Best-effort — never propagate
-        # I/O failures here, the run already completed (or already
-        # raised; we don't want to mask the real exception).
-        exc_value = exc[1] if len(exc) >= 2 else None
-        try:
-            self._write_pipeline_metrics(exc_value)
-        except Exception:  # noqa: BLE001 — observability, never fatal
-            logger.warning(
-                "pipeline_metrics write failed for %s/%s",
-                self.name, self.session_id, exc_info=True,
-            )
-        # Default: keep artefacts for inspection; cleanup happens at next run.
+        # No teardown work: artefacts are kept for inspection and the
+        # per-pipeline namespace is GC'd at the next __enter__ (see
+        # _gc_old_sessions). __exit__ stays defined so the class remains a
+        # valid context manager.
         return None
-
-    def _write_pipeline_metrics(self, exc_value: BaseException | None) -> None:
-        """Aggregate harness incident counters into pipeline_metrics.json.
-
-        v0.6 captures only the terminal incident that bubbled out of the
-        pipeline (one zero-output or timeout per run). Future enhancement:
-        scan sub-session metrics to count retries that recovered.
-        """
-        incidents = {
-            "silent_zero_output_incidents": 0,
-            "harness_timeout_incidents": 0,
-        }
-        if isinstance(exc_value, HarnessZeroOutputError):
-            incidents["silent_zero_output_incidents"] = 1
-        elif isinstance(exc_value, HarnessTimeoutError):
-            incidents["harness_timeout_incidents"] = 1
-
-        self.namespace.mkdir(parents=True, exist_ok=True)
-        (self.namespace / "pipeline_metrics.json").write_text(
-            json.dumps(
-                {
-                    "pipeline": self.name,
-                    "session_id": self.session_id,
-                    "incidents": incidents,
-                },
-                indent=2,
-            )
-        )
 
     def _gc_old_sessions(self, keep_n: int | None = None) -> None:
         """Prune sibling session dirs beyond the N most-recent.
