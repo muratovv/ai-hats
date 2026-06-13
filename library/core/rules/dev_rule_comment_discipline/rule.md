@@ -4,6 +4,10 @@ Default to **no comment**. Good names make the next line obvious; a comment is
 only for the WHY the code can't show — and then it's **one line**. Learn the
 boundary from the examples; match them.
 
+> In the examples, `TASK-NNN` is a placeholder for a ticket id. Use whatever
+> prefix *this* repository uses (`PROX-`, `ACME-`, `JIRA-…`); never write the
+> literal string `TASK-NNN`.
+
 ## When NOT to write a comment — the common case (delete / skip)
 
 ```python
@@ -17,7 +21,7 @@ total = price * qty          # ❌ "compute total" — restates the code
 # rows = old_load(x)         # ❌ commented-out code — git remembers it; delete
 
 # TODO: clean this up         # ❌ ownerless TODO — delete, or pin it:
-# TODO(HATS-712): drop after the v0.8 migration lands
+# TODO(TASK-712): drop after the v0.8 migration lands
 ```
 
 ## When a comment earns its place — ONE line, the WHY
@@ -30,7 +34,7 @@ Each ✅ is paired with the weak version it replaces.
 lock = FileLock(path)
 
 # ❌ lock around the worktree add
-# ✅ git does NOT serialize `worktree add` across processes (HATS-479)
+# ✅ git does NOT serialize `worktree add` across processes (TASK-479)
 with _create_lock():
     ...
 
@@ -43,14 +47,14 @@ def _load_under_lock(branch): ...
 
 ```python
 # ❌ four lines retelling the task + a number that rots:
-# HATS-452: framework-invariant reminder for any agent that may
+# TASK-452: framework-invariant reminder for any agent that may
 # touch composition / pipeline / runtime internals. Short body
 # (~600 chars); acceptable budget for an always-on architectural
 # guard. Full rationale: docs/adr/0005-*.md.
 "rule_composition_value_contract",
 
 # ✅ pointer + link; no retelling, no stale-able count:
-"rule_composition_value_contract",  # HATS-452: always-on; see docs/adr/0005
+"rule_composition_value_contract",  # TASK-452: always-on; see docs/adr/0005
 ```
 
 That `~600 chars` is now **1690 (2.8×)** — the count rotted, the pointer wouldn't
@@ -60,7 +64,7 @@ docstring states the contract in a few lines, not the design history.
 ## The 4-question test — run it before typing any comment
 
 1. Does the code already say this?            → **delete.**
-2. Is it *what changed* / task history?       → **`# HATS-NNN` pointer**, not prose.
+2. Is it *what changed* / task history?       → **`# TASK-NNN` pointer**, not prose.
 3. Is it a count/claim that can go stale?     → **omit** ("~600 chars", "only caller", "always").
 4. Left with a non-obvious WHY in ≤1 line?    → **keep it.**
 
