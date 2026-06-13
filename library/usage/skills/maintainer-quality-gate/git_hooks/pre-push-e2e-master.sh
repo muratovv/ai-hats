@@ -27,6 +27,13 @@
 #
 # Run-mode behaviour carried over from earlier tickets:
 #   * HATS-568: sweeps stale `build/` wheel artefacts before the run.
+#   * HATS-731: previews stale tmp cruft (`ai-hats-wt-*`, `pytest-of-*`) via
+#     scripts/clean-tmp-cruft.sh before the run — the leak source that sweeper
+#     (HATS-570) was built for. DRY-RUN by default (it matches every
+#     `ai-hats-wt-*` by name and cannot tell a leaked test worktree from a live
+#     session, so it never auto-deletes); opt in to real `--force` deletion
+#     with AI_HATS_E2E_CLEAN_TMP=1. Guarded on the script's presence (a no-op
+#     in consuming projects that ship the hook but not scripts/).
 #   * HATS-589/592: parallelises with pytest-xdist when present, adaptive
 #     `-n min(logical_cpus, 8) --dist=loadgroup`; serial fallback when absent.
 #   * HATS-645: exports `AI_HATS_E2E_REQUIRE_VENV=1` so the tier-2 venv fixture
@@ -147,6 +154,26 @@ EOF
     if [[ -d "$repo_root/build" ]]; then
         echo "[e2e-gate] cleaning stale $repo_root/build/ (HATS-568)" >&2
         rm -rf "$repo_root/build" 2>/dev/null || true
+    fi
+
+    # HATS-731: surface stale ai-hats test cruft (ai-hats-wt-*, pytest-of-*) in
+    # TMPDIR before the heavy run — the leak source scripts/clean-tmp-cruft.sh
+    # (HATS-570) was built to clear, finally wired into the gate it speeds up.
+    # DRY-RUN by default: the sweeper matches every `ai-hats-wt-*` dir by name
+    # and cannot tell a leaked test worktree from a LIVE task session, so the
+    # gate only PREVIEWS what would be freed — it never auto-deletes a sibling
+    # worktree. Opt IN to real deletion with AI_HATS_E2E_CLEAN_TMP=1 (--force).
+    # Guarded on presence so it is a no-op anywhere the script is absent
+    # (consumers ship the hook, not scripts/).
+    local sweep="$repo_root/scripts/clean-tmp-cruft.sh"
+    if [[ -x "$sweep" ]]; then
+        if [[ "${AI_HATS_E2E_CLEAN_TMP:-0}" == "1" ]]; then
+            echo "[e2e-gate] sweeping stale tmp cruft --force (HATS-731/HATS-570)" >&2
+            bash "$sweep" --force >&2 || true
+        else
+            echo "[e2e-gate] tmp-cruft preview — set AI_HATS_E2E_CLEAN_TMP=1 to delete (HATS-731):" >&2
+            bash "$sweep" >&2 || true
+        fi
     fi
 
     # HATS-589/592: opt into pytest-xdist when present, adaptive worker count

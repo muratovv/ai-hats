@@ -188,15 +188,24 @@ def _check(stdin: str, bindir: Path | None, *, cwd: Path) -> subprocess.Complete
     )
 
 
-def _run(bindir: Path | None, *, cwd: Path, extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
+def _run(
+    bindir: Path | None,
+    *,
+    cwd: Path,
+    extra: tuple[str, ...] = (),
+    env_extra: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     """Run the hook in RUN mode (``--run``)."""
+    env = _env(bindir)
+    if env_extra:
+        env.update(env_extra)
     return subprocess.run(
         ["bash", str(HOOK), "--run", *extra],
         cwd=str(cwd),
         capture_output=True,
         text=True,
         timeout=30,
-        env=_env(bindir),
+        env=env,
     )
 
 
@@ -568,6 +577,69 @@ def test_run_mode_falls_back_to_serial_without_xdist(tmp_path: Path):
     argv = (bindir / "last_argv").read_text()
     assert _xdist_n(argv) is None, argv
     assert "--dist" not in argv, argv
+
+
+# ===========================================================================
+# Run mode — tmp-cruft sweep preamble (HATS-731)
+# ===========================================================================
+
+
+def _seed_sweep_recorder(repo: Path) -> Path:
+    """Stub ``scripts/clean-tmp-cruft.sh`` that records the argv it was called with.
+
+    Stands in for the real sweeper so the gate test asserts *whether and how*
+    the hook invokes it, without touching the host's TMPDIR.
+    """
+    scripts = repo / "scripts"
+    scripts.mkdir(parents=True, exist_ok=True)
+    sweep = scripts / "clean-tmp-cruft.sh"
+    sweep.write_text(
+        "#!/usr/bin/env bash\n"
+        f'printf "%s\\n" "$@" > "{repo}/sweep_argv"\n'
+    )
+    sweep.chmod(0o755)
+    return sweep
+
+
+@pytest.mark.integration
+def test_run_mode_tmp_sweep_is_dry_run_by_default(tmp_path: Path):
+    """`--run` invokes scripts/clean-tmp-cruft.sh in DRY-RUN (no ``--force``).
+
+    Default must never auto-delete: the sweeper cannot tell a leaked test
+    worktree from a live session, so the gate only previews. Fail-under-revert:
+    drop the HATS-731 sweep block → the recorder is never written → red.
+    """
+    repo = _git_repo(tmp_path)
+    bindir = tmp_path / "bin"
+    _make_pytest_stub(bindir, exit_code=0)
+    _seed_sweep_recorder(repo)
+
+    res = _run(bindir, cwd=repo)
+
+    assert res.returncode == 0, res.stderr
+    recorded = repo / "sweep_argv"
+    assert recorded.exists(), f"sweeper not invoked; stderr:\n{res.stderr}"
+    # invoked with NO args → dry-run preview, not a destructive --force.
+    assert recorded.read_text().strip() == "", "default must be dry-run, not --force"
+
+
+@pytest.mark.integration
+def test_run_mode_tmp_sweep_force_when_opted_in(tmp_path: Path):
+    """``AI_HATS_E2E_CLEAN_TMP=1`` → the sweeper is invoked with ``--force``.
+
+    Fail-under-revert: drop the opt-in branch → no ``--force`` recorded → red.
+    """
+    repo = _git_repo(tmp_path)
+    bindir = tmp_path / "bin"
+    _make_pytest_stub(bindir, exit_code=0)
+    _seed_sweep_recorder(repo)
+
+    res = _run(bindir, cwd=repo, env_extra={"AI_HATS_E2E_CLEAN_TMP": "1"})
+
+    assert res.returncode == 0, res.stderr
+    recorded = repo / "sweep_argv"
+    assert recorded.exists(), f"sweeper not invoked; stderr:\n{res.stderr}"
+    assert recorded.read_text().strip() == "--force"
 
 
 # ===========================================================================

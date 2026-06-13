@@ -37,7 +37,12 @@ commit SHA, preserving the HATS-550 "no-broken-master, no-bypass" contract.
 Run this **before** pushing master. From the repo root the hook first sweeps
 the dev checkout's `build/` directory (HATS-568 — stale wheel-build artefacts
 cause "File exists: build/bdist...dist-info" collisions across worktree-tier
-e2e tests), then runs:
+e2e tests), then previews stale tmp cruft (`ai-hats-wt-*`, `pytest-of-*`) via
+`scripts/clean-tmp-cruft.sh` (HATS-731/HATS-570 — keeps APFS metadata ops fast
+on a loaded host). The preview is **dry-run by default** — the sweeper matches
+every `ai-hats-wt-*` by name and cannot tell a leaked test worktree from a live
+session, so the gate never auto-deletes one; opt in to real `--force` deletion
+with `AI_HATS_E2E_CLEAN_TMP=1`. Then runs:
 
     pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ \
            -q --tb=line --no-header -p no:cacheprovider
