@@ -40,7 +40,6 @@ from ai_hats.paths import (
     venv_path,
     version_dir,
     versions_root,
-    worktree_state_path,
     worktrees_dir,
 )
 
@@ -167,7 +166,6 @@ def test_ai_hats_dir_handles_corrupt_yaml(tmp_path, monkeypatch):
         (handoffs_dir, "sessions/handoffs"),
         (experiments_dir, "sessions/experiments"),
         (worktrees_dir, "sessions/worktrees"),
-        (worktree_state_path, "sessions/worktree.json"),
     ],
 )
 def test_sessions_class_resolvers(tmp_path, monkeypatch, fn, subpath):
@@ -181,7 +179,6 @@ def test_sessions_class_resolvers(tmp_path, monkeypatch, fn, subpath):
 def test_sessions_resolvers_respect_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "custom"))
     assert runs_dir(tmp_path) == tmp_path / "custom" / "sessions" / "runs"
-    assert worktree_state_path(tmp_path) == tmp_path / "custom" / "sessions" / "worktree.json"
 
 
 # ---------- HATS-316: tracker/ resolvers ----------
