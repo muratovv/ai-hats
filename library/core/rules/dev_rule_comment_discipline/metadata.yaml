@@ -1,0 +1,4 @@
+name: dev_rule_comment_discipline
+description: Comments explain WHY-now in 1-3 lines; history is a bare task-ID pointer (git blame, not inline retelling); long rationale lives in ADR/task card; never write a stale-able claim
+author: ai-hats
+tags: [development, code-health, dx, comments]
