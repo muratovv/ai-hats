@@ -6,7 +6,7 @@ import pytest
 from pathlib import Path
 
 from ai_hats.models import TaskState
-from ai_hats.state import TaskManager
+from ai_hats.state import EmptyPlanError, TaskManager
 from ai_hats.worktree import WorktreeManager
 
 
@@ -162,12 +162,41 @@ def test_final_state(mgr):
     mgr.create_task("T-1", "Review me")
     mgr.transition("T-1", TaskState.PLAN)
     mgr.transition("T-1", TaskState.EXECUTE)
-    mgr.set_final_state("T-1", "Implemented feature X with full test coverage")
     mgr.transition("T-1", TaskState.DOCUMENT)
-    mgr.transition("T-1", TaskState.REVIEW)
+    # final_state rides the review transition's lock window (HATS-723).
+    mgr.transition(
+        "T-1",
+        TaskState.REVIEW,
+        final_state="Implemented feature X with full test coverage",
+    )
 
     t = mgr.get_task("T-1")
     assert t.final_state == "Implemented feature X with full test coverage"
+
+
+def test_final_state_not_written_when_transition_fails(tmp_path):
+    """HATS-723: a transition that raises must not half-apply final_state.
+
+    The old CLI wrote final_state in its own lock BEFORE transitioning; a
+    later raise left the card mutated. Now final_state rides the transition's
+    single lock window, so a failed transition persists nothing.
+    """
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
+    (project / ".agent" / "STATE.md").write_text("")
+    strict = TaskManager(project, prefix="T", strict_plan_check=True)
+
+    strict.create_task("T-9", "Empty plan")
+    strict.transition("T-9", TaskState.PLAN)  # empty scaffold → execute blocked
+
+    with pytest.raises(EmptyPlanError):
+        strict.transition("T-9", TaskState.EXECUTE, final_state="should not persist")
+
+    # The raise fired before _save_task — the card on disk is untouched.
+    reloaded = strict.get_task("T-9")
+    assert reloaded.final_state == ""
+    assert reloaded.state == TaskState.PLAN
 
 
 def test_state_md_lists_all_tasks(mgr):
@@ -231,11 +260,12 @@ def test_full_lifecycle_with_logs(mgr):
     mgr.transition("T-1", TaskState.EXECUTE)
 
     mgr.log_work("T-1", "Implementation complete")
-    mgr.set_final_state("T-1", "Feature implemented and tested")
     mgr.transition("T-1", TaskState.DOCUMENT)
 
     mgr.log_work("T-1", "Docs updated")
-    mgr.transition("T-1", TaskState.REVIEW)
+    mgr.transition(
+        "T-1", TaskState.REVIEW, final_state="Feature implemented and tested"
+    )
 
     mgr.log_work("T-1", "Review passed")
     mgr.transition("T-1", TaskState.DONE)
