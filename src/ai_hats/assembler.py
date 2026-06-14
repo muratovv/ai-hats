@@ -1542,7 +1542,7 @@ class Assembler:
         if effective_role:
             try:
                 composition = compose_for_role(self, effective_role)
-                source_lookup = self._build_v07_tier2_source_lookup()
+                source_lookup = self._build_v07_tier2_source_lookup(composition)
             except Exception:  # noqa: BLE001 — defensive fallback for compose failure
                 composition = empty_composition()
                 source_lookup = {}
@@ -1621,23 +1621,22 @@ class Assembler:
                 out.append(hooks_root)
         return out
 
-    def _build_v07_tier2_source_lookup(self) -> dict[str, Path]:
-        """Map mirror-dir name → source root for every rule/skill the composer resolved.
+    def _build_v07_tier2_source_lookup(self, comp: CompositionResult) -> dict[str, Path]:
+        """Map mirror-dir name → source root for every rule/skill in ``comp``.
 
         Used by :func:`ai_hats.migration_v07.plan_migration` so Tier-2 dirs
         whose source we can locate get a diff baseline (safe-to-delete when
         content matches).
+
+        HATS-755: consumes the composition already computed by the sole
+        caller (:meth:`_run_v07_migration`) instead of recomposing the same
+        role — the two composes ran back-to-back on identical state, so they
+        were guaranteed equal. The caller's ``try/except`` maps a compose
+        failure to an empty ``composition`` + empty lookup.
         """
         from .models import resolve_namespace
 
         resolver = self.composer.resolver
-        effective = self.project_config.active_role or self.project_config.default_role
-        if not effective:
-            return {}
-        try:
-            comp = compose_for_role(self, effective)
-        except Exception:  # noqa: BLE001 — defensive: any compose failure → empty lookup
-            return {}
         out: dict[str, Path] = {}
         for r in comp.rules:
             src = resolver.resolve_rule_dir(r.name)
