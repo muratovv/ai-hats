@@ -5,8 +5,12 @@
 # `path.rmdir(...)` call sneaks into `src/ai_hats/` without either:
 #   (a) being inside `src/ai_hats/safe_delete.py` (the single authorised
 #       primitive site), OR
-#   (b) carrying an explicit `# safe-delete: ok <reason>` inline marker
-#       on the same line (reviewer-visible bypass with reason in the diff).
+#   (b) carrying an explicit `# safe-delete: ok <reason>` marker anywhere in
+#       the call's parenthesised span (reviewer-visible bypass with reason in
+#       the diff). The span-aware match (HATS-757) survives `ruff format`
+#       wrapping a long call across lines — which relocates the trailing marker
+#       onto the closing-paren line, where a line-local whitelist could not see
+#       it and false-positived on every commit.
 #
 # The aim is to prevent silent regressions where new code reintroduces
 # the data-loss patterns HATS-470 just neutralised (see
@@ -35,31 +39,66 @@ if [[ ! -d "$src_dir" ]]; then
     exit 0
 fi
 
-# Pick a grep impl: prefer ripgrep (faster + line-numbered out of the box),
-# fall back to grep -rn (works everywhere).
+# List the .py files that contain a destructive token. Prefer ripgrep,
+# fall back to grep -rl (works everywhere). We only awk-scan files that have
+# at least one token — same candidate set under both impls (rg/grep parity).
 if command -v rg >/dev/null 2>&1; then
-    scan() {
-        rg -n --type py \
+    list_files() {
+        rg -l --type py \
             -e '\.unlink\(' \
             -e 'shutil\.rmtree\(' \
             -e '\.rmdir\(' \
             "$src_dir"
     }
 else
-    scan() {
-        grep -rn --include='*.py' \
+    list_files() {
+        grep -rl --include='*.py' \
             -E '\.unlink\(|shutil\.rmtree\(|\.rmdir\(' \
             "$src_dir"
     }
 fi
 
-# Whitelist:
-#  - safe_delete.py is the single legitimate raw-ops site
-#  - lines carrying `# safe-delete: ok ` are reviewer-acknowledged bypasses
-violators=$(scan \
-    | grep -v 'src/ai_hats/safe_delete\.py' \
-    | grep -v '# safe-delete: ok ' \
-    || true)
+# Span-aware whitelist (HATS-757):
+#  - safe_delete.py is the single legitimate raw-ops site → skipped wholesale.
+#  - A destructive call is acknowledged iff a `# safe-delete: ok ` marker
+#    appears on ANY line of its parenthesised span (token line … closing-paren
+#    line). awk tracks paren balance from the token line until the call's
+#    parens rebalance, so the marker survives `ruff format` wrapping the call
+#    across lines.
+#
+# Limitation: paren balance is counted over raw text, so parens or `#` inside
+# string literals can confuse span boundaries. In that (contrived) case the
+# scan OVER-reports (treats the call as unmarked and demands a marker) — it
+# never silently passes an *unmarked* destructive call, so the guard stays safe.
+scan_file() {
+    awk '
+    BEGIN { watching = 0; depth = 0; start = 0; marker = 0 }
+    {
+        if (!watching && $0 ~ /\.unlink\(|shutil\.rmtree\(|\.rmdir\(/) {
+            watching = 1; start = NR; marker = 0; depth = 0
+        }
+        if (watching) {
+            if ($0 ~ /# safe-delete: ok /) marker = 1
+            opens = $0; o = gsub(/\(/, "", opens)
+            closes = $0; c = gsub(/\)/, "", closes)
+            depth += o - c
+            if (depth <= 0) {
+                if (!marker) print FILENAME ":" start
+                watching = 0; depth = 0
+            }
+        }
+    }
+    END { if (watching && !marker) print FILENAME ":" start }
+    ' "$1"
+}
+
+violators=""
+while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    [[ "$f" == *"src/ai_hats/safe_delete.py" ]] && continue
+    out="$(scan_file "$f")"
+    [[ -n "$out" ]] && violators+="${violators:+$'\n'}$out"
+done < <(list_files)
 
 if [[ -n "$violators" ]]; then
     echo "" >&2

@@ -113,6 +113,23 @@ def test_hook_allows_inline_marker_bypass(tmp_path):
     assert rc == 0, f"inline-marker bypass should pass; got: {err}"
 
 
+def test_hook_allows_inline_marker_on_multiline_call(tmp_path):
+    """HATS-757: the marker on the closing-paren line of a MULTI-LINE call must
+    pass. ``ruff format`` wraps long calls and relocates the trailing comment
+    onto the ``)`` line — a different physical line than the matched token, so a
+    line-local whitelist false-positives on a correctly-marked call."""
+    project = _make_fake_project(tmp_path)
+    (project / "src" / "ai_hats" / "ok_multiline.py").write_text(
+        "import shutil\n"
+        "def f(p):\n"
+        "    shutil.rmtree(\n"
+        "        p, ignore_errors=True\n"
+        "    )  # safe-delete: ok multi-line cleanup\n"
+    )
+    rc, _, err = _run_hook(project)
+    assert rc == 0, f"multi-line marker bypass should pass; got: {err}"
+
+
 def test_hook_noop_on_non_ai_hats_project(tmp_path):
     """Project without src/ai_hats/ → silent no-op."""
     project = tmp_path / "other"
@@ -146,6 +163,21 @@ def test_hook_respects_skip_env(tmp_path):
     )
     assert result.returncode == 0
     assert "skipped" in result.stderr
+
+
+def test_hook_passes_on_the_real_repo_tree():
+    """HATS-757 R6 — the guard MUST pass against the ACTUAL ``src/ai_hats/``
+    tree, not only fixtures.
+
+    The unit cases above run against a stub tree (agnostic to refactors), which
+    is precisely why HATS-715 could drift a correctly-marked call into a
+    multi-line shape the old line-local hook mishandled without any test going
+    red. This gate runs the guard against the real repository so real call-site
+    drift is caught automatically, instead of only on a manual commit.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    rc, _, err = _run_hook(repo_root)
+    assert rc == 0, f"guard must pass on the real src/ai_hats/ tree; got:\n{err}"
 
 
 def test_hook_does_not_flag_safe_delete_module_itself(tmp_path):
