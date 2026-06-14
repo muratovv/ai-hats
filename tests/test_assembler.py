@@ -296,6 +296,42 @@ def test_bump_silent_on_clean_v07_layout(project_with_library):
     bump_pipeline(asm)  # no raise — has_work=False path
 
 
+def test_run_v07_migration_composes_role_once(project_with_library, monkeypatch):
+    """HATS-755: ``_run_v07_migration`` composes the active role exactly once.
+
+    The migration-plan baseline (``compose_for_role`` at the top of the
+    method) and the Tier-2 source lookup (``_build_v07_tier2_source_lookup``)
+    observe identical state — back-to-back, nothing mutates compose inputs
+    between them. The lookup therefore reuses the already-computed
+    composition instead of recomposing the same role. Reverting the collapse
+    restores the second compose → count == 2 → this test fails.
+    """
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    import ai_hats.assembler as assembler_mod
+
+    real_compose = assembler_mod.compose_for_role
+    roles_composed: list[str] = []
+
+    def counting_compose(assembler, role):
+        roles_composed.append(role)
+        return real_compose(assembler, role)
+
+    # Both call sites in _run_v07_migration use the bare module-level
+    # ``compose_for_role`` name, so one patch intercepts both.
+    monkeypatch.setattr(assembler_mod, "compose_for_role", counting_compose)
+
+    asm._run_v07_migration(force=False, check_branches=False)
+
+    assert roles_composed == ["test-role"], (
+        "HATS-755: _run_v07_migration must compose the role once; "
+        f"got {len(roles_composed)} composes: {roles_composed}"
+    )
+
+
 # -- HATS-413: bump persists yaml hardening (heal + deprecated-strip) --
 
 
