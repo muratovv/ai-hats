@@ -478,3 +478,51 @@ def test_format_audit_preserves_full_user_input(tmp_path):
 
     assert big in out, "user_input must be rendered in full (no cap)"
     assert "chars truncated" not in out, "no truncation marker — generation is lossless"
+
+
+# --- HATS-735: metrics.json guarded reads + atomic write ---
+
+def test_audit_build_survives_corrupt_metrics_json(tmp_path):
+    """A torn/corrupt metrics.json must not crash the audit build.
+
+    Before the read-guard, _format_audit/_write_metrics did a raw json.loads
+    that raised JSONDecodeError; make_audit swallowed it into a logger.warning
+    and the structured audit silently vanished for that session.
+    """
+    from ai_hats.observe import AuditWriter
+
+    session = make_test_session(tmp_path)
+    session.metrics_path.write_text("{ this is not valid json ]]")  # torn file
+    session.trace_path.write_text("")
+
+    # Must not raise; audit.md must still be produced.
+    AuditWriter().build(session, jsonl_path=None, keep_raw=False)
+    assert session.audit_path.exists()
+    assert "# Session Audit" in session.audit_path.read_text()
+
+
+def test_finalize_audit_metrics_write_is_atomic(tmp_path, monkeypatch):
+    """A crash during the metrics.json write must not truncate an existing file.
+
+    Fails under open('w')+json.dump (truncates before json.dump writes a byte);
+    passes once the write routes through atomic_io (serialize, then atomic replace).
+    """
+    from ai_hats import atomic_io
+
+    session = make_test_session(tmp_path)
+    session.finalize_audit({"turns": 1, "tool_calls": 2})
+    original = session.metrics_path.read_text()
+
+    def boom(src, dst):
+        raise OSError("simulated crash before rename completes")
+
+    monkeypatch.setattr(atomic_io.os, "replace", boom)
+    with pytest.raises(OSError):
+        session.finalize_audit({"turns": 999, "tool_calls": 999})
+
+    assert session.metrics_path.read_text() == original  # never truncated
+    orphans = [
+        f for f in session.metrics_path.parent.iterdir()
+        if f.name.startswith(".metrics.json.")
+    ]
+    assert orphans == []

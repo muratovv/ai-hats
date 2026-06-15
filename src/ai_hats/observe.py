@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .atomic_io import atomic_write_text
 from .environment_recovery import EnvironmentRecovery, RecoveryProtocol
 from .paths import runs_dir
 
@@ -169,17 +170,14 @@ class Session:
 
     def is_productive(self) -> bool:
         """Return True if this session had meaningful work (turns > 0 and tool_calls > 0)."""
-        if not self.metrics_path.exists():
+        metrics = _load_metrics_safe(self)
+        if metrics is None:
             return False
-        try:
-            metrics = json.loads(self.metrics_path.read_text())
-            turns = metrics.get("turns")
-            tool_calls = metrics.get("tool_calls")
-            if turns is None or tool_calls is None:
-                return False
-            return turns > 0 and tool_calls > 0
-        except (json.JSONDecodeError, OSError):
+        turns = metrics.get("turns")
+        tool_calls = metrics.get("tool_calls")
+        if turns is None or tool_calls is None:
             return False
+        return turns > 0 and tool_calls > 0
 
     def log_trace(self, tag: str, message: str) -> None:
         """Append a trace entry."""
@@ -285,8 +283,7 @@ class Session:
         composition = getattr(self, "_composition", None)
         if composition is not None:
             out["composition"] = composition
-        with open(self.metrics_path, "w") as f:
-            json.dump(out, f, indent=2)
+        atomic_write_text(self.metrics_path, json.dumps(out, indent=2))
 
     def save_meta_prompt(self, prompt: str) -> None:
         """Save the meta-prompt used for sub-agent execution."""
@@ -579,9 +576,7 @@ class AuditWriter:
         turns: list[Turn],
         model_stats: dict[str, dict] | None = None,
     ) -> str:
-        metrics = {}
-        if session.metrics_path.exists():
-            metrics = json.loads(session.metrics_path.read_text())
+        metrics = _load_metrics_safe(session) or {}
 
         role = metrics.get("role", "unknown")
         provider = metrics.get("provider", "unknown")
@@ -760,9 +755,7 @@ class AuditWriter:
         agg_usage: dict,
     ) -> None:
         """Overwrite metrics.json with enriched data from JSONL."""
-        existing = {}
-        if session.metrics_path.exists():
-            existing = json.loads(session.metrics_path.read_text())
+        existing = _load_metrics_safe(session) or {}
 
         existing.update({
             "turns": len(turns),
@@ -783,8 +776,7 @@ class AuditWriter:
             "tool_calls": sum(len(t.tools) for t in turns),
         })
 
-        with open(session.metrics_path, "w") as f:
-            json.dump(existing, f, indent=2)
+        atomic_write_text(session.metrics_path, json.dumps(existing, indent=2))
 
     def _parse_jsonl(self, jsonl_path: Path) -> tuple[list[Turn], dict[str, dict], dict]:
         """Parse Claude Code JSONL → (turns, per-model stats, aggregated usage)."""
