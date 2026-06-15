@@ -110,10 +110,17 @@ def find_missing_runtime_deps() -> list[str]:
 
 
 def attempt_self_heal(missing: list[str]) -> bool:
-    """Run pip install for the missing distributions. Returns True on exit 0."""
+    """Run ``uv pip install`` for the missing distributions. True on exit 0.
+
+    HATS-763: uv is the single engine — no pip fallback (D2). ``--python
+    sys.executable`` targets THIS interpreter (B1); a uv venv ships no pip, so
+    ``python -m pip`` would not even exist here. A missing uv binary raises
+    FileNotFoundError (OSError) → caught → returns False, and the caller prints
+    the rescue command + exits.
+    """
     if not missing:
         return True
-    cmd = [sys.executable, "-m", "pip", "install", "--no-cache-dir", *missing]
+    cmd = ["uv", "pip", "install", "--python", sys.executable, *missing]
     try:
         result = subprocess.run(cmd, check=False)
     except OSError:
@@ -123,14 +130,14 @@ def attempt_self_heal(missing: list[str]) -> bool:
 
 def _rescue_command(missing: list[str]) -> str:
     quoted = " ".join(f"'{m}'" for m in missing)
-    return f"{sys.executable} -m pip install --no-cache-dir {quoted}"
+    return f"uv pip install --python {sys.executable} {quoted}"
 
 
 def bootstrap_or_die() -> None:
-    """Detect missing runtime deps; pip-install + re-exec, or die loudly.
+    """Detect missing runtime deps; uv-install + re-exec, or die loudly.
 
     Called as the very first action in :func:`ai_hats.cli.main`. Side effects:
-    prints to stderr, runs pip in a subprocess, and on success replaces the
+    prints to stderr, runs uv in a subprocess, and on success replaces the
     current process via :func:`os.execv` so freshly-installed modules become
     importable for the actual command the user invoked.
     """
@@ -139,7 +146,7 @@ def bootstrap_or_die() -> None:
         return
 
     sys.stderr.write(
-        f"ai-hats: missing runtime deps {missing}; healing via pip…\n"
+        f"ai-hats: missing runtime deps {missing}; healing via uv…\n"
         f"  manual command if this fails: {_rescue_command(missing)}\n"
     )
     sys.stderr.flush()
