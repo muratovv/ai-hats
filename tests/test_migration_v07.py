@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType, HooksConfig, ProjectConfig
+from ai_hats.models import ComponentType, ProjectConfig
 from ai_hats import migration_v07 as m
 
 
@@ -72,7 +72,6 @@ def _make_compose(
         priorities=priorities or [],
         rules=rules or [],
         skills=skills or [],
-        hooks=HooksConfig(),
         injections=[],
         trait_injections=trait_injections or {},
         role_injection=role_injection,

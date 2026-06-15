@@ -20,10 +20,6 @@ composition:
     - agentic-topology-design
     - trust-boundary-mapping
     - drift-detection
-  hooks:
-    session_start: []
-    session_end: []
-    task_complete: []
 injection: |
   # ROLE: SOFTWARE ARCHITECT
 

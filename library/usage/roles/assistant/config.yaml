@@ -13,12 +13,6 @@ composition:
     - dev::shell
   rules: []
   skills: []
-  hooks:
-    session_start: []
-    session_end: []
-    task_complete:
-      - git status
-      - git diff --stat
 injection: |
   # ROLE: PRIMARY AUTOMATION ASSISTANT
 

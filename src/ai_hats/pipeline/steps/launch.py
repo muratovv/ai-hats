@@ -6,15 +6,14 @@ session-end hooks/retro into ``run_session_end`` (both invoked via the
 ``finalize-hitl`` / ``finalize-subagent`` sub-pipelines from the
 runner's ``finally``). Post-split, this step is responsible for spawn
 + per-runner basic finalize (metrics.json, transcripts, cache cleanup)
-+ the SIGINT-safe session-end summary print. Audit + lifecycle hooks
-live downstream.
++ the SIGINT-safe session-end summary print. Audit lives downstream.
 
 ADR-0002 §Step inventory: produces flat keys
 ``{session_id, session_dir, transcript_path, exit_code}`` so post-steps
 (``extract_marker``, ``save_artifact``, ``spawn_session_review``) depend
-on path strings, not Session-objects. ``claude_session_id`` and
-``hooks_env`` are NOT in the main funnel — the runner passes them
-directly into ``PipelineHarness.run("finalize-hitl"|"finalize-subagent",
+on path strings, not Session-objects. ``claude_session_id`` is NOT in
+the main funnel — the runner passes it directly into
+``PipelineHarness.run("finalize-hitl"|"finalize-subagent",
 initial=...)`` from its ``finally`` block.
 
 The step calls ``WrapRunner``/``SubAgentRunner`` directly rather than

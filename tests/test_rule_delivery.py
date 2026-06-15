@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.composer import Composer, CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType, HooksConfig
+from ai_hats.models import ComponentType
 from ai_hats.providers import ALWAYS_ON_RULES, ClaudeProvider, GeminiProvider
 from ai_hats.resolver import LibraryResolver
 from ai_hats.rule_delivery import (
@@ -94,7 +94,6 @@ def test_always_on_rule_body_reaches_prompt(rule_name, provider_cls):
         priorities=[],
         rules=[rule],
         skills=[],
-        hooks=HooksConfig(),
         injections=[],
     )
     prompt = provider_cls().build_system_prompt(result)

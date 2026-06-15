@@ -3,8 +3,8 @@ name: finalize-hitl
 # Invoked by WrapRunner.run() from its `finally` block via the
 # `PipelineHarness.run("finalize-hitl", initial=...)` surface. Runner
 # passes session_id, session_dir, claude_session_id, project_dir,
-# exit_code, hooks_env as initial state — they do NOT appear in the
-# main `human` pipeline funnel.
+# exit_code as initial state — they do NOT appear in the main `human`
+# pipeline funnel.
 #
 # HATS-530: `maybe_spawn_session_reviewer` extracted from inline
 # inside `run_session_end`. The same step is now also wired into

@@ -1,7 +1,5 @@
 """Tests for composition engine."""
 
-from pathlib import Path
-
 import pytest
 
 from ai_hats.composer import Composer
@@ -476,74 +474,3 @@ def test_compose_missing_role_has_empty_structured_fields(composer):
     assert result.trait_injections == {}
     assert result.role_injection == ""
     assert result.overlay_injection == ""
-
-
-# ----- HATS-593 Phase 3: session_start lifecycle hook composition -----
-
-
-def test_session_start_hook_composes_from_trait(tmp_path):
-    """A trait declaring `composition.hooks.session_start` surfaces in
-    `result.hooks.session_start` (the mechanism layer B relies on)."""
-    lib = tmp_path / "lib"
-    trait_dir = lib / "traits" / "trait-heal"
-    trait_dir.mkdir(parents=True)
-    (trait_dir / "config.yaml").write_text(
-        "name: trait-heal\n"
-        "composition:\n"
-        "  hooks:\n"
-        "    session_start:\n"
-        "      - ai-hats self sync-hooks\n"
-        "injection: Heal.\n"
-    )
-    role_dir = lib / "roles" / "heal-role"
-    role_dir.mkdir(parents=True)
-    (role_dir / "config.yaml").write_text(
-        "name: heal-role\npriorities: [Quality]\n"
-        "composition:\n  traits:\n    - trait-heal\ninjection: R.\n"
-    )
-
-    result = Composer(LibraryResolver([lib])).compose("heal-role")
-    assert "ai-hats self sync-hooks" in result.hooks.session_start
-
-
-def test_real_maintainer_trait_declares_session_start_sync_hooks():
-    """The shipped ai-hats-maintainer trait wires the session-start self-heal
-    (HATS-593 layer B). Static config check against the source tree this test
-    file lives in (worktree-safe — does NOT depend on which library root the
-    editable install resolves at test time)."""
-    import yaml
-
-    repo_root = Path(__file__).resolve().parent.parent
-    trait_cfg = (
-        repo_root / "library" / "usage" / "traits"
-        / "ai-hats-maintainer" / "config.yaml"
-    )
-    data = yaml.safe_load(trait_cfg.read_text())
-    hooks = (data.get("composition") or {}).get("hooks") or {}
-    assert "ai-hats self sync-hooks" in (hooks.get("session_start") or [])
-
-
-def test_compose_role_with_bogus_hook_event_fails_fast(tmp_path):
-    """HATS-515: a role whose config.yaml declares an unknown hook event
-    must fail-fast at parse time with a clear message, not silently drop
-    the hook block."""
-    from pydantic import ValidationError
-
-    lib = tmp_path / "lib"
-    role_dir = lib / "roles" / "bad-hooks-role"
-    role_dir.mkdir(parents=True)
-    (role_dir / "config.yaml").write_text("""
-name: bad-hooks-role
-composition:
-  hooks:
-    session_start:
-      - good.sh
-    sesion_start:   # typo — must fail
-      - typo.sh
-injection: |
-  Role with a typo'd hook event.
-""")
-
-    composer = Composer(LibraryResolver([lib]))
-    with pytest.raises(ValidationError, match="unknown hook event.*sesion_start"):
-        composer.compose("bad-hooks-role")

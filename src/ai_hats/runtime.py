@@ -1,4 +1,4 @@
-"""Runtime — PTY wrapping, hooks execution, sub-agent launch.
+"""Runtime — PTY wrapping, sub-agent launch.
 
 Thin re-export hub (HATS-715): WrapRunner -> wrap_runner, SubAgentRunner ->
 subagent_runner, shared helpers -> runtime_common. The import surface is
@@ -17,7 +17,6 @@ from .runtime_common import (  # noqa: F401
     _cleanup_session_cache,
     _session_timed_out,
     _finalize_sub_agent,
-    HooksRunner,
     _claude_jsonl_path,
     _discover_claude_jsonl,
     _print_session_start,

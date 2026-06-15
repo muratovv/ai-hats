@@ -96,10 +96,8 @@ def _install_pty_capture(monkeypatch, sink: dict[str, Any]) -> None:
 
     monkeypatch.setattr(rt.WrapRunner, "_pty_spawn", _capture)
 
-    def _noop_run(self, event, env=None):  # noqa: ARG001
-        return []
-
-    monkeypatch.setattr(rt.HooksRunner, "run", _noop_run, raising=False)
+    # HATS-707: session start re-heals git hooks; stub it (no .githooks/ here).
+    monkeypatch.setattr(rt.WrapRunner, "_resync_git_hooks", lambda self, session=None: None, raising=False)
     monkeypatch.setenv("AI_HATS_QUIET", "1")
 
 
@@ -193,10 +191,8 @@ def test_hitl_meta_prompt_matches_system_prompt_file_bytes(
 
     monkeypatch.setattr(rt.WrapRunner, "_pty_spawn", _capture)
 
-    def _noop_run(self, event, env=None):  # noqa: ARG001
-        return []
-
-    monkeypatch.setattr(rt.HooksRunner, "run", _noop_run, raising=False)
+    # HATS-707: session start re-heals git hooks; stub it (no .githooks/ here).
+    monkeypatch.setattr(rt.WrapRunner, "_resync_git_hooks", lambda self, session=None: None, raising=False)
     monkeypatch.setenv("AI_HATS_QUIET", "1")
 
     result = CliRunner().invoke(main, [])

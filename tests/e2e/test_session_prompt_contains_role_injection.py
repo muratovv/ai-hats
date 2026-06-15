@@ -105,14 +105,9 @@ def _install_pty_capture(monkeypatch, sink: dict[str, Any]) -> None:
 
     monkeypatch.setattr(rt.WrapRunner, "_pty_spawn", _capture)
 
-    # The wrapper also runs SessionStart hooks + tries to spawn the
-    # session-review backgrounder. Stub them — neither matters for what
-    # we assert.
-    def _noop_run(self, event, env=None):  # noqa: ARG001
-        # Return an empty list — runtime._finalize_session iterates the result.
-        return []
-
-    monkeypatch.setattr(rt.HooksRunner, "run", _noop_run, raising=False)
+    # HATS-707: the wrapper re-heals git hooks at session start (replacing the
+    # old SessionStart lifecycle-hook dispatch). Stub it — no .githooks/ here.
+    monkeypatch.setattr(rt.WrapRunner, "_resync_git_hooks", lambda self, session=None: None, raising=False)
 
     # Suppress the "(re-)assembling …" stdout chatter from
     # Assembler.set_role and friends — keeps test output clean.

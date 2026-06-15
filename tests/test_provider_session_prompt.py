@@ -21,7 +21,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType, HooksConfig, ProjectConfig
+from ai_hats.models import ComponentType, ProjectConfig
 from ai_hats.paths import session_cache_dir, session_cache_root
 from ai_hats.providers import ClaudeProvider, GeminiProvider
 from ai_hats.runtime import _cleanup_session_cache, _sweep_orphan_session_caches
@@ -316,7 +316,6 @@ def _skill_composition(tmp_path: Path) -> CompositionResult:
         priorities=["Reliability"],
         rules=[rule],
         skills=[skill],
-        hooks=HooksConfig(),
         injections=[],
     )
 

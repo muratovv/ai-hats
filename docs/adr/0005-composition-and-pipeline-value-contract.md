@@ -135,6 +135,13 @@ Validation lives at the boundary where the silent drop hurts.
 future event added to the enum auto-propagates to the merge loop and
 the two stop drifting.
 
+> **Superseded in part (HATS-707).** The `hooks:` composition channel this
+> phase hardened — `HooksConfig`, `LifecycleEvent`, `_merge_hooks`,
+> `CompositionResult.hooks` — was later found to have **zero** runtime
+> execution consumers and was deleted. The silent-key *invariant* below stands
+> as a general value-contract principle; only its `HooksConfig` instantiation
+> is gone.
+
 **Invariant added to the contract.** When a model's field set is the
 *authoritative* enumeration of allowed keys for a YAML block (not a
 schema-evolution surface for round-trip extras), the model must override

@@ -21,7 +21,6 @@ composition:
     - review-hypothesis
     - review-proposal
     - judge-auditor-protocol
-  hooks: {}
 injection: |
   # ROLE: JUDGE-AUDITOR (Phase 1 — read-only audit pass)
 
