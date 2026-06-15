@@ -49,7 +49,7 @@ New rule / skill / trait
 
 **HATS-373 (E2E gate, 2026-05).** First draft attached the new
 `dev_rule_e2e_gate` (narrow trigger: CLI/shell/pip ai-hats codebase) to
-`trait-agent` alongside `edit_efficiency` and `tool_call_hygiene`. The rule
+`trait-agent` alongside `backlog_discipline` and `tool_call_hygiene`. The rule
 itself was reusable in concept (other projects with CLI surface might want
 the same gate), but its **specific trigger surface** was ai-hats-internal.
 

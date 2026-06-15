@@ -300,11 +300,16 @@ def _skill_composition(tmp_path: Path) -> CompositionResult:
         source_path=skill_dir,
         injection="# body",
     )
+    # HATS-700: the always-on body is read on demand from source_path/rule.md.
+    rule_dir = tmp_path / "rules" / "dev_rule_tool_call_hygiene"
+    rule_dir.mkdir(parents=True)
+    (rule_dir / "rule.md").write_text(
+        "# Rule: Tool-Call Hygiene\nUse dedicated tools over Bash."
+    )
     rule = ResolvedComponent(
         name="dev_rule_tool_call_hygiene",
         component_type=ComponentType.RULE,
-        source_path=Path("/dev/null"),
-        injection="# Rule: Tool-Call Hygiene\nUse dedicated tools over Bash.",
+        source_path=rule_dir,
     )
     return CompositionResult(
         name="role",

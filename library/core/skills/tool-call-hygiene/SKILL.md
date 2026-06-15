@@ -1,6 +1,6 @@
 ---
 name: tool-call-hygiene
-description: Choose between Bash and dedicated Claude Code tools (Grep/Glob/Read/Edit). Triggers on intent to grep/find/cat/sed/rg, multiple sequential reads, session-start context restore, or codebase discovery.
+description: Choose between Bash and dedicated Claude Code tools (Grep/Glob/Read/Edit) and edit files efficiently. Triggers on intent to grep/find/cat/sed/rg, multiple sequential reads, session-start context restore, codebase discovery, or multiple sequential Edits to one file.
 ---
 # Tool-Call Hygiene
 
@@ -11,6 +11,7 @@ Decide between Bash and dedicated Claude Code tools. Batch and parallelize.
 - Restoring context at session start (multiple Reads/Greps/Globs)
 - Initial codebase exploration (>3 tool calls planned)
 - Noticing 5+ similar sequential calls
+- About to make 3+ Edits to the same existing file (consider one Write)
 
 ## Conventions
 
@@ -35,6 +36,11 @@ Decide between Bash and dedicated Claude Code tools. Batch and parallelize.
 - **Combine shell checks**: merge with `&&` (e.g. `git status && git log --oneline -5`).
 - **5-call threshold**: 5+ similar sequential calls → STOP, batch or use a more targeted tool.
 - **Discovery budget**: initial codebase exploration ≤ 3–5 tool calls; broader → `Agent(Explore)`.
+
+### Edit efficiency
+- **New file → Write**, not a sequence of Edits — building a fresh file with incremental Edits wastes turns.
+- **3+ Edits to the same existing file → STOP**; plan all changes and **Write** it once.
+- **Edit is surgical**: targeted, isolated changes to existing files. Read → plan all edits → execute in the fewest operations.
 
 For ❌/✅ worked examples → `references/examples.md`.
 

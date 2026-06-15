@@ -109,11 +109,13 @@ def test_build_options_always_on_rule_appears_in_append(
     """Rules listed in ALWAYS_ON_RULES end up in the RULES section."""
     rule_dir = tmp_path / "rule"
     rule_dir.mkdir()
+    # HATS-700: the always-on body is read on demand from source_path/rule.md
+    # (the composer no longer eager-loads it into injection).
+    (rule_dir / "rule.md").write_text("Don't rm -rf the homedir.")
     always_on = ResolvedComponent(
         name="global_rule_destructive_actions",
         component_type=ComponentType.RULE,
         source_path=rule_dir,
-        injection="Don't rm -rf the homedir.",
     )
     comp = CompositionResult(
         name="role",

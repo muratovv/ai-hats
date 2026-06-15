@@ -195,7 +195,7 @@ library/
   core/                              # engine fundament — required at runtime
     roles/          initial-wizard, session-reviewer, auditor-for-role, judge, judge-for-role, hypothesis-intake, test-agent
     traits/         trait-base, trait-agent, trait-analyst-base, base-judge, base-auditor, trait-reflect-mode
-    rules/          global_rule_*, rule_backlog_discipline, dev_rule_edit_efficiency, dev_rule_tool_call_hygiene
+    rules/          global_rule_*, rule_backlog_discipline, dev_rule_comment_discipline, dev_rule_tool_call_hygiene
     skills/         backlog-manager, backlog-create, context-*, review-*, judge-*, role-coherence-protocol, request-supervisor, ...
     pipelines/      execute, human, reflect-{session,role,all,issue}
     initial_injections/   initial-wizard, reflect-all, reflect-role
