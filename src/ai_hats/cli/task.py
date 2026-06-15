@@ -6,6 +6,7 @@ import sys
 
 import click
 
+from ..utils.atomic_io import atomic_write_text
 from ..state import EmptyPlanError
 from ._helpers import _project_dir, _task_manager, console
 
@@ -564,7 +565,7 @@ def task_plan_extract(task_id: str, auto: bool, dry_run: bool, as_json: bool):
         created.append(f"{child_id}: {title}")
 
     if created:
-        plan_path.write_text(text)
+        atomic_write_text(plan_path, text)
         console.print(f"\n[green]Created {len(created)} subtask(s):[/]")
         for line in created:
             console.print(f"  {line}")
