@@ -143,10 +143,6 @@ class Provider(abc.ABC):
         return "\n\n".join(sections)
 
     @abc.abstractmethod
-    def inject_rules(self, session_dir: Path, rules: list[ResolvedComponent]) -> None:
-        """Copy rule files into the provider's expected location."""
-
-    @abc.abstractmethod
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         """Get the CLI command to launch this provider."""
 
@@ -312,16 +308,6 @@ class GeminiProvider(Provider):
         # index as its only discovery channel (HATS-701).
         return self._compose_sections(result, include_skills=True)
 
-    def inject_rules(self, session_dir: Path, rules: list[ResolvedComponent]) -> None:
-        rules_dir = self.rules_dir(session_dir)
-        rules_dir.mkdir(parents=True, exist_ok=True)
-        for rule in rules:
-            if rule.source_path.is_dir():
-                dest = rules_dir / rule.name
-                if dest.exists():
-                    shutil.rmtree(dest)  # safe-delete: ok session-cache (per-session ephemeral republish)
-                shutil.copytree(rule.source_path, dest)
-
     def build_session_prompt(
         self,
         project_dir: Path,
@@ -407,16 +393,6 @@ class ClaudeProvider(Provider):
         # / sdk_options. Suppress the AVAILABLE SKILLS index here to avoid the
         # 2-3x duplicate listing (~1.5k tok/session).
         return self._compose_sections(result, include_skills=False)
-
-    def inject_rules(self, session_dir: Path, rules: list[ResolvedComponent]) -> None:
-        rules_dir = self.rules_dir(session_dir)
-        rules_dir.mkdir(parents=True, exist_ok=True)
-        for rule in rules:
-            if rule.source_path.is_dir():
-                dest = rules_dir / rule.name
-                if dest.exists():
-                    shutil.rmtree(dest)  # safe-delete: ok session-cache (per-session ephemeral republish)
-                shutil.copytree(rule.source_path, dest)
 
     def build_session_prompt(
         self,
