@@ -109,7 +109,9 @@ def test_t4_bootstrap_or_die_success_path(monkeypatch):
 
     assert len(pip_calls) == 1
     cmd = pip_calls[0]
-    assert cmd[:5] == [sys.executable, "-m", "pip", "install", "--no-cache-dir"]
+    # HATS-763: uv engine. `--python sys.executable` targets THIS interp (B1).
+    assert cmd[:3] == ["uv", "pip", "install"]
+    assert cmd[cmd.index("--python") + 1] == sys.executable
     assert "ptyprocess" in cmd
 
     assert len(execv_calls) == 1
@@ -142,7 +144,7 @@ def test_t5_bootstrap_or_die_failure_path(monkeypatch, capsys):
 
     err = capsys.readouterr().err
     assert "ptyprocess" in err
-    assert "pip install" in err
+    assert "uv pip install" in err  # HATS-763: rescue is a uv command
 
 
 # ---------- T6 ----------

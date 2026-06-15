@@ -833,23 +833,32 @@ def _get_changelog() -> str:
 
 
 def _snapshot_dep_versions() -> dict[str, str]:
-    """Snapshot ``{distribution_name: version}`` via a fresh ``pip list`` subprocess.
+    """Snapshot ``{distribution_name: version}`` via a fresh ``uv pip list`` subprocess.
 
     Fresh subprocess avoids importlib cache divergence between pre- and
     post-update — important for HATS-213 activation banner.
+
+    HATS-763 (B2): a ``uv venv`` ships NO ``pip``, so the old
+    ``python -m pip list`` returned nothing in a uv-built venv and silently
+    blanked the banner. ``uv pip list --python <interp>`` reads any interpreter's
+    env without needing pip installed there, and emits the SAME ``{name,version}``
+    JSON shape — drop-in. ``--python sys.executable`` pins THIS env (B1).
     """
     import json
     import subprocess
 
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "list", "--format=json"],
+            ["uv", "pip", "list", "--python", sys.executable, "--format=json"],
             capture_output=True,
             text=True,
             timeout=15,
         )
     except (subprocess.SubprocessError, OSError):
-        logger.debug("pip list snapshot failed", exc_info=True)
+        # OSError covers uv-missing (FileNotFoundError); the banner just shows no
+        # deltas — non-critical snapshot, so no fail-loud here (uv is required by
+        # the install paths that DO fail loud via _require_uv).
+        logger.debug("uv pip list snapshot failed", exc_info=True)
         return {}
     if result.returncode != 0:
         return {}
