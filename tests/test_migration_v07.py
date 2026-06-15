@@ -392,6 +392,9 @@ def test_plan_migration_no_user_edits_when_disk_matches_baseline(tmp_path):
     files["skill_index"].unlink()  # skip skill_index for this case
     files["trait_foo"].write_text(m.render_trait_md("trait body"))
     files["rule_bar"].write_text(m.render_rule_md("rule body"))
+    # HATS-700: the rule body is read on demand from source_path/rule.md
+    # (the composer no longer eager-loads it into ResolvedComponent.injection).
+    (tmp_path / "rule.md").write_text("rule body")
 
     compose = _make_compose(
         priorities=["Reliability", "Cleanliness"],
@@ -418,6 +421,9 @@ def test_plan_migration_flags_user_edits_beyond_whitespace(tmp_path):
     files["skill_index"].unlink()
     files["trait_foo"].write_text(m.render_trait_md("trait body"))
     files["rule_bar"].write_text(m.render_rule_md("rule body"))
+    # HATS-700: the rule body is read on demand from source_path/rule.md
+    # (the composer no longer eager-loads it into ResolvedComponent.injection).
+    (tmp_path / "rule.md").write_text("rule body")
 
     compose = _make_compose(
         priorities=["Reliability"],
@@ -638,7 +644,7 @@ def test_render_priorities_integrates_with_real_composer(tmp_path):
     needed — and asserts the renderer yields non-trivial, well-shaped
     bytes for every Tier-1 kind."""
     from ai_hats.composer import Composer
-    from ai_hats.resolver import LibraryResolver
+    from ai_hats.resolver import LibraryResolver, read_rule_body
 
     # Minimal library layout matching the library/{traits,rules,roles}
     # spec the resolver expects.
@@ -674,9 +680,9 @@ def test_render_priorities_integrates_with_real_composer(tmp_path):
     priorities_md = m.render_priorities_md(result.priorities)
     role_md = m.render_role_md(result.role_injection, result.overlay_injection)
     trait_md = m.render_trait_md(result.trait_injections.get("demo_trait", ""))
-    rule_md = m.render_rule_md(
-        next((r.injection for r in result.rules if r.name == "demo_rule"), "")
-    )
+    # HATS-700: rule body now comes from source_path/rule.md, not injection.
+    demo_rule = next(r for r in result.rules if r.name == "demo_rule")
+    rule_md = m.render_rule_md(read_rule_body(demo_rule.source_path))
 
     assert priorities_md is not None
     assert priorities_md.startswith("# Priorities\n")

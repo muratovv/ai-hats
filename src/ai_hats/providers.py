@@ -18,6 +18,7 @@ from .paths import hooks_dir as _lib_hooks_dir
 from .paths import managed_runtime_hook_filename
 from .paths import session_cache_dir
 from .placeholders import expand_path_placeholders
+from .resolver import read_rule_body
 from .role_catalog import expand_role_catalog
 
 
@@ -32,6 +33,16 @@ PUBLISH_AGGREGATOR_START = "<!-- ai-hats:start -->"
 PUBLISH_AGGREGATOR_END = "<!-- ai-hats:end -->"
 
 # Always-on rules that stay in prompt (safety-critical + framework invariants).
+#
+# HATS-700 delivery contract: this set is the ONLY rule-delivery channel into
+# the system prompt. A rule's full body reaches the agent iff its name is here;
+# the composer no longer eager-loads bodies, so the provider reads these on
+# demand from ``source_path`` (read_rule_body) at prompt-build. Non-always-on
+# rules are composed for provenance but their bodies are intentionally
+# UNDELIVERED — the canonical delivery for them is the compact summary in the
+# owning trait/role injection text. Adding a rule here is a deliberate
+# prompt-budget decision; do not widen it to "fix" an undelivered rule whose
+# essence already rides in an injection summary.
 ALWAYS_ON_RULES = {
     "global_rule_destructive_actions",
     "global_rule_resource_hygiene",
@@ -110,13 +121,15 @@ class Provider(abc.ABC):
         if result.merged_injection:
             sections.append(result.merged_injection)
 
-        # Only always-on rules in prompt
+        # Only always-on rules in prompt; body read on demand from source_path
+        # (HATS-700 — composer no longer eager-loads rule bodies).
         always_on = [r for r in result.rules if r.name in ALWAYS_ON_RULES]
         if always_on:
             rules_section = "## RULES\n"
             for rule in always_on:
-                if rule.injection:
-                    rules_section += f"\n### {rule.name}\n{rule.injection}\n"
+                body = read_rule_body(rule.source_path)
+                if body:
+                    rules_section += f"\n### {rule.name}\n{body}\n"
             sections.append(rules_section)
 
         # Skills: index only (body loaded on demand via native provider).
