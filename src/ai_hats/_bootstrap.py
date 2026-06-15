@@ -112,11 +112,8 @@ def find_missing_runtime_deps() -> list[str]:
 def attempt_self_heal(missing: list[str]) -> bool:
     """Run ``uv pip install`` for the missing distributions. True on exit 0.
 
-    HATS-763: uv is the single engine — no pip fallback (D2). ``--python
-    sys.executable`` targets THIS interpreter (B1); a uv venv ships no pip, so
-    ``python -m pip`` would not even exist here. A missing uv binary raises
-    FileNotFoundError (OSError) → caught → returns False, and the caller prints
-    the rescue command + exits.
+    HATS-763: uv-only (no pip fallback, D2); ``--python sys.executable`` targets
+    THIS interp (B1). Missing-uv OSError → False → caller prints rescue + exits.
     """
     if not missing:
         return True

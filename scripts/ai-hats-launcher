@@ -95,9 +95,7 @@ heal_if_needed() {
         exit 1
     fi
     echo "  · ai-hats venv missing or broken — recreating $VENV" >&2
-    # HATS-763: uv engine. The launcher is host-global and least-recoverable, so
-    # it never auto-installs uv (no curl|sh from a routine invocation) — it fails
-    # loud with the one-liner. Deliberate onboarding (bootstrap.sh) auto-installs.
+    # Host-global launcher never auto-installs uv (that's bootstrap.sh's job) — fail loud.
     if ! command -v uv >/dev/null 2>&1; then
         echo "ai-hats: uv is required but not found on PATH." >&2
         echo "  Install: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2

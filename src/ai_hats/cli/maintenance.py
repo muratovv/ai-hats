@@ -20,20 +20,16 @@ from ._helpers import _assembler, _project_dir, console, logger
 # defer to pip's own resolution downstream).
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
 
-# HATS-763: uv is the single host prerequisite + the env engine. Versioned venvs
-# pin the lowest supported interpreter (pyproject requires-python>=3.11); uv
-# provisions it via `uv python install` if the host lacks it.
+# Lowest supported interpreter (pyproject requires-python>=3.11); uv provisions it.
 PINNED_PYTHON = "3.11"
 
 
 def _require_uv() -> None:
     """Fail loud with the install hint if uv is missing (D2: no pip fallback).
 
-    uv is the single hard dependency (HATS-762/763). When it is absent there is
-    no pip fallback — print the one-line installer and exit non-zero so scripted
-    chains (`self update && self init`) stop instead of half-installing. Called
-    only right before an actual uv invocation, so a pure reuse / already-current
-    no-op stays green on a host that has a valid env but no uv (idempotency).
+    uv is the single hard dependency — no pip fallback (D2). Called only right
+    before a real uv call, so reuse / already-current no-ops stay green without
+    uv (idempotency).
     """
     import shutil
 
@@ -82,12 +78,8 @@ def _build_update_cmd(ref: str | None = None) -> list[str]:
         target = f"{url}@{ref}"
     else:
         target = f"ai-hats @ {url}" if "://" in url else url
-    # HATS-763: uv engine. `--python sys.executable` is load-bearing (B1) — a
-    # bare `uv pip install` resolves the nearest discoverable venv (e.g. a cwd
-    # `.venv`), not the running interpreter that `python -m pip` targeted
-    # implicitly. `--reinstall` is uv's `--force-reinstall`; transitive deps are
-    # served from uv's content-addressed cache (~/.cache/uv), keeping `self
-    # update` fast on a warm cache (supersedes the HATS-563 pip-cache note).
+    # B1 (HATS-763): pin --python or `uv pip install` targets the nearest cwd
+    # venv, not this interpreter. `--reinstall` == pip's `--force-reinstall`.
     return [
         "uv",
         "pip",
@@ -277,8 +269,7 @@ def _build_install_cmd(python_exe: str, url: str, ref: str) -> list[str]:
     install spec.
     """
     target = f"ai-hats @ {url}@{ref}" if "://" in url else url
-    # HATS-763: uv engine. `--python <python_exe>` is load-bearing (B1) — a bare
-    # `uv pip install` targets the nearest discoverable venv, NOT this interp.
+    # B1 (HATS-763): pin --python or uv targets the nearest cwd venv, not python_exe.
     return ["uv", "pip", "install", "--python", python_exe, "--reinstall", target]
 
 
@@ -480,9 +471,7 @@ def _run_managed_versioned_update(
                 f"[cyan]Creating versioned venv[/] versions/{target_sha[:12]} …",
                 spinner="dots",
             ):
-                # HATS-763: uv engine. `uv venv --python 3.11` provisions the
-                # interpreter (drops the host-Python precondition) and creates
-                # bin/python; the subsequent `uv pip install` drops bin/ai-hats.
+                # uv provisions the interpreter (drops the host-Python precondition).
                 venv_proc = subprocess.run(
                     ["uv", "venv", "--python", PINNED_PYTHON, str(vdir)],
                     capture_output=True,

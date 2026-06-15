@@ -227,3 +227,59 @@ def test_bootstrap_auto_installs_uv_when_absent(tmp_path):
     assert (home / ".local" / "bin" / "uv").is_file(), "astral installer stub did not create uv"
     assert "installing via astral.sh" in res.stdout
     assert "ARGS=self update" in log.read_text(), "self update must run after PATH refresh"
+
+
+def test_bootstrap_piped_fetches_installer(tmp_path):
+    """HATS-763: with no sibling install-launcher.sh (the `curl … | bash` one-liner),
+    bootstrap fetches the installer from the public URL (stubbed curl) and still
+    installs the launcher + runs self update."""
+    # bootstrap.sh ALONE in scripts_dir → no sibling installer → piped fetch path.
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    bootstrap = scripts_dir / "bootstrap.sh"
+    shutil.copy(BOOTSTRAP, bootstrap)
+    project = tmp_path / "project"
+    project.mkdir()
+    launcher_dest = tmp_path / "bin" / "ai-hats"
+    launcher_dest.parent.mkdir(parents=True)
+    log = tmp_path / "calls.log"
+
+    # Asset the stubbed curl will serve: an install-launcher.sh that installs a
+    # stub launcher (which logs REPO+ARGS on every call).
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    stub_launcher = assets / "ai-hats-launcher"
+    stub_launcher.write_text(
+        f'#!/usr/bin/env bash\necho "REPO=${{AI_HATS_REPO_URL:-}}|ARGS=$*" >> "{log}"\nexit 0\n'
+    )
+    _make_executable(stub_launcher)
+    stub_installer = assets / "install-launcher.sh"
+    stub_installer.write_text(
+        '#!/usr/bin/env bash\nset -e\n'
+        'mkdir -p "$(dirname "$AI_HATS_LAUNCHER_DEST")"\n'
+        f'cp "{stub_launcher}" "$AI_HATS_LAUNCHER_DEST"\n'
+        'chmod +x "$AI_HATS_LAUNCHER_DEST"\nexit 0\n'
+    )
+
+    # Stub `curl`: `curl -fsSL <url> -o <out>` → serve the stub installer to <out>.
+    stubbin = tmp_path / "stubbin"
+    stubbin.mkdir()
+    curl = stubbin / "curl"
+    curl.write_text(
+        '#!/usr/bin/env bash\n'
+        'out=""; prev=""\n'
+        'for a in "$@"; do [[ "$prev" == "-o" ]] && out="$a"; prev="$a"; done\n'
+        f'cp "{stub_installer}" "$out"\n'
+        'exit 0\n'
+    )
+    _make_executable(curl)
+
+    # Stub curl first on PATH; real uv stays reachable (host) so the uv
+    # precondition passes without hitting the stub.
+    env_extra = {"PATH": f"{stubbin}:{os.environ['PATH']}"}
+    res = _run_bootstrap(bootstrap, cwd=project, launcher_dest=launcher_dest, env_extra=env_extra)
+
+    assert res.returncode == 0, f"stderr={res.stderr}\nstdout={res.stdout}"
+    assert "fetching install-launcher.sh" in res.stdout
+    assert launcher_dest.is_file()
+    assert "ARGS=self update" in log.read_text()
