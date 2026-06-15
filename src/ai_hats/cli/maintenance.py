@@ -262,13 +262,12 @@ def _flip_current(project_dir: Path, sha: str) -> None:
     crash-during-install leaves ``current`` untouched (still the old sha), so
     the tool never bricks.
     """
-    from ..paths import current_pointer, versions_root
+    from ..atomic_io import atomic_write_text
+    from ..paths import current_pointer
 
-    versions_root(project_dir).mkdir(parents=True, exist_ok=True)
-    ptr = current_pointer(project_dir)
-    tmp = ptr.with_name(f".current.{sha}.tmp")
-    tmp.write_text(f"{sha}\n", encoding="utf-8")
-    os.replace(tmp, ptr)
+    # atomic_write_text creates the parent (versions/) and writes via a unique
+    # tmp + os.replace — same atomicity as the prior inline form (HATS-716).
+    atomic_write_text(current_pointer(project_dir), f"{sha}\n")
 
 
 def _version_string(python_exe: str) -> str:

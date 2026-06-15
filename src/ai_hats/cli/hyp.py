@@ -19,6 +19,7 @@ from pathlib import Path
 import click
 import yaml
 
+from ..atomic_io import atomic_write_text
 from ..hypothesis import (
     Hypothesis,
     HypothesisStore,
@@ -275,9 +276,7 @@ def hyp_migrate(dry_run: bool):
         if dry_run:
             console.print(f"[yellow]would change[/yellow] {p.name}")
         else:
-            tmp = p.with_suffix(p.suffix + ".tmp")
-            tmp.write_text(yaml.safe_dump(normalized, sort_keys=False, allow_unicode=True))
-            tmp.replace(p)
+            atomic_write_text(p, yaml.safe_dump(normalized, sort_keys=False, allow_unicode=True))
             console.print(f"[green]✓[/green] {p.name}")
 
     # Ensure proposals dir + .gitkeep exists for downstream PROP CLI.

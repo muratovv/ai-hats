@@ -13,6 +13,7 @@ from pathlib import Path
 import yaml
 from filelock import FileLock
 
+from ..atomic_io import atomic_write_text
 from .model import Hypothesis, ValidationLogEntry
 from .proposal import Proposal, Vote
 
@@ -21,11 +22,8 @@ _PROP_FILE_RE = re.compile(r"^PROP-(\d+)\.ya?ml$")
 
 
 def _atomic_dump(path: Path, data: dict) -> None:
-    """Write YAML atomically: tmp file in same dir + rename."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
-    tmp.replace(path)
+    """Write YAML atomically via the canonical helper (HATS-716)."""
+    atomic_write_text(path, yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
 
 
 def _lock_for(path: Path) -> FileLock:
