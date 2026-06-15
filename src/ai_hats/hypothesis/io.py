@@ -84,6 +84,34 @@ class HypothesisStore:
             _atomic_dump(p, raw)
             return Hypothesis.model_validate(raw)
 
+    def append_then_set_status(
+        self,
+        hyp_id: str,
+        entry: ValidationLogEntry,
+        *,
+        status: str,
+        only_if_status: str | None = None,
+    ) -> Hypothesis | None:
+        """Append a verdict AND flip status under a SINGLE filelock (atomic).
+
+        ``only_if_status`` guards the write: when set and the on-disk status
+        differs, make no change and return ``None``. This makes a quorum
+        auto-close (HATS-769) safe against a concurrent/repeat close — the
+        verdict append and the status flip cannot interleave with another
+        closer, so no duplicate synthetic entry and no double-close.
+        """
+        p = self.path(hyp_id)
+        with _lock_for(p):
+            raw = yaml.safe_load(p.read_text()) or {}
+            if only_if_status is not None and raw.get("status") != only_if_status:
+                return None
+            log = list(raw.get("validation_log") or [])
+            log.append(entry.model_dump(mode="json", exclude_none=True))
+            raw["validation_log"] = log
+            raw["status"] = status
+            _atomic_dump(p, raw)
+            return Hypothesis.model_validate(raw)
+
     def save(self, hypothesis: Hypothesis, *, preserve_extras: dict | None = None) -> Path:
         """Write the full Hypothesis. If preserve_extras given, merge unknown keys."""
         p = self.path(hypothesis.id)
