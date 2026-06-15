@@ -3,7 +3,7 @@
 Used by ``ai-hats self update`` (see :mod:`ai_hats.cli.maintenance`)
 to run the bump pipeline in a **fresh interpreter** so the freshly
 installed code (migrations, healer, assembler) is loaded — running
-``bump`` in-process after ``pip install --force-reinstall`` would
+``bump`` in-process after ``uv pip install --reinstall`` would
 silently keep the pre-update code in memory (HATS-400).
 
 **NOT a user-facing CLI.** Deliberately not exposed in

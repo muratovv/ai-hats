@@ -32,8 +32,8 @@ def _make_executable(path: Path) -> None:
 def _fake_venv(venv_path: Path, *, ai_hats_echo: str = "ai-hats-stub") -> None:
     """Build a venv layout that satisfies the launcher's pre-checks.
 
-    Creates bin/python (stub, exit 0), bin/ai-hats (echoes ai_hats_echo
-    plus args), and bin/pip (records args to '../pip_called' marker).
+    Creates bin/python (stub, exit 0) and bin/ai-hats (echoes ai_hats_echo
+    plus args) — the two executables the launcher resolution checks for.
     """
     bindir = venv_path / "bin"
     bindir.mkdir(parents=True, exist_ok=True)
@@ -47,14 +47,6 @@ def _fake_venv(venv_path: Path, *, ai_hats_echo: str = "ai-hats-stub") -> None:
         f'#!/usr/bin/env bash\necho "{ai_hats_echo}: $*"\nexit 0\n'
     )
     _make_executable(ai_hats_stub)
-
-    pip_stub = bindir / "pip"
-    pip_stub.write_text(
-        '#!/usr/bin/env bash\n'
-        'printf "%s\\n" "$@" > "$(dirname "$0")/../pip_called"\n'
-        'exit 0\n'
-    )
-    _make_executable(pip_stub)
 
 
 def _fake_uv_with_venv_creator(stub_dir: Path) -> Path:

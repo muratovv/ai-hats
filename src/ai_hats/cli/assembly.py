@@ -72,19 +72,23 @@ def _wizard_provider_prompt(detected: list[str]) -> str:
 
 
 def _run_self_update() -> bool:
-    """Run `pip install -U` for ai-hats inline. Returns True on success.
+    """Run `uv pip install` for ai-hats inline. Returns True on success.
 
     Used in the wizard bootstrap path to guarantee that newly-onboarded
     users start with the latest framework version. Skipped in flag-only
     (CI) mode and behind ``--no-update`` for tests / offline use.
 
-    Wraps the pip subprocess in a Rich spinner so users on slow links
+    Wraps the uv subprocess in a Rich spinner so users on slow links
     see continuous progress instead of a silent terminal.
     """
     import subprocess
 
-    from .maintenance import _build_update_cmd
+    from .maintenance import _build_update_cmd, _require_uv
 
+    # HATS-763 (D2): uv is the single engine — fail loud with the install hint
+    # before invoking it, so a missing uv shows a one-line message instead of a
+    # raw FileNotFoundError traceback mid-wizard.
+    _require_uv()
     cmd = _build_update_cmd()
     with console.status(
         "[cyan]Downloading ai-hats from GitHub …[/] "

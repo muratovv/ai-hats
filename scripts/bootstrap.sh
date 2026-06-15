@@ -101,7 +101,12 @@ if ! command -v uv >/dev/null 2>&1; then
     # The astral installer drops uv in ~/.local/bin (or ~/.cargo/bin) and edits
     # shell rc files, but does NOT export it onto THIS shell's PATH — so the very
     # next `command -v uv` in this same process would miss it. Refresh now.
-    [[ -f "$HOME/.local/bin/env" ]] && . "$HOME/.local/bin/env"
+    # Source astral's env under +u: third-party shell may reference unset vars,
+    # which would abort bootstrap under `set -u`. The explicit PATH export below
+    # is the real fix; the source is belt-and-suspenders.
+    if [[ -f "$HOME/.local/bin/env" ]]; then
+        set +u; . "$HOME/.local/bin/env"; set -u
+    fi
     export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 fi
 if ! command -v uv >/dev/null 2>&1; then
