@@ -29,7 +29,7 @@ import sys
 import uuid
 from pathlib import Path
 
-from .atomic_io import atomic_write_text
+from .utils.atomic_io import atomic_write_text
 from .paths import _is_safe_sha_component, versions_root
 
 # One run_id per process — stable across repeated ``create_session`` calls

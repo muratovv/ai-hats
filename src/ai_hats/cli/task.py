@@ -6,7 +6,7 @@ import sys
 
 import click
 
-from ..atomic_io import atomic_write_text
+from ..utils.atomic_io import atomic_write_text
 from ..state import EmptyPlanError
 from ._helpers import _project_dir, _task_manager, console
 
