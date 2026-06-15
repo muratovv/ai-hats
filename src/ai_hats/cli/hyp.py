@@ -5,6 +5,7 @@ Subcommands:
   create               — create a new HYP-NNN.yaml (auto-id)
   append-verdict       — atomic ValidationLogEntry append (used by reflect-session)
   set-status           — flip status (active|confirmed|refuted|stalled)
+  autoclose            — safe quorum close-as-gone of refuted HYPs (HATS-769)
   migrate              — one-shot normalize all HYP files under current schema
 """
 
@@ -169,6 +170,40 @@ def hyp_set_status(hyp_id: str, status: str):
         raise click.ClickException(f"{hyp_id} not found")
     h = store.set_status(hyp_id, status)
     console.print(f"[green]✓[/green] {hyp_id}: status={h.status}")
+
+
+@hyp.command("autoclose")
+@click.option("--k", type=int, default=None, help="Quorum threshold (default 3)")
+@click.option("--dry-run", is_flag=True, help="Print candidates; mutate nothing")
+def hyp_autoclose(k: int | None, dry_run: bool):
+    """Close-as-gone every active HYP with a quorum of K independent refuted verdicts.
+
+    Safe direction only — never confirms. Each closure is logged to
+    validation_log and reversed with `set-status --status active` (HATS-769).
+    This is the same sweep the `finalize-hitl` pipeline runs after each session.
+    """
+    from ..hypothesis.quorum import DEFAULT_QUORUM_K, apply_closure, find_quorum_closures
+
+    threshold = DEFAULT_QUORUM_K if k is None else k
+    if threshold < 1:
+        raise click.ClickException("--k must be >= 1")
+    store = _store()
+    closures = find_quorum_closures(store, threshold)
+    if not closures:
+        console.print("closed: none")
+        return
+    if dry_run:
+        for c in closures:
+            console.print(
+                f"[yellow]would close[/yellow] {c.hyp_id} "
+                f"(refuted by {len(c.refute_sessions)} independent sessions: "
+                f"{', '.join(c.refute_sessions)})"
+            )
+        console.print(f"(dry-run) {len(closures)} candidate(s); nothing mutated")
+        return
+    for c in closures:
+        apply_closure(store, c)
+    console.print(f"[green]✓[/green] closed: {', '.join(c.hyp_id for c in closures)}")
 
 
 @hyp.command("append-verdict")
