@@ -62,7 +62,7 @@ def atomic_write_bytes(path: Path, data: bytes, *, mode: int | None = None) -> N
     except BaseException:
         # Leave no orphan tmp behind on any failure (incl. KeyboardInterrupt).
         try:
-            tmp.unlink()
+            tmp.unlink()  # safe-delete: ok ephemeral atomic-write tmp (never user data)
         except OSError:
             pass
         raise

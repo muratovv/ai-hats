@@ -36,8 +36,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 
-from .atomic_io import atomic_write_bytes
-
 __all__ = [
     "discard",
     "replace",
@@ -302,21 +300,35 @@ def _move_to_trash(src: Path, dest: Path) -> None:
 
 
 def _write_atomic(path: Path, content: bytes, mode: int | None = None) -> None:
-    """Atomic write via the canonical helper, mapping ENOSPC to TrashFullError.
+    """Atomic write: tmp + rename. Internal helper (NOT routed through trash).
 
-    Kept as a thin wrapper (rather than calling :func:`atomic_io.atomic_write_bytes`
-    directly at each site) so the trash subsystem keeps its no-space contract: a
-    full disk during a snapshot or replace surfaces as :class:`TrashFullError`, not
-    a bare ``OSError`` — callers (bump / init) abort hard rather than silently lose
-    recovery capability. ``mode`` (HATS-467) is passed through; the underlying helper
-    chmods the tmp BEFORE the rename so the final path never appears with default
-    umask perms. (HATS-716 routed the write itself through ``atomic_io``.)
+    Intentionally NOT delegated to ``ai_hats.atomic_io`` (HATS-716): ``safe_delete``
+    is a designated leaf module (``test_import_hygiene.LEAF_MODULES``) that must
+    import nothing first-party, so it keeps its own copy of the tmp+replace
+    primitive. The ``.tmp`` file lives for milliseconds and never carries user data
+    — the standard atomic-write pattern. Lint-whitelisted within safe_delete.py.
+
+    When ``mode`` is given, ``chmod`` is applied to the ``.tmp`` BEFORE
+    the atomic rename, so the final path appears with the requested
+    permission bits in a single fs operation — no window where the file
+    exists with default umask perms (HATS-467).
     """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
     try:
-        atomic_write_bytes(path, content, mode=mode)
+        tmp.write_bytes(content)
+        if mode is not None:
+            tmp.chmod(mode)
+        tmp.replace(path)
     except OSError as e:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
         if e.errno == errno.ENOSPC:
-            raise TrashFullError(f"Cannot write {path}: no space left.") from e
+            raise TrashFullError(
+                f"Cannot write {path}: no space left."
+            ) from e
         raise
 
 
