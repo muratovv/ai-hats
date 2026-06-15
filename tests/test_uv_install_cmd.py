@@ -11,7 +11,26 @@ from __future__ import annotations
 
 import sys
 
-from ai_hats.cli.maintenance import _build_install_cmd, _build_update_cmd
+import pytest
+
+from ai_hats.cli.maintenance import (
+    _build_install_cmd,
+    _build_update_cmd,
+    _require_uv,
+)
+
+
+def test_require_uv_fails_loud_when_missing(monkeypatch):
+    """D2: uv absent on PATH → fail loud, exit non-zero, no pip fallback."""
+    monkeypatch.setattr("shutil.which", lambda _name: None)
+    with pytest.raises(SystemExit) as exc:
+        _require_uv()
+    assert exc.value.code == 1
+
+
+def test_require_uv_passes_when_present(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/uv")
+    _require_uv()  # no raise
 
 
 def _python_arg(cmd: list[str]) -> str:
