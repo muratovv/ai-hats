@@ -26,8 +26,6 @@ Design notes:
   the conventions this replaces fsync'd either.
 """
 
-from __future__ import annotations
-
 import os
 import tempfile
 from pathlib import Path

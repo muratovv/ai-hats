@@ -22,7 +22,7 @@ from pydantic import (
     model_validator,
 )
 
-from .atomic_io import atomic_write_text
+from .utils.atomic_io import atomic_write_text
 
 logger = logging.getLogger(__name__)
 

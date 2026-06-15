@@ -197,7 +197,7 @@ from typing import Any, Iterator
 
 import filelock
 
-from .atomic_io import atomic_write_text
+from .utils.atomic_io import atomic_write_text
 from .paths import worktrees_dir
 
 logger = logging.getLogger(__name__)

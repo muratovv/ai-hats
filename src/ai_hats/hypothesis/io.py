@@ -13,7 +13,7 @@ from pathlib import Path
 import yaml
 from filelock import FileLock
 
-from ..atomic_io import atomic_write_text
+from ..utils.atomic_io import atomic_write_text
 from .model import Hypothesis, ValidationLogEntry
 from .proposal import Proposal, Vote
 

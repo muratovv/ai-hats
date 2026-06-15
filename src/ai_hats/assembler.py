@@ -18,7 +18,7 @@ from pathlib import Path
 
 import yaml
 
-from .atomic_io import atomic_write_bytes
+from .utils.atomic_io import atomic_write_bytes
 from .composer import (
     Composer,
     CompositionResult,

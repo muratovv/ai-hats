@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .atomic_io import atomic_write_text
+from .utils.atomic_io import atomic_write_text
 from .environment_recovery import EnvironmentRecovery, RecoveryProtocol
 from .paths import runs_dir
 
