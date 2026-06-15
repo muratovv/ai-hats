@@ -11,7 +11,7 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .assembler import GITIGNORE_FILE
+from .constants import GITIGNORE_FILE
 from .safe_delete import discard as _safe_discard
 from .safe_delete import replace as _safe_replace
 
