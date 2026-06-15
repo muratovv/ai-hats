@@ -86,19 +86,30 @@ echo ""
 printf "  ${BOLD}ai-hats bootstrap${RESET}\n"
 echo ""
 
-# -- 1. Python precondition (launcher will need it for `python -m venv`) --
-if ! command -v python3 >/dev/null 2>&1; then
-    err "python" "not found — install Python 3.11+"
+# -- 1. uv precondition — the env engine; provisions Python (HATS-763) --
+# bootstrap.sh is the deliberate one-command onboarding entry, so (unlike the
+# host-global launcher, which only fails loud) it AUTO-INSTALLS uv when absent —
+# making `curl … bootstrap.sh | bash` a true single-command install with no
+# pre-installed uv or Python required.
+if ! command -v uv >/dev/null 2>&1; then
+    info "uv" "not found — installing via astral.sh"
+    if ! curl -LsSf https://astral.sh/uv/install.sh | sh; then
+        err "uv" "auto-install failed"
+        err "hint" "install manually: curl -LsSf https://astral.sh/uv/install.sh | sh"
+        exit 1
+    fi
+    # The astral installer drops uv in ~/.local/bin (or ~/.cargo/bin) and edits
+    # shell rc files, but does NOT export it onto THIS shell's PATH — so the very
+    # next `command -v uv` in this same process would miss it. Refresh now.
+    [[ -f "$HOME/.local/bin/env" ]] && . "$HOME/.local/bin/env"
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+fi
+if ! command -v uv >/dev/null 2>&1; then
+    err "uv" "still not found after install"
+    err "hint" "add ~/.local/bin to PATH and re-run"
     exit 1
 fi
-PY_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-PY_MAJOR=${PY_VERSION%%.*}
-PY_MINOR=${PY_VERSION##*.}
-if (( PY_MAJOR < 3 || (PY_MAJOR == 3 && PY_MINOR < 11) )); then
-    err "python" "${PY_VERSION} — need 3.11+"
-    exit 1
-fi
-ok "python" "${PY_VERSION}"
+ok "uv" "$(uv --version 2>/dev/null || echo present)"
 
 # -- 2. Install launcher --
 LAUNCHER_DEST="${AI_HATS_LAUNCHER_DEST:-$HOME/.local/bin/ai-hats}"

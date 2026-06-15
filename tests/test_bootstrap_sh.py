@@ -189,3 +189,41 @@ def test_bootstrap_default_repo_url_blank_when_no_override(tmp_path):
     ]
     assert len(self_update_lines) == 1
     assert "REPO=|" in self_update_lines[0]  # empty REPO value
+
+
+def test_bootstrap_auto_installs_uv_when_absent(tmp_path):
+    """HATS-763: uv missing → bootstrap runs the astral installer (stubbed) and
+    refreshes PATH in-process so the very next `command -v uv` finds it, then
+    proceeds to `self update`. Keeps the one-command install honest on a host
+    with neither uv nor Python."""
+    scripts_dir, project, dest, log, bootstrap = _setup_env(tmp_path)
+    home = tmp_path / "home"
+    (home / ".local" / "bin").mkdir(parents=True)
+
+    # Stub `curl`: simulates the astral installer by dropping a uv stub into
+    # ~/.local/bin (side effect) and emitting a no-op to the `| sh` consumer.
+    stubbin = tmp_path / "stubbin"
+    stubbin.mkdir()
+    curl = stubbin / "curl"
+    curl.write_text(
+        '#!/usr/bin/env bash\n'
+        'mkdir -p "$HOME/.local/bin"\n'
+        'printf \'#!/usr/bin/env bash\\necho "uv 0.0.0-stub"\\nexit 0\\n\' '
+        '> "$HOME/.local/bin/uv"\n'
+        'chmod +x "$HOME/.local/bin/uv"\n'
+        'echo "true"\n'  # piped into `sh` — harmless no-op
+    )
+    _make_executable(curl)
+
+    # PATH excludes the real uv (~/.local/bin / ~/.cargo/bin) so the auto-install
+    # branch fires; keeps system bins + our stub curl.
+    env_extra = {
+        "HOME": str(home),
+        "PATH": f"{stubbin}:/usr/bin:/bin:/usr/sbin:/sbin",
+    }
+    res = _run_bootstrap(bootstrap, cwd=project, launcher_dest=dest, env_extra=env_extra)
+
+    assert res.returncode == 0, f"stderr={res.stderr}\nstdout={res.stdout}"
+    assert (home / ".local" / "bin" / "uv").is_file(), "astral installer stub did not create uv"
+    assert "installing via astral.sh" in res.stdout
+    assert "ARGS=self update" in log.read_text(), "self update must run after PATH refresh"
