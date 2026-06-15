@@ -500,7 +500,7 @@ def _run_managed_versioned_update(
             new_python = str(vdir / "bin" / "python")
             with console.status(
                 "[cyan]Downloading ai-hats from GitHub …[/] "
-                "[dim](pip install — may take a minute)[/]",
+                "[dim](uv install — may take a minute)[/]",
                 spinner="dots",
             ):
                 install = subprocess.run(
@@ -1242,7 +1242,7 @@ def update(
     if skip_install:
         console.print(
             f"[green]Already up to date[/] ({old_version}) "
-            "[dim]— skipping pip install[/]"
+            "[dim]— skipping reinstall[/]"
         )
         new_version = old_version
     else:
@@ -1252,7 +1252,7 @@ def update(
         # downloads (can take 30s+ on slow links).
         with console.status(
             "[cyan]Downloading ai-hats from GitHub …[/] "
-            "[dim](pip install — may take a minute)[/]",
+            "[dim](uv install — may take a minute)[/]",
             spinner="dots",
         ):
             result = subprocess.run(cmd, capture_output=True, text=True)

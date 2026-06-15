@@ -41,7 +41,7 @@ VENV_TIER_PROBE = (
 def _run_probe_offline(tmp_path, *, strict: bool) -> subprocess.CompletedProcess[str]:
     """Run the probe test in a forced-offline subprocess pytest.
 
-    Empty ``PATH`` ⇒ ``shutil.which("pip")`` is None ⇒ ``network_available()``
+    Empty ``PATH`` ⇒ ``shutil.which("uv")`` is None ⇒ ``network_available()``
     returns False ⇒ ``_shared_launcher_venv`` hits its first branch and calls
     ``venv_unavailable`` WITHOUT attempting a build. ``strict`` controls the
     fail-closed env. ``REQUIRE_VENV_ENV`` is popped first so the non-strict case
@@ -50,7 +50,7 @@ def _run_probe_offline(tmp_path, *, strict: bool) -> subprocess.CompletedProcess
     empty_bin = tmp_path / "nopip_bin"
     empty_bin.mkdir()
     env = dict(os.environ)
-    env["PATH"] = str(empty_bin)  # no pip/pip3 ⇒ network_available() False
+    env["PATH"] = str(empty_bin)  # no uv ⇒ network_available() False
     env.pop(REQUIRE_VENV_ENV, None)
     if strict:
         env[REQUIRE_VENV_ENV] = "1"
