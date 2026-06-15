@@ -64,6 +64,9 @@ def test_e2e_task_surface_wiring_sweep(shared_launcher, tmp_path):
       absence (``--short``) is the revert signal.
     - `hyp create --verification-protocol` (HATS-623): flag removal → click
       rejects the unknown option → exit 2.
+    - `hyp autoclose` (HATS-769): subcommand removal → click exit 2; the
+      ``"closed:"`` marker proves the sweep ran. Quorum semantics (status flip,
+      audit entry, negative case) live in test_cli_hyp.py + test_quorum.py.
     """
     launcher_dest, env, _venv = shared_launcher
     project = tmp_path / "project"
@@ -126,3 +129,10 @@ def test_e2e_task_surface_wiring_sweep(shared_launcher, tmp_path):
         "--verification-protocol", "Run suite X; observe metric Y unchanged",
     )
     assert "HYP-001" in res.stdout, f"hyp create did not report HYP-001:\n{res.stdout}"
+
+    # ---- hyp autoclose (HATS-769) ----
+    # Wiring only: the command resolves through the real binary and exits 0.
+    # HYP-001 has no refuted verdicts → nothing closes → "closed: none" marker.
+    # Revert signal: removing the subcommand → click exit 2.
+    res = ai_hats("task", "hyp", "autoclose")
+    assert "closed:" in res.stdout, f"hyp autoclose marker missing:\n{res.stdout}"

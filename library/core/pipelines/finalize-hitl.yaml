@@ -17,3 +17,5 @@ steps:
   - id: compute_usage
   - id: maybe_spawn_session_reviewer
   - id: run_session_end
+  - id: quorum_autoclose
+    params: {k: 3}

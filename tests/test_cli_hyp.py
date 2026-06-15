@@ -362,3 +362,63 @@ def test_migrate_dry_run_does_not_write(project_dir: Path):
     assert res.exit_code == 0
     after = p.read_text()
     assert before == after
+
+
+# ---- autoclose (HATS-769) ----
+
+
+def _refuted(session_id: str) -> dict:
+    return {
+        "date": "2026-06-10",
+        "verdict": "refuted",
+        "evidence": "behaviour gone",
+        "session_id": session_id,
+    }
+
+
+def test_autoclose_flips_status_on_quorum(project_dir: Path):
+    p = _write_hyp(
+        project_dir, "HYP-001", validation_log=[_refuted("s1"), _refuted("s2"), _refuted("s3")]
+    )
+    res = _invoke(["autoclose"])
+    assert res.exit_code == 0, res.output
+    assert "HYP-001" in res.output
+    data = yaml.safe_load(p.read_text())
+    assert data["status"] == "refuted"
+    # Closure is logged with the contributing sessions named (audit trail).
+    audit = data["validation_log"][-1]
+    assert audit["session_id"] == "auto-quorum"
+    assert "s1, s2, s3" in audit["evidence"]
+
+
+def test_autoclose_below_quorum_leaves_active(project_dir: Path):
+    p = _write_hyp(project_dir, "HYP-001", validation_log=[_refuted("s1"), _refuted("s2")])
+    res = _invoke(["autoclose"])
+    assert res.exit_code == 0, res.output
+    assert "closed: none" in res.output
+    assert yaml.safe_load(p.read_text())["status"] == "active"
+
+
+def test_autoclose_dry_run_does_not_mutate(project_dir: Path):
+    p = _write_hyp(
+        project_dir, "HYP-001", validation_log=[_refuted("s1"), _refuted("s2"), _refuted("s3")]
+    )
+    res = _invoke(["autoclose", "--dry-run"])
+    assert res.exit_code == 0, res.output
+    assert "HYP-001" in res.output
+    data = yaml.safe_load(p.read_text())
+    assert data["status"] == "active"
+    assert all(e["session_id"] != "auto-quorum" for e in data["validation_log"])
+
+
+def test_autoclose_custom_k(project_dir: Path):
+    p = _write_hyp(project_dir, "HYP-001", validation_log=[_refuted("s1"), _refuted("s2")])
+    res = _invoke(["autoclose", "--k", "2"])
+    assert res.exit_code == 0, res.output
+    assert yaml.safe_load(p.read_text())["status"] == "refuted"
+
+
+def test_autoclose_rejects_k_below_one(project_dir: Path):
+    res = _invoke(["autoclose", "--k", "0"])
+    assert res.exit_code != 0
+    assert ">= 1" in res.output
