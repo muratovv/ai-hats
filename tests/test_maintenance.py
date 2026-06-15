@@ -677,9 +677,11 @@ def test_installed_launcher_path_resolution(tmp_path, monkeypatch):
 def test_build_install_cmd_url_and_local():
     """Install target: PEP 508 `name @ url@ref` for URLs, bare path@ref otherwise."""
     url_cmd = _build_install_cmd("/v/bin/python", "git+ssh://x/ai-hats.git", "abc")
-    assert url_cmd[:5] == ["/v/bin/python", "-m", "pip", "install", "--force-reinstall"]
+    assert url_cmd[:3] == ["uv", "pip", "install"]  # HATS-763: uv engine
+    assert url_cmd[url_cmd.index("--python") + 1] == "/v/bin/python"  # B1
+    assert "--reinstall" in url_cmd
     assert url_cmd[-1] == "ai-hats @ git+ssh://x/ai-hats.git@abc"
-    # Local path: bare path (pip can't take @ref on a local path).
+    # Local path: bare path (uv can't take @ref on a local path).
     local_cmd = _build_install_cmd("/v/bin/python", "/local/path", "abc")
     assert local_cmd[-1] == "/local/path"
 
