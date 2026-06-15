@@ -52,21 +52,19 @@ from .providers import (
     Provider,
     get_provider,
 )
+from .constants import (
+    AGENT_DIR,
+    CANONICAL_DIR,
+    CANONICAL_MANIFEST,
+    GITIGNORE_FILE,
+    PROJECT_CONFIG,
+    USER_RULES_SUBDIR,
+)
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .relocation import RelocationResult
-
-
-AGENT_DIR = ".agent"
-PROJECT_CONFIG = "ai-hats.yaml"
-GITIGNORE_FILE = ".gitignore"
-
-# HATS-282 — canonical layered layer
-CANONICAL_DIR = "ai-hats"
-CANONICAL_MANIFEST = "MANAGED"
-USER_RULES_SUBDIR = "user-rules"
 
 
 def _ai_hats_owned_hook_basenames() -> frozenset[str]:

@@ -23,7 +23,13 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: python
-          queries: security-and-quality
+          # security-extended (not security-and-quality): the maintainability
+          # query family (unused-import, cyclic-import, unreachable, empty-except)
+          # false-positives on this project's idioms — noqa'd re-export hubs,
+          # TYPE_CHECKING/deferred cycle-management, documented SIGINT scaffolds.
+          # Module-level runtime cycles + leaf purity are gated locally instead
+          # (tests/test_import_hygiene.py, HATS-758).
+          queries: security-extended
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
         with:
