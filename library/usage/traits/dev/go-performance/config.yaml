@@ -5,7 +5,6 @@ composition:
   skills:
     - golang-performance
     - golang-benchmark
-  hooks: {}
 injection: |
   ## GO PERFORMANCE
 

@@ -22,7 +22,9 @@ Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
 Fail-under-revert: with the install-info block removed from
 ``assembly.py:status()``, the ``Version:`` substring is absent from
 both sub-case outputs and the assertion fails. With the role-check
-return restored, sub-case 1 misses install fields too.
+return restored, sub-case 1 misses install fields too. HATS-707: with
+the dead lifecycle ``hooks:`` channel restored, sub-case 2's tree
+renders a ``task_complete`` branch again and the no-hooks assertion fails.
 """
 
 from __future__ import annotations
@@ -109,4 +111,12 @@ def test_e2e_config_status_install_diagnostics(
     # Project-side checks (existing, pre-HATS-497) still present.
     assert "system_prompt:" in out2, (
         f"existing project health check 'system_prompt' missing:\n{out2}"
+    )
+    # HATS-707: the dead lifecycle ``hooks:`` channel is gone — the composition
+    # tree must NOT render a hooks branch. Pre-HATS-707 the ``assistant`` role
+    # declared ``task_complete: [git status]``, which surfaced here as a
+    # ``task_complete: [...]`` tree node. Fail-under-revert: restoring the
+    # channel (assembler payload + assembly.py renderer) brings it back.
+    assert "task_complete" not in out2, (
+        f"config status still renders a dead lifecycle-hook branch (HATS-707):\n{out2}"
     )

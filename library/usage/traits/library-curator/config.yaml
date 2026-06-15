@@ -7,7 +7,6 @@ composition:
   skills:
     - doc-protocol
     - library-change-hypothesis-protocol
-  hooks: {}
 injection: |
   ## LIBRARY CURATOR
 

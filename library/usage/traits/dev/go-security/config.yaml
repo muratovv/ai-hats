@@ -4,7 +4,6 @@ composition:
   rules: []
   skills:
     - golang-security
-  hooks: {}
 injection: |
   ## GO SECURITY
 

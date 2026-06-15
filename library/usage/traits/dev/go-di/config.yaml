@@ -5,7 +5,6 @@ composition:
   skills:
     - golang-dependency-injection
     - golang-samber-do
-  hooks: {}
 injection: |
   ## GO DEPENDENCY INJECTION
 

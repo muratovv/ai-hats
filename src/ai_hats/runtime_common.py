@@ -6,9 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import shutil
-import subprocess
 import sys
 from collections import deque
 from pathlib import Path
@@ -22,7 +20,6 @@ from .assembler import Assembler
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
-from .models import LifecycleEvent
 from .observe import Session, SidecarTracer, TraceTag
 
 if TYPE_CHECKING:
@@ -254,60 +251,6 @@ def _finalize_sub_agent(
             logger.warning("finalize-subagent pipeline failed", exc_info=True)
 
 
-class HooksRunner:
-    """Executes lifecycle hook scripts."""
-
-    def __init__(self, hooks_dir: Path, project_dir: Path) -> None:
-        self.hooks_dir = hooks_dir
-        self.project_dir = project_dir
-
-    def run(self, event: LifecycleEvent, env: dict[str, str] | None = None) -> list[dict]:
-        """Run all hook scripts for an event. Returns list of results."""
-        results = []
-        scripts = self._find_scripts(event)
-        for script in scripts:
-            result = self._execute(script, env or {})
-            results.append(result)
-        return results
-
-    def _find_scripts(self, event: LifecycleEvent) -> list[Path]:
-        """Find hook scripts in hooks dir matching the event pattern."""
-        scripts = []
-        if not self.hooks_dir.exists():
-            return scripts
-        # Convention: scripts starting with event name or in event subdir
-        for f in sorted(self.hooks_dir.iterdir()):
-            if f.is_file() and f.suffix in (".sh", ".py") and f.stem.startswith(event.value):
-                scripts.append(f)
-        event_dir = self.hooks_dir / event.value
-        if event_dir.is_dir():
-            for f in sorted(event_dir.iterdir()):
-                if f.is_file() and f.suffix in (".sh", ".py"):
-                    scripts.append(f)
-        return scripts
-
-    def _execute(self, script: Path, env: dict[str, str]) -> dict:
-        """Execute a single hook script."""
-        full_env = {**os.environ, **env}
-        try:
-            result = subprocess.run(
-                [str(script)],
-                cwd=str(self.project_dir),
-                env=full_env,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            return {
-                "script": str(script),
-                "returncode": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-            }
-        except subprocess.TimeoutExpired:
-            return {"script": str(script), "returncode": -1, "error": "timeout"}
-        except Exception as e:
-            return {"script": str(script), "returncode": -1, "error": str(e)}
 
 
 def _claude_jsonl_path(project_dir: Path, claude_session_id: str) -> Path | None:
@@ -608,15 +551,13 @@ def _run_finalize_hitl(
     *,
     claude_session_id: str,
     project_dir: Path,
-    env: dict[str, str],
     exit_code: int,
 ) -> None:
     """Invoke the ``finalize-hitl`` sub-pipeline (HATS-535).
 
-    The pipeline runs ``make_audit`` then ``run_session_end``. Caller
-    (WrapRunner.run's finally) wraps this in its own try/except so a
-    finalize-pipeline crash never blocks the outer
-    ``_print_session_end``.
+    The pipeline runs ``make_audit`` then ``run_session_end`` (retro banner).
+    Caller (WrapRunner.run's finally) wraps this in its own try/except so a
+    finalize-pipeline crash never blocks the outer ``_print_session_end``.
     """
     from .pipeline.loader import load_core_pipeline
     from .pipeline.pipeline import run as run_pipeline
@@ -630,7 +571,6 @@ def _run_finalize_hitl(
             "claude_session_id": claude_session_id,
             "project_dir": project_dir,
             "exit_code": exit_code,
-            "hooks_env": env,
         },
     )
     _log_pipeline_errors("finalize-hitl", final_state)

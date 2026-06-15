@@ -5,7 +5,6 @@ composition:
   skills:
     - golang-observability
     - golang-samber-slog
-  hooks: {}
 injection: |
   ## GO OBSERVABILITY
 

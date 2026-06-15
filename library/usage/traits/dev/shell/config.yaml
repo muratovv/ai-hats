@@ -4,7 +4,6 @@ composition:
   rules: []
   skills:
     - bash-mastery
-  hooks: {}
 injection: |
   ## SHELL DEVELOPMENT
 

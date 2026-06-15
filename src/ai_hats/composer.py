@@ -9,8 +9,6 @@ from .resolver import LibraryResolver
 from .models import (
     ComponentConfig,
     ComponentType,
-    HooksConfig,
-    LifecycleEvent,
     OverlayConfig,
     RuntimeHook,
     SkillMetadata,
@@ -73,7 +71,6 @@ class CompositionResult:
     priorities: list[str]
     rules: list[ResolvedComponent]
     skills: list[ResolvedComponent]
-    hooks: HooksConfig
     injections: list[str]  # ordered injection texts
     errors: list[str] = field(default_factory=list)
     trait_injections: dict[str, str] = field(default_factory=dict)
@@ -154,7 +151,6 @@ class Composer:
                 priorities=[],
                 rules=[],
                 skills=[],
-                hooks=HooksConfig(),
                 injections=[],
                 errors=[f"Role '{role_name}' not found"],
             )
@@ -169,7 +165,6 @@ class Composer:
         trait_injections: dict[str, str] = {}
         role_injection_text = ""
         overlay_injection_text = ""
-        hooks = HooksConfig()
 
         # Apply overlays in order — each layer's `remove` then `add` (move-to-end
         # within a layer; project-after-global means project wins cross-layer).
@@ -186,7 +181,6 @@ class Composer:
             skills=skills,
             injections=injections,
             trait_injections=trait_injections,
-            hooks=hooks,
             errors=errors,
             visited=set(),
         )
@@ -206,9 +200,6 @@ class Composer:
             skills=skills,
             errors=errors,
         )
-
-        # Merge role's own hooks (role hooks override trait hooks for same event)
-        self._merge_hooks(hooks, config.composition.hooks)
 
         # Add role's own injection last (highest priority).
         # role_injection is recorded independently of dedup so the layered
@@ -238,7 +229,6 @@ class Composer:
             priorities=config.priorities,  # Only from root role
             rules=rules,
             skills=skills,
-            hooks=hooks,
             injections=injections,
             errors=errors,
             trait_injections=trait_injections,
@@ -286,7 +276,6 @@ class Composer:
         skills: list[ResolvedComponent],
         injections: list[str],
         trait_injections: dict[str, str],
-        hooks: HooksConfig,
         errors: list[str],
         visited: set[str],
     ) -> None:
@@ -323,9 +312,6 @@ class Composer:
                 skills=skills,
                 errors=errors,
             )
-
-            # Merge trait hooks
-            self._merge_hooks(hooks, config.composition.hooks)
 
             # Add trait injection (deduped by text).
             # trait_injections mirrors the dedup: a trait whose text is empty
@@ -400,15 +386,6 @@ class Composer:
                 )
             )
 
-    @staticmethod
-    def _merge_hooks(target: HooksConfig, source: HooksConfig) -> None:
-        """Merge source hooks into target (appending scripts)."""
-        for event in LifecycleEvent:
-            target_list = getattr(target, event.value)
-            source_list = getattr(source, event.value)
-            for script in source_list:
-                if script not in target_list:
-                    target_list.append(script)
 
 
 # ---------------------------------------------------------------------------

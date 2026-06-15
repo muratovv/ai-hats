@@ -804,7 +804,7 @@ def status():
             """Return a source-tag suffix like ``  (global)`` for a node.
 
             Defaults to ``built-in`` when no overlay claims the name.
-            Empty for ``priorities`` and ``hooks`` (no layer notion).
+            Empty for ``priorities`` (no layer notion).
             """
             label = provenance.get(component_type, {}).get(name, "built-in")
             color = {"global": "magenta", "project": "cyan"}.get(label, "dim")
@@ -827,10 +827,6 @@ def status():
             s_branch = tree.add("[dim]skills[/]")
             for s in st["tree"]["skills"]:
                 s_branch.add(f"{s}{_tag('skills', s)}")
-        if st["tree"]["hooks"]:
-            h_branch = tree.add("[dim]hooks[/]")
-            for event, scripts in st["tree"]["hooks"].items():
-                h_branch.add(f"{event}: {scripts}")
         console.print(tree)
         console.print(
             "[dim]Legend:[/] [dim](built-in)[/]  [magenta](global)[/]  [cyan](project)[/]"

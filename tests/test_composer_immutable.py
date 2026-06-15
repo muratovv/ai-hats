@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType, HooksConfig
+from ai_hats.models import ComponentType
 
 
 def _make_minimal_result(
@@ -27,7 +27,6 @@ def _make_minimal_result(
         priorities=["Reliability"],
         rules=[],
         skills=[],
-        hooks=HooksConfig(),
         injections=injections if injections is not None else ["body"],
     )
 

@@ -372,15 +372,9 @@ def wrap_runner_factory(tmp_path, monkeypatch):
 
         monkeypatch.setattr(WrapRunner, "_pty_spawn", _stub_spawn)
 
-        # Stub hooks so SESSION_START hooks don't try to exec anything.
-        class _NoopHooks:
-            def run(self, event, env=None):
-                return []
-
-        monkeypatch.setattr(
-            WrapRunner, "_make_session_hooks_runner",
-            lambda self: _NoopHooks(),
-        )
+        # Stub the session-start git-hook resync so the test doesn't touch
+        # the real .githooks/ surface (HATS-707).
+        monkeypatch.setattr(WrapRunner, "_resync_git_hooks", lambda self, session=None: None)
 
         if finalize_hitl_exc is not None:
             def _exploding_finalize_hitl(*args, **kwargs):

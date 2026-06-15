@@ -22,7 +22,6 @@ composition:
     - task-summary
     - tool-call-hygiene
     - design-minimalism
-  hooks: {}
 injection: |
   ## AGENT BEHAVIOR
 

@@ -86,14 +86,12 @@ def test_claude_materialize_runtime_skills_returns_plugin_dir_arg(tmp_path):
         )
     ]
     from ai_hats.composer import CompositionResult
-    from ai_hats.models import HooksConfig
 
     result = CompositionResult(
         name="guest",
         priorities=[],
         rules=[],
         skills=result_skills,
-        hooks=HooksConfig(),
         injections=[],
     )
 
@@ -111,14 +109,12 @@ def test_claude_materialize_runtime_skills_returns_plugin_dir_arg(tmp_path):
 def test_gemini_materialize_runtime_skills_is_noop(tmp_path):
     """Gemini has no plugin-dir analog (HATS-367 follow-up)."""
     from ai_hats.composer import CompositionResult
-    from ai_hats.models import HooksConfig
 
     result = CompositionResult(
         name="anything",
         priorities=[],
         rules=[],
         skills=[],
-        hooks=HooksConfig(),
         injections=[],
     )
     assert GeminiProvider().materialize_runtime_skills(tmp_path, result, "test-sid") == []

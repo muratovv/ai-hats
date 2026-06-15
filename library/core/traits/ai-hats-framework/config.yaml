@@ -7,7 +7,6 @@ composition:
   # to role-curator.
   rules: []
   skills: []
-  hooks: {}
 injection: |
   ## AI-HATS FRAMEWORK
 

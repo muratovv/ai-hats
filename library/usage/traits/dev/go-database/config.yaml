@@ -4,7 +4,6 @@ composition:
   rules: []
   skills:
     - golang-database
-  hooks: {}
 injection: |
   ## GO DATABASE
 

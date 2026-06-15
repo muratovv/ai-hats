@@ -13,7 +13,6 @@ composition:
     - role-coherence-protocol
     - judge-role-protocol
     - backlog-create
-  hooks: {}
 injection: |
   # ROLE: JUDGE-FOR-ROLE (interactive role coherence)
 

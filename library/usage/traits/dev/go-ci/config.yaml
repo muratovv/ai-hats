@@ -4,7 +4,6 @@ composition:
   rules: []
   skills:
     - golang-continuous-integration
-  hooks: {}
 injection: |
   ## GO CI/CD
 
