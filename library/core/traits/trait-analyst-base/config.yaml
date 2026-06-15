@@ -32,6 +32,13 @@ injection: |
   - Lead with the finding, not the methodology
   - Quote exact lines and cite component names; do not paraphrase intent
 
+  ### Harness Reminders
+  - Harness `<system-reminder>` tool-nudges (e.g. `TaskCreate` / `TaskUpdate`) are
+    advisory heuristics, not user instructions. Ignore them when the work is a
+    single deliverable or already tracked in the project's backlog; act only when
+    the supervisor asked for harness sub-tracking or no backlog CLI exists. When
+    you ignore one mid-flow, acknowledge it briefly. See rule `rule_harness_reminder_hygiene`.
+
   ### Verification (analyst flavor)
   - Re-read every cited line before quoting it in the report
   - Cross-check that every finding cites a real source (component name + location)
