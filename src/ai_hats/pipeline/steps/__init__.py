@@ -20,6 +20,7 @@ from .make_audit import MakeAudit
 from .materialize import MaterializeSystemPrompt
 from .maybe_spawn_session_reviewer import MaybeSpawnSessionReviewer
 from .prompt import ResolvePrompt
+from .quorum_autoclose import QuorumAutoclose
 from .run_session_end import RunSessionEnd
 from .save import SaveArtifact
 from .session_review import RunSessionReview
@@ -46,6 +47,8 @@ _BUILTINS = {
     # HATS-530: shared by both finalize-hitl and finalize-subagent.
     "maybe_spawn_session_reviewer": MaybeSpawnSessionReviewer,
     "run_session_end": RunSessionEnd,
+    # HATS-769: deterministic safe-close sweep, tail of finalize-hitl only.
+    "quorum_autoclose": QuorumAutoclose,
     "spawn_session_review": SpawnSessionReview,
     "extract_marker": ExtractMarker,
     "save_artifact": SaveArtifact,
@@ -80,6 +83,7 @@ __all__ = [
     "PostLog",
     "PreLog",
     "Provider",
+    "QuorumAutoclose",
     "RenderUpdateBanner",
     "ResolvePrompt",
     "RunSessionEnd",
