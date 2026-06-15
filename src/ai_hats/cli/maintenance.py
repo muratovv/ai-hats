@@ -20,6 +20,31 @@ from ._helpers import _assembler, _project_dir, console, logger
 # defer to pip's own resolution downstream).
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
 
+# HATS-763: uv is the single host prerequisite + the env engine. Versioned venvs
+# pin the lowest supported interpreter (pyproject requires-python>=3.11); uv
+# provisions it via `uv python install` if the host lacks it.
+PINNED_PYTHON = "3.11"
+
+
+def _require_uv() -> None:
+    """Fail loud with the install hint if uv is missing (D2: no pip fallback).
+
+    uv is the single hard dependency (HATS-762/763). When it is absent there is
+    no pip fallback — print the one-line installer and exit non-zero so scripted
+    chains (`self update && self init`) stop instead of half-installing. Called
+    only right before an actual uv invocation, so a pure reuse / already-current
+    no-op stays green on a host that has a valid env but no uv (idempotency).
+    """
+    import shutil
+
+    if shutil.which("uv") is None:
+        console.print(
+            "[red]ai-hats requires uv[/] but it was not found on PATH.\n"
+            "  Install: [bold]curl -LsSf https://astral.sh/uv/install.sh | sh[/]\n"
+            "  then re-run."
+        )
+        sys.exit(1)
+
 
 # HATS-337: AI_HATS_REPO_URL env overrides the default git URL, mirroring
 # the bash launcher (HATS-339) so a single env var pins the install source
@@ -447,6 +472,7 @@ def _run_managed_versioned_update(
         else:
             # No dir, or incomplete crash residue (no .complete sentinel) — never
             # trust it; rebuild fresh (HATS-648 build-in-place + sentinel).
+            _require_uv()  # only here — reuse/no-op above needs no uv
             if vdir.exists():
                 shutil.rmtree(vdir, ignore_errors=True)  # safe-delete: ok incomplete-venv (crash residue, rebuilt fresh)
             vdir.parent.mkdir(parents=True, exist_ok=True)
@@ -454,8 +480,11 @@ def _run_managed_versioned_update(
                 f"[cyan]Creating versioned venv[/] versions/{target_sha[:12]} …",
                 spinner="dots",
             ):
+                # HATS-763: uv engine. `uv venv --python 3.11` provisions the
+                # interpreter (drops the host-Python precondition) and creates
+                # bin/python; the subsequent `uv pip install` drops bin/ai-hats.
                 venv_proc = subprocess.run(
-                    [sys.executable, "-m", "venv", str(vdir)],
+                    ["uv", "venv", "--python", PINNED_PYTHON, str(vdir)],
                     capture_output=True,
                     text=True,
                 )
@@ -1208,8 +1237,9 @@ def update(
         )
         new_version = old_version
     else:
+        _require_uv()  # HATS-763: legacy in-place path also runs uv
         cmd = _build_update_cmd(ref=revision)
-        # Wrapped in a Rich spinner so the terminal isn't silent while pip
+        # Wrapped in a Rich spinner so the terminal isn't silent while uv
         # downloads (can take 30s+ on slow links).
         with console.status(
             "[cyan]Downloading ai-hats from GitHub …[/] "
