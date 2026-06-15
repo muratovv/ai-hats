@@ -483,8 +483,8 @@ def test_update_skips_pip_when_installed_sha_matches_remote(tmp_path: Path) -> N
         f"pip install ran despite SHA match: {captured}"
     assert "Already up to date" in output, \
         f"missing already-up-to-date banner:\n{output}"
-    assert "skipping pip install" in output, \
-        f"missing skip-pip dim hint:\n{output}"
+    assert "skipping reinstall" in output, \
+        f"missing skip-reinstall dim hint:\n{output}"
     # Verify subprocess must not run when pip was skipped — nothing to verify.
     verify_called = any(
         len(c[0]) >= 4 and c[0][1:4] == ("-m", "ai_hats._bootstrap")
