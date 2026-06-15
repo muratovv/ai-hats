@@ -196,7 +196,7 @@ def _configure_hooks_path(project_dir: Path, warnings: list[str]) -> None:
 
     if existing == target:
         return  # Already correct.
-    if existing and existing != target:
+    if existing:
         warnings.append(
             f"core.hooksPath is already set to '{existing}' — not "
             f"overwriting. To enable ai-hats hooks, run: "
