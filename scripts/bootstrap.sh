@@ -4,9 +4,8 @@
 # Pipeline: install-launcher.sh → `ai-hats self update` → `ai-hats self init`.
 # Idempotent — safe to re-run; launcher's self update handles existing venv.
 #
-# Quick start (fresh tmp each run, auto-cleanup):
-#   TMP=$(mktemp -d) && git clone --depth 1 git@github.com:muratovv/ai-hats.git "$TMP" && \
-#     bash "$TMP/scripts/bootstrap.sh" -r assistant -p claude; rm -rf "$TMP"
+# Quick start (piped one-liner — fetches the installer + launcher):
+#   curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- -r assistant -p claude
 #
 # From local clone:
 #   bash scripts/bootstrap.sh -r go-dev -p claude
@@ -47,9 +46,8 @@ ${BOLD}Notes:${RESET}
   Idempotent — safe to re-run. Existing ai-hats.yaml is preserved by init.
 
 ${BOLD}Examples:${RESET}
-  ${DIM}# Quick start — fresh tmp each run${RESET}
-  TMP=\$(mktemp -d) && git clone --depth 1 git@github.com:muratovv/ai-hats.git "\$TMP" && \\
-    bash "\$TMP/scripts/bootstrap.sh" -r assistant -p claude; rm -rf "\$TMP"
+  ${DIM}# Piped one-liner (fresh host)${RESET}
+  curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- -r assistant -p claude
 
   ${DIM}# From local clone${RESET}
   bash scripts/bootstrap.sh -r go-dev -p claude
@@ -86,11 +84,8 @@ echo ""
 printf "  ${BOLD}ai-hats bootstrap${RESET}\n"
 echo ""
 
-# -- 1. uv precondition — the env engine; provisions Python (HATS-763) --
-# bootstrap.sh is the deliberate one-command onboarding entry, so (unlike the
-# host-global launcher, which only fails loud) it AUTO-INSTALLS uv when absent —
-# making `curl … bootstrap.sh | bash` a true single-command install with no
-# pre-installed uv or Python required.
+# -- 1. uv precondition — the engine; provisions Python. Auto-install (unlike the
+#       host-global launcher) so the piped one-liner needs no pre-installed uv. --
 if ! command -v uv >/dev/null 2>&1; then
     info "uv" "not found — installing via astral.sh"
     if ! curl -LsSf https://astral.sh/uv/install.sh | sh; then
@@ -98,12 +93,8 @@ if ! command -v uv >/dev/null 2>&1; then
         err "hint" "install manually: curl -LsSf https://astral.sh/uv/install.sh | sh"
         exit 1
     fi
-    # The astral installer drops uv in ~/.local/bin (or ~/.cargo/bin) and edits
-    # shell rc files, but does NOT export it onto THIS shell's PATH — so the very
-    # next `command -v uv` in this same process would miss it. Refresh now.
-    # Source astral's env under +u: third-party shell may reference unset vars,
-    # which would abort bootstrap under `set -u`. The explicit PATH export below
-    # is the real fix; the source is belt-and-suspenders.
+    # astral edits rc files but not THIS shell's PATH — refresh it. Source the env
+    # under +u (third-party shell may ref unset vars); the PATH export is the real fix.
     if [[ -f "$HOME/.local/bin/env" ]]; then
         set +u; . "$HOME/.local/bin/env"; set -u
     fi
@@ -116,21 +107,26 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 ok "uv" "$(uv --version 2>/dev/null || echo present)"
 
-# -- 2. Install launcher --
+# -- 2. Install launcher (local script if cloned, else fetch — enables piped use) --
 LAUNCHER_DEST="${AI_HATS_LAUNCHER_DEST:-$HOME/.local/bin/ai-hats}"
-INSTALLER=""
+INSTALL_LAUNCHER_URL="${AI_HATS_INSTALL_LAUNCHER_URL:-https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh}"
 if [[ -n "$SCRIPT_DIR" && -f "$SCRIPT_DIR/install-launcher.sh" ]]; then
-    INSTALLER="$SCRIPT_DIR/install-launcher.sh"
-fi
-if [[ -n "$INSTALLER" ]]; then
-    info "launcher" "running $INSTALLER"
-    AI_HATS_LAUNCHER_DEST="$LAUNCHER_DEST" bash "$INSTALLER" >/dev/null
-    ok "launcher" "$LAUNCHER_DEST"
+    info "launcher" "running $SCRIPT_DIR/install-launcher.sh"
+    AI_HATS_LAUNCHER_DEST="$LAUNCHER_DEST" bash "$SCRIPT_DIR/install-launcher.sh" >/dev/null
 else
-    err "launcher" "install-launcher.sh not found next to bootstrap.sh"
-    err "hint" "clone the ai-hats repo and re-run from scripts/"
-    exit 1
+    # Piped (`curl … bootstrap.sh | bash`): fetch the installer; it self-fetches
+    # the launcher binary from the same public repo.
+    info "launcher" "fetching install-launcher.sh"
+    _installer="$(mktemp)"
+    trap 'rm -f "$_installer"' EXIT
+    if ! curl -fsSL "$INSTALL_LAUNCHER_URL" -o "$_installer"; then
+        err "launcher" "could not fetch $INSTALL_LAUNCHER_URL"
+        err "hint" "clone the ai-hats repo and run scripts/bootstrap.sh locally"
+        exit 1
+    fi
+    AI_HATS_LAUNCHER_DEST="$LAUNCHER_DEST" bash "$_installer" >/dev/null
 fi
+ok "launcher" "$LAUNCHER_DEST"
 
 if [[ ! -x "$LAUNCHER_DEST" ]]; then
     err "launcher" "expected $LAUNCHER_DEST after install; not found/executable"

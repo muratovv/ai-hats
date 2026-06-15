@@ -85,10 +85,7 @@ def _run_self_update() -> bool:
 
     from .maintenance import _build_update_cmd, _require_uv
 
-    # HATS-763 (D2): uv is the single engine — fail loud with the install hint
-    # before invoking it, so a missing uv shows a one-line message instead of a
-    # raw FileNotFoundError traceback mid-wizard.
-    _require_uv()
+    _require_uv()  # D2 (HATS-763): fail loud before invoking uv, not a raw traceback
     cmd = _build_update_cmd()
     with console.status(
         "[cyan]Downloading ai-hats from GitHub …[/] "
