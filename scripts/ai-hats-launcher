@@ -95,12 +95,21 @@ heal_if_needed() {
         exit 1
     fi
     echo "  · ai-hats venv missing or broken — recreating $VENV" >&2
+    # HATS-763: uv engine. The launcher is host-global and least-recoverable, so
+    # it never auto-installs uv (no curl|sh from a routine invocation) — it fails
+    # loud with the one-liner. Deliberate onboarding (bootstrap.sh) auto-installs.
+    if ! command -v uv >/dev/null 2>&1; then
+        echo "ai-hats: uv is required but not found on PATH." >&2
+        echo "  Install: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+        echo "  then re-run. (uv is the single host prerequisite — HATS-763.)" >&2
+        exit 1
+    fi
     rm -rf "$VENV"
-    python3 -m venv "$VENV"
+    uv venv --python 3.11 "$VENV"
     # Bare install so the subsequent exec into <venv>/bin/ai-hats succeeds.
     # The python self update (called next via delegate) will then re-install
-    # with --force-reinstall and render the rich diff + auto-bump.
-    "$VENV/bin/pip" install --quiet "$PIP_TARGET"
+    # with --reinstall and render the rich diff + auto-bump.
+    uv pip install --quiet --python "$VENV/bin/python" "$PIP_TARGET"
 }
 
 # --- Self update / self init: heal-then-delegate. Never bypass the python
