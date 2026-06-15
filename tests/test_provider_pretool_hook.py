@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType, HooksConfig
+from ai_hats.models import ComponentType
 from ai_hats.paths import hooks_dir, managed_runtime_hook_filename
 from ai_hats.providers import ClaudeProvider, GeminiProvider
 
@@ -61,7 +61,7 @@ def _skill_with_runtime_hooks(
 def _result(skills: list[ResolvedComponent]) -> CompositionResult:
     return CompositionResult(
         name="r", priorities=[], rules=[], skills=skills,
-        hooks=HooksConfig(), injections=[],
+        injections=[],
     )
 
 

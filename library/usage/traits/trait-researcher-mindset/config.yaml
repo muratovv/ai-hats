@@ -4,7 +4,6 @@ composition:
   rules: []
   skills:
     - tool-evaluation-protocol
-  hooks: {}
 injection: |
   ## RESEARCHER MINDSET
 

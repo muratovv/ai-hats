@@ -7,20 +7,17 @@ name: finalize-subagent
 #   - `make_audit`                     — shared (structured audit.md parity)
 #   - `maybe_spawn_session_reviewer`   — shared (HATS-530: auto-retro spawn,
 #                                        same threshold/policy as HITL)
-#   - `run_session_end`                — HITL-only (SESSION_END hooks +
-#                                        cyan banner; SubAgent has no TTY
-#                                        for the banner and the pre-HATS-535
-#                                        contract is "no SESSION_END hooks
-#                                        for sub-agents", preserved here)
+#   - `run_session_end`                — HITL-only (cyan retro banner;
+#                                        SubAgent has no TTY for the banner)
 #
 # HATS-530 closes the HITL/SubAgent auto-retro asymmetry: before this,
 # only HITL sessions triggered `_spawn_session_reviewer_background` at
 # session-end. Now the SubAgent path triggers the same reviewer when
 # the retro threshold is met.
 #
-# If SubAgent SESSION_END hooks become desired later, append
-# `- id: run_session_end` — the runner already wires hooks_env into
-# the finalize initial state, no Python change required.
+# (HATS-707: the SESSION_END lifecycle-hook dispatch `run_session_end`
+# once carried was deleted — the `hooks:` channel had zero consumers —
+# so `run_session_end` is now banner-only and stays HITL-only.)
 steps:
   - id: make_audit
   # HATS-664: sibling of make_audit — emits usage.json (usage/v1).

@@ -1378,18 +1378,6 @@ class Assembler:
             "traits": effective_traits,
             "rules": [r.name for r in result.rules],
             "skills": [s.name for s in result.skills],
-            "hooks": {
-                k: getattr(result.hooks, k)
-                for k in (
-                    "session_start",
-                    "session_end",
-                    "task_start",
-                    "task_complete",
-                    "task_failed",
-                    "error",
-                )
-                if getattr(result.hooks, k)
-            },
             "injections_count": len(result.injections),
             "provenance": provenance,
         }

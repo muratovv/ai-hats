@@ -23,12 +23,6 @@ composition:
     - network-change-verification
     - distributed-systems-checklist
     - trust-boundary-mapping
-  hooks:
-    session_start: []
-    session_end: []
-    task_complete:
-      - git status
-      - git diff --stat
 injection: |
   # ROLE: SITE RELIABILITY ENGINEER
 

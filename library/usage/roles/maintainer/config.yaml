@@ -20,12 +20,6 @@ composition:
     # push target is refs/heads/master. Pure infrastructure (no agent-side
     # decision logic); hard gate, no env-var bypass.
     - maintainer-quality-gate
-  hooks:
-    session_start: []
-    session_end: []
-    task_complete:
-      - git status
-      - git diff --stat
 # Composition rationale (author-facing — NOT injected into the agent prompt).
 # What sets the `maintainer` role apart from the base `assistant` role:
 #   - Maintainer-specific gear via the `ai-hats-maintainer` trait: E2E gate,

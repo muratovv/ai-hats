@@ -6,7 +6,6 @@ composition:
     - review-hypothesis
     - review-proposal
     - review-session
-  hooks: {}
 injection: |
   ## REFLECT MODE
 

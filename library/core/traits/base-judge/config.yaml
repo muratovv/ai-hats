@@ -12,7 +12,6 @@ composition:
   skills:
     - tool-call-hygiene
     - request-supervisor
-  hooks: {}
 injection: |
   ## JUDGE BEHAVIOR (L1 — analysis + ack'd mutations + HITL dialogue)
 

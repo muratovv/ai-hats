@@ -18,7 +18,6 @@ composition:
   rules: []
   skills:
     - judge-protocol
-  hooks: {}
 injection: |
   # ROLE: JUDGE (Phase 2 — HITL HYP closure + PROP triage)
 

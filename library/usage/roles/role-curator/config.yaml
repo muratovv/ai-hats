@@ -15,12 +15,6 @@ composition:
   rules: []
   skills:
     - review-role
-  hooks:
-    session_start: []
-    session_end: []
-    task_complete:
-      - git status
-      - git diff --stat
 injection: |
   # ROLE: ROLE CURATOR
 

@@ -20,6 +20,21 @@ since the latest tag lives under **Unreleased** until the next release.
   session artefacts, making the channel falsifiable.
 
 ### Changed
+- **Deleted the dead lifecycle `hooks:` composition channel; re-homed the one
+  real consumer** (HATS-707, child of HATS-699 / HATS-698 audit). The
+  role/trait `composition.hooks` channel (`CompositionResult.hooks`,
+  `HooksConfig`, the `LifecycleEvent` enum, `composer._merge_hooks`, and
+  `HooksRunner`) was composed and displayed in `config status` but had **zero**
+  runtime execution consumers — `HooksRunner` scanned `library/hooks/` by
+  filename convention (empty of lifecycle scripts since HATS-314) and never
+  read `result.hooks`; `TASK_*` events never fired. `config status` no longer
+  advertises a hook subsystem that never runs. The single piece of real intent —
+  the maintainer's `session_start: [ai-hats self sync-hooks]` git-hook drift net
+  (HATS-593 layer B), itself silently dead — is re-homed to a direct
+  `WrapRunner._resync_git_hooks()` call at session start, for every role
+  (idempotent, fail-open). Existing user configs with a `hooks:` block are
+  unaffected (`Composition` is `extra="ignore"`; no migration). `RunSessionEnd`
+  is now the retro-banner-only finalize step.
 - **Claude system prompt no longer carries the `AVAILABLE SKILLS` index**
   (HATS-701, audit F2 of HATS-698, child of HATS-699 — harness optimization).
   `ClaudeProvider.build_system_prompt` appended a skills index built from

@@ -14,7 +14,6 @@ composition:
     # `see rule X` pointer to a rule the agent cannot read. Same invariant as the
     # G2 unit test; pure infrastructure (hook carrier).
     - rule-delivery-gate
-  hooks: {}
 injection: |
   ## SKILL ENGINEER
 

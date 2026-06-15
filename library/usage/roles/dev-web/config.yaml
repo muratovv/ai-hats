@@ -11,14 +11,6 @@ composition:
     - dev::web
   rules: []
   skills: []
-  hooks:
-    session_start: []
-    session_end: []
-    task_complete:
-      - npm run lint
-      - npm run test
-      - npm run build
-      - npx playwright test
 injection: |
   # ROLE: WEB / FRONTEND DEVELOPER
 

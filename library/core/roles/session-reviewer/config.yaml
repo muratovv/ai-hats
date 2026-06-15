@@ -10,7 +10,6 @@ composition:
     - trait-reflect-mode
   rules: []
   skills: []
-  hooks: {}
 injection: |
   # ROLE: SESSION REVIEWER (post-session, single LLM pass)
 
