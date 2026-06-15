@@ -18,6 +18,10 @@ from ai_hats.composer import Composer, CompositionResult, ResolvedComponent
 from ai_hats.models import ComponentType, HooksConfig
 from ai_hats.providers import ALWAYS_ON_RULES, ClaudeProvider, GeminiProvider
 from ai_hats.resolver import LibraryResolver
+from ai_hats.rule_delivery import (
+    SUMMARIZED_IN_INJECTION,
+    find_dangling_rule_pointers,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIB_LAYERS = [REPO_ROOT / "library" / "core", REPO_ROOT / "library" / "usage"]
@@ -99,3 +103,41 @@ def test_always_on_rule_body_reaches_prompt(rule_name, provider_cls):
     assert f"### {rule_name}" in prompt
     body = prompt.split(f"### {rule_name}", 1)[1]
     assert body.strip(), f"{rule_name} heading present but body empty (lazy load broke)"
+
+
+# --------------------------------------------------------------------------- #
+# G2 — no `see rule X` pointer reaches the agent for a rule it cannot read. The
+# invariant lives in find_dangling_rule_pointers (shared by this test and the
+# rule-delivery-gate pre-commit hook). This is the test that would have caught
+# HATS-700.
+# --------------------------------------------------------------------------- #
+
+
+def test_no_dangling_rule_pointers_in_shipped_library():
+    violations = find_dangling_rule_pointers(REPO_ROOT / "library")
+    assert violations == [], (
+        "Undelivered `see rule X` pointers — each rule must be always-on or "
+        "registered in SUMMARIZED_IN_INJECTION:\n"
+        + "\n".join(f"  {v.source}: see rule `{v.rule}`" for v in violations)
+    )
+
+
+def test_summarized_allowlist_has_no_always_on_overlap():
+    # An allowlisted rule is, by definition, NOT delivered as a body; if it is
+    # also always-on the registration is contradictory/stale.
+    assert SUMMARIZED_IN_INJECTION.isdisjoint(ALWAYS_ON_RULES)
+
+
+def test_g2_catches_an_undelivered_pointer(tmp_path):
+    # Sanity: the gate is not vacuous. A trait that points at a rule which is
+    # neither always-on nor allowlisted must be flagged.
+    trait = tmp_path / "core" / "traits" / "trait-bad"
+    trait.mkdir(parents=True)
+    (trait / "config.yaml").write_text(
+        "name: trait-bad\n"
+        "injection: |\n"
+        "  Do the thing — see rule `rule_totally_undelivered`.\n"
+    )
+    violations = find_dangling_rule_pointers(tmp_path)
+    assert [v.rule for v in violations] == ["rule_totally_undelivered"]
+
