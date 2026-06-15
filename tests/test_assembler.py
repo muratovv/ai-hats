@@ -1081,21 +1081,24 @@ def test_user_skill_dir_survives_bump(project_with_library):
 # --------------------------------------------------------------------- #
 
 
-def test_tool_call_hygiene_is_always_on():
+def test_tool_call_hygiene_is_always_on(tmp_path):
     """dev_rule_tool_call_hygiene must appear in system prompt (HATS-251)."""
-    from pathlib import Path
-
     from ai_hats.composer import CompositionResult, ResolvedComponent
     from ai_hats.models import ComponentType, HooksConfig
     from ai_hats.providers import ALWAYS_ON_RULES, ClaudeProvider
 
     assert "dev_rule_tool_call_hygiene" in ALWAYS_ON_RULES
 
+    # HATS-700: the always-on body is read on demand from source_path/rule.md.
+    rule_dir = tmp_path / "dev_rule_tool_call_hygiene"
+    rule_dir.mkdir()
+    (rule_dir / "rule.md").write_text(
+        "# Rule: Tool-Call Hygiene\nUse dedicated tools over Bash."
+    )
     rule = ResolvedComponent(
         name="dev_rule_tool_call_hygiene",
         component_type=ComponentType.RULE,
-        source_path=Path("/dev/null"),
-        injection="# Rule: Tool-Call Hygiene\nUse dedicated tools over Bash.",
+        source_path=rule_dir,
     )
     result = CompositionResult(
         name="test",

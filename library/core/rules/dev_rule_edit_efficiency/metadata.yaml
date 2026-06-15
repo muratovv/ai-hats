@@ -1,4 +1,0 @@
-name: dev_rule_edit_efficiency
-description: Use Write for new/rewritten files, Edit only for surgical changes, max 3 consecutive Edits per file
-author: ai-hats
-tags: [development, efficiency, tools]

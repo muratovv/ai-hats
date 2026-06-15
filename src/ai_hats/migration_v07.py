@@ -40,6 +40,7 @@ from pathlib import Path
 
 from .composer import CompositionResult, ResolvedComponent
 from .models import ProjectConfig
+from .resolver import read_rule_body
 
 
 # Tier-1 fixed root files and the kind tag each carries.
@@ -448,7 +449,11 @@ def plan_migration(
     """
     report = MigrationReport()
     trait_baseline = composition.trait_injections
-    rule_baseline = {r.name: r.injection for r in composition.rules}
+    # HATS-700: rule bodies are no longer eager-loaded into ``injection``; read
+    # the deliverable text on demand from the resolved ``source_path`` (same
+    # bytes the v0.6 canonical writer materialised) so edit-detection stays
+    # byte-accurate.
+    rule_baseline = {r.name: read_rule_body(r.source_path) for r in composition.rules}
 
     for path, kind in collect_tier1(canonical_dir):
         baseline = _tier1_baseline_for(

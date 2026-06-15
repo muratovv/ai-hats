@@ -50,6 +50,8 @@ The two component kinds that ai-hats injects into the **provider** prompt (`CLAU
 
 Catalog — `ai-hats list {rules,skills}`. Formats — see [3]; library layout and override precedence — see [9].
 
+**Rule-delivery contract (HATS-700).** Not every composed rule's body reaches the prompt. Only the **always-on** set (`providers.ALWAYS_ON_RULES` — safety-critical + framework invariants) is injected in full under the prompt's `## RULES` section; every other composed rule is **provenance only** — its body is not delivered, and its canonical guidance is the compact summary in the trait/role injection that references it. A `see rule X` pointer must therefore name a rule that is always-on or registered in `SUMMARIZED_IN_INJECTION` (`ai_hats/rule_delivery.py`); the **rule-delivery-gate** pre-commit hook and the G2 unit test (`find_dangling_rule_pointers`) enforce this so an author never ships a pointer to a rule the agent cannot read.
+
 ## Backlog
 
 Three kinds of cards with strict state machines. **All operations go through the `ai-hats task …` CLI** — direct access to `<ai_hats_dir>/tracker/**` is forbidden.
