@@ -188,7 +188,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import random
 import subprocess
 import time
@@ -198,6 +197,7 @@ from typing import Any, Iterator
 
 import filelock
 
+from .atomic_io import atomic_write_text
 from .paths import worktrees_dir
 
 logger = logging.getLogger(__name__)
@@ -328,11 +328,8 @@ def _acquire(state_path: Path, *, timeout: float = LOCK_TIMEOUT) -> Iterator[Non
 
 
 def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
-    """Write JSON atomically via ``tmp + os.replace`` (POSIX-atomic)."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2))
-    os.replace(tmp, path)
+    """Write JSON atomically via the canonical helper (HATS-716)."""
+    atomic_write_text(path, json.dumps(data, indent=2))
 
 
 def _create_lock_path(project_dir: Path) -> Path:

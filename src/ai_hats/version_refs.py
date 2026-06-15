@@ -29,6 +29,7 @@ import sys
 import uuid
 from pathlib import Path
 
+from .atomic_io import atomic_write_text
 from .paths import _is_safe_sha_component, versions_root
 
 # One run_id per process — stable across repeated ``create_session`` calls
@@ -145,18 +146,14 @@ def write_current_run_ref(project_dir: Path) -> Path | None:
     if sha is None:
         return None
     pid = os.getpid()
-    d = refs_dir(project_dir)
-    d.mkdir(parents=True, exist_ok=True)
     ref = {
         "run_id": _process_run_id(),
         "root_pid": pid,
         "start_time": _proc_start_time(pid),
         "sha": sha,
     }
-    dest = d / f"{pid}.json"
-    tmp = d / f".{pid}.json.tmp"
-    tmp.write_text(json.dumps(ref), encoding="utf-8")
-    tmp.replace(dest)
+    dest = refs_dir(project_dir) / f"{pid}.json"
+    atomic_write_text(dest, json.dumps(ref))
     return dest
 
 
