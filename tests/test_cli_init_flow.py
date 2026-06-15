@@ -566,6 +566,17 @@ def test_update_command_uses_uv_reinstall():
     )
 
 
+def test_run_self_update_fails_loud_without_uv(monkeypatch):
+    """HATS-763 D2: the wizard self-update step fails loud (clean exit, not a raw
+    FileNotFoundError traceback) when uv is absent from PATH."""
+    from ai_hats.cli.assembly import _run_self_update
+
+    monkeypatch.setattr("shutil.which", lambda _name: None)
+    with pytest.raises(SystemExit) as exc:
+        _run_self_update()
+    assert exc.value.code == 1
+
+
 def test_update_command_runs_via_cli(cli_project, monkeypatch):
     """ai-hats self updateinvokes pip with correct flags (mocked subprocess)."""
     import subprocess

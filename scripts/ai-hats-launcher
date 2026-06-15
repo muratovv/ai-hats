@@ -91,7 +91,7 @@ heal_if_needed() {
     if ! is_default_venv; then
         echo "ai-hats: override venv $VENV is missing or broken." >&2
         echo "  Override venv is user-owned; ai-hats will not auto-recreate it." >&2
-        echo "  Fix manually:  python3 -m venv $VENV && $VENV/bin/pip install '$PIP_TARGET'" >&2
+        echo "  Fix manually:  uv venv --python 3.11 $VENV && uv pip install --python $VENV/bin/python '$PIP_TARGET'" >&2
         exit 1
     fi
     echo "  · ai-hats venv missing or broken — recreating $VENV" >&2

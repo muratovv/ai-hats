@@ -13,7 +13,7 @@ the project itself is what may be missing dependencies.
 Two entry points:
 
 * :func:`bootstrap_or_die` — called first in ``cli.main()``. Detects missing
-  runtime deps; pip-installs them; ``os.execv`` re-execs the same command
+  runtime deps; uv-installs them; ``os.execv`` re-execs the same command
   in a fresh interpreter so freshly-installed modules are importable.
 * :func:`verify_after_install` — called via ``python -m ai_hats._bootstrap
   verify`` from ``cli.maintenance.update()`` as a stage-2 check inside a
@@ -178,13 +178,13 @@ def verify_after_install() -> int:
         f"ai-hats: post-install verify found missing deps {missing}; healing…\n"
     )
     if attempt_self_heal(missing):
-        # Re-check — pip can succeed but install nothing useful in pathological
+        # Re-check — uv can succeed but install nothing useful in pathological
         # cases (e.g. wheel for wrong platform). Trust but verify.
         still_missing = find_missing_runtime_deps()
         if not still_missing:
             return 0
         sys.stderr.write(
-            f"ai-hats: deps still missing after pip: {still_missing}\n"
+            f"ai-hats: deps still missing after uv install: {still_missing}\n"
         )
     sys.stderr.write(
         f"  manual command: {_rescue_command(missing)}\n"
