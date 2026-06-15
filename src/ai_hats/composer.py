@@ -354,13 +354,17 @@ class Composer:
                 errors.append(f"Rule '{rule_name}' not found")
                 continue
 
-            content = self.resolver.rule_content(rule_name)
+            # HATS-700: do NOT eager-load the rule.md body here. Only the 6
+            # always-on rules reach the prompt; the provider reads their body on
+            # demand from ``source_path`` (read_rule_body). Non-always-on bodies
+            # are intentionally undelivered (trait/role summaries are the
+            # delivery channel). Loading every composed rule body per session was
+            # ~16 KB reaching no channel. Symmetric to HATS-706 (skills).
             rules.append(
                 ResolvedComponent(
                     name=rule_name,
                     component_type=ComponentType.RULE,
                     source_path=rule_dir,
-                    injection=content or "",
                 )
             )
 

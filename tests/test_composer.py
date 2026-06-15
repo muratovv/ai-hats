@@ -111,6 +111,18 @@ def test_compose_resolves_skills(composer):
     assert "Test Skill" in (skill.source_path / "SKILL.md").read_text()
 
 
+def test_compose_does_not_eager_load_rule_bodies(composer):
+    # HATS-700: rule bodies are NOT eager-loaded into injection. Only the 6
+    # always-on rules reach the prompt, and the provider reads their body on
+    # demand from source_path; non-always-on bodies are intentionally
+    # undelivered. Eager-loading every composed rule body per session was dead
+    # work (~16 KB/session reaching no channel). Symmetric to HATS-706 (skills).
+    result = composer.compose("test-role")
+    rule = next(r for r in result.rules if r.name == "test_rule")
+    assert rule.injection == ""
+    assert "Do good things." in (rule.source_path / "rule.md").read_text()
+
+
 def test_compose_missing_role(composer):
     result = composer.compose("nonexistent")
     assert len(result.errors) > 0

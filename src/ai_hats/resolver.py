@@ -7,6 +7,20 @@ from pathlib import Path
 from .models import ComponentConfig, ComponentType, resolve_namespace
 
 
+def read_rule_body(rule_dir: Path) -> str:
+    """Read a rule's ``rule.md`` body, or ``""`` if the file is absent.
+
+    HATS-700: the file on disk is the single source of truth for a rule's
+    deliverable text. Consumers that need a body read it on demand from the
+    resolved ``source_path`` — the provider (for always-on rules, at
+    prompt-build) and the v0.7 migration baseline — instead of the composer
+    eager-loading every composed rule body into ``ResolvedComponent.injection``
+    each session (dead work; only the 6 always-on rules ever reached a channel).
+    """
+    rule_md = rule_dir / "rule.md"
+    return rule_md.read_text() if rule_md.exists() else ""
+
+
 class LibraryResolver:
     """Resolves component references to filesystem paths across multiple library roots."""
 
