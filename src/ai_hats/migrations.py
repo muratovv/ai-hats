@@ -75,7 +75,7 @@ import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
-from .assembler import AGENT_DIR
+from .constants import AGENT_DIR
 from .paths import (
     hooks_dir as _lib_hooks_dir,
     legacy_paths_by_class,
