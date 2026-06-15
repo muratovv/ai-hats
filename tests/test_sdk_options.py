@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType, HooksConfig
+from ai_hats.models import ComponentType
 from ai_hats.sdk_options import (
     _build_plugins,
     _build_system_prompt,
@@ -27,7 +27,6 @@ def _empty_composition(name: str = "test-role") -> CompositionResult:
         priorities=[],
         rules=[],
         skills=[],
-        hooks=HooksConfig(),
         injections=[],
     )
 
@@ -89,7 +88,6 @@ def test_build_options_priorities_render_in_append(project_dir: Path) -> None:
         priorities=["Reliability", "Cleanliness"],
         rules=[],
         skills=[],
-        hooks=HooksConfig(),
         injections=[],
     )
     opts = build_options(
@@ -122,7 +120,6 @@ def test_build_options_always_on_rule_appears_in_append(
         priorities=[],
         rules=[always_on],
         skills=[],
-        hooks=HooksConfig(),
         injections=[],
     )
     append = build_options(
@@ -150,7 +147,6 @@ def test_build_options_non_always_on_rule_not_inlined(
         priorities=[],
         rules=[other_rule],
         skills=[],
-        hooks=HooksConfig(),
         injections=[],
     )
     append = build_options(
@@ -174,7 +170,6 @@ def test_build_options_skills_absent_from_append_but_materialized(
         priorities=[],
         rules=[],
         skills=[skill],
-        hooks=HooksConfig(),
         injections=[],
     )
     opts = build_options(comp, project_dir=project_dir, session_id="sid")
@@ -204,7 +199,6 @@ def test_build_options_plugins_populated_when_skills_present(
         priorities=[],
         rules=[],
         skills=[skill],
-        hooks=HooksConfig(),
         injections=[],
     )
     opts = build_options(
@@ -400,7 +394,6 @@ def test_build_system_prompt_expands_ai_hats_dir_placeholder(
         priorities=[],
         rules=[],
         skills=[],
-        hooks=HooksConfig(),
         injections=["See files under <ai_hats_dir>/library/"],
     )
     sp = _build_system_prompt(comp, project_dir)

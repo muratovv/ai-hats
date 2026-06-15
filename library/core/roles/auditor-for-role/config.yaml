@@ -11,7 +11,6 @@ composition:
   rules: []
   skills:
     - role-coherence-protocol
-  hooks: {}
 injection: |
   # ROLE: AUDITOR-FOR-ROLE (role coherence audit)
 

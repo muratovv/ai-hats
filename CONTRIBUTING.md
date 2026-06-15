@@ -122,10 +122,11 @@ re-runs `ai-hats self init`. To close that drift window (HATS-593):
   (`git_hooks/self-heal-hooks.sh`) that calls `sync-hooks` at the moment drift
   is introduced, so hooks self-heal for humans *and* agents — including a
   `git push` from a plain terminal.
-- The `ai-hats-maintainer` trait additionally declares a `session_start`
-  lifecycle hook that runs `sync-hooks` as an in-session safety net (covers
-  `ai-hats execute`; the post-merge/post-checkout layer is what covers a bare
-  terminal).
+- `WrapRunner` additionally runs `sync-hooks` directly at session start
+  (`_resync_git_hooks`, HATS-707) as an in-session safety net for every role
+  (covers `ai-hats execute`; the post-merge/post-checkout layer is what covers
+  a bare terminal). Re-homed from a dead `session_start` lifecycle-hook
+  declaration that never executed.
 
 **Failure policy.** Every self-heal caller is **fail-open** — it always
 `exit 0` so a heal failure never aborts the triggering git/session op, and it

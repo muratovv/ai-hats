@@ -12,7 +12,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType, HooksConfig, RuntimeHook
+from ai_hats.models import ComponentType, RuntimeHook
 
 
 def _skill(name: str, source_path: Path) -> ResolvedComponent:
@@ -60,7 +60,6 @@ def _result(skills: list[ResolvedComponent]) -> CompositionResult:
         priorities=[],
         rules=[],
         skills=skills,
-        hooks=HooksConfig(),
         injections=[],
     )
 

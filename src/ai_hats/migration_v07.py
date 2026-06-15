@@ -748,14 +748,11 @@ def empty_composition() -> CompositionResult:
     compose, so any Tier-1 file on disk is by definition baselineless and
     classifies as a user edit (conservative — release-gate fork A).
     """
-    from .models import HooksConfig
-
     return CompositionResult(
         name="",
         priorities=[],
         rules=[],
         skills=[],
-        hooks=HooksConfig(),
         injections=[],
     )
 

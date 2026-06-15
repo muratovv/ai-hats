@@ -6,9 +6,6 @@ composition:
     - global_rule_destructive_actions
     - rule_harness_reminder_hygiene
   skills: []
-  hooks:
-    session_end:
-      - skills/backlog-manager/hooks/session_end_auto-retro.sh
 injection: |
   ## BASE BEHAVIOR
 

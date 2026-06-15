@@ -81,15 +81,6 @@ class TaskState(str, Enum):
         return target in self.valid_transitions()[self]
 
 
-class LifecycleEvent(str, Enum):
-    SESSION_START = "session_start"
-    SESSION_END = "session_end"
-    TASK_START = "task_start"
-    TASK_COMPLETE = "task_complete"
-    TASK_FAILED = "task_failed"
-    ERROR = "error"
-
-
 class FeedbackPolicy(str, Enum):
     OFF = "off"
     ALWAYS = "always"
@@ -122,40 +113,10 @@ class _YamlModel(BaseModel):
 # ----- Composition + components -----
 
 
-class HooksConfig(_YamlModel):
-    session_start: list[str] = Field(default_factory=list)
-    session_end: list[str] = Field(default_factory=list)
-    task_start: list[str] = Field(default_factory=list)
-    task_complete: list[str] = Field(default_factory=list)
-    task_failed: list[str] = Field(default_factory=list)
-    error: list[str] = Field(default_factory=list)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _reject_unknown_events(cls, data: Any) -> Any:
-        # Only validate dict input (YAML load path). Direct kwarg construction
-        # (HooksConfig(session_start=[...])) is type-checked by pydantic itself
-        # and cannot carry unknown event keys.
-        if not isinstance(data, dict):
-            return data
-        allowed = {e.value for e in LifecycleEvent}
-        unknown = sorted(set(data) - allowed)
-        if unknown:
-            raise ValueError(
-                f"unknown hook event(s): {', '.join(unknown)}; "
-                f"allowed: {', '.join(e.value for e in LifecycleEvent)}"
-            )
-        return data
-
-    def get_scripts(self, event: LifecycleEvent) -> list[str]:
-        return getattr(self, event.value, [])
-
-
 class Composition(_YamlModel):
     traits: list[str] = Field(default_factory=list)
     rules: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
-    hooks: HooksConfig = Field(default_factory=HooksConfig)
 
 
 class ComponentConfig(_YamlModel):

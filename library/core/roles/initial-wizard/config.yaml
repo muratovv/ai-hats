@@ -11,10 +11,6 @@ composition:
     - dev_rule_tool_call_hygiene
   skills:
     - requirements-interview
-  hooks:
-    session_start: []
-    session_end: []
-    task_complete: []
 injection: |
   # ROLE: INITIAL WIZARD
 

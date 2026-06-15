@@ -4,7 +4,6 @@ composition:
   rules: []
   skills:
     - golang-cli
-  hooks: {}
 injection: |
   ## GO CLI
 

@@ -4,5 +4,4 @@ composition:
   rules: []
   skills:
     - gworkspace-cli
-  hooks: {}
 injection: ""

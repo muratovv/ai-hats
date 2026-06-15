@@ -4,7 +4,6 @@ composition:
   rules: []
   skills:
     - golang-stretchr-testify
-  hooks: {}
 injection: |
   ## GO TESTING (EXTENDED)
 

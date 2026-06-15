@@ -9,7 +9,6 @@ composition:
     - golang-samber-hot
     - golang-samber-ro
     - golang-popular-libraries
-  hooks: {}
 injection: |
   ## GO SAMBER ECOSYSTEM
 

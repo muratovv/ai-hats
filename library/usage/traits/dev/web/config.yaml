@@ -5,7 +5,6 @@ composition:
   skills:
     - ui-ux-review
     - webapp-testing
-  hooks: {}
 injection: |
   ## WEB DEVELOPMENT (JS/TS + REACT)
 

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from ai_hats.cli.reflect import _materialize_target_composition
 from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType, HooksConfig
+from ai_hats.models import ComponentType
 
 
 SKILL_BODY = "# Demo Skill\n\nThe full body that only reflect needs.\n"
@@ -42,7 +42,6 @@ def test_reflect_writes_skill_body_from_source_path(tmp_path: Path) -> None:
         priorities=[],
         rules=[],
         skills=[skill],
-        hooks=HooksConfig(),
         injections=[],
     )
 
