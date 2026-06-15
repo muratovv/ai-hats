@@ -57,17 +57,19 @@ def _build_update_cmd(ref: str | None = None) -> list[str]:
         target = f"{url}@{ref}"
     else:
         target = f"ai-hats @ {url}" if "://" in url else url
-    # HATS-563: dropped --no-cache-dir. --force-reinstall already re-installs
-    # the named target unconditionally; transitive deps (click, pydantic,
-    # rich, pyyaml, ...) are safe to serve from the local wheel cache. Keeps
-    # `self update` fast even when the host has a warm pip cache. UX bonus
-    # to all users; also unlocks ~100s on the e2e+smoke gate (HATS-550).
+    # HATS-763: uv engine. `--python sys.executable` is load-bearing (B1) — a
+    # bare `uv pip install` resolves the nearest discoverable venv (e.g. a cwd
+    # `.venv`), not the running interpreter that `python -m pip` targeted
+    # implicitly. `--reinstall` is uv's `--force-reinstall`; transitive deps are
+    # served from uv's content-addressed cache (~/.cache/uv), keeping `self
+    # update` fast on a warm cache (supersedes the HATS-563 pip-cache note).
     return [
-        sys.executable,
-        "-m",
+        "uv",
         "pip",
         "install",
-        "--force-reinstall",
+        "--python",
+        sys.executable,
+        "--reinstall",
         target,
     ]
 
@@ -250,7 +252,9 @@ def _build_install_cmd(python_exe: str, url: str, ref: str) -> list[str]:
     install spec.
     """
     target = f"ai-hats @ {url}@{ref}" if "://" in url else url
-    return [python_exe, "-m", "pip", "install", "--force-reinstall", target]
+    # HATS-763: uv engine. `--python <python_exe>` is load-bearing (B1) — a bare
+    # `uv pip install` targets the nearest discoverable venv, NOT this interp.
+    return ["uv", "pip", "install", "--python", python_exe, "--reinstall", target]
 
 
 def _flip_current(project_dir: Path, sha: str) -> None:
