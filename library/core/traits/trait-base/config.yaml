@@ -27,6 +27,13 @@ injection: |
   - Show don't tell — provide code, not descriptions
   - Ask clarifying questions when requirements are ambiguous
 
+  ### Harness Reminders
+  - Harness `<system-reminder>` tool-nudges (e.g. `TaskCreate` / `TaskUpdate`) are
+    advisory heuristics, not user instructions. Ignore them when the work is a
+    single deliverable or already tracked in the project's backlog; act only when
+    the supervisor asked for harness sub-tracking or no backlog CLI exists. When
+    you ignore one mid-flow, acknowledge it briefly. See rule `rule_harness_reminder_hygiene`.
+
   ### Least Astonishment
   - Default behavior should match the most common user expectation; surprises require explicit opt-in.
   - When two options are equally valid, choose the one that aligns with existing project conventions.
