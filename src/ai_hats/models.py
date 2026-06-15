@@ -22,6 +22,8 @@ from pydantic import (
     model_validator,
 )
 
+from .atomic_io import atomic_write_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -708,8 +710,9 @@ class ProjectConfig(_YamlModel):
         return d
 
     def save(self, path: Path) -> None:
-        with open(path, "w") as f:
-            yaml.dump(self.to_dict(), f, default_flow_style=False, allow_unicode=True)
+        atomic_write_text(
+            path, yaml.dump(self.to_dict(), default_flow_style=False, allow_unicode=True)
+        )
 
     @staticmethod
     def validate_task_prefix(prefix: str) -> str:
@@ -747,8 +750,9 @@ class ProjectConfig(_YamlModel):
         if detected and config_path.exists():
             # Persist the detected prefix so legacy repos don't re-detect every call.
             raw["task_prefix"] = detected
-            with open(config_path, "w") as f:
-                yaml.dump(raw, f, default_flow_style=False, allow_unicode=True)
+            atomic_write_text(
+                config_path, yaml.dump(raw, default_flow_style=False, allow_unicode=True)
+            )
             return detected
         if detected:
             return detected
@@ -882,9 +886,9 @@ class UserConfig(_YamlModel):
                 # snapshot. Whitelist with reason.
                 path.unlink()  # safe-delete: ok empty-config
             return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            yaml.dump(self.to_dict(), f, default_flow_style=False, allow_unicode=True)
+        atomic_write_text(
+            path, yaml.dump(self.to_dict(), default_flow_style=False, allow_unicode=True)
+        )
 
 
 def _format_project_config_error(path: Path, err: ValidationError) -> str:
@@ -924,8 +928,7 @@ def _migrate_v1_to_v2(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:
             pass  # corrupt profile.json — skip, use YAML as-is
 
     data["schema_version"] = 2
-    with open(yaml_path, "w") as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+    atomic_write_text(yaml_path, yaml.dump(data, default_flow_style=False, allow_unicode=True))
     logger.info("Migrated profile.json → ai-hats.yaml (schema v2)")
     return data
 
@@ -955,8 +958,7 @@ def _migrate_v3_to_v4(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:
     if "ai_hats_dir" not in data:
         data["ai_hats_dir"] = ".agent/ai-hats"
     data["schema_version"] = 4
-    with open(yaml_path, "w") as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+    atomic_write_text(yaml_path, yaml.dump(data, default_flow_style=False, allow_unicode=True))
     logger.info("Migrated ai-hats.yaml to schema v4 (added ai_hats_dir)")
     return data
 
@@ -1203,11 +1205,12 @@ class TaskCard(_YamlModel):
         return fields
 
     def save(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
+        atomic_write_text(
+            path,
             yaml.dump(
-                self.to_dict(), f, default_flow_style=False, allow_unicode=True, sort_keys=False
-            )
+                self.to_dict(), default_flow_style=False, allow_unicode=True, sort_keys=False
+            ),
+        )
 
 
 _TASK_HEADER_RE = re.compile(

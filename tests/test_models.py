@@ -1020,3 +1020,29 @@ def test_task_card_attachments_not_captured_into_extras():
     card = TaskCard.from_dict(data)
     assert len(card.attachments) == 1
     assert "attachments" not in card.extras
+
+
+def test_task_card_save_is_atomic_on_serialization_crash(tmp_path, monkeypatch):
+    """HATS-716: a crash mid-save must never truncate an existing task.yaml.
+
+    Fails under the legacy ``open(path,'w') + yaml.dump`` (open truncates before
+    yaml.dump writes a byte); passes once save routes through atomic_io
+    (serialize fully, then atomic replace — the target is untouched on failure).
+    """
+    import ai_hats.models as models_mod
+
+    p = tmp_path / "task.yaml"
+    TaskCard(id="T-1", title="Original").save(p)
+    original = p.read_text()
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("simulated crash during YAML serialization")
+
+    monkeypatch.setattr(models_mod.yaml, "dump", boom)
+
+    with pytest.raises(RuntimeError):
+        TaskCard(id="T-1", title="New title that must not land").save(p)
+
+    assert p.read_text() == original  # never truncated
+    orphans = [f for f in p.parent.iterdir() if f.name.startswith(".task.yaml.")]
+    assert orphans == []
