@@ -140,9 +140,8 @@ def _read_baked_commit_sha() -> str | None:
 def _coerce_to_https(url: str) -> str:
     """Map a git+ssh URL form to https so ``git ls-remote`` works without keys.
 
-    The public default is now ``git+https://`` (HATS-766), but an
-    ``AI_HATS_REPO_URL`` override may still carry ``git+ssh://git@github.com/...``
-    (HATS-337); for an anonymous probe we only need the bare https form.
+    The default is git+https (HATS-766); an ``AI_HATS_REPO_URL`` override may
+    still carry ``git+ssh://`` (HATS-337) — the probe only needs the bare https.
     """
     prefixes = ("git+ssh://git@", "git+https://", "git+")
     for p in prefixes:
@@ -177,10 +176,8 @@ def detect_remote_url() -> str:
 def fetch_latest_sha(remote_url: str, ref: str = "master") -> str | None:
     """``git ls-remote <url> <ref>`` → SHA. ``None`` on network/timeout/error.
 
-    ``ref`` defaults to ``master`` (the upstream banner probe). The ``self
-    update`` edge guard passes ``HEAD`` so a custom edge repo is probed at its
-    own default branch, not a possibly-absent ``master`` (HATS-766). The
-    ``git+`` PEP 508 prefix is stripped — git speaks only bare URL schemes.
+    ``ref`` defaults to ``master`` (banner); the edge guard passes ``HEAD`` to
+    probe a custom repo's own default branch (HATS-766). ``git+`` prefix stripped.
     """
     try:
         result = subprocess.run(
@@ -388,12 +385,9 @@ def run_check(
     the entry and :meth:`CacheEntry.has_update` returns False — the banner
     stays silent rather than firing with stale or unverified state.
 
-    HATS-766: ``remote_url`` / ``ref`` override the probed target. The banner
-    leaves both default (``detect_remote_url()`` + ``master``); the ``self
-    update`` edge guard passes the resolved edge repo (bare URL) + ``HEAD`` so
-    install and guard probe the SAME repo/branch. ``remote_url`` MUST be a bare
-    URL (no ``git+`` prefix) — callers coerce via ``_coerce_to_https``; the git
-    helpers also strip ``git+`` defensively.
+    HATS-766: ``remote_url`` / ``ref`` override the probed target (banner uses the
+    defaults; the edge guard passes a bare edge URL + ``HEAD``). ``remote_url``
+    must be bare — the git helpers strip ``git+`` defensively.
     """
     installed = detect_installed_sha()
     if installed is None:
