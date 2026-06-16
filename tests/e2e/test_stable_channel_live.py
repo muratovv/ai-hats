@@ -22,7 +22,7 @@ build installed during ``self init`` — the semver-monotonic downgrade guard
 (``_classify_semver_downgrade``) admits the install rather than refusing it.
 
 Per ``dev_rule_e2e_gate``: real ``bash`` + real launcher + real ``uv`` install +
-real ``ai-hats`` binary, marked ``integration`` + ``pip_heavy`` (a real index
+real ``ai-hats`` binary, marked ``integration`` + ``install_heavy`` (a real index
 install at call time).
 """
 
@@ -39,7 +39,7 @@ from _helpers.repo_src import build_src
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
-pytestmark = pytest.mark.pip_heavy  # HATS-678: real index install → capped via conftest
+pytestmark = pytest.mark.install_heavy  # HATS-678: real index install → capped via conftest
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
