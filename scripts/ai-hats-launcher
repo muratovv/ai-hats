@@ -10,7 +10,8 @@
 set -euo pipefail
 
 PROJECT="$(pwd)"
-REPO_URL="${AI_HATS_REPO_URL:-git+ssh://git@github.com/muratovv/ai-hats.git}"
+# HATS-766: anonymous git+https default (override still accepts ssh/local).
+REPO_URL="${AI_HATS_REPO_URL:-git+https://github.com/muratovv/ai-hats.git}"
 AH_DIR="$PROJECT/.agent/ai-hats"
 DEFAULT_VENV="$AH_DIR/.venv"
 VERSIONS_DIR="$AH_DIR/versions"   # HATS-647: blue-green versioned venvs
@@ -23,6 +24,33 @@ if [[ "$REPO_URL" == *"://"* ]]; then
     PIP_TARGET="ai-hats @ $REPO_URL"
 else
     PIP_TARGET="$REPO_URL"
+fi
+
+# --- HATS-766: channel-aware heal source ---
+# Read the nested harness.channel / harness.path so a `channel: local` project
+# heals EDITABLE (see heal_if_needed). Bounded reader for the indented `harness:`
+# block, reusing the venv_path strip chain (comments/quotes/tilde).
+read_harness_key() {
+    local key="$1"
+    [[ -f "$PROJECT/ai-hats.yaml" ]] || return 0
+    awk '
+        /^[^[:space:]]/ { inblock = ($0 ~ /^harness:[[:space:]]*$/) ? 1 : 0; next }
+        inblock { print }
+    ' "$PROJECT/ai-hats.yaml" \
+        | grep -E "^[[:space:]]+${key}:[[:space:]]" \
+        | head -1 \
+        | sed -E "s/^[[:space:]]+${key}:[[:space:]]+//; s/[[:space:]]+#.*//; s/^\"//; s/\"\$//; s/^'//; s/'\$//" \
+        || true
+}
+
+HARNESS_CHANNEL="$(read_harness_key channel)"
+# Editable source for channel:local (default project root, resolved like venv_path).
+LOCAL_SRC=""
+if [[ "$HARNESS_CHANNEL" == "local" ]]; then
+    LOCAL_SRC="$(read_harness_key path)"
+    LOCAL_SRC="${LOCAL_SRC:-.}"
+    LOCAL_SRC="${LOCAL_SRC/#\~/$HOME}"
+    [[ "${LOCAL_SRC:0:1}" != "/" ]] && LOCAL_SRC="$PROJECT/$LOCAL_SRC"
 fi
 
 # --- Resolve venv (mirrors paths.venv_path precedence) ---
@@ -91,7 +119,11 @@ heal_if_needed() {
     if ! is_default_venv; then
         echo "ai-hats: override venv $VENV is missing or broken." >&2
         echo "  Override venv is user-owned; ai-hats will not auto-recreate it." >&2
-        echo "  Fix manually:  uv venv --python 3.11 $VENV && uv pip install --python $VENV/bin/python '$PIP_TARGET'" >&2
+        if [[ "$HARNESS_CHANNEL" == "local" ]]; then
+            echo "  Fix manually:  uv venv --python 3.11 $VENV && uv pip install --python $VENV/bin/python -e '$LOCAL_SRC'" >&2
+        else
+            echo "  Fix manually:  uv venv --python 3.11 $VENV && uv pip install --python $VENV/bin/python '$PIP_TARGET'" >&2
+        fi
         exit 1
     fi
     echo "  · ai-hats venv missing or broken — recreating $VENV" >&2
@@ -107,7 +139,12 @@ heal_if_needed() {
     # Bare install so the subsequent exec into <venv>/bin/ai-hats succeeds.
     # The python self update (called next via delegate) will then re-install
     # with --reinstall and render the rich diff + auto-bump.
-    uv pip install --quiet --python "$VENV/bin/python" "$PIP_TARGET"
+    # HATS-766: channel:local heals EDITABLE (-e), else the PIP_TARGET rebuild.
+    if [[ "$HARNESS_CHANNEL" == "local" ]]; then
+        uv pip install --quiet --python "$VENV/bin/python" -e "$LOCAL_SRC"
+    else
+        uv pip install --quiet --python "$VENV/bin/python" "$PIP_TARGET"
+    fi
 }
 
 # --- Self update / self init: heal-then-delegate. Never bypass the python

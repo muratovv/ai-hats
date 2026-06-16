@@ -49,9 +49,10 @@ def _require_uv() -> None:
 # HATS-337: AI_HATS_REPO_URL env overrides the default git URL, mirroring
 # the bash launcher (HATS-339) so a single env var pins the install source
 # end-to-end (CI, airgapped mirrors, custom forks).
+# HATS-766: public default is anonymous git+https (override still accepts ssh/local).
 def _git_install_url() -> str:
     return os.environ.get(
-        "AI_HATS_REPO_URL", "git+ssh://git@github.com/muratovv/ai-hats.git"
+        "AI_HATS_REPO_URL", "git+https://github.com/muratovv/ai-hats.git"
     )
 
 
@@ -780,47 +781,52 @@ def _get_installed_version() -> str:
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 
-def _get_changelog() -> str:
-    """Get recent commits from GitHub via shallow clone."""
-    import subprocess
-    import tempfile
+# HATS-766: anonymous GitHub Commits API read replaces a per-update shallow clone.
+_CHANGELOG_API_URL = "https://api.github.com/repos/muratovv/ai-hats/commits"
+_CHANGELOG_COUNT = 7
 
-    tmp = tempfile.mkdtemp(prefix="ai-hats-changelog-")
+
+def _get_changelog() -> str:
+    """Recent non-merge commit subjects from the public GitHub Commits API (HATS-766).
+
+    Cosmetic "Recent changes" block — any failure (offline, timeout, 403
+    rate-limit, bad JSON) fails soft to ``""``. Merge commits dropped
+    client-side (``parents`` > 1); over-fetch 15 then slice 7.
+    """
+    import urllib.error
+    import urllib.request
+
+    url = f"{_CHANGELOG_API_URL}?per_page=15"
+    # urllib injects a default Python-urllib UA that GitHub accepts (a UA-less
+    # request is 403'd); we set an explicit one anyway. URL is a pinned https
+    # constant, so the B310 scheme audit is satisfied.
+    req = urllib.request.Request(
+        url,
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "ai-hats"},
+    )
     try:
-        result = subprocess.run(
-            [
-                "git",
-                "clone",
-                "--depth",
-                "10",
-                "--filter=blob:none",
-                "--quiet",
-                "ssh://git@github.com/muratovv/ai-hats.git",
-                tmp,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        if result.returncode != 0:
-            return ""
-        log = subprocess.run(
-            # `--no-merges`: hide `Merge branch 'task/hats-NNN'` titles —
-            # conventional-commit titles from the actual work are more useful
-            # than the wrapping merge commits under a no-ff merge convention.
-            ["git", "-C", tmp, "log", "--oneline", "--no-merges", "-7"],
-            capture_output=True,
-            text=True,
-        )
-        return log.stdout.strip() if log.returncode == 0 else ""
-    except (subprocess.SubprocessError, OSError):
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — pinned https constant
+            commits = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError):
         logger.debug("changelog fetch failed", exc_info=True)
         return ""
-    finally:
-        import shutil
+    if not isinstance(commits, list):
+        return ""
 
-        # Local tempfile.mkdtemp() — own temp dir, no user data.
-        shutil.rmtree(tmp, ignore_errors=True)  # safe-delete: ok own-tmpdir
+    lines: list[str] = []
+    for entry in commits:
+        if not isinstance(entry, dict):
+            continue
+        if len(entry.get("parents") or []) > 1:
+            continue  # merge commit — hide (matches old --no-merges)
+        sha = (entry.get("sha") or "")[:7]
+        message = ((entry.get("commit") or {}).get("message") or "").strip()
+        subject = message.splitlines()[0] if message else ""
+        if sha and subject:
+            lines.append(f"{sha} {subject}")
+        if len(lines) >= _CHANGELOG_COUNT:
+            break
+    return "\n".join(lines)
 
 
 def _snapshot_dep_versions() -> dict[str, str]:
@@ -926,18 +932,26 @@ def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
 DOWNGRADE_REFUSAL_EXIT_CODE = 3
 
 
-def _probe_remote_state(project_dir: Path):
+def _probe_remote_state(
+    project_dir: Path,
+    *,
+    remote_url: str | None = None,
+    ref: str = "master",
+):
     """Run the ahead/behind probe. Returns the cache entry or ``None``.
 
     Wrapper around :func:`update_check.checker.run_check` that swallows
     transport errors — a network blip MUST NOT block an explicit
     ``self update`` invocation. Returns ``None`` only when the probe could
     not resolve SHAs (no network, non-git install, malformed remote).
+
+    HATS-766: ``remote_url`` / ``ref`` (bare URL + ``HEAD``) make the guard probe
+    the same repo the edge install targets, not hardwired upstream ``master``.
     """
     from ..update_check.checker import run_check
 
     try:
-        return run_check(project_dir)
+        return run_check(project_dir, remote_url=remote_url, ref=ref)
     except (OSError, ValueError):
         logger.debug("update-check probe failed", exc_info=True)
         return None
@@ -978,7 +992,7 @@ def _render_downgrade_refusal(reason: str, entry) -> None:
     if reason == "ahead":
         console.print(
             f"[red]Installed version[/] [bold]{installed}[/] is ahead of "
-            f"remote master [bold]{latest}[/] by {entry.ahead} commits. "
+            f"the edge remote [bold]{latest}[/] by {entry.ahead} commits. "
             f"[red]Refusing to downgrade.[/]\n"
             f"Use [bold]--force-downgrade[/] to override "
             f"(will replace your local install).",
@@ -987,7 +1001,7 @@ def _render_downgrade_refusal(reason: str, entry) -> None:
     else:  # diverged
         console.print(
             f"[red]Installed version[/] [bold]{installed}[/] has diverged "
-            f"from remote master [bold]{latest}[/] "
+            f"from the edge remote [bold]{latest}[/] "
             f"(local ahead: {entry.ahead}, remote ahead: {entry.behind}). "
             f"[red]Refusing to downgrade.[/]\n"
             f"Use [bold]--force-downgrade[/] to override "
@@ -1301,13 +1315,26 @@ def update(
         # edge: moving target → keep the HATS-441 git ahead/diverged guard.
         # ``--force-downgrade`` opts back into the destructive replace for
         # callers who know what they're doing (discarding a stale dev branch).
-        probe = None if force_downgrade else _probe_remote_state(project_dir)
+        # HATS-766: probe the edge repo's HEAD (bare url; env > harness.repo >
+        # upstream), not hardwired master — else a custom edge repo silently
+        # disables the guard.
+        from ..update_check.checker import FALLBACK_REMOTE_URL, _coerce_to_https
+
+        raw_edge = (
+            os.environ.get("AI_HATS_REPO_URL") or harness_repo or FALLBACK_REMOTE_URL
+        )
+        probe_url = _coerce_to_https(raw_edge)
+        probe = (
+            None
+            if force_downgrade
+            else _probe_remote_state(project_dir, remote_url=probe_url, ref="HEAD")
+        )
         if force_downgrade:
             console.print(
                 "[yellow]Warning:[/] --force-downgrade bypasses the "
                 "ahead/diverged guard. Your local install (including "
-                "editable / unpushed commits) will be replaced by remote "
-                "master."
+                "editable / unpushed commits) will be replaced by the "
+                "edge remote's HEAD."
             )
         else:
             reason = _classify_downgrade(probe)

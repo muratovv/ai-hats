@@ -1,9 +1,9 @@
 """Unit tests for ``cli.maintenance`` helpers (HATS-398, HATS-400).
 
-- ``_get_changelog``: shallow-clones the public repo and returns recent
-  commits formatted for the ``Recent changes`` block of
+- ``_get_changelog`` (HATS-766): reads the public GitHub Commits API and
+  returns recent commits formatted for the ``Recent changes`` block of
   ``ai-hats self update``. The contract: hide merge commits, keep
-  conventional-commit titles.
+  conventional-commit titles, fail soft to "" on any network/JSON error.
 - ``update`` subprocess-bump control flow (HATS-400): when the version
   on disk changes, auto-bump runs in a fresh interpreter so newly
   installed code (migrations, healer, etc.) activates without a second
@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -37,68 +38,99 @@ def _make_completed(args, *, returncode: int, stdout: str = "", stderr: str = ""
     )
 
 
-def test_get_changelog_passes_no_merges_flag() -> None:
-    """``git log`` invocation must include ``--no-merges`` to hide merge titles."""
-    captured_args: list[list[str]] = []
-
-    def fake_run(args, **kwargs):
-        captured_args.append(args)
-        # First call = git clone (succeeds), second = git log
-        if "clone" in args:
-            return _make_completed(args, returncode=0)
-        return _make_completed(args, returncode=0, stdout="abc1234 fix(x): y\n")
-
-    with patch("subprocess.run", side_effect=fake_run):
-        _get_changelog()
-
-    # Two subprocess calls: clone, then log
-    assert len(captured_args) == 2
-    log_args = captured_args[1]
-    assert "log" in log_args
-    assert "--no-merges" in log_args, \
-        f"expected --no-merges in git log args, got: {log_args}"
+def _commit(sha: str, message: str, *, merge: bool = False) -> dict:
+    """A GitHub Commits-API entry (the subset ``_get_changelog`` reads)."""
+    return {
+        "sha": sha,
+        "parents": [{}, {}] if merge else [{}],
+        "commit": {"message": message},
+    }
 
 
-def test_get_changelog_returns_log_output_on_success() -> None:
-    """Successful flow returns stripped stdout of ``git log``."""
-    def fake_run(args, **kwargs):
-        if "clone" in args:
-            return _make_completed(args, returncode=0)
-        return _make_completed(
-            args, returncode=0,
-            stdout="abc1234 fix(self-bump): y\ndef5678 feat(x): z\n",
-        )
+def _fake_urlopen(payload):
+    """Context-manager stand-in for ``urllib.request.urlopen`` returning ``payload`` as JSON."""
+    body = json.dumps(payload).encode("utf-8")
 
-    with patch("subprocess.run", side_effect=fake_run):
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return body
+
+    return _Resp()
+
+
+def test_get_changelog_filters_merge_commits() -> None:
+    """Merge commits (``parents`` > 1) are dropped — matches the old ``--no-merges``."""
+    payload = [
+        _commit("aaaaaaa000", "Merge branch 'task/hats-1'", merge=True),
+        _commit("bbbbbbb111", "fix(x): real work\n\nbody ignored"),
+    ]
+    with patch("urllib.request.urlopen", return_value=_fake_urlopen(payload)):
         out = _get_changelog()
-    assert "abc1234 fix(self-bump): y" in out
-    assert "def5678 feat(x): z" in out
+    assert out.splitlines() == ["bbbbbbb fix(x): real work"]  # sha[:7], subject line only
+    assert "Merge branch" not in out
 
 
-def test_get_changelog_returns_empty_when_clone_fails() -> None:
-    def fake_run(args, **kwargs):
-        return _make_completed(args, returncode=128, stderr="ssh denied")
+def test_get_changelog_returns_formatted_lines() -> None:
+    """Success → ``<sha[:7]> <subject>`` per non-merge commit, first message line only."""
+    payload = [
+        _commit("1234567abc", "fix(self-bump): y"),
+        _commit("89abcde000", "feat(x): z\ntrailer dropped"),
+    ]
+    with patch("urllib.request.urlopen", return_value=_fake_urlopen(payload)):
+        out = _get_changelog()
+    assert out.splitlines() == ["1234567 fix(self-bump): y", "89abcde feat(x): z"]
 
-    with patch("subprocess.run", side_effect=fake_run):
+
+def test_get_changelog_caps_at_seven() -> None:
+    """Over-fetch (15) but render at most 7 non-merge lines."""
+    payload = [_commit(f"{i:040x}", f"feat: commit {i}") for i in range(15)]
+    with patch("urllib.request.urlopen", return_value=_fake_urlopen(payload)):
+        out = _get_changelog()
+    assert len(out.splitlines()) == 7
+
+
+def test_get_changelog_empty_on_http_error() -> None:
+    """A 403 (anonymous rate-limit) or any HTTP error fails soft to ""."""
+    import urllib.error
+
+    err = urllib.error.HTTPError("u", 403, "rate limited", {}, None)
+    with patch("urllib.request.urlopen", side_effect=err):
         assert _get_changelog() == ""
 
 
-def test_get_changelog_returns_empty_when_log_fails() -> None:
-    def fake_run(args, **kwargs):
-        if "clone" in args:
-            return _make_completed(args, returncode=0)
-        return _make_completed(args, returncode=1)
+def test_get_changelog_empty_on_urlerror() -> None:
+    """Offline / DNS / timeout (URLError) fails soft to "", never raises."""
+    import urllib.error
 
-    with patch("subprocess.run", side_effect=fake_run):
+    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline")):
         assert _get_changelog() == ""
 
 
-def test_get_changelog_handles_subprocess_error() -> None:
-    """Network / OS issues during clone surface as empty string, not raise."""
-    def fake_run(args, **kwargs):
-        raise subprocess.SubprocessError("timeout")
+def test_get_changelog_empty_on_malformed_json() -> None:
+    """A non-JSON body (e.g. an HTML error page) fails soft to ""."""
+    class _Resp:
+        def __enter__(self):
+            return self
 
-    with patch("subprocess.run", side_effect=fake_run):
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return b"<!doctype html>not json"
+
+    with patch("urllib.request.urlopen", return_value=_Resp()):
+        assert _get_changelog() == ""
+
+
+def test_get_changelog_empty_on_non_list_payload() -> None:
+    """A dict error payload (e.g. ``{"message": "Not Found"}``) yields ""."""
+    with patch("urllib.request.urlopen", return_value=_fake_urlopen({"message": "Not Found"})):
         assert _get_changelog() == ""
 
 
