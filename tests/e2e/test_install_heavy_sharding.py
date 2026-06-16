@@ -1,20 +1,24 @@
-"""HATS-678: deterministic guard for the pip-heavy concurrency cap.
+"""HATS-678 / HATS-771: deterministic guard for the install-heavy concurrency cap.
 
-The pre-push e2e gate runs ``-n8 --dist=loadgroup``. ~21 tests across 16 files
-do a real ``pip install`` at call time (``@pytest.mark.pip_heavy``); uncapped,
-up to ``nworkers`` (≤8) hit the package index at once and intermittently reset
-(the flake class HATS-676 quarantined). ``tests/e2e/conftest.py`` caps them by
-round-robining their FILES into ``PIP_HEAVY_GROUPS`` fixed xdist groups so
-``loadgroup`` runs at most K concurrently.
+The pre-push e2e gate runs ``-n8 --dist=loadgroup``. ~26 tests across 21 files
+do a real ``uv pip install`` at call time (``@pytest.mark.install_heavy``).
+Under the pip engine, uncapped concurrency let up to ``nworkers`` (≤8) hit the
+package index at once and intermittently reset (the flake class HATS-676
+quarantined); ``tests/e2e/conftest.py`` caps them by round-robining their FILES
+into ``INSTALL_HEAVY_GROUPS`` fixed xdist groups so ``loadgroup`` runs at most K
+concurrently. HATS-771 relaxed the default K to 8 (uv serves ``--reinstall``
+from its warm global cache, so the throttle is inert in the happy path) but
+KEPT the grouping as a cold-network safety valve — so this scheduling contract
+still matters.
 
-This file is a PURE unit test — no real pip, no integration marker — so it runs
+This file is a PURE unit test — no real install, no integration marker — so it runs
 in the normal fast suite and fails loudly if the cap regresses. The expensive
 proof (a green ``-n8`` gate) lives in the gate run itself; this locks the
 *scheduling contract* that makes the gate stable.
 
-Fail-under-revert: drop the pip-heavy branch from ``pytest_collection_modifyitems``
-→ pip-heavy items fall back to per-file groups (one group per file) →
-``test_hook_routes_pip_heavy_within_cap`` sees >K distinct groups and fails.
+Fail-under-revert: drop the install-heavy branch from ``pytest_collection_modifyitems``
+→ install-heavy items fall back to per-file groups (one group per file) →
+``test_hook_routes_install_heavy_within_cap`` sees >K distinct groups and fails.
 """
 
 from __future__ import annotations
@@ -34,8 +38,8 @@ _spec = importlib.util.spec_from_file_location("e2e_conftest_under_test", _CONFT
 _conftest = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_conftest)
 
-PIP_HEAVY_GROUPS = _conftest.PIP_HEAVY_GROUPS
-_group_map = _conftest._pip_heavy_group_map
+INSTALL_HEAVY_GROUPS = _conftest.INSTALL_HEAVY_GROUPS
+_group_map = _conftest._install_heavy_group_map
 _modifyitems = _conftest.pytest_collection_modifyitems
 
 
@@ -45,26 +49,27 @@ _modifyitems = _conftest.pytest_collection_modifyitems
 @pytest.mark.parametrize("n_files", [0, 1, 3, 4, 16, 50])
 def test_group_map_never_exceeds_k(n_files: int) -> None:
     """Distinct groups == min(n_files, K) — never more than K concurrent."""
-    files = [f"tests/e2e/test_pip_{i}.py" for i in range(n_files)]
-    mapping = _group_map(files, PIP_HEAVY_GROUPS)
+    files = [f"tests/e2e/test_install_{i}.py" for i in range(n_files)]
+    mapping = _group_map(files, INSTALL_HEAVY_GROUPS)
     distinct = set(mapping.values())
-    assert len(distinct) == min(n_files, PIP_HEAVY_GROUPS)
-    assert len(distinct) <= PIP_HEAVY_GROUPS
-    assert all(g.startswith("pip_heavy_") for g in distinct)
+    assert len(distinct) == min(n_files, INSTALL_HEAVY_GROUPS)
+    assert len(distinct) <= INSTALL_HEAVY_GROUPS
+    assert all(g.startswith("install_heavy_") for g in distinct)
 
 
 def test_group_map_balanced_and_deterministic() -> None:
     """Round-robin spreads files evenly and is stable across calls (no clock)."""
     files = [f"f{i}.py" for i in range(16)]
-    m1 = _group_map(files, PIP_HEAVY_GROUPS)
-    m2 = _group_map(list(reversed(files)), PIP_HEAVY_GROUPS)
+    m1 = _group_map(files, INSTALL_HEAVY_GROUPS)
+    m2 = _group_map(list(reversed(files)), INSTALL_HEAVY_GROUPS)
     assert m1 == m2, "assignment must depend only on the sorted file set"
 
     counts = {}
     for g in m1.values():
         counts[g] = counts.get(g, 0) + 1
-    # 16 files / 4 groups → exactly 4 each (perfectly balanced).
-    assert set(counts.values()) == {16 // PIP_HEAVY_GROUPS}
+    # 16 files / K groups → exactly 16//K each (perfectly balanced; 16 % K == 0
+    # holds for the supported K ∈ {4, 8, 16}, which the default 8 satisfies).
+    assert set(counts.values()) == {16 // INSTALL_HEAVY_GROUPS}
 
 
 # --------------------------- hook routing ---------------------------
@@ -73,16 +78,16 @@ def test_group_map_balanced_and_deterministic() -> None:
 class _FakeItem:
     """Minimal stand-in for a pytest Item for the grouping hook."""
 
-    def __init__(self, nodeid: str, *, pip_heavy: bool = False, live: bool = False):
+    def __init__(self, nodeid: str, *, install_heavy: bool = False, live: bool = False):
         self.nodeid = nodeid
         self.fixturenames = ("requires_claude_auth",) if live else ()
-        self._has_pip_heavy = pip_heavy
+        self._has_install_heavy = install_heavy
         self.group: str | None = None
         self.markers: set[str] = set()
 
     def get_closest_marker(self, name: str):
-        if name == "pip_heavy" and self._has_pip_heavy:
-            return pytest.mark.pip_heavy
+        if name == "install_heavy" and self._has_install_heavy:
+            return pytest.mark.install_heavy
         return None
 
     def add_marker(self, marker) -> None:
@@ -92,14 +97,14 @@ class _FakeItem:
             self.markers.add(marker.name)
 
 
-def test_hook_routes_pip_heavy_within_cap() -> None:
-    """The real hook caps pip-heavy items at K groups and leaves the rest.
+def test_hook_routes_install_heavy_within_cap() -> None:
+    """The real hook caps install-heavy items at K groups and leaves the rest.
 
-    This is the fail-under-revert guard: with the pip-heavy branch removed each
-    pip-heavy file would get its own group → ``len(pip_heavy_groups) > K``.
+    This is the fail-under-revert guard: with the install-heavy branch removed each
+    install-heavy file would get its own group → ``len(install_heavy_groups) > K``.
     """
     items = [
-        _FakeItem(f"tests/e2e/test_ph_{i}.py::test_x", pip_heavy=True)
+        _FakeItem(f"tests/e2e/test_ph_{i}.py::test_x", install_heavy=True)
         for i in range(10)
     ]
     items += [
@@ -110,11 +115,11 @@ def test_hook_routes_pip_heavy_within_cap() -> None:
     ]
     _modifyitems(None, items)
 
-    pip_groups = {it.group for it in items[:10]}
-    assert len(pip_groups) <= PIP_HEAVY_GROUPS, (
-        f"pip-heavy cap breached: {pip_groups}"
+    install_groups = {it.group for it in items[:10]}
+    assert len(install_groups) <= INSTALL_HEAVY_GROUPS, (
+        f"install-heavy cap breached: {install_groups}"
     )
-    assert all(g.startswith("pip_heavy_") for g in pip_groups)
+    assert all(g.startswith("install_heavy_") for g in install_groups)
 
     # live → single shared group; plain → own file group (unchanged contract).
     assert {it.group for it in items if it.fixturenames} == {"live_claude"}
@@ -135,34 +140,34 @@ def test_hook_applies_live_claude_deselect_marker() -> None:
     items = [
         _FakeItem("tests/e2e/test_live.py::test_a", live=True),
         _FakeItem("tests/e2e/test_plain.py::test_a"),
-        _FakeItem("tests/e2e/test_ph.py::test_a", pip_heavy=True),
+        _FakeItem("tests/e2e/test_ph.py::test_a", install_heavy=True),
     ]
     _modifyitems(None, items)
 
     assert "live_claude" in items[0].markers, "live test must carry the marker"
     assert "live_claude" not in items[1].markers, "plain test must not"
-    assert "live_claude" not in items[2].markers, "pip_heavy test must not"
+    assert "live_claude" not in items[2].markers, "install_heavy test must not"
 
 
-def test_hook_keeps_a_files_pip_heavy_tests_together() -> None:
-    """All pip-heavy tests of one file share a group (module-fixture coherence)."""
+def test_hook_keeps_a_files_install_heavy_tests_together() -> None:
+    """All install-heavy tests of one file share a group (module-fixture coherence)."""
     items = [
-        _FakeItem("tests/e2e/test_same.py::test_a", pip_heavy=True),
-        _FakeItem("tests/e2e/test_same.py::test_b", pip_heavy=True),
-        _FakeItem("tests/e2e/test_same.py::test_c", pip_heavy=True),
+        _FakeItem("tests/e2e/test_same.py::test_a", install_heavy=True),
+        _FakeItem("tests/e2e/test_same.py::test_b", install_heavy=True),
+        _FakeItem("tests/e2e/test_same.py::test_c", install_heavy=True),
     ]
     _modifyitems(None, items)
     assert len({it.group for it in items}) == 1
 
 
-def test_live_takes_precedence_over_pip_heavy() -> None:
-    """A test that is BOTH live and pip_heavy pins to live_claude.
+def test_live_takes_precedence_over_install_heavy() -> None:
+    """A test that is BOTH live and install_heavy pins to live_claude.
 
-    Locks the documented precedence (live_claude > pip_heavy > per-file). The
-    case is currently vacuous (no live test is pip_heavy) and harmless either
+    Locks the documented precedence (live_claude > install_heavy > per-file). The
+    case is currently vacuous (no live test is install_heavy) and harmless either
     way — live_claude already pins to one worker (effective concurrency 1 < K) —
     but this guards the ordering against a future test that gates on both.
     """
-    items = [_FakeItem("tests/e2e/test_x.py::test_a", pip_heavy=True, live=True)]
+    items = [_FakeItem("tests/e2e/test_x.py::test_a", install_heavy=True, live=True)]
     _modifyitems(None, items)
     assert items[0].group == "live_claude"

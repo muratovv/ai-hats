@@ -31,7 +31,7 @@ import pytest
 
 from _helpers.project import pin_edge_channel
 
-pytestmark = pytest.mark.pip_heavy  # HATS-678: real pip at call time → capped via conftest.PIP_HEAVY_GROUPS
+pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
