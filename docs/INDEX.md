@@ -42,6 +42,8 @@ tool when a question goes beyond built-in instructions.
 | [how-to-backlog.md](how-to-backlog.md) | Task / hypothesis / proposal lifecycle and CLI surface | Advanced |
 | [reflect.md](reflect.md) | Reflection-mode internals — hypothesis/proposal triage flow | Advanced |
 | [RELEASING.md](RELEASING.md) | Release process — SemVer bump, CHANGELOG roll-up, tag | Maintainers |
+| [migration-v0.8.0.md](migration-v0.8.0.md) | Upgrade guide v0.7→v0.8 — `plan-sync` / `self bump` removal | Upgrading across a MAJOR bump |
+| [migration-v0.9.0.md](migration-v0.9.0.md) | Upgrade guide v0.8→v0.9 — uv prerequisite, channel model, PyPI `stable` | Upgrading across a MAJOR bump |
 
 ## Other docs
 
