@@ -31,6 +31,11 @@ dependencies = [
     "rich>=13.0",
     "filelock>=3.12",
     "ptyprocess>=0.7",
+    # HATS-764: PEP 440 version compare for the stable channel's semver-
+    # monotonic downgrade guard. Installed is a setuptools-scm dev string
+    # (0.8.1.dev105+g…), target a clean PyPI release — a stdlib tuple-parse
+    # mis-orders dev<release, so packaging.version.Version is load-bearing.
+    "packaging>=23.0",
     # HATS-474: claude_agent_sdk powers the sub-agent / e2e path
     # (replaces direct subprocess(`claude -p`)). Pinned to 0.2.x — the
     # SDK stabilised its API at 0.2.0. Bundles the `claude` CLI binary
