@@ -38,6 +38,8 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.project import pin_edge_channel
+
 pytestmark = pytest.mark.pip_heavy  # HATS-678: real pip at call time → capped via conftest.PIP_HEAVY_GROUPS
 
 
@@ -80,6 +82,7 @@ def test_e2e_self_update_install_failure_exits_nonzero(tmp_path: Path) -> None:
     project = tmp_path / "project"
     launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
+    pin_edge_channel(project)  # HATS-764: edge so self update resolves the local source
 
     # ----- fixture: local src-repo (the non-editable install source) -----
     subprocess.run(
@@ -87,6 +90,7 @@ def test_e2e_self_update_install_failure_exits_nonzero(tmp_path: Path) -> None:
     )
     _git(["config", "user.email", "e2e@test"], src_repo)
     _git(["config", "user.name", "E2E"], src_repo)
+    _git(["checkout", "-B", "e2e-main"], src_repo)  # HATS-764: align ls-remote HEAD
     sha_a = _head_sha(src_repo)
 
     env = os.environ.copy()
