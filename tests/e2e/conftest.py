@@ -65,43 +65,52 @@ def _scrub_redirect_env(monkeypatch):
         monkeypatch.delenv(key, raising=False)
 
 
-# HATS-678: how many pip-heavy e2e tests may run concurrently under the gate's
-# ``-n8 --dist=loadgroup``. ~21 tests across 16 files do a real ``pip install``
-# at call time (own launcher build / ``self update --force-reinstall``).
-# Uncapped, up to ``nworkers`` (≤8) of them hit the package index at once →
-# intermittent network resets (RemoteDisconnected / ProtocolError → exit 2) or
-# TimeoutExpired — the flake class HATS-676 quarantined. Round-robining their
-# FILES into this many fixed xdist groups (see ``_pip_heavy_group_map``) means
-# ``loadgroup`` runs at most ``PIP_HEAVY_GROUPS`` of them concurrently; light
-# tests keep per-file groups and still use every worker.
+# HATS-678 / HATS-771: how many INSTALL-heavy e2e tests may run concurrently
+# under the gate's ``-n8 --dist=loadgroup``. ~26 tests across 21 files do a real
+# ``uv pip install`` at call time (own launcher build / ``self update``).
 #
-# This is the speed/stability knob: higher K = faster (more concurrency) but
-# closer to the uncapped ~8 that flaked. K=4 halves peak concurrency — a strong
-# stability margin while keeping 4× parallelism on the pip tail (~21 tests ×
-# ~42s each ÷ 4 ≈ a 4-wave tail). Tune from real gate telemetry; the flake is
-# cold-network-contention dependent and does not reliably reproduce on a warm
-# local pip cache. Override via AI_HATS_E2E_PIP_HEAVY_GROUPS=<int> on a
-# degraded/slow network (lower K = fewer concurrent index hits, so each download
-# gets more bandwidth and stays under the per-test 300s budget); the default of
-# 4 preserves the fast-network behaviour for everyone else.
-PIP_HEAVY_GROUPS = int(os.environ.get("AI_HATS_E2E_PIP_HEAVY_GROUPS", "4"))
+# Origin (HATS-678, pip era): uncapped, up to ``nworkers`` (≤8) of them hit the
+# package index at once under ``pip --force-reinstall`` → intermittent network
+# resets (RemoteDisconnected / ProtocolError → exit 2) or TimeoutExpired — the
+# flake class HATS-676 quarantined. The fix round-robins their FILES into this
+# many fixed xdist groups (see ``_install_heavy_group_map``) so ``loadgroup``
+# runs at most ``INSTALL_HEAVY_GROUPS`` of them concurrently; light tests keep
+# per-file groups and still use every worker.
+#
+# HATS-771 (uv era): the engine is now uv (HATS-763). uv serves ``--reinstall``
+# from its warm global cache (``~/.cache/uv``; no ``--refresh`` ⇒ no re-download),
+# and the per-worker session venv build warms that cache before any install-heavy
+# test runs — so peak index contention is near-zero. A measured A/B of the
+# install-heavy cohort (K=4 vs 6 vs 8, ``-n8 --dist=loadgroup``, warm cache,
+# 2026-06-16) found the wall-clock dominated by the cold session venv builds, not
+# the cap: K=4 ≈ 124–157s (two runs, 33s of run-to-run noise), K=6 ≈ 124s,
+# K=8 ≈ 122s — raising K buys nothing measurable, and zero reset/timeout
+# signatures appeared at any K (incl. uncapped-equivalent K=8). So the default is
+# relaxed to 8: on the ``-n8`` gate that is inert in the happy path, while the
+# round-robin grouping + this override knob are RETAINED as the cold-cache /
+# degraded-network safety valve — set ``AI_HATS_E2E_INSTALL_HEAVY_GROUPS=<lower>``
+# to re-throttle (fewer concurrent index hits, more bandwidth per download under
+# the per-test 300s budget). The flake is cold-network-contention dependent and
+# does not reliably reproduce on a warm cache, hence the retained valve. Raw
+# numbers: HATS-771 work_log.
+INSTALL_HEAVY_GROUPS = int(os.environ.get("AI_HATS_E2E_INSTALL_HEAVY_GROUPS", "8"))
 
 
-def _pip_heavy_group_map(pip_heavy_files, k):  # noqa: ANN001, ANN202
-    """Round-robin sorted pip-heavy files into ``k`` fixed xdist groups.
+def _install_heavy_group_map(install_heavy_files, k):  # noqa: ANN001, ANN202
+    """Round-robin sorted install-heavy files into ``k`` fixed xdist groups.
 
-    Returns ``{file: "pip_heavy_<n>"}``. Pure + deterministic (``sorted`` →
+    Returns ``{file: "install_heavy_<n>"}``. Pure + deterministic (``sorted`` →
     stable order → ``i % k``; no clock/random) so it is unit-testable without
-    pytest internals — see ``tests/e2e/test_pip_heavy_sharding.py``. File
-    granularity (not per-test) keeps every test of a pip-heavy file in ONE
+    pytest internals — see ``tests/e2e/test_install_heavy_sharding.py``. File
+    granularity (not per-test) keeps every test of an install-heavy file in ONE
     group, so a module-scoped own-build fixture (e.g. ``private_launcher``)
     never rebuilds across workers.
 
     Fail-under-revert: collapse this to per-file groups (drop the call in the
-    hook) → pip-heavy items fan back out to ``nworkers`` concurrent installs.
+    hook) → install-heavy items fan back out to ``nworkers`` concurrent installs.
     """
     return {
-        f: f"pip_heavy_{i % k}" for i, f in enumerate(sorted(pip_heavy_files))
+        f: f"install_heavy_{i % k}" for i, f in enumerate(sorted(install_heavy_files))
     }
 
 
@@ -116,15 +125,15 @@ def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
       deterministic offline / no-auth e2e run (HATS-583), and (b) pin the whole
       cohort to a single ``live_claude`` xdist group so a parallel run never
       opens N concurrent SDK sessions (cost / rate-limit hazard, HATS-589).
-    * **pip-heavy → ``PIP_HEAVY_GROUPS`` capped groups.** Tests tagged
-      ``@pytest.mark.pip_heavy`` run a real ``pip install`` at call time;
+    * **install-heavy → ``INSTALL_HEAVY_GROUPS`` capped groups.** Tests tagged
+      ``@pytest.mark.install_heavy`` run a real ``uv pip install`` at call time;
       round-robining their files into a small fixed set of groups caps how many
       hit the package index concurrently (HATS-678 — root-fix for the flake
       class HATS-676 quarantined).
     * **everything else → grouped by file.** Mirrors ``--dist=loadfile``
       semantics so module-scoped venv fixtures stay coherent per worker.
 
-    Precedence (xdist groups): live_claude → pip_heavy → per-file. The
+    Precedence (xdist groups): live_claude → install_heavy → per-file. The
     ``xdist_group`` assignments are consulted only by the ``loadgroup``
     scheduler — under ``loadfile``, ``-n0`` (serial), or no xdist they are
     inert, so this hook is safe in every run mode. The ``live_claude`` *deselect*
@@ -134,18 +143,19 @@ def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
     NOTE (HATS-678 Category A): the session-shared ``_shared_launcher_venv``
     build is ``scope="session"`` = per-worker under xdist, so up to ``nworkers``
     venv builds still fire at session start. Those install ai-hats from the
-    LOCAL repo and warm the shared pip cache once, so they are a far narrower
-    network window than the ``--force-reinstall`` pip-heavy class capped here.
+    LOCAL repo and warm the shared uv cache once, so they are a far narrower
+    network window than the ``uv pip install --reinstall`` install-heavy class
+    capped here.
     If real gate runs still flake on the session build, add a cross-worker
     filelock semaphore around ``build_launcher_venv`` (deferred; not built).
     """
-    group_for_file = _pip_heavy_group_map(
+    group_for_file = _install_heavy_group_map(
         {
             item.nodeid.split("::", 1)[0]
             for item in items
-            if item.get_closest_marker("pip_heavy")
+            if item.get_closest_marker("install_heavy")
         },
-        PIP_HEAVY_GROUPS,
+        INSTALL_HEAVY_GROUPS,
     )
     for item in items:
         if "requires_claude_auth" in getattr(item, "fixturenames", ()):
@@ -156,7 +166,7 @@ def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
             # ...plus the xdist scheduling group (loadgroup-only) that pins the
             # whole live cohort to ONE worker — no N concurrent SDK sessions.
             item.add_marker(pytest.mark.xdist_group("live_claude"))
-        elif item.get_closest_marker("pip_heavy"):
+        elif item.get_closest_marker("install_heavy"):
             item.add_marker(
                 pytest.mark.xdist_group(group_for_file[item.nodeid.split("::", 1)[0]])
             )
