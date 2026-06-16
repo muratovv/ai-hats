@@ -35,11 +35,17 @@ def build_launcher_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
     1. Run ``scripts/install-launcher.sh`` with
        ``AI_HATS_LAUNCHER_DEST=<work_dir>/bin/ai-hats`` so the binary
        lands inside the test sandbox.
-    2. Run ``<launcher> self update`` from a dedicated bootstrap
-       directory (``<work_dir>/bootstrap/``) with
-       ``AI_HATS_REPO_URL=<repo_root>`` so pip installs from the
-       local checkout (no network for ai-hats itself). The inner
-       venv lands at ``<work_dir>/bootstrap/.agent/ai-hats/.venv/``.
+    2. Pin the bootstrap dir to the edge channel (HATS-780, via
+       :func:`tests.e2e._helpers.project.pin_edge_channel`) so the next
+       step resolves the local ``AI_HATS_REPO_URL`` source, NOT PyPI.
+       Without it, post-764 a missing harness block defaults to ``stable``
+       → the PyPI JSON API (ai-hats unpublished pre-765 → 404, fail-loud) →
+       fail-closed under ``AI_HATS_E2E_REQUIRE_VENV=1``.
+    3. Run ``<launcher> self update`` from that bootstrap directory
+       (``<work_dir>/bootstrap/``) with ``AI_HATS_REPO_URL=<repo_root>``
+       so pip installs from the local checkout (no network for ai-hats
+       itself). The inner venv lands at
+       ``<work_dir>/bootstrap/.agent/ai-hats/.venv/``.
 
     Returns ``(launcher_path, shared_venv_path)``. Callers point
     per-test projects at the shared venv via the ``AI_HATS_VENV``
@@ -49,7 +55,8 @@ def build_launcher_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
     is missing — callers can catch that and ``pytest.skip``.
     Raises :class:`subprocess.CalledProcessError` on launcher or
     self-update failure (e.g. no network when pip needs to fetch
-    transitive deps not in the local wheel cache).
+    transitive deps not in the local wheel cache). The edge pin (step 2)
+    removes the post-764 stable→PyPI-404 failure mode for the local source.
     Raises :class:`RuntimeError` if the launcher binary lands but
     isn't executable, or if the venv directory doesn't materialise.
     Callers that pre-skip on missing artefacts should catch these
@@ -81,6 +88,18 @@ def build_launcher_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
     )
     if not launcher.is_file() or not os.access(launcher, os.X_OK):
         raise RuntimeError(f"launcher not installed at {launcher}")
+
+    # HATS-780: pin the bootstrap to the edge channel BEFORE `self update`.
+    # Post-764 a missing harness block defaults to `stable`, which resolves the
+    # target from PyPI (ai-hats unpublished pre-765 → 404 → fail-closed under
+    # AI_HATS_E2E_REQUIRE_VENV=1, ERROR-ing every shared-venv test). Edge
+    # resolves the local `AI_HATS_REPO_URL` set above (git ls-remote on the
+    # local path — no network, no PyPI). Mirrors the `pin_edge_channel` every
+    # other e2e `self update` already applies; this session-shared bootstrap is
+    # the one HATS-764 missed.
+    from _helpers.project import pin_edge_channel
+
+    pin_edge_channel(bootstrap)
 
     # Bootstrap the inner venv via the launcher in a DEDICATED dir,
     # NOT a project that tests will use — tests get fresh project
