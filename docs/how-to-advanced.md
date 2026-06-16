@@ -9,6 +9,7 @@ Umbrella for advanced ai-hats workflows beyond first-time setup. Each section is
 | 3 | **Orchestration** — fan out sessions in parallel / CI, tag metadata, parse JSON, lean on exit codes            | TODO — see [4] |
 | 4 | **CLI integrations** — wire external services (Google, GitHub, BQ) as a regular skill                          | TODO — see [5] |
 | 5 | **Escape a wedged session** — force-exit an unresponsive interactive session with triple Ctrl-C                | live           |
+| 6 | **Channel & install-source knobs** — pick local / edge / stable, point edge at a fork, override the repo       | live           |
 
 > Full CLI reference — `ai-hats --tree`. First-time setup → [1]. Day-to-day backlog CLI → [2]. Pipeline contract reference (`Step` / `StepIO`) → [3].
 
@@ -332,6 +333,47 @@ The gesture is dormant in healthy sessions: the first two Ctrl-C reach the provi
 
 ---
 
+## 6. Channel & install-source knobs
+
+`ai-hats self update` pulls the harness from one of three **channels** — the per-project install source recorded as `harness.channel` in `ai-hats.yaml`. Most projects never touch this: the default `stable` channel installs published releases from PyPI. The knobs below are for the cases that do. Channel semantics are defined in [10]; the `harness` config field is documented in [1] §1.
+
+### 6.1 Switch channel
+
+```bash
+ai-hats config set --channel stable                  # latest PyPI release (default)
+ai-hats config set --channel edge  --repo <url>      # a repo's branch HEAD, via git+https
+ai-hats config set --channel local --path <dir>      # editable install of a working tree
+```
+
+- **`stable`** — pinned, semver-monotonic. The downgrade guard refuses a published tag lower than the installed one (override `--force-downgrade`).
+- **`edge`** — a moving target: `git+https://<repo>@<branch-HEAD-sha>`, reinstalled when HEAD advances. Use it to run your own ai-hats fork or an unreleased branch.
+- **`local`** — `uv pip install -e <path>`, an in-place editable install. For developing ai-hats itself; reflects working-tree edits without a reinstall.
+
+Do **not** hand-edit the `harness:` block — the `config set` surface keeps `channel` / `repo` / `path` consistent.
+
+### 6.2 Run edge against a fork
+
+Point `edge` at any public Git remote — a personal fork, a team mirror, a long-lived feature branch:
+
+```bash
+ai-hats config set --channel edge --repo https://github.com/<you>/ai-hats.git
+ai-hats self update                                  # installs that repo's branch HEAD
+```
+
+`self update` resolves the branch HEAD to a concrete sha and installs into `versions/<sha>/`, so a run is pinned to one sha even if HEAD advances mid-session (pin-at-spawn).
+
+### 6.3 `AI_HATS_REPO_URL` override
+
+`AI_HATS_REPO_URL` overrides the `edge` repo for a single invocation without editing `ai-hats.yaml` — useful in CI or a throwaway checkout where you want a one-shot source swap:
+
+```bash
+AI_HATS_REPO_URL=https://github.com/<you>/ai-hats.git ai-hats self update
+```
+
+The env var wins over `harness.repo` for that run only; the persisted config is untouched.
+
+---
+
 ## References
 
 **[1]** — [`docs/how-to-configure.md`](how-to-configure.md) — first-time setup, role pick, provider, feedback policy.
@@ -351,3 +393,5 @@ The gesture is dormant in healthy sessions: the first two Ctrl-C reach the provi
 **[8]** — [`library/core/skills/worktree-isolation/SKILL.md`](../library/core/skills/worktree-isolation/SKILL.md) — in-session skill for isolated work.
 
 **[9]** — [`src/ai_hats/runtime.py`](../src/ai_hats/runtime.py) — `_scan_escape` (escape-gesture counter) + `WrapRunner._pty_spawn` (the PTY passthrough loop and force-exit wire), HATS-679.
+
+**[10]** — [`docs/glossary.md`](glossary.md) — **Harness source / channel**: the local / edge / stable channel model and its resolver.

@@ -221,8 +221,8 @@ curl -fsS https://pypi.org/pypi/ai-hats/json \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])'   # → 0.4.0
 
 # 2. Install the published wheel in a throwaway venv.
-python3 -m venv /tmp/release-verify
-/tmp/release-verify/bin/pip install "ai-hats==0.4.0"
+uv venv /tmp/release-verify
+uv pip install --python /tmp/release-verify/bin/python "ai-hats==0.4.0"
 /tmp/release-verify/bin/ai-hats --version    # → ai-hats 0.4.0
 rm -rf /tmp/release-verify
 ```
