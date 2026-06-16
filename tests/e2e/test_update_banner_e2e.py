@@ -30,6 +30,8 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.project import pin_edge_channel
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
@@ -110,6 +112,7 @@ def test_update_banner_e2e(tmp_path):
     project = tmp_path / "project"
     launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
+    pin_edge_channel(project)  # HATS-764: edge so self update resolves the local source
 
     env = os.environ.copy()
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
