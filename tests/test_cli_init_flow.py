@@ -33,6 +33,15 @@ def cli_project(tmp_path, monkeypatch):
     return project, CliRunner()
 
 
+def _pin_edge(project):
+    """HATS-764: append a `harness: channel: edge` block so `self update` takes
+    the git ahead/diverged + in-place path these pre-channel tests assert,
+    instead of the new default-stable PyPI path (which 404s — name unpublished
+    until HATS-765). Channel-specific routing has its own dedicated tests."""
+    p = project / "ai-hats.yaml"
+    p.write_text(p.read_text() + "harness:\n  channel: edge\n")
+
+
 def test_set_creates_project(cli_project):
     """ai-hats config set -r <role> -p claude auto-inits and creates all artifacts."""
     project, runner = cli_project
@@ -585,6 +594,7 @@ def test_update_command_runs_via_cli(cli_project, monkeypatch):
 
     # Init project so migrate doesn't fail
     runner.invoke(main, ["config", "set", "-p", "claude"])
+    _pin_edge(project)
 
     captured_cmds = []
 
@@ -618,6 +628,7 @@ def test_update_command_reports_failure(cli_project, monkeypatch):
 
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-p", "claude"])
+    _pin_edge(project)
 
     def mock_run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="Connection refused")
@@ -640,6 +651,7 @@ def test_update_shows_version_transition(cli_project, monkeypatch):
 
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-p", "claude"])
+    _pin_edge(project)
 
     def mock_run(cmd, **kwargs):
         # Version check returns new version
@@ -901,6 +913,7 @@ def test_t10_update_invokes_stage2_verify(cli_project, monkeypatch):
 
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-p", "claude"])
+    _pin_edge(project)
 
     captured: list[list[str]] = []
 
@@ -930,6 +943,7 @@ def test_t11_update_warns_on_stage2_failure_does_not_crash(cli_project, monkeypa
 
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-p", "claude"])
+    _pin_edge(project)
 
     monkeypatch.setattr(subprocess, "run", _make_mock_run_factory(verify_rc=1))
 
@@ -944,6 +958,7 @@ def test_t12_update_prints_activation_banner_on_dep_change(cli_project, monkeypa
 
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-p", "claude"])
+    _pin_edge(project)
 
     before = '[{"name": "click", "version": "8.1.0"}]'
     after = '[{"name": "click", "version": "8.1.0"}, {"name": "ptyprocess", "version": "0.7.0"}]'
@@ -967,6 +982,7 @@ def test_t13_update_no_banner_when_deps_unchanged(cli_project, monkeypatch):
 
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-p", "claude"])
+    _pin_edge(project)
 
     same = '[{"name": "click", "version": "8.1.0"}]'
     monkeypatch.setattr(
@@ -988,6 +1004,7 @@ def test_update_shows_already_up_to_date(cli_project, monkeypatch):
 
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-p", "claude"])
+    _pin_edge(project)
 
     def mock_run(cmd, **kwargs):
         if "__version__" in str(cmd):

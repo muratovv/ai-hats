@@ -38,20 +38,22 @@ def _python_arg(cmd: list[str]) -> str:
     return cmd[cmd.index("--python") + 1]
 
 
-def test_build_install_cmd_uv_url_with_ref():
-    cmd = _build_install_cmd("/v/bin/python", "git+ssh://x/ai-hats.git", "abc")
+def test_build_install_cmd_passes_spec_through():
+    # HATS-764: _build_install_cmd is a thin uv wrapper now — install_spec is
+    # pre-shaped by the channel resolver; the builder passes it through verbatim.
+    cmd = _build_install_cmd("/v/bin/python", "ai-hats @ git+https://x/ai-hats.git@abc")
     assert cmd[:3] == ["uv", "pip", "install"]
     assert _python_arg(cmd) == "/v/bin/python"
     assert "--reinstall" in cmd
-    assert cmd[-1] == "ai-hats @ git+ssh://x/ai-hats.git@abc"
+    assert cmd[-1] == "ai-hats @ git+https://x/ai-hats.git@abc"
     assert "-m" not in cmd  # no `python -m pip` form
 
 
-def test_build_install_cmd_uv_local_path():
-    cmd = _build_install_cmd("/v/bin/python", "/local/path", "abc")
+def test_build_install_cmd_local_path_spec():
+    cmd = _build_install_cmd("/v/bin/python", "/local/path")
     assert cmd[:3] == ["uv", "pip", "install"]
     assert _python_arg(cmd) == "/v/bin/python"
-    assert cmd[-1] == "/local/path"  # local path: pip/uv take no @ref
+    assert cmd[-1] == "/local/path"
 
 
 def test_build_update_cmd_pins_running_interpreter():

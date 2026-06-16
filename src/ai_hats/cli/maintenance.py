@@ -9,10 +9,14 @@ import subprocess
 import sys
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from ._helpers import _assembler, _project_dir, console, logger
+
+if TYPE_CHECKING:
+    from ..channel import ChannelResolution
 
 # HATS-496: accept tag / branch / full-or-short SHA as a --revision argument.
 # Bare SHA detection skips the ls-remote pre-flight (git ls-remote returns
@@ -258,19 +262,18 @@ def _installed_launcher_path() -> Path:
     return Path.home() / ".local" / "bin" / "ai-hats"
 
 
-def _build_install_cmd(python_exe: str, url: str, ref: str) -> list[str]:
-    """pip-install ai-hats into the venv owning ``python_exe``.
+def _build_install_cmd(python_exe: str, install_spec: str) -> list[str]:
+    """uv-install ``install_spec`` into the venv owning ``python_exe``.
 
-    URL source (``git+ssh://…``) → PEP 508 ``ai-hats @ url@ref`` so the exact
-    sha is installed. Local-path source (e.g. ``--local`` bootstrap, e2e
-    harness) → bare path: pip builds the working tree and does NOT support an
-    ``@ref`` suffix on local paths (the same reason ``--revision`` refuses
-    them). The version dir is named by the sha resolved separately, not by the
-    install spec.
+    HATS-764: ``install_spec`` is the resolved channel target —
+    ``ai-hats @ git+https://…@<sha>`` (edge), ``ai-hats==<ver>`` (stable), or a
+    bare local-path repo (e2e harness). The PEP 508 / local-path shaping moved
+    into the channel resolver (:func:`ai_hats.channel._edge_install_spec`); this
+    builder is now a thin uv-command wrapper. ``--reinstall`` == pip's
+    ``--force-reinstall``; ``--python`` (B1, HATS-763) pins the interpreter so
+    uv targets it rather than the nearest cwd venv.
     """
-    target = f"ai-hats @ {url}@{ref}" if "://" in url else url
-    # B1 (HATS-763): pin --python or uv targets the nearest cwd venv, not python_exe.
-    return ["uv", "pip", "install", "--python", python_exe, "--reinstall", target]
+    return ["uv", "pip", "install", "--python", python_exe, "--reinstall", install_spec]
 
 
 def _flip_current(project_dir: Path, sha: str) -> None:
@@ -325,9 +328,8 @@ def _pause_after_complete_for_test() -> None:
 
 def _run_managed_versioned_update(
     project_dir: Path,
+    resolution: ChannelResolution,
     *,
-    url: str,
-    target_sha: str | None,
     old_version: str,
     active_role: str | None,
     config_unreadable: bool,
@@ -335,6 +337,12 @@ def _run_managed_versioned_update(
     check_branches: bool,
 ) -> None:
     """Blue-green ``self update`` for the managed default venv (HATS-647).
+
+    HATS-764: driven by a :class:`~ai_hats.channel.ChannelResolution` — the
+    version dir is named by ``resolution.version_id`` (edge sha | stable tag)
+    and the build installs ``resolution.install_spec``. The source-shaping that
+    used to live here (local-path HEAD re-resolution, PEP 508 url@ref) moved
+    into the pure resolver upstream; ``version_id`` is authoritative.
 
     Installs the new version into ``versions/<sha>/`` — never the live venv —
     then atomically flips ``versions/current``. A concurrently-live run pinned
@@ -358,20 +366,15 @@ def _run_managed_versioned_update(
         version_dir,
     )
 
-    if "://" not in url:
-        # Local-path source: pip installs the working tree, so identify the
-        # version by the local repo's HEAD — NOT the remote-master probe,
-        # which can point at a different branch (e.g. a worktree checked out
-        # off master). URL sources keep the probe / revision sha because pip
-        # installs that exact ref.
-        target_sha = _resolve_ref(url, "HEAD") or target_sha
-    if not target_sha:
-        target_sha = _resolve_ref(url, "HEAD")
+    # HATS-764: version_id is resolved upstream (edge head sha / stable tag) and
+    # is authoritative — names versions/<version_id>/. The caller fails loud on
+    # an unresolvable edge sha BEFORE building the resolution, so a None here is
+    # a contract violation, not an offline case.
+    target_sha = resolution.version_id
     if not target_sha:
         console.print(
-            "[red]Update failed[/]: could not resolve a target revision to "
-            "install (offline, or the remote/source is unreachable). A "
-            "versioned install needs a resolvable sha to name versions/<sha>/."
+            "[red]Update failed[/]: the channel resolution carries no version "
+            "id; a versioned install needs one to name versions/<version_id>/."
         )
         sys.exit(2)
 
@@ -492,7 +495,7 @@ def _run_managed_versioned_update(
                 spinner="dots",
             ):
                 install = subprocess.run(
-                    _build_install_cmd(new_python, url, target_sha),
+                    _build_install_cmd(new_python, resolution.install_spec),
                     capture_output=True,
                     text=True,
                 )
@@ -993,6 +996,139 @@ def _render_downgrade_refusal(reason: str, entry) -> None:
         )
 
 
+# ---------- HATS-764: channel-driven source + per-channel guard ----------
+
+
+def _read_harness(project_dir: Path):
+    """Read ``(channel, repo, path)`` from ai-hats.yaml; degrade to the stable
+    default if the installed code can't parse the config.
+
+    HATS-764/581: ``self update`` must self-heal — a config the *current* code
+    rejects must not block the recovery command. An unreadable/absent config
+    yields ``(Channel.STABLE, None, None)``; the fresh-interpreter bump heals
+    the yaml afterwards. Independent of the ``_assembler`` read below so the
+    channel is always available for the guard, even on the degraded path.
+    """
+    from ..models import Channel, ProjectConfig, ProjectConfigError
+
+    config_path = project_dir / "ai-hats.yaml"
+    if not config_path.exists():
+        return Channel.STABLE, None, None
+    try:
+        h = ProjectConfig.from_yaml(config_path).harness
+    except ProjectConfigError:
+        return Channel.STABLE, None, None
+    return h.channel, h.repo, h.path
+
+
+def _classify_semver_downgrade(installed: str, target: str) -> bool:
+    """True if installing ``target`` (a published PyPI version) downgrades
+    ``installed`` — the stable channel's semver-monotonic guard (HATS-764).
+
+    Uses ``packaging.version.Version`` (PEP 440), NOT a naive ``vX.Y.Z``
+    tuple-parse: ``installed`` is a setuptools-scm string (e.g.
+    ``0.8.1.dev105+g589f167``) while ``target`` is a clean release (``0.8.1``);
+    a tuple-parse chokes on the dev suffix and mis-orders ``0.8.1.dev105`` vs
+    ``0.8.1``. An unparseable ``installed`` (editable ``unknown``) → allow.
+    """
+    from packaging.version import InvalidVersion, Version
+
+    try:
+        return Version(target) < Version(installed)
+    except InvalidVersion:
+        return False
+
+
+def _render_semver_downgrade_refusal(installed: str, target: str) -> None:
+    console.print(
+        f"[red]Installed stable[/] [bold]{installed}[/] is newer than the "
+        f"latest published tag [bold]{target}[/]. "
+        f"[red]Refusing to downgrade.[/]\n"
+        f"Use [bold]--force-downgrade[/] to override.",
+        highlight=False,
+    )
+
+
+def _build_managed_resolution(
+    channel,
+    *,
+    revision_repo: str | None,
+    revision_sha: str | None,
+    harness_repo: str | None,
+    probe,
+    latest_stable: str | None,
+) -> ChannelResolution:
+    """Compose the :class:`ChannelResolution` for the managed versioned install.
+
+    ``--revision`` (``revision_sha`` set) → explicit edge-style pin at that sha
+    against ``_git_install_url()`` (channel-agnostic, HATS-496). stable →
+    ``ai-hats==<latest_stable>``. edge → ``git+https`` repo @ (the probe's
+    upstream-master sha, reused to avoid a second round-trip, else a fresh
+    ``git ls-remote`` HEAD). Fails loud (exit 2) when an edge sha can't resolve.
+    """
+    from ..channel import fetch_edge_head_sha, resolve_channel, resolve_edge_repo
+    from ..models import Channel
+
+    if revision_sha is not None:
+        return resolve_channel(Channel.EDGE, repo=revision_repo, head_sha=revision_sha)
+    if channel is Channel.STABLE:
+        return resolve_channel(Channel.STABLE, latest_version=latest_stable)
+    repo = resolve_edge_repo(harness_repo)
+    head_sha = (probe.latest_sha if probe is not None else None) or fetch_edge_head_sha(repo)
+    if not head_sha:
+        console.print(
+            "[red]Update failed[/]: could not resolve a target revision to "
+            "install (offline, or the edge remote is unreachable). A versioned "
+            "install needs a resolvable sha to name versions/<version_id>/."
+        )
+        sys.exit(2)
+    return resolve_channel(Channel.EDGE, repo=repo, head_sha=head_sha)
+
+
+def _run_editable_update(
+    project_dir: Path,
+    path: str,
+    *,
+    old_version: str,
+    active_role: str | None,
+    config_unreadable: bool,
+    migrate_force: bool,
+    check_branches: bool,
+) -> None:
+    """channel: local — editable reinstall of the working tree in place.
+
+    No versioned dir, no ``current`` flip: the working tree IS the live source
+    (HATS-764). Mirrors the dev dogfooding ``uv pip install -e .``. The on-disk
+    code is already current, so the post-install bump runs the standard
+    fresh-interpreter subprocess only to refresh composition / migrations.
+    """
+    _require_uv()
+    cmd = ["uv", "pip", "install", "--python", sys.executable, "-e", path]
+    with console.status(
+        f"[cyan]Editable reinstall[/] [dim](uv pip install -e {path})[/]",
+        spinner="dots",
+    ):
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        console.print(f"[red]Update failed[/]: {result.stderr}")
+        sys.exit(1)  # HATS-718: failed install must be machine-detectable
+    console.print(f"[green]Editable reinstall[/]: uv pip install -e {path}")
+    if active_role or config_unreadable:
+        role_label = active_role or "(config unreadable — healing)"
+        console.print(f"\n[bold]Re-assembling:[/] {role_label}")
+        bump_cmd = [sys.executable, "-m", "ai_hats._bump_internal"]
+        if migrate_force:
+            bump_cmd.append("--migrate-force")
+        if check_branches:
+            bump_cmd.append("--check-branches")
+        proc = subprocess.run(bump_cmd, cwd=str(project_dir), check=False)
+        if proc.returncode != 0:
+            console.print(
+                f"  [yellow]Bump (fresh interpreter) exited {proc.returncode} "
+                f"— review output above[/]"
+            )
+
+
 @click.command()
 @click.option(
     "--migrate-force",
@@ -1055,7 +1191,8 @@ def update(
     """
     from .. import __version__ as old_version
     from ..assembler import AssemblyError
-    from ..models import ProjectConfigError
+    from ..channel import ChannelResolveError, fetch_latest_stable_version
+    from ..models import Channel, ProjectConfigError
 
     console.print(f"Current version: [bold]{old_version}[/]")
     # HATS-318: surface which interpreter we're updating. When the wrapper has
@@ -1066,19 +1203,27 @@ def update(
 
     project_dir = _project_dir()
 
-    # HATS-496: --revision short-circuits the guard machinery — the user
-    # is explicit about the target ref, so probing master and comparing
-    # ahead/behind axes would only obstruct. Editable check (D2) and ref
-    # pre-flight (steps 2-3 of plan) happen here, BEFORE the snapshot /
-    # install path runs.
+    # HATS-764: the harness channel (config) selects BOTH the install source and
+    # the downgrade guard. Read it up front, degrading to the stable default if
+    # the installed code can't parse the config (`self update` self-heals).
+    channel, harness_repo, harness_path = _read_harness(project_dir)
+
+    # Built per channel / --revision below. `probe` feeds the edge (moving
+    # target) git ahead/diverged guard; `latest_stable` the stable semver
+    # guard; `revision_url`/`revision_sha` carry an explicit --revision pin.
     probe = None
-    managed_target_sha: str | None = None  # HATS-647: resolved sha for versioned install
+    latest_stable: str | None = None
+    revision_url: str | None = None
+    revision_sha: str | None = None
     if revision:
-        url = _git_install_url()
-        if "://" not in url:
+        # HATS-496: --revision is an explicit, channel-agnostic pin. It
+        # short-circuits the guard machinery (the user named the ref), refuses
+        # an editable target unless --force, and pre-flights `git ls-remote`.
+        revision_url = _git_install_url()
+        if "://" not in revision_url:
             console.print(
                 f"[red]--revision requires a git URL[/] "
-                f"(AI_HATS_REPO_URL={url!r} looks like a local path; "
+                f"(AI_HATS_REPO_URL={revision_url!r} looks like a local path; "
                 "local-path installs do not support refs)."
             )
             sys.exit(2)
@@ -1095,13 +1240,13 @@ def update(
             sys.exit(2)
 
         with console.status(
-            f"[cyan]Resolving ref[/] {revision} on {url} …",
+            f"[cyan]Resolving ref[/] {revision} on {revision_url} …",
             spinner="dots",
         ):
-            resolved = _resolve_ref(url, revision)
-        if resolved is None:
+            revision_sha = _resolve_ref(revision_url, revision)
+        if revision_sha is None:
             console.print(
-                f"[red]error:[/] ref '{revision}' not found on remote {url}"
+                f"[red]error:[/] ref '{revision}' not found on remote {revision_url}"
             )
             sys.exit(2)
 
@@ -1109,18 +1254,32 @@ def update(
             "[yellow]Warning:[/] --revision bypasses the ahead/diverged "
             "guard. Installing arbitrary ref may downgrade your install."
         )
-        console.print(f"  [dim]Resolved {revision} → {resolved}[/]")
-        managed_target_sha = resolved
+        console.print(f"  [dim]Resolved {revision} → {revision_sha}[/]")
+    elif channel is Channel.LOCAL:
+        # local: editable working-tree install — no remote probe / guard.
+        pass
+    elif channel is Channel.STABLE:
+        # HATS-764: stable is pinned + semver-monotonic. Skip the git
+        # ahead/diverged probe (a PyPI release has no master divergence) and
+        # instead refuse a published tag whose semver is LOWER than installed.
+        try:
+            latest_stable = fetch_latest_stable_version()
+        except ChannelResolveError as exc:
+            console.print(f"[red]Update failed[/]: {exc}")
+            sys.exit(2)
+        if force_downgrade:
+            console.print(
+                "[yellow]Warning:[/] --force-downgrade bypasses the "
+                "semver-monotonic guard."
+            )
+        elif _classify_semver_downgrade(old_version, latest_stable):
+            _render_semver_downgrade_refusal(old_version, latest_stable)
+            sys.exit(DOWNGRADE_REFUSAL_EXIT_CODE)
     else:
-        # HATS-441: refuse silent downgrade when installed HEAD is ahead of
-        # remote master. ``--force-downgrade`` opts back into the destructive
-        # ``pip install --force-reinstall git+…`` behaviour for callers who
-        # know what they're doing (e.g. discarding a stale dev branch).
-        # Single probe — feeds both the downgrade gate and the no-op
-        # short-circuit below. Avoids running run_check twice per invocation.
+        # edge: moving target → keep the HATS-441 git ahead/diverged guard.
+        # ``--force-downgrade`` opts back into the destructive replace for
+        # callers who know what they're doing (discarding a stale dev branch).
         probe = None if force_downgrade else _probe_remote_state(project_dir)
-        managed_target_sha = probe.latest_sha if probe is not None else None
-
         if force_downgrade:
             console.print(
                 "[yellow]Warning:[/] --force-downgrade bypasses the "
@@ -1180,18 +1339,40 @@ def update(
             if active_role:
                 before_rules, before_skills = _snapshot_composition(asm)
 
-    # HATS-647: managed default venv → blue-green versioned install. Install
-    # into versions/<sha>/ (never the live venv) + atomic current flip, so a
-    # concurrently-live run survives. Editable / override venvs fall through
-    # to the legacy in-place install path below.
+    # HATS-764: route by channel.
+    #  - local → editable in-place install of the working tree (no versioned
+    #    dir, no current flip). --revision overrides the channel (HATS-496).
+    if channel is Channel.LOCAL and not revision:
+        _run_editable_update(
+            project_dir,
+            harness_path or ".",
+            old_version=old_version,
+            active_role=active_role,
+            config_unreadable=config_unreadable,
+            migrate_force=migrate_force,
+            check_branches=check_branches,
+        )
+        return
+
+    # HATS-647/764: edge/stable on the managed default venv → blue-green
+    # versioned install into versions/<version_id>/ (never the live venv) +
+    # atomic current flip, so a concurrently-live run survives. Editable /
+    # override venvs fall through to the legacy in-place install path below.
     if _is_managed_install(project_dir):
         from ..version_lock import VersionLockError
 
+        resolution = _build_managed_resolution(
+            channel,
+            revision_repo=revision_url,
+            revision_sha=revision_sha,
+            harness_repo=harness_repo,
+            probe=probe,
+            latest_stable=latest_stable,
+        )
         try:
             _run_managed_versioned_update(
                 project_dir,
-                url=_git_install_url(),
-                target_sha=managed_target_sha,
+                resolution,
                 old_version=old_version,
                 active_role=active_role,
                 config_unreadable=config_unreadable,
@@ -1235,7 +1416,12 @@ def update(
         new_version = old_version
     else:
         _require_uv()  # HATS-763: legacy in-place path also runs uv
-        cmd = _build_update_cmd(ref=revision)
+        # HATS-764: stable on a non-managed (override) venv → install the
+        # pinned PyPI release in place; edge / --revision keep the git source.
+        if channel is Channel.STABLE and latest_stable:
+            cmd = _build_install_cmd(sys.executable, f"ai-hats=={latest_stable}")
+        else:
+            cmd = _build_update_cmd(ref=revision)
         # Wrapped in a Rich spinner so the terminal isn't silent while uv
         # downloads (can take 30s+ on slow links).
         with console.status(

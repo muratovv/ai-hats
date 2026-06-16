@@ -72,23 +72,43 @@ def _wizard_provider_prompt(detected: list[str]) -> str:
 
 
 def _run_self_update() -> bool:
-    """Run `uv pip install` for ai-hats inline. Returns True on success.
+    """Run the channel-appropriate ai-hats install inline. Returns True on success.
 
-    Used in the wizard bootstrap path to guarantee that newly-onboarded
-    users start with the latest framework version. Skipped in flag-only
-    (CI) mode and behind ``--no-update`` for tests / offline use.
+    Used in the wizard bootstrap path to guarantee newly-onboarded users start
+    on the latest framework version for their harness channel (HATS-764): local
+    → editable working tree, edge → upstream git HEAD, stable → latest PyPI
+    release. Skipped in flag-only (CI) mode and behind ``--no-update``.
 
-    Wraps the uv subprocess in a Rich spinner so users on slow links
-    see continuous progress instead of a silent terminal.
+    HATS-764 (reviewer MAJOR): routed through the channel so a ``stable`` project
+    no longer silently pulls git master at first install. Wraps the uv subprocess
+    in a Rich spinner so users on slow links see continuous progress.
     """
     import subprocess
 
-    from .maintenance import _build_update_cmd, _require_uv
+    from ..channel import ChannelResolveError, fetch_latest_stable_version
+    from ..models import Channel
+    from .maintenance import _build_update_cmd, _read_harness, _require_uv
 
     _require_uv()  # D2 (HATS-763): fail loud before invoking uv, not a raw traceback
-    cmd = _build_update_cmd()
+    channel, _repo, path = _read_harness(_project_dir())
+    if channel is Channel.LOCAL:
+        cmd = ["uv", "pip", "install", "--python", sys.executable, "-e", path or "."]
+    elif channel is Channel.STABLE:
+        # 764 reality: the ai-hats PyPI name may be unpublished → skip gracefully
+        # rather than silently pulling git master. Live stable path is HATS-765.
+        try:
+            version = fetch_latest_stable_version()
+        except ChannelResolveError as exc:
+            console.print(f"[yellow]Update skipped[/]: {exc}")
+            return False
+        cmd = [
+            "uv", "pip", "install", "--python", sys.executable,
+            "--reinstall", f"ai-hats=={version}",
+        ]
+    else:  # edge
+        cmd = _build_update_cmd()
     with console.status(
-        "[cyan]Downloading ai-hats from GitHub …[/] "
+        "[cyan]Downloading ai-hats …[/] "
         "[dim](first run can take a minute on slow links)[/]",
         spinner="dots",
     ):
@@ -101,7 +121,7 @@ def _run_self_update() -> bool:
         tail = msg[-1] if msg else "see logs"
         console.print(f"[yellow]Update skipped[/]: {tail}")
         return False
-    console.print("[green]✓[/] ai-hats updated from GitHub")
+    console.print("[green]✓[/] ai-hats updated")
     return True
 
 
