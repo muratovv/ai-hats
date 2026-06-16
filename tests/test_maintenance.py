@@ -1068,8 +1068,6 @@ def test_managed_update_no_dormant_hint_on_first_migration(tmp_path, monkeypatch
 
 # ---------- HATS-764: channel routing + per-channel guard ----------
 
-from types import SimpleNamespace  # noqa: E402
-
 from ai_hats.cli.maintenance import (  # noqa: E402
     _build_managed_resolution,
     _classify_semver_downgrade,
@@ -1105,7 +1103,7 @@ def test_semver_downgrade_classify():
 def test_build_managed_resolution_stable():
     r = _build_managed_resolution(
         Channel.STABLE, revision_repo=None, revision_sha=None,
-        harness_repo=None, probe=None, latest_stable="0.8.1",
+        harness_repo=None, latest_stable="0.8.1",
     )
     assert r.version_id == "0.8.1"
     assert r.install_spec == "ai-hats==0.8.1"
@@ -1115,18 +1113,20 @@ def test_build_managed_resolution_stable():
 def test_build_managed_resolution_revision_pin_wins_over_channel():
     r = _build_managed_resolution(
         Channel.STABLE, revision_repo="git+ssh://x/y.git", revision_sha="abc123",
-        harness_repo=None, probe=None, latest_stable="0.8.1",
+        harness_repo=None, latest_stable="0.8.1",
     )
     assert r.version_id == "abc123"
     assert r.install_spec == "ai-hats @ git+ssh://x/y.git@abc123"
 
 
-def test_build_managed_resolution_edge_reuses_probe_sha(monkeypatch):
+def test_build_managed_resolution_edge_fetches_repo_head(monkeypatch):
     monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
-    probe = SimpleNamespace(latest_sha="feed1234")
+    # version_id comes from the edge repo's actual HEAD (ls-remote), not the
+    # upstream-master probe (which is hardwired to a possibly-different repo).
+    monkeypatch.setattr("ai_hats.channel.fetch_edge_head_sha", lambda repo: "feed1234")
     r = _build_managed_resolution(
         Channel.EDGE, revision_repo=None, revision_sha=None,
-        harness_repo=None, probe=probe, latest_stable=None,
+        harness_repo=None, latest_stable=None,
     )
     assert r.version_id == "feed1234"
     assert r.install_spec == (
@@ -1140,7 +1140,7 @@ def test_build_managed_resolution_edge_offline_exits_2(monkeypatch):
     with pytest.raises(SystemExit) as exc:
         _build_managed_resolution(
             Channel.EDGE, revision_repo=None, revision_sha=None,
-            harness_repo=None, probe=None, latest_stable=None,
+            harness_repo=None, latest_stable=None,
         )
     assert exc.value.code == 2
 
