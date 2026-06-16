@@ -7,10 +7,9 @@
 # Usage (from a local clone):
 #   bash scripts/install-launcher.sh
 #
-# Usage (public one-liner — repo is public, no credentials needed; HATS-766):
+# Usage (public one-liner — no credentials needed):
 #   curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh | bash
-#   (when piped, the script fetches the launcher itself from the same repo.
-#    Override AI_HATS_LAUNCHER_URL to install from a fork or mirror.)
+#   (piped: fetches the launcher from the repo; override AI_HATS_LAUNCHER_URL for a fork.)
 set -euo pipefail
 
 DEST="${AI_HATS_LAUNCHER_DEST:-$HOME/.local/bin/ai-hats}"
@@ -60,9 +59,8 @@ else
     info "source" "fetching $LAUNCHER_URL"
     TMP="$(mktemp)"
     trap 'rm -f "$TMP"' EXIT
-    # curl -f returns non-zero on 4xx/5xx (e.g. a 404 for a wrong branch), so a
-    # failed fetch is caught here — no HTML-404 body can leak into $DEST. The
-    # old private-repo HTML guard (HATS-339) is gone: the repo is public (HATS-766).
+    # curl -f rejects 4xx/5xx (e.g. a wrong-branch 404), so no HTML body leaks
+    # into $DEST — the old private-repo HTML guard (HATS-339) is no longer needed.
     if ! curl -fsSL "$LAUNCHER_URL" -o "$TMP"; then
         err "fetch" "failed to download launcher from $LAUNCHER_URL"
         err "hint"  "check the URL/branch, or clone the repo and run scripts/install-launcher.sh locally"

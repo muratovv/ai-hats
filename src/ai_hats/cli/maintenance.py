@@ -48,10 +48,8 @@ def _require_uv() -> None:
 
 # HATS-337: AI_HATS_REPO_URL env overrides the default git URL, mirroring
 # the bash launcher (HATS-339) so a single env var pins the install source
-# end-to-end (CI, airgapped mirrors, custom forks). The override still accepts
-# git+ssh / local paths.
-# HATS-766: repo is public → anonymous git+https is the keyless default
-# (was git+ssh, which required configured keys even for a fresh anonymous install).
+# end-to-end (CI, airgapped mirrors, custom forks).
+# HATS-766: public default is anonymous git+https (override still accepts ssh/local).
 def _git_install_url() -> str:
     return os.environ.get(
         "AI_HATS_REPO_URL", "git+https://github.com/muratovv/ai-hats.git"
@@ -783,25 +781,17 @@ def _get_installed_version() -> str:
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 
-# HATS-766: read recent commits from the public GitHub REST API instead of a
-# shallow clone — the repo is public, so one anonymous HTTPS GET replaces a
-# per-update network clone + temp dir. Over-fetch then slice (see below).
+# HATS-766: anonymous GitHub Commits API read replaces a per-update shallow clone.
 _CHANGELOG_API_URL = "https://api.github.com/repos/muratovv/ai-hats/commits"
 _CHANGELOG_COUNT = 7
 
 
 def _get_changelog() -> str:
-    """Recent non-merge commit subjects from the public GitHub Commits API.
+    """Recent non-merge commit subjects from the public GitHub Commits API (HATS-766).
 
-    HATS-766: replaces the per-update shallow git clone with a single anonymous
-    REST read. The "Recent changes" block is cosmetic, so EVERY failure
-    (offline, timeout, 403 anonymous rate-limit — 60 req/hr/IP, malformed JSON)
-    fails soft to ``""``. Mirrors the ``urllib`` pattern in
-    ``channel.fetch_latest_stable_version``.
-
-    Merge commits are dropped client-side (``parents`` length > 1) to match the
-    old ``git log --no-merges`` behaviour. We over-fetch (``per_page=15``) then
-    slice 7 so a merge-heavy stretch (no-ff convention) still yields real work.
+    Cosmetic "Recent changes" block — any failure (offline, timeout, 403
+    rate-limit, bad JSON) fails soft to ``""``. Merge commits dropped
+    client-side (``parents`` > 1); over-fetch 15 then slice 7.
     """
     import urllib.error
     import urllib.request
@@ -955,9 +945,8 @@ def _probe_remote_state(
     ``self update`` invocation. Returns ``None`` only when the probe could
     not resolve SHAs (no network, non-git install, malformed remote).
 
-    HATS-766: ``remote_url`` / ``ref`` thread the resolved edge repo + ``HEAD``
-    so the guard probes the SAME repo the edge install targets (was hardwired
-    to upstream ``master``). ``remote_url`` must be bare (no ``git+``).
+    HATS-766: ``remote_url`` / ``ref`` (bare URL + ``HEAD``) make the guard probe
+    the same repo the edge install targets, not hardwired upstream ``master``.
     """
     from ..update_check.checker import run_check
 
@@ -1326,10 +1315,9 @@ def update(
         # edge: moving target → keep the HATS-441 git ahead/diverged guard.
         # ``--force-downgrade`` opts back into the destructive replace for
         # callers who know what they're doing (discarding a stale dev branch).
-        # HATS-766: probe the SAME repo the edge install targets — resolve the
-        # edge repo (env > harness.repo > upstream) to a BARE url and track its
-        # default-branch HEAD, not hardwired upstream ``master`` (which a custom
-        # edge repo may not even have → probe None → guard silently inactive).
+        # HATS-766: probe the edge repo's HEAD (bare url; env > harness.repo >
+        # upstream), not hardwired master — else a custom edge repo silently
+        # disables the guard.
         from ..update_check.checker import FALLBACK_REMOTE_URL, _coerce_to_https
 
         raw_edge = (

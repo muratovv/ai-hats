@@ -10,8 +10,7 @@
 set -euo pipefail
 
 PROJECT="$(pwd)"
-# HATS-766: repo is public → anonymous git+https default (was git+ssh, which
-# needed configured keys). AI_HATS_REPO_URL override still accepts ssh/local.
+# HATS-766: anonymous git+https default (override still accepts ssh/local).
 REPO_URL="${AI_HATS_REPO_URL:-git+https://github.com/muratovv/ai-hats.git}"
 AH_DIR="$PROJECT/.agent/ai-hats"
 DEFAULT_VENV="$AH_DIR/.venv"
@@ -28,14 +27,9 @@ else
 fi
 
 # --- HATS-766: channel-aware heal source ---
-# Read the NESTED harness.channel / harness.path from ai-hats.yaml so a
-# `channel: local` project heals as an EDITABLE install (uv pip install -e
-# <path>, mirroring maintenance._run_editable_update) instead of a non-editable
-# PIP_TARGET rebuild that would clobber the dev working-tree install.
-# Bounded reader: isolate the indented `harness:` block (terminated by the next
-# column-1 key), then reuse the venv_path reader's comment/quote strip chain.
-# Key-order-independent; values with spaces / trailing `# comment` / surrounding
-# quotes are handled (NOT a bare field-split).
+# Read the nested harness.channel / harness.path so a `channel: local` project
+# heals EDITABLE (see heal_if_needed). Bounded reader for the indented `harness:`
+# block, reusing the venv_path strip chain (comments/quotes/tilde).
 read_harness_key() {
     local key="$1"
     [[ -f "$PROJECT/ai-hats.yaml" ]] || return 0
@@ -50,8 +44,7 @@ read_harness_key() {
 }
 
 HARNESS_CHANNEL="$(read_harness_key channel)"
-# Editable source for channel:local (default: project root). Tilde-expanded and
-# resolved relative to $PROJECT, mirroring the venv_path logic below.
+# Editable source for channel:local (default project root, resolved like venv_path).
 LOCAL_SRC=""
 if [[ "$HARNESS_CHANNEL" == "local" ]]; then
     LOCAL_SRC="$(read_harness_key path)"
@@ -146,8 +139,7 @@ heal_if_needed() {
     # Bare install so the subsequent exec into <venv>/bin/ai-hats succeeds.
     # The python self update (called next via delegate) will then re-install
     # with --reinstall and render the rich diff + auto-bump.
-    # HATS-766: channel:local heals EDITABLE (-e) so a dev working-tree install
-    # isn't clobbered by a non-editable snapshot from PIP_TARGET.
+    # HATS-766: channel:local heals EDITABLE (-e), else the PIP_TARGET rebuild.
     if [[ "$HARNESS_CHANNEL" == "local" ]]; then
         uv pip install --quiet --python "$VENV/bin/python" -e "$LOCAL_SRC"
     else
