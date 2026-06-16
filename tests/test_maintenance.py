@@ -114,6 +114,12 @@ def _setup_update_test_env(tmp_path: Path) -> Path:
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
         "active_role: assistant\n"
+        # HATS-764: pin edge so these command-level update tests exercise the
+        # git ahead/diverged guard + legacy in-place path (behaviourally the
+        # pre-channel default). stable/local routing is covered by dedicated
+        # unit + e2e tests.
+        "harness:\n"
+        "  channel: edge\n"
     )
     return project
 
@@ -534,6 +540,8 @@ from ai_hats.cli.maintenance import (  # noqa: E402
     _is_managed_install,
     _run_managed_versioned_update,
 )
+from ai_hats.channel import resolve_channel  # noqa: E402
+from ai_hats.models import Channel  # noqa: E402
 from ai_hats.paths import (  # noqa: E402
     complete_sentinel,
     current_pointer,
@@ -541,6 +549,12 @@ from ai_hats.paths import (  # noqa: E402
     read_current_sha,
     version_dir,
 )
+
+
+def _edge_res(url: str, sha: str):
+    """HATS-764: build the edge ChannelResolution the managed-update tests
+    install with — replaces the old (url=, target_sha=) call shape."""
+    return resolve_channel(Channel.EDGE, repo=url, head_sha=sha)
 
 
 def test_is_managed_editable_is_false(tmp_path, monkeypatch):
@@ -674,15 +688,14 @@ def test_installed_launcher_path_resolution(tmp_path, monkeypatch):
     assert _mnt._installed_launcher_path() == Path.home() / ".local" / "bin" / "ai-hats"
 
 
-def test_build_install_cmd_url_and_local():
-    """Install target: PEP 508 `name @ url@ref` for URLs, bare path@ref otherwise."""
-    url_cmd = _build_install_cmd("/v/bin/python", "git+ssh://x/ai-hats.git", "abc")
+def test_build_install_cmd_passes_spec_through():
+    """HATS-764: thin uv wrapper — the pre-shaped install_spec is passed verbatim."""
+    url_cmd = _build_install_cmd("/v/bin/python", "ai-hats @ git+ssh://x/ai-hats.git@abc")
     assert url_cmd[:3] == ["uv", "pip", "install"]  # HATS-763: uv engine
     assert url_cmd[url_cmd.index("--python") + 1] == "/v/bin/python"  # B1
     assert "--reinstall" in url_cmd
     assert url_cmd[-1] == "ai-hats @ git+ssh://x/ai-hats.git@abc"
-    # Local path: bare path (uv can't take @ref on a local path).
-    local_cmd = _build_install_cmd("/v/bin/python", "/local/path", "abc")
+    local_cmd = _build_install_cmd("/v/bin/python", "/local/path")
     assert local_cmd[-1] == "/local/path"
 
 
@@ -739,7 +752,7 @@ def test_managed_update_happy_path_flips_current(tmp_path, monkeypatch):
     bump_rec: list[str] = []
     with patch("subprocess.run", side_effect=_versioned_fake_run(bump_rec=bump_rec)):
         _run_managed_versioned_update(
-            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            tmp_path, _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0", active_role="assistant",
             config_unreadable=False, migrate_force=False, check_branches=False,
         )
@@ -758,7 +771,7 @@ def test_managed_update_venv_create_failure_exits_1(tmp_path, monkeypatch):
     with patch("subprocess.run", side_effect=_versioned_fake_run(fail_at="venv")):
         with pytest.raises(SystemExit) as exc:
             _run_managed_versioned_update(
-                tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+                tmp_path, _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
                 old_version="1.0.0", active_role=None,
                 config_unreadable=False, migrate_force=False, check_branches=False,
             )
@@ -775,7 +788,7 @@ def test_managed_update_install_failure_does_not_flip(tmp_path, monkeypatch):
                side_effect=_versioned_fake_run(fail_at="install", bump_rec=bump_rec)):
         with pytest.raises(SystemExit) as exc:
             _run_managed_versioned_update(
-                tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+                tmp_path, _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
                 old_version="1.0.0", active_role="assistant",
                 config_unreadable=False, migrate_force=False, check_branches=False,
             )
@@ -793,7 +806,7 @@ def test_managed_update_verify_failure_does_not_flip(tmp_path, monkeypatch):
     with patch("subprocess.run", side_effect=_versioned_fake_run(fail_at="verify")):
         with pytest.raises(SystemExit) as exc:
             _run_managed_versioned_update(
-                tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+                tmp_path, _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
                 old_version="1.0.0", active_role=None,
                 config_unreadable=False, migrate_force=False, check_branches=False,
             )
@@ -824,7 +837,7 @@ def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
 
     with patch("subprocess.run", side_effect=rec_run):
         _run_managed_versioned_update(
-            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            tmp_path, _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0", active_role="assistant",
             config_unreadable=False, migrate_force=False, check_branches=False,
         )
@@ -876,7 +889,7 @@ def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
 
     with patch("subprocess.run", side_effect=rec_run):
         _run_managed_versioned_update(
-            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            tmp_path, _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0", active_role=None,
             config_unreadable=False, migrate_force=False, check_branches=False,
         )
@@ -909,7 +922,7 @@ def test_managed_update_sweeps_incomplete_residue_before_build(tmp_path, monkeyp
 
     with patch("subprocess.run", side_effect=_versioned_fake_run()):
         _run_managed_versioned_update(
-            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            tmp_path, _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0", active_role=None,
             config_unreadable=False, migrate_force=False, check_branches=False,
         )
@@ -938,7 +951,7 @@ def test_managed_update_reuses_complete_dir_without_reinstall(tmp_path, monkeypa
 
     with patch("subprocess.run", side_effect=rec_run):
         _run_managed_versioned_update(
-            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            tmp_path, _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0", active_role=None,
             config_unreadable=False, migrate_force=False, check_branches=False,
         )
@@ -962,7 +975,7 @@ def test_managed_update_reclaims_legacy_venv_when_on_versioned(tmp_path, monkeyp
 
     with patch("subprocess.run", side_effect=_versioned_fake_run()):
         _run_managed_versioned_update(
-            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            tmp_path, _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0", active_role=None,
             config_unreadable=False, migrate_force=False, check_branches=False,
         )
@@ -982,7 +995,7 @@ def test_managed_update_keeps_legacy_venv_when_on_venv(tmp_path, monkeypatch):
 
     with patch("subprocess.run", side_effect=_versioned_fake_run()):
         _run_managed_versioned_update(
-            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            tmp_path, _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0", active_role=None,
             config_unreadable=False, migrate_force=False, check_branches=False,
         )
@@ -1023,7 +1036,7 @@ def test_managed_update_warns_when_launcher_dormant(tmp_path, monkeypatch):
 
     with patch("subprocess.run", side_effect=_versioned_fake_run()):
         _run_managed_versioned_update(
-            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            tmp_path, _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0", active_role=None,
             config_unreadable=False, migrate_force=False, check_branches=False,
         )
@@ -1045,9 +1058,136 @@ def test_managed_update_no_dormant_hint_on_first_migration(tmp_path, monkeypatch
 
     with patch("subprocess.run", side_effect=_versioned_fake_run()):
         _run_managed_versioned_update(
-            tmp_path, url="git+ssh://x/ai-hats.git", target_sha="cafef00d",
+            tmp_path, _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
             old_version="1.0.0", active_role=None,
             config_unreadable=False, migrate_force=False, check_branches=False,
         )
     assert read_current_sha(tmp_path) == "cafef00d"  # update succeeded
     assert not any("host launcher is not using" in p for p in printed)
+
+
+# ---------- HATS-764: channel routing + per-channel guard ----------
+
+from ai_hats.cli.maintenance import (  # noqa: E402
+    _build_managed_resolution,
+    _classify_semver_downgrade,
+)
+
+
+def _setup_channel_env(tmp_path: Path, channel: str, *, extra: str = "") -> Path:
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "ai-hats.yaml").write_text(
+        "schema_version: 4\n"
+        "provider: claude\n"
+        "ai_hats_dir: .agent/ai-hats\n"
+        "active_role: assistant\n"
+        f"harness:\n  channel: {channel}\n{extra}"
+    )
+    return project
+
+
+def test_semver_downgrade_classify():
+    # refuse lower, allow equal/higher, dev-vs-release boundary, unparseable→allow.
+    assert _classify_semver_downgrade("0.9.0", "0.8.1") is True
+    assert _classify_semver_downgrade("0.8.1", "0.8.1") is False
+    assert _classify_semver_downgrade("0.8.0", "0.8.1") is False
+    # installed dev precedes the release → upgrading to the release is allowed.
+    assert _classify_semver_downgrade("0.8.1.dev105+g589f167", "0.8.1") is False
+    # release installed, an older dev target → downgrade.
+    assert _classify_semver_downgrade("0.8.1", "0.8.1.dev3") is True
+    # unparseable installed (editable 'unknown') → allow.
+    assert _classify_semver_downgrade("unknown", "0.8.1") is False
+
+
+def test_build_managed_resolution_stable():
+    r = _build_managed_resolution(
+        Channel.STABLE, revision_repo=None, revision_sha=None,
+        harness_repo=None, latest_stable="0.8.1",
+    )
+    assert r.version_id == "0.8.1"
+    assert r.install_spec == "ai-hats==0.8.1"
+    assert r.mutable is False
+
+
+def test_build_managed_resolution_revision_pin_wins_over_channel():
+    r = _build_managed_resolution(
+        Channel.STABLE, revision_repo="git+ssh://x/y.git", revision_sha="abc123",
+        harness_repo=None, latest_stable="0.8.1",
+    )
+    assert r.version_id == "abc123"
+    assert r.install_spec == "ai-hats @ git+ssh://x/y.git@abc123"
+
+
+def test_build_managed_resolution_edge_fetches_repo_head(monkeypatch):
+    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    # version_id comes from the edge repo's actual HEAD (ls-remote), not the
+    # upstream-master probe (which is hardwired to a possibly-different repo).
+    monkeypatch.setattr("ai_hats.channel.fetch_edge_head_sha", lambda repo: "feed1234")
+    r = _build_managed_resolution(
+        Channel.EDGE, revision_repo=None, revision_sha=None,
+        harness_repo=None, latest_stable=None,
+    )
+    assert r.version_id == "feed1234"
+    assert r.install_spec == (
+        "ai-hats @ git+https://github.com/muratovv/ai-hats.git@feed1234"
+    )
+
+
+def test_build_managed_resolution_edge_offline_exits_2(monkeypatch):
+    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    monkeypatch.setattr("ai_hats.channel.fetch_edge_head_sha", lambda repo: None)
+    with pytest.raises(SystemExit) as exc:
+        _build_managed_resolution(
+            Channel.EDGE, revision_repo=None, revision_sha=None,
+            harness_repo=None, latest_stable=None,
+        )
+    assert exc.value.code == 2
+
+
+def test_update_stable_refuses_semver_downgrade(tmp_path, monkeypatch):
+    """channel: stable + a lower published tag than installed → exit 3."""
+    project = _setup_channel_env(tmp_path, "stable")
+    monkeypatch.setattr("ai_hats.channel.fetch_latest_stable_version", lambda: "0.0.1")
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project), \
+         patch("ai_hats.__version__", "0.9.0"):
+        result = CliRunner().invoke(update, [])
+    assert result.exit_code == DOWNGRADE_REFUSAL_EXIT_CODE == 3, result.output
+    assert "newer than" in result.output and "0.0.1" in result.output
+
+
+def test_update_stable_fetch_unreachable_exits_2(tmp_path, monkeypatch):
+    """channel: stable + PyPI unreachable → fail loud, exit 2, no silent fallback."""
+    from ai_hats.channel import ChannelResolveError
+
+    project = _setup_channel_env(tmp_path, "stable")
+
+    def boom():
+        raise ChannelResolveError("could not resolve latest stable version from PyPI")
+
+    monkeypatch.setattr("ai_hats.channel.fetch_latest_stable_version", boom)
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
+        result = CliRunner().invoke(update, [])
+    assert result.exit_code == 2, result.output
+    assert "could not resolve latest stable version from PyPI" in result.output
+
+
+def test_update_local_editable_in_place(tmp_path, monkeypatch):
+    """channel: local → `uv pip install -e <path>` in place, no versioned dir."""
+    project = _setup_channel_env(tmp_path, "local", extra="  path: .\n")
+    captured: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        captured.append(list(args))
+        return _make_completed(list(args), returncode=0)
+
+    monkeypatch.setattr("shutil.which", lambda _n: "/usr/bin/uv")  # _require_uv passes
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project), \
+         patch("subprocess.run", side_effect=fake_run):
+        result = CliRunner().invoke(update, [])
+    assert result.exit_code == 0, result.output
+    editable = [c for c in captured if c[:3] == ["uv", "pip", "install"] and "-e" in c]
+    assert len(editable) == 1, f"expected one editable install, got {captured}"
+    assert editable[0][-1] == "."
+    # No versioned dir is created for a local editable install.
+    assert not (project / ".agent" / "ai-hats" / "versions").exists()

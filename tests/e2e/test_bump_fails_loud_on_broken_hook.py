@@ -26,6 +26,8 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.project import pin_edge_channel
+
 
 def _seed_stuck_state(project_path: Path) -> None:
     """Mimic proxmox-stuck shape: settings.json post-heal form pointing
@@ -88,6 +90,7 @@ def test_bump_fails_loud_when_settings_points_at_missing_hook(
     """AC5: end-of-bump smoke-assert raises AssemblyError that lists
     the broken entry and carries the backup-path recovery one-liner."""
     _seed_stuck_state(tmp_venv_project.path)
+    pin_edge_channel(tmp_venv_project.path)  # HATS-764: edge so self update resolves the local source
     backup_dir = tmp_path / "backups"
 
     # First bump succeeds — it materializes pre_bash_shared_state_guard.sh
@@ -179,6 +182,7 @@ def test_bump_passes_smoke_assert_on_clean_state(
         "default_role: assistant\n"
         "active_role: assistant\n"
         "task_prefix: HATS\n"
+        "harness:\n  channel: edge\n"  # HATS-764
     )
     for cmd in (
         ["git", "init", "-q"],

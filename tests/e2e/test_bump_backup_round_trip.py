@@ -113,12 +113,13 @@ def bumped(tmp_path_factory, _shared_launcher_venv, repo_root: Path):
     (the ``RunResult``), ``pre_hashes`` (pre-bump sha256 of the round-trip
     files).
     """
-    from _helpers.project import Project
+    from _helpers.project import Project, pin_edge_channel
     from _helpers.repo_src import build_src
 
     launcher, shared_venv = _shared_launcher_venv
     project_path = tmp_path_factory.mktemp("bump-backup") / "project"
     project_path.mkdir()
+    pin_edge_channel(project_path)  # HATS-764: edge so self update resolves the local source
     project = Project(
         path=project_path,
         ai_hats_binary=launcher,

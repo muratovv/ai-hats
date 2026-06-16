@@ -36,6 +36,8 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.project import pin_edge_channel
+
 pytestmark = pytest.mark.pip_heavy  # HATS-678: real pip at call time → capped via conftest.PIP_HEAVY_GROUPS
 
 
@@ -76,6 +78,7 @@ def test_e2e_self_update_skips_pip_when_in_sync(tmp_path: Path) -> None:
     project = tmp_path / "project"
     launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
+    pin_edge_channel(project)  # HATS-764: edge so self update resolves the local source
 
     # ----- fixture: src-repo (installed checkout) -----
     subprocess.run(

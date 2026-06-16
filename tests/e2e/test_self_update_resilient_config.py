@@ -33,6 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 # HATS-589: per-xdist-worker private build source (no-op on serial run).
+from _helpers.project import pin_edge_channel  # noqa: E402
 from _helpers.repo_src import build_src  # noqa: E402
 
 pytestmark = pytest.mark.pip_heavy  # HATS-678: real pip at call time → capped via conftest.PIP_HEAVY_GROUPS
@@ -64,6 +65,9 @@ def _bootstrap(tmp_path: Path) -> tuple[Path, Path, dict]:
     launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
     user_home.mkdir()
+    # HATS-764: edge so the bootstrap self update resolves the local source
+    # (not the new default-stable PyPI path). Re-pinned after `self init` below.
+    pin_edge_channel(project)
 
     # Isolate from the developer's global config: a real ``~/.ai-hats/`` (custom
     # library symlinks + customizations.yaml) and inherited ``AI_HATS_*`` /
@@ -99,6 +103,11 @@ def _bootstrap(tmp_path: Path) -> tuple[Path, Path, dict]:
         [str(launcher_dest), "self", "init", "-r", "assistant", "-p", "claude"],
         cwd=project, env=env, timeout=60,
     )
+    # HATS-764: `self init` rewrote ai-hats.yaml without a harness block (→ the
+    # stable default). Re-pin edge so the per-test corrupt-config `self update`s
+    # resolve the local source. An unparseable corruption (the garbage-value
+    # test) routes through edge anyway via _read_harness's recovery fallback.
+    pin_edge_channel(project)
     return launcher_dest, project, env
 
 
