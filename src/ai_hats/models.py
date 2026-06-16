@@ -491,14 +491,31 @@ class HarnessConfig(_YamlModel):
 
     Inherits ``extra="ignore"`` from :class:`_YamlModel` (NOT ``forbid``): a
     newer ai-hats may add a nested ``harness`` sub-field, and an older binary
-    must drop it silently rather than crash (forward-compat — the top-level
-    strip in :meth:`ProjectConfig._strip_unknown_fields` only reaches the
-    outer ``harness`` key, never nested ones).
+    must drop it rather than crash (forward-compat — the top-level strip in
+    :meth:`ProjectConfig._strip_unknown_fields` only reaches the outer
+    ``harness`` key, never nested ones). The drop is WARNed (below), mirroring
+    the top-level strip so a vanished field is observable, not silent.
     """
 
     channel: Channel = Channel.STABLE
     repo: str | None = None
     path: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_unknown_keys(cls, data: Any) -> Any:
+        """WARN (stderr) on an unknown nested key before ``extra="ignore"`` drops
+        it — keeps the forward-compat behaviour observable, consistent with
+        ``ProjectConfig._strip_unknown_fields`` (HATS-764 review)."""
+        if isinstance(data, dict):
+            for key in sorted(set(data) - set(cls.model_fields)):
+                print(
+                    f"WARN: ai-hats.yaml harness: dropping unknown field {key!r} "
+                    "(not in this ai-hats version's schema — written by a newer "
+                    "ai-hats? run 'ai-hats self update' to use it).",
+                    file=sys.stderr,
+                )
+        return data
 
     @property
     def is_default(self) -> bool:

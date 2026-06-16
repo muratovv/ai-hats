@@ -1000,27 +1000,39 @@ def _render_downgrade_refusal(reason: str, entry) -> None:
 
 
 def _read_harness(project_dir: Path):
-    """Read ``(channel, repo, path)`` from ai-hats.yaml; degrade to the stable
-    default if the installed code can't parse the config.
+    """Read ``(channel, repo, path)`` from ai-hats.yaml for the install router.
 
-    HATS-764/581: ``self update`` must self-heal — a config the *current* code
-    rejects must not block the recovery command. An unreadable/absent config
-    yields ``(Channel.STABLE, None, None)``; the fresh-interpreter bump heals
-    the yaml afterwards. Independent of the ``_assembler`` read below so the
-    channel is always available for the guard, even on the degraded path.
+    HATS-764/581: ``self update`` must self-heal, so resolution degrades:
+      - no config file → ``STABLE`` (greenfield, the documented default).
+      - present but unparseable by the installed code → ``EDGE`` recovery
+        (install from the configured source / upstream, never an unreachable
+        PyPI release), so a broken config can't strand the recovery command.
+      - otherwise → the configured ``harness`` block.
+
+    Independent of the snapshot-block ``_assembler`` read so the channel is
+    available for the guard even on the degraded path. The parse's WARNs
+    (deprecated-strip / default_role heal / unknown key) are suppressed here —
+    the authoritative copy fires once from that ``_assembler`` read; without
+    this they would print twice per ``self update`` (HATS-408 double-WARN).
     """
+    import contextlib
+    import io
+
     from ..models import Channel, ProjectConfig, ProjectConfigError
 
     config_path = project_dir / "ai-hats.yaml"
     if not config_path.exists():
         return Channel.STABLE, None, None  # greenfield → documented default
     try:
-        h = ProjectConfig.from_yaml(config_path).harness
+        with contextlib.redirect_stderr(io.StringIO()):
+            h = ProjectConfig.from_yaml(config_path).harness
     except ProjectConfigError:
-        # Recovery mode: the file EXISTS but the installed code can't parse it.
-        # Route the heal through edge (install from the configured source /
-        # upstream), NOT stable — a broken config must not strand `self update`
-        # on an unreachable/unpublished PyPI release (HATS-581 self-heal).
+        # File EXISTS but the installed code can't parse it → edge recovery
+        # (install from the configured source / upstream, NOT an
+        # unreachable/unpublished PyPI release — HATS-581 self-heal).
+        # NOTE (HATS-765): once stable is live on PyPI, a corrupted config on a
+        # stable project recovers via edge (git HEAD) for one cycle; the healed
+        # yaml restores stable on the next update. Revisit if that drift bites.
         return Channel.EDGE, None, None
     return h.channel, h.repo, h.path
 
@@ -1269,7 +1281,13 @@ def update(
         try:
             latest_stable = fetch_latest_stable_version()
         except ChannelResolveError as exc:
-            console.print(f"[red]Update failed[/]: {exc}")
+            console.print(
+                f"[red]Update failed[/]: {exc}\n"
+                "[dim]stable resolves the target version from PyPI — required "
+                "even with --force-downgrade (which bypasses the guard, not the "
+                "version fetch). Use [bold]--channel edge[/bold] to install from "
+                "git instead.[/]"
+            )
             sys.exit(2)
         if force_downgrade:
             console.print(
