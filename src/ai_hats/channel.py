@@ -13,9 +13,24 @@ the caller (see ``cli/maintenance.py``) and injected as ``head_sha`` /
 
 from __future__ import annotations
 
+import json
+import os
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 
 from .models import Channel
+
+# PyPI JSON API for the latest published ai-hats version (stable channel).
+PYPI_JSON_URL = "https://pypi.org/pypi/ai-hats/json"
+
+
+class ChannelResolveError(RuntimeError):
+    """An effectful channel fetch failed loud (PyPI unreachable, offline edge).
+
+    Raised instead of falling back to another channel — the caller surfaces a
+    clear message and a non-zero exit (HATS-764 §3: no silent fallback).
+    """
 
 
 @dataclass(frozen=True)
@@ -98,3 +113,69 @@ def resolve_channel(
             editable=False,
         )
     raise ValueError(f"unhandled channel {channel!r}")  # pragma: no cover
+
+
+# ---------- effectful fetchers (run by the caller, injected into the resolver) ----------
+
+
+def _git_https_repo(raw: str) -> str:
+    """Coerce a repo URL to the ``git+https://`` form pip needs for a VCS spec.
+
+    Reuses ``checker._coerce_to_https`` (which strips ``git+`` to a *bare* https
+    URL for anonymous ``git ls-remote``) and re-adds the ``git+`` prefix so the
+    edge install spec (``ai-hats @ git+https://…@<sha>``) is a valid pip VCS
+    URL. A local-path repo (no scheme — the e2e harness) is left bare.
+    """
+    from .update_check.checker import _coerce_to_https
+
+    https = _coerce_to_https(raw)
+    if "://" not in https:
+        return https  # local path (e2e harness) — pip builds the working tree
+    return https if https.startswith("git+") else "git+" + https
+
+
+def resolve_edge_repo(yaml_repo: str | None = None) -> str:
+    """Edge repo precedence: ``AI_HATS_REPO_URL`` env > yaml ``harness.repo`` >
+    upstream default (``checker.FALLBACK_REMOTE_URL``), coerced to ``git+https``.
+    """
+    from .update_check.checker import FALLBACK_REMOTE_URL
+
+    raw = os.environ.get("AI_HATS_REPO_URL") or yaml_repo or FALLBACK_REMOTE_URL
+    return _git_https_repo(raw)
+
+
+def fetch_edge_head_sha(repo: str) -> str | None:
+    """Resolve the edge repo's default-branch HEAD sha via ``git ls-remote``.
+
+    ``None`` on offline / unreachable remote — the caller fails loud (the same
+    "could not resolve a target revision" path the legacy install used). Edge
+    has no ``branch`` field: it tracks default-branch HEAD, the same call the
+    local-source path uses.
+    """
+    from .cli.maintenance import _resolve_ref  # lazy: avoid maintenance<->channel cycle
+
+    return _resolve_ref(repo, "HEAD")
+
+
+def fetch_latest_stable_version(url: str = PYPI_JSON_URL, *, timeout: int = 10) -> str:
+    """Latest published ai-hats version from the PyPI JSON API (``info.version``).
+
+    Fails LOUD via :class:`ChannelResolveError` when PyPI is unreachable or the
+    package is not yet published (404) — NO silent fallback to edge
+    (HATS-764 §3). The 764 reality is the ``ai-hats`` PyPI name is still free;
+    HATS-765 owns the live publish + live e2e. Unit-tested here with a stub.
+    """
+    if not url.startswith("https://"):  # defense: only the pinned https endpoint
+        raise ChannelResolveError(f"refusing non-https PyPI URL: {url!r}")
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 — https-only, guarded above
+            payload = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise ChannelResolveError(
+            f"could not resolve latest stable version from PyPI ({url}): {exc}"
+        ) from exc
+    version = (payload.get("info") or {}).get("version")
+    if not version:
+        raise ChannelResolveError(f"PyPI response for ai-hats has no info.version ({url})")
+    return version
