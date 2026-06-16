@@ -783,47 +783,60 @@ def _get_installed_version() -> str:
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 
-def _get_changelog() -> str:
-    """Get recent commits from GitHub via shallow clone."""
-    import subprocess
-    import tempfile
+# HATS-766: read recent commits from the public GitHub REST API instead of a
+# shallow clone — the repo is public, so one anonymous HTTPS GET replaces a
+# per-update network clone + temp dir. Over-fetch then slice (see below).
+_CHANGELOG_API_URL = "https://api.github.com/repos/muratovv/ai-hats/commits"
+_CHANGELOG_COUNT = 7
 
-    tmp = tempfile.mkdtemp(prefix="ai-hats-changelog-")
+
+def _get_changelog() -> str:
+    """Recent non-merge commit subjects from the public GitHub Commits API.
+
+    HATS-766: replaces the per-update shallow git clone with a single anonymous
+    REST read. The "Recent changes" block is cosmetic, so EVERY failure
+    (offline, timeout, 403 anonymous rate-limit — 60 req/hr/IP, malformed JSON)
+    fails soft to ``""``. Mirrors the ``urllib`` pattern in
+    ``channel.fetch_latest_stable_version``.
+
+    Merge commits are dropped client-side (``parents`` length > 1) to match the
+    old ``git log --no-merges`` behaviour. We over-fetch (``per_page=15``) then
+    slice 7 so a merge-heavy stretch (no-ff convention) still yields real work.
+    """
+    import urllib.error
+    import urllib.request
+
+    url = f"{_CHANGELOG_API_URL}?per_page=15"
+    # urllib injects a default Python-urllib UA that GitHub accepts (a UA-less
+    # request is 403'd); we set an explicit one anyway. URL is a pinned https
+    # constant, so the B310 scheme audit is satisfied.
+    req = urllib.request.Request(
+        url,
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "ai-hats"},
+    )
     try:
-        result = subprocess.run(
-            [
-                "git",
-                "clone",
-                "--depth",
-                "10",
-                "--filter=blob:none",
-                "--quiet",
-                "ssh://git@github.com/muratovv/ai-hats.git",
-                tmp,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        if result.returncode != 0:
-            return ""
-        log = subprocess.run(
-            # `--no-merges`: hide `Merge branch 'task/hats-NNN'` titles —
-            # conventional-commit titles from the actual work are more useful
-            # than the wrapping merge commits under a no-ff merge convention.
-            ["git", "-C", tmp, "log", "--oneline", "--no-merges", "-7"],
-            capture_output=True,
-            text=True,
-        )
-        return log.stdout.strip() if log.returncode == 0 else ""
-    except (subprocess.SubprocessError, OSError):
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — pinned https constant
+            commits = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError):
         logger.debug("changelog fetch failed", exc_info=True)
         return ""
-    finally:
-        import shutil
+    if not isinstance(commits, list):
+        return ""
 
-        # Local tempfile.mkdtemp() — own temp dir, no user data.
-        shutil.rmtree(tmp, ignore_errors=True)  # safe-delete: ok own-tmpdir
+    lines: list[str] = []
+    for entry in commits:
+        if not isinstance(entry, dict):
+            continue
+        if len(entry.get("parents") or []) > 1:
+            continue  # merge commit — hide (matches old --no-merges)
+        sha = (entry.get("sha") or "")[:7]
+        message = ((entry.get("commit") or {}).get("message") or "").strip()
+        subject = message.splitlines()[0] if message else ""
+        if sha and subject:
+            lines.append(f"{sha} {subject}")
+        if len(lines) >= _CHANGELOG_COUNT:
+            break
+    return "\n".join(lines)
 
 
 def _snapshot_dep_versions() -> dict[str, str]:
