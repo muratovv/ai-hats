@@ -1016,3 +1016,48 @@ def test_update_shows_already_up_to_date(cli_project, monkeypatch):
     result = runner.invoke(main, ["self", "update"])
     assert result.exit_code == 0, result.output
     assert "Already up to date" in result.output
+
+
+# ---------- HATS-764: config set --channel / config status Channel line ----------
+
+
+def test_config_set_channel_edge_roundtrips(cli_project):
+    import yaml
+
+    project, runner = cli_project
+    runner.invoke(main, ["config", "set", "-p", "claude"])
+    r = runner.invoke(main, ["config", "set", "--channel", "edge"])
+    assert r.exit_code == 0, r.output
+    raw = yaml.safe_load((project / "ai-hats.yaml").read_text())
+    assert raw["harness"] == {"channel": "edge"}
+    s = runner.invoke(main, ["config", "status"])
+    assert s.exit_code == 0, s.output
+    assert "Channel:" in s.output and "edge" in s.output
+
+
+def test_config_set_channel_local_with_path(cli_project):
+    import yaml
+
+    project, runner = cli_project
+    runner.invoke(main, ["config", "set", "-p", "claude"])
+    r = runner.invoke(main, ["config", "set", "--channel", "local", "--path", "."])
+    assert r.exit_code == 0, r.output
+    raw = yaml.safe_load((project / "ai-hats.yaml").read_text())
+    assert raw["harness"] == {"channel": "local", "path": "."}
+
+
+def test_config_set_stable_is_byte_clean(cli_project):
+    project, runner = cli_project
+    runner.invoke(main, ["config", "set", "-p", "claude"])
+    r = runner.invoke(main, ["config", "set", "--channel", "stable"])
+    assert r.exit_code == 0, r.output
+    # stable is the default → omitted from yaml (no spurious harness: block).
+    assert "harness" not in (project / "ai-hats.yaml").read_text()
+
+
+def test_config_set_repo_rejected_without_edge(cli_project):
+    project, runner = cli_project
+    runner.invoke(main, ["config", "set", "-p", "claude"])
+    r = runner.invoke(main, ["config", "set", "--channel", "local", "--repo", "https://x/y.git"])
+    assert r.exit_code == 1
+    assert "--repo is only valid with --channel edge" in r.output

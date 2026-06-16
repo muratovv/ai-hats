@@ -413,6 +413,26 @@ def sync_hooks():
     "sessions/, STATE.md to the new path; updates yaml and .gitignore; "
     "deletes managed venv (recreated on next session).",
 )
+@click.option(
+    "--channel",
+    "channel",
+    type=click.Choice(["local", "edge", "stable"]),
+    default=None,
+    help="Harness source channel (HATS-764): local (editable working tree), "
+    "edge (repo HEAD), stable (latest PyPI release). Pure yaml, like --venv.",
+)
+@click.option(
+    "--repo",
+    "repo",
+    default=None,
+    help="Edge-only: override the upstream repo URL the edge channel installs from.",
+)
+@click.option(
+    "--path",
+    "harness_path",
+    default=None,
+    help="Local-only: editable source path for the local channel (default: project root).",
+)
 def set_role(
     provider: str | None,
     role: str | None,
@@ -421,8 +441,11 @@ def set_role(
     no_venv: bool,
     manage_gitignore: bool | None,
     ai_hats_dir: str | None,
+    channel: str | None,
+    repo: str | None,
+    harness_path: str | None,
 ):
-    """Configure project: provider, role, prefix, venv, gitignore, framework dir."""
+    """Configure project: provider, role, prefix, venv, gitignore, framework dir, channel."""
     from ..models import ProjectConfig
 
     if venv_path is not None and no_venv:
@@ -434,12 +457,13 @@ def set_role(
         or venv_path is not None or no_venv
         or manage_gitignore is not None
         or ai_hats_dir is not None
+        or channel is not None or repo is not None or harness_path is not None
     )
     if not any_change:
         console.print(
             "[red]Specify at least one of[/]: --provider/-p, --role/-r, "
             "--task-prefix, --venv/--no-venv, --manage-gitignore/--no-manage-gitignore, "
-            "--ai-hats-dir."
+            "--ai-hats-dir, --channel/--repo/--path."
         )
         raise SystemExit(1)
 
@@ -498,6 +522,36 @@ def set_role(
             asm.project_config.save(asm.config_path)
             label = new_venv if new_venv is not None else "managed (default)"
             console.print(f"[green]Updated[/]: venv_path = [bold]{label}[/]")
+
+    # --channel / --repo / --path — harness source (HATS-764). Mirrors --venv:
+    # pure yaml, no filesystem state. The initial-wizard applies the channel via
+    # this flag — it never edits ai-hats.yaml directly.
+    if channel is not None or repo is not None or harness_path is not None:
+        from ..models import Channel, HarnessConfig
+
+        current = asm.project_config.harness
+        if channel is not None:
+            # An explicit channel resets repo/path to only what is passed now, so
+            # switching away from edge/local never carries a stale repo/path.
+            new_channel = Channel(channel)
+            new_repo, new_path = repo, harness_path
+        else:
+            new_channel = current.channel
+            new_repo = repo if repo is not None else current.repo
+            new_path = harness_path if harness_path is not None else current.path
+        if new_repo is not None and new_channel is not Channel.EDGE:
+            console.print("[red]Error[/]: --repo is only valid with --channel edge.")
+            raise SystemExit(1)
+        if new_path is not None and new_channel is not Channel.LOCAL:
+            console.print("[red]Error[/]: --path is only valid with --channel local.")
+            raise SystemExit(1)
+        new_harness = HarnessConfig(channel=new_channel, repo=new_repo, path=new_path)
+        if current == new_harness:
+            console.print("[dim]harness unchanged[/]")
+        else:
+            asm.project_config.harness = new_harness
+            asm.project_config.save(asm.config_path)
+            console.print(f"[green]Updated[/]: channel = [bold]{new_channel.value}[/]")
 
     # --manage-gitignore / --no-manage-gitignore — pure yaml toggle.
     if manage_gitignore is not None:
@@ -816,6 +870,19 @@ def status():
     else:
         console.print(f"Role: [bold]{st['role']}[/]")
         console.print(f"Provider: {st['provider']}")
+
+    # HATS-764: harness channel — a config-side read (NOT _gather_install_info,
+    # which is install-level with no config access). The full install-Source
+    # line redesign stays HATS-767; this is the minimal config view.
+    from ..models import Channel
+
+    channel = asm.project_config.harness.channel
+    _hint = {
+        Channel.LOCAL: "editable working tree",
+        Channel.EDGE: "repo HEAD",
+        Channel.STABLE: "latest PyPI release",
+    }[channel]
+    console.print(f"Channel: [bold]{channel.value}[/]  [dim]({_hint})[/]")
 
     # Dependency tree (HATS-421: each node tagged with source layer).
     if st["role"] and st["tree"]:
