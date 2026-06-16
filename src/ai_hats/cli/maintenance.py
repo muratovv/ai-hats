@@ -1055,16 +1055,16 @@ def _build_managed_resolution(
     revision_repo: str | None,
     revision_sha: str | None,
     harness_repo: str | None,
-    probe,
     latest_stable: str | None,
 ) -> ChannelResolution:
     """Compose the :class:`ChannelResolution` for the managed versioned install.
 
     ``--revision`` (``revision_sha`` set) → explicit edge-style pin at that sha
     against ``_git_install_url()`` (channel-agnostic, HATS-496). stable →
-    ``ai-hats==<latest_stable>``. edge → ``git+https`` repo @ (the probe's
-    upstream-master sha, reused to avoid a second round-trip, else a fresh
-    ``git ls-remote`` HEAD). Fails loud (exit 2) when an edge sha can't resolve.
+    ``ai-hats==<latest_stable>``. edge → the edge repo's actual HEAD via
+    ``git ls-remote`` (NOT the upstream-master probe, which is hardwired to a
+    possibly-different repo — the probe drives the guard only). Fails loud
+    (exit 2) when an edge sha can't resolve.
     """
     from ..channel import fetch_edge_head_sha, resolve_channel, resolve_edge_repo
     from ..models import Channel
@@ -1074,7 +1074,7 @@ def _build_managed_resolution(
     if channel is Channel.STABLE:
         return resolve_channel(Channel.STABLE, latest_version=latest_stable)
     repo = resolve_edge_repo(harness_repo)
-    head_sha = (probe.latest_sha if probe is not None else None) or fetch_edge_head_sha(repo)
+    head_sha = fetch_edge_head_sha(repo)
     if not head_sha:
         console.print(
             "[red]Update failed[/]: could not resolve a target revision to "
@@ -1366,7 +1366,6 @@ def update(
             revision_repo=revision_url,
             revision_sha=revision_sha,
             harness_repo=harness_repo,
-            probe=probe,
             latest_stable=latest_stable,
         )
         try:

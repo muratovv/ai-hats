@@ -15,6 +15,28 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+def pin_edge_channel(project_path) -> None:
+    """HATS-764: pin ``harness: channel: edge`` so a managed ``self update``
+    resolves the local ``AI_HATS_REPO_URL`` source the e2e harness provides.
+
+    Without a harness block the channel defaults to ``stable`` → the PyPI JSON
+    API (the ``ai-hats`` name is unpublished until HATS-765 → 404, fail-loud).
+    Appends to an existing config; writes a minimal valid one otherwise.
+    """
+    p = Path(project_path) / "ai-hats.yaml"
+    if p.exists():
+        text = p.read_text()
+        if "harness:" not in text:
+            p.write_text(text + "harness:\n  channel: edge\n")
+    else:
+        p.write_text(
+            "schema_version: 4\n"
+            "ai_hats_dir: .agent/ai-hats\n"
+            "provider: claude\n"
+            "harness:\n  channel: edge\n"
+        )
+
+
 @dataclass(frozen=True)
 class RunResult:
     """Outcome of one ``ai-hats`` (or ``python -m ai_hats``) invocation.
