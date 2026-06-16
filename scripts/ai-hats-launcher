@@ -10,7 +10,9 @@
 set -euo pipefail
 
 PROJECT="$(pwd)"
-REPO_URL="${AI_HATS_REPO_URL:-git+ssh://git@github.com/muratovv/ai-hats.git}"
+# HATS-766: repo is public → anonymous git+https default (was git+ssh, which
+# needed configured keys). AI_HATS_REPO_URL override still accepts ssh/local.
+REPO_URL="${AI_HATS_REPO_URL:-git+https://github.com/muratovv/ai-hats.git}"
 AH_DIR="$PROJECT/.agent/ai-hats"
 DEFAULT_VENV="$AH_DIR/.venv"
 VERSIONS_DIR="$AH_DIR/versions"   # HATS-647: blue-green versioned venvs
