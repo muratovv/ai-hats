@@ -174,11 +174,17 @@ def detect_remote_url() -> str:
     return FALLBACK_REMOTE_URL
 
 
-def fetch_latest_sha(remote_url: str) -> str | None:
-    """``git ls-remote <url> master`` → SHA. ``None`` on network/timeout/error."""
+def fetch_latest_sha(remote_url: str, ref: str = "master") -> str | None:
+    """``git ls-remote <url> <ref>`` → SHA. ``None`` on network/timeout/error.
+
+    ``ref`` defaults to ``master`` (the upstream banner probe). The ``self
+    update`` edge guard passes ``HEAD`` so a custom edge repo is probed at its
+    own default branch, not a possibly-absent ``master`` (HATS-766). The
+    ``git+`` PEP 508 prefix is stripped — git speaks only bare URL schemes.
+    """
     try:
         result = subprocess.run(
-            ["git", "ls-remote", remote_url, "master"],
+            ["git", "ls-remote", remote_url.removeprefix("git+"), ref],
             capture_output=True,
             text=True,
             timeout=LS_REMOTE_TIMEOUT,
@@ -211,7 +217,8 @@ def _fetch_into_pkg(remote_url: str, ref: str = "master") -> bool:
         return False
     try:
         result = subprocess.run(
-            ["git", "-C", str(pkg_dir), "fetch", "--quiet", remote_url, ref],
+            ["git", "-C", str(pkg_dir), "fetch", "--quiet",
+             remote_url.removeprefix("git+"), ref],
             capture_output=True,
             text=True,
             timeout=FETCH_TIMEOUT,
@@ -265,12 +272,12 @@ def _ensure_probe_mirror(project_dir: Path) -> Path | None:
 def _fetch_into_mirror(mirror: Path, remote_url: str, ref: str) -> bool:
     """``git fetch <remote_url> <ref>`` into the probe-mirror (HATS-458).
 
-    Full fetch (no shallow). The ai-hats master branch is small
+    Full fetch (no shallow). The ai-hats default branch is small
     (hundreds of commits, a few hundred KB), so fetching it fully is
-    cheap and guarantees ``rev-list installed...master`` resolves
+    cheap and guarantees ``rev-list installed...<latest>`` resolves
     correctly — the typical non-editable user's installed_sha is some
-    ancestor of master and thus already in the local object graph
-    after the master fetch. No separate ``fetch <installed_sha>`` call
+    ancestor of the probed ref and thus already in the local object graph
+    after the fetch. No separate ``fetch <installed_sha>`` call
     is needed; that avoids the short-SHA / protocol limitations of
     fetch-by-SHA (setuptools-scm bakes a 9-char short SHA into
     ``_version.py`` which most HTTPS remotes refuse in the want line).
@@ -282,7 +289,7 @@ def _fetch_into_mirror(mirror: Path, remote_url: str, ref: str) -> bool:
     try:
         result = subprocess.run(
             ["git", "-C", str(mirror), "fetch",
-             "--quiet", remote_url, ref],
+             "--quiet", remote_url.removeprefix("git+"), ref],
             capture_output=True,
             text=True,
             timeout=FETCH_TIMEOUT,
@@ -368,19 +375,32 @@ def _describe(sha: str, *, git_dir: Path | None = None) -> str | None:
     return label or None
 
 
-def run_check(project_dir: Path) -> CacheEntry | None:
+def run_check(
+    project_dir: Path,
+    *,
+    remote_url: str | None = None,
+    ref: str = "master",
+) -> CacheEntry | None:
     """Run a full check, persist cache, return the entry.
 
     Returns ``None`` if either SHA side is unresolved (cache untouched).
     Ahead/behind/labels are best-effort: failures persist as ``None`` in
     the entry and :meth:`CacheEntry.has_update` returns False — the banner
     stays silent rather than firing with stale or unverified state.
+
+    HATS-766: ``remote_url`` / ``ref`` override the probed target. The banner
+    leaves both default (``detect_remote_url()`` + ``master``); the ``self
+    update`` edge guard passes the resolved edge repo (bare URL) + ``HEAD`` so
+    install and guard probe the SAME repo/branch. ``remote_url`` MUST be a bare
+    URL (no ``git+`` prefix) — callers coerce via ``_coerce_to_https``; the git
+    helpers also strip ``git+`` defensively.
     """
     installed = detect_installed_sha()
     if installed is None:
         return None
-    remote_url = detect_remote_url()
-    latest = fetch_latest_sha(remote_url)
+    if remote_url is None:
+        remote_url = detect_remote_url()
+    latest = fetch_latest_sha(remote_url, ref)
     if latest is None:
         return None
 
@@ -391,7 +411,7 @@ def run_check(project_dir: Path) -> CacheEntry | None:
 
     # Fast path: pkg-checkout (editable installs reachable through
     # ``_fetch_into_pkg``'s tracked-check gate, HATS-441).
-    if _fetch_into_pkg(remote_url):
+    if _fetch_into_pkg(remote_url, ref):
         counts = _count_ahead_behind(installed, latest)
         if counts is not None:
             ahead, behind = counts
@@ -406,7 +426,7 @@ def run_check(project_dir: Path) -> CacheEntry | None:
         mirror = _ensure_probe_mirror(project_dir)
         if (
             mirror is not None
-            and _fetch_into_mirror(mirror, remote_url, "master")
+            and _fetch_into_mirror(mirror, remote_url, ref)
         ):
             counts = _count_ahead_behind(installed, latest, git_dir=mirror)
             if counts is not None:

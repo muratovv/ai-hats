@@ -942,18 +942,27 @@ def _snapshot_composition(asm) -> tuple[set[str], set[str]]:
 DOWNGRADE_REFUSAL_EXIT_CODE = 3
 
 
-def _probe_remote_state(project_dir: Path):
+def _probe_remote_state(
+    project_dir: Path,
+    *,
+    remote_url: str | None = None,
+    ref: str = "master",
+):
     """Run the ahead/behind probe. Returns the cache entry or ``None``.
 
     Wrapper around :func:`update_check.checker.run_check` that swallows
     transport errors — a network blip MUST NOT block an explicit
     ``self update`` invocation. Returns ``None`` only when the probe could
     not resolve SHAs (no network, non-git install, malformed remote).
+
+    HATS-766: ``remote_url`` / ``ref`` thread the resolved edge repo + ``HEAD``
+    so the guard probes the SAME repo the edge install targets (was hardwired
+    to upstream ``master``). ``remote_url`` must be bare (no ``git+``).
     """
     from ..update_check.checker import run_check
 
     try:
-        return run_check(project_dir)
+        return run_check(project_dir, remote_url=remote_url, ref=ref)
     except (OSError, ValueError):
         logger.debug("update-check probe failed", exc_info=True)
         return None
@@ -994,7 +1003,7 @@ def _render_downgrade_refusal(reason: str, entry) -> None:
     if reason == "ahead":
         console.print(
             f"[red]Installed version[/] [bold]{installed}[/] is ahead of "
-            f"remote master [bold]{latest}[/] by {entry.ahead} commits. "
+            f"the edge remote [bold]{latest}[/] by {entry.ahead} commits. "
             f"[red]Refusing to downgrade.[/]\n"
             f"Use [bold]--force-downgrade[/] to override "
             f"(will replace your local install).",
@@ -1003,7 +1012,7 @@ def _render_downgrade_refusal(reason: str, entry) -> None:
     else:  # diverged
         console.print(
             f"[red]Installed version[/] [bold]{installed}[/] has diverged "
-            f"from remote master [bold]{latest}[/] "
+            f"from the edge remote [bold]{latest}[/] "
             f"(local ahead: {entry.ahead}, remote ahead: {entry.behind}). "
             f"[red]Refusing to downgrade.[/]\n"
             f"Use [bold]--force-downgrade[/] to override "
@@ -1317,13 +1326,27 @@ def update(
         # edge: moving target → keep the HATS-441 git ahead/diverged guard.
         # ``--force-downgrade`` opts back into the destructive replace for
         # callers who know what they're doing (discarding a stale dev branch).
-        probe = None if force_downgrade else _probe_remote_state(project_dir)
+        # HATS-766: probe the SAME repo the edge install targets — resolve the
+        # edge repo (env > harness.repo > upstream) to a BARE url and track its
+        # default-branch HEAD, not hardwired upstream ``master`` (which a custom
+        # edge repo may not even have → probe None → guard silently inactive).
+        from ..update_check.checker import FALLBACK_REMOTE_URL, _coerce_to_https
+
+        raw_edge = (
+            os.environ.get("AI_HATS_REPO_URL") or harness_repo or FALLBACK_REMOTE_URL
+        )
+        probe_url = _coerce_to_https(raw_edge)
+        probe = (
+            None
+            if force_downgrade
+            else _probe_remote_state(project_dir, remote_url=probe_url, ref="HEAD")
+        )
         if force_downgrade:
             console.print(
                 "[yellow]Warning:[/] --force-downgrade bypasses the "
                 "ahead/diverged guard. Your local install (including "
-                "editable / unpushed commits) will be replaced by remote "
-                "master."
+                "editable / unpushed commits) will be replaced by the "
+                "edge remote's HEAD."
             )
         else:
             reason = _classify_downgrade(probe)
