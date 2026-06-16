@@ -18,6 +18,7 @@ from pathlib import Path
 
 import yaml
 
+from .utils.atomic_io import atomic_write_bytes
 from .composer import (
     Composer,
     CompositionResult,
@@ -1485,10 +1486,7 @@ class Assembler:
         """Write `content` to `path` only if it would change. Returns True on write."""
         if path.exists() and path.read_bytes() == content:
             return False
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_bytes(content)
-        tmp.replace(path)
+        atomic_write_bytes(path, content)  # HATS-716: canonical atomic write
         return True
 
     def _run_v07_migration(self, *, force: bool, check_branches: bool) -> None:
