@@ -320,7 +320,7 @@ Moved to the narrative walkthrough — see [2] §6 for default vs override, owne
 | `ai-hats: venv exists but ai-hats binary is missing` | `ai-hats self update` |
 | System Python upgrade (the Proxmox case) | `ai-hats self update` — the launcher auto-recreates the default venv |
 | Import error / corrupted site-packages | `rm -rf .agent/ai-hats/.venv && ai-hats self update` |
-| Override venv broken | `python3 -m venv <override-path> && <override-path>/bin/pip install 'ai-hats @ git+ssh://...'` (user-managed) |
+| Override venv broken | `uv venv --python 3.11 <override-path> && uv pip install --python <override-path>/bin/python 'ai-hats @ git+ssh://...'` (user-managed) |
 | Full project wipe (data loss!) | `rm -rf .agent/ai-hats/ && ai-hats self update && ai-hats self init -r <role> -p <provider>` |
 
 ---

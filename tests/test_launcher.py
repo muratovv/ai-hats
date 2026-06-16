@@ -1,8 +1,8 @@
 """Tests for scripts/ai-hats-launcher (HATS-339).
 
 Strategy: spawn the launcher via subprocess against fixture-built fake
-venv layouts. No real `pip install` (network + slow); python3/pip are
-stubbed via PATH prepend where the launcher would invoke them.
+venv layouts. No real `uv pip install` (network + slow); uv is stubbed
+via PATH prepend where the launcher's heal would invoke it (HATS-763).
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ def _make_executable(path: Path) -> None:
 def _fake_venv(venv_path: Path, *, ai_hats_echo: str = "ai-hats-stub") -> None:
     """Build a venv layout that satisfies the launcher's pre-checks.
 
-    Creates bin/python (stub, exit 0), bin/ai-hats (echoes ai_hats_echo
-    plus args), and bin/pip (records args to '../pip_called' marker).
+    Creates bin/python (stub, exit 0) and bin/ai-hats (echoes ai_hats_echo
+    plus args) — the two executables the launcher resolution checks for.
     """
     bindir = venv_path / "bin"
     bindir.mkdir(parents=True, exist_ok=True)
@@ -48,60 +48,48 @@ def _fake_venv(venv_path: Path, *, ai_hats_echo: str = "ai-hats-stub") -> None:
     )
     _make_executable(ai_hats_stub)
 
-    pip_stub = bindir / "pip"
-    pip_stub.write_text(
-        '#!/usr/bin/env bash\n'
-        'printf "%s\\n" "$@" > "$(dirname "$0")/../pip_called"\n'
-        'exit 0\n'
-    )
-    _make_executable(pip_stub)
 
+def _fake_uv_with_venv_creator(stub_dir: Path) -> Path:
+    """Create a `uv` stub emulating the launcher's heal (HATS-763).
 
-def _fake_python3_with_venv_creator(stub_dir: Path) -> Path:
-    """Create a python3 stub that emulates `python3 -m venv <path>`.
-
-    When called as `python3 -m venv <target>`, builds a minimal venv
-    layout at <target>:
-      - bin/python: exit 0
-      - bin/pip: records args to <venv>/pip_called; on `install <…> ai-hats`
-        also drops bin/ai-hats stub so the launcher's downstream delegate
-        (HATS-337 heal-then-delegate) succeeds.
+    Handles the two uv calls the launcher's heal_if_needed makes:
+      - `uv venv [--python <ver>] <target>` → builds <target>/bin/python (exit 0).
+      - `uv pip install … --python <venv>/bin/python <target>` → records args to
+        <venv>/pip_called and drops <venv>/bin/ai-hats so the launcher's
+        downstream delegate (HATS-337 heal-then-delegate) succeeds. Covers both
+        the PEP 508 "ai-hats @ url" and bare local-path target forms.
     Returns the directory to prepend to PATH.
     """
     stub_dir.mkdir(parents=True, exist_ok=True)
-    py = stub_dir / "python3"
-    py.write_text(
+    uv = stub_dir / "uv"
+    uv.write_text(
         '#!/usr/bin/env bash\n'
-        'if [[ "${1:-}" == "-m" && "${2:-}" == "venv" && -n "${3:-}" ]]; then\n'
-        '    target="$3"\n'
+        'if [[ "${1:-}" == "venv" ]]; then\n'
+        '    target="${@: -1}"\n'  # last arg is the venv dir
         '    mkdir -p "$target/bin"\n'
         '    cat > "$target/bin/python" <<\'PY\'\n'
         '#!/usr/bin/env bash\n'
         'exit 0\n'
         'PY\n'
         '    chmod +x "$target/bin/python"\n'
-        '    cat > "$target/bin/pip" <<\'PIP\'\n'
-        '#!/usr/bin/env bash\n'
-        'printf "%s\\n" "$@" > "$(dirname "$0")/../pip_called"\n'
-        '# Treat any `pip install …` invocation as installing ai-hats so the\n'
-        '# launcher\'s downstream delegate (HATS-337) succeeds — covers both\n'
-        '# PEP 508 "ai-hats @ url" and bare local-path target forms.\n'
-        'if [[ "${1:-}" == "install" ]]; then\n'
-        '    cat > "$(dirname "$0")/ai-hats" <<AHATS\n'
+        '    exit 0\n'
+        'fi\n'
+        'if [[ "${1:-}" == "pip" && "${2:-}" == "install" ]]; then\n'
+        '    pyexe=""; prev=""\n'
+        '    for a in "$@"; do [[ "$prev" == "--python" ]] && pyexe="$a"; prev="$a"; done\n'
+        '    venv="$(dirname "$(dirname "$pyexe")")"\n'
+        '    printf "%s\\n" "$@" > "$venv/pip_called"\n'
+        '    cat > "$venv/bin/ai-hats" <<AHATS\n'
         '#!/usr/bin/env bash\n'
         'echo "venv-ai-hats: \\$*"\n'
         'exit 0\n'
         'AHATS\n'
-        '    chmod +x "$(dirname "$0")/ai-hats"\n'
-        'fi\n'
-        'exit 0\n'
-        'PIP\n'
-        '    chmod +x "$target/bin/pip"\n'
+        '    chmod +x "$venv/bin/ai-hats"\n'
         '    exit 0\n'
         'fi\n'
         'exit 0\n'
     )
-    _make_executable(py)
+    _make_executable(uv)
     return stub_dir
 
 
@@ -217,7 +205,7 @@ def test_env_overrides_yaml(tmp_path):
 def test_self_update_creates_default_when_missing(tmp_path):
     """Default venv missing → heal creates venv + bare-installs ai-hats,
     then delegates to <venv>/bin/ai-hats for the rich python self update."""
-    stub_dir = _fake_python3_with_venv_creator(tmp_path / "fake-bin")
+    stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
     env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
     res = _run(["self", "update"], cwd=tmp_path, env=env)
     assert res.returncode == 0, f"rc={res.returncode}\nstderr={res.stderr}\nstdout={res.stdout}"
@@ -230,7 +218,7 @@ def test_self_update_creates_default_when_missing(tmp_path):
     text = pip_marker.read_text()
     assert "install" in text
     assert "ai-hats @" in text
-    assert "--upgrade" not in text  # bare install only; python self update adds --force-reinstall
+    assert "--upgrade" not in text  # bare install only; python self update adds --reinstall
     # Delegate phase: <venv>/bin/ai-hats called with original argv.
     assert "venv-ai-hats: self update" in res.stdout
 
@@ -240,7 +228,7 @@ def test_self_init_creates_default_when_missing(tmp_path):
     bare-installs ai-hats), then delegates to <venv>/bin/ai-hats so init can
     configure the project in one command — no separate `self update` first
     (HATS-612)."""
-    stub_dir = _fake_python3_with_venv_creator(tmp_path / "fake-bin")
+    stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
     env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
     res = _run(["self", "init", "-r", "assistant", "-p", "claude"], cwd=tmp_path, env=env)
     assert res.returncode == 0, f"rc={res.returncode}\nstderr={res.stderr}\nstdout={res.stdout}"
@@ -261,7 +249,7 @@ def test_self_update_recreates_broken_default(tmp_path):
     venv = tmp_path / ".agent" / "ai-hats" / ".venv"
     (venv / "bin").mkdir(parents=True)
     (venv / "marker_old").write_text("pre-existing")
-    stub_dir = _fake_python3_with_venv_creator(tmp_path / "fake-bin")
+    stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
     env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
     res = _run(["self", "update"], cwd=tmp_path, env=env)
     assert res.returncode == 0, res.stderr
@@ -290,7 +278,7 @@ def test_self_update_with_local_path_repo_url(tmp_path):
     """AI_HATS_REPO_URL без `://` (local path) → pip gets bare path, not the
     PEP 508 `ai-hats @ <path>` form (which requires a URL scheme and would
     fail pip install)."""
-    stub_dir = _fake_python3_with_venv_creator(tmp_path / "fake-bin")
+    stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
     fake_repo = tmp_path / "local-repo"
     fake_repo.mkdir()
     env = {

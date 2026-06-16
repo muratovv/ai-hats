@@ -145,7 +145,7 @@ def test_update_runs_bump_in_subprocess_when_version_changed(tmp_path: Path) -> 
                return_value=(set(), set())), \
          patch("ai_hats.cli.maintenance._format_component_diff", return_value=False), \
          patch("ai_hats.cli.maintenance._build_update_cmd",
-               return_value=["pip", "install", "ai-hats"]), \
+               return_value=["uv", "pip", "install", "ai-hats"]), \
          patch("ai_hats.cli.maintenance._get_changelog", return_value=""), \
          patch("ai_hats.cli.maintenance._assembler") as mock_asm_factory, \
          patch("ai_hats.cli.maintenance._probe_remote_state",
@@ -205,7 +205,7 @@ def test_update_runs_bump_in_process_when_version_unchanged(tmp_path: Path) -> N
                return_value=(set(), set())), \
          patch("ai_hats.cli.maintenance._format_component_diff", return_value=False), \
          patch("ai_hats.cli.maintenance._build_update_cmd",
-               return_value=["pip", "install", "ai-hats"]), \
+               return_value=["uv", "pip", "install", "ai-hats"]), \
          patch("ai_hats.cli.maintenance._get_changelog", return_value=""), \
          patch("ai_hats.cli.maintenance._assembler", return_value=mock_asm), \
          patch("ai_hats.cli.maintenance._probe_remote_state",
@@ -251,7 +251,7 @@ def _run_degraded_update(tmp_path, *, version_changed, assembler_side_effect):
                return_value=(set(), set())), \
          patch("ai_hats.cli.maintenance._format_component_diff", return_value=False), \
          patch("ai_hats.cli.maintenance._build_update_cmd",
-               return_value=["pip", "install", "ai-hats"]), \
+               return_value=["uv", "pip", "install", "ai-hats"]), \
          patch("ai_hats.cli.maintenance._get_changelog", return_value=""), \
          patch("ai_hats.cli.maintenance._assembler",
                side_effect=assembler_side_effect), \
@@ -356,8 +356,8 @@ def _invoke_update(args: list[str], *, run_check_return,
 
     def fake_run(cmd_args, **kwargs):
         captured.append((tuple(cmd_args), kwargs))
-        if fail_install and tuple(cmd_args)[:2] == ("pip", "install"):
-            return _make_completed(cmd_args, returncode=1, stderr="pip boom")
+        if fail_install and tuple(cmd_args)[:3] == ("uv", "pip", "install"):
+            return _make_completed(cmd_args, returncode=1, stderr="uv boom")
         return _make_completed(cmd_args, returncode=0, stdout="ok")
 
     with patch("ai_hats.cli.maintenance._project_dir", return_value=project), \
@@ -369,7 +369,7 @@ def _invoke_update(args: list[str], *, run_check_return,
                return_value=(set(), set())), \
          patch("ai_hats.cli.maintenance._format_component_diff", return_value=False), \
          patch("ai_hats.cli.maintenance._build_update_cmd",
-               return_value=["pip", "install", "ai-hats"]), \
+               return_value=["uv", "pip", "install", "ai-hats"]), \
          patch("ai_hats.cli.maintenance._get_changelog", return_value=""), \
          patch("ai_hats.cli.maintenance._assembler") as mock_asm_factory, \
          patch("ai_hats.update_check.checker.run_check",
@@ -383,8 +383,8 @@ def _invoke_update(args: list[str], *, run_check_return,
     return result.exit_code, result.output, captured
 
 
-def _pip_called(captured: list[tuple]) -> bool:
-    return any(c[0][:2] == ("pip", "install") for c in captured)
+def _install_called(captured: list[tuple]) -> bool:
+    return any(tuple(c[0][:3]) == ("uv", "pip", "install") for c in captured)
 
 
 def test_update_refuses_when_installed_ahead(tmp_path: Path) -> None:
@@ -401,7 +401,7 @@ def test_update_refuses_when_installed_ahead(tmp_path: Path) -> None:
     assert "--force-downgrade" in output, f"missing override hint:\n{output}"
     assert "v0.6.1-77" in output and "v0.6.1-70" in output, \
         f"refusal omits version labels:\n{output}"
-    assert not _pip_called(captured), \
+    assert not _install_called(captured), \
         f"pip install ran despite refusal: {captured}"
 
 
@@ -415,7 +415,7 @@ def test_update_refuses_when_diverged(tmp_path: Path) -> None:
         f"expected exit 3, got {exit_code}; output:\n{output}"
     assert "diverged" in output.lower(), f"missing 'diverged' wording:\n{output}"
     assert "Refusing to downgrade" in output, f"missing refusal text:\n{output}"
-    assert not _pip_called(captured), \
+    assert not _install_called(captured), \
         f"pip install ran despite refusal: {captured}"
 
 
@@ -431,7 +431,7 @@ def test_update_force_downgrade_bypasses_gate(tmp_path: Path) -> None:
         f"missing flag warning:\n{output}"
     assert "Refusing to downgrade" not in output, \
         f"refusal printed despite override:\n{output}"
-    assert _pip_called(captured), \
+    assert _install_called(captured), \
         f"pip install did not run with --force-downgrade: {captured}"
 
 
@@ -446,7 +446,7 @@ def test_update_proceeds_when_behind(tmp_path: Path) -> None:
         f"unexpected refusal:\n{output}"
     assert "--force-downgrade bypasses" not in output, \
         f"unexpected flag warning without --force-downgrade:\n{output}"
-    assert _pip_called(captured), f"pip install missing: {captured}"
+    assert _install_called(captured), f"pip install missing: {captured}"
 
 
 def test_update_proceeds_when_probe_unknown(tmp_path: Path) -> None:
@@ -457,7 +457,7 @@ def test_update_proceeds_when_probe_unknown(tmp_path: Path) -> None:
     assert exit_code == 0, f"expected exit 0, got {exit_code}; output:\n{output}"
     assert "Refusing to downgrade" not in output, \
         f"unexpected refusal on unknown probe:\n{output}"
-    assert _pip_called(captured), f"pip install missing: {captured}"
+    assert _install_called(captured), f"pip install missing: {captured}"
 
 
 def test_update_skips_pip_when_installed_sha_matches_remote(tmp_path: Path) -> None:
@@ -479,12 +479,12 @@ def test_update_skips_pip_when_installed_sha_matches_remote(tmp_path: Path) -> N
         tmp_path=tmp_path,
     )
     assert exit_code == 0, f"expected exit 0, got {exit_code}; output:\n{output}"
-    assert not _pip_called(captured), \
+    assert not _install_called(captured), \
         f"pip install ran despite SHA match: {captured}"
     assert "Already up to date" in output, \
         f"missing already-up-to-date banner:\n{output}"
-    assert "skipping pip install" in output, \
-        f"missing skip-pip dim hint:\n{output}"
+    assert "skipping reinstall" in output, \
+        f"missing skip-reinstall dim hint:\n{output}"
     # Verify subprocess must not run when pip was skipped — nothing to verify.
     verify_called = any(
         len(c[0]) >= 4 and c[0][1:4] == ("-m", "ai_hats._bootstrap")
@@ -508,7 +508,7 @@ def test_update_proceeds_when_ahead_behind_axes_none(tmp_path: Path) -> None:
     assert exit_code == 0, f"expected exit 0, got {exit_code}; output:\n{output}"
     assert "Refusing to downgrade" not in output, \
         f"unexpected refusal on unresolved axes:\n{output}"
-    assert _pip_called(captured), f"pip install missing: {captured}"
+    assert _install_called(captured), f"pip install missing: {captured}"
 
 
 def test_update_legacy_install_failure_exits_1(tmp_path: Path) -> None:
@@ -677,9 +677,11 @@ def test_installed_launcher_path_resolution(tmp_path, monkeypatch):
 def test_build_install_cmd_url_and_local():
     """Install target: PEP 508 `name @ url@ref` for URLs, bare path@ref otherwise."""
     url_cmd = _build_install_cmd("/v/bin/python", "git+ssh://x/ai-hats.git", "abc")
-    assert url_cmd[:5] == ["/v/bin/python", "-m", "pip", "install", "--force-reinstall"]
+    assert url_cmd[:3] == ["uv", "pip", "install"]  # HATS-763: uv engine
+    assert url_cmd[url_cmd.index("--python") + 1] == "/v/bin/python"  # B1
+    assert "--reinstall" in url_cmd
     assert url_cmd[-1] == "ai-hats @ git+ssh://x/ai-hats.git@abc"
-    # Local path: bare path (pip can't take @ref on a local path).
+    # Local path: bare path (uv can't take @ref on a local path).
     local_cmd = _build_install_cmd("/v/bin/python", "/local/path", "abc")
     assert local_cmd[-1] == "/local/path"
 
@@ -696,17 +698,17 @@ def test_flip_current_atomic_write(tmp_path, monkeypatch):
 def _versioned_fake_run(*, fail_at=None, bump_rec=None):
     """subprocess.run side-effect for _run_managed_versioned_update.
 
-    Creates the venv dir on `-m venv`, succeeds for each phase unless
+    Creates the venv dir on `uv venv`, succeeds for each phase unless
     `fail_at` ('venv'|'install'|'verify') matches; records bump python.
     """
     def fake_run(args, **kwargs):
         a = list(args)
-        if "venv" in a and "-m" in a:  # python -m venv <target>
+        if "venv" in a and "uv" in a:  # uv venv --python <ver> <target>
             if fail_at == "venv":
                 return _make_completed(a, returncode=1, stderr="venv boom")
             target = Path(a[-1])
             (target / "bin").mkdir(parents=True, exist_ok=True)
-            # `python -m venv` lays down the interpreter; pip install (next phase)
+            # `uv venv` lays down the interpreter; uv pip install (next phase)
             # drops the ai-hats entry-point. The venv is only "usable"
             # (read_current_sha-acceptable) once both bin/python and bin/ai-hats
             # exist alongside the sentinel (HATS-657).
@@ -827,7 +829,7 @@ def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
             config_unreadable=False, migrate_force=False, check_branches=False,
         )
     # No venv create / pip install / verify happened.
-    assert not any("venv" in c and "-m" in c for c in calls)
+    assert not any("venv" in c and "uv" in c for c in calls)
     assert not any("pip" in c for c in calls)
     # Bump ran with sys.executable (the live venv already IS the target).
     assert any(
@@ -864,7 +866,7 @@ def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
     printed = _capture_prints(monkeypatch)
 
     # Record every subprocess call while delegating to the real fake (which
-    # rebuilds bin/python + bin/ai-hats on `python -m venv`).
+    # rebuilds bin/python + bin/ai-hats on `uv venv`).
     fake = _versioned_fake_run()
     calls: list[list[str]] = []
 
@@ -879,7 +881,7 @@ def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
             config_unreadable=False, migrate_force=False, check_branches=False,
         )
     # #1 REBUILT (not reused): a venv create + pip install ran for the target sha.
-    assert any("venv" in c and "-m" in c for c in calls)
+    assert any("venv" in c and "uv" in c for c in calls)
     assert any("pip" in c for c in calls)
     # The interpreter is restored and the sha is usable / current again.
     assert (version_dir(tmp_path, "cafef00d") / "bin" / "python").exists()
@@ -941,7 +943,7 @@ def test_managed_update_reuses_complete_dir_without_reinstall(tmp_path, monkeypa
             config_unreadable=False, migrate_force=False, check_branches=False,
         )
     # Reused: no rebuild, but current re-flipped to the complete dir.
-    assert not any("venv" in c and "-m" in c for c in calls)
+    assert not any("venv" in c and "uv" in c for c in calls)
     assert not any("pip" in c for c in calls)
     assert read_current_sha(tmp_path) == "cafef00d"
     assert is_complete(tmp_path, "cafef00d")

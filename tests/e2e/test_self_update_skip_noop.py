@@ -23,7 +23,7 @@ Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
 
 Fail-under-revert: if the short-circuit is removed from
 ``cli/maintenance.py``, the in-sync invocation runs pip and the
-"skipping pip install" hint never prints — the assertion below fails.
+"skipping reinstall" hint never prints — the assertion below fails.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def test_e2e_self_update_skips_pip_when_in_sync(tmp_path: Path) -> None:
 
     Two assertions amortize the heavy setup:
 
-    1. ``self update`` (no flag) → exit 0 + "skipping pip install" hint.
+    1. ``self update`` (no flag) → exit 0 + "skipping reinstall" hint.
        Proves the short-circuit fires inside a real subprocess.
     2. The same invocation completes well under the 60s timeout — pip
        install alone is typically 10-15s, so a regression that re-enables
@@ -121,14 +121,15 @@ def test_e2e_self_update_skips_pip_when_in_sync(tmp_path: Path) -> None:
     # Required for the ahead/behind probe to find a usable git checkout
     # reachable from ``ai_hats.__file__``. Same rationale as
     # test_self_update_downgrade_gate.py.
-    venv_pip = project / ".agent" / "ai-hats" / ".venv" / "bin" / "pip"
+    # HATS-763: uv venvs ship no pip — drive editable conversion through uv,
+    # targeting the venv interpreter explicitly (B1).
     venv_python = project / ".agent" / "ai-hats" / ".venv" / "bin" / "python"
     subprocess.run(
-        [str(venv_pip), "uninstall", "-y", "--quiet", "ai-hats"],
+        ["uv", "pip", "uninstall", "--python", str(venv_python), "ai-hats"],
         env=env, check=True, timeout=60,
     )
     subprocess.run(
-        [str(venv_pip), "install", "--quiet", "-e", str(src_repo)],
+        ["uv", "pip", "install", "--python", str(venv_python), "-e", str(src_repo)],
         env=env, check=True, timeout=120,
     )
     # HATS-647: the non-editable bootstrap `self update` above created a
@@ -168,7 +169,7 @@ def test_e2e_self_update_skips_pip_when_in_sync(tmp_path: Path) -> None:
     )
     elapsed = time.monotonic() - started
     combined = result.stdout + result.stderr
-    assert "skipping pip install" in combined, (
+    assert "skipping reinstall" in combined, (
         f"no-op short-circuit hint missing; combined output:\n{combined}"
     )
     assert "Already up to date" in combined, (

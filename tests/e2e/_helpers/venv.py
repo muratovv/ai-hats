@@ -86,20 +86,14 @@ def build_launcher_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
     # NOT a project that tests will use — tests get fresh project
     # paths and reach the venv via AI_HATS_VENV env override.
     #
-    # Timeout budget (HATS-582): a healthy build is ~7s of pip +
-    # venv-create overhead (~24s total). The generous 600s ceiling
-    # absorbs two slow cases without tripping:
-    #   * cold pip cache / first run on a fresh host — ~35 transitive
-    #     deps (ai-hats → claude-agent-sdk → mcp → starlette, uvicorn,
-    #     httpx, jsonschema, …) downloaded over the network;
-    #   * a *corrupted* pip HTTP cache — if a prior run's pip was
-    #     SIGKILL'd mid-download (e.g. by a too-tight timeout), its cache
-    #     entries deserialize-fail and pip refetches everything with retry
-    #     backoff (observed ~10min). A tight timeout here SIGKILLs pip
-    #     again → re-corrupts the cache → death spiral. The wide window
-    #     lets one slow build COMPLETE and self-heal the cache instead.
-    # ``subprocess.TimeoutExpired`` still propagates so the session-scoped
-    # fixture can skip the venv tier gracefully on a genuinely stuck host.
+    # Timeout budget (HATS-582 / HATS-763): a healthy build is fast under uv
+    # (~2s warm cache). The generous 600s ceiling absorbs the slow case without
+    # tripping: a cold uv cache / first run on a fresh host downloads ~35
+    # transitive deps (ai-hats → claude-agent-sdk → mcp → starlette, uvicorn,
+    # httpx, jsonschema, …) over the network, and `uv venv --python 3.11` may
+    # provision the interpreter itself. ``subprocess.TimeoutExpired`` still
+    # propagates so the session-scoped fixture can skip the venv tier gracefully
+    # on a genuinely stuck host.
     subprocess.run(
         [str(launcher), "self", "update"],
         cwd=str(bootstrap), env=env,
@@ -112,16 +106,16 @@ def build_launcher_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
 
 
 def network_available() -> bool:
-    """Cheap pre-flight: are we likely to be able to ``pip install``?
+    """Cheap pre-flight: is the uv engine present so a build can even start?
 
     ``install-launcher.sh`` is offline once it has the local script.
-    ``self update`` with ``AI_HATS_REPO_URL=<local>`` installs ai-hats
-    from the checkout but pip still resolves transitive deps; those
-    may already be cached. We probe by checking that ``pip`` is on
-    PATH and a wheel cache dir exists. False negatives are tolerable
-    — the build itself will fail loudly if the assumption breaks.
+    ``self update`` with ``AI_HATS_REPO_URL=<local>`` installs ai-hats from the
+    checkout but uv still resolves transitive deps; those may already be in the
+    uv cache. We probe only that ``uv`` is on PATH (HATS-763 — the single host
+    prerequisite). Note: uv-present ≠ network — a False here means "no engine",
+    not "offline"; the build itself fails loudly if the network assumption breaks.
     """
-    return shutil.which("pip") is not None or shutil.which("pip3") is not None
+    return shutil.which("uv") is not None
 
 
 def venv_unavailable(reason: str) -> NoReturn:
