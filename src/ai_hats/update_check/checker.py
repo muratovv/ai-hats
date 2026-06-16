@@ -140,8 +140,9 @@ def _read_baked_commit_sha() -> str | None:
 def _coerce_to_https(url: str) -> str:
     """Map a git+ssh URL form to https so ``git ls-remote`` works without keys.
 
-    The ``self update`` flow uses ``git+ssh://git@github.com/...`` (HATS-337);
-    for an anonymous probe we only need the public https form.
+    The public default is now ``git+https://`` (HATS-766), but an
+    ``AI_HATS_REPO_URL`` override may still carry ``git+ssh://git@github.com/...``
+    (HATS-337); for an anonymous probe we only need the bare https form.
     """
     prefixes = ("git+ssh://git@", "git+https://", "git+")
     for p in prefixes:

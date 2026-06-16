@@ -569,7 +569,9 @@ def test_update_command_uses_uv_reinstall():
         "must NOT pass --no-deps: new deps in pyproject.toml (e.g. ptyprocess in HATS-207) "
         "would otherwise be skipped on update and crash at runtime"
     )
-    assert any("git+ssh://" in arg for arg in cmd), "must install from git"
+    assert any("git+https://" in arg for arg in cmd), (
+        "HATS-766: public default must install over anonymous git+https"
+    )
     assert "--python" in cmd and cmd[cmd.index("--python") + 1] == sys.executable, (
         "B1: must pin --python sys.executable so uv targets THIS interpreter"
     )

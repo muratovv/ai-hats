@@ -48,10 +48,13 @@ def _require_uv() -> None:
 
 # HATS-337: AI_HATS_REPO_URL env overrides the default git URL, mirroring
 # the bash launcher (HATS-339) so a single env var pins the install source
-# end-to-end (CI, airgapped mirrors, custom forks).
+# end-to-end (CI, airgapped mirrors, custom forks). The override still accepts
+# git+ssh / local paths.
+# HATS-766: repo is public → anonymous git+https is the keyless default
+# (was git+ssh, which required configured keys even for a fresh anonymous install).
 def _git_install_url() -> str:
     return os.environ.get(
-        "AI_HATS_REPO_URL", "git+ssh://git@github.com/muratovv/ai-hats.git"
+        "AI_HATS_REPO_URL", "git+https://github.com/muratovv/ai-hats.git"
     )
 
 
