@@ -35,6 +35,7 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 HOOK_BASENAMES = ("pre_bash_shared_state_guard.sh", "shared_state_classifier.sh")
 
 # HATS-589: per-xdist-worker private build source (no-op on serial run).
+from _helpers.project import pin_edge_channel  # noqa: E402
 from _helpers.repo_src import build_src  # noqa: E402
 
 
@@ -151,6 +152,7 @@ def _init_minimal_project(launcher: Path, env: dict, project: Path) -> None:
          "-r", "assistant", "--no-wizard"],
         cwd=project, env=env, timeout=120,
     )
+    pin_edge_channel(project)  # HATS-764: edge for the subsequent self update
 
 
 def _materialized_hooks_dir(project: Path) -> Path:
