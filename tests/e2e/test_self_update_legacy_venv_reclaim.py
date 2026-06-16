@@ -31,6 +31,8 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.project import pin_edge_channel
+
 pytestmark = pytest.mark.pip_heavy  # HATS-678: real pip at call time → capped via conftest.PIP_HEAVY_GROUPS
 
 
@@ -77,12 +79,14 @@ def test_e2e_legacy_venv_reclaimed_once_versioned_healthy(tmp_path: Path) -> Non
     project = tmp_path / "project"
     launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
+    pin_edge_channel(project)  # HATS-764: edge so self update resolves the local source
 
     subprocess.run(
         ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)], check=True,
     )
     _git(["config", "user.email", "e2e@test"], src_repo)
     _git(["config", "user.name", "E2E"], src_repo)
+    _git(["checkout", "-B", "e2e-main"], src_repo)  # HATS-764: align ls-remote HEAD
     sha_a = _head_sha(src_repo)
 
     env = os.environ.copy()

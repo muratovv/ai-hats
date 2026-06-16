@@ -90,6 +90,19 @@ class FeedbackPolicy(str, Enum):
     HINT = "hint"
 
 
+class Channel(str, Enum):
+    """Harness source channel (HATS-764). Maps an audience to an install spec.
+
+    - ``local``  — ai-hats dev: editable install of a working tree; moving target.
+    - ``edge``   — own repos: ``git+https://<repo>@<branch-HEAD-sha>``; moving target.
+    - ``stable`` — end users: ``ai-hats==<latest-tag>`` from PyPI; pinned, semver-monotonic.
+    """
+
+    LOCAL = "local"
+    EDGE = "edge"
+    STABLE = "stable"
+
+
 # ----- Base -----
 
 
@@ -467,6 +480,57 @@ class FeedbackConfig(_YamlModel):
         return self == FeedbackConfig()
 
 
+class HarnessConfig(_YamlModel):
+    """Harness source — where ``ai-hats self update`` pulls ai-hats from (HATS-764).
+
+    - ``channel`` — ``local`` | ``edge`` | ``stable`` (default ``stable``). An
+      unknown value fails loud via the :class:`Channel` enum.
+    - ``repo`` — edge-only override of the upstream repo URL
+      (precedence ``AI_HATS_REPO_URL`` env > this field > default upstream https).
+    - ``path`` — local-only editable source path (defaults to the project root).
+
+    Inherits ``extra="ignore"`` from :class:`_YamlModel` (NOT ``forbid``): a
+    newer ai-hats may add a nested ``harness`` sub-field, and an older binary
+    must drop it rather than crash (forward-compat — the top-level strip in
+    :meth:`ProjectConfig._strip_unknown_fields` only reaches the outer
+    ``harness`` key, never nested ones). The drop is WARNed (below), mirroring
+    the top-level strip so a vanished field is observable, not silent.
+    """
+
+    channel: Channel = Channel.STABLE
+    repo: str | None = None
+    path: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_unknown_keys(cls, data: Any) -> Any:
+        """WARN (stderr) on an unknown nested key before ``extra="ignore"`` drops
+        it — keeps the forward-compat behaviour observable, consistent with
+        ``ProjectConfig._strip_unknown_fields`` (HATS-764 review)."""
+        if isinstance(data, dict):
+            for key in sorted(set(data) - set(cls.model_fields)):
+                print(
+                    f"WARN: ai-hats.yaml harness: dropping unknown field {key!r} "
+                    "(not in this ai-hats version's schema — written by a newer "
+                    "ai-hats? run 'ai-hats self update' to use it).",
+                    file=sys.stderr,
+                )
+        return data
+
+    @property
+    def is_default(self) -> bool:
+        return self == HarnessConfig()
+
+    def to_dict(self) -> dict[str, Any]:
+        # Omit None repo/path so a plain `channel: edge` block stays minimal.
+        d: dict[str, Any] = {"channel": self.channel.value}
+        if self.repo is not None:
+            d["repo"] = self.repo
+        if self.path is not None:
+            d["path"] = self.path
+        return d
+
+
 # ----- ProjectConfig -----
 
 
@@ -491,6 +555,7 @@ class ProjectConfig(_YamlModel):
       - Project: provider, library_paths, ai_hats_dir
       - Role: active_role, default_role, customizations
       - Feedback: session_retro
+      - Harness: harness (channel local|edge|stable, repo, path — HATS-764)
       - Meta: schema_version (4 = current)
     """
 
@@ -529,6 +594,11 @@ class ProjectConfig(_YamlModel):
     feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
     manage_gitignore: bool = True
     task_prefix: str = "TASK"
+    # HATS-764: harness source (channel local|edge|stable). Optional — an
+    # ai-hats.yaml with no `harness:` block loads as the `stable` default and
+    # saves byte-clean (omitted from to_dict when default). Drives `self update`
+    # source + downgrade-guard selection.
+    harness: HarnessConfig = Field(default_factory=HarnessConfig)
 
     @model_validator(mode="before")
     @classmethod
@@ -707,6 +777,10 @@ class ProjectConfig(_YamlModel):
             d["manage_gitignore"] = False
         if self.task_prefix != "TASK":
             d["task_prefix"] = self.task_prefix
+        # HATS-764: harness is opt-in — omitted when default (stable, no
+        # repo/path) so existing yamls without the block stay byte-clean.
+        if not self.harness.is_default:
+            d["harness"] = self.harness.to_dict()
         return d
 
     def save(self, path: Path) -> None:

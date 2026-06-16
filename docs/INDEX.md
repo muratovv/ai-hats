@@ -12,7 +12,7 @@ Primary references the [initial-wizard](../library/core/roles/initial-wizard/con
 role opens during each step of first-time configuration:
 
 - **Step 1 — language**: (no docs).
-- **Step 2 — workspace**: [how-to-configure.md §1](how-to-configure.md#1-whats-in-ai-hatsyaml) (fields),
+- **Step 2 — workspace**: [how-to-configure.md §1](how-to-configure.md#1-whats-in-ai-hatsyaml) (fields, incl. the `harness` source channel — HATS-764),
   [§6](how-to-configure.md#6-venv-ownership) (venv).
 - **Step 3 — stack + role**: [glossary.md](glossary.md) (Role definition),
   [how-to-extend.md](how-to-extend.md) (layered library, custom roles).

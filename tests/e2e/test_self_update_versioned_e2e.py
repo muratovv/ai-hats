@@ -77,6 +77,16 @@ def test_e2e_self_update_blue_green_versioned(tmp_path: Path) -> None:
     project = tmp_path / "project"
     launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
+    # HATS-764: pin the edge channel so `self update` resolves the local
+    # src-repo HEAD (the upstream-master probe names a different repo). With no
+    # harness block the channel defaults to stable → PyPI (unpublished → 404).
+    (project / "ai-hats.yaml").write_text(
+        "schema_version: 4\n"
+        "ai_hats_dir: .agent/ai-hats\n"
+        "provider: claude\n"
+        "harness:\n"
+        "  channel: edge\n"
+    )
 
     # ----- fixture: local src-repo (the non-editable install source) -----
     subprocess.run(
@@ -84,6 +94,11 @@ def test_e2e_self_update_blue_green_versioned(tmp_path: Path) -> None:
     )
     _git(["config", "user.email", "e2e@test"], src_repo)
     _git(["config", "user.name", "E2E"], src_repo)
+    # Align the clone's symbolic HEAD with its checked-out working tree so
+    # `git ls-remote <src> HEAD` (what the edge resolver reads to name the
+    # version dir) matches the installed source — robust whether REPO_ROOT is a
+    # master checkout or a linked worktree on a feature branch.
+    _git(["checkout", "-B", "e2e-main"], src_repo)
     sha_a = _head_sha(src_repo)
 
     env = os.environ.copy()

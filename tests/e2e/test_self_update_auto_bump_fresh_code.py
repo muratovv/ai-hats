@@ -29,6 +29,8 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.project import pin_edge_channel
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
@@ -65,6 +67,7 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
     project = tmp_path / "project"
     launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
+    pin_edge_channel(project)  # HATS-764: edge so self update resolves the local source
 
     env = os.environ.copy()
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
@@ -118,6 +121,7 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
     cfg_path = project / "ai-hats.yaml"
     cfg_data = _yaml.safe_load(cfg_path.read_text())
     cfg_data["migration_step"] = 3
+    cfg_data["harness"] = {"channel": "edge"}  # HATS-764: edge for the 2nd update
     cfg_path.write_text(_yaml.safe_dump(cfg_data))
 
     # Initialize git so the healer's git-clean gate can evaluate cleanliness.
@@ -175,6 +179,7 @@ def test_e2e_python_dash_m_ai_hats_self_bump_invokable(tmp_path: Path) -> None:
     project = tmp_path / "project"
     launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
+    pin_edge_channel(project)  # HATS-764: edge so self update resolves the local source
 
     env = os.environ.copy()
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)

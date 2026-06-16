@@ -30,6 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 # HATS-589: per-xdist-worker private build source (no-op on serial run).
+from _helpers.project import pin_edge_channel  # noqa: E402
 from _helpers.repo_src import build_src  # noqa: E402
 
 # HATS-685: build the subprocess env without inherited PYTHONPATH/redirect vars
@@ -82,6 +83,7 @@ def test_e2e_install_init_break_heal(tmp_path):
     src_repo = tmp_path / "src-repo"
     launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
+    pin_edge_channel(project)  # HATS-764: edge so self update resolves the local source
 
     # Install source: a standalone full clone of the repo under test (NOT
     # build_src / REPO_ROOT directly). A standalone clone's HEAD is unresolvable

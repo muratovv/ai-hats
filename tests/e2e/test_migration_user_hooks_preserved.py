@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.project import pin_edge_channel
+
 
 def _seed(project_path: Path) -> None:
     (project_path / "ai-hats.yaml").write_text(
@@ -71,6 +73,7 @@ def test_user_owned_hook_relocates_to_user_hooks(
     """AC6 part 1: user-authored hook ends up under
     ``<ai_hats_dir>/user-hooks/`` with content + mode preserved."""
     _seed(tmp_venv_project.path)
+    pin_edge_channel(tmp_venv_project.path)  # HATS-764: edge so self update resolves the local source
     original_body = (
         tmp_venv_project.path / ".agent" / "hooks" / "user_guard.py"
     ).read_bytes()
@@ -110,6 +113,7 @@ def test_user_owned_hook_not_in_managed_namespace(
     A user .py landing there would be at risk of future framework
     sweeps mistaking it for managed content."""
     _seed(tmp_venv_project.path)
+    pin_edge_channel(tmp_venv_project.path)  # HATS-764: edge so self update resolves the local source
 
     tmp_venv_project.run(
         "self", "update",
@@ -135,6 +139,7 @@ def test_settings_json_entry_disabled_not_rewritten(
     auto-rewritten to user-hooks/. Phase 4's explicit-disable
     contract: user must re-enable manually after reviewing."""
     _seed(tmp_venv_project.path)
+    pin_edge_channel(tmp_venv_project.path)  # HATS-764: edge so self update resolves the local source
 
     tmp_venv_project.run(
         "self", "update",
@@ -162,6 +167,7 @@ def test_stage_b_inventory_carries_reenable_snippet(
     payload of explicit-disable: the user needs a one-line snippet
     to put the hook back if they decide they want it."""
     _seed(tmp_venv_project.path)
+    pin_edge_channel(tmp_venv_project.path)  # HATS-764: edge so self update resolves the local source
 
     tmp_venv_project.run(
         "self", "update",

@@ -47,6 +47,8 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.project import pin_edge_channel
+
 pytestmark = pytest.mark.pip_heavy  # HATS-678: real pip at call time → capped via conftest.PIP_HEAVY_GROUPS
 
 
@@ -77,6 +79,7 @@ def test_e2e_update_banner_fires_for_non_editable_install(tmp_path: Path) -> Non
     project = tmp_path / "project"
     launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
+    pin_edge_channel(project)  # HATS-764: edge so self update resolves the local source
 
     # ----- fixture: src-repo (installed) + fake-remote (LAG_COMMITS ahead) -----
     # The installed snapshot MUST be at the current worktree HEAD so the
