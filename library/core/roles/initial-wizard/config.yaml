@@ -33,7 +33,7 @@ injection: |
   > Hi! I'll help you configure ai-hats. We'll cover:
   >
   > 1. Preferred language
-  > 2. (Optional) workspace setup — paths / venv / gitignore
+  > 2. (Optional) workspace setup — paths / venv / gitignore / source
   > 3. Stack detection + base role
   > 4. (Optional) role customization
   > 5. Task-id prefix
@@ -106,8 +106,9 @@ injection: |
   projects. Open with a single yes/no:
 
   > **Step 2 — workspace setup (optional).** Want to customize paths,
-  > venv, or `.gitignore` policy? Defaults are fine for most projects.
-  > (`y` to walk through three settings / `n` to skip — recommended)
+  > venv, `.gitignore` policy, or harness source? Defaults are fine for
+  > most projects.
+  > (`y` to walk through four settings / `n` to skip — recommended)
 
   **Skip-check first**: before asking, run `ai-hats config status` (Read
   the output). If `venv_path` is not "managed default" OR
@@ -157,7 +158,21 @@ injection: |
   ai-hats config set --no-manage-gitignore
   ```
 
-  After all three — announce "Step 3 — …" and continue.
+  **2d — harness source** (default: `stable` — **recommend it**):
+  > Where `ai-hats self update` pulls ai-hats from (HATS-764):
+  > `stable` (latest PyPI release — recommended for most users),
+  > `edge` (your repo's HEAD — for teams running a fork),
+  > `local` (an editable working tree — for ai-hats developers).
+  > Most users keep `stable`.
+
+  Apply the chosen channel (the wizard NEVER hand-edits the yaml):
+  ```
+  ai-hats config set --channel stable            # default — recommended
+  ai-hats config set --channel edge              # own repo HEAD (default repo = upstream)
+  ai-hats config set --channel local --path .    # editable working tree
+  ```
+
+  After all four — announce "Step 3 — …" and continue.
 
   ### Step 3 — stack detection + role recommendation
   Read (via the Read tool) what exists in the project root:

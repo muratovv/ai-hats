@@ -53,6 +53,7 @@ library_paths:                 # extra component sources (last wins)
 | `library_paths`     | Extra directories ai-hats walks for components — see [3] for full precedence.                                 |
 | `venv_path`         | Override the framework-managed venv — see §6.                                                                 |
 | `manage_gitignore`  | When `true` (default) ai-hats adds `<ai_hats_dir>/` to `.gitignore` once at init. Toggle via `ai-hats config set --no-manage-gitignore`. |
+| `harness`           | Install-source channel `ai-hats self update` pulls from (HATS-764): `channel: local` (editable working tree, `path:`), `edge` (own repo HEAD, `repo:`), or `stable` (latest PyPI release — the default; omitted from yaml when unset). Set via `ai-hats config set --channel {local\|edge\|stable} [--repo URL] [--path DIR]` — do **not** hand-edit. `AI_HATS_REPO_URL` overrides the edge repo. See [1]. |
 
 ---
 
