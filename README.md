@@ -52,7 +52,19 @@ roles/dev-python ── trait-base + trait-agent + dev::python + dev::shell
 
 A bash launcher in `~/.local/bin/ai-hats` (one-time per host) plus a per-project venv in `<ai_hats_dir>/.venv/`. Get help for any command with `ai-hats --help`. View the full CLI tree with `ai-hats --tree`.
 
+**Prerequisite:** [uv](https://docs.astral.sh/uv/) is the single host requirement — the env engine that also provisions Python (no separate Python install). The one-command install below auto-installs uv if it is absent; the step-by-step path assumes it is present (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
+
+### One command (recommended)
+
+```bash
+curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- -r <role> -p <provider>
+```
+
+On a fresh host this installs the launcher, auto-installs uv if absent, creates the venv, and initializes the project — nothing pre-installed required.
+
 ### 1. Install the launcher (once per host)
+
+> Requires uv on the host (see prerequisite above). The launcher heals/creates venvs via uv and fails loud with the install one-liner if uv is missing.
 
 ```bash
 curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh | bash

@@ -150,16 +150,16 @@ def test_e2e_self_update_refuses_silent_downgrade(tmp_path: Path) -> None:
     # ``pip install -e`` over an existing non-editable snapshot can be a
     # silent no-op ("already satisfied"). Force the conversion by
     # uninstalling first.
-    venv_pip = project / ".agent" / "ai-hats" / ".venv" / "bin" / "pip"
+    # HATS-763: uv venvs ship no pip — convert via uv, targeting the venv interp.
     venv_python = project / ".agent" / "ai-hats" / ".venv" / "bin" / "python"
-    assert venv_pip.is_file(), \
-        f"project venv pip missing at {venv_pip}"
+    assert venv_python.is_file(), \
+        f"project venv python missing at {venv_python}"
     subprocess.run(
-        [str(venv_pip), "uninstall", "-y", "--quiet", "ai-hats"],
+        ["uv", "pip", "uninstall", "--python", str(venv_python), "ai-hats"],
         env=env, check=True, timeout=60,
     )
     subprocess.run(
-        [str(venv_pip), "install", "--quiet", "-e", str(src_repo)],
+        ["uv", "pip", "install", "--python", str(venv_python), "-e", str(src_repo)],
         env=env, check=True, timeout=120,
     )
     # HATS-647: the non-editable bootstrap `self update` created a versions/<sha>/

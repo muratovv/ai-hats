@@ -134,14 +134,15 @@ def test_e2e_self_update_revision(tmp_path: Path) -> None:
     # Launcher bootstrap installs from ``file://`` non-editable by default
     # (direct_url.json has dir_info={} — file URL but no editable marker).
     # Convert to editable so the D2 path is reachable in assertion 1.
-    venv_pip = venv_dir / "bin" / "pip"
-    assert venv_pip.is_file(), f"project venv pip missing at {venv_pip}"
+    # HATS-763: uv venvs ship no pip — convert via uv, targeting the venv interp.
+    venv_python = venv_dir / "bin" / "python"
+    assert venv_python.is_file(), f"project venv python missing at {venv_python}"
     subprocess.run(
-        [str(venv_pip), "uninstall", "-y", "--quiet", "ai-hats"],
+        ["uv", "pip", "uninstall", "--python", str(venv_python), "ai-hats"],
         env=env, check=True, timeout=60,
     )
     subprocess.run(
-        [str(venv_pip), "install", "--quiet", "-e", str(src_repo)],
+        ["uv", "pip", "install", "--python", str(venv_python), "-e", str(src_repo)],
         env=env, check=True, timeout=180,
     )
     # HATS-647: the non-editable bootstrap `self update` created a versions/<sha>/

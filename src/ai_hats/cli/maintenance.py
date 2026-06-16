@@ -20,6 +20,27 @@ from ._helpers import _assembler, _project_dir, console, logger
 # defer to pip's own resolution downstream).
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
 
+# Lowest supported interpreter (pyproject requires-python>=3.11); uv provisions it.
+PINNED_PYTHON = "3.11"
+
+
+def _require_uv() -> None:
+    """Fail loud with the install hint if uv is missing (D2: no pip fallback).
+
+    uv is the single hard dependency — no pip fallback (D2). Called only right
+    before a real uv call, so reuse / already-current no-ops stay green without
+    uv (idempotency).
+    """
+    import shutil
+
+    if shutil.which("uv") is None:
+        console.print(
+            "[red]ai-hats requires uv[/] but it was not found on PATH.\n"
+            "  Install: [bold]curl -LsSf https://astral.sh/uv/install.sh | sh[/]\n"
+            "  then re-run."
+        )
+        sys.exit(1)
+
 
 # HATS-337: AI_HATS_REPO_URL env overrides the default git URL, mirroring
 # the bash launcher (HATS-339) so a single env var pins the install source
@@ -57,17 +78,15 @@ def _build_update_cmd(ref: str | None = None) -> list[str]:
         target = f"{url}@{ref}"
     else:
         target = f"ai-hats @ {url}" if "://" in url else url
-    # HATS-563: dropped --no-cache-dir. --force-reinstall already re-installs
-    # the named target unconditionally; transitive deps (click, pydantic,
-    # rich, pyyaml, ...) are safe to serve from the local wheel cache. Keeps
-    # `self update` fast even when the host has a warm pip cache. UX bonus
-    # to all users; also unlocks ~100s on the e2e+smoke gate (HATS-550).
+    # B1 (HATS-763): pin --python or `uv pip install` targets the nearest cwd
+    # venv, not this interpreter. `--reinstall` == pip's `--force-reinstall`.
     return [
-        sys.executable,
-        "-m",
+        "uv",
         "pip",
         "install",
-        "--force-reinstall",
+        "--python",
+        sys.executable,
+        "--reinstall",
         target,
     ]
 
@@ -250,7 +269,8 @@ def _build_install_cmd(python_exe: str, url: str, ref: str) -> list[str]:
     install spec.
     """
     target = f"ai-hats @ {url}@{ref}" if "://" in url else url
-    return [python_exe, "-m", "pip", "install", "--force-reinstall", target]
+    # B1 (HATS-763): pin --python or uv targets the nearest cwd venv, not python_exe.
+    return ["uv", "pip", "install", "--python", python_exe, "--reinstall", target]
 
 
 def _flip_current(project_dir: Path, sha: str) -> None:
@@ -442,6 +462,7 @@ def _run_managed_versioned_update(
         else:
             # No dir, or incomplete crash residue (no .complete sentinel) — never
             # trust it; rebuild fresh (HATS-648 build-in-place + sentinel).
+            _require_uv()  # only here — reuse/no-op above needs no uv
             if vdir.exists():
                 shutil.rmtree(vdir, ignore_errors=True)  # safe-delete: ok incomplete-venv (crash residue, rebuilt fresh)
             vdir.parent.mkdir(parents=True, exist_ok=True)
@@ -449,8 +470,9 @@ def _run_managed_versioned_update(
                 f"[cyan]Creating versioned venv[/] versions/{target_sha[:12]} …",
                 spinner="dots",
             ):
+                # uv provisions the interpreter (drops the host-Python precondition).
                 venv_proc = subprocess.run(
-                    [sys.executable, "-m", "venv", str(vdir)],
+                    ["uv", "venv", "--python", PINNED_PYTHON, str(vdir)],
                     capture_output=True,
                     text=True,
                 )
@@ -466,7 +488,7 @@ def _run_managed_versioned_update(
             new_python = str(vdir / "bin" / "python")
             with console.status(
                 "[cyan]Downloading ai-hats from GitHub …[/] "
-                "[dim](pip install — may take a minute)[/]",
+                "[dim](uv install — may take a minute)[/]",
                 spinner="dots",
             ):
                 install = subprocess.run(
@@ -799,23 +821,32 @@ def _get_changelog() -> str:
 
 
 def _snapshot_dep_versions() -> dict[str, str]:
-    """Snapshot ``{distribution_name: version}`` via a fresh ``pip list`` subprocess.
+    """Snapshot ``{distribution_name: version}`` via a fresh ``uv pip list`` subprocess.
 
     Fresh subprocess avoids importlib cache divergence between pre- and
     post-update — important for HATS-213 activation banner.
+
+    HATS-763 (B2): a ``uv venv`` ships NO ``pip``, so the old
+    ``python -m pip list`` returned nothing in a uv-built venv and silently
+    blanked the banner. ``uv pip list --python <interp>`` reads any interpreter's
+    env without needing pip installed there, and emits the SAME ``{name,version}``
+    JSON shape — drop-in. ``--python sys.executable`` pins THIS env (B1).
     """
     import json
     import subprocess
 
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "list", "--format=json"],
+            ["uv", "pip", "list", "--python", sys.executable, "--format=json"],
             capture_output=True,
             text=True,
             timeout=15,
         )
     except (subprocess.SubprocessError, OSError):
-        logger.debug("pip list snapshot failed", exc_info=True)
+        # OSError covers uv-missing (FileNotFoundError); the banner just shows no
+        # deltas — non-critical snapshot, so no fail-loud here (uv is required by
+        # the install paths that DO fail loud via _require_uv).
+        logger.debug("uv pip list snapshot failed", exc_info=True)
         return {}
     if result.returncode != 0:
         return {}
@@ -1199,16 +1230,17 @@ def update(
     if skip_install:
         console.print(
             f"[green]Already up to date[/] ({old_version}) "
-            "[dim]— skipping pip install[/]"
+            "[dim]— skipping reinstall[/]"
         )
         new_version = old_version
     else:
+        _require_uv()  # HATS-763: legacy in-place path also runs uv
         cmd = _build_update_cmd(ref=revision)
-        # Wrapped in a Rich spinner so the terminal isn't silent while pip
+        # Wrapped in a Rich spinner so the terminal isn't silent while uv
         # downloads (can take 30s+ on slow links).
         with console.status(
             "[cyan]Downloading ai-hats from GitHub …[/] "
-            "[dim](pip install — may take a minute)[/]",
+            "[dim](uv install — may take a minute)[/]",
             spinner="dots",
         ):
             result = subprocess.run(cmd, capture_output=True, text=True)

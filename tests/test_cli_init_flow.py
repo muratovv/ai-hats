@@ -535,34 +535,46 @@ def test_migrate_cleanup_ignores_non_tmp_pointer_target(tmp_path):
     assert (user_dir / "important.txt").exists()
 
 
-def test_update_command_uses_force_reinstall():
-    """Update command must use --force-reinstall and MUST NOT disable cache.
+def test_update_command_uses_uv_reinstall():
+    """Update command must use `uv pip install --reinstall` and NOT disable cache.
 
-    HATS-563: ``--no-cache-dir`` was dropped from the production pip
-    command. ``--force-reinstall`` already re-installs the target
-    unconditionally, so the extra flag only defeated pip's local wheel
-    cache for transitive deps (click, pydantic, rich, pyyaml, ...). The
-    negative assertion below is the fail-under-revert canary for
-    ``cli/maintenance.py:_build_update_cmd``; the full pipeline is
-    covered by ``tests/e2e/test_self_update_pip_cache.py``.
+    HATS-763: the env engine is uv. ``--reinstall`` is uv's
+    ``--force-reinstall`` (re-installs the target unconditionally); the uv
+    content-addressed cache (~/.cache/uv) still serves transitive deps, so we
+    never pass a cache-disabling flag. ``--python sys.executable`` is
+    load-bearing (B1): a bare ``uv pip install`` would resolve the nearest
+    discoverable venv, not this interpreter. This is the fail-under-revert
+    canary for ``cli/maintenance.py:_build_update_cmd``.
     """
     from ai_hats.cli.maintenance import _build_update_cmd
 
     cmd = _build_update_cmd()
-    assert "--force-reinstall" in cmd, "pip caches git installs; --force-reinstall is required"
+    assert cmd[0] == "uv", "must use the uv engine"
+    assert cmd[:3] == ["uv", "pip", "install"]
+    assert "--reinstall" in cmd, "uv caches git installs; --reinstall is required"
     assert "--no-cache-dir" not in cmd, (
-        "HATS-563: --no-cache-dir was dropped — --force-reinstall already "
-        "re-installs the target, --no-cache-dir only blocks pip's local "
-        "wheel cache for transitive deps and wastes ~100s on the HATS-550 "
-        "e2e+smoke gate"
+        "--reinstall already re-installs the target; never disable uv's "
+        "content-addressed cache for transitive deps"
     )
     assert "--no-deps" not in cmd, (
         "must NOT pass --no-deps: new deps in pyproject.toml (e.g. ptyprocess in HATS-207) "
         "would otherwise be skipped on update and crash at runtime"
     )
     assert any("git+ssh://" in arg for arg in cmd), "must install from git"
-    assert cmd[0] == sys.executable, "must use current Python interpreter"
-    assert "pip" in cmd, "must use pip"
+    assert "--python" in cmd and cmd[cmd.index("--python") + 1] == sys.executable, (
+        "B1: must pin --python sys.executable so uv targets THIS interpreter"
+    )
+
+
+def test_run_self_update_fails_loud_without_uv(monkeypatch):
+    """HATS-763 D2: the wizard self-update step fails loud (clean exit, not a raw
+    FileNotFoundError traceback) when uv is absent from PATH."""
+    from ai_hats.cli.assembly import _run_self_update
+
+    monkeypatch.setattr("shutil.which", lambda _name: None)
+    with pytest.raises(SystemExit) as exc:
+        _run_self_update()
+    assert exc.value.code == 1
 
 
 def test_update_command_runs_via_cli(cli_project, monkeypatch):
@@ -593,11 +605,11 @@ def test_update_command_runs_via_cli(cli_project, monkeypatch):
     assert "Current version:" in result.output
     assert "Library:" in result.output
 
-    # Interaction-count only: exactly one pip install call.
-    # Cmd composition is covered by test_update_command_uses_force_reinstall;
+    # Interaction-count only: exactly one uv install call.
+    # Cmd composition is covered by test_update_command_uses_uv_reinstall;
     # the real install flow is covered by tests/e2e/test_install.py.
-    pip_cmds = [c for c in captured_cmds if "--force-reinstall" in c]
-    assert len(pip_cmds) == 1, f"Expected 1 pip install call, got {len(pip_cmds)}"
+    install_cmds = [c for c in captured_cmds if "--reinstall" in c]
+    assert len(install_cmds) == 1, f"Expected 1 uv install call, got {len(install_cmds)}"
 
 
 def test_update_command_reports_failure(cli_project, monkeypatch):

@@ -13,7 +13,7 @@ the project itself is what may be missing dependencies.
 Two entry points:
 
 * :func:`bootstrap_or_die` — called first in ``cli.main()``. Detects missing
-  runtime deps; pip-installs them; ``os.execv`` re-execs the same command
+  runtime deps; uv-installs them; ``os.execv`` re-execs the same command
   in a fresh interpreter so freshly-installed modules are importable.
 * :func:`verify_after_install` — called via ``python -m ai_hats._bootstrap
   verify`` from ``cli.maintenance.update()`` as a stage-2 check inside a
@@ -110,10 +110,14 @@ def find_missing_runtime_deps() -> list[str]:
 
 
 def attempt_self_heal(missing: list[str]) -> bool:
-    """Run pip install for the missing distributions. Returns True on exit 0."""
+    """Run ``uv pip install`` for the missing distributions. True on exit 0.
+
+    HATS-763: uv-only (no pip fallback, D2); ``--python sys.executable`` targets
+    THIS interp (B1). Missing-uv OSError → False → caller prints rescue + exits.
+    """
     if not missing:
         return True
-    cmd = [sys.executable, "-m", "pip", "install", "--no-cache-dir", *missing]
+    cmd = ["uv", "pip", "install", "--python", sys.executable, *missing]
     try:
         result = subprocess.run(cmd, check=False)
     except OSError:
@@ -123,14 +127,14 @@ def attempt_self_heal(missing: list[str]) -> bool:
 
 def _rescue_command(missing: list[str]) -> str:
     quoted = " ".join(f"'{m}'" for m in missing)
-    return f"{sys.executable} -m pip install --no-cache-dir {quoted}"
+    return f"uv pip install --python {sys.executable} {quoted}"
 
 
 def bootstrap_or_die() -> None:
-    """Detect missing runtime deps; pip-install + re-exec, or die loudly.
+    """Detect missing runtime deps; uv-install + re-exec, or die loudly.
 
     Called as the very first action in :func:`ai_hats.cli.main`. Side effects:
-    prints to stderr, runs pip in a subprocess, and on success replaces the
+    prints to stderr, runs uv in a subprocess, and on success replaces the
     current process via :func:`os.execv` so freshly-installed modules become
     importable for the actual command the user invoked.
     """
@@ -139,7 +143,7 @@ def bootstrap_or_die() -> None:
         return
 
     sys.stderr.write(
-        f"ai-hats: missing runtime deps {missing}; healing via pip…\n"
+        f"ai-hats: missing runtime deps {missing}; healing via uv…\n"
         f"  manual command if this fails: {_rescue_command(missing)}\n"
     )
     sys.stderr.flush()
@@ -171,13 +175,13 @@ def verify_after_install() -> int:
         f"ai-hats: post-install verify found missing deps {missing}; healing…\n"
     )
     if attempt_self_heal(missing):
-        # Re-check — pip can succeed but install nothing useful in pathological
+        # Re-check — uv can succeed but install nothing useful in pathological
         # cases (e.g. wheel for wrong platform). Trust but verify.
         still_missing = find_missing_runtime_deps()
         if not still_missing:
             return 0
         sys.stderr.write(
-            f"ai-hats: deps still missing after pip: {still_missing}\n"
+            f"ai-hats: deps still missing after uv install: {still_missing}\n"
         )
     sys.stderr.write(
         f"  manual command: {_rescue_command(missing)}\n"

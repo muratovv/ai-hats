@@ -91,16 +91,23 @@ heal_if_needed() {
     if ! is_default_venv; then
         echo "ai-hats: override venv $VENV is missing or broken." >&2
         echo "  Override venv is user-owned; ai-hats will not auto-recreate it." >&2
-        echo "  Fix manually:  python3 -m venv $VENV && $VENV/bin/pip install '$PIP_TARGET'" >&2
+        echo "  Fix manually:  uv venv --python 3.11 $VENV && uv pip install --python $VENV/bin/python '$PIP_TARGET'" >&2
         exit 1
     fi
     echo "  · ai-hats venv missing or broken — recreating $VENV" >&2
+    # Host-global launcher never auto-installs uv (that's bootstrap.sh's job) — fail loud.
+    if ! command -v uv >/dev/null 2>&1; then
+        echo "ai-hats: uv is required but not found on PATH." >&2
+        echo "  Install: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+        echo "  then re-run. (uv is the single host prerequisite — HATS-763.)" >&2
+        exit 1
+    fi
     rm -rf "$VENV"
-    python3 -m venv "$VENV"
+    uv venv --python 3.11 "$VENV"
     # Bare install so the subsequent exec into <venv>/bin/ai-hats succeeds.
     # The python self update (called next via delegate) will then re-install
-    # with --force-reinstall and render the rich diff + auto-bump.
-    "$VENV/bin/pip" install --quiet "$PIP_TARGET"
+    # with --reinstall and render the rich diff + auto-bump.
+    uv pip install --quiet --python "$VENV/bin/python" "$PIP_TARGET"
 }
 
 # --- Self update / self init: heal-then-delegate. Never bypass the python
