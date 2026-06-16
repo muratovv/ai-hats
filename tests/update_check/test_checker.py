@@ -15,6 +15,7 @@ from ai_hats.update_check.checker import (
     detect_remote_url,
     fetch_latest_sha,
     run_check,
+    sha_matches,
 )
 
 
@@ -544,3 +545,29 @@ def test_describe_returns_none_when_no_tags():
 def test_describe_returns_none_when_git_missing():
     with patch.object(subprocess, "run", side_effect=FileNotFoundError):
         assert checker._describe("abcdef0") is None
+
+
+# ---------- sha_matches (HATS-781) ----------
+
+
+def test_sha_matches_short_prefix_of_long():
+    # Cache holds a 9-char baked SHA; rev-parse returns the full 40-char one.
+    assert sha_matches("86a6bb1a0", "86a6bb1a0c1f43bcb6e7" + "0" * 20)
+    assert sha_matches("86a6bb1a0c1f43bcb6e7" + "0" * 20, "86a6bb1a0")
+
+
+def test_sha_matches_identical():
+    assert sha_matches("a" * 40, "a" * 40)
+
+
+def test_sha_matches_disjoint_is_false():
+    assert not sha_matches("86a6bb1a0", "598a0eeb0")
+    assert not sha_matches("a" * 40, "b" * 40)
+
+
+def test_sha_matches_empty_or_none_is_false():
+    assert not sha_matches("", "abc")
+    assert not sha_matches("abc", "")
+    assert not sha_matches(None, "abc")
+    assert not sha_matches("abc", None)
+    assert not sha_matches(None, None)
