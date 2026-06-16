@@ -295,6 +295,59 @@ def test_self_update_with_local_path_repo_url(tmp_path):
     assert "ai-hats @" not in text
 
 
+def test_self_update_channel_local_heals_editable(tmp_path):
+    """HATS-766: `channel: local` → heal installs EDITABLE (`-e <path>`),
+    mirroring maintenance._run_editable_update, not a non-editable PIP_TARGET
+    snapshot that would clobber the dev working-tree install."""
+    stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
+    src = tmp_path / "src-tree"
+    src.mkdir()
+    (tmp_path / "ai-hats.yaml").write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+        f"harness:\n  channel: local\n  path: {src}\n"
+    )
+    env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
+    res = _run(["self", "update"], cwd=tmp_path, env=env)
+    assert res.returncode == 0, res.stderr
+    text = (tmp_path / ".agent" / "ai-hats" / ".venv" / "pip_called").read_text()
+    lines = text.splitlines()
+    assert "-e" in lines, f"editable flag missing from heal install: {lines}"
+    assert str(src) in text, f"editable target path missing: {text}"
+    assert "ai-hats @" not in text, "channel:local must not heal the PEP508 url form"
+
+
+def test_self_update_channel_local_default_path_is_editable(tmp_path):
+    """HATS-766: `channel: local` with no explicit `path` → editable install of
+    the project root (the resolve_channel default), still `-e`."""
+    stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
+    (tmp_path / "ai-hats.yaml").write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+        "harness:\n  channel: local\n"
+    )
+    env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
+    res = _run(["self", "update"], cwd=tmp_path, env=env)
+    assert res.returncode == 0, res.stderr
+    text = (tmp_path / ".agent" / "ai-hats" / ".venv" / "pip_called").read_text()
+    assert "-e" in text.splitlines(), f"editable flag missing (default path): {text}"
+    assert "ai-hats @" not in text
+
+
+def test_self_update_channel_edge_heals_non_editable(tmp_path):
+    """HATS-766 branch boundary: `channel: edge` keeps the non-editable
+    PIP_TARGET rebuild — only `local` heals editable."""
+    stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
+    (tmp_path / "ai-hats.yaml").write_text(
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
+        "harness:\n  channel: edge\n"
+    )
+    env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
+    res = _run(["self", "update"], cwd=tmp_path, env=env)
+    assert res.returncode == 0, res.stderr
+    text = (tmp_path / ".agent" / "ai-hats" / ".venv" / "pip_called").read_text()
+    assert "-e" not in text.splitlines(), f"edge must not heal editable: {text}"
+    assert "ai-hats @" in text, "edge heals the PEP508 git+https url form"
+
+
 def test_self_update_in_healthy_venv_delegates_to_python(tmp_path):
     """Healthy venv → heal is a no-op (no pip_called marker), launcher
     delegates straight to <venv>/bin/ai-hats for the rich python self

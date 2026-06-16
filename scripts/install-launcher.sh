@@ -4,16 +4,12 @@
 # Idempotent: safe to re-run. Target path overridable via
 # AI_HATS_LAUNCHER_DEST env var.
 #
-# Usage (from local clone — recommended while the repo is private):
+# Usage (from a local clone):
 #   bash scripts/install-launcher.sh
 #
-# Usage (one-liner — requires the repo to be public OR a pre-authenticated URL):
+# Usage (public one-liner — no credentials needed):
 #   curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh | bash
-#   (when piped, the script falls back to fetching the launcher itself
-#    from the same repo. NOTE: the repo is currently private — anonymous
-#    curl will receive an HTML 404 page that bash chokes on. Use the
-#    local-clone path above, or override AI_HATS_LAUNCHER_URL with a URL
-#    that carries credentials, e.g. a gh-api raw URL.)
+#   (piped: fetches the launcher from the repo; override AI_HATS_LAUNCHER_URL for a fork.)
 set -euo pipefail
 
 DEST="${AI_HATS_LAUNCHER_DEST:-$HOME/.local/bin/ai-hats}"
@@ -63,15 +59,11 @@ else
     info "source" "fetching $LAUNCHER_URL"
     TMP="$(mktemp)"
     trap 'rm -f "$TMP"' EXIT
+    # curl -f rejects 4xx/5xx (e.g. a wrong-branch 404), so no HTML body leaks
+    # into $DEST — the old private-repo HTML guard (HATS-339) is no longer needed.
     if ! curl -fsSL "$LAUNCHER_URL" -o "$TMP"; then
         err "fetch" "failed to download launcher from $LAUNCHER_URL"
-        err "hint"  "if the repo is private, clone it and run scripts/install-launcher.sh locally"
-        exit 1
-    fi
-    # Guard against HTML error pages (e.g. private-repo 404) leaking into $DEST
-    if head -c 256 "$TMP" | grep -qiE '<!doctype html|<html'; then
-        err "fetch" "received HTML instead of a script (likely private repo or wrong branch)"
-        err "hint"  "clone the repo and run scripts/install-launcher.sh from the working tree"
+        err "hint"  "check the URL/branch, or clone the repo and run scripts/install-launcher.sh locally"
         exit 1
     fi
     if [[ -f "$DEST" ]] && cmp -s "$TMP" "$DEST"; then
