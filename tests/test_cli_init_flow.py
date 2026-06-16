@@ -659,20 +659,15 @@ def test_update_shows_version_transition(cli_project, monkeypatch):
         # Version check returns new version
         if "__version__" in str(cmd):
             return subprocess.CompletedProcess(cmd, 0, stdout="0.5.0\n", stderr="")
-        # git clone for changelog — simulate success
-        if "git" in cmd and "clone" in cmd:
-            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-        # git log for changelog
-        if "git" in cmd and "log" in cmd:
-            return subprocess.CompletedProcess(
-                cmd,
-                0,
-                stdout="abc1234 feat: new feature\ndef5678 fix: bug fix\n",
-                stderr="",
-            )
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(subprocess, "run", mock_run)
+    # HATS-766: changelog is a GitHub Commits API read, not a git clone — stub it
+    # directly so the test is deterministic + offline (no real network call).
+    monkeypatch.setattr(
+        "ai_hats.cli.maintenance._get_changelog",
+        lambda: "abc1234 feat: new feature\ndef5678 fix: bug fix",
+    )
 
     result = runner.invoke(main, ["self", "update"])
     assert result.exit_code == 0, result.output
