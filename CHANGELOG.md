@@ -11,6 +11,17 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [Unreleased]
 
 ### Added
+- **Release CI to PyPI via OIDC trusted publishing** (HATS-765, child of the
+  HATS-762 distribution overhaul). A new `.github/workflows/release.yml` builds
+  the wheel + sdist with `uv build` and publishes to PyPI on a `v*` tag push via
+  tokenless OIDC trusted publishing — build and publish are split into two jobs
+  so the `id-token: write` privilege is held only by a publish-only job. This is
+  the artefact that makes the `stable` channel real: end users install a
+  prebuilt `ai-hats==<version>` wheel instead of a git source build. A
+  self-skipping live e2e (`tests/e2e/test_stable_channel_live.py`) exercises a
+  stable-channel `self update` against the real PyPI index (skips until the name
+  is published). `docs/RELEASING.md` documents the trusted-publisher one-time
+  setup and the post-publish verify step.
 - **`ai-hats session show` renders a Usage section from `usage.json`** (HATS-734,
   child of HATS-699 / HATS-698 audit) — the HATS-664 producer (`compute_usage`)
   had zero in-src consumers, so a producer regression (the resume-mode discovery
