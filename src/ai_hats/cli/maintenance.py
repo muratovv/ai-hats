@@ -1159,6 +1159,23 @@ def _run_editable_update(
             )
 
 
+def _invalidate_update_cache(project_dir: Path) -> None:
+    """Drop the update-check cache after a self update (HATS-781).
+
+    The cache is keyed only on ``project_dir`` + a 24h TTL, so without this a
+    reinstall within the window leaves the banner reporting the PRE-update SHA
+    and a stale ``behind`` count — nagging "update available" the moment the
+    user finished updating. Idempotent and best-effort: a missing file or an
+    unlink error must never fail the update itself.
+    """
+    from ..update_check.cache import cache_path
+
+    try:
+        cache_path(project_dir).unlink(missing_ok=True)  # safe-delete: ok update-check cache (ephemeral, re-probed next session)
+    except OSError:
+        pass
+
+
 @click.command()
 @click.option(
     "--migrate-force",
@@ -1401,6 +1418,7 @@ def update(
             migrate_force=migrate_force,
             check_branches=check_branches,
         )
+        _invalidate_update_cache(project_dir)  # HATS-781
         return
 
     # HATS-647/764: edge/stable on the managed default venv → blue-green
@@ -1433,6 +1451,7 @@ def update(
             # other update converges. Clean exit, no traceback.
             console.print(f"[red]Update failed[/] (another update in progress):\n{exc}")
             sys.exit(2)
+        _invalidate_update_cache(project_dir)  # HATS-781
         return
 
     # 2. Install — short-circuited when the probe confirms installed SHA
@@ -1512,6 +1531,11 @@ def update(
             console.print("\n[bold]Recent changes:[/]")
             for line in changelog.splitlines()[:7]:
                 console.print(f"  {line}")
+
+    # HATS-781: legacy in-place path reached on success (incl. the "already up
+    # to date" no-op). Drop the stale update-check cache so the next session
+    # re-probes instead of nagging with the pre-update delta.
+    _invalidate_update_cache(project_dir)
 
     # 3b. Dep activation banner — flag the chicken-and-egg cycle: new in-
     # memory code is still the OLD one, so any changed dep won't be wired
