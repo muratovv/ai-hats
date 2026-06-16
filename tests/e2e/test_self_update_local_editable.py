@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.pip_heavy  # real uv install at call time → capped via conftest
+pytestmark = pytest.mark.install_heavy  # real uv install at call time → capped via conftest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
