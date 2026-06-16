@@ -315,13 +315,15 @@ Moved to the narrative walkthrough — see [2] §6 for default vs override, owne
 
 | Symptom | Command |
 |---|---|
-| `ai-hats: command not found` (fresh host) | `curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh \| bash` (if the repo is private — clone it and run `bash scripts/install-launcher.sh`) |
+| `ai-hats: command not found` (fresh host) | `curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh \| bash` (or clone the public repo and run `bash scripts/install-launcher.sh`) |
 | `ai-hats: venv missing at ...` (no venv) | `ai-hats self update` |
 | `ai-hats: venv exists but ai-hats binary is missing` | `ai-hats self update` |
 | System Python upgrade (the Proxmox case) | `ai-hats self update` — the launcher auto-recreates the default venv |
 | Import error / corrupted site-packages | `rm -rf .agent/ai-hats/.venv && ai-hats self update` |
-| Override venv broken | `uv venv --python 3.11 <override-path> && uv pip install --python <override-path>/bin/python 'ai-hats @ git+ssh://...'` (user-managed) |
+| Override venv broken | `uv venv --python 3.11 <override-path> && uv pip install --python <override-path>/bin/python 'ai-hats @ git+https://github.com/muratovv/ai-hats.git'` (user-managed) |
 | Full project wipe (data loss!) | `rm -rf .agent/ai-hats/ && ai-hats self update && ai-hats self init -r <role> -p <provider>` |
+
+**Zero-install bootstrap.** With uv present, `uvx ai-hats self init` runs the latest published ai-hats (the `stable` PyPI release) in a throwaway environment — no host launcher needed to wire a fresh project. Install the launcher (top row) for day-to-day use.
 
 ---
 

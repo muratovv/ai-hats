@@ -1,6 +1,6 @@
 # How-To: configure ai-hats in a project
 
-End-to-end walkthrough for wiring ai-hats into a project: provider, role, customizations, feedback policy, venv. Start here after `pip install ai-hats` and the bash launcher.
+End-to-end walkthrough for wiring ai-hats into a project: provider, role, customizations, feedback policy, venv. Start here after installing the bash launcher and running `ai-hats self init` (or `uvx ai-hats self init`) on the project.
 
 > Core terms (role, provider, session, …) are defined in [1]. This doc is the practical narrative — pair it with [2] for the cookbook of overlay snippets and with [3] when you need to ship your own roles or skills.
 
@@ -261,8 +261,8 @@ venv_path: /opt/shared/ai-hats-venv
 
 ```bash
 # One-time setup — user-owned
-python3 -m venv /opt/shared/ai-hats-venv
-/opt/shared/ai-hats-venv/bin/pip install "ai-hats @ git+ssh://git@github.com/muratovv/ai-hats.git"
+uv venv /opt/shared/ai-hats-venv
+uv pip install --python /opt/shared/ai-hats-venv/bin/python "ai-hats @ git+https://github.com/muratovv/ai-hats.git"
 
 # After that the launcher resolves the override automatically
 cd ~/dev/my-project
@@ -281,7 +281,7 @@ venv_path: .venv          # an existing project venv at the repo root
 ### Ownership invariant
 
 - **Default venv** (`<ai_hats_dir>/.venv/`) — framework-managed. `ai-hats self update` may recreate it wholesale (for example after a system Python upgrade).
-- **Override venv** (`venv_path:` set) — user-owned. ai-hats never deletes or recreates it automatically; it only does `pip install -U` into it.
+- **Override venv** (`venv_path:` set) — user-owned. ai-hats never deletes or recreates it automatically; it only does `uv pip install -U` into it.
 
 ---
 
@@ -309,7 +309,7 @@ Rerun `self init` after: yaml edits, `ai-hats self update`, or any change under 
 - **Stale prompt.** Edited `ai-hats.yaml` and didn't see the change in the next session? You forgot `ai-hats self init`. Add it to your apply-step muscle memory.
 - **Overlay warnings.** `Overlay: cannot remove 'X' — not in base role` is a soft warning. The build still succeeds; the overlay is just inert. Fix by spelling the component name as it appears in `ai-hats config status`.
 - **`library_paths` precedence.** Later paths win; project-local `<project>/libraries/` overrides the shipped library. Full precedence table — see [3].
-- **Override venv updates.** Once `venv_path:` is set, ai-hats only does `pip install -U` into that venv — never recreates it. If it breaks (e.g. corrupted site-packages), you fix it manually.
+- **Override venv updates.** Once `venv_path:` is set, ai-hats only does `uv pip install -U` into that venv — never recreates it. If it breaks (e.g. corrupted site-packages), you fix it manually.
 - **Wizard re-run.** Wizard is one-shot — there is no replay flag. To rerun from scratch: `rm ai-hats.yaml && ai-hats self init`. To tweak individual fields without restarting: `ai-hats config set …` or `ai-hats config customize …`.
 - **`Overlay` vs base edit.** Don't edit `library/usage/roles/<name>/config.yaml` directly — the change is lost on `ai-hats self update`. Always overlay via `customizations:` (§4).
 - **Broken venv / launcher.** For symptom-to-command recovery (`command not found`, `venv missing`, corrupted site-packages, override venv broken) — see [2] §10.

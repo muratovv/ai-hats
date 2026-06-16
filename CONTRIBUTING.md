@@ -18,20 +18,20 @@ For how the framework's reflection loop works see
 
 ```bash
 git clone git@github.com:muratovv/ai-hats.git && cd ai-hats
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+uv venv && source .venv/bin/activate
+uv pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
 Requirements:
 
-- Python 3.11+
+- [uv](https://docs.astral.sh/uv/) — the env engine; provisions Python 3.11+ and builds the venv (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
 - A POSIX shell (the launcher and pre-commit hooks are bash scripts).
 - `ruff` for linting (installed via `[dev]` extra).
 
 ### Stable runtime vs editable dev install
 
-The `pip install -e ".[dev]"` recipe above gives you an **editable**
+The `uv pip install -e ".[dev]"` recipe above gives you an **editable**
 install — `import ai_hats` resolves to `src/ai_hats/` directly, so every
 change to your working tree is picked up on the next `ai-hats`
 invocation. That's exactly what you want for testing in-flight changes,
@@ -51,7 +51,7 @@ makes both work side by side:
 
 ```bash
 # 1. Stable venv pinned to a known-good tag (via --revision).
-python3 -m venv ~/.local/share/ai-hats-stable
+uv venv ~/.local/share/ai-hats-stable
 AI_HATS_VENV=~/.local/share/ai-hats-stable \
     ai-hats self update --revision v0.7.0
 
@@ -71,7 +71,7 @@ confirming which mode you're in.
 *not* auto-track:
 
 - `pyproject.toml` is frozen at install time. Adding a CLI command,
-  dep, or entry point requires `pip install -e .` again.
+  dep, or entry point requires `uv pip install -e .` again.
 - The editable finder hardcodes the absolute repo path. Moving the repo
   (e.g. `~/dev/ai-hats` → `~/projects/ai-hats`) breaks every
   `import ai_hats` in the dev venv until you reinstall.

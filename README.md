@@ -16,7 +16,7 @@
 <p align="center">
   <a href="https://github.com/muratovv/ai-hats/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/muratovv/ai-hats/actions/workflows/ci.yml/badge.svg?branch=master"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green.svg"></a>
-  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue.svg">
+  <a href="https://docs.astral.sh/uv/"><img alt="uv" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json"></a>
   <img alt="Status: Beta" src="https://img.shields.io/badge/status-beta-orange.svg">
   <a href="https://github.com/muratovv/ai-hats/commits/master"><img alt="Last commit" src="https://img.shields.io/github/last-commit/muratovv/ai-hats"></a>
   <a href="https://github.com/muratovv/ai-hats/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/muratovv/ai-hats"></a>
@@ -62,6 +62,16 @@ curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh |
 
 On a fresh host this installs the launcher, auto-installs uv if absent, creates the venv, and initializes the project — nothing pre-installed required.
 
+### Zero-install first touch
+
+Already have uv? Wire a single project with the latest published ai-hats, no host launcher required:
+
+```bash
+uvx ai-hats self init                          # runs the stable PyPI release ephemerally
+```
+
+`uvx` fetches and runs ai-hats from the `stable` channel (PyPI) in a throwaway environment — handy to try it or bootstrap one project. For day-to-day use, install the launcher below so `ai-hats` is a persistent command on `$PATH`.
+
 ### 1. Install the launcher (once per host)
 
 > Requires uv on the host (see prerequisite above). The launcher heals/creates venvs via uv and fails loud with the install one-liner if uv is missing.
@@ -81,7 +91,7 @@ ai-hats self init                              # interactive wizard (recommended
 
 `ai-hats self init` is the human-friendly bootstrap. It:
 
-1. Pulls the latest ai-hats from GitHub.
+1. Installs the latest ai-hats from the default `stable` channel (a published release on PyPI). Other channels — `edge` (a repo branch HEAD via `git+https`) and `local` (an editable working tree) — are selectable later; see [2].
 2. Asks for a provider (smart default by `~/.claude` / `~/.gemini` presence) and writes a minimal `ai-hats.yaml`.
 3. Hands off to the `initial-wizard` LLM session, which detects your stack, recommends a base role, helps with customizations, and configures the feedback (session-retro) policy — all via `ai-hats config …` commands.
 
