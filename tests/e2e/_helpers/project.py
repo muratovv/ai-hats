@@ -27,6 +27,8 @@ def pin_edge_channel(project_path) -> None:
     if p.exists():
         text = p.read_text()
         if "harness:" not in text:
+            if text and not text.endswith("\n"):
+                text += "\n"  # robust to a config without a trailing newline
             p.write_text(text + "harness:\n  channel: edge\n")
     else:
         p.write_text(

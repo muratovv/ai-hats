@@ -43,6 +43,17 @@ def test_unknown_channel_fails_loud(tmp_path):
         ProjectConfig.from_yaml(_write(tmp_path, BASE + "harness:\n  channel: bogus\n"))
 
 
+def test_unknown_nested_harness_key_warns_but_loads(tmp_path, capsys):
+    # Forward-compat: a newer ai-hats may add a nested harness field; an older
+    # binary DROPS it (no crash) but WARNs so the vanished field is observable.
+    cfg = ProjectConfig.from_yaml(
+        _write(tmp_path, BASE + "harness:\n  channel: edge\n  branch: main\n")
+    )
+    assert cfg.harness.channel is Channel.EDGE
+    assert not hasattr(cfg.harness, "branch")
+    assert "dropping unknown field 'branch'" in capsys.readouterr().err
+
+
 def test_default_harness_omitted_from_to_dict():
     assert "harness" not in ProjectConfig().to_dict()
 
