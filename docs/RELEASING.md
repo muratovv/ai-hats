@@ -3,8 +3,10 @@
 Maintainer-facing guide to cutting a release. The mechanics rely on
 [`setuptools-scm`](https://github.com/pypa/setuptools_scm/) (version
 from git tags), [Conventional Commits](https://www.conventionalcommits.org/)
-(commit log structure), and [Keep a Changelog](https://keepachangelog.com)
-(human-readable release notes).
+(commit log structure), [Keep a Changelog](https://keepachangelog.com)
+(human-readable release notes), and
+[PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/)
+(tokenless OIDC publish from CI).
 
 ## SemVer policy
 
@@ -61,17 +63,58 @@ in the standard SemVer way.
 
 ## Release artefacts
 
-For now, a release ships exactly two things:
+A release ships three things:
 
 1. **A git tag** (annotated, e.g. `v0.4.0`) — `setuptools-scm` reads
-   this and stamps `src/ai_hats/_version.py` accordingly.
-2. **A GitHub Release** — body is the matching CHANGELOG.md section,
-   verbatim.
+   this and stamps `src/ai_hats/_version.py` accordingly. Pushing the
+   tag is also what triggers the PyPI publish.
+2. **A PyPI release** (wheel + sdist) — built and published
+   automatically by the `release.yml` workflow [3] on the tag push, via
+   OIDC trusted publishing (no stored API token). This is the artefact
+   the `stable` channel installs (`ai-hats==<version>`).
+3. **A GitHub Release** — body is the matching CHANGELOG.md section,
+   verbatim. Created by hand after the tag (step 4) so the notes stay
+   human-curated.
 
-PyPI publication is intentionally deferred. The install path remains
-`pip install 'ai-hats @ git+https://github.com/muratovv/ai-hats'`.
-Once the API surface is stable enough for SemVer to mean something to
-downstream packagers (post-1.0), we add a PyPI publish step.
+## PyPI trusted publishing
+
+The `release.yml` workflow [3] publishes to PyPI without a stored API
+token — it authenticates via OIDC ("trusted publishing"). Build and
+publish are split into two jobs so the `id-token: write` privilege is
+held only by a job that does nothing but download the prebuilt dist and
+upload it (least privilege).
+
+### One-time setup
+
+Configured once on the PyPI side, scoped to a GitHub deployment
+environment. Repeat only when the repo or workflow filename changes.
+
+1. **Reserve the name + add a pending publisher.** On PyPI →
+   *Account settings → Publishing → Add a new pending publisher*. This
+   both claims the `ai-hats` name and binds the OIDC trust. Set exactly:
+
+   | Field | Value |
+   |---|---|
+   | PyPI Project Name | `ai-hats` |
+   | Owner | `muratovv` |
+   | Repository name | `ai-hats` |
+   | Workflow name | `release.yml` |
+   | Environment name | `pypi` |
+
+   These four binding values must match the workflow verbatim — any
+   mismatch fails the publish loud.
+2. **Create the GitHub `pypi` environment:**
+
+   ```bash
+   gh api -X PUT repos/muratovv/ai-hats/environments/pypi
+   ```
+
+   The workflow's `publish` job runs in this environment; the pending
+   publisher above is scoped to it.
+3. **Optional hardening** — add a required reviewer to the `pypi`
+   environment (repo *Settings → Environments → pypi*) to gate each
+   publish behind a manual approval. Off by default: the tag push
+   publishes unattended.
 
 ## CHANGELOG flow
 
@@ -139,6 +182,13 @@ git push origin master
 git push origin v0.4.0
 ```
 
+The `git push origin v0.4.0` triggers `release.yml` [3] → `uv build` →
+PyPI publish. Watch it before moving on:
+
+```bash
+gh run watch --workflow release.yml
+```
+
 ### 4. Create the GitHub Release
 
 The release body is the verbatim CHANGELOG section for this version:
@@ -162,15 +212,28 @@ gh release create v0.4.0 --generate-notes
 
 ### 5. Verify
 
+Confirm the PyPI release resolves and installs — this is what the
+`stable` channel consumes:
+
+```bash
+# 1. The release is live on the index (the stable resolver's endpoint).
+curl -fsS https://pypi.org/pypi/ai-hats/json \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])'   # → 0.4.0
+
+# 2. Install the published wheel in a throwaway venv.
+python3 -m venv /tmp/release-verify
+/tmp/release-verify/bin/pip install "ai-hats==0.4.0"
+/tmp/release-verify/bin/ai-hats --version    # → ai-hats 0.4.0
+rm -rf /tmp/release-verify
+```
+
+A `stable`-channel project then picks it up via `ai-hats self update`
+(resolves `ai-hats==<latest>` from PyPI). Finally confirm the tag and
+the GitHub Release:
+
 ```bash
 git fetch --tags
 git describe --tags --exact-match    # → v0.4.0
-
-# Install in a throwaway venv and confirm the version
-python3 -m venv /tmp/release-verify
-/tmp/release-verify/bin/pip install 'ai-hats @ git+https://github.com/muratovv/ai-hats@v0.4.0'
-/tmp/release-verify/bin/ai-hats --version    # → ai-hats 0.4.0
-rm -rf /tmp/release-verify
 ```
 
 Open `https://github.com/muratovv/ai-hats/releases/tag/v0.4.0` and
@@ -194,14 +257,17 @@ applies. There is no "release candidate" step — the work that justifies
 
 ## Out of scope
 
-- **PyPI publication** — deferred to post-1.0.
 - **Automated release-notes generation** — manual `awk` extraction is
   fine for the current cadence.
-- **CI-driven release** — a GitHub Actions workflow that triggers on
-  tag and attaches built wheels lands in HATS-345 (CI infrastructure).
+- **TestPyPI staging / release candidates** — a single-shot publish on
+  the tag is enough at the current cadence.
+- **Attaching built wheels to the GitHub Release** — PyPI is the
+  distribution channel; the GitHub Release carries notes only.
 
 ## References
 
 **[1]** — [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) — skill / rule / trait file format and the rest of the engine model.
 
 **[2]** — [`CHANGELOG.md`](../CHANGELOG.md) — versioned release notes following Keep a Changelog 1.1.0.
+
+**[3]** — [`.github/workflows/release.yml`](../.github/workflows/release.yml) — the tag-triggered PyPI publish workflow (OIDC trusted publishing, two-job least-privilege split).
