@@ -119,7 +119,6 @@ def bumped(tmp_path_factory, _shared_launcher_venv, repo_root: Path):
     launcher, shared_venv = _shared_launcher_venv
     project_path = tmp_path_factory.mktemp("bump-backup") / "project"
     project_path.mkdir()
-    pin_edge_channel(project_path)  # HATS-764: edge so self update resolves the local source
     project = Project(
         path=project_path,
         ai_hats_binary=launcher,
@@ -131,6 +130,13 @@ def bumped(tmp_path_factory, _shared_launcher_venv, repo_root: Path):
     )
 
     _seed_proxmox_shape(project_path)
+    # HATS-780: pin edge AFTER the seed. _seed_proxmox_shape rewrites
+    # ai-hats.yaml wholesale (no harness block), so a pin placed before it is
+    # clobbered → `self update` falls back to stable → PyPI 404 (ai-hats
+    # unpublished pre-765) → no backup tarball → this fixture's setup asserts
+    # fail. (Masked until HATS-780 fixed the shared-venv build, which this
+    # fixture depends on — the error surfaced only once the tier ran.)
+    pin_edge_channel(project_path)  # edge so self update resolves the local source
     (project_path / "CLAUDE.md").write_text("# Project\n")
     # Plant derived state the snapshot must EXCLUDE. The shared venv lives
     # outside <project>/.agent/ (reached via AI_HATS_VENV); this fake one
