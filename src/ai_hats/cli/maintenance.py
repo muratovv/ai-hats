@@ -1013,11 +1013,15 @@ def _read_harness(project_dir: Path):
 
     config_path = project_dir / "ai-hats.yaml"
     if not config_path.exists():
-        return Channel.STABLE, None, None
+        return Channel.STABLE, None, None  # greenfield → documented default
     try:
         h = ProjectConfig.from_yaml(config_path).harness
     except ProjectConfigError:
-        return Channel.STABLE, None, None
+        # Recovery mode: the file EXISTS but the installed code can't parse it.
+        # Route the heal through edge (install from the configured source /
+        # upstream), NOT stable — a broken config must not strand `self update`
+        # on an unreachable/unpublished PyPI release (HATS-581 self-heal).
+        return Channel.EDGE, None, None
     return h.channel, h.repo, h.path
 
 
