@@ -199,7 +199,15 @@ class WrapRunner:
         except Exception:
             logger.warning("finalize-hitl preload failed", exc_info=True)
 
-        _print_session_start(active_role, provider_name, session.session_id)
+        from . import __version__
+
+        _print_session_start(
+            active_role,
+            provider_name,
+            session.session_id,
+            version=__version__,
+            channel=self.assembler.project_config.harness.channel.value,
+        )
 
         # PTY proxy via pty.spawn with sidecar trace.
         # HATS-086: wrap _pty_spawn so SIGINT during the interactive part
