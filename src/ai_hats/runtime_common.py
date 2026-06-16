@@ -251,8 +251,6 @@ def _finalize_sub_agent(
             logger.warning("finalize-subagent pipeline failed", exc_info=True)
 
 
-
-
 def _claude_jsonl_path(project_dir: Path, claude_session_id: str) -> Path | None:
     """Resolve path to Claude Code's JSONL conversation file."""
     project_key = str(project_dir).replace("/", "-")
@@ -304,10 +302,33 @@ def _discover_claude_jsonl(project_dir: Path, session_id: str) -> Path | None:
     return best[1] if best else None
 
 
-def _print_session_start(role: str, provider: str, session_id: str) -> None:
+def _highlight_hash(version: str) -> str:
+    """Colorize only the git-hash local segment of a setuptools-scm version.
+
+    ``0.8.1.dev127+gf7f916378`` → base + cyan ``gf7f916378``. A clean release
+    (no ``+`` local segment) has nothing to highlight and returns verbatim.
+    """
+    base, sep, local = version.partition("+")
+    if not sep:
+        return version
+    return f"{base}+\033[36m{local}\033[0m"
+
+
+def _print_session_start(
+    role: str,
+    provider: str,
+    session_id: str,
+    *,
+    version: str | None = None,
+    channel: str | None = None,
+) -> None:
     role_info = f"\033[1;36m{role or 'none'}\033[0m"
     provider_info = f"\033[1;35m{provider}\033[0m"
-    print(f"\n[*] Role: {role_info} | Provider: {provider_info} | Session: {session_id}\n")
+    line = f"\n[*] Role: {role_info} | Provider: {provider_info} | Session: {session_id}"
+    if version:
+        chan = f" ({channel})" if channel else ""
+        line += f" | ai-hats v{_highlight_hash(version)}{chan}"
+    print(line + "\n")
 
 
 def _composition_snapshot(assembler: Assembler, role_name: str, result) -> dict:
