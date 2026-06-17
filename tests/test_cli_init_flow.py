@@ -13,6 +13,25 @@ from ai_hats.models import ComponentType
 from ai_hats.paths import rules_dir, skills_dir, tasks_dir
 
 
+@pytest.fixture(autouse=True)
+def _uv_on_path(monkeypatch):
+    """Make ``_require_uv``'s ``shutil.which("uv")`` probe pass deterministically.
+
+    These tests mock the real uv/pip subprocess, so the ``self update`` flow must
+    not depend on the host (or the CI ``test`` job) having uv on PATH (HATS-787).
+    Targeted to ``"uv"``; other lookups hit the real ``which``. The dedicated
+    uv-absent test sets ``which`` -> None itself, overriding this.
+    """
+    import shutil
+
+    real_which = shutil.which
+    monkeypatch.setattr(
+        shutil,
+        "which",
+        lambda name, *a, **k: "/usr/bin/uv" if name == "uv" else real_which(name, *a, **k),
+    )
+
+
 def _all_roles() -> list[str]:
     """Discover all roles from the built-in library (core + usage)."""
     from ai_hats.assembler import _builtin_library_layers

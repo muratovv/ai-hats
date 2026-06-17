@@ -34,6 +34,25 @@ from ai_hats.update_check.cache import CacheEntry, cache_path, write_cache
 from datetime import datetime, timezone
 
 
+@pytest.fixture(autouse=True)
+def _uv_on_path(monkeypatch):
+    """Make ``_require_uv``'s ``shutil.which("uv")`` probe pass deterministically.
+
+    These tests mock the real uv/pip subprocess, so the ``update`` flow must not
+    depend on the host (or the CI ``test`` job) having uv on PATH (HATS-787).
+    Targeted to ``"uv"``; other lookups hit the real ``which``. Tests that pin
+    ``which`` themselves (e.g. the explicit ``/usr/bin/uv`` mocks) override this.
+    """
+    import shutil
+
+    real_which = shutil.which
+    monkeypatch.setattr(
+        shutil,
+        "which",
+        lambda name, *a, **k: "/usr/bin/uv" if name == "uv" else real_which(name, *a, **k),
+    )
+
+
 def _seed_update_cache(project: Path) -> Path:
     """Write a minimal update-check cache and return its path."""
     write_cache(
