@@ -51,7 +51,8 @@ from __future__ import annotations
 import pytest
 
 
-pytestmark = pytest.mark.integration
+# smoke: also run by the merge-to-master CI gate (HATS-783)
+pytestmark = [pytest.mark.integration, pytest.mark.smoke]
 
 
 _BOGUS = "definitely-not-a-real-role"
