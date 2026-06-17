@@ -24,11 +24,46 @@ from click.testing import CliRunner
 from ai_hats.cli.maintenance import (
     DOWNGRADE_REFUSAL_EXIT_CODE,
     _get_changelog,
+    _invalidate_update_cache,
     update,
 )
 from ai_hats.models import ProjectConfigError
-from ai_hats.update_check.cache import CacheEntry
+from ai_hats.update_check.cache import CacheEntry, cache_path, write_cache
 from datetime import datetime, timezone
+
+
+def _seed_update_cache(project: Path) -> Path:
+    """Write a minimal update-check cache and return its path."""
+    write_cache(
+        project,
+        CacheEntry(
+            checked_at=datetime.now(timezone.utc),
+            installed_sha="a" * 40,
+            latest_sha="b" * 40,
+            remote_url="https://example.git",
+            behind=5,
+            ahead=0,
+        ),
+    )
+    return cache_path(project)
+
+
+# ---------- _invalidate_update_cache (HATS-781) ----------
+
+
+def test_invalidate_update_cache_removes_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    p = _seed_update_cache(tmp_path)
+    assert p.exists()
+    _invalidate_update_cache(tmp_path)
+    assert not p.exists()
+
+
+def test_invalidate_update_cache_idempotent_when_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    # No cache written — must not raise.
+    _invalidate_update_cache(tmp_path)
+    _invalidate_update_cache(tmp_path)
 
 
 def _make_completed(args, *, returncode: int, stdout: str = "", stderr: str = ""):
@@ -1223,3 +1258,21 @@ def test_update_local_editable_in_place(tmp_path, monkeypatch):
     assert editable[0][-1] == "."
     # No versioned dir is created for a local editable install.
     assert not (project / ".agent" / "ai-hats" / "versions").exists()
+
+
+def test_update_invalidates_update_cache(tmp_path, monkeypatch):
+    """HATS-781: a successful `self update` drops the stale update-check cache
+    so the banner stops nagging with the pre-update delta."""
+    project = _setup_channel_env(tmp_path, "local", extra="  path: .\n")
+    cache_file = _seed_update_cache(project)
+    assert cache_file.exists()
+
+    def fake_run(args, **kwargs):
+        return _make_completed(list(args), returncode=0)
+
+    monkeypatch.setattr("shutil.which", lambda _n: "/usr/bin/uv")
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project), \
+         patch("subprocess.run", side_effect=fake_run):
+        result = CliRunner().invoke(update, [])
+    assert result.exit_code == 0, result.output
+    assert not cache_file.exists()

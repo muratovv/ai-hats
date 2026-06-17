@@ -22,7 +22,14 @@ import sys
 from pathlib import Path
 from typing import Any, Mapping
 
-from ...update_check import OPT_OUT_ENV, is_disabled, read_cache
+from ...update_check import (
+    OPT_OUT_ENV,
+    detect_installed_sha,
+    is_disabled,
+    is_local_channel,
+    read_cache,
+    sha_matches,
+)
 from ...update_check.cache import CacheEntry
 from ..step import Step, StepIO
 
@@ -77,8 +84,20 @@ class RenderUpdateBanner(Step):
     def run(self, *, project_dir: Path, **_: Any) -> dict[str, Any]:
         if is_disabled():
             return {}
+        # HATS-781: a LOCAL editable harness is updated via ``git``, not
+        # ``self update`` — the banner's advice is wrong there, so hide it.
+        if is_local_channel(project_dir):
+            return {}
         entry = read_cache(project_dir)
         if entry is None or not entry.has_update:
+            return {}
+        # HATS-781: never render a banner about a build we are not running.
+        # The cache is keyed only on project_dir + 24h TTL, so after a reinstall
+        # within the window it can describe the PRE-update SHA with a stale
+        # delta. Suppress when the running SHA is known AND differs; when it is
+        # unknown (None) fall through and preserve the prior render behaviour.
+        current = detect_installed_sha()
+        if current is not None and not sha_matches(entry.installed_sha, current):
             return {}
         sys.stderr.write(_render(entry))
         sys.stderr.flush()

@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 
 from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner
 from ai_hats.update_check.cache import CacheEntry, write_cache
+
+# Cached installed SHA used by the fixtures below; tests that want the banner to
+# render patch ``detect_installed_sha`` to return this so the HATS-781 SHA-match
+# gate sees the running build as the one the cache describes.
+_ENTRY_INSTALLED_SHA = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 
 
 def _entry_with_update(
@@ -78,7 +84,11 @@ def test_renders_banner_when_update_available_fallback_shas(tmp_path, monkeypatc
     monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _entry_with_update())
     step = RenderUpdateBanner()
-    step.run(project_dir=tmp_path)
+    with patch(
+        "ai_hats.pipeline.steps.update_banner.detect_installed_sha",
+        return_value=_ENTRY_INSTALLED_SHA,
+    ):
+        step.run(project_dir=tmp_path)
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "ai-hats update available" in captured.err
@@ -105,7 +115,11 @@ def test_renders_banner_with_describe_labels(tmp_path, monkeypatch, capsys):
         ),
     )
     step = RenderUpdateBanner()
-    step.run(project_dir=tmp_path)
+    with patch(
+        "ai_hats.pipeline.steps.update_banner.detect_installed_sha",
+        return_value=_ENTRY_INSTALLED_SHA,
+    ):
+        step.run(project_dir=tmp_path)
     captured = capsys.readouterr()
     assert "v0.6.0" in captured.err
     assert "v0.6.0-19-gabcdef0" in captured.err
@@ -163,5 +177,71 @@ def test_silent_when_disabled(tmp_path, monkeypatch, capsys):
     write_cache(tmp_path, _entry_with_update())
     step = RenderUpdateBanner()
     step.run(project_dir=tmp_path)
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+# ---------- HATS-781: SHA-match + local-channel gates ----------
+
+
+def test_silent_when_installed_sha_differs(tmp_path, monkeypatch, capsys):
+    """Stale cache: the running build's SHA differs from the cached
+    ``installed_sha`` — never render a banner about a build you are not
+    running (the reported delta would be for the wrong commit)."""
+    monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    write_cache(tmp_path, _entry_with_update())
+    step = RenderUpdateBanner()
+    with patch(
+        "ai_hats.pipeline.steps.update_banner.detect_installed_sha",
+        return_value="f" * 40,
+    ):
+        step.run(project_dir=tmp_path)
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_renders_when_installed_sha_matches_short(tmp_path, monkeypatch, capsys):
+    """Prefix-tolerant: a 9-char baked SHA matches its full rev-parse form."""
+    monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    write_cache(tmp_path, _entry_with_update())
+    step = RenderUpdateBanner()
+    with patch(
+        "ai_hats.pipeline.steps.update_banner.detect_installed_sha",
+        return_value=_ENTRY_INSTALLED_SHA[:9],
+    ):
+        step.run(project_dir=tmp_path)
+    captured = capsys.readouterr()
+    assert "ai-hats update available" in captured.err
+
+
+def test_renders_when_installed_sha_unknown(tmp_path, monkeypatch, capsys):
+    """Cannot detect the running SHA → preserve prior behaviour (render)."""
+    monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    write_cache(tmp_path, _entry_with_update())
+    step = RenderUpdateBanner()
+    with patch(
+        "ai_hats.pipeline.steps.update_banner.detect_installed_sha",
+        return_value=None,
+    ):
+        step.run(project_dir=tmp_path)
+    captured = capsys.readouterr()
+    assert "ai-hats update available" in captured.err
+
+
+def test_silent_when_local_channel(tmp_path, monkeypatch, capsys):
+    """LOCAL editable harness → banner hidden even with a matching update."""
+    monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    (tmp_path / "ai-hats.yaml").write_text("harness:\n  channel: local\n  path: .\n")
+    write_cache(tmp_path, _entry_with_update())
+    step = RenderUpdateBanner()
+    with patch(
+        "ai_hats.pipeline.steps.update_banner.detect_installed_sha",
+        return_value=_ENTRY_INSTALLED_SHA,
+    ):
+        step.run(project_dir=tmp_path)
     captured = capsys.readouterr()
     assert captured.err == ""
