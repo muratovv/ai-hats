@@ -1059,9 +1059,15 @@ def _read_harness(project_dir: Path):
         # File EXISTS but the installed code can't parse it → edge recovery
         # (install from the configured source / upstream, NOT an
         # unreachable/unpublished PyPI release — HATS-581 self-heal).
-        # NOTE (HATS-765): once stable is live on PyPI, a corrupted config on a
-        # stable project recovers via edge (git HEAD) for one cycle; the healed
-        # yaml restores stable on the next update. Revisit if that drift bites.
+        # DECIDED (HATS-778): the one-cycle edge drift this causes on a stable
+        # project is ACCEPTED, not worked around. edge == master HEAD, gated
+        # green by the maintainer e2e gate (no-broken-master, HATS-550), so
+        # recovering there is low-risk; the scenario is rare and self-heals (the
+        # recovery update rewrites a valid yaml → next update restores stable).
+        # A stable-aware recovery would have to infer the prior channel from the
+        # installed artifact (HATS-779: no direct_url.json + resolvable dist ⇒
+        # was stable) AND add a stable→edge fallback for the unreachable-PyPI
+        # case — not worth it for this path. See tasks/HATS-778 for the trade-off.
         return Channel.EDGE, None, None
     return h.channel, h.repo, h.path
 
