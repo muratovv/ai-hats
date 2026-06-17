@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -23,6 +24,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli.maintenance import (
     DOWNGRADE_REFUSAL_EXIT_CODE,
+    _format_install_source,
     _get_changelog,
     _invalidate_update_cache,
     update,
@@ -64,6 +66,57 @@ def test_invalidate_update_cache_idempotent_when_missing(tmp_path, monkeypatch):
     # No cache written — must not raise.
     _invalidate_update_cache(tmp_path)
     _invalidate_update_cache(tmp_path)
+
+
+# ---------- _format_install_source (HATS-779) ----------
+#
+# The `data is None` branch (no PEP 610 direct_url.json) must distinguish a
+# released-wheel / stable PyPI install (installed BY NAME from an index — pip/uv
+# write no direct_url.json) from ai-hats not being installed at all. The
+# disambiguator is the package's own dist metadata. Other branches need
+# direct_url.json present and are covered alongside as regression anchors (the
+# function had no unit test before HATS-779).
+
+
+def test_format_install_source_stable_pypi_when_no_direct_url_but_installed():
+    with patch("ai_hats.cli.maintenance._read_direct_url", return_value=None), \
+         patch("ai_hats.cli.maintenance.distribution", return_value=MagicMock()):
+        assert _format_install_source() == "stable @ PyPI"
+
+
+def test_format_install_source_unknown_when_not_installed():
+    with patch("ai_hats.cli.maintenance._read_direct_url", return_value=None), \
+         patch(
+             "ai_hats.cli.maintenance.distribution",
+             side_effect=PackageNotFoundError("ai-hats"),
+         ):
+        assert _format_install_source() == "(unknown — direct_url.json missing)"
+
+
+def test_format_install_source_editable():
+    data = {"url": "file:///repo", "dir_info": {"editable": True}}
+    with patch("ai_hats.cli.maintenance._read_direct_url", return_value=data):
+        assert _format_install_source() == "editable @ file:///repo"
+
+
+def test_format_install_source_git_and_pinned():
+    pinned = {"url": "git+https://x", "vcs_info": {
+        "commit_id": "abcdef1234567", "requested_revision": "v1.2.3"}}
+    plain = {"url": "git+https://x", "vcs_info": {
+        "commit_id": "abcdef1234567", "requested_revision": "HEAD"}}
+    with patch("ai_hats.cli.maintenance._read_direct_url", return_value=pinned):
+        assert _format_install_source() == "pinned @ v1.2.3 → abcdef1"
+    with patch("ai_hats.cli.maintenance._read_direct_url", return_value=plain):
+        assert _format_install_source() == "git @ HEAD → abcdef1"
+
+
+def test_format_install_source_installed_archive_with_direct_url():
+    # Wheel FILE / local-path install: direct_url.json present, no editable/vcs.
+    data = {"url": "file:///tmp/ai_hats-1.0-py3-none-any.whl", "archive_info": {}}
+    with patch("ai_hats.cli.maintenance._read_direct_url", return_value=data):
+        assert _format_install_source() == (
+            "installed @ file:///tmp/ai_hats-1.0-py3-none-any.whl"
+        )
 
 
 def _make_completed(args, *, returncode: int, stdout: str = "", stderr: str = ""):
