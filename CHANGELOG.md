@@ -10,6 +10,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-17
+
 ### Added
 - **Release CI to PyPI via OIDC trusted publishing** (HATS-765, child of the
   HATS-762 distribution overhaul). A new `.github/workflows/release.yml` builds
@@ -109,6 +111,8 @@ since the latest tag lives under **Unreleased** until the next release.
   `_write_managed_manifest` + the unreachable `preserve_local` branch and
   `.library_rules` marker protocol) are removed (~90 LOC). Re-materialize a
   project's managed tree via `ai-hats self init` / `self update`.
+  Migration: [`docs/migration-v0.9.0.md`](docs/migration-v0.9.0.md) §4 — the
+  command was a no-op; drop any calls and use `self update` / `self init`.
 - **Write-only `pipeline_metrics.json` telemetry** (HATS-736, child of
   HATS-699 / HATS-698 audit — dead-delivery class #5). `PipelineHarness.__exit__`
   wrote a per-run `pipeline_metrics.json` (terminal zero-output / timeout
@@ -1556,7 +1560,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/muratovv/ai-hats/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/muratovv/ai-hats/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/muratovv/ai-hats/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/muratovv/ai-hats/compare/v0.5.0...v0.6.0
