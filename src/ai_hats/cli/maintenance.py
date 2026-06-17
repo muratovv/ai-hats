@@ -610,21 +610,36 @@ def _run_managed_versioned_update(
 def _format_install_source() -> str:
     """Format the ``Source:`` line for ``ai-hats config status``.
 
-    Reads PEP 610 ``direct_url.json`` via :func:`_read_direct_url`. Three
-    branches map to user-visible labels:
+    Reads PEP 610 ``direct_url.json`` via :func:`_read_direct_url`. Branches
+    map to user-visible labels:
 
     - ``editable @ <url>``                            — local dev install
     - ``pinned @ <ref> → <sha>``                      — ``vcs_info`` has
       ``requested_revision`` AND it's not "HEAD" / branch-tip
     - ``git @ <ref-or-HEAD> → <sha>``                 — plain git install
+    - ``installed @ <url>``                           — non-editable, non-vcs
+      direct-URL install (wheel FILE / local path — ``direct_url.json`` present)
+    - ``stable @ PyPI``                               — installed BY NAME from an
+      index (HATS-779): pip/uv write NO ``direct_url.json`` for index-by-name
+      installs, so a missing direct_url + a resolvable dist IS the released-wheel
+      (stable channel) case
 
-    Falls back to ``"(unknown — direct_url.json missing)"`` when the
-    metadata isn't available. Truncates SHA to 7 chars for display;
-    full SHA stays in direct_url.json for tooling.
+    Falls back to ``"(unknown — direct_url.json missing)"`` only when ai-hats
+    has no installed-dist metadata at all (a raw source / PYTHONPATH run).
+    Truncates SHA to 7 chars for display; full SHA stays in direct_url.json.
     """
     data = _read_direct_url()
     if data is None:
-        return "(unknown — direct_url.json missing)"
+        # No PEP 610 direct_url. Two sub-cases (HATS-779): ai-hats was installed
+        # BY NAME from an index (the stable channel — `uv pip install
+        # ai-hats==<tag>`; pip/uv never write direct_url.json for index-by-name
+        # installs), or ai-hats has no installed dist at all. The package's own
+        # metadata disambiguates: resolvable ⇒ released wheel; absent ⇒ unknown.
+        try:
+            distribution("ai-hats")
+        except PackageNotFoundError:
+            return "(unknown — direct_url.json missing)"
+        return "stable @ PyPI"
     url = data.get("url") or "?"
     dir_info = data.get("dir_info") or {}
     if dir_info.get("editable"):
