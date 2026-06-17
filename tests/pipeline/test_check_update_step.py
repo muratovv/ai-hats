@@ -48,14 +48,57 @@ def test_skips_spawn_when_disabled(tmp_path, monkeypatch):
     popen.assert_not_called()
 
 
-def test_skips_spawn_when_cache_fresh(tmp_path, monkeypatch):
+def test_skips_spawn_when_cache_fresh_and_sha_matches(tmp_path, monkeypatch):
+    monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    write_cache(tmp_path, _fresh_entry())  # installed_sha = "a" * 40
+    step = CheckUpdateAsync()
+    with patch(
+        "ai_hats.pipeline.steps.check_update.detect_installed_sha",
+        return_value="a" * 40,
+    ), patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen:
+        result = step.run(project_dir=tmp_path)
+    assert result == {}
+    popen.assert_not_called()
+
+
+def test_skips_spawn_when_fresh_and_sha_unknown(tmp_path, monkeypatch):
+    """Cannot detect the running SHA → do NOT churn a probe every session."""
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
     monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _fresh_entry())
     step = CheckUpdateAsync()
+    with patch(
+        "ai_hats.pipeline.steps.check_update.detect_installed_sha",
+        return_value=None,
+    ), patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen:
+        step.run(project_dir=tmp_path)
+    popen.assert_not_called()
+
+
+def test_spawns_when_fresh_but_sha_changed(tmp_path, monkeypatch):
+    """HATS-781: a reinstall within the 24h TTL changes the installed SHA — the
+    fresh cache no longer describes the running build, so re-probe."""
+    monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    write_cache(tmp_path, _fresh_entry())  # installed_sha = "a" * 40
+    step = CheckUpdateAsync()
+    with patch(
+        "ai_hats.pipeline.steps.check_update.detect_installed_sha",
+        return_value="b" * 40,
+    ), patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen:
+        step.run(project_dir=tmp_path)
+    popen.assert_called_once()
+
+
+def test_skips_spawn_when_local_channel(tmp_path, monkeypatch):
+    """LOCAL editable harness → no background probe at all."""
+    monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    (tmp_path / "ai-hats.yaml").write_text("harness:\n  channel: local\n  path: .\n")
+    step = CheckUpdateAsync()
     with patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen:
-        result = step.run(project_dir=tmp_path)
-    assert result == {}
+        step.run(project_dir=tmp_path)
     popen.assert_not_called()
 
 

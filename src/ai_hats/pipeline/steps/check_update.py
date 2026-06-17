@@ -19,7 +19,13 @@ import sys
 from pathlib import Path
 from typing import Any, Mapping
 
-from ...update_check import is_disabled, read_cache
+from ...update_check import (
+    detect_installed_sha,
+    is_disabled,
+    is_local_channel,
+    read_cache,
+    sha_matches,
+)
 from ..step import Step, StepIO
 
 
@@ -39,9 +45,20 @@ class CheckUpdateAsync(Step):
     def run(self, *, project_dir: Path, **_: Any) -> dict[str, Any]:
         if is_disabled():
             return {}
+        # HATS-781: a LOCAL editable harness is updated via ``git`` — never
+        # probe upstream or surface a ``self update`` nudge for it.
+        if is_local_channel(project_dir):
+            return {}
         cached = read_cache(project_dir)
         if cached is not None and cached.is_fresh:
-            return {}
+            # HATS-781: the cache is keyed only on project_dir + 24h TTL. A
+            # reinstall within that window changes the installed SHA, so a
+            # time-fresh cache can still describe the PRE-update build. Re-probe
+            # when the running SHA is known AND differs; when it is unknown
+            # (None) keep skipping rather than churn a probe every session.
+            current = detect_installed_sha()
+            if current is None or sha_matches(cached.installed_sha, current):
+                return {}
         try:
             subprocess.Popen(
                 [sys.executable, "-m", "ai_hats.update_check", str(project_dir)],

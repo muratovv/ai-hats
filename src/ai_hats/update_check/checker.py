@@ -43,6 +43,21 @@ FETCH_TIMEOUT = 10
 GIT_QUERY_TIMEOUT = 5
 
 
+def sha_matches(a: str | None, b: str | None) -> bool:
+    """Prefix-tolerant SHA equality (HATS-781).
+
+    The update-check cache may hold a 9-char baked short SHA (from
+    ``_version.py``, e.g. ``86a6bb1a0``) while :func:`detect_installed_sha`
+    returns a full 40-char ``git rev-parse HEAD``. A bare ``==`` would treat
+    the same commit as a mismatch and re-probe / suppress on every session.
+    Compare via mutual ``startswith`` so a short SHA matches its long form.
+    Empty / ``None`` on either side → ``False`` (unknown ≠ match).
+    """
+    if not a or not b:
+        return False
+    return a.startswith(b) or b.startswith(a)
+
+
 def _package_dir() -> Path:
     return Path(ai_hats.__file__).resolve().parent
 
