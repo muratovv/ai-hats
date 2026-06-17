@@ -86,9 +86,22 @@ uv pip install --python <venv>/bin/python "ai-hats @ git+https://github.com/mura
 No SSH key or repo access is needed any more. Managed (default-venv) installs
 are migrated automatically by the resolver; only hand-rolled specs need editing.
 
-<!-- epic-close (HATS-762): append the `ai-hats self clean` removal section here.
-     It is a stable-CLI-surface removal -> MANDATORY migration entry under the
-     breaking-change protocol [1], with a matching CHANGELOG `Removed` line. -->
+## 4. `ai-hats self clean` was removed (it was a no-op on v4)
+
+The `ai-hats self clean` command is gone. On v4 it was already a **total
+no-op**: framework content is composed in memory, so the rules/skills mirrors
+it wiped are empty, the legacy `.agent/{skills,hooks}` it swept don't exist, and
+the `.ai-hats-managed` manifest its sweep read was never written. It cleaned
+nothing.
+
+**Migration:** drop any `ai-hats self clean` invocations — they had no effect.
+To re-materialize a project's managed tree (the command's closest real intent),
+run `self update` (or `self init` on a fresh project):
+
+```bash
+ai-hats self update                          # reinstall + re-materialize managed content
+ai-hats self init -r <role> -p <provider>    # fresh project
+```
 
 ## References
 
