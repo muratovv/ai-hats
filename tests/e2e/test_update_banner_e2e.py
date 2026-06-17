@@ -41,7 +41,10 @@ from _helpers.repo_src import build_src  # noqa: E402
 
 pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
-INSTALLED_SHA = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+# HATS-782: the installed sha is detected at runtime (the real running build) so
+# HATS-781's installed-SHA banner guard does not suppress the seeded banner.
+# LATEST_SHA is the synthetic "remote tip" — the display target, never compared
+# to the running sha.
 LATEST_SHA = "9876543210fedcba9876543210fedcba98765432"
 
 
@@ -136,6 +139,22 @@ def test_update_banner_e2e(tmp_path):
     venv_python = venv / "bin" / "python"
     assert venv_python.is_file()
 
+    # HATS-782: seed the cache with the REAL installed sha. HATS-781 added a
+    # RenderUpdateBanner guard that suppresses a banner whose cached
+    # installed_sha does not match detect_installed_sha() of the running build
+    # ("never advertise an update about a build we are not running"). Seeding a
+    # synthetic sha (the pre-781 approach) now hides EVERY banner — so query the
+    # venv's own detector (the same interpreter the banner step runs under) and
+    # seed THAT, so each stage exercises its intended behind/ahead path rather
+    # than the sha-mismatch guard.
+    real_sha = _run(
+        [str(venv_python), "-c",
+         "from ai_hats.update_check import detect_installed_sha; "
+         "print(detect_installed_sha() or '')"],
+        cwd=project, env=env, timeout=15,
+    ).stdout.strip()
+    assert real_sha, "detect_installed_sha() empty — cannot seed a matching cache"
+
     # ---- 3. self init ----
     ai_hats("self", "init", "-r", "assistant", "-p", "claude")
     assert (project / "ai-hats.yaml").is_file()
@@ -160,7 +179,7 @@ def test_update_banner_e2e(tmp_path):
     # ---- 5. seed strictly-behind → banner renders with +N suffix ----
     _seed_cache(
         project,
-        installed=INSTALLED_SHA,
+        installed=real_sha,
         latest=LATEST_SHA,
         behind=19,
         ahead=0,
@@ -174,7 +193,7 @@ def test_update_banner_e2e(tmp_path):
         cwd=project, env=env, timeout=15,
     )
     assert "ai-hats update available" in res.stderr, res.stderr
-    assert INSTALLED_SHA[:7] in res.stderr, res.stderr
+    assert real_sha[:7] in res.stderr, res.stderr
     assert LATEST_SHA[:7] in res.stderr, res.stderr
     assert "+19 commits" in res.stderr, res.stderr
     assert "ai-hats self update" in res.stderr, res.stderr
@@ -187,7 +206,7 @@ def test_update_banner_e2e(tmp_path):
     # time); the ahead/behind semantics must suppress.
     _seed_cache(
         project,
-        installed=INSTALLED_SHA,
+        installed=real_sha,
         latest=LATEST_SHA,
         behind=0,
         ahead=5,
@@ -205,7 +224,7 @@ def test_update_banner_e2e(tmp_path):
     # ---- 5c. diverged (both sides have unique commits) → silent ----
     _seed_cache(
         project,
-        installed=INSTALLED_SHA,
+        installed=real_sha,
         latest=LATEST_SHA,
         behind=3,
         ahead=2,
@@ -223,7 +242,7 @@ def test_update_banner_e2e(tmp_path):
     # ---- 6. opt-out — strictly-behind cache, banner suppressed by env var ----
     _seed_cache(
         project,
-        installed=INSTALLED_SHA,
+        installed=real_sha,
         latest=LATEST_SHA,
         behind=19,
         ahead=0,
@@ -243,8 +262,8 @@ def test_update_banner_e2e(tmp_path):
     # ---- 7. matching SHAs (behind=ahead=0) — silent ----
     _seed_cache(
         project,
-        installed=INSTALLED_SHA,
-        latest=INSTALLED_SHA,
+        installed=real_sha,
+        latest=real_sha,
         behind=0,
         ahead=0,
     )
