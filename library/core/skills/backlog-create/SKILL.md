@@ -25,14 +25,15 @@ for backlog-manager's.
 ## CLI Interface
 
 **Invocation in a harness shell.** Harness-spawned bash does not inherit an
-activated venv. Resolve the binary once per session:
+activated venv. Define a resolver once per session (host launcher on PATH, else
+the project venv's interpreter — no `bin/ai-hats` console script since HATS-790):
 
 ```bash
-AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
-"$AH" task create "Title" -d "Description" -p medium --tag <tag>
+ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
+ah task create "Title" -d "Description" -p medium --tag <tag>
 ```
 
-If neither works, the project's venv lives at `./.venv/bin/ai-hats`.
+If neither works, the project's venv interpreter lives at `./.venv/bin/python` (invoke the package as `./.venv/bin/python -m ai_hats …`).
 
 ### `ai-hats task create`
 

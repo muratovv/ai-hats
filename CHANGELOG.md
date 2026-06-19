@@ -10,6 +10,22 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Changed
+- **Removed the `ai-hats` console-script entry point; `python -m ai_hats` is now
+  the sole package entry** (HATS-790, Alt 5). The `[project.scripts] ai-hats =
+  "ai_hats.cli:main_entry"` generator made every venv depending on `ai-hats`
+  materialise a `bin/ai-hats` that direnv could prepend ahead of the host
+  launcher (`~/.local/bin/ai-hats`), silently running stale code. With the
+  generator gone, no venv produces `bin/ai-hats`; the bash launcher now execs
+  `<venv>/bin/python -m ai_hats "$@"` and probes venv health/usability via
+  `bin/python` + a `python -c "import ai_hats"` import probe rather than the
+  removed console-script proxy. `is_usable_version` / `read_current_sha`
+  (`paths.py`) drop the `bin/ai-hats` clause and key on the `.complete` sentinel
+  + `bin/python` (behaviour-equivalent for any real install). `python -m ai_hats`
+  routes through `main_entry` so `--tree` / `--help --tree` ordering is identical
+  to the old console entry. The host launcher remains named `ai-hats` and on
+  `$PATH` — only the per-venv generated binary is gone.
+
 ## [0.9.0] - 2026-06-17
 
 ### Added

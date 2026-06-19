@@ -10,7 +10,7 @@ or any other reviewer.
 
 > **Harness shell prelude.** Before any `ai-hats` invocation:
 > ```bash
-> AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
+> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # HATS-790: no bin/ai-hats console script
 > ```
 
 ## When to Use
@@ -31,7 +31,7 @@ Boundaries & disambiguation (the description already states the trigger):
 ### Step 1 — Read the hypothesis
 
 ```bash
-"$AH" task hyp show HYP-NNN
+ah task hyp show HYP-NNN
 ```
 
 Pay attention to `success_criterion`, `observation_window`, `exit_criteria`,
@@ -108,7 +108,7 @@ and write `inconclusive`.
 For verdicts that carry signal (`confirmed`, `refuted`, `inconclusive`):
 
 ```bash
-"$AH" task hyp append-verdict \
+ah task hyp append-verdict \
   --hyp HYP-NNN --session "$SID" \
   --verdict {confirmed|refuted|inconclusive} \
   --evidence "<one-line citation from audit.md or metrics.json>" \
@@ -124,7 +124,7 @@ When `--recommendation` was `close_confirmed` or `close_refuted` and the
 observation window has filled, flip the status:
 
 ```bash
-"$AH" task hyp set-status --hyp HYP-NNN --status {confirmed|refuted|stalled}
+ah task hyp set-status --hyp HYP-NNN --status {confirmed|refuted|stalled}
 ```
 
 `append-verdict` does NOT auto-flip status — `set-status` is a separate,

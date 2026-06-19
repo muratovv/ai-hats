@@ -29,12 +29,12 @@ work-log cadence, `plan-extract`, sub-agent coordination. Two boundaries:
 
 **All backlog operations MUST use the `ai-hats task` CLI. Never create task directories or YAML files manually.**
 
-> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. Before running any `ai-hats` command, resolve the binary once:
+> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. Before running any `ai-hats` command, define a resolver once (the host launcher on PATH, else the project venv's interpreter — there is no `bin/ai-hats` console script since HATS-790):
 > ```bash
-> AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
-> "$AH" task list
+> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
+> ah task list
 > ```
-> If neither works, the project's venv lives at `./.venv/bin/ai-hats`. Resolve the binary path explicitly — falling back blindly between `ai-hats` and the venv path wastes a turn.
+> If neither works, the project's venv interpreter lives at `./.venv/bin/python` (invoke the package as `./.venv/bin/python -m ai_hats …`). Resolve the path explicitly — falling back blindly wastes a turn.
 
 > **Run from the main repo, never a linked worktree.** The tracker
 > (`<ai_hats_dir>`, under the gitignored `.agent/`) is NOT version-controlled,

@@ -127,7 +127,19 @@ def test_e2e_install_init_break_heal(tmp_path):
     res = ai_hats("self", "update", timeout=300)
     venv = project / ".agent" / "ai-hats" / ".venv"
     assert (venv / "bin" / "python").is_file(), "venv python missing after self update"
-    assert (venv / "bin" / "ai-hats").is_file(), "ai-hats binary missing after install"
+    # HATS-790: no bin/ai-hats console script — assert NO proxy binary AND that
+    # the package is importable via the venv interpreter (the real install signal
+    # the launcher now probes with `python -c "import ai_hats"`).
+    assert not (venv / "bin" / "ai-hats").exists(), (
+        "bin/ai-hats console script must NOT exist after install (HATS-790)"
+    )
+    import_probe = subprocess.run(
+        [str(venv / "bin" / "python"), "-c", "import ai_hats"],
+        capture_output=True, text=True,
+    )
+    assert import_probe.returncode == 0, (
+        f"ai_hats not importable after install: {import_probe.stderr}"
+    )
     # heal-then-delegate: python rich self update ran after bash heal.
     assert "Current version:" in res.stdout
 
@@ -160,9 +172,10 @@ def test_e2e_install_init_break_heal(tmp_path):
     assert not (venv / "bin" / "python").exists()
 
     # ---- 6. broken command — actionable hint to stderr ----
-    # HATS-656: the launcher requires bin/python (not just bin/ai-hats) to
-    # select a versioned venv, so the python-broken versioned venv routes to
-    # the (also broken) .venv and the exec check reports the missing interpreter.
+    # HATS-656 / HATS-790: the launcher requires an executable bin/python to
+    # select a versioned venv (no bin/ai-hats console script exists), so the
+    # python-broken versioned venv routes to the (also broken) .venv and the
+    # exec check reports the missing interpreter.
     res = ai_hats("config", "status", expect_exit=1)
     assert "venv missing" in res.stderr
     assert "ai-hats self update" in res.stderr
@@ -237,7 +250,17 @@ def test_e2e_fresh_init_heals(tmp_path):
     # Heal ran (launcher recreated the default venv before delegating to init).
     assert "recreating" in res.stderr, f"heal-on-init did not run:\n{res.stderr}"
     assert (venv / "bin" / "python").is_file(), "venv python missing after self init"
-    assert (venv / "bin" / "ai-hats").is_file(), "ai-hats binary missing after self init"
+    # HATS-790: no bin/ai-hats console script — the install signal is importability.
+    assert not (venv / "bin" / "ai-hats").exists(), (
+        "bin/ai-hats console script must NOT exist after self init (HATS-790)"
+    )
+    init_probe = subprocess.run(
+        [str(venv / "bin" / "python"), "-c", "import ai_hats"],
+        capture_output=True, text=True,
+    )
+    assert init_probe.returncode == 0, (
+        f"ai_hats not importable after self init: {init_probe.stderr}"
+    )
 
     # Init configured the project in the same command.
     assert (project / "ai-hats.yaml").is_file()

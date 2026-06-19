@@ -10,7 +10,7 @@ Role-agnostic: same procedure whether you are running as `reflect-session`,
 
 > **Harness shell prelude.** Before any `ai-hats` invocation:
 > ```bash
-> AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
+> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # HATS-790: no bin/ai-hats console script
 > ```
 
 ## When to Use
@@ -30,7 +30,7 @@ Boundaries & disambiguation (the description states the trigger):
 ### Step 1 — Read the inbox first
 
 ```bash
-"$AH" task proposal list --status open
+ah task proposal list --status open
 ```
 
 A proposal is "similar" if it covers the same change (same `category` +
@@ -40,14 +40,14 @@ fragment the signal.
 ### Step 2a — Vote (preferred)
 
 ```bash
-"$AH" task proposal vote --prop PROP-NNN \
+ah task proposal vote --prop PROP-NNN \
   --session "$SID" --reasoning "<one-line: why you agree>"
 ```
 
 ### Step 2b — Create only if novel
 
 ```bash
-"$AH" task proposal create \
+ah task proposal create \
   --title "<short imperative title>" \
   --category {rule|skill|code|process|doc} \
   --target "<rule/skill/file/process name>" \
@@ -73,10 +73,10 @@ If you are the role responsible for closing the inbox (typically `judge`),
 flip status after weighing votes/evidence:
 
 ```bash
-"$AH" task proposal status --prop PROP-NNN --status accepted
-"$AH" task proposal status --prop PROP-NNN --status rejected
-"$AH" task proposal status --prop PROP-NNN --status deferred
-"$AH" task proposal status --prop PROP-NNN --status duplicate
+ah task proposal status --prop PROP-NNN --status accepted
+ah task proposal status --prop PROP-NNN --status rejected
+ah task proposal status --prop PROP-NNN --status deferred
+ah task proposal status --prop PROP-NNN --status duplicate
 ```
 
 **Cost-citation heuristic** — drives *how long* a PROP stays open, not
@@ -99,7 +99,7 @@ instructions conflict — **do NOT silently drop the entry**. File a
 meta-proposal:
 
 ```bash
-"$AH" task proposal create \
+ah task proposal create \
   --category process --target <your-role> \
   --title "<one-line: what failed>" \
   --description "<what>" --rationale "<why it blocked you>" \
