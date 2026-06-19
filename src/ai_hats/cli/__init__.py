@@ -12,6 +12,7 @@ this file.
 
 from __future__ import annotations
 
+import os
 import sys
 
 import click
@@ -274,6 +275,85 @@ def _extract_tree_path(argv: list[str]) -> list[str]:
     return path
 
 
+# Pure-informational invocations that touch NO project state and so are safe to
+# run from anywhere — never worth refusing (a shadow printing its version harms
+# nothing). Skipping them also keeps the guard off the in-process ``main_entry``
+# tree tests (which run with ``src`` on ``PYTHONPATH``, where editable detection
+# can't see ``direct_url.json``). HATS-791.
+_GUARD_EXEMPT_FLAGS = frozenset({"--version", "--help", "-h", "--tree"})
+
+
+def _is_guard_exempt_invocation(argv: list[str]) -> bool:
+    """True for pure-info invocations (``--version`` / ``--help`` / ``--tree``)
+    or a bare ``ai-hats`` with no args (top-level help) — none resolve a project,
+    so the self-location guard has nothing to protect."""
+    if not argv:
+        return True  # bare invocation → click prints help, no project work
+    return any(a in _GUARD_EXEMPT_FLAGS for a in argv)
+
+
+def _guard_self_location() -> None:
+    """Refuse-and-instruct when running from a FOREIGN (non-managed) venv.
+
+    HATS-791 backstop for the "shadow" problem (a stale ai-hats in some
+    project app-venv reached ahead of the host launcher). Wired into
+    :func:`main_entry` — the real-invocation path (launcher → ``python -m
+    ai_hats`` → ``__main__`` → ``main_entry``) — and DELIBERATELY NOT into the
+    bare ``main`` click group, so in-process ``CliRunner`` tests (which invoke
+    ``main`` directly) never reach it and the guard cannot break the suite.
+
+    Bias HARD toward fail-open: the shadow generator is already gone (HATS-790),
+    so a missed shadow merely reproduces old behaviour while a false-positive
+    bricks the CLI. Any resolution error → sanctioned (we never raise out of
+    here). The actual sanctioned/foreign decision is the pure
+    :func:`ai_hats.self_location.classify_invocation`.
+    """
+    from ..self_location import (
+        SKIP_ENV_VAR,
+        classify_invocation,
+        remediation_text,
+    )
+
+    # Pure-info commands resolve no project state → nothing to protect.
+    if _is_guard_exempt_invocation(sys.argv[1:]):
+        return
+
+    skip = os.environ.get(SKIP_ENV_VAR) == "1"
+    running_prefix = sys.prefix
+
+    # Resolve the venv ai-hats would pick for this project, and whether this is
+    # an editable host clone — both wrapped so ANY failure fails open.
+    resolved_venv: str | None = None
+    is_editable = False
+    try:
+        from ..paths import venv_path
+        from ._helpers import _project_dir
+
+        # The launcher pins the resolved venv via AI_HATS_VENV (HATS-647
+        # pin-at-spawn); honour it verbatim so launcher and guard agree. Else
+        # resolve from the project (venv_path already reads AI_HATS_VENV first).
+        pinned = os.environ.get("AI_HATS_VENV")
+        resolved_venv = pinned if pinned else str(venv_path(_project_dir()))
+    except Exception:  # noqa: BLE001 — fail open on ANY resolution error
+        resolved_venv = None
+    try:
+        from .maintenance import _is_editable_install
+
+        is_editable, _ = _is_editable_install()
+    except Exception:  # noqa: BLE001 — fail open
+        is_editable = False
+
+    verdict = classify_invocation(
+        running_prefix,
+        resolved_venv,
+        is_editable_install=is_editable,
+        skip=skip,
+    )
+    if verdict == "foreign":
+        print(remediation_text(running_prefix), file=sys.stderr)
+        sys.exit(3)
+
+
 def main_entry() -> None:
     """Package entry point — invoked by ``python -m ai_hats`` (HATS-790).
 
@@ -290,7 +370,12 @@ def main_entry() -> None:
     HATS-337: the legacy ``_maybe_reexec_into_local_venv`` python wrapper
     was removed — the bash launcher (HATS-339) is now the single
     host-level entry-point and owns venv selection / re-exec.
+
+    HATS-791: self-location guard fires FIRST. Real invocations land here
+    (launcher → ``python -m ai_hats`` → ``__main__`` → ``main_entry``); the
+    in-process ``CliRunner`` calls ``main`` directly and so bypasses the guard.
     """
+    _guard_self_location()
     if "--tree" in sys.argv[1:]:
         from ._tree import print_subtree
 

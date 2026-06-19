@@ -1,11 +1,24 @@
 #!/usr/bin/env bash
-# ai-hats bootstrap — convenience wrapper for first-time setup (HATS-333/336).
+# ai-hats bootstrap — convenience wrapper for first-time setup (HATS-333/336)
+# AND the canonical OUT-OF-BAND recovery hatch (HATS-791).
 #
 # Pipeline: install-launcher.sh → `ai-hats self update` → `ai-hats self init`.
 # Idempotent — safe to re-run; launcher's self update handles existing venv.
 #
+# WHY out-of-band recovery lives here (HATS-791): the in-band `ai-hats self
+# update` runs FROM the managed venv it is trying to fix, so a venv broken
+# badly enough (deleted site-packages, dangling interpreter, a foreign shadow
+# install) can't heal itself — a paradox. bootstrap.sh is paradox-immune: it is
+# always fetched-fresh (curl | bash) and drives the launcher by ABSOLUTE path
+# ("$LAUNCHER_DEST"), never the on-PATH `ai-hats`, so a stray shadow can't
+# intercept it. `--repair` is the dedicated recovery entrypoint: it force-
+# reinstalls the launcher + the managed venv from scratch.
+#
 # Quick start (piped one-liner — fetches the installer + launcher):
 #   curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- -r assistant -p claude
+#
+# Recover a broken/shadowed install (out-of-band):
+#   curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- --repair
 #
 # From local clone:
 #   bash scripts/bootstrap.sh -r go-dev -p claude
@@ -19,12 +32,14 @@ else
 fi
 ok()   { printf "  ${GREEN}✓${RESET} %-14s %s\n" "$1" "$2"; }
 info() { printf "  ${DIM}…${RESET} %-14s %s\n" "$1" "$2"; }
+warn() { printf "  ${YELLOW}!${RESET} %-14s %s\n" "$1" "$2" >&2; }
 err()  { printf "  ${RED}✗${RESET} %-14s %s\n" "$1" "$2" >&2; }
 
 ROLE=""
 PROVIDER=""
 REPO_URL=""
 LOCAL_ROOT=""
+REPAIR=0
 
 usage() {
     cat <<EOF
@@ -35,12 +50,21 @@ ${BOLD}Options:${RESET}
   -p, --provider <name>    Provider (claude or gemini)
   --repo <git-url>         Custom git install URL (overrides default)
   --local <path>           Install from local clone instead of GitHub
+  --repair                 Force-reinstall launcher + managed venv (out-of-band recovery)
   -h, --help               Show this help
 
 ${BOLD}Pipeline:${RESET}
   1. install-launcher.sh  → ~/.local/bin/ai-hats (one-time per host).
   2. ai-hats self update  → create venv + install ai-hats.
   3. ai-hats self init -r ... -p ...  (if -r/-p given; else printed as next step).
+
+${BOLD}--repair (out-of-band recovery):${RESET}
+  Use when in-band \`ai-hats self update\` can't fix itself (a venv broken
+  badly enough — deleted package, dangling interpreter — to be unrunnable).
+  bootstrap.sh is fetched-fresh and drives the launcher by ABSOLUTE path, so
+  it is paradox-immune. --repair force-reinstalls the launcher then re-runs
+  \`"\$LAUNCHER_DEST" self update\` to rebuild the managed venv. Idempotent.
+  Also scans \$PATH for stray (shadow) \`ai-hats\` binaries and WARNs.
 
 ${BOLD}Notes:${RESET}
   Idempotent — safe to re-run. Existing ai-hats.yaml is preserved by init.
@@ -49,10 +73,45 @@ ${BOLD}Examples:${RESET}
   ${DIM}# Piped one-liner (fresh host)${RESET}
   curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- -r assistant -p claude
 
+  ${DIM}# Recover a broken/shadowed install${RESET}
+  curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- --repair
+
   ${DIM}# From local clone${RESET}
   bash scripts/bootstrap.sh -r go-dev -p claude
 EOF
     exit 0
+}
+
+# Scan \$PATH for stray (shadow) ai-hats binaries OUTSIDE the sanctioned host
+# launcher and WARN (HATS-791). NEVER deletes — destructive-actions rule. Bash
+# twin of ai_hats.cli.maintenance.find_stray_launchers so --repair works even
+# when the managed venv (and thus the python detector) is unrunnable.
+detect_stray_launchers() {
+    local sanctioned="$1"
+    # Resolve sanctioned dest to an absolute, symlink-followed path for compare.
+    local sanc_real
+    sanc_real="$(cd "$(dirname "$sanctioned")" 2>/dev/null && pwd || true)/$(basename "$sanctioned")"
+    local found=0 dir cand cand_real
+    local seen=""
+    local IFS=':'
+    for dir in $PATH; do
+        [[ -z "$dir" ]] && continue
+        cand="$dir/ai-hats"
+        [[ -x "$cand" && -f "$cand" ]] || continue
+        cand_real="$(cd "$(dirname "$cand")" 2>/dev/null && pwd || true)/$(basename "$cand")"
+        [[ "$cand_real" == "$sanc_real" ]] && continue
+        case ":$seen:" in *":$cand_real:"*) continue ;; esac
+        seen="$seen:$cand_real"
+        if [[ $found -eq 0 ]]; then
+            warn "shadow" "stray ai-hats on PATH outside $sanctioned:"
+            found=1
+        fi
+        warn "shadow" "  - $cand"
+    done
+    if [[ $found -eq 1 ]]; then
+        warn "shadow" "ai-hats will NOT delete these. Uninstall ai-hats from each"
+        warn "shadow" "  shadow's venv, or remove the file + put $sanctioned first on PATH."
+    fi
 }
 
 # -- Parse arguments --
@@ -62,6 +121,7 @@ while [[ $# -gt 0 ]]; do
         -p|--provider) PROVIDER="$2";   shift 2 ;;
         --repo)        REPO_URL="$2";   shift 2 ;;
         --local)       LOCAL_ROOT="$2"; shift 2 ;;
+        --repair)      REPAIR=1;        shift ;;
         -h|--help)     usage ;;
         *)  err "unknown" "$1"; usage ;;
     esac
@@ -107,6 +167,10 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 ok "uv" "$(uv --version 2>/dev/null || echo present)"
 
+if [[ "$REPAIR" -eq 1 ]]; then
+    info "repair" "out-of-band recovery — force-reinstalling launcher + managed venv"
+fi
+
 # -- 2. Install launcher (local script if cloned, else fetch — enables piped use) --
 LAUNCHER_DEST="${AI_HATS_LAUNCHER_DEST:-$HOME/.local/bin/ai-hats}"
 INSTALL_LAUNCHER_URL="${AI_HATS_INSTALL_LAUNCHER_URL:-https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh}"
@@ -131,6 +195,33 @@ ok "launcher" "$LAUNCHER_DEST"
 if [[ ! -x "$LAUNCHER_DEST" ]]; then
     err "launcher" "expected $LAUNCHER_DEST after install; not found/executable"
     exit 1
+fi
+
+# -- 2b. Stray-shadow detector (HATS-791) — scan PATH for ai-hats binaries
+#        outside the sanctioned launcher and WARN. Never deletes. Always runs,
+#        so a plain bootstrap also surfaces a shadow; repair is the canonical
+#        place a user goes to clean one up. --
+detect_stray_launchers "$LAUNCHER_DEST"
+
+# -- 2c. --repair: force-rebuild the managed default venv (HATS-791). A venv
+#        broken badly enough to be unrunnable, OR a complete-but-stale one that
+#        `self update` would treat as already-current, is nuked here so the
+#        launcher's heal-then-`self update` below rebuilds it from scratch. We
+#        only touch the framework-managed default `.agent/ai-hats/.venv`
+#        + versions/ (NOT a user override venv): destructive only on our own
+#        managed state. --
+if [[ "$REPAIR" -eq 1 ]]; then
+    _ah_dir="$(pwd)/.agent/ai-hats"
+    if [[ -z "${AI_HATS_VENV:-}" ]]; then
+        for _v in "$_ah_dir/.venv" "$_ah_dir/versions"; do
+            if [[ -e "$_v" ]]; then
+                info "repair" "removing managed $_v"
+                rm -rf "$_v"
+            fi
+        done
+    else
+        warn "repair" "AI_HATS_VENV override set — leaving user-owned venv untouched"
+    fi
 fi
 
 # -- 3. Compute AI_HATS_REPO_URL for self update --
