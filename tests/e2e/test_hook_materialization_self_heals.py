@@ -30,7 +30,10 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-AI_HATS_BINARY = Path(sys.executable).parent / "ai-hats"
+# HATS-790: invoke the dev-venv ai-hats as `python -m ai_hats` — the
+# bin/ai-hats console-script generator was removed.
+AI_HATS_PYTHON = Path(sys.executable)
+AI_HATS_CMD = (str(AI_HATS_PYTHON), "-m", "ai_hats")
 
 pytestmark = pytest.mark.integration
 
@@ -55,7 +58,7 @@ def _binary_env() -> dict[str, str]:
     """
     env = dict(os.environ)
     env["PYTHONPATH"] = str(REPO_ROOT / "src")
-    env["AI_HATS_VENV"] = str(AI_HATS_BINARY.parent.parent)
+    env["AI_HATS_VENV"] = str(AI_HATS_PYTHON.parent.parent)
     return env
 
 
@@ -135,7 +138,7 @@ def _make_project_with_hooks(tmp_path: Path) -> tuple[Path, Path]:
 def _self_init(project: Path) -> None:
     """Run the REAL binary: init + apply the gate-role (installs .githooks)."""
     cp = subprocess.run(
-        [str(AI_HATS_BINARY), "self", "init", "-p", "gemini", "-r", "gate-role",
+        [*AI_HATS_CMD, "self", "init", "-p", "gemini", "-r", "gate-role",
          "--no-wizard"],
         cwd=str(project),
         env=_binary_env(),
@@ -199,7 +202,7 @@ def test_sync_hooks_restores_deleted_pre_push_hook(initialised_project):
     gate.unlink()  # the hook is entirely gone
 
     cp = subprocess.run(
-        [str(AI_HATS_BINARY), "self", "sync-hooks"],
+        [*AI_HATS_CMD, "self", "sync-hooks"],
         cwd=str(project),
         env=_binary_env(),
         capture_output=True,
@@ -218,7 +221,7 @@ def test_sync_hooks_is_noop_when_in_sync(initialised_project):
     before = gate.stat().st_mtime_ns
 
     cp = subprocess.run(
-        [str(AI_HATS_BINARY), "self", "sync-hooks"],
+        [*AI_HATS_CMD, "self", "sync-hooks"],
         cwd=str(project),
         env=_binary_env(),
         capture_output=True,

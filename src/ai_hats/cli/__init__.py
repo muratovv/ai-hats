@@ -326,6 +326,8 @@ def _guard_self_location() -> None:
     resolved_venv: str | None = None
     is_editable = False
     try:
+        from pathlib import Path
+
         from ..paths import venv_path
         from ._helpers import _project_dir
 
@@ -333,7 +335,14 @@ def _guard_self_location() -> None:
         # pin-at-spawn); honour it verbatim so launcher and guard agree. Else
         # resolve from the project (venv_path already reads AI_HATS_VENV first).
         pinned = os.environ.get("AI_HATS_VENV")
-        resolved_venv = pinned if pinned else str(venv_path(_project_dir()))
+        resolved_path = Path(pinned) if pinned else venv_path(_project_dir())
+        # HATS-791 refinement: only a managed venv that ACTUALLY EXISTS can be
+        # "shadowed". If the resolved venv is absent (no managed install for this
+        # project), there is nothing to shadow — fail open (treat as unknown).
+        # This keeps the guard to its true scope (a real managed venv exists but
+        # we are running from a DIFFERENT one) and clears false-positives for
+        # standalone / by-name installs in projects with no managed venv.
+        resolved_venv = str(resolved_path) if resolved_path.exists() else None
     except Exception:  # noqa: BLE001 — fail open on ANY resolution error
         resolved_venv = None
     try:
