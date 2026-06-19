@@ -263,6 +263,90 @@ def _installed_launcher_path() -> Path:
     return Path.home() / ".local" / "bin" / "ai-hats"
 
 
+def _sanctioned_launcher_dest() -> Path:
+    """The ONE on-PATH ``ai-hats`` entry that is legitimate (HATS-791).
+
+    The host launcher install target: ``AI_HATS_LAUNCHER_DEST`` env override →
+    documented default ``~/.local/bin/ai-hats``. Mirrors
+    ``install-launcher.sh``'s ``DEST`` logic exactly. Unlike
+    :func:`_installed_launcher_path`, this deliberately does NOT fall back to
+    ``shutil.which`` — the whole point is to compare *every* ``ai-hats`` on
+    ``$PATH`` against the sanctioned target, so resolving to whatever PATH finds
+    would defeat the detector.
+    """
+    dest = os.environ.get("AI_HATS_LAUNCHER_DEST")
+    if dest:
+        return Path(dest).expanduser()
+    return Path.home() / ".local" / "bin" / "ai-hats"
+
+
+def find_stray_launchers(
+    path_env: str | None = None,
+    sanctioned: Path | None = None,
+) -> list[Path]:
+    """Scan ``$PATH`` for ``ai-hats`` executables OUTSIDE the sanctioned host
+    launcher (HATS-791 stray-shadow detector).
+
+    A stray is any ``<dir>/ai-hats`` on ``PATH`` whose resolved path differs
+    from the sanctioned launcher destination (``AI_HATS_LAUNCHER_DEST`` or
+    ``~/.local/bin/ai-hats``). These are the "shadow" binaries a stale
+    ``pip install ai-hats`` into a project app-venv can leave ahead of the host
+    launcher. PURE + deterministic: takes ``PATH`` and the sanctioned dest as
+    args (defaulting to the live environment) so it is unit-testable without
+    mutating the process environment.
+
+    NEVER deletes — destructive-actions rule. Returns the de-duplicated list of
+    stray paths in PATH order; callers WARN + instruct.
+    """
+    raw = path_env if path_env is not None else os.environ.get("PATH", "")
+    target = (sanctioned if sanctioned is not None else _sanctioned_launcher_dest())
+    try:
+        target_resolved = target.expanduser().resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        target_resolved = target
+    strays: list[Path] = []
+    seen: set[Path] = set()
+    for entry in raw.split(os.pathsep):
+        if not entry:
+            continue
+        candidate = Path(entry) / "ai-hats"
+        try:
+            if not (candidate.is_file() and os.access(candidate, os.X_OK)):
+                continue
+            resolved = candidate.resolve(strict=False)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if resolved == target_resolved:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        strays.append(candidate)
+    return strays
+
+
+def _stray_shadow_warning(strays: list[Path]) -> str:
+    """Build the WARN-and-instruct text for detected stray launchers (HATS-791).
+
+    Warn only — never auto-delete (destructive-actions rule). Names the
+    sanctioned launcher and the remediation (uninstall from the offending venv
+    / remove the stray) so a user can clean it up by hand.
+    """
+    sanctioned = _sanctioned_launcher_dest()
+    lines = [
+        "ai-hats: stray 'ai-hats' executables found on PATH outside the host launcher.",
+        f"  Sanctioned launcher: {sanctioned}",
+        "  These shadow the host launcher and may run a stale ai-hats mis-resolved:",
+    ]
+    lines += [f"    - {p}" for p in strays]
+    lines += [
+        "  ai-hats will NOT delete them. To fix, for each stray either:",
+        "    - uninstall ai-hats from its venv:  uv pip uninstall ai-hats",
+        "    - or remove the stray file, and ensure the host launcher dir precedes it on PATH.",
+    ]
+    return "\n".join(lines)
+
+
 def _build_install_cmd(python_exe: str, install_spec: str) -> list[str]:
     """uv-install ``install_spec`` into the venv owning ``python_exe``.
 
