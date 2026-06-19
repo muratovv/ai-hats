@@ -935,6 +935,16 @@ def status():
             icon = "[green]OK[/]" if status_val == "OK" else "[red]Missing[/]"
             console.print(f"  {component}: {icon}", highlight=False)
 
+    # HATS-791: stray-shadow detector. WARN (never delete) if any ai-hats on
+    # PATH lives outside the sanctioned host launcher — these shadow it and may
+    # run stale/mis-resolved. In-band visibility for the same scan bootstrap.sh
+    # --repair does out-of-band.
+    from .maintenance import _stray_shadow_warning, find_stray_launchers
+
+    strays = find_stray_launchers()
+    if strays:
+        console.print(f"\n[bold yellow]{_stray_shadow_warning(strays)}[/]", highlight=False)
+
     if st.get("errors"):
         console.print("\n[bold yellow]Errors:[/]")
         for err in st["errors"]:
