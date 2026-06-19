@@ -237,6 +237,8 @@ Pipeline architecture, what the retro emits, and how `reflect all` consumes it �
 
 ## 6. Venv ownership
 
+ai-hats is a **host tool driven by the launcher** (`~/.local/bin/ai-hats`) and `python -m ai_hats` — not a dependency of your project's application venv. The launcher resolves a per-project **managed venv** and exec's `<venv>/bin/python -m ai_hats`. There is **no `<venv>/bin/ai-hats` console script** (removed in HATS-790); the only `bin/ai-hats` is the host launcher itself. A stale `ai-hats` once `pip install`ed into a project app-venv is a *stray shadow* — if it runs ahead of the launcher, ai-hats refuses-and-instructs (the self-location guard, exit 3) instead of running mis-resolved. Recovery for a shadowed / unrunnable install — see [8].
+
 By default ai-hats lives in a **dedicated** venv at `<ai_hats_dir>/.venv/` (default `.agent/ai-hats/.venv/`). The venv is created automatically by `ai-hats self update` or `bash bootstrap.sh`. The launcher (`~/.local/bin/ai-hats`) resolves the venv by precedence:
 
 1. `AI_HATS_VENV` env var (absolute path, for tests / sandbox).
@@ -312,7 +314,8 @@ Rerun `self init` after: yaml edits, `ai-hats self update`, or any change under 
 - **Override venv updates.** Once `venv_path:` is set, ai-hats only does `uv pip install -U` into that venv — never recreates it. If it breaks (e.g. corrupted site-packages), you fix it manually.
 - **Wizard re-run.** Wizard is one-shot — there is no replay flag. To rerun from scratch: `rm ai-hats.yaml && ai-hats self init`. To tweak individual fields without restarting: `ai-hats config set …` or `ai-hats config customize …`.
 - **`Overlay` vs base edit.** Don't edit `library/usage/roles/<name>/config.yaml` directly — the change is lost on `ai-hats self update`. Always overlay via `customizations:` (§4).
-- **Broken venv / launcher.** For symptom-to-command recovery (`command not found`, `venv missing`, corrupted site-packages, override venv broken) — see [2] §10.
+- **Broken venv / launcher.** For symptom-to-command recovery (`command not found`, `venv missing`, corrupted site-packages, override venv broken, a stray shadow, or an unrunnable install needing `bootstrap.sh --repair`) — see [2] §10.
+- **`WARN: ... dropping unknown field` on load.** A NEWER ai-hats wrote a field this (older) binary doesn't know. It is **preserved, not lost** — the field round-trips through `save()` (HATS-792) so a save from the older binary won't delete it; the WARN just flags that the typed model ignored it. Run `ai-hats self update` to use the field properly. By contrast, `schema_version N is newer than this ai-hats` **fails loud** (not a warning): the on-disk format is too new to read safely — update before editing.
 
 ---
 
@@ -331,3 +334,5 @@ Rerun `self init` after: yaml edits, `ai-hats self update`, or any change under 
 **[6]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture and schema dispatch.
 
 **[7]** — [`library/core/roles/initial-wizard/config.yaml`](../library/core/roles/initial-wizard/config.yaml) — wizard source. If §2 drifts from this file, this file is the ground truth.
+
+**[8]** — [`docs/how-to.md#10-recovery-scenarios`](how-to.md#10-recovery-scenarios) — symptom→command recovery table, including the `bootstrap.sh --repair` out-of-band hatch and the stray-shadow case.

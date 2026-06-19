@@ -52,6 +52,8 @@ roles/dev-python ── trait-base + trait-agent + dev::python + dev::shell
 
 A bash launcher in `~/.local/bin/ai-hats` (one-time per host) plus a per-project venv in `<ai_hats_dir>/.venv/`. Get help for any command with `ai-hats --help`. View the full CLI tree with `ai-hats --tree`.
 
+ai-hats is a **host tool**: it is driven by that launcher (which exec's `python -m ai_hats`), never installed as a dependency of your project's own venv. There is no `<venv>/bin/ai-hats` console script — the only `bin/ai-hats` is the host launcher. If `self update` ever can't repair a broken install in-band, recover out-of-band with `curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- --repair` (see [3] §10).
+
 **Prerequisite:** [uv](https://docs.astral.sh/uv/) is the single host requirement — the env engine that also provisions Python (no separate Python install). The one-command install below auto-installs uv if it is absent; the step-by-step path assumes it is present (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
 
 ### One command (recommended)

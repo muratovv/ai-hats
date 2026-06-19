@@ -313,15 +313,21 @@ Moved to the narrative walkthrough — see [2] §6 for default vs override, owne
 
 ## 10. Recovery scenarios
 
+> **ai-hats is a host tool, not a project dependency.** It runs via the host launcher (`~/.local/bin/ai-hats`) and `python -m ai_hats` — never as a dependency of your project's own application venv. There is **no `<venv>/bin/ai-hats` console script** (removed in HATS-790; terms — [6]); the only `bin/ai-hats` worth invoking is the host launcher. If a stale `ai-hats` shadow on `$PATH` (e.g. one a `pip install ai-hats` once dropped into a project app-venv) runs ahead of the launcher, ai-hats refuses-and-instructs (the **self-location guard**, exit 3 — see [6]) rather than running mis-resolved.
+
 | Symptom | Command |
 |---|---|
 | `ai-hats: command not found` (fresh host) | `curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh \| bash` (or clone the public repo and run `bash scripts/install-launcher.sh`) |
 | `ai-hats: venv missing at ...` (no venv) | `ai-hats self update` |
-| `ai-hats: venv exists but ai-hats binary is missing` | `ai-hats self update` |
+| `ai-hats: venv exists at ... but ai_hats is not importable` | `ai-hats self update` |
 | System Python upgrade (the Proxmox case) | `ai-hats self update` — the launcher auto-recreates the default venv |
 | Import error / corrupted site-packages | `rm -rf .agent/ai-hats/.venv && ai-hats self update` |
+| `refusing to run from a foreign (non-managed) virtualenv` (a stray shadow) | `~/.local/bin/ai-hats <command>` (host launcher by absolute path), then uninstall ai-hats from the offending venv |
+| In-band `self update` can't self-repair (deleted package / dangling interpreter / shadow) | `curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh \| bash -s -- --repair` (out-of-band recovery — see below) |
 | Override venv broken | `uv venv --python 3.11 <override-path> && uv pip install --python <override-path>/bin/python 'ai-hats @ git+https://github.com/muratovv/ai-hats.git'` (user-managed) |
 | Full project wipe (data loss!) | `rm -rf .agent/ai-hats/ && ai-hats self update && ai-hats self init -r <role> -p <provider>` |
+
+**Out-of-band recovery (`--repair`).** When the managed venv is broken badly enough that in-band `ai-hats self update` can't fix itself — it runs *from* the venv it must repair (the bootstrap paradox) — use `bootstrap.sh --repair`. It is paradox-immune: fetched fresh over `curl`, and it drives the launcher by **absolute path** (`"$LAUNCHER_DEST"`), so no stray shadow on `$PATH` can intercept it. `--repair` force-reinstalls the launcher, removes the framework-managed default venv (`.agent/ai-hats/.venv` + `versions/`, never a user-owned `AI_HATS_VENV` override), then rebuilds via `self update`. Idempotent; it also WARNs about any stray `ai-hats` it finds on `$PATH` (never deletes them). Architecture rationale — [7].
 
 **Zero-install bootstrap.** With uv present, `uvx ai-hats self init` runs the latest published ai-hats (the `stable` PyPI release) in a throwaway environment — no host launcher needed to wire a fresh project. Install the launcher (top row) for day-to-day use.
 
@@ -340,3 +346,7 @@ For deeper dives — first-time setup walkthrough [2], the reflect-session / ref
 **[4]** — [`docs/how-to-backlog.md`](how-to-backlog.md) — day-to-day `ai-hats task` / `task hyp` / `task proposal` recipes.
 
 **[5]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture.
+
+**[6]** — [`docs/glossary.md`](glossary.md) — **Managed venv / managed-venv invariant**, **self-location guard**, **stray shadow**, **out-of-band recovery**.
+
+**[7]** — [`docs/adr/0010-bootstrap-paradox-self-location-and-forward-safe-config.md`](adr/0010-bootstrap-paradox-self-location-and-forward-safe-config.md) — ADR for the bootstrap paradox, the layered fix, and the absolute-path-immunity insight.

@@ -10,6 +10,41 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+- **Self-location guard + out-of-band recovery + stray-shadow detector**
+  (HATS-791, child of HATS-786). Closes the residual "shadow" case HATS-790's
+  generator removal left open: a stale ai-hats running from a FOREIGN
+  (non-managed) venv reached ahead of the host launcher. A pure classifier
+  `ai_hats.self_location.classify_invocation` (`"sanctioned"` / `"foreign"`),
+  wired by `_guard_self_location` into `main_entry`, **refuses-and-instructs**
+  on a foreign invocation — prints `remediation_text` (run the host launcher /
+  re-bootstrap / uninstall from the offending venv) to stderr and exits 3. It
+  biases HARD toward fail-open (only a positively-identified foreign venv that
+  ACTUALLY EXISTS as a resolvable managed venv is refused; every ambiguity,
+  editable dev clone, or `--version`/`--help`/`--tree` info command resolves to
+  sanctioned), is wired into `main_entry` (not the `main` click group, so
+  in-process `CliRunner` tests bypass it), and has an escape hatch
+  `AI_HATS_SKIP_SELF_LOCATION_GUARD=1` (`SKIP_ENV_VAR`). `scripts/bootstrap.sh`
+  becomes the canonical **out-of-band recovery** hatch — paradox-immune because
+  it is fetched fresh (`curl … | bash`) and drives the launcher by ABSOLUTE path
+  (`"$LAUNCHER_DEST"`), so a shadow cannot intercept it — with a new `--repair`
+  flag that force-reinstalls the launcher + the framework-managed default venv
+  (`.agent/ai-hats/.venv` + `versions/`, never a user override). Both
+  `bootstrap.sh` (`detect_stray_launchers`) and `ai_hats.cli.maintenance`
+  (`find_stray_launchers`) scan `$PATH` for stray `ai-hats` binaries outside the
+  sanctioned launcher and WARN — never delete.
+- **Forward-safe `ai-hats.yaml` reader — preserve unknowns, fail loud on a newer
+  schema** (HATS-792, child of HATS-786). `ProjectConfig` now round-trips a
+  same-version unknown top-level field instead of dropping it: `from_yaml`
+  stashes the pre-stripped unknown keys on an `_extra` `PrivateAttr` and
+  `to_dict` merges them back (mirrors `TaskCard.extras`), so an OLDER ai-hats
+  preserves (does not silently delete on `save()`) a field a NEWER ai-hats wrote
+  without a `schema_version` bump — while the HATS-581 stderr WARN still fires.
+  A genuinely newer schema fails loud: `from_yaml` raises `ProjectConfigError`
+  pointing at `ai-hats self update` when on-disk `schema_version` exceeds
+  `KNOWN_SCHEMA_VERSION` (4), and a matching `save()` clobber guard refuses to
+  overwrite a file whose on-disk schema is newer than this binary knows.
+
 ### Changed
 - **Removed the `ai-hats` console-script entry point; `python -m ai_hats` is now
   the sole package entry** (HATS-790, Alt 5). The `[project.scripts] ai-hats =
