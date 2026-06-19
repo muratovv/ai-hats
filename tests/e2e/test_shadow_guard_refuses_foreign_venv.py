@@ -101,6 +101,15 @@ def test_foreign_venv_invocation_is_refused(tmp_path: Path) -> None:
     (project / "ai-hats.yaml").write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
     )
+    # HATS-791 refinement: the guard only refuses when a managed venv ACTUALLY
+    # EXISTS to be shadowed (else it's a standalone invocation, not a shadow).
+    # Build the project's resolved managed venv so this models the REAL bug — a
+    # configured project whose managed venv is shadowed by the foreign one.
+    managed = project / ".agent" / "ai-hats" / ".venv"
+    subprocess.run(
+        ["uv", "venv", "--python", "3.11", str(managed)],
+        check=True, capture_output=True, text=True, env=env, timeout=120,
+    )
 
     # --- 1. guard ON → refuse-and-instruct + nonzero ---
     refused = subprocess.run(

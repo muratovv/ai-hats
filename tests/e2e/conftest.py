@@ -34,14 +34,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-# Dev-venv ``ai-hats`` binary resolved via ``sys.executable``. Works
-# from both the main checkout and from linked git worktrees (where
-# ``<worktree>/.venv`` does not exist) — pytest is always launched by
-# the dev venv's python, so its sibling ``ai-hats`` binary is the same
-# editable build we're testing. HATS-552: previously hardcoded as
-# ``repo_root / ".venv" / "bin" / "ai-hats"`` which silently broke
-# every ``tmp_project``-using e2e when run from a worktree.
-AI_HATS_BINARY = Path(sys.executable).parent / "ai-hats"
+# HATS-790: the ``bin/ai-hats`` console-script generator was removed, so e2e
+# tests can no longer point at a ``<venv>/bin/ai-hats`` executable. The
+# ``ai_hats_shim`` session fixture (below) materialises a real shim that execs
+# the dev venv's ``python -m ai_hats`` (the editable build under test).
 
 
 @pytest.fixture(autouse=True)
@@ -233,8 +229,24 @@ def requires_claude_auth() -> None:
         pytest.skip(f"claude --version exit {cp.returncode}: {cp.stderr[:200]}")
 
 
+@pytest.fixture(scope="session")
+def ai_hats_shim(tmp_path_factory) -> Path:
+    """A real ``ai-hats`` executable for e2e tests (HATS-790: no console script).
+
+    Execs the dev venv's ``python -m ai_hats`` — the editable build under test.
+    A real file on disk, so it works both for ``Project.run`` AND for tests that
+    read ``project.ai_hats_binary`` directly (task-worktree, reflect). Lives in a
+    pytest session tmp dir (NOT ``build/``, which wheel-building e2e tests clean).
+    Worktree-portable: ``sys.executable`` is pytest's interpreter wherever it runs.
+    """
+    shim = tmp_path_factory.mktemp("ai-hats-shim") / "ai-hats"
+    shim.write_text(f'#!/usr/bin/env bash\nexec "{sys.executable}" -m ai_hats "$@"\n')
+    shim.chmod(0o755)
+    return shim
+
+
 @pytest.fixture
-def tmp_project(tmp_path: Path):
+def tmp_project(tmp_path: Path, ai_hats_shim: Path):
     """Role-less ai-hats project + Project driver for CLI subprocess tests.
 
     Contract:
@@ -265,7 +277,7 @@ def tmp_project(tmp_path: Path):
     Assembler(project_path).init()
     return Project(
         path=project_path,
-        ai_hats_binary=AI_HATS_BINARY,
+        ai_hats_binary=ai_hats_shim,
     )
 
 
