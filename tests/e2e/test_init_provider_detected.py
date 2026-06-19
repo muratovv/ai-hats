@@ -34,8 +34,12 @@ from _helpers.hitl import strip_ansi
 pytestmark = pytest.mark.integration
 
 
-def _drive_init_menu(venv_bin: Path, project: Path, home: Path) -> tuple[str, int | None]:
+def _drive_init_menu(venv_python: Path, project: Path, home: Path) -> tuple[str, int | None]:
     """Run `ai-hats self init --no-update` under a PTY, pick claude, capture.
+
+    HATS-790: invoked as ``<venv>/bin/python -m ai_hats`` — there is no
+    bin/ai-hats console script. PATH still omits ai-hats so the wizard's
+    ``shutil.which("ai-hats")`` hand-off skips gracefully.
 
     Returns ``(ansi_stripped_output, exit_status)``.
     """
@@ -51,7 +55,7 @@ def _drive_init_menu(venv_bin: Path, project: Path, home: Path) -> tuple[str, in
     }
 
     proc = PtyProcess.spawn(
-        [str(venv_bin), "self", "init", "--no-update"],
+        [str(venv_python), "-m", "ai_hats", "self", "init", "--no-update"],
         env=env,
         cwd=str(project),
         dimensions=(40, 120),  # wide enough that the menu line never wraps
@@ -81,14 +85,14 @@ def _drive_init_menu(venv_bin: Path, project: Path, home: Path) -> tuple[str, in
 
 
 def test_e2e_init_marks_every_detected_provider(tmp_venv_project, tmp_path):
-    venv_bin = Path(tmp_venv_project.env["AI_HATS_VENV"]) / "bin" / "ai-hats"
-    assert venv_bin.is_file(), f"venv ai-hats binary missing: {venv_bin}"
+    venv_python = Path(tmp_venv_project.env["AI_HATS_VENV"]) / "bin" / "python"
+    assert venv_python.is_file(), f"venv python missing: {venv_python}"
 
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
     (home / ".gemini").mkdir(parents=True)
 
-    plain, status = _drive_init_menu(venv_bin, tmp_venv_project.path, home)
+    plain, status = _drive_init_menu(venv_python, tmp_venv_project.path, home)
 
     # Both providers detected; never the old "recommended" wording.
     assert "detected — found ~/.gemini" in plain, plain[-1200:]
