@@ -81,7 +81,12 @@ def test_e2e_self_update_local_editable_in_place(tmp_path: Path) -> None:
     )
     # 2. The managed .venv install is editable (PEP 610 dir_info.editable).
     venv = ai_hats_dir / ".venv"
-    assert (venv / "bin" / "ai-hats").is_file(), "managed .venv ai-hats missing"
+    # HATS-790: no bin/ai-hats console script — usability is bin/python; assert
+    # the proxy binary is ABSENT (editable install must not re-introduce it).
+    assert (venv / "bin" / "python").is_file(), "managed .venv python missing"
+    assert not (venv / "bin" / "ai-hats").exists(), (
+        "bin/ai-hats console script must NOT exist (HATS-790)"
+    )
     dist_info = list((venv / "lib").glob("python*/site-packages/ai_hats-*.dist-info"))
     assert dist_info, "ai-hats dist-info not found in .venv"
     direct_url = json.loads((dist_info[0] / "direct_url.json").read_text())

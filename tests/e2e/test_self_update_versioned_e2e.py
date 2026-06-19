@@ -118,7 +118,9 @@ def test_e2e_self_update_blue_green_versioned(tmp_path: Path) -> None:
     cur_a = current.read_text().strip()
     assert cur_a == sha_a, f"current={cur_a!r} != installed HEAD {sha_a!r}"
     vdir_a = versions / sha_a
-    assert (vdir_a / "bin" / "ai-hats").is_file(), "versions/<shaA>/ venv incomplete"
+    # HATS-790: versioned-venv completeness is bin/python (no bin/ai-hats script).
+    assert (vdir_a / "bin" / "python").is_file(), "versions/<shaA>/ venv incomplete (bin/python)"
+    assert not (vdir_a / "bin" / "ai-hats").exists(), "HATS-790: no bin/ai-hats in versioned venv"
 
     # Marker proving the old version dir is not rebuilt by the next update.
     marker = vdir_a / "AINTTOUCHED"
@@ -135,7 +137,7 @@ def test_e2e_self_update_blue_green_versioned(tmp_path: Path) -> None:
     _run([str(launcher_dest), "self", "update"], cwd=project, env=env, timeout=300)
 
     assert current.read_text().strip() == sha_b, "current did not flip to shaB"
-    assert (versions / sha_b / "bin" / "ai-hats").is_file(), "versions/<shaB>/ missing"
+    assert (versions / sha_b / "bin" / "python").is_file(), "versions/<shaB>/ missing (bin/python)"
     # AC1: the previously-pinned version dir survives the update untouched.
     assert vdir_a.is_dir(), "versions/<shaA>/ was destroyed by the update"
     assert marker.read_text() == "pinned\n", "versions/<shaA>/ was rebuilt in place"

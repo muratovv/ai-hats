@@ -131,5 +131,7 @@ def test_e2e_self_update_install_failure_exits_nonzero(tmp_path: Path) -> None:
     assert current.read_text().strip() == sha_a, (
         f"current flipped to a half-installed version: {current.read_text().strip()!r}"
     )
-    assert (versions / sha_a / "bin" / "ai-hats").is_file(), \
+    # HATS-790: the surviving version dir's completeness is bin/python (the
+    # launcher's usability signal), not the removed bin/ai-hats console script.
+    assert (versions / sha_a / "bin" / "python").is_file(), \
         "previous working version dir was damaged by the failed update"

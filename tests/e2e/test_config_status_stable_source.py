@@ -92,8 +92,13 @@ def test_e2e_config_status_stable_source(tmp_path):
           "--find-links", str(wheeldir), f"ai-hats=={version}"],
          cwd=tmp_path, env=env, timeout=300)
 
-    ai_hats = venv / "bin" / "ai-hats"
-    assert ai_hats.is_file(), "ai-hats console script missing after by-name install"
+    # HATS-790: a by-name install no longer materialises a bin/ai-hats console
+    # script — invoke via the venv interpreter and assert the proxy is ABSENT.
+    py = venv / "bin" / "python"
+    assert py.is_file(), "venv python missing after by-name install"
+    assert not (venv / "bin" / "ai-hats").exists(), (
+        "bin/ai-hats console script must NOT exist after by-name install (HATS-790)"
+    )
 
     # SANITY: confirm the by-name install reproduced the PyPI case (no direct_url.json).
     dist_info = sorted((venv / "lib").glob("python*/site-packages/ai_hats-*.dist-info"))
@@ -107,7 +112,7 @@ def test_e2e_config_status_stable_source(tmp_path):
     #    regardless of role (HATS-497), so the Source line is present.
     project = tmp_path / "project"
     project.mkdir()
-    res = _run([str(ai_hats), "config", "status"], cwd=project, env=env, timeout=60)
+    res = _run([str(py), "-m", "ai_hats", "config", "status"], cwd=project, env=env, timeout=60)
     out = res.stdout + res.stderr
     assert "Source:" in out, f"no Source line in config status:\n{out}"
     assert "stable @ PyPI" in out, (
