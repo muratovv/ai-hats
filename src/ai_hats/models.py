@@ -16,6 +16,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PrivateAttr,
     ValidationError,
     computed_field,
     field_validator,
@@ -544,6 +545,16 @@ _DEPRECATED_PROJECT_FIELDS: frozenset[str] = frozenset({
 })
 
 
+# HATS-792: highest ai-hats.yaml ``schema_version`` this binary understands.
+# Migrations in ``from_yaml`` run upward ONLY to this version; a yaml whose
+# ``schema_version`` exceeds it was written by a NEWER ai-hats whose format we
+# cannot safely interpret OR round-trip. Rather than silently treat it as v4
+# (and risk clobbering future fields on the next ``save()``), ``from_yaml``
+# fails loud with a remediation pointer (``ai-hats self update``). Bump this in
+# lockstep with the migration chain + the ``to_dict`` ``schema_version`` literal.
+KNOWN_SCHEMA_VERSION = 4
+
+
 class ProjectConfigError(ValueError):
     """Raised when ai-hats.yaml fails schema validation."""
 
@@ -600,6 +611,18 @@ class ProjectConfig(_YamlModel):
     # source + downgrade-guard selection.
     harness: HarnessConfig = Field(default_factory=HarnessConfig)
 
+    # HATS-792: same-version unknown TOP-LEVEL keys, preserved for round-trip.
+    # Mirrors the TaskCard ``extras`` pattern (capture-on-load, merge-on-dump),
+    # but ProjectConfig is ``extra="forbid"`` and pre-strips unknown keys in the
+    # classmethod ``from_yaml`` BEFORE ``model_validate`` runs — so the stash
+    # cannot be a validated field (it would re-trip ``forbid``). Instead the
+    # popped keys live on a ``PrivateAttr`` set after validation, and
+    # ``to_dict`` merges them back so an OLDER binary preserves (not drops) a
+    # field a NEWER binary wrote, while the HATS-581 stderr WARN still fires.
+    # Only populated when ``schema_version <= KNOWN_SCHEMA_VERSION`` (a newer
+    # schema fails loud in ``from_yaml`` and never reaches this preserve seam).
+    _extra: dict[str, Any] = PrivateAttr(default_factory=dict)
+
     @model_validator(mode="before")
     @classmethod
     def _coerce_customizations(cls, data: Any) -> Any:
@@ -643,6 +666,17 @@ class ProjectConfig(_YamlModel):
         if not path.exists():
             return cls()
         data = yaml.safe_load(path.read_text()) or {}
+        # HATS-792: fail loud on a schema_version this binary cannot understand.
+        # Migrations below run upward ONLY to KNOWN_SCHEMA_VERSION; a higher
+        # value was written by a NEWER ai-hats. Silently treating it as v4 would
+        # both misread its (unknown) format AND risk clobbering future fields on
+        # the next save() — so refuse to operate and point at the recovery path.
+        on_disk_version = data.get("schema_version", 1)
+        if isinstance(on_disk_version, int) and on_disk_version > KNOWN_SCHEMA_VERSION:
+            raise ProjectConfigError(
+                f"{path}: schema_version {on_disk_version} is newer than this "
+                f"ai-hats (knows <={KNOWN_SCHEMA_VERSION}) — run 'ai-hats self update'."
+            )
         if data.get("schema_version", 1) < 2:
             data = _migrate_v1_to_v2(path, data)
         if data.get("schema_version", 1) < 3:
@@ -667,16 +701,23 @@ class ProjectConfig(_YamlModel):
         # an OLDER binary survives a yaml a NEWER binary wrote (e.g.
         # ``migration_step``, added without a schema_version bump). Runs AFTER
         # the deprecated strip so known ghosts keep their specific message.
-        cls._strip_unknown_fields(data, path)
+        # HATS-792: the popped keys are returned so they can be PRESERVED (not
+        # silently lost) on the next save — same-version round-trip.
+        extra = cls._strip_unknown_fields(data, path)
         # HATS-408: heal empty default_role from active_role on load. Any
         # ai-hats command that needs an "effective role" already falls back
         # to (active_role or default_role); persisting the heal makes the
         # downstream contract — default_role is the source of truth — true.
         cls._heal_default_role(data, path)
         try:
-            return cls.model_validate(data)
+            cfg = cls.model_validate(data)
         except ValidationError as e:
             raise ProjectConfigError(_format_project_config_error(path, e)) from e
+        # HATS-792: stash the popped unknown top-level keys so to_dict can
+        # round-trip them. Set after validation because the PrivateAttr stash
+        # is not a model field (extra="forbid" would re-trip on it).
+        cfg._extra = extra
+        return cfg
 
     @staticmethod
     def _strip_deprecated_fields(data: dict[str, Any], path: Path) -> None:
@@ -698,15 +739,23 @@ class ProjectConfig(_YamlModel):
                 )
 
     @classmethod
-    def _strip_unknown_fields(cls, data: dict[str, Any], path: Path) -> None:
-        """Drop keys not in the model schema; one stderr WARN per key.
+    def _strip_unknown_fields(cls, data: dict[str, Any], path: Path) -> dict[str, Any]:
+        """Pop keys not in the model schema; one stderr WARN per key. Returns
+        the popped ``{key: value}`` map so the caller can PRESERVE them.
 
         HATS-581 forward-compat seam. A NEWER ai-hats may add a field to
         ai-hats.yaml without bumping ``schema_version`` (``migration_step``
         did exactly this — orthogonal to schema_version by design). An OLDER
         binary that doesn't know the field must not hard-crash on it: strip
-        it with a visible WARN so the load succeeds and a subsequent
-        ``ai-hats self update`` can deliver code that understands the field.
+        it (so ``extra="forbid"`` validation succeeds) with a visible WARN.
+
+        HATS-792: the stripped values are no longer thrown away — they are
+        returned and stashed on ``_extra`` so ``to_dict`` round-trips them.
+        Read→write therefore preserves the unknown field's key+value instead of
+        dropping it on the next ``save()``. The WARN is RETAINED (HATS-581): the
+        vanish-from-the-typed-model is still observable; what changes is that the
+        bytes survive a save. (A genuinely newer SCHEMA fails loud earlier in
+        ``from_yaml`` and never reaches this same-version preserve seam.)
 
         Must run AFTER ``_strip_deprecated_fields`` so known ghosts keep their
         specific message instead of falling through to the generic one here.
@@ -716,14 +765,16 @@ class ProjectConfig(_YamlModel):
 
         Channel: plain stderr (fires at yaml-load, before logging config).
         """
+        extra: dict[str, Any] = {}
         for field in sorted(set(data) - set(cls.model_fields)):
-            data.pop(field)
+            extra[field] = data.pop(field)
             print(
                 f"WARN: {path}: dropping unknown field {field!r} "
                 "(not in this ai-hats version's schema — written by a newer "
                 "ai-hats? run 'ai-hats self update' to use it).",
                 file=sys.stderr,
             )
+        return extra
 
     @staticmethod
     def _heal_default_role(data: dict[str, Any], path: Path) -> None:
@@ -781,9 +832,39 @@ class ProjectConfig(_YamlModel):
         # repo/path) so existing yamls without the block stay byte-clean.
         if not self.harness.is_default:
             d["harness"] = self.harness.to_dict()
+        # HATS-792: round-trip same-version unknown top-level keys captured on
+        # load (mirrors TaskCard.to_dict). Known fields take precedence on an
+        # accidental collision; _extra should never hold a known key since
+        # _strip_unknown_fields only pops set(data) - set(model_fields), but we
+        # defend against direct mutation of _extra. Default-empty for any
+        # instance built without from_yaml, so harness/byte-clean is unaffected.
+        for k, v in self._extra.items():
+            if k not in type(self).model_fields:
+                d.setdefault(k, v)
         return d
 
     def save(self, path: Path) -> None:
+        # HATS-792 downgrade-clobber guard: refuse to overwrite an on-disk
+        # ai-hats.yaml whose schema_version is newer than this binary knows.
+        # from_yaml already fails loud on such a file, so the normal
+        # load→mutate→save flow never reaches here with a future config; this
+        # guards the bypass paths that construct a ProjectConfig WITHOUT loading
+        # the existing file first (e.g. a fresh ProjectConfig().save(path) over
+        # a future file, or a re-init) — an old binary must not silently stomp a
+        # future config it cannot represent. Best-effort: a malformed/unreadable
+        # existing file is left to the normal load path to diagnose.
+        if path.exists():
+            try:
+                existing = yaml.safe_load(path.read_text()) or {}
+            except yaml.YAMLError:
+                existing = {}
+            on_disk_version = existing.get("schema_version", 1) if isinstance(existing, dict) else 1
+            if isinstance(on_disk_version, int) and on_disk_version > KNOWN_SCHEMA_VERSION:
+                raise ProjectConfigError(
+                    f"{path}: refusing to overwrite — on-disk schema_version "
+                    f"{on_disk_version} is newer than this ai-hats (knows "
+                    f"<={KNOWN_SCHEMA_VERSION}) — run 'ai-hats self update'."
+                )
         atomic_write_text(
             path, yaml.dump(self.to_dict(), default_flow_style=False, allow_unicode=True)
         )

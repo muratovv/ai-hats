@@ -3,6 +3,7 @@
 import pytest
 
 from ai_hats.models import (
+    KNOWN_SCHEMA_VERSION,
     Attachment,
     ComponentConfig,
     Composition,
@@ -470,6 +471,50 @@ def test_from_yaml_deprecated_field_keeps_specific_message(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "dropping deprecated field 'imports_order'" in err
     assert "dropping unknown field 'imports_order'" not in err
+
+
+# -- HATS-792: forward-safe config reader (preserve same-version unknowns,
+#    fail loud on a newer schema_version) --
+
+
+def test_known_schema_version_is_four():
+    """Lock the constant the migration chain + to_dict literal track."""
+    assert KNOWN_SCHEMA_VERSION == 4
+
+
+def test_from_yaml_preserves_unknown_top_level_field_round_trip(tmp_path, capsys):
+    """HATS-792: a same-version unknown top-level key is captured into ``_extra``
+    on load and merged back by ``to_dict``, so read→write→read preserves it
+    (HATS-581 no longer means silent loss). The WARN still fires."""
+    path = tmp_path / "ai-hats.yaml"
+    path.write_text(
+        "provider: claude\nschema_version: 4\n"
+        "ai_hats_dir: .agent/ai-hats\nfuture_field: 7\n"
+    )
+
+    cfg = ProjectConfig.from_yaml(path)
+    assert "dropping unknown field 'future_field'" in capsys.readouterr().err
+    assert cfg._extra == {"future_field": 7}
+    assert cfg.to_dict()["future_field"] == 7
+
+    cfg.save(path)
+    reloaded = ProjectConfig.from_yaml(path)
+    assert reloaded.to_dict()["future_field"] == 7
+
+
+def test_from_yaml_fails_loud_on_newer_schema_version(tmp_path):
+    """HATS-792: schema_version 5 (> KNOWN 4) is refused with a typed error +
+    remediation instead of being silently treated as v4."""
+    path = tmp_path / "ai-hats.yaml"
+    path.write_text(
+        "provider: claude\nschema_version: 5\nai_hats_dir: .agent/ai-hats\n"
+    )
+
+    with pytest.raises(ProjectConfigError) as exc:
+        ProjectConfig.from_yaml(path)
+    msg = str(exc.value)
+    assert "schema_version 5 is newer" in msg
+    assert "ai-hats self update" in msg
 
 
 def test_from_yaml_missing_ai_hats_dir_still_hard_errors(tmp_path):
