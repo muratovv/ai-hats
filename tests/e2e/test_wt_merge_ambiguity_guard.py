@@ -16,11 +16,12 @@ message naming all candidate branches so the operator can disambiguate.
 Free-tier (no agent spawn) — bare `git init` + two `wt create`s + one
 bad `wt merge` invocation. Wall budget < 5s.
 
-Why not the ``tmp_project`` fixture? That fixture binds to
-``<repo_root>/.venv/bin/ai-hats`` which only exists in the main checkout,
-not in a linked worktree. This test invokes ``python -m ai_hats``
-directly via the current interpreter + an explicit ``PYTHONPATH`` so it
-runs from either location without needing an installed binary.
+Why not the ``tmp_project`` fixture? That fixture binds to the dev
+``<repo_root>/.venv`` which only exists in the main checkout, not in a linked
+worktree. This test invokes ``python -m ai_hats`` directly via the current
+interpreter + an explicit ``PYTHONPATH`` so it runs from either location.
+(HATS-790: ``python -m ai_hats`` is the sole entry point — there is no
+``bin/ai-hats`` console script in any venv.)
 """
 
 from __future__ import annotations

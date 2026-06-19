@@ -1,9 +1,13 @@
 """CLI interface — Click-based command-line tool.
 
-`main_entry` is the console-script entry point exported via `pyproject.toml`.
-It thin-wraps `main` (the click group) to make `--tree` order-independent
-relative to `--help`. Subcommands are defined in sibling modules (assembly,
-task, worktree, …) and mounted onto `main` at the bottom of this file.
+`main_entry` is the package entry point invoked by ``python -m ai_hats``
+(``src/ai_hats/__main__.py``). HATS-790 (Alt 5) removed the
+``[project.scripts] ai-hats`` console script, so ``python -m ai_hats`` is now
+the only entry — no venv materialises a shadowable ``bin/ai-hats`` proxy.
+``main_entry`` thin-wraps `main` (the click group) to make `--tree`
+order-independent relative to `--help`. Subcommands are defined in sibling
+modules (assembly, task, worktree, …) and mounted onto `main` at the bottom of
+this file.
 """
 
 from __future__ import annotations
@@ -271,7 +275,7 @@ def _extract_tree_path(argv: list[str]) -> list[str]:
 
 
 def main_entry() -> None:
-    """Console-script entry point.
+    """Package entry point — invoked by ``python -m ai_hats`` (HATS-790).
 
     Intercepts ``--tree`` before click parses, so:
       - ``ai-hats --tree`` renders the full tree;

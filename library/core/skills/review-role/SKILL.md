@@ -12,7 +12,7 @@ edits, composer changes).
 
 > **Harness shell prelude.** Before any `ai-hats` invocation:
 > ```bash
-> AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
+> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # HATS-790: no bin/ai-hats console script
 > ```
 
 ## When to Use

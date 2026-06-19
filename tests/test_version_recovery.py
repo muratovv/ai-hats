@@ -27,12 +27,13 @@ def _isolate(tmp_path, monkeypatch):
 
 
 def _mk_version(project_dir, sha, *, complete, age_hours=0.0):
-    """Seed versions/<sha>/ with bin/ai-hats + bin/python; optional sentinel;
-    optional age. A real venv always carries the interpreter (bin/python), which
-    read_current_sha now requires to resolve `current` (HATS-657)."""
+    """Seed versions/<sha>/ with bin/python; optional sentinel; optional age.
+    A real venv always carries the interpreter (bin/python), which
+    read_current_sha now requires to resolve `current` (HATS-657). HATS-790
+    removed the bin/ai-hats console script, so no proxy binary is seeded —
+    usability keys on bin/python + the .complete sentinel."""
     vdir = version_dir(project_dir, sha)
     (vdir / "bin").mkdir(parents=True, exist_ok=True)
-    (vdir / "bin" / "ai-hats").write_text("#!/bin/sh\n", encoding="utf-8")
     (vdir / "bin" / "python").write_text("#!/bin/sh\n", encoding="utf-8")
     if complete:
         complete_sentinel(project_dir, sha).write_text("", encoding="utf-8")

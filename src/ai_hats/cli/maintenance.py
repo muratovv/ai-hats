@@ -445,7 +445,7 @@ def _run_managed_versioned_update(
             new_python = sys.executable
         elif is_usable_version(project_dir, target_sha):
             # A prior successful install of this exact sha that is still USABLE
-            # (sentinel present AND bin/python + bin/ai-hats on disk): trust it
+            # (sentinel present AND bin/python on disk — HATS-790): trust it
             # and reuse — just (re)flip current below. A blind reinstall would
             # rmtree a dir that may be a LIVE pinned run's frozen env (e.g. run
             # still on sha A while current already moved to B, then a `self update

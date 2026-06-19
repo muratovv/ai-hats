@@ -44,7 +44,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # A stale launcher: resolves ONLY the legacy .venv (no versions/current block,
 # no pin-at-spawn), mirroring a pre-HATS-647 install. Heals .venv on self update
-# so the first migration update can bootstrap.
+# so the first migration update can bootstrap. HATS-790: there is no bin/ai-hats
+# console script, so usability is probed via `python -c "import ai_hats"` and the
+# package is dispatched via `python -m ai_hats` (this stub's "stale" property is
+# that it ignores versions/current — not its dispatch mechanism).
 STALE_LAUNCHER = """#!/usr/bin/env bash
 set -euo pipefail
 PROJECT="$(pwd)"
@@ -53,13 +56,13 @@ REPO_URL="${AI_HATS_REPO_URL:?}"
 if [[ "$REPO_URL" == *"://"* ]]; then PIP_TARGET="ai-hats @ $REPO_URL"; else PIP_TARGET="$REPO_URL"; fi
 export AI_HATS_VENV="$VENV"
 if [[ "${1:-}" == "self" && "${2:-}" == "update" ]]; then
-  if [[ ! -x "$VENV/bin/ai-hats" ]]; then
+  if ! { [[ -x "$VENV/bin/python" ]] && "$VENV/bin/python" -c "import ai_hats" 2>/dev/null; }; then
     rm -rf "$VENV"
     python3 -m venv "$VENV"
     "$VENV/bin/pip" install --quiet "$PIP_TARGET"
   fi
 fi
-exec "$VENV/bin/ai-hats" "$@"
+exec "$VENV/bin/python" -m ai_hats "$@"
 """
 
 

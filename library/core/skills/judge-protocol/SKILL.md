@@ -16,7 +16,7 @@ Edge Cases).
 > **Harness shell prelude.** Before any `ai-hats` invocation:
 >
 > ```bash
-> AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
+> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # HATS-790: no bin/ai-hats console script
 > ```
 
 ## When to Use
@@ -77,7 +77,7 @@ proposed verdict + recommendation to the supervisor, dialogue if
 needed, and on ack execute via CLI:
 
 ```bash
-"$AH" task hyp append-verdict HYP-NNN \
+ah task hyp append-verdict HYP-NNN \
   --verdict <confirmed|refuted|inconclusive> \
   --recommendation <close_confirmed|close_refuted|keep|extend_window> \
   --note "<reason>"
@@ -87,7 +87,7 @@ When a HYP's window closes (`close_confirmed` / `close_refuted` /
 `stalled`):
 
 ```bash
-"$AH" task hyp set-status HYP-NNN --status <confirmed|refuted|stalled>
+ah task hyp set-status HYP-NNN --status <confirmed|refuted|stalled>
 ```
 
 Follow **review-hypothesis** for verdict-choice rules. The draft
@@ -101,7 +101,7 @@ proposed decision (`accept | reject | defer | duplicate`) to the
 supervisor. On ack for the full batch, run **one** bulk commit:
 
 ```bash
-"$AH" reflect commit \
+ah reflect commit \
   --accept PROP-001 --accept PROP-007 \
   --reject PROP-003 \
   --defer PROP-009 \
@@ -112,7 +112,7 @@ For each accepted PROP, spawn the follow-up task as recommended in the
 draft's `## Proposed mutations` section:
 
 ```bash
-"$AH" task create "<title>" --description "<from PROP body>"
+ah task create "<title>" --description "<from PROP body>"
 ```
 
 Follow **review-proposal** for decision rules + the cost-citation

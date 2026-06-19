@@ -6,12 +6,12 @@ description: Convert project retrospective findings into framework-level improve
 
 Convert project-level retrospective findings into framework-level improvements.
 
-> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. When running `ai-hats self init` (step 5), resolve the binary once:
+> **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. When running `ai-hats self init` (step 5), define a resolver once (host launcher on PATH, else the project venv's interpreter — no `bin/ai-hats` console script since HATS-790):
 > ```bash
-> AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
-> "$AH" self init
+> ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
+> ah self init
 > ```
-> If neither works, the project's venv lives at `./.venv/bin/ai-hats`. Resolve the binary path explicitly — falling back blindly between `ai-hats` and the venv path wastes a turn.
+> If neither works, the project's venv interpreter lives at `./.venv/bin/python` (invoke the package as `./.venv/bin/python -m ai_hats …`). Resolve the path explicitly — falling back blindly wastes a turn.
 
 ## When to Use
 Runs *downstream* of a retro: **self-retrospective** produces the findings, this

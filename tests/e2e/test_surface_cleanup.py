@@ -1,7 +1,8 @@
 """E2E: HATS-407 — surface-command cleanup (init / config set / bump).
 
-Validates the post-HATS-407 contracts via the **real** ``ai-hats`` binary
-in real subprocess invocations:
+Validates the post-HATS-407 contracts via the **real** package invoked as
+``python -m ai_hats`` (HATS-790: no bin/ai-hats console script) in real
+subprocess invocations:
 
 - ``ai-hats self init`` — scaffolds dirs + ai-hats.yaml + ./CLAUDE.md +
   .gitignore + writes user-rules-only imports.md. **No** role-content
@@ -15,10 +16,11 @@ in real subprocess invocations:
 - ``ai-hats self bump`` — refreshes ``imports.md`` to pick up new
   user-rule files; no role-content materialization, no ``.last_backup/``.
 
-Per ``dev_rule_e2e_gate``: real subprocess chain (real bash, real
-``ai-hats`` binary from the dev venv at ``<repo>/.venv/bin/ai-hats``),
-``@pytest.mark.integration``. No pip install — we exercise the
-locally-installed binary directly so the turnaround stays cheap.
+Per ``dev_rule_e2e_gate``: real subprocess chain (real bash, the real package
+run as ``<dev-venv python> -m ai_hats`` — HATS-790 removed the
+``<repo>/.venv/bin/ai-hats`` console script), ``@pytest.mark.integration``. No
+pip install — we exercise the locally-installed package directly so the
+turnaround stays cheap.
 
 NB: we deliberately bypass the host launcher (``$HOME/.local/bin/ai-hats``,
 HATS-339), which since HATS-337 refuses to run without a pre-existing
@@ -45,22 +47,28 @@ pytestmark = pytest.mark.integration
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-# Dev-venv binary path resolved through ``sys.executable`` — works
-# from both the main checkout and from linked git worktrees (where
-# ``<worktree>/.venv`` does not exist). Bypassing the host launcher
-# is intentional — see module docstring for rationale (HATS-337/339/552).
-AI_HATS = str(Path(sys.executable).parent / "ai-hats")
+# HATS-790 (Alt 5): there is no ``<venv>/bin/ai-hats`` console script anymore.
+# Invoke the package via ``<dev-venv python> -m ai_hats`` — resolved through
+# ``sys.executable`` so it works from both the main checkout and from linked git
+# worktrees (where ``<worktree>/.venv`` does not exist). Bypassing the host
+# launcher is intentional — see module docstring (HATS-337/339/552).
+AI_HATS = [sys.executable, "-m", "ai_hats"]
 
 
 def _ai_hats_available() -> bool:
-    return Path(AI_HATS).is_file() and os.access(AI_HATS, os.X_OK)
+    """True iff the dev-venv interpreter can import the package (HATS-790:
+    importability replaces the removed bin/ai-hats existence check)."""
+    probe = subprocess.run(
+        [sys.executable, "-c", "import ai_hats"], capture_output=True, text=True
+    )
+    return probe.returncode == 0
 
 
 @pytest.fixture
 def fresh_project(tmp_path):
     """Empty project dir + git init (so HATS-088 hook install path is exercisable)."""
     if not _ai_hats_available():
-        pytest.skip(f"ai-hats dev-venv binary missing: {AI_HATS}")
+        pytest.skip(f"ai_hats not importable by dev-venv interpreter: {sys.executable}")
     project = tmp_path / "proj"
     project.mkdir()
     subprocess.run(
@@ -100,7 +108,7 @@ def test_init_writes_yaml_scaffold_and_user_rules_aggregator_only(fresh_project)
     project = fresh_project
 
     _run(
-        [AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
+        [*AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
          "--no-wizard", "--no-update"],
         cwd=project,
     )
@@ -157,7 +165,7 @@ def test_config_set_role_is_yaml_only(fresh_project):
     in ai-hats.yaml without touching the canonical tree or .last_backup."""
     project = fresh_project
     _run(
-        [AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
+        [*AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
          "--no-wizard", "--no-update"],
         cwd=project,
     )
@@ -167,7 +175,7 @@ def test_config_set_role_is_yaml_only(fresh_project):
     initial_imports = (canon / "imports.md").read_text()
 
     res = _run(
-        [AI_HATS, "config", "set", "-r", "sre"],
+        [*AI_HATS, "config", "set", "-r", "sre"],
         cwd=project,
     )
     # CLI surfaces the new contract banner.
@@ -202,7 +210,7 @@ def test_bump_regenerates_user_rules_aggregator_only(fresh_project):
     """
     project = fresh_project
     _run(
-        [AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
+        [*AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
          "--no-wizard", "--no-update"],
         cwd=project,
     )
@@ -245,13 +253,13 @@ def test_self_rollback_command_removed(fresh_project):
     must surface a 'no such command' error from click."""
     project = fresh_project
     _run(
-        [AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
+        [*AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
          "--no-wizard", "--no-update"],
         cwd=project,
     )
 
     res = _run(
-        [AI_HATS, "self", "rollback"],
+        [*AI_HATS, "self", "rollback"],
         cwd=project, expect_exit=None,
     )
     assert res.returncode != 0, "self rollback should not exist post-HATS-407"
