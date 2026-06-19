@@ -5,6 +5,7 @@ unknown-channel fail-loud, and omit-when-default byte-clean round-trips.
 """
 
 import pytest
+import yaml
 
 from ai_hats.models import (
     Channel,
@@ -93,3 +94,87 @@ def test_back_compat_no_harness_stays_byte_clean(tmp_path):
     cfg.save(p)
     assert "harness" not in p.read_text()
     assert cfg.harness.channel is Channel.STABLE
+
+
+# -- HATS-792: forward-safe config reader (preserve + fail-loud) --
+
+
+def test_unknown_top_level_field_survives_read_write_read(tmp_path, capsys):
+    """HATS-792 (a): a same-version unknown TOP-LEVEL key is PRESERVED across
+    read→write→read (round-trip), instead of being dropped on the next save.
+
+    Fail-under-revert: drop the ``_extra`` capture in ``from_yaml`` or the merge
+    in ``to_dict`` → the field vanishes from the rewritten yaml and the reload
+    below loses it.
+    """
+    p = _write(tmp_path, BASE + "future_field: keep-me\n")
+
+    cfg = ProjectConfig.from_yaml(p)
+    # HATS-581 (d): the WARN must still fire even though we now preserve.
+    assert "dropping unknown field 'future_field'" in capsys.readouterr().err
+    # The unknown key is NOT a typed attribute (extra="forbid" still holds).
+    assert not hasattr(cfg, "future_field")
+
+    cfg.save(p)
+    on_disk = yaml.safe_load(p.read_text())
+    assert on_disk["future_field"] == "keep-me"
+
+    # Reload: the field is still there (full round-trip).
+    reloaded = ProjectConfig.from_yaml(p)
+    assert reloaded.to_dict()["future_field"] == "keep-me"
+
+
+def test_unknown_field_absent_when_none_present(tmp_path):
+    """A clean config (no unknown keys) gains NO spurious _extra output —
+    ``to_dict`` stays byte-clean. Guards against _extra leaking known keys."""
+    p = _write(tmp_path, BASE)
+    cfg = ProjectConfig.from_yaml(p)
+    assert cfg._extra == {}
+    # No unexpected top-level keys beyond the known serialized set.
+    assert "future_field" not in cfg.to_dict()
+
+
+def test_newer_schema_version_fails_loud(tmp_path):
+    """HATS-792 (b): schema_version newer than KNOWN_SCHEMA_VERSION (4) is
+    refused with a typed error + remediation, not silently treated as v4.
+
+    Fail-under-revert: remove the from_yaml guard → schema_version 5 loads
+    silently and this raise-assertion fails.
+    """
+    p = _write(tmp_path, "schema_version: 5\nai_hats_dir: .agent/ai-hats\nprovider: gemini\n")
+
+    with pytest.raises(ProjectConfigError) as exc:
+        ProjectConfig.from_yaml(p)
+    msg = str(exc.value)
+    assert "schema_version 5 is newer" in msg
+    assert "ai-hats self update" in msg
+
+
+def test_save_refuses_to_clobber_newer_schema_on_disk(tmp_path):
+    """HATS-792: an old binary must not overwrite a future config it cannot
+    represent — even on a bypass path that constructs a config WITHOUT loading
+    the existing (future) file first."""
+    p = _write(tmp_path, "schema_version: 99\nai_hats_dir: .agent/ai-hats\nprovider: gemini\n")
+    before = p.read_text()
+
+    with pytest.raises(ProjectConfigError) as exc:
+        ProjectConfig(provider="claude").save(p)
+    assert "refusing to overwrite" in str(exc.value)
+    # The future file is byte-for-byte untouched.
+    assert p.read_text() == before
+
+
+def test_harness_still_round_trips_byte_clean_with_extra_seam(tmp_path):
+    """HATS-764 guard under HATS-792: an explicit harness block still round-trips
+    byte-clean, and the default harness stays omitted, with the _extra seam in
+    place (a clean config carries no extras, so nothing changes)."""
+    cfg = ProjectConfig(harness=HarnessConfig(channel=Channel.EDGE, repo="https://x/y.git"))
+    p = tmp_path / "ai-hats.yaml"
+    cfg.save(p)
+    first = p.read_text()
+    reloaded = ProjectConfig.from_yaml(p)
+    reloaded.save(p)
+    assert p.read_text() == first
+    assert reloaded.harness == cfg.harness
+    # Default harness still omitted under the new seam.
+    assert "harness" not in ProjectConfig().to_dict()
