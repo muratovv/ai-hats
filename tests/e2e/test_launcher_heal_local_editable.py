@@ -90,7 +90,19 @@ def test_e2e_launcher_heal_channel_local_is_editable(tmp_path: Path) -> None:
 
     ai_hats_dir = project / ".agent" / "ai-hats"
     venv = ai_hats_dir / ".venv"
-    assert (venv / "bin" / "ai-hats").is_file(), "healed .venv ai-hats missing"
+    # HATS-790: no bin/ai-hats console script — the heal's signal is an importable
+    # package under the venv interpreter.
+    assert (venv / "bin" / "python").is_file(), "healed .venv python missing"
+    assert not (venv / "bin" / "ai-hats").exists(), (
+        "bin/ai-hats console script must NOT exist (HATS-790)"
+    )
+    import_probe = subprocess.run(
+        [str(venv / "bin" / "python"), "-c", "import ai_hats"],
+        capture_output=True, text=True,
+    )
+    assert import_probe.returncode == 0, (
+        f"ai_hats not importable in healed .venv: {import_probe.stderr}"
+    )
     # In-place editable heal creates no blue-green versions/ dir.
     assert not (ai_hats_dir / "versions").exists(), (
         "channel:local heal must be in place — no versions/ dir"

@@ -860,12 +860,12 @@ def _versioned_fake_run(*, fail_at=None, bump_rec=None):
                 return _make_completed(a, returncode=1, stderr="venv boom")
             target = Path(a[-1])
             (target / "bin").mkdir(parents=True, exist_ok=True)
-            # `uv venv` lays down the interpreter; uv pip install (next phase)
-            # drops the ai-hats entry-point. The venv is only "usable"
-            # (read_current_sha-acceptable) once both bin/python and bin/ai-hats
-            # exist alongside the sentinel (HATS-657).
+            # `uv venv` lays down the interpreter. HATS-790: there is no
+            # bin/ai-hats console script anymore — the venv is "usable"
+            # (read_current_sha-acceptable) once bin/python exists alongside the
+            # .complete sentinel (HATS-657: interpreter present; HATS-648:
+            # sentinel written last by self update).
             (target / "bin" / "python").write_text("#!/bin/sh\n")
-            (target / "bin" / "ai-hats").write_text("#!/bin/sh\n")
             return _make_completed(a, returncode=0)
         if "pip" in a:
             return _make_completed(a, returncode=1 if fail_at == "install" else 0,
@@ -959,13 +959,13 @@ def test_managed_update_verify_failure_does_not_flip(tmp_path, monkeypatch):
 def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
     """current already == target + dir present → no venv/pip/verify, bump only."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    # Pre-seed: a USABLE versions/cafef00d/ venv (bin/python + bin/ai-hats +
-    # .complete sentinel) and current → it. HATS-648: completeness requires the
-    # sentinel; HATS-657: read_current_sha additionally requires bin/python.
+    # Pre-seed: a USABLE versions/cafef00d/ venv (bin/python + .complete
+    # sentinel) and current → it. HATS-648: completeness requires the sentinel;
+    # HATS-657: read_current_sha additionally requires bin/python. HATS-790
+    # removed the bin/ai-hats console script, so it is no longer seeded.
     vbin = version_dir(tmp_path, "cafef00d") / "bin"
     vbin.mkdir(parents=True, exist_ok=True)
     (vbin / "python").write_text("#!/bin/sh\n")
-    (vbin / "ai-hats").write_text("#!/bin/sh\n")
     complete_sentinel(tmp_path, "cafef00d").write_text("", encoding="utf-8")
     _flip_current(tmp_path, "cafef00d")
     calls: list[list[str]] = []
@@ -1007,18 +1007,19 @@ def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     # This run came from the (healed) legacy .venv — the post-HATS-656 reality.
     monkeypatch.setattr(sys, "prefix", str(tmp_path / ".agent" / "ai-hats" / ".venv"))
-    # Pre-seed a COMPLETE versioned venv (sentinel + bin/ai-hats) but NO bin/python
-    # — the host-python-upgrade symptom — and point current at it.
+    # Pre-seed a COMPLETE versioned venv (sentinel) but NO bin/python — the
+    # host-python-upgrade symptom — and point current at it. HATS-790: bin/python
+    # is the sole runnable marker now (no bin/ai-hats console script), so a
+    # sentinel-only dir is precisely the complete-but-unrunnable case.
     vbin = version_dir(tmp_path, "cafef00d") / "bin"
     vbin.mkdir(parents=True, exist_ok=True)
-    (vbin / "ai-hats").write_text("#!/bin/sh\n")
     complete_sentinel(tmp_path, "cafef00d").write_text("", encoding="utf-8")
     _flip_current(tmp_path, "cafef00d")
     assert read_current_sha(tmp_path) is None  # broken venv is not usable
     printed = _capture_prints(monkeypatch)
 
     # Record every subprocess call while delegating to the real fake (which
-    # rebuilds bin/python + bin/ai-hats on `uv venv`).
+    # rebuilds bin/python on `uv venv` — HATS-790: no bin/ai-hats console script).
     fake = _versioned_fake_run()
     calls: list[list[str]] = []
 

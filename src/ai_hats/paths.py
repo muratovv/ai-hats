@@ -398,8 +398,10 @@ def complete_sentinel(project_dir: Path, sha: str) -> Path:
     Written **last** by ``self update`` — only after a fully-successful
     install+verify — so its presence is the authoritative "this install
     finished" signal (HATS-648). Independent of pip's internal file-write
-    ordering, unlike the ``bin/ai-hats`` proxy: a build killed mid-pip can
-    leave ``bin/ai-hats`` present yet lack ``.complete``.
+    ordering: a build killed mid-pip can drop interpreter / package files yet
+    lack ``.complete``. (HATS-790 removed the old ``bin/ai-hats`` console-script
+    proxy this note used to cite; the ``.complete`` sentinel remains the
+    completeness authority.)
     """
     return version_dir(project_dir, sha) / ".complete"
 
@@ -420,28 +422,31 @@ def is_usable_version(project_dir: Path, sha: str) -> bool:
     """True iff ``versions/<sha>/`` is a COMPLETE and RUNNABLE managed venv.
 
     Stronger than :func:`is_complete`. A *usable* version is one that can
-    actually execute: it carries the ``.complete`` sentinel **and** has both an
-    interpreter (``bin/python``) and an entry point (``bin/ai-hats``) on disk.
+    actually execute: it carries the ``.complete`` sentinel **and** has a
+    runnable interpreter (``bin/python``) on disk, since the launcher now execs
+    ``<venv>/bin/python -m ai_hats`` (HATS-790).
 
     The ``bin/python`` clause is HATS-657: a host python upgrade leaves a venv
-    *complete* (sentinel + ``bin/ai-hats`` present) yet *unrunnable* — its
-    ``bin/python`` symlink dangles to the removed interpreter. Treating such a
-    venv as current would make ``self update`` see ``already_current`` and skip
-    the heal (#1) and false-fire the HATS-655 dormancy advisory (#2).
+    *complete* (sentinel present) yet *unrunnable* — its ``bin/python`` symlink
+    dangles to the removed interpreter. Treating such a venv as current would
+    make ``self update`` see ``already_current`` and skip the heal (#1) and
+    false-fire the HATS-655 dormancy advisory (#2).
+
+    HATS-790 (Alt 5) removed the ``[project.scripts] ai-hats`` console script,
+    so a managed venv no longer materialises ``bin/ai-hats``; the entry point is
+    importability of the package, which a complete venv with a live interpreter
+    guarantees. Hence usability keys on ``bin/python`` alone — dropping the old
+    ``bin/ai-hats`` clause, behaviour-equivalent for any real install.
 
     This is the single "usable" predicate, shared by :func:`read_current_sha`
-    and the ``self update`` reuse gate, mirroring the launcher's
-    ``-x bin/ai-hats && -x bin/python`` resolution (HATS-656) so launcher,
-    ``read_current_sha`` and the reuse path all agree on the same definition.
-    A dangling symlink is ``False`` under both ``Path.exists()`` (it follows the
-    link) and bash ``-x``, so the two stay consistent on the load-bearing case.
+    and the ``self update`` reuse gate, mirroring the launcher's ``-x bin/python``
+    resolution so launcher, ``read_current_sha`` and the reuse path all agree on
+    the same definition. A dangling symlink is ``False`` under both
+    ``Path.exists()`` (it follows the link) and bash ``-x``, so the two stay
+    consistent on the load-bearing case.
     """
     vdir = version_dir(project_dir, sha)
-    return (
-        is_complete(project_dir, sha)
-        and (vdir / "bin" / "ai-hats").exists()
-        and (vdir / "bin" / "python").exists()
-    )
+    return is_complete(project_dir, sha) and (vdir / "bin" / "python").exists()
 
 
 def read_current_sha(project_dir: Path) -> str | None:
@@ -449,8 +454,8 @@ def read_current_sha(project_dir: Path) -> str | None:
 
     Returns the ``sha`` only when the pointer exists, is well-formed, and the
     ``versions/<sha>/`` venv is **usable** — complete (carries the ``.complete``
-    sentinel, HATS-648) AND runnable (``bin/python`` + ``bin/ai-hats`` present,
-    HATS-657). A missing/corrupt pointer, a dangling ``sha``, an incomplete
+    sentinel, HATS-648) AND runnable (``bin/python`` present, HATS-657 /
+    HATS-790). A missing/corrupt pointer, a dangling ``sha``, an incomplete
     install, or a present-but-broken venv (e.g. a host python upgrade dangling
     ``bin/python``) returns ``None`` so callers fall back to the legacy ``.venv``
     (HATS-647 lazy-migration contract) — a corrupted versioned install degrades
@@ -463,10 +468,10 @@ def read_current_sha(project_dir: Path) -> str | None:
     if not _is_safe_sha_component(raw):
         return None
     # Usability is the single gate (HATS-657): sentinel (completeness authority,
-    # written last post-verify — HATS-648) + bin/ai-hats (entry point) + bin/python
-    # (interpreter). The corruption guard (HATS-647 review-finding #1) folds in
-    # here: a complete-but-later-broken venv — missing bin/ai-hats OR a python
-    # upgrade dangling bin/python — is NOT usable, so we return None and callers
+    # written last post-verify — HATS-648) + bin/python (interpreter — the
+    # launcher execs `bin/python -m ai_hats`, HATS-790). The corruption guard
+    # (HATS-647 review-finding #1) folds in here: a complete-but-later-broken venv
+    # — a python upgrade dangling bin/python — is NOT usable, so we return None and callers
     # degrade to the legacy .venv when it still exists. NOTE (HATS-653 / Phase B):
     # once a healthy versioned install is the authoritative venv, that legacy .venv
     # is deliberately reclaimed (reclaim_legacy_venv) — so post-reclaim this

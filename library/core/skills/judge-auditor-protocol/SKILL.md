@@ -54,8 +54,9 @@ Two source-of-truth invocations (run both via **Bash**; you may **read**
 the output but NOT mutate state):
 
 ```bash
-AH="$(command -v ai-hats || echo ./.venv/bin/ai-hats)"
-"$AH" task list --state done --updated-since "$PRIOR_TS"
+# HATS-790: no bin/ai-hats console script — fallback runs the venv module.
+ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
+ah task list --state done --updated-since "$PRIOR_TS"
 git log --since="$PRIOR_TS" --oneline
 ```
 
