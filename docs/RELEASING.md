@@ -223,7 +223,8 @@ curl -fsS https://pypi.org/pypi/ai-hats/json \
 # 2. Install the published wheel in a throwaway venv.
 uv venv /tmp/release-verify
 uv pip install --python /tmp/release-verify/bin/python "ai-hats==0.4.0"
-/tmp/release-verify/bin/ai-hats --version    # → ai-hats 0.4.0
+# HATS-790: no bin/ai-hats console script — invoke the package as a module.
+/tmp/release-verify/bin/python -m ai_hats --version    # → ai-hats 0.4.0
 rm -rf /tmp/release-verify
 ```
 

@@ -33,8 +33,9 @@ injection: |
   ### Canonical CLI (do not invent equivalents)
   - **Update ai-hats in a consuming project:** `ai-hats self update` (NOT raw
     `pip install --force-reinstall git+...`). Follow with `ai-hats self init`
-    if composition changed. For projects with isolated venv, call explicitly:
-    `~/<project>/.venv/bin/ai-hats self update`.
+    if composition changed. For projects with isolated venv, call the venv
+    interpreter explicitly (HATS-790: no `bin/ai-hats` console script):
+    `~/<project>/.venv/bin/python -m ai_hats self update`.
   - **Backlog ops:** every change to `tasks/<ID>/**` via `ai-hats task ...`
     CLI — never direct file edits (see `rule_backlog_discipline §1`).
   - **Plan files:** edit `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md`
