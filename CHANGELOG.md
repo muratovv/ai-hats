@@ -10,6 +10,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-20
+
 ### Added
 - **Self-location guard + out-of-band recovery + stray-shadow detector**
   (HATS-791, child of HATS-786). Closes the residual "shadow" case HATS-790's
@@ -45,9 +47,11 @@ since the latest tag lives under **Unreleased** until the next release.
   `KNOWN_SCHEMA_VERSION` (4), and a matching `save()` clobber guard refuses to
   overwrite a file whose on-disk schema is newer than this binary knows.
 
-### Changed
-- **Removed the `ai-hats` console-script entry point; `python -m ai_hats` is now
-  the sole package entry** (HATS-790, Alt 5). The `[project.scripts] ai-hats =
+### Removed
+- **Migration:** see [`docs/migration-v0.10.0.md`](docs/migration-v0.10.0.md) for
+  the one-time crossover (reinstall the host launcher; clear stray app-venv
+  installs). **Removed the `ai-hats` console-script entry point; `python -m
+  ai_hats` is now the sole package entry** (HATS-790, Alt 5). The `[project.scripts] ai-hats =
   "ai_hats.cli:main_entry"` generator made every venv depending on `ai-hats`
   materialise a `bin/ai-hats` that direnv could prepend ahead of the host
   launcher (`~/.local/bin/ai-hats`), silently running stale code. With the
@@ -1611,7 +1615,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/muratovv/ai-hats/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/muratovv/ai-hats/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/muratovv/ai-hats/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/muratovv/ai-hats/compare/v0.6.0...v0.7.0
