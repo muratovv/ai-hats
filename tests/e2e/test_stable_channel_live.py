@@ -19,7 +19,10 @@ precondition, so there is no second source of truth to drift:
 Precondition for the body (epic-close): the publish that activates this test
 ships the *current* version, so the published release is >= the local-source dev
 build installed during ``self init`` — the semver-monotonic downgrade guard
-(``_classify_semver_downgrade``) admits the install rather than refusing it.
+(``_classify_semver_downgrade``) admits the install rather than refusing it. When
+the local build is AHEAD of the latest published tag (the normal between-releases
+state, incl. release-prep), the body SKIPs: the downgrade guard correctly refuses
+that install, which is expected, not a failure.
 
 Per ``dev_rule_e2e_gate``: real ``bash`` + real launcher + real ``uv`` install +
 real ``ai-hats`` binary, marked ``integration`` + ``install_heavy`` (a real index
@@ -68,6 +71,28 @@ def test_e2e_stable_self_update_installs_published_wheel(tmp_path: Path) -> None
         pytest.skip(
             f"ai-hats not yet published on PyPI ({exc}); HATS-765 epic-close "
             "publish activates this live test"
+        )
+
+    # The body asserts a stable `self update` INSTALLS the published wheel — which
+    # only holds when the published release is >= the local source build. On a dev
+    # checkout AHEAD of the latest published tag (the normal between-releases
+    # state, incl. release-prep before the new tag is published) the semver
+    # downgrade-guard CORRECTLY refuses the downgrade, so skip rather than fail:
+    # the refusal is expected, not a regression. Runs for real only at/after a
+    # publish of the current version (published >= local).
+    from ai_hats import __version__ as local_version
+
+    try:
+        from packaging.version import Version
+
+        local_is_ahead = Version(local_version) > Version(published)
+    except Exception:  # noqa: BLE001 — unparseable local ("dev") → don't skip on version grounds
+        local_is_ahead = False
+    if local_is_ahead:
+        pytest.skip(
+            f"local build {local_version} is ahead of latest published {published}; "
+            "stable self update correctly refuses the downgrade — live test runs "
+            "only at/after a release of the current version"
         )
 
     launcher = tmp_path / "bin" / "ai-hats"
