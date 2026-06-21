@@ -46,7 +46,8 @@ INJECTION_START = "<!-- AI-HATS:START -->"
 INJECTION_END = "<!-- AI-HATS:END -->"
 
 
-pytestmark = pytest.mark.integration
+# smoke: also run by the merge-to-master CI gate (HATS-783)
+pytestmark = [pytest.mark.integration, pytest.mark.smoke]
 
 
 # --------------------------------------------------------------------- #

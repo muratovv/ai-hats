@@ -119,3 +119,30 @@ jobs:
           out=$(bash scripts/install-launcher.sh)
           echo "$out"
           echo "$out" | grep -q "already current"
+
+  merge-smoke:
+    # HATS-783: the curated e2e SMOKE subset, enforced server-side on every
+    # push/PR to master. The other CI jobs `--ignore=tests/e2e/`, so the e2e
+    # tier is otherwise enforced ONLY by the local ~27-min pre-push gate
+    # (bypassable via --no-verify / forged marker). This runs just the
+    # `smoke`-tagged e2e tests — hand-picked fast, deterministic, network-free
+    # and auth-free (no install_heavy / live_claude / per-session venv build) so
+    # they finish in minutes on a hosted runner. Complements, never replaces,
+    # the full local gate. HATS-785 makes this a required status check.
+    name: merge-smoke (curated e2e subset)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install package + dev deps
+        run: pip install -e ".[dev]"
+      - name: Configure git identity (e2e tests create/commit projects)
+        run: |
+          git config --global user.email "ci@ai-hats.test"
+          git config --global user.name "ai-hats CI"
+          git config --global init.defaultBranch main
+      - name: Run curated e2e smoke subset
+        run: pytest -m "smoke and not quarantine and not live_claude" tests/e2e/ -q

@@ -44,7 +44,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LIBRARY_DIR = REPO_ROOT / "library"
 
 
-pytestmark = pytest.mark.integration
+# smoke: also run by the merge-to-master CI gate (HATS-783)
+pytestmark = [pytest.mark.integration, pytest.mark.smoke]
 
 
 # --------------------------------------------------------------------- #

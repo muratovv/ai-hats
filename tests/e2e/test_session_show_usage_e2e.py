@@ -17,7 +17,8 @@ import json
 
 import pytest
 
-pytestmark = pytest.mark.integration
+# smoke: also run by the merge-to-master CI gate (HATS-783)
+pytestmark = [pytest.mark.integration, pytest.mark.smoke]
 
 _USAGE = {
     "schema_version": "usage/v1",
