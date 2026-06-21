@@ -1588,3 +1588,73 @@ def test_plan_epic_all_cancelled_not_advanced(mgr):
     _card, auto = mgr.transition("C2", TaskState.CANCELLED, resolution="drop")
     assert mgr.get_task("EPIC").state == TaskState.PLAN  # none done -> no advance
     assert auto == []
+
+
+# -- Epic is a tracker, not an executable task (HATS-794) --
+
+
+def test_manual_epic_execute_no_worktree(mgr, monkeypatch):
+    """HATS-794: manually moving an epic (has children) to execute is a pure state
+    flip — no worktree (epics are trackers; symmetric with the auto-path)."""
+    setup_calls: list[str] = []
+    monkeypatch.setattr(
+        mgr, "_setup_worktree", lambda task: setup_calls.append(task.id)
+    )
+    mgr.create_task("EPIC", "Epic")
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    mgr.transition("EPIC", TaskState.PLAN)
+    mgr.transition("EPIC", TaskState.EXECUTE)
+    assert mgr.get_task("EPIC").state == TaskState.EXECUTE
+    assert "EPIC" not in setup_calls  # epic gets no worktree on the manual path
+
+
+def test_manual_non_epic_execute_still_worktree(mgr, monkeypatch):
+    """HATS-794 (regression): a childless task still gets a worktree on execute."""
+    setup_calls: list[str] = []
+    monkeypatch.setattr(
+        mgr, "_setup_worktree", lambda task: setup_calls.append(task.id)
+    )
+    mgr.create_task("SOLO", "Lone task")  # no children
+    mgr.transition("SOLO", TaskState.PLAN)
+    mgr.transition("SOLO", TaskState.EXECUTE)
+    assert "SOLO" in setup_calls  # non-epic path unchanged
+
+
+def test_manual_epic_execute_skips_plan_gate(tmp_path, monkeypatch):
+    """HATS-794: an epic with an unfilled plan still enters execute (plan-gate
+    waived); a childless task with the same empty scaffold is still gated."""
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
+    (project / ".agent" / "STATE.md").write_text("")
+    strict = TaskManager(project, prefix="T", strict_plan_check=True)
+    monkeypatch.setattr(strict, "_setup_worktree", lambda task: None)
+
+    strict.create_task("T-1", "Epic")
+    strict.create_task("T-2", "Child", parent_task="T-1")
+    strict.transition("T-1", TaskState.PLAN)  # empty scaffold
+    strict.transition("T-1", TaskState.EXECUTE)  # epic → plan-gate waived
+    assert strict.get_task("T-1").state == TaskState.EXECUTE
+
+    strict.create_task("T-3", "Solo")  # childless → still gated
+    strict.transition("T-3", TaskState.PLAN)
+    with pytest.raises(EmptyPlanError):
+        strict.transition("T-3", TaskState.EXECUTE)
+
+
+def test_manual_epic_reopen_no_worktree(mgr, monkeypatch):
+    """HATS-794: reopening a done epic (DONE → EXECUTE) takes no worktree either."""
+    setup_calls: list[str] = []
+    monkeypatch.setattr(
+        mgr, "_setup_worktree", lambda task: setup_calls.append(task.id)
+    )
+    mgr.create_task("EPIC", "Epic")
+    mgr.create_task("C1", "Child 1", parent_task="EPIC")
+    mgr.close_task("C1", "shipped")  # C1 done → EPIC auto-advances to review
+    assert mgr.get_task("EPIC").state == TaskState.REVIEW
+    mgr.transition("EPIC", TaskState.DONE)  # reviewer closes the epic
+    setup_calls.clear()
+
+    mgr.transition("EPIC", TaskState.EXECUTE)  # reopen done → execute
+    assert mgr.get_task("EPIC").state == TaskState.EXECUTE
+    assert "EPIC" not in setup_calls  # reopened epic: still a tracker, no worktree
