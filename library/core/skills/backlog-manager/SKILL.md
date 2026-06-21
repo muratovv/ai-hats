@@ -122,6 +122,21 @@ procedure, the two plan→execute flows, and edge-case gotchas →
 | **blocked** | request-supervisor | `transition blocked` |
 | **cancelled** | — | `transition cancelled --resolution "<why>"` |
 
+### Pre-execute re-validation (premise freshness)
+
+`rule_backlog_discipline §6` makes a premise retraction a go/no-go event — but a
+retraction logged in an *earlier* session does not re-announce itself when a later
+agent picks the task up. So this is a **second, independent firing point**: before
+`transition <ID> execute`, **mechanically scan** the card for a premise change
+since the plan was authored — a `[RETRACTED]` / `[SUPERSEDED]` / *"no longer
+holds"* / driver-change marker on the strategic driver or motivating consumer (and
+treat a long park between `plan` and pickup as the same signal). Grep the card;
+do not eyeball whether it "looks ready". If a marker is unresolved, the
+justification is stale: bounce to `brainstorm` so `plan-gate → devils-advocate`
+re-fires, or record in the work_log *why* the premise still holds before
+proceeding. (Origin: HATS-795 — a retracted driver passed silently into execute
+and reached a green ~920-LoC build before cancellation.)
+
 ## References
 
 One level deep — pull only the domain you're working in:
