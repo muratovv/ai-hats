@@ -320,19 +320,30 @@ class TaskManager:
             if new_state == TaskState.PLAN:
                 self._create_plan_scaffold(task)
             elif new_state == TaskState.EXECUTE:
-                # Reopen path (HATS-328): coming back from DONE — clear the
-                # completion timestamp and record the reopen in work_log so the
-                # lifecycle stays auditable. Skip the empty-plan strict-check:
-                # the plan already passed it once on the original execute.
+                # HATS-794: an epic (a task with children) is a tracker, not a
+                # unit of executable work — entering execute is a pure state flip
+                # with no worktree and no plan-gate, symmetric with the auto-path
+                # (`_propagate_to_parent` reaches epic-execute via `transition_to`
+                # with neither). Detection is emergent (`_children_of`).
+                is_epic = bool(self._children_of(task.id))
                 if old_state == TaskState.DONE:
+                    # Reopen path (HATS-328): coming back from DONE — clear the
+                    # completion timestamp and record the reopen in work_log so the
+                    # lifecycle stays auditable. Skip the empty-plan strict-check:
+                    # the plan already passed it once on the original execute.
                     task.completed_at = ""
                     task.log_work("Reopened from done")
+                elif is_epic:
+                    task.log_work(
+                        "Epic → execute (tracker): no plan-gate, no worktree"
+                    )
                 elif self.strict_plan_check:
                     unfilled = self._unfilled_sections(task)
                     if unfilled:
                         plan_path = self.tasks_dir / task.id / "plan.md"
                         raise EmptyPlanError(task.id, plan_path, unfilled)
-                self._setup_worktree(task)
+                if not is_epic:
+                    self._setup_worktree(task)  # epics never get a worktree
             elif new_state == TaskState.DONE:
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 # HATS-596: plumb `force` so a corrective `transition done
