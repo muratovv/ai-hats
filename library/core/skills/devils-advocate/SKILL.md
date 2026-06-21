@@ -51,6 +51,11 @@ Run the 4-step method on the plan's core value claim:
      a simpler problem underneath this one?
    - **Another way?** Is there a cheaper / smaller / already-built path to the
      same value? (Reuse over new code, config over feature, doc over tool.)
+     **Make this probe empirical, not rhetorical:** a claimed consumer or
+     capability is a *hypothesis* — before assuming new code is needed, run the
+     cheapest disconfirming PoC: `grep` the engine / codebase for machinery that
+     already covers it. ("Is the wt-close gate already enforced?" → one grep for
+     `_check_clean` answered yes — but only at S6, after the build, not at S0.)
 4. **Assess impact.** If a counter holds, what changes? Resolve explicitly —
    **proceed** (counter doesn't hold, say why), **descope**, **redirect**, or
    **drop**. Record the resolution so a reviewer sees the decision, not just the
@@ -80,10 +85,12 @@ rationalizations that precede a skipped or hollow counter:
 | "This is obviously worth doing — write N/A" | Reflex `N/A` on a non-trivial plan is the exact failure this stage prevents; a steelman + one real counter costs little |
 | "I already know the answer is proceed" | Then *record* the counter you considered and why it fails — a resolution, not a skipped step |
 | "Questioning it now will just slow us down" | Redirecting before execute is cheap; rebuilding after shipping the wrong thing is not |
+| "This counter already ran at authoring — no need to re-run" (on a resumed / bounced / premise-changed plan) | The premise that changed is exactly what the prior counter never tested; a resumed plan gets a fresh counter scoped to what moved (see `rule_backlog_discipline §6` — a retracted premise bounces the task back here) |
 
 **Red-flag words in your own reasoning:** "obviously", "clearly worth it", "no
-point questioning", "we already decided". Any of these → write a real steelman →
-assumption → counter → impact, even when the impact is *proceed*.
+point questioning", "we already decided", "already decided at authoring", "still
+ready to implement". Any of these → write a real steelman → assumption → counter →
+impact, even when the impact is *proceed*.
 (Rationalization-table discipline adapted from obra/superpowers, MIT.)
 
 ## Anti-Patterns
