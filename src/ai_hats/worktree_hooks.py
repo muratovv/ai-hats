@@ -39,7 +39,14 @@ logger = logging.getLogger(__name__)
 WT_HOOK_TIMEOUT_S: float = 45.0
 _TIMEOUT_ENV = "AI_HATS_WT_HOOK_TIMEOUT_S"
 
-assert WT_HOOK_TIMEOUT_S < LIFECYCLE_LOCK_TIMEOUT  # invariant guard (D7)
+# Load-bearing D7 invariant (explicit raise, not assert — survives ``python -O``):
+# the default hook budget MUST stay under the lifecycle-lock timeout so a hung
+# hook times out before a peer waiting on the lock mis-blames a concurrent op.
+if WT_HOOK_TIMEOUT_S >= LIFECYCLE_LOCK_TIMEOUT:  # pragma: no cover - config guard
+    raise RuntimeError(
+        f"WT_HOOK_TIMEOUT_S ({WT_HOOK_TIMEOUT_S}) must be < "
+        f"LIFECYCLE_LOCK_TIMEOUT ({LIFECYCLE_LOCK_TIMEOUT})"
+    )
 
 
 def resolve_hook_timeout() -> float:

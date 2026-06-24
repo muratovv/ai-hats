@@ -491,6 +491,26 @@ class SkillMetadata(_YamlModel):
                         on = WT_TEARDOWN_EVENTS
                 parsed.append({"script": str(row["script"]), "on": on})
             normalized[kind] = parsed
+
+        # Materialized filename is ``<skill>-<basename>`` (managed_wt_hook_
+        # filename), so two DISTINCT scripts sharing a basename would overwrite
+        # each other on disk and cross-wire which hook runs — a silent data-loss
+        # hole. The same script reused across kinds (one file, wt_in + wt_out) is
+        # fine. Mirrors the runtime_hooks basename guard.
+        basename_source: dict[str, str] = {}
+        for rows in normalized.values():
+            for row in rows:
+                base = Path(str(row["script"])).name
+                prior = basename_source.get(base)
+                if prior is not None and prior != row["script"]:
+                    raise ValueError(
+                        f"skill {skill_name!r}: worktree scripts {prior!r} and "
+                        f"{row['script']!r} share basename {base!r} — they would "
+                        f"collide on the materialized filename; give them distinct "
+                        f"basenames"
+                    )
+                basename_source[base] = str(row["script"])
+
         data["worktree"] = normalized
         return data
 
