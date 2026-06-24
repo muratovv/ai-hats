@@ -1,5 +1,0 @@
-name: clean-architecture-guide
-description: Audit a codebase for DDD/Hexagonal/Ports-and-Adapters compliance
-author: ai-hats
-tags: [architecture, ddd, hexagonal, clean-architecture]
-pattern: checklist

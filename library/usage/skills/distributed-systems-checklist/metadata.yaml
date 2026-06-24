@@ -1,5 +1,0 @@
-name: distributed-systems-checklist
-description: Audit distributed services against the 8 fallacies + CAP trade-off
-author: ai-hats
-tags: [architecture, operations, distributed, verification]
-pattern: checklist
