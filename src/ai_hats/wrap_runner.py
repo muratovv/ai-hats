@@ -31,6 +31,8 @@ from .runtime_common import (
     _scan_escape,
     _cleanup_session_cache,
     _print_session_start,
+    _print_startup_warnings,
+    _startup_hold_seconds,
     _composition_snapshot,
     _print_session_end,
     _finalize_session_basic,
@@ -51,7 +53,7 @@ class WrapRunner:
         self.assembler = Assembler(project_dir)
         self.session_mgr = SessionManager(project_dir)
 
-    def _resync_git_hooks(self, session: Session | None = None) -> None:
+    def _resync_git_hooks(self, session: Session | None = None) -> str | None:
         """Re-heal git-hook drift at session start (HATS-593 layer B).
 
         Re-homed in HATS-707 from the maintainer's
@@ -62,13 +64,55 @@ class WrapRunner:
         ``Assembler.sync_hooks()`` is idempotent, skips a non-git / role-less
         project, and refuses on a stale binary. Fail-open: a best-effort
         drift-heal must never block session start.
+
+        HATS-825: on failure, returns a summary and traces it (was stderr-only,
+        which the TUI clobbers); ``None`` on success.
         """
         try:
             res = self.assembler.sync_hooks()
             if session is not None:
                 session.log_trace(TraceTag.SYS, f"git-hook resync: {res.status}")
-        except Exception:
+            return None
+        except Exception as exc:
             logger.warning("git-hook resync at session start failed", exc_info=True)
+            summary = f"git-hook resync failed: {type(exc).__name__}: {exc}"
+            if session is not None:
+                session.log_trace(TraceTag.SYS, f"git-hook resync FAILED — {summary}")
+            return summary
+
+    def _hold_before_launch(self, startup_warnings: list[str]) -> None:
+        """Hold the start banner briefly before the wrapped TUI spawns (HATS-825).
+
+        ``1s`` clean / ``10s`` when a startup step warned; no hold on a non-tty
+        (policy in :func:`_startup_hold_seconds`). Ctrl-C during the hold prints
+        an abort note and propagates — ``run()``'s ``KeyboardInterrupt`` handler
+        turns it into a clean exit (130) that finalizes the session and never
+        spawns the CLI.
+        """
+        delay = _startup_hold_seconds(bool(startup_warnings), is_tty=sys.stdin.isatty())
+        if delay <= 0:
+            return
+        if startup_warnings:
+            _print_startup_warnings(startup_warnings)
+        try:
+            self._sleep_countdown(delay, announce=bool(startup_warnings))
+        except KeyboardInterrupt:
+            print("\n\033[1;31m  launch aborted\033[0m")
+            raise
+
+    @staticmethod
+    def _sleep_countdown(seconds: float, *, announce: bool) -> None:
+        """Sleep ``seconds``; when ``announce``, show a live 1-Hz countdown."""
+        whole = int(seconds)
+        if not announce or whole <= 0:
+            time.sleep(seconds)
+            return
+        for remaining in range(whole, 0, -1):
+            sys.stdout.write(f"\r\033[2m  starting in {remaining}s — Ctrl-C to abort \033[0m")
+            sys.stdout.flush()
+            time.sleep(1)
+        sys.stdout.write("\r\033[2K")  # wipe the countdown line before the TUI
+        sys.stdout.flush()
 
     def run(
         self,
@@ -165,7 +209,12 @@ class WrapRunner:
         # HATS-707: in-session git-hook drift net (HATS-593 layer B), re-homed
         # from the dead lifecycle ``hooks:`` channel to a direct sync_hooks()
         # call. Fail-open; idempotent no-op when hooks are already in sync.
-        self._resync_git_hooks(session)
+        # HATS-825: collect fail-open startup warnings so the pre-launch hold
+        # can surface them before the TUI clobbers the scrollback.
+        startup_warnings: list[str] = []
+        resync_warning = self._resync_git_hooks(session)
+        if resync_warning:
+            startup_warnings.append(resync_warning)
 
         # Build CLI command with session ID for JSONL linkage
         claude_session_id = str(uuid.uuid4())
@@ -196,8 +245,11 @@ class WrapRunner:
             from .pipeline.loader import load_core_pipeline
 
             load_core_pipeline("finalize-hitl")
-        except Exception:
+        except Exception as exc:
             logger.warning("finalize-hitl preload failed", exc_info=True)
+            summary = f"finalize-hitl preload failed: {type(exc).__name__}: {exc}"
+            session.log_trace(TraceTag.SYS, f"finalize-hitl preload FAILED — {summary}")
+            startup_warnings.append(summary)
 
         from . import __version__
 
@@ -224,6 +276,10 @@ class WrapRunner:
         tracer = SidecarTracer(session)
         exit_code = 130  # canonical SIGINT default if _pty_spawn raises pre-assignment
         try:
+            # HATS-825: brief pre-launch hold so the start banner + any
+            # fail-open startup warning are readable before the TUI clobbers
+            # them. Ctrl-C here aborts the launch (caught below → exit 130).
+            self._hold_before_launch(startup_warnings)
             exit_code = self._pty_spawn(cmd, env, tracer)
         except KeyboardInterrupt:
             exit_code = 130
