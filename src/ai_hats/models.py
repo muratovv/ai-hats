@@ -24,6 +24,7 @@ from pydantic import (
 )
 
 from .frontmatter import read_frontmatter
+from .skill_sidecar import leftover_sidecar_remedy
 from .utils.atomic_io import atomic_write_text
 
 logger = logging.getLogger(__name__)
@@ -389,11 +390,9 @@ class SkillMetadata(_YamlModel):
             if isinstance(raw, dict):
                 leaked = [k for k in ("git_hooks", "runtime_hooks") if raw.get(k)]
                 if leaked:
+                    # Remedy single-sourced with the HATS-815 bump diagnostic.
                     raise LeftoverSidecarHooksError(
-                        f"skill {skill_dir.name!r}: metadata.yaml still carries "
-                        f"hook key(s) {leaked} — move them to SKILL.md frontmatter "
-                        f"under the top-level 'ai_hats:' key and delete "
-                        f"metadata.yaml (HATS-814 cutover)"
+                        leftover_sidecar_remedy(skill_dir.name, leaked)
                     )
         fm = read_frontmatter(skill_dir / "SKILL.md")
         ai_hats = fm.get("ai_hats")

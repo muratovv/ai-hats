@@ -973,6 +973,7 @@ class Assembler:
         """
         self._warn_orphan_user_level_managed_skills()
         self._note_empty_legacy_agent_dir()
+        self._warn_leftover_hook_sidecars()
 
     def _note_empty_legacy_agent_dir(self) -> None:
         """HATS-317: print a NOTE if `.agent/` only holds the managed `ai-hats/`.
@@ -1846,6 +1847,38 @@ class Assembler:
             file=sys.stderr,
         )
         return True
+
+    def _warn_leftover_hook_sidecars(self) -> bool:
+        """HATS-815: WARN per skill still shipping a hook-bearing metadata.yaml.
+
+        Proactive companion to the 814 compose-guard
+        (:class:`~ai_hats.models.LeftoverSidecarHooksError`): scans every
+        resolved library layer (``self.library_paths``) and names each skill
+        whose ``metadata.yaml`` still carries ``git_hooks`` / ``runtime_hooks``,
+        with the migrate-by-hand remedy. Where the guard hard-fails the FIRST
+        such skill it composes mid-session, this lists ALL of them at bump time
+        — including library skills the active role does not compose, which the
+        guard never reaches.
+
+        Detection only — never rewrites or deletes (supervisor: the user
+        migrates by hand). It lives here, in :meth:`_run_diagnostics`, not the
+        one-shot migration registry, so it re-fires on every user-initiated
+        bump until fixed and stays silent on per-session ``set_role``.
+
+        Returns ``True`` when a WARN was emitted (test seam).
+        """
+        from .skill_sidecar import (
+            leftover_sidecar_remedy,
+            scan_leftover_hook_sidecars,
+        )
+
+        findings = scan_leftover_hook_sidecars(self.library_paths)
+        for finding in findings:
+            print(
+                f"[ai-hats] WARN: {leftover_sidecar_remedy(finding.name, finding.keys)}",
+                file=sys.stderr,
+            )
+        return bool(findings)
 
     def relocate(self, new_dir: str) -> "RelocationResult":
         """Move the framework dir to ``new_dir`` (logic in relocation.py, HATS-715)."""
