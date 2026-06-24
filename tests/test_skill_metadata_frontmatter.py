@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.models import LeftoverSidecarHooksError, SkillMetadata
+from ai_hats.skill_sidecar import leftover_sidecar_remedy
 
 
 def _skill(tmp_path: Path, frontmatter: str, *, sidecar: str | None = None) -> Path:
@@ -92,6 +93,19 @@ def test_leftover_sidecar_with_runtime_hooks_raises(tmp_path: Path) -> None:
     )
     with pytest.raises(LeftoverSidecarHooksError):
         SkillMetadata.from_skill_dir(d)
+
+
+def test_guard_message_single_sourced_with_remedy_helper(tmp_path: Path) -> None:
+    # R4: the hard-fail guard and the 815 proactive WARN share one remedy
+    # string — byte-identical, no drift.
+    d = _skill(
+        tmp_path,
+        "---\nname: demo\n---\n# Demo\n",
+        sidecar="name: demo\ngit_hooks:\n  pre-commit:\n    - git_hooks/check.sh\n",
+    )
+    with pytest.raises(LeftoverSidecarHooksError) as exc:
+        SkillMetadata.from_skill_dir(d)
+    assert str(exc.value) == leftover_sidecar_remedy("demo", ["git_hooks"])
 
 
 def test_absent_skill_md_empty_hooks(tmp_path: Path) -> None:
