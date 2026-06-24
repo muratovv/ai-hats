@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import abc
 import json
+import logging
 import shutil
 from pathlib import Path
 
@@ -22,6 +23,8 @@ from .placeholders import expand_path_placeholders
 from .resolver import read_rule_body
 from .role_catalog import expand_role_catalog
 
+
+logger = logging.getLogger(__name__)
 
 INJECTION_START = "<!-- AI-HATS:START -->"
 INJECTION_END = "<!-- AI-HATS:END -->"
@@ -63,14 +66,19 @@ ALWAYS_ON_RULES = {
 def _extract_frontmatter_description(skill: ResolvedComponent) -> str:
     """Extract ``description`` from a skill's SKILL.md frontmatter, else its name.
 
-    Best-effort lookup for the prompt-build skill index: a malformed frontmatter
-    block falls back to the skill name rather than crashing the whole prompt
-    build (the loud :class:`FrontmatterError` contract is consumed raw by the
-    hook-reading path in HATS-814, where a silent drop is a security hole).
+    Best-effort: a malformed block warns and falls back to the name rather than
+    crashing the prompt build for one skill — the loud raise is the hook path's
+    job (HATS-814).
     """
     try:
         data = read_frontmatter(skill.source_path / "SKILL.md")
-    except FrontmatterError:
+    except FrontmatterError as exc:
+        logger.warning(
+            "skill %r: malformed SKILL.md frontmatter; using name in the skill "
+            "index: %s",
+            skill.name,
+            exc,
+        )
         return skill.name
     desc = data.get("description")
     return desc if isinstance(desc, str) and desc else skill.name

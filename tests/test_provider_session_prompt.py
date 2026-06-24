@@ -13,6 +13,7 @@ Coverage:
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from pathlib import Path
@@ -385,10 +386,24 @@ def test_extract_description_reads_frontmatter(tmp_path):
     assert _extract_frontmatter_description(skill) == "the doc skill"
 
 
-def test_extract_description_malformed_falls_back_to_name(tmp_path):
-    """A broken frontmatter block must not raise on the prompt-build path."""
+def test_extract_description_malformed_warns_then_falls_back(tmp_path, caplog):
+    """A broken frontmatter block must not raise on the prompt-build path — but
+    the malformed state is logged (observable), NOT silently collapsed into the
+    same path as a skill that merely declares no description."""
     skill = _skill_on_disk(tmp_path, "broken", "---\nbad: : indent\n---\nbody\n")
-    assert _extract_frontmatter_description(skill) == "broken"
+    with caplog.at_level(logging.WARNING, logger="ai_hats.providers"):
+        assert _extract_frontmatter_description(skill) == "broken"
+    assert "malformed" in caplog.text
+    assert "broken" in caplog.text
+
+
+def test_extract_description_absent_key_is_silent(tmp_path, caplog):
+    """The contrast: a valid block with no description falls back to the name
+    WITHOUT a warning — only the malformed state is noisy."""
+    skill = _skill_on_disk(tmp_path, "quiet", "---\nname: quiet\n---\nbody\n")
+    with caplog.at_level(logging.WARNING, logger="ai_hats.providers"):
+        assert _extract_frontmatter_description(skill) == "quiet"
+    assert caplog.text == ""
 
 
 def test_extract_description_missing_falls_back_to_name(tmp_path):
