@@ -1,6 +1,16 @@
 ---
 name: maintainer-quality-gate
 description: Maintainer-only quality gates — pre-push e2e+smoke when pushing to master
+ai_hats:
+  # HATS-550 / HATS-686 — hook-carrier skill. The assembler installs the
+  # dual-mode pre-push script into `.githooks/pre-push.d/` at composition
+  # time. Default (git pre-push): INSTANT pass-marker check keyed to the
+  # pushed master local_sha. `--run` (scripts/run-e2e-gate.sh): runs the
+  # ~27-min suite out of band and writes the marker on pass + clean tree.
+  # Hard gate: no env-var bypass; `git push --no-verify` is the only escape.
+  git_hooks:
+    pre-push:
+      - git_hooks/pre-push-e2e-master.sh
 ---
 # maintainer-quality-gate
 

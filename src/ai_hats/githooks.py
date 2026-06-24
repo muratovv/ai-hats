@@ -25,7 +25,8 @@ GITHOOKS_DISPATCHER_TEMPLATE = Path(__file__).parent / "templates" / "githooks" 
 def install_git_hooks(project_dir: Path, result: CompositionResult) -> None:
     """Install git hooks declared by composed skills.
 
-    Skills declare hooks in their `metadata.yaml` under `git_hooks:`.
+    Skills declare hooks in their `SKILL.md` frontmatter under the top-level
+    `ai_hats.git_hooks:` key (HATS-814).
     Each declared script is copied into `.githooks/<event>.d/<skill>-<basename>`,
     a dispatcher script is generated at `.githooks/<event>`, and
     `core.hooksPath` is set to `.githooks` (idempotently).
@@ -106,8 +107,7 @@ def _collect_skill_git_hooks(
     """
     collected: dict[str, list[tuple[str, str]]] = {}
     for skill in result.skills:
-        metadata_path = skill.source_path / "metadata.yaml"
-        metadata = SkillMetadata.from_yaml(metadata_path)
+        metadata = SkillMetadata.from_skill_dir(skill.source_path)
         if not metadata.git_hooks:
             continue
         for event, scripts in metadata.git_hooks.items():

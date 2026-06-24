@@ -23,6 +23,7 @@ from pydantic import (
     model_validator,
 )
 
+from .frontmatter import read_frontmatter
 from .utils.atomic_io import atomic_write_text
 
 logger = logging.getLogger(__name__)
@@ -213,8 +214,19 @@ class RuntimeHook(_YamlModel):
     script: str
 
 
+class LeftoverSidecarHooksError(RuntimeError):
+    """A skill still ships a ``metadata.yaml`` carrying hook keys after the
+    frontmatter cutover (HATS-814).
+
+    The engine reads ``git_hooks`` / ``runtime_hooks`` from ``SKILL.md``
+    frontmatter top-level ``ai_hats:`` now; a leftover hook-bearing sidecar would
+    be *silently ignored* — a guard that stops materializing is a security
+    regression. We fail loud instead, naming the skill + keys + remedy.
+    """
+
+
 class SkillMetadata(_YamlModel):
-    """Parsed metadata.yaml for a skill.
+    """Skill hook wiring, read from ``SKILL.md`` frontmatter top-level ``ai_hats:``.
 
     `git_hooks` lets a skill declare scripts that should be installed into
     the project's `.githooks/<event>.d/` during composition. Keys are git
@@ -349,6 +361,52 @@ class SkillMetadata(_YamlModel):
         if not path.exists():
             return cls()
         return cls.model_validate(yaml.safe_load(path.read_text()) or {})
+
+    @classmethod
+    def from_skill_dir(cls, skill_dir: Path) -> SkillMetadata:
+        """Build from ``SKILL.md`` frontmatter top-level ``ai_hats:`` (HATS-814).
+
+        Hook wiring lives under a top-level ``ai_hats:`` frontmatter key
+        (governance: ``ai_hats`` = framework hook wiring ONLY, never prose).
+        It is NOT nested under ``metadata:`` — the Agent-Skills ``metadata``
+        field is a flat ``map<string,string>`` (agnix rejects nested values
+        there), and ``metadata:`` is not even a Claude Code frontmatter field.
+        The harness strips frontmatter and ignores unknown keys, so this key
+        has zero context cost. Malformed frontmatter propagates
+        ``FrontmatterError`` — a silent drop on the hook path is a security hole.
+
+        **Cutover guard:** a leftover ``metadata.yaml`` carrying truthy hook
+        keys raises :class:`LeftoverSidecarHooksError`. A hookless leftover
+        sidecar is tolerated (ignored) — external libraries the engine cannot
+        atomically rewrite must keep composing.
+        """
+        sidecar = skill_dir / "metadata.yaml"
+        if sidecar.is_file():
+            try:
+                raw = yaml.safe_load(sidecar.read_text()) or {}
+            except yaml.YAMLError:
+                raw = {}
+            if isinstance(raw, dict):
+                leaked = [k for k in ("git_hooks", "runtime_hooks") if raw.get(k)]
+                if leaked:
+                    raise LeftoverSidecarHooksError(
+                        f"skill {skill_dir.name!r}: metadata.yaml still carries "
+                        f"hook key(s) {leaked} — move them to SKILL.md frontmatter "
+                        f"under the top-level 'ai_hats:' key and delete "
+                        f"metadata.yaml (HATS-814 cutover)"
+                    )
+        fm = read_frontmatter(skill_dir / "SKILL.md")
+        ai_hats = fm.get("ai_hats")
+        if not isinstance(ai_hats, dict):
+            ai_hats = {}
+        name = fm.get("name")
+        return cls.model_validate(
+            {
+                "name": name if isinstance(name, str) else "",
+                "git_hooks": ai_hats.get("git_hooks") or {},
+                "runtime_hooks": ai_hats.get("runtime_hooks") or {},
+            }
+        )
 
 
 # ----- Overlays + feedback config -----

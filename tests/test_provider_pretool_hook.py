@@ -37,22 +37,24 @@ def _settings(project: Path) -> dict:
 def _skill_with_runtime_hooks(
     base: Path, name: str, hooks: dict[str, list[tuple[str, str]]]
 ) -> ResolvedComponent:
-    """Skill dir with metadata.yaml declaring runtime_hooks + real scripts.
+    """Skill dir whose SKILL.md frontmatter declares runtime_hooks under
+    top-level ``ai_hats:`` (HATS-814) + materializes the hook scripts.
 
     ``hooks`` maps event -> list of (matcher, script_relpath).
     """
     skill_dir = base / name
     skill_dir.mkdir(parents=True, exist_ok=True)
-    lines = [f"name: {name}", "runtime_hooks:"]
+    lines = ["---", f"name: {name}", "ai_hats:", "  runtime_hooks:"]
     for event, rows in hooks.items():
-        lines.append(f"  {event}:")
+        lines.append(f"    {event}:")
         for matcher, script in rows:
-            lines.append(f"    - matcher: {matcher}")
-            lines.append(f"      script: {script}")
+            lines.append(f"      - matcher: {matcher}")
+            lines.append(f"        script: {script}")
             sp = skill_dir / script
             sp.parent.mkdir(parents=True, exist_ok=True)
             sp.write_text("#!/usr/bin/env bash\nexit 0\n")
-    (skill_dir / "metadata.yaml").write_text("\n".join(lines) + "\n")
+    lines += ["---", f"# {name}"]
+    (skill_dir / "SKILL.md").write_text("\n".join(lines) + "\n")
     return ResolvedComponent(
         name=name, component_type=ComponentType.SKILL, source_path=skill_dir
     )

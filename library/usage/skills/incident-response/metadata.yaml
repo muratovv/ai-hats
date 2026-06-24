@@ -1,5 +1,0 @@
-name: incident-response
-description: Structured procedure for investigating and resolving production incidents
-author: ai-hats
-tags: [operations, reliability, incident]
-pattern: protocol
