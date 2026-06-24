@@ -141,6 +141,9 @@ def test_save_skips_empty_overlays_in_yaml(tmp_path: Path):
 
 
 def test_default_path_points_to_home(monkeypatch, tmp_path: Path):
+    # Exercise the Path.home() fallback: clear the autouse AI_HATS_USER_HOME
+    # pin (HATS-814) which otherwise takes precedence in user_home().
+    monkeypatch.delenv("AI_HATS_USER_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
     expected = tmp_path / ".ai-hats" / "customizations.yaml"
     assert UserConfig.default_path() == expected

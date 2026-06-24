@@ -26,6 +26,8 @@ def isolated_home(monkeypatch, tmp_path: Path):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    # user_home() prefers AI_HATS_USER_HOME over Path.home() (HATS-822).
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(home))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     return home
 
