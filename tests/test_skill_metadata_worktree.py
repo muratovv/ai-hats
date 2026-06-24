@@ -163,6 +163,46 @@ def test_wt_in_with_on_warns_and_is_cleared(tmp_path: Path) -> None:
     assert md.worktree.wt_in[0].on == ()
 
 
+def test_distinct_scripts_sharing_basename_raise(tmp_path: Path) -> None:
+    # Two distinct scripts with the same basename collide on the materialized
+    # filename (<skill>-<basename>) — fail loud, like runtime_hooks.
+    d = _skill(
+        tmp_path,
+        "---\n"
+        "name: demo\n"
+        "ai_hats:\n"
+        "  worktree:\n"
+        "    wt_in:\n"
+        "      - script: a/run.sh\n"
+        "    wt_out:\n"
+        "      - script: b/run.sh\n"
+        "---\n"
+        "# Demo\n",
+    )
+    with pytest.raises(ValueError, match="basename"):
+        SkillMetadata.from_skill_dir(d)
+
+
+def test_same_script_reused_across_kinds_ok(tmp_path: Path) -> None:
+    # One file used for both wt_in and wt_out is fine (single materialized file).
+    d = _skill(
+        tmp_path,
+        "---\n"
+        "name: demo\n"
+        "ai_hats:\n"
+        "  worktree:\n"
+        "    wt_in:\n"
+        "      - script: hooks/run.sh\n"
+        "    wt_out:\n"
+        "      - script: hooks/run.sh\n"
+        "---\n"
+        "# Demo\n",
+    )
+    md = SkillMetadata.from_skill_dir(d)  # must not raise
+    assert md.worktree.wt_in[0].script == "hooks/run.sh"
+    assert md.worktree.wt_out[0].script == "hooks/run.sh"
+
+
 def test_no_worktree_block_empty_carry(tmp_path: Path) -> None:
     d = _skill(tmp_path, "---\nname: demo\ndescription: x\n---\n# Demo\n")
     md = SkillMetadata.from_skill_dir(d)
