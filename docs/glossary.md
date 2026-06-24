@@ -85,16 +85,17 @@ manifest entry; the only legal path is the CLI.
 
 The feedback loop that turns session evidence plus active HYP / open PROP into actionable items. CLI subcommand ↔ spawned role:
 
-| CLI subcommand | Spawned role | Mode | Purpose |
-| --- | --- | --- | --- |
-| `ai-hats reflect session` | `session-reviewer` | non-interactive | Per-session retrospective: HYP verdicts + PROP-on-self-problem. Auto on `session_end` (policy `always` / `smart`) or on demand. |
-| `ai-hats reflect hypothesis` | `judge-auditor` then `judge` | autopilot + HITL (two-phase) | Bulk triage: Phase 1 (`judge-auditor`, headless, read-only) produces a draft; Phase 2 (`judge`, HITL) discusses + ack's mutations. `--headless` runs Phase 1 only (CI / cron-safe). HATS-513 / ADR-0007. |
-| `ai-hats reflect all` | `judge` | interactive (HITL) | Deprecated — single-phase bulk triage with runtime mode-switch in the protocol skill. Kept for one bake cycle while `reflect hypothesis` rolls out; removal tracked as a follow-up task. |
-| `ai-hats reflect role <target>` | `auditor-for-role` then `judge-for-role` | autopilot + optional HITL | Coherence audit of a single role: autopilot pass first, then interactive review. |
-| `ai-hats reflect roles` | `judge-for-role` * | per-role HITL | Bulk role audit — spawns one session per project role. |
-| `ai-hats reflect issue` | (no role) | non-interactive | Log a supervisor observation as a new HYP, or merge into an active one. |
+| CLI subcommand                  | Spawned role                             | Mode                         | Purpose                                                                                                                                                                                                  |
+| ------------------------------- | ---------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ai-hats reflect session`       | `session-reviewer`                       | non-interactive              | Per-session retrospective: HYP verdicts + PROP-on-self-problem. Auto on `session_end` (policy `always` / `smart`) or on demand.                                                                          |
+| `ai-hats reflect hypothesis`    | `judge-auditor` then `judge`             | autopilot + HITL (two-phase) | Bulk triage: Phase 1 (`judge-auditor`, headless, read-only) produces a draft; Phase 2 (`judge`, HITL) discusses + ack's mutations. `--headless` runs Phase 1 only (CI / cron-safe). HATS-513 / ADR-0007. |
+| `ai-hats reflect all`           | `judge`                                  | interactive (HITL)           | Deprecated — single-phase bulk triage with runtime mode-switch in the protocol skill. Kept for one bake cycle while `reflect hypothesis` rolls out; removal tracked as a follow-up task.                 |
+| `ai-hats reflect role <target>` | `auditor-for-role` then `judge-for-role` | autopilot + optional HITL    | Coherence audit of a single role: autopilot pass first, then interactive review.                                                                                                                         |
+| `ai-hats reflect roles`         | `judge-for-role` *                       | per-role HITL                | Bulk role audit — spawns one session per project role.                                                                                                                                                   |
+| `ai-hats reflect issue`         | (no role)                                | non-interactive              | Log a supervisor observation as a new HYP, or merge into an active one.                                                                                                                                  |
 
 **Naming note:** Two-phase pairs are symmetric:
+
 - Backlog triage: `judge-auditor` (L0, read-only audit) → `judge` (L1, HITL + ack'd mutations). Entry: `ai-hats reflect hypothesis`.
 - Role coherence: `auditor-for-role` (L0, non-interactive coherence pass) → `judge-for-role` (L1, interactive review). Entry: `ai-hats reflect role`.
 
@@ -167,16 +168,25 @@ Two visually similar blocks fire at the end of a [Session](#session). Use these 
 The name (or names) of the branch that worktrees are expected to be created from and merged back into. Hardcoded to `master` and `main`, in that priority order (HATS-518); the first one that actually exists in the repo is the comparison target.
 
 - **Why it matters.** `WorktreeManager.create()` captures whatever branch the main repo's HEAD currently points at as the worktree's `_original_branch` — and that is the branch `ai-hats wt merge` later lands commits on. Two silent-wrong-branch failure modes:
-    - *Create-time.* Operator parks the main repo on a feature branch before `wt create` / `task transition <ID> execute`. The worktree quietly inherits that branch as its merge target; CLI reports "merged" while master never sees the work.
-    - *Merge-time.* Even when create-time HEAD was on a canonical base, the main-repo HEAD can wander off `_original_branch` between create and merge — manual `git checkout`, IDE branch-switch, a peer agent operating directly in the main repo without a linked worktree. `_fast_forward_merge` / `_squash_merge` run `git merge` in the main-repo cwd, so the merge lands on whatever branch is currently checked out — not on `_original_branch`.
+  - *Create-time.* Operator parks the main repo on a feature branch before `wt create` / `task transition <ID> execute`. The worktree quietly inherits that branch as its merge target; CLI reports "merged" while master never sees the work.
+  - *Merge-time.* Even when create-time HEAD was on a canonical base, the main-repo HEAD can wander off `_original_branch` between create and merge — manual `git checkout`, IDE branch-switch, a peer agent operating directly in the main repo without a linked worktree. `_fast_forward_merge` / `_squash_merge` run `git merge` in the main-repo cwd, so the merge lands on whatever branch is currently checked out — not on `_original_branch`.
 - **Create-time guard.** `assert_head_is_canonical_base()` in `ai_hats.worktree` refuses both `wt create` and `task transition execute` when HEAD is not on a canonical base (HATS-518) — raises `WorktreeBaseBranchError`. Detached HEAD, non-git directories, and exotic repos that have neither `master` nor `main` are passed through (no canon to compare against).
 - **Merge-time guard.** `WorktreeManager.merge()` refuses when `git rev-parse --abbrev-ref HEAD != self._original_branch` (HATS-533) — raises `WorktreeBaseBranchMismatchError` BEFORE any mutation. Positioned ahead of `_check_clean` / `_check_drift`: with HEAD wrong, drift is asking the wrong question. No-op for legacy states where `_original_branch is None`.
 - **Recovery (both guards).** `git checkout <expected>` in the main repo, then retry. No work lost in either case, but the surfaces differ:
-    - *Create-time refusal* (HATS-518) — no worktree exists yet; the refusal aborts before `git worktree add` runs. Retry creates the worktree fresh once HEAD is on a canonical base.
-    - *Merge-time refusal* (HATS-533) — the worktree dir and worktree branch are preserved untouched; the refusal happens before `_check_clean` / `_check_drift` / the actual `git merge`. Retry from the corrected HEAD finishes the merge as if the refusal hadn't happened.
-  Both CLI surfaces (direct `wt merge` and `task transition done`) emit a copy-pasteable recipe.
+  - *Create-time refusal* (HATS-518) — no worktree exists yet; the refusal aborts before `git worktree add` runs. Retry creates the worktree fresh once HEAD is on a canonical base.
+  - *Merge-time refusal* (HATS-533) — the worktree dir and worktree branch are preserved untouched; the refusal happens before `_check_clean` / `_check_drift` / the actual `git merge`. Retry from the corrected HEAD finishes the merge as if the refusal hadn't happened.
+    Both CLI surfaces (direct `wt merge` and `task transition done`) emit a copy-pasteable recipe.
 - **`--force` / `--accept-drift` do NOT bypass either guard.** `--force` is the dirty-worktree consent; `--accept-drift` is the moved-base consent. Neither addresses wrong-branch protection — three independent safety contracts, three independent flags.
 - **Not configurable.** Hardcoded two-name list, no override flag. If a project needs a different base, raise a ticket with the second use case — until then, KISS / design-minimalism.
+
+## Worktree data-transfer
+
+The mechanism by which **gitignored** data crosses the `ai-hats wt` boundary in either direction — **carry-in** (seeded *into* a worktree at `wt create`) or **carry-out** (harvested *out of* a worktree before `wt merge` / `wt discard` teardown). Designed in ADR-0012 (HATS-821); gates HATS-775 (carry-in) + HATS-818 (carry-out).
+
+- **Why it matters.** `WorktreeManager.create()` populates a worktree only from the base branch's *tracked* git state (`git worktree add`, `src/ai_hats/worktree.py`), so anything gitignored is, by default, absent on entry **and** destroyed on teardown. Confirmed loss: a supervisor's `.hunk/notes.json` review notes were silently deleted by `wt merge` (HATS-818) — `_check_clean` guards only *tracked* changes (`git status --porcelain`), so the gitignored sidecar is invisible to it.
+- **Hooks-first, tool-agnostic.** The primitive is a **worktree lifecycle hook** — a component-declared script run at `wt_in` (after create) or `wt_out` (before every teardown route), declared in `SKILL.md` frontmatter `ai_hats:` and collected/materialized exactly like `runtime_hooks` (`RuntimeHook`, HATS-597). ai-hats core hardcodes no tool-specific path: the `hunk-review-comments` skill ships a `wt_out` hook that runs the existing `hunk-notes.sh consume` (DOTS-157). The common path operations are sugar over a **built-in `capture` hook**: `seed_in: [{path, mode}]` and `harvest_out: [{path, on, guard}]`.
+- **Resolution kinds.** seed (`wt_in`): **copy** by default (a per-worktree copy keeps worktrees isolated) or **reference** (read-only shared, for "I need the same file not a fork" — the tracker is served by the HATS-524 redirect, not a seed); write-through to a *mutable* shared dir (`.venv`/`node_modules`) is rejected (concurrent-worktree race). harvest (`wt_out`): **backup+guard** built-in (back up unconditionally, then refuse a non-empty teardown until drained or `--accept-harvest-loss`), or a **custom hook** (fail-closed: a non-zero exit aborts teardown). Two kinds are *not* mechanism cases: **redirect-or-none** (shared mutable state read in place via HATS-524) and **doc/convention-fix** (e.g. the editable-venv test trap, HATS-641).
+- **Security.** Arbitrary scripts run at lifecycle boundaries → same trust model as `runtime_hooks` (composed-only, materialized, logged, not sandboxed). Built-in seeds only gitignored paths, re-checked at merge (an agent can `git add -f`); credential files (HATS-776) are excluded from built-in harvest backups; built-in backups land gitignored under `.agent/` keyed by `_state_key`, never `/tmp` or a tracked path.
 
 ## Git-hook surface
 
