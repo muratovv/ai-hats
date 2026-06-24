@@ -12,6 +12,43 @@ hardened after a failure-mode review (bounded timeout, fail-closed on every
 teardown with a single `--skip-hooks` escape, `IsolationMode.NONE` skip), see
 D4 + D7.
 
+## Revisions
+
+Two corrections landed at the HATS-823 implementation plan-gate (2026-06-24),
+approved by the supervisor. They amend — do not re-litigate — the decisions
+below:
+
+1. **`wt_in` / seed run AFTER `git worktree add`, not before (corrects D2/D7).**
+   The original "after `mkdtemp()`, before `git worktree add`" sequencing is
+   infeasible: `git worktree add` refuses a non-empty target directory (verified,
+   git 2.50; even `--force`), so any pre-add seed breaks worktree creation. The
+   hook therefore runs once the checkout exists; gitignored seed paths do not
+   collide with tracked files. The `wt_in` env contract is unchanged (read
+   sources from `$AI_HATS_PROJECT_DIR`, write into `$AI_HATS_WORKTREE_PATH`).
+2. **Mechanism task ships the hook primitive only; the built-in `capture` hook
+   moves to HATS-775 (revises Consequences "one mechanism task").** The single
+   day-one consumer (HATS-818) is a pure custom `wt_out` hook; the built-in
+   `capture` (declarative `seed_in` / `harvest_out`, copy/reference, backup+guard,
+   merge-time tracked-seed recheck, creds-exclusion) has **no** confirmed consumer
+   in the mechanism task — HATS-775 is the first task that needs declarative seed.
+   By design-minimalism, HATS-823 ships `wt_in`/`wt_out` custom-script hooks +
+   threading + fail-closed teardown + the execution contract (D7) + the trust
+   model (D5 for scripts); HATS-775 introduces the built-in `capture` (and decides
+   whether the path-list sugar is worth it vs a custom seed hook). `mode: reference`
+   is dropped from v1 (no consumer; the tracker shared-read need is already served
+   by HATS-524, row 6) and is reconsidered when a real read-only-shared case
+   appears. The schema in this ADR (`SeedRule`/`HarvestRule`, the path-list form)
+   is therefore HATS-775's deliverable; HATS-823 ships only the `WorktreeHook`
+   (custom-script) leaf + the `worktree` container.
+3. **Forward-compat of the carry frontmatter (refines the schema spec).** Leaf
+   records (`WorktreeHook`, and HATS-775's `SeedRule`/`HarvestRule`) use
+   `extra="forbid"` (fail-loud, mirroring `RuntimeHook`); the top-level
+   `worktree:` *container* uses `extra="ignore"` + a WARN on unknown keys, so a
+   newer skill declaring a future carry kind does not hard-fail composition on an
+   older engine (precedent: `HarnessConfig`). The sidecar leak-check
+   (`LeftoverSidecarHooksError`) is extended to catch `worktree` in a leftover
+   `metadata.yaml`.
+
 ## Context
 
 `ai-hats wt` gives each task or sub-agent its own branch + filesystem working
@@ -72,8 +109,10 @@ skill-scoped.
 
 A component declares **scripts to run at worktree lifecycle events**:
 
-- `wt_in` — runs after `tempfile.mkdtemp()`, before `git worktree add` completes
-  (seed phase).
+- `wt_in` — runs **after** `git worktree add` (the checked-out worktree exists;
+  gitignored seeds do not collide with tracked files). *(Corrected — see
+  [Revisions](#revisions); the original "before `git worktree add`" is infeasible:
+  git refuses a non-empty target dir.)*
 - `wt_out` — runs before `_remove_worktree()` on every teardown route: `merge()`,
   `discard()`, `cleanup()` (all `IsolationMode`s, incl. `BRANCH`), **and** the
   HATS-596 already-merged short-circuit.
@@ -238,9 +277,10 @@ NEEDS-REWORK on its absence). Each hook runs with:
   implementation task.
 - **`stdin` closed** (`DEVNULL`) and **`cwd = $AI_HATS_PROJECT_DIR`.** An
   interactive `read` fails fast instead of hanging; scripts use the `AI_HATS_*`
-  env paths, not ambient cwd. At `wt_in` time the worktree dir exists but is empty
-  (pre-`git worktree add`), so a `wt_in` script reads sources from
-  `$AI_HATS_PROJECT_DIR`, not `$AI_HATS_WORKTREE_PATH`.
+  env paths, not ambient cwd. At `wt_in` time the worktree holds the checked-out
+  tracked state (post-`git worktree add` — see [Revisions](#revisions)), so a
+  `wt_in` script reads sources from `$AI_HATS_PROJECT_DIR` and writes the
+  gitignored seed into `$AI_HATS_WORKTREE_PATH`.
 - **Bounded, captured output.** stdout/stderr stream to a size-capped managed log
   (`<ai_hats_dir>/sessions/worktrees/<_state_key>.logs/`); a runaway producer is
   terminated (counts as non-zero), never slurped into memory.
@@ -365,17 +405,20 @@ today omits the `.agent/`-is-main-repo-only rule (a gap the sweep confirmed).
 
 ## Consequences
 
-- **One mechanism task, several consumers.** A single
-  **mechanism-implementation task** (filed once this ADR is accepted —
-  "no child-tasks before design approval") owns: the frontmatter hook-schema
-  parse, the `composer`/`assembler` collection of the new hook kind, the
-  declaration→`create()` threading (D3), the `wt_in`/`wt_out` invocation sites on
-  all routes (D2/D4), the built-in `capture` hook (copy/reference seed,
-  backup+guard harvest), and the fail-closed teardown contract. HATS-818 then
-  ships a **custom `wt_out` hook** (run `hunk-notes.sh consume`) in
-  `hunk-review-comments`; HATS-775 ships **`seed_in` declarations**. Both depend
-  on the mechanism task. The `worktree-isolation` doc-fix (rows 8/9) and the creds
-  design (HATS-776) stay independent.
+- **Mechanism task ships the hook primitive; built-in `capture` ships with its
+  first consumer** (revised — see [Revisions](#revisions) #2). HATS-823 (the
+  mechanism task) owns: the `WorktreeHook` frontmatter parse, the
+  `composer`/`assembler` collection of the new hook kind, the declaration→`create()`
+  threading (D3), the `wt_in`/`wt_out` invocation sites on all routes (D2/D4), the
+  execution contract (D7), the trust model for scripts (D5), and the fail-closed
+  teardown. **HATS-775** then introduces the built-in `capture` hook (declarative
+  `seed_in`/`harvest_out`, copy seed, backup+guard harvest, merge-time tracked-seed
+  recheck, creds-exclusion) **and** its first `seed_in` declarations — i.e. it owns
+  the `SeedRule`/`HarvestRule` schema. **HATS-818** ships a **custom `wt_out` hook**
+  (run `hunk-notes.sh consume`) in `hunk-review-comments`. Both consumers depend on
+  the mechanism task; HATS-818 needs only the primitive, HATS-775 needs the
+  primitive + builds `capture` on it. The `worktree-isolation` doc-fix (rows 8/9)
+  and the creds design (HATS-776) stay independent.
 - **The hook executor ships from day one** (not deferred): the motivating HATS-818
   case *requires* the custom-hook path, so it is exercised end-to-end by the first
   consumer — which is why hooks-first passes design-minimalism (a concrete current
