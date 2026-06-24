@@ -145,6 +145,15 @@ def test_unknown_container_key_warns_and_is_ignored(tmp_path: Path) -> None:
     assert len(md.worktree.wt_out) == 1
 
 
+def test_on_yaml_true_key_restored_directly() -> None:
+    # PyYAML coerces bare `on:` to the boolean True key; the validator restores
+    # the string field even when the row is fed directly (not via YAML text).
+    md = SkillMetadata.model_validate(
+        {"name": "d", "worktree": {"wt_out": [{True: ["merge"], "script": "x.sh"}]}}
+    )
+    assert md.worktree.wt_out[0].on == ("merge",)
+
+
 def test_wt_in_with_on_warns_and_is_cleared(tmp_path: Path) -> None:
     d = _skill(
         tmp_path,

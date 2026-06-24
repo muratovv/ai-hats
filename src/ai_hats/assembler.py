@@ -1299,19 +1299,12 @@ class Assembler:
     def _materialize_worktree_hooks(
         self, result: "CompositionResult | None" = None
     ) -> None:
-        """Materialize skill-declared worktree-hook scripts to
+        """Materialize skill-declared wt_in/wt_out scripts to
         ``<ai_hats_dir>/library/wt-hooks/`` (HATS-823).
 
-        Mirrors :meth:`_materialize_pretooluse_hooks` (managed dir + ``.manifest``
-        + sweep) but has **no** package-data guards — only the ``wt_in`` /
-        ``wt_out`` scripts composed skills declare. Materialized like a runtime
-        hook so the worktree lifecycle can invoke an inspectable, logged copy
-        (ADR-0012 D5 trust model).
-
-        Managed-only and self-effacing: when nothing is declared *and* nothing
-        was managed before, this is a pure no-op — no dir, no manifest — so the
-        vast majority of projects (which declare no worktree hooks) stay clean.
-        A skill leaving the composition sweeps its script on the next pass.
+        Mirrors :meth:`_materialize_pretooluse_hooks` (managed dir + manifest +
+        sweep), minus the package-data guards. No-op (no dir) when nothing is or
+        was declared, so projects without worktree hooks stay clean.
         """
         target_dir = _wt_hooks_dir(self.project_dir)
         manifest_path = target_dir / ".manifest"
@@ -1339,7 +1332,7 @@ class Assembler:
                 pending.append((dest_name, src))
 
         if not new_names and not previous:
-            return  # nothing managed now or before — keep the project clean
+            return  # nothing now or before → no dir/manifest
 
         target_dir.mkdir(parents=True, exist_ok=True)
         for dest_name, src in pending:

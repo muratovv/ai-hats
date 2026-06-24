@@ -199,10 +199,7 @@ RUNTIME_HOOK_EVENTS: tuple[str, ...] = (
 )
 
 
-# Worktree teardown events a ``wt_out`` hook can bind to (HATS-823, ADR-0012).
-# ``wt_in`` fires once after ``git worktree add``; ``wt_out`` fires before
-# ``_remove_worktree`` on each of these routes (all also cover the HATS-596
-# already-merged short-circuit). An empty / unset ``on`` defaults to all routes.
+# Teardown routes a ``wt_out`` hook can bind to (HATS-823); empty `on` = all.
 WT_TEARDOWN_EVENTS: tuple[str, ...] = ("merge", "discard", "cleanup")
 
 
@@ -451,10 +448,7 @@ class SkillMetadata(_YamlModel):
             parsed: list[dict[str, Any]] = []
             for row in rows:
                 if isinstance(row, dict) and True in row and "on" not in row:
-                    # PyYAML (YAML 1.1) parses the bare key ``on:`` as boolean
-                    # True. The ADR schema spells the field ``on:``, so restore
-                    # the string key (the well-known ``on:`` YAML trap, also hit
-                    # by GitHub Actions workflows).
+                    # YAML 1.1 parses bare `on:` as boolean True — restore it.
                     on_val = row[True]
                     row = {k: v for k, v in row.items() if k is not True}
                     row["on"] = on_val
@@ -492,11 +486,8 @@ class SkillMetadata(_YamlModel):
                 parsed.append({"script": str(row["script"]), "on": on})
             normalized[kind] = parsed
 
-        # Materialized filename is ``<skill>-<basename>`` (managed_wt_hook_
-        # filename), so two DISTINCT scripts sharing a basename would overwrite
-        # each other on disk and cross-wire which hook runs — a silent data-loss
-        # hole. The same script reused across kinds (one file, wt_in + wt_out) is
-        # fine. Mirrors the runtime_hooks basename guard.
+        # Distinct scripts sharing a basename collide on the <skill>-<basename>
+        # materialized filename (silent overwrite); same script reused is fine.
         basename_source: dict[str, str] = {}
         for rows in normalized.values():
             for row in rows:
