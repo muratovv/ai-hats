@@ -15,14 +15,14 @@ The split is informational — both layers are loaded at runtime. You can overri
 
 When resolving a component by name, ai-hats walks these paths in order; **later paths win** over earlier ones:
 
-| # | Path | Owner |
-|---|------|-------|
-| 1 | `<pkg>/ai_hats/library/core/` | built-in (shipped) |
-| 2 | `<pkg>/ai_hats/library/usage/` | built-in (shipped) |
-| 3 | `~/.ai-hats/` | user-global |
-| 4 | each path in `ai-hats.yaml: library_paths:` | project-config |
-| 5 | `<project>/libraries/` | project-local |
-| 6 | CLI `--library-path` extras (rarely used) | session-scoped |
+| # | Path                                        | Owner              |
+| - | ------------------------------------------- | ------------------ |
+| 1 | `<pkg>/ai_hats/library/core/`               | built-in (shipped) |
+| 2 | `<pkg>/ai_hats/library/usage/`              | built-in (shipped) |
+| 3 | `~/.ai-hats/`                               | user-global        |
+| 4 | each path in `ai-hats.yaml: library_paths:` | project-config     |
+| 5 | `<project>/libraries/`                      | project-local      |
+| 6 | CLI `--library-path` extras (rarely used)   | session-scoped     |
 
 So a `~/.ai-hats/roles/my-role/` is visible to every project on your machine; a `<project>/libraries/roles/my-role/` is visible only to that project; both override anything with the same name in the built-in layers.
 
@@ -158,24 +158,20 @@ Attach it via a role or trait `composition.rules`.
 
 ## Adding your own skill
 
-A skill is a procedure or checklist (something with decision logic or steps). Two files:
+A skill is a procedure or checklist (something with decision logic or steps). One file — `SKILL.md` with YAML frontmatter:
 
 ```
 libraries/skills/my-skill/
-├── metadata.yaml     # name + description + triggers
-└── SKILL.md          # the procedure body
+└── SKILL.md          # frontmatter (name + description) + the procedure body
 ```
 
 ```bash
 mkdir -p libraries/skills/my-skill
-cat > libraries/skills/my-skill/metadata.yaml <<'YAML'
+cat > libraries/skills/my-skill/SKILL.md <<'MD'
+---
 name: my-skill
 description: When to invoke and what it does.
-triggers:
-  - keyword: "rebase"
-  - keyword: "cherry-pick"
-YAML
-cat > libraries/skills/my-skill/SKILL.md <<'MD'
+---
 # Skill: My Skill
 
 ## When to use
@@ -191,8 +187,9 @@ Attach via `composition.skills` in a role or trait.
 
 ## Declaring hooks from a skill (advanced)
 
-Beyond prose, a skill can declare two kinds of hook in its `metadata.yaml`,
-both materialized during `ai-hats self init`:
+Beyond prose, a skill can declare two kinds of hook in its `SKILL.md`
+frontmatter under a top-level `ai_hats:` key, both materialized during
+`ai-hats self init`:
 
 - **`git_hooks`** — scripts installed into the project's `.githooks/<event>.d/`
   (e.g. `pre-commit`, `post-merge`). The value is a bare list of script paths.
@@ -200,15 +197,27 @@ both materialized during `ai-hats self init`:
   `PostToolUse`). Each entry carries a tool `matcher` and a `script`:
 
 ```yaml
-# libraries/skills/my-skill/metadata.yaml
-runtime_hooks:
-  PreToolUse:
-    - matcher: Bash            # Claude tool name or regex (e.g. Edit|Write)
-      script: hooks/guard.sh   # path relative to the skill directory
-  PostToolUse:
-    - matcher: Edit|Write
-      script: hooks/audit.sh
+# libraries/skills/my-skill/SKILL.md frontmatter
+---
+name: my-skill
+description: When to invoke and what it does.
+ai_hats:
+  runtime_hooks:
+    PreToolUse:
+      - matcher: Bash            # Claude tool name or regex (e.g. Edit|Write)
+        script: hooks/guard.sh   # path relative to the skill directory
+    PostToolUse:
+      - matcher: Edit|Write
+        script: hooks/audit.sh
+---
 ```
+
+The `ai_hats:` key is framework hook wiring only — never prose — and sits at the
+frontmatter top level, not under the Agent-Skills `metadata:` field (a flat
+string map that rejects nested values). A leftover `metadata.yaml` carrying
+`git_hooks` / `runtime_hooks` is a hard error at compose time
+(`LeftoverSidecarHooksError`): move the keys into frontmatter and delete the
+sidecar.
 
 On `self init` the assembler copies each script to
 `<ai_hats_dir>/library/hooks/` under a collision-free `<skill>-<basename>` name
@@ -222,14 +231,14 @@ Two behaviours worth knowing:
 
 - **Fail-loud validation.** The `runtime_hooks` block is validated at load and
   rejects (naming the offending skill) any of:
-    - an unknown event — only `PreToolUse` / `PostToolUse` are allowed;
-    - a row missing `matcher` or `script`;
-    - the same `matcher` declared twice in one event — only one script per
-      `(event, matcher)` is supported, so a duplicate would collapse onto a
-      single hook entry and silently drop one;
-    - two *distinct* scripts whose filenames share a basename — they would
-      collide on the materialized `<skill>-<basename>` name (reusing the *same*
-      script across events is fine).
+  - an unknown event — only `PreToolUse` / `PostToolUse` are allowed;
+  - a row missing `matcher` or `script`;
+  - the same `matcher` declared twice in one event — only one script per
+    `(event, matcher)` is supported, so a duplicate would collapse onto a
+    single hook entry and silently drop one;
+  - two *distinct* scripts whose filenames share a basename — they would
+    collide on the materialized `<skill>-<basename>` name (reusing the *same*
+    script across events is fine).
 
   A silently dropped runtime hook could be a safety hole (a guard that never
   fires), so these are hard errors — unlike `git_hooks`, which skips unknown
@@ -331,10 +340,10 @@ built-in `ai-hats` subcommands because the alias is expanded *before*
 
 ### Role of `fin_consult` vs prompt of `rebalance-long.md`
 
-| Layer | Carries | Stable across runs? |
-|---|---|---|
-| **Role** (`fin_consult`) | Identity, tools, rules, behaviour ("you are a financial consultant; here are your tools and constraints") | Yes — same role for every `rebalance` invocation |
-| **Initial injection** (`rebalance-long.md`) | Per-run startup checklist ("read portfolio.yaml, compare to long-strategy targets, propose trades, confirm before executing") | Per-verb, swapped via `--prompt` |
+| Layer                                       | Carries                                                                                                                       | Stable across runs?                              |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **Role** (`fin_consult`)                    | Identity, tools, rules, behaviour ("you are a financial consultant; here are your tools and constraints")                     | Yes — same role for every `rebalance` invocation |
+| **Initial injection** (`rebalance-long.md`) | Per-run startup checklist ("read portfolio.yaml, compare to long-strategy targets, propose trades, confirm before executing") | Per-verb, swapped via `--prompt`                 |
 
 This is the cleanest separation when the run is a single agent session with
 no pre/post processing outside the agent itself.
