@@ -390,3 +390,86 @@ def test_transition_done_lost_state_prints_recovery_hint(
     assert "ai-hats task transition T-1 done" in result.output
     # Friendly cause hint.
     assert "earlier" in result.output.lower() and "merge failed" in result.output.lower()
+
+
+# -- HATS-492: --description-file (heredoc-fragility fix) --
+
+# Content that mangles `-d "$(cat <<EOF ...)"`: backticks, $(...), an
+# unbalanced paren, a nested ``` fence, and a bare `EOF` terminator line.
+_GNARLY_DESC = (
+    "## Repro\n"
+    "```python\n"
+    "x = `backtick` + $(whoami)\n"
+    "y = (unbalanced\n"
+    "```\n"
+    "EOF\n"
+    "field: value\n"
+)
+
+
+def test_create_description_file_preserves_content(cli, project_dir):
+    """`task create --description-file F` stores F verbatim (no shell mangling)."""
+    desc = project_dir / "desc.md"
+    desc.write_text(_GNARLY_DESC)
+
+    result = cli.invoke(
+        main, ["task", "create", "Gnarly", "--id", "T-1", "--description-file", str(desc)]
+    )
+    assert result.exit_code == 0, result.output
+
+    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    assert t.description == _GNARLY_DESC
+
+
+def test_create_description_file_mutually_exclusive_with_d(cli, project_dir):
+    """`-d` and `--description-file` together → UsageError (exit 2), no card written."""
+    desc = project_dir / "desc.md"
+    desc.write_text("from file")
+
+    result = cli.invoke(main, [
+        "task", "create", "Clash", "--id", "T-1",
+        "-d", "inline", "--description-file", str(desc),
+    ])
+    assert result.exit_code == 2, result.output
+    assert "mutually exclusive" in result.output.lower()
+    # Resolution happens before any write — no card leaks.
+    assert not (project_dir / ".agent" / "backlog" / "tasks" / "T-1").exists()
+
+
+def test_create_description_file_missing_is_friendly(cli, project_dir):
+    """Unreadable path → friendly UsageError naming the flag + path, no traceback."""
+    result = cli.invoke(main, [
+        "task", "create", "Ghost", "--id", "T-1",
+        "--description-file", str(project_dir / "nope.md"),
+    ])
+    assert result.exit_code == 2, result.output
+    assert "--description-file" in result.output
+    assert "nope.md" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_create_description_file_empty_yields_empty(cli, project_dir):
+    """An empty file is a valid (empty) description — same as `-d ''`."""
+    empty = project_dir / "empty.md"
+    empty.write_text("")
+
+    result = cli.invoke(main, [
+        "task", "create", "Blank", "--id", "T-1", "--description-file", str(empty),
+    ])
+    assert result.exit_code == 0, result.output
+
+    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    assert t.description == ""
+
+
+def test_update_description_file_replaces_verbatim(cli, project_dir):
+    """`task update --description-file F` rewrites the description from F verbatim."""
+    TaskManager(project_dir, prefix="T").create_task("T-1", "Title", description="old")
+    desc = project_dir / "new.md"
+    desc.write_text(_GNARLY_DESC)
+
+    result = cli.invoke(main, ["task", "update", "T-1", "--description-file", str(desc)])
+    assert result.exit_code == 0, result.output
+
+    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    assert t.description == _GNARLY_DESC
