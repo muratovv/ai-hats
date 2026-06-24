@@ -431,16 +431,10 @@ class WorktreeManager:
         self._is_git = False
         self._original_branch: str | None = None
         self._base_sha_at_create: str | None = None  # HATS-457
-        # HATS-823: resolved worktree lifecycle hooks, threaded in at create()
-        # and persisted to state so teardown runs the create-time set (never
-        # recomposed). Shape: {"wt_in": [{skill, script}], "wt_out": [{skill,
-        # script, on}]}. Empty for every worktree that declares no carry.
+        # HATS-823: create-time carry {wt_in/wt_out: [{skill, script, on}]},
+        # persisted to state and replayed at teardown (never recomposed).
         self._wt_hooks: dict[str, list[dict[str, Any]]] = {}
-        # HATS-823 migration: True only for a state file written BEFORE wt-hooks
-        # existed (``wt_hooks`` key absent, not merely empty). Such a worktree
-        # may hold gitignored data that cannot be harvested — teardown WARNs
-        # rather than silently dropping it. A new no-carry worktree writes
-        # ``wt_hooks: {}`` (key present) and stays silent.
+        # HATS-823: state predates wt-hooks (key absent, not empty {}) → WARN.
         self._wt_hooks_legacy = False
 
     def create(
@@ -472,9 +466,7 @@ class WorktreeManager:
         """
         self._wt_hooks = wt_hooks or {}
         if self.isolation_mode == IsolationMode.NONE:
-            # No worktree: sub-agent runs directly in project_dir. No worktree
-            # exists, so wt_in/wt_out MUST NOT run (ADR-0012 D7) — the absent
-            # worktree_path makes teardown a no-op, and we never reach wt_in.
+            # No worktree → wt_in/wt_out never run (D7); worktree_path stays None.
             return self.project_dir
         if not self._check_is_git():
             return self.project_dir
@@ -613,10 +605,7 @@ class WorktreeManager:
                     except subprocess.CalledProcessError:
                         pass  # branch may not have been created — fine
                 raise WorktreeCreateError(_format_git_create_error(exc, self.branch_name)) from exc
-            # HATS-823: seed phase. wt_in runs AFTER `git worktree add` (git
-            # refuses a non-empty target dir, so pre-add seeding is impossible —
-            # ADR-0012 Revisions #1). A wt_in failure is warn-and-continue:
-            # create-time friction, not data loss (D3/D7).
+            # HATS-823: wt_in runs AFTER add (git refuses a non-empty dir).
             self._run_wt_in_hooks()
             logger.info(
                 "Created worktree %s on branch %s",
@@ -702,9 +691,7 @@ class WorktreeManager:
             ):
                 if not force:
                     self._check_clean()
-                # HATS-823: even the already-merged short-circuit is a teardown
-                # that destroys the worktree dir, so wt_out (e.g. review-note
-                # drain) must run fail-closed before _remove_worktree.
+                # HATS-823: short-circuit still destroys the dir → harvest first.
                 self._run_wt_out_hooks("merge", skip_hooks=skip_hooks)
                 self._remove_worktree()
                 self._delete_branch()
@@ -820,10 +807,8 @@ class WorktreeManager:
                     exc_info=True,
                 )
                 raise
-            # HATS-823: harvest the gitignored data before the dir is removed.
-            # Runs after the merge integrated the work; on hook failure the
-            # branch is NOT yet deleted (we raise here), so a retry hits the
-            # HATS-596 short-circuit and re-runs the (idempotent) hook.
+            # HATS-823: harvest before teardown. On failure the branch survives,
+            # so a retry hits the HATS-596 short-circuit and re-runs the hook.
             self._run_wt_out_hooks("merge", skip_hooks=skip_hooks)
             self._remove_worktree()
             self._delete_branch()
@@ -875,8 +860,7 @@ class WorktreeManager:
 
             if not force:
                 self._check_clean()
-            # HATS-823: `discard` means "don't merge", NOT "accept losing the
-            # gitignored data" — harvest fail-closed before teardown (D4).
+            # HATS-823: discard != "accept data loss" — harvest fail-closed (D4).
             self._run_wt_out_hooks("discard", skip_hooks=skip_hooks)
             self._remove_worktree(force_rmtree=force_remove)
             self._delete_branch()
@@ -913,21 +897,15 @@ class WorktreeManager:
                 logger.warning("Merge failed, falling back to branch mode", exc_info=True)
                 mode = IsolationMode.BRANCH
 
-            # HATS-823: cleanup() is the auto path (context-manager / exception
-            # unwind). A wt_out failure here must PRESERVE the worktree and must
-            # NOT raise over the agent's original error (ADR-0012 D4): log and
-            # return, leaving the dir intact. Operator escape: a later manual
-            # `ai-hats wt discard <branch> --skip-hooks`.
+            # HATS-823: auto path — a wt_out failure must NOT raise over the
+            # agent's original error (D4); preserve the dir and return.
             try:
                 self._run_wt_out_hooks("cleanup", skip_hooks=skip_hooks)
             except WorktreeHookError as exc:
                 logger.warning(
                     "wt_out hook failed during cleanup of '%s' — worktree "
-                    "preserved (not removed) to avoid losing gitignored data; "
-                    "recover with `ai-hats wt discard %s --skip-hooks`: %s",
-                    self.branch_name,
-                    self.branch_name,
-                    exc,
+                    "preserved; recover with `ai-hats wt discard %s --skip-hooks`: %s",
+                    self.branch_name, self.branch_name, exc,
                 )
                 return
 
@@ -989,22 +967,14 @@ class WorktreeManager:
                 )
 
     def _run_wt_out_hooks(self, event: str, *, skip_hooks: bool = False) -> None:
-        """Run wt_out hooks bound to ``event`` before a teardown removes the dir.
+        """Run wt_out hooks bound to ``event`` before teardown removes the dir.
 
-        Fail-closed: a hook that exits non-zero / times out / is missing /
-        unrunnable raises :class:`WorktreeHookError`, aborting the teardown so
-        the worktree + branch (and unharvested gitignored data) survive
-        (ADR-0012 D4). ``skip_hooks`` is the one conscious escape — logged
-        loudly. A strict no-op for worktrees that declare no wt_out hooks.
-        Idempotent: a retry re-runs the hooks (drain hooks no-op when already
-        drained).
+        Fail-closed (D4): any hook failure raises :class:`WorktreeHookError` and
+        aborts the teardown, preserving the worktree. ``skip_hooks`` is the
+        conscious escape; a no-op when no wt_out hooks are declared.
         """
         if self._wt_hooks_legacy:
-            # HATS-823 migration window: a worktree created before wt-hooks
-            # existed. We cannot know what gitignored data it holds, so warn
-            # instead of silently tearing down (the HATS-818 loss must not
-            # recur as an upgrade artifact). Fires once per teardown, only for
-            # pre-upgrade worktrees — silent for every new worktree.
+            # Pre-upgrade worktree: can't know what it holds → warn, don't drop.
             logger.warning(
                 "Worktree '%s' predates wt-hooks (no carry recorded at create) "
                 "— gitignored data cannot be auto-harvested on %s; back it up "
@@ -1224,9 +1194,7 @@ class WorktreeManager:
         # HATS-457: legacy state files (pre-457) omit this key — graceful
         # degradation, drift check becomes a no-op.
         mgr._base_sha_at_create = data.get("base_sha_at_create")
-        # HATS-823: pre-upgrade worktrees have no persisted hooks — default to
-        # empty (no wt_out runs). The migration WARN for that case lives at the
-        # teardown sites (a carry-less worktree predating wt-hooks).
+        # HATS-823: absent key = pre-upgrade worktree (legacy WARN at teardown).
         mgr._wt_hooks = data.get("wt_hooks") or {}
         mgr._wt_hooks_legacy = "wt_hooks" not in data
         mgr._is_git = True
