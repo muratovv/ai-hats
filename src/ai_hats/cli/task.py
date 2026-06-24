@@ -3,12 +3,37 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import click
 
 from ..utils.atomic_io import atomic_write_text
 from ..state import EmptyPlanError
 from ._helpers import _project_dir, _task_manager, console
+
+
+def _resolve_description(
+    description: str | None, description_file: str | None, *, default: str | None
+) -> str | None:
+    """Resolve a task description from ``-d``/``--description`` or ``--description-file``.
+
+    The two are mutually exclusive. ``--description-file`` reads the file
+    verbatim via :meth:`Path.read_text`, sidestepping the shell-quoting /
+    heredoc hazards that silently truncate ``-d "$(cat <<EOF …)"`` (HATS-492).
+    Returns ``default`` when neither option is supplied.
+    """
+    if description is not None and description_file is not None:
+        raise click.UsageError("--description and --description-file are mutually exclusive")
+    if description_file is not None:
+        try:
+            return Path(description_file).read_text(encoding="utf-8")
+        except OSError as exc:
+            raise click.UsageError(
+                f"--description-file: cannot read {description_file!r}: {exc.strerror or exc}"
+            )
+    if description is not None:
+        return description
+    return default
 
 
 @click.group()
@@ -20,7 +45,12 @@ def task():
 @task.command("create")
 @click.argument("title")
 @click.option("--id", "task_id", default=None, help="Task ID (auto-generated if omitted)")
-@click.option("--description", "-d", default="", help="Task description")
+@click.option("--description", "-d", default=None, help="Task description")
+@click.option(
+    "--description-file", "description_file", default=None,
+    help="Read description from a file (verbatim, bypasses shell quoting). "
+    "Mutually exclusive with -d/--description.",
+)
 @click.option("--priority", "-p", default="medium", help="Priority (low/medium/high)")
 @click.option("--role", default="", help="Assigned role")
 @click.option("--reviewer", default="user", help="Reviewer (user or agent)")
@@ -36,7 +66,8 @@ def task():
 def task_create(
     task_id: str | None,
     title: str,
-    description: str,
+    description: str | None,
+    description_file: str | None,
     priority: str,
     role: str,
     reviewer: str,
@@ -46,6 +77,7 @@ def task_create(
 ):
     """Create a new task card. ID is auto-generated if omitted."""
 
+    description = _resolve_description(description, description_file, default="")
     mgr = _task_manager(_project_dir())
     if task_id is None:
         task_id = mgr.next_id()
@@ -576,6 +608,11 @@ def task_plan_extract(task_id: str, auto: bool, dry_run: bool, as_json: bool):
 @click.option("--title", default=None, help="New title")
 @click.option("--description", "-d", default=None, help="New description")
 @click.option(
+    "--description-file", "description_file", default=None,
+    help="Read description from a file (verbatim, bypasses shell quoting). "
+    "Mutually exclusive with -d/--description.",
+)
+@click.option(
     "--priority", "-p", default=None, type=click.Choice(["low", "medium", "high"]), help="Priority"
 )
 @click.option("--resolution", default=None, help="Resolution note (why closed)")
@@ -603,6 +640,7 @@ def task_update(
     task_id: str,
     title: str | None,
     description: str | None,
+    description_file: str | None,
     priority: str | None,
     resolution: str | None,
     role: str | None,
@@ -616,6 +654,7 @@ def task_update(
 ):
     """Update task card fields."""
 
+    description = _resolve_description(description, description_file, default=None)
     mgr = _task_manager(_project_dir())
 
     if clear_parent and parent_task is not None:
