@@ -11,6 +11,7 @@ were removed — git owns user recovery.
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -107,13 +108,47 @@ def _ai_hats_owned_hook_basenames() -> frozenset[str]:
         return frozenset()
 
 
-def _builtin_library_layers() -> list[Path]:
-    """Resolve built-in library layers via `importlib.resources`.
+def _validated_library_root(raw: str | None) -> Path | None:
+    """A builtin-library root is valid only if it holds BOTH ``core`` and ``usage``.
 
-    Returns `[core, usage]` in priority order (core first = lowest, usage on
-    top). Both layers ship inside the `ai_hats.library` sub-package. Falls
-    back to a relative path when the package is not installed (sdist
-    inspection in CI).
+    A partial root (e.g. ``core`` but no ``usage`` — a corrupt/sparse checkout, or
+    a leaked stale ``AI_HATS_LIBRARY_ROOT`` pointing at a half-removed worktree)
+    is rejected LOUDLY rather than silently dropping the entire ``usage`` layer.
+    Returns the root, or ``None`` (caller falls back to the next resolver).
+    """
+    if not raw:
+        return None
+    root = Path(raw).expanduser()
+    if (root / "core").is_dir() and (root / "usage").is_dir():
+        return root
+    print(
+        f"[ai-hats] AI_HATS_LIBRARY_ROOT={raw!r} has no core/+usage/ pair; "
+        "ignoring it and resolving the builtin library normally.",
+        file=sys.stderr,
+    )
+    return None
+
+
+def _detect_source_library_root(start: Path) -> Path | None:
+    """Walk up from ``start`` for an ai-hats *source* checkout; return its ``library/``.
+
+    A source checkout is a dir holding BOTH ``library/core`` AND ``src/ai_hats``.
+    The ``src/ai_hats`` co-requirement is what distinguishes the engine source
+    repo (and its linked worktrees) from any downstream project that merely has
+    a ``library/core`` of its own — so downstream stays on the installed package
+    (HATS-826 R2). Returns ``<dir>/library`` or ``None``.
+    """
+    for d in (start, *start.parents):
+        if (d / "library" / "core").is_dir() and (d / "src" / "ai_hats").is_dir():
+            return d / "library"
+    return None
+
+
+def _importlib_library_layers() -> list[Path]:
+    """Resolve ``[core, usage]`` from the installed ``ai_hats.library`` package.
+
+    Falls back to an empty list when the package data is missing (sdist
+    inspection in CI / broken install) — callers degrade gracefully.
     """
     from importlib.resources import files
 
@@ -127,6 +162,33 @@ def _builtin_library_layers() -> list[Path]:
         if p.is_dir():
             out.append(p)
     return out
+
+
+def _builtin_library_layers() -> list[Path]:
+    """Resolve the builtin ``[core, usage]`` layers (core first = lowest priority).
+
+    Resolution order (HATS-826), highest precedence first:
+
+    1. ``AI_HATS_LIBRARY_ROOT`` env override — an explicit, greppable seam
+       (tests, power users), validated both-or-none.
+    2. **cwd auto-detection** of an ai-hats source checkout. ``importlib.resources``
+       hard-pins ``ai_hats.library`` to the editable-install MAIN repo regardless
+       of cwd, so library edits made inside a linked worktree are otherwise
+       invisible to composition. Keying off cwd makes a command run *inside* a
+       worktree resolve that worktree's ``library/``.
+    3. ``importlib.resources`` — the installed package (downstream / default).
+
+    A detected/overridden root is used only when BOTH layers exist under it;
+    otherwise we fall through to the installed package (never a partial builtin).
+    """
+    root = _validated_library_root(os.environ.get("AI_HATS_LIBRARY_ROOT"))
+    if root is None:
+        root = _detect_source_library_root(Path.cwd())
+    if root is not None:
+        layers = [root / layer for layer in ("core", "usage")]
+        if all(p.is_dir() for p in layers):
+            return layers
+    return _importlib_library_layers()
 
 
 @dataclass(frozen=True)
