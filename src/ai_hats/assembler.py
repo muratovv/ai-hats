@@ -23,6 +23,7 @@ from .composer import (
     Composer,
     CompositionResult,
     collect_runtime_hooks as _collect_runtime_hooks,
+    collect_worktree_hooks as _collect_worktree_hooks,
     resolve_skill_script as _resolve_runtime_script,
 )
 from .materialize import compose_for_role
@@ -37,9 +38,11 @@ from .models import (
 from .paths import (
     hooks_dir as _lib_hooks_dir,
     managed_runtime_hook_filename as _managed_runtime_hook_filename,
+    managed_wt_hook_filename as _managed_wt_hook_filename,
     rules_dir as _lib_rules_dir,
     skills_dir as _lib_skills_dir,
     user_home,
+    wt_hooks_dir as _wt_hooks_dir,
 )
 from .placeholders import expand_path_placeholders
 from .safe_delete import discard as _safe_discard
@@ -946,6 +949,7 @@ class Assembler:
         # the very first Bash call).
         provider.ensure_runtime_hooks(self.project_dir, result)
         self._materialize_pretooluse_hooks(result)
+        self._materialize_worktree_hooks(result)
 
         # 4. Role-specific git hooks — only if role active AND .git/
         # exists. ``.git/`` guard lives here (was inline in init); other
@@ -1284,6 +1288,83 @@ class Assembler:
         lives in composer, not here).
         """
         return _collect_runtime_hooks(result)
+
+    def _collect_skill_worktree_hooks(self, result: CompositionResult):
+        """Collect skill-declared worktree hooks by kind (HATS-823).
+
+        Thin delegate to :func:`composer.collect_worktree_hooks`.
+        """
+        return _collect_worktree_hooks(result)
+
+    def _materialize_worktree_hooks(
+        self, result: "CompositionResult | None" = None
+    ) -> None:
+        """Materialize skill-declared worktree-hook scripts to
+        ``<ai_hats_dir>/library/wt-hooks/`` (HATS-823).
+
+        Mirrors :meth:`_materialize_pretooluse_hooks` (managed dir + ``.manifest``
+        + sweep) but has **no** package-data guards — only the ``wt_in`` /
+        ``wt_out`` scripts composed skills declare. Materialized like a runtime
+        hook so the worktree lifecycle can invoke an inspectable, logged copy
+        (ADR-0012 D5 trust model).
+
+        Managed-only and self-effacing: when nothing is declared *and* nothing
+        was managed before, this is a pure no-op — no dir, no manifest — so the
+        vast majority of projects (which declare no worktree hooks) stay clean.
+        A skill leaving the composition sweeps its script on the next pass.
+        """
+        target_dir = _wt_hooks_dir(self.project_dir)
+        manifest_path = target_dir / ".manifest"
+
+        previous: set[str] = set()
+        if manifest_path.exists():
+            previous = {
+                line.strip()
+                for line in manifest_path.read_text().splitlines()
+                if line.strip() and not line.startswith("#")
+            }
+
+        collected = (
+            self._collect_skill_worktree_hooks(result) if result is not None else {}
+        )
+        new_names: set[str] = set()
+        pending: list[tuple[str, Path]] = []
+        for entries in collected.values():
+            for skill_name, hook in entries:
+                src = self._resolve_skill_script(skill_name, hook.script, result)
+                if src is None:
+                    continue
+                dest_name = _managed_wt_hook_filename(skill_name, hook.script)
+                new_names.add(dest_name)
+                pending.append((dest_name, src))
+
+        if not new_names and not previous:
+            return  # nothing managed now or before — keep the project clean
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for dest_name, src in pending:
+            _safe_replace(
+                target_dir / dest_name,
+                src.read_bytes(),
+                reason="materialize-worktree-hook",
+                project_dir=self.project_dir,
+                mode=0o755,
+            )
+        for stale in previous - new_names:
+            _safe_discard(
+                target_dir / stale,
+                reason="materialize-worktree-hook-sweep",
+                project_dir=self.project_dir,
+            )
+        body = (
+            "# ai-hats managed — do not edit\n" + "\n".join(sorted(new_names)) + "\n"
+        )
+        _safe_replace(
+            manifest_path,
+            body.encode(),
+            reason="materialize-worktree-hook-manifest",
+            project_dir=self.project_dir,
+        )
 
     # ----- HATS-593: drift-detecting hook re-materialization -----
 
