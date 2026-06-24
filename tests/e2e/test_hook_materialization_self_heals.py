@@ -84,17 +84,20 @@ def _make_project_with_hooks(tmp_path: Path) -> tuple[Path, Path]:
     # self-heal hooks for post-merge / post-checkout.
     skill = lib / "skills" / "gate_skill"
     (skill / "git_hooks").mkdir(parents=True)
-    (skill / "SKILL.md").write_text("# Gate")
-    (skill / "metadata.yaml").write_text(
+    (skill / "SKILL.md").write_text(
+        "---\n"
         "name: gate_skill\n"
         "description: ships a pre-push gate + self-heal hooks\n"
-        "git_hooks:\n"
-        "  pre-push:\n"
-        "    - git_hooks/gate.sh\n"
-        "  post-merge:\n"
-        "    - git_hooks/self-heal.sh\n"
-        "  post-checkout:\n"
-        "    - git_hooks/self-heal.sh\n"
+        "ai_hats:\n"
+        "  git_hooks:\n"
+        "    pre-push:\n"
+        "      - git_hooks/gate.sh\n"
+        "    post-merge:\n"
+        "      - git_hooks/self-heal.sh\n"
+        "    post-checkout:\n"
+        "      - git_hooks/self-heal.sh\n"
+        "---\n\n"
+        "# Gate\n"
     )
     gate = skill / "git_hooks" / "gate.sh"
     gate.write_text("#!/usr/bin/env bash\necho 'GATE v1'\nexit 0\n")
