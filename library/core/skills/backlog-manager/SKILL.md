@@ -1,6 +1,12 @@
 ---
 name: backlog-manager
 description: Backlog lifecycle orchestration for tasks, hypotheses, and proposals via the ai-hats CLI. Use when starting any new task, hypothesis, or proposal, managing state transitions on any of the three types, coordinating sub-agent delegation, or recording verdicts on hypotheses or votes on proposals.
+ai_hats:
+  # Skill-contributed git hooks (HATS-088 framework). The assembler installs
+  # these into the project's .githooks/<event>.d/ at composition time.
+  git_hooks:
+    pre-commit:
+      - git_hooks/pre-commit-attachments.sh
 ---
 # Backlog Manager
 

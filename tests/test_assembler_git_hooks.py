@@ -51,16 +51,19 @@ def project_with_hook_skill(tmp_path):
 
     lib = tmp_path / "lib"
 
-    # Skill with a git_hooks declaration.
+    # Skill with a git_hooks declaration (frontmatter top-level ai_hats; HATS-814).
     skill_dir = lib / "skills" / "hook_skill"
     (skill_dir / "git_hooks").mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("# Hook Skill")
-    (skill_dir / "metadata.yaml").write_text(
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
         "name: hook_skill\n"
         "description: skill that ships a pre-commit hook\n"
-        "git_hooks:\n"
-        "  pre-commit:\n"
-        "    - git_hooks/check.sh\n"
+        "ai_hats:\n"
+        "  git_hooks:\n"
+        "    pre-commit:\n"
+        "      - git_hooks/check.sh\n"
+        "---\n"
+        "# Hook Skill\n"
     )
     hook_script = skill_dir / "git_hooks" / "check.sh"
     hook_script.write_text("#!/usr/bin/env bash\necho 'check ran'\nexit 0\n")
@@ -213,9 +216,11 @@ def test_stale_hooks_removed_when_skill_drops_declaration(project_with_hook_skil
     asm.set_role("test-role")
     assert (project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh").exists()
 
-    # Now mutate the skill to drop git_hooks and re-apply.
-    metadata = lib / "skills" / "hook_skill" / "metadata.yaml"
-    metadata.write_text("name: hook_skill\ndescription: now no hooks\n")
+    # Now mutate the skill to drop git_hooks (frontmatter) and re-apply.
+    skill_md = lib / "skills" / "hook_skill" / "SKILL.md"
+    skill_md.write_text(
+        "---\nname: hook_skill\ndescription: now no hooks\n---\n# Hook Skill\n"
+    )
     asm.set_role("test-role")
 
     # Stale managed file gone.
@@ -271,12 +276,15 @@ def test_unknown_event_silently_skipped(tmp_path):
 
     skill_dir = lib / "skills" / "weird_skill"
     (skill_dir / "git_hooks").mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("# Weird")
-    (skill_dir / "metadata.yaml").write_text(
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
         "name: weird_skill\n"
-        "git_hooks:\n"
-        "  not-a-real-event:\n"
-        "    - git_hooks/x.sh\n"
+        "ai_hats:\n"
+        "  git_hooks:\n"
+        "    not-a-real-event:\n"
+        "      - git_hooks/x.sh\n"
+        "---\n"
+        "# Weird\n"
     )
     (skill_dir / "git_hooks" / "x.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
 
@@ -511,15 +519,18 @@ def project_with_self_heal_skill(tmp_path):
     lib = tmp_path / "lib"
     skill_dir = lib / "skills" / "healer_skill"
     (skill_dir / "git_hooks").mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("# Healer")
-    (skill_dir / "metadata.yaml").write_text(
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
         "name: healer_skill\n"
         "description: ships post-merge/post-checkout self-heal hooks\n"
-        "git_hooks:\n"
-        "  post-merge:\n"
-        "    - git_hooks/self-heal.sh\n"
-        "  post-checkout:\n"
-        "    - git_hooks/self-heal.sh\n"
+        "ai_hats:\n"
+        "  git_hooks:\n"
+        "    post-merge:\n"
+        "      - git_hooks/self-heal.sh\n"
+        "    post-checkout:\n"
+        "      - git_hooks/self-heal.sh\n"
+        "---\n"
+        "# Healer\n"
     )
     # A self-heal script that mirrors the real one's branch-flag guard so the
     # behavioural test below is meaningful.
