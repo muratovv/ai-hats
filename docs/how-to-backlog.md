@@ -120,14 +120,16 @@ Happy path: `brainstorm → plan → execute → document → review → done`. 
 
 ### `task create` fields
 
-| Flag                                 | Notes                                                                |
-| ------------------------------------ | -------------------------------------------------------------------- |
-| `--priority {low,medium,high}`       | default `medium`                                                     |
-| `--tag` (repeatable)                 | e.g. `--tag docs --tag milestone-1.0`                                |
-| `--parent-task HATS-NNN`             | epic → child relationship                                            |
-| `--depends-on HATS-NNN` (repeatable) | blocker — card stays out of `execute` until each blocker hits `done` |
-| `--reviewer {user,agent}`            | who closes the card                                                  |
-| `--role <name>`                      | suggested role for the executor                                      |
+| Flag                                 | Notes                                                                                                                                                                              |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-d, --description <text>`           | inline description; for markdown / code bodies use `--description-file`                                                                                                            |
+| `--description-file <path>`          | read the description verbatim from a file — avoids the silent shell-truncation that `-d "$(cat <<EOF…)"` hits on backticks / `$(...)` / nested `EOF`; mutually exclusive with `-d` |
+| `--priority {low,medium,high}`       | default `medium`                                                                                                                                                                   |
+| `--tag` (repeatable)                 | e.g. `--tag docs --tag milestone-1.0`                                                                                                                                              |
+| `--parent-task HATS-NNN`             | epic → child relationship                                                                                                                                                          |
+| `--depends-on HATS-NNN` (repeatable) | blocker — card stays out of `execute` until each blocker hits `done`                                                                                                               |
+| `--reviewer {user,agent}`            | who closes the card                                                                                                                                                                |
+| `--role <name>`                      | suggested role for the executor                                                                                                                                                    |
 
 ### `task log` — work log cadence
 
@@ -151,12 +153,12 @@ ai-hats task log HATS-NNN "abandoned overlay approach — replacing role wholesa
 
 Attach files to a task — plans, diagrams, sample inputs, postmortem artifacts. Blobs live under `<ai_hats_dir>/tracker/backlog/tasks/<ID>/attachments/<name>`; metadata (`name`, `digest`, `added`, `note`) lives in `task.yaml::attachments[]`. Works on any task state, including `done` and `cancelled`.
 
-| Command | Purpose |
-| --- | --- |
-| `task attach add <ID> <PATH> [--name N] [--note T]` | Move file into `attachments/`, record manifest entry |
-| `task attach list <ID>` | Show all attachments on a task |
-| `task attach show <ID> <NAME>` | Print attachment to stdout (binaries print only the path) |
-| `task attach remove <ID> <NAME> [--yes]` | Detach + delete blob |
+| Command                                             | Purpose                                                   |
+| --------------------------------------------------- | --------------------------------------------------------- |
+| `task attach add <ID> <PATH> [--name N] [--note T]` | Move file into `attachments/`, record manifest entry      |
+| `task attach list <ID>`                             | Show all attachments on a task                            |
+| `task attach show <ID> <NAME>`                      | Print attachment to stdout (binaries print only the path) |
+| `task attach remove <ID> <NAME> [--yes]`            | Detach + delete blob                                      |
 
 **Idempotency.** Re-running `attach add` with identical content under the same name is a no-op (`exit 0`). Different content under an existing name is a **hard error** — there is no silent overwrite. To replace: `attach remove` first, then `attach add`.
 
