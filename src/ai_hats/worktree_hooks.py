@@ -55,6 +55,29 @@ def resolve_hook_timeout() -> float:
     return val if val > 0 else WT_HOOK_TIMEOUT_S
 
 
+def serialize_collected_hooks(
+    collected: dict[str, list[tuple[str, object]]],
+) -> dict[str, list[dict[str, object]]]:
+    """Flatten ``collect_worktree_hooks`` output into a JSON-safe carry record.
+
+    ``{kind: [(skill, WorktreeHook)]}`` → ``{kind: [{skill, script, on?}]}`` —
+    the shape persisted in worktree state and consumed by the manager's run
+    methods at create / teardown (HATS-823). ``on`` is omitted for ``wt_in``
+    (always empty) and for any leaf with an empty ``on``.
+    """
+    out: dict[str, list[dict[str, object]]] = {}
+    for kind, entries in collected.items():
+        rows: list[dict[str, object]] = []
+        for skill_name, hook in entries:
+            row: dict[str, object] = {"skill": skill_name, "script": hook.script}
+            if getattr(hook, "on", ()):  # wt_out carries teardown events
+                row["on"] = list(hook.on)
+            rows.append(row)
+        if rows:
+            out[kind] = rows
+    return out
+
+
 @dataclass(frozen=True)
 class HookOutcome:
     """Result of one hook run. ``ok`` drives the caller's fail-closed decision."""
