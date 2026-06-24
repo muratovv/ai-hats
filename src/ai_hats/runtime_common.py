@@ -336,14 +336,14 @@ def _print_session_start(
 #
 # The wrapped CLI's full-screen TUI tears the terminal into the alternate
 # screen buffer the instant it spawns, clobbering anything ``run()`` printed
-# before it — including the start banner and any fail-open startup warning
-# (git-hook resync, finalize preload). A brief hold before the spawn gives the
-# human a beat to read them. The hold is longer when a startup step warned, so
-# a degraded session (hooks not synced, formatting hook unwired) is noticed
-# *before* a session's worth of work runs against it — not in the post-mortem
-# end-banner, which arrives too late to act on.
+# before it — including any fail-open startup warning (git-hook resync,
+# finalize preload). When a startup step warned, a brief hold gives the human
+# a beat to read it, so a degraded session (hooks not synced, formatting hook
+# unwired) is noticed *before* a session's worth of work runs against it — not
+# in the post-mortem end-banner, which arrives too late to act on. A clean
+# start does NOT hold: there is nothing to read, and the delay is pure friction
+# (HATS-825 follow-up — the original 1s default was scrapped after use).
 
-STARTUP_HOLD_SECONDS = 1.0
 STARTUP_WARN_HOLD_SECONDS = 10.0
 
 
@@ -355,9 +355,9 @@ def _startup_hold_seconds(
 ) -> float:
     """Seconds to hold the start banner before launching the wrapped TUI.
 
-    Policy (HATS-825): ``1s`` on a clean start, ``10s`` when a fail-open
-    startup step emitted a warning. A **non-tty** invocation never holds —
-    a headless/CI run must not be delayed (the ``never block session start``
+    Policy: ``10s`` when a fail-open startup step emitted a warning, otherwise
+    **no hold** — a clean start has nothing to surface, and a **non-tty**
+    (headless/CI) run must not be delayed (the ``never block session start``
     fail-open invariant). ``AI_HATS_STARTUP_HOLD`` overrides the delay for
     every case (set ``0`` to disable, including in tests); a malformed value
     is ignored. Pure over its inputs so the policy is unit-testable without
@@ -370,9 +370,9 @@ def _startup_hold_seconds(
             return max(0.0, float(override))
         except ValueError:
             pass
-    if not is_tty:
+    if not is_tty or not has_warnings:
         return 0.0
-    return STARTUP_WARN_HOLD_SECONDS if has_warnings else STARTUP_HOLD_SECONDS
+    return STARTUP_WARN_HOLD_SECONDS
 
 
 def _print_startup_warnings(warnings: list[str]) -> None:
