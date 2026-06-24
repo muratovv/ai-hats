@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import sys
 from collections import deque
@@ -329,6 +330,57 @@ def _print_session_start(
         chan = f" ({channel})" if channel else ""
         line += f" | ai-hats v{_highlight_hash(version)}{chan}"
     print(line + "\n")
+
+
+# ----- Pre-launch startup hold (HATS-825) -----
+#
+# The wrapped CLI's full-screen TUI tears the terminal into the alternate
+# screen buffer the instant it spawns, clobbering anything ``run()`` printed
+# before it — including the start banner and any fail-open startup warning
+# (git-hook resync, finalize preload). A brief hold before the spawn gives the
+# human a beat to read them. The hold is longer when a startup step warned, so
+# a degraded session (hooks not synced, formatting hook unwired) is noticed
+# *before* a session's worth of work runs against it — not in the post-mortem
+# end-banner, which arrives too late to act on.
+
+STARTUP_HOLD_SECONDS = 1.0
+STARTUP_WARN_HOLD_SECONDS = 10.0
+
+
+def _startup_hold_seconds(
+    has_warnings: bool,
+    *,
+    is_tty: bool,
+    env: dict[str, str] | None = None,
+) -> float:
+    """Seconds to hold the start banner before launching the wrapped TUI.
+
+    Policy (HATS-825): ``1s`` on a clean start, ``10s`` when a fail-open
+    startup step emitted a warning. A **non-tty** invocation never holds —
+    a headless/CI run must not be delayed (the ``never block session start``
+    fail-open invariant). ``AI_HATS_STARTUP_HOLD`` overrides the delay for
+    every case (set ``0`` to disable, including in tests); a malformed value
+    is ignored. Pure over its inputs so the policy is unit-testable without
+    sleeping or a real terminal.
+    """
+    env = env if env is not None else os.environ
+    override = env.get("AI_HATS_STARTUP_HOLD")
+    if override is not None:
+        try:
+            return max(0.0, float(override))
+        except ValueError:
+            pass
+    if not is_tty:
+        return 0.0
+    return STARTUP_WARN_HOLD_SECONDS if has_warnings else STARTUP_HOLD_SECONDS
+
+
+def _print_startup_warnings(warnings: list[str]) -> None:
+    """Print fail-open startup warnings as a bold-yellow block before the hold."""
+    y, rst = "\033[1;33m", "\033[0m"
+    print(f"{y}⚠ {len(warnings)} startup warning(s):{rst}")
+    for w in warnings:
+        print(f"{y}  • {w}{rst}")
 
 
 def _composition_snapshot(assembler: Assembler, role_name: str, result) -> dict:

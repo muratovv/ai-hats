@@ -99,5 +99,32 @@ def test_resync_is_failopen_on_non_git(tmp_path):
     project = tmp_path / "plain"
     project.mkdir()
     ProjectConfig(provider="gemini").save(project / "ai-hats.yaml")
-    # Must not raise.
-    WrapRunner(project)._resync_git_hooks()
+    # Must not raise; clean resync returns no warning.
+    assert WrapRunner(project)._resync_git_hooks() is None
+
+
+def test_resync_failure_returns_summary_and_traces(tmp_path, monkeypatch):
+    """HATS-825: a failed resync is fail-open but no longer silent.
+
+    The failure must (a) not raise, (b) return a one-line summary the caller
+    surfaces in the pre-launch hold, and (c) be persisted to the session trace
+    — previously it reached only stderr, which the TUI clobbers.
+    """
+    project = tmp_path / "plain"
+    project.mkdir()
+    ProjectConfig(provider="gemini").save(project / "ai-hats.yaml")
+
+    runner = WrapRunner(project)
+    monkeypatch.setattr(
+        runner.assembler,
+        "sync_hooks",
+        lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    session = runner.session_mgr.create_session()
+
+    summary = runner._resync_git_hooks(session)
+
+    assert summary is not None
+    assert "git-hook resync failed" in summary
+    assert "RuntimeError" in summary and "boom" in summary
+    assert "git-hook resync FAILED" in session.trace_path.read_text()
