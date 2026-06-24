@@ -33,6 +33,7 @@ re-materialisation is intentionally out of scope.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -42,6 +43,8 @@ from .composer import CompositionResult, ResolvedComponent
 from .frontmatter import FrontmatterError, read_frontmatter
 from .models import ProjectConfig
 from .resolver import read_rule_body
+
+logger = logging.getLogger(__name__)
 
 
 # Tier-1 fixed root files and the kind tag each carries.
@@ -263,13 +266,18 @@ def render_skills_index_md(skills: list[ResolvedComponent]) -> str | None:
 def _skill_description(skill: ResolvedComponent) -> str:
     """Extract the frontmatter ``description`` from a skill's SKILL.md, or empty.
 
-    Best-effort: a malformed frontmatter block falls back to ``""`` (a v0.6
-    skills_index baseline never lists a description it cannot read), rather than
+    Best-effort: a malformed block warns and falls back to ``""`` rather than
     aborting the migration diff.
     """
     try:
         data = read_frontmatter(skill.source_path / "SKILL.md")
-    except FrontmatterError:
+    except FrontmatterError as exc:
+        logger.warning(
+            "skill %r: malformed SKILL.md frontmatter; omitting description from "
+            "the migration baseline: %s",
+            skill.name,
+            exc,
+        )
         return ""
     desc = data.get("description")
     return desc if isinstance(desc, str) else ""

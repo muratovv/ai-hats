@@ -1,17 +1,12 @@
 """Real YAML frontmatter parser for SKILL.md (HATS-813).
 
-A single primitive that reads a Markdown document's leading ``---`` fenced
-YAML block into a mapping — including arbitrarily nested keys (e.g.
-``metadata.ai_hats.*``, the shape HATS-814 consumes). It replaces two
-line-scanners (``providers._extract_frontmatter_description`` and
-``migration_v07._skill_description``) that could only read a flat
+Parses a Markdown document's leading ``---`` fenced block into a (possibly
+nested) mapping, replacing two line-scanners that read only a flat
 ``description:`` line.
 
-Loudness contract: where a fenced block is present but is not valid YAML — or
-parses to something other than a mapping — we raise :class:`FrontmatterError`
-instead of returning an empty mapping. The Claude Code harness drops a malformed
-frontmatter block *silently and totally* (HATS-812 PoC finding #4); ai-hats fails
-loud so a config typo surfaces at read time rather than vanishing.
+Loudness contract: a present-but-invalid block (bad YAML or non-mapping) raises
+:class:`FrontmatterError` rather than returning ``{}`` — the Claude Code harness
+drops a malformed block silently (HATS-812 PoC #4); we surface it.
 """
 
 from __future__ import annotations

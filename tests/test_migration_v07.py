@@ -12,6 +12,7 @@ Coverage:
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from pathlib import Path
 
@@ -311,9 +312,10 @@ def test_render_skills_index_md_skips_description_when_equal_to_name(tmp_path):
     assert out == "# Skills Index\n\n- **beta**\n"
 
 
-def test_skill_description_malformed_falls_back_to_empty(tmp_path):
+def test_skill_description_malformed_warns_then_falls_back(tmp_path, caplog):
     """HATS-813: a malformed frontmatter block must not abort the migration diff;
-    the description lookup falls back to "" (bullet without a description)."""
+    the description lookup falls back to "" — but logs a WARNING so the broken
+    skill is distinguishable from one that simply declares no description."""
     skill_dir = tmp_path / "skills" / "gamma"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text("---\nbad: : indent\n---\nbody\n")
@@ -323,8 +325,25 @@ def test_skill_description_malformed_falls_back_to_empty(tmp_path):
         source_path=skill_dir,
         injection="",
     )
-    assert m._skill_description(rc) == ""
+    with caplog.at_level(logging.WARNING, logger="ai_hats.migration_v07"):
+        assert m._skill_description(rc) == ""
+    assert "malformed" in caplog.text and "gamma" in caplog.text
     assert m.render_skills_index_md([rc]) == "# Skills Index\n\n- **gamma**\n"
+
+
+def test_skill_description_absent_is_silent(tmp_path, caplog):
+    """Contrast: no SKILL.md → "" with NO warning (only malformed is noisy)."""
+    skill_dir = tmp_path / "delta"
+    skill_dir.mkdir()
+    rc = ResolvedComponent(
+        name="delta",
+        component_type=ComponentType.SKILL,
+        source_path=skill_dir,
+        injection="",
+    )
+    with caplog.at_level(logging.WARNING, logger="ai_hats.migration_v07"):
+        assert m._skill_description(rc) == ""
+    assert caplog.text == ""
 
 
 # ---------- Diff engine ----------
