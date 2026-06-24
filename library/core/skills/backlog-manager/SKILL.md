@@ -15,8 +15,8 @@ Orchestrate the lifecycle of all three backlog item types via the `ai-hats task`
 | Type | ID prefix | YAML location | State machine |
 |---|---|---|---|
 | **Task** | `<PROJ>-NNN` (e.g. `HATS-NNN`) | `<ai_hats_dir>/tracker/backlog/tasks/<ID>/task.yaml` | `brainstorm → plan → execute → document → review → done` (+ `blocked`, `failed`, `cancelled`) |
-| **Hypothesis** | `HYP-NNN` | `<ai_hats_dir>/tracker/hypotheses/HYP-NNN.yaml` | `active → confirmed | refuted | stalled` |
-| **Proposal** | `PROP-NNN` | `<ai_hats_dir>/tracker/backlog/proposals/PROP-NNN.yaml` | `open → accepted | rejected | deferred | duplicate` |
+| **Hypothesis** | `HYP-NNN` | `<ai_hats_dir>/tracker/hypotheses/HYP-NNN.yaml` | `active → confirmed \| refuted \| stalled` |
+| **Proposal** | `PROP-NNN` | `<ai_hats_dir>/tracker/backlog/proposals/PROP-NNN.yaml` | `open → accepted \| rejected \| deferred \| duplicate` |
 
 CLI-only enforcement is owned by rule **rule_backlog_discipline**: never read or edit `<ai_hats_dir>/tracker/backlog/**` or `<ai_hats_dir>/tracker/hypotheses/**` directly — always through the verbs documented below.
 
@@ -57,6 +57,10 @@ work-log cadence, `plan-extract`, sub-agent coordination. Two boundaries:
 # Create task (ID auto-generated if omitted)
 ai-hats task create "Title" -d "Description" -p medium --tag dx --tag cleanup --id PROJ-042
 
+# Markdown/code descriptions ($(...), backticks, nested EOF) → file, not -d
+# (`-d "$(cat <<EOF…)"` truncates silently on shell quoting). Mutually exclusive with -d.
+ai-hats task create "Title" --description-file /tmp/desc.md -p medium --id PROJ-042
+
 # Show task — by default appends a "Linked context" block with the bodies of
 # all linked tasks (parent epic + its plan.md, depends_on/related/see_also),
 # the same content a sub-agent gets. Add --short for the compact index only.
@@ -75,6 +79,7 @@ ai-hats task transition PROJ-042 cancelled --resolution "duplicate of PROJ-040"
 # Update task fields
 ai-hats task update PROJ-042 -p high
 ai-hats task update PROJ-042 --description "New description" --resolution "Closed: duplicate"
+ai-hats task update PROJ-042 --description-file /tmp/desc.md   # verbatim; same -d-free safe path
 ai-hats task update PROJ-042 --add-tag refactor --remove-tag wip
 
 # Log work progress
