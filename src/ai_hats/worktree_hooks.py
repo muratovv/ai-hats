@@ -24,12 +24,15 @@ Contract (D7):
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from .worktree_locks import LIFECYCLE_LOCK_TIMEOUT
+
+logger = logging.getLogger(__name__)
 
 # Default per-hook wall-clock budget. Strictly below LIFECYCLE_LOCK_TIMEOUT so
 # the timeout — not the lock — is what bounds a hung hook (see module docstring).
@@ -53,6 +56,41 @@ def resolve_hook_timeout() -> float:
     except ValueError:
         return WT_HOOK_TIMEOUT_S
     return val if val > 0 else WT_HOOK_TIMEOUT_S
+
+
+def collect_carry_for_role(
+    project_dir: Path, role: str = ""
+) -> dict[str, list[dict[str, object]]]:
+    """Compose the effective role and return its serialized worktree carry.
+
+    The threading entry point (HATS-823 D3): the create-time caller
+    (``state._setup_worktree`` / ``wt create`` CLI) calls this to collect the
+    worktree hooks the worktree's role declares, to pass into
+    ``WorktreeManager.create(wt_hooks=...)``. ``role`` falls back to the
+    project's ``active_role`` / ``default_role`` (the canonical effective-role
+    resolution). Compose failures degrade to an empty carry with a WARN —
+    collection trouble must not block worktree creation; a genuinely
+    declared-but-missing script still fail-closes at teardown (D7).
+    """
+    from .assembler import Assembler
+    from .composer import collect_worktree_hooks
+    from .materialize import compose_for_role
+
+    try:
+        assembler = Assembler(project_dir=project_dir)
+        cfg = assembler.project_config
+        effective = role or cfg.active_role or cfg.default_role
+        if not effective:
+            return {}
+        result = compose_for_role(assembler, effective)
+        return serialize_collected_hooks(collect_worktree_hooks(result))
+    except Exception as exc:  # noqa: BLE001 — never block create on carry collection
+        logger.warning(
+            "worktree hooks: could not compose role %r for carry collection: %s",
+            role,
+            exc,
+        )
+        return {}
 
 
 def serialize_collected_hooks(
