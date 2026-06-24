@@ -70,6 +70,7 @@ def isolated_home(monkeypatch, tmp_path: Path):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(home))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     return home
 
