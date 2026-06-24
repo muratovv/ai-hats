@@ -1,5 +1,0 @@
-name: api-evolution-checklist
-description: Audit public-API/contract changes against Hyrum, Tesler, Leaky Abstractions, Lehman
-author: ai-hats
-tags: [architecture, api-design, laws-of-se, contracts]
-pattern: checklist

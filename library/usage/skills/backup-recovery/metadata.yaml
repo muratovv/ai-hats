@@ -1,5 +1,0 @@
-name: backup-recovery
-description: 3-2-1 backup strategy with verified restore procedures
-author: ai-hats
-tags: [operations, reliability, data-safety]
-pattern: protocol

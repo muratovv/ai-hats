@@ -1,5 +1,0 @@
-name: terraform-expert
-description: Terraform/OpenTofu IaC — state management, DRY modules, safety practices
-author: ai-hats
-tags: [operations, iac, terraform]
-pattern: reference
