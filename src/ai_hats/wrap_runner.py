@@ -83,8 +83,8 @@ class WrapRunner:
     def _hold_before_launch(self, startup_warnings: list[str]) -> None:
         """Hold the start banner briefly before the wrapped TUI spawns (HATS-825).
 
-        ``1s`` clean / ``10s`` when a startup step warned; no hold on a non-tty
-        (policy in :func:`_startup_hold_seconds`). Ctrl-C during the hold prints
+        ``10s`` when a startup step warned; no hold otherwise (clean start or
+        non-tty) — policy in :func:`_startup_hold_seconds`. Ctrl-C during the hold prints
         an abort note and propagates — ``run()``'s ``KeyboardInterrupt`` handler
         turns it into a clean exit (130) that finalizes the session and never
         spawns the CLI.

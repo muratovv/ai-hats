@@ -1,26 +1,24 @@
 """HATS-825: pre-launch startup-hold policy.
 
 The wrapped CLI's full-screen TUI clobbers anything printed before the spawn,
-so ``WrapRunner`` holds the start banner briefly before launching: 1s on a
-clean start, 10s when a fail-open startup step warned, and not at all on a
-non-tty (the ``never block session start`` invariant). The policy lives in a
-pure function so it is testable without sleeping or a real terminal.
+so ``WrapRunner`` holds the start banner before launching ONLY when a fail-open
+startup step warned (10s). A clean start does not hold (nothing to read), and a
+non-tty never holds (the ``never block session start`` invariant). The policy
+lives in a pure function so it is testable without sleeping or a real terminal.
 """
 
 from ai_hats.runtime_common import (
-    STARTUP_HOLD_SECONDS,
     STARTUP_WARN_HOLD_SECONDS,
     _startup_hold_seconds,
 )
 
 
-def test_clean_start_on_tty_holds_default():
-    assert _startup_hold_seconds(False, is_tty=True, env={}) == STARTUP_HOLD_SECONDS
+def test_clean_start_on_tty_does_not_hold():
+    assert _startup_hold_seconds(False, is_tty=True, env={}) == 0.0
 
 
-def test_warning_on_tty_holds_longer():
+def test_warning_on_tty_holds():
     assert _startup_hold_seconds(True, is_tty=True, env={}) == STARTUP_WARN_HOLD_SECONDS
-    assert STARTUP_WARN_HOLD_SECONDS > STARTUP_HOLD_SECONDS
 
 
 def test_non_tty_never_holds():
