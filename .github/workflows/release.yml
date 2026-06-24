@@ -16,7 +16,7 @@ jobs:
     name: build (uv build → sdist + wheel)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # setuptools-scm derives the version from git tags; a shallow checkout
           # stamps a 0.0.dev fallback instead of the clean release version.
