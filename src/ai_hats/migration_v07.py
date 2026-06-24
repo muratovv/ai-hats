@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .composer import CompositionResult, ResolvedComponent
+from .frontmatter import FrontmatterError, read_frontmatter
 from .models import ProjectConfig
 from .resolver import read_rule_body
 
@@ -260,28 +261,18 @@ def render_skills_index_md(skills: list[ResolvedComponent]) -> str | None:
 
 
 def _skill_description(skill: ResolvedComponent) -> str:
-    """Extract the frontmatter ``description`` from a skill's SKILL.md, or empty."""
-    skill_md = skill.source_path / "SKILL.md"
-    if not skill_md.is_file():
-        return ""
+    """Extract the frontmatter ``description`` from a skill's SKILL.md, or empty.
+
+    Best-effort: a malformed frontmatter block falls back to ``""`` (a v0.6
+    skills_index baseline never lists a description it cannot read), rather than
+    aborting the migration diff.
+    """
     try:
-        text = skill_md.read_text()
-    except OSError:
+        data = read_frontmatter(skill.source_path / "SKILL.md")
+    except FrontmatterError:
         return ""
-    # Minimal frontmatter parse: between leading ``---`` lines, look for
-    # ``description: ...`` (single-line value). Mirrors the v0.6 behaviour
-    # of providers._extract_frontmatter_description without taking a
-    # cross-module dependency on a private symbol.
-    if not text.startswith("---\n"):
-        return ""
-    end = text.find("\n---", 4)
-    if end == -1:
-        return ""
-    for line in text[4:end].splitlines():
-        line = line.strip()
-        if line.startswith("description:"):
-            return line[len("description:"):].strip().strip('"').strip("'")
-    return ""
+    desc = data.get("description")
+    return desc if isinstance(desc, str) else ""
 
 
 def _ensure_trailing_newline(text: str) -> str:
