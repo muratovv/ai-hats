@@ -23,7 +23,11 @@ from ai_hats.assembler import Assembler
 from ai_hats.composer import CompositionResult, ResolvedComponent
 from ai_hats.models import ComponentType, ProjectConfig
 from ai_hats.paths import session_cache_dir, session_cache_root
-from ai_hats.providers import ClaudeProvider, GeminiProvider
+from ai_hats.providers import (
+    ClaudeProvider,
+    GeminiProvider,
+    _extract_frontmatter_description,
+)
 from ai_hats.runtime import _cleanup_session_cache, _sweep_orphan_session_caches
 
 
@@ -356,3 +360,41 @@ def test_claude_omits_skills_index_gemini_keeps_it(tmp_path):
         assert "Reliability" in prompt
         assert "dev_rule_tool_call_hygiene" in prompt
         assert "Tool-Call Hygiene" in prompt
+
+
+# --------------------------------------------------------------------- #
+# HATS-813 — _extract_frontmatter_description now parses real YAML. The
+# skill-index description lookup keeps its name fallback and never crashes
+# the prompt build on a malformed frontmatter block.
+# --------------------------------------------------------------------- #
+
+
+def _skill_on_disk(tmp_path: Path, name: str, skill_md: str) -> ResolvedComponent:
+    skill_dir = tmp_path / "skills" / name
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(skill_md)
+    return ResolvedComponent(
+        name=name, component_type=ComponentType.SKILL, source_path=skill_dir
+    )
+
+
+def test_extract_description_reads_frontmatter(tmp_path):
+    skill = _skill_on_disk(
+        tmp_path, "doc", "---\ndescription: the doc skill\n---\n# body\n"
+    )
+    assert _extract_frontmatter_description(skill) == "the doc skill"
+
+
+def test_extract_description_malformed_falls_back_to_name(tmp_path):
+    """A broken frontmatter block must not raise on the prompt-build path."""
+    skill = _skill_on_disk(tmp_path, "broken", "---\nbad: : indent\n---\nbody\n")
+    assert _extract_frontmatter_description(skill) == "broken"
+
+
+def test_extract_description_missing_falls_back_to_name(tmp_path):
+    skill = ResolvedComponent(
+        name="ghost",
+        component_type=ComponentType.SKILL,
+        source_path=tmp_path / "absent",
+    )
+    assert _extract_frontmatter_description(skill) == "ghost"
