@@ -22,7 +22,7 @@ jobs:
           # stamps a 0.0.dev fallback instead of the clean release version.
           fetch-depth: 0
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
       - name: Build sdist + wheel
         run: uv build
       - name: Upload dist artifact
