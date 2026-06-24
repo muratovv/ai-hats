@@ -311,6 +311,22 @@ def test_render_skills_index_md_skips_description_when_equal_to_name(tmp_path):
     assert out == "# Skills Index\n\n- **beta**\n"
 
 
+def test_skill_description_malformed_falls_back_to_empty(tmp_path):
+    """HATS-813: a malformed frontmatter block must not abort the migration diff;
+    the description lookup falls back to "" (bullet without a description)."""
+    skill_dir = tmp_path / "skills" / "gamma"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nbad: : indent\n---\nbody\n")
+    rc = ResolvedComponent(
+        name="gamma",
+        component_type=ComponentType.SKILL,
+        source_path=skill_dir,
+        injection="",
+    )
+    assert m._skill_description(rc) == ""
+    assert m.render_skills_index_md([rc]) == "# Skills Index\n\n- **gamma**\n"
+
+
 # ---------- Diff engine ----------
 
 

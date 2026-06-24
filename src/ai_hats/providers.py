@@ -13,6 +13,7 @@ from .composer import (
     collect_runtime_hooks,
     resolve_skill_script,
 )
+from .frontmatter import FrontmatterError, read_frontmatter
 from .paths import CLAUDE_PROJECT_DIR_VAR
 from .paths import hooks_dir as _lib_hooks_dir
 from .paths import managed_runtime_hook_filename
@@ -60,20 +61,19 @@ ALWAYS_ON_RULES = {
 
 
 def _extract_frontmatter_description(skill: ResolvedComponent) -> str:
-    """Extract description from SKILL.md YAML frontmatter."""
-    skill_md = skill.source_path / "SKILL.md"
-    if not skill_md.exists():
+    """Extract ``description`` from a skill's SKILL.md frontmatter, else its name.
+
+    Best-effort lookup for the prompt-build skill index: a malformed frontmatter
+    block falls back to the skill name rather than crashing the whole prompt
+    build (the loud :class:`FrontmatterError` contract is consumed raw by the
+    hook-reading path in HATS-814, where a silent drop is a security hole).
+    """
+    try:
+        data = read_frontmatter(skill.source_path / "SKILL.md")
+    except FrontmatterError:
         return skill.name
-    text = skill_md.read_text()
-    if not text.startswith("---"):
-        return skill.name
-    end = text.find("---", 3)
-    if end == -1:
-        return skill.name
-    for line in text[3:end].splitlines():
-        if line.startswith("description:"):
-            return line.split(":", 1)[1].strip()
-    return skill.name
+    desc = data.get("description")
+    return desc if isinstance(desc, str) and desc else skill.name
 
 
 class Provider(abc.ABC):
