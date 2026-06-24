@@ -18,7 +18,9 @@ from pathlib import Path
 from typing import Any
 
 
-from .paths import worktrees_dir
+from .models import WT_TEARDOWN_EVENTS
+from .paths import managed_wt_hook_filename, worktrees_dir, wt_hooks_dir
+from .worktree_hooks import run_worktree_hook
 
 from .worktree_locks import (  # noqa: F401  -- re-export preserves the import surface (HATS-715)
     BASE_LOCK_TIMEOUT,
@@ -62,6 +64,17 @@ logger = logging.getLogger(__name__)
 
 class WorktreeDirtyError(Exception):
     """Raised when a destructive operation targets a worktree with uncommitted changes."""
+
+
+class WorktreeHookError(Exception):
+    """A ``wt_out`` lifecycle hook failed and the teardown is fail-closed (HATS-823).
+
+    Raised by :meth:`WorktreeManager._run_wt_out_hooks` when a declared
+    ``wt_out`` hook exits non-zero / times out / is missing / unrunnable and
+    ``--skip-hooks`` was not given. The teardown aborts before
+    ``_remove_worktree`` so the worktree + branch (and any unharvested
+    gitignored data) are preserved (ADR-0012 D4). On the ``cleanup()`` path it
+    is caught and logged — never raised over the agent's original error."""
 
 
 class WorktreeCreateError(Exception):
@@ -418,10 +431,25 @@ class WorktreeManager:
         self._is_git = False
         self._original_branch: str | None = None
         self._base_sha_at_create: str | None = None  # HATS-457
+        # HATS-823: create-time carry {wt_in/wt_out: [{skill, script, on}]},
+        # persisted to state and replayed at teardown (never recomposed).
+        self._wt_hooks: dict[str, list[dict[str, Any]]] = {}
+        # HATS-823: state predates wt-hooks (key absent, not empty {}) → WARN.
+        self._wt_hooks_legacy = False
 
-    def create(self) -> Path:
+    def create(
+        self,
+        *,
+        wt_hooks: dict[str, list[dict[str, Any]]] | None = None,
+    ) -> Path:
         """Create an isolated worktree. Returns project_dir if not a git repo
         or if isolation_mode is NONE (no worktree, runs in project_dir).
+
+        ``wt_hooks`` (HATS-823) are the resolved worktree lifecycle hooks the
+        caller collected from composition (``collect_worktree_hooks`` →
+        ``serialize_collected_hooks``). They are stored on the manager, run at
+        ``wt_in`` time (after ``git worktree add``), and persisted by
+        :meth:`save_state` so teardown runs the create-time set verbatim.
 
         HATS-479: concurrent ai-hats peers and external git writers are
         handled via L1 (repo-scoped create-mutex), L2 (TOCTOU re-check
@@ -436,9 +464,9 @@ class WorktreeManager:
         :raises WorktreeLockError: L1 mutex was held by another process
             for longer than :data:`CREATE_LOCK_TIMEOUT`.
         """
+        self._wt_hooks = wt_hooks or {}
         if self.isolation_mode == IsolationMode.NONE:
-            # No worktree: sub-agent runs directly in project_dir.
-            # worktree_path stays None so cleanup() is a no-op.
+            # No worktree → wt_in/wt_out never run (D7); worktree_path stays None.
             return self.project_dir
         if not self._check_is_git():
             return self.project_dir
@@ -577,6 +605,8 @@ class WorktreeManager:
                     except subprocess.CalledProcessError:
                         pass  # branch may not have been created — fine
                 raise WorktreeCreateError(_format_git_create_error(exc, self.branch_name)) from exc
+            # HATS-823: wt_in runs AFTER add (git refuses a non-empty dir).
+            self._run_wt_in_hooks()
             logger.info(
                 "Created worktree %s on branch %s",
                 self.worktree_path,
@@ -590,6 +620,7 @@ class WorktreeManager:
         squash: bool = False,
         force: bool = False,
         accept_drift: bool = False,
+        skip_hooks: bool = False,
     ) -> None:
         """Merge worktree changes back into the original branch and clean up.
 
@@ -660,6 +691,8 @@ class WorktreeManager:
             ):
                 if not force:
                     self._check_clean()
+                # HATS-823: short-circuit still destroys the dir → harvest first.
+                self._run_wt_out_hooks("merge", skip_hooks=skip_hooks)
                 self._remove_worktree()
                 self._delete_branch()
                 self._clear_state()
@@ -737,6 +770,7 @@ class WorktreeManager:
             if not accept_drift:
                 self._check_drift()
             if self._original_branch and not self._branch_exists(self._original_branch):
+                self._run_wt_out_hooks("merge", skip_hooks=skip_hooks)
                 self._remove_worktree()
                 self._clear_state()
                 raise OriginalBranchMissingError(
@@ -773,6 +807,9 @@ class WorktreeManager:
                     exc_info=True,
                 )
                 raise
+            # HATS-823: harvest before teardown. On failure the branch survives,
+            # so a retry hits the HATS-596 short-circuit and re-runs the hook.
+            self._run_wt_out_hooks("merge", skip_hooks=skip_hooks)
             self._remove_worktree()
             self._delete_branch()
             self._clear_state()
@@ -780,7 +817,13 @@ class WorktreeManager:
             # merge invalidates self for any further lifecycle ops.
             self.worktree_path = None
 
-    def discard(self, *, force: bool = False, force_remove: bool = False) -> None:
+    def discard(
+        self,
+        *,
+        force: bool = False,
+        force_remove: bool = False,
+        skip_hooks: bool = False,
+    ) -> None:
         """Remove worktree and branch without merging.
 
         Raises WorktreeDirtyError if the worktree has uncommitted changes
@@ -817,12 +860,14 @@ class WorktreeManager:
 
             if not force:
                 self._check_clean()
+            # HATS-823: discard != "accept data loss" — harvest fail-closed (D4).
+            self._run_wt_out_hooks("discard", skip_hooks=skip_hooks)
             self._remove_worktree(force_rmtree=force_remove)
             self._delete_branch()
             self.worktree_path = None
             self._clear_state()
 
-    def cleanup(self, *, force_discard: bool = False) -> None:
+    def cleanup(self, *, force_discard: bool = False, skip_hooks: bool = False) -> None:
         """Clean up worktree. Merges changes based on isolation_mode.
 
         HATS-480: holds the per-wt-branch lifecycle lock through the
@@ -852,6 +897,18 @@ class WorktreeManager:
                 logger.warning("Merge failed, falling back to branch mode", exc_info=True)
                 mode = IsolationMode.BRANCH
 
+            # HATS-823: auto path — a wt_out failure must NOT raise over the
+            # agent's original error (D4); preserve the dir and return.
+            try:
+                self._run_wt_out_hooks("cleanup", skip_hooks=skip_hooks)
+            except WorktreeHookError as exc:
+                logger.warning(
+                    "wt_out hook failed during cleanup of '%s' — worktree "
+                    "preserved; recover with `ai-hats wt discard %s --skip-hooks`: %s",
+                    self.branch_name, self.branch_name, exc,
+                )
+                return
+
             # Remove worktree directory
             self._remove_worktree()
 
@@ -869,6 +926,98 @@ class WorktreeManager:
         return None
 
     # ------------------------------------------------------------------
+    # Worktree lifecycle hooks (HATS-823, ADR-0012)
+    # ------------------------------------------------------------------
+
+    def _wt_hook_log_dir(self) -> Path:
+        return worktrees_dir(self.project_dir) / f"{_state_key(self.branch_name)}.logs"
+
+    def _materialized_hook(self, row: dict[str, Any]) -> Path:
+        """On-disk path of a hook script the assembler materialized."""
+        return wt_hooks_dir(self.project_dir) / managed_wt_hook_filename(
+            row["skill"], row["script"]
+        )
+
+    def _run_wt_in_hooks(self) -> None:
+        """Run wt_in hooks after ``git worktree add`` (warn-and-continue).
+
+        A create-time hook failure is friction, not data loss (ADR-0012 D3/D7):
+        it is logged and skipped, never aborting worktree creation.
+        """
+        rows = self._wt_hooks.get("wt_in") or []
+        if not rows or self.worktree_path is None:
+            return
+        log_dir = self._wt_hook_log_dir()
+        for row in rows:
+            script = self._materialized_hook(row)
+            outcome = run_worktree_hook(
+                script,
+                event="wt_in",
+                worktree_path=self.worktree_path,
+                project_dir=self.project_dir,
+                branch_name=self.branch_name,
+                log_path=log_dir / f"wt_in-{script.name}.log",
+            )
+            if not outcome.ok:
+                logger.warning(
+                    "wt_in hook from skill '%s' failed — continuing "
+                    "(create-time friction, not data loss): %s",
+                    row.get("skill", "?"),
+                    outcome.reason,
+                )
+
+    def _run_wt_out_hooks(self, event: str, *, skip_hooks: bool = False) -> None:
+        """Run wt_out hooks bound to ``event`` before teardown removes the dir.
+
+        Fail-closed (D4): any hook failure raises :class:`WorktreeHookError` and
+        aborts the teardown, preserving the worktree. ``skip_hooks`` is the
+        conscious escape; a no-op when no wt_out hooks are declared.
+        """
+        if self._wt_hooks_legacy:
+            # Pre-upgrade worktree: can't know what it holds → warn, don't drop.
+            logger.warning(
+                "Worktree '%s' predates wt-hooks (no carry recorded at create) "
+                "— gitignored data cannot be auto-harvested on %s; back it up "
+                "manually if needed.",
+                self.branch_name,
+                event,
+            )
+        rows = [
+            r
+            for r in (self._wt_hooks.get("wt_out") or [])
+            if event in (r.get("on") or WT_TEARDOWN_EVENTS)
+        ]
+        if self.worktree_path is None or not rows:
+            return
+        if skip_hooks:
+            logger.warning(
+                "wt_out hooks SKIPPED for '%s' on %s via --skip-hooks — "
+                "unharvested gitignored data will be destroyed (%d hook(s))",
+                self.branch_name,
+                event,
+                len(rows),
+            )
+            return
+        log_dir = self._wt_hook_log_dir()
+        for row in rows:
+            script = self._materialized_hook(row)
+            outcome = run_worktree_hook(
+                script,
+                event=event,
+                worktree_path=self.worktree_path,
+                project_dir=self.project_dir,
+                branch_name=self.branch_name,
+                log_path=log_dir / f"{event}-{script.name}.log",
+            )
+            if not outcome.ok:
+                raise WorktreeHookError(
+                    f"wt_out hook from skill '{row.get('skill', '?')}' failed on "
+                    f"{event} ({outcome.reason}). Teardown aborted — worktree "
+                    f"'{self.branch_name}' preserved. Fix the hook and retry, or "
+                    f"force with --skip-hooks (accepts the data loss)."
+                )
+
+    # ------------------------------------------------------------------
     # State persistence
     # ------------------------------------------------------------------
 
@@ -883,6 +1032,7 @@ class WorktreeManager:
             "worktree_path": str(self.worktree_path),
             "original_branch": self._original_branch,
             "base_sha_at_create": self._base_sha_at_create,  # HATS-457
+            "wt_hooks": self._wt_hooks,  # HATS-823: create-time hooks for teardown
         }
         with _acquire(state_path):
             _atomic_write_json(state_path, state)
@@ -1044,6 +1194,9 @@ class WorktreeManager:
         # HATS-457: legacy state files (pre-457) omit this key — graceful
         # degradation, drift check becomes a no-op.
         mgr._base_sha_at_create = data.get("base_sha_at_create")
+        # HATS-823: absent key = pre-upgrade worktree (legacy WARN at teardown).
+        mgr._wt_hooks = data.get("wt_hooks") or {}
+        mgr._wt_hooks_legacy = "wt_hooks" not in data
         mgr._is_git = True
         mgr._state_key_cached = key
         return mgr

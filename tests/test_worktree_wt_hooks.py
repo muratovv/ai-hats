@@ -1,0 +1,156 @@
+"""HATS-823 — worktree lifecycle hook application points (ADR-0012 D2/D4).
+
+Exercises the real WorktreeManager against a real git repo: wt_in runs after
+checkout; wt_out runs fail-closed before every teardown; --skip-hooks forces;
+cleanup() preserves on hook failure; on-filtering; create→persist→teardown
+round-trip; pre-upgrade (carry-less) state warns instead of crashing.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from ai_hats.paths import managed_wt_hook_filename, worktrees_dir, wt_hooks_dir
+from ai_hats.worktree import WorktreeHookError, WorktreeManager
+
+
+def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True
+    )
+
+
+@pytest.fixture
+def git_project(tmp_path: Path) -> Path:
+    project = tmp_path / "project"
+    project.mkdir()
+    _git(project, "init")
+    _git(project, "config", "user.email", "test@test.com")
+    _git(project, "config", "user.name", "Test")
+    (project / "README.md").write_text("# Test")
+    _git(project, "add", ".")
+    _git(project, "commit", "-m", "init")
+    return project
+
+
+def _place_hook(project: Path, skill: str, basename: str, body: str) -> None:
+    dest = wt_hooks_dir(project) / managed_wt_hook_filename(skill, basename)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text("#!/usr/bin/env bash\nset -e\n" + body)
+    dest.chmod(0o755)
+
+
+def _carry_out(skill="s", script="drain.sh", on=("merge", "discard", "cleanup")):
+    return {"wt_out": [{"skill": skill, "script": script, "on": list(on)}]}
+
+
+def _commit_in_wt(wt: Path) -> None:
+    (wt / "work.txt").write_text("x")
+    _git(wt, "add", ".")
+    _git(wt, "commit", "-m", "work")
+
+
+def test_wt_in_runs_after_checkout(git_project, tmp_path):
+    sentinel = tmp_path / "seeded"
+    _place_hook(git_project, "s", "seed.sh", f'touch "{sentinel}"\n')
+    mgr = WorktreeManager(git_project, branch_name="task/a")
+    mgr.create(wt_hooks={"wt_in": [{"skill": "s", "script": "seed.sh"}]})
+    assert sentinel.exists()
+
+
+def test_wt_out_runs_on_merge_then_tears_down(git_project, tmp_path):
+    sentinel = tmp_path / "drained"
+    _place_hook(git_project, "s", "drain.sh", f'touch "{sentinel}"\n')
+    mgr = WorktreeManager(git_project, branch_name="task/b")
+    wt = mgr.create(wt_hooks=_carry_out())
+    _commit_in_wt(wt)
+    mgr.merge()
+    assert sentinel.exists()
+    assert not wt.exists()  # torn down after the hook ran
+
+
+def test_failing_wt_out_aborts_merge_fail_closed(git_project):
+    _place_hook(git_project, "s", "drain.sh", "exit 1\n")
+    mgr = WorktreeManager(git_project, branch_name="task/c")
+    wt = mgr.create(wt_hooks=_carry_out())
+    _commit_in_wt(wt)
+    with pytest.raises(WorktreeHookError):
+        mgr.merge()
+    assert wt.exists()  # preserved
+    assert WorktreeManager.branch_exists(git_project, "task/c")
+
+
+def test_failing_wt_out_aborts_discard_fail_closed(git_project):
+    _place_hook(git_project, "s", "drain.sh", "exit 1\n")
+    mgr = WorktreeManager(git_project, branch_name="task/d")
+    wt = mgr.create(wt_hooks=_carry_out())
+    with pytest.raises(WorktreeHookError):
+        mgr.discard()
+    assert wt.exists()
+
+
+def test_skip_hooks_forces_discard_through(git_project):
+    _place_hook(git_project, "s", "drain.sh", "exit 1\n")
+    mgr = WorktreeManager(git_project, branch_name="task/e")
+    wt = mgr.create(wt_hooks=_carry_out())
+    mgr.discard(skip_hooks=True)  # must not raise
+    assert not wt.exists()
+
+
+def test_on_filtering_skips_non_matching_event(git_project, tmp_path):
+    sentinel = tmp_path / "ran"
+    _place_hook(git_project, "s", "drain.sh", f'touch "{sentinel}"\n')
+    mgr = WorktreeManager(git_project, branch_name="task/f")
+    wt = mgr.create(wt_hooks=_carry_out(on=("discard",)))  # not merge
+    _commit_in_wt(wt)
+    mgr.merge()
+    assert not sentinel.exists()  # hook bound to discard only
+    assert not wt.exists()  # merge still tore down
+
+
+def test_cleanup_preserves_worktree_on_hook_failure(git_project):
+    _place_hook(git_project, "s", "drain.sh", "exit 1\n")
+    mgr = WorktreeManager(git_project, branch_name="task/g")
+    wt = mgr.create(wt_hooks=_carry_out())
+    mgr.cleanup()  # must NOT raise (auto path)
+    assert wt.exists()  # preserved, not removed
+
+
+def test_persistence_roundtrip_runs_create_time_hooks(git_project, tmp_path):
+    sentinel = tmp_path / "drained2"
+    _place_hook(git_project, "s", "drain.sh", f'touch "{sentinel}"\n')
+    mgr = WorktreeManager(git_project, branch_name="task/h")
+    wt = mgr.create(wt_hooks=_carry_out())
+    mgr.save_state()
+    # Fresh manager loaded from persisted state (separate-CLI-invocation path).
+    loaded = WorktreeManager.load_for_branch(git_project, "task/h")
+    assert loaded is not None
+    assert loaded._wt_hooks == _carry_out()
+    _commit_in_wt(wt)
+    loaded.merge()
+    assert sentinel.exists()
+
+
+def test_legacy_state_without_wt_hooks_warns_and_does_not_crash(
+    git_project, caplog
+):
+    mgr = WorktreeManager(git_project, branch_name="task/i")
+    wt = mgr.create()
+    mgr.save_state()
+    # Simulate a pre-upgrade state file: strip the wt_hooks key.
+    state_file = next(worktrees_dir(git_project).glob("*.json"))
+    data = json.loads(state_file.read_text())
+    data.pop("wt_hooks", None)
+    state_file.write_text(json.dumps(data))
+
+    loaded = WorktreeManager.load_for_branch(git_project, "task/i")
+    assert loaded is not None
+    assert loaded._wt_hooks_legacy is True
+    with caplog.at_level("WARNING"):
+        loaded.discard()  # no crash
+    assert not wt.exists()
+    assert any("predates wt-hooks" in r.message for r in caplog.records)

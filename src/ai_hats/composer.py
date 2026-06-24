@@ -12,6 +12,7 @@ from .models import (
     OverlayConfig,
     RuntimeHook,
     SkillMetadata,
+    WorktreeHook,
 )
 
 
@@ -417,6 +418,29 @@ def collect_runtime_hooks(
             collected.setdefault(event, []).extend(
                 (skill.name, hook) for hook in hooks
             )
+    return collected
+
+
+def collect_worktree_hooks(
+    result: CompositionResult,
+) -> dict[str, list[tuple[str, WorktreeHook]]]:
+    """Walk composed skills and group their worktree lifecycle hooks by kind.
+
+    Returns ``{"wt_in": [(skill_name, WorktreeHook), ...], "wt_out": [...]}`` —
+    only non-empty kinds appear (HATS-823). Validation (unknown event in ``on``,
+    malformed row) already happened at :meth:`SkillMetadata.from_skill_dir` time
+    and fails loud there. Mirrors :func:`collect_runtime_hooks`.
+    """
+    collected: dict[str, list[tuple[str, WorktreeHook]]] = {}
+    for skill in result.skills:
+        carry = SkillMetadata.from_skill_dir(skill.source_path).worktree
+        if carry.is_empty():
+            continue
+        for kind, hooks in (("wt_in", carry.wt_in), ("wt_out", carry.wt_out)):
+            if hooks:
+                collected.setdefault(kind, []).extend(
+                    (skill.name, hook) for hook in hooks
+                )
     return collected
 
 

@@ -119,9 +119,13 @@ def wt_create(branch: str):
     # the loser got an opaque CalledProcessError + a leaked tempdir.
     # WorktreeManager.create() now re-checks under the repo-scoped L1 lock
     # and raises WorktreeCreateError with a friendly message; we just relay.
+    # HATS-823: thread the project's effective-role worktree carry (wt_in/wt_out
+    # hooks) in at create; persisted to state for teardown (D3).
+    from ..worktree_hooks import collect_carry_for_role
+
     mgr = WorktreeManager(project_dir, branch_name=branch)
     try:
-        wt_path = mgr.create()
+        wt_path = mgr.create(wt_hooks=collect_carry_for_role(project_dir))
     except WorktreeCreateError as exc:
         console.print(f"[red]{exc}[/]")
         sys.exit(1)
@@ -146,7 +150,20 @@ def wt_create(branch: str):
     default=False,
     help="Proceed even if the base branch moved since worktree create (HATS-457)",
 )
-def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
+@click.option(
+    "--skip-hooks",
+    is_flag=True,
+    default=False,
+    help="Force teardown even if a wt_out hook fails — accepts losing "
+         "unharvested gitignored data (HATS-823).",
+)
+def wt_merge(
+    branch: str | None,
+    squash: bool,
+    force: bool,
+    accept_drift: bool,
+    skip_hooks: bool,
+):
     """Merge worktree changes back and clean up.
 
     Without BRANCH: auto-detect from CWD (if inside a linked worktree).
@@ -159,6 +176,7 @@ def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
         WorktreeBaseBranchMismatchError,  # HATS-533
         WorktreeDirtyError,
         WorktreeDriftError,
+        WorktreeHookError,  # HATS-823
         WorktreeMainRepoMidMergeError,  # HATS-587 / F4
         WorktreePartialCleanupError,
         WorktreeRemoveError,
@@ -176,7 +194,17 @@ def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
 
     name = mgr.branch_name
     try:
-        mgr.merge(squash=squash, force=force, accept_drift=accept_drift)
+        mgr.merge(
+            squash=squash, force=force, accept_drift=accept_drift,
+            skip_hooks=skip_hooks,
+        )
+    except WorktreeHookError as e:
+        # HATS-823: a wt_out hook failed; teardown aborted fail-closed, the
+        # worktree + gitignored data are preserved. The message carries the
+        # recovery + --skip-hooks escape.
+        from rich.markup import escape as _escape
+        console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e))}")
+        sys.exit(1)
     except WorktreeDirtyError as e:
         console.print(f"[red]Refused[/]: {e}")
         sys.exit(1)
@@ -281,7 +309,14 @@ def wt_merge(branch: str | None, squash: bool, force: bool, accept_drift: bool):
          "fall back to rm -rf. HATS-488 / B-03: opt-in only — default refuses "
          "to silently nuke residual data.",
 )
-def wt_discard(branch: str | None, force: bool, force_remove: bool):
+@click.option(
+    "--skip-hooks",
+    is_flag=True,
+    default=False,
+    help="Force teardown even if a wt_out hook fails — accepts losing "
+         "unharvested gitignored data (HATS-823).",
+)
+def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: bool):
     """Discard worktree changes and clean up.
 
     Without BRANCH: auto-detect from CWD (if inside a linked worktree).
@@ -291,6 +326,7 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool):
     """
     from ..worktree import (
         WorktreeDirtyError,
+        WorktreeHookError,  # HATS-823
         WorktreePartialCleanupError,
         WorktreeRemoveError,
     )
@@ -307,7 +343,14 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool):
 
     name = mgr.branch_name
     try:
-        mgr.discard(force=force, force_remove=force_remove)
+        mgr.discard(force=force, force_remove=force_remove, skip_hooks=skip_hooks)
+    except WorktreeHookError as e:
+        # HATS-823: `discard` is still fail-closed on a wt_out hook — the data
+        # may matter even when the work doesn't. The message carries the
+        # --skip-hooks escape.
+        from rich.markup import escape as _escape
+        console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e))}")
+        sys.exit(1)
     except WorktreeDirtyError as e:
         console.print(f"[red]Refused[/]: {e}")
         sys.exit(1)
