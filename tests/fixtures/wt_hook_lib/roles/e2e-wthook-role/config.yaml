@@ -1,0 +1,16 @@
+name: e2e-wthook-role
+priorities:
+  - Correctness
+composition:
+  traits: []
+  rules: []
+  skills:
+    - e2e-wthook
+  hooks: {}
+injection: |
+  # ROLE: E2E-WTHOOK-ROLE
+
+  E2E fixture role (HATS-823). Bundles the `e2e-wthook` skill so a real
+  `ai-hats self init -r e2e-wthook-role` composes a skill that declares
+  worktree `wt_in` / `wt_out` hooks. Used only by the worktree-hook e2e;
+  not shipped.

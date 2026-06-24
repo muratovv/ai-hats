@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import sys
+import warnings
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -24,7 +25,7 @@ from pydantic import (
 )
 
 from .frontmatter import read_frontmatter
-from .skill_sidecar import leftover_sidecar_remedy
+from .skill_sidecar import _HOOK_KEYS, leftover_sidecar_remedy
 from .utils.atomic_io import atomic_write_text
 
 logger = logging.getLogger(__name__)
@@ -198,6 +199,10 @@ RUNTIME_HOOK_EVENTS: tuple[str, ...] = (
 )
 
 
+# Teardown routes a ``wt_out`` hook can bind to (HATS-823); empty `on` = all.
+WT_TEARDOWN_EVENTS: tuple[str, ...] = ("merge", "discard", "cleanup")
+
+
 class RuntimeHook(_YamlModel):
     """A single provider runtime hook declared by a skill (HATS-597).
 
@@ -213,6 +218,45 @@ class RuntimeHook(_YamlModel):
 
     matcher: str
     script: str
+
+
+class WorktreeHook(_YamlModel):
+    """A single worktree lifecycle hook declared by a skill (HATS-823, ADR-0012).
+
+    ``script`` is a path relative to the skill directory. ``on`` lists the
+    teardown events a ``wt_out`` hook fires on (subset of
+    :data:`WT_TEARDOWN_EVENTS`; empty/unset is normalized to *all* routes by
+    :meth:`SkillMetadata._normalize_worktree`). ``on`` is always empty for
+    ``wt_in`` (it fires once after ``git worktree add``).
+
+    Frozen + ``extra="forbid"``: a malformed row is a silent data-loss hole (a
+    ``wt_out`` drain that never runs), so the leaf fails loud — same posture as
+    :class:`RuntimeHook`.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    script: str
+    on: tuple[str, ...] = ()
+
+
+class WorktreeCarry(_YamlModel):
+    """Worktree lifecycle hooks a skill declares (HATS-823, ADR-0012).
+
+    The container is **forward-compatible**: unknown keys are ignored with a
+    WARN at parse time (a newer skill declaring a future carry kind must not
+    hard-fail composition on an older engine — ADR-0012 Revisions #3), in
+    contrast to the fail-loud leaves. Frozen so collected carry is safe to pass
+    around and persist into worktree state.
+    """
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    wt_in: tuple[WorktreeHook, ...] = ()
+    wt_out: tuple[WorktreeHook, ...] = ()
+
+    def is_empty(self) -> bool:
+        return not self.wt_in and not self.wt_out
 
 
 class LeftoverSidecarHooksError(RuntimeError):
@@ -255,6 +299,7 @@ class SkillMetadata(_YamlModel):
     pattern: str = ""
     git_hooks: dict[str, list[str]] = Field(default_factory=dict)
     runtime_hooks: dict[str, list[RuntimeHook]] = Field(default_factory=dict)
+    worktree: WorktreeCarry = Field(default_factory=WorktreeCarry)
     triggers: list[str] = Field(default_factory=list)
     skip: list[str] = Field(default_factory=list)
 
@@ -357,6 +402,109 @@ class SkillMetadata(_YamlModel):
         data["runtime_hooks"] = normalized
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_worktree(cls, data: Any) -> Any:
+        """Parse + validate the ``worktree:`` carry block (HATS-823, ADR-0012).
+
+        Leaf rows fail loud (a dropped ``wt_out`` hook is the data-loss hole this
+        mechanism closes); the *container* tolerates unknown keys with a WARN
+        (forward-compat — Revisions #3). ``wt_out`` ``on`` is validated against
+        :data:`WT_TEARDOWN_EVENTS` and defaults to all routes when unset;
+        ``wt_in`` ``on`` is meaningless (fires once at create) so it is dropped
+        with a WARN.
+        """
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("worktree")
+        if not raw:
+            data["worktree"] = {}
+            return data
+        skill_name = data.get("name", "<unknown>")
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"skill {skill_name!r}: worktree must be a mapping with "
+                f"wt_in / wt_out, got {type(raw).__name__}"
+            )
+        known = {"wt_in", "wt_out"}
+        unknown = [k for k in raw if k not in known]
+        if unknown:
+            warnings.warn(
+                f"skill {skill_name!r}: unknown worktree carry key(s) "
+                f"{', '.join(map(repr, unknown))} ignored (known: wt_in, wt_out)"
+                f" — update ai-hats if this is a newer carry kind",
+                stacklevel=2,
+            )
+        normalized: dict[str, list[dict[str, Any]]] = {}
+        for kind in ("wt_in", "wt_out"):
+            rows = raw.get(kind)
+            if rows is None:
+                continue
+            if not isinstance(rows, list):
+                raise ValueError(
+                    f"skill {skill_name!r}: worktree[{kind!r}] must be a list of "
+                    f"{{script, on?}} entries, got {type(rows).__name__}"
+                )
+            parsed: list[dict[str, Any]] = []
+            for row in rows:
+                if isinstance(row, dict) and True in row and "on" not in row:
+                    # YAML 1.1 parses bare `on:` as boolean True — restore it.
+                    on_val = row[True]
+                    row = {k: v for k, v in row.items() if k is not True}
+                    row["on"] = on_val
+                if not isinstance(row, dict) or "script" not in row:
+                    raise ValueError(
+                        f"skill {skill_name!r}: worktree[{kind!r}] entry must "
+                        f"have a 'script' — got {row!r}"
+                    )
+                on_raw = row.get("on", [])
+                if not isinstance(on_raw, list):
+                    raise ValueError(
+                        f"skill {skill_name!r}: worktree[{kind!r}] 'on' must be a "
+                        f"list of teardown events, got {type(on_raw).__name__}"
+                    )
+                on = tuple(str(e) for e in on_raw)
+                if kind == "wt_in":
+                    if on:
+                        warnings.warn(
+                            f"skill {skill_name!r}: worktree['wt_in'] entry has "
+                            f"'on' {list(on)} — ignored (wt_in fires once at "
+                            f"create)",
+                            stacklevel=2,
+                        )
+                    on = ()
+                else:  # wt_out
+                    bad = [e for e in on if e not in WT_TEARDOWN_EVENTS]
+                    if bad:
+                        raise ValueError(
+                            f"skill {skill_name!r}: worktree['wt_out'] 'on' has "
+                            f"unknown event(s) {bad} (allowed: "
+                            f"{', '.join(WT_TEARDOWN_EVENTS)})"
+                        )
+                    if not on:
+                        on = WT_TEARDOWN_EVENTS
+                parsed.append({"script": str(row["script"]), "on": on})
+            normalized[kind] = parsed
+
+        # Distinct scripts sharing a basename collide on the <skill>-<basename>
+        # materialized filename (silent overwrite); same script reused is fine.
+        basename_source: dict[str, str] = {}
+        for rows in normalized.values():
+            for row in rows:
+                base = Path(str(row["script"])).name
+                prior = basename_source.get(base)
+                if prior is not None and prior != row["script"]:
+                    raise ValueError(
+                        f"skill {skill_name!r}: worktree scripts {prior!r} and "
+                        f"{row['script']!r} share basename {base!r} — they would "
+                        f"collide on the materialized filename; give them distinct "
+                        f"basenames"
+                    )
+                basename_source[base] = str(row["script"])
+
+        data["worktree"] = normalized
+        return data
+
     @classmethod
     def from_yaml(cls, path: Path) -> SkillMetadata:
         if not path.exists():
@@ -388,7 +536,7 @@ class SkillMetadata(_YamlModel):
             except yaml.YAMLError:
                 raw = {}
             if isinstance(raw, dict):
-                leaked = [k for k in ("git_hooks", "runtime_hooks") if raw.get(k)]
+                leaked = [k for k in _HOOK_KEYS if raw.get(k)]
                 if leaked:
                     # Remedy single-sourced with the HATS-815 bump diagnostic.
                     raise LeftoverSidecarHooksError(
@@ -404,6 +552,7 @@ class SkillMetadata(_YamlModel):
                 "name": name if isinstance(name, str) else "",
                 "git_hooks": ai_hats.get("git_hooks") or {},
                 "runtime_hooks": ai_hats.get("runtime_hooks") or {},
+                "worktree": ai_hats.get("worktree") or {},
             }
         )
 

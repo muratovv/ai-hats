@@ -994,6 +994,7 @@ class TaskManager:
             WorktreeManager,
             assert_head_is_canonical_base,
         )
+        from .worktree_hooks import collect_carry_for_role
 
         # HATS-060: invoked from inside a linked worktree → adopt it.
         if WorktreeManager.is_inside_linked_worktree(self.project_dir):
@@ -1011,11 +1012,14 @@ class TaskManager:
         # WorktreeBaseBranchError → caller translates to red exit.
         assert_head_is_canonical_base(self.project_dir)
 
-        # No existing worktree for this task — create one.
+        # No existing worktree for this task — create one. HATS-823: thread the
+        # worktree's role carry (wt_in/wt_out hooks) in at create; persisted to
+        # state so teardown runs the create-time set (D3).
         branch = f"task/{task.id.lower()}"
         mgr = WorktreeManager(self.project_dir, branch_name=branch)
+        wt_hooks = collect_carry_for_role(self.project_dir, getattr(task, "role", ""))
         try:
-            path = mgr.create()
+            path = mgr.create(wt_hooks=wt_hooks)
         except WorktreeCreateError:
             # HATS-479: race-loser — another process won between our
             # pre-check and the L2 re-check under the create lock. Adopt

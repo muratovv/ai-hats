@@ -257,6 +257,23 @@ def hooks_dir(project_dir: Path) -> Path:
     return library_dir(project_dir) / "hooks"
 
 
+def wt_hooks_dir(project_dir: Path) -> Path:
+    """Managed worktree-hook scripts: ``<ai_hats_dir>/library/wt-hooks/`` (HATS-823).
+
+    Separate dir + manifest from :func:`hooks_dir` so the two sweeps never cross.
+    """
+    return library_dir(project_dir) / "wt-hooks"
+
+
+def managed_wt_hook_filename(skill_name: str, script: str) -> str:
+    """Collision-free on-disk filename for a worktree-hook script: ``<skill>-<basename>``.
+
+    Both parts are reduced to ``Path(...).name`` so a tampered persisted carry
+    cannot traverse out of :func:`wt_hooks_dir` at teardown (HATS-823 review).
+    """
+    return f"{Path(skill_name).name}-{Path(script).name}"
+
+
 def managed_runtime_hook_filename(skill_name: str, script: str) -> str:
     """Collision-free on-disk filename for a skill-declared runtime-hook script.
 
