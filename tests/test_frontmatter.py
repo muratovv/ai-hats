@@ -2,7 +2,7 @@
 
 Replaces the two line-scanners (``providers._extract_frontmatter_description``
 and ``migration_v07._skill_description``). The parser must read arbitrarily
-nested frontmatter (the ``metadata.ai_hats.*`` shape HATS-814 consumes) and
+nested frontmatter (the top-level ``ai_hats.*`` shape HATS-814 consumes) and
 fail **loud** on a malformed block — the Claude Code harness drops a bad
 frontmatter block silently and totally (HATS-812 PoC finding #4), so ai-hats'
 own parser raises instead.
