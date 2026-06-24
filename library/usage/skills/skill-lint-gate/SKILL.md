@@ -1,6 +1,15 @@
 ---
 name: skill-lint-gate
 description: Pre-commit agnix validation of staged library SKILL.md files for skill-authoring roles. Use when composing the maintainer or role-curator role, when a commit touches a library/**/SKILL.md, or when diagnosing why a commit was blocked by the skill-lint hook.
+ai_hats:
+  # HATS-617 — hook-carrier skill. The assembler installs the script below
+  # into `.githooks/pre-commit.d/` at composition time. It lints STAGED
+  # `library/**/SKILL.md` (excluding the golang-* pack) with agnix against the
+  # repo-root `.agnix.toml` and blocks on agnix errors. Fail-open if
+  # agnix/node absent; per-commit override AI_HATS_SKILL_LINT_ACK=1.
+  git_hooks:
+    pre-commit:
+      - git_hooks/pre-commit-skill-lint.sh
 ---
 # Skill Lint Gate
 

@@ -40,13 +40,16 @@ def project_with_hook_role(tmp_path):
     lib = tmp_path / "lib"
     skill_dir = lib / "skills" / "hook_skill"
     (skill_dir / "git_hooks").mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("# Hook Skill")
-    (skill_dir / "metadata.yaml").write_text(
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
         "name: hook_skill\n"
         "description: skill that ships a pre-commit hook\n"
-        "git_hooks:\n"
-        "  pre-commit:\n"
-        "    - git_hooks/check.sh\n"
+        "ai_hats:\n"
+        "  git_hooks:\n"
+        "    pre-commit:\n"
+        "      - git_hooks/check.sh\n"
+        "---\n"
+        "# Hook Skill\n"
     )
     hook_script = skill_dir / "git_hooks" / "check.sh"
     hook_script.write_text("#!/usr/bin/env bash\necho 'check ran'\nexit 0\n")

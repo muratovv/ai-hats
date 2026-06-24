@@ -1,6 +1,34 @@
 ---
 name: git-mastery
 description: Advanced git operations covering branches, conventional commits, worktrees, and rebasing. Use for any git operation beyond basic add/commit/push, for branch management, rebasing, and conflict resolution, or when setting up commit conventions for a project.
+ai_hats:
+  # Skill-contributed git hooks (HATS-088 framework). The assembler installs
+  # these into the project's .githooks/<event>.d/ at composition time.
+  git_hooks:
+    pre-commit:
+      - git_hooks/pre-commit-privacy.sh
+      - git_hooks/pre-commit-smoke.sh
+      # HATS-444: enforce docs/INDEX.md freshness — block commits that
+      # add/delete/rename docs/*.md without staging INDEX.md alongside.
+      - git_hooks/pre-commit-docs-index.sh
+      # HATS-470: forbid raw path.unlink / shutil.rmtree / .rmdir under
+      # src/ai_hats/ outside safe_delete.py without an inline
+      # `# safe-delete: ok <reason>` marker. No-op on non-ai-hats projects.
+      - git_hooks/pre-commit-no-raw-destructive.sh
+    # HATS-437: provider-agnostic safety net for `git push --force`. Claude
+    # gets a stronger PreToolUse-level block via ClaudeProvider auto-wiring;
+    # this pre-push hook protects Gemini sessions and direct-terminal pushes.
+    pre-push:
+      - git_hooks/pre-push-shared-state.sh
+    # HATS-593: self-heal the (untracked, generated) .githooks/ surface at the
+    # moment drift is introduced. merge / pull / branch-checkout rewrite
+    # tracked files and leave hooks stale; these re-run
+    # `ai-hats self sync-hooks`. Same script for both events — it branches on
+    # $0's basename and on the post-checkout branch-flag ($3). Always exits 0.
+    post-merge:
+      - git_hooks/self-heal-hooks.sh
+    post-checkout:
+      - git_hooks/self-heal-hooks.sh
 ---
 # Git Mastery
 

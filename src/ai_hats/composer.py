@@ -406,11 +406,11 @@ def collect_runtime_hooks(
 
     Returns ``{event_name: [(skill_name, RuntimeHook), ...]}``. Validation
     (unknown event, malformed row) already happened at
-    :meth:`SkillMetadata.from_yaml` time and fails loud there.
+    :meth:`SkillMetadata.from_skill_dir` time and fails loud there.
     """
     collected: dict[str, list[tuple[str, RuntimeHook]]] = {}
     for skill in result.skills:
-        metadata = SkillMetadata.from_yaml(skill.source_path / "metadata.yaml")
+        metadata = SkillMetadata.from_skill_dir(skill.source_path)
         if not metadata.runtime_hooks:
             continue
         for event, hooks in metadata.runtime_hooks.items():
