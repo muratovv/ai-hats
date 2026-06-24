@@ -21,8 +21,11 @@ from typing import Iterable
 import yaml
 
 # Hook keys the 814 cutover moved into SKILL.md frontmatter ``ai_hats:``. A
-# leftover sidecar carrying either (truthy) is what trips the compose-guard.
-_HOOK_KEYS = ("git_hooks", "runtime_hooks")
+# leftover sidecar carrying any (truthy) is what trips the compose-guard.
+# ``worktree`` is the HATS-823 carry block (wt_in / wt_out) — frontmatter-only
+# from day one, so a leftover ``worktree:`` in metadata.yaml is the same
+# silent-drop hazard the guard exists to catch.
+_HOOK_KEYS = ("git_hooks", "runtime_hooks", "worktree")
 
 
 @dataclass(frozen=True)
