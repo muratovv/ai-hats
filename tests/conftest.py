@@ -109,3 +109,25 @@ def _isolate_ai_hats_dir(monkeypatch):
     """
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ai_hats_user_home(monkeypatch, tmp_path):
+    """Pin ``AI_HATS_USER_HOME`` to an empty per-test dir for EVERY test (HATS-814).
+
+    ``UserConfig.default_path()`` resolves
+    ``<user_home>/.ai-hats/customizations.yaml`` where ``user_home()`` falls back
+    to the real ``Path.home()`` when ``AI_HATS_USER_HOME`` is unset (HATS-532). A
+    composing test therefore reads the developer's PERSONAL ``~/.ai-hats`` global
+    layer — non-hermetic, and after the HATS-814 leftover-sidecar guard it turns
+    local runs RED on any machine whose ``ai-hats-custom`` skills still ship
+    hook-bearing ``metadata.yaml`` (not yet migrated by HATS-816). Pinning an
+    empty home makes the suite hermetic = CI (which has no ``~/.ai-hats``). Tests
+    that genuinely exercise the global layer re-set ``AI_HATS_USER_HOME`` via
+    ``monkeypatch.setenv`` (runs after this, undone at teardown), so they are
+    unaffected.
+    """
+    home = tmp_path / "_ai_hats_user_home"
+    home.mkdir(exist_ok=True)
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(home))
+    yield

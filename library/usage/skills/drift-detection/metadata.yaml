@@ -1,5 +1,0 @@
-name: drift-detection
-description: Compare implementation diff against task acceptance criteria and ADRs to surface drift
-author: ai-hats
-tags: [architecture, review, scope, contracts]
-pattern: protocol

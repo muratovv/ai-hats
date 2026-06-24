@@ -1,5 +1,0 @@
-name: ansible-ops
-description: Ansible playbook management — inventory, vault, syntax checks, idempotency
-author: ai-hats
-tags: [operations, iac, ansible]
-pattern: reference

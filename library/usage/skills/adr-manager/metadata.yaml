@@ -1,5 +1,0 @@
-name: adr-manager
-description: Document architectural decisions using Michael Nygard ADR format
-author: ai-hats
-tags: [architecture, documentation]
-pattern: template
