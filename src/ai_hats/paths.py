@@ -257,6 +257,27 @@ def hooks_dir(project_dir: Path) -> Path:
     return library_dir(project_dir) / "hooks"
 
 
+def wt_hooks_dir(project_dir: Path) -> Path:
+    """Managed worktree-hook scripts: ``<ai_hats_dir>/library/wt-hooks/`` (HATS-823).
+
+    Separate dir + manifest from :func:`hooks_dir` (PreToolUse) so the two
+    sweeps never cross. Managed-only — nothing but materialized wt_in / wt_out
+    scripts + the ``.manifest`` live here; the dir is absent when no skill
+    declares a worktree hook.
+    """
+    return library_dir(project_dir) / "wt-hooks"
+
+
+def managed_wt_hook_filename(skill_name: str, script: str) -> str:
+    """Collision-free on-disk filename for a skill-declared worktree-hook script.
+
+    Mirrors :func:`managed_runtime_hook_filename` / the ``git_hooks`` dest
+    convention (``<skill>-<basename>``); ``script`` may be a relpath — only its
+    basename is used.
+    """
+    return f"{skill_name}-{Path(script).name}"
+
+
 def managed_runtime_hook_filename(skill_name: str, script: str) -> str:
     """Collision-free on-disk filename for a skill-declared runtime-hook script.
 
