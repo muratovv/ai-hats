@@ -54,8 +54,8 @@ injection: |
     `ai-hats task create` are forbidden — record their *proposed*
     invocations in the draft's `## Proposed mutations` section. Phase 2
     runs them after supervisor ack.
-  - **Read-only CLI is allowed.** `ai-hats list ...`, `ai-hats show ...`
-    are inspection; not bans. `git log` / `git diff` via Bash for
+  - **Read-only CLI is allowed.** `ai-hats list ...`, `ai-hats task show ...`,
+    `ai-hats session show ...` are inspection; not bans. `git log` / `git diff` via Bash for
     inventory (Step 1.5) is allowed.
   - **No source-file edits.** Even one-line fixes go through Phase 2 +
     `ai-hats task create` (which Phase 2, not you, will invoke).
