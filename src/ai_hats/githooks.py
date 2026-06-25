@@ -238,36 +238,56 @@ def expected_git_hook_files(project_dir: Path, result: CompositionResult) -> dic
     return expected
 
 
-def git_hooks_drift(project_dir: Path, result: CompositionResult, manifest_set: set[str]) -> bool:
-    """True if managed git hooks on disk diverge from ``result``.
+def git_hooks_changes(
+    project_dir: Path, result: CompositionResult, manifest_set: set[str]
+) -> list[tuple[str, str]]:
+    """Managed git-hook drift as ``[(relpath, kind), ...]`` (HATS-833).
 
-    Compares the expected managed file set (content + exec-bit + presence)
-    and the manifest against disk. A foreign (non-marker) dispatcher is
-    left to the install policy and is never counted as drift here.
+    Same comparison as :func:`git_hooks_drift` (content + exec-bit + presence +
+    manifest), but reports WHICH files drifted and HOW so the session-start net
+    can name them. ``kind`` is ``"missing"`` (absent / exec-bit lost / unreadable),
+    ``"content"`` (bytes differ), or ``"stale"`` (managed in the manifest but no
+    longer expected). A foreign (non-marker) top-level dispatcher is never
+    counted as drift (left to the install policy).
     """
     githooks_dir = project_dir / GITHOOKS_DIR
     expected = expected_git_hook_files(project_dir, result)
-    if not expected:
-        # Nothing should be installed → drift iff a stale manifest lingers.
-        return manifest_set != set()
-    if manifest_set != set(expected):
-        return True
-    for rel, content in expected.items():
+    changes: list[tuple[str, str]] = []
+    # Stale: managed previously (manifest) but no longer expected.
+    for rel in sorted(manifest_set - set(expected)):
+        changes.append((rel, "stale"))
+    for rel, content in sorted(expected.items()):
         target = githooks_dir / rel
-        if not target.is_file():
-            return True
-        # Top-level dispatcher with a foreign body → leave alone (not drift).
-        if "/" not in rel:
+        # Top-level dispatcher with a foreign body on disk → install policy
+        # leaves it alone, so it is NEVER our drift — even when it's absent from
+        # our manifest (a user-owned dispatcher we never installed). Check this
+        # BEFORE the manifest/presence test, else a foreign dispatcher would be
+        # flagged "missing" every launch and never heal (perpetual false note).
+        if "/" not in rel and target.is_file():
             try:
                 if GITHOOKS_DISPATCHER_MARKER not in target.read_text():
                     continue
             except OSError:
-                return True
+                pass
+        if rel not in manifest_set or not target.is_file():
+            changes.append((rel, "missing"))
+            continue
         try:
             if target.read_bytes() != content:
-                return True
+                changes.append((rel, "content"))
+                continue
         except OSError:
-            return True
+            changes.append((rel, "missing"))
+            continue
         if not target.stat().st_mode & 0o100:  # owner-exec bit lost
-            return True
-    return False
+            changes.append((rel, "missing"))
+    return changes
+
+
+def git_hooks_drift(project_dir: Path, result: CompositionResult, manifest_set: set[str]) -> bool:
+    """True if managed git hooks on disk diverge from ``result``.
+
+    Thin wrapper over :func:`git_hooks_changes` (HATS-833) — preserves the
+    original boolean contract for callers that only need yes/no.
+    """
+    return bool(git_hooks_changes(project_dir, result, manifest_set))

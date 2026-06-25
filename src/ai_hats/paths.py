@@ -257,6 +257,20 @@ def hooks_dir(project_dir: Path) -> Path:
     return library_dir(project_dir) / "hooks"
 
 
+def package_hooks_source_dir() -> Path:
+    """Filesystem dir of the bundled package-data runtime-hook scripts
+    (``ai_hats.library/hooks/*.sh`` — the HATS-437 shared-state guard + helper).
+
+    Single source of truth for the package-data hook root so the materializer
+    and the drift detector resolve the same place. May raise
+    ``ModuleNotFoundError`` / ``FileNotFoundError`` on a broken install — the
+    caller decides whether that is fatal (materialize) or fail-open (detect).
+    """
+    from importlib.resources import files
+
+    return Path(str(files("ai_hats.library") / "hooks"))
+
+
 def wt_hooks_dir(project_dir: Path) -> Path:
     """Managed worktree-hook scripts: ``<ai_hats_dir>/library/wt-hooks/`` (HATS-823).
 
