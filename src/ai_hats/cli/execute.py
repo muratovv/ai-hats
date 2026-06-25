@@ -124,6 +124,19 @@ def execute_cmd(
     from ..tags import TagValidationError, parse_tags
     from ._helpers import _handle_role_not_found
 
+    # HATS-827: --batch builds an isolated worktree whose branch is
+    # ``agent/<role>/<sid>``; an empty role makes git reject ``agent//<sid>``.
+    # Fail at the CLI boundary with a redirect to the recommended surface
+    # instead of crashing deep in worktree creation. execute is the low-level
+    # primitive; AI_HATS_ROLE is an output marker, not an input — so no env
+    # fallback. Interactive (role=None, no worktree) is unaffected.
+    if not interactive and not role:
+        raise click.BadParameter(
+            "--batch requires a role. To launch a sub-agent use "
+            "'ai-hats agent <role> --task ...'; or pass -r/--role.",
+            param_hint="--role",
+        )
+
     try:
         tags = parse_tags(tags_raw)
     except TagValidationError as e:
