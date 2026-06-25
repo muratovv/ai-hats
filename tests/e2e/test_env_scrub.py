@@ -15,7 +15,7 @@ roles vanish. The scrub removes that class of leak.
 
 from __future__ import annotations
 
-from _helpers.env import ENV_DENYLIST, clean_env
+from _helpers.env import ENV_DENYLIST, clean_env, launcher_subprocess_env
 
 
 def test_clean_env_strips_denylist_keeps_rest():
@@ -46,3 +46,43 @@ def test_clean_env_strips_denylist_keeps_rest():
 def test_clean_env_denylist_covers_pythonpath():
     """PYTHONPATH is the proven culprit — it must be in the denylist."""
     assert "PYTHONPATH" in ENV_DENYLIST
+
+
+def test_launcher_subprocess_env_isolates_and_pins(tmp_path):
+    """HATS-828: the ``shared_launcher`` env transform drops the leak + pins home.
+
+    Fail-under-revert: make ``launcher_subprocess_env`` a pass-through (or revert
+    the fixture to ``os.environ.copy()``) → ``PYTHONPATH`` survives and
+    ``AI_HATS_USER_HOME`` falls back to the dev's real home → the e2e regression
+    (``test_shared_launcher_env_isolation``) reports "Role 'assistant' not found".
+    """
+    user_home = tmp_path / "empty_home"
+    base = {
+        # The absolute-PYTHONPATH leak that hides the built-in library.
+        "PYTHONPATH": "/repo/src",
+        # An inherited user-home that must NOT win over the explicit pin.
+        "AI_HATS_USER_HOME": "/dev/.config",
+        # A stray launcher-dest that could redirect a child install.
+        "AI_HATS_LAUNCHER_DEST": "/leak/bin/ai-hats",
+        # Innocuous vars that MUST be preserved (HOME → warm uv cache + auth).
+        "PATH": "/usr/bin",
+        "HOME": "/home/me",
+    }
+    out = launcher_subprocess_env(
+        base, repo_url="/clone", venv="/venv", user_home=user_home
+    )
+
+    # The leak is gone.
+    assert "PYTHONPATH" not in out
+    assert "AI_HATS_LAUNCHER_DEST" not in out
+    # AI_HATS_USER_HOME is re-pinned to the explicit empty dir, not the inherited.
+    assert out["AI_HATS_USER_HOME"] == str(user_home)
+    # Install-source knobs are set.
+    assert out["AI_HATS_REPO_URL"] == "/clone"
+    assert out["AI_HATS_VENV"] == "/venv"
+    # HOME (and other innocuous vars) ride through untouched.
+    assert out["HOME"] == "/home/me"
+    assert out["PATH"] == "/usr/bin"
+    # Pure: the input dict is not mutated.
+    assert base["PYTHONPATH"] == "/repo/src"
+    assert base["AI_HATS_USER_HOME"] == "/dev/.config"
