@@ -57,6 +57,27 @@ def is_local_channel(project_dir: Path) -> bool:
     return channel == Channel.LOCAL
 
 
+def upstream_update(project_dir: Path) -> CacheEntry | None:
+    """The cache entry iff the *running* build is genuinely behind upstream, else None.
+
+    The one canonical reader of the behind signal (HATS-846): bundles
+    is_local_channel (LOCAL is git-driven, never "behind") + has_update +
+    running-SHA sha_matches, so the banner and hook self-heal can't diverge on the
+    guard set (a guard-test pins the signal to a single reader). is_disabled is NOT
+    folded in (it suppresses the notification, not hook-safety); an unknown running
+    SHA is treated as about-us, not suppressed.
+    """
+    if is_local_channel(project_dir):
+        return None
+    entry = read_cache(project_dir)
+    if entry is None or not entry.has_update:
+        return None
+    current = detect_installed_sha()
+    if current is not None and not sha_matches(entry.installed_sha, current):
+        return None
+    return entry
+
+
 __all__ = [
     "CacheEntry",
     "OPT_OUT_ENV",
@@ -69,5 +90,6 @@ __all__ = [
     "read_cache",
     "run_check",
     "sha_matches",
+    "upstream_update",
     "write_cache",
 ]
