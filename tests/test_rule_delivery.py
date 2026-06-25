@@ -4,8 +4,8 @@ The library under test is ALWAYS the source tree this test file lives in
 (worktree-safe). We resolve it via ``Path(__file__).parent.parent / "library"``
 and an explicit ``LibraryResolver`` — never the editable-install builtin library
 (``importlib.resources.files("ai_hats.library")``), which is baked to whichever
-checkout ran ``pip install -e`` and would mask worktree edits. Same idiom as
-``test_real_maintainer_trait_declares_session_start_sync_hooks``.
+checkout ran ``pip install -e`` and would mask worktree edits (the standard
+worktree-safe library-resolution idiom used across the real-library tests).
 """
 
 from __future__ import annotations
