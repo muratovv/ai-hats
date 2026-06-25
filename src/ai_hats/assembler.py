@@ -107,7 +107,12 @@ def _ai_hats_owned_hook_basenames() -> frozenset[str]:
 class Assembler:
     """Manages the lifecycle of role assembly in a project directory."""
 
-    def __init__(self, project_dir: Path, library_paths: list[Path] | None = None) -> None:
+    def __init__(
+        self,
+        project_dir: Path,
+        library_paths: list[Path] | None = None,
+        hooks: "HooksManager | None" = None,
+    ) -> None:
         self.project_dir = project_dir
         self.agent_dir = project_dir / AGENT_DIR
         self.config_path = project_dir / PROJECT_CONFIG
@@ -124,11 +129,8 @@ class Assembler:
         self.resolver = LibraryResolver(self.library_paths)
         self.composer = Composer(self.resolver)
 
-        # HATS-837: the managed-hook concern (materialize + drift-sync) lives in
-        # a dedicated DI dependency. Narrow seam — it gets the project dir, a live
-        # config reference, and a compose callable (the one back-coupling), so it
-        # never imports Assembler at load time.
-        self.hooks = HooksManager(
+        # HATS-837: managed-hook materialize + drift-sync. Injectable for tests.
+        self.hooks = hooks if hooks is not None else HooksManager(
             self.project_dir,
             self.project_config,
             compose=lambda role: compose_for_role(self, role),
@@ -931,22 +933,11 @@ class Assembler:
         self._ensure_scaffold(provider)
         self.write_canonical()
 
-        # 3. Provider-level hooks — always (HATS-469 D1).
-        # ``ensure_runtime_hooks`` writes ``.claude/settings.json``
-        # PreToolUse entry; ``HooksManager.materialize_runtime_hooks`` copies
-        # hook bodies from package data. Both are idempotent and
-        # REQUIRED on set_role first-session bootstrap (without them,
-        # Claude fires PreToolUse against a non-existent script on
-        # the very first Bash call).
-        provider.ensure_runtime_hooks(self.project_dir, result)
-        self.hooks.materialize_runtime_hooks(result)
-        self.hooks.materialize_worktree_hooks(result)
-
-        # 4. Role-specific git hooks — only if role active AND .git/
-        # exists. ``.git/`` guard lives here (was inline in init); other
-        # call sites benefit too — non-git project dirs skip silently.
-        if result is not None and (self.project_dir / ".git").exists():
-            self.hooks.install_git_hooks(result)
+        # 3. Managed hooks — provider settings.json wiring + the three surfaces,
+        # delegated to the HooksManager facade (HATS-837). The .git guard lives
+        # inside materialize(), so non-git project dirs skip git hooks silently.
+        # All idempotent and REQUIRED on set_role first-session bootstrap.
+        self.hooks.materialize(result)
 
     def _run_diagnostics(self) -> None:
         """Surface state-condition diagnostics on user-initiated paths only.
