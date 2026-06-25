@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from pathlib import Path
 
 # Redirect vars that must not leak into a real-install e2e subprocess. PYTHONPATH
 # is the proven culprit (HATS-685); the rest are defensive siblings that could
@@ -46,3 +47,48 @@ def clean_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
     """
     src = os.environ if base is None else base
     return {k: v for k, v in src.items() if k not in ENV_DENYLIST}
+
+
+def launcher_subprocess_env(
+    base: Mapping[str, str],
+    *,
+    repo_url: str | os.PathLike[str],
+    venv: str | os.PathLike[str],
+    user_home: str | os.PathLike[str],
+) -> dict[str, str]:
+    """Build a hermetic env for a real-launcher e2e subprocess (HATS-828).
+
+    The session-scoped ``shared_launcher`` fixture captures ``os.environ`` at
+    SESSION setup — *before* the function-scoped autouse scrubs
+    (``_scrub_redirect_env`` / ``_isolate_ai_hats_user_home``) apply — so it
+    cannot rely on a pre-scrubbed ``os.environ``. It must isolate explicitly.
+    This helper is that explicit transform, factored out so the regression test
+    can apply the EXACT same logic to a deliberately-leaked base (deterministic
+    fail-under-revert without drift).
+
+    Two leaks are closed:
+
+    * ``clean_env(base)`` drops ``ENV_DENYLIST`` — chiefly an **absolute**
+      ``PYTHONPATH=<repo>/src`` (what ``ai-hats wt exec`` sets). Left in, it
+      shadows the non-editable install's nested ``ai_hats.library`` → built-in
+      roles vanish → "Role 'assistant' not found". (A *relative* ``src`` is
+      harmless — it resolves against the subprocess cwd, not the repo.)
+    * ``AI_HATS_USER_HOME`` is re-pinned to ``user_home`` (an empty dir).
+      ``clean_env`` already strips the inherited value, but unset it falls back
+      to the real ``HOME`` → the dev's ``~/.ai-hats/roles`` leak into
+      composition. We pin ``AI_HATS_USER_HOME`` (NOT ``HOME``) deliberately:
+      ``user_home()`` (``paths.py``) makes it the surgical knob that isolates
+      only the ai-hats global slice, leaving ``HOME`` — and the warm
+      ``~/.cache/uv`` + claude auth — intact (precedent:
+      ``test_self_update_resilient_config.py``).
+
+    ``AI_HATS_REPO_URL`` / ``AI_HATS_VENV`` pin the install source + shared venv;
+    ``AI_HATS_LAUNCHER_DEST`` is dropped so a stray value can't redirect a child
+    launcher install. Pure: never mutates ``base``.
+    """
+    env = clean_env(base)
+    env["AI_HATS_REPO_URL"] = str(repo_url)
+    env["AI_HATS_VENV"] = str(venv)
+    env["AI_HATS_USER_HOME"] = str(Path(user_home))
+    env.pop("AI_HATS_LAUNCHER_DEST", None)
+    return env
