@@ -48,6 +48,19 @@ below:
    older engine (precedent: `HarnessConfig`). The sidecar leak-check
    (`LeftoverSidecarHooksError`) is extended to catch `worktree` in a leftover
    `metadata.yaml`.
+4. **Creds reconciliation — `.env` is owned by a secret-aware `wt_in` hook, not
+   the dep-seed (HATS-776, 2026-06-25).** The original Resolution map straddled
+   `.env*` across row 2 (seeded via the built-in `capture` like any dep) and row 5
+   (creds, handled out-of-band) with no reconciliation. HATS-776 settles it: a
+   `.env` that carries secrets is owned by a **secret-aware `wt_in` hook**
+   (copy-in by default — co-location with the same-user main checkout means a
+   worktree copy adds no exfil surface the agent lacks; never harvested out), NOT
+   the declarative `seed_in` dep-copy. HATS-775's declarative `seed_in` is
+   therefore scoped to **non-secret** deps (`.venv` / `node_modules` / `target`).
+   The concrete cred hook lives **downstream** (per D5: "a custom hook handling
+   creds owns its policy") — HATS-776 ships only the documentation + the
+   never-harvest-secrets constraint D5 binds onto HATS-775's future `harvest_out`.
+   Amends D5 + Resolution map rows 2/5 below.
 
 ## Context
 
@@ -241,10 +254,24 @@ boundaries** — so the trust model is a core decision, not a footnote:
   necessary but not sufficient — an agent can `git add -f` or edit `.gitignore`
   mid-worktree (security review, BLOCKING) — so the merge ALSO refuses if any
   `seed_in` path became tracked on the branch.
-- **Credentials are never harvested by the built-in.** Backing a credential file
-  (HATS-776) up anywhere creates a new leak; creds are excluded from built-in
-  `harvest_out` backups by construction. A custom hook handling creds owns its
-  policy and is reviewed as such.
+- **Credentials are never harvested into a persistent backup (binding on HATS-775).**
+  Backing a credential file up anywhere creates a *new* copy that outlives the
+  worktree, accumulates across teardowns, and may leak into logs/diagnostics — so
+  a secret-bearing path is **never** eligible for the built-in `harvest_out`
+  backup. This is the load-bearing invariant of the creds story: by the IN/OUT
+  asymmetry, copying a secret *in* adds no exfil surface (the agent shares the
+  same OS user as the main checkout and can already read it), but a secret flowing
+  *out* into a backup is the actual leak. HATS-775 builds `harvest_out`; it MUST
+  honor this exclusion when it does. The carry-**in** side is owned by a
+  **secret-aware `wt_in` hook** (HATS-776 documents the pattern): copy `.env` in by
+  default, customizable to filter / redact / inject. The concrete hook lives
+  **downstream** — a custom hook handling creds owns its policy and is reviewed as
+  such; ai-hats core ships the primitive (HATS-823), the documented pattern, and
+  this constraint, not a secret-handling skill. Out of this layer: ambient OS creds
+  (`~/.aws`, `~/.ssh`, the OS keychain) live outside the repo, are never seeded, and
+  are used in place; a broker-proxy / short-lived-token tier (wardn as reference
+  design, never a runtime dep, MCP integration excluded) is deferred (HATS-776 §
+  out-of-scope).
 - **Built-in backups are gitignored, project-local, collision-free.** Under the
   already-gitignored `.agent/` tree (e.g.
   `<ai_hats_dir>/sessions/worktrees/<_state_key>.harvest/<timestamp>/`), never a
@@ -383,22 +410,23 @@ Every instance the sweep found, with its resolution and whether it needs the new
 mechanism. `Mechanism? = N` rows are recorded so the map is exhaustive, not so the
 mechanism owns them.
 
-| #  | Instance                                                   | Dir | Resolution kind                                    | Mechanism? | Notes                                                                                                                                                                                                           |
-| -- | ---------------------------------------------------------- | --- | -------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1  | deps `.venv` / `node_modules` / `target` (HATS-775)        | IN  | `seed_in` path (built-in `capture`, copy)          | **Y**      | copy preserves isolation; `reference` only if immutable (D2)                                                                                                                                                    |
-| 2  | `.env*` (HATS-775)                                         | IN  | `seed_in` path (built-in `capture`, copy)          | **Y**      | small files, copied                                                                                                                                                                                             |
-| 3  | review sidecar `.hunk/notes.json` (HATS-818)               | OUT | **custom `wt_out` hook** (`hunk-notes.sh consume`) | **Y**      | hook guarantees the existing consume runs before teardown — the step that never ran in the incident                                                                                                             |
-| 4  | agent `*.log` born in worktree                             | OUT | `harvest_out` path (opt-in, `guard:false`)         | candidate  | **no confirmed incident** — ships only if a real need surfaces (design-minimalism)                                                                                                                              |
-| 5  | credentials / kubeconfig / tokens (HATS-776)               | IN  | redirect / broker                                  | N          | HATS-776 owns the design; this ADR only sets the creds-exclusion constraint (D5)                                                                                                                                |
-| 6  | tracker `.agent/` read access (HATS-492 session)           | IN  | redirect-or-none                                   | N          | **already solved** by HATS-524: `_project_dir()` (`cli/_helpers.py`) hops to `main_worktree_root()` (`worktree.py`). The shared-file-by-reference need (review #1) is met here — read live, never copied/forked |
-| 7  | `.githooks/` generated tree                                | IN  | re-compose (existing)                              | N          | regenerated by composition; HATS-088 / HATS-593                                                                                                                                                                 |
-| 8  | editable-venv tests main checkout, not worktree (HATS-641) | —   | doc/convention-fix                                 | N          | test-correctness, not data carry; throwaway venv                                                                                                                                                                |
-| 9  | main-path Read then worktree-path Edit fails (HYP-015)     | —   | doc/convention-fix                                 | N          | tool/UX; document "edit via main-repo path"                                                                                                                                                                     |
-| 10 | `build/` artifact collision                                | OUT | already-handled                                    | N          | swept by `maintainer-quality-gate` (HATS-568)                                                                                                                                                                   |
-| 11 | `.claude/plans/` not in worktree                           | IN  | already-handled                                    | N          | `plan-discipline` keeps plans in the tracker                                                                                                                                                                    |
+| #  | Instance                                                   | Dir | Resolution kind                                             | Mechanism? | Notes                                                                                                                                                                                                             |
+| -- | ---------------------------------------------------------- | --- | ----------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1  | deps `.venv` / `node_modules` / `target` (HATS-775)        | IN  | `seed_in` path (built-in `capture`, copy)                   | **Y**      | copy preserves isolation; `reference` only if immutable (D2)                                                                                                                                                      |
+| 2  | `.env*` secret-bearing config (HATS-776)                   | IN  | **secret-aware `wt_in` hook** (downstream; copy-in default) | **Y**      | uses the `wt_in` primitive; pattern owned by HATS-776, concrete hook downstream — **not** the dep-seed; copy-in safe (co-location), never harvested out (D5)                                                      |
+| 3  | review sidecar `.hunk/notes.json` (HATS-818)               | OUT | **custom `wt_out` hook** (`hunk-notes.sh consume`)          | **Y**      | hook guarantees the existing consume runs before teardown — the step that never ran in the incident                                                                                                               |
+| 4  | agent `*.log` born in worktree                             | OUT | `harvest_out` path (opt-in, `guard:false`)                  | candidate  | **no confirmed incident** — ships only if a real need surfaces (design-minimalism)                                                                                                                                |
+| 5  | file creds: kubeconfig / SSH / TLS / tokens (HATS-776)     | IN  | ambient (in-place) / deferred broker                        | N          | outside-repo OS creds used in place, never seeded; broker / short-lived = deferred tier (wardn = reference, not MCP). `.env` secrets → row 2. Never-harvest-into-backup (D5) applies to any secret a hook touches |
+| 6  | tracker `.agent/` read access (HATS-492 session)           | IN  | redirect-or-none                                            | N          | **already solved** by HATS-524: `_project_dir()` (`cli/_helpers.py`) hops to `main_worktree_root()` (`worktree.py`). The shared-file-by-reference need (review #1) is met here — read live, never copied/forked   |
+| 7  | `.githooks/` generated tree                                | IN  | re-compose (existing)                                       | N          | regenerated by composition; HATS-088 / HATS-593                                                                                                                                                                   |
+| 8  | editable-venv tests main checkout, not worktree (HATS-641) | —   | doc/convention-fix                                          | N          | test-correctness, not data carry; throwaway venv                                                                                                                                                                  |
+| 9  | main-path Read then worktree-path Edit fails (HYP-015)     | —   | doc/convention-fix                                          | N          | tool/UX; document "edit via main-repo path"                                                                                                                                                                       |
+| 10 | `build/` artifact collision                                | OUT | already-handled                                             | N          | swept by `maintainer-quality-gate` (HATS-568)                                                                                                                                                                     |
+| 11 | `.claude/plans/` not in worktree                           | IN  | already-handled                                             | N          | `plan-discipline` keeps plans in the tracker                                                                                                                                                                      |
 
-**Net: 3 confirmed mechanism cases** (rows 1–3) — two via built-in `capture`
-sugar, one via a custom `wt_out` hook — plus 1 candidate (row 4). Rows 5–11
+**Net: 3 confirmed mechanism cases** (rows 1–3) — one via built-in `capture`
+sugar (row 1), one via a secret-aware `wt_in` hook (row 2, downstream), one via a
+custom `wt_out` hook (row 3) — plus 1 candidate (row 4). Rows 5–11
 resolve by redirect, existing infra, another design, or documentation; several
 (8, 9) point at a **separate** doc-fix to `worktree-isolation` SKILL.md, which
 today omits the `.agent/`-is-main-repo-only rule (a gap the sweep confirmed).
@@ -481,9 +509,13 @@ today omits the `.agent/`-is-main-repo-only rule (a gap the sweep confirmed).
   the requirements, the devil's-advocate counter, and the Step-2 sweep.
 - HATS-818 — carry-out incident (review-notes loss); ships the custom `wt_out`
   hook.
-- HATS-775 — carry-in (deps / `.env*`); ships `seed_in` declarations.
-- HATS-776 — credential-isolation design; owns row 5, sets the creds-exclusion
-  constraint (D5).
+- HATS-775 — carry-in (non-secret deps `.venv` / `node_modules` / `target`); ships
+  `seed_in` declarations + the `harvest_out` built-in, which MUST honor the
+  never-harvest-secrets exclusion (D5, Revisions #4). `.env` is no longer HATS-775's
+  (moved to row 2 / HATS-776).
+- HATS-776 — documents the secret-aware `wt_in` hook pattern (`.env` carry-in, row 2)
+  in `how-to-extend.md`, and formalizes the never-harvest-secrets constraint (D5);
+  the concrete cred hook lives downstream. Docs-only — ships no skill.
 - HATS-524 — worktree-aware tracker routing (`_project_dir` →
   `main_worktree_root`); the redirect resolution for row 6 + the shared-reference
   need.
