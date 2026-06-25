@@ -80,6 +80,25 @@ def exec_claude_with_retro(retro_path: Path, kind: str = "session") -> None:
     os.execvp(claude_bin, [claude_bin, prompt])
 
 
+class DeadCwdError(click.ClickException):
+    """The current working directory no longer exists (HATS-788).
+
+    Commonly: the linked worktree you were standing in was just torn down by
+    `task transition done` / `wt merge`. Resolving the project root from a
+    removed cwd would otherwise crash (`Path.cwd()` → FileNotFoundError on
+    macOS) or, on Linux where `os.getcwd()` can return a stale path string,
+    silently fall through to the cwd fallback and let `ai_hats_dir()`'s
+    `mkdir -p` resurrect a phantom `.agent/` tracker. Fail loud instead and
+    point the operator back to a real directory.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Current directory no longer exists (a worktree you were in may "
+            "have just been removed). cd to your project root and re-run."
+        )
+
+
 def _project_dir() -> Path:
     """Resolve the project root by walking up from CWD.
 
@@ -104,7 +123,16 @@ def _project_dir() -> Path:
     to itself without spawning git — the worktree hop in pass 3 only fires when
     no `.agent/` ancestor exists.
     """
-    cwd = Path.cwd()
+    # HATS-788: fail loud on a removed cwd rather than crashing (macOS:
+    # Path.cwd() raises FileNotFoundError) or silently resurrecting a phantom
+    # tracker (Linux: os.getcwd() may return a stale path string for a removed
+    # directory). A non-existent-but-returned path is treated the same.
+    try:
+        cwd = Path.cwd()
+    except FileNotFoundError as exc:
+        raise DeadCwdError() from exc
+    if not cwd.exists():
+        raise DeadCwdError()
     candidates = [cwd, *cwd.parents]
 
     for d in candidates:
@@ -133,29 +161,40 @@ def _assembler(project_dir: Path | None = None):
     return Assembler(project_dir or _project_dir())
 
 
-def _guard_not_inside_linked_worktree(project_dir: Path) -> None:
-    """HATS-060 / HATS-482 (B-08): refuse `wt` ops issued from inside a linked
-    worktree, except those designed to be run there (`wt exec`, `wt env`).
+def _guard_not_inside_linked_worktree() -> None:
+    """Refuse lifecycle ops issued from inside a linked worktree, except those
+    designed to be run there (`wt exec`, `wt env`).
 
-    Without this guard, `_project_dir` walks up through ``.agent/`` /
-    ``.git/`` and — if the user shelled into a ``/tmp/ai-hats-wt-…`` dir
-    without those markers — resolves to a parent that is NOT the real project
-    root. CLI then writes state files under the tmp tree → corrupt /
-    orphaned state on next agent invocation.
+    HATS-788: checks the **raw `Path.cwd()`**, NOT a passed `project_dir`.
+    Callers used to hand this `_project_dir()`, which has already HOPPED to the
+    main checkout (HATS-524), so `is_inside_linked_worktree` inspected MAIN and
+    the guard silently no-op'd from inside a worktree — letting a
+    teardown command (`wt merge`/`discard`, `task transition done`) run
+    `git worktree remove --force` on the operator's own cwd. Resolving cwd
+    here, once, also keeps the check uncopyable-wrong at the call sites.
 
-    Originally inline in ``wt_create`` (HATS-060). Lifted to a helper so
-    ``wt_merge`` / ``wt_discard`` / ``wt_list`` share the same guard (B-08).
+    `Path.cwd()` is safe here: the guard runs *before* any teardown, while the
+    worktree (and thus cwd) still exists.
+
+    Originally inline in ``wt_create`` (HATS-060); lifted to a helper so
+    ``wt_merge`` / ``wt_discard`` / ``wt_list`` / ``task transition`` share it.
 
     Prints a guidance message and ``sys.exit(1)`` on breach. Returns None
     when CWD is OK (main worktree or non-git path).
     """
     from ..worktree import WorktreeManager
 
-    if WorktreeManager.is_inside_linked_worktree(project_dir):
+    cwd = Path.cwd()
+    if WorktreeManager.is_inside_linked_worktree(cwd):
         console.print("[red]Cannot run this command from inside a linked worktree[/]")
-        console.print(f"  You are in: {project_dir}")
-        console.print("  Run from the main repo. To act on the active worktree without")
-        console.print("  leaving it, use [bold]ai-hats wt exec[/] / [bold]ai-hats wt env[/].")
+        console.print(f"  You are in: {cwd}")
+        main_root = WorktreeManager.main_worktree_root(cwd)
+        if main_root is not None:
+            console.print(f"  Run it from the main checkout: [bold]cd {main_root}[/]")
+        else:
+            console.print("  Run from the main repo.")
+        console.print("  To act on the active worktree without leaving it, use")
+        console.print("  [bold]ai-hats wt exec[/] / [bold]ai-hats wt env[/].")
         sys.exit(1)
 
 
