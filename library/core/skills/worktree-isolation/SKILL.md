@@ -98,6 +98,18 @@ see the drift block in step 3 of the Workflow above.
 | `ai-hats wt exec -- <cmd>`   | Run command in worktree (auto cwd + PYTHONPATH=src) |
 | `ai-hats wt env`             | Print `export WT=... PYTHONPATH=...` for eval       |
 
+## Teardown runs lifecycle hooks
+
+`ai-hats wt merge` / `wt discard` / `cleanup` run any composed **`wt_out`
+lifecycle hooks** *before* removing the worktree — e.g. the `hunk-review-comments`
+skill drains its review sidecar so notes aren't lost. They are **fail-closed**: if a
+hook fails, the teardown **aborts** and the worktree + branch are preserved (nothing
+gitignored is destroyed). Force past a genuinely broken hook with
+`ai-hats wt … --skip-hooks` only if you accept the loss. (`wt create` likewise runs
+`wt_in` hooks to seed gitignored data — e.g. `.env` — into the fresh worktree.) These
+are *component-declared* hooks, distinct from the FSM merge-locks/drift guards; to
+author one see `docs/how-to-extend.md` → "Worktree lifecycle hooks".
+
 ## Running Commands in Worktree
 
 **Always use `wt exec` instead of manual WT=/PYTHONPATH= boilerplate:**
