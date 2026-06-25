@@ -1,7 +1,7 @@
 """HATS-833 — the startup-notice channel: structured note/warn rendering and the
 session-start heal-note formatting (folded kinds, version-skew warn)."""
 
-from ai_hats.assembler import HookChange
+from ai_hats.hooks_manager import HookChange
 from ai_hats.runtime_common import (
     StartupNotice,
     _print_startup_notices,
