@@ -122,7 +122,7 @@ injection: |
   - **Immutable state + deltas** > mutable envelopes. Steps return deltas; runtime composes. Tests pass dict in, assert dict out.
   - **Open registries** > closed central schemas. Each component owns its keys; no canonical enumeration tables.
   - **Value-driven phasing** > technical layering. Phase = user-deliverable value, not "next architectural layer".
-  - **Bash-composable primitives** > YAML manifests / DSLs. `ai-hats reflect handoff | ai-hats execute --prompt -`, not YAML pipeline files.
+  - **Bash-composable primitives** > YAML manifests / DSLs. `ai-hats agent <role> --task ... --json | jq`, not YAML pipeline files.
   - **Composability through recursion** — `Pipeline = Step`. Composite steps (Parallel, Branch) implement the Step interface — extension without core edits.
   - **No child-tasks before design approval.** File child task IDs at the start of the phase, when the design is stable; not earlier.
   - **Persistence (`Path.write_text`) is not a Step** — until there is a use case like declarative pipeline manifests, persistence stays in handlers.
