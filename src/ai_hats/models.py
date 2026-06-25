@@ -181,7 +181,7 @@ GIT_HOOK_EVENTS: tuple[str, ...] = (
     # Drift-introducing events — a merge / pull / branch checkout rewrites
     # tracked files, leaving the (untracked, generated) .githooks/ stale. Still
     # VALID hook events a skill may declare; HATS-833 removed the self-heal that
-    # used them (healing is now session-start only via Assembler.sync_hooks).
+    # used them (healing is now session-start only via HooksManager.sync_hooks).
     "post-merge",
     "post-checkout",
 )

@@ -81,7 +81,7 @@ class TestCollectSkillRuntimeHooks:
                 "PostToolUse": [("Write", "hooks/c.sh")],
             },
         )
-        collected = assembler._collect_skill_runtime_hooks(_result([s1, s2]))
+        collected = assembler.hooks._collect_skill_runtime_hooks(_result([s1, s2]))
 
         assert set(collected) == {"PreToolUse", "PostToolUse"}
         pre = collected["PreToolUse"]
@@ -94,7 +94,7 @@ class TestCollectSkillRuntimeHooks:
         plain = tmp_path / "skills" / "plain"
         plain.mkdir(parents=True)
         (plain / "metadata.yaml").write_text("name: plain\n")
-        collected = assembler._collect_skill_runtime_hooks(
+        collected = assembler.hooks._collect_skill_runtime_hooks(
             _result([_skill("plain", plain)])
         )
         assert collected == {}
@@ -121,7 +121,7 @@ class TestMaterializeRuntimeHooks:
             "skill-a",
             {"PreToolUse": [("Bash", "hooks/guard.sh")]},
         )
-        assembler._materialize_pretooluse_hooks(_result([s]))
+        assembler.hooks.materialize_runtime_hooks(_result([s]))
 
         target = hooks_dir(assembler.project_dir)
         dest = target / managed_runtime_hook_filename("skill-a", "hooks/guard.sh")
@@ -144,11 +144,11 @@ class TestMaterializeRuntimeHooks:
         target = hooks_dir(assembler.project_dir)
         dest = target / managed_runtime_hook_filename("skill-a", "hooks/guard.sh")
 
-        assembler._materialize_pretooluse_hooks(_result([s]))
+        assembler.hooks.materialize_runtime_hooks(_result([s]))
         assert dest.is_file()
 
         # Skill leaves the composition → its script is swept; guard survives.
-        assembler._materialize_pretooluse_hooks(_result([]))
+        assembler.hooks.materialize_runtime_hooks(_result([]))
         assert not dest.exists()
         assert (target / "pre_bash_shared_state_guard.sh").is_file()
 
@@ -156,7 +156,7 @@ class TestMaterializeRuntimeHooks:
         from ai_hats.paths import hooks_dir
 
         # Legacy bare-bump path (no active role) — guards only, no crash.
-        assembler._materialize_pretooluse_hooks(None)
+        assembler.hooks.materialize_runtime_hooks(None)
         assert (
             hooks_dir(assembler.project_dir) / "pre_bash_shared_state_guard.sh"
         ).is_file()
