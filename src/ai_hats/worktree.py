@@ -184,6 +184,24 @@ class WorktreeStateLostError(Exception):
         )
 
 
+class WorktreeStateIncompleteError(Exception):
+    """State file present but ``original_branch`` is ``None`` (corrupt /
+    hand-edited / pre-versioned JSON).
+
+    HATS-714: every ``merge()`` guard is gated on ``_original_branch is not
+    None``, so ``None`` would otherwise reach ``git rev-parse None`` → an
+    opaque ``TypeError``. This is the typed refusal instead.
+    """
+
+    def __init__(self, branch_name: str) -> None:
+        self.branch_name = branch_name
+        super().__init__(
+            f"Worktree state for '{branch_name}' lacks 'original_branch' "
+            f"(corrupt or legacy state file). Recreate it via `ai-hats wt "
+            f"create` adoption, or merge the branch manually."
+        )
+
+
 class WorktreeDriftError(Exception):
     """Raised when the worktree's original branch moved between create and merge.
 
@@ -666,6 +684,11 @@ class WorktreeManager:
                     self.branch_name,
                 )
                 return
+
+            # HATS-714: refuse before the gated guards below let None reach
+            # `git rev-parse None`. See WorktreeStateIncompleteError.
+            if self._original_branch is None:
+                raise WorktreeStateIncompleteError(self.branch_name)
 
             # HATS-596: checkout-independent already-merged short-circuit.
             # The worktree-isolation contract: the task lives on its own
