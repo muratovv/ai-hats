@@ -12,7 +12,6 @@ were removed — git owns user recovery.
 from __future__ import annotations
 
 import logging
-import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -38,15 +37,17 @@ from .models import (
     UserConfig,
 )
 from .paths import (
+    builtin_library_hooks as _builtin_library_hooks,
+    builtin_library_layers as _builtin_library_layers,
     hooks_dir as _lib_hooks_dir,
     managed_runtime_hook_filename as _managed_runtime_hook_filename,
     managed_wt_hook_filename as _managed_wt_hook_filename,
-    package_hooks_source_dir as _package_hooks_source_dir,
     rules_dir as _lib_rules_dir,
     skills_dir as _lib_skills_dir,
     user_home,
     wt_hooks_dir as _wt_hooks_dir,
 )
+from .paths.constants import LIBRARIES_DIRNAME
 from .placeholders import expand_path_placeholders
 from .safe_delete import discard as _safe_discard
 from .safe_delete import replace as _safe_replace
@@ -79,9 +80,10 @@ logger = logging.getLogger(__name__)
 def _ai_hats_owned_hook_basenames() -> frozenset[str]:
     """Return basenames of hooks shipped inside the ai-hats package.
 
-    Sourced from ``importlib.resources.files("ai_hats.library") /
-    "hooks"`` so the whitelist tracks package contents automatically
-    when new managed hooks are added. The result is cached (functools
+    Sourced from :func:`paths.builtin_library_hooks` (the worktree-aware
+    builtin ``library/hooks/`` resolver) so the whitelist tracks package
+    contents automatically when new managed hooks are added. Re-walked on
+    every call (functools
     not used to keep import-time imports minimal — re-walking the
     package data is cheap on every call).
 
@@ -100,99 +102,13 @@ def _ai_hats_owned_hook_basenames() -> frozenset[str]:
     user-owned (worst case: a managed file ends up under user-hooks/,
     which the next clean install can re-materialize under library/hooks/).
     """
-    from importlib.resources import files
-
     try:
-        source_root = files("ai_hats.library") / "hooks"
-        root_path = Path(str(source_root))
-        if not root_path.is_dir():
+        hooks = _builtin_library_hooks()
+        if hooks is None:
             return frozenset()
-        return frozenset(entry.name for entry in root_path.iterdir() if entry.is_file())
-    except (ModuleNotFoundError, FileNotFoundError, OSError):
+        return frozenset(entry.name for entry in hooks.iterdir() if entry.is_file())
+    except OSError:
         return frozenset()
-
-
-def _validated_library_root(raw: str | None) -> Path | None:
-    """A builtin-library root is valid only if it holds BOTH ``core`` and ``usage``.
-
-    A partial root (e.g. ``core`` but no ``usage`` — a corrupt/sparse checkout, or
-    a leaked stale ``AI_HATS_LIBRARY_ROOT`` pointing at a half-removed worktree)
-    is rejected LOUDLY rather than silently dropping the entire ``usage`` layer.
-    Returns the root, or ``None`` (caller falls back to the next resolver).
-    """
-    if not raw:
-        return None
-    root = Path(raw).expanduser()
-    if (root / "core").is_dir() and (root / "usage").is_dir():
-        return root
-    print(
-        f"[ai-hats] AI_HATS_LIBRARY_ROOT={raw!r} has no core/+usage/ pair; "
-        "ignoring it and resolving the builtin library normally.",
-        file=sys.stderr,
-    )
-    return None
-
-
-def _detect_source_library_root(start: Path) -> Path | None:
-    """Walk up from ``start`` for an ai-hats *source* checkout; return its ``library/``.
-
-    A source checkout is a dir holding BOTH ``library/core`` AND ``src/ai_hats``.
-    The ``src/ai_hats`` co-requirement is what distinguishes the engine source
-    repo (and its linked worktrees) from any downstream project that merely has
-    a ``library/core`` of its own — so downstream stays on the installed package
-    (HATS-826 R2). Returns ``<dir>/library`` or ``None``.
-    """
-    for d in (start, *start.parents):
-        if (d / "library" / "core").is_dir() and (d / "src" / "ai_hats").is_dir():
-            return d / "library"
-    return None
-
-
-def _importlib_library_layers() -> list[Path]:
-    """Resolve ``[core, usage]`` from the installed ``ai_hats.library`` package.
-
-    Falls back to an empty list when the package data is missing (sdist
-    inspection in CI / broken install) — callers degrade gracefully.
-    """
-    from importlib.resources import files
-
-    try:
-        root = files("ai_hats.library")
-    except (ModuleNotFoundError, FileNotFoundError):
-        return []
-    out: list[Path] = []
-    for layer in ("core", "usage"):
-        p = Path(str(root / layer))
-        if p.is_dir():
-            out.append(p)
-    return out
-
-
-def _builtin_library_layers() -> list[Path]:
-    """Resolve the builtin ``[core, usage]`` layers (core first = lowest priority).
-
-    Resolution order (HATS-826), highest precedence first:
-
-    1. ``AI_HATS_LIBRARY_ROOT`` env override — an explicit, greppable seam
-       (tests, power users), validated both-or-none.
-    2. **cwd auto-detection** of an ai-hats source checkout. ``importlib.resources``
-       hard-pins ``ai_hats.library`` to the editable-install MAIN repo regardless
-       of cwd, so library edits made inside a linked worktree are otherwise
-       invisible to composition. Keying off cwd makes a command run *inside* a
-       worktree resolve that worktree's ``library/``.
-    3. ``importlib.resources`` — the installed package (downstream / default).
-
-    A detected/overridden root is used only when BOTH layers exist under it;
-    otherwise we fall through to the installed package (never a partial builtin).
-    """
-    root = _validated_library_root(os.environ.get("AI_HATS_LIBRARY_ROOT"))
-    if root is None:
-        root = _detect_source_library_root(Path.cwd())
-    if root is not None:
-        layers = [root / layer for layer in ("core", "usage")]
-        if all(p.is_dir() for p in layers):
-            return layers
-    return _importlib_library_layers()
 
 
 @dataclass(frozen=True)
@@ -282,8 +198,9 @@ class Assembler:
             if expanded.is_dir():
                 paths.append(expanded)
 
-        # Project-local libraries
-        local_lib = self.project_dir / "libraries"
+        # Project-local libraries — re-pointed to the worktree when composing
+        # inside one (HATS-831); see :meth:`_worktree_local_libraries`.
+        local_lib = self._worktree_local_libraries() or self.project_dir / LIBRARIES_DIRNAME
         if local_lib.is_dir():
             paths.append(local_lib)
 
@@ -291,6 +208,30 @@ class Assembler:
         paths.extend(extra)
 
         return paths
+
+    def _worktree_local_libraries(self) -> Path | None:
+        """Project-local ``libraries/`` re-pointed to the linked worktree, or ``None``.
+
+        Inside a linked worktree ``_project_dir`` hopped to MAIN (HATS-524), so the
+        git-tracked ``libraries/`` would resolve to MAIN — invisible to worktree
+        edits. Re-point only when cwd is in a worktree whose main checkout IS
+        ``project_dir``. The ``is_relative_to`` pre-gate skips the git probe on the
+        common main-checkout path (and under subprocess-mocking tests).
+        """
+        cwd = Path.cwd()
+        try:
+            if cwd.resolve().is_relative_to(self.project_dir.resolve()):
+                return None
+        except (OSError, ValueError):
+            return None
+
+        from .worktree import WorktreeManager
+
+        main_root = WorktreeManager.main_worktree_root(cwd)
+        if main_root is None or main_root.resolve() != self.project_dir.resolve():
+            return None
+        wt_top = WorktreeManager.worktree_toplevel(cwd)
+        return (wt_top / LIBRARIES_DIRNAME) if wt_top is not None else None
 
     # ----- Scaffold-as-asset (HATS-284) -----
 
@@ -1144,8 +1085,7 @@ class Assembler:
     def _ai_hats_owned_hook_basenames() -> frozenset[str]:
         """Set of hook basenames the framework itself ships.
 
-        Sourced from ``importlib.resources.files("ai_hats.library") /
-        "hooks"`` at import time — same surface as
+        Sourced from :func:`paths.builtin_library_hooks` — same surface as
         :meth:`_materialize_pretooluse_hooks`. Anything not in this set
         is treated as user-owned content by the v4 hooks-partition step
         (HATS-549 Phase 4).
@@ -1286,15 +1226,9 @@ class Assembler:
         cannot be resolved — a broken install is not a state we'd want
         to silently paper over with an empty hooks dir.
         """
-        try:
-            source_root_path = _package_hooks_source_dir()
-        except (ModuleNotFoundError, FileNotFoundError) as e:
-            raise AssemblyError(
-                "ai_hats.library.hooks not found in package data — broken install"
-            ) from e
-
-        if not source_root_path.is_dir():
-            raise AssemblyError(f"Hook source dir missing: {source_root_path}")
+        source_root_path = _builtin_library_hooks()
+        if source_root_path is None:
+            raise AssemblyError("ai_hats.library.hooks not found in package data — broken install")
 
         target_dir = _lib_hooks_dir(self.project_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -1546,12 +1480,12 @@ class Assembler:
         """
         expected: dict[str, bytes] = {}
         try:
-            src_root = _package_hooks_source_dir()
-            if src_root.is_dir():
+            src_root = _builtin_library_hooks()  # worktree-aware builtin resolver (HATS-831)
+            if src_root is not None and src_root.is_dir():
                 for src in src_root.iterdir():
                     if src.is_file() and src.suffix == ".sh":
                         expected[src.name] = src.read_bytes()
-        except (ModuleNotFoundError, FileNotFoundError, OSError):
+        except OSError:
             return []  # broken install — let _refresh's loud path own it
         if result is not None:
             for _event, entries in self._collect_skill_runtime_hooks(result).items():

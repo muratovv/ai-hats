@@ -164,6 +164,7 @@ def task_transition(
     from ..worktree import WorktreeCreateError  # HATS-517
     from ..worktree import WorktreeDriftError  # HATS-509
     from ..worktree import WorktreeMainRepoMidMergeError  # HATS-587 / F4
+    from ..worktree import WorktreeStateIncompleteError  # HATS-714
     from ..worktree import WorktreeStateLostError  # HATS-541
 
     mgr = _task_manager(_project_dir())
@@ -303,6 +304,17 @@ def task_transition(
         console.print(
             f"  [cyan]ai-hats task transition {task_id} done[/]",
             soft_wrap=True,
+        )
+        sys.exit(1)
+    except WorktreeStateIncompleteError as e:
+        # HATS-714: `task transition done` shares `WorktreeManager.merge`, so a
+        # state file lacking `original_branch` would re-traceback here just as
+        # it did on `wt merge`. Surface the same typed refusal. The card stays
+        # in `review` (HATS-481 fail-loud: the raise precedes `_save_task`).
+        from rich.markup import escape as _escape
+
+        console.print(
+            f"[red]Refused (incomplete worktree state)[/]: {_escape(str(e))}"
         )
         sys.exit(1)
     except WorktreeStateLostError as e:

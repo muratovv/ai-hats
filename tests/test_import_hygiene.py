@@ -154,20 +154,33 @@ def test_no_module_level_runtime_import_cycles():
 
 def test_leaf_modules_are_pure():
     """Leaf modules must import nothing first-party — at any level (incl.
-    TYPE_CHECKING). Keeps shared constants out of high-level modules (HATS-715)."""
+    TYPE_CHECKING). Keeps shared constants out of high-level modules (HATS-715).
+
+    A leaf may be a single module OR a package (e.g. ``paths`` after the HATS-831
+    split): every submodule is checked, and imports WITHIN the leaf's own package
+    are allowed (internal cohesion) — only a dependency on a module OUTSIDE the
+    leaf violates the invariant."""
     mods = _modules()
     nodeset = set(mods)
     offenders: dict[str, list[str]] = {}
     for leaf in LEAF_MODULES:
         name = f"{PKG}.{leaf}"
-        path = mods[name]
-        tree = ast.parse(path.read_text())
+        prefix = name + "."  # the leaf's own package subtree (empty for plain modules)
+        leaf_mods = {m: p for m, p in mods.items() if m == name or m.startswith(prefix)}
         refs: list[str] = []
-        for node in _import_nodes(tree, top_level_only=False):
-            refs += _targets(name, path.name == "__init__.py", node, nodeset)
+        for m, path in leaf_mods.items():
+            tree = ast.parse(path.read_text())
+            for node in _import_nodes(tree, top_level_only=False):
+                refs += [
+                    t
+                    for t in _targets(m, path.name == "__init__.py", node, nodeset)
+                    if t != name and not t.startswith(prefix)  # ignore intra-leaf imports
+                ]
         if refs:
             offenders[leaf] = sorted(set(refs))
-    assert not offenders, f"leaf modules must not import first-party: {offenders}"
+    assert not offenders, (
+        f"leaf modules must not import first-party (outside their own package): {offenders}"
+    )
 
 
 def test_detector_flags_a_synthetic_cycle():

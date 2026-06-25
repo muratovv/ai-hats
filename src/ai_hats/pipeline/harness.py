@@ -36,11 +36,10 @@ import secrets
 import shutil
 import string
 from datetime import datetime, timezone
-from importlib.resources import as_file, files
 from pathlib import Path
 from typing import Any, Mapping
 
-from ..paths import runs_dir, traces_dir
+from ..paths import core_pipeline_path, runs_dir, traces_dir
 from .loader import load_pipeline
 from .pipeline import run as run_pipeline
 from .trace import JsonlTraceWriter, TraceHook
@@ -166,9 +165,12 @@ class PipelineHarness:
 
     def run(self, initial: Mapping[str, Any]) -> dict[str, Any]:
         """Load the named YAML pipeline and run it against ``initial``."""
-        res = files("ai_hats.library") / "core" / "pipelines" / f"{self.name}.yaml"
-        with as_file(res) as yaml_path:
-            pipeline = load_pipeline(yaml_path)
+        yaml_path = core_pipeline_path(self.name)
+        if yaml_path is None:
+            raise FileNotFoundError(
+                f"core pipeline {self.name!r} not found — ai_hats.library missing (broken install)"
+            )
+        pipeline = load_pipeline(yaml_path)
         return run_pipeline(
             pipeline,
             dict(initial),
