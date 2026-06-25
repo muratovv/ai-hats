@@ -115,7 +115,7 @@ class WrapRunner:
         """Heal drift of ALL managed-hook surfaces at session start (HATS-833,
         generalizing HATS-593 layer B from git-only to runtime + wt + git).
 
-        ``Assembler.sync_hooks()`` is idempotent, drift-gated, skips a role-less
+        ``Assembler.hooks.sync_hooks()`` is idempotent, drift-gated, skips a role-less
         project, and refuses to heal from a stale binary. Fail-open: a best-effort
         drift-heal must never block session start. The sole trigger is here —
         there is no ``ai-hats self sync-hooks`` command and no git-event hook
@@ -128,7 +128,7 @@ class WrapRunner:
         to avoid a second compose.
         """
         try:
-            res = self.assembler.sync_hooks(result)
+            res = self.assembler.hooks.sync_hooks(result)
             if session is not None:
                 session.log_trace(TraceTag.SYS, f"managed-hook resync: {res.status}")
             if res.status == "synced" and res.changes:

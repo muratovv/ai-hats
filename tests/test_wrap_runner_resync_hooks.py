@@ -1,7 +1,7 @@
 """HATS-707 → HATS-833: the in-session managed-hook drift net.
 
 Re-homed from the dead ``session_start: [ai-hats self sync-hooks]`` lifecycle
-channel to a direct ``Assembler.sync_hooks()`` call at session start in
+channel to a direct ``Assembler.hooks.sync_hooks()`` call at session start in
 ``WrapRunner._resync_managed_hooks``, then generalized (HATS-833) from git-only
 to ALL managed-hook surfaces (runtime + wt + git) with an observable heal note.
 
@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.assembler import Assembler
-from ai_hats.githooks import GITHOOKS_DIR
+from ai_hats.hooks_manager import GITHOOKS_DIR
 from ai_hats.models import ProjectConfig
 from ai_hats.wrap_runner import WrapRunner
 
@@ -125,7 +125,7 @@ def test_resync_failure_returns_warn_notice_and_traces(tmp_path):
     ProjectConfig(provider="gemini").save(project / "ai-hats.yaml")
 
     runner = WrapRunner(project)
-    runner.assembler.sync_hooks = lambda *a, **k: (_ for _ in ()).throw(
+    runner.assembler.hooks.sync_hooks = lambda *a, **k: (_ for _ in ()).throw(
         RuntimeError("boom")
     )
     session = runner.session_mgr.create_session()
