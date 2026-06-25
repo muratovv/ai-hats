@@ -9,7 +9,12 @@ import click
 
 from ..utils.atomic_io import atomic_write_text
 from ..state import EmptyPlanError
-from ._helpers import _project_dir, _task_manager, console
+from ._helpers import (
+    _guard_not_inside_linked_worktree,
+    _project_dir,
+    _task_manager,
+    console,
+)
 
 
 def _resolve_description(
@@ -198,6 +203,14 @@ def task_transition(
             f"transition (got target '{state.value}')"
         )
         sys.exit(1)
+
+    # HATS-788: done/failed/cancelled tear down the task's worktree
+    # (`_remove_worktree` via merge or discard). If the operator's shell is
+    # inside that worktree, the teardown deletes its own cwd and every later
+    # `ai-hats` mis-resolves the tracker. Refuse before the manager runs;
+    # the guard prints the `cd <main-checkout>` recovery.
+    if state in (TaskState.DONE, TaskState.FAILED, TaskState.CANCELLED):
+        _guard_not_inside_linked_worktree()
 
     try:
         # final_state rides the transition's lock window (HATS-723) so a failed

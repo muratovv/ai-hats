@@ -4,12 +4,12 @@ Internal model of ai-hats: components, composition rules, project layout, librar
 
 ## Component model
 
-| Component | Description           | Format |
-|-----------|-----------------------|--------|
-| **Rules** | Behavioral directives | `rule.md` + `metadata.yaml` |
+| Component  | Description                      | Format                                                    |
+| ---------- | -------------------------------- | --------------------------------------------------------- |
+| **Rules**  | Behavioral directives            | `rule.md` + `metadata.yaml`                               |
 | **Skills** | Capabilities with implementation | `SKILL.md` + `metadata.yaml` + `scripts/` + `references/` |
-| **Traits** | Composite components | `config.yaml` (composition + injection) |
-| **Roles** | Root configurations | `config.yaml` (traits + priorities + injection) |
+| **Traits** | Composite components             | `config.yaml` (composition + injection)                   |
+| **Roles**  | Root configurations              | `config.yaml` (traits + priorities + injection)           |
 
 ### Role customization
 
@@ -68,7 +68,6 @@ From role to materialized prompt — a single pipeline; the split happens only a
 
 <!-- Source: docs/assets/diagrams/composition-flow.d2 — render: docs/assets/diagrams/render.sh -->
 
-
 The overlay from `ai-hats.yaml.customizations` affects the pipeline at two points: `add` / `remove` patches the component lists before resolution, and `injection_append` is appended last — after the role's own injection. Deduplication happens during resolution: traits are collected first (depth-first), then the role's own rules and skills are added on top; duplicates by name are ignored.
 
 - **Disk materialization** — the primary path: `ai-hats self init` writes `CLAUDE.md` / `GEMINI.md` at the project root, and the provider CLI picks them up automatically at session start.
@@ -90,7 +89,6 @@ When a user runs `ai-hats agent <role>`, the runtime opens an interactive provid
 </p>
 
 <!-- Source: docs/assets/diagrams/session-lifecycle.d2 — render: d2 --sketch --theme=200 -->
-
 
 The `Bridge` node — entry into auto reflect-session (see the next section). When `policy=off` or the threshold is not met, the session ends without an LLM call.
 
@@ -116,7 +114,6 @@ The framework's backlog lives in three parallel state machines: tasks (`HATS-NNN
 </p>
 
 <!-- Sources: docs/assets/diagrams/backlog-{task,hyp,prop}-fsm.d2 -->
-
 
 - **Task (`HATS-NNN`)** — a unit of planned work. Happy path — the fixed pipeline `brainstorm → plan → execute → document → review → done` without skipping states. Side routes: `blocked` (returnable to `plan` or `execute`), `failed` (recoverable via `brainstorm`), `cancelled` (administrative close from any non-terminal state), and from `done` a reopen path to `execute` is available for finishing epic scope. Shortcuts: `ai-hats task close <id> --resolution "..."` fast-closes a `brainstorm`/`plan` task straight to `done` when the work shipped on master (no worktree theatre); `ai-hats task transition <id> <state> --force --reason "..."` bypasses the FSM guard for corrective overrides (e.g. undo a stray `plan` transition) and records the reason in `work_log`. Cross-references between cards live in `related: []`, `see_also: []`, and `folded_into: <id>` fields, managed via `ai-hats task link`. On the transition to `plan` a `plan.md` scaffold is created; the work log is written with session tracking; a file lock protects against race conditions.
 - **Hypothesis (`HYP-NNN`)** — a claim about system or process behavior. Stays `active` while sessions accumulate verdicts in `validation_log`; closes into `confirmed`, `refuted`, or `stalled` per `exit_criteria`. Verdicts are written by reflect-session (see below).
@@ -152,7 +149,6 @@ Triggered after `session_end` when `policy ∈ {always, smart}` and the threshol
 
 <!-- Source: docs/assets/diagrams/auto-reflect-session.d2 -->
 
-
 ### Manual reflect-all (triage)
 
 When HYPs and PROPs have piled up — the user runs `ai-hats reflect all`. Pre-flight builds a handoff from active HYPs and open PROPs, then an interactive chat, and finally `reflect commit` flips statuses in bulk.
@@ -162,7 +158,6 @@ When HYPs and PROPs have piled up — the user runs `ai-hats reflect all`. Pre-f
 </p>
 
 <!-- Source: docs/assets/diagrams/manual-reflect-all.d2 -->
-
 
 Full guide (policies, session-reviewer, manual triage, hypothesis workflow) — see [10].
 
@@ -217,25 +212,31 @@ Every skill follows the canonical format (see `skill-template`):
 
 ```markdown
 # Skill Name
+
 One-line purpose.
 
-## When to Use         ← activation triggers
-## <Main Section>      ← Procedure | Checklist | Workflow | Conventions
-## Completion          ← completion criteria
-## Anti-Patterns       ← common mistakes
+## When to Use ← activation triggers
+
+## <Main Section> ← Procedure | Checklist | Workflow | Conventions
+
+## Completion ← completion criteria
+
+## Anti-Patterns ← common mistakes
 ```
 
 Patterns: `protocol`, `checklist`, `orchestrator`, `reference`, `template`.
 Metadata: `metadata.yaml` (name, description, author, tags, pattern).
 
-A skill may optionally declare **git hooks**, which are installed
-automatically into `.githooks/` when the role is built (HATS-088):
+A skill may optionally declare **git hooks** in its `SKILL.md` frontmatter
+(under the top-level `ai_hats:` key, alongside `runtime_hooks` and `worktree`),
+installed automatically into `.githooks/` when the role is built (HATS-088):
 
 ```yaml
-# <skill>/metadata.yaml
-git_hooks:
-  pre-commit:
-    - git_hooks/check.sh   # path relative to the skill directory
+# <skill>/SKILL.md frontmatter
+ai_hats:
+  git_hooks:
+    pre-commit:
+      - git_hooks/check.sh   # path relative to the skill directory
 ```
 
 The builder copies scripts to `.githooks/<event>.d/<skill>-<basename>`,
@@ -279,9 +280,43 @@ overrides `Provider.ensure_runtime_hooks()` to perform the auto-wire;
 `GeminiProvider` keeps the default no-op.
 
 **Skill-declared runtime hooks.** Beyond the built-in guard, any skill can
-declare its own `PreToolUse` / `PostToolUse` hooks via `runtime_hooks:` in
-`metadata.yaml`; `ensure_runtime_hooks()` materializes and wires them through
-the same path (HATS-597/601). See [how-to-extend.md](how-to-extend.md).
+declare its own `PreToolUse` / `PostToolUse` hooks via `runtime_hooks:` in its
+`SKILL.md` frontmatter (`ai_hats:` key); `ensure_runtime_hooks()` materializes
+and wires them through the same path (HATS-597/601). See
+[how-to-extend.md](how-to-extend.md).
+
+### Worktree lifecycle hooks (HATS-823)
+
+The third hook kind runs at the boundary of an `ai-hats wt` worktree rather than
+on git events or tool use. A skill declares `wt_in` / `wt_out` scripts under
+`ai_hats.worktree` in its `SKILL.md` frontmatter; they are collected and
+materialized exactly like `runtime_hooks` (ADR-0012). `wt_in` seeds gitignored
+data *into* a fresh worktree (warn-and-continue); `wt_out` drains it *out* before
+any teardown route and is **fail-closed** — a failing drain aborts the teardown so
+gitignored data is never silently destroyed, with `--skip-hooks` as the conscious
+escape. Credentials are copied *in* freely (same-user co-location) but **never
+harvested out** into a persistent backup by construction (creds boundary: ADR-0012
+D5). Author-facing contract: [how-to-extend.md](how-to-extend.md#worktree-lifecycle-hooks).
+
+```mermaid
+flowchart TD
+    compose["compose role<br/>(collect wt_in / wt_out hooks)"]
+    create["ai-hats wt create"]
+    wt["worktree<br/>(tracked git state only)"]
+    work["agent works"]
+    teardown["wt merge / discard / cleanup"]
+    drained{"wt_out hook ok?"}
+    done["torn down<br/>(nothing lost)"]
+    abort["ABORT teardown<br/>worktree + branch preserved"]
+
+    compose -->|"materialize<br/>(reuses runtime-hook infra)"| create
+    create -->|"run wt_in (warn-continue)<br/>e.g. seed .env"| wt
+    wt --> work --> teardown
+    teardown -->|"run wt_out BEFORE removal"| drained
+    drained -->|yes| done
+    drained -->|"no — fail-closed"| abort
+    drained -->|"--skip-hooks (force)"| done
+```
 
 ### Sample role config.yaml
 
