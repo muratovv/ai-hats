@@ -180,6 +180,7 @@ def wt_merge(
         WorktreeMainRepoMidMergeError,  # HATS-587 / F4
         WorktreePartialCleanupError,
         WorktreeRemoveError,
+        WorktreeStateIncompleteError,  # HATS-714
     )
 
     # HATS-482 / B-08: guard before resolving CWD/_project_dir.
@@ -207,6 +208,15 @@ def wt_merge(
         sys.exit(1)
     except WorktreeDirtyError as e:
         console.print(f"[red]Refused[/]: {e}")
+        sys.exit(1)
+    except WorktreeStateIncompleteError as e:
+        # HATS-714: the state file is present but lacks `original_branch`
+        # (corrupt / hand-edited / legacy). Surface the typed refusal instead
+        # of the pre-714 `git rev-parse None` traceback. The message already
+        # carries the recovery recipe; escape defensively (branch names can
+        # in principle contain Rich-markup characters).
+        from rich.markup import escape as _escape
+        console.print(f"[red]Refused (incomplete worktree state)[/]: {_escape(str(e))}")
         sys.exit(1)
     except WorktreeBaseBranchMismatchError as e:
         # HATS-533: main-repo HEAD wandered off `_original_branch` between
