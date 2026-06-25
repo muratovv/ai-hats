@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.assembler import Assembler
-from ai_hats.githooks import GITHOOKS_DIR
+from ai_hats.hooks_manager import GITHOOKS_DIR
 from ai_hats.models import ProjectConfig
 from ai_hats.wrap_runner import WrapRunner
 

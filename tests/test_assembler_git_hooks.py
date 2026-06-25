@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.assembler import Assembler
-from ai_hats.githooks import (  # HATS-715: git-hook constants moved to githooks.py
+from ai_hats.hooks_manager import (  # HATS-837: git-hook mechanics merged into hooks_manager
     GITHOOKS_DIR,
     GITHOOKS_DISPATCHER_MARKER,
     GITHOOKS_MANIFEST,
@@ -251,7 +251,7 @@ def test_sync_hooks_ignores_foreign_dispatcher_no_perpetual_heal(project_with_ho
     """HATS-833 P1 regression: a user-owned (foreign) top-level dispatcher
     coexisting with managed ``.d/`` scripts must NOT be detected as drift — else
     the session-start net would re-heal + emit a false note on EVERY launch."""
-    from ai_hats.githooks import GITHOOKS_MANIFEST, git_hooks_changes
+    from ai_hats.hooks_manager import GITHOOKS_MANIFEST, git_hooks_changes
     from ai_hats.materialize import compose_for_role
 
     project, lib = project_with_hook_skill
