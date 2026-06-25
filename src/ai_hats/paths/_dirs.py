@@ -1,4 +1,4 @@
-"""Path conventions for ai-hats runtime + user config (HATS-316).
+"""Directory-path resolution for ai-hats runtime + user config (HATS-316).
 
 Single source of truth for "where does ai-hats keep its files?". All
 framework-managed artefacts live under ``<ai_hats_dir>/`` — by default
@@ -18,8 +18,8 @@ Resolution of ``ai_hats_dir`` itself follows the precedence chain:
   3. Bootstrap fallback ``.agent/ai-hats/`` — used pre-migration, fresh
      projects, or tests without yaml. ``ProjectConfig`` itself treats the
      field as required and will raise ``ValidationError`` if it's missing
-     from a v4 yaml; ``paths.py`` is the low-level resolver that needs to
-     work during migration too, so it tolerates the missing field here.
+     from a v4 yaml; this resolver needs to work during migration too, so it
+     tolerates the missing field here.
 
 All path functions are pure (return ``Path`` without ``mkdir``) except
 ``ai_hats_dir`` / ``traces_dir`` / ``pipeline_steps_dir``, which preserve
@@ -29,7 +29,7 @@ their historical ``mkdir -p`` behavior so callers don't have to guard.
 from __future__ import annotations
 
 import os
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Literal
 
 import yaml
@@ -234,7 +234,7 @@ def session_cache_dir(project_dir: Path, session_id: str) -> Path:
     return session_cache_root(project_dir) / session_id
 
 
-# ---------- Library class ----------
+# ---------- Library class (materialized mirror) ----------
 
 
 def library_dir(project_dir: Path) -> Path:
@@ -255,20 +255,6 @@ def skills_dir(project_dir: Path) -> Path:
 def hooks_dir(project_dir: Path) -> Path:
     """Canonical hooks source: ``<ai_hats_dir>/library/hooks/``."""
     return library_dir(project_dir) / "hooks"
-
-
-def package_hooks_source_dir() -> Path:
-    """Filesystem dir of the bundled package-data runtime-hook scripts
-    (``ai_hats.library/hooks/*.sh`` — the HATS-437 shared-state guard + helper).
-
-    Single source of truth for the package-data hook root so the materializer
-    and the drift detector resolve the same place. May raise
-    ``ModuleNotFoundError`` / ``FileNotFoundError`` on a broken install — the
-    caller decides whether that is fatal (materialize) or fail-open (detect).
-    """
-    from importlib.resources import files
-
-    return Path(str(files("ai_hats.library") / "hooks"))
 
 
 def wt_hooks_dir(project_dir: Path) -> Path:
@@ -318,7 +304,7 @@ def strip_claude_project_dir(s: str) -> str:
     on-disk existence checks.
     """
     if s.startswith(CLAUDE_PROJECT_DIR_VAR):
-        return s[len(CLAUDE_PROJECT_DIR_VAR):]
+        return s[len(CLAUDE_PROJECT_DIR_VAR) :]
     return s
 
 
@@ -522,24 +508,24 @@ def read_current_sha(project_dir: Path) -> str | None:
 LEGACY_PATH_MAP: dict[str, tuple[LegacyClass, str]] = {
     # Sessions — `.gitlog/` holds both pipeline_runs/ and session_<id>/
     # subdirs; the whole tree moves to sessions/runs/ in one shot.
-    ".gitlog":                ("sessions", "sessions/runs"),
-    ".agent/retrospectives":  ("sessions", "sessions/retros"),
-    ".agent/audits":          ("sessions", "sessions/audits"),
-    ".agent/handoffs":        ("sessions", "sessions/handoffs"),
-    ".agent/experiments":     ("sessions", "sessions/experiments"),
-    ".agent/worktrees":       ("sessions", "sessions/worktrees"),
-    ".agent/worktree.json":   ("sessions", "sessions/worktree.json"),
+    ".gitlog": ("sessions", "sessions/runs"),
+    ".agent/retrospectives": ("sessions", "sessions/retros"),
+    ".agent/audits": ("sessions", "sessions/audits"),
+    ".agent/handoffs": ("sessions", "sessions/handoffs"),
+    ".agent/experiments": ("sessions", "sessions/experiments"),
+    ".agent/worktrees": ("sessions", "sessions/worktrees"),
+    ".agent/worktree.json": ("sessions", "sessions/worktree.json"),
     # Tracker
-    ".agent/backlog":         ("tracker",  "tracker/backlog"),
-    ".agent/hypotheses":      ("tracker",  "tracker/hypotheses"),
-    ".agent/decisions":       ("tracker",  "tracker/decisions"),
-    ".agent/STATE.md":        ("tracker",  "STATE.md"),
+    ".agent/backlog": ("tracker", "tracker/backlog"),
+    ".agent/hypotheses": ("tracker", "tracker/hypotheses"),
+    ".agent/decisions": ("tracker", "tracker/decisions"),
+    ".agent/STATE.md": ("tracker", "STATE.md"),
     # Library
-    ".agent/rules":           ("library",  "library/rules"),
-    ".agent/skills":          ("library",  "library/skills"),
-    ".agent/hooks":           ("library",  "library/hooks"),
+    ".agent/rules": ("library", "library/rules"),
+    ".agent/skills": ("library", "library/skills"),
+    ".agent/hooks": ("library", "library/hooks"),
     # Framework root
-    ".agent/.last_backup":    ("root",     ".last_backup"),
+    ".agent/.last_backup": ("root", ".last_backup"),
 }
 
 
@@ -563,51 +549,49 @@ def legacy_paths_by_class(
     return out
 
 
-# ---------- Config-value validation (used by ProjectConfig validator) ----------
-
-
-def normalize_ai_hats_dir(value: str) -> str:
-    """Validate + normalize an ``ai_hats_dir`` config value.
-
-    Raises ``ValueError`` on:
-      - empty string, ``"."``, ``"/"``
-      - absolute paths (project must be relocatable)
-      - ``..`` segments (escape out of project)
-
-    Normalization: POSIX-style separators, trailing slash stripped.
-    """
-    if not value:
-        raise ValueError("ai_hats_dir must not be empty")
-    p = PurePosixPath(value.replace("\\", "/"))
-    if p.is_absolute():
-        raise ValueError("ai_hats_dir must be relative to project root (not absolute)")
-    if ".." in p.parts:
-        raise ValueError("ai_hats_dir must not contain '..' segments")
-    s = p.as_posix().rstrip("/")
-    if s in {"", ".", "/"}:
-        raise ValueError(f"ai_hats_dir is invalid: {value!r}")
-    return s
-
-
-def normalize_venv_path(value: str) -> str:
-    """Validate + normalize a ``venv_path`` config value (HATS-334).
-
-    Differs from :func:`normalize_ai_hats_dir` by ALLOWING absolute paths —
-    venv may legitimately live outside the project (CI shared cache,
-    system-wide ai-hats venv, user-owned override venv).
-
-    Raises ``ValueError`` on:
-      - empty string, ``"."``, ``"/"``
-      - ``..`` segments (relative escape; not meaningful for absolute either)
-
-    Normalization: POSIX-style separators, trailing slash stripped.
-    """
-    if not value:
-        raise ValueError("venv_path must not be empty")
-    p = PurePosixPath(value.replace("\\", "/"))
-    if ".." in p.parts:
-        raise ValueError("venv_path must not contain '..' segments")
-    s = p.as_posix().rstrip("/")
-    if s in {"", ".", "/"}:
-        raise ValueError(f"venv_path is invalid: {value!r}")
-    return s
+__all__ = [
+    "LegacyClass",
+    "_read_ai_hats_dir_from_yaml",
+    "_read_venv_path_from_yaml",
+    "_is_safe_sha_component",
+    "user_home",
+    "ai_hats_dir",
+    "traces_dir",
+    "pipeline_steps_dir",
+    "sessions_dir",
+    "runs_dir",
+    "retros_dir",
+    "audits_dir",
+    "handoffs_dir",
+    "worktrees_dir",
+    "tracker_dir",
+    "backlog_dir",
+    "tasks_dir",
+    "proposals_dir",
+    "hypotheses_dir",
+    "decisions_dir",
+    "state_md_path",
+    "session_cache_root",
+    "session_cache_dir",
+    "library_dir",
+    "rules_dir",
+    "skills_dir",
+    "hooks_dir",
+    "wt_hooks_dir",
+    "managed_wt_hook_filename",
+    "managed_runtime_hook_filename",
+    "CLAUDE_PROJECT_DIR_VAR",
+    "strip_claude_project_dir",
+    "user_hooks_dir",
+    "last_backup_path",
+    "venv_path",
+    "versions_root",
+    "version_dir",
+    "current_pointer",
+    "complete_sentinel",
+    "is_complete",
+    "is_usable_version",
+    "read_current_sha",
+    "LEGACY_PATH_MAP",
+    "legacy_paths_by_class",
+]

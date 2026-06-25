@@ -18,10 +18,10 @@ import pytest
 
 from ai_hats.paths import worktrees_dir
 from ai_hats.worktree import (
-    OriginalBranchMissingError,
     WorktreeBaseBranchMismatchError,
     WorktreeDriftError,
     WorktreeManager,
+    WorktreeStateIncompleteError,
 )
 
 
@@ -688,61 +688,37 @@ class TestBaseBranchMismatch:
         ).stdout
         assert listing.strip() == "", "branch should be cleaned up on merge"
 
-    def test_legacy_state_no_original_branch_skips_guard(
+    def test_legacy_state_no_original_branch_refuses_typed(
         self, git_project: Path
     ) -> None:
-        """Legacy state with ``_original_branch=None`` bypasses the guard.
+        """State with ``_original_branch=None`` → typed refusal, not a crash.
 
-        Symmetric to the existing ``OriginalBranchMissingError`` short-
-        circuit at worktree.py:1189 (``if self._original_branch and not
-        self._branch_exists(...)``). A legacy state JSON without the
-        ``original_branch`` field must not crash with mismatch — it falls
-        through to whatever the merge naturally does, preserving the
-        pre-HATS-533 behavior for migration paths.
+        HATS-714: a corrupt / hand-edited / pre-versioned state JSON yields
+        ``_original_branch is None``. Pre-714 this fell through every guard
+        to ``git rev-parse None`` → an opaque ``TypeError``. ``merge()`` now
+        raises :class:`WorktreeStateIncompleteError` at the top, BEFORE the
+        HATS-533 mismatch guard.
+
+        Moving HEAD off the original branch first preserves the HATS-533
+        coverage in one assertion: if the mismatch guard fired (or the old
+        ``TypeError`` returned), the ``pytest.raises`` below would observe
+        the wrong exception type and fail. So this proves both the new typed
+        refusal AND that the mismatch guard does not pre-empt it.
         """
         mgr = WorktreeManager(git_project, branch_name="task/legacy-state")
         wt_path = mgr.create()
         mgr.save_state()
         _commit_in_worktree(wt_path)
 
-        # Hand-clear the field to simulate legacy state.
+        # Hand-clear the field to simulate a corrupt / legacy state file.
         mgr._original_branch = None
 
-        # Move HEAD off the original branch to ensure we'd trip the guard
-        # if it ran.
+        # Move HEAD off the original branch: the HATS-533 mismatch guard
+        # would fire here if it ran. The HATS-714 guard must pre-empt it.
         _git(git_project, "checkout", "-b", "any-feature")
 
-        # No WorktreeBaseBranchMismatchError. Whether the merge then
-        # succeeds or fails downstream is not this test's concern — we
-        # only assert that the new guard does NOT fire for legacy state.
-        # Narrow `except` list (no bare Exception): each clause is an
-        # explicitly-acceptable downstream consequence of having
-        # `_original_branch=None`. An UNEXPECTED type — e.g. an
-        # AttributeError from a future guard regression that drops the
-        # `is not None` check — IS the regression this test catches:
-        # such an exception falls through, pytest reports an ERROR, and
-        # the contract violation is visible.
-        try:
+        with pytest.raises(WorktreeStateIncompleteError):
             mgr.merge()
-        except WorktreeBaseBranchMismatchError:
-            pytest.fail(
-                "mismatch guard fired for legacy state "
-                "(_original_branch=None) — must be a no-op"
-            )
-        except OriginalBranchMissingError:
-            # Expected: legacy state path resolves `_original_branch` as
-            # None / missing; the existing `_branch_exists` check raises
-            # this. Pre-HATS-533 behavior preserved.
-            pass
-        except (subprocess.CalledProcessError, TypeError):
-            # Expected downstream from `_check_drift` (worktree.py)
-            # invoking ``self._git("rev-parse", None)`` — TypeError from
-            # subprocess args validation, OR CalledProcessError if git
-            # is reached. Both confirm only that the GUARD itself
-            # short-circuited; downstream merge mechanics on legacy
-            # state were never made to work end-to-end. Out of scope
-            # for HATS-533, separate concern.
-            pass
 
     def test_force_does_not_bypass_mismatch(self, git_project: Path) -> None:
         """``--force`` (uncommitted-bypass) does NOT bypass the HEAD guard.
