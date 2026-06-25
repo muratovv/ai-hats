@@ -44,8 +44,8 @@ class PipelineYamlError(ValueError):
 # HATS-566: memoize core pipelines to guard against editable-install
 # YAML drift. When the ai-hats source tree is updated mid-session
 # (``git pull`` / merge during a long-running ``WrapRunner`` PTY
-# session), ``importlib.resources.files("ai_hats.library")`` resolves
-# to the live working tree — so a fresh ``load_core_pipeline`` call at
+# session), ``paths.core_pipeline_path`` resolves to the live working
+# tree (cwd/worktree-aware, HATS-831) — so a fresh ``load_core_pipeline`` call at
 # session-end reads the *new* YAML against the *old* step registry
 # that was imported at process start. Memoizing the parsed Pipeline at
 # first access (combined with eager preload from ``WrapRunner.run``
@@ -71,11 +71,14 @@ def load_core_pipeline(name: str, *, use_cache: bool = True) -> Pipeline:
     if use_cache and name in _CORE_PIPELINE_CACHE:
         return _CORE_PIPELINE_CACHE[name]
 
-    from importlib.resources import as_file, files
+    from ..paths import core_pipeline_path
 
-    res = files("ai_hats.library") / "core" / "pipelines" / f"{name}.yaml"
-    with as_file(res) as yaml_path:
-        pipeline = load_pipeline(yaml_path)
+    yaml_path = core_pipeline_path(name)
+    if yaml_path is None:
+        raise PipelineYamlError(
+            f"core pipeline {name!r} not found — ai_hats.library missing (broken install)"
+        )
+    pipeline = load_pipeline(yaml_path)
     if use_cache:
         _CORE_PIPELINE_CACHE[name] = pipeline
     return pipeline
