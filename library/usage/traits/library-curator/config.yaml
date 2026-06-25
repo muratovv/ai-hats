@@ -40,27 +40,38 @@ injection: |
     `CompositionResult` (rules, skills, traits, injections,
     `merged_injection`, errors). Dedup happens by component name.
   - `src/ai_hats/assembler.py` — `_builtin_library_layers()` resolves
-    `ai_hats.library` via `importlib.resources`; layer order
+    builtin core/usage by precedence (HATS-826): `AI_HATS_LIBRARY_ROOT`
+    env → cwd auto-detect of an ai-hats source checkout (worktree-aware)
+    → `importlib.resources` (installed package). Full layer order
     (lowest → highest): builtin/core, builtin/usage, `~/.ai-hats`,
     project config-specified, project-local `libraries/`, explicit
     extras. **Last-wins precedence.**
   - `src/ai_hats/paths.py` — agent / library / tracker path resolution.
 
   ### Verifying compositions in-process (worktree-safe)
-  Editable installs read `ai_hats.library` from the install location,
-  NOT from `$CWD`. To verify a worktree's library:
+  Since HATS-826 `_builtin_library_layers()` auto-detects an ai-hats
+  source checkout from the **process cwd** (a dir holding `library/core`
+  + `src/ai_hats`) and honours `AI_HATS_LIBRARY_ROOT`. So builtin
+  core/usage resolve from the worktree you RUN IN — a bare `ai-hats …`
+  from inside the worktree already sees its `library/` edits, and
+  in-process you construct the Assembler with cwd in the worktree:
 
       from pathlib import Path
       from ai_hats.assembler import Assembler
-      wt = Path('.').resolve()
-      a = Assembler(wt, library_paths=[wt / 'library' / 'core',
-                                       wt / 'library' / 'usage'])
+      wt = Path('.').resolve()        # run this FROM inside the worktree
+      a = Assembler(wt)               # builtin core/usage auto-detected from cwd
       # ALWAYS pass overlays — without them, user-global customizations
       # (~/.ai-hats/customizations.yaml) and project ai-hats.yaml overlays
       # are silently skipped, leading to false "rule absent" diagnoses.
       overlays = a._get_overlays('role-curator')
       result = a.composer.compose('role-curator', overlays=overlays)
       assert result.errors == []
+
+  If you cannot run from the worktree cwd, set
+  `AI_HATS_LIBRARY_ROOT=<wt>/library` (or pass an explicit
+  `library_paths=[<wt>/library/core, <wt>/library/usage]`). The old
+  "editable installs always read main, edit-in-main or symlink to
+  validate" workaround is obsolete — do not reintroduce it.
 
   **Positive-control discipline.** When verifying that a NEW rule/skill
   is now present, also assert that an EXISTING rule/skill from the same
