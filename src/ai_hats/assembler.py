@@ -1173,17 +1173,6 @@ class Assembler:
             f"Unknown provider: {provider_name}. Available: {sorted(PROVIDERS.keys())}"
         )
 
-    def _find_hook_script(self, script_ref: str) -> Path | None:
-        """Find a hook script across library paths."""
-        script_path = Path(script_ref)
-        if script_path.is_absolute() and script_path.exists():
-            return script_path
-        for lib_path in reversed(self.library_paths):
-            candidate = lib_path / script_ref
-            if candidate.exists():
-                return candidate
-        return None
-
     # ----- Skill-contributed git hooks (HATS-088) -----
 
     @staticmethod
