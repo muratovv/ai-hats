@@ -409,7 +409,7 @@ def tmp_venv_project(tmp_path: Path, _shared_launcher_venv, repo_root: Path):
 
 
 @pytest.fixture(scope="session")
-def shared_launcher(_shared_launcher_venv, repo_root: Path):
+def shared_launcher(_shared_launcher_venv, repo_root: Path, tmp_path_factory):
     """Session-scoped ``(launcher, env, shared_venv)`` for raw-subprocess tests.
 
     HATS-582: the read-only own-venv-builder e2e tests used to each build
@@ -423,24 +423,36 @@ def shared_launcher(_shared_launcher_venv, repo_root: Path):
     Returns ``(launcher, env, shared_venv)`` — the exact shape the migrated
     tests' local fixtures returned, so test bodies keep their
     ``launcher, env, venv = ...`` unpacking and their raw ``subprocess``
-    helpers. ``env`` is a NEUTRAL copy of ``os.environ`` with
-    ``AI_HATS_REPO_URL`` + ``AI_HATS_VENV`` set (no HOME isolation /
-    PYTHONPATH pop — matches the prior behaviour of the 5 simple module
-    fixtures and :func:`tmp_venv_project`). Tests that need extra env hygiene
-    (e.g. ``test_pretooluse_hook_materialization``) copy this dict and add
-    their own keys.
+    helpers.
+
+    HATS-828: ``env`` is built via
+    :func:`_helpers.env.launcher_subprocess_env` — a HERMETIC env, not a raw
+    ``os.environ.copy()``. This fixture is **session-scoped**, so it captures
+    ``os.environ`` BEFORE the function-scoped autouse scrubs
+    (``_scrub_redirect_env`` / ``_isolate_ai_hats_user_home``) ever apply —
+    meaning a raw copy would leak an inherited absolute ``PYTHONPATH=<repo>/src``
+    (``wt exec`` / worktree-dev) and an unpinned ``AI_HATS_USER_HOME`` straight
+    into every raw consumer's subprocess, hiding the built-in roles ("Role
+    'assistant' not found"). The helper drops ``ENV_DENYLIST`` (incl.
+    ``PYTHONPATH``) and pins an empty ``AI_HATS_USER_HOME``, so every raw
+    consumer is isolated by construction. The WRAPPED ``installed_launcher``
+    fixtures keep their own ``PYTHONPATH`` pop / ``HOME`` set as harmless
+    defense-in-depth.
 
     The ``env`` dict is shared across the whole session — consumers MUST
     treat it as read-only and copy before mutating. The shared venv MUST NOT
     be mutated destructively; the no-mutation contract is guarded by
     :func:`test_wave1_venv_tier.test_shared_venv_reused_across_tests`.
     """
+    from _helpers.env import launcher_subprocess_env
     from _helpers.repo_src import build_src
 
     launcher, shared_venv = _shared_launcher_venv
-    env = os.environ.copy()
-    # HATS-589: per-worker private build source (no-op on serial).
-    env["AI_HATS_REPO_URL"] = str(build_src(repo_root))
-    env["AI_HATS_VENV"] = str(shared_venv)
-    env.pop("AI_HATS_LAUNCHER_DEST", None)
+    env = launcher_subprocess_env(
+        os.environ,
+        # HATS-589: per-worker private build source (no-op on serial).
+        repo_url=build_src(repo_root),
+        venv=shared_venv,
+        user_home=tmp_path_factory.mktemp("shared-launcher-user-home"),
+    )
     return launcher, env, shared_venv
