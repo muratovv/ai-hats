@@ -189,18 +189,20 @@ def test_core_pipeline_cache_absorbs_on_disk_drift(
     disk between calls — proving the cache *absorbs* drift, not merely that
     repeated calls return the same object.
     """
-    import ai_hats.paths as _paths
+    import ai_hats.paths.library as _paths_library
 
     # Tmp library layout that ``load_core_pipeline`` resolves through. Patch the
     # builtin-library resolver seam (HATS-831) rather than ``importlib.files`` —
     # the resolver is cwd-aware and short-circuits to the live source checkout
     # before reaching importlib, so patching importlib no longer intercepts.
+    # Patch in ``paths.library`` (where ``core_pipeline_path`` resolves the name),
+    # not the ``ai_hats.paths`` re-export.
     pipelines_dir = tmp_path / "core" / "pipelines"
     pipelines_dir.mkdir(parents=True)
     yaml_file = pipelines_dir / "finalize-hitl.yaml"
     yaml_file.write_text("name: finalize-hitl\nsteps:\n  - id: pre_log\n")
 
-    monkeypatch.setattr(_paths, "builtin_library_root", lambda: tmp_path)
+    monkeypatch.setattr(_paths_library, "builtin_library_root", lambda: tmp_path)
 
     clear_core_pipeline_cache()
     try:

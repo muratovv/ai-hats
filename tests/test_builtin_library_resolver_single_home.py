@@ -17,12 +17,13 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from ai_hats.paths.constants import LIBRARY_PKG
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_DIR = REPO_ROOT / "src" / "ai_hats"
 
 # The sole home for builtin-library SOURCE resolution.
-RESOLVER_FILE = SRC_DIR / "paths.py"
+RESOLVER_FILE = SRC_DIR / "paths" / "library.py"
 
 # Whitelisted exceptions: file -> justification (non-empty, enforced below).
 ALLOWED_FILES: dict[Path, str] = {
@@ -34,14 +35,25 @@ ALLOWED_FILES: dict[Path, str] = {
 }
 
 
+def _is_library_pkg_arg(arg: ast.expr) -> bool:
+    """True if ``arg`` is the library package id — as the literal ``"ai_hats.library"``
+    (e.g. the maintenance diagnostic) OR the ``LIBRARY_PKG`` constant (the resolver)."""
+    if isinstance(arg, ast.Constant) and arg.value == LIBRARY_PKG:
+        return True
+    if isinstance(arg, ast.Name) and arg.id == "LIBRARY_PKG":
+        return True
+    return isinstance(arg, ast.Attribute) and arg.attr == "LIBRARY_PKG"
+
+
 def _find_library_files_calls(text: str) -> list[tuple[int, str]]:
-    """AST detector for ``files("ai_hats.library")`` calls (any spelling).
+    """AST detector for ``files(<library pkg>)`` calls (any spelling).
 
     Matches a ``Call`` whose ``func`` is ``files`` — a bare ``Name`` or any
     ``Attribute`` ending in ``.files`` (e.g. ``importlib.resources.files``) —
-    and whose first positional arg is the constant ``"ai_hats.library"``.
-    Returns ``[(lineno, source_segment)]``; ``[]`` for unparseable files
-    (other tests catch syntax errors).
+    and whose first positional arg is the library package, either the literal
+    ``"ai_hats.library"`` or the ``LIBRARY_PKG`` constant. Returns
+    ``[(lineno, source_segment)]``; ``[]`` for unparseable files (other tests
+    catch syntax errors).
     """
     try:
         tree = ast.parse(text)
@@ -60,18 +72,17 @@ def _find_library_files_calls(text: str) -> list[tuple[int, str]]:
             continue
         if fname != "files" or not node.args:
             continue
-        first = node.args[0]
-        if isinstance(first, ast.Constant) and first.value == "ai_hats.library":
+        if _is_library_pkg_arg(node.args[0]):
             try:
                 segment = ast.unparse(node)
             except Exception:  # noqa: BLE001 — ast.unparse is reliable on 3.11+
-                segment = 'files("ai_hats.library")'
+                segment = "files(LIBRARY_PKG)"
             found.append((node.lineno, segment))
     return found
 
 
 def test_builtin_library_files_call_only_in_resolver():
-    """No ``files("ai_hats.library")`` call may live outside ``paths.py``
+    """No ``files(<library pkg>)`` call may live outside ``paths/library.py``
     (+ the whitelisted diagnostic). Any other hit re-introduces the
     MAIN-pinned, worktree-invisible resolution the refactor eliminated.
     """
@@ -87,10 +98,10 @@ def test_builtin_library_files_call_only_in_resolver():
             offenders.append((py_file.relative_to(REPO_ROOT), lineno, segment))
 
     assert not offenders, (
-        'HATS-831 drift: files("ai_hats.library") called outside '
-        "src/ai_hats/paths.py. importlib hard-pins the MAIN repo regardless of "
-        "cwd, so this re-introduces the worktree-invisibility bug. Route through "
-        "paths.builtin_library_root / builtin_library_layers / "
+        "HATS-831 drift: files(<library pkg>) called outside "
+        "src/ai_hats/paths/library.py. importlib hard-pins the MAIN repo "
+        "regardless of cwd, so this re-introduces the worktree-invisibility bug. "
+        "Route through paths.builtin_library_root / builtin_library_layers / "
         "builtin_library_hooks / core_pipeline_path instead.\n"
         + "\n".join(f"  {p}:{ln}: {seg}" for p, ln, seg in offenders)
     )
@@ -102,17 +113,20 @@ def test_resolver_actually_contains_the_call():
     """
     text = RESOLVER_FILE.read_text(encoding="utf-8")
     assert _find_library_files_calls(text), (
-        'expected files("ai_hats.library") in paths.py (the resolver); '
+        "expected files(LIBRARY_PKG) in paths/library.py (the resolver); "
         "if it moved, update RESOLVER_FILE."
     )
 
 
 def test_detector_flags_a_synthetic_hit():
-    """Green must mean 'no stray site', not 'detector broken' — fire on a
-    synthetic positive, and stay silent on prose + unrelated ``files()`` calls.
+    """Green must mean 'no stray site', not 'detector broken' — fire on both the
+    literal and the constant spelling, and stay silent on prose + unrelated calls.
     """
-    positive = 'from importlib.resources import files\nx = files("ai_hats.library") / "hooks"\n'
-    assert len(_find_library_files_calls(positive)) == 1
+    literal = 'from importlib.resources import files\nx = files("ai_hats.library") / "hooks"\n'
+    assert len(_find_library_files_calls(literal)) == 1
+
+    constant = "from .constants import LIBRARY_PKG\nx = files(LIBRARY_PKG)\n"
+    assert len(_find_library_files_calls(constant)) == 1
 
     qualified = 'import importlib.resources as ir\nir.files("ai_hats.library")\n'
     assert len(_find_library_files_calls(qualified)) == 1
