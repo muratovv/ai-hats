@@ -141,6 +141,38 @@ def test_project_dir_main_repo_never_spawns_git(monkeypatch, repo_with_agent: Pa
     assert _project_dir() == repo_with_agent
 
 
+# --- dead-cwd fail-loud (HATS-788) -------------------------------------
+
+
+def test_project_dir_dead_cwd_raises_when_getcwd_errors(monkeypatch) -> None:
+    """macOS variant: `Path.cwd()` raises FileNotFoundError on a removed cwd
+    (e.g. a worktree torn down by `task done`). `_project_dir` must fail loud
+    with `DeadCwdError`, not let the raw traceback escape."""
+    from ai_hats.cli._helpers import DeadCwdError, _project_dir
+
+    def _boom():
+        raise FileNotFoundError(2, "No such file or directory")
+
+    monkeypatch.setattr(Path, "cwd", staticmethod(_boom))
+    with pytest.raises(DeadCwdError):
+        _project_dir()
+
+
+def test_project_dir_dead_cwd_raises_when_path_missing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Linux variant: `os.getcwd()` can return a stale path string for a
+    removed directory instead of raising. A returned-but-nonexistent cwd must
+    fail the same way — never fall through to Pass-4 + a phantom `.agent/`."""
+    from ai_hats.cli._helpers import DeadCwdError, _project_dir
+
+    missing = tmp_path / "gone"  # never created
+    monkeypatch.setattr(Path, "cwd", staticmethod(lambda: missing))
+    with pytest.raises(DeadCwdError):
+        _project_dir()
+    assert not (missing / ".agent").exists()  # no phantom resurrection
+
+
 # --- exec_claude_with_retro (HATS-199) ---------------------------------
 
 
