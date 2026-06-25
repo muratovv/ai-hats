@@ -162,6 +162,25 @@ class TestWorktreeCreate:
             mgr.create()
 
 
+class TestEmptyRoleGuard:
+    """HATS-827: an empty role must never silently yield an invalid branch
+    like ``agent//<sid>`` — the constructor raises early instead."""
+
+    def test_empty_role_raises(self, git_project: Path) -> None:
+        with pytest.raises(ValueError, match="empty role segment"):
+            WorktreeManager(git_project, role_name="", session_id="sess-040")
+
+    def test_nonempty_role_still_builds_branch(self, git_project: Path) -> None:
+        mgr = WorktreeManager(git_project, role_name="coder", session_id="sess-041")
+        assert mgr.branch_name == "agent/coder/sess-041"
+
+    def test_explicit_branch_name_bypasses_role_guard(self, git_project: Path) -> None:
+        # Persistent CLI path supplies branch_name directly; an empty role
+        # segment is irrelevant and must not trip the guard.
+        mgr = WorktreeManager(git_project, branch_name="task/hats-827")
+        assert mgr.branch_name == "task/hats-827"
+
+
 class TestWorktreeIsolation:
     def test_changes_not_visible_in_main(self, git_project: Path) -> None:
         mgr = WorktreeManager(git_project, "tester", "sess-010")
