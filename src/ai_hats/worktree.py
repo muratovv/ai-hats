@@ -1326,6 +1326,47 @@ class WorktreeManager:
             return None  # main worktree — nothing to hop to
         return common_dir.parent
 
+    @staticmethod
+    def worktree_toplevel(path: Path) -> Path | None:
+        """Return the linked worktree's OWN toplevel, or ``None``.
+
+        The mirror image of :meth:`main_worktree_root`: where that hops to the
+        MAIN checkout (via ``--git-common-dir``), this returns the linked
+        worktree's own root (``--show-toplevel``) — the checkout the agent is
+        actually editing. Returns ``None`` for the main worktree, a non-git
+        path, or any git error (fail-safe).
+
+        HATS-831: ``_project_dir`` hops a linked worktree to MAIN (HATS-524) to
+        share the tracker, so the project-local ``libraries/`` layer would
+        otherwise resolve to MAIN — invisible to worktree edits. The assembler
+        re-points that one layer to this toplevel. Single ``git rev-parse``
+        invocation, mirroring :meth:`is_inside_linked_worktree` (HATS-490).
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "rev-parse",
+                    "--path-format=absolute",
+                    "--show-toplevel",
+                    "--git-dir",
+                    "--git-common-dir",
+                ],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return None
+        lines = [line for line in result.stdout.splitlines() if line.strip()]
+        if len(lines) != 3:
+            return None
+        toplevel, git_dir, common_dir = lines
+        if Path(git_dir).resolve() == Path(common_dir).resolve():
+            return None  # main worktree — caller keeps project_dir as-is
+        return Path(toplevel).resolve()
+
     @classmethod
     def _find_linked_worktree_for_branch(cls, project_dir: Path, branch: str) -> Path | None:
         """Return the on-disk worktree path that currently has ``branch``
