@@ -741,6 +741,41 @@ def test_execute_inside_linked_worktree_does_not_nest(tmp_path):
     assert not (wt_path / ".agent" / "worktrees").exists()
 
 
+def test_execute_from_hopped_main_adopts_via_caller_cwd(tmp_path):
+    """HATS-840: `transition execute` issued from inside a linked worktree adopts
+    it even when the TaskManager's ``project_dir`` is the main-hopped checkout —
+    the real CLI case, where ``_project_dir()`` hops a worktree to MAIN (HATS-524).
+    The adopt signal is the explicitly-threaded ``caller_cwd``, NOT
+    ``self.project_dir`` (which is MAIN here, so the old check never fired).
+
+    Complements ``test_execute_inside_linked_worktree_does_not_nest``, which builds
+    ``TaskManager(wt_path)`` and so cannot exercise the hop that triggers the bug.
+    """
+    project = tmp_path / "project"
+    project.mkdir()
+    _init_git(project)
+    (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
+    (project / ".agent" / "STATE.md").write_text("")
+
+    # Operator's worktree, created from main (mirrors `ai-hats wt create`).
+    wt = WorktreeManager(project, branch_name="feat/T-9-foo")
+    wt_path = wt.create()
+    wt.save_state()
+
+    # TaskManager is constructed with MAIN — the value `_project_dir()` hops to
+    # when the operator's shell is inside the worktree.
+    main_mgr = TaskManager(project, strict_plan_check=False)
+    main_mgr.create_task("T-9", "Created from main, executed from inside a worktree")
+    main_mgr.transition("T-9", TaskState.PLAN)
+
+    # Execute fires while the operator's shell is inside the linked worktree.
+    main_mgr.transition("T-9", TaskState.EXECUTE, caller_cwd=wt_path)
+
+    # No second worktree on task/t-9 — the caller's worktree was adopted.
+    branches = {w.get("branch", "") for w in WorktreeManager.list_worktrees(project)}
+    assert "task/t-9" not in branches, f"Nested worktree created: {branches}"
+
+
 # -- HATS-371: linking, fast-close, force-transition ----------------------
 
 
@@ -1330,7 +1365,7 @@ def test_plan_epic_syncs_via_child_lifecycle(mgr, monkeypatch):
     untouched. Walking its child execute->done activates it (plan->execute) then
     advances it (->review) — without ever creating a worktree for the epic."""
     setup_calls: list[str] = []
-    monkeypatch.setattr(mgr, "_setup_worktree", lambda task: setup_calls.append(task.id))
+    monkeypatch.setattr(mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id))
 
     mgr.create_task("EPIC", "Epic")
     mgr.transition("EPIC", TaskState.PLAN)
@@ -1368,7 +1403,7 @@ def test_create_under_done_epic_reopens_without_worktree(mgr, monkeypatch):
     assert mgr.get_task("EPIC").completed_at != ""
 
     setup_calls: list[str] = []
-    monkeypatch.setattr(mgr, "_setup_worktree", lambda task: setup_calls.append(task.id))
+    monkeypatch.setattr(mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id))
 
     _card, auto = mgr.create_task("C2", "New child", parent_task="EPIC")
 
@@ -1537,7 +1572,7 @@ def test_brainstorm_epic_activation_no_worktree(mgr, monkeypatch):
     worktree (epics are trackers — the multi-hop never calls _setup_worktree)."""
     setup_calls: list[str] = []
     monkeypatch.setattr(
-        mgr, "_setup_worktree", lambda task: setup_calls.append(task.id)
+        mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id)
     )
     mgr.create_task("EPIC", "Epic")  # brainstorm
     mgr.create_task("C1", "Child 1", parent_task="EPIC")
@@ -1598,7 +1633,7 @@ def test_manual_epic_execute_no_worktree(mgr, monkeypatch):
     flip — no worktree (epics are trackers; symmetric with the auto-path)."""
     setup_calls: list[str] = []
     monkeypatch.setattr(
-        mgr, "_setup_worktree", lambda task: setup_calls.append(task.id)
+        mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id)
     )
     mgr.create_task("EPIC", "Epic")
     mgr.create_task("C1", "Child 1", parent_task="EPIC")
@@ -1612,7 +1647,7 @@ def test_manual_non_epic_execute_still_worktree(mgr, monkeypatch):
     """HATS-794 (regression): a childless task still gets a worktree on execute."""
     setup_calls: list[str] = []
     monkeypatch.setattr(
-        mgr, "_setup_worktree", lambda task: setup_calls.append(task.id)
+        mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id)
     )
     mgr.create_task("SOLO", "Lone task")  # no children
     mgr.transition("SOLO", TaskState.PLAN)
@@ -1628,7 +1663,7 @@ def test_manual_epic_execute_skips_plan_gate(tmp_path, monkeypatch):
     (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
     (project / ".agent" / "STATE.md").write_text("")
     strict = TaskManager(project, prefix="T", strict_plan_check=True)
-    monkeypatch.setattr(strict, "_setup_worktree", lambda task: None)
+    monkeypatch.setattr(strict, "_setup_worktree", lambda task, **_kw: None)
 
     strict.create_task("T-1", "Epic")
     strict.create_task("T-2", "Child", parent_task="T-1")
@@ -1646,7 +1681,7 @@ def test_manual_epic_reopen_no_worktree(mgr, monkeypatch):
     """HATS-794: reopening a done epic (DONE → EXECUTE) takes no worktree either."""
     setup_calls: list[str] = []
     monkeypatch.setattr(
-        mgr, "_setup_worktree", lambda task: setup_calls.append(task.id)
+        mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id)
     )
     mgr.create_task("EPIC", "Epic")
     mgr.create_task("C1", "Child 1", parent_task="EPIC")

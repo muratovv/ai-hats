@@ -215,9 +215,12 @@ def task_transition(
     try:
         # final_state rides the transition's lock window (HATS-723) so a failed
         # transition never leaves a half-applied summary on the card.
+        # HATS-840: raw cwd for the execute-state worktree adopt (project_dir is
+        # already main-hopped, so the library can't read cwd itself).
+        caller_cwd = Path.cwd()
         t, auto = mgr.transition(
             task_id, state, resolution=resolution, final_state=final_state,
-            force=force, reason=reason,
+            force=force, reason=reason, caller_cwd=caller_cwd,
         )
         prefix = "[yellow]Forced[/]" if force else "[green]Transitioned[/]"
         console.print(f"{prefix}: {t.id} → {t.state.value}")
@@ -236,9 +239,10 @@ def task_transition(
                 console.print(f"  Worktree: {active.worktree_path}")
                 console.print(f"  Branch: {active.branch_name}")
                 console.print(f"  [dim]cd {active.worktree_path}[/]")
-            elif WorktreeManager.is_inside_linked_worktree(project_dir):
-                # HATS-060: adopted the caller's linked worktree.
-                console.print(f"  Worktree: {project_dir} [dim](adopted — already cwd)[/]")
+            elif WorktreeManager.is_inside_linked_worktree(caller_cwd):
+                # HATS-060 / HATS-840: adopted the caller's worktree (detect via cwd).
+                adopted = WorktreeManager.worktree_toplevel(caller_cwd) or caller_cwd
+                console.print(f"  Worktree: {adopted} [dim](adopted — already cwd)[/]")
         elif state == TaskState.DONE:
             console.print("  Worktree merged")
         elif state == TaskState.FAILED:
