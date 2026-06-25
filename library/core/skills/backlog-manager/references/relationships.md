@@ -38,6 +38,7 @@ ai-hats task list --search PROJ-105
 ```
 
 **Validation behavior:**
+
 - Self-references (parent or depends pointing at the same task) → hard error.
 - Immediate two-task cycles (`A.depends=[B]` and `B.depends=[A]`) → hard error.
   Deeper transitive cycles are not detected — keep the dependency graph shallow.
@@ -48,7 +49,7 @@ ai-hats task list --search PROJ-105
 ## Harness behaviour: linked-context injection (HATS-689)
 
 Links are not just inert metadata. When a sub-agent takes a task non-interactively
-(`ai-hats agent --ticket <id>` or `ai-hats execute --batch --ticket <id>`), the
+(`ai-hats agent <role> --ticket <id>` — the recommended sub-agent surface), the
 harness auto-injects a `# LINKED_CONTEXT` section into the agent's first prompt —
 the **cards of all directly-linked tasks**, so the agent doesn't have to chase
 them with `task show`.
