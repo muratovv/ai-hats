@@ -187,12 +187,15 @@ Attach via `composition.skills` in a role or trait.
 
 ## Declaring hooks from a skill (advanced)
 
-Beyond prose, a skill can declare two kinds of hook in its `SKILL.md`
-frontmatter under a top-level `ai_hats:` key, both materialized during
+Beyond prose, a skill can declare three kinds of hook in its `SKILL.md`
+frontmatter under a top-level `ai_hats:` key, all materialized during
 `ai-hats self init`:
 
 - **`git_hooks`** — scripts installed into the project's `.githooks/<event>.d/`
   (e.g. `pre-commit`, `post-merge`). The value is a bare list of script paths.
+- **`worktree`** — worktree **lifecycle** hooks (`wt_in` / `wt_out`) run when an
+  `ai-hats wt` worktree is created or torn down — the carry-in / carry-out
+  mechanism (ADR-0012). Full contract in [Worktree lifecycle hooks](#worktree-lifecycle-hooks) below.
 - **`runtime_hooks`** — provider runtime hooks (Claude Code `PreToolUse` /
   `PostToolUse`). Each entry carries a tool `matcher` and a `script`:
 
@@ -251,6 +254,102 @@ Events recognised today are `PreToolUse` and `PostToolUse` (the set is open).
 Materialized scripts run on tool use — treat them as a security surface (see
 `SECURITY.md`). The shipped HATS-437 shared-state guard is the canonical
 example of a wired `PreToolUse` hook.
+
+### Worktree lifecycle hooks
+
+`ai-hats wt` gives a task or sub-agent its own branch + filesystem checkout. By
+construction that checkout carries **only the base branch's tracked git state** —
+anything gitignored (`.venv`, `.env`, build caches, review sidecars) is absent when
+the worktree is born and destroyed when it is torn down. **Worktree lifecycle
+hooks** are the escape hatch: component-declared scripts that run at the two ends of
+that lifecycle, so a skill can seed gitignored data *in* at create and drain it *out*
+before teardown (ADR-0012).
+
+A skill declares them under `ai_hats.worktree`:
+
+```yaml
+# libraries/skills/my-skill/SKILL.md frontmatter
+---
+name: my-skill
+description: When to invoke and what it does.
+ai_hats:
+  worktree:
+    wt_in:
+      - script: hooks/seed-env.sh        # runs after the worktree is created
+    wt_out:
+      - script: hooks/drain.sh           # runs before the worktree is torn down
+        on: [merge, discard, cleanup]    # which teardown routes; omit = all
+---
+```
+
+**Who fires where.** The two events sit at opposite ends of the worktree lifecycle
+and have deliberately different failure postures:
+
+| Hook     | Fires                                                                                                                              | On failure                                                                                                                             | Escape         |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `wt_in`  | once, **after** `git worktree add` (the checkout exists; gitignored seeds don't collide with tracked files)                        | **warn-and-continue** — a missing seed is friction, not data loss                                                                      | —              |
+| `wt_out` | **before** the worktree dir is removed, on every teardown route: `ai-hats wt merge`, `wt discard`, `wt cleanup` (+ already-merged) | **fail-closed** — a non-zero exit, timeout, or missing script **aborts the teardown**; worktree + branch are preserved, error surfaced | `--skip-hooks` |
+
+The asymmetry is the point: a failed seed-in just means the agent re-fetches a dep,
+but a failed drain-out could **destroy** gitignored data the supervisor cares about
+(the motivating incident: review notes left in a worktree sidecar, lost on
+`wt merge`). So `wt_out` defaults to refusing the teardown rather than losing data;
+`--skip-hooks` is the conscious "force it, I accept the loss" escape. `on:` narrows a
+`wt_out` hook to specific routes (a subset of `merge` / `discard` / `cleanup`); omit it
+for all three. `wt_in` ignores `on:` — it fires once, at create.
+
+**Execution contract.** Each hook runs as a subprocess with:
+
+- **Env:** `AI_HATS_WORKTREE_PATH` (the new checkout), `AI_HATS_PROJECT_DIR` (the main
+  repo — read your sources from here), `AI_HATS_BRANCH_NAME`, `AI_HATS_EVENT`
+  (`wt_in` | `merge` | `discard` | `cleanup`).
+- **`cwd` = the project dir**, **`stdin` closed** (an interactive `read` fails fast
+  instead of hanging), stdout/stderr streamed to a managed log under `.agent/`.
+- **A bounded timeout** (default 45 s, override `AI_HATS_WT_HOOK_TIMEOUT_S`), kept
+  below the worktree lifecycle-lock budget so a hung hook can't starve peer `wt` ops.
+
+**Worked example — seed `.env` into the worktree.** The common case: your agent needs
+the project's gitignored `.env` (or a `.venv`, a local config) that `git worktree add`
+won't bring. A `wt_in` hook copies it in:
+
+```bash
+#!/usr/bin/env bash
+# hooks/seed-env.sh — copy the gitignored .env into a fresh worktree
+set -euo pipefail
+src="$AI_HATS_PROJECT_DIR/.env"
+dst="$AI_HATS_WORKTREE_PATH/.env"
+[[ -f "$src" ]] || { echo "no .env to seed — skipping"; exit 0; }  # absent = friction, not error
+cp "$src" "$dst"
+echo "seeded .env into $AI_HATS_WORKTREE_PATH"
+```
+
+It is just bash — the same hook can filter keys, redact values, or inject
+placeholders instead of a blind copy, which is the recommended shape when `.env`
+carries **secrets** you don't want duplicated verbatim.
+
+> **Secrets: copy *in* freely, never harvest *out*.** A worktree runs as the same OS
+> user as the main checkout, so copying a secret *into* it adds no exfiltration
+> surface the agent doesn't already have. The leak to avoid is the opposite direction
+> — a secret flowing *out* into a persistent backup that outlives the worktree.
+> ai-hats **never** backs a credential path up by construction; a concrete
+> secret-handling hook is **yours to own downstream** — ai-hats ships the mechanism
+> and this pattern, not a secret-handling skill. Ambient OS creds (`~/.aws`, `~/.ssh`,
+> the OS keychain) live outside the repo, are never seeded, and are used in place. See
+> ADR-0012 D5 [4] for the full creds boundary.
+
+**Validation.** Like `runtime_hooks`, a malformed `worktree` block **fails loud** at
+load (a silently dropped `wt_out` hook is the exact data-loss hole this mechanism
+closes), naming the offending skill: a `wt_out` `on:` value outside
+`merge` / `discard` / `cleanup`, two scripts sharing a basename (they collide on the
+materialized `<skill>-<basename>` filename), or a row missing its `script`. The
+`worktree` *container* itself is forward-compatible — an unknown carry key (a newer
+ai-hats's future hook kind) is ignored with a WARN, not a hard error, so a newer skill
+does not break an older engine.
+
+> **Path-list sugar is not shipped yet.** ADR-0012 also designs a declarative
+> `seed_in:` / `harvest_out:` path-list form (sugar over a built-in `capture` hook).
+> That is HATS-775's deliverable and is **not available today** — use the `wt_in` /
+> `wt_out` **hook form** above. This section documents only what ships.
 
 ## Custom pipelines (advanced)
 
@@ -468,3 +567,5 @@ This pattern works for any removed trait / skill / rule: re-create under
 **[2]** — [`docs/how-to-advanced.md`](how-to-advanced.md) — advanced flows: custom pipeline steps (§1), worktree workflow (§2).
 
 **[3]** — [`docs/adr/0002-pipeline-subsystem-cli.md`](adr/0002-pipeline-subsystem-cli.md) — ADR-0002, step contract: inputs, outputs, failure policy.
+
+**[4]** — [`docs/adr/0012-worktree-data-transfer.md`](adr/0012-worktree-data-transfer.md) — ADR-0012, worktree data-transfer: the `wt_in` / `wt_out` hook contract (D2/D7) and the never-harvest-secrets creds boundary (D5).

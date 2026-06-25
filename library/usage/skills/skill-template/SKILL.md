@@ -73,8 +73,9 @@ than code regenerated from a description each time. Keep ad-hoc, one-off,
 or judgment-heavy steps as prose.
 
 A skill's `SKILL.md` frontmatter can also declare **hooks** under a top-level
-`ai_hats:` key — `git_hooks` (git events) and `runtime_hooks` (Claude Code
-`PreToolUse` / `PostToolUse`). See `docs/how-to-extend.md`.
+`ai_hats:` key — `git_hooks` (git events), `runtime_hooks` (Claude Code
+`PreToolUse` / `PostToolUse`), and `worktree` (`wt_in` / `wt_out` worktree
+lifecycle hooks). See `docs/how-to-extend.md`.
 
 ## Validation scenario (RED → GREEN → REFACTOR)
 
