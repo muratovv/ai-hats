@@ -172,8 +172,9 @@ class Assembler:
             if expanded.is_dir():
                 paths.append(expanded)
 
-        # Project-local libraries
-        local_lib = self.project_dir / "libraries"
+        # Project-local libraries — re-pointed to the worktree when composing
+        # inside one (HATS-831); see :meth:`_worktree_local_libraries`.
+        local_lib = self._worktree_local_libraries() or self.project_dir / "libraries"
         if local_lib.is_dir():
             paths.append(local_lib)
 
@@ -181,6 +182,42 @@ class Assembler:
         paths.extend(extra)
 
         return paths
+
+    def _worktree_local_libraries(self) -> Path | None:
+        """Re-point the project-local ``libraries/`` to a linked worktree (HATS-831).
+
+        Returns ``<worktree_toplevel>/libraries`` when cwd sits inside a linked
+        worktree of THIS project; else ``None`` (caller keeps
+        ``project_dir/libraries``). Inside a linked worktree ``_project_dir``
+        hopped to MAIN (HATS-524, to share the tracker), but the git-tracked
+        ``libraries/`` physically lives in the worktree checkout — invisible to
+        composition unless re-pointed. Only this one layer moves; the
+        ``ai-hats.yaml`` overlay, config paths and tracker stay MAIN.
+
+        A cheap fs pre-gate runs before any git: a linked worktree always lives
+        OUTSIDE its main checkout (e.g. under ``/tmp``), so a re-point is
+        impossible when cwd is within ``project_dir``. This keeps the common
+        main-checkout path — and tests that mock ``subprocess`` — from ever
+        shelling out to git. The git probe runs only when cwd is genuinely
+        elsewhere, and re-points only when that worktree's main checkout IS
+        ``project_dir`` (guards cwd/project_dir divergence: composing project A
+        from a worktree of project B — e.g. sub-agents compose from MAIN per
+        HATS-826 D1).
+        """
+        cwd = Path.cwd()
+        try:
+            if cwd.resolve().is_relative_to(self.project_dir.resolve()):
+                return None
+        except (OSError, ValueError):
+            return None
+
+        from .worktree import WorktreeManager
+
+        main_root = WorktreeManager.main_worktree_root(cwd)
+        if main_root is None or main_root.resolve() != self.project_dir.resolve():
+            return None
+        wt_top = WorktreeManager.worktree_toplevel(cwd)
+        return (wt_top / "libraries") if wt_top is not None else None
 
     # ----- Scaffold-as-asset (HATS-284) -----
 
@@ -1177,9 +1214,7 @@ class Assembler:
         """
         source_root_path = _builtin_library_hooks()
         if source_root_path is None:
-            raise AssemblyError(
-                "ai_hats.library.hooks not found in package data — broken install"
-            )
+            raise AssemblyError("ai_hats.library.hooks not found in package data — broken install")
 
         target_dir = _lib_hooks_dir(self.project_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
