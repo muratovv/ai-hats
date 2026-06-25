@@ -75,8 +75,17 @@ def collect_carry_for_role(
     ``WorktreeManager.create(wt_hooks=...)``. ``role`` falls back to the
     project's ``active_role`` / ``default_role`` (the canonical effective-role
     resolution). Compose failures degrade to an empty carry with a WARN —
-    collection trouble must not block worktree creation; a genuinely
-    declared-but-missing script still fail-closes at teardown (D7).
+    collection trouble must not block worktree creation.
+
+    HATS-833 req-2 — create-time backstop: ``wt create`` runs via bare CLI /
+    ``task transition execute`` / CI, where no session-start drift net fires, so
+    the parent's ``library/wt-hooks/`` may be stale. We materialize the wt-hook
+    scripts HERE (the carry-record chokepoint) and only keep a carry row whose
+    backing script is present on disk afterwards — so the invariant **"recorded
+    carry ⇒ backing script exists"** holds by construction, even for sessionless
+    consumers. A declared hook whose source can't be resolved is dropped (with a
+    WARN) rather than recorded-then-fail-closed at teardown. The fail-closed
+    teardown (D7) stays as the last net for a genuinely vanished script.
     """
     from .assembler import Assembler
     from .composer import collect_worktree_hooks
@@ -89,14 +98,53 @@ def collect_carry_for_role(
         if not effective:
             return {}
         result = compose_for_role(assembler, effective)
-        return serialize_collected_hooks(collect_worktree_hooks(result))
+        carry = serialize_collected_hooks(collect_worktree_hooks(result))
+        if carry:
+            # Materialize MUST complete before we keep the carry. If it raises,
+            # the outer except drops the whole carry ({}); a partial/unresolvable
+            # script is then filtered out below. Never return a carry row that
+            # lacks a backing script (review pt-4: degrade-to-empty is safe,
+            # degrade-to-partial re-opens the fail-closed it prevents).
+            assembler._materialize_worktree_hooks(result)
+            carry = _drop_unbacked_carry_rows(carry, project_dir)
+        return carry
     except Exception as exc:  # noqa: BLE001 — never block create on carry collection
         logger.warning(
-            "worktree hooks: could not compose role %r for carry collection: %s",
+            "worktree hooks: could not compose/materialize role %r for carry "
+            "collection: %s — dropping carry",
             role,
             exc,
         )
         return {}
+
+
+def _drop_unbacked_carry_rows(
+    carry: dict[str, list[dict[str, object]]], project_dir: Path
+) -> dict[str, list[dict[str, object]]]:
+    """Keep only carry rows whose materialized script exists on disk (HATS-833).
+    A row with no backing script (unresolvable source) is dropped with a WARN —
+    enforcing "recorded carry ⇒ backing script exists" by construction."""
+    from .paths import managed_wt_hook_filename, wt_hooks_dir
+
+    wt_dir = wt_hooks_dir(project_dir)
+    out: dict[str, list[dict[str, object]]] = {}
+    for kind, rows in carry.items():
+        kept: list[dict[str, object]] = []
+        for row in rows:
+            dest = wt_dir / managed_wt_hook_filename(str(row["skill"]), str(row["script"]))
+            if dest.is_file():
+                kept.append(row)
+            else:
+                logger.warning(
+                    "worktree hooks: dropping carry row %s/%s — no backing script "
+                    "on disk after materialize (%s)",
+                    row["skill"],
+                    row["script"],
+                    dest,
+                )
+        if kept:
+            out[kind] = kept
+    return out
 
 
 def serialize_collected_hooks(
@@ -149,7 +197,13 @@ def run_worktree_hook(
     if timeout is None:
         timeout = resolve_hook_timeout()
     if not script.is_file():
-        return HookOutcome(False, None, f"hook script missing: {script}")
+        # HATS-833: actionable hint — a missing managed script means the parent's
+        # library/wt-hooks/ is stale; re-materialize it. (Create-time backstop
+        # should prevent recording such a carry, but teardown stays fail-closed
+        # as the last net for a genuinely vanished script.)
+        return HookOutcome(
+            False, None, f"hook script missing: {script} — run 'ai-hats self init' to re-materialize"
+        )
     if not os.access(script, os.X_OK):
         return HookOutcome(False, None, f"hook script not executable: {script}")
 

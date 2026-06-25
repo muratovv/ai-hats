@@ -1,13 +1,11 @@
-"""HATS-707: the in-session git-hook drift net (HATS-593 layer B).
+"""HATS-707 → HATS-833: the in-session managed-hook drift net.
 
-The maintainer's ``session_start: [ai-hats self sync-hooks]`` lifecycle-hook
-declaration never executed — the ``hooks:`` composition channel had zero
-runtime consumers (the dead channel deleted in HATS-707). Its one piece of
-real intent — re-heal git-hook drift that layer A (post-merge/post-checkout)
-misses (rebase / reset --hard / stash / manual edits) — is re-homed to a
-direct ``Assembler.sync_hooks()`` call at session start in ``WrapRunner``.
+Re-homed from the dead ``session_start: [ai-hats self sync-hooks]`` lifecycle
+channel to a direct ``Assembler.sync_hooks()`` call at session start in
+``WrapRunner._resync_managed_hooks``, then generalized (HATS-833) from git-only
+to ALL managed-hook surfaces (runtime + wt + git) with an observable heal note.
 
-These tests drive ``WrapRunner._resync_git_hooks()`` directly (the seam),
+These tests drive ``WrapRunner._resync_managed_hooks()`` directly (the seam),
 not a full PTY session.
 """
 
@@ -82,49 +80,60 @@ def _installed_hook(project: Path) -> Path:
     return project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
 
 
-def test_resync_heals_drifted_hook_at_session_start(project_with_hook_role):
+def test_resync_heals_drifted_hook_and_names_it(project_with_hook_role):
     project = project_with_hook_role
     installed = _installed_hook(project)
-    installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")  # simulate rebase/reset drift
+    installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")  # rebase/reset drift
 
-    WrapRunner(project)._resync_git_hooks()
+    notices = WrapRunner(project)._resync_managed_hooks()
 
+    # Healed in place ...
     body = installed.read_text()
     assert "check ran" in body
     assert "DRIFTED" not in body
+    # ... and observable (HATS-833 req-5): one NOTE naming the git surface + kind.
+    assert len(notices) == 1
+    note = notices[0]
+    assert note.level == "note"
+    assert "healed at start" in note.text
+    assert "git-hook pre-commit" in note.text
+    assert "content drift" in note.text
 
 
-def test_resync_is_failopen_on_non_git(tmp_path):
-    """No .git → sync_hooks skips; the net must never raise at session start."""
+def test_resync_silent_when_in_sync(project_with_hook_role):
+    """A clean (already in-sync) start emits NO notice and holds for nothing."""
+    notices = WrapRunner(project_with_hook_role)._resync_managed_hooks()
+    assert notices == []
+
+
+def test_resync_is_failopen_on_roleless_project(tmp_path):
+    """No active role → sync_hooks skips; the net must never raise, no notice."""
     project = tmp_path / "plain"
     project.mkdir()
+    _git_init(project)
     ProjectConfig(provider="gemini").save(project / "ai-hats.yaml")
-    # Must not raise; clean resync returns no warning.
-    assert WrapRunner(project)._resync_git_hooks() is None
+    assert WrapRunner(project)._resync_managed_hooks() == []
 
 
-def test_resync_failure_returns_summary_and_traces(tmp_path, monkeypatch):
-    """HATS-825: a failed resync is fail-open but no longer silent.
-
-    The failure must (a) not raise, (b) return a one-line summary the caller
-    surfaces in the pre-launch hold, and (c) be persisted to the session trace
-    — previously it reached only stderr, which the TUI clobbers.
-    """
+def test_resync_failure_returns_warn_notice_and_traces(tmp_path):
+    """HATS-825/833: a failed resync is fail-open but no longer silent — it
+    returns a WARN notice the caller surfaces in the pre-launch hold, and is
+    persisted to the session trace (stderr alone is clobbered by the TUI)."""
     project = tmp_path / "plain"
     project.mkdir()
+    _git_init(project)
     ProjectConfig(provider="gemini").save(project / "ai-hats.yaml")
 
     runner = WrapRunner(project)
-    monkeypatch.setattr(
-        runner.assembler,
-        "sync_hooks",
-        lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+    runner.assembler.sync_hooks = lambda *a, **k: (_ for _ in ()).throw(
+        RuntimeError("boom")
     )
     session = runner.session_mgr.create_session()
 
-    summary = runner._resync_git_hooks(session)
+    notices = runner._resync_managed_hooks(session)
 
-    assert summary is not None
-    assert "git-hook resync failed" in summary
-    assert "RuntimeError" in summary and "boom" in summary
-    assert "git-hook resync FAILED" in session.trace_path.read_text()
+    assert len(notices) == 1
+    assert notices[0].level == "warn"
+    assert "managed-hook resync failed" in notices[0].text
+    assert "RuntimeError" in notices[0].text and "boom" in notices[0].text
+    assert "managed-hook resync FAILED" in session.trace_path.read_text()

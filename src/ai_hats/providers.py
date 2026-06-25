@@ -250,6 +250,14 @@ class Provider(abc.ABC):
         del project_dir, result
         return None
 
+    def runtime_wiring_changes(
+        self, project_dir: Path, result: CompositionResult | None = None
+    ) -> list[tuple[str, str]]:
+        """Managed runtime-hook wiring drift as ``[(name, "wiring")]``. Default:
+        none (no settings.json channel); ``ClaudeProvider`` overrides (HATS-833)."""
+        del project_dir, result
+        return []
+
     def update_system_prompt(self, project_dir: Path, content: str) -> None:
         """Write or update the inline system prompt block.
 
@@ -546,14 +554,38 @@ class ClaudeProvider(Provider):
         ``project_dir`` moves; ``ai-hats self update``'s migration_healer owns
         the physical-move case.
         """
-        settings_path = project_dir / ".claude" / "settings.json"
+        settings_path, data, changed, _tags, _desired = self._plan_runtime_hooks(
+            project_dir, result
+        )
+        if changed and data is not None:
+            self._write_settings(settings_path, data, project_dir)
 
+    def _plan_runtime_hooks(
+        self, project_dir: Path, result: CompositionResult | None
+    ) -> tuple[Path, dict | None, bool, set[str], dict[str, dict]]:
+        """Compute the desired managed runtime-hook wiring against the current
+        ``.claude/settings.json`` WITHOUT writing (HATS-833).
+
+        Single source of truth shared by :meth:`ensure_runtime_hooks` (which
+        writes the returned ``data`` when ``changed``) and
+        :meth:`runtime_wiring_changes` (which discards it and reports the changed
+        tags). Running the SAME upsert/sweep on a freshly-parsed copy guarantees
+        the detector can never diverge from the writer — in particular it inherits
+        :meth:`_upsert_managed_entry`'s respect for a user-authored entry already
+        wiring the same script (so a covered hook is never flagged drift forever).
+
+        Returns ``(settings_path, data, changed, changed_tags, desired_by_tag)``;
+        ``data`` is ``None`` when the file is user-shaped / malformed and must be
+        left untouched (then ``changed`` is False, ``changed_tags`` empty).
+        """
+        settings_path = project_dir / ".claude" / "settings.json"
         desired = self._desired_runtime_entries(project_dir, result)
-        desired_tags = {
-            entry["_ai_hats_managed"]
+        desired_by_tag = {
+            entry["_ai_hats_managed"]: entry
             for entries in desired.values()
             for entry in entries
         }
+        desired_tags = set(desired_by_tag)
 
         # Read existing settings, tolerating missing file / malformed JSON.
         data: dict = {}
@@ -564,31 +596,58 @@ class ClaudeProvider(Provider):
                     data = json.loads(raw)
                     if not isinstance(data, dict):
                         # Settings file is not an object — bail to avoid clobbering.
-                        return
+                        return settings_path, None, False, set(), desired_by_tag
             except json.JSONDecodeError:
                 # Malformed user-owned settings. Leave alone.
-                return
+                return settings_path, None, False, set(), desired_by_tag
 
         hooks_root = data.setdefault("hooks", {})
         if not isinstance(hooks_root, dict):
-            return  # user-shaped — do not clobber
+            return settings_path, None, False, set(), desired_by_tag  # user-shaped
 
-        changed = False
+        changed_tags: set[str] = set()
         for event, want_entries in desired.items():
             event_list = hooks_root.setdefault(event, [])
             if not isinstance(event_list, list):
                 continue  # user-shaped event — leave alone
             for want in want_entries:
                 if self._upsert_managed_entry(event_list, want):
-                    changed = True
+                    changed_tags.add(want["_ai_hats_managed"])
 
         # Sweep managed entries no longer desired (across every event, so a
         # PostToolUse skill hook is swept too when its skill leaves).
-        if self._sweep_stale_managed(hooks_root, desired_tags):
-            changed = True
+        changed_tags |= self._sweep_stale_managed_tags(hooks_root, desired_tags)
 
-        if changed:
-            self._write_settings(settings_path, data, project_dir)
+        return settings_path, data, bool(changed_tags), changed_tags, desired_by_tag
+
+    def runtime_wiring_changes(
+        self, project_dir: Path, result: CompositionResult | None = None
+    ) -> list[tuple[str, str]]:
+        """Managed settings.json wiring drift as ``[(display_name, "wiring")]``.
+
+        Reuses :meth:`_plan_runtime_hooks` (no write) so it is exactly the set of
+        managed entries ``ensure_runtime_hooks`` would (re)write or sweep.
+        """
+        _path, _data, _changed, changed_tags, desired_by_tag = self._plan_runtime_hooks(
+            project_dir, result
+        )
+        return [
+            (self._runtime_wiring_name(tag, desired_by_tag), "wiring")
+            for tag in sorted(changed_tags)
+        ]
+
+    @staticmethod
+    def _runtime_wiring_name(tag: str, desired_by_tag: dict[str, dict]) -> str:
+        """Human display name for a managed wiring tag — the script basename when
+        still desired, else the skill segment of the ``ai-hats:<skill>:…`` tag."""
+        entry = desired_by_tag.get(tag)
+        if entry:
+            cmd = (entry.get("hooks") or [{}])[0].get("command", "")
+            base = str(cmd).rsplit("/", 1)[-1]
+            if base:
+                return base
+        parts = tag.split(":")
+        return parts[1] if len(parts) > 1 else tag
 
     def _desired_runtime_entries(
         self, project_dir: Path, result: CompositionResult | None
@@ -675,34 +734,39 @@ class ClaudeProvider(Provider):
         return True
 
     @staticmethod
-    def _sweep_stale_managed(hooks_root: dict, desired_tags: set[str]) -> bool:
+    def _sweep_stale_managed_tags(hooks_root: dict, desired_tags: set[str]) -> set[str]:
         """Drop ai-hats-managed entries no longer in ``desired_tags`` from every
-        event list. Preserves user-authored entries and still-desired managed
-        ones; cascade-drops an event key whose list becomes empty. Returns True
-        if anything was removed.
+        event list and return the removed tags (HATS-833). Preserves
+        user-authored entries and still-desired managed ones; cascade-drops an
+        event key whose list becomes empty.
         """
-        changed = False
+        removed: set[str] = set()
         for event in list(hooks_root.keys()):
             event_list = hooks_root[event]
             if not isinstance(event_list, list):
                 continue
-            kept = [
-                entry
-                for entry in event_list
-                if not (
+            kept: list = []
+            for entry in event_list:
+                if (
                     isinstance(entry, dict)
                     and isinstance(entry.get("_ai_hats_managed"), str)
                     and entry["_ai_hats_managed"].startswith("ai-hats:")
                     and entry["_ai_hats_managed"] not in desired_tags
-                )
-            ]
+                ):
+                    removed.add(entry["_ai_hats_managed"])
+                else:
+                    kept.append(entry)
             if len(kept) != len(event_list):
-                changed = True
                 if kept:
                     hooks_root[event] = kept
                 else:
                     del hooks_root[event]
-        return changed
+        return removed
+
+    @staticmethod
+    def _sweep_stale_managed(hooks_root: dict, desired_tags: set[str]) -> bool:
+        """Bool back-compat wrapper over :meth:`_sweep_stale_managed_tags`."""
+        return bool(ClaudeProvider._sweep_stale_managed_tags(hooks_root, desired_tags))
 
     @staticmethod
     def _write_settings(settings_path: Path, data: dict, project_dir: Path) -> None:

@@ -372,9 +372,13 @@ def wrap_runner_factory(tmp_path, monkeypatch):
 
         monkeypatch.setattr(WrapRunner, "_pty_spawn", _stub_spawn)
 
-        # Stub the session-start git-hook resync so the test doesn't touch
-        # the real .githooks/ surface (HATS-707).
-        monkeypatch.setattr(WrapRunner, "_resync_git_hooks", lambda self, session=None: None)
+        # Stub the session-start managed-hook resync so the test doesn't touch
+        # the real hook surfaces (HATS-707 → HATS-833). Returns no notices.
+        monkeypatch.setattr(
+            WrapRunner,
+            "_resync_managed_hooks",
+            lambda self, session=None, result=None: [],
+        )
 
         if finalize_hitl_exc is not None:
             def _exploding_finalize_hitl(*args, **kwargs):

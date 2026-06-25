@@ -10,6 +10,7 @@ import os
 import shutil
 import sys
 from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 
 from typing import TYPE_CHECKING
@@ -375,12 +376,62 @@ def _startup_hold_seconds(
     return STARTUP_WARN_HOLD_SECONDS
 
 
+@dataclass(frozen=True)
+class StartupNotice:
+    """One pre-launch line surfaced during the startup hold (HATS-833).
+
+    ``level``:
+        ``"note"`` — informational success (e.g. a managed-hook heal). Rendered
+            bold-green; means "we fixed drift", not "something is wrong".
+        ``"warn"`` — a fail-open startup step degraded (resync raised, finalize
+            preload failed, drift left unhealed under version-skew). Rendered
+            bold-yellow.
+    Both levels trigger the hold so the human can read them; a clean start emits
+    neither and holds for nothing.
+    """
+
+    level: str
+    text: str
+
+
+def _print_startup_notices(notices: list[StartupNotice]) -> None:
+    """Render startup notices before the hold: ✓ notes (green) then ⚠ warns
+    (yellow), each as a titled bullet block. Generalizes the warnings-only
+    channel (HATS-825 → HATS-833) so a heal note shares the same visible,
+    non-blocking surface as a warning."""
+    notes = [n for n in notices if n.level == "note"]
+    warns = [n for n in notices if n.level != "note"]
+    g, y, rst = "\033[1;32m", "\033[1;33m", "\033[0m"
+    if notes:
+        print(f"{g}✓ {len(notes)} startup note(s):{rst}")
+        for n in notes:
+            print(f"{g}  • {n.text}{rst}")
+    if warns:
+        print(f"{y}⚠ {len(warns)} startup warning(s):{rst}")
+        for n in warns:
+            print(f"{y}  • {n.text}{rst}")
+
+
 def _print_startup_warnings(warnings: list[str]) -> None:
-    """Print fail-open startup warnings as a bold-yellow block before the hold."""
-    y, rst = "\033[1;33m", "\033[0m"
-    print(f"{y}⚠ {len(warnings)} startup warning(s):{rst}")
-    for w in warnings:
-        print(f"{y}  • {w}{rst}")
+    """Back-compat shim (HATS-833): render plain warning strings via the
+    structured notice channel."""
+    _print_startup_notices([StartupNotice("warn", w) for w in warnings])
+
+
+def show_and_hold_startup_notices(notices, *, is_tty, sleep, env=None) -> None:
+    """User-facing startup notices: notices present → render them and hold before
+    launch so they're read; nothing to show → no render, no hold (HATS-833).
+
+    Single owner of the "notices exist ⇒ show and wait" decision (the hold
+    *policy* stays in :func:`_startup_hold_seconds`). ``sleep(delay)`` performs
+    the actual wait — the caller injects a Ctrl-C-aware countdown so this stays
+    free of PTY/TUI concerns and unit-testable.
+    """
+    delay = _startup_hold_seconds(bool(notices), is_tty=is_tty, env=env)
+    if delay <= 0:
+        return
+    _print_startup_notices(notices)
+    sleep(delay)
 
 
 def _composition_snapshot(assembler: Assembler, role_name: str, result) -> dict:
