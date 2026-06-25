@@ -304,8 +304,9 @@ class TestLinkedWorktreeGuard:
             "ai_hats.worktree.WorktreeManager.is_inside_linked_worktree",
             staticmethod(lambda _path: True),
         )
+        # HATS-788: guard takes no arg now — it checks the raw Path.cwd().
         with pytest.raises(SystemExit) as exc_info:
-            _guard_not_inside_linked_worktree(git_project)
+            _guard_not_inside_linked_worktree()
         assert exc_info.value.code == 1
 
     def test_helper_passes_when_not_inside(
@@ -318,7 +319,7 @@ class TestLinkedWorktreeGuard:
             staticmethod(lambda _path: False),
         )
         # No exit, no exception.
-        assert _guard_not_inside_linked_worktree(git_project) is None
+        assert _guard_not_inside_linked_worktree() is None
 
     @pytest.mark.parametrize("subcmd", ["merge", "discard", "list"])
     def test_cli_refuses_from_inside_linked_worktree(

@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 import click
 
@@ -55,11 +56,18 @@ def _resolve_worktree(branch: str | None = None):
         return WorktreeManager.load_for_branch(project_dir, branch)
 
     # CWD is inside a linked worktree → detect branch automatically.
-    if WorktreeManager.is_inside_linked_worktree(project_dir):
+    # HATS-788: detect on the RAW cwd — `project_dir` has hopped to MAIN
+    # (HATS-524) so `is_inside_linked_worktree(project_dir)` is always False
+    # from inside a worktree. In practice the lifecycle guard refuses
+    # merge/discard from inside a worktree before this runs; the raw-cwd check
+    # keeps it correct for any unguarded caller. The tracker lookup
+    # (`load_for_branch`) still uses the main `project_dir`.
+    cwd = Path.cwd()
+    if WorktreeManager.is_inside_linked_worktree(cwd):
         try:
             head = _sp.run(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=str(project_dir),
+                cwd=str(cwd),
                 capture_output=True,
                 text=True,
                 check=True,
@@ -102,7 +110,7 @@ def wt_create(branch: str):
 
     # HATS-060: refuse to create from inside a linked worktree
     # (helper-extracted in HATS-482 / B-08 so merge/discard/list share it).
-    _guard_not_inside_linked_worktree(project_dir)
+    _guard_not_inside_linked_worktree()
 
     # HATS-518: refuse if main-repo HEAD is not on a canonical base branch.
     # Otherwise the worktree captures the feature branch as its merge target
@@ -184,7 +192,7 @@ def wt_merge(
     )
 
     # HATS-482 / B-08: guard before resolving CWD/_project_dir.
-    _guard_not_inside_linked_worktree(_project_dir())
+    _guard_not_inside_linked_worktree()
 
     mgr = _resolve_worktree(branch)
     if mgr is None:
@@ -342,7 +350,7 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
     )
 
     # HATS-482 / B-08: guard before resolving CWD/_project_dir.
-    _guard_not_inside_linked_worktree(_project_dir())
+    _guard_not_inside_linked_worktree()
 
     mgr = _resolve_worktree(branch)
     if mgr is None:
@@ -405,7 +413,7 @@ def wt_list():
 
     project_dir = _project_dir()
     # HATS-482 / B-08: guard CWD-from-inside-linked-worktree.
-    _guard_not_inside_linked_worktree(project_dir)
+    _guard_not_inside_linked_worktree()
     worktrees = WorktreeManager.list_worktrees(project_dir)
     tracked_branches = {m.branch_name for m in WorktreeManager.list_active(project_dir)}
 
