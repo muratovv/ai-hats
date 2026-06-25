@@ -346,10 +346,10 @@ materialized `<skill>-<basename>` filename), or a row missing its `script`. The
 ai-hats's future hook kind) is ignored with a WARN, not a hard error, so a newer skill
 does not break an older engine.
 
-> **Path-list sugar is not shipped yet.** ADR-0012 also designs a declarative
+> **Path-list sugar is shelved.** ADR-0012 also designs a declarative
 > `seed_in:` / `harvest_out:` path-list form (sugar over a built-in `capture` hook).
-> That is HATS-775's deliverable and is **not available today** — use the `wt_in` /
-> `wt_out` **hook form** above. This section documents only what ships.
+> It is **not built** — shelved for want of a confirmed consumer (HATS-775 cancelled);
+> use the `wt_in` / `wt_out` **hook form** above. This section documents only what ships.
 
 ## Custom pipelines (advanced)
 

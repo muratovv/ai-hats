@@ -181,7 +181,7 @@ The name (or names) of the branch that worktrees are expected to be created from
 
 ## Worktree data-transfer
 
-The mechanism by which **gitignored** data crosses the `ai-hats wt` boundary in either direction — **carry-in** (seeded *into* a worktree at `wt create`) or **carry-out** (harvested *out of* a worktree before `wt merge` / `wt discard` teardown). The primitive is a **worktree lifecycle hook** — a component-declared script run at `wt_in` (after create) or `wt_out` (before every teardown route, fail-closed). Shipped today is the `wt_in` / `wt_out` hook form (HATS-823); the declarative `seed_in` / `harvest_out` path-list sugar is designed but not yet implemented (HATS-775).
+The mechanism by which **gitignored** data crosses the `ai-hats wt` boundary in either direction — **carry-in** (seeded *into* a worktree at `wt create`) or **carry-out** (harvested *out of* a worktree before `wt merge` / `wt discard` teardown). The primitive is a **worktree lifecycle hook** — a component-declared script run at `wt_in` (after create) or `wt_out` (before every teardown route, fail-closed). Shipped today is the `wt_in` / `wt_out` hook form (HATS-823); the declarative `seed_in` / `harvest_out` path-list sugar (designed in ADR-0012) is **shelved** — HATS-775 cancelled, no confirmed consumer the primitive does not already serve.
 
 See [how-to-extend → Worktree lifecycle hooks](how-to-extend.md#worktree-lifecycle-hooks) for the author contract (declaration, lifecycle, `.env` / secrets) and [ADR-0012](adr/0012-worktree-data-transfer.md) for the design (hooks-first, resolution map, creds boundary D5).
 
