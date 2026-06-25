@@ -427,10 +427,8 @@ class WorktreeManager:
         self.session_id = session_id
         self.isolation_mode = isolation_mode
         self.worktree_path: Path | None = None
-        # HATS-827: an empty role would yield ``agent//<sid>`` — a git refname
-        # with an empty path segment that ``git worktree add`` rejects. Fail at
-        # construction (backstop for all callers, e.g. launch.py ``role or ""``)
-        # rather than crashing deep in create().
+        # HATS-827: backstop — empty role yields the git-invalid branch
+        # agent//<sid>; fail at construction, not deep in create().
         if not branch_name and not role_name:
             raise ValueError(
                 "cannot build worktree branch: empty role segment — pass a role"
