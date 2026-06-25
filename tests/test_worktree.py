@@ -14,6 +14,7 @@ from ai_hats.worktree import (
     WorktreeCreateError,
     WorktreeDirtyError,
     WorktreeManager,
+    WorktreeStateIncompleteError,
 )
 
 
@@ -305,6 +306,32 @@ class TestOriginalBranchMissing:
 
         # Worktree dir gone, but worktree branch preserved
         assert not wt.exists()
+        result = subprocess.run(
+            ["git", "branch", "--list", mgr.branch_name],
+            cwd=str(git_project),
+            capture_output=True,
+            text=True,
+        )
+        assert result.stdout.strip() != "", "worktree branch should be preserved"
+
+    def test_merge_raises_when_original_branch_is_none(self, git_project: Path) -> None:
+        """HATS-714: a state file present but with ``original_branch=None``
+        (corrupt / hand-edited / pre-versioned legacy) must raise the typed
+        ``WorktreeStateIncompleteError`` — not the pre-714 opaque ``TypeError``
+        from ``git rev-parse None`` — and must refuse before any mutation, so
+        the worktree dir and branch are preserved."""
+        mgr = WorktreeManager(git_project, "tester", "sess-714", IsolationMode.SQUASH)
+        wt = mgr.create()
+        mgr.save_state()
+        # Simulate the corrupt / legacy field the way _load_by_key would
+        # surface it: original_branch resolves to None.
+        mgr._original_branch = None
+
+        with pytest.raises(WorktreeStateIncompleteError):
+            mgr.merge()
+
+        # Refusal precedes mutation: worktree dir + branch both intact.
+        assert wt.exists(), "worktree dir must survive a pre-mutation refusal"
         result = subprocess.run(
             ["git", "branch", "--list", mgr.branch_name],
             cwd=str(git_project),
