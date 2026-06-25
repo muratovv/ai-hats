@@ -124,6 +124,15 @@ def execute_cmd(
     from ..tags import TagValidationError, parse_tags
     from ._helpers import _handle_role_not_found
 
+    # HATS-827: empty role builds the git-invalid branch agent//<sid>; fail at
+    # the boundary instead of crashing deep in worktree creation.
+    if not interactive and not role:
+        raise click.BadParameter(
+            "--batch requires a role. To launch a sub-agent use "
+            "'ai-hats agent <role> --task ...'; or pass -r/--role.",
+            param_hint="--role",
+        )
+
     try:
         tags = parse_tags(tags_raw)
     except TagValidationError as e:

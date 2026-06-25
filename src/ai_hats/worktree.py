@@ -427,6 +427,12 @@ class WorktreeManager:
         self.session_id = session_id
         self.isolation_mode = isolation_mode
         self.worktree_path: Path | None = None
+        # HATS-827: backstop — empty role yields the git-invalid branch
+        # agent//<sid>; fail at construction, not deep in create().
+        if not branch_name and not role_name:
+            raise ValueError(
+                "cannot build worktree branch: empty role segment — pass a role"
+            )
         self.branch_name = branch_name or f"agent/{role_name}/{session_id}"
         self._is_git = False
         self._original_branch: str | None = None
