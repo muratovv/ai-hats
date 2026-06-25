@@ -99,7 +99,7 @@ def _install_pty_capture(monkeypatch, sink: dict[str, Any]) -> None:
     monkeypatch.setattr(rt.WrapRunner, "_pty_spawn", _capture)
 
     # HATS-707: session start re-heals git hooks; stub it (no .githooks/ here).
-    monkeypatch.setattr(rt.WrapRunner, "_resync_git_hooks", lambda self, session=None: None, raising=False)
+    monkeypatch.setattr(rt.WrapRunner, "_resync_managed_hooks", lambda self, session=None, result=None: [], raising=False)
     monkeypatch.setenv("AI_HATS_QUIET", "1")
 
 

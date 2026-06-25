@@ -178,10 +178,10 @@ GIT_HOOK_EVENTS: tuple[str, ...] = (
     "post-commit",
     "pre-push",
     "pre-rebase",
-    # HATS-593: drift-introducing events. A merge / pull / branch checkout
-    # rewrites tracked files, leaving the (untracked, generated) .githooks/
-    # stale. These hooks re-materialize the hook surface at the moment drift
-    # is introduced via `ai-hats self sync-hooks`.
+    # Drift-introducing events — a merge / pull / branch checkout rewrites
+    # tracked files, leaving the (untracked, generated) .githooks/ stale. Still
+    # VALID hook events a skill may declare; HATS-833 removed the self-heal that
+    # used them (healing is now session-start only via Assembler.sync_hooks).
     "post-merge",
     "post-checkout",
 )

@@ -31,18 +31,74 @@ from .runtime_common import (
     _scan_escape,
     _cleanup_session_cache,
     _print_session_start,
-    _print_startup_warnings,
-    _startup_hold_seconds,
+    show_and_hold_startup_notices,
     _composition_snapshot,
     _print_session_end,
     _finalize_session_basic,
     _run_finalize_hitl,
+    StartupNotice,
 )
 
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+# ----- HATS-833 session-start heal-note formatting -----
+
+_SURFACE_LABEL = {"runtime": "runtime-hook", "wt": "wt-hook", "git": "git-hook"}
+_KIND_PHRASE = {
+    "missing": "materialized (was missing)",
+    "content": "updated (content drift)",
+    "wiring": "re-wired",
+    "stale": "swept (no longer composed)",
+}
+
+
+def _hook_display_name(surface: str, name: str) -> str:
+    """Drop the script extension for runtime/wt names (git ``name`` is the bare
+    event)."""
+    if surface in ("runtime", "wt") and "." in name:
+        return name.rsplit(".", 1)[0]
+    return name
+
+
+def _format_hook_heal(changes) -> str:
+    """One-glance heal note: one clause per changed hook, kinds on the same hook
+    folded (``content`` + ``wiring`` → ``updated (content drift) + re-wired``)."""
+    grouped: dict[tuple[str, str], list[str]] = {}
+    order: list[tuple[str, str]] = []
+    for c in changes:
+        key = (c.surface, _hook_display_name(c.surface, c.name))
+        if key not in grouped:
+            grouped[key] = []
+            order.append(key)
+        if c.kind not in grouped[key]:
+            grouped[key].append(c.kind)
+    clauses = []
+    for surface, dname in order:
+        phrases = " + ".join(_KIND_PHRASE.get(k, k) for k in grouped[(surface, dname)])
+        clauses.append(f"{_SURFACE_LABEL.get(surface, surface)} {dname} {phrases}")
+    return "managed hooks healed at start — " + "; ".join(clauses)
+
+
+def _format_version_skew(changes) -> str:
+    """Warn note when drift exists but the binary is behind upstream (req-7:
+    name the unhealed drift rather than skip silently)."""
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for c in changes:
+        label = f"{c.surface} {_hook_display_name(c.surface, c.name)}"
+        if label not in seen:
+            seen.add(label)
+            uniq.append(label)
+    listed = ", ".join(uniq[:6])
+    more = "" if len(uniq) <= 6 else f" (+{len(uniq) - 6} more)"
+    return (
+        "managed hooks drifted but not healed — installed ai-hats is behind "
+        "upstream. Run 'ai-hats self update'. Stale: " + listed + more + "."
+    )
 
 
 class WrapRunner:
@@ -53,49 +109,53 @@ class WrapRunner:
         self.assembler = Assembler(project_dir)
         self.session_mgr = SessionManager(project_dir)
 
-    def _resync_git_hooks(self, session: Session | None = None) -> str | None:
-        """Re-heal git-hook drift at session start (HATS-593 layer B).
+    def _resync_managed_hooks(
+        self, session: Session | None = None, result=None
+    ) -> list[StartupNotice]:
+        """Heal drift of ALL managed-hook surfaces at session start (HATS-833,
+        generalizing HATS-593 layer B from git-only to runtime + wt + git).
 
-        Re-homed in HATS-707 from the maintainer's
-        ``session_start: [ai-hats self sync-hooks]`` lifecycle-hook
-        declaration. That declaration never executed — the ``hooks:``
-        composition channel had zero runtime consumers (HooksRunner scanned
-        a tree empty since HATS-314), so the in-session drift net was dead.
-        ``Assembler.sync_hooks()`` is idempotent, skips a non-git / role-less
-        project, and refuses on a stale binary. Fail-open: a best-effort
-        drift-heal must never block session start.
+        ``Assembler.sync_hooks()`` is idempotent, drift-gated, skips a role-less
+        project, and refuses to heal from a stale binary. Fail-open: a best-effort
+        drift-heal must never block session start. The sole trigger is here —
+        there is no ``ai-hats self sync-hooks`` command and no git-event hook
+        anymore (HATS-833 Q2).
 
-        HATS-825: on failure, returns a summary and traces it (was stderr-only,
-        which the TUI clobbers); ``None`` on success.
+        Returns startup notices to surface (HATS-833 req-5): a single NOTE naming
+        each healed hook + change kind on the heal path; a WARN on failure or when
+        drift was detected but left unhealed under version-skew. Empty list on a
+        clean in-sync start (silent). ``result`` reuses the session's composition
+        to avoid a second compose.
         """
         try:
-            res = self.assembler.sync_hooks()
+            res = self.assembler.sync_hooks(result)
             if session is not None:
-                session.log_trace(TraceTag.SYS, f"git-hook resync: {res.status}")
-            return None
+                session.log_trace(TraceTag.SYS, f"managed-hook resync: {res.status}")
+            if res.status == "synced" and res.changes:
+                return [StartupNotice("note", _format_hook_heal(res.changes))]
+            if res.status == "version-skew":
+                return [StartupNotice("warn", _format_version_skew(res.changes))]
+            return []
         except Exception as exc:
-            logger.warning("git-hook resync at session start failed", exc_info=True)
-            summary = f"git-hook resync failed: {type(exc).__name__}: {exc}"
+            logger.warning("managed-hook resync at session start failed", exc_info=True)
+            summary = f"managed-hook resync failed: {type(exc).__name__}: {exc}"
             if session is not None:
-                session.log_trace(TraceTag.SYS, f"git-hook resync FAILED — {summary}")
-            return summary
+                session.log_trace(TraceTag.SYS, f"managed-hook resync FAILED — {summary}")
+            return [StartupNotice("warn", summary)]
 
-    def _hold_before_launch(self, startup_warnings: list[str]) -> None:
-        """Hold the start banner briefly before the wrapped TUI spawns (HATS-825).
-
-        ``10s`` when a startup step warned; no hold otherwise (clean start or
-        non-tty) — policy in :func:`_startup_hold_seconds`. Ctrl-C during the hold prints
-        an abort note and propagates — ``run()``'s ``KeyboardInterrupt`` handler
-        turns it into a clean exit (130) that finalizes the session and never
-        spawns the CLI.
+    def _hold_before_launch(self, startup_notices: list[StartupNotice]) -> None:
+        """Show any startup notices and hold before the wrapped TUI spawns
+        (HATS-825, HATS-833). Delegates the "notices ⇒ show and wait" policy to
+        :func:`show_and_hold_startup_notices`; supplies a Ctrl-C-aware countdown
+        as the wait. Ctrl-C propagates — ``run()``'s handler turns it into a clean
+        exit (130) that finalizes the session and never spawns the CLI.
         """
-        delay = _startup_hold_seconds(bool(startup_warnings), is_tty=sys.stdin.isatty())
-        if delay <= 0:
-            return
-        if startup_warnings:
-            _print_startup_warnings(startup_warnings)
         try:
-            self._sleep_countdown(delay, announce=bool(startup_warnings))
+            show_and_hold_startup_notices(
+                startup_notices,
+                is_tty=sys.stdin.isatty(),
+                sleep=lambda d: self._sleep_countdown(d, announce=bool(startup_notices)),
+            )
         except KeyboardInterrupt:
             print("\n\033[1;31m  launch aborted\033[0m")
             raise
@@ -206,15 +266,10 @@ class WrapRunner:
             "AI_HATS_ROLE": active_role,
         }
 
-        # HATS-707: in-session git-hook drift net (HATS-593 layer B), re-homed
-        # from the dead lifecycle ``hooks:`` channel to a direct sync_hooks()
-        # call. Fail-open; idempotent no-op when hooks are already in sync.
-        # HATS-825: collect fail-open startup warnings so the pre-launch hold
-        # can surface them before the TUI clobbers the scrollback.
-        startup_warnings: list[str] = []
-        resync_warning = self._resync_git_hooks(session)
-        if resync_warning:
-            startup_warnings.append(resync_warning)
+        # HATS-833: fail-open session-start drift net for all managed-hook
+        # surfaces; reuses the composition above and returns startup notices.
+        startup_notices: list[StartupNotice] = []
+        startup_notices.extend(self._resync_managed_hooks(session, result))
 
         # Build CLI command with session ID for JSONL linkage
         claude_session_id = str(uuid.uuid4())
@@ -249,7 +304,7 @@ class WrapRunner:
             logger.warning("finalize-hitl preload failed", exc_info=True)
             summary = f"finalize-hitl preload failed: {type(exc).__name__}: {exc}"
             session.log_trace(TraceTag.SYS, f"finalize-hitl preload FAILED — {summary}")
-            startup_warnings.append(summary)
+            startup_notices.append(StartupNotice("warn", summary))
 
         from . import __version__
 
@@ -279,7 +334,7 @@ class WrapRunner:
             # HATS-825: brief pre-launch hold so the start banner + any
             # fail-open startup warning are readable before the TUI clobbers
             # them. Ctrl-C here aborts the launch (caught below → exit 130).
-            self._hold_before_launch(startup_warnings)
+            self._hold_before_launch(startup_notices)
             exit_code = self._pty_spawn(cmd, env, tracer)
         except KeyboardInterrupt:
             exit_code = 130

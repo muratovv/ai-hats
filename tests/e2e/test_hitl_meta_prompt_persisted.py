@@ -96,8 +96,14 @@ def _install_pty_capture(monkeypatch, sink: dict[str, Any]) -> None:
 
     monkeypatch.setattr(rt.WrapRunner, "_pty_spawn", _capture)
 
-    # HATS-707: session start re-heals git hooks; stub it (no .githooks/ here).
-    monkeypatch.setattr(rt.WrapRunner, "_resync_git_hooks", lambda self, session=None: None, raising=False)
+    # HATS-707 → HATS-833: session start re-heals managed hooks; stub it
+    # (no hook surfaces under test here). Returns no startup notices.
+    monkeypatch.setattr(
+        rt.WrapRunner,
+        "_resync_managed_hooks",
+        lambda self, session=None, result=None: [],
+        raising=False,
+    )
     monkeypatch.setenv("AI_HATS_QUIET", "1")
 
 
@@ -191,8 +197,14 @@ def test_hitl_meta_prompt_matches_system_prompt_file_bytes(
 
     monkeypatch.setattr(rt.WrapRunner, "_pty_spawn", _capture)
 
-    # HATS-707: session start re-heals git hooks; stub it (no .githooks/ here).
-    monkeypatch.setattr(rt.WrapRunner, "_resync_git_hooks", lambda self, session=None: None, raising=False)
+    # HATS-707 → HATS-833: session start re-heals managed hooks; stub it
+    # (no hook surfaces under test here). Returns no startup notices.
+    monkeypatch.setattr(
+        rt.WrapRunner,
+        "_resync_managed_hooks",
+        lambda self, session=None, result=None: [],
+        raising=False,
+    )
     monkeypatch.setenv("AI_HATS_QUIET", "1")
 
     result = CliRunner().invoke(main, [])

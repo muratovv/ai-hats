@@ -247,6 +247,35 @@ def test_existing_dispatcher_without_marker_left_alone(project_with_hook_skill, 
     assert "not managed by ai-hats" in out
 
 
+def test_sync_hooks_ignores_foreign_dispatcher_no_perpetual_heal(project_with_hook_skill):
+    """HATS-833 P1 regression: a user-owned (foreign) top-level dispatcher
+    coexisting with managed ``.d/`` scripts must NOT be detected as drift — else
+    the session-start net would re-heal + emit a false note on EVERY launch."""
+    from ai_hats.githooks import GITHOOKS_MANIFEST, git_hooks_changes
+    from ai_hats.materialize import compose_for_role
+
+    project, lib = project_with_hook_skill
+    githooks = project / GITHOOKS_DIR
+    githooks.mkdir()
+    foreign = githooks / "pre-commit"
+    foreign.write_text("#!/usr/bin/env bash\n# user's own dispatcher\necho hi\n")
+    foreign.chmod(0o755)
+
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    # Managed .d/ script installed; the foreign dispatcher is left untouched.
+    assert (githooks / "pre-commit.d" / "hook_skill-check.sh").is_file()
+
+    result = compose_for_role(asm, "test-role")
+    manifest = asm._read_canonical_manifest(githooks / GITHOOKS_MANIFEST)
+    assert git_hooks_changes(project, result, manifest) == []
+    # Idempotent across launches — no perpetual re-heal (the P1 symptom).
+    assert asm.sync_hooks().status == "in-sync"
+    assert asm.sync_hooks().status == "in-sync"
+
+
 def test_existing_core_hookspath_other_value_left_alone(project_with_hook_skill, capsys):
     project, lib = project_with_hook_skill
     subprocess.run(
@@ -471,8 +500,10 @@ def test_sync_hooks_heals_when_no_update_cache(project_with_hook_skill):
     assert "check ran" in installed.read_text()
 
 
-def test_sync_hooks_skips_non_git_project(tmp_path):
-    """No .git/ → skipped, never raises."""
+def test_sync_hooks_non_git_still_heals_runtime(tmp_path):
+    """HATS-833: a non-git project no longer SKIPS outright — the runtime / wt
+    surfaces are git-independent, so the generalized net still heals them and only
+    the git surface is skipped (no ``.githooks/`` is created)."""
     project = tmp_path / "proj"
     project.mkdir()
     lib = tmp_path / "lib"
@@ -491,27 +522,35 @@ def test_sync_hooks_skips_non_git_project(tmp_path):
         "name: test-role\npriorities: [Quality]\n"
         "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
     )
-    ProjectConfig(provider="gemini", library_paths=[str(lib)]).save(project / "ai-hats.yaml")
+    ProjectConfig(
+        provider="gemini", library_paths=[str(lib)], active_role="test-role"
+    ).save(project / "ai-hats.yaml")
 
     asm = Assembler(project, library_paths=[lib])
-    res = asm.sync_hooks()
-    assert res.status == "skipped"
+    res = asm.sync_hooks()  # must not raise on a non-git project
+    # Runtime guards were never materialized → drift detected & healed; git
+    # surface is skipped (no repo) so no .githooks/ appears.
+    assert res.status in ("synced", "in-sync")
+    assert not (project / GITHOOKS_DIR).exists()
 
 
-# ----- HATS-593 Phase 1.4: post-merge / post-checkout self-heal events -----
+# ----- post-merge / post-checkout remain valid declarable git-hook events -----
+# HATS-833 removed git-mastery's self-heal use of these events, but the framework
+# still SUPPORTS any skill declaring a post-merge / post-checkout hook — these
+# tests cover that generic install capability with a synthetic skill.
 
 
 def test_post_merge_and_post_checkout_are_registered_events():
-    """The drift-introducing events are recognized by the framework."""
+    """The drift-introducing events stay recognized by the framework."""
     assert "post-merge" in GIT_HOOK_EVENTS
     assert "post-checkout" in GIT_HOOK_EVENTS
 
 
 @pytest.fixture
 def project_with_self_heal_skill(tmp_path):
-    """Project + library with a skill that declares the self-heal hooks
-    for both post-merge and post-checkout (mirrors the real git-mastery
-    declaration)."""
+    """Project + library with a SYNTHETIC skill declaring post-merge /
+    post-checkout hooks (a generic example — git-mastery no longer ships these
+    after HATS-833)."""
     project = tmp_path / "project"
     project.mkdir()
     _git_init(project)
