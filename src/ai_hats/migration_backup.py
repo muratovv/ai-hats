@@ -18,7 +18,7 @@ Scope (what enters the tarball):
   (``migration_step`` persistence).
 * ``CLAUDE.md`` / ``GEMINI.md`` — provider system prompts that
   ``_migrate_claude_md_to_v3`` rewrites.
-* ``.githooks/`` — ``_install_git_hooks`` writes here.
+* ``.githooks/`` — ``HooksManager.install_git_hooks`` writes here.
 * ``.gitignore`` — ``_ensure_gitignore_entry`` mutates this.
 
 Anything else under ``project_dir`` is the user's project and is NOT

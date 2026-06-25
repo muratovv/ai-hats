@@ -105,7 +105,7 @@ def collect_carry_for_role(
             # script is then filtered out below. Never return a carry row that
             # lacks a backing script (review pt-4: degrade-to-empty is safe,
             # degrade-to-partial re-opens the fail-closed it prevents).
-            assembler._materialize_worktree_hooks(result)
+            assembler.hooks.materialize_worktree_hooks(result)
             carry = _drop_unbacked_carry_rows(carry, project_dir)
         return carry
     except Exception as exc:  # noqa: BLE001 — never block create on carry collection

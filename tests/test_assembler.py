@@ -215,7 +215,7 @@ def test_reinit_without_role_arg_still_composes_for_default_role(project_with_li
     # Step 2: re-init WITHOUT role kwarg on the same project.
     asm2 = Assembler(project, library_paths=[lib])
     install_calls = []
-    asm2._install_git_hooks = lambda r: install_calls.append(r.name)  # type: ignore[assignment]
+    asm2.hooks.install_git_hooks = lambda r: install_calls.append(r.name)  # type: ignore[assignment]
     asm2.init()  # no role; default_role=test-role in yaml
 
     assert install_calls == ["test-role"], (

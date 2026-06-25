@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.assembler import Assembler, HookChange
+from ai_hats.assembler import Assembler
+from ai_hats.hooks_manager import HookChange
 from ai_hats.composer import CompositionResult, ResolvedComponent
 from ai_hats.models import ComponentType, ProjectConfig
 from ai_hats.paths import (
@@ -74,48 +75,48 @@ class TestRuntimeBytesDrift:
     def test_in_sync_after_materialize(self, assembler, tmp_path):
         s = _skill_runtime(tmp_path / "sk", "sa", "PreToolUse", "Bash", "h/a.sh")
         res = _result([s])
-        assembler._materialize_pretooluse_hooks(res)
-        assert assembler._runtime_bytes_changes(res) == []
+        assembler.hooks.materialize_runtime_hooks(res)
+        assert assembler.hooks._runtime_bytes_changes(res) == []
 
     def test_missing_script_reported(self, assembler, tmp_path):
         s = _skill_runtime(tmp_path / "sk", "sa", "PreToolUse", "Bash", "h/a.sh")
         res = _result([s])
-        assembler._materialize_pretooluse_hooks(res)
+        assembler.hooks.materialize_runtime_hooks(res)
         dest = hooks_dir(assembler.project_dir) / managed_runtime_hook_filename(
             "sa", "h/a.sh"
         )
         dest.unlink()
-        changes = assembler._runtime_bytes_changes(res)
+        changes = assembler.hooks._runtime_bytes_changes(res)
         assert (dest.name, "missing") in changes
 
     def test_content_drift_reported(self, assembler, tmp_path):
         s = _skill_runtime(tmp_path / "sk", "sa", "PreToolUse", "Bash", "h/a.sh")
         res = _result([s])
-        assembler._materialize_pretooluse_hooks(res)
+        assembler.hooks.materialize_runtime_hooks(res)
         dest = hooks_dir(assembler.project_dir) / managed_runtime_hook_filename(
             "sa", "h/a.sh"
         )
         dest.write_text("#!/usr/bin/env bash\necho drifted\n")
-        changes = assembler._runtime_bytes_changes(res)
+        changes = assembler.hooks._runtime_bytes_changes(res)
         assert (dest.name, "content") in changes
 
     def test_stale_reported_when_skill_leaves(self, assembler, tmp_path):
         s = _skill_runtime(tmp_path / "sk", "sa", "PreToolUse", "Bash", "h/a.sh")
-        assembler._materialize_pretooluse_hooks(_result([s]))
+        assembler.hooks.materialize_runtime_hooks(_result([s]))
         # Skill gone from composition, file+manifest still list it → stale.
         name = managed_runtime_hook_filename("sa", "h/a.sh")
-        changes = assembler._runtime_bytes_changes(_result([]))
+        changes = assembler.hooks._runtime_bytes_changes(_result([]))
         assert (name, "stale") in changes
 
     def test_package_guard_helper_tracked(self, assembler, tmp_path):
         # The classifier helper is materialized but NOT wired — the bytes
         # detector must still cover it (review pt-2). Delete it → missing.
         res = _result([])
-        assembler._materialize_pretooluse_hooks(res)
+        assembler.hooks.materialize_runtime_hooks(res)
         helper = hooks_dir(assembler.project_dir) / "shared_state_classifier.sh"
         if helper.exists():  # only if the package ships it
             helper.unlink()
-            assert ("shared_state_classifier.sh", "missing") in assembler._runtime_bytes_changes(res)
+            assert ("shared_state_classifier.sh", "missing") in assembler.hooks._runtime_bytes_changes(res)
 
 
 # ----- wt-hook BYTES drift -----
@@ -125,20 +126,20 @@ class TestWtBytesDrift:
     def test_in_sync_after_materialize(self, assembler, tmp_path):
         s = _skill_wt(tmp_path / "sk", "drn", "d.sh")
         res = _result([s])
-        assembler._materialize_worktree_hooks(res)
-        assert assembler._wt_hooks_changes(res) == []
+        assembler.hooks.materialize_worktree_hooks(res)
+        assert assembler.hooks._wt_hooks_changes(res) == []
 
     def test_missing_reported(self, assembler, tmp_path):
         s = _skill_wt(tmp_path / "sk", "drn", "d.sh")
         res = _result([s])
-        assembler._materialize_worktree_hooks(res)
+        assembler.hooks.materialize_worktree_hooks(res)
         dest = wt_hooks_dir(assembler.project_dir) / managed_wt_hook_filename("drn", "d.sh")
         dest.unlink()
-        changes = assembler._wt_hooks_changes(res)
+        changes = assembler.hooks._wt_hooks_changes(res)
         assert HookChange("wt", dest.name, "missing") in changes
 
     def test_clean_project_no_changes(self, assembler):
-        assert assembler._wt_hooks_changes(_result([])) == []
+        assert assembler.hooks._wt_hooks_changes(_result([])) == []
 
 
 # ----- runtime-hook WIRING drift (.claude/settings.json) -----
@@ -212,17 +213,17 @@ class TestSyncHooksOrchestration:
 
     def _wire(self, monkeypatch, asm, *, runtime, wt, git, behind=False):
         calls: list[str] = []
-        monkeypatch.setattr(asm, "_runtime_hooks_changes", lambda result, provider: runtime)
-        monkeypatch.setattr(asm, "_wt_hooks_changes", lambda result: wt)
-        monkeypatch.setattr(asm, "_git_hooks_changes", lambda result: git)
-        monkeypatch.setattr(asm, "_binary_behind_source", lambda: behind)
+        monkeypatch.setattr(asm.hooks, "_runtime_hooks_changes", lambda result, provider: runtime)
+        monkeypatch.setattr(asm.hooks, "_wt_hooks_changes", lambda result: wt)
+        monkeypatch.setattr(asm.hooks, "_git_hooks_changes", lambda result: git)
+        monkeypatch.setattr(asm.hooks, "_binary_behind_source", lambda: behind)
         monkeypatch.setattr(
-            asm, "_materialize_pretooluse_hooks", lambda result: calls.append("rt_bytes")
+            asm.hooks, "materialize_runtime_hooks", lambda result: calls.append("rt_bytes")
         )
         monkeypatch.setattr(
-            asm, "_materialize_worktree_hooks", lambda result: calls.append("wt")
+            asm.hooks, "materialize_worktree_hooks", lambda result: calls.append("wt")
         )
-        monkeypatch.setattr(asm, "_install_git_hooks", lambda result: calls.append("git"))
+        monkeypatch.setattr(asm.hooks, "install_git_hooks", lambda result: calls.append("git"))
         monkeypatch.setattr(
             "ai_hats.providers.ClaudeProvider.ensure_runtime_hooks",
             lambda self, p, r: calls.append("rt_wire"),
@@ -232,14 +233,14 @@ class TestSyncHooksOrchestration:
     def test_in_sync_is_silent_noop(self, tmp_path, monkeypatch):
         asm = self._role_project(tmp_path)
         calls = self._wire(monkeypatch, asm, runtime=[], wt=[], git=[])
-        res = asm.sync_hooks(result=_result([]))
+        res = asm.hooks.sync_hooks(result=_result([]))
         assert res.status == "in-sync"
         assert res.changes == ()
         assert calls == []
 
     def test_skipped_when_no_role(self, assembler):
         # plain project: no active/default role → skipped, no compose.
-        assert assembler.sync_hooks(result=_result([])).status == "skipped"
+        assert assembler.hooks.sync_hooks(result=_result([])).status == "skipped"
 
     def test_heals_only_drifted_surface(self, tmp_path, monkeypatch):
         asm = self._role_project(tmp_path)
@@ -250,7 +251,7 @@ class TestSyncHooksOrchestration:
             wt=[],
             git=[],
         )
-        res = asm.sync_hooks(result=_result([]))
+        res = asm.hooks.sync_hooks(result=_result([]))
         assert res.status == "synced"
         assert HookChange("runtime", "x", "content") in res.changes
         assert set(calls) == {"rt_wire", "rt_bytes"}  # git/wt NOT healed
@@ -265,7 +266,7 @@ class TestSyncHooksOrchestration:
             git=[],
             behind=True,
         )
-        res = asm.sync_hooks(result=_result([]))
+        res = asm.hooks.sync_hooks(result=_result([]))
         assert res.status == "version-skew"
         assert HookChange("runtime", "x", "content") in res.changes  # named, not silent
         assert calls == []  # nothing healed from a stale binary
