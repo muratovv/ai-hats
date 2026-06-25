@@ -46,6 +46,7 @@ from .paths import (
     user_home,
     wt_hooks_dir as _wt_hooks_dir,
 )
+from .paths.constants import LIBRARIES_DIRNAME
 from .placeholders import expand_path_placeholders
 from .safe_delete import discard as _safe_discard
 from .safe_delete import replace as _safe_replace
@@ -174,7 +175,7 @@ class Assembler:
 
         # Project-local libraries — re-pointed to the worktree when composing
         # inside one (HATS-831); see :meth:`_worktree_local_libraries`.
-        local_lib = self._worktree_local_libraries() or self.project_dir / "libraries"
+        local_lib = self._worktree_local_libraries() or self.project_dir / LIBRARIES_DIRNAME
         if local_lib.is_dir():
             paths.append(local_lib)
 
@@ -184,25 +185,13 @@ class Assembler:
         return paths
 
     def _worktree_local_libraries(self) -> Path | None:
-        """Re-point the project-local ``libraries/`` to a linked worktree (HATS-831).
+        """Project-local ``libraries/`` re-pointed to the linked worktree, or ``None``.
 
-        Returns ``<worktree_toplevel>/libraries`` when cwd sits inside a linked
-        worktree of THIS project; else ``None`` (caller keeps
-        ``project_dir/libraries``). Inside a linked worktree ``_project_dir``
-        hopped to MAIN (HATS-524, to share the tracker), but the git-tracked
-        ``libraries/`` physically lives in the worktree checkout — invisible to
-        composition unless re-pointed. Only this one layer moves; the
-        ``ai-hats.yaml`` overlay, config paths and tracker stay MAIN.
-
-        A cheap fs pre-gate runs before any git: a linked worktree always lives
-        OUTSIDE its main checkout (e.g. under ``/tmp``), so a re-point is
-        impossible when cwd is within ``project_dir``. This keeps the common
-        main-checkout path — and tests that mock ``subprocess`` — from ever
-        shelling out to git. The git probe runs only when cwd is genuinely
-        elsewhere, and re-points only when that worktree's main checkout IS
-        ``project_dir`` (guards cwd/project_dir divergence: composing project A
-        from a worktree of project B — e.g. sub-agents compose from MAIN per
-        HATS-826 D1).
+        Inside a linked worktree ``_project_dir`` hopped to MAIN (HATS-524), so the
+        git-tracked ``libraries/`` would resolve to MAIN — invisible to worktree
+        edits. Re-point only when cwd is in a worktree whose main checkout IS
+        ``project_dir``. The ``is_relative_to`` pre-gate skips the git probe on the
+        common main-checkout path (and under subprocess-mocking tests).
         """
         cwd = Path.cwd()
         try:
@@ -217,7 +206,7 @@ class Assembler:
         if main_root is None or main_root.resolve() != self.project_dir.resolve():
             return None
         wt_top = WorktreeManager.worktree_toplevel(cwd)
-        return (wt_top / "libraries") if wt_top is not None else None
+        return (wt_top / LIBRARIES_DIRNAME) if wt_top is not None else None
 
     # ----- Scaffold-as-asset (HATS-284) -----
 

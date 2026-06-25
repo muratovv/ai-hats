@@ -1,4 +1,4 @@
-"""Path conventions for ai-hats runtime + user config (HATS-316).
+"""Directory-path resolution for ai-hats runtime + user config (HATS-316).
 
 Single source of truth for "where does ai-hats keep its files?". All
 framework-managed artefacts live under ``<ai_hats_dir>/`` — by default
@@ -18,8 +18,8 @@ Resolution of ``ai_hats_dir`` itself follows the precedence chain:
   3. Bootstrap fallback ``.agent/ai-hats/`` — used pre-migration, fresh
      projects, or tests without yaml. ``ProjectConfig`` itself treats the
      field as required and will raise ``ValidationError`` if it's missing
-     from a v4 yaml; ``paths.py`` is the low-level resolver that needs to
-     work during migration too, so it tolerates the missing field here.
+     from a v4 yaml; this resolver needs to work during migration too, so it
+     tolerates the missing field here.
 
 All path functions are pure (return ``Path`` without ``mkdir``) except
 ``ai_hats_dir`` / ``traces_dir`` / ``pipeline_steps_dir``, which preserve
@@ -29,8 +29,7 @@ their historical ``mkdir -p`` behavior so callers don't have to guard.
 from __future__ import annotations
 
 import os
-import sys
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Literal
 
 import yaml
@@ -235,7 +234,7 @@ def session_cache_dir(project_dir: Path, session_id: str) -> Path:
     return session_cache_root(project_dir) / session_id
 
 
-# ---------- Library class ----------
+# ---------- Library class (materialized mirror) ----------
 
 
 def library_dir(project_dir: Path) -> Path:
@@ -256,152 +255,6 @@ def skills_dir(project_dir: Path) -> Path:
 def hooks_dir(project_dir: Path) -> Path:
     """Canonical hooks source: ``<ai_hats_dir>/library/hooks/``."""
     return library_dir(project_dir) / "hooks"
-
-
-# ---------- Builtin library SOURCE resolution (HATS-826 / HATS-831) ----------
-#
-# Single source of truth for "where is the builtin ``library/`` the engine
-# composes from?". This is the SHIPPED source (``core``/``usage``/``hooks``/
-# ``core/pipelines``), distinct from :func:`library_dir` (the materialized
-# ``<.agent>/library/`` mirror).
-#
-# ``importlib.resources.files("ai_hats.library")`` hard-pins the editable
-# install to the MAIN repo regardless of cwd, so library edits made inside a
-# linked worktree are otherwise invisible to composition (HATS-826). Routing
-# EVERY consumer (layers, hooks, core pipelines) through these helpers makes
-# worktree-awareness uniform — and a guard test
-# (``test_builtin_library_resolver_single_home``) bans
-# ``files("ai_hats.library")`` anywhere else, so the resolution cannot silently
-# diverge again (HATS-831).
-
-
-def _validated_library_root(raw: str | None) -> Path | None:
-    """A builtin-library root is valid only if it holds BOTH ``core`` and ``usage``.
-
-    A partial root (e.g. ``core`` but no ``usage`` — a corrupt/sparse checkout, or
-    a leaked stale ``AI_HATS_LIBRARY_ROOT`` pointing at a half-removed worktree)
-    is rejected LOUDLY rather than silently dropping the entire ``usage`` layer.
-    Returns the root, or ``None`` (caller falls back to the next resolver).
-    """
-    if not raw:
-        return None
-    root = Path(raw).expanduser()
-    if (root / "core").is_dir() and (root / "usage").is_dir():
-        return root
-    print(
-        f"[ai-hats] AI_HATS_LIBRARY_ROOT={raw!r} has no core/+usage/ pair; "
-        "ignoring it and resolving the builtin library normally.",
-        file=sys.stderr,
-    )
-    return None
-
-
-def _detect_source_library_root(start: Path) -> Path | None:
-    """Walk up from ``start`` for an ai-hats *source* checkout; return its ``library/``.
-
-    A source checkout is a dir holding BOTH ``library/core`` AND ``src/ai_hats``.
-    The ``src/ai_hats`` co-requirement is what distinguishes the engine source
-    repo (and its linked worktrees) from any downstream project that merely has
-    a ``library/core`` of its own — so downstream stays on the installed package
-    (HATS-826 R2). Returns ``<dir>/library`` or ``None``.
-    """
-    for d in (start, *start.parents):
-        if (d / "library" / "core").is_dir() and (d / "src" / "ai_hats").is_dir():
-            return d / "library"
-    return None
-
-
-def _importlib_library_root() -> Path | None:
-    """The installed ``ai_hats.library`` package dir, or ``None`` (broken install).
-
-    File-based setuptools packaging (``package-dir`` maps ``ai_hats.library`` to
-    the ``library/`` tree, no ``__init__.py``), so the resource resolves to a
-    real filesystem path — no ``as_file`` context manager needed; callers get a
-    plain ``Path``.
-    """
-    from importlib.resources import files
-
-    try:
-        root = Path(str(files("ai_hats.library")))
-    except (ModuleNotFoundError, FileNotFoundError):
-        return None
-    return root if root.is_dir() else None
-
-
-def builtin_library_root() -> Path | None:
-    """Resolve the builtin ``library/`` source root (worktree-aware).
-
-    Resolution order (HATS-826), highest precedence first:
-
-    1. ``AI_HATS_LIBRARY_ROOT`` env override — explicit, greppable seam
-       (tests, power users), validated both-``core``-and-``usage`` or rejected.
-    2. **cwd auto-detection** of an ai-hats source checkout — keys off
-       ``Path.cwd()`` so a command run *inside* a worktree resolves THAT
-       worktree's ``library/`` (``importlib`` would hard-pin MAIN).
-    3. ``importlib.resources`` — the installed package (downstream / default).
-
-    Returns the root dir whose children are ``core``/``usage``/``hooks``/… or
-    ``None`` on a broken install. All builtin-library subpaths derive from here.
-    """
-    root = _validated_library_root(os.environ.get("AI_HATS_LIBRARY_ROOT"))
-    if root is None:
-        root = _detect_source_library_root(Path.cwd())
-    if root is not None and (root / "core").is_dir() and (root / "usage").is_dir():
-        return root
-    return _importlib_library_root()
-
-
-def _importlib_library_layers() -> list[Path]:
-    """Resolve ``[core, usage]`` from the installed ``ai_hats.library`` package.
-
-    Falls back to an empty list when the package data is missing (sdist
-    inspection in CI / broken install) — callers degrade gracefully.
-    """
-    root = _importlib_library_root()
-    if root is None:
-        return []
-    return [root / layer for layer in ("core", "usage") if (root / layer).is_dir()]
-
-
-def builtin_library_layers() -> list[Path]:
-    """The builtin ``[core, usage]`` layers (core first = lowest priority).
-
-    Derived from :func:`builtin_library_root`; both layers must exist under the
-    resolved root, else we fall through to the installed package (never a
-    partial builtin).
-    """
-    root = builtin_library_root()
-    if root is None:
-        return []
-    layers = [root / layer for layer in ("core", "usage")]
-    if all(p.is_dir() for p in layers):
-        return layers
-    return _importlib_library_layers()
-
-
-def builtin_library_hooks() -> Path | None:
-    """The builtin ``library/hooks/`` source dir, or ``None`` if unresolved.
-
-    Callers decide on ``None``: the managed-hook whitelist degrades to empty;
-    materialization raises (a broken install is not a state to paper over).
-    """
-    root = builtin_library_root()
-    if root is None:
-        return None
-    hooks = root / "hooks"
-    return hooks if hooks.is_dir() else None
-
-
-def core_pipeline_path(name: str) -> Path | None:
-    """Filesystem path to a builtin core pipeline YAML, or ``None`` if unresolved.
-
-    Returns a plain ``Path`` (file-based packaging, see
-    :func:`_importlib_library_root`) — no ``as_file`` wrapper needed.
-    """
-    root = builtin_library_root()
-    if root is None:
-        return None
-    return root / "core" / "pipelines" / f"{name}.yaml"
 
 
 def wt_hooks_dir(project_dir: Path) -> Path:
@@ -451,7 +304,7 @@ def strip_claude_project_dir(s: str) -> str:
     on-disk existence checks.
     """
     if s.startswith(CLAUDE_PROJECT_DIR_VAR):
-        return s[len(CLAUDE_PROJECT_DIR_VAR):]
+        return s[len(CLAUDE_PROJECT_DIR_VAR) :]
     return s
 
 
@@ -655,24 +508,24 @@ def read_current_sha(project_dir: Path) -> str | None:
 LEGACY_PATH_MAP: dict[str, tuple[LegacyClass, str]] = {
     # Sessions — `.gitlog/` holds both pipeline_runs/ and session_<id>/
     # subdirs; the whole tree moves to sessions/runs/ in one shot.
-    ".gitlog":                ("sessions", "sessions/runs"),
-    ".agent/retrospectives":  ("sessions", "sessions/retros"),
-    ".agent/audits":          ("sessions", "sessions/audits"),
-    ".agent/handoffs":        ("sessions", "sessions/handoffs"),
-    ".agent/experiments":     ("sessions", "sessions/experiments"),
-    ".agent/worktrees":       ("sessions", "sessions/worktrees"),
-    ".agent/worktree.json":   ("sessions", "sessions/worktree.json"),
+    ".gitlog": ("sessions", "sessions/runs"),
+    ".agent/retrospectives": ("sessions", "sessions/retros"),
+    ".agent/audits": ("sessions", "sessions/audits"),
+    ".agent/handoffs": ("sessions", "sessions/handoffs"),
+    ".agent/experiments": ("sessions", "sessions/experiments"),
+    ".agent/worktrees": ("sessions", "sessions/worktrees"),
+    ".agent/worktree.json": ("sessions", "sessions/worktree.json"),
     # Tracker
-    ".agent/backlog":         ("tracker",  "tracker/backlog"),
-    ".agent/hypotheses":      ("tracker",  "tracker/hypotheses"),
-    ".agent/decisions":       ("tracker",  "tracker/decisions"),
-    ".agent/STATE.md":        ("tracker",  "STATE.md"),
+    ".agent/backlog": ("tracker", "tracker/backlog"),
+    ".agent/hypotheses": ("tracker", "tracker/hypotheses"),
+    ".agent/decisions": ("tracker", "tracker/decisions"),
+    ".agent/STATE.md": ("tracker", "STATE.md"),
     # Library
-    ".agent/rules":           ("library",  "library/rules"),
-    ".agent/skills":          ("library",  "library/skills"),
-    ".agent/hooks":           ("library",  "library/hooks"),
+    ".agent/rules": ("library", "library/rules"),
+    ".agent/skills": ("library", "library/skills"),
+    ".agent/hooks": ("library", "library/hooks"),
     # Framework root
-    ".agent/.last_backup":    ("root",     ".last_backup"),
+    ".agent/.last_backup": ("root", ".last_backup"),
 }
 
 
@@ -696,51 +549,49 @@ def legacy_paths_by_class(
     return out
 
 
-# ---------- Config-value validation (used by ProjectConfig validator) ----------
-
-
-def normalize_ai_hats_dir(value: str) -> str:
-    """Validate + normalize an ``ai_hats_dir`` config value.
-
-    Raises ``ValueError`` on:
-      - empty string, ``"."``, ``"/"``
-      - absolute paths (project must be relocatable)
-      - ``..`` segments (escape out of project)
-
-    Normalization: POSIX-style separators, trailing slash stripped.
-    """
-    if not value:
-        raise ValueError("ai_hats_dir must not be empty")
-    p = PurePosixPath(value.replace("\\", "/"))
-    if p.is_absolute():
-        raise ValueError("ai_hats_dir must be relative to project root (not absolute)")
-    if ".." in p.parts:
-        raise ValueError("ai_hats_dir must not contain '..' segments")
-    s = p.as_posix().rstrip("/")
-    if s in {"", ".", "/"}:
-        raise ValueError(f"ai_hats_dir is invalid: {value!r}")
-    return s
-
-
-def normalize_venv_path(value: str) -> str:
-    """Validate + normalize a ``venv_path`` config value (HATS-334).
-
-    Differs from :func:`normalize_ai_hats_dir` by ALLOWING absolute paths —
-    venv may legitimately live outside the project (CI shared cache,
-    system-wide ai-hats venv, user-owned override venv).
-
-    Raises ``ValueError`` on:
-      - empty string, ``"."``, ``"/"``
-      - ``..`` segments (relative escape; not meaningful for absolute either)
-
-    Normalization: POSIX-style separators, trailing slash stripped.
-    """
-    if not value:
-        raise ValueError("venv_path must not be empty")
-    p = PurePosixPath(value.replace("\\", "/"))
-    if ".." in p.parts:
-        raise ValueError("venv_path must not contain '..' segments")
-    s = p.as_posix().rstrip("/")
-    if s in {"", ".", "/"}:
-        raise ValueError(f"venv_path is invalid: {value!r}")
-    return s
+__all__ = [
+    "LegacyClass",
+    "_read_ai_hats_dir_from_yaml",
+    "_read_venv_path_from_yaml",
+    "_is_safe_sha_component",
+    "user_home",
+    "ai_hats_dir",
+    "traces_dir",
+    "pipeline_steps_dir",
+    "sessions_dir",
+    "runs_dir",
+    "retros_dir",
+    "audits_dir",
+    "handoffs_dir",
+    "worktrees_dir",
+    "tracker_dir",
+    "backlog_dir",
+    "tasks_dir",
+    "proposals_dir",
+    "hypotheses_dir",
+    "decisions_dir",
+    "state_md_path",
+    "session_cache_root",
+    "session_cache_dir",
+    "library_dir",
+    "rules_dir",
+    "skills_dir",
+    "hooks_dir",
+    "wt_hooks_dir",
+    "managed_wt_hook_filename",
+    "managed_runtime_hook_filename",
+    "CLAUDE_PROJECT_DIR_VAR",
+    "strip_claude_project_dir",
+    "user_hooks_dir",
+    "last_backup_path",
+    "venv_path",
+    "versions_root",
+    "version_dir",
+    "current_pointer",
+    "complete_sentinel",
+    "is_complete",
+    "is_usable_version",
+    "read_current_sha",
+    "LEGACY_PATH_MAP",
+    "legacy_paths_by_class",
+]
