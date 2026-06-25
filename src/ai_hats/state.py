@@ -264,6 +264,7 @@ class TaskManager:
         final_state: str | None = None,
         force: bool = False,
         reason: str | None = None,
+        caller_cwd: Path | None = None,
     ) -> tuple[TaskCard, list[TaskTransition]]:
         """Transition a task to a new state with file-lock protection.
 
@@ -286,6 +287,9 @@ class TaskManager:
         ``work_log``. State-specific side effects (worktree setup/teardown,
         plan scaffold) still fire based on ``new_state`` — ``--force`` only
         relaxes the guard, not the post-transition machinery.
+
+        ``caller_cwd`` (HATS-840): the operator's raw cwd, threaded from the CLI for
+        the execute-state worktree adopt; ``None`` for programmatic callers.
         """
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -343,7 +347,7 @@ class TaskManager:
                         plan_path = self.tasks_dir / task.id / "plan.md"
                         raise EmptyPlanError(task.id, plan_path, unfilled)
                 if not is_epic:
-                    self._setup_worktree(task)  # epics never get a worktree
+                    self._setup_worktree(task, caller_cwd=caller_cwd)  # epics never get a worktree
             elif new_state == TaskState.DONE:
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 # HATS-596: plumb `force` so a corrective `transition done
@@ -974,7 +978,7 @@ class TaskManager:
             self._update_indexes()
             return [TaskTransition(epic, from_state, epic.state, reason)]
 
-    def _setup_worktree(self, task: TaskCard) -> Path | None:
+    def _setup_worktree(self, task: TaskCard, *, caller_cwd: Path | None = None) -> Path | None:
         """Create or adopt an isolated worktree when task enters execute state.
 
         HATS-061: each task gets its own worktree state slot — no singleton
@@ -985,8 +989,12 @@ class TaskManager:
         defense raises :class:`WorktreeCreateError`. We re-fetch and adopt
         the peer's worktree — both transitions converge on one worktree.
 
-        Returns the adopted linked-worktree path if invoked from inside one
-        (HATS-060 short-circuit), the existing / created / adopted worktree
+        HATS-840: the adopt short-circuit keys on ``caller_cwd`` (the operator's raw
+        cwd from the CLI), not the main-hopped ``self.project_dir``; ``None`` falls
+        back to ``self.project_dir``.
+
+        Returns the adopted linked-worktree's own toplevel if invoked from inside
+        one (HATS-060 short-circuit), the existing / created / adopted worktree
         path on the happy path, or None for non-git projects.
         """
         from .worktree import (
@@ -996,9 +1004,11 @@ class TaskManager:
         )
         from .worktree_hooks import collect_carry_for_role
 
-        # HATS-060: invoked from inside a linked worktree → adopt it.
-        if WorktreeManager.is_inside_linked_worktree(self.project_dir):
-            return self.project_dir
+        # HATS-060 / HATS-840: adopt the worktree the operator is in. Probe the
+        # threaded `caller_cwd`, not the main-hopped `self.project_dir`.
+        adopt_probe = caller_cwd if caller_cwd is not None else self.project_dir
+        if WorktreeManager.is_inside_linked_worktree(adopt_probe):
+            return WorktreeManager.worktree_toplevel(adopt_probe) or adopt_probe
 
         # Per-task lookup (HATS-061) — fast-path, avoids the create-lock
         # roundtrip on the common case. The lock is acquired inside create()
