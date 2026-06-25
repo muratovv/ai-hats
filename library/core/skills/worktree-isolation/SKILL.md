@@ -2,15 +2,18 @@
 name: worktree-isolation
 description: Isolated development using git worktrees so the main branch stays clean. Use when starting any non-trivial task (execute state), doing parallel work on multiple tasks, making risky changes you might want to discard, or delegating to a sub-agent (automatic via ai-hats agent --isolation).
 ---
+
 # Worktree Isolation
 
 Isolated development using git worktrees. Each task gets its own working copy — main branch stays clean.
 
 > **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. Before running any `ai-hats` command, define a resolver once (host launcher on PATH, else the project venv's interpreter — no `bin/ai-hats` console script since HATS-790):
+>
 > ```bash
 > ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
 > ah wt list
 > ```
+>
 > If neither works, the project's venv interpreter lives at `./.venv/bin/python` (invoke the package as `./.venv/bin/python -m ai_hats …`). Resolve the path explicitly — falling back blindly wastes a turn.
 
 ## Workflow
@@ -52,16 +55,28 @@ receives commits. `ai-hats task transition <id> done` will then
 fail with `WorktreeDriftError` and you'll need an ad-hoc recovery.
 
 Rebase **before** closing so drift never accumulates past your
-verification window:
+verification window. Do the rebase IN the worktree, but run the close
+from the MAIN checkout:
 
 ```bash
+# Rebase the task branch in the worktree (git work is fine here):
 cd <worktree-path>
 git fetch --all
 git rebase <base-branch>         # usually master
-# resolve any conflicts
-# re-run the affected tests
-ai-hats task transition <id> done   # framework auto-merges
+# resolve any conflicts; re-run the affected tests
+
+# Close from the MAIN checkout — NOT from inside the worktree. A
+# worktree-backed `transition done` issued from inside its own worktree
+# is refused (HATS-788): the merge runs `git worktree remove` on the cwd
+# you are standing in, which would orphan your shell and desync the tracker.
+cd <project-dir>
+ai-hats task transition <id> done   # auto-merges; do NOT `git merge` by hand
 ```
+
+`transition done` runs the merge for you — never `git merge <task-branch>`
+yourself first (a manual pre-merge collides with the FSM merge, HYP-023). If
+the base moved and the close reports drift, accept it explicitly from the main
+repo with `ai-hats wt merge --accept-drift`, then re-run the transition.
 
 **Skip this for short tasks** (< ~2 hours wall-clock, no review
 rounds). Drift typically only matters on multi-session work; for a
@@ -73,15 +88,15 @@ see the drift block in step 3 of the Workflow above.
 
 ## Commands
 
-| Command | What it does |
-|---------|-------------|
-| `ai-hats wt create <branch>` | Create worktree on new branch |
-| `ai-hats wt merge` | Squash-merge changes back, clean up |
-| `ai-hats wt discard` | Delete worktree and branch |
-| `ai-hats wt list` | Show all worktrees |
-| `ai-hats wt status` | Show active worktree |
-| `ai-hats wt exec -- <cmd>` | Run command in worktree (auto cwd + PYTHONPATH=src) |
-| `ai-hats wt env` | Print `export WT=... PYTHONPATH=...` for eval |
+| Command                      | What it does                                        |
+| ---------------------------- | --------------------------------------------------- |
+| `ai-hats wt create <branch>` | Create worktree on new branch                       |
+| `ai-hats wt merge`           | Squash-merge changes back, clean up                 |
+| `ai-hats wt discard`         | Delete worktree and branch                          |
+| `ai-hats wt list`            | Show all worktrees                                  |
+| `ai-hats wt status`          | Show active worktree                                |
+| `ai-hats wt exec -- <cmd>`   | Run command in worktree (auto cwd + PYTHONPATH=src) |
+| `ai-hats wt env`             | Print `export WT=... PYTHONPATH=...` for eval       |
 
 ## Running Commands in Worktree
 
@@ -99,6 +114,7 @@ PYTHONPATH=$WT/src python -m pytest tests/test_foo.py -xvs
 ```
 
 For interactive shell work (rare):
+
 ```bash
 eval "$(ai-hats wt env)"
 cd $WT
@@ -123,28 +139,33 @@ lifecycle.
 ## Syncing After Skill Edits
 
 After editing `library/{core,usage}/skills/*/SKILL.md`, run:
+
 ```
 ai-hats self init
 ```
+
 This re-copies all skills to `.claude/skills/` and `.agent/ai-hats/library/skills/`.
 **Never manually `cp` skill files** — it generates garbage permission entries.
 
 ## Anti-Patterns
+
 - Working directly on main branch for non-trivial changes — use a worktree
 - Forgetting to `cd` back to project dir before merge/discard — commands fail silently
 - Manually copying skill files with `cp src/.../SKILL.md .claude/skills/.../SKILL.md` — use `ai-hats self init` instead
 - Multiple active worktrees without tracking — leads to forgotten branches
-- Running `ai-hats wt create` from inside a linked worktree — blocked with an error. Always `cd` back to the main repo first.
+- Running `ai-hats wt create` / `wt merge` / `wt discard` / `task transition <id> done|failed|cancelled` from inside a linked worktree — all blocked (HATS-788). The teardown commands run `git worktree remove` on the very cwd you are standing in, orphaning your shell so every later `ai-hats` mis-resolves the tracker. Always `cd` back to the main repo first; use `ai-hats wt exec` / `ai-hats wt env` to act on a worktree without leaving it.
 - Mixing manual `wt create` with `task transition execute` from the main repo — if you created a worktree manually and want the task to use it, `cd` into the worktree first, then transition. Otherwise the transition errors out with a clear remediation message.
 - Invoking `ai-hats wt create` (or `task transition <ID> execute`) while the main repo's HEAD is on a feature branch — blocked with a "Refused: HEAD is not a canonical base" error (HATS-518). Worktrees inherit their merge target from the current branch, so creating from a feature branch causes `wt merge` to silently land on it instead of master. Recovery: `git checkout master` in the main repo, then retry.
 - **Working without committing inside a worktree** — uncommitted work in a worktree is NOT protected. The worktree is a filesystem directory that parallel sessions, cleanup hooks, or `git worktree remove --force` can destroy without warning, and there is **no recovery** for uncommitted changes. Commit at every meaningful checkpoint (every passing test run, every completed sub-task). If a step could be reverted with `git checkout HEAD -- .`, you've waited too long to commit.
 - **Finishing the worktree cycle with raw git** — running `git merge --no-ff <task-branch>`, `git worktree remove`, or a manual `git push` to the base branch instead of `ai-hats wt merge` / `ai-hats task transition <id> done`. The CLI wrappers run the FSM lifecycle hooks — per-branch + base-branch merge-locks, drift-check, stale-lock recovery, state cleanup (HATS-477/484). Raw git skips every one of them and re-opens the race/drift bugs those epics closed; a manual merge *before* FSM-`done` also produces a double-merge conflict that then needs `--force` (HYP-023). **Scope:** this targets the **lifecycle transitions only** (merge-to-base + cleanup + done). Raw git for *inspection* (`git status`/`log`/`diff`, `git worktree list`) and for *in-worktree conflict resolution* during a rebase stays fine.
 
 ## If You End Up With a Stray Worktree
+
 ```
 git worktree list                 # audit
 git worktree remove <path>        # remove a stray linked worktree
 git worktree prune                # clean stale metadata
 rm <ai_hats_dir>/sessions/worktree.json           # if ai-hats state is stale
 ```
+
 Rule of thumb: one task, one worktree, one `<ai_hats_dir>/sessions/worktree.json` (in the main repo).
