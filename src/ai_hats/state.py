@@ -296,9 +296,15 @@ class TaskManager:
         ``force=True`` bypasses the FSM guard for corrective transitions
         (e.g. ``plan → brainstorm`` when planning was started by mistake).
         ``reason`` is required when ``force`` is set and is recorded in
-        ``work_log``. State-specific side effects (worktree setup/teardown,
-        plan scaffold) still fire based on ``new_state`` — ``--force`` only
-        relaxes the guard, not the post-transition machinery.
+        ``work_log``. State-specific side effects (worktree teardown, plan
+        scaffold) still fire based on ``new_state`` — ``--force`` only
+        relaxes the guard, not the post-transition machinery. One carve-out
+        (HATS-697): a forced ``→ execute`` does NOT create a fresh worktree.
+        A forced execute is a manual state correction (often for
+        shipped-on-master work); spinning a worktree off HEAD there orphaned
+        retrospective work in the main tree. The operator creates one
+        explicitly (or is already inside one — still adopted via the CLI cwd
+        probe) if they want isolation.
 
         ``caller_cwd`` (HATS-840): the operator's raw cwd, threaded from the CLI for
         the execute-state worktree adopt; ``None`` for programmatic callers.
@@ -359,8 +365,20 @@ class TaskManager:
                     if unfilled:
                         plan_path = self.tasks_dir / task.id / "plan.md"
                         raise EmptyPlanError(task.id, plan_path, unfilled)
-                if not is_epic:
-                    self._setup_worktree(task, caller_cwd=caller_cwd)  # epics never get a worktree
+                if is_epic:
+                    pass  # epics never get a worktree
+                elif force:
+                    # HATS-697: a forced execute is a manual state correction,
+                    # not the start of isolated work. Spinning a fresh worktree
+                    # off HEAD here orphaned retrospective shipped-on-master work
+                    # in the main tree (PROX-287). The operator owns the worktree
+                    # decision — they `ai-hats wt create` (or are already inside
+                    # one, still adopted via the CLI cwd probe) if they want one.
+                    task.log_work(
+                        "Forced → execute: no worktree created (manual override)"
+                    )
+                else:
+                    self._setup_worktree(task, caller_cwd=caller_cwd)
             elif new_state == TaskState.DONE:
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 # HATS-596: plumb `force` so a corrective `transition done
