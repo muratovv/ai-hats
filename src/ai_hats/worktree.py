@@ -1134,6 +1134,57 @@ class WorktreeManager:
         return bool(result.stdout.strip())
 
     @staticmethod
+    def _git_probe(
+        project_dir: Path, *args: str
+    ) -> subprocess.CompletedProcess[str] | None:
+        """Run ``git <args>`` in ``project_dir`` (captured); None if git is absent."""
+        try:
+            return subprocess.run(
+                ["git", *args], cwd=str(project_dir),
+                capture_output=True, text=True, check=False,
+            )
+        except (FileNotFoundError, OSError):
+            return None
+
+    @classmethod
+    def branch_merged_into_canonical_base(
+        cls,
+        project_dir: Path,
+        branch: str,
+        *,
+        bases: tuple[str, ...] = CANONICAL_BASE_BRANCHES,
+    ) -> str | None:
+        """Return the canonical base ``branch`` is already merged into, else None.
+
+        HATS-697: state-lost twin of the HATS-596 already-merged short-circuit.
+        Resolves the base from the first existing of ``bases`` (injected for
+        testability, R6) and tests ``git merge-base --is-ancestor``. ``None``
+        on a genuine divergence, no canonical base, or an unreadable repo.
+        """
+        for base in bases:
+            exists = cls._git_probe(project_dir, "rev-parse", "--verify", "--quiet", base)
+            if exists is None or exists.returncode != 0:
+                continue
+            anc = cls._git_probe(project_dir, "merge-base", "--is-ancestor", branch, base)
+            return base if anc is not None and anc.returncode == 0 else None
+        return None
+
+    @classmethod
+    def delete_merged_branch(cls, project_dir: Path, branch: str) -> bool:
+        """Best-effort safe-delete (``git branch -d``) of an already-merged branch.
+
+        HATS-697: clears the stale ``task/<id>`` ref after a state-lost
+        finalize; ``-d`` refuses an un-merged branch, so failure is logged,
+        never raised — finalize must not hinge on cleanup. True iff deleted.
+        """
+        res = cls._git_probe(project_dir, "branch", "-d", branch)
+        if res is None or res.returncode != 0:
+            detail = (res.stderr.strip() if res else "git unavailable") or "<no stderr>"
+            logger.warning("Merged-branch cleanup skipped for '%s': %s", branch, detail)
+            return False
+        return True
+
+    @staticmethod
     def _migrate_legacy_lowercase_state(state_path: Path, key: str) -> None:
         """One-shot rename of pre-HATS-482 lowercased state file (B-07).
 
