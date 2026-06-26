@@ -10,3 +10,8 @@ tests/e2e/conftest.py
 # shape is exactly what the privacy hook flags, but the values are fake
 # (sess-normal / sess-mal / sess-sub), no real session IDs or prompts.
 tests/fixtures/transcripts/*.jsonl
+
+# HATS-633: the git-mastery skill doc *catalogues* the secret patterns the hook
+# detects, so its examples (home paths, credentialed DB URIs, token prefixes)
+# are pattern-shaped by design — documentation of the scanner, not a real leak.
+library/core/skills/git-mastery/SKILL.md
