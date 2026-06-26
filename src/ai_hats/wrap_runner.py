@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import os
+import select
 import sys
 import time
 import uuid
@@ -28,6 +29,7 @@ from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
     _ESCAPE_NOTICE,
+    _countdown_hold,
     _scan_escape,
     _cleanup_session_cache,
     _print_session_start,
@@ -161,16 +163,44 @@ class WrapRunner:
             raise
 
     @staticmethod
+    def _poll_enter(timeout: float) -> bool:
+        """Block up to ``timeout`` seconds for the user to press Enter (HATS-847).
+
+        On a TTY, ``select`` waits for stdin to become readable; the terminal is
+        still in cooked mode here (the PTY has not spawned), so it reports ready
+        only on a complete line — exactly an Enter press. The line is drained so
+        the keystroke does not leak into the wrapped TUI's first prompt. Returns
+        ``True`` when Enter arrived (skip the wait), ``False`` on timeout. Off a
+        TTY there is nothing to read, so it just sleeps the budget and never
+        skips — but that path is unreachable in practice (a non-tty start holds
+        for 0 s; see ``_startup_hold_seconds``).
+        """
+        if not sys.stdin.isatty():
+            time.sleep(timeout)
+            return False
+        ready, _, _ = select.select([sys.stdin], [], [], timeout)
+        if not ready:
+            return False
+        sys.stdin.readline()  # drain the Enter line so it doesn't reach the TUI
+        return True
+
+    @staticmethod
     def _sleep_countdown(seconds: float, *, announce: bool) -> None:
-        """Sleep ``seconds``; when ``announce``, show a live 1-Hz countdown."""
+        """Sleep ``seconds``; when ``announce``, show a live 1-Hz countdown that
+        Enter cuts short (HATS-847) — Ctrl-C still aborts via the SIGINT that
+        propagates out of the wait."""
         whole = int(seconds)
         if not announce or whole <= 0:
             time.sleep(seconds)
             return
-        for remaining in range(whole, 0, -1):
-            sys.stdout.write(f"\r\033[2m  starting in {remaining}s — Ctrl-C to abort \033[0m")
+
+        def render(remaining: int) -> None:
+            sys.stdout.write(
+                f"\r\033[2m  starting in {remaining}s — Enter to skip · Ctrl-C to abort \033[0m"
+            )
             sys.stdout.flush()
-            time.sleep(1)
+
+        _countdown_hold(whole, render=render, poll_skip=WrapRunner._poll_enter)
         sys.stdout.write("\r\033[2K")  # wipe the countdown line before the TUI
         sys.stdout.flush()
 

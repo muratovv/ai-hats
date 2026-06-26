@@ -85,7 +85,7 @@ def test_renders_banner_when_update_available_fallback_shas(tmp_path, monkeypatc
     write_cache(tmp_path, _entry_with_update())
     step = RenderUpdateBanner()
     with patch(
-        "ai_hats.pipeline.steps.update_banner.detect_installed_sha",
+        "ai_hats.update_check.detect_installed_sha",
         return_value=_ENTRY_INSTALLED_SHA,
     ):
         step.run(project_dir=tmp_path)
@@ -116,7 +116,7 @@ def test_renders_banner_with_describe_labels(tmp_path, monkeypatch, capsys):
     )
     step = RenderUpdateBanner()
     with patch(
-        "ai_hats.pipeline.steps.update_banner.detect_installed_sha",
+        "ai_hats.update_check.detect_installed_sha",
         return_value=_ENTRY_INSTALLED_SHA,
     ):
         step.run(project_dir=tmp_path)
@@ -193,7 +193,7 @@ def test_silent_when_installed_sha_differs(tmp_path, monkeypatch, capsys):
     write_cache(tmp_path, _entry_with_update())
     step = RenderUpdateBanner()
     with patch(
-        "ai_hats.pipeline.steps.update_banner.detect_installed_sha",
+        "ai_hats.update_check.detect_installed_sha",
         return_value="f" * 40,
     ):
         step.run(project_dir=tmp_path)
@@ -208,7 +208,7 @@ def test_renders_when_installed_sha_matches_short(tmp_path, monkeypatch, capsys)
     write_cache(tmp_path, _entry_with_update())
     step = RenderUpdateBanner()
     with patch(
-        "ai_hats.pipeline.steps.update_banner.detect_installed_sha",
+        "ai_hats.update_check.detect_installed_sha",
         return_value=_ENTRY_INSTALLED_SHA[:9],
     ):
         step.run(project_dir=tmp_path)
@@ -223,7 +223,7 @@ def test_renders_when_installed_sha_unknown(tmp_path, monkeypatch, capsys):
     write_cache(tmp_path, _entry_with_update())
     step = RenderUpdateBanner()
     with patch(
-        "ai_hats.pipeline.steps.update_banner.detect_installed_sha",
+        "ai_hats.update_check.detect_installed_sha",
         return_value=None,
     ):
         step.run(project_dir=tmp_path)
@@ -239,7 +239,7 @@ def test_silent_when_local_channel(tmp_path, monkeypatch, capsys):
     write_cache(tmp_path, _entry_with_update())
     step = RenderUpdateBanner()
     with patch(
-        "ai_hats.pipeline.steps.update_banner.detect_installed_sha",
+        "ai_hats.update_check.detect_installed_sha",
         return_value=_ENTRY_INSTALLED_SHA,
     ):
         step.run(project_dir=tmp_path)

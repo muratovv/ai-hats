@@ -21,9 +21,10 @@ Resolution of ``ai_hats_dir`` itself follows the precedence chain:
      from a v4 yaml; this resolver needs to work during migration too, so it
      tolerates the missing field here.
 
-All path functions are pure (return ``Path`` without ``mkdir``) except
-``ai_hats_dir`` / ``traces_dir`` / ``pipeline_steps_dir``, which preserve
-their historical ``mkdir -p`` behavior so callers don't have to guard.
+All path functions are pure (return ``Path`` without ``mkdir``). Directory
+creation is the job of ``ensure_ai_hats_dir`` — the one validated creator that
+refuses a non-project root — or a sanctioned explicit ``mkdir`` at a write site
+(HATS-839).
 """
 
 from __future__ import annotations
@@ -106,39 +107,89 @@ def user_home() -> Path:
     return Path(raw).expanduser() if raw else Path.home()
 
 
-def ai_hats_dir(project_dir: Path) -> Path:
-    """Base dir for ai-hats managed artefacts.
+class NotAnAiHatsProjectError(Exception):
+    """``project_dir`` is not an onboarded ai-hats project (HATS-839).
 
-    Precedence: ``AI_HATS_DIR`` env > yaml ``ai_hats_dir`` > bootstrap
-    fallback ``.agent/ai-hats/``. Created with ``mkdir -p`` so callers
-    never have to guard.
+    Raised by :func:`ensure_ai_hats_dir` instead of letting a write bootstrap a
+    phantom ``.agent/ai-hats`` skeleton at a wrong-but-alive root (the id-collision
+    engine behind HATS-788). The CLI renders it as a friendly recovery message.
+    """
+
+    def __init__(self, project_dir: Path) -> None:
+        self.project_dir = project_dir
+        super().__init__(
+            f"{project_dir} is not an ai-hats project (no .agent/ or ai-hats.yaml, "
+            "and AI_HATS_DIR is unset). cd to your project root, or run "
+            "`ai-hats init` to onboard it."
+        )
+
+
+def _resolve_ai_hats_base(project_dir: Path) -> Path:
+    """Pure precedence resolution of the base dir — NO mkdir.
+
+    ``AI_HATS_DIR`` env > yaml ``ai_hats_dir`` > bootstrap ``.agent/ai-hats``.
+    Shared by the pure :func:`ai_hats_dir` and the validating
+    :func:`ensure_ai_hats_dir`.
     """
     raw = os.environ.get("AI_HATS_DIR")
     if raw:
-        base = Path(raw).expanduser()
-    else:
-        yaml_value = _read_ai_hats_dir_from_yaml(project_dir)
-        base = (project_dir / yaml_value) if yaml_value else (project_dir / ".agent" / "ai-hats")
+        return Path(raw).expanduser()
+    yaml_value = _read_ai_hats_dir_from_yaml(project_dir)
+    return (project_dir / yaml_value) if yaml_value else (project_dir / ".agent" / "ai-hats")
+
+
+def _is_ai_hats_project(project_dir: Path) -> bool:
+    """True iff ``project_dir`` is an onboarded ai-hats project, or ``AI_HATS_DIR`` opts in.
+
+    Markers: ``AI_HATS_DIR`` env (explicit runtime opt-in), a pre-existing
+    ``ai-hats.yaml``, or a pre-existing ``.agent/`` dir. A stray root has none.
+    """
+    if os.environ.get("AI_HATS_DIR"):
+        return True
+    if (project_dir / "ai-hats.yaml").exists():
+        return True
+    return (project_dir / ".agent").is_dir()
+
+
+def ai_hats_dir(project_dir: Path) -> Path:
+    """Resolve the base dir for ai-hats managed artefacts — PURE, no mkdir (HATS-839).
+
+    Precedence: ``AI_HATS_DIR`` env > yaml ``ai_hats_dir`` > bootstrap
+    ``.agent/ai-hats/``. Returns the path WITHOUT creating it, so resolving against a
+    wrong-but-alive root can never bootstrap a phantom tracker. Creation is the job of
+    :func:`ensure_ai_hats_dir` (validated) or a sanctioned explicit ``mkdir``.
+    """
+    return _resolve_ai_hats_base(project_dir)
+
+
+def ensure_ai_hats_dir(project_dir: Path) -> Path:
+    """Validate ``project_dir`` is an ai-hats project, then create + return the base.
+
+    The single sanctioned creator of the base dir (HATS-839). Unlike the pure
+    :func:`ai_hats_dir`, this ``mkdir``s — but only for a real project
+    (:func:`_is_ai_hats_project`); a stray root raises
+    :class:`NotAnAiHatsProjectError` so no phantom tracker is bootstrapped. Call it
+    at the top of every write op before touching the tracker.
+    """
+    if not _is_ai_hats_project(project_dir):
+        raise NotAnAiHatsProjectError(project_dir)
+    base = _resolve_ai_hats_base(project_dir)
     base.mkdir(parents=True, exist_ok=True)
     return base
 
 
 def traces_dir(project_dir: Path) -> Path:
-    """Pipeline trace JSONL directory: ``<ai_hats_dir>/traces/``."""
-    d = ai_hats_dir(project_dir) / "traces"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    """Pipeline trace JSONL directory: ``<ai_hats_dir>/traces/`` — pure, no mkdir (HATS-839)."""
+    return ai_hats_dir(project_dir) / "traces"
 
 
 def pipeline_steps_dir(project_dir: Path) -> Path:
     """User-authored pipeline-step modules: ``<ai_hats_dir>/pipeline_steps/``.
 
     Modules placed here are auto-imported by ``PipelineHarness`` on entry;
-    see ``pipeline.user_steps.load_user_steps``.
+    see ``pipeline.user_steps.load_user_steps``. Pure — no mkdir (HATS-839).
     """
-    d = ai_hats_dir(project_dir) / "pipeline_steps"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return ai_hats_dir(project_dir) / "pipeline_steps"
 
 
 # ---------- Sessions class ----------
@@ -556,6 +607,10 @@ __all__ = [
     "_is_safe_sha_component",
     "user_home",
     "ai_hats_dir",
+    "NotAnAiHatsProjectError",
+    "ensure_ai_hats_dir",
+    "_resolve_ai_hats_base",
+    "_is_ai_hats_project",
     "traces_dir",
     "pipeline_steps_dir",
     "sessions_dir",
