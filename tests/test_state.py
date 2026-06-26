@@ -60,6 +60,20 @@ def test_auto_id_ignores_foreign_prefix(tmp_path):
     assert fresh.next_id() == "TASK-001"
 
 
+def test_write_op_refused_at_non_project_root(tmp_path, monkeypatch):
+    """HATS-839: a TaskManager write op against a non-project root raises
+    NotAnAiHatsProjectError and bootstraps no phantom .agent/ tracker."""
+    from ai_hats.paths import NotAnAiHatsProjectError
+
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    stray = tmp_path / "stray"  # no .agent/, no ai-hats.yaml
+    stray.mkdir()
+    mgr = TaskManager(stray, strict_plan_check=False)
+    with pytest.raises(NotAnAiHatsProjectError):
+        mgr.create_task("X-1", "should be refused")
+    assert not (stray / ".agent").exists(), "phantom tracker bootstrapped at a stray root"
+
+
 def test_work_log(mgr):
     mgr.create_task("T-1", "Task with logs")
     t = mgr.log_work("T-1", "Started implementation", session_id="sess-001")
@@ -703,8 +717,11 @@ def test_cancel_discards_worktree(git_mgr):
 
 
 def test_execute_inside_linked_worktree_does_not_nest(tmp_path):
-    """HATS-060: `task transition execute` from inside a manually-created
-    linked worktree must NOT create a second nested worktree.
+    """HATS-060 / HATS-840: `task transition execute` from inside a linked worktree
+    adopts it and must NOT create a second nested worktree. The manager runs against
+    MAIN (where `_project_dir()` hops to, HATS-524) and the operator's cwd is threaded
+    as `caller_cwd` (HATS-840); MAIN carries the `.agent/` marker, so the HATS-839
+    write-gate passes.
     """
     project = tmp_path / "project"
     project.mkdir()
@@ -717,13 +734,13 @@ def test_execute_inside_linked_worktree_does_not_nest(tmp_path):
     wt_path = wt.create()
     wt.save_state()
 
-    # Step 2: from inside the linked worktree, create and plan the task.
-    wt_mgr = TaskManager(wt_path, strict_plan_check=False)
-    wt_mgr.create_task("T-1", "Created from inside worktree")
-    wt_mgr.transition("T-1", TaskState.PLAN)
+    # Step 2: create + plan the task (the CLI does this from MAIN).
+    mgr = TaskManager(project, strict_plan_check=False)
+    mgr.create_task("T-1", "Created from main, executed from inside a worktree")
+    mgr.transition("T-1", TaskState.PLAN)
 
-    # Step 3: the line that triggers the bug pre-fix.
-    wt_mgr.transition("T-1", TaskState.EXECUTE)
+    # Step 3: execute while the operator's shell is inside the linked worktree.
+    mgr.transition("T-1", TaskState.EXECUTE, caller_cwd=wt_path)
 
     # Assertion 1: no second worktree created on task/t-1.
     wts = WorktreeManager.list_worktrees(project)
