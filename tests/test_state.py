@@ -1157,6 +1157,11 @@ def test_teardown_worktree_raises_when_state_lost_but_branch_exists(
     returns ``None`` on a real git repo where ``branch_exists("task/t-1")``
     is True. The first stub (failing merge → task stays REVIEW) still
     pins the HATS-481 fail-loud contract.
+
+    HATS-697: the branch must carry genuinely un-merged commits for this
+    guard to fire — the new ancestry-aware short-circuit finalizes an
+    already-merged orphan instead (see
+    ``test_teardown_worktree_finalizes_when_state_lost_but_branch_merged``).
     """
     from ai_hats import worktree as worktree_module
     from ai_hats.worktree import WorktreeStateLostError
@@ -1164,6 +1169,24 @@ def test_teardown_worktree_raises_when_state_lost_but_branch_exists(
     git_mgr.create_task("T-1", "HATS-541 regression")
     git_mgr.transition("T-1", TaskState.PLAN)
     git_mgr.transition("T-1", TaskState.EXECUTE)  # creates task/t-1 branch
+
+    # HATS-697: the guard protects genuinely UN-MERGED work, so the orphan
+    # branch must actually diverge from the base. Commit a file on the
+    # worktree branch (NOT merged anywhere) — otherwise `task/t-1` would be
+    # created at base HEAD and the new ancestry-aware short-circuit would
+    # (correctly) finalize it without a re-merge instead of refusing.
+    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    assert active is not None and active.worktree_path is not None
+    (active.worktree_path / "unmerged.txt").write_text("un-merged work\n")
+    subprocess.run(
+        ["git", "add", "."], cwd=str(active.worktree_path),
+        capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "un-merged worktree work"],
+        cwd=str(active.worktree_path), capture_output=True, check=True,
+    )
+
     git_mgr.transition("T-1", TaskState.DOCUMENT)
     git_mgr.transition("T-1", TaskState.REVIEW)
 
@@ -1202,6 +1225,94 @@ def test_teardown_worktree_raises_when_state_lost_but_branch_exists(
     )
     assert reloaded.completed_at == "", (
         "completed_at must not be persisted when the merge never happened"
+    )
+
+
+def test_teardown_worktree_finalizes_when_state_lost_but_branch_merged(
+    git_mgr, monkeypatch
+):
+    """HATS-697: state lost + branch ALREADY merged → finalize, don't refuse.
+
+    The shipped-on-master / removed-worktree scenario from PROX-287: the
+    ``task/<id>`` work was integrated out-of-band (manual ``git merge
+    --no-ff``) and/or the auto-worktree was removed by hand, leaving
+    ``load_for_task`` → ``None``. Re-merging is a no-op; the old guard
+    raised a FALSE ``WorktreeStateLostError`` ("un-merged commits"). The
+    ancestry-aware short-circuit must instead mark the task DONE and clean
+    up the now-merged branch.
+
+    Fail-under-revert: drop the
+    ``branch_merged_into_canonical_base`` check in ``_teardown_worktree``
+    (raise unconditionally when the branch exists) → this test sees
+    ``WorktreeStateLostError`` and the ``state == DONE`` assertion fails.
+    """
+    from ai_hats import worktree as worktree_module
+
+    git_mgr.create_task("T-1", "HATS-697 already-merged finalize")
+    git_mgr.transition("T-1", TaskState.PLAN)
+    git_mgr.transition("T-1", TaskState.EXECUTE)  # creates task/t-1 branch
+
+    # Commit work on the worktree branch, then merge it into the base in the
+    # main repo (out-of-band) — exactly the manual-ship the FSM must tolerate.
+    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    assert active is not None and active.worktree_path is not None
+    wt_path = active.worktree_path
+    (wt_path / "shipped.txt").write_text("shipped on master\n")
+    subprocess.run(
+        ["git", "add", "."], cwd=str(wt_path),
+        capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "shipped work"],
+        cwd=str(wt_path), capture_output=True, check=True,
+    )
+    base = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(git_mgr.project_dir), capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "merge", "--no-ff", "--no-edit", "task/t-1"],
+        cwd=str(git_mgr.project_dir), capture_output=True, check=True,
+    )
+    base_sha_after_merge = subprocess.run(
+        ["git", "rev-parse", base],
+        cwd=str(git_mgr.project_dir), capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+    git_mgr.transition("T-1", TaskState.DOCUMENT)
+    git_mgr.transition("T-1", TaskState.REVIEW)
+
+    # Reproduce the bug trigger: the auto-worktree was removed by hand,
+    # freeing the (already-merged) branch, and the state JSON is gone.
+    subprocess.run(
+        ["git", "worktree", "remove", "--force", str(wt_path)],
+        cwd=str(git_mgr.project_dir), capture_output=True, check=True,
+    )
+    monkeypatch.setattr(
+        worktree_module.WorktreeManager,
+        "load_for_task",
+        staticmethod(lambda *_a, **_kw: None),
+    )
+
+    # Must NOT raise — the work is integrated, so finalize without re-merge.
+    git_mgr.transition("T-1", TaskState.DONE)
+
+    reloaded = git_mgr.get_task("T-1")
+    assert reloaded.state == TaskState.DONE, (
+        f"already-merged orphan should finalize, got {reloaded.state}"
+    )
+    assert reloaded.completed_at != "", "completed_at must be stamped on DONE"
+    # The now-merged branch was cleaned up (best-effort safe delete).
+    assert not WorktreeManager.branch_exists(git_mgr.project_dir, "task/t-1"), (
+        "merged branch should be deleted by the finalize short-circuit"
+    )
+    # No double-merge: the base ref is unchanged since the manual merge.
+    base_sha_now = subprocess.run(
+        ["git", "rev-parse", base],
+        cwd=str(git_mgr.project_dir), capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert base_sha_now == base_sha_after_merge, (
+        "base ref moved — the short-circuit must NOT run a second git merge"
     )
 
 
