@@ -243,11 +243,16 @@ class SubAgentRunner:
         mode = IsolationMode(isolation_mode)
         session.log_trace(TraceTag.SUB, f"Isolation: {mode.value}")
 
+        # ADR-0013 D3: the context-manager cleanup() fires before_teardown from
+        # __exit__, so the manager must carry ai-hats's hook-running bundle.
+        from .wt_lifecycle import HOOK_LIFECYCLE
+
         with WorktreeManager(
             self.project_dir,
             role_name,
             session.session_id,
             mode,
+            lifecycle=HOOK_LIFECYCLE,
         ) as work_dir:
             session.log_trace(TraceTag.SUB, f"Working directory: {work_dir}")
             t0 = time.monotonic()
