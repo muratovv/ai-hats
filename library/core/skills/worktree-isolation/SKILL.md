@@ -181,3 +181,9 @@ rm <ai_hats_dir>/sessions/worktree.json           # if ai-hats state is stale
 ```
 
 Rule of thumb: one task, one worktree, one `<ai_hats_dir>/sessions/worktree.json` (in the main repo).
+
+## Shipped on Master (Retrospective Close)
+
+Work shipped on the base out-of-band? From `brainstorm`/`plan`: `ai-hats task
+close --resolution "…"`. From `execute`/`document`/`review`: `transition <id>
+done` finalizes an already-merged branch even if the worktree/state is gone (HATS-697).

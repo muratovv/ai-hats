@@ -333,7 +333,8 @@ class HooksManager:
 
         # Failure-mode #5: a binary strictly behind upstream may derive hooks that
         # don't match the merged repo — name the drift but refuse to heal blind
-        # (HATS-833 req-7: never silently skip).
+        # (HATS-833 req-7: never silently skip). Excludes LOCAL channel and a cache
+        # about a different build — see `upstream_update` (HATS-846).
         if self._binary_behind_source():
             return HookSyncResult(
                 status=HookSyncStatus.VERSION_SKEW,
@@ -480,17 +481,20 @@ class HooksManager:
     def _binary_behind_source(self) -> bool:
         """True if the installed ai-hats binary is strictly behind upstream.
 
-        Reuses the update-check cache (the update-banner signal). Best-effort — any
-        read error means "unknown", treated as "not behind" so a healthy heal is
-        never blocked by a cold cache.
+        Routes through the canonical ``update_check.upstream_update`` predicate
+        (HATS-846), so the behind-check honours LOCAL channel + running-SHA match
+        identically to the update banner — heal can no longer diverge from the
+        banner's guard set. On LOCAL this is always False (the dev drives the
+        source with git; the working tree IS the merged source). Best-effort — any
+        error means "unknown", treated as "not behind" so a healthy heal is never
+        blocked by a cold or foreign cache.
         """
         try:
-            from .update_check import read_cache
+            from .update_check import upstream_update
 
-            entry = read_cache(self.project_dir)
+            return upstream_update(self.project_dir) is not None
         except Exception:  # noqa: BLE001 — version-skew detection is best-effort
             return False
-        return bool(entry is not None and entry.has_update)
 
 
 # ----- git-hook mechanics (HATS-837: merged from the former githooks.py) -----

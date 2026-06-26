@@ -170,6 +170,17 @@ class TaskManager:
                         max_num = max(max_num, int(match.group(1)))
         return f"{self.prefix}-{max_num + 1:03d}"
 
+    def _ensure_project(self) -> None:
+        """HATS-839: refuse a write op at a non-project root before any mkdir.
+
+        Validates + creates the base via ``ensure_ai_hats_dir``; a stray root raises
+        ``NotAnAiHatsProjectError`` so no phantom tracker is bootstrapped (the
+        id-collision engine behind HATS-788).
+        """
+        from .paths import ensure_ai_hats_dir
+
+        ensure_ai_hats_dir(self.project_dir)
+
     def create_task(
         self,
         task_id: str,
@@ -189,6 +200,7 @@ class TaskManager:
         accepted silently at the manager level — surface warnings at the
         CLI edge via :meth:`missing_refs` so write paths remain pure.
         """
+        self._ensure_project()
         depends = list(depends_on or [])
         self._reject_self_or_cycle(task_id, parent_task, depends)
         if (self.tasks_dir / task_id / "task.yaml").exists():
@@ -284,13 +296,16 @@ class TaskManager:
         ``force=True`` bypasses the FSM guard for corrective transitions
         (e.g. ``plan → brainstorm`` when planning was started by mistake).
         ``reason`` is required when ``force`` is set and is recorded in
-        ``work_log``. State-specific side effects (worktree setup/teardown,
-        plan scaffold) still fire based on ``new_state`` — ``--force`` only
-        relaxes the guard, not the post-transition machinery.
+        ``work_log``. State-specific side effects (worktree teardown, plan
+        scaffold) still fire based on ``new_state`` — ``--force`` only
+        relaxes the guard, not the post-transition machinery. One carve-out
+        (HATS-697): a forced ``→ execute`` creates no fresh worktree — it is a
+        manual state correction, so the operator owns the worktree decision.
 
         ``caller_cwd`` (HATS-840): the operator's raw cwd, threaded from the CLI for
         the execute-state worktree adopt; ``None`` for programmatic callers.
         """
+        self._ensure_project()
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -346,14 +361,21 @@ class TaskManager:
                     if unfilled:
                         plan_path = self.tasks_dir / task.id / "plan.md"
                         raise EmptyPlanError(task.id, plan_path, unfilled)
-                if not is_epic:
-                    self._setup_worktree(task, caller_cwd=caller_cwd)  # epics never get a worktree
+                if is_epic:
+                    pass  # epics never get a worktree
+                elif force:
+                    # HATS-697: forced execute is a manual state correction —
+                    # no fresh worktree (spinning one off HEAD orphaned retro
+                    # work, PROX-287). Operator owns the worktree decision.
+                    task.log_work(
+                        "Forced → execute: no worktree created (manual override)"
+                    )
+                else:
+                    self._setup_worktree(task, caller_cwd=caller_cwd)
             elif new_state == TaskState.DONE:
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                # HATS-596: plumb `force` so a corrective `transition done
-                # --force` reaches the merge guards (e.g. bypass _check_clean
-                # on an already-merged worktree). force does NOT relax the
-                # HEAD-mismatch guard — that stays a correctness gate.
+                # HATS-596: `force` lets `done --force` bypass _check_clean;
+                # it does NOT relax the HEAD-mismatch correctness guard.
                 self._teardown_worktree(task, merge=True, force=force)
             elif new_state == TaskState.FAILED:
                 self._teardown_worktree(task, merge=False)
@@ -373,6 +395,7 @@ class TaskManager:
 
     def log_work(self, task_id: str, message: str, session_id: str = "") -> TaskCard:
         """Append a work log entry to a task."""
+        self._ensure_project()
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -412,6 +435,7 @@ class TaskManager:
         untouched. ``add_depends`` / ``remove_depends`` mutate the list
         the same way ``add_tags`` / ``remove_tags`` do.
         """
+        self._ensure_project()
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -472,6 +496,7 @@ class TaskManager:
         """
         if not (resolution and resolution.strip()):
             raise ValueError("close_task requires a non-empty resolution")
+        self._ensure_project()
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -525,6 +550,7 @@ class TaskManager:
         if not blob_path.is_file():
             raise ValueError(f"blob not found: {blob_path}")
 
+        self._ensure_project()
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -572,6 +598,7 @@ class TaskManager:
         """
         from .attachments import attachments_dir
 
+        self._ensure_project()
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -648,6 +675,7 @@ class TaskManager:
         # Two-card writes don't share a single lock — we take both serially,
         # smaller-ID-first to avoid deadlocks under concurrent link/unlink.
         ids_sorted = sorted([from_id, to_id])
+        self._ensure_project()
         lock_a = self.tasks_dir / ids_sorted[0] / ".lock"
         lock_b = self.tasks_dir / ids_sorted[1] / ".lock"
         lock_a.parent.mkdir(parents=True, exist_ok=True)
@@ -720,6 +748,7 @@ class TaskManager:
             raise ValueError(f"Task '{to_id}' not found")
 
         ids_sorted = sorted([from_id, to_id])
+        self._ensure_project()
         lock_a = self.tasks_dir / ids_sorted[0] / ".lock"
         lock_b = self.tasks_dir / ids_sorted[1] / ".lock"
         lock_a.parent.mkdir(parents=True, exist_ok=True)
@@ -821,6 +850,7 @@ class TaskManager:
         """Synchronize STATE.md with current task cards. Returns task count."""
         from .safe_delete import discard as _safe_discard
 
+        self._ensure_project()
         headers = self._iter_headers()
         self._update_state_md(headers)
         if self._legacy_backlog_md_path.exists():
@@ -1084,31 +1114,30 @@ class TaskManager:
 
         active = WorktreeManager.load_for_task(self.project_dir, task.id)
         if active is None:
-            # HATS-541 fail-loud, defense-in-depth: a worktree state may be
-            # gone while a ``task/<id>`` branch still exists. Post-HATS-587
-            # a *failed* ``Worktree.merge()`` no longer produces this orphan
-            # (F5: merge failure preserves worktree + state + branch for a
-            # clean retry). The guard still covers the residual causes:
-            # manual ``rm`` of the state JSON, a crash between
-            # ``_remove_worktree`` and ``_clear_state`` on the SUCCESS path,
-            # and pre-587 orphans created before that fix landed.
-            #
-            # A silent return here on the ``merge=True`` path would let
-            # ``_save_task`` stamp DONE without any merge ever happening —
-            # the silent-data-loss class HATS-481/541 exist to prevent.
-            #
-            # If a ``task/<id>`` branch still exists in the repo, refuse
-            # the transition and point the user at manual recovery.
-            # If the branch is also absent (true admin no-op, or
-            # legitimately never had a worktree), keep silent return.
-            #
-            # merge=False (discard) path: stay silent — discard is
-            # intentionally lossy by design, and refusing it would
-            # block admin closes.
+            # State JSON gone but the branch may survive (manual rm,
+            # success-path crash, pre-587 orphan). On merge=True a silent
+            # return would stamp DONE with no merge — the HATS-481/541
+            # silent-data-loss class. So when the branch exists:
+            # already-merged → finalize without re-merge (HATS-697, the
+            # state-lost twin of the HATS-596 short-circuit) + drop the stale
+            # ref; genuinely un-merged → fail-loud (force is NOT a data-loss
+            # hatch). Branch absent, or merge=False discard → silent.
             if merge:
                 branch_name = f"task/{task.id.lower()}"
                 if WorktreeManager.branch_exists(self.project_dir, branch_name):
-                    raise WorktreeStateLostError(task.id, branch_name)
+                    base = WorktreeManager.branch_merged_into_canonical_base(
+                        self.project_dir, branch_name
+                    )
+                    if base is None:
+                        raise WorktreeStateLostError(task.id, branch_name)
+                    WorktreeManager.delete_merged_branch(
+                        self.project_dir, branch_name
+                    )
+                    logger.info(
+                        "Task %s branch '%s' already merged into '%s' — "
+                        "finalizing without re-merge (HATS-697)",
+                        task.id, branch_name, base,
+                    )
             return
 
         try:
