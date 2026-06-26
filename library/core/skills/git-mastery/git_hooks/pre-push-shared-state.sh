@@ -58,12 +58,16 @@ done
 if [[ $blocked -eq 1 ]]; then
     cat >&2 <<EOF
 
-This rewrites shared history with no clean undo path (HATS-437). Pause and
-ask the user before continuing. Do NOT chain forced pushes with other
-git commands.
+This rewrites shared history with no clean undo path (HATS-437).
 
-Override for a single push (only after user has confirmed):
-  AI_HATS_SHARED_STATE_ACK=1 git push ...
+Recover without wasting turns (rule_pause_before_shared_state_write):
+  1. Do NOT retry or re-issue the push — the block is deliberate, not a
+     transient error, and will deny again.
+  2. In your NEXT turn, show the user the exact push and ask for explicit
+     go-ahead. Do not act in the same turn that announces it.
+  3. Only after the user confirms, re-run the SINGLE push with the ack prefix
+     (do not chain it with other git commands):
+       AI_HATS_SHARED_STATE_ACK=1 git push ...
 EOF
     exit 1
 fi
