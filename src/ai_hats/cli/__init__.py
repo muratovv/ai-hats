@@ -391,4 +391,12 @@ def main_entry() -> None:
         path = _extract_tree_path(sys.argv[1:])
         print_subtree(main, path, console)
         sys.exit(0)
-    main()
+    # HATS-839: a write op resolved to a non-project root — render the library
+    # NotAnAiHatsProjectError as a friendly message instead of a traceback.
+    from ..paths import NotAnAiHatsProjectError
+
+    try:
+        main()
+    except NotAnAiHatsProjectError as exc:
+        console.print(f"[red]Error:[/] {exc}")
+        sys.exit(2)

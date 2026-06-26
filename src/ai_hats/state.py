@@ -170,6 +170,17 @@ class TaskManager:
                         max_num = max(max_num, int(match.group(1)))
         return f"{self.prefix}-{max_num + 1:03d}"
 
+    def _ensure_project(self) -> None:
+        """HATS-839: refuse a write op at a non-project root before any mkdir.
+
+        Validates + creates the base via ``ensure_ai_hats_dir``; a stray root raises
+        ``NotAnAiHatsProjectError`` so no phantom tracker is bootstrapped (the
+        id-collision engine behind HATS-788).
+        """
+        from .paths import ensure_ai_hats_dir
+
+        ensure_ai_hats_dir(self.project_dir)
+
     def create_task(
         self,
         task_id: str,
@@ -189,6 +200,7 @@ class TaskManager:
         accepted silently at the manager level — surface warnings at the
         CLI edge via :meth:`missing_refs` so write paths remain pure.
         """
+        self._ensure_project()
         depends = list(depends_on or [])
         self._reject_self_or_cycle(task_id, parent_task, depends)
         if (self.tasks_dir / task_id / "task.yaml").exists():
@@ -291,6 +303,7 @@ class TaskManager:
         ``caller_cwd`` (HATS-840): the operator's raw cwd, threaded from the CLI for
         the execute-state worktree adopt; ``None`` for programmatic callers.
         """
+        self._ensure_project()
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -373,6 +386,7 @@ class TaskManager:
 
     def log_work(self, task_id: str, message: str, session_id: str = "") -> TaskCard:
         """Append a work log entry to a task."""
+        self._ensure_project()
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -412,6 +426,7 @@ class TaskManager:
         untouched. ``add_depends`` / ``remove_depends`` mutate the list
         the same way ``add_tags`` / ``remove_tags`` do.
         """
+        self._ensure_project()
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -472,6 +487,7 @@ class TaskManager:
         """
         if not (resolution and resolution.strip()):
             raise ValueError("close_task requires a non-empty resolution")
+        self._ensure_project()
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -525,6 +541,7 @@ class TaskManager:
         if not blob_path.is_file():
             raise ValueError(f"blob not found: {blob_path}")
 
+        self._ensure_project()
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -572,6 +589,7 @@ class TaskManager:
         """
         from .attachments import attachments_dir
 
+        self._ensure_project()
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -648,6 +666,7 @@ class TaskManager:
         # Two-card writes don't share a single lock — we take both serially,
         # smaller-ID-first to avoid deadlocks under concurrent link/unlink.
         ids_sorted = sorted([from_id, to_id])
+        self._ensure_project()
         lock_a = self.tasks_dir / ids_sorted[0] / ".lock"
         lock_b = self.tasks_dir / ids_sorted[1] / ".lock"
         lock_a.parent.mkdir(parents=True, exist_ok=True)
@@ -720,6 +739,7 @@ class TaskManager:
             raise ValueError(f"Task '{to_id}' not found")
 
         ids_sorted = sorted([from_id, to_id])
+        self._ensure_project()
         lock_a = self.tasks_dir / ids_sorted[0] / ".lock"
         lock_b = self.tasks_dir / ids_sorted[1] / ".lock"
         lock_a.parent.mkdir(parents=True, exist_ok=True)
@@ -821,6 +841,7 @@ class TaskManager:
         """Synchronize STATE.md with current task cards. Returns task count."""
         from .safe_delete import discard as _safe_discard
 
+        self._ensure_project()
         headers = self._iter_headers()
         self._update_state_md(headers)
         if self._legacy_backlog_md_path.exists():
