@@ -144,29 +144,27 @@ def _raise_teardown_aborted(
 ) -> NoReturn:
     """Raise the core abort wrapping a :class:`WorktreeHookError` cause (D8).
 
-    The ``__cause__`` carries the full recovery recipe the CLI surfaces via
-    ``str(e.__cause__)`` on the propagated merge/discard routes. The abort's own
-    message is what the core's ``cleanup`` route logs (it suppresses the abort,
-    so it never reaches the CLI) — so on ``cleanup`` it must itself name the
-    recovery, keeping the sub-agent-path message actionable (D8 provenance).
+    The ``__cause__`` carries the full recovery recipe. On the propagated
+    merge/discard routes the CLI surfaces ``str(e.__cause__)`` and the FSM
+    surfaces ``str(exc)`` — so the abort message there is kept identical to the
+    cause (rich on both). The ``cleanup`` route SUPPRESSES the abort and logs
+    only ``str(exc)`` (the cause is never surfaced), so its abort message must
+    itself name the sub-agent recovery (D8 provenance).
     """
     skill = row.get("skill", "?")
-    cause = WorktreeHookError(
+    detail = (
         f"wt_out hook from skill '{skill}' failed on {event} ({reason}). "
         f"Teardown aborted — worktree '{branch_name}' preserved. Fix the hook "
         f"and retry, or force with --skip-hooks (accepts the data loss)."
     )
+    cause = WorktreeHookError(detail)
     if event == "cleanup":
         message = (
-            f"wt_out hook failed during cleanup of '{branch_name}' — worktree "
-            f"preserved; recover with `ai-hats wt discard {branch_name} "
-            f"--skip-hooks`: {reason}"
+            f"wt_out hook failed on cleanup — recover with "
+            f"`ai-hats wt discard {branch_name} --skip-hooks`: {reason}"
         )
     else:
-        message = (
-            f"wt_out hook from skill '{skill}' failed on {event} — teardown "
-            f"aborted, worktree '{branch_name}' preserved ({reason})."
-        )
+        message = detail
     raise WorktreeTeardownAborted(message) from cause
 
 
