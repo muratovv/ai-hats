@@ -1032,7 +1032,7 @@ class TaskManager:
             WorktreeManager,
             assert_head_is_canonical_base,
         )
-        from .worktree_hooks import collect_carry_for_role
+        from .wt_carry import collect_carry_for_role
 
         # HATS-060 / HATS-840: adopt the worktree the operator is in. Probe the
         # threaded `caller_cwd`, not the main-hopped `self.project_dir`.
