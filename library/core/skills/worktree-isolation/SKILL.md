@@ -184,19 +184,6 @@ Rule of thumb: one task, one worktree, one `<ai_hats_dir>/sessions/worktree.json
 
 ## Shipped on Master (Retrospective Close)
 
-Work sometimes lands on the base branch out-of-band — a direct commit, or a
-manual `git merge --no-ff task/<id>` — and the tracker still needs to catch up.
-Route by the card's current state; do NOT force-walk the FSM by hand:
-
-- **From `brainstorm` / `plan`** — `ai-hats task close --resolution "shipped on
-  master"`. Fast-close straight to `done` with no worktree theatre. (Do NOT
-  `transition execute --force` to "walk it forward" — a forced execute
-  deliberately creates no worktree, HATS-697, but `close` is the intended path.)
-- **From `execute` / `document` / `review`** — `ai-hats task transition <id>
-  done`. If the `task/<id>` branch is already merged into the base, the close
-  finalizes WITHOUT a re-merge even when the auto-worktree was removed and its
-  state is gone (HATS-697). No manual `git branch -d` workaround needed.
-
-Only a branch that GENUINELY diverges from the base (commits not yet in it) +
-lost worktree state still refuses with `Refused (worktree state lost)` — the
-message walks you through merging the work or abandoning it.
+Work shipped on the base out-of-band? From `brainstorm`/`plan`: `ai-hats task
+close --resolution "…"`. From `execute`/`document`/`review`: `transition <id>
+done` finalizes an already-merged branch even if the worktree/state is gone (HATS-697).
