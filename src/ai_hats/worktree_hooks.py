@@ -24,15 +24,12 @@ Contract (D7):
 
 from __future__ import annotations
 
-import logging
 import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from .worktree_locks import LIFECYCLE_LOCK_TIMEOUT
-
-logger = logging.getLogger(__name__)
 
 # Default per-hook wall-clock budget. Strictly below LIFECYCLE_LOCK_TIMEOUT so
 # the timeout — not the lock — is what bounds a hung hook (see module docstring).

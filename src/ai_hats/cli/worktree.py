@@ -218,9 +218,10 @@ def wt_merge(
     except WorktreeTeardownAborted as e:
         # HATS-823 / ADR-0013 D8: a wt_out hook failed; teardown aborted
         # fail-closed, the worktree + gitignored data are preserved. The hook
-        # detail (recovery + --skip-hooks escape) rides as the __cause__.
+        # detail (recovery + --skip-hooks escape) rides as the __cause__; fall
+        # back to the abort itself for a future causeless (non-hook) veto.
         from rich.markup import escape as _escape
-        console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e.__cause__))}")
+        console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e.__cause__ or e))}")
         sys.exit(1)
     except WorktreeDirtyError as e:
         console.print(f"[red]Refused[/]: {e}")
@@ -373,9 +374,10 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
     except WorktreeTeardownAborted as e:
         # HATS-823 / ADR-0013 D8: `discard` is still fail-closed on a wt_out hook
         # — the data may matter even when the work doesn't. The hook detail
-        # (--skip-hooks escape) rides as the __cause__.
+        # (--skip-hooks escape) rides as the __cause__; fall back to the abort
+        # itself for a future causeless (non-hook) veto.
         from rich.markup import escape as _escape
-        console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e.__cause__))}")
+        console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e.__cause__ or e))}")
         sys.exit(1)
     except WorktreeDirtyError as e:
         console.print(f"[red]Refused[/]: {e}")

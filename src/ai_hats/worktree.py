@@ -1016,7 +1016,7 @@ class WorktreeManager:
         return None
 
     # ------------------------------------------------------------------
-    # Worktree lifecycle hooks (HATS-823, ADR-0012)
+    # Lifecycle extension-point firing (ADR-0013 D2/D3; hooks run ai-hats-side)
     # ------------------------------------------------------------------
 
     def _lifecycle_ctx(self, *, skip_hooks: bool = False) -> LifecycleContext:
