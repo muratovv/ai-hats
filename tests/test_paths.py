@@ -12,6 +12,7 @@ from ai_hats.paths import (
     complete_sentinel,
     current_pointer,
     decisions_dir,
+    ensure_ai_hats_dir,
     handoffs_dir,
     hooks_dir,
     hypotheses_dir,
@@ -22,6 +23,7 @@ from ai_hats.paths import (
     library_dir,
     normalize_ai_hats_dir,
     normalize_venv_path,
+    NotAnAiHatsProjectError,
     pipeline_steps_dir,
     proposals_dir,
     read_current_sha,
@@ -47,7 +49,7 @@ def test_ai_hats_dir_default(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     base = ai_hats_dir(tmp_path)
     assert base == tmp_path / ".agent" / "ai-hats"
-    assert base.is_dir()
+    assert not base.exists()  # HATS-839: pure resolution, nothing created
 
 
 def test_ai_hats_dir_env_override(tmp_path, monkeypatch):
@@ -56,7 +58,7 @@ def test_ai_hats_dir_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_DIR", str(custom))
     base = ai_hats_dir(tmp_path / "project")
     assert base == custom
-    assert base.is_dir()
+    assert not base.exists()
 
 
 def test_ai_hats_dir_env_expands_user(tmp_path, monkeypatch):
@@ -65,24 +67,24 @@ def test_ai_hats_dir_env_expands_user(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_DIR", "~/my-ai-hats")
     base = ai_hats_dir(tmp_path / "project")
     assert base == tmp_path / "my-ai-hats"
-    assert base.is_dir()
+    assert not base.exists()
 
 
-def test_ai_hats_dir_idempotent_mkdir(tmp_path, monkeypatch):
-    """Calling twice doesn't fail and returns same path."""
+def test_ai_hats_dir_pure_resolution_creates_nothing(tmp_path, monkeypatch):
+    """HATS-839: ai_hats_dir resolves a stable path but never creates it."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     first = ai_hats_dir(tmp_path)
     second = ai_hats_dir(tmp_path)
     assert first == second
-    assert first.is_dir()
+    assert not first.exists()
 
 
 def test_traces_dir_under_ai_hats(tmp_path, monkeypatch):
-    """traces_dir is <ai_hats_dir>/traces and gets created."""
+    """traces_dir is <ai_hats_dir>/traces — pure resolution, not created (HATS-839)."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     td = traces_dir(tmp_path)
     assert td == tmp_path / ".agent" / "ai-hats" / "traces"
-    assert td.is_dir()
+    assert not td.exists()
 
 
 def test_traces_dir_respects_env_override(tmp_path, monkeypatch):
@@ -91,7 +93,7 @@ def test_traces_dir_respects_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_DIR", str(custom))
     td = traces_dir(tmp_path / "project")
     assert td == custom / "traces"
-    assert td.is_dir()
+    assert not td.exists()
 
 
 def test_pipeline_steps_dir_under_ai_hats(tmp_path, monkeypatch):
@@ -99,7 +101,7 @@ def test_pipeline_steps_dir_under_ai_hats(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     psd = pipeline_steps_dir(tmp_path)
     assert psd == tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
-    assert psd.is_dir()
+    assert not psd.exists()
 
 
 def test_pipeline_steps_dir_respects_env_override(tmp_path, monkeypatch):
@@ -108,7 +110,45 @@ def test_pipeline_steps_dir_respects_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_DIR", str(custom))
     psd = pipeline_steps_dir(tmp_path / "project")
     assert psd == custom / "pipeline_steps"
-    assert psd.is_dir()
+    assert not psd.exists()
+
+
+# ---------- HATS-839: ensure_ai_hats_dir (validating creator) ----------
+
+
+def test_ensure_ai_hats_dir_raises_for_non_project(tmp_path, monkeypatch):
+    """A bare dir (no marker, no env) is not an ai-hats project → refuse, create nothing."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    with pytest.raises(NotAnAiHatsProjectError):
+        ensure_ai_hats_dir(tmp_path)
+    assert not (tmp_path / ".agent").exists()
+
+
+def test_ensure_ai_hats_dir_creates_with_yaml_marker(tmp_path, monkeypatch):
+    """`ai-hats.yaml` marks an onboarded project → create + return the base."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    (tmp_path / "ai-hats.yaml").write_text("schema_version: 4\nprovider: claude\n")
+    base = ensure_ai_hats_dir(tmp_path)
+    assert base == tmp_path / ".agent" / "ai-hats"
+    assert base.is_dir()
+
+
+def test_ensure_ai_hats_dir_creates_with_agent_marker(tmp_path, monkeypatch):
+    """A pre-existing `.agent/` marks an onboarded project → create + return the base."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    (tmp_path / ".agent").mkdir()
+    base = ensure_ai_hats_dir(tmp_path)
+    assert base == tmp_path / ".agent" / "ai-hats"
+    assert base.is_dir()
+
+
+def test_ensure_ai_hats_dir_creates_with_env_optin(tmp_path, monkeypatch):
+    """`AI_HATS_DIR` is an explicit opt-in → create + return the override path."""
+    custom = tmp_path / "runtime"
+    monkeypatch.setenv("AI_HATS_DIR", str(custom))
+    base = ensure_ai_hats_dir(tmp_path / "project")
+    assert base == custom
+    assert base.is_dir()
 
 
 # ---------- HATS-316: yaml-based resolution ----------
@@ -122,7 +162,7 @@ def test_ai_hats_dir_reads_yaml(tmp_path, monkeypatch):
     )
     base = ai_hats_dir(tmp_path)
     assert base == tmp_path / "custom" / "runtime"
-    assert base.is_dir()
+    assert not base.exists()
 
 
 def test_ai_hats_dir_env_overrides_yaml(tmp_path, monkeypatch):
