@@ -10,9 +10,49 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-26
+
+Headline: epic **HATS-835 — worktree lifecycle & merge robustness**. A sweep
+that hardens the git-worktree lifecycle (create → merge → teardown → tracker
+consistency) against the failure modes that silently lost or corrupted state.
+
+### Fixed
+
+- **`task transition done` tolerates an already-merged, state-lost branch**
+  (HATS-697). When work shipped on the base out-of-band (manual `git merge
+  --no-ff task/<id>`) and/or the auto-worktree was removed by hand, `done`
+  refused with a false `worktree state lost` ("un-merged commits") even though
+  the branch was fully integrated. It now detects the already-merged branch,
+  finalizes without a re-merge, and cleans up the stale ref; only a genuinely
+  divergent branch still refuses (the silent-data-loss guard stays intact).
+- **Forced `execute` spins no fresh worktree** (HATS-697). `transition execute
+  --force` is a manual state correction; it no longer creates a worktree off
+  HEAD that orphaned retrospective shipped-on-master work in the main tree.
+- **In-worktree `transition done` / `close` is refused before teardown**
+  (HATS-788). Running it from inside the task's own linked worktree used to
+  delete the cwd and leave the CLI resolving a phantom tracker (false `task
+  not found`); it now refuses with guidance and preserves the worktree.
+- **No phantom tracker on a wrong-but-alive root** (HATS-839). `<ai_hats_dir>`
+  is no longer created unconditionally, which had resurrected a phantom
+  `.agent/` tracker and drove the HATS-788 id-collision.
+- **Worktree-adopt short-circuit works from inside a worktree** (HATS-840).
+  The HATS-060 adopt path no longer no-ops on a hopped `_project_dir`, so it
+  adopts the caller's worktree instead of spinning a fresh one off main.
+- **Typed refusal for `original_branch: null`** (HATS-714). `wt merge` /
+  `task transition done` raise an "incomplete worktree state" error naming the
+  field instead of an opaque `TypeError`.
+- **`execute --batch` without `--role` fails cleanly** (HATS-827), instead of
+  crashing on an invalid `agent//<session>` worktree branch.
+
+### Added
+
+- Capstone e2e matrix `test_worktree_lifecycle_robustness_matrix.py` asserting
+  the epic's invariants hold together on the real launcher + binary.
+
 ## [0.10.0] - 2026-06-20
 
 ### Added
+
 - **Self-location guard + out-of-band recovery + stray-shadow detector**
   (HATS-791, child of HATS-786). Closes the residual "shadow" case HATS-790's
   generator removal left open: a stale ai-hats running from a FOREIGN
@@ -48,6 +88,7 @@ since the latest tag lives under **Unreleased** until the next release.
   overwrite a file whose on-disk schema is newer than this binary knows.
 
 ### Removed
+
 - **Migration:** see [`docs/migration-v0.10.0.md`](docs/migration-v0.10.0.md) for
   the one-time crossover (reinstall the host launcher; clear stray app-venv
   installs). **Removed the `ai-hats` console-script entry point; `python -m
@@ -60,14 +101,15 @@ since the latest tag lives under **Unreleased** until the next release.
   `bin/python` + a `python -c "import ai_hats"` import probe rather than the
   removed console-script proxy. `is_usable_version` / `read_current_sha`
   (`paths.py`) drop the `bin/ai-hats` clause and key on the `.complete` sentinel
-  + `bin/python` (behaviour-equivalent for any real install). `python -m ai_hats`
-  routes through `main_entry` so `--tree` / `--help --tree` ordering is identical
-  to the old console entry. The host launcher remains named `ai-hats` and on
-  `$PATH` — only the per-venv generated binary is gone.
+  - `bin/python` (behaviour-equivalent for any real install). `python -m ai_hats`
+    routes through `main_entry` so `--tree` / `--help --tree` ordering is identical
+    to the old console entry. The host launcher remains named `ai-hats` and on
+    `$PATH` — only the per-venv generated binary is gone.
 
 ## [0.9.0] - 2026-06-17
 
 ### Added
+
 - **Release CI to PyPI via OIDC trusted publishing** (HATS-765, child of the
   HATS-762 distribution overhaul). A new `.github/workflows/release.yml` builds
   the wheel + sdist with `uv build` and publishes to PyPI on a `v*` tag push via
@@ -88,6 +130,7 @@ since the latest tag lives under **Unreleased** until the next release.
   session artefacts, making the channel falsifiable.
 
 ### Changed
+
 - **Deleted the dead lifecycle `hooks:` composition channel; re-homed the one
   real consumer** (HATS-707, child of HATS-699 / HATS-698 audit). The
   role/trait `composition.hooks` channel (`CompositionResult.hooks`,
@@ -155,6 +198,7 @@ since the latest tag lives under **Unreleased** until the next release.
   into the `Provider` base — was already delivered by HATS-701.)
 
 ### Removed
+
 - **`ai-hats self clean` command** (HATS-709, child of HATS-699 / HATS-698
   audit — finding 2a-F3). A total no-op on v4: framework content is composed
   in memory (HATS-294), so the rules/skills mirrors it wiped are empty, the
@@ -182,6 +226,7 @@ since the latest tag lives under **Unreleased** until the next release.
   now a no-op (artefacts are still kept and GC'd at the next `__enter__`).
 
 ### Fixed
+
 - **Two real-subprocess e2e files now run in the pre-push gate that protects
   master** (HATS-746, audit 4b-F4 of HATS-698). `tests/e2e/test_wave1_free_tier.py`
   (3 free-tier pilots) and `tests/e2e/test_wt_merge_ambiguity_guard.py` (2 tests —
@@ -249,6 +294,7 @@ since the latest tag lives under **Unreleased** until the next release.
 ## [0.8.0] - 2026-06-07
 
 ### Added
+
 - **`compute_usage` step + `usage.json` per-session context-cost report**
   (HATS-664, first child of HATS-663 session-observability epic) — a transcript-
   first parser that turns one Claude Code JSONL session into a machine-readable
@@ -455,6 +501,7 @@ since the latest tag lives under **Unreleased** until the next release.
   `AI_HATS_NO_RAW_DESTRUCTIVE_SKIP=1 git commit ...` (HATS-470).
 
 ### Changed
+
 - **Pre-push e2e gate decoupled from the push connection** (HATS-686)
   — the maintainer master-push gate ran the ~27-min `pytest -m "(integration
   or smoke) and not quarantine" tests/e2e/ tests/smoke/` suite *inside* the
@@ -531,7 +578,7 @@ since the latest tag lives under **Unreleased** until the next release.
     `_claude_jsonl_path` + `_discover_claude_jsonl` mtime fallback.
   - New `run_session_end` step (`src/ai_hats/pipeline/steps/run_session_end.py`)
     — retro decision + `write_retro_log` + `_spawn_session_reviewer_background`
-    + SESSION_END hooks + cyan retro reminder banner.
+    - SESSION_END hooks + cyan retro reminder banner.
   - Two new sub-pipelines `library/core/pipelines/finalize-hitl.yaml`
     (`make_audit + run_session_end`) and `finalize-subagent.yaml`
     (`make_audit` only). Invoked by `WrapRunner.run` /
@@ -569,12 +616,12 @@ since the latest tag lives under **Unreleased** until the next release.
   stays silent (no per-session orphan-warning spam). Internal
   refactor: `Assembler.bump()` was removed; the `do_bump` CLI
   composes `_run_v07_migration` + `compose_for_role` + `_refresh`
-  + `_run_diagnostics` inline. `cli/assembly.py`'s post-init
-  auto-bump block was removed (init itself is the refresh path).
-  Behaviour change on re-init: existing projects with
-  `migration_step=0` (pre-HATS-471 shape) now replay the registry
-  on `ai-hats self init` — same effect as the old `self bump`
-  auto-trigger but via init directly.
+  - `_run_diagnostics` inline. `cli/assembly.py`'s post-init
+    auto-bump block was removed (init itself is the refresh path).
+    Behaviour change on re-init: existing projects with
+    `migration_step=0` (pre-HATS-471 shape) now replay the registry
+    on `ai-hats self init` — same effect as the old `self bump`
+    auto-trigger but via init directly.
 - `self update`'s auto-bump now runs via `python -m
   ai_hats._bump_internal` (new hidden module entry-point) instead of
   `ai-hats self bump`. Behaviour is identical — same flags
@@ -583,6 +630,7 @@ since the latest tag lives under **Unreleased** until the next release.
   not surfaced in `--help` / `--tree` (HATS-470).
 
 ### Removed
+
 - **The `.claude/plans → plan-sync` plan detour is gone** (HATS-637). A plan is
   always a task and always lives at the one canonical path
   `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md`. `transition <ID> plan` no
@@ -605,6 +653,7 @@ since the latest tag lives under **Unreleased** until the next release.
   [`docs/migration-v0.8.0.md`](docs/migration-v0.8.0.md).
 
 ### Fixed
+
 - **e2e install tests are now hermetic against an inherited `PYTHONPATH`** (HATS-685)
   — `tests/e2e/` builds subprocess envs with `os.environ.copy()`. `src/ai_hats/`
   has no `library/` subdir (it maps to the `ai_hats.library` package only at
@@ -975,8 +1024,8 @@ moves out of `assistant` into a dedicated role. New shipped content:
 - `core/skills/predictive-accounting` — for shrink/refactor tasks,
   present baseline + delta *before* implementation.
 - `usage/skills/doc-protocol` — plan-stage style forks + scope triage
-  + pre-commit artifact verification (folds three prior memory-only
-  patterns).
+  - pre-commit artifact verification (folds three prior memory-only
+    patterns).
 - `core/rules/rule_core_vs_usage_split` — universal-vs-project-specific
   decision tree for library content (sourced from PROP-037).
 - `core/traits/ai-hats-framework` — wraps the rule + layered-library
@@ -1196,7 +1245,7 @@ built-in component".
   `action == "run"` and `HATS_SKIP_RETRO != "1"`.
 - **HATS-419** — `session-reviewer` retro pipeline no longer dies on
   markdown-fenced YAML. Model frequently wraps the body in
-  ` ```yaml ... ``` ` inside the `BEGIN_REFLECT_SESSION_RETRO` markers;
+  `` ```yaml ... ``` `` inside the `BEGIN_REFLECT_SESSION_RETRO` markers;
   `_extract_yaml` passed the fence verbatim to `safe_load`. New
   `_strip_code_fence` helper. Unblocks ~30+ stranded sessions.
 - **HATS-411** — PTY shutdown is bounded. `_pty_spawn` used to call
