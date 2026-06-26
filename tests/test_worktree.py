@@ -629,3 +629,96 @@ class TestAlreadyMergedShortCircuit:
         assert _git(
             git_project, "branch", "--list", mgr.branch_name
         ).stdout.strip() != ""
+
+
+class TestBranchMergedIntoCanonicalBase:
+    """HATS-697: state-lost twin of the HATS-596 already-merged short-circuit.
+
+    The predicate + safe-delete that let ``transition done`` finalize a
+    branch whose work is already integrated, even when the worktree state
+    JSON is gone (no instance, no recorded ``original_branch``).
+    """
+
+    def _base(self, project: Path) -> str:
+        return _git(project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+
+    def test_returns_base_when_branch_is_merged(self, git_project: Path) -> None:
+        base = self._base(git_project)
+        _git(git_project, "checkout", "-b", "task/merged")
+        (git_project / "work.txt").write_text("work")
+        _git(git_project, "add", ".")
+        _git(git_project, "commit", "-m", "work")
+        _git(git_project, "checkout", base)
+        _git(git_project, "merge", "--no-ff", "--no-edit", "task/merged")
+
+        got = WorktreeManager.branch_merged_into_canonical_base(
+            git_project, "task/merged"
+        )
+        assert got == base
+        assert base in ("master", "main")
+
+    def test_returns_base_for_empty_branch_at_base_head(
+        self, git_project: Path
+    ) -> None:
+        """A branch created at base HEAD with no extra commits IS an ancestor
+        of base — nothing to merge, so finalize is correct (not refuse)."""
+        base = self._base(git_project)
+        _git(git_project, "branch", "task/empty")
+        got = WorktreeManager.branch_merged_into_canonical_base(
+            git_project, "task/empty"
+        )
+        assert got == base
+
+    def test_returns_none_when_branch_diverges(self, git_project: Path) -> None:
+        base = self._base(git_project)
+        _git(git_project, "checkout", "-b", "task/diverged")
+        (git_project / "wip.txt").write_text("wip")
+        _git(git_project, "add", ".")
+        _git(git_project, "commit", "-m", "unmerged wip")
+        _git(git_project, "checkout", base)
+        # NOT merged → genuinely un-merged → predicate must refuse to vouch.
+        got = WorktreeManager.branch_merged_into_canonical_base(
+            git_project, "task/diverged"
+        )
+        assert got is None
+
+    def test_returns_none_when_no_canonical_base_exists(
+        self, git_project: Path
+    ) -> None:
+        """R6 (injected bases): with a bases tuple naming only a
+        nonexistent branch, the predicate finds no base to compare against
+        and safely returns None — without monkeypatching the module global."""
+        _git(git_project, "branch", "task/x")
+        got = WorktreeManager.branch_merged_into_canonical_base(
+            git_project, "task/x", bases=("does-not-exist",)
+        )
+        assert got is None
+
+    def test_delete_merged_branch_removes_merged_ref(
+        self, git_project: Path
+    ) -> None:
+        base = self._base(git_project)
+        _git(git_project, "checkout", "-b", "task/gone")
+        (git_project / "g.txt").write_text("g")
+        _git(git_project, "add", ".")
+        _git(git_project, "commit", "-m", "g")
+        _git(git_project, "checkout", base)
+        _git(git_project, "merge", "--no-ff", "--no-edit", "task/gone")
+
+        assert WorktreeManager.delete_merged_branch(git_project, "task/gone") is True
+        assert not WorktreeManager.branch_exists(git_project, "task/gone")
+
+    def test_delete_merged_branch_preserves_unmerged_ref(
+        self, git_project: Path
+    ) -> None:
+        """Safe-delete: ``git branch -d`` refuses an un-merged branch →
+        returns False and the branch survives (no silent data loss)."""
+        base = self._base(git_project)
+        _git(git_project, "checkout", "-b", "task/keepme")
+        (git_project / "k.txt").write_text("k")
+        _git(git_project, "add", ".")
+        _git(git_project, "commit", "-m", "k")
+        _git(git_project, "checkout", base)
+
+        assert WorktreeManager.delete_merged_branch(git_project, "task/keepme") is False
+        assert WorktreeManager.branch_exists(git_project, "task/keepme")

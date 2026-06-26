@@ -243,6 +243,13 @@ def task_transition(
                 # HATS-060 / HATS-840: adopted the caller's worktree (detect via cwd).
                 adopted = WorktreeManager.worktree_toplevel(caller_cwd) or caller_cwd
                 console.print(f"  Worktree: {adopted} [dim](adopted — already cwd)[/]")
+            elif force:
+                # HATS-697: a forced execute is a manual state correction and
+                # deliberately creates no worktree.
+                console.print(
+                    "  [dim]No worktree created (forced) — "
+                    "`ai-hats wt create` if you want isolation.[/]"
+                )
         elif state == TaskState.DONE:
             console.print("  Worktree merged")
         elif state == TaskState.FAILED:
@@ -335,11 +342,9 @@ def task_transition(
         )
         sys.exit(1)
     except WorktreeStateLostError as e:
-        # HATS-541: a prior failed merge orphaned the worktree state
-        # (state.json + dir cleared by Worktree.merge() on failure),
-        # but the branch is still preserved. _teardown_worktree refused
-        # to silently mark the task DONE without merging. Card stays in
-        # `review` (HATS-481 fail-loud propagation).
+        # State JSON gone, branch preserved → card stays in `review`. Post
+        # HATS-697 an already-merged branch auto-finalizes, so reaching here
+        # means the branch genuinely diverges (un-merged wording is accurate).
         from rich.markup import escape as _escape
 
         project_dir = _project_dir()
@@ -348,16 +353,17 @@ def task_transition(
             f"cannot be silently marked DONE."
         )
         console.print(
-            f"Branch '{_escape(e.branch_name)}' is preserved with "
-            f"un-merged commits."
+            f"Branch '{_escape(e.branch_name)}' has commits that are NOT in "
+            f"the base branch (an already-merged branch would finalize on its "
+            f"own — HATS-697)."
         )
         console.print(
-            "Likely cause: an earlier `task transition <id> done` "
-            "attempt's merge failed (conflict, lock contention, "
-            "untracked file collision)."
+            "Likely cause: the auto-worktree was removed by hand, or an "
+            "earlier `task transition <id> done` attempt's merge failed "
+            "(conflict, lock contention, untracked file collision)."
         )
         console.print("")
-        console.print("Recover manually:")
+        console.print("Apply the un-merged work, then finalize:")
         # soft_wrap=True keeps each recipe line intact for copy-paste.
         console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
         console.print(
@@ -373,6 +379,13 @@ def task_transition(
         console.print(
             f"  [cyan]ai-hats task transition {task_id} done[/]  "
             "[dim]# update tracker[/]",
+            soft_wrap=True,
+        )
+        console.print("")
+        console.print(
+            f"[dim]Abandoning the work instead? "
+            f"`git branch -D {_escape(e.branch_name)}` then re-run done, or "
+            f"`task transition {task_id} cancelled`.[/]",
             soft_wrap=True,
         )
         sys.exit(1)
