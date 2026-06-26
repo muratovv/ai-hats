@@ -13,7 +13,7 @@ from ai_hats.hooks_manager import (  # HATS-837: git-hook mechanics merged into 
     GITHOOKS_DISPATCHER_MARKER,
     GITHOOKS_MANIFEST,
 )
-from ai_hats.models import GIT_HOOK_EVENTS, ProjectConfig
+from ai_hats.models import GIT_HOOK_EVENTS, Channel, HarnessConfig, ProjectConfig
 
 
 pytestmark = pytest.mark.integration
@@ -451,12 +451,27 @@ def _write_update_cache(project, *, behind, ahead):
     )
 
 
-def test_sync_hooks_refuses_heal_when_binary_behind(project_with_hook_skill):
-    """Installed binary strictly behind upstream → version-skew, no heal."""
+def _set_channel_local(project: Path) -> None:
+    """Flip the on-disk harness channel to LOCAL, preserving everything else
+    (``is_local_channel`` reads the file fresh at sync time)."""
+    cfg = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    cfg.model_copy(update={"harness": HarnessConfig(channel=Channel.LOCAL)}).save(
+        project / "ai-hats.yaml"
+    )
+
+
+def test_sync_hooks_refuses_heal_when_binary_behind(project_with_hook_skill, monkeypatch):
+    """Installed binary strictly behind upstream → version-skew, no heal.
+
+    The cache must describe the *running* build (HATS-846), so pin
+    ``detect_installed_sha`` to the cache's ``installed_sha`` — otherwise the
+    running-SHA guard would (correctly) treat it as a foreign-build cache.
+    """
     project, lib = project_with_hook_skill
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role")
+    monkeypatch.setattr("ai_hats.update_check.detect_installed_sha", lambda: "a" * 40)
 
     installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
     installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")  # plant drift
@@ -483,6 +498,70 @@ def test_sync_hooks_heals_when_binary_in_sync_with_upstream(project_with_hook_sk
     res = asm.hooks.sync_hooks()
     assert res.status == "synced"
     assert "check ran" in installed.read_text()
+
+
+def test_sync_hooks_heals_on_local_channel_despite_behind_cache(
+    project_with_hook_skill, monkeypatch
+):
+    """HATS-846: on a LOCAL-channel build the dev drives the source with git —
+    a stale 'behind' cache must NOT block heal (it is never refreshed there)."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+    # Even a matching SHA must not resurrect version-skew on LOCAL.
+    monkeypatch.setattr("ai_hats.update_check.detect_installed_sha", lambda: "a" * 40)
+
+    installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
+    installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")
+    _write_update_cache(project, behind=7, ahead=0)  # stale 'behind' entry
+    _set_channel_local(project)
+
+    res = asm.hooks.sync_hooks()
+    assert res.status == "synced"
+    assert "check ran" in installed.read_text()
+
+
+def test_sync_hooks_ignores_cache_about_foreign_build(project_with_hook_skill, monkeypatch):
+    """HATS-846: a 'behind' cache that describes a DIFFERENT build than the one
+    running must not block heal (running-SHA guard, parity with the banner)."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+    # Cache installed_sha is "a"*40; the running build is something else.
+    monkeypatch.setattr("ai_hats.update_check.detect_installed_sha", lambda: "f" * 40)
+
+    installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
+    installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")
+    _write_update_cache(project, behind=7, ahead=0)
+
+    res = asm.hooks.sync_hooks()
+    assert res.status == "synced"
+    assert "check ran" in installed.read_text()
+
+
+def test_sync_hooks_refuses_when_opted_out_and_genuinely_behind(
+    project_with_hook_skill, monkeypatch
+):
+    """HATS-846 (C-4): ``AI_HATS_NO_UPDATE_CHECK`` is notification opt-out, NOT a
+    hook-safety override. A non-LOCAL, genuinely-behind, matching-SHA build still
+    refuses to heal blind even when opted out — pins the deliberate decision to
+    keep ``is_disabled`` out of the ``upstream_update`` predicate."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+    monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
+    monkeypatch.setattr("ai_hats.update_check.detect_installed_sha", lambda: "a" * 40)
+
+    installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
+    installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")
+    _write_update_cache(project, behind=7, ahead=0)
+
+    res = asm.hooks.sync_hooks()
+    assert res.status == "version-skew"
+    assert "DRIFTED" in installed.read_text()
 
 
 def test_sync_hooks_heals_when_no_update_cache(project_with_hook_skill):
