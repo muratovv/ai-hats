@@ -13,9 +13,10 @@ import logging
 import shutil
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 
 from .models import WT_TEARDOWN_EVENTS
@@ -413,6 +414,73 @@ class IsolationMode(str, Enum):
     NONE = "none"
 
 
+# ------------------------------------------------------------------
+# Lifecycle extension-point contract (ADR-0013 D2/D3/D8)
+#
+# The hook-agnostic core fires these extension-points at each lifecycle
+# site; ai-hats injects a bundle that decides WHAT runs (worktree hooks),
+# the fail-vs-warn policy, and the skip/legacy escapes. A bare core uses
+# the no-op default and runs no hooks.
+# ------------------------------------------------------------------
+
+
+class WorktreeTeardownAborted(Exception):
+    """A ``before_teardown`` extension-point vetoed teardown (ADR-0013 D8).
+
+    Hook-agnostic: the core knows only that a teardown route was aborted —
+    never why. ai-hats raises this from its hook-running bundle on a
+    fail-closed ``wt_out`` failure, with the hook error riding as ``__cause__``.
+    Per-route control-flow is core-owned: ``merge`` / ``discard`` propagate it
+    (FSM/CLI surface it, HATS-481); ``cleanup`` suppresses it (warn + preserve
+    + return, so a sub-agent's original error is not masked).
+    """
+
+
+@dataclass(frozen=True)
+class LifecycleContext:
+    """What a lifecycle extension-point needs — and nothing hook-policy (D2).
+
+    ``carry`` is the opaque persisted hook record (the core stores/replays it
+    verbatim, D5); ``legacy`` distinguishes an absent carry (state predates
+    wt-hooks) from an empty ``{}`` so the bundle can warn-not-drop.
+    """
+
+    worktree_path: Path | None
+    project_dir: Path
+    branch_name: str
+    carry: dict[str, list[dict[str, Any]]]
+    skip_hooks: bool
+    legacy: bool
+
+
+class WorktreeLifecycle(Protocol):
+    """Core lifecycle extension-points (ADR-0013 D2). Default impl is no-op.
+
+    ``on_created`` fires once after ``git worktree add`` (warn-continue — it
+    must never raise). ``before_teardown`` fires at every teardown route just
+    before ``_remove_worktree``; raising :class:`WorktreeTeardownAborted`
+    aborts the route fail-closed.
+    """
+
+    def on_created(self, ctx: LifecycleContext) -> None: ...
+
+    def before_teardown(self, event: str, ctx: LifecycleContext) -> None: ...
+
+
+class _NoopLifecycle:
+    """Hook-agnostic default: a bare core runs no hooks (ADR-0013 D2)."""
+
+    def on_created(self, ctx: LifecycleContext) -> None:
+        return None
+
+    def before_teardown(self, event: str, ctx: LifecycleContext) -> None:
+        return None
+
+
+#: The default bundle injected when no ai-hats hook-runner is supplied.
+NOOP_LIFECYCLE: WorktreeLifecycle = _NoopLifecycle()
+
+
 class WorktreeManager:
     """Creates and manages isolated git worktrees.
 
@@ -439,6 +507,7 @@ class WorktreeManager:
         isolation_mode: IsolationMode = IsolationMode.DISCARD,
         *,
         branch_name: str = "",
+        lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
     ) -> None:
         self.project_dir = project_dir
         self.role_name = role_name
@@ -460,6 +529,9 @@ class WorktreeManager:
         self._wt_hooks: dict[str, list[dict[str, Any]]] = {}
         # HATS-823: state predates wt-hooks (key absent, not empty {}) → WARN.
         self._wt_hooks_legacy = False
+        # ADR-0013 D3: the lifecycle extension-point bundle. ai-hats injects its
+        # hook-running bundle; a bare core keeps the no-op default.
+        self._lifecycle = lifecycle
 
     def create(
         self,
@@ -1078,7 +1150,13 @@ class WorktreeManager:
                 pass
 
     @classmethod
-    def load_for_task(cls, project_dir: Path, task_id: str) -> WorktreeManager | None:
+    def load_for_task(
+        cls,
+        project_dir: Path,
+        task_id: str,
+        *,
+        lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
+    ) -> WorktreeManager | None:
         """Load the worktree state for a specific task ID.
 
         Derives the key via the same _state_key used by save_state:
@@ -1091,13 +1169,19 @@ class WorktreeManager:
         → key ``task-HATS-086``, while ``save_state`` wrote ``task-hats-086``).
         """
         key = _state_key(f"task/{task_id.lower()}")
-        return cls._load_by_key(project_dir, key)
+        return cls._load_by_key(project_dir, key, lifecycle=lifecycle)
 
     @classmethod
-    def load_for_branch(cls, project_dir: Path, branch: str) -> WorktreeManager | None:
+    def load_for_branch(
+        cls,
+        project_dir: Path,
+        branch: str,
+        *,
+        lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
+    ) -> WorktreeManager | None:
         """Load worktree state by branch name."""
         key = _state_key(branch)
-        return cls._load_by_key(project_dir, key)
+        return cls._load_by_key(project_dir, key, lifecycle=lifecycle)
 
     @classmethod
     def branch_exists(cls, project_dir: Path, branch: str) -> bool:
@@ -1238,7 +1322,13 @@ class WorktreeManager:
                 )
 
     @classmethod
-    def _load_by_key(cls, project_dir: Path, key: str) -> WorktreeManager | None:
+    def _load_by_key(
+        cls,
+        project_dir: Path,
+        key: str,
+        *,
+        lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
+    ) -> WorktreeManager | None:
         state_path = worktrees_dir(project_dir) / f"{key}.json"
         # HATS-482 (B-07): one-shot migration of legacy lowercase state file.
         # Pre-482 `_state_key` lowercased its output; an upgrade may leave
@@ -1268,7 +1358,7 @@ class WorktreeManager:
                 except FileNotFoundError:
                     pass
                 return None
-        mgr = cls(project_dir, branch_name=data["branch"])
+        mgr = cls(project_dir, branch_name=data["branch"], lifecycle=lifecycle)
         mgr.worktree_path = wt_path
         mgr._original_branch = data.get("original_branch")
         # HATS-457: legacy state files (pre-457) omit this key — graceful
@@ -1282,7 +1372,12 @@ class WorktreeManager:
         return mgr
 
     @classmethod
-    def list_active(cls, project_dir: Path) -> list[WorktreeManager]:
+    def list_active(
+        cls,
+        project_dir: Path,
+        *,
+        lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
+    ) -> list[WorktreeManager]:
         """Load all active worktree states. Prunes stale entries.
 
         HATS-482 (R-05): best-effort under concurrent ``_clear_state``.
@@ -1301,7 +1396,7 @@ class WorktreeManager:
         result = []
         for f in sorted(states_dir.glob("*.json")):
             key = f.stem
-            mgr = cls._load_by_key(project_dir, key)
+            mgr = cls._load_by_key(project_dir, key, lifecycle=lifecycle)
             if mgr is not None:
                 result.append(mgr)
         return result
