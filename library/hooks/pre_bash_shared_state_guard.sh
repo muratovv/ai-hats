@@ -116,10 +116,13 @@ This command writes shared state with no undo path (HATS-437):
   - gh pr merge ...           (PR + master commit; no undo)
   - git push --force / -f     (overwrites remote history)
 
-Pause and ask the user for explicit go-ahead in the next turn. Do NOT
-chain irreversible commands with other Bash calls.
-
-Override for a single command (only after user has confirmed):
-  AI_HATS_SHARED_STATE_ACK=1 <command>
+Recover without wasting turns (rule_pause_before_shared_state_write):
+  1. Do NOT retry, rephrase, or wrap this command — the block is deliberate,
+     not a transient error, and will deny again.
+  2. In your NEXT turn, show the user the exact command and ask for explicit
+     go-ahead. Do not act in the same turn that announces it.
+  3. Only after the user confirms, re-run the SINGLE command with the ack
+     prefix (do not chain it with &&, ||, ;, | — one shared-state write per call):
+       AI_HATS_SHARED_STATE_ACK=1 <command>
 EOF
 exit 2
