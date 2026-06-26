@@ -1133,6 +1133,93 @@ class WorktreeManager:
         # is the "branch absent" signal.
         return bool(result.stdout.strip())
 
+    @classmethod
+    def branch_merged_into_canonical_base(
+        cls,
+        project_dir: Path,
+        branch: str,
+        *,
+        bases: tuple[str, ...] = CANONICAL_BASE_BRANCHES,
+    ) -> str | None:
+        """Return the canonical base ``branch`` is already merged into, else None.
+
+        HATS-697 — the state-lost twin of the HATS-596 already-merged
+        short-circuit inside :meth:`merge`. When the worktree state JSON is
+        gone (``load_for_task`` → ``None``) there is no instance and no
+        recorded ``original_branch`` to consult, so the base is resolved from
+        the first existing of ``bases`` and ``branch`` is tested against it
+        with ``git merge-base --is-ancestor``.
+
+        ``bases`` is injected (default :data:`CANONICAL_BASE_BRANCHES`) so the
+        predicate is unit-testable without monkeypatching a module global
+        (R6 — explicit dependency threading). Probe-only — does NOT touch
+        worktree state.
+
+        Returns the base branch name when ``branch`` is an ancestor of it
+        (work fully integrated → ``transition done`` may finalize without a
+        re-merge). Returns ``None`` when the branch genuinely diverges, when
+        no canonical base exists (exotic repo — safe fall-through to the
+        un-merged refusal), or when git can't introspect.
+        """
+        for base in bases:
+            try:
+                # Base must exist locally before the ancestor test is meaningful.
+                subprocess.run(
+                    ["git", "rev-parse", "--verify", "--quiet", base],
+                    cwd=str(project_dir),
+                    capture_output=True,
+                    check=True,
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+                continue
+            try:
+                subprocess.run(
+                    ["git", "merge-base", "--is-ancestor", branch, base],
+                    cwd=str(project_dir),
+                    capture_output=True,
+                    check=True,
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+                # exit 1 = not an ancestor; exit ≥2 / missing binary = can't
+                # tell → treat as "not merged" (safer default: do NOT suppress
+                # the un-merged refusal on an ambiguous answer).
+                return None
+            return base
+        return None
+
+    @classmethod
+    def delete_merged_branch(cls, project_dir: Path, branch: str) -> bool:
+        """Best-effort safe-delete of an already-merged ``branch``.
+
+        HATS-697 cleanup for the state-lost finalize path: mirrors the
+        ``_delete_branch`` call in the HATS-596 already-merged short-circuit
+        so a finalized task does not leave a stale ``task/<id>`` ref behind.
+        Uses ``git branch -d`` (safe delete: git refuses if NOT merged), so a
+        non-zero exit is a signal the caller has miscategorised the branch —
+        logged, never raised. The ``transition done`` finalize must not hinge
+        on cleanup success (the tracker state is the contract; a leftover
+        merged ref is cosmetic). Returns True iff the branch was deleted.
+        """
+        try:
+            result = subprocess.run(
+                ["git", "branch", "-d", branch],
+                cwd=str(project_dir),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as exc:
+            logger.warning("Could not delete merged branch '%s': %s", branch, exc)
+            return False
+        if result.returncode != 0:
+            logger.warning(
+                "Merged-branch cleanup skipped for '%s': %s",
+                branch,
+                (result.stderr or "").strip() or "<no stderr>",
+            )
+            return False
+        return True
+
     @staticmethod
     def _migrate_legacy_lowercase_state(state_path: Path, key: str) -> None:
         """One-shot rename of pre-HATS-482 lowercased state file (B-07).

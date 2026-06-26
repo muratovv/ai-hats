@@ -1118,8 +1118,26 @@ class TaskManager:
             # ``_save_task`` stamp DONE without any merge ever happening —
             # the silent-data-loss class HATS-481/541 exist to prevent.
             #
-            # If a ``task/<id>`` branch still exists in the repo, refuse
-            # the transition and point the user at manual recovery.
+            # If a ``task/<id>`` branch still exists in the repo, the
+            # decision turns on whether its work is already integrated:
+            #
+            #   * Already merged (branch is an ancestor of the canonical
+            #     base) — HATS-697: the work shipped out-of-band (manual
+            #     ``git merge --no-ff task/<id>`` and/or the auto-worktree
+            #     was removed by hand). Re-merging is a no-op; refusing here
+            #     produced a FALSE ``WorktreeStateLostError`` ("un-merged
+            #     commits") that blocked a legitimate finalize. This is the
+            #     state-lost twin of the HATS-596 already-merged
+            #     short-circuit inside ``Worktree.merge`` (that path needs a
+            #     live state JSON; this one runs when it's gone). Best-effort
+            #     delete the now-merged branch (safe ``-d``) so no stale ref
+            #     is left, then finalize.
+            #   * Genuinely un-merged — keep the HATS-541/481 fail-loud
+            #     refusal: silently stamping DONE would lose the un-merged
+            #     work. ``--force`` does NOT relax this — force is not a
+            #     data-loss authorization (use ``transition failed`` /
+            #     ``cancelled``, or delete the branch by hand, to abandon).
+            #
             # If the branch is also absent (true admin no-op, or
             # legitimately never had a worktree), keep silent return.
             #
@@ -1129,7 +1147,19 @@ class TaskManager:
             if merge:
                 branch_name = f"task/{task.id.lower()}"
                 if WorktreeManager.branch_exists(self.project_dir, branch_name):
-                    raise WorktreeStateLostError(task.id, branch_name)
+                    base = WorktreeManager.branch_merged_into_canonical_base(
+                        self.project_dir, branch_name
+                    )
+                    if base is None:
+                        raise WorktreeStateLostError(task.id, branch_name)
+                    WorktreeManager.delete_merged_branch(
+                        self.project_dir, branch_name
+                    )
+                    logger.info(
+                        "Task %s branch '%s' already merged into '%s' — "
+                        "finalizing without re-merge (HATS-697)",
+                        task.id, branch_name, base,
+                    )
             return
 
         try:
