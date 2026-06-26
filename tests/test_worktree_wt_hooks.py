@@ -127,6 +127,9 @@ def test_on_filtering_skips_non_matching_event(git_project, tmp_path):
 
 
 def test_cleanup_preserves_worktree_on_hook_failure(git_project):
+    # S19 (cleanup-contract guard): a cleanup hook-fail must preserve the dir
+    # AND propagate NO exception — the abort is suppressed (warn + return). The
+    # call sits OUTSIDE pytest.raises, so a propagated abort fails the test.
     _place_hook(git_project, "s", "drain.sh", "exit 1\n")
     mgr = _mgr(git_project, "task/g")
     wt = mgr.create(wt_hooks=_carry_out())
@@ -173,3 +176,78 @@ def test_legacy_state_without_wt_hooks_warns_and_does_not_crash(
         loaded.discard()  # no crash
     assert not wt.exists()
     assert any("predates wt-hooks" in r.message for r in caplog.records)
+
+
+# --- ADR-0013 scenario-matrix cells added by P1 (S3/S8/S10/S12/S20) ----------
+
+
+def test_wt_in_failure_does_not_abort_create(git_project):
+    # S3: a failing wt_in hook is create-time friction, not data loss — the
+    # worktree is still created (warn-continue; on_created never raises).
+    _place_hook(git_project, "s", "seed.sh", "exit 1\n")
+    mgr = _mgr(git_project, "task/s3")
+    wt = mgr.create(wt_hooks={"wt_in": [{"skill": "s", "script": "seed.sh"}]})
+    assert wt.exists()
+    assert wt != git_project  # a real worktree was created despite the failure
+
+
+def test_skip_hooks_forces_merge_through(git_project):
+    # S8: merge --skip-hooks proceeds despite a failing wt_out hook (data-loss
+    # consciously accepted). Mirror of the discard-skip cell (S16).
+    _place_hook(git_project, "s", "drain.sh", "exit 1\n")
+    mgr = _mgr(git_project, "task/s8")
+    wt = mgr.create(wt_hooks=_carry_out())
+    _commit_in_wt(wt)
+    mgr.merge(skip_hooks=True)  # must not raise
+    assert not wt.exists()  # merged + torn down
+
+
+def test_already_merged_short_circuit_hook_fail_aborts(git_project):
+    # S10: the HATS-596 already-merged short-circuit (worktree.py:784) still
+    # harvests fail-closed. A failing wt_out hook aborts BEFORE _remove_worktree;
+    # the branch is preserved so a retry re-hits 596 and re-runs the hook.
+    _place_hook(git_project, "s", "drain.sh", "exit 1\n")
+    mgr = _mgr(git_project, "task/s10")
+    wt = mgr.create(wt_hooks=_carry_out())
+    _commit_in_wt(wt)
+    _git(git_project, "merge", "--no-ff", "--no-edit", "task/s10")  # already merged
+    with pytest.raises(WorktreeTeardownAborted) as ei:
+        mgr.merge()
+    assert isinstance(ei.value.__cause__, WorktreeHookError)
+    assert wt.exists()  # abort before teardown on the 596 route
+    assert WorktreeManager.branch_exists(git_project, "task/s10")
+
+
+def test_obm_route_hook_fail_takes_precedence(git_project):
+    # S12: on the OriginalBranchMissing route (worktree.py:862) a failing wt_out
+    # hook aborts BEFORE _remove_worktree — hook-fail takes precedence, the
+    # OriginalBranchMissingError is never reached, wt + branch preserved.
+    _git(git_project, "checkout", "-b", "doomed")
+    _place_hook(git_project, "s", "drain.sh", "exit 1\n")
+    mgr = _mgr(git_project, "task/s12")
+    wt = mgr.create(wt_hooks=_carry_out())
+    _commit_in_wt(wt)
+    _git(git_project, "checkout", "-")  # back to base
+    _git(git_project, "branch", "-D", "doomed")
+    with pytest.raises(WorktreeTeardownAborted) as ei:
+        mgr.merge()
+    assert isinstance(ei.value.__cause__, WorktreeHookError)
+    assert wt.exists()  # OBM not reached — hook-fail aborted first
+    assert WorktreeManager.branch_exists(git_project, "task/s12")
+
+
+def test_exit_with_inflight_error_surfaces_original_not_abort(git_project):
+    # S20 (cleanup-contract guard): __exit__ runs cleanup; a failing wt_out hook
+    # aborts teardown but the abort is SUPPRESSED — it must NOT mask the agent's
+    # in-flight exception. The original error surfaces; the worktree is preserved.
+    _place_hook(git_project, "s", "drain.sh", "exit 1\n")
+    mgr = _mgr(git_project, "task/s20")
+    boom = RuntimeError("agent boom")
+    captured: dict[str, Path] = {}
+    with pytest.raises(RuntimeError) as ei:
+        with mgr as wd:
+            captured["wt"] = wd
+            mgr._wt_hooks = _carry_out()  # simulate a collected/persisted carry
+            raise boom
+    assert ei.value is boom  # original surfaced, not the WorktreeTeardownAborted
+    assert captured["wt"].exists()  # preserved (cleanup suppressed the abort)
