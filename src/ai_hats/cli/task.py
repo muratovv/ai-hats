@@ -342,12 +342,9 @@ def task_transition(
         )
         sys.exit(1)
     except WorktreeStateLostError as e:
-        # HATS-541: the worktree state JSON is gone but the branch is
-        # preserved. _teardown_worktree refused to silently mark the task
-        # DONE. Card stays in `review` (HATS-481 fail-loud propagation).
-        # HATS-697: an already-merged branch is now finalized automatically,
-        # so reaching this handler means the branch GENUINELY diverges from
-        # the base — the un-merged-commits wording below is accurate.
+        # State JSON gone, branch preserved → card stays in `review`. Post
+        # HATS-697 an already-merged branch auto-finalizes, so reaching here
+        # means the branch genuinely diverges (un-merged wording is accurate).
         from rich.markup import escape as _escape
 
         project_dir = _project_dir()

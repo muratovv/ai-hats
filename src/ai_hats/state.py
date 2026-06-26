@@ -299,12 +299,8 @@ class TaskManager:
         ``work_log``. State-specific side effects (worktree teardown, plan
         scaffold) still fire based on ``new_state`` — ``--force`` only
         relaxes the guard, not the post-transition machinery. One carve-out
-        (HATS-697): a forced ``→ execute`` does NOT create a fresh worktree.
-        A forced execute is a manual state correction (often for
-        shipped-on-master work); spinning a worktree off HEAD there orphaned
-        retrospective work in the main tree. The operator creates one
-        explicitly (or is already inside one — still adopted via the CLI cwd
-        probe) if they want isolation.
+        (HATS-697): a forced ``→ execute`` creates no fresh worktree — it is a
+        manual state correction, so the operator owns the worktree decision.
 
         ``caller_cwd`` (HATS-840): the operator's raw cwd, threaded from the CLI for
         the execute-state worktree adopt; ``None`` for programmatic callers.
@@ -368,12 +364,9 @@ class TaskManager:
                 if is_epic:
                     pass  # epics never get a worktree
                 elif force:
-                    # HATS-697: a forced execute is a manual state correction,
-                    # not the start of isolated work. Spinning a fresh worktree
-                    # off HEAD here orphaned retrospective shipped-on-master work
-                    # in the main tree (PROX-287). The operator owns the worktree
-                    # decision — they `ai-hats wt create` (or are already inside
-                    # one, still adopted via the CLI cwd probe) if they want one.
+                    # HATS-697: forced execute is a manual state correction —
+                    # no fresh worktree (spinning one off HEAD orphaned retro
+                    # work, PROX-287). Operator owns the worktree decision.
                     task.log_work(
                         "Forced → execute: no worktree created (manual override)"
                     )
@@ -381,10 +374,8 @@ class TaskManager:
                     self._setup_worktree(task, caller_cwd=caller_cwd)
             elif new_state == TaskState.DONE:
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                # HATS-596: plumb `force` so a corrective `transition done
-                # --force` reaches the merge guards (e.g. bypass _check_clean
-                # on an already-merged worktree). force does NOT relax the
-                # HEAD-mismatch guard — that stays a correctness gate.
+                # HATS-596: `force` lets `done --force` bypass _check_clean;
+                # it does NOT relax the HEAD-mismatch correctness guard.
                 self._teardown_worktree(task, merge=True, force=force)
             elif new_state == TaskState.FAILED:
                 self._teardown_worktree(task, merge=False)
@@ -1123,45 +1114,14 @@ class TaskManager:
 
         active = WorktreeManager.load_for_task(self.project_dir, task.id)
         if active is None:
-            # HATS-541 fail-loud, defense-in-depth: a worktree state may be
-            # gone while a ``task/<id>`` branch still exists. Post-HATS-587
-            # a *failed* ``Worktree.merge()`` no longer produces this orphan
-            # (F5: merge failure preserves worktree + state + branch for a
-            # clean retry). The guard still covers the residual causes:
-            # manual ``rm`` of the state JSON, a crash between
-            # ``_remove_worktree`` and ``_clear_state`` on the SUCCESS path,
-            # and pre-587 orphans created before that fix landed.
-            #
-            # A silent return here on the ``merge=True`` path would let
-            # ``_save_task`` stamp DONE without any merge ever happening —
-            # the silent-data-loss class HATS-481/541 exist to prevent.
-            #
-            # If a ``task/<id>`` branch still exists in the repo, the
-            # decision turns on whether its work is already integrated:
-            #
-            #   * Already merged (branch is an ancestor of the canonical
-            #     base) — HATS-697: the work shipped out-of-band (manual
-            #     ``git merge --no-ff task/<id>`` and/or the auto-worktree
-            #     was removed by hand). Re-merging is a no-op; refusing here
-            #     produced a FALSE ``WorktreeStateLostError`` ("un-merged
-            #     commits") that blocked a legitimate finalize. This is the
-            #     state-lost twin of the HATS-596 already-merged
-            #     short-circuit inside ``Worktree.merge`` (that path needs a
-            #     live state JSON; this one runs when it's gone). Best-effort
-            #     delete the now-merged branch (safe ``-d``) so no stale ref
-            #     is left, then finalize.
-            #   * Genuinely un-merged — keep the HATS-541/481 fail-loud
-            #     refusal: silently stamping DONE would lose the un-merged
-            #     work. ``--force`` does NOT relax this — force is not a
-            #     data-loss authorization (use ``transition failed`` /
-            #     ``cancelled``, or delete the branch by hand, to abandon).
-            #
-            # If the branch is also absent (true admin no-op, or
-            # legitimately never had a worktree), keep silent return.
-            #
-            # merge=False (discard) path: stay silent — discard is
-            # intentionally lossy by design, and refusing it would
-            # block admin closes.
+            # State JSON gone but the branch may survive (manual rm,
+            # success-path crash, pre-587 orphan). On merge=True a silent
+            # return would stamp DONE with no merge — the HATS-481/541
+            # silent-data-loss class. So when the branch exists:
+            # already-merged → finalize without re-merge (HATS-697, the
+            # state-lost twin of the HATS-596 short-circuit) + drop the stale
+            # ref; genuinely un-merged → fail-loud (force is NOT a data-loss
+            # hatch). Branch absent, or merge=False discard → silent.
             if merge:
                 branch_name = f"task/{task.id.lower()}"
                 if WorktreeManager.branch_exists(self.project_dir, branch_name):
