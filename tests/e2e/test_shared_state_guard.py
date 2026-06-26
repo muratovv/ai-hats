@@ -130,6 +130,19 @@ def test_pretool_allows_non_bash_payload():
     assert res.returncode == 0
 
 
+@pytest.mark.integration
+def test_pretool_block_carries_recovery_guidance():
+    """HATS-633 — the denial must steer the agent to the recovery, not just
+    block. It names the rule and tells the agent NOT to retry/rephrase."""
+    payload = '{"tool_input":{"command":"gh pr merge 5 --merge"}}'
+    res = _run(PRETOOL_HOOK, stdin=payload)
+    assert res.returncode == 2, res.stderr
+    # Points at the governing rule so the agent can read the full protocol.
+    assert "rule_pause_before_shared_state_write" in res.stderr
+    # Steers away from the #1 failure mode: retrying a deliberate block.
+    assert "Do NOT retry" in res.stderr
+
+
 # --- Git pre-push hook -----------------------------------------------------
 
 
@@ -188,6 +201,24 @@ def test_prepush_blocks_non_fast_forward(repo_with_two_commits: Path):
     res.check_returncode if False else None  # silence unused-import linters
     assert res.returncode == 1, res.stderr
     assert "non-fast-forward" in res.stderr
+
+
+@pytest.mark.integration
+def test_prepush_block_carries_recovery_guidance(repo_with_two_commits: Path):
+    """HATS-633 — pre-push denial carries the same recovery guidance shape as
+    the PreToolUse guard: names the rule, says do-not-retry."""
+    older = _git(repo_with_two_commits, "rev-parse", "HEAD~1")
+    newer = _git(repo_with_two_commits, "rev-parse", "HEAD")
+    stdin = f"refs/heads/master {older} refs/heads/master {newer}\n"
+    res = subprocess.run(
+        ["bash", str(PREPUSH_HOOK)],
+        input=stdin, cwd=str(repo_with_two_commits),
+        capture_output=True, text=True, timeout=5,
+        env={**os.environ, "AI_HATS_SHARED_STATE_ACK": ""},
+    )
+    assert res.returncode == 1, res.stderr
+    assert "rule_pause_before_shared_state_write" in res.stderr
+    assert "Do NOT retry" in res.stderr
 
 
 @pytest.mark.integration
