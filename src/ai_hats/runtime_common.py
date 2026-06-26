@@ -376,6 +376,25 @@ def _startup_hold_seconds(
     return STARTUP_WARN_HOLD_SECONDS
 
 
+def _countdown_hold(seconds, *, render, poll_skip) -> bool:
+    """Run a 1 Hz countdown that the user can cut short (HATS-847).
+
+    Pure loop, no I/O of its own — the caller injects both effects so the
+    skip/complete behaviour is unit-testable without a real terminal or
+    sleeping. For ``remaining`` from ``int(seconds)`` down to ``1``: draw the
+    frame via ``render(remaining)``, then block up to one second in
+    ``poll_skip(1.0)``. The moment ``poll_skip`` returns truthy (the user
+    pressed Enter), stop early and return ``True`` (skipped); otherwise return
+    ``False`` after the full count. ``poll_skip`` owns the per-frame wait, so it
+    must block ~1 s when idle — that is what keeps the countdown ticking at 1 Hz.
+    """
+    for remaining in range(int(seconds), 0, -1):
+        render(remaining)
+        if poll_skip(1.0):
+            return True
+    return False
+
+
 @dataclass(frozen=True)
 class StartupNotice:
     """One pre-launch line surfaced during the startup hold (HATS-833).
