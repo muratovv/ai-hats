@@ -364,6 +364,14 @@ class TaskManager:
                 if is_epic:
                     pass  # epics never get a worktree
                 elif force:
+                    # HATS-518: --force overrides the FSM arrow, NOT the
+                    # canonical-base safety contract. The guard otherwise lives
+                    # inside _setup_worktree (the non-force path), so the force
+                    # branch must run it explicitly or a non-canonical merge
+                    # target slips through (test_refuses_even_with_force).
+                    from .worktree import assert_head_is_canonical_base
+
+                    assert_head_is_canonical_base(self.project_dir)
                     # HATS-697: forced execute is a manual state correction —
                     # no fresh worktree (spinning one off HEAD orphaned retro
                     # work, PROX-287). Operator owns the worktree decision.
