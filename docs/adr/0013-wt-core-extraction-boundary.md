@@ -205,6 +205,17 @@ its convention (`<ai_hats_dir>/sessions/worktrees/` and
 `wt/` never imports `ai_hats.paths`. This is what lets the import-lint (D6)
 forbid `from ai_hats.paths import …` inside `wt/`.
 
+> **Implementation note (P2 / HATS-850): `hooks_dir` dropped — `state_dir` only.**
+> P1 (HATS-849) lifted the entire hook layer into ai-hats, including the
+> hooks-log / materialized-hook path helpers (now `wt_lifecycle.py`, which
+> resolves them from `ctx.project_dir`). By P2 the core had **zero** `hooks_dir`
+> consumers — `worktrees_dir` was the *only* `ai_hats.paths` symbol it imported —
+> so injecting `hooks_dir` would have been a dead parameter (design-minimalism).
+> P2 injects **only `state_dir`**; the goal ("core imports no `ai_hats.paths`")
+> holds. The bare-core fallback is `project_dir/.wt`, plus a `__debug__` assert
+> (`lifecycle is NOOP_LIFECYCLE or state_dir is not None`) that catches an
+> ai-hats driver omitting the base before it de-serializes the locks.
+
 **The base must thread through the `load_*` classmethods too, not just
 `__init__`.** `load_for_task` / `load_for_branch` / `list_active` resolve their
 own directory via `worktrees_dir(project_dir)` (`worktree.py:1191`, `:1247`); if
@@ -492,15 +503,19 @@ first):**
   real bundle, and rewrite `pytest.raises(WorktreeHookError)` → `…Aborted`. Turn
   scenario cells S3/S8/S10/S12/S16/**S19**/**S20** into tests. **e2e-gate applies**
   (touches `worktree.py` + `cli/worktree.py`).
-- **P2 — Inject the path base** (D4): `state_dir` / `hooks_dir` params on
-  `__init__` **and** on `load_for_task` / `load_for_branch` / `list_active`;
-  thread into `worktree_locks` (lock-path-identity invariant) and every call site
-  (`state.py:1016`/`:1037`/`:1085`, `cli/task.py`, `cli/worktree.py`,
-  `subagent_runner.py:246`, the L2 re-check `worktree.py:520`). After P2 the core
-  imports no `ai_hats.paths`.
-- **P3 — Formalize `src/ai_hats/wt/`** + extend `test_import_hygiene.py` with the
-  one-directional rule (RED-under-revert); add the explicit `wt/__init__.py`
-  public exports (D9).
+- **P2 — Inject the path base** (D4): `state_dir` param (only — `hooks_dir`
+  dropped, see the D4 implementation note) on `__init__` **and** on
+  `load_for_task` / `load_for_branch` / `list_active`; thread into
+  `worktree_locks` (lock-path-identity invariant) and every call site
+  (`state.py`, `cli/task.py`, `cli/worktree.py`, `subagent_runner.py`, the L2
+  re-check). After P2 the core imports no `ai_hats.paths`. **The D6 import-lint
+  was folded into P2** (HATS-850) so the task ships an enforced guarantee, keyed
+  on `WT_CORE_MODULES = ("worktree", "worktree_locks")` in
+  `test_import_hygiene.py` (RED-under-revert).
+- **P3 — Formalize `src/ai_hats/wt/`**: move the now-pure engine files under the
+  sub-package and re-point the D6 lint's `WT_CORE_MODULES` to the `wt/` package
+  prefix (one-line generalization of the rule P2 already added); add the explicit
+  `wt/__init__.py` public exports (D9). (The lint itself shipped in P2.)
 - **P4 — Leave accretions in place**, now importing *from* `wt/`
   (`state._setup/_teardown_worktree`, `cli/task.py` translation, `_project_dir`,
   `wt_carry`); verify nothing imports *into* `wt/`; add the standalone bare-repo
