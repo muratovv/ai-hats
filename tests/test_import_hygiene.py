@@ -19,6 +19,7 @@ re-create the CodeQL `security-and-quality` noise we dropped (HATS-758):
 TYPE_CHECKING edges and cannot express "module-level runtime only", so it flags
 the project's own idiom. This stdlib check expresses exactly the wanted policy.
 """
+
 from __future__ import annotations
 
 import ast
@@ -32,6 +33,21 @@ SRC = Path(__file__).resolve().parent.parent / "src" / PKG
 # here — it has real, deferred first-party deps (paths, providers), so it is not
 # a leaf. Keeping the list honest is what the gate enforces.
 LEAF_MODULES = ("constants", "paths", "safe_delete")
+
+# ADR-0013 D6 — the hook-agnostic wt core must not import ai-hats accretions
+# (one-directional rule: ai_hats.* -> wt core, never back). Keyed on the flat
+# module names with the module-or-subtree idiom (see test_leaf_modules_are_pure)
+# so HATS-851's move is a one-line edit: ("worktree","worktree_locks") -> ("wt",).
+WT_CORE_MODULES = ("worktree", "worktree_locks")
+WT_FORBIDDEN_ACCRETIONS = (
+    "paths",
+    "models",
+    "assembler",
+    "composer",
+    "materialize",
+    "state",
+    "worktree_hooks",
+)
 
 
 def _module_name(path: Path) -> str:
@@ -188,3 +204,64 @@ def test_detector_flags_a_synthetic_cycle():
     one — so a green gate above means 'no cycle', not 'detector broken'."""
     assert _find_cycle({"a": {"b"}, "b": {"a"}}) is not None
     assert _find_cycle({"a": {"b"}, "b": {"c"}, "c": set()}) is None
+
+
+def _forbidden_hits(targets: list[str], forbidden_roots: tuple[str, ...]) -> list[str]:
+    """Targets that match a forbidden root exactly or as a package subtree."""
+    return [t for t in targets if any(t == r or t.startswith(r + ".") for r in forbidden_roots)]
+
+
+def test_wt_core_imports_no_accretions():
+    """ADR-0013 D6: the wt core imports no ai-hats accretion.
+
+    The hook-agnostic engine (``worktree`` + ``worktree_locks``) must not import
+    ``{paths, models, assembler, composer, materialize, state, worktree_hooks}``
+    — the one-directional boundary that prevents accretion creep back into core
+    (the HATS-715 regression class). Full walk (incl. deferred imports, ignoring
+    TYPE_CHECKING); intra-core ``worktree <-> worktree_locks`` and leaf helpers
+    (e.g. ``utils.atomic_io``) stay allowed.
+
+    RED-under-revert: re-add ``from .paths import worktrees_dir`` to either core
+    module and this fails.
+    """
+    mods = _modules()
+    nodeset = set(mods)
+    forbidden_roots = tuple(f"{PKG}.{d}" for d in WT_FORBIDDEN_ACCRETIONS)
+    offenders: dict[str, list[str]] = {}
+    for core in WT_CORE_MODULES:
+        name = f"{PKG}.{core}"
+        prefix = name + "."  # the core's own subtree (empty for a plain module)
+        core_mods = {m: p for m, p in mods.items() if m == name or m.startswith(prefix)}
+        hits: list[str] = []
+        for m, path in core_mods.items():
+            tree = ast.parse(path.read_text())
+            for node in _import_nodes(tree, top_level_only=False):
+                targets = _targets(m, path.name == "__init__.py", node, nodeset)
+                hits += _forbidden_hits(targets, forbidden_roots)
+        if hits:
+            offenders[core] = sorted(set(hits))
+    assert not offenders, (
+        "wt core (ADR-0013 D6) must not import ai-hats accretions "
+        f"{list(WT_FORBIDDEN_ACCRETIONS)}: {offenders}"
+    )
+
+
+def test_wt_core_lint_self_test():
+    """Self-test: the accretion detector FIRES on a synthetic forbidden import
+    and stays quiet on an allowed intra-core one — so a green gate above means
+    'core is clean', not 'detector broken'."""
+    roots = (f"{PKG}.paths",)
+    nodeset = {f"{PKG}.paths", f"{PKG}.worktree_locks"}
+
+    def offends(source: str) -> bool:
+        tree = ast.parse(source)
+        for node in _import_nodes(tree, top_level_only=False):
+            targets = _targets(f"{PKG}.worktree", False, node, nodeset)
+            if _forbidden_hits(targets, roots):
+                return True
+        return False
+
+    assert offends("from .paths import worktrees_dir")  # forbidden (relative)
+    assert offends("import ai_hats.paths")  # forbidden (absolute)
+    assert offends("def f():\n    from .paths import worktrees_dir")  # deferred too
+    assert not offends("from .worktree_locks import _state_key")  # allowed intra-core
