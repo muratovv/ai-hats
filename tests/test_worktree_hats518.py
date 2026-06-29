@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats.paths import worktrees_dir
 from ai_hats.worktree import (
     CANONICAL_BASE_BRANCHES,
     WorktreeBaseBranchError,
@@ -32,7 +33,11 @@ pytestmark = pytest.mark.integration
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True,
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
     )
 
 
@@ -113,7 +118,8 @@ class TestRefuses:
         assert "master" in msg
 
     def test_raises_on_task_branch_with_both_canonicals(
-        self, master_project: Path,
+        self,
+        master_project: Path,
     ) -> None:
         _git(master_project, "branch", "main")
         _git(master_project, "checkout", "-b", "task/hats-007")
@@ -179,9 +185,7 @@ def test_canonical_base_branches_constant() -> None:
 class TestCliWtCreate:
     """`ai-hats wt create` must surface the guard with red text + exit 1."""
 
-    def test_refuses_on_feature_branch(
-        self, master_project: Path, monkeypatch
-    ) -> None:
+    def test_refuses_on_feature_branch(self, master_project: Path, monkeypatch) -> None:
         from click.testing import CliRunner
 
         from ai_hats.cli import main as cli_main
@@ -210,10 +214,18 @@ class TestCliWtCreate:
         result = CliRunner().invoke(cli_main, ["wt", "create", "task/probe"])
         try:
             assert result.exit_code == 0, result.output
-            wt = WorktreeManager.load_for_branch(master_project, "task/probe")
+            wt = WorktreeManager.load_for_branch(
+                master_project,
+                "task/probe",
+                state_dir=worktrees_dir(master_project),
+            )
             assert wt is not None
         finally:
-            wt = WorktreeManager.load_for_branch(master_project, "task/probe")
+            wt = WorktreeManager.load_for_branch(
+                master_project,
+                "task/probe",
+                state_dir=worktrees_dir(master_project),
+            )
             if wt is not None:
                 wt.cleanup()
 
@@ -278,8 +290,10 @@ class TestTransitionExecute:
 
         with pytest.raises(WorktreeBaseBranchError):
             mgr.transition(
-                "T-1", TaskState.EXECUTE,
-                force=True, reason="trying to bypass HATS-518 (must fail)",
+                "T-1",
+                TaskState.EXECUTE,
+                force=True,
+                reason="trying to bypass HATS-518 (must fail)",
             )
 
         assert mgr.get_task("T-1").state == TaskState.PLAN

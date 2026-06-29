@@ -162,7 +162,11 @@ class TestDriftDetection:
 class TestLegacyStateCompat:
     def test_legacy_state_no_field_skips_check(self, git_project: Path) -> None:
         """Pre-HATS-457 state files have no ``base_sha_at_create`` — skip."""
-        mgr = WorktreeManager(git_project, branch_name="task/legacy")
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="task/legacy",
+            state_dir=worktrees_dir(git_project),
+        )
         wt_path = mgr.create()
         mgr.save_state()
         _commit_in_worktree(wt_path)
@@ -175,7 +179,9 @@ class TestLegacyStateCompat:
         state_file.write_text(json.dumps(data, indent=2))
 
         # Reload via the public API — _base_sha_at_create stays None.
-        reloaded = WorktreeManager.load_for_branch(git_project, "task/legacy")
+        reloaded = WorktreeManager.load_for_branch(
+            git_project, "task/legacy", state_dir=worktrees_dir(git_project)
+        )
         assert reloaded is not None
         assert reloaded._base_sha_at_create is None
 
@@ -237,8 +243,7 @@ class TestNoRemoteSwallowed:
         assert "remote:" not in msg
         # WARN names the timeout so debugging starts at the network.
         assert any(
-            "timed out" in r.message and "fetch" in r.message.lower()
-            for r in caplog.records
+            "timed out" in r.message and "fetch" in r.message.lower() for r in caplog.records
         ), f"expected a fetch-timeout WARN, got: {[r.message for r in caplog.records]}"
 
     def test_fetch_invoked_with_timeout(self, git_project: Path) -> None:
@@ -266,9 +271,7 @@ class TestNoRemoteSwallowed:
         assert fetch_calls, "expected a pre-merge fetch call"
         assert fetch_calls[0][1].get("timeout") == FETCH_TIMEOUT
         # No other _git call may carry a timeout — local plumbing stays unbounded.
-        assert all(
-            k.get("timeout") is None for a, k in calls if not (a and a[0] == "fetch")
-        )
+        assert all(k.get("timeout") is None for a, k in calls if not (a and a[0] == "fetch"))
 
 
 class TestRemoteDrift:
@@ -286,7 +289,9 @@ class TestRemoteDrift:
         # Clone bare so we can push to it without checked-out-branch headaches.
         subprocess.run(
             ["git", "clone", "--bare", str(git_project), str(origin)],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         _git(git_project, "remote", "add", "origin", str(origin))
         _git(git_project, "fetch", "origin")
@@ -295,9 +300,7 @@ class TestRemoteDrift:
         _git(git_project, "branch", "--set-upstream-to", f"origin/{head}", head)
         return origin
 
-    def test_remote_only_drift_raises(
-        self, git_project: Path, tmp_path: Path
-    ) -> None:
+    def test_remote_only_drift_raises(self, git_project: Path, tmp_path: Path) -> None:
         """origin advanced while local base stayed → drift surfaces remote section."""
         origin = self._setup_origin(git_project, tmp_path)
 
@@ -311,7 +314,9 @@ class TestRemoteDrift:
         coworker = tmp_path / "coworker"
         subprocess.run(
             ["git", "clone", str(origin), str(coworker)],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         _git(coworker, "config", "user.email", "co@test")
         _git(coworker, "config", "user.name", "Co")
@@ -333,9 +338,7 @@ class TestRemoteDrift:
         # HATS-509: recipe lives in CLI layer, see TestLocalDrift comment.
         assert "--accept-drift" not in msg
 
-    def test_local_and_remote_drift_both_listed(
-        self, git_project: Path, tmp_path: Path
-    ) -> None:
+    def test_local_and_remote_drift_both_listed(self, git_project: Path, tmp_path: Path) -> None:
         """When both sources drift, the message must surface both sections."""
         origin = self._setup_origin(git_project, tmp_path)
 
@@ -351,7 +354,9 @@ class TestRemoteDrift:
         coworker = tmp_path / "coworker"
         subprocess.run(
             ["git", "clone", str(origin), str(coworker)],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         _git(coworker, "config", "user.email", "co@test")
         _git(coworker, "config", "user.name", "Co")
@@ -372,9 +377,7 @@ class TestRemoteDrift:
 class TestRichMarkupSafety:
     """Adversarial filenames must not inject Rich markup into the CLI output."""
 
-    def test_filename_with_markup_chars_preserved_in_message(
-        self, git_project: Path
-    ) -> None:
+    def test_filename_with_markup_chars_preserved_in_message(self, git_project: Path) -> None:
         """Drift message keeps adversarial filename verbatim — CLI handler escapes."""
         mgr = WorktreeManager(git_project, branch_name="task/markup-safety")
         wt_path = mgr.create()
@@ -411,7 +414,9 @@ class TestUnpushedLocalWorkNotDrift:
         origin = tmp_path / "origin.git"
         subprocess.run(
             ["git", "clone", "--bare", str(git_project), str(origin)],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         _git(git_project, "remote", "add", "origin", str(origin))
         _git(git_project, "fetch", "origin")
@@ -419,9 +424,7 @@ class TestUnpushedLocalWorkNotDrift:
         _git(git_project, "branch", "--set-upstream-to", f"origin/{head}", head)
         return origin
 
-    def test_local_ahead_of_remote_is_not_drift(
-        self, git_project: Path, tmp_path: Path
-    ) -> None:
+    def test_local_ahead_of_remote_is_not_drift(self, git_project: Path, tmp_path: Path) -> None:
         """Local has unpushed commits + worktree merge → must NOT raise.
 
         Reproduces the HATS-482 incident exactly: origin is behind local,
@@ -484,9 +487,7 @@ class TestUnpushedLocalWorkNotDrift:
         listing = _git(git_project, "branch", "--list", "task/unpushed-pre-create").stdout
         assert listing.strip() == "", "branch should be deleted on clean merge"
 
-    def test_diverged_remote_and_local_is_drift(
-        self, git_project: Path, tmp_path: Path
-    ) -> None:
+    def test_diverged_remote_and_local_is_drift(self, git_project: Path, tmp_path: Path) -> None:
         """Local and remote both have unique commits → real drift.
 
         Mirror image of test_local_ahead: remote is NOT an ancestor of
@@ -506,7 +507,9 @@ class TestUnpushedLocalWorkNotDrift:
         coworker = tmp_path / "coworker-diverged"
         subprocess.run(
             ["git", "clone", str(origin), str(coworker)],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         _git(coworker, "config", "user.email", "co@test")
         _git(coworker, "config", "user.name", "Co")
@@ -547,7 +550,8 @@ class TestFetchFailureBehaviour:
             mgr.merge()  # must proceed (offline-merge contract)
 
         warnings = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if r.levelno == logging.WARNING and "fetch origin" in r.message
         ]
         assert warnings, (
@@ -581,8 +585,10 @@ class TestFetchFailureBehaviour:
                 raise FileNotFoundError(2, "No such file or directory: 'git'")
             return real_git(*args, **kwargs)
 
-        with patch.object(mgr, "_git", side_effect=selective_git), \
-             caplog.at_level(logging.WARNING, logger="ai_hats.worktree"):
+        with (
+            patch.object(mgr, "_git", side_effect=selective_git),
+            caplog.at_level(logging.WARNING, logger="ai_hats.worktree"),
+        ):
             mgr.merge()  # must not raise FileNotFoundError
 
         # Warning emitted for the simulated missing git.
@@ -596,7 +602,11 @@ class TestFetchFailureBehaviour:
 class TestStateRoundtrip:
     def test_base_sha_persisted(self, git_project: Path) -> None:
         """``save_state`` writes ``base_sha_at_create``; load restores it."""
-        mgr = WorktreeManager(git_project, branch_name="task/persist")
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="task/persist",
+            state_dir=worktrees_dir(git_project),
+        )
         mgr.create()
         mgr.save_state()
 
@@ -606,7 +616,9 @@ class TestStateRoundtrip:
         assert data["base_sha_at_create"]
         assert len(data["base_sha_at_create"]) == 40  # full SHA
 
-        reloaded = WorktreeManager.load_for_branch(git_project, "task/persist")
+        reloaded = WorktreeManager.load_for_branch(
+            git_project, "task/persist", state_dir=worktrees_dir(git_project)
+        )
         assert reloaded is not None
         assert reloaded._base_sha_at_create == data["base_sha_at_create"]
 
@@ -650,12 +662,9 @@ class TestBaseBranchMismatch:
         # `wandered-feature` MUST NOT carry the worktree commit (that would
         # be the silent-wrong-branch-merge we're guarding against). And
         # `original` (master) MUST be unchanged.
-        wandered_log = _git(
-            git_project, "log", "--oneline", "wandered-feature"
-        ).stdout
+        wandered_log = _git(git_project, "log", "--oneline", "wandered-feature").stdout
         assert "wt-work" not in wandered_log, (
-            f"wandered branch must not have received the worktree commit:\n"
-            f"{wandered_log}"
+            f"wandered branch must not have received the worktree commit:\n{wandered_log}"
         )
         original_log = _git(git_project, "log", "--oneline", original).stdout
         assert "wt-work" not in original_log, (
@@ -664,9 +673,7 @@ class TestBaseBranchMismatch:
 
         # Worktree branch preserved — refusal is recoverable by
         # `git checkout <original>` + retry.
-        listing = _git(
-            git_project, "branch", "--list", "task/head-wandered"
-        ).stdout
+        listing = _git(git_project, "branch", "--list", "task/head-wandered").stdout
         assert "task/head-wandered" in listing
 
     def test_head_on_original_branch_passes(self, git_project: Path) -> None:
@@ -683,14 +690,10 @@ class TestBaseBranchMismatch:
         # HEAD already on `_original_branch` (default for the fixture).
         mgr.merge()  # no exception
 
-        listing = _git(
-            git_project, "branch", "--list", "task/matched-head"
-        ).stdout
+        listing = _git(git_project, "branch", "--list", "task/matched-head").stdout
         assert listing.strip() == "", "branch should be cleaned up on merge"
 
-    def test_legacy_state_no_original_branch_refuses_typed(
-        self, git_project: Path
-    ) -> None:
+    def test_legacy_state_no_original_branch_refuses_typed(self, git_project: Path) -> None:
         """State with ``_original_branch=None`` → typed refusal, not a crash.
 
         HATS-714: a corrupt / hand-edited / pre-versioned state JSON yields
@@ -728,9 +731,7 @@ class TestBaseBranchMismatch:
         would let an operator who only meant "I know about uncommitted
         changes" silently merge to the wrong branch.
         """
-        mgr = WorktreeManager(
-            git_project, branch_name="task/force-not-mismatch"
-        )
+        mgr = WorktreeManager(git_project, branch_name="task/force-not-mismatch")
         wt_path = mgr.create()
         mgr.save_state()
         _commit_in_worktree(wt_path)
@@ -739,9 +740,7 @@ class TestBaseBranchMismatch:
         with pytest.raises(WorktreeBaseBranchMismatchError):
             mgr.merge(force=True)
 
-    def test_accept_drift_does_not_bypass_mismatch(
-        self, git_project: Path
-    ) -> None:
+    def test_accept_drift_does_not_bypass_mismatch(self, git_project: Path) -> None:
         """``--accept-drift`` does NOT bypass the HEAD guard either.
 
         ``accept-drift`` is a deliberate consent to a moved base; it
@@ -749,9 +748,7 @@ class TestBaseBranchMismatch:
         Mismatch guard runs before drift check (worktree.py order) and is
         not gated by ``accept_drift``.
         """
-        mgr = WorktreeManager(
-            git_project, branch_name="task/accept-not-mismatch"
-        )
+        mgr = WorktreeManager(git_project, branch_name="task/accept-not-mismatch")
         wt_path = mgr.create()
         mgr.save_state()
         _commit_in_worktree(wt_path)
@@ -760,9 +757,7 @@ class TestBaseBranchMismatch:
         with pytest.raises(WorktreeBaseBranchMismatchError):
             mgr.merge(accept_drift=True)
 
-    def test_mismatch_wins_over_dirty_worktree(
-        self, git_project: Path
-    ) -> None:
+    def test_mismatch_wins_over_dirty_worktree(self, git_project: Path) -> None:
         """Mismatch surfaces BEFORE the dirty-worktree error.
 
         Pins the documented ordering invariant (worktree.py: HATS-533
@@ -771,9 +766,7 @@ class TestBaseBranchMismatch:
         would slip through — confusing the operator about the actual
         root cause (HEAD wandering, not their uncommitted edit).
         """
-        mgr = WorktreeManager(
-            git_project, branch_name="task/dirty-and-wandered"
-        )
+        mgr = WorktreeManager(git_project, branch_name="task/dirty-and-wandered")
         wt_path = mgr.create()
         mgr.save_state()
         _commit_in_worktree(wt_path)

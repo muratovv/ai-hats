@@ -19,8 +19,6 @@ from pathlib import Path
 from typing import Any, Protocol
 
 
-from .paths import worktrees_dir
-
 from .worktree_locks import (  # noqa: F401  -- re-export preserves the import surface (HATS-715)
     BASE_LOCK_TIMEOUT,
     CREATE_LOCK_CONTENTION_WARN,
@@ -468,6 +466,35 @@ class _NoopLifecycle:
 NOOP_LIFECYCLE: WorktreeLifecycle = _NoopLifecycle()
 
 
+#: Bare-core fallback for the state/lock path-base — a project-local dir, so the
+#: core needs no ``ai_hats.paths`` import (ADR-0013 D4, lets the D6 import-lint
+#: forbid it). This RUNTIME dir is unrelated to the future ``src/ai_hats/wt/``
+#: PACKAGE (HATS-851).
+_DEFAULT_STATE_DIRNAME = ".wt"
+
+
+def _resolve_state_dir(
+    project_dir: Path,
+    state_dir: Path | None,
+    lifecycle: WorktreeLifecycle,
+) -> Path:
+    """Resolve the worktree state/lock path-base (ADR-0013 D4).
+
+    ai-hats injects its ``worktrees_dir(project_dir)`` convention; a bare core
+    omits it and falls back project-local. The fallback fails *silent* (a
+    wrong-but-valid path the import-lint can't catch — it is a runtime arg), so
+    an ai-hats driver (any non-no-op ``lifecycle``) that omits the base is a bug
+    that would de-serialize the cross-process locks (ADR-0006). The
+    ``__debug__`` assert (D4 "Variant A") catches that omission loud rather than
+    silently mis-locating state.
+    """
+    assert lifecycle is NOOP_LIFECYCLE or state_dir is not None, (
+        "ADR-0013 D4: a non-no-op WorktreeLifecycle requires an explicit "
+        "state_dir base (omitting it de-serializes the cross-process locks)"
+    )
+    return state_dir if state_dir is not None else project_dir / _DEFAULT_STATE_DIRNAME
+
+
 class WorktreeManager:
     """Creates and manages isolated git worktrees.
 
@@ -495,6 +522,7 @@ class WorktreeManager:
         *,
         branch_name: str = "",
         lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
+        state_dir: Path | None = None,
     ) -> None:
         self.project_dir = project_dir
         self.role_name = role_name
@@ -504,9 +532,7 @@ class WorktreeManager:
         # HATS-827: backstop — empty role yields the git-invalid branch
         # agent//<sid>; fail at construction, not deep in create().
         if not branch_name and not role_name:
-            raise ValueError(
-                "cannot build worktree branch: empty role segment — pass a role"
-            )
+            raise ValueError("cannot build worktree branch: empty role segment — pass a role")
         self.branch_name = branch_name or f"agent/{role_name}/{session_id}"
         self._is_git = False
         self._original_branch: str | None = None
@@ -519,6 +545,9 @@ class WorktreeManager:
         # ADR-0013 D3: the lifecycle extension-point bundle. ai-hats injects its
         # hook-running bundle; a bare core keeps the no-op default.
         self._lifecycle = lifecycle
+        # ADR-0013 D4: the state/lock path-base. ai-hats passes worktrees_dir;
+        # a bare core falls back project-local (no ai_hats.paths import).
+        self._state_dir = _resolve_state_dir(project_dir, state_dir, lifecycle)
 
     def create(
         self,
@@ -573,10 +602,12 @@ class WorktreeManager:
             self._base_sha_at_create = None
 
         # HATS-479 — L1 + L2 + L4. See module docstring "Create-time concurrency".
-        with _acquire_create_lock(worktrees_dir(self.project_dir)):
+        with _acquire_create_lock(self._state_dir):
             # L2: re-check under the lock. Closes the TOCTOU window between a
             # caller's optional pre-check and our work.
-            existing = WorktreeManager.load_for_branch(self.project_dir, self.branch_name)
+            existing = WorktreeManager.load_for_branch(
+                self.project_dir, self.branch_name, state_dir=self._state_dir
+            )
             if existing is not None:
                 raise WorktreeCreateError(
                     f"Worktree already exists for branch "
@@ -729,7 +760,7 @@ class WorktreeManager:
         if not self._is_git or self.worktree_path is None:
             return
 
-        state_path = worktrees_dir(self.project_dir) / f"{_state_key(self.branch_name)}.json"
+        state_path = self._state_dir / f"{_state_key(self.branch_name)}.json"
         with _acquire_lifecycle_lock(state_path):
             # HATS-480 idempotency re-check: a peer (parallel discard or
             # another merge) finishing first would have run _remove_worktree
@@ -937,7 +968,7 @@ class WorktreeManager:
         if not self._is_git or self.worktree_path is None:
             return
 
-        state_path = worktrees_dir(self.project_dir) / f"{_state_key(self.branch_name)}.json"
+        state_path = self._state_dir / f"{_state_key(self.branch_name)}.json"
         with _acquire_lifecycle_lock(state_path):
             # HATS-480 idempotency re-check — see merge() for the rationale.
             if not self.worktree_path.exists():
@@ -967,7 +998,7 @@ class WorktreeManager:
         if not self._is_git or self.worktree_path is None:
             return
 
-        state_path = worktrees_dir(self.project_dir) / f"{_state_key(self.branch_name)}.json"
+        state_path = self._state_dir / f"{_state_key(self.branch_name)}.json"
         with _acquire_lifecycle_lock(state_path):
             # HATS-480 idempotency re-check — see merge() / discard().
             if not self.worktree_path.exists():
@@ -995,7 +1026,8 @@ class WorktreeManager:
             except WorktreeTeardownAborted as exc:
                 logger.warning(
                     "Teardown aborted at cleanup of '%s' — worktree preserved: %s",
-                    self.branch_name, exc,
+                    self.branch_name,
+                    exc,
                 )
                 return
 
@@ -1050,18 +1082,21 @@ class WorktreeManager:
         per-route handling (merge/discard propagate, ``cleanup`` suppresses) is
         owned by the calling teardown method, not by the bundle.
         """
-        self._lifecycle.before_teardown(
-            event, self._lifecycle_ctx(skip_hooks=skip_hooks)
-        )
+        self._lifecycle.before_teardown(event, self._lifecycle_ctx(skip_hooks=skip_hooks))
 
     # ------------------------------------------------------------------
     # State persistence
     # ------------------------------------------------------------------
 
     def save_state(self, *, key: str | None = None) -> Path:
-        """Persist worktree state to <ai_hats_dir>/sessions/worktrees/<key>.json (locked, atomic)."""
+        """Persist worktree state to ``<state_dir>/<key>.json`` (locked, atomic).
+
+        ``state_dir`` is the injected path-base (ADR-0013 D4): ai-hats passes its
+        ``<ai_hats_dir>/sessions/worktrees/`` convention; a bare core uses the
+        project-local fallback.
+        """
         k = key or _state_key(self.branch_name)
-        state_dir = worktrees_dir(self.project_dir)
+        state_dir = self._state_dir
         state_dir.mkdir(parents=True, exist_ok=True)
         state_path = state_dir / f"{k}.json"
         state: dict[str, Any] = {
@@ -1078,7 +1113,7 @@ class WorktreeManager:
 
     def _clear_state(self, *, key: str | None = None) -> None:
         k = key or getattr(self, "_state_key_cached", None) or _state_key(self.branch_name)
-        state_path = worktrees_dir(self.project_dir) / f"{k}.json"
+        state_path = self._state_dir / f"{k}.json"
         with _acquire(state_path):
             try:
                 state_path.unlink()  # safe-delete: ok worktree-state (git-managed)
@@ -1092,6 +1127,7 @@ class WorktreeManager:
         task_id: str,
         *,
         lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
+        state_dir: Path | None = None,
     ) -> WorktreeManager | None:
         """Load the worktree state for a specific task ID.
 
@@ -1105,7 +1141,7 @@ class WorktreeManager:
         → key ``task-HATS-086``, while ``save_state`` wrote ``task-hats-086``).
         """
         key = _state_key(f"task/{task_id.lower()}")
-        return cls._load_by_key(project_dir, key, lifecycle=lifecycle)
+        return cls._load_by_key(project_dir, key, lifecycle=lifecycle, state_dir=state_dir)
 
     @classmethod
     def load_for_branch(
@@ -1114,10 +1150,11 @@ class WorktreeManager:
         branch: str,
         *,
         lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
+        state_dir: Path | None = None,
     ) -> WorktreeManager | None:
         """Load worktree state by branch name."""
         key = _state_key(branch)
-        return cls._load_by_key(project_dir, key, lifecycle=lifecycle)
+        return cls._load_by_key(project_dir, key, lifecycle=lifecycle, state_dir=state_dir)
 
     @classmethod
     def branch_exists(cls, project_dir: Path, branch: str) -> bool:
@@ -1154,14 +1191,15 @@ class WorktreeManager:
         return bool(result.stdout.strip())
 
     @staticmethod
-    def _git_probe(
-        project_dir: Path, *args: str
-    ) -> subprocess.CompletedProcess[str] | None:
+    def _git_probe(project_dir: Path, *args: str) -> subprocess.CompletedProcess[str] | None:
         """Run ``git <args>`` in ``project_dir`` (captured); None if git is absent."""
         try:
             return subprocess.run(
-                ["git", *args], cwd=str(project_dir),
-                capture_output=True, text=True, check=False,
+                ["git", *args],
+                cwd=str(project_dir),
+                capture_output=True,
+                text=True,
+                check=False,
             )
         except (FileNotFoundError, OSError):
             return None
@@ -1264,8 +1302,10 @@ class WorktreeManager:
         key: str,
         *,
         lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
+        state_dir: Path | None = None,
     ) -> WorktreeManager | None:
-        state_path = worktrees_dir(project_dir) / f"{key}.json"
+        resolved_state_dir = _resolve_state_dir(project_dir, state_dir, lifecycle)
+        state_path = resolved_state_dir / f"{key}.json"
         # HATS-482 (B-07): one-shot migration of legacy lowercase state file.
         # Pre-482 `_state_key` lowercased its output; an upgrade may leave
         # `task-hats-x.json` on disk while the caller now queries with
@@ -1294,7 +1334,12 @@ class WorktreeManager:
                 except FileNotFoundError:
                     pass
                 return None
-        mgr = cls(project_dir, branch_name=data["branch"], lifecycle=lifecycle)
+        mgr = cls(
+            project_dir,
+            branch_name=data["branch"],
+            lifecycle=lifecycle,
+            state_dir=resolved_state_dir,
+        )
         mgr.worktree_path = wt_path
         mgr._original_branch = data.get("original_branch")
         # HATS-457: legacy state files (pre-457) omit this key — graceful
@@ -1313,6 +1358,7 @@ class WorktreeManager:
         project_dir: Path,
         *,
         lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
+        state_dir: Path | None = None,
     ) -> list[WorktreeManager]:
         """Load all active worktree states. Prunes stale entries.
 
@@ -1326,13 +1372,13 @@ class WorktreeManager:
         duration of the iteration, which is heavier than the cost of an
         occasional missing row in ``wt list``.
         """
-        states_dir = worktrees_dir(project_dir)
+        states_dir = _resolve_state_dir(project_dir, state_dir, lifecycle)
         if not states_dir.exists():
             return []
         result = []
         for f in sorted(states_dir.glob("*.json")):
             key = f.stem
-            mgr = cls._load_by_key(project_dir, key, lifecycle=lifecycle)
+            mgr = cls._load_by_key(project_dir, key, lifecycle=lifecycle, state_dir=states_dir)
             if mgr is not None:
                 result.append(mgr)
         return result
@@ -1802,7 +1848,7 @@ class WorktreeManager:
         if head_main == head_wt:
             return
 
-        with _acquire_base_branch_lock(worktrees_dir(self.project_dir), self._original_branch):
+        with _acquire_base_branch_lock(self._state_dir, self._original_branch):
             # HATS-602: authoritative mid-merge guard, inside the base lock.
             self._refuse_if_mid_merge()
             _retry_git_merge(
@@ -1831,7 +1877,7 @@ class WorktreeManager:
         if head_main == head_wt:
             return
 
-        with _acquire_base_branch_lock(worktrees_dir(self.project_dir), self._original_branch):
+        with _acquire_base_branch_lock(self._state_dir, self._original_branch):
             # HATS-602: authoritative mid-merge guard, inside the base lock.
             self._refuse_if_mid_merge()
             _retry_git_merge(

@@ -74,7 +74,11 @@ class TestExplicitBranch:
 
 class TestStatePersistence:
     def test_save_state_creates_file(self, git_project: Path) -> None:
-        mgr = WorktreeManager(git_project, branch_name="feat/test-save")
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="feat/test-save",
+            state_dir=worktrees_dir(git_project),
+        )
         mgr.create()
         state_path = mgr.save_state()
         try:
@@ -115,7 +119,12 @@ class TestStatePersistence:
                 }
             )
         )
-        assert WorktreeManager.load_for_branch(git_project, "feat/stale") is None
+        assert (
+            WorktreeManager.load_for_branch(
+                git_project, "feat/stale", state_dir=worktrees_dir(git_project)
+            )
+            is None
+        )
         assert not state_path.exists()
 
 
@@ -251,7 +260,11 @@ class _FakeCompleted:
 def active_worktree(git_project: Path, monkeypatch):
     """Create a worktree, save state, and chdir to project. Auto-cleanup."""
     monkeypatch.chdir(git_project)
-    mgr = WorktreeManager(git_project, branch_name="feat/exec-test")
+    mgr = WorktreeManager(
+        git_project,
+        branch_name="feat/exec-test",
+        state_dir=worktrees_dir(git_project),
+    )
     wt = mgr.create()
     mgr.save_state()
     yield git_project, wt
@@ -262,7 +275,9 @@ class TestWtExec:
     def _patch_subprocess(self, monkeypatch, fake_run):
         """Patch subprocess.run and prevent is_inside_linked_worktree from using it."""
         monkeypatch.setattr("ai_hats.cli.worktree.subprocess.run", fake_run)
-        monkeypatch.setattr(WorktreeManager, "is_inside_linked_worktree", staticmethod(lambda _: False))
+        monkeypatch.setattr(
+            WorktreeManager, "is_inside_linked_worktree", staticmethod(lambda _: False)
+        )
 
     def test_runs_in_worktree_cwd_with_pythonpath(self, active_worktree, monkeypatch) -> None:
         project, wt = active_worktree
@@ -318,7 +333,11 @@ class TestWtExec:
         # Self-contained: create + run + cleanup before any patch teardown,
         # so the fake subprocess.run never collides with worktree cleanup.
         monkeypatch.chdir(git_project)
-        mgr = WorktreeManager(git_project, branch_name="feat/notfound-test")
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="feat/notfound-test",
+            state_dir=worktrees_dir(git_project),
+        )
         mgr.create()
         mgr.save_state()
         try:
