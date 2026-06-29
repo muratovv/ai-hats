@@ -49,11 +49,16 @@ def _resolve_worktree(branch: str | None = None):
     import subprocess as _sp
 
     from ..worktree import WorktreeManager
+    from ..wt_lifecycle import HOOK_LIFECYCLE
 
     project_dir = _project_dir()
 
+    # ADR-0013 D3: every manager this resolver hands back may be torn down
+    # (merge/discard), so it carries ai-hats's hook-running bundle.
     if branch is not None:
-        return WorktreeManager.load_for_branch(project_dir, branch)
+        return WorktreeManager.load_for_branch(
+            project_dir, branch, lifecycle=HOOK_LIFECYCLE
+        )
 
     # CWD is inside a linked worktree → detect branch automatically.
     # HATS-788: detect on the RAW cwd — `project_dir` has hopped to MAIN
@@ -74,10 +79,12 @@ def _resolve_worktree(branch: str | None = None):
             ).stdout.strip()
         except _sp.CalledProcessError:
             return None
-        return WorktreeManager.load_for_branch(project_dir, head)
+        return WorktreeManager.load_for_branch(
+            project_dir, head, lifecycle=HOOK_LIFECYCLE
+        )
 
     # HATS-482 / R-08: fail-on-ambiguity instead of silent first-active.
-    active = WorktreeManager.list_active(project_dir)
+    active = WorktreeManager.list_active(project_dir, lifecycle=HOOK_LIFECYCLE)
     if not active:
         return None
     if len(active) == 1:
@@ -129,9 +136,10 @@ def wt_create(branch: str):
     # and raises WorktreeCreateError with a friendly message; we just relay.
     # HATS-823: thread the project's effective-role worktree carry (wt_in/wt_out
     # hooks) in at create; persisted to state for teardown (D3).
-    from ..worktree_hooks import collect_carry_for_role
+    from ..wt_carry import collect_carry_for_role
+    from ..wt_lifecycle import HOOK_LIFECYCLE
 
-    mgr = WorktreeManager(project_dir, branch_name=branch)
+    mgr = WorktreeManager(project_dir, branch_name=branch, lifecycle=HOOK_LIFECYCLE)
     try:
         wt_path = mgr.create(wt_hooks=collect_carry_for_role(project_dir))
     except WorktreeCreateError as exc:
@@ -184,11 +192,11 @@ def wt_merge(
         WorktreeBaseBranchMismatchError,  # HATS-533
         WorktreeDirtyError,
         WorktreeDriftError,
-        WorktreeHookError,  # HATS-823
         WorktreeMainRepoMidMergeError,  # HATS-587 / F4
         WorktreePartialCleanupError,
         WorktreeRemoveError,
         WorktreeStateIncompleteError,  # HATS-714
+        WorktreeTeardownAborted,  # HATS-823 / ADR-0013 D8
     )
 
     # HATS-482 / B-08: guard before resolving CWD/_project_dir.
@@ -207,12 +215,13 @@ def wt_merge(
             squash=squash, force=force, accept_drift=accept_drift,
             skip_hooks=skip_hooks,
         )
-    except WorktreeHookError as e:
-        # HATS-823: a wt_out hook failed; teardown aborted fail-closed, the
-        # worktree + gitignored data are preserved. The message carries the
-        # recovery + --skip-hooks escape.
+    except WorktreeTeardownAborted as e:
+        # HATS-823 / ADR-0013 D8: a wt_out hook failed; teardown aborted
+        # fail-closed, the worktree + gitignored data are preserved. The hook
+        # detail (recovery + --skip-hooks escape) rides as the __cause__; fall
+        # back to the abort itself for a future causeless (non-hook) veto.
         from rich.markup import escape as _escape
-        console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e))}")
+        console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e.__cause__ or e))}")
         sys.exit(1)
     except WorktreeDirtyError as e:
         console.print(f"[red]Refused[/]: {e}")
@@ -344,9 +353,9 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
     """
     from ..worktree import (
         WorktreeDirtyError,
-        WorktreeHookError,  # HATS-823
         WorktreePartialCleanupError,
         WorktreeRemoveError,
+        WorktreeTeardownAborted,  # HATS-823 / ADR-0013 D8
     )
 
     # HATS-482 / B-08: guard before resolving CWD/_project_dir.
@@ -362,12 +371,13 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
     name = mgr.branch_name
     try:
         mgr.discard(force=force, force_remove=force_remove, skip_hooks=skip_hooks)
-    except WorktreeHookError as e:
-        # HATS-823: `discard` is still fail-closed on a wt_out hook — the data
-        # may matter even when the work doesn't. The message carries the
-        # --skip-hooks escape.
+    except WorktreeTeardownAborted as e:
+        # HATS-823 / ADR-0013 D8: `discard` is still fail-closed on a wt_out hook
+        # — the data may matter even when the work doesn't. The hook detail
+        # (--skip-hooks escape) rides as the __cause__; fall back to the abort
+        # itself for a future causeless (non-hook) veto.
         from rich.markup import escape as _escape
-        console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e))}")
+        console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e.__cause__ or e))}")
         sys.exit(1)
     except WorktreeDirtyError as e:
         console.print(f"[red]Refused[/]: {e}")

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ai_hats.models import ProjectConfig, WorktreeHook
 from ai_hats.paths import managed_wt_hook_filename, wt_hooks_dir
-from ai_hats.worktree_hooks import collect_carry_for_role, serialize_collected_hooks
+from ai_hats.wt_carry import collect_carry_for_role, serialize_collected_hooks
 
 
 def _project_with_wt_role(tmp_path: Path, *, with_script: bool = True):
