@@ -25,6 +25,7 @@ pytestmark = pytest.mark.integration
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
@@ -53,6 +54,7 @@ def git_project(tmp_path: Path) -> Path:
 # IsolationMode
 # ---------------------------------------------------------------------------
 
+
 class TestIsolationMode:
     def test_values(self) -> None:
         assert IsolationMode.DISCARD == "discard"
@@ -76,7 +78,10 @@ class TestIsolationModeNone:
 
     def test_create_returns_project_dir(self, git_project: Path) -> None:
         mgr = WorktreeManager(
-            git_project, "tester", "sess-none-001", IsolationMode.NONE,
+            git_project,
+            "tester",
+            "sess-none-001",
+            IsolationMode.NONE,
         )
         wt = mgr.create()
         assert wt.resolve() == git_project.resolve()
@@ -84,7 +89,10 @@ class TestIsolationModeNone:
 
     def test_context_manager_no_op_cleanup(self, git_project: Path) -> None:
         mgr = WorktreeManager(
-            git_project, "tester", "sess-none-002", IsolationMode.NONE,
+            git_project,
+            "tester",
+            "sess-none-002",
+            IsolationMode.NONE,
         )
         with mgr as wt:
             assert wt.resolve() == git_project.resolve()
@@ -94,20 +102,25 @@ class TestIsolationModeNone:
     def test_no_branch_created(self, git_project: Path) -> None:
         """Verify no `agent/...` branch is created in NONE mode."""
         mgr = WorktreeManager(
-            git_project, "tester", "sess-none-003", IsolationMode.NONE,
+            git_project,
+            "tester",
+            "sess-none-003",
+            IsolationMode.NONE,
         )
         with mgr:
             pass
         result = _git(git_project, "branch", "--list", "agent/tester/sess-none-003")
-        assert result.stdout.strip() == "", \
-            "NONE mode must not create a branch"
+        assert result.stdout.strip() == "", "NONE mode must not create a branch"
 
     def test_works_in_non_git_dir(self, tmp_path: Path) -> None:
         """NONE mode must work even outside a git repo (no _check_is_git call)."""
         proj = tmp_path / "proj"
         proj.mkdir()
         mgr = WorktreeManager(
-            proj, "tester", "sess-none-004", IsolationMode.NONE,
+            proj,
+            "tester",
+            "sess-none-004",
+            IsolationMode.NONE,
         )
         with mgr as wt:
             assert wt.resolve() == proj.resolve()
@@ -116,6 +129,7 @@ class TestIsolationModeNone:
 # ---------------------------------------------------------------------------
 # WorktreeManager — create / cleanup
 # ---------------------------------------------------------------------------
+
 
 class TestWorktreeCreate:
     def test_create_returns_different_path(self, git_project: Path) -> None:
@@ -256,6 +270,7 @@ class TestWorktreeCleanup:
 # Context manager
 # ---------------------------------------------------------------------------
 
+
 class TestContextManager:
     def test_enter_returns_path_exit_cleans(self, git_project: Path) -> None:
         with WorktreeManager(git_project, "tester", "sess-030") as wt:
@@ -283,6 +298,7 @@ class TestContextManager:
 # ---------------------------------------------------------------------------
 # Original branch missing (HATS-253)
 # ---------------------------------------------------------------------------
+
 
 class TestOriginalBranchMissing:
     def test_merge_raises_when_original_branch_deleted(self, git_project: Path) -> None:
@@ -345,6 +361,7 @@ class TestOriginalBranchMissing:
 # Non-git fallback
 # ---------------------------------------------------------------------------
 
+
 class TestNonGitFallback:
     def test_non_git_returns_project_dir(self, tmp_path: Path) -> None:
         plain_dir = tmp_path / "plain"
@@ -364,6 +381,7 @@ class TestNonGitFallback:
 # ---------------------------------------------------------------------------
 # Parallel
 # ---------------------------------------------------------------------------
+
 
 class TestParallel:
     def test_two_managers_no_conflict(self, git_project: Path) -> None:
@@ -387,6 +405,7 @@ class TestParallel:
 # ---------------------------------------------------------------------------
 # HATS-517 — branch-exists classifier (Case A / B / C)
 # ---------------------------------------------------------------------------
+
 
 class TestBranchExistsClassifier:
     """`WorktreeManager.create()` must handle the three sub-cases where
@@ -429,8 +448,7 @@ class TestBranchExistsClassifier:
         # Make a commit in the worktree.
         (wt / "feature.txt").write_text("hello")
         _git(wt, "add", "feature.txt")
-        _git(wt, "-c", "user.email=t@t.com", "-c", "user.name=T",
-             "commit", "-m", "feat")
+        _git(wt, "-c", "user.email=t@t.com", "-c", "user.name=T", "commit", "-m", "feat")
         # Merge — must succeed (Case A lifecycle parity with happy path).
         mgr.merge()
         # File is now on master, branch is gone, worktree dir is gone.
@@ -447,6 +465,7 @@ class TestBranchExistsClassifier:
 
         # Force `git worktree add` to fail (non-retriable error).
         import ai_hats.worktree as wtmod
+
         real_retry = wtmod._retry_worktree_add
 
         def boom(*args, **kwargs):
@@ -463,9 +482,7 @@ class TestBranchExistsClassifier:
         result = _git(git_project, "branch", "--list", "task/keep")
         assert "task/keep" in result.stdout
 
-    def test_case_b_refuse_when_checked_out_in_main(
-        self, git_project: Path
-    ) -> None:
+    def test_case_b_refuse_when_checked_out_in_main(self, git_project: Path) -> None:
         """Case B: branch is currently HEAD of main worktree → refuse."""
         _git(git_project, "checkout", "-b", "task/main-collision")
         mgr = WorktreeManager(git_project, branch_name="task/main-collision")
@@ -477,9 +494,7 @@ class TestBranchExistsClassifier:
         assert "git switch" in msg
         assert "task close" in msg
 
-    def test_case_c_adopt_orphaned_linked_worktree(
-        self, git_project: Path, tmp_path: Path
-    ) -> None:
+    def test_case_c_adopt_orphaned_linked_worktree(self, git_project: Path, tmp_path: Path) -> None:
         """Case C: linked worktree exists, state JSON missing → adopt + restore."""
         # Create a linked worktree the manual way.
         linked_path = tmp_path / "manual-linked"
@@ -487,21 +502,25 @@ class TestBranchExistsClassifier:
         # No state JSON exists for it (we never went through ai-hats).
         from ai_hats.worktree import _state_key
         from ai_hats.paths import worktrees_dir
+
         state = worktrees_dir(git_project) / f"{_state_key('task/orphan')}.json"
         assert not state.exists()
 
         # Now call create() — should adopt, not fail.
-        mgr = WorktreeManager(git_project, branch_name="task/orphan")
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="task/orphan",
+            state_dir=worktrees_dir(git_project),
+        )
         wt = mgr.create()
         assert wt.resolve() == linked_path.resolve()
         # State JSON re-created.
         assert state.exists()
 
-    def test_case_c_refuse_when_directory_missing(
-        self, git_project: Path, tmp_path: Path
-    ) -> None:
+    def test_case_c_refuse_when_directory_missing(self, git_project: Path, tmp_path: Path) -> None:
         """Case C subtlety: linked admin entry exists but dir is rmtree'd."""
         import shutil
+
         linked_path = tmp_path / "ghost"
         _git(git_project, "worktree", "add", "-b", "task/ghost", str(linked_path))
         # Nuke the dir without `git worktree remove` — orphan admin entry.
@@ -529,6 +548,7 @@ class TestBranchExistsClassifier:
 # Already-merged short-circuit (HATS-596)
 # ---------------------------------------------------------------------------
 
+
 class TestAlreadyMergedShortCircuit:
     """HATS-596: ``merge()`` is checkout-independent when the branch is
     already an ancestor of the recorded base — no ``git merge`` runs, so the
@@ -543,9 +563,7 @@ class TestAlreadyMergedShortCircuit:
 
         Returns ``(mgr, wt, base_branch, base_sha_after_merge)``.
         """
-        base_branch = _git(
-            git_project, "rev-parse", "--abbrev-ref", "HEAD"
-        ).stdout.strip()
+        base_branch = _git(git_project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
         mgr = WorktreeManager(git_project, "tester", sess)
         wt = mgr.create()
         (wt / "feature.txt").write_text("wip")
@@ -558,61 +576,37 @@ class TestAlreadyMergedShortCircuit:
         _git(git_project, "checkout", "-b", "wandered")
         return mgr, wt, base_branch, base_sha
 
-    def test_already_merged_wandered_head_tears_down(
-        self, git_project: Path
-    ) -> None:
-        mgr, wt, base_branch, base_sha = self._setup_already_merged(
-            git_project, "sess-596a"
-        )
+    def test_already_merged_wandered_head_tears_down(self, git_project: Path) -> None:
+        mgr, wt, base_branch, base_sha = self._setup_already_merged(git_project, "sess-596a")
         # No exception despite main-repo HEAD on `wandered` (not base).
         mgr.merge()
         assert not wt.exists(), "worktree dir should be removed"
-        branches = _git(
-            git_project, "branch", "--list", mgr.branch_name
-        ).stdout.strip()
+        branches = _git(git_project, "branch", "--list", mgr.branch_name).stdout.strip()
         assert branches == "", "task branch should be deleted"
         # No double-merge: base ref untouched.
-        assert _git(
-            git_project, "rev-parse", base_branch
-        ).stdout.strip() == base_sha
+        assert _git(git_project, "rev-parse", base_branch).stdout.strip() == base_sha
         # Main-repo HEAD untouched.
-        assert _git(
-            git_project, "rev-parse", "--abbrev-ref", "HEAD"
-        ).stdout.strip() == "wandered"
+        assert _git(git_project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == "wandered"
 
-    def test_already_merged_dirty_no_force_raises_dirty(
-        self, git_project: Path
-    ) -> None:
-        mgr, wt, _base, _sha = self._setup_already_merged(
-            git_project, "sess-596b"
-        )
+    def test_already_merged_dirty_no_force_raises_dirty(self, git_project: Path) -> None:
+        mgr, wt, _base, _sha = self._setup_already_merged(git_project, "sess-596b")
         # Uncommitted edit in the worktree → short-circuit honors _check_clean.
         (wt / "feature.txt").write_text("uncommitted change")
         with pytest.raises(WorktreeDirtyError):
             mgr.merge()
         # Worktree + branch preserved for the operator.
         assert wt.exists()
-        assert _git(
-            git_project, "branch", "--list", mgr.branch_name
-        ).stdout.strip() != ""
+        assert _git(git_project, "branch", "--list", mgr.branch_name).stdout.strip() != ""
 
-    def test_already_merged_dirty_force_tears_down(
-        self, git_project: Path
-    ) -> None:
-        mgr, wt, _base, _sha = self._setup_already_merged(
-            git_project, "sess-596c"
-        )
+    def test_already_merged_dirty_force_tears_down(self, git_project: Path) -> None:
+        mgr, wt, _base, _sha = self._setup_already_merged(git_project, "sess-596c")
         (wt / "feature.txt").write_text("uncommitted change")
         # force bypasses _check_clean → clean teardown of the already-merged wt.
         mgr.merge(force=True)
         assert not wt.exists()
-        assert _git(
-            git_project, "branch", "--list", mgr.branch_name
-        ).stdout.strip() == ""
+        assert _git(git_project, "branch", "--list", mgr.branch_name).stdout.strip() == ""
 
-    def test_not_merged_wandered_head_still_refuses(
-        self, git_project: Path
-    ) -> None:
+    def test_not_merged_wandered_head_still_refuses(self, git_project: Path) -> None:
         """Guard intact: a NOT-merged branch + wandered HEAD still raises the
         HATS-533 mismatch — the short-circuit must not mask the real
         wrong-branch-merge risk."""
@@ -626,9 +620,7 @@ class TestAlreadyMergedShortCircuit:
         with pytest.raises(WorktreeBaseBranchMismatchError):
             mgr.merge()
         # Branch preserved.
-        assert _git(
-            git_project, "branch", "--list", mgr.branch_name
-        ).stdout.strip() != ""
+        assert _git(git_project, "branch", "--list", mgr.branch_name).stdout.strip() != ""
 
 
 class TestBranchMergedIntoCanonicalBase:
@@ -651,22 +643,16 @@ class TestBranchMergedIntoCanonicalBase:
         _git(git_project, "checkout", base)
         _git(git_project, "merge", "--no-ff", "--no-edit", "task/merged")
 
-        got = WorktreeManager.branch_merged_into_canonical_base(
-            git_project, "task/merged"
-        )
+        got = WorktreeManager.branch_merged_into_canonical_base(git_project, "task/merged")
         assert got == base
         assert base in ("master", "main")
 
-    def test_returns_base_for_empty_branch_at_base_head(
-        self, git_project: Path
-    ) -> None:
+    def test_returns_base_for_empty_branch_at_base_head(self, git_project: Path) -> None:
         """A branch created at base HEAD with no extra commits IS an ancestor
         of base — nothing to merge, so finalize is correct (not refuse)."""
         base = self._base(git_project)
         _git(git_project, "branch", "task/empty")
-        got = WorktreeManager.branch_merged_into_canonical_base(
-            git_project, "task/empty"
-        )
+        got = WorktreeManager.branch_merged_into_canonical_base(git_project, "task/empty")
         assert got == base
 
     def test_returns_none_when_branch_diverges(self, git_project: Path) -> None:
@@ -677,14 +663,10 @@ class TestBranchMergedIntoCanonicalBase:
         _git(git_project, "commit", "-m", "unmerged wip")
         _git(git_project, "checkout", base)
         # NOT merged → genuinely un-merged → predicate must refuse to vouch.
-        got = WorktreeManager.branch_merged_into_canonical_base(
-            git_project, "task/diverged"
-        )
+        got = WorktreeManager.branch_merged_into_canonical_base(git_project, "task/diverged")
         assert got is None
 
-    def test_returns_none_when_no_canonical_base_exists(
-        self, git_project: Path
-    ) -> None:
+    def test_returns_none_when_no_canonical_base_exists(self, git_project: Path) -> None:
         """R6 (injected bases): with a bases tuple naming only a
         nonexistent branch, the predicate finds no base to compare against
         and safely returns None — without monkeypatching the module global."""
@@ -694,9 +676,7 @@ class TestBranchMergedIntoCanonicalBase:
         )
         assert got is None
 
-    def test_delete_merged_branch_removes_merged_ref(
-        self, git_project: Path
-    ) -> None:
+    def test_delete_merged_branch_removes_merged_ref(self, git_project: Path) -> None:
         base = self._base(git_project)
         _git(git_project, "checkout", "-b", "task/gone")
         (git_project / "g.txt").write_text("g")
@@ -708,9 +688,7 @@ class TestBranchMergedIntoCanonicalBase:
         assert WorktreeManager.delete_merged_branch(git_project, "task/gone") is True
         assert not WorktreeManager.branch_exists(git_project, "task/gone")
 
-    def test_delete_merged_branch_preserves_unmerged_ref(
-        self, git_project: Path
-    ) -> None:
+    def test_delete_merged_branch_preserves_unmerged_ref(self, git_project: Path) -> None:
         """Safe-delete: ``git branch -d`` refuses an un-merged branch →
         returns False and the branch survives (no silent data loss)."""
         base = self._base(git_project)

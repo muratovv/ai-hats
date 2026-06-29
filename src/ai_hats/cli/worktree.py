@@ -10,6 +10,7 @@ from pathlib import Path
 
 import click
 
+from ..paths import worktrees_dir  # ADR-0013 D4: state-dir base for the wt core
 from ._helpers import _guard_not_inside_linked_worktree, _project_dir, console
 
 
@@ -57,7 +58,10 @@ def _resolve_worktree(branch: str | None = None):
     # (merge/discard), so it carries ai-hats's hook-running bundle.
     if branch is not None:
         return WorktreeManager.load_for_branch(
-            project_dir, branch, lifecycle=HOOK_LIFECYCLE
+            project_dir,
+            branch,
+            lifecycle=HOOK_LIFECYCLE,
+            state_dir=worktrees_dir(project_dir),
         )
 
     # CWD is inside a linked worktree → detect branch automatically.
@@ -80,11 +84,16 @@ def _resolve_worktree(branch: str | None = None):
         except _sp.CalledProcessError:
             return None
         return WorktreeManager.load_for_branch(
-            project_dir, head, lifecycle=HOOK_LIFECYCLE
+            project_dir,
+            head,
+            lifecycle=HOOK_LIFECYCLE,
+            state_dir=worktrees_dir(project_dir),
         )
 
     # HATS-482 / R-08: fail-on-ambiguity instead of silent first-active.
-    active = WorktreeManager.list_active(project_dir, lifecycle=HOOK_LIFECYCLE)
+    active = WorktreeManager.list_active(
+        project_dir, lifecycle=HOOK_LIFECYCLE, state_dir=worktrees_dir(project_dir)
+    )
     if not active:
         return None
     if len(active) == 1:
@@ -139,7 +148,12 @@ def wt_create(branch: str):
     from ..wt_carry import collect_carry_for_role
     from ..wt_lifecycle import HOOK_LIFECYCLE
 
-    mgr = WorktreeManager(project_dir, branch_name=branch, lifecycle=HOOK_LIFECYCLE)
+    mgr = WorktreeManager(
+        project_dir,
+        branch_name=branch,
+        lifecycle=HOOK_LIFECYCLE,
+        state_dir=worktrees_dir(project_dir),
+    )
     try:
         wt_path = mgr.create(wt_hooks=collect_carry_for_role(project_dir))
     except WorktreeCreateError as exc:
@@ -171,7 +185,7 @@ def wt_create(branch: str):
     is_flag=True,
     default=False,
     help="Force teardown even if a wt_out hook fails — accepts losing "
-         "unharvested gitignored data (HATS-823).",
+    "unharvested gitignored data (HATS-823).",
 )
 def wt_merge(
     branch: str | None,
@@ -212,7 +226,9 @@ def wt_merge(
     name = mgr.branch_name
     try:
         mgr.merge(
-            squash=squash, force=force, accept_drift=accept_drift,
+            squash=squash,
+            force=force,
+            accept_drift=accept_drift,
             skip_hooks=skip_hooks,
         )
     except WorktreeTeardownAborted as e:
@@ -221,6 +237,7 @@ def wt_merge(
         # detail (recovery + --skip-hooks escape) rides as the __cause__; fall
         # back to the abort itself for a future causeless (non-hook) veto.
         from rich.markup import escape as _escape
+
         console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e.__cause__ or e))}")
         sys.exit(1)
     except WorktreeDirtyError as e:
@@ -233,6 +250,7 @@ def wt_merge(
         # carries the recovery recipe; escape defensively (branch names can
         # in principle contain Rich-markup characters).
         from rich.markup import escape as _escape
+
         console.print(f"[red]Refused (incomplete worktree state)[/]: {_escape(str(e))}")
         sys.exit(1)
     except WorktreeBaseBranchMismatchError as e:
@@ -244,10 +262,9 @@ def wt_merge(
         # path. Escape current/expected defensively (branch names can in
         # principle contain Rich-markup characters).
         from rich.markup import escape as _escape
+
         project_dir = _project_dir()
-        console.print(
-            f"[red]Refused (base branch mismatch)[/]: {_escape(str(e))}"
-        )
+        console.print(f"[red]Refused (base branch mismatch)[/]: {_escape(str(e))}")
         console.print("Resolve:")
         console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
         console.print(
@@ -262,13 +279,13 @@ def wt_merge(
         # and branch are untouched (guard runs before any mutation), so
         # the operator can clean up the main repo and re-run unchanged.
         from rich.markup import escape as _escape
+
         project_dir = _project_dir()
         console.print(f"[red]Refused (main repo mid-merge)[/]: {_escape(str(e))}")
         console.print("Resolve the in-progress merge first:")
         console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
         console.print(
-            "  [cyan]git merge --abort[/]  [dim]# or resolve conflicts + "
-            "git commit[/]",
+            "  [cyan]git merge --abort[/]  [dim]# or resolve conflicts + git commit[/]",
             soft_wrap=True,
         )
         console.print("  [cyan]ai-hats wt merge[/]", soft_wrap=True)
@@ -278,6 +295,7 @@ def wt_merge(
         # so a filename like `[red]boom[/]` cannot inject Rich markup into
         # the operator's terminal.
         from rich.markup import escape as _escape
+
         console.print(f"[red]Refused (drift)[/]:\n{_escape(str(e))}")
         # HATS-509: the recipe (full command form) lives here, not in the
         # exception body, so the sibling `task transition done` handler
@@ -293,10 +311,8 @@ def wt_merge(
         # failed for a non-junk reason (held-open files, perms). Branch
         # state JSON intact; operator can investigate and retry.
         from rich.markup import escape as _escape
-        console.print(
-            f"[yellow]Merged, but worktree dir still on disk[/]: "
-            f"{_escape(str(e.path))}"
-        )
+
+        console.print(f"[yellow]Merged, but worktree dir still on disk[/]: {_escape(str(e.path))}")
         console.print(f"  git: {_escape(e.stderr_tail)}")
         console.print(
             f"  Manual cleanup: investigate the cause "
@@ -312,6 +328,7 @@ def wt_merge(
         # Rich markup); escape before console.print mirrors the drift
         # handler above.
         from rich.markup import escape as _escape
+
         console.print(
             f"[yellow]Worktree torn down, but branch '{_escape(e.branch_name)}' "
             f"preserved[/] ({e.reason})"
@@ -333,15 +350,15 @@ def wt_merge(
     is_flag=True,
     default=False,
     help="If `git worktree remove --force` fails (e.g. held-open files), "
-         "fall back to rm -rf. HATS-488 / B-03: opt-in only — default refuses "
-         "to silently nuke residual data.",
+    "fall back to rm -rf. HATS-488 / B-03: opt-in only — default refuses "
+    "to silently nuke residual data.",
 )
 @click.option(
     "--skip-hooks",
     is_flag=True,
     default=False,
     help="Force teardown even if a wt_out hook fails — accepts losing "
-         "unharvested gitignored data (HATS-823).",
+    "unharvested gitignored data (HATS-823).",
 )
 def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: bool):
     """Discard worktree changes and clean up.
@@ -377,6 +394,7 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
         # (--skip-hooks escape) rides as the __cause__; fall back to the abort
         # itself for a future causeless (non-hook) veto.
         from rich.markup import escape as _escape
+
         console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e.__cause__ or e))}")
         sys.exit(1)
     except WorktreeDirtyError as e:
@@ -388,9 +406,9 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
         # Path + stderr_tail come from git output / fs error (untrusted
         # re: Rich markup); escape before console.print.
         from rich.markup import escape as _escape
+
         console.print(
-            f"[yellow]Refused to remove worktree dir[/] (data preservation): "
-            f"{_escape(str(e.path))}"
+            f"[yellow]Refused to remove worktree dir[/] (data preservation): {_escape(str(e.path))}"
         )
         console.print(f"  git: {_escape(e.stderr_tail)}")
         console.print(
@@ -403,6 +421,7 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
         # branch_name + stderr_tail come from git output (untrusted re:
         # Rich markup); escape before console.print.
         from rich.markup import escape as _escape
+
         console.print(
             f"[yellow]Worktree torn down, but branch '{_escape(e.branch_name)}' "
             f"preserved[/] ({e.reason})"
@@ -425,7 +444,10 @@ def wt_list():
     # HATS-482 / B-08: guard CWD-from-inside-linked-worktree.
     _guard_not_inside_linked_worktree()
     worktrees = WorktreeManager.list_worktrees(project_dir)
-    tracked_branches = {m.branch_name for m in WorktreeManager.list_active(project_dir)}
+    tracked_branches = {
+        m.branch_name
+        for m in WorktreeManager.list_active(project_dir, state_dir=worktrees_dir(project_dir))
+    }
 
     if not worktrees:
         console.print("[dim]No worktrees[/]")
@@ -443,7 +465,8 @@ def wt_status():
     """Show all tracked worktrees."""
     from ..worktree import WorktreeManager
 
-    active = WorktreeManager.list_active(_project_dir())
+    project_dir = _project_dir()
+    active = WorktreeManager.list_active(project_dir, state_dir=worktrees_dir(project_dir))
     if not active:
         console.print("[dim]No active worktrees[/]")
         return
