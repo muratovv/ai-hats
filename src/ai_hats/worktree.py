@@ -13,14 +13,13 @@ import logging
 import shutil
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 
-from .models import WT_TEARDOWN_EVENTS
-from .paths import managed_wt_hook_filename, worktrees_dir, wt_hooks_dir
-from .worktree_hooks import run_worktree_hook
+from .paths import worktrees_dir
 
 from .worktree_locks import (  # noqa: F401  -- re-export preserves the import surface (HATS-715)
     BASE_LOCK_TIMEOUT,
@@ -64,17 +63,6 @@ logger = logging.getLogger(__name__)
 
 class WorktreeDirtyError(Exception):
     """Raised when a destructive operation targets a worktree with uncommitted changes."""
-
-
-class WorktreeHookError(Exception):
-    """A ``wt_out`` lifecycle hook failed and the teardown is fail-closed (HATS-823).
-
-    Raised by :meth:`WorktreeManager._run_wt_out_hooks` when a declared
-    ``wt_out`` hook exits non-zero / times out / is missing / unrunnable and
-    ``--skip-hooks`` was not given. The teardown aborts before
-    ``_remove_worktree`` so the worktree + branch (and any unharvested
-    gitignored data) are preserved (ADR-0012 D4). On the ``cleanup()`` path it
-    is caught and logged — never raised over the agent's original error."""
 
 
 class WorktreeCreateError(Exception):
@@ -413,6 +401,73 @@ class IsolationMode(str, Enum):
     NONE = "none"
 
 
+# ------------------------------------------------------------------
+# Lifecycle extension-point contract (ADR-0013 D2/D3/D8)
+#
+# The hook-agnostic core fires these extension-points at each lifecycle
+# site; ai-hats injects a bundle that decides WHAT runs (worktree hooks),
+# the fail-vs-warn policy, and the skip/legacy escapes. A bare core uses
+# the no-op default and runs no hooks.
+# ------------------------------------------------------------------
+
+
+class WorktreeTeardownAborted(Exception):
+    """A ``before_teardown`` extension-point vetoed teardown (ADR-0013 D8).
+
+    Hook-agnostic: the core knows only that a teardown route was aborted —
+    never why. ai-hats raises this from its hook-running bundle on a
+    fail-closed ``wt_out`` failure, with the hook error riding as ``__cause__``.
+    Per-route control-flow is core-owned: ``merge`` / ``discard`` propagate it
+    (FSM/CLI surface it, HATS-481); ``cleanup`` suppresses it (warn + preserve
+    + return, so a sub-agent's original error is not masked).
+    """
+
+
+@dataclass(frozen=True)
+class LifecycleContext:
+    """What a lifecycle extension-point needs — and nothing hook-policy (D2).
+
+    ``carry`` is the opaque persisted hook record (the core stores/replays it
+    verbatim, D5); ``legacy`` distinguishes an absent carry (state predates
+    wt-hooks) from an empty ``{}`` so the bundle can warn-not-drop.
+    """
+
+    worktree_path: Path | None
+    project_dir: Path
+    branch_name: str
+    carry: dict[str, list[dict[str, Any]]]
+    skip_hooks: bool
+    legacy: bool
+
+
+class WorktreeLifecycle(Protocol):
+    """Core lifecycle extension-points (ADR-0013 D2). Default impl is no-op.
+
+    ``on_created`` fires once after ``git worktree add`` (warn-continue — it
+    must never raise). ``before_teardown`` fires at every teardown route just
+    before ``_remove_worktree``; raising :class:`WorktreeTeardownAborted`
+    aborts the route fail-closed.
+    """
+
+    def on_created(self, ctx: LifecycleContext) -> None: ...
+
+    def before_teardown(self, event: str, ctx: LifecycleContext) -> None: ...
+
+
+class _NoopLifecycle:
+    """Hook-agnostic default: a bare core runs no hooks (ADR-0013 D2)."""
+
+    def on_created(self, ctx: LifecycleContext) -> None:
+        return None
+
+    def before_teardown(self, event: str, ctx: LifecycleContext) -> None:
+        return None
+
+
+#: The default bundle injected when no ai-hats hook-runner is supplied.
+NOOP_LIFECYCLE: WorktreeLifecycle = _NoopLifecycle()
+
+
 class WorktreeManager:
     """Creates and manages isolated git worktrees.
 
@@ -439,6 +494,7 @@ class WorktreeManager:
         isolation_mode: IsolationMode = IsolationMode.DISCARD,
         *,
         branch_name: str = "",
+        lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
     ) -> None:
         self.project_dir = project_dir
         self.role_name = role_name
@@ -460,6 +516,9 @@ class WorktreeManager:
         self._wt_hooks: dict[str, list[dict[str, Any]]] = {}
         # HATS-823: state predates wt-hooks (key absent, not empty {}) → WARN.
         self._wt_hooks_legacy = False
+        # ADR-0013 D3: the lifecycle extension-point bundle. ai-hats injects its
+        # hook-running bundle; a bare core keeps the no-op default.
+        self._lifecycle = lifecycle
 
     def create(
         self,
@@ -630,7 +689,8 @@ class WorktreeManager:
                         pass  # branch may not have been created — fine
                 raise WorktreeCreateError(_format_git_create_error(exc, self.branch_name)) from exc
             # HATS-823: wt_in runs AFTER add (git refuses a non-empty dir).
-            self._run_wt_in_hooks()
+            # ADR-0013: fire the create extension-point (ai-hats runs wt_in here).
+            self._fire_on_created()
             logger.info(
                 "Created worktree %s on branch %s",
                 self.worktree_path,
@@ -721,7 +781,7 @@ class WorktreeManager:
                 if not force:
                     self._check_clean()
                 # HATS-823: short-circuit still destroys the dir → harvest first.
-                self._run_wt_out_hooks("merge", skip_hooks=skip_hooks)
+                self._fire_before_teardown("merge", skip_hooks=skip_hooks)
                 self._remove_worktree()
                 self._delete_branch()
                 self._clear_state()
@@ -799,7 +859,7 @@ class WorktreeManager:
             if not accept_drift:
                 self._check_drift()
             if self._original_branch and not self._branch_exists(self._original_branch):
-                self._run_wt_out_hooks("merge", skip_hooks=skip_hooks)
+                self._fire_before_teardown("merge", skip_hooks=skip_hooks)
                 self._remove_worktree()
                 self._clear_state()
                 raise OriginalBranchMissingError(
@@ -838,7 +898,7 @@ class WorktreeManager:
                 raise
             # HATS-823: harvest before teardown. On failure the branch survives,
             # so a retry hits the HATS-596 short-circuit and re-runs the hook.
-            self._run_wt_out_hooks("merge", skip_hooks=skip_hooks)
+            self._fire_before_teardown("merge", skip_hooks=skip_hooks)
             self._remove_worktree()
             self._delete_branch()
             self._clear_state()
@@ -890,7 +950,7 @@ class WorktreeManager:
             if not force:
                 self._check_clean()
             # HATS-823: discard != "accept data loss" — harvest fail-closed (D4).
-            self._run_wt_out_hooks("discard", skip_hooks=skip_hooks)
+            self._fire_before_teardown("discard", skip_hooks=skip_hooks)
             self._remove_worktree(force_rmtree=force_remove)
             self._delete_branch()
             self.worktree_path = None
@@ -926,15 +986,16 @@ class WorktreeManager:
                 logger.warning("Merge failed, falling back to branch mode", exc_info=True)
                 mode = IsolationMode.BRANCH
 
-            # HATS-823: auto path — a wt_out failure must NOT raise over the
-            # agent's original error (D4); preserve the dir and return.
+            # ADR-0013 D8: auto path — a teardown abort must NOT raise over the
+            # agent's original error; suppress (warn + preserve + return). The
+            # core stays hook-agnostic: it logs the abort message verbatim (the
+            # ai-hats bundle authored the wt_out-specific recovery recipe into it).
             try:
-                self._run_wt_out_hooks("cleanup", skip_hooks=skip_hooks)
-            except WorktreeHookError as exc:
+                self._fire_before_teardown("cleanup", skip_hooks=skip_hooks)
+            except WorktreeTeardownAborted as exc:
                 logger.warning(
-                    "wt_out hook failed during cleanup of '%s' — worktree "
-                    "preserved; recover with `ai-hats wt discard %s --skip-hooks`: %s",
-                    self.branch_name, self.branch_name, exc,
+                    "Teardown aborted at cleanup of '%s' — worktree preserved: %s",
+                    self.branch_name, exc,
                 )
                 return
 
@@ -955,96 +1016,43 @@ class WorktreeManager:
         return None
 
     # ------------------------------------------------------------------
-    # Worktree lifecycle hooks (HATS-823, ADR-0012)
+    # Lifecycle extension-point firing (ADR-0013 D2/D3; hooks run ai-hats-side)
     # ------------------------------------------------------------------
 
-    def _wt_hook_log_dir(self) -> Path:
-        return worktrees_dir(self.project_dir) / f"{_state_key(self.branch_name)}.logs"
+    def _lifecycle_ctx(self, *, skip_hooks: bool = False) -> LifecycleContext:
+        """Snapshot the hook-agnostic context the extension-point bundle reads.
 
-    def _materialized_hook(self, row: dict[str, Any]) -> Path:
-        """On-disk path of a hook script the assembler materialized."""
-        return wt_hooks_dir(self.project_dir) / managed_wt_hook_filename(
-            row["skill"], row["script"]
+        ``carry`` is the opaque persisted hook record (D5); ``legacy`` lets the
+        bundle warn-not-drop on a pre-wt-hooks state.
+        """
+        return LifecycleContext(
+            worktree_path=self.worktree_path,
+            project_dir=self.project_dir,
+            branch_name=self.branch_name,
+            carry=self._wt_hooks,
+            skip_hooks=skip_hooks,
+            legacy=self._wt_hooks_legacy,
         )
 
-    def _run_wt_in_hooks(self) -> None:
-        """Run wt_in hooks after ``git worktree add`` (warn-and-continue).
+    def _fire_on_created(self) -> None:
+        """Fire the create extension-point (ADR-0013 D2/D3).
 
-        A create-time hook failure is friction, not data loss (ADR-0012 D3/D7):
-        it is logged and skipped, never aborting worktree creation.
+        Warn-continue: the bundle never raises here, so a create-time hook
+        failure is friction, not an aborted create. A bare core (no-op bundle)
+        runs nothing.
         """
-        rows = self._wt_hooks.get("wt_in") or []
-        if not rows or self.worktree_path is None:
-            return
-        log_dir = self._wt_hook_log_dir()
-        for row in rows:
-            script = self._materialized_hook(row)
-            outcome = run_worktree_hook(
-                script,
-                event="wt_in",
-                worktree_path=self.worktree_path,
-                project_dir=self.project_dir,
-                branch_name=self.branch_name,
-                log_path=log_dir / f"wt_in-{script.name}.log",
-            )
-            if not outcome.ok:
-                logger.warning(
-                    "wt_in hook from skill '%s' failed — continuing "
-                    "(create-time friction, not data loss): %s",
-                    row.get("skill", "?"),
-                    outcome.reason,
-                )
+        self._lifecycle.on_created(self._lifecycle_ctx())
 
-    def _run_wt_out_hooks(self, event: str, *, skip_hooks: bool = False) -> None:
-        """Run wt_out hooks bound to ``event`` before teardown removes the dir.
+    def _fire_before_teardown(self, event: str, *, skip_hooks: bool = False) -> None:
+        """Fire a teardown extension-point before ``_remove_worktree`` (D3).
 
-        Fail-closed (D4): any hook failure raises :class:`WorktreeHookError` and
-        aborts the teardown, preserving the worktree. ``skip_hooks`` is the
-        conscious escape; a no-op when no wt_out hooks are declared.
+        A raised :class:`WorktreeTeardownAborted` aborts the route fail-closed;
+        per-route handling (merge/discard propagate, ``cleanup`` suppresses) is
+        owned by the calling teardown method, not by the bundle.
         """
-        if self._wt_hooks_legacy:
-            # Pre-upgrade worktree: can't know what it holds → warn, don't drop.
-            logger.warning(
-                "Worktree '%s' predates wt-hooks (no carry recorded at create) "
-                "— gitignored data cannot be auto-harvested on %s; back it up "
-                "manually if needed.",
-                self.branch_name,
-                event,
-            )
-        rows = [
-            r
-            for r in (self._wt_hooks.get("wt_out") or [])
-            if event in (r.get("on") or WT_TEARDOWN_EVENTS)
-        ]
-        if self.worktree_path is None or not rows:
-            return
-        if skip_hooks:
-            logger.warning(
-                "wt_out hooks SKIPPED for '%s' on %s via --skip-hooks — "
-                "unharvested gitignored data will be destroyed (%d hook(s))",
-                self.branch_name,
-                event,
-                len(rows),
-            )
-            return
-        log_dir = self._wt_hook_log_dir()
-        for row in rows:
-            script = self._materialized_hook(row)
-            outcome = run_worktree_hook(
-                script,
-                event=event,
-                worktree_path=self.worktree_path,
-                project_dir=self.project_dir,
-                branch_name=self.branch_name,
-                log_path=log_dir / f"{event}-{script.name}.log",
-            )
-            if not outcome.ok:
-                raise WorktreeHookError(
-                    f"wt_out hook from skill '{row.get('skill', '?')}' failed on "
-                    f"{event} ({outcome.reason}). Teardown aborted — worktree "
-                    f"'{self.branch_name}' preserved. Fix the hook and retry, or "
-                    f"force with --skip-hooks (accepts the data loss)."
-                )
+        self._lifecycle.before_teardown(
+            event, self._lifecycle_ctx(skip_hooks=skip_hooks)
+        )
 
     # ------------------------------------------------------------------
     # State persistence
@@ -1078,7 +1086,13 @@ class WorktreeManager:
                 pass
 
     @classmethod
-    def load_for_task(cls, project_dir: Path, task_id: str) -> WorktreeManager | None:
+    def load_for_task(
+        cls,
+        project_dir: Path,
+        task_id: str,
+        *,
+        lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
+    ) -> WorktreeManager | None:
         """Load the worktree state for a specific task ID.
 
         Derives the key via the same _state_key used by save_state:
@@ -1091,13 +1105,19 @@ class WorktreeManager:
         → key ``task-HATS-086``, while ``save_state`` wrote ``task-hats-086``).
         """
         key = _state_key(f"task/{task_id.lower()}")
-        return cls._load_by_key(project_dir, key)
+        return cls._load_by_key(project_dir, key, lifecycle=lifecycle)
 
     @classmethod
-    def load_for_branch(cls, project_dir: Path, branch: str) -> WorktreeManager | None:
+    def load_for_branch(
+        cls,
+        project_dir: Path,
+        branch: str,
+        *,
+        lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
+    ) -> WorktreeManager | None:
         """Load worktree state by branch name."""
         key = _state_key(branch)
-        return cls._load_by_key(project_dir, key)
+        return cls._load_by_key(project_dir, key, lifecycle=lifecycle)
 
     @classmethod
     def branch_exists(cls, project_dir: Path, branch: str) -> bool:
@@ -1238,7 +1258,13 @@ class WorktreeManager:
                 )
 
     @classmethod
-    def _load_by_key(cls, project_dir: Path, key: str) -> WorktreeManager | None:
+    def _load_by_key(
+        cls,
+        project_dir: Path,
+        key: str,
+        *,
+        lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
+    ) -> WorktreeManager | None:
         state_path = worktrees_dir(project_dir) / f"{key}.json"
         # HATS-482 (B-07): one-shot migration of legacy lowercase state file.
         # Pre-482 `_state_key` lowercased its output; an upgrade may leave
@@ -1268,7 +1294,7 @@ class WorktreeManager:
                 except FileNotFoundError:
                     pass
                 return None
-        mgr = cls(project_dir, branch_name=data["branch"])
+        mgr = cls(project_dir, branch_name=data["branch"], lifecycle=lifecycle)
         mgr.worktree_path = wt_path
         mgr._original_branch = data.get("original_branch")
         # HATS-457: legacy state files (pre-457) omit this key — graceful
@@ -1282,7 +1308,12 @@ class WorktreeManager:
         return mgr
 
     @classmethod
-    def list_active(cls, project_dir: Path) -> list[WorktreeManager]:
+    def list_active(
+        cls,
+        project_dir: Path,
+        *,
+        lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
+    ) -> list[WorktreeManager]:
         """Load all active worktree states. Prunes stale entries.
 
         HATS-482 (R-05): best-effort under concurrent ``_clear_state``.
@@ -1301,7 +1332,7 @@ class WorktreeManager:
         result = []
         for f in sorted(states_dir.glob("*.json")):
             key = f.stem
-            mgr = cls._load_by_key(project_dir, key)
+            mgr = cls._load_by_key(project_dir, key, lifecycle=lifecycle)
             if mgr is not None:
                 result.append(mgr)
         return result

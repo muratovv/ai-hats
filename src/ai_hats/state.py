@@ -364,6 +364,14 @@ class TaskManager:
                 if is_epic:
                     pass  # epics never get a worktree
                 elif force:
+                    # HATS-518: --force overrides the FSM arrow, NOT the
+                    # canonical-base safety contract. The guard otherwise lives
+                    # inside _setup_worktree (the non-force path), so the force
+                    # branch must run it explicitly or a non-canonical merge
+                    # target slips through (test_refuses_even_with_force).
+                    from .worktree import assert_head_is_canonical_base
+
+                    assert_head_is_canonical_base(self.project_dir)
                     # HATS-697: forced execute is a manual state correction —
                     # no fresh worktree (spinning one off HEAD orphaned retro
                     # work, PROX-287). Operator owns the worktree decision.
@@ -1032,7 +1040,8 @@ class TaskManager:
             WorktreeManager,
             assert_head_is_canonical_base,
         )
-        from .worktree_hooks import collect_carry_for_role
+        from .wt_carry import collect_carry_for_role
+        from .wt_lifecycle import HOOK_LIFECYCLE
 
         # HATS-060 / HATS-840: adopt the worktree the operator is in. Probe the
         # threaded `caller_cwd`, not the main-hopped `self.project_dir`.
@@ -1056,7 +1065,9 @@ class TaskManager:
         # worktree's role carry (wt_in/wt_out hooks) in at create; persisted to
         # state so teardown runs the create-time set (D3).
         branch = f"task/{task.id.lower()}"
-        mgr = WorktreeManager(self.project_dir, branch_name=branch)
+        mgr = WorktreeManager(
+            self.project_dir, branch_name=branch, lifecycle=HOOK_LIFECYCLE
+        )
         wt_hooks = collect_carry_for_role(self.project_dir, getattr(task, "role", ""))
         try:
             path = mgr.create(wt_hooks=wt_hooks)
@@ -1111,8 +1122,13 @@ class TaskManager:
             WorktreeManager,
             WorktreeStateLostError,
         )
+        from .wt_lifecycle import HOOK_LIFECYCLE
 
-        active = WorktreeManager.load_for_task(self.project_dir, task.id)
+        # ADR-0013 D3: reconstruct the teardown manager with ai-hats's
+        # hook-running bundle so before_teardown fires wt_out hooks fail-closed.
+        active = WorktreeManager.load_for_task(
+            self.project_dir, task.id, lifecycle=HOOK_LIFECYCLE
+        )
         if active is None:
             # State JSON gone but the branch may survive (manual rm,
             # success-path crash, pre-587 orphan). On merge=True a silent
