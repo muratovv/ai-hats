@@ -252,8 +252,11 @@ Two behaviours worth knowing:
 
 Events recognised today are `PreToolUse` and `PostToolUse` (the set is open).
 Materialized scripts run on tool use — treat them as a security surface (see
-`SECURITY.md`). The shipped HATS-437 shared-state guard is the canonical
-example of a wired `PreToolUse` hook.
+`SECURITY.md`). The shipped HATS-437 shared-state guard is the canonical example
+of a wired `PreToolUse` hook (package data, always materialized); the
+`tool-call-hygiene` skill is the first **skill-declared** runtime hook — a
+non-blocking `PreToolUse` Bash guard that emits an `additionalContext` nudge
+toward Grep/Glob/Read/Edit and never blocks or prompts.
 
 ### Worktree lifecycle hooks
 

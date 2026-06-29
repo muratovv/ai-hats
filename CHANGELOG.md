@@ -10,6 +10,18 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+
+- **Tool-call-hygiene `PreToolUse` guard** (HATS-632). The `tool-call-hygiene`
+  skill now ships a non-blocking `PreToolUse` Bash runtime hook: when a command
+  is a pure invocation of `grep`/`find`/`cat`/`sed -i`/… that a dedicated tool
+  covers, it injects an `additionalContext` nudge toward Grep/Glob/Read/Edit
+  without blocking the command or prompting the user. Conservative by design —
+  any pipe / redirect / chained command is left alone. Kill switch:
+  `AI_HATS_TOOL_HYGIENE_OFF=1`. This is the first in-library `runtime_hooks`
+  consumer, setting the shared `stdin tool_input → JSON hookSpecificOutput`
+  convention for the behavior-hook family.
+
 ## [0.11.0] - 2026-06-26
 
 Headline: epic **HATS-835 — worktree lifecycle & merge robustness**. A sweep
