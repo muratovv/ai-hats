@@ -573,7 +573,7 @@ class WorktreeManager:
             self._base_sha_at_create = None
 
         # HATS-479 — L1 + L2 + L4. See module docstring "Create-time concurrency".
-        with _acquire_create_lock(self.project_dir):
+        with _acquire_create_lock(worktrees_dir(self.project_dir)):
             # L2: re-check under the lock. Closes the TOCTOU window between a
             # caller's optional pre-check and our work.
             existing = WorktreeManager.load_for_branch(self.project_dir, self.branch_name)
@@ -1802,7 +1802,7 @@ class WorktreeManager:
         if head_main == head_wt:
             return
 
-        with _acquire_base_branch_lock(self.project_dir, self._original_branch):
+        with _acquire_base_branch_lock(worktrees_dir(self.project_dir), self._original_branch):
             # HATS-602: authoritative mid-merge guard, inside the base lock.
             self._refuse_if_mid_merge()
             _retry_git_merge(
@@ -1831,7 +1831,7 @@ class WorktreeManager:
         if head_main == head_wt:
             return
 
-        with _acquire_base_branch_lock(self.project_dir, self._original_branch):
+        with _acquire_base_branch_lock(worktrees_dir(self.project_dir), self._original_branch):
             # HATS-602: authoritative mid-merge guard, inside the base lock.
             self._refuse_if_mid_merge()
             _retry_git_merge(

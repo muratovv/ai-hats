@@ -635,14 +635,14 @@ def test_base_lock_key_sanitization() -> None:
 
 def test_base_lock_path_under_state_dir(git_project: Path) -> None:
     """Lock file lives next to other worktree state, under .agent."""
-    path = _base_lock_path(git_project, "master")
+    path = _base_lock_path(worktrees_dir(git_project), "master")
     assert path.name == ".base-master.lock"
     assert path.parent == worktrees_dir(git_project)
 
 
 def _hold_base_lock(project_dir_str: str, base: str, hold_s: float, ready: str) -> None:
     """Acquire L1' for ``base`` and hold for ``hold_s`` seconds."""
-    with _acquire_base_branch_lock(Path(project_dir_str), base):
+    with _acquire_base_branch_lock(worktrees_dir(Path(project_dir_str)), base):
         Path(ready).write_text("ready")
         time.sleep(hold_s)
 
@@ -667,7 +667,7 @@ def test_base_lock_serializes_same_base(git_project: Path, tmp_path: Path) -> No
 
         # Second acquire with a short timeout MUST raise — holder is still active.
         with pytest.raises(WorktreeLockError):
-            with _acquire_base_branch_lock(git_project, "master", timeout=0.1):
+            with _acquire_base_branch_lock(worktrees_dir(git_project), "master", timeout=0.1):
                 pass  # pragma: no cover
     finally:
         holder.join(timeout=5)
@@ -690,7 +690,7 @@ def test_base_lock_independent_per_base(git_project: Path, tmp_path: Path) -> No
 
         # Different base → must NOT block.
         t0 = time.monotonic()
-        with _acquire_base_branch_lock(git_project, "develop"):
+        with _acquire_base_branch_lock(worktrees_dir(git_project), "develop"):
             assert time.monotonic() - t0 < 0.2, "different-base lock blocked"
     finally:
         holder.join(timeout=5)

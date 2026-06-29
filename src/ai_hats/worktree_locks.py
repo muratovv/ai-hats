@@ -198,7 +198,6 @@ from typing import Any, Iterator
 import filelock
 
 from .utils.atomic_io import atomic_write_text
-from .paths import worktrees_dir
 
 logger = logging.getLogger(__name__)
 
@@ -332,13 +331,17 @@ def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     atomic_write_text(path, json.dumps(data, indent=2))
 
 
-def _create_lock_path(project_dir: Path) -> Path:
-    """Repo-scoped create-lock file path (HATS-479 L1)."""
-    return worktrees_dir(project_dir) / ".git-worktree-create.lock"
+def _create_lock_path(state_dir: Path) -> Path:
+    """Repo-scoped create-lock file path (HATS-479 L1).
+
+    ``state_dir`` is the injected path-base (ADR-0013 D4); ai-hats passes its
+    ``worktrees_dir(project_dir)`` convention, a bare core a project-local dir.
+    """
+    return state_dir / ".git-worktree-create.lock"
 
 
 @contextmanager
-def _acquire_create_lock(project_dir: Path) -> Iterator[None]:
+def _acquire_create_lock(state_dir: Path) -> Iterator[None]:
     """Hold the repo-scoped create-mutex for the wt-create critical section.
 
     HATS-479 L1. See module docstring "Create-time concurrency".
@@ -347,7 +350,7 @@ def _acquire_create_lock(project_dir: Path) -> Iterator[None]:
     ``.git/worktrees/``. Does NOT protect against external git processes
     (IDE, manual ``git commit``) — :func:`_retry_worktree_add` covers that.
     """
-    lock_path = _create_lock_path(project_dir)
+    lock_path = _create_lock_path(state_dir)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock = filelock.FileLock(str(lock_path), timeout=CREATE_LOCK_TIMEOUT)
     t0 = time.monotonic()
@@ -376,14 +379,18 @@ def _base_lock_key(base_branch: str) -> str:
     return base_branch.replace("/", "-").lower()
 
 
-def _base_lock_path(project_dir: Path, base_branch: str) -> Path:
-    """Sibling lock file for a base ref (HATS-481 L1')."""
-    return worktrees_dir(project_dir) / f".base-{_base_lock_key(base_branch)}.lock"
+def _base_lock_path(state_dir: Path, base_branch: str) -> Path:
+    """Sibling lock file for a base ref (HATS-481 L1').
+
+    ``state_dir`` is the injected path-base (ADR-0013 D4) — see
+    :func:`_create_lock_path`.
+    """
+    return state_dir / f".base-{_base_lock_key(base_branch)}.lock"
 
 
 @contextmanager
 def _acquire_base_branch_lock(
-    project_dir: Path, base_branch: str, *, timeout: float = BASE_LOCK_TIMEOUT
+    state_dir: Path, base_branch: str, *, timeout: float = BASE_LOCK_TIMEOUT
 ) -> Iterator[None]:
     """Serialize merges into the same base ref (HATS-481 L1').
 
@@ -400,7 +407,7 @@ def _acquire_base_branch_lock(
         provoke the timeout path deterministically.
     :raises WorktreeLockError: lock not acquired within ``timeout`` seconds.
     """
-    lock_path = _base_lock_path(project_dir, base_branch)
+    lock_path = _base_lock_path(state_dir, base_branch)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock = filelock.FileLock(str(lock_path), timeout=timeout)
     t0 = time.monotonic()
