@@ -1,13 +1,11 @@
-"""HATS-842 — script-level behaviour of the comment-length-lint PostToolUse hook.
+"""Script-level behaviour of the comment-length-lint PostToolUse hook (HATS-842).
 
-Per ``dev_rule_e2e_gate`` the hook is a pure subprocess surface. We feed it Claude
-Code ``PostToolUse`` payloads on stdin and assert the NON-BLOCKING contract: on a
-``.py`` file carrying an oversized comment block or docstring it emits
-``hookSpecificOutput.additionalContext``; otherwise it is silent. It NEVER emits a
-``permissionDecision`` and NEVER blocks. Fail-open on any error (non-.py, garbage
-payload, syntax error). The RED baseline is the HATS-837 shape: a 4-line DI-wiring
-comment + a multi-paragraph docstring; the healthy ≈9-line contract docstring that
-review kept stays silent.
+Per ``dev_rule_e2e_gate``: feed Claude Code ``PostToolUse`` payloads on stdin and
+assert the NON-BLOCKING contract — oversized comment block / docstring -> emit
+``additionalContext``; else silent; never a ``permissionDecision``; fail-open on
+any error. RED baseline = the HATS-837 shape (4-line DI comment + essay docstring);
+the ≈9-line contract docstring review kept stays silent; ``# noqa: comment-length``
+suppresses.
 """
 from __future__ import annotations
 
@@ -75,6 +73,30 @@ TERSE_OK = (
 
 # 4 *trailing* (non-standalone) comments — not a comment block; must stay silent.
 INLINE_TRAILERS = "a = 1  # one\nb = 2  # two\nc = 3  # three\nd = 4  # four\n"
+
+# Suppressed: the DI block carries the marker on its last line.
+SUPPRESSED_COMMENT = DI_COMMENT.replace("# at load time.\n", "# at load time.\n# noqa: comment-length\n")
+
+# Suppressed: the marker rides the def line carrying the bloated docstring.
+SUPPRESSED_DOCSTRING_DEF = BLOATED_DOCSTRING.replace("def g():\n", "def g():  # noqa: comment-length\n")
+
+# Suppressed: a bloated module docstring with the marker inside it.
+SUPPRESSED_MODULE_DOC = (
+    '"""Module essay restating wiring in prose.\n'
+    "\n"
+    "    Line three of the essay.\n"
+    "    Line four of the essay.\n"
+    "    Line five of the essay.\n"
+    "    Line six of the essay.\n"
+    "    Line seven of the essay.\n"
+    "    Line eight of the essay.\n"
+    "    Line nine of the essay.\n"
+    "    Line ten of the essay.\n"
+    "    Line eleven of the essay.\n"
+    "    noqa: comment-length\n"
+    '"""\n'
+    "x = 1\n"
+)
 
 
 def _run(file_path, *, env_extra=None, raw=None):
@@ -157,6 +179,27 @@ def test_inline_trailing_comments_not_a_block(tmp_path):
     res = _run(_write(tmp_path, INLINE_TRAILERS))
     assert res.returncode == 0, res.stderr
     assert _ctx(res) is None
+
+
+@pytest.mark.integration
+def test_marker_suppresses_comment_block(tmp_path):
+    res = _run(_write(tmp_path, SUPPRESSED_COMMENT))
+    assert res.returncode == 0, res.stderr
+    assert _ctx(res) is None, f"marker should suppress: {res.stdout!r}"
+
+
+@pytest.mark.integration
+def test_marker_on_def_line_suppresses_docstring(tmp_path):
+    res = _run(_write(tmp_path, SUPPRESSED_DOCSTRING_DEF))
+    assert res.returncode == 0, res.stderr
+    assert _ctx(res) is None, f"def-line marker should suppress: {res.stdout!r}"
+
+
+@pytest.mark.integration
+def test_marker_inside_module_docstring_suppresses(tmp_path):
+    res = _run(_write(tmp_path, SUPPRESSED_MODULE_DOC))
+    assert res.returncode == 0, res.stderr
+    assert _ctx(res) is None, f"in-docstring marker should suppress: {res.stdout!r}"
 
 
 @pytest.mark.integration
