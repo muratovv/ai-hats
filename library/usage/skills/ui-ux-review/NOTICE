@@ -1,0 +1,17 @@
+NOTICE — ui-ux-review
+
+This skill is a DISTILLATION (not a verbatim copy) of canonical UX knowledge,
+adapted to the ai-hats SKILL.md format. Per-source licenses verified 2026-05-31
+(WebFetch); both permit attributed derivatives.
+
+Sources:
+
+- oil-oil/oiloil-ui-ux-guide — Apache-2.0
+  https://github.com/oil-oil/oiloil-ui-ux-guide
+  UI/UX guide + guide/review two-mode structure by oil-oil.
+  Distilled & adapted to ai-hats skill format; not a verbatim copy.
+
+- wondelai/skills — MIT
+  https://github.com/wondelai/skills
+  Refactoring UI + UX-heuristics distillations by Wondel.ai.
+  Distilled & adapted to ai-hats skill format; not a verbatim copy.
