@@ -16,6 +16,7 @@ from .composer import (
 )
 from .frontmatter import FrontmatterError, read_frontmatter
 from .paths import CLAUDE_PROJECT_DIR_VAR
+from .paths import ai_hats_dir
 from .paths import hooks_dir as _lib_hooks_dir
 from .paths import managed_runtime_hook_filename
 from .paths import session_cache_dir
@@ -525,7 +526,13 @@ class ClaudeProvider(Provider):
         return cmd + extra + ["--print", "-p", meta_prompt]
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
-        return {}
+        # HATS-819: hand every runtime hook a clean writable anchor so it need
+        # not derive WRITE paths from ``__file__`` depth — materialization
+        # relocates the script, so a ``__file__``-relative write can land in a
+        # source tree (the secret-guard ``.log`` incident). Inherited by hook
+        # subprocesses via the launched provider env (``wrap_runner``). Honours
+        # an ambient ``AI_HATS_DIR`` override (precedence lives in ``ai_hats_dir``).
+        return {"AI_HATS_DIR": str(ai_hats_dir(project_dir))}
 
     # ----- HATS-437: PreToolUse hook auto-wire -----
 
