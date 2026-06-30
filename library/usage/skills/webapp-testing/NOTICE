@@ -1,0 +1,14 @@
+NOTICE — webapp-testing
+
+This skill is a procedure-only DISTILLATION (not a verbatim copy), adapted to
+the ai-hats SKILL.md format. Upstream Playwright helper scripts (with_server.py
+et al.) are NOT vendored. License verified 2026-05-31 (WebFetch).
+
+Sources:
+
+- anthropics/skills (skills/webapp-testing) — Apache-2.0
+  https://github.com/anthropics/skills/tree/main/skills/webapp-testing
+  webapp-testing skill by Anthropic.
+  Distilled & adapted to ai-hats skill format; procedure only, no vendored scripts.
+  (anthropics/skills general skills are Apache-2.0; only docx/pdf/pptx/xlsx are
+   source-available — webapp-testing is open.)
