@@ -1,0 +1,22 @@
+{
+  "_comment": "HATS-857 — file extensions that make wt_gate.py nudge when edited in the MAIN checkout. Grouped by language so it stays editable. Add/remove a group or an extension to tune it for your project; point AI_HATS_WT_GATE_EXTS at a copy of this file to override per-process. Keep wt_gate.py's embedded _DEFAULT_LANGS in sync (a wiring test asserts they match).",
+  "python": [".py", ".pyi", ".pyx"],
+  "shell": [".sh", ".bash", ".zsh"],
+  "go": [".go"],
+  "rust": [".rs"],
+  "ruby": [".rb"],
+  "javascript": [".js", ".jsx", ".mjs", ".cjs"],
+  "typescript": [".ts", ".tsx"],
+  "web": [".vue", ".svelte"],
+  "jvm": [".java", ".kt", ".scala", ".groovy"],
+  "c_cpp": [".c", ".h", ".cc", ".cpp", ".hpp", ".cxx"],
+  "csharp": [".cs"],
+  "php": [".php"],
+  "swift": [".swift"],
+  "lua": [".lua"],
+  "perl": [".pl", ".pm"],
+  "elixir": [".ex", ".exs"],
+  "clojure": [".clj", ".cljs"],
+  "dart": [".dart"],
+  "config": [".yaml", ".yml", ".toml", ".json", ".ini", ".cfg", ".env"]
+}
