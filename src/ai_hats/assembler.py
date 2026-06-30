@@ -891,36 +891,28 @@ class Assembler:
         install_time: bool,
         result: CompositionResult | None,
     ) -> None:
-        """Single idempotent entry-point for on-disk state pull-up.
+        """Single idempotent entry-point for on-disk state pull-up (HATS-469).
 
-        Replaces the historical init/set_role/bump triple-dispatch
-        (HATS-469). One method, called from every public entry-point that
-        needs to bring the project tree to a consistent shape.
+        One method, called from every public entry-point that brings the project
+        tree to a consistent shape.
 
         Parameters:
-            install_time: ``True`` for ``init`` / ``do_bump`` paths — runs
-                the migration registry (``migrations.run_pending``).
-                ``False`` for ``set_role`` (runtime first-session
-                bootstrap) — skip migrations, they have already replayed
+            install_time: ``True`` for ``init`` / ``do_bump`` — runs the
+                migration registry (``migrations.run_pending``). ``False`` for
+                ``set_role`` (runtime bootstrap) — migrations already replayed
                 via init or a prior bump.
-            result: composition for the active role, or ``None`` when
-                no role is active (legacy bare-bump path / init without
-                ``-r``). When provided AND ``.git/`` exists, role-specific
-                git hooks (HATS-088) are installed.
+            result: composition for the active role, or ``None`` (legacy
+                bare-bump / init without ``-r``). When provided AND ``.git/``
+                exists, role-specific git hooks (HATS-088) are installed.
 
-        Concurrency contract: extends migrations.py:29-33 — under N
-        parallel ``init`` / ``set_role`` / ``bump`` processes against the
-        same project, every method invoked here MUST be idempotent (this
-        was already the case for the bump-only world; we explicitly
-        extend the surface). The registry guarantees at-most-once across
-        **sequential** invocations; concurrent ones may replay one step
-        per process (by design, documented in migrations.py).
+        Concurrency: per the migrations.py migration contract, under N parallel
+        ``init`` / ``set_role`` / ``bump`` processes every method invoked here
+        MUST be idempotent. The registry guarantees at-most-once across
+        sequential invocations; concurrent ones may replay one step per process.
 
-        Diagnostics (``_warn_orphan_*`` / ``_note_empty_*``) are NOT part
-        of refresh — they live in :meth:`_run_diagnostics` and fire only
-        on user-initiated paths (``do_bump``, init re-init). Runtime
-        set_role stays silent (HATS-469 R3: per-session orphan-warning
-        spam = bad UX).
+        Diagnostics (``_warn_orphan_*`` / ``_note_empty_*``) are NOT part of
+        refresh — they live in :meth:`_run_diagnostics`, firing only on
+        user-initiated paths (HATS-469 R3: per-session orphan spam = bad UX).
         """
         # 1. Migration registry — install_time only (HATS-471).
         if install_time:
