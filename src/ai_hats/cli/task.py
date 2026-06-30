@@ -52,7 +52,9 @@ def task():
 @click.option("--id", "task_id", default=None, help="Task ID (auto-generated if omitted)")
 @click.option("--description", "-d", default=None, help="Task description")
 @click.option(
-    "--description-file", "description_file", default=None,
+    "--description-file",
+    "description_file",
+    default=None,
     help="Read description from a file (verbatim, bypasses shell quoting). "
     "Mutually exclusive with -d/--description.",
 )
@@ -61,11 +63,15 @@ def task():
 @click.option("--reviewer", default="user", help="Reviewer (user or agent)")
 @click.option("--tag", multiple=True, help="Tags")
 @click.option(
-    "--parent-task", "parent_task", default="",
+    "--parent-task",
+    "parent_task",
+    default="",
     help="Parent task ID (composition / epic→child relationship)",
 )
 @click.option(
-    "--depends-on", "depends_on", multiple=True,
+    "--depends-on",
+    "depends_on",
+    multiple=True,
     help="Blocker task IDs (this task is blocked until each is done). Repeatable.",
 )
 def task_create(
@@ -219,8 +225,13 @@ def task_transition(
         # already main-hopped, so the library can't read cwd itself).
         caller_cwd = Path.cwd()
         t, auto = mgr.transition(
-            task_id, state, resolution=resolution, final_state=final_state,
-            force=force, reason=reason, caller_cwd=caller_cwd,
+            task_id,
+            state,
+            resolution=resolution,
+            final_state=final_state,
+            force=force,
+            reason=reason,
+            caller_cwd=caller_cwd,
         )
         prefix = "[yellow]Forced[/]" if force else "[green]Transitioned[/]"
         console.print(f"{prefix}: {t.id} → {t.state.value}")
@@ -231,10 +242,13 @@ def task_transition(
             if plan_path.exists():
                 console.print(f"  Plan scaffold: {plan_path}")
         elif state == TaskState.EXECUTE:
+            from ..paths import worktrees_dir
             from ..worktree import WorktreeManager
 
             project_dir = _project_dir()
-            active = WorktreeManager.load_for_task(project_dir, task_id)
+            active = WorktreeManager.load_for_task(
+                project_dir, task_id, state_dir=worktrees_dir(project_dir)
+            )
             if active and active.worktree_path:
                 console.print(f"  Worktree: {active.worktree_path}")
                 console.print(f"  Branch: {active.branch_name}")
@@ -259,14 +273,9 @@ def task_transition(
             console.print("  Worktree discarded")
         _print_auto_transitions(auto)
     except EmptyPlanError as e:
-        console.print(
-            f"[red]Plan is incomplete[/] — cannot transition {e.task_id} to execute."
-        )
+        console.print(f"[red]Plan is incomplete[/] — cannot transition {e.task_id} to execute.")
         if e.empty_sections:
-            console.print(
-                "  Empty required section(s): "
-                f"[yellow]{', '.join(e.empty_sections)}[/]"
-            )
+            console.print(f"  Empty required section(s): [yellow]{', '.join(e.empty_sections)}[/]")
         console.print(f"  Plan path: {e.plan_path}")
         console.print("  Fill the named section(s) in plan.md, then retry.")
         sys.exit(2)
@@ -284,10 +293,7 @@ def task_transition(
         from rich.markup import escape as _escape
 
         project_dir = _project_dir()
-        console.print(
-            f"[red]Refused (base branch mismatch)[/] — "
-            f"cannot merge for {task_id}."
-        )
+        console.print(f"[red]Refused (base branch mismatch)[/] — cannot merge for {task_id}.")
         console.print(_escape(str(e)))
         console.print("")
         console.print("Switch the main repo to the merge target, then retry:")
@@ -312,17 +318,13 @@ def task_transition(
         from rich.markup import escape as _escape
 
         project_dir = _project_dir()
-        console.print(
-            f"[red]Refused (main repo mid-merge)[/] — "
-            f"cannot merge for {task_id}."
-        )
+        console.print(f"[red]Refused (main repo mid-merge)[/] — cannot merge for {task_id}.")
         console.print(_escape(str(e)))
         console.print("")
         console.print("Resolve the in-progress merge first, then retry:")
         console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
         console.print(
-            "  [cyan]git merge --abort[/]  [dim]# or resolve conflicts + "
-            "git commit[/]",
+            "  [cyan]git merge --abort[/]  [dim]# or resolve conflicts + git commit[/]",
             soft_wrap=True,
         )
         console.print(
@@ -337,9 +339,7 @@ def task_transition(
         # in `review` (HATS-481 fail-loud: the raise precedes `_save_task`).
         from rich.markup import escape as _escape
 
-        console.print(
-            f"[red]Refused (incomplete worktree state)[/]: {_escape(str(e))}"
-        )
+        console.print(f"[red]Refused (incomplete worktree state)[/]: {_escape(str(e))}")
         sys.exit(1)
     except WorktreeStateLostError as e:
         # State JSON gone, branch preserved → card stays in `review`. Post
@@ -367,8 +367,7 @@ def task_transition(
         # soft_wrap=True keeps each recipe line intact for copy-paste.
         console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
         console.print(
-            "  [cyan]git merge --abort[/]  "
-            "[dim]# if main repo is mid-merge[/]",
+            "  [cyan]git merge --abort[/]  [dim]# if main repo is mid-merge[/]",
             soft_wrap=True,
         )
         console.print(
@@ -377,8 +376,7 @@ def task_transition(
             soft_wrap=True,
         )
         console.print(
-            f"  [cyan]ai-hats task transition {task_id} done[/]  "
-            "[dim]# update tracker[/]",
+            f"  [cyan]ai-hats task transition {task_id} done[/]  [dim]# update tracker[/]",
             soft_wrap=True,
         )
         console.print("")
@@ -405,10 +403,7 @@ def task_transition(
         from rich.markup import escape as _escape
 
         project_dir = _project_dir()
-        console.print(
-            f"[red]Worktree drifted vs original branch[/] — "
-            f"cannot merge for {task_id}."
-        )
+        console.print(f"[red]Worktree drifted vs original branch[/] — cannot merge for {task_id}.")
         # Preserve the drift summary verbatim (commits + affected paths
         # from WorktreeManager._drift_summary) — it's informational.
         # Escape: drift summary embeds filenames, and a hostile filename
@@ -416,24 +411,17 @@ def task_transition(
         # operator's terminal. Mirrors cli/worktree.py wt_merge handler.
         console.print(_escape(str(e)))
         console.print("")
-        console.print(
-            "Re-verify your changes against the new base, then run:"
-        )
+        console.print("Re-verify your changes against the new base, then run:")
         # soft_wrap=True keeps each recipe line intact for copy-paste
         # even on narrow terminals (default Rich console width when
         # stdout is a pipe is 80 cols, which truncates long project paths).
         console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
-        console.print(
-            "  [cyan]ai-hats wt merge --accept-drift[/]", soft_wrap=True
-        )
+        console.print("  [cyan]ai-hats wt merge --accept-drift[/]", soft_wrap=True)
         console.print(
             f"  [cyan]ai-hats task transition {task_id} done[/]",
             soft_wrap=True,
         )
-        console.print(
-            "[dim]Note: --accept-drift belongs to `wt merge`, "
-            "not `task transition`.[/]"
-        )
+        console.print("[dim]Note: --accept-drift belongs to `wt merge`, not `task transition`.[/]")
         sys.exit(1)
     except WorktreeCreateError as e:
         # HATS-517: defense-in-depth handler for the branch-exists
@@ -557,9 +545,7 @@ def task_plan_extract(task_id: str, auto: bool, dry_run: bool, as_json: bool):
         console.print(f"[red]Error[/]: plan.md not found at {plan_path}")
         sys.exit(1)
     if mgr._is_empty_scaffold(task):
-        console.print(
-            f"[red]Plan is empty scaffold[/] — nothing to extract from {plan_path}"
-        )
+        console.print(f"[red]Plan is empty scaffold[/] — nothing to extract from {plan_path}")
         sys.exit(2)
 
     plan_text = plan_path.read_text()
@@ -599,11 +585,15 @@ def task_plan_extract(task_id: str, auto: bool, dry_run: bool, as_json: bool):
             selected.append((c, c.title))
             continue
         console.print(f"\n[{c.kind}] line {c.line_no}: [bold]{c.title}[/]")
-        choice = click.prompt(
-            "  [y]es / [n]o / [e]dit / [q]uit",
-            default="n",
-            show_default=False,
-        ).strip().lower()
+        choice = (
+            click.prompt(
+                "  [y]es / [n]o / [e]dit / [q]uit",
+                default="n",
+                show_default=False,
+            )
+            .strip()
+            .lower()
+        )
         if choice in ("q", "quit"):
             break
         if choice in ("n", "no", ""):
@@ -650,7 +640,9 @@ def task_plan_extract(task_id: str, auto: bool, dry_run: bool, as_json: bool):
 @click.option("--title", default=None, help="New title")
 @click.option("--description", "-d", default=None, help="New description")
 @click.option(
-    "--description-file", "description_file", default=None,
+    "--description-file",
+    "description_file",
+    default=None,
     help="Read description from a file (verbatim, bypasses shell quoting). "
     "Mutually exclusive with -d/--description.",
 )
@@ -663,19 +655,24 @@ def task_plan_extract(task_id: str, auto: bool, dry_run: bool, as_json: bool):
 @click.option("--add-tag", multiple=True, help="Add tag")
 @click.option("--remove-tag", multiple=True, help="Remove tag")
 @click.option(
-    "--parent-task", "parent_task", default=None,
+    "--parent-task",
+    "parent_task",
+    default=None,
     help="Set parent task ID (composition / epic→child relationship)",
 )
 @click.option(
-    "--clear-parent", is_flag=True,
+    "--clear-parent",
+    is_flag=True,
     help="Clear the parent task reference",
 )
 @click.option(
-    "--add-depends", multiple=True,
+    "--add-depends",
+    multiple=True,
     help="Add a blocker task ID (this task is blocked until that one is done)",
 )
 @click.option(
-    "--remove-depends", multiple=True,
+    "--remove-depends",
+    multiple=True,
     help="Remove a blocker task ID",
 )
 def task_update(
@@ -705,8 +702,19 @@ def task_update(
     parent_arg = "" if clear_parent else parent_task
 
     has_changes = any(
-        [title, description, priority, resolution, role, reviewer,
-         add_tag, remove_tag, parent_arg is not None, add_depends, remove_depends]
+        [
+            title,
+            description,
+            priority,
+            resolution,
+            role,
+            reviewer,
+            add_tag,
+            remove_tag,
+            parent_arg is not None,
+            add_depends,
+            remove_depends,
+        ]
     )
     if not has_changes:
         console.print(
@@ -757,7 +765,12 @@ def task_log(task_id: str, message: str, session: str | None):
 @click.option("--state", default=None, help="Filter by state")
 @click.option("--priority", default=None, help="Filter by priority (low/medium/high)")
 @click.option("--all", "-a", "show_all", is_flag=True, help="Include done/failed tasks")
-@click.option("--search", "-s", default=None, help="Regex search across id, title, description, tags, parent_task, depends_on")
+@click.option(
+    "--search",
+    "-s",
+    default=None,
+    help="Regex search across id, title, description, tags, parent_task, depends_on",
+)
 def task_list(state: str | None, priority: str | None, show_all: bool, search: str | None):
     """List all task cards."""
     import re as _re
@@ -784,7 +797,11 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
     tasks = mgr.list_tasks(state=filter_state, priority=priority)
 
     if not show_all and filter_state is None:
-        tasks = [t for t in tasks if t.state not in (TaskState.DONE, TaskState.FAILED, TaskState.CANCELLED)]
+        tasks = [
+            t
+            for t in tasks
+            if t.state not in (TaskState.DONE, TaskState.FAILED, TaskState.CANCELLED)
+        ]
 
     if search:
         try:
@@ -793,13 +810,22 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
             console.print(f"[red]Bad regex[/]: {e}")
             sys.exit(1)
         tasks = [
-            t for t in tasks
+            t
+            for t in tasks
             if pattern.search(
-                "\n".join([
-                    t.id, t.title, t.description, t.parent_task,
-                    *t.tags, *t.depends_on, *t.related, *t.see_also,
-                    t.folded_into,
-                ])
+                "\n".join(
+                    [
+                        t.id,
+                        t.title,
+                        t.description,
+                        t.parent_task,
+                        *t.tags,
+                        *t.depends_on,
+                        *t.related,
+                        *t.see_also,
+                        t.folded_into,
+                    ]
+                )
             )
         ]
 
@@ -896,9 +922,7 @@ def task_show(task_id: str, short: bool):
             if other is None:
                 console.print(f"    {ref_id} [red](missing)[/]")
             else:
-                console.print(
-                    f"    {ref_id} ({other.state.value}) — {_escape(other.title)}"
-                )
+                console.print(f"    {ref_id} ({other.state.value}) — {_escape(other.title)}")
 
     if t.related:
         _render_links("Related", t.related)
@@ -910,9 +934,7 @@ def task_show(task_id: str, short: bool):
         if target is None:
             console.print(f"    {t.folded_into} [red](missing)[/]")
         else:
-            console.print(
-                f"    {t.folded_into} ({target.state.value}) — {_escape(target.title)}"
-            )
+            console.print(f"    {t.folded_into} ({target.state.value}) — {_escape(target.title)}")
     # Inbound "Subsumed:" — scan all cards for folded_into pointing here.
     subsumed = mgr.find_subsumed_by(task_id)
     if subsumed:

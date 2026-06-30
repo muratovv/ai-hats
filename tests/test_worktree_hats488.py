@@ -22,6 +22,7 @@ import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli import main
+from ai_hats.paths import worktrees_dir
 from ai_hats.worktree import WorktreeManager, WorktreeRemoveError
 
 
@@ -30,7 +31,11 @@ pytestmark = pytest.mark.integration
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True,
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
     )
 
 
@@ -71,9 +76,7 @@ class TestRemoveWorktreeDataPreservation:
             except subprocess.CalledProcessError:
                 pass
 
-    def test_default_raises_when_git_fails_and_dir_exists(
-        self, git_project: Path
-    ) -> None:
+    def test_default_raises_when_git_fails_and_dir_exists(self, git_project: Path) -> None:
         """Simulated `git worktree remove --force` failure + dir still on
         disk → WorktreeRemoveError; dir untouched (data preserved)."""
         mgr = WorktreeManager(git_project, branch_name="task/remove-stuck")
@@ -84,10 +87,12 @@ class TestRemoveWorktreeDataPreservation:
             (wt_path / "DO_NOT_DELETE.txt").write_text("precious\n")
 
             real_git = mgr._git
+
             def selective_git(*args, **kwargs):
                 if args[:2] == ("worktree", "remove"):
                     raise subprocess.CalledProcessError(
-                        1, ["git", *args],
+                        1,
+                        ["git", *args],
                         stderr="fatal: foo.txt is held open by another process\n",
                     )
                 return real_git(*args, **kwargs)
@@ -116,16 +121,20 @@ class TestRemoveWorktreeDataPreservation:
             (wt_path / "junk.txt").write_text("nuke me\n")
 
             real_git = mgr._git
+
             def selective_git(*args, **kwargs):
                 if args[:2] == ("worktree", "remove"):
                     raise subprocess.CalledProcessError(
-                        1, ["git", *args],
+                        1,
+                        ["git", *args],
                         stderr="fatal: cannot remove worktree\n",
                     )
                 return real_git(*args, **kwargs)
 
-            with patch.object(mgr, "_git", side_effect=selective_git), \
-                 caplog.at_level(logging.WARNING, logger="ai_hats.worktree"):
+            with (
+                patch.object(mgr, "_git", side_effect=selective_git),
+                caplog.at_level(logging.WARNING, logger="ai_hats.worktree"),
+            ):
                 mgr._remove_worktree(force_rmtree=True)
 
             assert not wt_path.exists()
@@ -148,33 +157,35 @@ class TestRemoveWorktreeDataPreservation:
             # Externally yank the dir (simulates a peer cleanup or
             # external removal that races with our remove).
             import shutil
+
             shutil.rmtree(wt_path)
 
             real_git = mgr._git
             prune_called = []
+
             def tracker(*args, **kwargs):
                 if args[:2] == ("worktree", "prune"):
                     prune_called.append(args)
                 if args[:2] == ("worktree", "remove"):
                     # git would now fail with "not a working tree" or similar.
                     raise subprocess.CalledProcessError(
-                        128, ["git", *args],
+                        128,
+                        ["git", *args],
                         stderr="fatal: not a valid worktree\n",
                     )
                 return real_git(*args, **kwargs)
 
-            with patch.object(mgr, "_git", side_effect=tracker), \
-                 caplog.at_level(logging.INFO, logger="ai_hats.worktree"):
+            with (
+                patch.object(mgr, "_git", side_effect=tracker),
+                caplog.at_level(logging.INFO, logger="ai_hats.worktree"),
+            ):
                 mgr._remove_worktree()  # must NOT raise
 
             assert not wt_path.exists()
             assert prune_called == [], (
-                f"R-04 regression: auto-prune called after failed remove: "
-                f"{prune_called}"
+                f"R-04 regression: auto-prune called after failed remove: {prune_called}"
             )
-            assert any(
-                "already absent" in r.message for r in caplog.records
-            )
+            assert any("already absent" in r.message for r in caplog.records)
         finally:
             try:
                 _git(git_project, "branch", "-D", "task/remove-vanished")
@@ -188,9 +199,7 @@ class TestRemoveWorktreeDataPreservation:
 
 
 class TestNoAutoPrune:
-    def test_prune_never_invoked_on_force_rmtree(
-        self, git_project: Path
-    ) -> None:
+    def test_prune_never_invoked_on_force_rmtree(self, git_project: Path) -> None:
         """Even on the force-rmtree path, the old auto-prune call is gone."""
         mgr = WorktreeManager(git_project, branch_name="task/no-prune")
         mgr.create()
@@ -198,12 +207,14 @@ class TestNoAutoPrune:
         try:
             real_git = mgr._git
             prune_called = []
+
             def tracker(*args, **kwargs):
                 if args[:2] == ("worktree", "prune"):
                     prune_called.append(args)
                 if args[:2] == ("worktree", "remove"):
                     raise subprocess.CalledProcessError(
-                        1, ["git", *args],
+                        1,
+                        ["git", *args],
                         stderr="fatal: cannot remove\n",
                     )
                 return real_git(*args, **kwargs)
@@ -211,9 +222,7 @@ class TestNoAutoPrune:
             with patch.object(mgr, "_git", side_effect=tracker):
                 mgr._remove_worktree(force_rmtree=True)
 
-            assert prune_called == [], (
-                f"R-04 regression: auto-prune invoked: {prune_called}"
-            )
+            assert prune_called == [], f"R-04 regression: auto-prune invoked: {prune_called}"
         finally:
             try:
                 _git(git_project, "branch", "-D", "task/no-prune")
@@ -268,8 +277,7 @@ class TestIsInsideLinkedWorktreeSingleRevParse:
             WorktreeManager.is_inside_linked_worktree(git_project)
 
         assert len(rev_parse_calls) == 1, (
-            f"expected exactly 1 git rev-parse call, got {len(rev_parse_calls)}: "
-            f"{rev_parse_calls}"
+            f"expected exactly 1 git rev-parse call, got {len(rev_parse_calls)}: {rev_parse_calls}"
         )
         # Single call carries BOTH flags.
         cmd = rev_parse_calls[0]
@@ -293,14 +301,16 @@ class TestIsInsideLinkedWorktreeSingleRevParse:
 
 
 class TestCliForceRemoveFlag:
-    def test_discard_default_partial_remove_exits_2(
-        self, git_project: Path, monkeypatch
-    ) -> None:
+    def test_discard_default_partial_remove_exits_2(self, git_project: Path, monkeypatch) -> None:
         """`wt discard` w/o --force-remove + simulated stuck dir → exit 2."""
         runner = CliRunner()
         monkeypatch.chdir(git_project)
 
-        mgr = WorktreeManager(git_project, branch_name="task/cli-stuck")
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="task/cli-stuck",
+            state_dir=worktrees_dir(git_project),
+        )
         wt_path = mgr.create()
         mgr.save_state()
 
@@ -308,9 +318,7 @@ class TestCliForceRemoveFlag:
         # manager invokes our raise.
         def boom(self, *, force_rmtree: bool = False) -> None:
             if not force_rmtree:
-                raise WorktreeRemoveError(
-                    wt_path, "fatal: cannot remove (held open)"
-                )
+                raise WorktreeRemoveError(wt_path, "fatal: cannot remove (held open)")
 
         try:
             monkeypatch.setattr(WorktreeManager, "_remove_worktree", boom)
@@ -323,14 +331,16 @@ class TestCliForceRemoveFlag:
             monkeypatch.undo()
             mgr.discard(force=True, force_remove=True)
 
-    def test_discard_force_remove_succeeds(
-        self, git_project: Path, monkeypatch
-    ) -> None:
+    def test_discard_force_remove_succeeds(self, git_project: Path, monkeypatch) -> None:
         """`wt discard --force-remove` plumbs `force_rmtree=True`."""
         runner = CliRunner()
         monkeypatch.chdir(git_project)
 
-        mgr = WorktreeManager(git_project, branch_name="task/cli-force-rm")
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="task/cli-force-rm",
+            state_dir=worktrees_dir(git_project),
+        )
         wt_path = mgr.create()
         mgr.save_state()
 
@@ -344,9 +354,7 @@ class TestCliForceRemoveFlag:
 
         try:
             monkeypatch.setattr(WorktreeManager, "_remove_worktree", tracker)
-            result = runner.invoke(
-                main, ["wt", "discard", "task/cli-force-rm", "--force-remove"]
-            )
+            result = runner.invoke(main, ["wt", "discard", "task/cli-force-rm", "--force-remove"])
             assert result.exit_code == 0, result.output
             assert seen_force.get("value") is True, (
                 f"--force-remove did NOT plumb into _remove_worktree: {seen_force}"
