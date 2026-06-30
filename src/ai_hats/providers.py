@@ -60,6 +60,11 @@ ALWAYS_ON_RULES = {
     # (~1.0 KB, HATS-702); acceptable budget for an always-on
     # architectural guard. Full rationale: docs/adr/0005-*.md.
     "rule_composition_value_contract",
+    # HATS-842: the calibrating few-shot under-fired while the body was
+    # SUMMARIZED_IN_INJECTION (delivered as a 1-line bullet that omitted
+    # docstrings). Trimmed to ~1.6 KB and promoted so the agent reads the
+    # exact guide at authoring time — also dropped from SUMMARIZED_IN_INJECTION.
+    "dev_rule_comment_discipline",
 }
 
 

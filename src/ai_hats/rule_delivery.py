@@ -31,7 +31,9 @@ from .providers import ALWAYS_ON_RULES
 SUMMARIZED_IN_INJECTION: frozenset[str] = frozenset(
     {
         "rule_backlog_discipline",
-        "dev_rule_comment_discipline",
+        # dev_rule_comment_discipline moved to ALWAYS_ON_RULES (HATS-842) — its
+        # few-shot body is now delivered in full, so the `see rule` pointer in
+        # trait-se-mindset resolves through the always-on channel, not here.
         "dev_rule_e2e_gate",
         "rule_harness_reminder_hygiene",
         "rule_core_vs_usage_split",
