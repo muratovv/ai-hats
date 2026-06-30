@@ -2,7 +2,8 @@ name: dev::python
 composition:
   traits: []
   rules: []
-  skills: []
+  skills:
+    - py-security-lint
 injection: |
   ## PYTHON DEVELOPMENT
 

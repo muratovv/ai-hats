@@ -256,7 +256,9 @@ Materialized scripts run on tool use — treat them as a security surface (see
 of a wired `PreToolUse` hook (package data, always materialized); the
 `tool-call-hygiene` skill is the first **skill-declared** runtime hook — a
 non-blocking `PreToolUse` Bash guard that emits an `additionalContext` nudge
-toward Grep/Glob/Read/Edit and never blocks or prompts.
+toward Grep/Glob/Read/Edit and never blocks or prompts. The `py-security-lint`
+skill is the `PostToolUse` counterpart — on each `.py` edit it runs `ruff
+--select S` and forwards any security findings via `additionalContext`.
 
 ### Worktree lifecycle hooks
 
