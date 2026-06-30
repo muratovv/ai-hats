@@ -1,34 +1,17 @@
 """Crash-recovery sweep for the versioned install layout (HATS-648 / R1).
 
-An ``ai-hats self update`` killed mid-pip leaves an incomplete
-``versions/<sha>/`` dir — one that lacks the ``.complete`` sentinel (written
-last, only after a fully-successful install+verify). This module removes that
-residue so ``versions/`` stays bounded, **idempotently and conservatively**:
+An ``ai-hats self update`` killed mid-pip leaves an incomplete ``versions/<sha>/``
+(no ``.complete`` sentinel). This removes that residue so ``versions/`` stays
+bounded — **idempotently and conservatively**: never touches ``current`` or any
+**complete** dir (a complete dir may be a live pinned run's env — reclaiming
+those is R2's job, HATS-649), only removes residue older than a TTL (no liveness
+signal exists for a half-install, so age is the stand-in), and deletes via
+``safe_delete.discard``. Called at the ``create_session`` chokepoint and at
+``self update`` start, with the same age guard at both.
 
-- never touches ``current`` or any **complete** dir — reclaiming a complete but
-  orphaned version requires liveness and is R2's job (HATS-649); a complete dir
-  may be a live pinned run's frozen env;
-- only removes residue older than a TTL, so an install **in flight** is not
-  deleted out from under a concurrent process (there is no liveness signal until
-  R2 — the age guard is the stand-in);
-- removal goes through :func:`safe_delete.discard` (idempotent; hard-deletes
-  under ``$TMPDIR``, trashes elsewhere with a forensic manifest entry).
-
-Called at the ``create_session`` chokepoint (converges on any ``ai-hats``
-invocation) and at ``self update`` start (cleans before staging the next
-build) — the **same** age guard applies at both call-sites.
-
-R2 (HATS-649) adds :func:`reclaim_orphan_versions` to this module: liveness-
-based reclaim of **complete** dirs that the incomplete sweep deliberately leaves
-alone. The two passes are complementary — incomplete residue is reclaimed by
-age (no liveness signal exists for a half-install), complete versions only when
-a liveness ref proves no live run pins them.
-
-Phase B (HATS-653) adds :func:`reclaim_legacy_venv`: once **this** process runs
-from a complete versioned venv, the orphaned pre-versioning
-``<ai_hats_dir>/.venv`` (outside ``versions/``, which both R1 and R2 leave
-alone) is dead weight and is reclaimed. Guarded by ``current_run_sha``; backed
-by the launcher's existing self-heal, so the reclaim is reversible.
+Phase B (HATS-653) adds ``reclaim_legacy_venv``: once this process runs from a
+complete versioned venv, the orphaned pre-versioning ``<ai_hats_dir>/.venv`` is
+dead weight and is reclaimed (reversible — backed by the launcher self-heal).
 """
 
 from __future__ import annotations
@@ -156,45 +139,23 @@ def reclaim_orphan_versions(
 def reclaim_legacy_venv(project_dir: Path) -> Path | None:
     """Reclaim the legacy ``<ai_hats_dir>/.venv`` once versioned is authoritative.
 
-    Phase B (HATS-653): after lazy migration to the versioned layout the
-    pre-versioning ``.venv`` only ever resolves as a *fallback* (the launcher /
-    :func:`ai_hats.paths.venv_path` precedence consults it solely when
-    ``versions/current`` is absent or broken). Once **this** process runs from a
-    complete versioned venv, ``.venv`` is dead weight whose fallback value only
-    decays — every ``self update`` it misses leaves it staler. Reclaim it.
+    Phase B (HATS-653): after lazy migration to the versioned layout the old
+    ``.venv`` only resolves as a fallback (when ``versions/current`` is absent or
+    broken). Once this process runs from a complete versioned venv it is dead
+    weight whose fallback value only decays, so reclaim it.
 
-    The single guard is ``current_run_sha(project_dir) is not None``. A non-None
-    result proves the running interpreter's ``sys.prefix`` is ``versions/<sha>/``,
-    which in one predicate means:
+    Single guard: ``current_run_sha(project_dir) is not None`` — a non-None result
+    proves the running interpreter's ``sys.prefix`` is ``versions/<sha>/``, which
+    in one predicate means (a) we are NOT running from ``.venv`` (so discarding it
+    can't pull the rug from the live interpreter), (b) no ``AI_HATS_VENV`` / yaml
+    override / editable checkout is active (all resolve to None), and (c) we run
+    from a working versioned prefix. When it fails, ``.venv`` is kept.
 
-    * **(a)** we are *not* running from ``.venv`` — so discarding it cannot pull
-      the rug out from under the live interpreter (lazy imports / a cross-device
-      trash-move could otherwise crash the current command). This assumes
-      ``.venv`` is a real directory, the only state migration produces
-      (``python3 -m venv``); a hypothetical ``.venv`` symlinked *into*
-      ``versions/`` would resolve under ``versions/`` and is out of scope;
-    * **(b)** no ``AI_HATS_VENV`` / yaml ``venv_path`` override and no editable /
-      dev checkout is active — all of those resolve ``current_run_sha → None``
-      (:func:`ai_hats.version_refs.current_run_sha`), so a user-owned venv is
-      never touched;
-    * **(c)** we run from a ``versions/<sha>``-shaped prefix — which for a *live*
-      interpreter is necessarily a working venv (one cannot execute from a
-      non-existent prefix). The guard itself is a lexical ``sys.prefix`` check,
-      not a ``.complete`` attestation; completeness is incidental to being live.
-
-    When the guard fails, the legacy ``.venv`` is kept. This is *stronger* than a
-    bare ``read_current_sha`` check: running-from-versioned additionally proves
-    live-process safety and the absence of an override.
-
-    Reclaim is **reversible**, not a destructive last resort: if a versioned
-    install later breaks and ``.venv`` is gone, the launcher's ``heal_if_needed``
-    recreates the default ``.venv`` on the next ``ai-hats self update`` and the
-    python self-update rebuilds the versioned install. So this is bounded disk
-    hygiene backed by the existing self-heal. Removal goes through
-    :func:`safe_delete.discard` (idempotent — a missing ``.venv`` is a no-op).
-
-    Returns the reclaimed path (for no-silent-caps logging by the caller) or
-    ``None`` when the guard skips or ``.venv`` was already absent.
+    Reversible, not destructive: if a versioned install later breaks, the
+    launcher's ``heal_if_needed`` recreates ``.venv`` on the next ``self update``.
+    Removal goes through :func:`safe_delete.discard` (a missing ``.venv`` is a
+    no-op). Returns the reclaimed path (for caller logging) or ``None`` when
+    skipped.
     """
     if current_run_sha(project_dir) is None:
         return None  # running from .venv / override / editable → keep legacy venv
