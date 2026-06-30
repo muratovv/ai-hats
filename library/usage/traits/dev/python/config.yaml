@@ -4,6 +4,7 @@ composition:
   rules: []
   skills:
     - py-security-lint
+    - comment-length-lint
 injection: |
   ## PYTHON DEVELOPMENT
 
