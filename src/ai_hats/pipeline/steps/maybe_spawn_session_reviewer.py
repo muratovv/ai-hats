@@ -1,36 +1,21 @@
 """``maybe_spawn_session_reviewer`` step — auto-retro decision + spawn.
 
-Single source of truth for the auto-retro spawn block, shared by
-`finalize-hitl` (HITL / WrapRunner) and `finalize-subagent`
-(SubAgent / SubAgentRunner) sub-pipelines (HATS-530).
+Single source of truth for the auto-retro spawn block, shared by `finalize-hitl`
+(WrapRunner) and `finalize-subagent` (SubAgentRunner) sub-pipelines (HATS-530,
+which closed the prior HITL-only asymmetry).
 
-Pre-HATS-530 this logic was inlined inside ``RunSessionEnd`` and
-therefore fired ONLY in the HITL pipeline — SubAgent's
-``finalize-subagent.yaml`` retained the pre-HATS-535 contract of
-"no auto-retro for sub-agents". HATS-530 closes that asymmetry by
-extracting the block into its own step which both pipelines now
-include.
+Three sub-phases, each wrapped in ``try/except (Exception, KeyboardInterrupt)``
+per the HATS-086 invariant (a second Ctrl+C during cleanup must not propagate):
 
-Three sub-phases, each wrapped in ``try/except (Exception,
-KeyboardInterrupt)`` per the HATS-086 invariant (a second Ctrl+C
-during cleanup must not propagate):
-
-1. **Retro decision** — pure ``make_decision(project_dir, session_id)``
-   + ``write_retro_log`` so the decision survives even if the spawn
-   crashes.
-2. **Session-reviewer spawn** — when ``retro.action == "run"`` AND not
-   recursion-guarded by ``HATS_SKIP_RETRO=1``, fire
+1. **Retro decision** — ``make_decision`` + ``write_retro_log`` so the decision
+   survives even if the spawn crashes.
+2. **Spawn** — when ``retro.action == "run"`` and not ``HATS_SKIP_RETRO=1``, fire
    ``_spawn_session_reviewer_background``.
-3. **Return delta** — emit ``retro_decision`` so a downstream step
-   (e.g. ``run_session_end``'s retro banner in HITL) can render
-   user-visible context without re-computing.
+3. **Return delta** — emit ``retro_decision`` for a downstream banner step.
 
-``failure_policy = "continue"`` — finalization is best-effort.
-
-The retro banner UI is NOT printed here on purpose — it's a
-HITL-only side effect of ``RunSessionEnd`` (SubAgent has no TTY of
-its own for user-visible banners). The decision is exposed via the
-funnel so the banner step can read it.
+``failure_policy = "continue"`` — finalization is best-effort. The retro banner
+UI is intentionally NOT printed here: it's a HITL-only ``RunSessionEnd`` side
+effect (SubAgent has no TTY), fed from the funnel value above.
 """
 
 from __future__ import annotations

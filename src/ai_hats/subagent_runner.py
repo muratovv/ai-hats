@@ -157,19 +157,14 @@ class SubAgentRunner:
         # HATS-456: single derivation point for "compose for role X".
         # Override (HATS-267) stays on the Automate path per ADR-0005 П2.
         result = compose_for_role(self.assembler, role_name)
-        # HATS-505 / HATS-452-class trap warning:
-        # ``with_injection_override`` REPLACES ``result.injections``
-        # WHOLESALE — every overlay-layer contribution (global + project
-        # ``injection_append`` text, ``add_traits`` injection bodies)
-        # gets dropped from the SDK system_prompt. The pipeline
-        # (``LaunchProvider``) no longer feeds an override here
-        # (HATS-505 (a)); the only legitimate caller is a HATS-267
-        # explicit-prompt invocation (a direct API consumer). If you
-        # add a new caller, the override
-        # text MUST already contain everything the role would have
-        # composed — or compose the role first and pass an *augmented*
-        # (not replacement) string. Layered composition is in
-        # ``result`` above this line if you need to read it.
+        # HATS-505 / HATS-452 trap: ``with_injection_override`` REPLACES
+        # ``result.injections`` WHOLESALE — every overlay contribution (global +
+        # project ``injection_append``, ``add_traits`` bodies) is dropped from
+        # the SDK system_prompt. The pipeline no longer feeds an override here
+        # (HATS-505 a); the only legitimate caller is a HATS-267 explicit-prompt
+        # API consumer. A new caller's override text MUST already contain
+        # everything the role would compose — or compose first and pass an
+        # *augmented* (not replacement) string. Layered ``result`` is above.
         if system_prompt_override is not None:
             # HATS-452: explicit immutable transformation via the typed
             # ``with_*`` API on ``CompositionResult`` (П1 in ADR-0005).
