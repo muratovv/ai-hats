@@ -1,186 +1,22 @@
-"""Lock & retry concurrency for worktree isolation (extracted from worktree.py, HATS-715).
+"""Lock & retry concurrency primitives for worktree isolation.
 
-Concurrency (HATS-121)
-----------------------
-State files in ``<ai_hats_dir>/sessions/worktrees/<key>.json`` are
-guarded by per-key ``filelock.FileLock`` locks (``<state_path>.lock``).
-The legacy singleton ``<ai_hats_dir>/sessions/worktree.json`` is locked
-on its own path during migration. Locks are OS-level (``fcntl.flock``) —
-kernel auto-releases on process death, so no stale-lock cleanup is
-required.
+Extracted from ``worktree.py`` in the HATS-715 wt-core split. Owns the per-key
+state-JSON lock, the create / base / lifecycle locks, and the jittered-backoff
+git retries.
 
-``save_state`` writes atomically (``tmp + os.replace``) so a SIGKILL
-mid-write never produces a truncated JSON.
+Architectural model, layer rationale, and the operator-guard / teardown /
+stale-lock hardening: ``docs/adr/0006-worktree-concurrency-layered-defense.md``
+— this docstring is its canonical in-code mirror.
 
-Acquire timeout is ``LOCK_TIMEOUT`` (10s). On timeout
-``WorktreeLockError`` is raised pointing the user at the lock file
-and ``ps`` for diagnosis. Real operations are <50ms, so 10s is a
-~200x safety margin for live-but-stuck holders.
+Lock-ordering hierarchy — always acquired outer -> inner, no inversion, so no
+deadlock is reachable by construction:
 
-Create-time concurrency (HATS-479)
-----------------------------------
-``git worktree add`` writes to repo-wide shared state (``.git/config``
-for upstream tracking, ``.git/worktrees/<name>/``, ``.git/refs/heads/``),
-which git does NOT serialize across processes. Per-branch locks would
-miss the real failure mode (two creates on *different* branches both
-contend on ``.git/config.lock`` — see Anthropic claude-code #34645).
-
-Defense is layered:
-
-* **L1** — :func:`_acquire_create_lock` (repo-scoped mutex at
-  ``<state_dir>/.git-worktree-create.lock``) wraps the entire
-  ``load_for_branch → git worktree add → save_state`` critical section.
-  Serializes ai-hats vs. ai-hats writes.
-* **L2** — TOCTOU re-check of :meth:`WorktreeManager.load_for_branch`
-  under L1; raises :class:`WorktreeCreateError` if the branch was
-  created by a concurrent ai-hats peer between the caller's pre-check
-  and L1 acquisition.
-* **L3** — :func:`_retry_worktree_add` retries ``git worktree add`` with
-  jittered exponential backoff on transient stderr (``could not lock
-  config file``, ``File exists``) caused by *external* git processes
-  (IDE, manual ``git commit``) briefly holding ``.git/config.lock``.
-* **L4** — :meth:`WorktreeManager.create` cleans up ``mkdtemp`` and the
-  branch (only when ``not branch_existed_before``) on any
-  ``CalledProcessError``, then raises :class:`WorktreeCreateError` with
-  parsed stderr — never an opaque ``subprocess.CalledProcessError``.
-
-Merge-time concurrency (HATS-481)
----------------------------------
-Concurrent ``ai-hats task transition <ID> done`` on worktrees sharing
-a base ref (e.g. both based on ``master``) contend on
-``.git/index.lock`` when running ``git merge``. Pre-HATS-481
-``state._teardown_worktree`` swallowed the resulting
-``CalledProcessError`` at WARNING and let ``transition`` proceed to
-``_save_task``, persisting the new DONE state despite the merge
-failure — silent data loss (same class as the GitHub Merge Queue
-April-2026 incident). Defense is layered:
-
-* **L1'** — :func:`_acquire_base_branch_lock` (filelock at
-  ``<state_dir>/.base-<sanitized>.lock``) wraps
-  :meth:`WorktreeManager._fast_forward_merge` and
-  :meth:`WorktreeManager._squash_merge`. Granularity = one writer per
-  ``(project, base_ref)`` — bors / Kodiak / Mergify / GH Merge Queue
-  consensus. Closes ai-hats vs. ai-hats contention; UX-fix.
-* **Free win** — :meth:`WorktreeManager._git_with_ref_lock_wait`
-  passes ``-c core.filesRefLockTimeout`` /
-  ``-c core.packedRefsTimeout``, letting git absorb ref-lock
-  contention internally without a userspace retry. Requires git
-  ≥ 2.31.
-* **L3'** — :func:`_retry_git_merge` retries ``git merge`` with AWS
-  full-jitter exponential backoff on the broader transient stderr set
-  (``unable to create``, ``index.lock``, ``another git process``,
-  ``could not lock``) — covers external git writers (IDE, manual
-  ``git commit``) holding ``.git/index.lock``, which has
-  no git wait-flag.
-* **L4'** — :meth:`state.TaskManager._teardown_worktree` re-raises
-  any merge failure (except :class:`OriginalBranchMissingError`).
-  ``transition`` aborts before ``_save_task``, task stays in
-  ``review``. **Data-integrity guarantee — L4' alone is sufficient
-  to close the silent-loss class; L1' + L3' are UX-optimization.**
-
-Lifecycle concurrency (HATS-480)
---------------------------------
-``wt merge`` and ``wt discard`` (or two parallel ``wt discard``) on the
-*same* worktree branch race outside the HATS-121 state-JSON lock: that
-lock is held only across millisecond-scoped JSON I/O and does NOT cover
-the surrounding git operations. Repro (R-03 in HATS-476):
-
-* A: ``wt merge task/hats-X`` → ``_check_clean`` → ``_check_drift`` →
-  ``_fast_forward_merge`` (HATS-481 base-lock acquired only inside the
-  ``git merge`` call, not around the whole lifecycle).
-* B: ``wt discard task/hats-X`` in parallel → ``_remove_worktree`` deletes
-  the dir mid-merge → either A's merge fails ("branch deleted") or B's
-  ``branch -D`` silently swallows "not fully merged" at DEBUG.
-* Either way: half-merged commit on ``master`` or branch graveyard,
-  state JSON cleared exactly once (second ``_clear_state`` no-ops).
-
-* **LC** — :func:`_acquire_lifecycle_lock` (per-wt-branch filelock at
-  ``<state>.json.lifecycle.lock``) wraps the entire ``merge()`` /
-  ``discard()`` / ``cleanup()`` body. After acquisition the caller
-  checks ``self.worktree_path.exists()`` — peer's ``_remove_worktree``
-  is the irreversible event, and the directory's absence is the cheap,
-  reliable signal that the lifecycle is already done; late arrival
-  no-ops idempotently. Separate file from :func:`_lock_path` so a long
-  lifecycle op does NOT block millisecond-scoped state-JSON I/O on
-  peers (``wt list`` / ``load_for_branch`` stay snappy).
-
-Operator-error guards (HATS-482)
---------------------------------
-Concurrency hardening (HATS-479/480/481) closed the data-loss class.
-HATS-482 layers a set of operator-visibility guards on top, so that
-remaining single-actor mistakes fail loud instead of corrupting state:
-
-* **B-02** — :meth:`WorktreeManager._delete_branch` classifies known
-  ``git branch -D`` failures (``not fully merged``, ``used by worktree``,
-  ``cannot lock ref``) and raises :class:`WorktreePartialCleanupError`.
-  CLI handlers convert this to ``exit 2`` with manual-cleanup guidance.
-  Unclassified stderr stays silent at DEBUG (regression-safe).
-* **B-07** — :func:`_state_key` is case-preserving. Pre-482 keys were
-  lowercased, collapsing distinct git refs (``Task/X`` ↔ ``task/x``)
-  onto one state file. Legacy lowercased files migrate one-shot in
-  :meth:`WorktreeManager._load_by_key` under the state lock.
-* **B-08** — :func:`ai_hats.cli._helpers._guard_not_inside_linked_worktree`
-  is wired into ``wt create / merge / discard / list``. Refuses to
-  resolve ``_project_dir`` upward through ``/tmp`` when CWD is inside
-  a linked worktree, preventing state writes to a tmp tree.
-  ``wt exec`` / ``wt env`` are intentionally exempt (designed to run
-  from inside the worktree).
-* **R-08** — :func:`ai_hats.cli.worktree._resolve_worktree` raises
-  :class:`click.UsageError` when no branch is given AND ``>1`` worktree
-  is tracked, instead of silently picking alphabetical first.
-
-Teardown hardening (HATS-488)
------------------------------
-* **B-03** — :meth:`WorktreeManager._remove_worktree` no longer falls
-  back to ``shutil.rmtree`` (``ignore_errors=True``) when ``git worktree
-  remove --force`` fails. Default raises :class:`WorktreeRemoveError`
-  (data preservation); ``wt discard --force-remove`` opts in to the
-  rmtree path explicitly. ``wt merge`` propagates the exception so
-  the operator sees the residual dir.
-* **R-04** — auto-``git worktree prune`` in the same fallback was
-  dropped. Pruning could race with concurrent ``wt create`` (admin
-  entry unlinked before target dir materializes); the trade is
-  occasional orphan ``.git/worktrees/<name>/`` admin entries that
-  ``wt list`` surfaces and operators clean with manual
-  ``git worktree prune``.
-* **B-06** — :meth:`WorktreeManager.is_inside_linked_worktree` now
-  runs ONE ``git rev-parse --git-dir --git-common-dir`` instead of
-  two separate ``subprocess.run`` calls. Closes the race window
-  between the two forks (path comparison saw mismatched paths if
-  ``.git`` was renamed between calls) and is incidentally faster.
-
-Stale-lock observability (HATS-486)
------------------------------------
-``.git/index.lock`` left behind by a crashed git process (manual SIGKILL,
-OOM kill, system crash mid-merge) blocks every subsequent merge. Git's
-own message ("Another git process seems to be running") suggests manual
-``rm -f`` but gives no confidence signal — the operator can't tell from
-the message whether a live process holds the lock or whether it's just
-debris.
-
-* **v1 (this layer)** — :func:`_stale_index_lock_age` is probed inside
-  :func:`_retry_git_merge` on the FIRST retriable error. When the lock
-  is older than :data:`STALE_INDEX_LOCK_THRESHOLD_S` (60 s),
-  ``logger.warning`` emits the absolute path + age + the exact
-  ``rm -f`` command the operator should run. Surfaces the actionable
-  hint before retry exhaustion (~30 s for the 8-attempt cycle).
-  **Warn-only** — no auto-delete; v2 will revisit after the warning
-  has been observed in production logs.
-* Limited to ``.git/index.lock`` — other lockfiles (``config.lock``,
-  ``HEAD.lock``, ``packed-refs.lock``) are absorbed inside git via
-  the ``core.filesRefLockTimeout`` / ``core.packedRefsTimeout`` flags
-  HATS-481 already passes. Only ``index.lock`` has no wait-flag in
-  git and is the empirical source of mid-merge-crash pain.
-
-Lock ordering hierarchy across HATS-121/479/480/481 (always outer →
-inner, no inversion → no deadlock):
-
-1. ``<state>.json.lifecycle.lock``       — HATS-480 (per wt branch)
-2. ``<state_dir>/.base-<base>.lock``     — HATS-481 (per base ref)
+1. ``<state>.json.lifecycle.lock``           — HATS-480 (per wt branch)
+2. ``<state_dir>/.base-<base>.lock``         — HATS-481 (per base ref)
 3. ``<state_dir>/.git-worktree-create.lock`` — HATS-479 (repo-wide, create-only)
-4. ``<state>.json.lock``                  — HATS-121 (per state JSON, I/O only)
+4. ``<state>.json.lock``                     — HATS-121 (per state JSON, I/O only)
 
-The lock file ``<state_dir>``  **must reside on a local filesystem**.
+The lock directory ``<state_dir>`` **must reside on a local filesystem** —
 ``filelock.FileLock`` (``fcntl`` advisory) is unreliable on NFS / SMB.
 """
 
