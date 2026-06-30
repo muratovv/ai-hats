@@ -1,51 +1,22 @@
 """Pre-bump backup snapshot (HATS-549).
 
-Single-purpose module: BEFORE any install-time work touches the project
-tree, snapshot the ai-hats-managed surface to ``/tmp/`` as a tarball.
-The tarball is the always-on recovery path — if any later step
-(migration registry, healer, layout move) misbehaves, the user has a
-one-liner to roll back:
+Before any install-time work touches the project tree, snapshot the
+ai-hats-managed surface to ``/tmp/`` as a tarball — the always-on recovery path
+if a later step (migration registry, healer, layout move) misbehaves::
 
     tar -xzf <snapshot>.tar.gz -C <project_dir>
 
-Scope (what enters the tarball):
-
-* ``.agent/`` — entire tree, including gitignored ``.agent/ai-hats/``
-  where the actual framework state lives.
-* ``.claude/settings.json`` / ``.claude/settings.local.json`` — the
-  configs the healer can mutate.
-* ``ai-hats.yaml`` — config the migration runner mutates
-  (``migration_step`` persistence).
-* ``CLAUDE.md`` / ``GEMINI.md`` — provider system prompts that
-  ``_migrate_claude_md_to_v3`` rewrites.
-* ``.githooks/`` — ``HooksManager.install_git_hooks`` writes here.
-* ``.gitignore`` — ``_ensure_gitignore_entry`` mutates this.
-
-Anything else under ``project_dir`` is the user's project and is NOT
-captured.
-
-Configuration via env:
-
-* ``AI_HATS_BUMP_BACKUP_DIR=<path>`` — override base dir (snapshot
-  still gets a per-call file underneath).
-* ``AI_HATS_BUMP_BACKUP_DIR=-`` — hard-disable, no snapshot written.
-  One stderr WARN per call. For CI / ephemeral environments where
-  snapshot value is zero.
-
-Failures:
-
-* ENOSPC / read-only fs on snapshot write → :class:`BackupError`
-  propagated to caller. Callers (``do_bump`` / ``do_init``) abort
-  hard rather than silently lose recovery capability — skipping the
-  snapshot defeats the whole safety guarantee.
-
-Retention: keep the last :data:`MAX_RETENTION` snapshots per project
-slug. Older ones are unlinked at the top of each :func:`snapshot_pre_bump`
-call. The unlink is best-effort; if it fails, the new snapshot still
-proceeds.
-
-See ``tracker/backlog/tasks/HATS-549/plan.md`` for full design.
+The captured paths are ``BACKUP_SCOPE_PATHS`` (the ``.agent/`` tree, the
+``.claude`` settings, ``ai-hats.yaml``, ``CLAUDE.md`` / ``GEMINI.md``,
+``.githooks``, ``.gitignore``); everything else under ``project_dir`` is the
+user's project and is skipped. Env: ``AI_HATS_BUMP_BACKUP_DIR=<path>`` overrides
+the base dir; ``=-`` hard-disables (one stderr WARN/call) for CI / ephemeral
+envs. A snapshot write failure (ENOSPC / read-only fs) raises ``BackupError`` and
+callers abort rather than silently lose recovery. Retention: last
+``MAX_RETENTION`` per project slug, older unlinked best-effort. See
+``tracker/backlog/tasks/HATS-549/plan.md`` for full design.
 """
+
 from __future__ import annotations
 
 import errno
@@ -89,19 +60,10 @@ BACKUP_SCOPE_PATHS: tuple[str, ...] = (
     ".gitignore",
 )
 
-# Directory / file basenames pruned at ANY depth inside the scope.
-# These are regenerable derived state — including them would inflate
-# the tarball by 100×+ (the ai-hats venv alone is ~85 MB) and offer no
-# recovery value (rebuilt by `pip install -e` / bytecode recompile).
-#
-# - ``.venv`` — framework venv lives under ``<ai_hats_dir>/.venv`` by
-#   default; user-pointed venvs reachable via ``venv_path`` config
-#   land at the same basename.
-# - ``__pycache__`` / ``*.pyc`` — Python bytecode.
-# - ``.cache`` — ai-hats per-session cache dir
-#   (``<ai_hats_dir>/.cache/`` per HATS-294-ish).
-# - ``node_modules`` — defensive; some projects mount node tooling
-#   under ``.agent/`` and we don't want to capture it either.
+# Basenames pruned at ANY depth inside the scope: regenerable derived state
+# (venv, bytecode, caches, node_modules) whose inclusion would inflate the
+# tarball ~100x (the venv alone is ~85 MB) for zero recovery value — rebuilt by
+# `pip install -e` / bytecode recompile.
 EXCLUDED_BASENAMES: frozenset[str] = frozenset({
     ".venv",
     "__pycache__",

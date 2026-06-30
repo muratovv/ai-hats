@@ -682,20 +682,14 @@ def _retag(ref: LegacyRef, reason: str) -> LegacyRef:
 # ---------- Phase 4 (HATS-549) — disable user-owned hook entries ----------
 
 
-# Path prefixes the Phase 4 disable pre-pass treats as candidate
-# user-owned-hook locations. Both forms need detection so the
-# REPEAT-bump path heals stuck projects that were already auto-healed
-# by a pre-HATS-549 version:
-#
-#   1. Fresh v3: settings.json still has the legacy ``.agent/hooks/``
-#      prefix. File is at legacy location; step 6 partitions it.
-#   2. Stuck-state: a previous bump auto-healed the path to the
-#      managed namespace ``.agent/ai-hats/library/hooks/``, file got
-#      moved to that managed location, BUT it's user-owned (not in
-#      the ai-hats whitelist). The reconciliation pass in
-#      ``Assembler._migrate_layout_v4_hooks_partition`` moves the
-#      file to ``user-hooks/``; this list lets the healer disable
-#      the matching settings.json entry in the same bump.
+# Path prefixes the Phase 4 disable pre-pass treats as candidate user-owned-hook
+# locations. Both forms are needed so a REPEAT bump heals stuck projects:
+#   1. Fresh v3 — settings.json still has the legacy ``.agent/hooks/`` prefix;
+#      step 6 partitions the file.
+#   2. Stuck-state — a pre-549 bump already auto-healed the path to the managed
+#      ``.agent/ai-hats/library/hooks/`` namespace, but the file is user-owned;
+#      reconciliation moves it to ``user-hooks/`` and this list lets the healer
+#      disable the matching settings.json entry in the same bump.
 _USER_HOOK_DETECT_PREFIXES: tuple[str, ...] = (
     ".agent/hooks/",
     ".agent/ai-hats/library/hooks/",
