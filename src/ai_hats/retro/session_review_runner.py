@@ -259,21 +259,15 @@ class SessionReviewRunner:
             parts.append(f"audit.md:\n```\n{audit_text}\n```")
         return "\n\n".join(parts)
 
-    # HATS-684: content-aware audit *delivery*. Generation is lossless
-    # (HATS-681/666/683); size is managed here, where audit.md is injected into
-    # the reviewer's prompt (`_render_session_evidence`).
-    #
-    # Re-measured on 155 live audits: 64% of corpus bytes are the first-turn 👤
-    # ingested-evidence echo (`# PROJECT_STATE` backlog dump / `# Reflect-all`
-    # handoff / harness-context injection) — redundant, since the reviewer already
-    # has the target's real content. The real signal (🔧 tools / 👾 responses /
-    # real 👤 turns / tail) is small (median 9.5KB). So:
-    #   1. bound the first-turn 👤 ingested block to a small cap (head-keep — any
-    #      real request sits at the block's head); and
-    #   2. keep ALL signal verbatim — NO tight budget. Capping signal was itself
-    #      the cause of "cannot cite evidence" → n/a verdicts (the HATS-666/680
-    #      chain).
-    # A high safety-valve catches pathological runaways only.
+    # HATS-684: content-aware audit *delivery* (generation stays lossless,
+    # HATS-681/666/683). The bulk of audit bytes is the first-turn 👤
+    # ingested-evidence echo (PROJECT_STATE backlog dump / Reflect-all handoff /
+    # harness-context) — redundant, since the reviewer already has the target's
+    # real content. So: (1) bound that first-turn block to a small head-keep cap
+    # (a real request sits at its head); (2) keep ALL real signal verbatim — NO
+    # tight budget. Capping signal was itself the cause of "cannot cite
+    # evidence" → n/a verdicts (the HATS-666/680 chain). A high safety-valve
+    # catches pathological runaways only.
     _INGESTED_CAP = 2000  # bound the first-turn 👤 ingested-evidence echo
 
     # HATS-424 invariant: end-of-session events (self-retro Skill calls, final

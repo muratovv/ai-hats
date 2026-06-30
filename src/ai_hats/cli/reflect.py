@@ -3,36 +3,22 @@
 Subcommands:
 
 - `reflect session [--session ID] [--background]`
-    Run the reflect-session role on one session. Auto-trigger from
-    session-end uses --background to detach from the caller.
-
+    Run the reflect-session role on one session; the session-end auto-trigger
+    uses --background to detach.
 - `reflect all [--dry-run]`
-    Pre-flight (Python) builds a handoff under
+    Pre-flight builds a handoff under
     `.agent/retrospectives/reflect-all/<ts>-handoff.md`, then forwards to
-    `ai-hats execute --role judge --interactive` with a combined prompt
-    (initial-injections preamble + handoff). The triage protocol itself
-    lives in the `judge-protocol` skill, not in this command.
-
+    `ai-hats execute --role judge --interactive`. The triage protocol lives in
+    the `judge-protocol` skill.
 - `reflect role <name>` / `reflect roles`
-    Audit a target role for coherence against the user's project context
-    (./CLAUDE.md + .agent/ai-hats/user-rules/*.md). Pre-flight (Python)
-    composes the target role and materializes its layered breakdown
-    under the harness's per-session namespace
-    (`<project>/.gitlog/pipeline_runs/reflect-role/<session_id>/
-    composed/<target_role>/`; HATS-308 — each invocation owns its
-    own `<session_id>/` subdir, so parallel runs do not race). The
-    `reflect-role` pipeline
-    then launches `judge-for-role` interactively with a small prompt
-    that points at those files; the judge reads them via Read/Glob
-    tools as needed and writes the audit report directly via the
-    Write tool to
-    `.agent/retrospectives/role-coherence/<UTC-ts>-<target>.md`.
-    The audit protocol lives in the `role-coherence-protocol` skill
-    (HATS-263); the judge dialogue contract lives in
-    `judge-role-protocol` (HATS-296, HATS-297).
-
+    Audit a target role against the user's project context. Pre-flight composes
+    the target and materializes its layered breakdown under the per-session
+    namespace; the `reflect-role` pipeline launches `judge-for-role`, which reads
+    those files and writes the report to
+    `.agent/retrospectives/role-coherence/<UTC-ts>-<target>.md`. Protocols:
+    `role-coherence-protocol` + `judge-role-protocol` skills.
 - `reflect commit ...`
-    Bulk-update proposal statuses (called at end of interactive chat).
+    Bulk-update proposal statuses (end of interactive chat).
 """
 
 from __future__ import annotations
