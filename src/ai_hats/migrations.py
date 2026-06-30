@@ -14,7 +14,11 @@ and advances the step only after the function returns):
 * **Atomically-safe.** A mid-way failure must leave on-disk state re-runnable.
 * **Concurrency-tolerant.** Under N parallel install-time refreshes a migration
   may execute up to N times (two processes both replaying step 1 is expected,
-  not a bug); ``_safe_replace`` file locks handle the byte-level races.
+  not a bug); ``_safe_replace`` file locks handle most byte-level races.
+
+``run_pending`` is not the only call site: some wrapped methods (e.g.
+``_migrate_claude_md_to_v3``) also run directly from ``init`` / ``set_role``, so
+idempotency must hold for those direct invocations, not just the gated replay.
 
 The ``Migration.run`` callable takes the ``Assembler`` (wrappers need
 ``self.provider`` / ``agent_dir`` / ``composer.resolver``), so this is an

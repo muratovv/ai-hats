@@ -72,7 +72,8 @@ class ComposeRole(Step):
         # (``SubAgentRunner``) each compose via the facade themselves. Drift
         # guards: ``test_no_direct_compose_outside_facade`` +
         # ``test_no_direct_compose_inside_pipeline_subtree`` +
-        # ``test_funnel_value_contract`` (HATS-505).
+        # ``test_funnel_value_contract`` + the
+        # ``test_compose_overlay_propagation`` regression catcher (HATS-505).
         asm = Assembler(project_dir)
         # Pre-check role existence so we can raise a typed exception the
         # CLI converts into a friendly "Available roles:" message. Cheap

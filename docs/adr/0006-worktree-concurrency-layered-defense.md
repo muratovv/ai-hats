@@ -131,10 +131,10 @@ No lock file lives outside `<ai_hats_dir>`, and the default
 ## Consequences
 
 - **Bounded lock surface.** For one project: 1 create-lock (constant),
-  N base-locks (one per active base ref, typically 1–2), M lifecycle
-  - state locks (one pair per active wt branch). Stale lock files on
-    disk are harmless — kernel auto-releases the underlying `fcntl`
-    lock on process death; the file is just a name.
+  N base-locks (one per active base ref, typically 1–2), and M
+  lifecycle+state-lock pairs (one per active wt branch). Stale lock files on
+  disk are harmless — kernel auto-releases the underlying `fcntl`
+  lock on process death; the file is just a name.
 - **Fail-under-revert tests per layer.** Each ticket landed at least
   one test that flips red when its specific lock is stubbed out
   (TC-N1..N20 in `tests/test_worktree_concurrency.py`). A future

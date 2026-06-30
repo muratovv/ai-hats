@@ -37,16 +37,16 @@ from ..utils.atomic_io import atomic_write_text
 
 logger = logging.getLogger(__name__)
 
-LOCK_TIMEOUT = 10.0  # seconds — see module docstring
+LOCK_TIMEOUT = 10.0  # seconds — real state-JSON I/O is <50ms, so ~200x margin
 
-# HATS-479 — create-time concurrency (see module docstring "Create-time concurrency")
+# HATS-479 — create-time concurrency (see ADR-0006)
 CREATE_LOCK_TIMEOUT = 10.0  # L1: repo-scoped mutex acquisition
 GIT_RETRY_MAX = 5  # L3: 1 initial + 4 retries
 GIT_RETRY_BASE_DELAY = 0.05  # 50 ms, exponential up to GIT_RETRY_MAX_DELAY
 GIT_RETRY_MAX_DELAY = 0.8  # cap per-attempt delay so 5 retries finish < 4 s
 CREATE_LOCK_CONTENTION_WARN = 1.0  # log at WARNING if acquisition took longer
 
-# HATS-481 — base-branch merge serialization (see module docstring "Merge-time concurrency")
+# HATS-481 — base-branch merge serialization (see ADR-0006)
 BASE_LOCK_TIMEOUT = 15.0  # L1' acquisition cap — covers a ~20-way pile-up
 MERGE_RETRY_MAX = 8  # AWS canonical at our scale
 MERGE_RETRY_BASE_DELAY = 0.1  # 100 ms — matches git's core.*LockTimeout default
@@ -54,7 +54,7 @@ MERGE_RETRY_MAX_DELAY = 5.0  # 5 s cap; longer wait = real work, not contention
 REF_LOCK_TIMEOUT_MS = 5000  # passed to git as core.filesRefLockTimeout — covers
 # ref-lock contention for free (no index.lock equivalent)
 
-# HATS-480 — per-branch lifecycle serialization (see module docstring "Lifecycle concurrency")
+# HATS-480 — per-branch lifecycle serialization (see ADR-0006)
 LIFECYCLE_LOCK_TIMEOUT = 60.0  # covers fetch + merge + remove + branch -D end-to-end
 
 # HATS-711 — wall-clock cap on the pre-merge network `fetch` in _check_drift.
@@ -66,9 +66,9 @@ LIFECYCLE_LOCK_TIMEOUT = 60.0  # covers fetch + merge + remove + branch -D end-t
 # network-fetch timeout already used in update_check/checker.py.
 FETCH_TIMEOUT = 30.0
 
-# HATS-486 — stale .git/index.lock observability (see module docstring
-# "Stale-lock observability"). Threshold above which the lock is treated
-# as evidence of a crashed git process (warn-only — no auto-delete in v1).
+# HATS-486 — stale .git/index.lock observability (see ADR-0006). Threshold
+# above which the lock is treated as evidence of a crashed git process
+# (warn-only — no auto-delete in v1).
 STALE_INDEX_LOCK_THRESHOLD_S = 60.0
 
 
@@ -180,10 +180,11 @@ def _create_lock_path(state_dir: Path) -> Path:
 def _acquire_create_lock(state_dir: Path) -> Iterator[None]:
     """Hold the repo-scoped create-mutex for the wt-create critical section.
 
-    HATS-479 L1. See module docstring "Create-time concurrency".
-
-    Serializes ai-hats vs. ai-hats writes to ``.git/config``, ``.git/refs``,
-    ``.git/worktrees/``. Does NOT protect against external git processes
+    HATS-479 L1 (see ADR-0006). Serializes ai-hats vs. ai-hats writes to
+    ``.git/config``, ``.git/refs``, ``.git/worktrees/``. Repo-wide, not
+    per-branch: two creates on *different* branches still both contend on
+    ``.git/config.lock`` (Anthropic claude-code #34645), so a per-branch lock
+    would miss the real race. Does NOT protect against external git processes
     (IDE, manual ``git commit``) — :func:`_retry_worktree_add` covers that.
     """
     lock_path = _create_lock_path(state_dir)
@@ -295,8 +296,8 @@ def _acquire_lifecycle_lock(
     worktree branches lifecycle-operate in parallel.
 
     Lock ordering hierarchy (no inversion → no deadlock). The full 4-tier
-    model lives in the module docstring; locally we co-hold layers 1, 2,
-    and 4 — layer 3 (create-lock) is never co-held with the lifecycle
+    model lives in the module docstring + ADR-0006; locally we co-hold layers
+    1, 2, and 4 — layer 3 (create-lock) is never co-held with the lifecycle
     layer because ``create()`` runs before any persisted state exists.
       1. ``<state>.json.lifecycle.lock`` — this lock (HATS-480, per wt branch)
       2. ``<state_dir>/.base-<base>.lock``     — HATS-481 (per base ref)
