@@ -1559,19 +1559,15 @@ def update(
         _invalidate_update_cache(project_dir)  # HATS-781
         return
 
-    # 2. Install — short-circuited when the probe confirms installed SHA
-    # already matches remote master AND the ahead/behind axes resolved to
-    # exactly (0, 0). The double check guards against environments where
-    # SHA detection returns identical garbage on both sides (e.g.,
-    # subprocess.run mocks that yield ``stdout=""`` for every git call);
-    # ahead/behind only resolve to (0, 0) when ``git rev-list`` actually
-    # walked real commits. No point paying ``pip install --force-reinstall``'s
-    # 10-15s re-download for a no-op; bump() below still runs to apply
-    # any pending migrations.
-    # HATS-496: --revision always re-installs. The user asked for a specific
-    # ref; even if the resolved SHA happens to equal the installed SHA, force
-    # the pip call so direct_url.json.vcs_info.requested_revision is rewritten
-    # to the literal ref the user typed (HATS-497 reads this).
+    # 2. Install — short-circuited when the probe confirms the installed SHA
+    # matches remote master AND ahead/behind are exactly (0, 0). The double
+    # check guards mock environments where SHA detection returns identical
+    # garbage on both sides (ahead/behind only hit (0, 0) when `git rev-list`
+    # walked real commits). Skips pip's 10-15s re-download for a no-op; bump()
+    # below still applies pending migrations.
+    # HATS-496: --revision always re-installs — force the pip call so
+    # direct_url.json's requested_revision is rewritten to the literal ref the
+    # user typed (HATS-497 reads this), even if the SHA already matches.
     skip_install = (
         not force_downgrade
         and not revision
