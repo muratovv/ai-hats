@@ -21,6 +21,13 @@ since the latest tag lives under **Unreleased** until the next release.
   `AI_HATS_TOOL_HYGIENE_OFF=1`. This is the first in-library `runtime_hooks`
   consumer, setting the shared `stdin tool_input → JSON hookSpecificOutput`
   convention for the behavior-hook family.
+- **Python security-lint `PostToolUse` hook** (HATS-660). A new `py-security-lint`
+  skill (composed by the `dev::python` trait) runs `ruff check --isolated --select S`
+  (flake8-bandit security rules) on every `.py` you Edit/Write and forwards any
+  findings to the agent via a non-blocking `additionalContext` note — an early,
+  edit-time security layer that complements (does not replace) the project's CI
+  lint. Zero egress, fail-open when `ruff` is absent. Kill switch:
+  `AI_HATS_SECURITY_LINT_OFF=1`.
 
 ## [0.11.0] - 2026-06-26
 
