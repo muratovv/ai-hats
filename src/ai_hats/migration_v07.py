@@ -1,34 +1,16 @@
-"""HATS-408: v0.6 → v0.7 canonical-layout migration.
+"""v0.6 -> v0.7 canonical-layout migration (HATS-408).
 
-Pure core module — no click, no subprocess for commit. The CLI wrapper in
-:mod:`ai_hats.cli.maintenance` is responsible for flag parsing and the
-atomic git commit envelope. Splitting concerns this way keeps the
-deletion logic / diff engine / refuse-vs-force decision tree fully
-unit-testable without Click overhead.
+Pure core module — no click, no commit. The CLI wrapper in
+``ai_hats.cli.maintenance`` owns flag parsing and the atomic git-commit envelope,
+keeping the deletion / diff / refuse-vs-force logic unit-testable without Click.
 
-Migration shape (per the HATS-408 plan):
-
-* **Tier 1** — canonical role-content under ``<ai_hats_dir>/``: ``priorities.md``,
-  ``role.md``, ``traits/*.md``, ``rules/*.md``, ``skills_index.md``.
-* **Tier 2** — library mirror copies under ``<ai_hats_dir>/library/rules/<name>/``
-  and ``<ai_hats_dir>/library/skills/<name>/``.
-* **Tier 3 (manifest-blind)** — same Tier-1/2 *shape* found by globbing rather
-  than trusting the legacy ``MANAGED`` / ``.ai-hats-managed`` markers; folded
-  into the Tier-1/2 collectors so a corrupt/missing manifest can never hide a
-  stale file from the sweep.
-
-For every finding we attempt to render the v0.6 baseline from the live
-``CompositionResult`` (Tier 1) or from the source library file (Tier 2). A
-whitespace-normalised diff between baseline and on-disk content classifies
-the file as user-edited or safe-to-delete. Files with no recoverable baseline
-(true manifest-blind orphans) are always treated as user-edited — under
-``--force`` they still get deleted, but the default refuse path lists them so
-the user can review.
-
-The v0.6 renderers (``_render_priorities``, ``_render_role``,
-``_render_skills_index``) were deleted by HATS-294 commit ``f124d16``. We
-reconstruct only the bytes-stable subset needed for diffing here; full
-re-materialisation is intentionally out of scope.
+Sweeps three shapes of stale role-content: Tier 1 (canonical role files under
+``<ai_hats_dir>/``), Tier 2 (library mirror copies), Tier 3 (the same shape found
+by globbing rather than trusting the legacy manifest, so a corrupt manifest can't
+hide a stale file). For each finding we render the v0.6 baseline (from the live
+``CompositionResult`` or the source library file); a whitespace-normalised diff
+classifies it user-edited vs safe-to-delete. Orphans with no recoverable baseline
+are treated as user-edited (``--force`` still deletes, default lists them).
 """
 
 from __future__ import annotations

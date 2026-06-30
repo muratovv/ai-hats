@@ -1,36 +1,19 @@
 """End-of-bump smoke-assert: every hook command path resolves (HATS-549 Phase 3).
 
-The proxmox stuck-state failure mode that motivated HATS-549 had a
-specific shape: ``.claude/settings.json`` referenced hook scripts at
-``.agent/ai-hats/library/hooks/<name>`` that didn't actually exist on
-disk. Claude Code's hook channel then printed
-``/bin/sh: <path>: No such file or directory`` on every Bash tool
-call — a non-blocking warning that's easy to miss but degrades the
-entire session.
+Final safety net for the proxmox stuck-state class — ``.claude/settings.json``
+referencing hook scripts that don't exist on disk, which Claude Code surfaces as
+``/bin/sh: <path>: No such file or directory`` on every Bash call. At the end of
+every install-time path (bump / non-greenfield init) we walk every hook command
+in the provider settings and assert each path resolves; on failure raise
+``assembler.AssemblyError`` with a recovery hint pointing at the Phase 1 backup.
 
-This module is the final safety net: at the END of every install-time
-path (bump / non-greenfield init), walk every hook command in the
-provider settings and assert each path resolves to an existing file.
-On failure, raise :class:`assembler.AssemblyError` with a recovery
-hint pointing at the Phase 1 pre-bump backup tarball.
-
-The assertion catches the WHOLE class of "settings.json points at
-nowhere" regressions, regardless of whether the broken state came from:
-
-* A historical bug that deleted user content (the proxmox case).
-* A failed migration that moved files but lost some.
-* User manually editing settings.json with a typo.
-* Stage A1 healer rewriting to a path that turned out to be wrong.
-
-Scope: ``.claude/settings.json`` and ``.claude/settings.local.json``.
-All hook event types (``PreToolUse``, ``PostToolUse``, ``SessionStart``,
-``SessionEnd``, ``UserPromptSubmit``, ...) are walked. Only string
-``command`` values whose shape looks path-like are checked; arbitrary
-shell commands (``echo foo``) are skipped because they're not file
-refs.
-
-See ``tracker/backlog/tasks/HATS-549/plan.md`` for full design.
+Catches the whole "settings points at nowhere" class regardless of cause
+(content-deleting bug, failed migration, manual typo, bad healer rewrite). Scope:
+``.claude/settings.json`` + ``settings.local.json``, all hook event types; only
+path-like string ``command`` values are checked (bare shell like ``echo foo`` is
+skipped). See ``tracker/backlog/tasks/HATS-549/plan.md`` for full design.
 """
+
 from __future__ import annotations
 
 import json

@@ -1,70 +1,26 @@
 """Schema-versioned migration registry (HATS-471).
 
-Stop accumulating migration code forever. Migrations run **once per project**,
-gated by ``ProjectConfig.migration_step``. Each entry advances the counter on
-success; subsequent invocations skip entries whose step is already covered.
+Migrations run **once per project**, gated by ``ProjectConfig.migration_step``
+(a monotonic counter for one-shot install-time side effects — file moves,
+cleanups, content heals). Orthogonal to ``schema_version`` (the on-disk yaml
+format, handled in ``ProjectConfig.from_yaml``): bumping one never implies the
+other. Replayed by ``Assembler._refresh(install_time=True)`` (init / do_bump);
+the ``set_role`` runtime path skips it.
 
-After HATS-469 the registry is replayed by :meth:`Assembler._refresh` when
-called with ``install_time=True`` (the path used by ``Assembler.init`` and
-the ``do_bump`` CLI pipeline). The ``set_role`` runtime bootstrap path
-uses ``install_time=False`` and skips the registry — migrations are
-expected to have run during the user-initiated init/bump.
+**Migration contract** (each entry MUST honour — the runner does not roll back,
+and advances the step only after the function returns):
 
-``migration_step`` is **orthogonal** to ``schema_version``:
+* **Idempotent.** Re-running on already-migrated state is a no-op.
+* **Atomically-safe.** A mid-way failure must leave on-disk state re-runnable.
+* **Concurrency-tolerant.** Under N parallel install-time refreshes a migration
+  may execute up to N times (two processes both replaying step 1 is expected,
+  not a bug); ``_safe_replace`` file locks handle the byte-level races.
 
-* ``schema_version`` describes the on-disk yaml format (handled in
-  :func:`ProjectConfig.from_yaml`).
-* ``migration_step`` is a monotonic counter for one-shot side effects
-  performed at install-time refresh (file moves, cleanups, content heals).
-
-Two are independent: bumping yaml schema does not automatically advance
-``migration_step``, and adding a new migration entry does not require a yaml
-schema bump.
-
-**Migration contract** (callers MUST honour):
-
-* **Idempotent.** Calling the function on already-migrated state is a no-op.
-  The runner cannot guarantee single execution under all conditions (partial
-  failures, concurrent bumps, direct invocation from other Assembler entry
-  points — see "scope" below), so each entry must defend itself.
-* **Atomically-safe.** If a migration may fail mid-way, it must leave the
-  on-disk state consistent enough that a re-run completes the job. The
-  runner does not roll back; it advances ``migration_step`` only after the
-  function returns successfully.
-* **Concurrency-tolerant.** Under N parallel install-time refreshes
-  (``ai-hats self init`` / ``self update`` / ``_bump_internal``) on the
-  same project, a migration may execute up to N times. Idempotency must
-  hold for that case — file locks at the ``_safe_replace`` level handle
-  most byte-level races, but two processes reading ``migration_step=0``
-  and both replaying step 1 is the steady-state expectation, not a bug.
-  HATS-469 widened the concurrency surface from bump-only to all three
-  install-time entry-points; the idempotency contract is unchanged.
-
-**Scope of the "at-most-once" guarantee.** The runner gates entries by
-``cfg.migration_step``, but the wrapped methods are still ordinary
-``Assembler`` instance methods and SOME of them are invoked directly from
-other entry points (e.g. ``_migrate_claude_md_to_v3`` runs once during
-``Assembler.init`` and again on each ``set_role`` so a fresh project gets
-the scaffold without first paying for a bump). The registry guarantees
-at-most-once **via** :func:`run_pending`; it does not own all call sites.
-This is by design — those direct invocations predate HATS-471 and serve
-bootstrap paths the registry cannot cover.
-
-**Assembler coupling.** The ``Migration.run`` callable accepts the
-:class:`Assembler` instance, not a generic ``(Path, ProjectConfig)`` tuple,
-because the wrapped methods need ``self.provider`` / ``self.agent_dir`` /
-``self.composer.resolver``. Most wrappers (``_m_*`` below) are thin dispatch to
-Assembler methods; the v4-layout migration *logic* was moved into this module
-(HATS-715 — see ``migrate_layout_v4*``, take-``a``), Assembler keeping thin
-delegators for the tested API. This began as a refactor of the pre-HATS-471
-inline migration calls (which lived in the now-removed ``Assembler.bump``
-method) into a registry, **not** a generic framework — do not import
-``MIGRATIONS`` from outside Assembler-aware code.
-
-The registry is intentionally additive: when a migration is no longer needed
-in supported releases, a follow-up will delete the entry and introduce an
-``OLDEST_SUPPORTED_STEP`` guard. Until then, every existing project replays
-the full list once on first bump after upgrade.
+The ``Migration.run`` callable takes the ``Assembler`` (wrappers need
+``self.provider`` / ``agent_dir`` / ``composer.resolver``), so this is an
+Assembler-internal registry, not a generic framework — do not import
+``MIGRATIONS`` from outside Assembler-aware code. Additive for now; an
+``OLDEST_SUPPORTED_STEP`` guard will prune old entries later.
 """
 
 from __future__ import annotations
@@ -207,43 +163,21 @@ def migrate_layout_v4_library(a: "Assembler") -> None:
 
 
 def migrate_layout_v4_hooks_partition(a: "Assembler") -> None:
-    """HATS-549 Phase 4: partition legacy ``.agent/hooks/`` contents
-    AND reconcile pre-Phase-4 stuck states.
+    """HATS-549 Phase 4: partition legacy ``.agent/hooks/`` and reconcile
+    pre-Phase-4 stuck states. Two passes:
 
-    Two passes:
+    1. **Legacy partition** — route each ``.agent/hooks/`` entry by basename
+       whitelist: ai-hats-owned hooks → ``<ai_hats_dir>/library/hooks/``,
+       everything else (subdirs, arbitrary files) → ``<ai_hats_dir>/user-hooks/``.
+    2. **Managed-namespace reconciliation** — move foreign files left in
+       ``library/hooks/`` by a pre-549 auto-heal out to ``user-hooks/`` (except
+       framework bookkeeping like ``.manifest``), so the next bump cleanly heals
+       stuck states.
 
-    1. **Legacy partition** — walks ``.agent/hooks/``, routes each
-       entry by basename whitelist:
-
-       - basename in :func:`_ai_hats_owned_hook_basenames` →
-         moved to ``<ai_hats_dir>/library/hooks/<name>``.
-       - everything else (including subdirs like ``tests/``,
-         arbitrary ``.py`` / ``.yaml`` / ``.log`` files) →
-         moved to ``<ai_hats_dir>/user-hooks/<name>``.
-
-    2. **Managed-namespace reconciliation** — walks
-       ``<ai_hats_dir>/library/hooks/`` for foreign files left
-       there by a pre-HATS-549 bump that auto-healed
-       ``.agent/hooks/X`` → ``.agent/ai-hats/library/hooks/X``
-       for user-owned content. Anything NOT in the whitelist
-       (and not framework bookkeeping like ``.manifest``) is
-       relocated to ``user-hooks/`` — getting user content out of
-       the managed namespace before any future sweep could touch
-       it. Combined with the healer Phase 4 pre-pass (which now
-       also recognises the post-heal path prefix), the next bump
-       cleanly heals stuck states from prior versions.
-
-    Per-entry move preserves mode (``shutil.move`` is rename-based
-    on the same filesystem, copytree-based across filesystems).
-    Idempotent: a fully-partitioned project is a no-op on re-entry.
-    Collisions on the destination side route through
-    ``_safe_discard`` so the user can recover from trash. Discard
-    failures emit a stderr WARN — silence here would mask a
-    partial-state limbo (HATS-549 review S.4).
-
-    On a fully-partitioned state, ``.agent/hooks/`` is empty;
-    ``_safe_discard`` drops the empty directory so the legacy
-    namespace doesn't linger.
+    Idempotent (a fully-partitioned project no-ops; its empty ``.agent/hooks/`` is
+    dropped). Destination collisions route through ``_safe_discard`` (recoverable);
+    discard failures WARN to stderr — silence would mask a partial-state limbo
+    (review S.4).
     """
     managed_dst = _lib_hooks_dir(a.project_dir)
     user_dst = _user_hooks_dir(a.project_dir)
