@@ -1,34 +1,21 @@
 """Bounded shutdown for PTY-spawned children — HATS-411.
 
-Background
-----------
-`PtyProcess.wait()` calls blocking `os.waitpid(pid, 0)`. On macOS,
-Claude Code (and other libuv-backed children) sometimes get stuck in the
-"trying to exit" state (`ps` STAT ``?Es``): JS heap is released, but
-the kernel never transitions the process to true zombie because libuv
-handles / detached worker threads are still open. `waitpid(pid, 0)`
-then blocks **forever**.
+``PtyProcess.wait()`` calls blocking ``os.waitpid(pid, 0)``; on macOS, Claude
+Code (libuv-backed) children sometimes get stuck "trying to exit" (``ps`` STAT
+``?Es``) with handles still open, so ``waitpid`` blocks **forever** (field
+evidence: 7 stuck panes 2026-05-20 — see HATS-411). ``bounded_proc_shutdown``
+replaces the unbounded ``proc.wait()`` in ``runtime._pty_spawn`` with an
+escalation chain:
 
-Field evidence: 7 simultaneously-stuck Claude panes on 2026-05-20,
-across versions 2.1.126 / 2.1.138 / 2.1.139 / 2.1.143 — see HATS-411
-description for full incident report.
+1. poll ``isalive`` up to ``grace_s`` (default 5.0);
+2. ``SIGTERM`` the process group (``killpg``) — pokes libuv worker threads;
+3. poll again up to ``term_s`` (default 2.0);
+4. ``SIGKILL`` via ``proc.terminate(force=True)``;
+5. non-blocking ``WNOHANG`` reap; worst case the PID slot leaks but the parent
+   returns.
 
-Fix
----
-Replace the unbounded ``proc.wait()`` in ``runtime._pty_spawn`` with
-:func:`bounded_proc_shutdown`. The escalation chain is:
-
-1. Poll ``isalive`` up to ``grace_s`` (default 5.0).
-2. ``SIGTERM`` the whole process group (``killpg``) — pokes libuv
-   worker threads / MCP children whose handles block exit.
-3. Poll again up to ``term_s`` (default 2.0).
-4. ``SIGKILL`` via ``proc.terminate(force=True)``.
-5. Non-blocking reap (``WNOHANG``); update ``proc.exitstatus`` /
-   ``proc.signalstatus`` if reapable. Worst-case the PID slot leaks
-   (zombie remains in process table) but the parent returns.
-
-Configuration: ``AI_HATS_PTY_GRACE_S`` and ``AI_HATS_PTY_TERM_S``
-(floats; invalid values fall back to the documented defaults).
+Config: ``AI_HATS_PTY_GRACE_S`` / ``AI_HATS_PTY_TERM_S`` (floats; invalid values
+fall back to the documented defaults).
 """
 
 from __future__ import annotations

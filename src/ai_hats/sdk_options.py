@@ -155,6 +155,8 @@ def build_options(
     The SDK import is deferred to call time so framework imports stay
     cheap and deployments running only the Gemini provider don't pull
     the SDK transitively at every CLI invocation.
+
+    Deliberate long API param contract — noqa: comment-length.
     """
     from claude_agent_sdk import ClaudeAgentOptions
 

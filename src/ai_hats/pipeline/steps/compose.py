@@ -64,27 +64,16 @@ class ComposeRole(Step):
         from ...assembler import Assembler
         from ...materialize import compose_for_role
 
-        # HATS-501 / HATS-505: route through the ``compose_for_role``
-        # facade so the funnel value reflects the *layered* composition
-        # (built-in role + global overlay + project overlay), matching
-        # every other composition consumer (HATS-456).
-        #
-        # Today (post-HATS-505) the only consumer of this funnel value
-        # is ``PreLog`` (observability — see ``pipeline/presets.py``).
-        # ``LaunchProvider`` does NOT feed it into runners on either
-        # branch:
-        # - HITL: ``WrapRunner`` composes via ``compose_for_role`` +
-        #   ``build_session_prompt`` internally.
-        # - Automate: ``SubAgentRunner._run_attempt`` does the same.
-        #
-        # If a future consumer beyond ``PreLog`` reads this funnel
-        # value, the layered composition is what they get — but the
-        # canonical role-delivery path is the runner's own composition,
-        # not this. Drift guard: ``test_no_direct_compose_outside_facade``
-        # + ``test_no_direct_compose_inside_pipeline_subtree`` (HATS-505).
-        # Sister contract: ``test_funnel_value_contract.py``;
-        # regression catchers: ``tests/pipeline/
-        # test_compose_overlay_propagation.py``.
+        # HATS-501 / HATS-505: route through the ``compose_for_role`` facade so
+        # the funnel value reflects the *layered* composition (built-in role +
+        # global + project overlay), matching every other consumer (HATS-456).
+        # This funnel value is observability-only (``PreLog``); ``LaunchProvider``
+        # does NOT feed it into runners — HITL (``WrapRunner``) and Automate
+        # (``SubAgentRunner``) each compose via the facade themselves. Drift
+        # guards: ``test_no_direct_compose_outside_facade`` +
+        # ``test_no_direct_compose_inside_pipeline_subtree`` +
+        # ``test_funnel_value_contract`` + the
+        # ``test_compose_overlay_propagation`` regression catcher (HATS-505).
         asm = Assembler(project_dir)
         # Pre-check role existence so we can raise a typed exception the
         # CLI converts into a friendly "Available roles:" message. Cheap

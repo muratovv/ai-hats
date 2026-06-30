@@ -38,42 +38,28 @@ SUBAGENT_EXIT_TIMEOUT = 124
 SUBAGENT_EXIT_ERROR = 1
 
 # HATS-215 / HATS-220: emitted on stdout before each PTY child spawn to
-# neutralise terminal-emulator state that a prior TUI session may have leaked.
-# All sequences are idempotent on a clean terminal.
-#
-# HATS-220 evidence: Ghostty emitted `\n` for plain Enter in a session that
-# had modifyOtherKeys=2 active (verified: Ctrl+J came through as the xterm
-# extended-key form `\x1b[27;5;106~`). The original HATS-215 prelude did NOT
-# reset modifyOtherKeys, so this state survived across sessions in one pane.
-#
-#   \x1b[=0;1u    — kitty-keyboard ABSOLUTE set: flags=0, mode=1 (replace).
-#                   Replaces the relative `\x1b[<u` pop, which was unreliable
-#                   because the stack could already be at depth 0 or below.
-#   \x1b[>4;0m    — modifyOtherKeys=0 (reset to default). Was the leaking
-#                   mode in HATS-220 — leaves Enter→\r encoding intact.
-#   \x1b[20l      — LNM off (DEC ANSI mode 20). Defensive; some terminals
-#                   leak it from prior `\x1b[20h`.
-#   \x1b>         — DECKPNM (numeric keypad mode); ensures keypad Enter
-#                   sends \r, not \x1bOM (DECKPAM application form).
-#   \x1b[?2004l   — disable bracketed paste
-#   \x1b[?1l      — exit application cursor mode (DECCKM off)
-#   \x1b[?25h     — show cursor (in case prior TUI hid it and crashed)
+# neutralise terminal state a prior TUI session may have leaked (idempotent on a
+# clean terminal). HATS-220: a leaked modifyOtherKeys=2 re-encoded plain Enter —
+# see the ticket. Each sequence:
+#   \x1b[=0;1u    — kitty-keyboard ABSOLUTE set (flags=0, mode=1); replaces the
+#                   unreliable relative `\x1b[<u` pop.
+#   \x1b[>4;0m    — modifyOtherKeys=0 (the HATS-220 leaker); keeps Enter→\r.
+#   \x1b[20l      — LNM off (DEC ANSI mode 20); defensive.
+#   \x1b>         — DECKPNM; keypad Enter sends \r, not \x1bOM.
+#   \x1b[?2004l   — disable bracketed paste.
+#   \x1b[?1l      — exit application cursor mode (DECCKM off).
+#   \x1b[?25h     — show cursor (in case a crashed TUI hid it).
 _TERM_RESET_PRELUDE = "\x1b[=0;1u\x1b[>4;0m\x1b[20l\x1b>\x1b[?2004l\x1b[?1l\x1b[?25h"
 
 
-# HATS-679: parent escape-hatch for a wedged PTY provider.
-#
-# When the wrapped child (claude) wedges into an un-exitable error-loop — it
-# ignores Ctrl-C, keeps its master fd open, never EOFs — the PTY passthrough
-# loop in ``_pty_spawn`` has no parent-side exit (``tty.setraw`` forwards Ctrl-C
-# as a byte to the child). The user is trapped until an external kill. We can't
-# reliably *ask* whether the child is dead-or-working (every cheap liveness
-# signal is ambiguous between a wedged loop and a healthy-busy session), so we
-# use the only robust behavioural probe: "send the quit gesture; if the child
-# does not EOF, it is wedged". A healthy claude exits on the 2nd Ctrl-C
-# (→ master EOF → loop ends), so the 3rd is never reached — the hatch is dormant
-# for healthy sessions and only fires on a child that fails to honour the
-# standard double-Ctrl-C quit.
+# HATS-679: parent escape-hatch for a wedged PTY provider. When the child
+# (claude) wedges un-exitably — ignores Ctrl-C, never EOFs — the raw-mode
+# passthrough in ``_pty_spawn`` forwards Ctrl-C as a byte, so the parent has no
+# exit and the user is trapped. We can't reliably tell wedged from healthy-busy
+# (every cheap liveness signal is ambiguous), so we use a behavioural probe:
+# 3 Ctrl-Cs in a short window force the exit. A healthy claude EOFs on the 2nd,
+# so the 3rd never lands — the hatch is dormant unless the child fails to honour
+# the standard double-Ctrl-C quit.
 _ESCAPE_CTRL_C = 0x03  # the Ctrl-C byte (VINTR) forwarded in raw mode
 _ESCAPE_COUNT = 3  # consecutive Ctrl-C presses that trip the hatch
 _ESCAPE_WINDOW_S = 1.5  # they must fall within this sliding window
