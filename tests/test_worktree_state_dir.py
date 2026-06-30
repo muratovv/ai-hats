@@ -14,7 +14,8 @@ from pathlib import Path
 import pytest
 
 from ai_hats.paths import worktrees_dir
-from ai_hats.worktree import NOOP_LIFECYCLE, WorktreeManager, _state_key
+from ai_hats.wt import NOOP_LIFECYCLE, WorktreeManager
+from ai_hats.wt.locks import _state_key
 from ai_hats.wt_lifecycle import HOOK_LIFECYCLE
 
 
@@ -82,3 +83,28 @@ def test_r5_assert_quiet_for_bare_core(git_project):
     raise — so a standalone consumer needs no path wiring."""
     mgr = WorktreeManager(git_project, branch_name="task/x", lifecycle=NOOP_LIFECYCLE)
     assert mgr._state_dir == git_project / ".wt"
+
+
+def test_lifecycle_ctx_threads_state_dir_into_hook_log_dir(git_project, tmp_path):
+    """ADR-0013 D4 / HATS-851 (R4): the manager threads its injected ``state_dir``
+    into ``LifecycleContext``, and the hook bundle resolves hook-logs off it — so a
+    custom-base HOOK_LIFECYCLE driver keeps state + hook-logs under ONE base instead
+    of splitting (state at the custom base, logs under ``worktrees_dir(project_dir)``).
+
+    Fail-under-revert: drop the ``LifecycleContext.state_dir`` field (→ AttributeError)
+    or re-base ``_wt_hook_log_dir`` on ``worktrees_dir(project_dir)`` (→ the log dir no
+    longer sits under ``custom``).
+    """
+    from ai_hats.wt_lifecycle import _wt_hook_log_dir
+
+    custom = tmp_path / "custom_state"
+    mgr = WorktreeManager(
+        git_project, branch_name="task/hats-851", lifecycle=HOOK_LIFECYCLE, state_dir=custom
+    )
+    ctx = mgr._lifecycle_ctx()
+
+    assert ctx.state_dir == custom
+    log_dir = _wt_hook_log_dir(ctx.state_dir, ctx.branch_name)
+    assert log_dir == custom / f"{_state_key('task/hats-851')}.logs"
+    # NOT split under the ai-hats convention dir — the regression this fix prevents.
+    assert worktrees_dir(git_project) not in log_dir.parents

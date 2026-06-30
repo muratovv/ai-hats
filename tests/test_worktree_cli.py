@@ -10,7 +10,7 @@ import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli import main
-from ai_hats.worktree import WorktreeManager
+from ai_hats.wt import WorktreeManager
 from ai_hats.paths import worktrees_dir
 
 
@@ -451,7 +451,7 @@ class TestPerTaskRegistry:
 
 class TestDirtyWorktreeSafety:
     def test_discard_refuses_on_dirty_worktree(self, git_project: Path) -> None:
-        from ai_hats.worktree import WorktreeDirtyError
+        from ai_hats.wt import WorktreeDirtyError
 
         mgr = WorktreeManager(git_project, branch_name="feat/dirty-discard")
         wt = mgr.create()
@@ -492,7 +492,7 @@ class TestDirtyWorktreeSafety:
         assert not wt.exists()
 
     def test_merge_refuses_on_dirty_worktree(self, git_project: Path) -> None:
-        from ai_hats.worktree import WorktreeDirtyError
+        from ai_hats.wt import WorktreeDirtyError
 
         mgr = WorktreeManager(git_project, branch_name="feat/dirty-merge")
         wt = mgr.create()

@@ -49,7 +49,7 @@ def _resolve_worktree(branch: str | None = None):
     """
     import subprocess as _sp
 
-    from ..worktree import WorktreeManager
+    from ..wt import WorktreeManager
     from ..wt_lifecycle import HOOK_LIFECYCLE
 
     project_dir = _project_dir()
@@ -114,7 +114,7 @@ def wt():
 @click.argument("branch", callback=_validate_branch_name)
 def wt_create(branch: str):
     """Create an isolated worktree on a new branch."""
-    from ..worktree import (
+    from ..wt import (
         WorktreeBaseBranchError,
         WorktreeCreateError,
         WorktreeLockError,
@@ -202,7 +202,7 @@ def wt_merge(
     Refuses if the base branch moved since `wt create` — local or remote
     drift (use --accept-drift to override after re-verifying).
     """
-    from ..worktree import (
+    from ..wt import (
         WorktreeBaseBranchMismatchError,  # HATS-533
         WorktreeDirtyError,
         WorktreeDriftError,
@@ -368,7 +368,7 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
     Refuses if `git worktree remove --force` cannot delete the directory
     (e.g. held-open files) — pass --force-remove to fall back to rm -rf.
     """
-    from ..worktree import (
+    from ..wt import (
         WorktreeDirtyError,
         WorktreePartialCleanupError,
         WorktreeRemoveError,
@@ -438,7 +438,7 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
 @wt.command("list")
 def wt_list():
     """List all git worktrees."""
-    from ..worktree import WorktreeManager
+    from ..wt import WorktreeManager
 
     project_dir = _project_dir()
     # HATS-482 / B-08: guard CWD-from-inside-linked-worktree.
@@ -463,7 +463,7 @@ def wt_list():
 @wt.command("status")
 def wt_status():
     """Show all tracked worktrees."""
-    from ..worktree import WorktreeManager
+    from ..wt import WorktreeManager
 
     project_dir = _project_dir()
     active = WorktreeManager.list_active(project_dir, state_dir=worktrees_dir(project_dir))

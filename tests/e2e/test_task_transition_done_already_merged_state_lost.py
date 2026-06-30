@@ -23,7 +23,7 @@ branch exists) → ``transition done`` exits 1 with "worktree state lost", and
 the exit-0 / ``state: done`` assertions below fail.
 
 Per ``dev_rule_e2e_gate``: HATS-697 touches ``src/ai_hats/cli/`` +
-``src/ai_hats/state.py`` + ``src/ai_hats/worktree.py``, so a real-launcher +
+``src/ai_hats/state.py`` + ``src/ai_hats/wt/manager.py``, so a real-launcher +
 real-binary e2e is mandatory. CliRunner / pipeline tests do NOT satisfy the gate.
 
 Modelled on ``tests/e2e/test_task_transition_done_already_merged_head_wandered.py``.

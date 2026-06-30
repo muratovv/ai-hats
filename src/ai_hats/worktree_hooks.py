@@ -29,7 +29,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from .worktree_locks import LIFECYCLE_LOCK_TIMEOUT
+from .wt.locks import LIFECYCLE_LOCK_TIMEOUT
 
 # Default per-hook wall-clock budget. Strictly below LIFECYCLE_LOCK_TIMEOUT so
 # the timeout — not the lock — is what bounds a hung hook (see module docstring).

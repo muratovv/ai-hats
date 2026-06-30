@@ -1,6 +1,6 @@
 """ai-hats worktree lifecycle bundle — the hook-running extension-point impl.
 
-ADR-0013 P1 / HATS-849. The worktree *core* (:mod:`ai_hats.worktree`) is
+ADR-0013 P1 / HATS-849. The worktree *core* (:mod:`ai_hats.wt`) is
 hook-agnostic: it fires ``on_created`` / ``before_teardown`` extension-points at
 each lifecycle site and owns the per-route teardown control-flow, but knows
 nothing about hooks. THIS module is the ai-hats accretion that plugs in: it
@@ -15,7 +15,7 @@ Policy (ADR-0012 D3/D7, relocated here from the engine):
 - ``wt_in`` (``on_created``) — **warn-continue**: a create-time failure is
   friction, not data loss; it is logged and never raises.
 - ``wt_out`` (``before_teardown``) — **fail-closed**: a hook failure raises the
-  core-owned :class:`ai_hats.worktree.WorktreeTeardownAborted` (with the
+  core-owned :class:`ai_hats.wt.WorktreeTeardownAborted` (with the
   :class:`WorktreeHookError` riding as ``__cause__``), aborting teardown and
   preserving the worktree. The core then propagates (merge/discard) or
   suppresses (cleanup) per route.
@@ -27,10 +27,10 @@ import logging
 from typing import NoReturn
 
 from .models import WT_TEARDOWN_EVENTS
-from .paths import managed_wt_hook_filename, worktrees_dir, wt_hooks_dir
-from .worktree import LifecycleContext, WorktreeTeardownAborted
+from .paths import managed_wt_hook_filename, wt_hooks_dir
 from .worktree_hooks import run_worktree_hook
-from .worktree_locks import _state_key
+from .wt import LifecycleContext, WorktreeTeardownAborted
+from .wt.locks import _state_key
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +41,16 @@ class WorktreeHookError(Exception):
     Relocated from the worktree engine by ADR-0013 D8: this is *hook
     vocabulary*, so it belongs with the lifted hook layer, not the hook-agnostic
     core. It never escapes this module as the raised type — it rides as the
-    ``__cause__`` of the core :class:`ai_hats.worktree.WorktreeTeardownAborted`,
+    ``__cause__`` of the core :class:`ai_hats.wt.WorktreeTeardownAborted`,
     which the CLI surfaces via ``str(e.__cause__)``.
     """
 
 
-def _wt_hook_log_dir(project_dir, branch_name: str):
-    return worktrees_dir(project_dir) / f"{_state_key(branch_name)}.logs"
+def _wt_hook_log_dir(state_dir, branch_name: str):
+    # ADR-0013 D4 / HATS-851: resolve hook-logs off the manager's INJECTED
+    # state-dir base (ctx.state_dir), not a recomputed worktrees_dir(project_dir),
+    # so state + hook-logs stay co-located even under a custom-base driver.
+    return state_dir / f"{_state_key(branch_name)}.logs"
 
 
 def _materialized_hook(project_dir, row: dict):
@@ -71,7 +74,7 @@ class HookRunningLifecycle:
         rows = ctx.carry.get("wt_in") or []
         if not rows or ctx.worktree_path is None:
             return
-        log_dir = _wt_hook_log_dir(ctx.project_dir, ctx.branch_name)
+        log_dir = _wt_hook_log_dir(ctx.state_dir, ctx.branch_name)
         for row in rows:
             script = _materialized_hook(ctx.project_dir, row)
             outcome = run_worktree_hook(
@@ -94,7 +97,7 @@ class HookRunningLifecycle:
         """Run ``wt_out`` hooks bound to ``event`` before the core removes the dir.
 
         Fail-closed: a hook failure raises
-        :class:`ai_hats.worktree.WorktreeTeardownAborted` (with a
+        :class:`ai_hats.wt.WorktreeTeardownAborted` (with a
         :class:`WorktreeHookError` ``__cause__``); the core aborts teardown and
         preserves the worktree. ``ctx.skip_hooks`` is the conscious escape; a
         legacy (carry-less) state warns but does not drop.
@@ -124,7 +127,7 @@ class HookRunningLifecycle:
                 len(rows),
             )
             return
-        log_dir = _wt_hook_log_dir(ctx.project_dir, ctx.branch_name)
+        log_dir = _wt_hook_log_dir(ctx.state_dir, ctx.branch_name)
         for row in rows:
             script = _materialized_hook(ctx.project_dir, row)
             outcome = run_worktree_hook(

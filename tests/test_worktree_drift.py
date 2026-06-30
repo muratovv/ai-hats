@@ -17,7 +17,7 @@ from unittest.mock import patch
 import pytest
 
 from ai_hats.paths import worktrees_dir
-from ai_hats.worktree import (
+from ai_hats.wt import (
     WorktreeBaseBranchMismatchError,
     WorktreeDriftError,
     WorktreeManager,
@@ -250,7 +250,7 @@ class TestNoRemoteSwallowed:
         """HATS-711 wiring: the pre-merge ``fetch`` is the one ``_git`` call
         that carries a finite ``timeout`` (``FETCH_TIMEOUT``); dropping it
         would re-open the unbounded-hang regression."""
-        from ai_hats.worktree import FETCH_TIMEOUT
+        from ai_hats.wt.locks import FETCH_TIMEOUT
 
         mgr = WorktreeManager(git_project, branch_name="task/fetch-timeout-arg")
         wt_path = mgr.create()
@@ -546,7 +546,7 @@ class TestFetchFailureBehaviour:
         # No 'origin' configured → real fetch would CalledProcessError.
         # Sanity-check that this is the path we're exercising by capturing
         # at WARNING level.
-        with caplog.at_level(logging.WARNING, logger="ai_hats.worktree"):
+        with caplog.at_level(logging.WARNING, logger="ai_hats.wt.manager"):
             mgr.merge()  # must proceed (offline-merge contract)
 
         warnings = [
@@ -587,7 +587,7 @@ class TestFetchFailureBehaviour:
 
         with (
             patch.object(mgr, "_git", side_effect=selective_git),
-            caplog.at_level(logging.WARNING, logger="ai_hats.worktree"),
+            caplog.at_level(logging.WARNING, logger="ai_hats.wt.manager"),
         ):
             mgr.merge()  # must not raise FileNotFoundError
 
