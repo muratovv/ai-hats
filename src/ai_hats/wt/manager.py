@@ -625,24 +625,17 @@ class WorktreeManager:
             branch_existed_before = self._branch_exists(self.branch_name)
 
             # HATS-517 — branch-exists classifier. Three sub-cases share the
-            # symptom "git worktree add -b … fails with 'already exists'":
-            #
-            #   Case C  branch is already a LINKED worktree, state JSON is
-            #           missing (manual delete, backup restore). Adopt the
-            #           existing linked path and persist a fresh state.
-            #   Case B  branch is checked out in the MAIN worktree
-            #           (project_dir). Adopting project_dir would silently
-            #           disable auto-merge in _teardown_worktree — FSM
-            #           contract divergence. Refuse with actionable hint.
-            #   Case A  branch exists but no worktree owns it (e.g. user ran
-            #           `git branch …` ahead of time). Attach to a new
-            #           linked worktree via `git worktree add <path> <branch>`
-            #           (positional, no -b). Normal lifecycle proceeds.
-            #
-            # Order matters: Case C / Case B are detected via
-            # `git worktree list`; Case A is the residual (branch exists but
-            # is not in `list_worktrees`). The classifier sits inside L1, so
-            # HATS-479 mutex invariants are preserved.
+            # symptom "git worktree add -b fails with 'already exists'":
+            #   Case C — branch is a LINKED worktree but state JSON is gone
+            #            (manual delete / restore): adopt the path, persist
+            #            fresh state.
+            #   Case B — branch checked out in the MAIN worktree: refuse —
+            #            adopting project_dir silently disables auto-merge in
+            #            _teardown_worktree (FSM contract divergence).
+            #   Case A — branch exists but unowned: attach a new linked
+            #            worktree (positional `git worktree add`, no -b).
+            # C/B are detected via `git worktree list`, A is the residual;
+            # classifier sits inside L1 so HATS-479 mutex invariants hold.
             existing_wt_path = (
                 self._find_linked_worktree_for_branch(self.project_dir, self.branch_name)
                 if branch_existed_before
@@ -786,28 +779,16 @@ class WorktreeManager:
                 raise WorktreeStateIncompleteError(self.branch_name)
 
             # HATS-596: checkout-independent already-merged short-circuit.
-            # The worktree-isolation contract: the task lives on its own
-            # branch; the main checkout may legitimately be on ANY branch.
-            # If the task-branch tip is already an ancestor of the recorded
-            # base ref, the work is fully integrated — `git merge` would be a
-            # no-op. (`_fast_forward_merge` / `_squash_merge` already
-            # short-circuit `head_main == head_wt`, but that path is (a)
-            # unreachable past the HEAD-mismatch guard below and (b) blind to
-            # the `--no-ff` case where the base tip is a merge commit, not the
-            # branch tip.)
-            #
-            # Because NO `git merge` runs here, the main-repo HEAD position is
-            # irrelevant: refusing on a wandered HEAD (HATS-533) or a foreign
-            # MERGE_HEAD (HATS-587 / F4) would be a FALSE refusal — the exact
-            # bug HATS-596 fixes (work merged into master + pushed, but the
-            # main checkout sat on a concurrent feature branch). So this MUST
-            # precede both of those guards.
-            #
-            # `_check_clean` is still honored (force-bypassable, matching the
-            # _check_clean contract) so uncommitted worktree edits are not
-            # silently dropped. Drift is skipped: once the work is integrated,
-            # base movement no longer matters. Uses the recorded refs only
-            # (local base) — origin/<base> is out of scope (HATS-596 decision).
+            # The task lives on its own branch; the main checkout may be on
+            # ANY branch. If the task-branch tip is already an ancestor of the
+            # recorded base, the work is integrated — `git merge` is a no-op.
+            # Because no merge runs, the main-repo HEAD is irrelevant, so this
+            # MUST precede the wandered-HEAD (HATS-533) and foreign-MERGE_HEAD
+            # (HATS-587/F4) guards — both would FALSE-refuse already-merged
+            # work (merged+pushed while main sat on a feature branch).
+            # `_check_clean` is still honored (force-bypassable) so uncommitted
+            # edits aren't dropped; drift is skipped (work already integrated).
+            # Recorded local base only — origin/<base> out of scope.
             if (
                 self._original_branch is not None
                 and self._branch_exists(self._original_branch)
@@ -829,44 +810,18 @@ class WorktreeManager:
                 )
                 return
 
-            # HATS-533: refuse if main-repo HEAD is no longer on the merge
-            # target captured at create time. _fast_forward_merge /
-            # _squash_merge run `git merge` in main-repo cwd, so a HEAD that
-            # has wandered (manual checkout, peer agent operating directly
-            # in main repo, IDE branch-switch) would silently merge into the
-            # current branch — same wrong-branch-merge class as HATS-486.
-            #
-            # Ordering invariants (do not flip without re-thinking):
-            #   1. AFTER `_acquire_lifecycle_lock` + the worktree-exists
-            #      peer no-op (line ~1178) — a parallel discard that has
-            #      already torn the dir down MUST short-circuit cleanly,
-            #      regardless of HEAD position. A spurious mismatch
-            #      refusal on top of a peer's completed teardown would
-            #      surface as a confusing user-visible error for what is
-            #      really a no-op.
-            #   2. BEFORE `_check_clean`, `_check_drift`, the
-            #      OriginalBranchMissing / `_branch_exists` check, and
-            #      the merge mechanics themselves. With HEAD wrong, all
-            #      of those answer the wrong question — drift = "did the
-            #      base move?", clean = "is the wt tree dirty against
-            #      its branch?". Refusing here keeps the user-visible
-            #      message focused on the actionable root cause.
-            #   3. AFTER the HATS-596 already-merged short-circuit above —
-            #      when the work is already integrated no `git merge` runs,
-            #      so a wandered HEAD is not a wrong-branch-merge risk and
-            #      refusing here would be a false positive.
-            #
-            # Skip for legacy states where _original_branch is None
-            # (symmetric with the OriginalBranchMissing guard below).
-            #
-            # Also skip when the recorded base branch no longer EXISTS: a
-            # deleted base can never equal HEAD, so an un-gated comparison
-            # always trips a misleading "base branch mismatch" and masks the
-            # real diagnosis. That case is owned by the OriginalBranchMissing
-            # guard below (it preserves the worktree branch for a manual
-            # rebase). Gating here restores the pre-HATS-533 fall-through and
-            # keeps `test_merge_raises_when_original_branch_deleted` green
-            # (HATS-596: HATS-533 vs HATS-253 reconciliation).
+            # HATS-533: refuse if main-repo HEAD has wandered off the merge
+            # target captured at create time (manual checkout, peer agent in
+            # main repo, IDE switch) — `git merge` runs in main-repo cwd, so a
+            # wrong HEAD silently merges into the wrong branch (HATS-486 class).
+            # Ordering (do not flip): AFTER the lifecycle lock + worktree-exists
+            # peer no-op (a completed peer teardown must no-op regardless of
+            # HEAD) and AFTER the HATS-596 short-circuit (no merge → no risk);
+            # BEFORE _check_clean/_check_drift/merge (all answer the wrong
+            # question with HEAD wrong). Skipped when _original_branch is None
+            # or the recorded base no longer exists — both owned by the
+            # OriginalBranchMissing guard below (keeps
+            # test_merge_raises_when_original_branch_deleted green).
             if self._original_branch is not None and self._branch_exists(self._original_branch):
                 head = self._git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
                 if head != self._original_branch:
@@ -874,20 +829,12 @@ class WorktreeManager:
                         current=head, expected=self._original_branch
                     )
 
-            # HATS-587 / F4 mid-merge guard moved (HATS-602): the
-            # MERGE_HEAD check now runs INSIDE the base-branch lock, in
-            # _fast_forward_merge / _squash_merge (via _refuse_if_mid_merge),
-            # not here. A concurrent peer ai-hats merge holds the base lock
-            # across its `git merge`, so checking outside the lock here
-            # false-positived on the peer's *transient* MERGE_HEAD — two
-            # parallel merges into the same base would spuriously refuse
-            # (the HATS-602 flake). Inside the lock the peer's merge has
-            # already completed, so only a genuinely-stuck FOREIGN MERGE_HEAD
-            # trips the guard. It still refuses before any mutation (git
-            # merge has not run yet), preserving the untouched-worktree
-            # contract. The HEAD-mismatch guard above stays here: a peer
-            # merge never moves the main-repo branch pointer, so it has no
-            # concurrency false-positive.
+            # HATS-587/F4 mid-merge guard lives INSIDE the base lock now
+            # (HATS-602: _refuse_if_mid_merge in _fast_forward_merge /
+            # _squash_merge), not here — checking outside false-positived on a
+            # peer merge's transient MERGE_HEAD (the HATS-602 flake). The
+            # HEAD-mismatch guard above stays here: a peer merge never moves
+            # the main-repo branch pointer, so it has no concurrency FP.
 
             if not force:
                 self._check_clean()
