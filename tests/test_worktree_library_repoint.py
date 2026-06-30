@@ -20,7 +20,7 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.worktree import WorktreeManager
+from ai_hats.wt import WorktreeManager
 
 
 def _git(cwd: Path, *args: str) -> None:

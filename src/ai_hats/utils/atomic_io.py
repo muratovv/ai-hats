@@ -5,7 +5,7 @@ target path always reflects either the complete old bytes or the complete new
 bytes. This consolidates the half-dozen ad-hoc ``tmp + replace`` conventions
 that had accreted across the codebase (``hypothesis/io._atomic_dump``,
 ``safe_delete._write_atomic``, ``cli/maintenance._flip_current``,
-``worktree_locks._atomic_write_json``, ``version_refs``, ``cli/hyp.py``,
+``wt.locks._atomic_write_json``, ``version_refs``, ``cli/hyp.py``,
 ``assembler._atomic_write_if_changed``) into one primitive (HATS-716).
 
 Design notes:
