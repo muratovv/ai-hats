@@ -245,6 +245,7 @@ class SubAgentRunner:
 
         # ADR-0013 D3: the context-manager cleanup() fires before_teardown from
         # __exit__, so the manager must carry ai-hats's hook-running bundle.
+        from .paths import worktrees_dir
         from .wt_lifecycle import HOOK_LIFECYCLE
 
         with WorktreeManager(
@@ -253,6 +254,7 @@ class SubAgentRunner:
             session.session_id,
             mode,
             lifecycle=HOOK_LIFECYCLE,
+            state_dir=worktrees_dir(self.project_dir),
         ) as work_dir:
             session.log_trace(TraceTag.SUB, f"Working directory: {work_dir}")
             t0 = time.monotonic()

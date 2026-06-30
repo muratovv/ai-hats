@@ -27,13 +27,16 @@ from ai_hats.wt_lifecycle import HOOK_LIFECYCLE, WorktreeHookError
 
 def _mgr(project: Path, branch: str) -> WorktreeManager:
     """A manager wired with the real ai-hats hook-running bundle (ADR-0013)."""
-    return WorktreeManager(project, branch_name=branch, lifecycle=HOOK_LIFECYCLE)
+    return WorktreeManager(
+        project,
+        branch_name=branch,
+        lifecycle=HOOK_LIFECYCLE,
+        state_dir=worktrees_dir(project),  # ADR-0013 D4: match the ai-hats convention
+    )
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True
-    )
+    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True)
 
 
 @pytest.fixture
@@ -146,7 +149,10 @@ def test_persistence_roundtrip_runs_create_time_hooks(git_project, tmp_path):
     # Fresh manager loaded from persisted state (separate-CLI-invocation path),
     # re-attaching the bundle as the teardown call sites do (ADR-0013 D3).
     loaded = WorktreeManager.load_for_branch(
-        git_project, "task/h", lifecycle=HOOK_LIFECYCLE
+        git_project,
+        "task/h",
+        lifecycle=HOOK_LIFECYCLE,
+        state_dir=worktrees_dir(git_project),
     )
     assert loaded is not None
     assert loaded._wt_hooks == _carry_out()
@@ -155,9 +161,7 @@ def test_persistence_roundtrip_runs_create_time_hooks(git_project, tmp_path):
     assert sentinel.exists()
 
 
-def test_legacy_state_without_wt_hooks_warns_and_does_not_crash(
-    git_project, caplog
-):
+def test_legacy_state_without_wt_hooks_warns_and_does_not_crash(git_project, caplog):
     mgr = _mgr(git_project, "task/i")
     wt = mgr.create()
     mgr.save_state()
@@ -168,7 +172,10 @@ def test_legacy_state_without_wt_hooks_warns_and_does_not_crash(
     state_file.write_text(json.dumps(data))
 
     loaded = WorktreeManager.load_for_branch(
-        git_project, "task/i", lifecycle=HOOK_LIFECYCLE
+        git_project,
+        "task/i",
+        lifecycle=HOOK_LIFECYCLE,
+        state_dir=worktrees_dir(git_project),
     )
     assert loaded is not None
     assert loaded._wt_hooks_legacy is True

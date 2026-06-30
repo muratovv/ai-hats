@@ -31,7 +31,11 @@ pytestmark = pytest.mark.integration
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True,
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
     )
 
 
@@ -65,24 +69,28 @@ class TestStateKeyCasePreserving:
         # Backwards compat for the common case: lowercase in → lowercase out.
         assert _state_key("task/hats-001") == "task-hats-001"
 
-    def test_legacy_lowercase_state_migrates_on_load(
-        self, git_project: Path
-    ) -> None:
+    def test_legacy_lowercase_state_migrates_on_load(self, git_project: Path) -> None:
         """Pre-482 lowercased state files migrate to the case-preserving key."""
         states = worktrees_dir(git_project)
         states.mkdir(parents=True, exist_ok=True)
         legacy_path = states / "task-hats-x.json"
         # Worktree path doesn't need to exist — _load_by_key returns None
         # when wt_path is missing, but does so AFTER the migration rename.
-        legacy_path.write_text(json.dumps({
-            "branch": "task/HATS-X",
-            "worktree_path": "/nonexistent",
-            "original_branch": "master",
-            "base_sha_at_create": None,
-        }))
+        legacy_path.write_text(
+            json.dumps(
+                {
+                    "branch": "task/HATS-X",
+                    "worktree_path": "/nonexistent",
+                    "original_branch": "master",
+                    "base_sha_at_create": None,
+                }
+            )
+        )
 
         # Load via the new (case-preserving) key → migration triggers.
-        result = WorktreeManager.load_for_branch(git_project, "task/HATS-X")
+        result = WorktreeManager.load_for_branch(
+            git_project, "task/HATS-X", state_dir=worktrees_dir(git_project)
+        )
 
         # File renamed; legacy gone, primary key file existed at migration
         # time (then unlinked by _load_by_key's stale-path cleanup).
@@ -98,30 +106,28 @@ class TestStateKeyCasePreserving:
         legacy = states / "task-hats-x.json"
         primary = states / "task-HATS-X.json"
         legacy.write_text(json.dumps({"branch": "task/hats-x"}))  # different ref
-        primary.write_text(json.dumps({
-            "branch": "task/HATS-X",
-            "worktree_path": "/nonexistent",
-        }))
-
-        WorktreeManager._migrate_legacy_lowercase_state(
-            primary, "task-HATS-X"
+        primary.write_text(
+            json.dumps(
+                {
+                    "branch": "task/HATS-X",
+                    "worktree_path": "/nonexistent",
+                }
+            )
         )
+
+        WorktreeManager._migrate_legacy_lowercase_state(primary, "task-HATS-X")
 
         assert legacy.exists()
         assert primary.exists()
 
-    def test_no_migration_when_key_already_lowercase(
-        self, git_project: Path
-    ) -> None:
+    def test_no_migration_when_key_already_lowercase(self, git_project: Path) -> None:
         """key.lower() == key → nothing to migrate, no-op."""
         states = worktrees_dir(git_project)
         states.mkdir(parents=True, exist_ok=True)
         primary = states / "task-hats-x.json"
         # Don't create the file — function should no-op before any I/O.
 
-        WorktreeManager._migrate_legacy_lowercase_state(
-            primary, "task-hats-x"
-        )
+        WorktreeManager._migrate_legacy_lowercase_state(primary, "task-hats-x")
 
         assert not primary.exists()
 
@@ -143,7 +149,11 @@ class TestStateKeyCasePreserving:
         manager, AND (b) the state directory stays at exactly one entry
         across save + load + save round-trips (no orphaned alternate-key
         file lurking on case-sensitive FS like Linux ext4)."""
-        mgr = WorktreeManager(git_project, branch_name="task/hats-086")
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="task/hats-086",
+            state_dir=worktrees_dir(git_project),
+        )
         mgr.create()
         mgr.save_state()
         try:
@@ -155,7 +165,9 @@ class TestStateKeyCasePreserving:
             # same file. Round-trip save again — load_for_task must point
             # at the SAME key so save_state doesn't fork into a second
             # file on case-sensitive FS.
-            loaded = WorktreeManager.load_for_task(git_project, "HATS-086")
+            loaded = WorktreeManager.load_for_task(
+                git_project, "HATS-086", state_dir=worktrees_dir(git_project)
+            )
             assert loaded is not None
             assert loaded.branch_name == "task/hats-086"
             loaded.save_state()
@@ -180,34 +192,40 @@ class TestBranchNameValidation:
     def runner(self) -> CliRunner:
         return CliRunner()
 
-    @pytest.mark.parametrize("name", [
-        "task/hats-001",     # canonical lowercase
-        "Task/HATS-X",       # mixed case allowed (B-07 permissive)
-        "feat/foo_bar.baz",  # underscore + dot
-        "a",                 # single char
-    ])
-    def test_accepts_valid_names(
-        self, runner: CliRunner, git_project: Path, name: str
-    ) -> None:
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "task/hats-001",  # canonical lowercase
+            "Task/HATS-X",  # mixed case allowed (B-07 permissive)
+            "feat/foo_bar.baz",  # underscore + dot
+            "a",  # single char
+        ],
+    )
+    def test_accepts_valid_names(self, runner: CliRunner, git_project: Path, name: str) -> None:
         with runner.isolated_filesystem(temp_dir=git_project.parent):
             import os
+
             os.chdir(git_project)
             result = runner.invoke(main, ["wt", "create", name])
             # Either success or a real worktree error — but NOT a click
             # BadParameter (which would be exit 2 with "Invalid value").
             assert "Invalid branch name" not in result.output
 
-    @pytest.mark.parametrize("name,why", [
-        ("../escape", "no '..'"),
-        (".hidden", "leading dot"),
-        ("/leading-slash", "leading slash"),
-        ("has space", "no whitespace"),
-    ])
+    @pytest.mark.parametrize(
+        "name,why",
+        [
+            ("../escape", "no '..'"),
+            (".hidden", "leading dot"),
+            ("/leading-slash", "leading slash"),
+            ("has space", "no whitespace"),
+        ],
+    )
     def test_rejects_bad_names(
         self, runner: CliRunner, git_project: Path, name: str, why: str
     ) -> None:
         """Names that violate our regex AND survive click's own arg parsing."""
         import os
+
         os.chdir(git_project)
         # `--` separator so click treats next arg as positional even if it
         # starts with `-`. Mirrors how operators would invoke from a shell.
@@ -217,22 +235,20 @@ class TestBranchNameValidation:
             f"name={name!r} ({why}); output={result.output!r}"
         )
 
-    def test_empty_branch_rejected_by_click(
-        self, runner: CliRunner, git_project: Path
-    ) -> None:
+    def test_empty_branch_rejected_by_click(self, runner: CliRunner, git_project: Path) -> None:
         """Empty string surfaces as our regex rejection (matches `^[A-Za-z0-9]`)."""
         import os
+
         os.chdir(git_project)
         result = runner.invoke(main, ["wt", "create", "--", ""])
         assert result.exit_code != 0
         assert "Invalid branch name" in result.output
 
-    def test_leading_dash_rejected(
-        self, runner: CliRunner, git_project: Path
-    ) -> None:
+    def test_leading_dash_rejected(self, runner: CliRunner, git_project: Path) -> None:
         """Leading dash rejected (via --) even though shell would otherwise
         confuse it with an option."""
         import os
+
         os.chdir(git_project)
         result = runner.invoke(main, ["wt", "create", "--", "-dash-leading"])
         assert result.exit_code != 0
@@ -251,7 +267,11 @@ class TestResolveWorktreeAmbiguity:
 
     def test_one_active_returns_it(self, git_project: Path, monkeypatch) -> None:
         monkeypatch.chdir(git_project)
-        mgr = WorktreeManager(git_project, branch_name="feat/only-one")
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="feat/only-one",
+            state_dir=worktrees_dir(git_project),
+        )
         mgr.create()
         mgr.save_state()
         try:
@@ -261,15 +281,22 @@ class TestResolveWorktreeAmbiguity:
         finally:
             mgr.discard(force=True)
 
-    def test_two_active_raises_usage_error(
-        self, git_project: Path, monkeypatch
-    ) -> None:
+    def test_two_active_raises_usage_error(self, git_project: Path, monkeypatch) -> None:
         import click
+
         monkeypatch.chdir(git_project)
-        mgr_a = WorktreeManager(git_project, branch_name="feat/aaa")
+        mgr_a = WorktreeManager(
+            git_project,
+            branch_name="feat/aaa",
+            state_dir=worktrees_dir(git_project),
+        )
         mgr_a.create()
         mgr_a.save_state()
-        mgr_b = WorktreeManager(git_project, branch_name="feat/bbb")
+        mgr_b = WorktreeManager(
+            git_project,
+            branch_name="feat/bbb",
+            state_dir=worktrees_dir(git_project),
+        )
         mgr_b.create()
         mgr_b.save_state()
         try:
@@ -295,9 +322,7 @@ class TestLinkedWorktreeGuard:
     CliRunner test via main entry point with monkeypatched detection.
     """
 
-    def test_helper_exits_when_inside_linked_worktree(
-        self, git_project: Path, monkeypatch
-    ) -> None:
+    def test_helper_exits_when_inside_linked_worktree(self, git_project: Path, monkeypatch) -> None:
         from ai_hats.cli._helpers import _guard_not_inside_linked_worktree
 
         monkeypatch.setattr(
@@ -309,9 +334,7 @@ class TestLinkedWorktreeGuard:
             _guard_not_inside_linked_worktree()
         assert exc_info.value.code == 1
 
-    def test_helper_passes_when_not_inside(
-        self, git_project: Path, monkeypatch
-    ) -> None:
+    def test_helper_passes_when_not_inside(self, git_project: Path, monkeypatch) -> None:
         from ai_hats.cli._helpers import _guard_not_inside_linked_worktree
 
         monkeypatch.setattr(
@@ -342,9 +365,7 @@ class TestLinkedWorktreeGuard:
 
 
 class TestDeleteBranchClassification:
-    def test_unknown_stderr_stays_silent_no_raise(
-        self, git_project: Path, caplog
-    ) -> None:
+    def test_unknown_stderr_stays_silent_no_raise(self, git_project: Path, caplog) -> None:
         """Regression-safe path: random git error stays DEBUG, no raise."""
         mgr = WorktreeManager(git_project, branch_name="feat/silent-test")
         mgr.create()
@@ -353,7 +374,8 @@ class TestDeleteBranchClassification:
             # Mock _git to raise CalledProcessError with non-classified stderr.
             with patch.object(mgr, "_git") as mock_git:
                 mock_git.side_effect = subprocess.CalledProcessError(
-                    1, ["git", "branch", "-D", "feat/silent-test"],
+                    1,
+                    ["git", "branch", "-D", "feat/silent-test"],
                     stderr="error: random unexplained git failure\n",
                 )
                 # Should NOT raise.
@@ -362,15 +384,21 @@ class TestDeleteBranchClassification:
             # Real cleanup outside the mock.
             mgr.discard(force=True)
 
-    @pytest.mark.parametrize("stderr,expected_reason", [
-        ("error: branch 'foo' is not fully merged.\n", "not_fully_merged"),
-        ("error: cannot delete branch used by worktree at /tmp/x\n", "checked_out"),
-        ("error: branch is the current branch of checkout /tmp/x\n", "checked_out"),
-        ("error: cannot lock ref 'refs/heads/foo'\n", "locked"),
-        ("error: unable to lock ref\n", "locked"),
-    ])
+    @pytest.mark.parametrize(
+        "stderr,expected_reason",
+        [
+            ("error: branch 'foo' is not fully merged.\n", "not_fully_merged"),
+            ("error: cannot delete branch used by worktree at /tmp/x\n", "checked_out"),
+            ("error: branch is the current branch of checkout /tmp/x\n", "checked_out"),
+            ("error: cannot lock ref 'refs/heads/foo'\n", "locked"),
+            ("error: unable to lock ref\n", "locked"),
+        ],
+    )
     def test_classified_stderr_raises(
-        self, git_project: Path, stderr: str, expected_reason: str,
+        self,
+        git_project: Path,
+        stderr: str,
+        expected_reason: str,
     ) -> None:
         mgr = WorktreeManager(git_project, branch_name="feat/classify-test")
         mgr.create()
@@ -378,7 +406,8 @@ class TestDeleteBranchClassification:
         try:
             with patch.object(mgr, "_git") as mock_git:
                 mock_git.side_effect = subprocess.CalledProcessError(
-                    1, ["git", "branch", "-D", "feat/classify-test"],
+                    1,
+                    ["git", "branch", "-D", "feat/classify-test"],
                     stderr=stderr,
                 )
                 with pytest.raises(WorktreePartialCleanupError) as exc_info:
@@ -389,14 +418,16 @@ class TestDeleteBranchClassification:
         finally:
             mgr.discard(force=True)
 
-    def test_cli_wt_discard_handles_partial_cleanup(
-        self, git_project: Path, monkeypatch
-    ) -> None:
+    def test_cli_wt_discard_handles_partial_cleanup(self, git_project: Path, monkeypatch) -> None:
         """wt discard → exit 2 + guidance message on WorktreePartialCleanupError."""
         runner = CliRunner()
         monkeypatch.chdir(git_project)
 
-        mgr = WorktreeManager(git_project, branch_name="feat/cli-partial")
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="feat/cli-partial",
+            state_dir=worktrees_dir(git_project),
+        )
         mgr.create()
         mgr.save_state()
 
@@ -405,9 +436,11 @@ class TestDeleteBranchClassification:
             # so the worktree dir is gone (matches the partial-cleanup contract).
             def boom(self):
                 raise WorktreePartialCleanupError(
-                    "feat/cli-partial", "checked_out",
+                    "feat/cli-partial",
+                    "checked_out",
                     "fatal: branch is used by worktree",
                 )
+
             monkeypatch.setattr(WorktreeManager, "_delete_branch", boom)
 
             result = runner.invoke(main, ["wt", "discard", "feat/cli-partial"])

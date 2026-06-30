@@ -78,7 +78,7 @@ def git_project(tmp_path: Path) -> Path:
 def _writer_worker(project_dir: str, branch: str, marker: str, iterations: int) -> None:
     """Repeatedly save_state with a payload identifiable by ``marker``."""
     project = Path(project_dir)
-    mgr = WorktreeManager(project, branch_name=branch)
+    mgr = WorktreeManager(project, branch_name=branch, state_dir=worktrees_dir(project))
     mgr.worktree_path = project / f"fake-wt-{marker}"
     mgr._original_branch = "main"
     for _ in range(iterations):
@@ -174,17 +174,13 @@ def test_load_during_clear_race(git_project: Path) -> None:
     assert list(errors) == [], f"reader observed errors: {list(errors)}"
 
 
-def test_acquire_timeout_raises_worktree_lock_error(
-    git_project: Path, tmp_path: Path
-) -> None:
+def test_acquire_timeout_raises_worktree_lock_error(git_project: Path, tmp_path: Path) -> None:
     """TC-3: a stuck lock holder triggers WorktreeLockError on second acquire."""
     state_path = worktrees_dir(git_project) / "task-hats-121-tc3.json"
     state_path.parent.mkdir(parents=True, exist_ok=True)
     ready = tmp_path / "ready.flag"
 
-    holder = multiprocessing.Process(
-        target=_hold_lock, args=(str(state_path), 5.0, str(ready))
-    )
+    holder = multiprocessing.Process(target=_hold_lock, args=(str(state_path), 5.0, str(ready)))
     holder.start()
     try:
         # Wait for the holder to actually grab the lock.
@@ -237,9 +233,7 @@ class _StubGit:
         try:
             r = self._responses.pop(0)
         except IndexError as exc:
-            raise AssertionError(
-                f"Unexpected extra call to _git (#{self.calls})"
-            ) from exc
+            raise AssertionError(f"Unexpected extra call to _git (#{self.calls})") from exc
         if isinstance(r, BaseException):
             raise r
 
@@ -248,7 +242,9 @@ def test_retry_succeeds_after_transient_failures(tmp_path: Path) -> None:
     """TC-N4 — 2 retriable failures then success → 3 calls, no raise."""
     stub = _StubGit(
         [
-            _make_called_process_error("fatal: could not lock config file .git/config: File exists"),
+            _make_called_process_error(
+                "fatal: could not lock config file .git/config: File exists"
+            ),
             _make_called_process_error("fatal: File exists"),
             None,  # success
         ]
@@ -260,26 +256,18 @@ def test_retry_succeeds_after_transient_failures(tmp_path: Path) -> None:
 def test_retry_exhausted_raises_last_error(tmp_path: Path) -> None:
     """TC-N5 — all attempts retriable-fail → raises CalledProcessError."""
     stderr = "fatal: could not lock config file .git/config: File exists"
-    stub = _StubGit(
-        [_make_called_process_error(stderr) for _ in range(GIT_RETRY_MAX)]
-    )
+    stub = _StubGit([_make_called_process_error(stderr) for _ in range(GIT_RETRY_MAX)])
     with pytest.raises(subprocess.CalledProcessError) as ei:
-        _retry_worktree_add(
-            stub, "task/n5", tmp_path / "wt", sleep=lambda _: None
-        )
+        _retry_worktree_add(stub, "task/n5", tmp_path / "wt", sleep=lambda _: None)
     assert stub.calls == GIT_RETRY_MAX
     assert "could not lock config file" in (ei.value.stderr or "")
 
 
 def test_retry_fails_fast_on_non_retriable(tmp_path: Path) -> None:
     """TC-N6 — non-retriable stderr → 1 call, no retries."""
-    stub = _StubGit(
-        [_make_called_process_error("fatal: not a valid object name: HEAD")]
-    )
+    stub = _StubGit([_make_called_process_error("fatal: not a valid object name: HEAD")])
     with pytest.raises(subprocess.CalledProcessError):
-        _retry_worktree_add(
-            stub, "task/n6", tmp_path / "wt", sleep=lambda _: None
-        )
+        _retry_worktree_add(stub, "task/n6", tmp_path / "wt", sleep=lambda _: None)
     assert stub.calls == 1
 
 
@@ -302,9 +290,7 @@ def test_is_retriable_git_error_classification() -> None:
 
 
 def test_format_git_create_error_special_cases_already_exists() -> None:
-    exc = _make_called_process_error(
-        "fatal: A branch named 'task/x' already exists."
-    )
+    exc = _make_called_process_error("fatal: A branch named 'task/x' already exists.")
     msg = _format_git_create_error(exc, "task/x")
     assert "task/x" in msg
     assert "already exists" in msg
@@ -337,7 +323,7 @@ def _create_worker(
     from ai_hats.worktree import WorktreeCreateError
 
     project = Path(project_dir)
-    mgr = WorktreeManager(project, branch_name=branch)
+    mgr = WorktreeManager(project, branch_name=branch, state_dir=worktrees_dir(project))
     try:
         path = mgr.create()
         mgr.save_state()
@@ -467,9 +453,7 @@ def test_parallel_create_different_branches_both_succeed(
 # ---------------------------------------------------------------------------
 
 
-def _setup_worktree_worker(
-    project_dir: str, task_id: str, result_dict: dict, key: str
-) -> None:
+def _setup_worktree_worker(project_dir: str, task_id: str, result_dict: dict, key: str) -> None:
     """Child process: invoke TaskManager._setup_worktree, record outcome."""
     from datetime import datetime, timezone
 
@@ -560,9 +544,7 @@ def test_retry_git_merge_succeeds_after_transient_failures(tmp_path: Path) -> No
                 "fatal: Unable to create '.git/index.lock': File exists.\n"
                 "Another git process seems to be running in this repository."
             ),
-            _make_called_process_error(
-                "fatal: Unable to create '.git/index.lock': File exists."
-            ),
+            _make_called_process_error("fatal: Unable to create '.git/index.lock': File exists."),
             None,  # success
         ]
     )
@@ -576,9 +558,7 @@ def test_retry_git_merge_exhausted_raises_last_error(tmp_path: Path) -> None:
         "fatal: Unable to create '.git/index.lock': File exists.\n"
         "Another git process seems to be running in this repository."
     )
-    stub = _StubGit(
-        [_make_called_process_error(stderr) for _ in range(MERGE_RETRY_MAX)]
-    )
+    stub = _StubGit([_make_called_process_error(stderr) for _ in range(MERGE_RETRY_MAX)])
     with pytest.raises(subprocess.CalledProcessError) as ei:
         _retry_git_merge(stub, "merge", "--no-ff", "task/y", sleep=lambda _: None)
     assert stub.calls == MERGE_RETRY_MAX
@@ -635,14 +615,14 @@ def test_base_lock_key_sanitization() -> None:
 
 def test_base_lock_path_under_state_dir(git_project: Path) -> None:
     """Lock file lives next to other worktree state, under .agent."""
-    path = _base_lock_path(git_project, "master")
+    path = _base_lock_path(worktrees_dir(git_project), "master")
     assert path.name == ".base-master.lock"
     assert path.parent == worktrees_dir(git_project)
 
 
 def _hold_base_lock(project_dir_str: str, base: str, hold_s: float, ready: str) -> None:
     """Acquire L1' for ``base`` and hold for ``hold_s`` seconds."""
-    with _acquire_base_branch_lock(Path(project_dir_str), base):
+    with _acquire_base_branch_lock(worktrees_dir(Path(project_dir_str)), base):
         Path(ready).write_text("ready")
         time.sleep(hold_s)
 
@@ -667,7 +647,7 @@ def test_base_lock_serializes_same_base(git_project: Path, tmp_path: Path) -> No
 
         # Second acquire with a short timeout MUST raise — holder is still active.
         with pytest.raises(WorktreeLockError):
-            with _acquire_base_branch_lock(git_project, "master", timeout=0.1):
+            with _acquire_base_branch_lock(worktrees_dir(git_project), "master", timeout=0.1):
                 pass  # pragma: no cover
     finally:
         holder.join(timeout=5)
@@ -690,7 +670,7 @@ def test_base_lock_independent_per_base(git_project: Path, tmp_path: Path) -> No
 
         # Different base → must NOT block.
         t0 = time.monotonic()
-        with _acquire_base_branch_lock(git_project, "develop"):
+        with _acquire_base_branch_lock(worktrees_dir(git_project), "develop"):
             assert time.monotonic() - t0 < 0.2, "different-base lock blocked"
     finally:
         holder.join(timeout=5)
@@ -739,19 +719,24 @@ def _create_and_merge_worker(
         # Use raw git (no commit hooks in this test fixture).
         subprocess.run(
             ["git", "config", "user.email", "tc@n12.test"],
-            cwd=str(wt_path), check=True,
+            cwd=str(wt_path),
+            check=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "TC-N12"],
-            cwd=str(wt_path), check=True,
+            cwd=str(wt_path),
+            check=True,
         )
         (wt_path / payload_file).write_text(payload_content)
         subprocess.run(
-            ["git", "add", payload_file], cwd=str(wt_path), check=True,
+            ["git", "add", payload_file],
+            cwd=str(wt_path),
+            check=True,
         )
         subprocess.run(
             ["git", "commit", "-m", f"wt: {payload_file}"],
-            cwd=str(wt_path), check=True,
+            cwd=str(wt_path),
+            check=True,
             capture_output=True,
         )
         mgr.merge(accept_drift=True)  # HATS-602: see worker docstring
@@ -782,13 +767,23 @@ def test_parallel_merges_into_same_base_both_succeed(git_project: Path) -> None:
     p1 = multiprocessing.Process(
         target=_create_and_merge_worker,
         args=(
-            str(git_project), branch_a, "file-a.txt", "alpha\n", results, "p1",
+            str(git_project),
+            branch_a,
+            "file-a.txt",
+            "alpha\n",
+            results,
+            "p1",
         ),
     )
     p2 = multiprocessing.Process(
         target=_create_and_merge_worker,
         args=(
-            str(git_project), branch_b, "file-b.txt", "beta\n", results, "p2",
+            str(git_project),
+            branch_b,
+            "file-b.txt",
+            "beta\n",
+            results,
+            "p2",
         ),
     )
     p1.start()
@@ -883,9 +878,7 @@ def _hold_lifecycle_lock(state_path_str: str, hold_s: float, ready: str) -> None
 # ---------------------------------------------------------------------------
 
 
-def _setup_wt_for_lifecycle_race(
-    project_dir: Path, branch: str, payload_file: str
-) -> None:
+def _setup_wt_for_lifecycle_race(project_dir: Path, branch: str, payload_file: str) -> None:
     """Create + populate a worktree, save state, leave it ready for merge/discard.
 
     Shared setup for TC-N17/N18: the race test only exercises merge()/discard(),
@@ -895,21 +888,19 @@ def _setup_wt_for_lifecycle_race(
     mgr = WorktreeManager(project_dir, branch_name=branch)
     wt_path = mgr.create()
     mgr.save_state()
-    subprocess.run(["git", "config", "user.email", "tc@n17.test"],
-                   cwd=str(wt_path), check=True)
-    subprocess.run(["git", "config", "user.name", "TC-N17"],
-                   cwd=str(wt_path), check=True)
+    subprocess.run(["git", "config", "user.email", "tc@n17.test"], cwd=str(wt_path), check=True)
+    subprocess.run(["git", "config", "user.name", "TC-N17"], cwd=str(wt_path), check=True)
     (wt_path / payload_file).write_text("payload\n")
     subprocess.run(["git", "add", payload_file], cwd=str(wt_path), check=True)
     subprocess.run(
         ["git", "commit", "-m", f"wt: {payload_file}"],
-        cwd=str(wt_path), check=True, capture_output=True,
+        cwd=str(wt_path),
+        check=True,
+        capture_output=True,
     )
 
 
-def _merge_worker(
-    project_dir: str, branch: str, results: dict, key: str, barrier
-) -> None:
+def _merge_worker(project_dir: str, branch: str, results: dict, key: str, barrier) -> None:
     """Child process: load worktree by branch, sync on barrier, merge it.
 
     Loading BEFORE the barrier ensures both workers have a valid manager
@@ -930,9 +921,7 @@ def _merge_worker(
         results[key] = {"error": f"{type(exc).__name__}: {exc}", "op": "merge"}
 
 
-def _discard_worker(
-    project_dir: str, branch: str, results: dict, key: str, barrier
-) -> None:
+def _discard_worker(project_dir: str, branch: str, results: dict, key: str, barrier) -> None:
     """Child process: load worktree by branch, sync on barrier, discard it."""
     project = Path(project_dir)
     try:
@@ -974,7 +963,10 @@ def test_parallel_merge_and_discard_same_branch_consistent_outcome(
     # Snapshot the base branch — used to decide which side won.
     initial_head = subprocess.run(
         ["git", "rev-parse", "HEAD"],
-        cwd=str(git_project), check=True, capture_output=True, text=True,
+        cwd=str(git_project),
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
 
     manager = multiprocessing.Manager()
@@ -1007,7 +999,10 @@ def test_parallel_merge_and_discard_same_branch_consistent_outcome(
     # Branch deleted exactly once (whichever winner reached _delete_branch).
     branch_ls = subprocess.run(
         ["git", "branch", "--list", branch],
-        cwd=str(git_project), check=True, capture_output=True, text=True,
+        cwd=str(git_project),
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     assert branch_ls == "", f"branch should be deleted, got: {branch_ls!r}"
 
@@ -1016,7 +1011,10 @@ def test_parallel_merge_and_discard_same_branch_consistent_outcome(
     feature_path = git_project / "feature.txt"
     final_head = subprocess.run(
         ["git", "rev-parse", "HEAD"],
-        cwd=str(git_project), check=True, capture_output=True, text=True,
+        cwd=str(git_project),
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     if feature_path.exists():
         assert final_head != initial_head, "file present but HEAD didn't advance"
@@ -1078,6 +1076,9 @@ def test_parallel_discard_same_branch_idempotent(git_project: Path) -> None:
     assert WorktreeManager.load_for_branch(git_project, branch) is None
     branch_ls = subprocess.run(
         ["git", "branch", "--list", branch],
-        cwd=str(git_project), check=True, capture_output=True, text=True,
+        cwd=str(git_project),
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     assert branch_ls == "", f"branch should be deleted, got: {branch_ls!r}"

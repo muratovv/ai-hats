@@ -89,9 +89,7 @@ class EmptyPlanError(Exception):
         self.empty_sections = empty_sections or []
         if self.empty_sections:
             joined = ", ".join(self.empty_sections)
-            super().__init__(
-                f"Plan for {task_id} has empty required section(s): {joined}"
-            )
+            super().__init__(f"Plan for {task_id} has empty required section(s): {joined}")
         else:
             super().__init__(f"Plan is empty scaffold for {task_id}")
         self.task_id = task_id
@@ -120,9 +118,7 @@ class TaskTransition:
 # Child states that count as "resolved" for epic auto-advance (HATS-690 Q2a).
 # A child in any of these no longer blocks its epic; FAILED / BLOCKED are
 # outstanding work and keep the epic open.
-_EPIC_RESOLVED_STATES: frozenset[TaskState] = frozenset(
-    {TaskState.DONE, TaskState.CANCELLED}
-)
+_EPIC_RESOLVED_STATES: frozenset[TaskState] = frozenset({TaskState.DONE, TaskState.CANCELLED})
 
 # Child states that count as "work taken" for epic activation (HATS-692 D2).
 # A child in any of these means real work has started under the epic, so a
@@ -320,13 +316,9 @@ class TaskManager:
             old_state = task.state
             if force:
                 if old_state == new_state:
-                    raise ValueError(
-                        f"Task '{task_id}' is already in state '{new_state.value}'"
-                    )
+                    raise ValueError(f"Task '{task_id}' is already in state '{new_state.value}'")
                 task.state = new_state
-                task.log_work(
-                    f"Forced transition {old_state.value} → {new_state.value}: {reason}"
-                )
+                task.log_work(f"Forced transition {old_state.value} → {new_state.value}: {reason}")
             else:
                 task.transition_to(new_state)
             task.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -353,9 +345,7 @@ class TaskManager:
                     task.completed_at = ""
                     task.log_work("Reopened from done")
                 elif is_epic:
-                    task.log_work(
-                        "Epic → execute (tracker): no plan-gate, no worktree"
-                    )
+                    task.log_work("Epic → execute (tracker): no plan-gate, no worktree")
                 elif self.strict_plan_check:
                     unfilled = self._unfilled_sections(task)
                     if unfilled:
@@ -375,9 +365,7 @@ class TaskManager:
                     # HATS-697: forced execute is a manual state correction —
                     # no fresh worktree (spinning one off HEAD orphaned retro
                     # work, PROX-287). Operator owns the worktree decision.
-                    task.log_work(
-                        "Forced → execute: no worktree created (manual override)"
-                    )
+                    task.log_work("Forced → execute: no worktree created (manual override)")
                 else:
                     self._setup_worktree(task, caller_cwd=caller_cwd)
             elif new_state == TaskState.DONE:
@@ -489,9 +477,7 @@ class TaskManager:
         # Re-parenting a live task into a `done` epic reopens it (HATS-690 Q3).
         return task, self._propagate_to_parent(task)
 
-    def close_task(
-        self, task_id: str, resolution: str
-    ) -> tuple[TaskCard, list[TaskTransition]]:
+    def close_task(self, task_id: str, resolution: str) -> tuple[TaskCard, list[TaskTransition]]:
         """Fast-close: ``brainstorm | plan → done`` with mandatory resolution.
 
         Skips the worktree theatre — there is no worktree in brainstorm/plan,
@@ -586,8 +572,7 @@ class TaskManager:
 
             task.attachments.append(result.attachment)
             task.log_work(
-                f"attached '{name}' (digest {result.attachment.digest}, "
-                f"{result.action.value})"
+                f"attached '{name}' (digest {result.attachment.digest}, {result.action.value})"
             )
             task.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             self._save_task(task)
@@ -627,8 +612,10 @@ class TaskManager:
                 # HATS-470: user-uploaded blob — route through trash so
                 # accidental detach is recoverable.
                 from .safe_delete import discard as _safe_discard
+
                 _safe_discard(
-                    blob_path, reason="attachment-detach",
+                    blob_path,
+                    reason="attachment-detach",
                     project_dir=self.project_dir,
                 )
             task.log_work(f"detached '{name}' (digest {entry.digest})")
@@ -666,10 +653,7 @@ class TaskManager:
         ``folded_into`` — the caller should ``remove_link`` first.
         """
         if link_type not in self.LINK_TYPES:
-            raise ValueError(
-                f"Unknown link type '{link_type}'. "
-                f"Valid: {list(self.LINK_TYPES)}"
-            )
+            raise ValueError(f"Unknown link type '{link_type}'. Valid: {list(self.LINK_TYPES)}")
         if from_id == to_id:
             raise ValueError("Cannot link a task to itself")
 
@@ -744,10 +728,7 @@ class TaskManager:
     ) -> tuple[TaskCard, TaskCard]:
         """Inverse of :meth:`add_link`. Silently no-ops if the link is absent."""
         if link_type not in self.LINK_TYPES:
-            raise ValueError(
-                f"Unknown link type '{link_type}'. "
-                f"Valid: {list(self.LINK_TYPES)}"
-            )
+            raise ValueError(f"Unknown link type '{link_type}'. Valid: {list(self.LINK_TYPES)}")
         a = self.get_task(from_id)
         if a is None:
             raise ValueError(f"Task '{from_id}' not found")
@@ -950,10 +931,7 @@ class TaskManager:
             from_state = epic.state
             reason: str | None = None
 
-            if (
-                epic.state == TaskState.DONE
-                and child.state not in _EPIC_RESOLVED_STATES
-            ):
+            if epic.state == TaskState.DONE and child.state not in _EPIC_RESOLVED_STATES:
                 # Reopen: live child work under a completed epic (Q3).
                 epic.transition_to(TaskState.EXECUTE)  # DONE → EXECUTE (FSM-valid)
                 epic.completed_at = ""
@@ -987,9 +965,7 @@ class TaskManager:
                         epic.transition_to(TaskState.DOCUMENT)
                     epic.transition_to(TaskState.REVIEW)
                     reason = "all children resolved (>=1 done)"
-                    epic.log_work(
-                        f"Auto-advanced {from_state.value} -> review ({reason})"
-                    )
+                    epic.log_work(f"Auto-advanced {from_state.value} -> review ({reason})")
                 elif (
                     epic.state in (TaskState.BRAINSTORM, TaskState.PLAN)
                     and child.state in _EPIC_ACTIVE_STATES
@@ -1000,12 +976,8 @@ class TaskManager:
                     if epic.state == TaskState.BRAINSTORM:
                         epic.transition_to(TaskState.PLAN)
                     epic.transition_to(TaskState.EXECUTE)
-                    reason = (
-                        f"activated: child {child.id} ({child.state.value}) taken"
-                    )
-                    epic.log_work(
-                        f"Auto-activated {from_state.value} -> execute ({reason})"
-                    )
+                    reason = f"activated: child {child.id} ({child.state.value}) taken"
+                    epic.log_work(f"Auto-activated {from_state.value} -> execute ({reason})")
                     # No _setup_worktree — epics never get a worktree here.
 
             if reason is None:
@@ -1035,6 +1007,7 @@ class TaskManager:
         one (HATS-060 short-circuit), the existing / created / adopted worktree
         path on the happy path, or None for non-git projects.
         """
+        from .paths import worktrees_dir
         from .worktree import (
             WorktreeCreateError,
             WorktreeManager,
@@ -1042,6 +1015,10 @@ class TaskManager:
         )
         from .wt_carry import collect_carry_for_role
         from .wt_lifecycle import HOOK_LIFECYCLE
+
+        # ADR-0013 D4: ai-hats injects its state-dir convention at every
+        # construct/load so the core never falls back project-local.
+        wt_state_dir = worktrees_dir(self.project_dir)
 
         # HATS-060 / HATS-840: adopt the worktree the operator is in. Probe the
         # threaded `caller_cwd`, not the main-hopped `self.project_dir`.
@@ -1052,7 +1029,7 @@ class TaskManager:
         # Per-task lookup (HATS-061) — fast-path, avoids the create-lock
         # roundtrip on the common case. The lock is acquired inside create()
         # for the actual decision.
-        existing = WorktreeManager.load_for_task(self.project_dir, task.id)
+        existing = WorktreeManager.load_for_task(self.project_dir, task.id, state_dir=wt_state_dir)
         if existing is not None:
             return existing.worktree_path
 
@@ -1066,7 +1043,10 @@ class TaskManager:
         # state so teardown runs the create-time set (D3).
         branch = f"task/{task.id.lower()}"
         mgr = WorktreeManager(
-            self.project_dir, branch_name=branch, lifecycle=HOOK_LIFECYCLE
+            self.project_dir,
+            branch_name=branch,
+            lifecycle=HOOK_LIFECYCLE,
+            state_dir=wt_state_dir,
         )
         wt_hooks = collect_carry_for_role(self.project_dir, getattr(task, "role", ""))
         try:
@@ -1075,11 +1055,14 @@ class TaskManager:
             # HATS-479: race-loser — another process won between our
             # pre-check and the L2 re-check under the create lock. Adopt
             # the peer's worktree instead of failing the transition.
-            existing = WorktreeManager.load_for_task(self.project_dir, task.id)
+            existing = WorktreeManager.load_for_task(
+                self.project_dir, task.id, state_dir=wt_state_dir
+            )
             if existing is not None:
                 logger.info(
                     "Adopted concurrently-created worktree for %s at %s",
-                    task.id, existing.worktree_path,
+                    task.id,
+                    existing.worktree_path,
                 )
                 return existing.worktree_path
             # Truly failed (state not findable) — propagate.
@@ -1117,6 +1100,7 @@ class TaskManager:
         that stays a correctness gate against wrong-branch merges. The
         ``merge=False`` path already discards with ``force=True``.
         """
+        from .paths import worktrees_dir
         from .worktree import (
             OriginalBranchMissingError,
             WorktreeManager,
@@ -1126,8 +1110,13 @@ class TaskManager:
 
         # ADR-0013 D3: reconstruct the teardown manager with ai-hats's
         # hook-running bundle so before_teardown fires wt_out hooks fail-closed.
+        # D4: pass the state-dir convention so teardown resolves the same dir
+        # create wrote to (a missing base would orphan the state).
         active = WorktreeManager.load_for_task(
-            self.project_dir, task.id, lifecycle=HOOK_LIFECYCLE
+            self.project_dir,
+            task.id,
+            lifecycle=HOOK_LIFECYCLE,
+            state_dir=worktrees_dir(self.project_dir),
         )
         if active is None:
             # State JSON gone but the branch may survive (manual rm,
@@ -1146,13 +1135,13 @@ class TaskManager:
                     )
                     if base is None:
                         raise WorktreeStateLostError(task.id, branch_name)
-                    WorktreeManager.delete_merged_branch(
-                        self.project_dir, branch_name
-                    )
+                    WorktreeManager.delete_merged_branch(self.project_dir, branch_name)
                     logger.info(
                         "Task %s branch '%s' already merged into '%s' — "
                         "finalizing without re-merge (HATS-697)",
-                        task.id, branch_name, base,
+                        task.id,
+                        branch_name,
+                        base,
                     )
             return
 
@@ -1179,7 +1168,8 @@ class TaskManager:
                     "Worktree merge failed for task %s, branch '%s' and "
                     "worktree preserved. Task NOT marked done — resolve and "
                     "retry.",
-                    task.id, active.branch_name,
+                    task.id,
+                    active.branch_name,
                 )
                 raise
             # merge=False (failed / cancelled administrative close): swallow.
@@ -1193,9 +1183,7 @@ class TaskManager:
         """Create plan.md scaffold when task moves to plan state."""
         plan_path = self.tasks_dir / task.id / "plan.md"
         if not plan_path.exists():
-            plan_path.write_text(
-                PLAN_SCAFFOLD.format(task_id=task.id, title=task.title)
-            )
+            plan_path.write_text(PLAN_SCAFFOLD.format(task_id=task.id, title=task.title))
 
     def _is_empty_scaffold(self, task: TaskCard) -> bool:
         plan_path = self.tasks_dir / task.id / "plan.md"
@@ -1286,7 +1274,17 @@ class TaskManager:
         for h in headers:
             by_state.setdefault(h["state"], []).append(h)
 
-        state_order = ["execute", "document", "plan", "brainstorm", "review", "blocked", "failed", "done", "cancelled"]
+        state_order = [
+            "execute",
+            "document",
+            "plan",
+            "brainstorm",
+            "review",
+            "blocked",
+            "failed",
+            "done",
+            "cancelled",
+        ]
         for state_name in state_order:
             state_tasks = by_state.get(state_name, [])
             if state_tasks:
@@ -1310,6 +1308,7 @@ class TaskManager:
         # doesn't churn /tmp. If this proves noisy in practice, convert
         # to a whitelist-marker site (regen is deterministic from tasks/).
         from .safe_delete import replace as _safe_replace
+
         self.state_md_path.parent.mkdir(parents=True, exist_ok=True)
         _safe_replace(
             self.state_md_path,

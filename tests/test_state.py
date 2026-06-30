@@ -6,6 +6,7 @@ import pytest
 from pathlib import Path
 
 from ai_hats.models import TaskState
+from ai_hats.paths import worktrees_dir
 from ai_hats.state import EmptyPlanError, TaskManager
 from ai_hats.worktree import WorktreeManager
 
@@ -277,9 +278,7 @@ def test_full_lifecycle_with_logs(mgr):
     mgr.transition("T-1", TaskState.DOCUMENT)
 
     mgr.log_work("T-1", "Docs updated")
-    mgr.transition(
-        "T-1", TaskState.REVIEW, final_state="Feature implemented and tested"
-    )
+    mgr.transition("T-1", TaskState.REVIEW, final_state="Feature implemented and tested")
 
     mgr.log_work("T-1", "Review passed")
     mgr.transition("T-1", TaskState.DONE)
@@ -464,8 +463,15 @@ def test_legacy_yaml_without_depends_loads(mgr, tmp_path):
 def _init_git(path: Path) -> None:
     """Initialize a git repo with an initial commit."""
     subprocess.run(["git", "init"], cwd=str(path), capture_output=True, check=True)
-    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True, check=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@test.com"],
+        cwd=str(path),
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True, check=True
+    )
     (path / "README.md").write_text("# test")
     subprocess.run(["git", "add", "."], cwd=str(path), capture_output=True, check=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=str(path), capture_output=True, check=True)
@@ -487,7 +493,9 @@ def test_execute_creates_worktree(git_mgr):
     git_mgr.transition("T-1", TaskState.PLAN)
     git_mgr.transition("T-1", TaskState.EXECUTE)
 
-    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    active = WorktreeManager.load_for_task(
+        git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+    )
     assert active is not None
     assert active.branch_name == "task/t-1"
     assert active.worktree_path.exists()
@@ -499,17 +507,31 @@ def test_done_merges_worktree(git_mgr):
     git_mgr.transition("T-1", TaskState.EXECUTE)
 
     # Make a change in the worktree
-    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    active = WorktreeManager.load_for_task(
+        git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+    )
     (active.worktree_path / "new_file.txt").write_text("hello")
-    subprocess.run(["git", "add", "."], cwd=str(active.worktree_path), capture_output=True, check=True)
-    subprocess.run(["git", "commit", "-m", "add file"], cwd=str(active.worktree_path), capture_output=True, check=True)
+    subprocess.run(
+        ["git", "add", "."], cwd=str(active.worktree_path), capture_output=True, check=True
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "add file"],
+        cwd=str(active.worktree_path),
+        capture_output=True,
+        check=True,
+    )
 
     git_mgr.transition("T-1", TaskState.DOCUMENT)
     git_mgr.transition("T-1", TaskState.REVIEW)
     git_mgr.transition("T-1", TaskState.DONE)
 
     # Worktree cleaned up
-    assert WorktreeManager.load_for_task(git_mgr.project_dir, "T-1") is None
+    assert (
+        WorktreeManager.load_for_task(
+            git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+        )
+        is None
+    )
     # Change merged into main
     assert (git_mgr.project_dir / "new_file.txt").exists()
 
@@ -519,14 +541,21 @@ def test_failed_discards_worktree(git_mgr):
     git_mgr.transition("T-1", TaskState.PLAN)
     git_mgr.transition("T-1", TaskState.EXECUTE)
 
-    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    active = WorktreeManager.load_for_task(
+        git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+    )
     wt_path = active.worktree_path
     assert wt_path.exists()
 
     git_mgr.transition("T-1", TaskState.FAILED)
 
     # Worktree removed
-    assert WorktreeManager.load_for_task(git_mgr.project_dir, "T-1") is None
+    assert (
+        WorktreeManager.load_for_task(
+            git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+        )
+        is None
+    )
     assert not wt_path.exists()
 
 
@@ -539,8 +568,12 @@ def test_parallel_tasks_get_independent_worktrees(git_mgr):
     git_mgr.transition("T-1", TaskState.EXECUTE)
     git_mgr.transition("T-2", TaskState.EXECUTE)
 
-    wt1 = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
-    wt2 = WorktreeManager.load_for_task(git_mgr.project_dir, "T-2")
+    wt1 = WorktreeManager.load_for_task(
+        git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+    )
+    wt2 = WorktreeManager.load_for_task(
+        git_mgr.project_dir, "T-2", state_dir=worktrees_dir(git_mgr.project_dir)
+    )
     assert wt1 is not None
     assert wt2 is not None
     assert wt1.worktree_path != wt2.worktree_path
@@ -548,7 +581,9 @@ def test_parallel_tasks_get_independent_worktrees(git_mgr):
     assert wt2.branch_name == "task/t-2"
 
     # list_active returns both
-    active = WorktreeManager.list_active(git_mgr.project_dir)
+    active = WorktreeManager.list_active(
+        git_mgr.project_dir, state_dir=worktrees_dir(git_mgr.project_dir)
+    )
     assert len(active) == 2
 
 
@@ -562,10 +597,17 @@ def test_done_merges_only_its_own_worktree(git_mgr):
     git_mgr.transition("T-2", TaskState.EXECUTE)
 
     # Make a change in T-1's worktree
-    wt1 = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    wt1 = WorktreeManager.load_for_task(
+        git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+    )
     (wt1.worktree_path / "from_t1.txt").write_text("t1")
     subprocess.run(["git", "add", "."], cwd=str(wt1.worktree_path), capture_output=True, check=True)
-    subprocess.run(["git", "commit", "-m", "t1 work"], cwd=str(wt1.worktree_path), capture_output=True, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "t1 work"],
+        cwd=str(wt1.worktree_path),
+        capture_output=True,
+        check=True,
+    )
 
     # Complete T-1
     git_mgr.transition("T-1", TaskState.DOCUMENT)
@@ -573,10 +615,17 @@ def test_done_merges_only_its_own_worktree(git_mgr):
     git_mgr.transition("T-1", TaskState.DONE)
 
     # T-1 merged, T-2 still active
-    assert WorktreeManager.load_for_task(git_mgr.project_dir, "T-1") is None
+    assert (
+        WorktreeManager.load_for_task(
+            git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+        )
+        is None
+    )
     assert (git_mgr.project_dir / "from_t1.txt").exists()
 
-    wt2 = WorktreeManager.load_for_task(git_mgr.project_dir, "T-2")
+    wt2 = WorktreeManager.load_for_task(
+        git_mgr.project_dir, "T-2", state_dir=worktrees_dir(git_mgr.project_dir)
+    )
     assert wt2 is not None
     assert wt2.worktree_path.exists()
 
@@ -586,16 +635,25 @@ def test_execute_reuses_worktree_after_blocked(git_mgr):
     git_mgr.transition("T-1", TaskState.PLAN)
     git_mgr.transition("T-1", TaskState.EXECUTE)
 
-    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    active = WorktreeManager.load_for_task(
+        git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+    )
     wt_path = active.worktree_path
 
     git_mgr.transition("T-1", TaskState.BLOCKED)
     # Worktree still active after blocked
-    assert WorktreeManager.load_for_task(git_mgr.project_dir, "T-1") is not None
+    assert (
+        WorktreeManager.load_for_task(
+            git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+        )
+        is not None
+    )
 
     git_mgr.transition("T-1", TaskState.EXECUTE)
     # Same worktree reused
-    active2 = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    active2 = WorktreeManager.load_for_task(
+        git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+    )
     assert active2.worktree_path == wt_path
 
 
@@ -690,7 +748,9 @@ def test_cancel_discards_worktree(git_mgr):
     git_mgr.transition("T-1", TaskState.PLAN)
     git_mgr.transition("T-1", TaskState.EXECUTE)
 
-    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    active = WorktreeManager.load_for_task(
+        git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+    )
     assert active is not None
     wt_path = active.worktree_path
 
@@ -704,7 +764,12 @@ def test_cancel_discards_worktree(git_mgr):
     git_mgr.transition("T-1", TaskState.CANCELLED, resolution="wont-fix per review")
 
     # Worktree dir gone, state slot cleared.
-    assert WorktreeManager.load_for_task(git_mgr.project_dir, "T-1") is None
+    assert (
+        WorktreeManager.load_for_task(
+            git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+        )
+        is None
+    )
     assert not wt_path.exists()
     # Change NOT merged into main (cancelled is not done).
     assert not (git_mgr.project_dir / "junk.txt").exists()
@@ -844,13 +909,9 @@ def test_force_transition_skips_guard(mgr):
     mgr.create_task("T-1", "rollback me")
     mgr.transition("T-1", TaskState.PLAN)
     assert mgr.get_task("T-1").state == TaskState.PLAN
-    t, _ = mgr.transition(
-        "T-1", TaskState.BRAINSTORM, force=True, reason="plan started by mistake"
-    )
+    t, _ = mgr.transition("T-1", TaskState.BRAINSTORM, force=True, reason="plan started by mistake")
     assert t.state == TaskState.BRAINSTORM
-    assert any(
-        "Forced transition plan → brainstorm" in e.message for e in t.work_log
-    )
+    assert any("Forced transition plan → brainstorm" in e.message for e in t.work_log)
 
 
 def test_force_requires_reason(mgr):
@@ -863,9 +924,7 @@ def test_force_requires_reason(mgr):
 def test_force_same_state_rejected(mgr):
     mgr.create_task("T-1", "already there")
     with pytest.raises(ValueError, match="already in state"):
-        mgr.transition(
-            "T-1", TaskState.BRAINSTORM, force=True, reason="oops"
-        )
+        mgr.transition("T-1", TaskState.BRAINSTORM, force=True, reason="oops")
 
 
 def test_add_link_related_is_bidirectional(mgr):
@@ -1038,7 +1097,7 @@ def test_teardown_worktree_reraises_on_merge_failure(mgr, monkeypatch):
     # `.merge()` raises. The real `load_for_task` would return None for
     # this non-git fixture project, so without the patch the teardown
     # is a no-op and the bug is not reproducible.
-    def fake_load_for_task(project_dir, task_id, *, lifecycle=None):
+    def fake_load_for_task(project_dir, task_id, *, lifecycle=None, state_dir=None):
         return _FailingMergeManager(branch_name=f"task/{task_id.lower()}")
 
     monkeypatch.setattr(
@@ -1053,12 +1112,9 @@ def test_teardown_worktree_reraises_on_merge_failure(mgr, monkeypatch):
     # The on-disk task must NOT have moved to DONE.
     reloaded = mgr.get_task("T-1")
     assert reloaded.state == TaskState.REVIEW, (
-        f"task moved to {reloaded.state} despite merge failure — "
-        f"silent data loss regression"
+        f"task moved to {reloaded.state} despite merge failure — silent data loss regression"
     )
-    assert reloaded.completed_at == "", (
-        "completed_at must not be persisted when merge fails"
-    )
+    assert reloaded.completed_at == "", "completed_at must not be persisted when merge fails"
 
 
 def test_done_force_forwards_to_merge(mgr, monkeypatch):
@@ -1094,9 +1150,7 @@ def test_done_force_forwards_to_merge(mgr, monkeypatch):
         staticmethod(lambda *_a, **_kw: _SpyManager()),
     )
 
-    mgr.transition(
-        "T-1", TaskState.DONE, force=True, reason="corrective finalize"
-    )
+    mgr.transition("T-1", TaskState.DONE, force=True, reason="corrective finalize")
     assert captured.get("force") is True, (
         "transition done --force must forward force=True to Worktree.merge()"
     )
@@ -1116,7 +1170,8 @@ def test_teardown_worktree_swallows_discard_failure(mgr, monkeypatch):
 
         def discard(self, *, force: bool = False):
             raise subprocess.CalledProcessError(
-                returncode=128, cmd=["git", "branch", "-D"],
+                returncode=128,
+                cmd=["git", "branch", "-D"],
                 stderr="fatal: could not lock something",
             )
 
@@ -1138,9 +1193,7 @@ def test_teardown_worktree_swallows_discard_failure(mgr, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_teardown_worktree_raises_when_state_lost_but_branch_exists(
-    git_mgr, monkeypatch
-):
+def test_teardown_worktree_raises_when_state_lost_but_branch_exists(git_mgr, monkeypatch):
     """HATS-541: a ``transition done`` whose worktree state JSON is gone
     while the branch still exists must NOT silently mark the task DONE.
 
@@ -1175,16 +1228,22 @@ def test_teardown_worktree_raises_when_state_lost_but_branch_exists(
     # worktree branch (NOT merged anywhere) — otherwise `task/t-1` would be
     # created at base HEAD and the new ancestry-aware short-circuit would
     # (correctly) finalize it without a re-merge instead of refusing.
-    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    active = WorktreeManager.load_for_task(
+        git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+    )
     assert active is not None and active.worktree_path is not None
     (active.worktree_path / "unmerged.txt").write_text("un-merged work\n")
     subprocess.run(
-        ["git", "add", "."], cwd=str(active.worktree_path),
-        capture_output=True, check=True,
+        ["git", "add", "."],
+        cwd=str(active.worktree_path),
+        capture_output=True,
+        check=True,
     )
     subprocess.run(
         ["git", "commit", "-m", "un-merged worktree work"],
-        cwd=str(active.worktree_path), capture_output=True, check=True,
+        cwd=str(active.worktree_path),
+        capture_output=True,
+        check=True,
     )
 
     git_mgr.transition("T-1", TaskState.DOCUMENT)
@@ -1194,9 +1253,7 @@ def test_teardown_worktree_raises_when_state_lost_but_branch_exists(
     monkeypatch.setattr(
         worktree_module.WorktreeManager,
         "load_for_task",
-        staticmethod(
-            lambda *_a, **_kw: _FailingMergeManager(branch_name="task/t-1")
-        ),
+        staticmethod(lambda *_a, **_kw: _FailingMergeManager(branch_name="task/t-1")),
     )
     with pytest.raises(subprocess.CalledProcessError):
         git_mgr.transition("T-1", TaskState.DONE)
@@ -1228,9 +1285,7 @@ def test_teardown_worktree_raises_when_state_lost_but_branch_exists(
     )
 
 
-def test_teardown_worktree_finalizes_when_state_lost_but_branch_merged(
-    git_mgr, monkeypatch
-):
+def test_teardown_worktree_finalizes_when_state_lost_but_branch_merged(git_mgr, monkeypatch):
     """HATS-697: state lost + branch ALREADY merged → finalize, don't refuse.
 
     The shipped-on-master / removed-worktree scenario from PROX-287: the
@@ -1254,29 +1309,43 @@ def test_teardown_worktree_finalizes_when_state_lost_but_branch_merged(
 
     # Commit work on the worktree branch, then merge it into the base in the
     # main repo (out-of-band) — exactly the manual-ship the FSM must tolerate.
-    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    active = WorktreeManager.load_for_task(
+        git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+    )
     assert active is not None and active.worktree_path is not None
     wt_path = active.worktree_path
     (wt_path / "shipped.txt").write_text("shipped on master\n")
     subprocess.run(
-        ["git", "add", "."], cwd=str(wt_path),
-        capture_output=True, check=True,
+        ["git", "add", "."],
+        cwd=str(wt_path),
+        capture_output=True,
+        check=True,
     )
     subprocess.run(
         ["git", "commit", "-m", "shipped work"],
-        cwd=str(wt_path), capture_output=True, check=True,
+        cwd=str(wt_path),
+        capture_output=True,
+        check=True,
     )
     base = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        cwd=str(git_mgr.project_dir), capture_output=True, text=True, check=True,
+        cwd=str(git_mgr.project_dir),
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     subprocess.run(
         ["git", "merge", "--no-ff", "--no-edit", "task/t-1"],
-        cwd=str(git_mgr.project_dir), capture_output=True, check=True,
+        cwd=str(git_mgr.project_dir),
+        capture_output=True,
+        check=True,
     )
     base_sha_after_merge = subprocess.run(
         ["git", "rev-parse", base],
-        cwd=str(git_mgr.project_dir), capture_output=True, text=True, check=True,
+        cwd=str(git_mgr.project_dir),
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
 
     git_mgr.transition("T-1", TaskState.DOCUMENT)
@@ -1286,7 +1355,9 @@ def test_teardown_worktree_finalizes_when_state_lost_but_branch_merged(
     # freeing the (already-merged) branch, and the state JSON is gone.
     subprocess.run(
         ["git", "worktree", "remove", "--force", str(wt_path)],
-        cwd=str(git_mgr.project_dir), capture_output=True, check=True,
+        cwd=str(git_mgr.project_dir),
+        capture_output=True,
+        check=True,
     )
     monkeypatch.setattr(
         worktree_module.WorktreeManager,
@@ -1309,16 +1380,17 @@ def test_teardown_worktree_finalizes_when_state_lost_but_branch_merged(
     # No double-merge: the base ref is unchanged since the manual merge.
     base_sha_now = subprocess.run(
         ["git", "rev-parse", base],
-        cwd=str(git_mgr.project_dir), capture_output=True, text=True, check=True,
+        cwd=str(git_mgr.project_dir),
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     assert base_sha_now == base_sha_after_merge, (
         "base ref moved — the short-circuit must NOT run a second git merge"
     )
 
 
-def test_teardown_worktree_silent_when_state_and_branch_both_gone(
-    git_mgr, monkeypatch
-):
+def test_teardown_worktree_silent_when_state_and_branch_both_gone(git_mgr, monkeypatch):
     """HATS-541 carve-out: when both ``state.json`` AND the
     ``task/<id>`` branch are absent, ``transition done`` is a
     legitimate admin no-op — silently complete.
@@ -1345,7 +1417,9 @@ def test_teardown_worktree_silent_when_state_and_branch_both_gone(
     # Force-discard the worktree (removes dir, deletes branch, clears
     # state) so the carve-out's preconditions hold: no state, no
     # branch. Matches what `task transition failed` would have done.
-    active = WorktreeManager.load_for_task(git_mgr.project_dir, "T-1")
+    active = WorktreeManager.load_for_task(
+        git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+    )
     if active is not None:
         active.discard(force=True)
 
@@ -1364,9 +1438,7 @@ def test_teardown_worktree_silent_when_state_and_branch_both_gone(
     assert git_mgr.get_task("T-1").state == TaskState.DONE
 
 
-def test_teardown_worktree_silent_on_discard_path_when_state_lost(
-    git_mgr, monkeypatch
-):
+def test_teardown_worktree_silent_on_discard_path_when_state_lost(git_mgr, monkeypatch):
     """HATS-541 carve-out: the ``merge=False`` discard path
     (``transition failed`` / ``transition cancelled``) keeps silent
     return even when the branch still exists.
@@ -1437,9 +1509,7 @@ def test_epic_auto_advances_to_review_when_all_children_done(mgr):
     assert [(t.ticket.id, t.from_state, t.to_state) for t in auto] == [
         ("EPIC", TaskState.EXECUTE, TaskState.REVIEW)
     ]
-    assert any(
-        "Auto-advanced" in e.message for e in mgr.get_task("EPIC").work_log
-    )
+    assert any("Auto-advanced" in e.message for e in mgr.get_task("EPIC").work_log)
 
 
 def test_epic_auto_advances_from_document_single_hop(mgr):
@@ -1699,9 +1769,7 @@ def test_brainstorm_epic_activation_no_worktree(mgr, monkeypatch):
     """HATS-789 R3: activating a brainstorm epic via the auto-path gives it no
     worktree (epics are trackers — the multi-hop never calls _setup_worktree)."""
     setup_calls: list[str] = []
-    monkeypatch.setattr(
-        mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id)
-    )
+    monkeypatch.setattr(mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id))
     mgr.create_task("EPIC", "Epic")  # brainstorm
     mgr.create_task("C1", "Child 1", parent_task="EPIC")
     mgr.transition("C1", TaskState.PLAN)
@@ -1760,9 +1828,7 @@ def test_manual_epic_execute_no_worktree(mgr, monkeypatch):
     """HATS-794: manually moving an epic (has children) to execute is a pure state
     flip — no worktree (epics are trackers; symmetric with the auto-path)."""
     setup_calls: list[str] = []
-    monkeypatch.setattr(
-        mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id)
-    )
+    monkeypatch.setattr(mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id))
     mgr.create_task("EPIC", "Epic")
     mgr.create_task("C1", "Child 1", parent_task="EPIC")
     mgr.transition("EPIC", TaskState.PLAN)
@@ -1774,9 +1840,7 @@ def test_manual_epic_execute_no_worktree(mgr, monkeypatch):
 def test_manual_non_epic_execute_still_worktree(mgr, monkeypatch):
     """HATS-794 (regression): a childless task still gets a worktree on execute."""
     setup_calls: list[str] = []
-    monkeypatch.setattr(
-        mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id)
-    )
+    monkeypatch.setattr(mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id))
     mgr.create_task("SOLO", "Lone task")  # no children
     mgr.transition("SOLO", TaskState.PLAN)
     mgr.transition("SOLO", TaskState.EXECUTE)
@@ -1808,9 +1872,7 @@ def test_manual_epic_execute_skips_plan_gate(tmp_path, monkeypatch):
 def test_manual_epic_reopen_no_worktree(mgr, monkeypatch):
     """HATS-794: reopening a done epic (DONE → EXECUTE) takes no worktree either."""
     setup_calls: list[str] = []
-    monkeypatch.setattr(
-        mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id)
-    )
+    monkeypatch.setattr(mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id))
     mgr.create_task("EPIC", "Epic")
     mgr.create_task("C1", "Child 1", parent_task="EPIC")
     mgr.close_task("C1", "shipped")  # C1 done → EPIC auto-advances to review
