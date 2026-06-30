@@ -25,7 +25,7 @@ from .harness.guard import apply_post_run_guard
 from .materialize import compose_for_role
 from .observe import Session, SessionManager, TraceTag
 from .providers import get_provider
-from .worktree import IsolationMode, WorktreeManager
+from .wt import IsolationMode, WorktreeManager
 from .runtime_common import (
     SUBAGENT_SUBPROCESS_TIMEOUT_S,
     SUBAGENT_EXIT_TIMEOUT,

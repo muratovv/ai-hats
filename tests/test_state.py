@@ -8,7 +8,7 @@ from pathlib import Path
 from ai_hats.models import TaskState
 from ai_hats.paths import worktrees_dir
 from ai_hats.state import EmptyPlanError, TaskManager
-from ai_hats.worktree import WorktreeManager
+from ai_hats.wt import WorktreeManager
 
 
 pytestmark = pytest.mark.integration
@@ -1085,7 +1085,7 @@ def test_teardown_worktree_reraises_on_merge_failure(mgr, monkeypatch):
     reached under the filelock context manager → on-disk state stays
     at ``review``.
     """
-    from ai_hats import worktree as worktree_module
+    from ai_hats import wt as worktree_module
 
     mgr.create_task("T-1", "L4' regression coverage")
     mgr.transition("T-1", TaskState.PLAN)
@@ -1125,7 +1125,7 @@ def test_done_force_forwards_to_merge(mgr, monkeypatch):
     ``--force`` never reached the merge — the git-integration check could not
     be overridden at all.
     """
-    from ai_hats import worktree as worktree_module
+    from ai_hats import wt as worktree_module
 
     captured: dict[str, bool] = {}
 
@@ -1160,7 +1160,7 @@ def test_teardown_worktree_swallows_discard_failure(mgr, monkeypatch):
     """L4' must not regress discard semantics: ``transition failed`` /
     ``transition cancelled`` (merge=False) keep the swallowing behavior,
     because the user is administratively dropping the work."""
-    from ai_hats import worktree as worktree_module
+    from ai_hats import wt as worktree_module
 
     class _FailingDiscardManager:
         branch_name = "task/t-2"
@@ -1216,8 +1216,8 @@ def test_teardown_worktree_raises_when_state_lost_but_branch_exists(git_mgr, mon
     already-merged orphan instead (see
     ``test_teardown_worktree_finalizes_when_state_lost_but_branch_merged``).
     """
-    from ai_hats import worktree as worktree_module
-    from ai_hats.worktree import WorktreeStateLostError
+    from ai_hats import wt as worktree_module
+    from ai_hats.wt import WorktreeStateLostError
 
     git_mgr.create_task("T-1", "HATS-541 regression")
     git_mgr.transition("T-1", TaskState.PLAN)
@@ -1301,7 +1301,7 @@ def test_teardown_worktree_finalizes_when_state_lost_but_branch_merged(git_mgr, 
     (raise unconditionally when the branch exists) → this test sees
     ``WorktreeStateLostError`` and the ``state == DONE`` assertion fails.
     """
-    from ai_hats import worktree as worktree_module
+    from ai_hats import wt as worktree_module
 
     git_mgr.create_task("T-1", "HATS-697 already-merged finalize")
     git_mgr.transition("T-1", TaskState.PLAN)
@@ -1401,7 +1401,7 @@ def test_teardown_worktree_silent_when_state_and_branch_both_gone(git_mgr, monke
     because admin closes via ``task close`` and similar paths legitimately
     reach this branch with no underlying worktree state.
     """
-    from ai_hats import worktree as worktree_module
+    from ai_hats import wt as worktree_module
 
     # Walk through review on the real git_mgr fixture, then drop the
     # worktree + branch — mimicking the "no worktree state, branch
@@ -1447,7 +1447,7 @@ def test_teardown_worktree_silent_on_discard_path_when_state_lost(git_mgr, monke
     block admin closes. The defensive raise applies only to the
     ``merge=True`` DONE path where silent success would be data loss.
     """
-    from ai_hats import worktree as worktree_module
+    from ai_hats import wt as worktree_module
 
     git_mgr.create_task("T-1", "discard with orphan branch")
     git_mgr.transition("T-1", TaskState.PLAN)

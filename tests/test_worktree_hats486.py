@@ -19,9 +19,9 @@ from unittest.mock import patch
 
 import pytest
 
-from ai_hats.worktree import (
+from ai_hats.wt import WorktreeManager
+from ai_hats.wt.locks import (
     STALE_INDEX_LOCK_THRESHOLD_S,
-    WorktreeManager,
     _retry_git_merge,
     _stale_index_lock_age,
 )
@@ -114,7 +114,7 @@ class TestStaleIndexLockAge:
 
     def test_git_binary_missing_returns_none(self, git_project: Path) -> None:
         """FileNotFoundError on subprocess → None (graceful)."""
-        import ai_hats.worktree as wt_mod
+        import ai_hats.wt.manager as wt_mod
 
         def boom(*args, **kwargs):
             raise FileNotFoundError(2, "No such file or directory: 'git'")
@@ -177,7 +177,7 @@ class TestRetryGitMergeStaleProbe:
                         stderr="fatal: Another git process seems to be running\n",
                     )
 
-            with caplog.at_level(logging.WARNING, logger="ai_hats.worktree"):
+            with caplog.at_level(logging.WARNING, logger="ai_hats.wt.manager"):
                 _retry_git_merge(
                     mock_runner, "merge", "--no-ff", "task/foo",
                     sleep=lambda _: None,  # no real sleep in tests
@@ -215,7 +215,7 @@ class TestRetryGitMergeStaleProbe:
                         stderr="fatal: Another git process seems to be running\n",
                     )
 
-            with caplog.at_level(logging.WARNING, logger="ai_hats.worktree"):
+            with caplog.at_level(logging.WARNING, logger="ai_hats.wt.manager"):
                 _retry_git_merge(
                     mock_runner, "merge", "--no-ff", "task/foo",
                     sleep=lambda _: None,
@@ -252,7 +252,7 @@ class TestRetryGitMergeStaleProbe:
                         stderr="fatal: Another git process seems to be running\n",
                     )
 
-            with caplog.at_level(logging.WARNING, logger="ai_hats.worktree"):
+            with caplog.at_level(logging.WARNING, logger="ai_hats.wt.manager"):
                 _retry_git_merge(
                     mock_runner, "merge", "--no-ff", "task/foo",
                     sleep=lambda _: None,
@@ -286,7 +286,7 @@ class TestRetryGitMergeStaleProbe:
                     stderr="fatal: Another git process seems to be running\n",
                 )
 
-            with caplog.at_level(logging.WARNING, logger="ai_hats.worktree"):
+            with caplog.at_level(logging.WARNING, logger="ai_hats.wt.manager"):
                 with pytest.raises(subprocess.CalledProcessError):
                     _retry_git_merge(
                         always_fail, "merge", "--no-ff", "task/foo",

@@ -3,7 +3,7 @@
 :class:`WorktreeManager` creates and manages linked git worktrees and their
 create / merge / discard lifecycle. The lock & retry concurrency infrastructure
 that serializes those operations — and the full lock-ordering model — lives in
-:mod:`ai_hats.worktree_locks` (extracted in HATS-715).
+:mod:`ai_hats.wt.locks` (extracted in HATS-715, moved to the ``wt`` package in HATS-851).
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 
-from .worktree_locks import (  # noqa: F401  -- re-export preserves the import surface (HATS-715)
+from .locks import (  # noqa: F401  -- re-export preserves the import surface (HATS-715)
     BASE_LOCK_TIMEOUT,
     CREATE_LOCK_CONTENTION_WARN,
     CREATE_LOCK_TIMEOUT,
@@ -427,11 +427,15 @@ class LifecycleContext:
 
     ``carry`` is the opaque persisted hook record (the core stores/replays it
     verbatim, D5); ``legacy`` distinguishes an absent carry (state predates
-    wt-hooks) from an empty ``{}`` so the bundle can warn-not-drop.
+    wt-hooks) from an empty ``{}`` so the bundle can warn-not-drop. ``state_dir``
+    is the manager's injected state/lock path-base (ADR-0013 D4); the bundle
+    resolves hook-log paths off it so state + hook-logs share one base even when a
+    driver injects a custom base (HATS-851).
     """
 
     worktree_path: Path | None
     project_dir: Path
+    state_dir: Path
     branch_name: str
     carry: dict[str, list[dict[str, Any]]]
     skip_hooks: bool
@@ -1060,6 +1064,7 @@ class WorktreeManager:
         return LifecycleContext(
             worktree_path=self.worktree_path,
             project_dir=self.project_dir,
+            state_dir=self._state_dir,
             branch_name=self.branch_name,
             carry=self._wt_hooks,
             skip_hooks=skip_hooks,

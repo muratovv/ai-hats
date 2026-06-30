@@ -92,7 +92,7 @@ def test_project_dir_ignores_agent_file(monkeypatch, tmp_path: Path) -> None:
 def test_project_dir_hops_from_git_file_to_main_root(monkeypatch, tmp_path: Path) -> None:
     """HATS-524: no `.agent/` ancestor + a `.git` *file* (linked worktree) →
     hop to the main checkout via `WorktreeManager.main_worktree_root`."""
-    from ai_hats import worktree as wt_mod
+    from ai_hats import wt as wt_mod
 
     wt = tmp_path / "wt"
     wt.mkdir()
@@ -113,7 +113,7 @@ def test_project_dir_git_file_hop_failure_falls_back_to_worktree(
     """HATS-524: when the commondir hop returns None (git error, submodule,
     malformed pointer), fall back to the dir holding the `.git` file — never
     raise, never climb past the gitlink boundary."""
-    from ai_hats import worktree as wt_mod
+    from ai_hats import wt as wt_mod
 
     wt = tmp_path / "wt"
     wt.mkdir()
@@ -129,7 +129,7 @@ def test_project_dir_git_file_hop_failure_falls_back_to_worktree(
 def test_project_dir_main_repo_never_spawns_git(monkeypatch, repo_with_agent: Path) -> None:
     """HATS-524 contract: an onboarded repo resolves via the `.agent/` pass
     and MUST NOT reach the worktree commondir hop (no git subprocess)."""
-    from ai_hats import worktree as wt_mod
+    from ai_hats import wt as wt_mod
 
     def _boom(_p):
         raise AssertionError("main_worktree_root must not be called for a main repo")

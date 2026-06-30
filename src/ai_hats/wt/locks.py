@@ -197,7 +197,7 @@ from typing import Any, Iterator
 
 import filelock
 
-from .utils.atomic_io import atomic_write_text
+from ..utils.atomic_io import atomic_write_text
 
 logger = logging.getLogger(__name__)
 
