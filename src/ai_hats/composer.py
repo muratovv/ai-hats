@@ -37,35 +37,23 @@ class CompositionResult:
     """The flattened result of composing a role.
 
     `injections` is the legacy flat view (trait/role/overlay text, deduped by
-    content). The structured fields below carry the same data with provenance
-    for layered writers (HATS-282 canonical writer):
+    content). The structured fields carry the same data with provenance for
+    layered writers (HATS-282):
 
-    - `trait_injections` — `{trait_name: text}`, deduped by text (mirror of
-      `injections` dedup): a trait whose text is empty or already recorded by
-      another trait/role is absent from the map.
-    - `role_injection` — root role's own injection text (independent of dedup;
-      always recorded if non-empty).
-    - `overlay_injection` — overlay's appended text (independent of dedup;
-      always recorded if non-empty).
+    - `trait_injections` — `{trait_name: text}`, deduped by text: a trait whose
+      text is empty or already recorded elsewhere is absent.
+    - `role_injection` / `overlay_injection` — root role's / overlay's own text
+      (independent of dedup; recorded if non-empty).
 
-    Rules and skills already carry provenance via `rules`/`skills` lists
-    (deduped by name), so no separate maps are needed for them.
+    Rules and skills carry provenance via `rules`/`skills` (deduped by name).
 
-    HATS-452 immutability contract. ``CompositionResult`` is ``frozen=True``:
-    fields cannot be reassigned after construction. Transformations that
-    derive a *modified* result (e.g. replacing the injection text with an
-    explicit override for a sub-agent) MUST go through the dedicated
-    ``with_*`` methods so the call-site is self-documenting and the
-    immutable contract stays uniform. Re-composing the same (role, overlays)
-    pair in a second layer to obtain a "modified" variant is forbidden —
-    that's re-derivation of the same logical entity in two places (П1 in
-    ADR-0005).
-
-    Note on container fields. ``frozen=True`` prevents *field reassignment*
-    only — the inner ``list``/``dict`` containers are still technically
-    mutable. By convention (and by the ``with_*`` API) callers do not mutate
-    them in place; the composer builds them once during ``compose`` and
-    never touches them afterwards.
+    HATS-452 immutability contract: ``frozen=True``, so fields cannot be
+    reassigned. Deriving a *modified* result (e.g. an injection override for a
+    sub-agent) MUST go through the ``with_*`` methods; re-composing the same
+    (role, overlays) pair to obtain a variant is forbidden (П1 in ADR-0005).
+    ``frozen`` guards field reassignment only — the inner list/dict containers
+    stay technically mutable, but by convention callers never mutate them in
+    place (the composer builds them once during ``compose``).
     """
 
     name: str
