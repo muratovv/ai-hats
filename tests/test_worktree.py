@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.worktree import (
+from ai_hats.wt import (
     IsolationMode,
     OriginalBranchMissingError,
     WorktreeBaseBranchMismatchError,
@@ -464,7 +464,7 @@ class TestBranchExistsClassifier:
         mgr = WorktreeManager(git_project, branch_name="task/keep")
 
         # Force `git worktree add` to fail (non-retriable error).
-        import ai_hats.worktree as wtmod
+        import ai_hats.wt.manager as wtmod
 
         real_retry = wtmod._retry_worktree_add
 
@@ -500,7 +500,7 @@ class TestBranchExistsClassifier:
         linked_path = tmp_path / "manual-linked"
         _git(git_project, "worktree", "add", "-b", "task/orphan", str(linked_path))
         # No state JSON exists for it (we never went through ai-hats).
-        from ai_hats.worktree import _state_key
+        from ai_hats.wt.locks import _state_key
         from ai_hats.paths import worktrees_dir
 
         state = worktrees_dir(git_project) / f"{_state_key('task/orphan')}.json"
