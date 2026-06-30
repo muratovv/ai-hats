@@ -1,6 +1,11 @@
 ---
 name: worktree-isolation
 description: Isolated development using git worktrees so the main branch stays clean. Use when starting any non-trivial task (execute state), doing parallel work on multiple tasks, making risky changes you might want to discard, or delegating to a sub-agent (automatic via ai-hats agent --isolation).
+ai_hats:
+  runtime_hooks:
+    PreToolUse:
+      - matcher: Edit|Write|MultiEdit
+        script: hooks/wt_gate.py
 ---
 
 # Worktree Isolation
@@ -23,6 +28,12 @@ Isolated development using git worktrees. Each task gets its own working copy â€
    ai-hats wt create feat/PROJ-004
    cd <worktree-path>
    ```
+
+   A non-blocking **PreToolUse nudge** (`hooks/wt_gate.py`) reminds you if you
+   edit a code or config file in the main checkout instead of a worktree.
+   Triggering extensions are grouped by language in `hooks/code_extensions.json`
+   (editable; override per-process via `AI_HATS_WT_GATE_EXTS`). Silence the nudge
+   with `AI_HATS_WT_GATE_OFF=1`.
 
 2. **Work** â€” commit freely in the worktree. Main tree is untouched.
 
