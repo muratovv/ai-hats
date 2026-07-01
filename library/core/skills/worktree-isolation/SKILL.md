@@ -29,22 +29,14 @@ Isolated development using git worktrees. Each task gets its own working copy �
    cd <worktree-path>
    ```
 
-   A **PreToolUse gate** (`hooks/wt_gate.py`) **hard-denies** an Edit/Write to a
-   code or config file in the **main checkout** — in both interactive and headless
-   sessions (HATS-889; the old non-blocking nudge was provably ignored, PROX-375).
-   The worktree is the enforced default. On a deny:
-
-   - **Already have an active worktree?** `ai-hats wt status` for its path; work there.
-   - **Otherwise**, from the main repo on a canonical base (`master`):
-     `ai-hats wt create <type>/<short-name>` → `cd` to the printed path → re-apply the edit.
-   - **Do not** retry or rephrase the edit, and **do not** ask the supervisor to skip a
-     worktree as a shortcut — making one is a single command. Ask only for a genuine
-     direct-master change (docs/hotfix) or when a worktree is truly impossible.
-   - **Bypass is supervisor-only**: `AI_HATS_WT_GATE_OFF=1`. The agent must NOT set it
-     for its own edits (same discipline as `AI_HATS_SHARED_STATE_ACK`).
-
-   Triggering extensions are grouped by language in `hooks/code_extensions.json`
-   (editable; override per-process via `AI_HATS_WT_GATE_EXTS`).
+   A **PreToolUse gate** (`hooks/wt_gate.py`) **hard-denies** a code/config Edit/Write in
+   the **main checkout** — interactive and headless (HATS-889; the old nudge was ignored,
+   PROX-375). On a deny, move into a worktree and re-apply: `ai-hats wt status` for an
+   active one, else `ai-hats wt create <type>/<name>` from `master`. Don't ask to skip a
+   worktree (making one is one command); ask the supervisor only for a genuine
+   direct-master change. Bypass is supervisor-only (`AI_HATS_WT_GATE_OFF=1`, never
+   agent-set). Docs, non-trigger extensions, and gitignored paths (tracker, `ai-hats.yaml`)
+   are exempt (trigger set: `hooks/code_extensions.json`).
 
 2. **Work** — commit freely in the worktree. Main tree is untouched.
 
