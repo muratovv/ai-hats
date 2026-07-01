@@ -507,7 +507,7 @@ def test_finalize_audit_metrics_write_is_atomic(tmp_path, monkeypatch):
     Fails under open('w')+json.dump (truncates before json.dump writes a byte);
     passes once the write routes through atomic_io (serialize, then atomic replace).
     """
-    from ai_hats.utils import atomic_io
+    from ai_hats_core import atomic_io
 
     session = make_test_session(tmp_path)
     session.finalize_audit({"turns": 1, "tool_calls": 2})

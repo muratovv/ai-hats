@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-hats-core"
+version = "0.1.0"
+description = "Dependency-free core primitives for the ai-hats framework (atomic filesystem I/O)."
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "muratovv", email = "f@muratovv.me" }, # ai-hats: allow-secret
+]
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_hats_core"]

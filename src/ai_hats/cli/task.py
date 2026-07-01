@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from ..utils.atomic_io import atomic_write_text
+from ai_hats_core import atomic_write_text
 from ..state import EmptyPlanError
 from ._helpers import (
     _guard_not_inside_linked_worktree,

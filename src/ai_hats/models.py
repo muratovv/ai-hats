@@ -26,7 +26,7 @@ from pydantic import (
 
 from .frontmatter import read_frontmatter
 from .skill_sidecar import _HOOK_KEYS, leftover_sidecar_remedy
-from .utils.atomic_io import atomic_write_text
+from ai_hats_core import atomic_write_text
 
 logger = logging.getLogger(__name__)
 
