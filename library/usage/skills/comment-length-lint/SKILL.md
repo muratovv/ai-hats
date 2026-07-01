@@ -16,8 +16,10 @@ Thin registration shell for a PostToolUse runtime-hook: after every agent
 forwarded to the agent via non-blocking `additionalContext`. Backstop for
 `dev_rule_comment_discipline` — the few-shot guide is the primary defense; this
 catches the HATS-837 shapes that slip past it. A deliberate long contract
-suppresses a single finding with `# noqa: comment-length` (in the block, on the
-`def`/`class` line, or inside a module docstring). Fail-open, kill switch
+suppresses a single finding with `# comment-length: allow` (in the block, on the
+`def`/`class` line, or inside a module docstring); the legacy
+`noqa: comment-length` still works but trips ruff's `# noqa:` parser as a bare
+comment. Fail-open, kill switch
 `AI_HATS_COMMENT_LINT_OFF=1`; thresholds tune via `AI_HATS_COMMENT_MAX_LINES` /
 `AI_HATS_DOCSTRING_MAX_LINES` / `AI_HATS_DOCSTRING_MAX_CHARS`. Full contract in
 the hook header: `hooks/comment_length_lint.py`.
