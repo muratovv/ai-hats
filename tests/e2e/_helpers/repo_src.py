@@ -29,6 +29,8 @@ naturally per-worker and single-threaded — no lock needed. The clone
 lives under ``tempfile`` (sandboxed into the pytest temp root by
 ``tests/conftest.py::_wt_sandbox``), so it is swept with the rest of the
 worktree artefacts on a green session.
+
+Deliberate long pitfall/contract module docstring — noqa: comment-length.
 """
 
 from __future__ import annotations
