@@ -370,7 +370,7 @@ def _flip_current(project_dir: Path, sha: str) -> None:
     crash-during-install leaves ``current`` untouched (still the old sha), so
     the tool never bricks.
     """
-    from ..utils.atomic_io import atomic_write_text
+    from ai_hats_core import atomic_write_text
     from ..paths import current_pointer
 
     # atomic_write_text creates the parent (versions/) and writes via a unique
