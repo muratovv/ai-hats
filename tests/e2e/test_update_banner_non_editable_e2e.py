@@ -36,6 +36,8 @@ Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
 Fail-under-revert: reverting the mirror fallback in ``run_check`` leaves
 ``cache.behind = None``, which fails both the cache assertion and the
 banner assertion below.
+
+Deliberate long e2e scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations

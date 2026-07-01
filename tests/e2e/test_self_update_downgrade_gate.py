@@ -31,6 +31,8 @@ Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
 Fail-under-revert: if the gate is removed from ``cli/maintenance.py``,
 the refuse-case invocation succeeds (exit 0, silent downgrade) and the
 ``returncode == 3`` assertion below fails.
+
+Deliberate long e2e scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations

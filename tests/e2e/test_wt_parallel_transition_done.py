@@ -34,6 +34,8 @@ Only L3'        L1' + L4'                     L1' serializes → green
 The single test in this file therefore verifies the *interaction* of
 L1' + L3'; ``test_wt_merge_conflict_preserves_review.py`` (TC-E2)
 verifies L4' in isolation. Together they cover the whole stack.
+
+Deliberate long e2e scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations
