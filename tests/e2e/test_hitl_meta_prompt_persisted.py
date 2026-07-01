@@ -31,6 +31,8 @@ Companion to ``test_session_prompt_contains_role_injection.py`` — that test
 inspects the in-cache ``prompt.md`` mid-session; THIS test inspects the
 persistent ``meta_prompt.txt`` post-session, which is the artefact e2e
 tools / audit / retro consumers actually have access to.
+
+Deliberate long e2e regression scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations

@@ -41,6 +41,8 @@ What this test does NOT pin
 
 Fixture choice: ``tmp_project`` (dev venv) + real HOME claude auth.
 Same rationale as ``test_reflect_issue_e2e.py``.
+
+Deliberate long e2e scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations
