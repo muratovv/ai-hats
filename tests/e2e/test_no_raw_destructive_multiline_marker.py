@@ -56,7 +56,7 @@ def _make_repo(tmp_path: Path) -> Path:
 
 def _commit(repo: Path, msg: str) -> subprocess.CompletedProcess:
     """Run a real ``git commit`` (hooks active, override env stripped)."""
-    env = os.environ.copy()
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env.pop("AI_HATS_NO_RAW_DESTRUCTIVE_SKIP", None)
     _git(repo, "add", "-A")
     return subprocess.run(

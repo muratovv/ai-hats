@@ -134,7 +134,10 @@ def _git_repo(tmp_path: Path) -> Path:
     """Create a throwaway git repo with one commit (controlled HEAD + tree)."""
     repo = tmp_path / "repo"
     repo.mkdir()
-    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+    # HATS-887: strip GIT_* (plumbing) then re-pin config isolation only.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["GIT_CONFIG_GLOBAL"] = "/dev/null"
+    env["GIT_CONFIG_SYSTEM"] = "/dev/null"
     run = lambda *a: subprocess.run(  # noqa: E731
         ["git", *a], cwd=repo, check=True, capture_output=True, text=True, env=env
     )
