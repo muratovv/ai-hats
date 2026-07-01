@@ -17,6 +17,7 @@ unit suite (``test_worktree.py``, which reaches into internals + imports
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -36,8 +37,12 @@ _STANDALONE_SURFACE = {"WorktreeManager", "IsolationMode", "NOOP_LIFECYCLE"}
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    # HATS-886: drop inherited GIT_* so an ambient GIT_DIR/GIT_WORK_TREE (which
+    # the merge-smoke gate's enclosing `git merge` exports at the REAL repo)
+    # cannot retarget these plumbing calls off `cwd` onto real master.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     return subprocess.run(
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True
+        ["git", *args], cwd=str(cwd), env=env, capture_output=True, text=True, check=True
     )
 
 
@@ -47,6 +52,16 @@ def bare_repo(tmp_path: Path) -> Path:
     project = tmp_path / "standalone"
     project.mkdir()
     _git(project, "init")
+    # HATS-886 tripwire: refuse to add/commit unless the repo we just made is
+    # this tmp dir's own `.git`. If an ambient GIT_DIR slipped past the env-strip
+    # `git init` would have (re)targeted the real repo — fail loud, before harm.
+    git_dir = Path(_git(project, "rev-parse", "--absolute-git-dir").stdout.strip()).resolve()
+    assert git_dir == (project / ".git").resolve(), (
+        f"bare_repo escaped its sandbox: git dir is {git_dir}, not {project / '.git'}"
+    )
+    assert tmp_path.resolve() in git_dir.parents, (
+        f"bare_repo git dir {git_dir} is not under tmp_path {tmp_path.resolve()}"
+    )
     _git(project, "config", "user.email", "consumer@example.com")
     _git(project, "config", "user.name", "Standalone Consumer")
     (project / "README.md").write_text("# standalone consumer\n")
@@ -129,4 +144,45 @@ def test_create_then_discard_standalone(bare_repo: Path) -> None:
     assert not (bare_repo / "scratch.txt").exists()
     assert (
         _git(bare_repo, "branch", "--list", "standalone/throwaway").stdout.strip() == ""
+    )
+
+
+def test_git_env_isolation_regression(tmp_path: Path, monkeypatch) -> None:
+    """HATS-886 gate: this module's git plumbing must ignore an ambient GIT_DIR.
+
+    Points GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE at a throwaway "victim" repo (as
+    the merge-smoke gate's enclosing ``git merge`` exports the real repo), then
+    runs the same init/config/commit plumbing ``bare_repo`` uses, in an unrelated
+    dir. The env-strip in :func:`_git` must confine it; reverting Fix #1 lets the
+    commit land in the victim, which the unchanged-HEAD assertion catches (RED).
+    """
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    _git(victim, "init")
+    _git(victim, "config", "user.email", "victim@example.com")  # ai-hats: allow-secret
+    _git(victim, "config", "user.name", "Victim Repo")
+    (victim / "keep.txt").write_text("keep\n")
+    _git(victim, "add", ".")
+    _git(victim, "commit", "-m", "victim baseline")
+    before_head = _git(victim, "rev-parse", "HEAD").stdout.strip()
+    before_count = _git(victim, "rev-list", "--count", "HEAD").stdout.strip()
+
+    # Simulate the git-merge context that exports the victim as the active repo.
+    monkeypatch.setenv("GIT_DIR", str((victim / ".git").resolve()))
+    monkeypatch.setenv("GIT_WORK_TREE", str(victim.resolve()))
+    monkeypatch.setenv("GIT_INDEX_FILE", str((victim / ".git" / "index").resolve()))
+
+    project = tmp_path / "standalone"
+    project.mkdir()
+    _git(project, "init")
+    _git(project, "config", "user.email", "consumer@example.com")  # ai-hats: allow-secret
+    _git(project, "config", "user.name", "Standalone Consumer")
+    _git(project, "commit", "--allow-empty", "-m", "standalone probe")
+
+    after_head = _git(victim, "rev-parse", "HEAD").stdout.strip()
+    after_count = _git(victim, "rev-list", "--count", "HEAD").stdout.strip()
+    assert after_head == before_head and after_count == before_count, (
+        "subprocess-git honoured an ambient GIT_DIR and mutated the env-pointed "
+        f"repo (HATS-886): count {before_count} -> {after_count}, "
+        f"HEAD {before_head[:12]} -> {after_head[:12]}"
     )

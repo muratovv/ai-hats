@@ -112,6 +112,23 @@ def _isolate_ai_hats_dir(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_git_env(monkeypatch):
+    """Strip inherited ``GIT_*`` plumbing vars for EVERY test (HATS-886).
+
+    The smoke/integration gate runs inside a ``git merge`` (merge-smoke, on
+    ``wt merge`` / ``transition done``), where git exports ``GIT_DIR`` /
+    ``GIT_WORK_TREE`` / ``GIT_INDEX_FILE`` at the REAL repo. Any test that shells
+    ``git`` while inheriting ``os.environ`` would then operate on the real
+    ``.git`` — observed committing an ``init`` onto real ``master``. Clearing
+    them makes every git-invoking test resolve its own ``cwd`` repo. Tests that
+    deliberately set one (the HATS-886 regression gate) re-``setenv`` after this.
+    """
+    for var in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
+        monkeypatch.delenv(var, raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_ai_hats_user_home(monkeypatch, tmp_path):
     """Pin ``AI_HATS_USER_HOME`` to an empty per-test dir for EVERY test (HATS-814).
 
