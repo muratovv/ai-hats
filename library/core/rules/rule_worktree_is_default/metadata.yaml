@@ -1,4 +1,0 @@
-name: rule_worktree_is_default
-description: The worktree is the enforced default working copy; main-checkout code/config edits are hard-denied and only the supervisor may authorize a direct-main edit
-author: ai-hats
-tags: [safety, agent, worktree, guardrail, hats-889]

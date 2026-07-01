@@ -10,8 +10,8 @@ extension AND file in the MAIN worktree (git-dir == git-common-dir) -> exit 0 +
 {"hookSpecificOutput":{...,"permissionDecision":"deny","permissionDecisionReason":..}};
 else exit 0 silent. `deny` is a final decision so it binds in BOTH interactive and
 headless sessions (unlike `ask`, which degrades to `defer` with no UI). Sole escape:
-supervisor-only AI_HATS_WT_GATE_OFF=1 — the agent MUST NOT self-set it
-(rule_worktree_is_default; mirrors AI_HATS_SHARED_STATE_ACK).
+supervisor-only AI_HATS_WT_GATE_OFF=1 — the agent MUST NOT self-set it (mirrors
+AI_HATS_SHARED_STATE_ACK). Recovery recipe + discipline live in the SKILL.md.
 
 Extensions grouped by language in code_extensions.json beside this script; resolution
 $AI_HATS_WT_GATE_EXTS -> sibling -> <repo>/library/core/skills/worktree-isolation/hooks/
@@ -63,20 +63,11 @@ _DEFAULT_LANGS = {
 }
 
 _DENY_REASON = (
-    "GUARDRAIL (worktree-isolation): blocked — this edits a code/config file in the "
-    "MAIN checkout. The worktree is the default working copy; main-checkout edits "
-    "collide with parallel worktrees and dirty the shared tree.\n"
-    "Do this instead (cheapest path — switch BEFORE editing, nothing is lost yet):\n"
-    "  - Already have an active worktree? Run `ai-hats wt status` for its path and work there.\n"
-    "  - Otherwise, from the main repo on master:\n"
-    "      ai-hats wt create <type>/<short-name>   # e.g. fix/typo\n"
-    "      cd <printed worktree path>\n"
-    "    then re-apply this edit there.\n"
-    "Do NOT retry, rephrase, or wrap this edit — the block is deliberate. Do NOT set "
-    "AI_HATS_WT_GATE_OFF yourself. Genuinely need a direct-MAIN edit (docs/hotfix, or a "
-    "worktree is impossible)? Ask the supervisor to authorize it — only the supervisor "
-    "may run with AI_HATS_WT_GATE_OFF=1. See rule_worktree_is_default and "
-    "library/core/skills/worktree-isolation/SKILL.md."
+    "GUARDRAIL (worktree-isolation): blocked — code/config edit in the MAIN checkout. "
+    "The worktree is the default; move to one and re-apply the edit — see the "
+    "worktree-isolation skill (SKILL.md) for the recovery recipe. Do NOT retry or "
+    "rephrase this edit, and do NOT self-set AI_HATS_WT_GATE_OFF; only the supervisor "
+    "may authorize a direct-MAIN edit."
 )
 
 

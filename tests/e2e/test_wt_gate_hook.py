@@ -86,8 +86,9 @@ def test_code_file_in_main_checkout_is_denied(repos):
     assert res.returncode == 0, res.stderr  # deny is carried in JSON, not a non-zero exit
     decision, reason = _decision(res)
     assert decision == "deny", f"expected a hard deny, stdout={res.stdout!r}"
-    # Reason must route the agent to a worktree and name the supervisor-only escape.
-    assert reason and "wt create" in reason and "AI_HATS_WT_GATE_OFF" in reason
+    # Reason must point at the worktree-isolation skill (recovery recipe) and name the
+    # supervisor-only escape.
+    assert reason and "worktree-isolation" in reason and "AI_HATS_WT_GATE_OFF" in reason
 
 
 @pytest.mark.integration
