@@ -40,6 +40,8 @@ Fixture choice: ``tmp_project`` (dev venv binary + real HOME claude
 auth). Same rationale as HATS-545 / S-CLI-04 — the launcher-venv
 build refuses to install when the worktree branch is ahead of master
 (separate framework gap).
+
+Deliberate long e2e scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations

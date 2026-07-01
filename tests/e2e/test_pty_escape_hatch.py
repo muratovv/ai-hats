@@ -28,6 +28,8 @@ suite (``tests/test_runtime_escape_hatch.py`` exercising the pure
 ``_scan_escape``); this module guards only the real ``_pty_spawn`` wire.
 
 Marker: ``integration`` (real PTY, real signals, real subprocess).
+
+Deliberate long real-PTY revert-detection scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations

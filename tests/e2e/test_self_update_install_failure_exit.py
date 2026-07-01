@@ -28,6 +28,8 @@ second update prints the red failure text but exits 0 — the ``expect_exit=1``
 assertion below fails. (And because ``current`` is never flipped either way,
 the half-updated environment is what the pre-fix ``&&`` chain would have run
 ``init`` against.)
+
+Deliberate long e2e scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations

@@ -84,16 +84,8 @@ def test_compose_for_role_unknown_role_surfaces_in_errors(maintainer_project):
     )
 
 
-# --------------------------------------------------------------------- #
-# Note on dropped ``materialize_system_prompt`` function
-# --------------------------------------------------------------------- #
-#
-# The plan (F1) proposed a second facade function returning a fully
-# materialized prompt string (compose + ``provider.build_system_prompt``).
-# During Phase 1 migration every real consumer turned out to need the
-# intermediate ``CompositionResult`` for some parallel concern (hook
-# install, audit snapshot, stats payload, HATS-267 override). Nobody
-# just wants the text. The function was dropped before Phase 2 per
-# design-minimalism. If a real text-only consumer appears later, add
-# it back — but assert at least one real call-site exists in the same
-# commit.
+# No ``materialize_system_prompt`` facade: every real consumer needs the
+# intermediate ``CompositionResult`` (hook install, audit snapshot, stats,
+# HATS-267 override), so the plan's text-only F1 helper was dropped before
+# Phase 2 per design-minimalism. Re-add only alongside a real text-only
+# call-site.

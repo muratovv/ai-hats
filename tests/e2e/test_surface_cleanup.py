@@ -31,6 +31,8 @@ so the launcher's venv precondition is not the contract under test.
 Fail-under-revert (dev_rule_e2e_gate §4): reverting the HATS-407 commits
 makes ``set_role`` repopulate ``library/rules/*`` and emit
 ``.last_backup/`` again; assertions below catch both regressions.
+
+Deliberate long e2e scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations

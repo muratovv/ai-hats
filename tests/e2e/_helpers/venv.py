@@ -61,6 +61,8 @@ def build_launcher_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
     isn't executable, or if the venv directory doesn't materialise.
     Callers that pre-skip on missing artefacts should catch these
     three explicitly.
+
+    Deliberate long helper API contract — noqa: comment-length.
     """
     install_script = repo_root / "scripts" / "install-launcher.sh"
     if not install_script.is_file():
