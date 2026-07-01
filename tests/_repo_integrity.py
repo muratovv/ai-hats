@@ -36,21 +36,31 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     # Strip GIT_* so an ambient GIT_DIR (merge-smoke's `git merge` exports it at
     # the real repo) can't retarget the snapshot off `root` — the HATS-886 vector.
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    return subprocess.run(
-        ["git", *args], cwd=str(root), env=env, capture_output=True, text=True, check=False
-    )
+    try:
+        return subprocess.run(
+            ["git", *args], cwd=str(root), env=env, capture_output=True, text=True, check=False
+        )
+    except FileNotFoundError:
+        # No `git` on PATH (e.g. the empty-PATH offline subprocess in
+        # test_venv_strict_mode); the tripwire is session-autouse so a raise
+        # would crash the subprocess. Signal 127 -> snapshot_repo degrades.
+        return subprocess.CompletedProcess(["git", *args], returncode=127, stdout="", stderr="")
 
 
 def snapshot_repo(root: Path) -> RepoState:
     """Snapshot ``root``'s HEAD + index fingerprint.
 
     Degrades to a not-a-repo sentinel (never raises) when ``root`` has no
-    ``.git`` — e.g. a source dir unpacked from an sdist.
+    ``.git`` (e.g. a source dir unpacked from an sdist) or when the ``git``
+    binary is unavailable (e.g. the empty-PATH offline subprocess in
+    ``test_venv_strict_mode``).
     """
     if not (root / ".git").exists():
         return RepoState(head=_NOT_A_REPO, index_digest="", tracked_count=None)
 
     head_proc = _git(root, "rev-parse", "HEAD")
+    if head_proc.returncode == 127:  # git binary unavailable → cannot snapshot
+        return RepoState(head=_NOT_A_REPO, index_digest="", tracked_count=None)
     head = head_proc.stdout.strip() if head_proc.returncode == 0 else "<unborn>"
 
     ls_proc = _git(root, "ls-files", "-s")
