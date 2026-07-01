@@ -19,7 +19,7 @@ from pathlib import Path
 import click
 import yaml
 
-from ..utils.atomic_io import atomic_write_text
+from ai_hats_core import atomic_write_text
 from ..hypothesis import (
     Hypothesis,
     HypothesisStore,

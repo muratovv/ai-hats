@@ -302,7 +302,7 @@ def _move_to_trash(src: Path, dest: Path) -> None:
 def _write_atomic(path: Path, content: bytes, mode: int | None = None) -> None:
     """Atomic write: tmp + rename. Internal helper (NOT routed through trash).
 
-    Intentionally NOT delegated to ``ai_hats.utils.atomic_io`` (HATS-716): ``safe_delete``
+    Intentionally NOT delegated to ``ai_hats_core.atomic_io`` (HATS-716): ``safe_delete``
     is a designated leaf module (``test_import_hygiene.LEAF_MODULES``) that must
     import nothing first-party, so it keeps its own copy of the tmp+replace
     primitive. The ``.tmp`` file lives for milliseconds and never carries user data
