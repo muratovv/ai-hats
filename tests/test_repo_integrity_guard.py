@@ -85,6 +85,21 @@ def test_snapshot_non_repo_is_noop(tmp_path: Path) -> None:
     assert diff_repo(state, snapshot_repo(plain)) is None
 
 
+def test_snapshot_no_git_binary_is_noop(repo: Path, tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
+    """HATS-892: git binary unreachable (empty PATH) → sentinel, never raises.
+
+    RED-under-revert of the ``_git`` FileNotFoundError guard: without it,
+    ``snapshot_repo`` raises here — the exact crash the empty-PATH offline
+    subprocess in ``test_venv_strict_mode`` hit via the session-autouse tripwire.
+    """
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))  # `repo` has .git, but no git binary
+    state = snapshot_repo(repo)
+    assert not state.is_repo
+    assert diff_repo(state, snapshot_repo(repo)) is None
+
+
 @pytest.mark.integration
 def test_tripwire_fires_on_real_repo_mutation(pytester, tmp_path, monkeypatch) -> None:
     """The session-scoped tripwire (real conftest) fails a session whose test
