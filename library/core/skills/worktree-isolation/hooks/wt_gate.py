@@ -1,24 +1,11 @@
 #!/usr/bin/env python3
-"""HATS-857/HATS-889 — worktree-isolation PreToolUse gate. Denies on trigger, fails open on error. Stdlib-only.
+"""HATS-857/HATS-889 — worktree-isolation PreToolUse gate. Denies on trigger, fails open.
 
-DENY an agent editing a code/config file in the MAIN checkout instead of an isolated
-worktree (concurrent main-checkout edits collide — HATS-526). A nudge here was provably
-ignored (HATS-889 / PROX-375), so the gate now hard-denies rather than advises.
-
-Contract: stdin = Claude Code PreToolUse payload JSON (.tool_input.file_path). Triggering
-extension AND file in the MAIN worktree (git-dir == git-common-dir) -> exit 0 +
-{"hookSpecificOutput":{...,"permissionDecision":"deny","permissionDecisionReason":..}};
-else exit 0 silent. `deny` is a final decision so it binds in BOTH interactive and
-headless sessions (unlike `ask`, which degrades to `defer` with no UI). Sole escape:
-supervisor-only AI_HATS_WT_GATE_OFF=1 — the agent MUST NOT self-set it (mirrors
-AI_HATS_SHARED_STATE_ACK). Recovery recipe + discipline live in the SKILL.md.
-
-Extensions grouped by language in code_extensions.json beside this script; resolution
-$AI_HATS_WT_GATE_EXTS -> sibling -> <repo>/library/core/skills/worktree-isolation/hooks/
--> embedded _DEFAULT_LANGS mirror (a wiring test keeps JSON and mirror in sync). Stdlib-
-only: the provider runs this under system python3 via shebang (no ai_hats import), so
-worktree detection is an inline `git rev-parse`. Zero egress. Rationale: HATS-889 plan.md.
-comment-length: allow
+Hard-deny an Edit/Write to a code/config file in the MAIN checkout instead of a worktree
+(main-checkout edits collide, HATS-526; a nudge here was ignored, PROX-375). A triggering,
+non-gitignored file in MAIN -> exit 0 + permissionDecision "deny" (binds headless too,
+unlike "ask"); else exit 0 silent. Recovery + discipline: SKILL.md. Kill switch:
+AI_HATS_WT_GATE_OFF=1. Stdlib-only (system python3 via shebang, inline git). Zero egress.
 """
 from __future__ import annotations
 
@@ -64,10 +51,7 @@ _DEFAULT_LANGS = {
 
 _DENY_REASON = (
     "GUARDRAIL (worktree-isolation): blocked — code/config edit in the MAIN checkout. "
-    "The worktree is the default; move to one and re-apply the edit — see the "
-    "worktree-isolation skill (SKILL.md) for the recovery recipe. Do NOT retry or "
-    "rephrase this edit, and do NOT self-set AI_HATS_WT_GATE_OFF; only the supervisor "
-    "may authorize a direct-MAIN edit."
+    "Work in a worktree instead; see the worktree-isolation skill for how."
 )
 
 

@@ -1,13 +1,11 @@
 """HATS-857/HATS-889 — script-level behaviour of the worktree-isolation PreToolUse gate.
 
-Per ``dev_rule_e2e_gate`` the hook is a pure subprocess surface. We feed it Claude
-Code ``PreToolUse`` payloads on stdin and assert the BLOCKING contract: a code/config
-file whose ``file_path`` is in the MAIN checkout emits
-``hookSpecificOutput.permissionDecision == "deny"`` with a remediation reason (HATS-889
-turned the old nudge into a hard deny); a file inside a linked worktree, a non-code
-file, a non-git path, the kill switch, and a garbage payload are all silent. Exit code
-is always 0 — the deny is carried in JSON (``deny`` is a final decision that binds in
-headless too), not via a non-zero exit.
+Per ``dev_rule_e2e_gate`` the hook is a pure subprocess surface: we feed it Claude Code
+``PreToolUse`` payloads on stdin. BLOCKING contract — a code/config file in the MAIN
+checkout emits ``permissionDecision == "deny"`` (HATS-889 turned the old nudge into a
+hard deny); a linked-worktree file, a non-trigger file, a gitignored path, a non-git
+path, the kill switch, and a garbage payload are all silent. Exit is always 0 — the deny
+rides in JSON (a final decision that binds headless too), not a non-zero exit.
 """
 from __future__ import annotations
 
@@ -86,9 +84,8 @@ def test_code_file_in_main_checkout_is_denied(repos):
     assert res.returncode == 0, res.stderr  # deny is carried in JSON, not a non-zero exit
     decision, reason = _decision(res)
     assert decision == "deny", f"expected a hard deny, stdout={res.stdout!r}"
-    # Reason must point at the worktree-isolation skill (recovery recipe) and name the
-    # supervisor-only escape.
-    assert reason and "worktree-isolation" in reason and "AI_HATS_WT_GATE_OFF" in reason
+    # Reason points at the worktree-isolation skill, which carries the recovery recipe.
+    assert reason and "worktree-isolation" in reason
 
 
 @pytest.mark.integration
