@@ -2,9 +2,11 @@
 
 ## Status
 
-Proposed (HATS-841, 2026-06-26). Design only; no engine code changes land with
-this ADR. Realized by child impl tasks P1–P4 (see [Consequences](#consequences)),
-filed after this ADR is approved. Supersedes nothing; complements
+Accepted (HATS-841, 2026-06-26; implemented 2026-07-01). Realized by child impl
+tasks P1–P4 — HATS-849 (hook lift + extension-point contract), HATS-850
+(path-base injection + D6 import-lint), HATS-851 (`wt/` sub-package + D9 exports),
+HATS-852 (re-point verification + D9 standalone smoke test) — all merged to
+master. Supersedes nothing; complements
 [ADR-0006](0006-worktree-concurrency-layered-defense.md) (the layered lock model
 that stays in the extracted core) and [ADR-0012](0012-worktree-data-transfer.md)
 (the lifecycle-hook layer that this ADR keeps *outside* the core).
