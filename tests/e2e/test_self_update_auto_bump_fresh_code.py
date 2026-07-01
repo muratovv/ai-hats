@@ -69,7 +69,8 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
     project.mkdir()
     pin_edge_channel(project)  # HATS-764: edge so self update resolves the local source
 
-    env = os.environ.copy()
+    # HATS-887: strip GIT_* so nothing here inherits an ambient GIT_DIR (real .git).
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
     env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))
     env.pop("AI_HATS_VENV", None)
@@ -181,7 +182,8 @@ def test_e2e_python_dash_m_ai_hats_self_bump_invokable(tmp_path: Path) -> None:
     project.mkdir()
     pin_edge_channel(project)  # HATS-764: edge so self update resolves the local source
 
-    env = os.environ.copy()
+    # HATS-887: strip GIT_* so nothing here inherits an ambient GIT_DIR (real .git).
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
     env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))
     env.pop("AI_HATS_VENV", None)

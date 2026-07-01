@@ -26,6 +26,9 @@ def test_clean_env_strips_denylist_keeps_rest():
         "PYTHONSTARTUP": "/leak/startup.py",
         "AI_HATS_DIR": "/leak/.agent",
         "AI_HATS_USER_HOME": "/leak/home",
+        "GIT_DIR": "/leak/.git",
+        "GIT_WORK_TREE": "/leak",
+        "GIT_INDEX_FILE": "/leak/.git/index",
         "PATH": "/usr/bin",
         "HOME": "/home/me",
         "AI_HATS_REPO_URL": "/repo",
@@ -46,6 +49,13 @@ def test_clean_env_strips_denylist_keeps_rest():
 def test_clean_env_denylist_covers_pythonpath():
     """PYTHONPATH is the proven culprit — it must be in the denylist."""
     assert "PYTHONPATH" in ENV_DENYLIST
+
+
+def test_clean_env_denylist_covers_git_plumbing():
+    """HATS-887: the session-scoped shared_launcher captures env before the
+    function-scoped GIT_* strip, so the denylist itself must drop the plumbing
+    vars. RED-under-revert: drop them from ENV_DENYLIST and this fails."""
+    assert {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"} <= ENV_DENYLIST
 
 
 def test_launcher_subprocess_env_isolates_and_pins(tmp_path):

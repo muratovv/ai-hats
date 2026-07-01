@@ -35,6 +35,11 @@ ENV_DENYLIST: frozenset[str] = frozenset(
         "VIRTUAL_ENV",
         "AI_HATS_DIR",
         "AI_HATS_USER_HOME",
+        # HATS-887: session-scoped shared_launcher captures env before the
+        # function-scoped GIT_* strip, so plumbing vars must be denied here too.
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
     }
 )
 
