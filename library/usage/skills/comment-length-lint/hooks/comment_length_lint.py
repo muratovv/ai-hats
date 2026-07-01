@@ -17,10 +17,12 @@ What trips it (all env-tunable, all advisory):
     (≈9 lines / ≈470 chars in this repo) stay silent.
 
 Per-item suppression for a deliberate long block (an architectural contract):
-add the marker ``# noqa: comment-length`` inside the comment block, on the
+add the marker ``# comment-length: allow`` inside the comment block, on the
 ``def``/``class`` line carrying the docstring, or inside a module docstring.
-A finding is dropped when the marker sits in its line span or on the line just
-above it. The global kill switch ``AI_HATS_COMMENT_LINT_OFF=1`` silences
+(The legacy ``noqa: comment-length`` is still honored, but as a bare ``#``
+comment it trips ruff's ``# noqa:`` directive parser — prefer the ruff-safe
+form.) A finding is dropped when the marker sits in its line span or on the line
+just above it. The global kill switch ``AI_HATS_COMMENT_LINT_OFF=1`` silences
 everything; the env thresholds shift the bar for all files.
 
 Contract (PostToolUse variant of the HATS-632/660 convention): stdin = Claude
@@ -32,7 +34,7 @@ Zero network egress (stdlib only). Fail-open: any error, a non-``.py`` file, an
 unparsable payload, or a syntax error in the target -> exit 0 silently. Provider
 asymmetry: Claude consumes this; Gemini is a no-op.
 
-This contract header is a deliberate long docstring — noqa: comment-length.
+This contract header is a deliberate long docstring — comment-length: allow.
 """
 from __future__ import annotations
 
@@ -44,7 +46,9 @@ import sys
 import tokenize
 
 _KILL_SWITCH = "AI_HATS_COMMENT_LINT_OFF"
-_MARKER = "noqa: comment-length"
+# Ruff-safe suppression token (HATS-888). The legacy ``noqa: comment-length`` is
+# still honored, but as a bare ``#`` comment it trips ruff's ``# noqa:`` parser.
+_MARKERS = ("comment-length: allow", "noqa: comment-length")
 
 
 def _env_int(name: str, default: int) -> int:
@@ -58,7 +62,7 @@ def _suppressed(lines: list[str], lo: int, hi: int) -> bool:
     """True if the suppression marker sits in physical lines [lo, hi] (1-indexed,
     inclusive) — covers the line just above the finding through its last line."""
     for i in range(max(1, lo), hi + 1):
-        if i - 1 < len(lines) and _MARKER in lines[i - 1]:
+        if i - 1 < len(lines) and any(m in lines[i - 1] for m in _MARKERS):
             return True
     return False
 
@@ -164,7 +168,7 @@ def main() -> int:
         "dev_rule_comment_discipline — oversized comments/docstrings on the file "
         "you just edited. Non-blocking; trim to the one-line WHY (or move long "
         "rationale to an ADR / task card). A deliberate long contract can carry "
-        "`# noqa: comment-length`:\n" + "\n".join(findings)
+        "`# comment-length: allow`:\n" + "\n".join(findings)
     )
     print(
         json.dumps(
