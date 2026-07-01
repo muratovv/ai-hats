@@ -503,7 +503,11 @@ def wt_exec(cmd_args: tuple[str, ...]):
         console.print("[red]Active worktree has no path[/]")
         sys.exit(1)
 
+    # HATS-887: strip GIT_* plumbing so `ai-hats wt exec -- git …` resolves from
+    # the worktree (cwd), not an ambient GIT_DIR a merge/hook context exports.
     env = os.environ.copy()
+    for _var in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
+        env.pop(_var, None)
     src_path = str(wt_path / "src")
     existing = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = f"{src_path}:{existing}" if existing else src_path
