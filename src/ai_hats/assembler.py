@@ -18,7 +18,7 @@ from pathlib import Path
 
 import yaml
 
-from .utils.atomic_io import atomic_write_bytes
+from ai_hats_core import atomic_write_bytes
 from .composer import (
     Composer,
     CompositionResult,

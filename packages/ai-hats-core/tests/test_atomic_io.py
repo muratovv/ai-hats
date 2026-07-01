@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.utils import atomic_io
+from ai_hats_core import atomic_io
 
 
 def _tmp_siblings(path: Path) -> list[Path]:

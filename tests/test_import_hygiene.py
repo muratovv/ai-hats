@@ -221,7 +221,7 @@ def test_wt_core_imports_no_accretions():
     — the one-directional boundary that prevents accretion creep back into core
     (the HATS-715 regression class). Full walk (incl. deferred imports, ignoring
     TYPE_CHECKING); intra-core ``wt.manager <-> wt.locks`` and leaf helpers
-    (e.g. ``utils.atomic_io``) stay allowed.
+    (e.g. ``ai_hats_core.atomic_io``) stay allowed.
 
     RED-under-revert: re-add ``from ai_hats.paths import worktrees_dir`` to either
     core module and this fails. (Use the *absolute* form — a relative ``.paths``
