@@ -134,6 +134,8 @@ def wait_for_new_session_dir(
         enumerates observed candidates and why each was skipped, so
         the test failure includes enough context to debug without
         re-running.
+
+    Deliberate long helper API contract — noqa: comment-length.
     """
     deadline = time.monotonic() + timeout
     observed: dict[str, str] = {}  # name → last-seen skip reason

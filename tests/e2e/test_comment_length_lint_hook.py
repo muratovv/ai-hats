@@ -77,6 +77,11 @@ INLINE_TRAILERS = "a = 1  # one\nb = 2  # two\nc = 3  # three\nd = 4  # four\n"
 # Suppressed: the DI block carries the marker on its last line.
 SUPPRESSED_COMMENT = DI_COMMENT.replace("# at load time.\n", "# at load time.\n# noqa: comment-length\n")
 
+# Suppressed via the ruff-safe token (HATS-888): same block, new marker.
+SUPPRESSED_COMMENT_NEW = DI_COMMENT.replace(
+    "# at load time.\n", "# at load time.\n# comment-length: allow\n"
+)
+
 # Suppressed: the marker rides the def line carrying the bloated docstring.
 SUPPRESSED_DOCSTRING_DEF = BLOATED_DOCSTRING.replace("def g():\n", "def g():  # noqa: comment-length\n")
 
@@ -186,6 +191,15 @@ def test_marker_suppresses_comment_block(tmp_path):
     res = _run(_write(tmp_path, SUPPRESSED_COMMENT))
     assert res.returncode == 0, res.stderr
     assert _ctx(res) is None, f"marker should suppress: {res.stdout!r}"
+
+
+@pytest.mark.integration
+def test_ruff_safe_marker_suppresses_comment_block(tmp_path):
+    # HATS-888: the ruff-safe marker suppresses the same as the legacy one,
+    # but without tripping ruff's noqa directive parser.
+    res = _run(_write(tmp_path, SUPPRESSED_COMMENT_NEW))
+    assert res.returncode == 0, res.stderr
+    assert _ctx(res) is None, f"ruff-safe marker should suppress: {res.stdout!r}"
 
 
 @pytest.mark.integration

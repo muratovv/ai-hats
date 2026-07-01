@@ -35,6 +35,8 @@ Setup contract (real subprocess + real uv):
   - ``self update --revision <SHA> --force`` — runs ``_build_update_cmd``
                        through the real ai-hats binary at the same SHA so the
                        post-call binary still recognises every flag.
+
+Deliberate long e2e scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations

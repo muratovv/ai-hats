@@ -47,16 +47,11 @@ Layer coverage added by the HITL probe (bare ``ai-hats`` only):
 * ``_print_session_start`` / ``_print_session_end`` console banners
 * PTY proxy round-trip (stdin payload → child PTY → exit)
 
-Cost shape: ~46s venv build (amortised) + ~5-10s ``self init`` +
-~10-20s SDK turn = ~60-90s wall-clock. Capped at $0.10; actual
-~$0.02 on haiku-4-5. Cost cap is now ALSO asserted post-run from
-the ``--json`` envelope, so a runaway turn fails the test loud.
+Cost shape: ~60-90s wall-clock (amortised venv + ``self init`` + SDK turn);
+capped at $0.10, actual ~$0.02 on haiku-4-5, asserted post-run from the
+``--json`` envelope so a runaway turn fails loud.
 
-Verification of plan-stage assumption (decisions §2):
-``Reliability`` / ``Cleanliness`` / ``Velocity`` are the literal
-``priorities:`` entries in ``library/usage/roles/assistant/config.yaml``,
-rendered verbatim into the materialised system prompt by the composer
-— confirmed via grep before this test landed.
+Deliberate long golden-path coverage contract — noqa: comment-length.
 """
 
 from __future__ import annotations

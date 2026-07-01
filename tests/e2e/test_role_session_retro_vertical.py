@@ -32,10 +32,10 @@ in once both harness fixes land. The TRUE user-facing flow this test
 guards is bare ``ai-hats`` HITL; the current shape exercises the same
 composition + reviewer machinery via the cleanest available channel.
 
-Cost shape: ~46s shared venv (amortised) + ~5s Phase 1 + ~5-10s
-SDK turn + ~10-15s reviewer subagent = ~50-80s post-venv. Two LLM
-turns: drive turn on sonnet-4-5 (~$0.06) + session-reviewer turn on
-haiku-4-5 (~$0.05); cost cap asserted at $0.20 envelope (Phase 5).
+Cost: two LLM turns (drive on sonnet-4-5, reviewer on haiku-4-5); cost cap
+asserted at the $0.20 envelope in Phase 5.
+
+Deliberate long e2e vertical scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations
