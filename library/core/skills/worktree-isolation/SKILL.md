@@ -29,11 +29,14 @@ Isolated development using git worktrees. Each task gets its own working copy �
    cd <worktree-path>
    ```
 
-   A non-blocking **PreToolUse nudge** (`hooks/wt_gate.py`) reminds you if you
-   edit a code or config file in the main checkout instead of a worktree.
-   Triggering extensions are grouped by language in `hooks/code_extensions.json`
-   (editable; override per-process via `AI_HATS_WT_GATE_EXTS`). Silence the nudge
-   with `AI_HATS_WT_GATE_OFF=1`.
+   A **PreToolUse gate** (`hooks/wt_gate.py`) **hard-denies** an Edit/Write to a
+   code or config file in the main checkout — in both interactive and headless
+   sessions (HATS-889; the old non-blocking nudge was provably ignored). On a deny,
+   create a worktree and re-apply the edit there. Triggering extensions are grouped
+   by language in `hooks/code_extensions.json` (editable; override per-process via
+   `AI_HATS_WT_GATE_EXTS`). The deny is **supervisor-only** to bypass:
+   `AI_HATS_WT_GATE_OFF=1` — the agent must NOT set it for its own edits
+   (rule `rule_worktree_is_default`).
 
 2. **Work** — commit freely in the worktree. Main tree is untouched.
 

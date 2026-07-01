@@ -37,6 +37,10 @@ SUMMARIZED_IN_INJECTION: frozenset[str] = frozenset(
         "dev_rule_e2e_gate",
         "rule_harness_reminder_hygiene",
         "rule_core_vs_usage_split",
+        # HATS-889: process-hygiene guardrail (reversible), not the irreversible
+        # tier of ALWAYS_ON_RULES; essence (wt is default, don't ask to skip it,
+        # supervisor-only escape) rides in trait-agent's Delegation summary.
+        "rule_worktree_is_default",
     }
 )
 

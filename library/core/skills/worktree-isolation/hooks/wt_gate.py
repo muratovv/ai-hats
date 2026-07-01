@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
-"""HATS-857 — worktree-isolation PreToolUse gate. NON-BLOCKING, stdlib-only, fail-open.
+"""HATS-857/HATS-889 — worktree-isolation PreToolUse gate. BLOCKING, stdlib-only, fail-open.
 
-Nudge an agent editing a code/config file in the MAIN checkout instead of an
-isolated worktree (concurrent main-checkout edits collide — e.g. HATS-526).
+DENY an agent editing a code/config file in the MAIN checkout instead of an isolated
+worktree (concurrent main-checkout edits collide — HATS-526). A nudge here was provably
+ignored (HATS-889 / PROX-375), so the gate now hard-denies rather than advises.
 
-Contract: stdin = Claude Code PreToolUse payload JSON; read .tool_input.file_path.
-A triggering extension AND a file in the MAIN worktree (git-dir == git-common-dir)
--> exit 0 + {"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":..}};
-else exit 0, silent. NEVER emits permissionDecision, so it never blocks.
+Contract: stdin = Claude Code PreToolUse payload JSON (.tool_input.file_path). Triggering
+extension AND file in the MAIN worktree (git-dir == git-common-dir) -> exit 0 +
+{"hookSpecificOutput":{...,"permissionDecision":"deny","permissionDecisionReason":..}};
+else exit 0 silent. `deny` is a final decision so it binds in BOTH interactive and
+headless sessions (unlike `ask`, which degrades to `defer` with no UI). Sole escape:
+supervisor-only AI_HATS_WT_GATE_OFF=1 — the agent MUST NOT self-set it
+(rule_worktree_is_default; mirrors AI_HATS_SHARED_STATE_ACK).
 
-Triggering extensions are grouped by language in code_extensions.json beside this
-script (editable). Resolution: $AI_HATS_WT_GATE_EXTS -> sibling file -> the same
-file at <repo>/library/core/skills/worktree-isolation/hooks/ -> embedded
-_DEFAULT_LANGS mirror (the fallback once the engine flattens this into
-library/hooks/). A wiring test asserts the JSON and mirror stay in sync.
-
-Stdlib-only because the provider runs this under the system python3 via shebang
-(no ai_hats import) -> worktree detection is an inline `git rev-parse`. Kill
-switch AI_HATS_WT_GATE_OFF=1. Zero egress. Full rationale: HATS-857 plan.md.
+Extensions grouped by language in code_extensions.json beside this script; resolution
+$AI_HATS_WT_GATE_EXTS -> sibling -> <repo>/library/core/skills/worktree-isolation/hooks/
+-> embedded _DEFAULT_LANGS mirror (a wiring test keeps JSON and mirror in sync). Stdlib-
+only: the provider runs this under system python3 via shebang (no ai_hats import), so
+worktree detection is an inline `git rev-parse`. Zero egress. Rationale: HATS-889 plan.md.
+comment-length: allow
 """
 from __future__ import annotations
 
@@ -61,10 +62,21 @@ _DEFAULT_LANGS = {
     "config": (".yaml", ".yml", ".toml", ".json", ".ini", ".cfg", ".env"),
 }
 
-_NUDGE = (
-    "worktree-isolation: you are editing a code/config file in the MAIN checkout. "
-    "Consider a task + worktree before editing: `ai-hats wt create <TASK_ID>`. "
-    "See library/core/skills/worktree-isolation/SKILL.md. Silence: AI_HATS_WT_GATE_OFF=1."
+_DENY_REASON = (
+    "GUARDRAIL (worktree-isolation): blocked — this edits a code/config file in the "
+    "MAIN checkout. The worktree is the default working copy; main-checkout edits "
+    "collide with parallel worktrees and dirty the shared tree.\n"
+    "Do this instead (cheapest path — switch BEFORE editing, nothing is lost yet):\n"
+    "  - Already have an active worktree? Run `ai-hats wt status` for its path and work there.\n"
+    "  - Otherwise, from the main repo on master:\n"
+    "      ai-hats wt create <type>/<short-name>   # e.g. fix/typo\n"
+    "      cd <printed worktree path>\n"
+    "    then re-apply this edit there.\n"
+    "Do NOT retry, rephrase, or wrap this edit — the block is deliberate. Do NOT set "
+    "AI_HATS_WT_GATE_OFF yourself. Genuinely need a direct-MAIN edit (docs/hotfix, or a "
+    "worktree is impossible)? Ask the supervisor to authorize it — only the supervisor "
+    "may run with AI_HATS_WT_GATE_OFF=1. See rule_worktree_is_default and "
+    "library/core/skills/worktree-isolation/SKILL.md."
 )
 
 
@@ -127,7 +139,7 @@ def _git_info(directory: str) -> tuple[str, Path | None]:
     because the hook runs under the system interpreter without ai_hats."""
     try:
         result = subprocess.run(
-            [
+            [  # noqa: S607
                 "git", "rev-parse", "--path-format=absolute",
                 "--show-toplevel", "--git-dir", "--git-common-dir",
             ],
@@ -175,7 +187,8 @@ def main() -> int:
             {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
-                    "additionalContext": _NUDGE,
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": _DENY_REASON,
                 }
             }
         )
