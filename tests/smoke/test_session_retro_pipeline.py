@@ -1,19 +1,13 @@
 """Smoke test for the session-retro pipeline dispatch (HATS-418, HATS-535, HATS-530).
 
-Locks the in-process session-reviewer dispatch. Originally added in
-HATS-418 inside ``runtime._finalize_session`` after HATS-294's
-install-step regression silently broke the legacy
-``session_end_auto-retro.sh`` shell hook. HATS-535 split the dispatch
-out into the ``RunSessionEnd`` step of the ``finalize-hitl`` sub-
-pipeline. HATS-530 then **extracted the decision+spawn block again**
-into its own ``MaybeSpawnSessionReviewer`` step, so both
-``finalize-hitl`` (HITL) and ``finalize-subagent`` (SubAgent) can
-share it — closing the asymmetry where SubAgent sessions never auto-
-retroed. Contract is still unchanged; only the step boundary moved.
-
-These tests therefore drive ``MaybeSpawnSessionReviewer.run(...)``
-directly, NOT ``RunSessionEnd`` — the latter retained only SESSION_END
-hooks and the retro banner UI after the HATS-530 split.
+Locks the in-process session-reviewer dispatch. HATS-530 extracted the
+decision+spawn block into its own ``MaybeSpawnSessionReviewer`` step (out of
+``RunSessionEnd``, HATS-535) so both ``finalize-hitl`` (HITL) and
+``finalize-subagent`` (SubAgent) share it, closing the asymmetry where
+SubAgent sessions never auto-retroed. Contract unchanged; only the step
+boundary moved. These tests therefore drive
+``MaybeSpawnSessionReviewer.run(...)`` directly, NOT ``RunSessionEnd`` (which
+kept only SESSION_END hooks and the retro banner UI after the split).
 
 Coverage:
 
@@ -25,19 +19,13 @@ Coverage:
 * Spawner itself uses ``start_new_session=True`` so the child survives
   parent-shell ``SIGHUP``.
 
-Monkeypatch invocation style — HATS-562: the three dispatch-shape tests
-patch ``_spawn_session_reviewer_background`` via the **string form**
-(``"ai_hats.retro.auto_retro._spawn_session_reviewer_background"``)
-rather than the object form ``(auto_retro, "...")``. String form
-resolves the module via ``importlib.import_module`` at patch time, so
-it reads ``sys.modules`` NOW and patches the live module the step will
-see. The object form binds a module reference at test-module import
-time; if any earlier fixture (notably ``_import_pty_shutdown`` in
-``tests/e2e/test_pty_shutdown_bounded.py``) evicts ``ai_hats.*`` from
-``sys.modules``, the bound reference becomes stale, the patch silently
-lands on a dead module, and production code re-imports the original
-function — leaving ``spawned`` empty in the full suite while passing in
-isolation.
+Monkeypatch style (HATS-562): the dispatch-shape tests patch
+``_spawn_session_reviewer_background`` via the **string form** so it resolves
+``sys.modules`` at patch time and lands on the live module the step will see.
+The object form binds a module reference at import time; if an earlier fixture
+evicts ``ai_hats.*`` from ``sys.modules`` the patch lands on a dead module and
+production re-imports the original — ``spawned`` stays empty in the full suite
+while passing in isolation.
 """
 
 from __future__ import annotations

@@ -311,22 +311,13 @@ def test_discover_claude_jsonl_returns_none_when_dir_missing(tmp_path, monkeypat
     assert found is None
 
 
-# ---------------------------------------------------------------------------
-# HATS-535 integration: WrapRunner.run finally chain (HATS-086 contract)
-# ---------------------------------------------------------------------------
-#
-# These tests pin the 3-layer try/finally structure of WrapRunner.run's
-# finally block:
-#
-#   1. _finalize_session_basic — metrics + trace_stats
-#   2. _run_finalize_hitl — finalize-hitl sub-pipeline
-#   3. _print_session_end — green summary (HATS-086 invariant: ALWAYS fires)
-#
-# Component-level tests cover each layer in isolation; these tests verify
-# that a crash in layer 2 does NOT prevent layer 3 from firing — the
-# session-id MUST always reach stdout. Without this gate, a future refactor
-# could silently regress the SIGINT-safety chain (e.g. by re-introducing
-# a bare `raise` in _run_finalize_hitl that escapes the per-step wrap).
+# HATS-535 integration: WrapRunner.run finally chain (HATS-086 contract).
+# The finally block runs 3 layers: (1) _finalize_session_basic (metrics +
+# trace_stats), (2) _run_finalize_hitl, (3) _print_session_end (green summary
+# — HATS-086 invariant: ALWAYS fires). Component tests cover each layer alone;
+# these verify a crash in layer 2 does NOT stop layer 3 — the session-id MUST
+# reach stdout, guarding the SIGINT-safety chain against a future bare `raise`
+# in _run_finalize_hitl escaping the per-step wrap.
 
 
 @pytest.fixture
