@@ -260,6 +260,23 @@ toward Grep/Glob/Read/Edit and never blocks or prompts. The `py-security-lint`
 skill is the `PostToolUse` counterpart — on each `.py` edit it runs `ruff
 --select S` and forwards any security findings via `additionalContext`.
 
+> **Write-path discipline — never derive a WRITE path from `__file__` depth.**
+> Materialization copies the script to
+> `<ai_hats_dir>/library/hooks/<skill>-<basename>`, so at runtime its `__file__`
+> no longer sits beside the skill source. A hook that builds a WRITE target by
+> walking up from `__file__` (e.g. `Path(__file__).parent.parent/…`) therefore
+> writes relative to *wherever the copy lives* — and when the hook is invoked
+> from a non-materialized location (the skill's dev repo, a smoke test) that
+> path can land **inside the committed source tree** (the secret-guard wrote a
+> telemetry `.log` into `skills/…/user-hooks/`, HATS-819). Instead, take the
+> writable anchor from **`$AI_HATS_DIR`** — the engine exports it into the
+> hook's environment (`ClaudeProvider.get_env`), resolving to `<ai_hats_dir>`.
+> It MAY be absent under a direct `claude` launch (no `ai-hats` wrap), so a hook
+> must **self-protect**: refuse any candidate path under a source tree
+> (`*/skills/*`, `*/library/*`) and fall back to an XDG state dir (`$XDG_STATE_HOME`)
+> or `/tmp`. `__file__` stays fine for *reading* script-adjacent data — the rule
+> is about writes.
+
 ### Worktree lifecycle hooks
 
 `ai-hats wt` gives a task or sub-agent its own branch + filesystem checkout. By
