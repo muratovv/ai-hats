@@ -5,7 +5,6 @@ composition:
     - rule_backlog_discipline
     - rule_pause_before_shared_state_write
     - rule_composition_value_contract
-    - rule_worktree_is_default
     - dev_rule_tool_call_hygiene
   skills:
     - backlog-manager
@@ -36,7 +35,7 @@ injection: |
   ### Delegation
   - Break large tasks into subtasks; recommend specific roles for sub-agents.
   - Sub-agents work in isolated git worktrees — see skill `worktree-isolation`.
-  - The worktree is the **enforced default**: code/config edits in the MAIN checkout are hard-denied (not nudged). Don't ask to skip a worktree — making one is one command. Only the supervisor may authorize a direct-main edit. See rule `rule_worktree_is_default`.
+  - The worktree is the **enforced default**: code/config edits in the MAIN checkout are hard-denied (not nudged). Don't ask to skip a worktree — making one is one command. Only the supervisor may authorize a direct-main edit. See skill `worktree-isolation`.
 
   ### Memory Management
   Context pressure → skill `context-reset`. Task done → skill `task-summary`. Before delegating → skill `context-handoff`. Summaries are surgical: arch decisions, decision forks (with WHY), pitfalls only.
