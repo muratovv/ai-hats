@@ -1,23 +1,11 @@
 #!/usr/bin/env python3
-"""HATS-857 — worktree-isolation PreToolUse gate. NON-BLOCKING, stdlib-only, fail-open.
+"""HATS-857/HATS-889 — worktree-isolation PreToolUse gate. Denies on trigger, fails open.
 
-Nudge an agent editing a code/config file in the MAIN checkout instead of an
-isolated worktree (concurrent main-checkout edits collide — e.g. HATS-526).
-
-Contract: stdin = Claude Code PreToolUse payload JSON; read .tool_input.file_path.
-A triggering extension AND a file in the MAIN worktree (git-dir == git-common-dir)
--> exit 0 + {"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":..}};
-else exit 0, silent. NEVER emits permissionDecision, so it never blocks.
-
-Triggering extensions are grouped by language in code_extensions.json beside this
-script (editable). Resolution: $AI_HATS_WT_GATE_EXTS -> sibling file -> the same
-file at <repo>/library/core/skills/worktree-isolation/hooks/ -> embedded
-_DEFAULT_LANGS mirror (the fallback once the engine flattens this into
-library/hooks/). A wiring test asserts the JSON and mirror stay in sync.
-
-Stdlib-only because the provider runs this under the system python3 via shebang
-(no ai_hats import) -> worktree detection is an inline `git rev-parse`. Kill
-switch AI_HATS_WT_GATE_OFF=1. Zero egress. Full rationale: HATS-857 plan.md.
+Hard-deny an Edit/Write to a code/config file in the MAIN checkout instead of a worktree
+(main-checkout edits collide, HATS-526; a nudge here was ignored, PROX-375). A triggering,
+non-gitignored file in MAIN -> exit 0 + permissionDecision "deny" (binds headless too,
+unlike "ask"); else exit 0 silent. Recovery + discipline: SKILL.md. Kill switch:
+AI_HATS_WT_GATE_OFF=1. Stdlib-only (system python3 via shebang, inline git). Zero egress.
 """
 from __future__ import annotations
 
@@ -61,10 +49,9 @@ _DEFAULT_LANGS = {
     "config": (".yaml", ".yml", ".toml", ".json", ".ini", ".cfg", ".env"),
 }
 
-_NUDGE = (
-    "worktree-isolation: you are editing a code/config file in the MAIN checkout. "
-    "Consider a task + worktree before editing: `ai-hats wt create <TASK_ID>`. "
-    "See library/core/skills/worktree-isolation/SKILL.md. Silence: AI_HATS_WT_GATE_OFF=1."
+_DENY_REASON = (
+    "GUARDRAIL (worktree-isolation): blocked — code/config edit in the MAIN checkout. "
+    "Work in a worktree instead; see the worktree-isolation skill for how."
 )
 
 
@@ -127,7 +114,7 @@ def _git_info(directory: str) -> tuple[str, Path | None]:
     because the hook runs under the system interpreter without ai_hats."""
     try:
         result = subprocess.run(
-            [
+            [  # noqa: S607
                 "git", "rev-parse", "--path-format=absolute",
                 "--show-toplevel", "--git-dir", "--git-common-dir",
             ],
@@ -145,6 +132,25 @@ def _git_info(directory: str) -> tuple[str, Path | None]:
     toplevel, git_dir, common_dir = lines
     loc = "linked" if Path(git_dir).resolve() != Path(common_dir).resolve() else "main"
     return (loc, Path(toplevel))
+
+
+def _is_git_ignored(file_path: str, directory: str) -> bool:
+    """True iff git ignores ``file_path``. Gitignored files (``.agent/`` tracker,
+    ``.claude/``, ``ai-hats.yaml``, ``.venv/`` ...) are not version-controlled source,
+    so a main-checkout edit of one cannot cause the cross-worktree collision the gate
+    prevents — and tracker/config edits are *required* from the main repo (HATS-889).
+    Fail-open: any git error -> True (treat as ignored -> silent), matching the hook's
+    overall fail-open stance."""
+    try:
+        result = subprocess.run(  # noqa: S603
+            ["git", "check-ignore", "-q", "--", file_path],  # noqa: S607
+            cwd=directory,
+            capture_output=True,
+            timeout=5,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return True
+    return result.returncode != 1  # 0 = ignored; 1 = not ignored; other = fail-open
 
 
 def main() -> int:
@@ -170,12 +176,16 @@ def main() -> int:
     if Path(file_path).suffix not in _load_extensions(repo_root):
         return 0  # docs / non-triggering file -> silent
 
+    if _is_git_ignored(file_path, directory):
+        return 0  # gitignored tracker/runtime/config (.agent/, ai-hats.yaml) -> silent
+
     print(
         json.dumps(
             {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
-                    "additionalContext": _NUDGE,
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": _DENY_REASON,
                 }
             }
         )
