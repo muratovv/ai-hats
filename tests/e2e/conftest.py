@@ -61,34 +61,17 @@ def _scrub_redirect_env(monkeypatch):
         monkeypatch.delenv(key, raising=False)
 
 
-# HATS-678 / HATS-771: how many INSTALL-heavy e2e tests may run concurrently
-# under the gate's ``-n8 --dist=loadgroup``. ~26 tests across 21 files do a real
-# ``uv pip install`` at call time (own launcher build / ``self update``).
-#
-# Origin (HATS-678, pip era): uncapped, up to ``nworkers`` (≤8) of them hit the
-# package index at once under ``pip --force-reinstall`` → intermittent network
-# resets (RemoteDisconnected / ProtocolError → exit 2) or TimeoutExpired — the
-# flake class HATS-676 quarantined. The fix round-robins their FILES into this
-# many fixed xdist groups (see ``_install_heavy_group_map``) so ``loadgroup``
-# runs at most ``INSTALL_HEAVY_GROUPS`` of them concurrently; light tests keep
-# per-file groups and still use every worker.
-#
-# HATS-771 (uv era): the engine is now uv (HATS-763). uv serves ``--reinstall``
-# from its warm global cache (``~/.cache/uv``; no ``--refresh`` ⇒ no re-download),
-# and the per-worker session venv build warms that cache before any install-heavy
-# test runs — so peak index contention is near-zero. A measured A/B of the
-# install-heavy cohort (K=4 vs 6 vs 8, ``-n8 --dist=loadgroup``, warm cache,
-# 2026-06-16) found the wall-clock dominated by the cold session venv builds, not
-# the cap: K=4 ≈ 124–157s (two runs, 33s of run-to-run noise), K=6 ≈ 124s,
-# K=8 ≈ 122s — raising K buys nothing measurable, and zero reset/timeout
-# signatures appeared at any K (incl. uncapped-equivalent K=8). So the default is
-# relaxed to 8: on the ``-n8`` gate that is inert in the happy path, while the
-# round-robin grouping + this override knob are RETAINED as the cold-cache /
-# degraded-network safety valve — set ``AI_HATS_E2E_INSTALL_HEAVY_GROUPS=<lower>``
-# to re-throttle (fewer concurrent index hits, more bandwidth per download under
-# the per-test 300s budget). The flake is cold-network-contention dependent and
-# does not reliably reproduce on a warm cache, hence the retained valve. Raw
-# numbers: HATS-771 work_log.
+# HATS-678 / HATS-771: cap on how many INSTALL-heavy e2e tests (~26 across 21
+# files doing a real ``uv pip install``) may run concurrently under the gate's
+# ``-n8 --dist=loadgroup``. ``_install_heavy_group_map`` round-robins their
+# FILES into this many fixed xdist groups so ``loadgroup`` runs at most
+# ``INSTALL_HEAVY_GROUPS`` at once; light tests keep per-file groups.
+# Origin: uncapped pip-era index contention caused network-reset / timeout
+# flakes (HATS-676). Under uv (HATS-763) the warm global cache makes contention
+# near-zero, so the default is relaxed to 8 (inert on the -n8 gate); the cap is
+# RETAINED as the cold-cache / degraded-network safety valve — set
+# ``AI_HATS_E2E_INSTALL_HEAVY_GROUPS=<lower>`` to re-throttle. Raw A/B numbers:
+# HATS-771 work_log.
 INSTALL_HEAVY_GROUPS = int(os.environ.get("AI_HATS_E2E_INSTALL_HEAVY_GROUPS", "8"))
 
 
@@ -136,14 +119,9 @@ def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
     marker (HATS-583) is the exception: it is a normal marker, honoured by
     ``-m`` selection in every run mode.
 
-    NOTE (HATS-678 Category A): the session-shared ``_shared_launcher_venv``
-    build is ``scope="session"`` = per-worker under xdist, so up to ``nworkers``
-    venv builds still fire at session start. Those install ai-hats from the
-    LOCAL repo and warm the shared uv cache once, so they are a far narrower
-    network window than the ``uv pip install --reinstall`` install-heavy class
-    capped here.
-    If real gate runs still flake on the session build, add a cross-worker
-    filelock semaphore around ``build_launcher_venv`` (deferred; not built).
+    NOTE (HATS-678 Category A): the per-worker session ``_shared_launcher_venv``
+    builds still fire uncapped at session start, but install from the LOCAL repo
+    and warm the shared cache once — a far narrower window than the capped class.
     """
     group_for_file = _install_heavy_group_map(
         {
@@ -289,25 +267,16 @@ def _shared_launcher_venv(tmp_path_factory, repo_root: Path, request):
     via :func:`tests.e2e._helpers.venv.build_launcher_venv` (~30-60s on
     cold pip cache). Returns ``(launcher_path, shared_venv_path)``.
 
-    HATS-569: promoted from module scope to session scope. The 8
-    consumers of :func:`tmp_venv_project` were audited and none mutate
-    the shared venv (no ``rm -rf`` / ``pip uninstall`` / ``self bump``
-    to a different version) — each test works in its own
-    function-scoped ``project_path`` and only reads/executes the shared
-    venv. Building once per session instead of once per module
-    eliminates ~7 redundant ~30-60s builds. The no-mutation contract
-    is guarded by
-    :func:`test_wave1_venv_tier.test_shared_venv_reused_across_tests`,
-    which fails loudly if any test poisons the shared venv.
+    HATS-569: promoted from module to session scope. The 8 consumers of
+    :func:`tmp_venv_project` were audited READ-ONLY (each works in its own
+    function-scoped ``project_path``), so building once eliminates ~7 redundant
+    ~30-60s builds. The no-mutation contract is guarded by
+    :func:`test_wave1_venv_tier.test_shared_venv_reused_across_tests`, which
+    fails loudly if any test poisons the shared venv.
 
-    HATS-570: the ``hats-venv-tier`` work dir holds a full venv (heavy)
-    and pytest's default retention keeps only the last few runs, so the
-    rest leak (16GB observed). A pass-only finalizer ``rmtree``s the work
-    dir when no test failed after the venv was built (session-scoped
-    delta — robust to unrelated pre-existing failures); a run with
-    venv-tier failures keeps the venv for triage (mirrors the
-    :func:`tests.conftest._wt_sandbox` contract). Registered via
-    ``addfinalizer`` BEFORE the skip paths so the empty ``mktemp`` dir is
+    HATS-570: a pass-only ``addfinalizer`` ``rmtree``s the heavy work dir when
+    no test failed after the venv build (session-scoped delta), else keeps it
+    for triage; registered before the skip paths so the empty ``mktemp`` dir is
     reclaimed on skip too.
 
     Skips the whole session when:
@@ -443,6 +412,8 @@ def shared_launcher(_shared_launcher_venv, repo_root: Path, tmp_path_factory):
     treat it as read-only and copy before mutating. The shared venv MUST NOT
     be mutated destructively; the no-mutation contract is guarded by
     :func:`test_wave1_venv_tier.test_shared_venv_reused_across_tests`.
+
+    Deliberate long fixture contract — noqa: comment-length.
     """
     from _helpers.env import launcher_subprocess_env
     from _helpers.repo_src import build_src

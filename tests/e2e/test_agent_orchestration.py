@@ -26,19 +26,13 @@ We deliberately do NOT assert the FULL envelope shape: extra metrics
 fields may legitimately come and go across versions. Pinning the
 documented subset only.
 
-Cost shape: ~$0.01-0.02 / run on haiku × 1 test = ~$0.02 / run.
-Cost cap $0.10 (5× headroom) catches a runaway composition explosion
-before $ vanishes.
+Fixture choice: ``tmp_project`` (dev-venv binary) not ``tmp_venv_project``,
+because the launcher build's ``self update`` refuses to install when the
+worktree branch is ahead of master; the dev binary inherits the real HOME's
+claude auth, exactly what S-CLI-04 needs. Cost cap $0.10 (~5× headroom over
+~$0.02/run on haiku).
 
-Fixture choice: ``tmp_project`` (dev-venv binary) rather than
-``tmp_venv_project`` (launcher-venv) because the launcher build runs
-``self update`` which currently refuses to install when the worktree
-branch is ahead of master (file a sibling under HATS-484 for a
-worktree-aware build). ``tmp_project`` uses the dev ``ai-hats`` and
-inherits the real HOME's claude auth, which is exactly what
-S-CLI-04 needs for envelope-contract verification. The
-``ai-hats agent`` codepath under test is the same regardless of which
-venv the binary lives in.
+Deliberate long e2e envelope-contract scenario — noqa: comment-length.
 """
 
 from __future__ import annotations

@@ -69,24 +69,14 @@ def _bootstrap(tmp_path: Path) -> tuple[Path, Path, dict]:
     # (not the new default-stable PyPI path). Re-pinned after `self init` below.
     pin_edge_channel(project)
 
-    # Isolate from the developer's global config: a real ``~/.ai-hats/`` (custom
-    # library symlinks + customizations.yaml) and inherited ``AI_HATS_*`` /
-    # ``VIRTUAL_ENV`` env would otherwise leak in and change role resolution
-    # (e.g. hide the packaged ``assistant`` role behind a custom library).
-    #
-    # We isolate via ``AI_HATS_USER_HOME`` (HATS-532), NOT by overriding
-    # ``HOME``: the knob intercepts only the ai-hats global slice, leaving
-    # ``HOME`` — and therefore the warm ``~/.cache/pip`` — intact. Pointing
-    # ``HOME`` at a tmp dir empties the pip cache, forcing fresh build-dep
-    # fetches under build isolation that can produce a degraded wheel
-    # (observed: ``ai_hats.library`` package-data dropped → "no roles found").
-    #
-    # ``PYTHONPATH`` MUST be dropped: a parent ``PYTHONPATH=<repo>/src`` (set
-    # when running this suite against a worktree) would leak into the inner
-    # venv subprocess and shadow its INSTALLED ``ai_hats`` with the source
-    # tree — which has no ``ai_hats.library`` subpackage (the library is
-    # top-level ``library/``, only mapped into the package at install time),
-    # so role resolution finds nothing.
+    # Isolate from the developer's global config so role resolution is
+    # deterministic: scrub ``AI_HATS_*`` / ``VIRTUAL_ENV`` and isolate via
+    # ``AI_HATS_USER_HOME`` (HATS-532) NOT ``HOME`` — repointing ``HOME`` empties
+    # the warm ``~/.cache/pip`` and can yield a degraded wheel (``ai_hats.library``
+    # package-data dropped → "no roles found"). ``PYTHONPATH`` MUST be dropped: a
+    # parent ``PYTHONPATH=<repo>/src`` would shadow the inner venv's INSTALLED
+    # ``ai_hats`` with the source tree, which has no ``ai_hats.library`` subpackage
+    # — so role resolution finds nothing.
     env = {
         k: v for k, v in os.environ.items()
         if not k.startswith("AI_HATS_")

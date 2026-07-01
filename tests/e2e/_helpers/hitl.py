@@ -251,6 +251,8 @@ def drive_bare_hitl(
     env_allowlist
         Keys forwarded from ``os.environ`` to the subprocess. Anything
         outside this list (plus ``project.env``) is dropped.
+
+    Deliberate long helper API contract — noqa: comment-length.
     """
     cmd: tuple[str, ...] = (str(project.ai_hats_binary),)
     cmd += tuple(subcommand_args)
