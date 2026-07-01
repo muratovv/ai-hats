@@ -73,6 +73,35 @@ def _wt_sandbox(tmp_path_factory, request):
             )
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _real_repo_integrity_tripwire():
+    """Fail the session loud if any test mutated the real repo (HATS-887).
+
+    Snapshots the checked-out HEAD + this worktree's index at session start and
+    asserts them unchanged at session end, naming the delta — catches the "a test
+    wrote real ``.git``" class. Deliberately not all-refs: a sibling branch moved
+    by a concurrent agent in a shared clone must not trip it. Watched root defaults
+    to this repo; ``AI_HATS_REPO_INTEGRITY_ROOT`` overrides it (pytester self-test).
+    """
+    import os
+    from pathlib import Path
+
+    from tests._repo_integrity import diff_repo, snapshot_repo
+
+    override = os.environ.get("AI_HATS_REPO_INTEGRITY_ROOT")
+    root = Path(override) if override else Path(__file__).resolve().parent.parent
+    before = snapshot_repo(root)
+    yield
+    if not before.is_repo:
+        return
+    delta = diff_repo(before, snapshot_repo(root))
+    if delta is not None:
+        pytest.fail(
+            f"[repo-integrity] a test mutated the real repo at {root}: {delta}",
+            pytrace=False,
+        )
+
+
 @pytest.fixture(autouse=True)
 def _reset_safe_delete_session(monkeypatch):
     """Reset trash-bin module state + clear AI_HATS_TRASH_DIR per test.

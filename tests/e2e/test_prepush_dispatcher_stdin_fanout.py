@@ -102,10 +102,13 @@ def repo_and_remote(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _push(work: Path, marker: Path) -> subprocess.CompletedProcess[str]:
+    # HATS-887: strip GIT_* so an ambient GIT_DIR can't retarget the push.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["AI_HATS_TEST_MARKER"] = str(marker)
     return subprocess.run(
         ["git", "push", "origin", "master"],
         cwd=str(work), capture_output=True, text=True, timeout=30,
-        env={**os.environ, "AI_HATS_TEST_MARKER": str(marker)},
+        env=env,
     )
 
 

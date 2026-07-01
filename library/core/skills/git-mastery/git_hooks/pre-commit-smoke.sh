@@ -49,7 +49,11 @@ if ! command -v pytest &>/dev/null; then
 fi
 
 # Run smoke tests (from cwd = worktree root where the code lives).
-output=$(pytest -m smoke -q --tb=line --no-header -p no:cacheprovider 2>&1)
+# HATS-887: strip GIT_* plumbing so the merge-smoke `git merge` that spawns this
+# hook can't leak GIT_DIR into pytest and retarget a test's git off cwd onto real
+# .git (the child `env -u` does not affect the parent commit).
+output=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE \
+    pytest -m smoke -q --tb=line --no-header -p no:cacheprovider 2>&1)
 rc=$?
 
 if [[ $rc -eq 5 ]]; then
