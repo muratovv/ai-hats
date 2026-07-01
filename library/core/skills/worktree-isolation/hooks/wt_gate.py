@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HATS-857/HATS-889 — worktree-isolation PreToolUse gate. BLOCKING, stdlib-only, fail-open.
+"""HATS-857/HATS-889 — worktree-isolation PreToolUse gate. Denies on trigger, fails open on error. Stdlib-only.
 
 DENY an agent editing a code/config file in the MAIN checkout instead of an isolated
 worktree (concurrent main-checkout edits collide — HATS-526). A nudge here was provably
