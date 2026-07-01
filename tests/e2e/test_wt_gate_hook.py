@@ -134,6 +134,19 @@ def test_env_override_extensions(repos, tmp_path):
 
 
 @pytest.mark.integration
+def test_gitignored_file_in_main_is_silent(repos):
+    # Tracker/runtime/config (.agent/, ai-hats.yaml, .claude/) lives in gitignored
+    # paths and is edited from the MAIN repo by design — gitignored files are not
+    # version-controlled source and must NOT be denied (HATS-889 false-positive).
+    main, _ = repos
+    (main / ".gitignore").write_text(".agent/\n")
+    (main / ".agent").mkdir()
+    res = _run(main / ".agent" / "card.yaml")  # a trigger-ext (.yaml) in a gitignored dir
+    assert res.returncode == 0, res.stderr
+    assert _decision(res) == (None, None), f"gitignored yaml must be silent, {res.stdout!r}"
+
+
+@pytest.mark.integration
 def test_non_git_path_is_silent(tmp_path):
     res = _run(tmp_path / "loose.py")  # tmp_path is not a git repo
     assert res.returncode == 0, res.stderr

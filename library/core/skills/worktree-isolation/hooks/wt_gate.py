@@ -150,6 +150,25 @@ def _git_info(directory: str) -> tuple[str, Path | None]:
     return (loc, Path(toplevel))
 
 
+def _is_git_ignored(file_path: str, directory: str) -> bool:
+    """True iff git ignores ``file_path``. Gitignored files (``.agent/`` tracker,
+    ``.claude/``, ``ai-hats.yaml``, ``.venv/`` ...) are not version-controlled source,
+    so a main-checkout edit of one cannot cause the cross-worktree collision the gate
+    prevents — and tracker/config edits are *required* from the main repo (HATS-889).
+    Fail-open: any git error -> True (treat as ignored -> silent), matching the hook's
+    overall fail-open stance."""
+    try:
+        result = subprocess.run(  # noqa: S603
+            ["git", "check-ignore", "-q", "--", file_path],  # noqa: S607
+            cwd=directory,
+            capture_output=True,
+            timeout=5,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return True
+    return result.returncode != 1  # 0 = ignored; 1 = not ignored; other = fail-open
+
+
 def main() -> int:
     if os.environ.get(_KILL_SWITCH) == "1":
         return 0
@@ -172,6 +191,9 @@ def main() -> int:
 
     if Path(file_path).suffix not in _load_extensions(repo_root):
         return 0  # docs / non-triggering file -> silent
+
+    if _is_git_ignored(file_path, directory):
+        return 0  # gitignored tracker/runtime/config (.agent/, ai-hats.yaml) -> silent
 
     print(
         json.dumps(
