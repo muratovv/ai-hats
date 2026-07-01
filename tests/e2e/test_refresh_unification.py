@@ -32,6 +32,8 @@ Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
 ``ai-hats`` binary, marked ``@pytest.mark.integration``. Cost
 amortization (HATS-582): reuses the session-scoped shared venv via
 :func:`tests.e2e.conftest.shared_launcher` — no per-module venv build.
+
+Deliberate long e2e scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations

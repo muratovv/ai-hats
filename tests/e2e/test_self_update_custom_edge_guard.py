@@ -32,6 +32,8 @@ Fail-under-revert: revert the ``ref="HEAD"`` / bare-URL threading in
 ``cli/maintenance.py`` (edge branch) + ``update_check/checker.py`` and the probe
 falls back to ``master``, which this remote lacks → exit 0, and the
 ``expect_exit=3`` assertion fails.
+
+Deliberate long e2e scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations

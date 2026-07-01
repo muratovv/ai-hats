@@ -29,6 +29,8 @@ under ``git stash`` of the HATS-517 classifier in
 ``WorktreeManager.create()``, Case A fails with the original
 ``WorktreeCreateError: branch already exists`` from
 ``git worktree add -b ...``.
+
+Deliberate long e2e scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations

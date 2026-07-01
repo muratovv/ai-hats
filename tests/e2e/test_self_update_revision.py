@@ -38,6 +38,8 @@ Fail-under-revert: if the ``--revision`` plumbing is removed from
 ``cli/maintenance.py``, the assertion 1 invocation receives a click
 ``unknown option`` error (exit 2 but stderr says "no such option"),
 which the substring assertion on ``editable install`` catches.
+
+Deliberate long e2e scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations

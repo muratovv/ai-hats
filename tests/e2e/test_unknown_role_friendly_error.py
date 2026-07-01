@@ -1,16 +1,10 @@
 """E2E: every CLI entry-point exits clean on unknown ``--role <bogus>``.
 
-Before HATS-507 the bare ``ai-hats --role <bogus>`` path raised a bare
-``RuntimeError`` from inside the ``compose_role`` pipeline step. Click
-had no special handling for it, so users saw a 9-frame Python traceback
-and an exit code from Python's unhandled-exception path. No
-discoverability for the typo.
-
-HATS-507 fixed the bare-``ai-hats`` path. HATS-547 (S-CLI-20) closed
-the same asymmetry for ``ai-hats execute`` (both ``--batch`` and
-``--interactive``). HATS-545 (S-CLI-05) closes it for ``ai-hats agent``
-— the third "compose-then-run" entry-point. All three now share the
-``cli/_helpers._handle_role_not_found`` renderer.
+History: pre-HATS-507 the bare ``--role <bogus>`` path leaked a bare
+``RuntimeError`` traceback with no typo discoverability. HATS-507 (bare),
+HATS-547 / S-CLI-20 (``execute``) and HATS-545 / S-CLI-05 (``agent``) now
+share the ``cli/_helpers._handle_role_not_found`` renderer across all three
+"compose-then-run" entry-points.
 
 Setup contract (real subprocess + real ``ai-hats`` binary — satisfies
 ``dev_rule_e2e_gate`` for changes under ``src/ai_hats/cli/``):
@@ -44,6 +38,8 @@ Fail-under-revert:
   only the ``execute-*`` params fail (HATS-547 surface).
 - Removing the ``try/except`` in ``cli/agent.py:run_subagent`` makes
   only the ``agent`` param fail (HATS-545 surface).
+
+Deliberate long e2e scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations
