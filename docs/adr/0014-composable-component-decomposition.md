@@ -15,9 +15,8 @@ decision (with a 4-reviewer panel) the OSS surface becomes
 `-tracker` / `-observe` / **`-library`** / the `ai-hats` integrator);
 `ai-hats-library` is **symmetric with the engines** (a workspace package, not an
 own-repo now); each package `git filter-repo`s to its own repo **on demand**. The
-repo map, the `ai-hats-core` contract, the `devkit` (deferred), and the enterprise
-planes are now recorded in this doc — see §2 (Repository topology) and §8 (Enterprise
-deployment planes).
+repo map, the `ai-hats-core` contract, and the enterprise planes are now recorded in
+this doc — see §2 (Repository topology) and §8 (Enterprise deployment planes).
 
 Complements ADR-0013 (the first module), reconciles the composition-inversion with
 [ADR-0005](0005-composition-and-pipeline-value-contract.md)'s compose-once contract,
@@ -100,17 +99,58 @@ modules — the layer that "takes different projects into itself." Full `ai-hats
 contract (in/out tables + open-field boundary rule + shared-mechanism litmus):
 §2 (Repository topology).
 
+**The dependency rule as a picture — who may import what from whom:**
+
+```mermaid
+flowchart TB
+    AH["ai-hats — INTEGRATOR<br/>may import EVERY package + core"]
+    WT["ai-hats-wt"]
+    TR["ai-hats-tracker"]
+    OB["ai-hats-observe"]
+    LB["ai-hats-library"]
+    CO["ai-hats-core — KERNEL<br/>imports stdlib only"]
+
+    AH ==> WT
+    AH ==> TR
+    AH ==> OB
+    AH ==> LB
+    AH ==> CO
+    WT ==> CO
+    TR ==> CO
+    OB ==> CO
+    LB ==> CO
+
+    TR -. "✗ never · package → package" .-> WT
+    WT -. "✗ never · package → integrator" .-> AH
+
+    classDef integ fill:#3a4f7a,stroke:#16213a,color:#faf2e6;
+    classDef pkg fill:#5a6f9a,stroke:#16213a,color:#faf2e6;
+    classDef kernel fill:#1c2942,stroke:#0e1830,color:#faf2e6;
+    class AH integ;
+    class WT,TR,OB,LB pkg;
+    class CO kernel;
+```
+
+**Read it top-down.** A solid `⇒` is an allowed import and only ever points **down**
+(integrator → packages → core); a dotted `✗` is a forbidden edge. So *who may take
+what from whom*: the **integrator** may use any package + core; **every package** may
+use **only core**; **core** depends on nothing but the stdlib. No package imports
+another package, and none imports up into the integrator. Cross-package data that must
+travel (e.g. a wt-carry inside `SkillMetadata`) rides as an **opaque field**, never a
+typed import — and the integrator does the wiring: it composes once and injects
+`CompositionResult`, the observe-writer handle, and the `needs_worktree` effect **down**
+into the packages (the composition-inversion rule above). The full-AST import-lint
+mechanically enforces every arrow in this picture.
+
 ### 2. Repository topology — the workspace, the core contract, module anatomy
 
 > **Workspace model (finalized — HATS-858).** The whole OSS surface —
 > `ai-hats-core`, `-wt`, `-tracker`, `-observe`, `ai-hats-library`, and the `ai-hats`
 > integrator — lives as **independently-publishable packages in ONE uv-workspace git
 > repo** (diagram below). `ai-hats-library` is **symmetric with the engines** (a
-> workspace package + independent PyPI publish, **not** an own-repo now);
-> `ai-hats-devkit` is **deferred** until the first git-split (one repo needs no
-> cross-repo config sync); security / integration are commercial. Any package
-> `git filter-repo`s to its own repo **on demand**, when a real external consumer
-> needs an independent cadence.
+> workspace package + independent PyPI publish, **not** an own-repo now); security /
+> integration are commercial. Any package `git filter-repo`s to its own repo **on
+> demand**, when a real external consumer needs an independent cadence.
 
 ```mermaid
 flowchart TB
@@ -139,29 +179,21 @@ flowchart TB
         INT["ai-hats-integration<br/>enterprise RAG (§8)"]
     end
 
-    subgraph DEV["PRIVATE — DEFERRED until the first git-split (one repo needs no cross-repo sync)"]
-        DEVKIT["ai-hats-devkit (private)<br/>scaffold · ruff/dprint · CI · privacy-hook · secret-scan<br/>LICENSE / NOTICE / THIRD_PARTY_NOTICES templates"]
-    end
-
     SEC -.->|"register via entry-points"| AIHATS
     INT -.->|"register via entry-points"| AIHATS
-    DEVKIT -.->|"template sync — materialized INTO each repo at the split"| WS
 
     classDef integ fill:#3a4f7a,stroke:#16213a,color:#faf2e6;
     classDef module fill:#5a6f9a,stroke:#16213a,color:#faf2e6;
     classDef kernel fill:#1c2942,stroke:#0e1830,color:#faf2e6;
     classDef data fill:#e8632b,stroke:#b54818,color:#faf2e6;
     classDef comm fill:#1f7a6b,stroke:#114c43,color:#faf2e6;
-    classDef devkit fill:#4a4a5e,stroke:#26263a,color:#faf2e6;
     class AIHATS integ;
     class WT,TRACK,OBS module;
     class CORE kernel;
     class LIB data;
     class SEC,INT comm;
-    class DEVKIT devkit;
     style WS fill:#ebeef4,stroke:#16213a,color:#16213a;
     style COMM fill:#d4ebe6,stroke:#1f7a6b,color:#0e3a33;
-    style DEV fill:#e6e4ee,stroke:#4a4a5e,color:#26263a;
 ```
 
 **Workspace packages (finalized — HATS-858; supersedes the interim "polyrepo now"
@@ -249,58 +281,67 @@ attach through stable extension points, so they plug in **without forking** the 
 core — which is exactly what the decomposition (and its Phase −1 provider-adapter open
 registry) exists to enable.
 
-#### Shared dev-time conventions — the `devkit` (NOT a runtime dependency)
+#### Dev-time conventions live at the workspace root (no `devkit`)
 
-> **Deferred (HATS-858).** The devkit only earns its keep once a **second git repo**
-> exists to sync config into; in the workspace-now model there is one repo, so the
-> enforcement layer (ruff / hooks / license-gate) simply lives at the workspace root.
-> Stand up `ai-hats-devkit` at the **first on-demand git-split** — its first real
-> customer. The public-vs-private split (panel: make the enforcement layer public)
-> is decided **then**, with it. The design below is the target shape, not Phase-0 work.
+"Unified style + documentation" is a **dev-time** concern, not runtime code — you do
+not `import` a ruff config. In a single workspace it needs no home of its own: ruff /
+dprint config, the **privacy pre-commit hook + secret-scan CI**, the CI workflows, the
+`CONTRIBUTING` + doc-style + ADR/diagram conventions, and the `LICENSE` / `NOTICE` /
+`THIRD_PARTY_NOTICES` templates all live at the **repo root**, shared by every package
+by virtue of being one repo.
 
-"Unified style across all repos + unified documentation" is a **dev-time** concern,
-not runtime code — you do not `import` a ruff config. It has its own home: a shared
-**dev-template (`ai-hats-devkit`)** that every repo *inherits* (template sync, not a
-pip dep): ruff / dprint config, the **privacy pre-commit hook + secret-scan CI**, CI
-workflow templates, `CONTRIBUTING` + doc-style guide, ADR + Mermaid/d2 diagram
-conventions, and `LICENSE` / `NOTICE` / `THIRD_PARTY_NOTICES` templates. This is also
-how the review's per-repo P0 hygiene (privacy hook, secret scanning, license +
-attribution) propagates uniformly instead of being lost on the split.
+There is deliberately **no `ai-hats-devkit`** package or template: a config-sync
+template only earns its keep across *multiple* repos, and there is exactly one. If a
+package is ever `git filter-repo`'d out on demand, that split task copies the root
+config it then needs — a future concern, not designed now (YAGNI).
 
-**Private — maintainers only.** The devkit repo itself is **not public** — it holds
-maintainer-only conventions, release tooling, and security/scan rules. Reconciliation
-with the public OSS repos: the devkit is the *template source* and **materializes** the
-relevant config (ruff, pre-commit hooks, `CONTRIBUTING`, `LICENSE` / `NOTICE`) **into
-each repo** — so a public-repo contributor sees and runs that config locally but never
-the devkit itself (copier / cruft model: private template → rendered output committed
-in each repo). Edge in the map is dashed and dev-time, never a runtime/pip dependency.
+**Two homes + root config — do not conflate them:**
 
-**Three homes — do not conflate them:**
+| "Shared across packages" means…                                         | Home              | Mechanism                     |
+| ----------------------------------------------------------------------- | ----------------- | ----------------------------- |
+| runtime code util (locks, env, parse, FSM-primitive)                    | `ai-hats-core`    | pip dependency                |
+| dev-time style / config / CI / hooks / doc-style / license templates    | workspace root    | shared by the single repo     |
+| agent dev-*behaviour* guidance (SE-mindset, doc-protocol, commit-style) | `ai-hats-library` | composed into the role prompt |
 
-| "Shared across modules" means…                                          | Home              | Mechanism                      |
-| ----------------------------------------------------------------------- | ----------------- | ------------------------------ |
-| runtime code util (locks, env, parse, FSM-primitive)                    | `ai-hats-core`    | pip dependency                 |
-| dev-time style / config / CI / hooks / doc-style / license templates    | `ai-hats-devkit`  | template inherited at dev-time |
-| agent dev-*behaviour* guidance (SE-mindset, doc-protocol, commit-style) | `ai-hats-library` | composed into the role prompt  |
+#### Workspace layout, module anatomy & consistency
 
-#### Module anatomy, scaffold & consistency
+The whole OSS surface is **one git repo — the uv-workspace**. The refactored tree:
 
-Each module is a **self-describing, independently-publishable unit** — which is what
-makes the workspace→repo extraction trivial: its README / CONTRIBUTING / docs travel
-with the package and become its GitHub front on extraction. A standard **scaffold**
-lives in `ai-hats-devkit` and is rendered into every module (`copier copy` to create
-a new module, `copier update` + the CI drift-gate to keep it in sync):
+```
+ai-hats/                             # ONE git repo = the uv-workspace
+├─ pyproject.toml                    # [tool.uv.workspace] members = ["packages/*"]
+├─ ruff.toml · dprint.json · .pre-commit-config.yaml · .github/   # dev config at the ROOT (no devkit)
+├─ docs/                             # ADRs + guides (shared, repo-root)
+├─ packages/
+│  ├─ ai-hats-core/                  # KERNEL — depended on by all; deps = (none)
+│  │  └─ src/ai_hats_core/
+│  ├─ ai-hats-wt/                    # deps = ["ai-hats-core"]
+│  │  ├─ src/ai_hats_wt/
+│  │  └─ skills/                     # engine-owned: worktree-isolation
+│  ├─ ai-hats-tracker/               # deps = ["ai-hats-core"];  skills/ = backlog-manager
+│  │  └─ src/ai_hats_tracker/
+│  ├─ ai-hats-observe/               # deps = ["ai-hats-core"]
+│  │  └─ src/ai_hats_observe/
+│  ├─ ai-hats-library/               # DATA — no src/;  skills/ roles/ traits/ rules/
+│  └─ ai-hats/                       # INTEGRATOR — deps = every package above
+│     └─ src/ai_hats/                # composer/assembler/providers · subagent · cli · wizard
+└─ .agent/                           # gitignored tracker (backlog, sessions)
+```
+
+Each package is a **self-describing, independently-publishable unit** — its README /
+CONTRIBUTING / docs travel with it and become its GitHub front if it is ever extracted.
+A standard **scaffold** every package follows (kept consistent by the workspace's
+shared CI + import-lint, not a template engine):
 
 ```
 packages/ai-hats-<x>/
   README.md         # STANDALONE: what it is · pip install · quickstart · the schema/API it owns · its skills · deps (core only) · semver
-  CONTRIBUTING.md   # module-scoped: gates (skill-lint, import-lint), schema-migration discipline, release/semver flow
+  CONTRIBUTING.md   # package-scoped: gates (skill-lint, import-lint), schema-migration discipline, release/semver flow
   CHANGELOG.md
   pyproject.toml    # name + version + deps (ai-hats-core, …)
   src/ai_hats_<x>/  # the engine
   skills/<s>/SKILL.md   # engine-owned skills (open-registry source — below)
   tests/
-  .cruft.json       # pins the devkit scaffold version (drift-gate)
 ```
 
 The README is **standalone-readable** — the module ships via `pip install
@@ -321,7 +362,7 @@ layers replace it:
 
 | Layer         | Where                                                                                                                             | Catches                                           |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| **Local**     | skill-lint / agnix + README-section + import-lint in each package's CI (propagated by the devkit)                                 | format, license, layout                           |
+| **Local**     | skill-lint / agnix + README-section + import-lint in each package's CI (shared from the workspace root)                           | format, license, layout                           |
 | **Aggregate** | the integrator's CI composes all sources + validates cross-skill `→ See` refs + dedup/overlap (skill-optimization across sources) | the cross-cutting checks no single module can run |
 | **Curation**  | shared `skill-template` + skill-engineer guidance + owner / role-curator review                                                   | voice, quality, semantic overlap                  |
 
@@ -354,7 +395,7 @@ ai-hats-wt` works) gets its own git repo **on demand** — a near-mechanical
 | Sub-agents                              | **integrator** (`ai-hats` package)        | composition-root; only PTY/runtime primitives are core-able                                       |
 | Reflection / retro                      | **integrator** (`ai-hats` package)        | orchestrates tracker + observe + subagent + pipeline                                              |
 | Role-model + provider-mat.; init/wizard | **integrator** (`ai-hats` package)        | the combine itself                                                                                |
-| Dev-time style / scaffold               | **`ai-hats-devkit`** — private template   | not runtime — materialized into every repo (copier)                                               |
+| Dev-time style / config                 | **workspace root** (no package)           | ruff / hooks / CI / license templates shared by the single repo — no `devkit`                     |
 | Enterprise: security, integration       | **commercial repos**                      | plug in via extension points; §8 (Enterprise deployment planes)                                   |
 
 > **Phase −1 is the hard prerequisite (independent of the topology choice).** A package
@@ -699,7 +740,7 @@ flowchart TD
   full-AST workspace import-lint, enforcing (HATS-869) — the gate. **Tier model = option
   A** (cut every package↔package edge; the integrator mediates; no mid-tier). **Nothing
   else lands cleanly until this is done.**
-- **Phase 0 — registries** (devkit deferred, see below): **T10** provider open-registry
+- **Phase 0 — registries:** **T10** provider open-registry
   - `[project.entry-points]` (HATS-870), **T11** open-registry skill sources + aggregate
     skill-consistency check (HATS-871).
 - **Phase 1 — first packages:** **T14** `ai-hats-wt` (ADR-0013 ~done; HATS-872) and
@@ -716,9 +757,9 @@ flowchart TD
   **separate epic under HATS-855** on the now-stable extension points
   (§8, Enterprise deployment planes).
 - **On demand (unscheduled):** per-package PyPI publish · `git filter-repo` any
-  `packages/<x>/` to its own repo · full-history secret-scan before any extracted-repo
-  publish · `ai-hats-devkit` (built at the first git-split — one repo needs no cross-repo
-  config sync) — when a real external consumer needs an independent cadence.
+  `packages/<x>/` to its own repo (the split task copies the root dev-config it needs) ·
+  full-history secret-scan before any extracted-repo publish — when a real external
+  consumer needs an independent cadence.
 
 **Positive:**
 
@@ -764,7 +805,7 @@ the first brick, Phase 1 precedent), HATS-801 (over-abstraction discipline).
 > | P1 #11 import-lint deferred-import policy  | full-AST workspace lint                                                                                                                                                                  | HATS-869 (T8)                  |
 > | #9 (open) migration runner                 | generic `Migration[Ctx]` into core                                                                                                                                                       | HATS-868 (T7)                  |
 > | provider open-registry                     | `register_provider()` + `[project.entry-points]`                                                                                                                                         | HATS-870 (T10)                 |
-> | devkit                                     | **deferred** to first git-split                                                                                                                                                          | on-demand bucket               |
+> | devkit                                     | **removed** — dev config lives at the workspace root; a config-sync template only earns its keep across multiple repos                                                                   | —                              |
 > | library = own repo now                     | **superseded** — symmetric workspace package                                                                                                                                             | HATS-876 (T18)                 |
 
 Three adversarial reviewers (architecture-coupling, per-component matrix,
