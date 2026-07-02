@@ -1,0 +1,76 @@
+name: release-packages
+
+# Publish the workspace packages (ai-hats-core, ai-hats-wt) to PyPI via OIDC
+# trusted publishing — no stored API token. Manual trigger: these packages carry
+# their own static versions in packages/*/pyproject.toml, decoupled from the
+# ai-hats `v*` release tag (release.yml). To cut a package release: bump the
+# version in its pyproject.toml, merge to master, then run this workflow.
+#
+# Build and publish are split so id-token: write is held only by the publish
+# job. Each package publishes from its own dist dir (unambiguous per-project
+# upload; core first, then the wt package that depends on it).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (ai-hats-core + ai-hats-wt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+      - name: Build both packages
+        run: |
+          uv build packages/ai-hats-core -o dist-core
+          uv build packages/ai-hats-wt -o dist-wt
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages-dist
+          path: |
+            dist-core/
+            dist-wt/
+          if-no-files-found: error
+
+  # Split per package with a DISTINCT environment each: PyPI forbids two PENDING
+  # trusted publishers sharing one (repo, workflow, environment) tuple, so the
+  # environment is the disambiguator (see docs/RELEASING.md). id-token: write is
+  # held only by these publish jobs.
+  publish-core:
+    name: publish ai-hats-core (PyPI trusted publishing)
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi-core
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: packages-dist
+      - name: Publish ai-hats-core to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-core/
+
+  publish-wt:
+    name: publish ai-hats-wt (PyPI trusted publishing)
+    # Core first — ai-hats-wt depends on it.
+    needs: publish-core
+    runs-on: ubuntu-latest
+    environment: pypi-wt
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: packages-dist
+      - name: Publish ai-hats-wt to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-wt/
