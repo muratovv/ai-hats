@@ -36,6 +36,8 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.workspace import build_workspace_member_wheels  # noqa: E402
+
 pytestmark = pytest.mark.install_heavy  # real wheel build + install at call time → capped via conftest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -60,6 +62,9 @@ def _build_wheel(out_dir: Path, env: dict) -> Path:
     wheels = sorted(out_dir.glob("ai_hats-*.whl"))
     if not wheels:
         pytest.skip(f"no wheel produced in {out_dir}:\n{proc.stdout}\n{proc.stderr}")
+    # HATS-898: build the unpublished ai-hats-core/ai-hats-wt into the same dir
+    # so the foreign install resolves them via --find-links.
+    build_workspace_member_wheels(REPO_ROOT, out_dir, env)
     return wheels[-1]
 
 
@@ -74,7 +79,8 @@ def _foreign_venv(tmp_path: Path, env: dict) -> Path:
         check=True, capture_output=True, text=True, env=env, timeout=120,
     )
     install = subprocess.run(
-        ["uv", "pip", "install", "--python", str(venv / "bin" / "python"), str(wheel)],
+        ["uv", "pip", "install", "--python", str(venv / "bin" / "python"),
+         "--find-links", str(wheel.parent), str(wheel)],
         capture_output=True, text=True, env=env, timeout=300,
     )
     assert install.returncode == 0, f"foreign install failed:\n{install.stdout}\n{install.stderr}"
