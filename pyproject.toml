@@ -27,8 +27,8 @@ classifiers = [
 dependencies = [
     # First-party workspace packages (uv sources below) — atomic_io lives in
     # ai-hats-core; the worktree engine (ai_hats_wt) lives in ai-hats-wt.
-    "ai-hats-core",
-    "ai-hats-wt",
+    "ai-hats-core>=0.1.0",
+    "ai-hats-wt>=0.1.0",
     "click>=8.1",
     "pyyaml>=6.0",
     "pydantic>=2.0",
