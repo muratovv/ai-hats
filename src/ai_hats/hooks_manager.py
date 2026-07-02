@@ -27,6 +27,7 @@ from .composer import (
     collect_worktree_hooks as _collect_worktree_hooks,
     resolve_skill_script as _resolve_runtime_script,
 )
+from .git_env import scrubbed_git_env
 from .models import SkillMetadata
 from .paths import (
     builtin_library_hooks as _builtin_library_hooks,
@@ -671,6 +672,7 @@ def _configure_hooks_path(project_dir: Path, warnings: list[str]) -> None:
             capture_output=True,
             text=True,
             check=False,
+            env=scrubbed_git_env(),
         )
     except (OSError, FileNotFoundError):
         warnings.append("git not found — cannot configure core.hooksPath")
@@ -696,6 +698,7 @@ def _configure_hooks_path(project_dir: Path, warnings: list[str]) -> None:
             capture_output=True,
             text=True,
             check=True,
+            env=scrubbed_git_env(),
         )
     except subprocess.CalledProcessError as e:
         warnings.append(f"failed to set core.hooksPath: {e.stderr.strip() or e}")

@@ -53,6 +53,7 @@ from .locks import (  # noqa: F401  -- re-export preserves the import surface (H
     _lock_path,
     _retry_git_merge,
     _retry_worktree_add,
+    _scrubbed_git_env,
     _state_key,
     _stale_index_lock_age,
 )
@@ -355,6 +356,7 @@ def assert_head_is_canonical_base(project_dir: Path) -> None:
             capture_output=True,
             text=True,
             check=True,
+            env=_scrubbed_git_env(),
         ).stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return  # Can't introspect — fall through to existing behavior.
@@ -373,6 +375,7 @@ def assert_head_is_canonical_base(project_dir: Path) -> None:
                 cwd=str(project_dir),
                 capture_output=True,
                 check=True,
+                env=_scrubbed_git_env(),
             )
             existing_canonical.append(name)
         except (subprocess.CalledProcessError, FileNotFoundError):
@@ -1134,6 +1137,7 @@ class WorktreeManager:
                 capture_output=True,
                 text=True,
                 check=False,
+                env=_scrubbed_git_env(),
             )
         except OSError:
             return False
@@ -1153,6 +1157,7 @@ class WorktreeManager:
                 capture_output=True,
                 text=True,
                 check=False,
+                env=_scrubbed_git_env(),
             )
         except (FileNotFoundError, OSError):
             return None
@@ -1361,6 +1366,7 @@ class WorktreeManager:
                 capture_output=True,
                 text=True,
                 check=True,
+                env=_scrubbed_git_env(),
             )
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
@@ -1396,6 +1402,7 @@ class WorktreeManager:
                 capture_output=True,
                 text=True,
                 check=True,
+                env=_scrubbed_git_env(),
             )
         except (subprocess.CalledProcessError, FileNotFoundError):
             return None
@@ -1437,6 +1444,7 @@ class WorktreeManager:
                 capture_output=True,
                 text=True,
                 check=True,
+                env=_scrubbed_git_env(),
             )
         except (subprocess.CalledProcessError, FileNotFoundError):
             return None
@@ -1477,6 +1485,7 @@ class WorktreeManager:
                 capture_output=True,
                 text=True,
                 check=True,
+                env=_scrubbed_git_env(),
             )
         except (subprocess.CalledProcessError, FileNotFoundError):
             return []
@@ -1521,6 +1530,7 @@ class WorktreeManager:
             text=True,
             check=True,
             timeout=timeout,
+            env=_scrubbed_git_env(),
         )
 
     def _git_with_ref_lock_wait(
