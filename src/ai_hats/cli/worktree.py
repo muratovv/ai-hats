@@ -50,7 +50,7 @@ def _resolve_worktree(branch: str | None = None):
     """
     import subprocess as _sp
 
-    from ..wt import WorktreeManager
+    from ai_hats_wt import WorktreeManager
     from ..wt_lifecycle import HOOK_LIFECYCLE
 
     project_dir = _project_dir()
@@ -113,7 +113,7 @@ def _peel_selector_and_resolve(args: list[str], ambiguity: click.UsageError):
     active). Pops ``args[0]`` (and a trailing ``--``) when it names an active
     worktree and resolves that one; re-raises ``ambiguity`` otherwise.
     """
-    from ..wt import WorktreeManager
+    from ai_hats_wt import WorktreeManager
     from ..wt_lifecycle import HOOK_LIFECYCLE
 
     project_dir = _project_dir()
@@ -142,7 +142,7 @@ def wt():
 @click.argument("branch", callback=_validate_branch_name)
 def wt_create(branch: str):
     """Create an isolated worktree on a new branch."""
-    from ..wt import (
+    from ai_hats_wt import (
         WorktreeBaseBranchError,
         WorktreeCreateError,
         WorktreeLockError,
@@ -230,7 +230,7 @@ def wt_merge(
     Refuses if the base branch moved since `wt create` — local or remote
     drift (use --accept-drift to override after re-verifying).
     """
-    from ..wt import (
+    from ai_hats_wt import (
         WorktreeBaseBranchMismatchError,  # HATS-533
         WorktreeDirtyError,
         WorktreeDriftError,
@@ -396,7 +396,7 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
     Refuses if `git worktree remove --force` cannot delete the directory
     (e.g. held-open files) — pass --force-remove to fall back to rm -rf.
     """
-    from ..wt import (
+    from ai_hats_wt import (
         WorktreeDirtyError,
         WorktreePartialCleanupError,
         WorktreeRemoveError,
@@ -466,7 +466,7 @@ def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: 
 @wt.command("list")
 def wt_list():
     """List all git worktrees."""
-    from ..wt import WorktreeManager
+    from ai_hats_wt import WorktreeManager
 
     project_dir = _project_dir()
     # HATS-482 / B-08: guard CWD-from-inside-linked-worktree.
@@ -491,7 +491,7 @@ def wt_list():
 @wt.command("status")
 def wt_status():
     """Show all tracked worktrees."""
-    from ..wt import WorktreeManager
+    from ai_hats_wt import WorktreeManager
 
     project_dir = _project_dir()
     active = WorktreeManager.list_active(project_dir, state_dir=worktrees_dir(project_dir))

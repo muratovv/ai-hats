@@ -3,7 +3,8 @@
 :class:`WorktreeManager` creates and manages linked git worktrees and their
 create / merge / discard lifecycle. The lock & retry concurrency infrastructure
 that serializes those operations — and the full lock-ordering model — lives in
-:mod:`ai_hats.wt.locks` (extracted in HATS-715, moved to the ``wt`` package in HATS-851).
+:mod:`ai_hats_wt.locks` (extracted in HATS-715, moved to the standalone
+``ai-hats-wt`` package in HATS-880).
 """
 
 from __future__ import annotations
@@ -475,8 +476,8 @@ NOOP_LIFECYCLE: WorktreeLifecycle = _NoopLifecycle()
 
 #: Bare-core fallback for the state/lock path-base — a project-local dir, so the
 #: core needs no ``ai_hats.paths`` import (ADR-0013 D4, lets the D6 import-lint
-#: forbid it). This RUNTIME dir is unrelated to the future ``src/ai_hats/wt/``
-#: PACKAGE (HATS-851).
+#: forbid it). This RUNTIME dir is unrelated to the ``ai_hats_wt`` code
+#: PACKAGE (HATS-880).
 _DEFAULT_STATE_DIRNAME = ".wt"
 
 

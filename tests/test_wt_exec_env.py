@@ -8,7 +8,6 @@ RED-under-revert: drop the GIT_* pop in ``wt_exec`` and the captured env keeps t
 """
 from __future__ import annotations
 
-from pathlib import Path
 from unittest import mock
 
 from click.testing import CliRunner

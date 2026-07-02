@@ -107,6 +107,6 @@ def test_timeout_env_override(monkeypatch):
 def test_default_timeout_under_lifecycle_lock_budget():
     # D7: a hook must time out before a peer waiting on the lifecycle lock
     # would mis-blame a concurrent op (HATS-711 class).
-    from ai_hats.wt.locks import LIFECYCLE_LOCK_TIMEOUT
+    from ai_hats_wt.locks import LIFECYCLE_LOCK_TIMEOUT
 
     assert WT_HOOK_TIMEOUT_S < LIFECYCLE_LOCK_TIMEOUT
