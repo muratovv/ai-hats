@@ -22,6 +22,7 @@ import filelock
 
 from .composer import ResolvedComponent
 from .placeholders import expand_path_placeholders
+from .safe_delete import discard
 
 # HATS-604: two callers can resolve the SAME per-session plugin dir (a
 # session_id collision under high parallel load — see HATS-605 for the
@@ -155,6 +156,26 @@ def duplicate_skill_registrations(
                 verdict = "differs"
             collisions.append(SkillCollision(name=name, path=candidate, verdict=verdict))
     return collisions
+
+
+def drop_legacy_skills_mirror(project_dir: Path) -> None:
+    """Discard the pre-HATS-294 `.claude/skills/` export mirror (HATS-901)."""
+    skills_dir = project_dir / ".claude" / "skills"
+    marker = skills_dir / ".ai-hats-managed"
+    if not marker.is_file():
+        return
+    for victim in _mirror_victims(skills_dir, marker):
+        discard(victim, reason="claude-legacy-skills-mirror", project_dir=project_dir)
+    try:
+        if not any(skills_dir.iterdir()):
+            skills_dir.rmdir()  # safe-delete: ok empty-dir
+    except OSError:
+        pass
+
+
+def _mirror_victims(skills_dir: Path, marker: Path) -> list[Path]:
+    """Marker-listed skill dirs + the marker itself — user-authored entries excluded."""
+    return [skills_dir / name for name in sorted(_marker_names(marker))] + [marker]
 
 
 def _marker_names(marker: Path) -> frozenset[str]:
