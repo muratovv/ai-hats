@@ -1,7 +1,7 @@
 """End-to-end coverage for HATS-479 — concurrent ``ai-hats wt create``.
 
 Per ``dev_rule_e2e_gate``: changes to ``src/ai_hats/cli/worktree.py`` or
-``src/ai_hats/wt/manager.py`` require an e2e test using the real launcher
+``packages/ai-hats-wt/src/ai_hats_wt/manager.py`` require an e2e test using the real launcher
 + real ``ai-hats`` binary. This test exercises the L1+L2+L4 defense:
 
 * two concurrent ``ai-hats wt create task/<same>`` processes,
