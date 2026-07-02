@@ -10,8 +10,17 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-02
+
 ### Added
 
+- **Standalone `ai-hats-core` + `ai-hats-wt` packages** (HATS-885). The atomic
+  filesystem-I/O core primitives and the hook-agnostic git-worktree engine are
+  extracted into two independently-versioned PyPI packages; `ai-hats` now depends
+  on them (`ai-hats-core>=0.1.0`, `ai-hats-wt>=0.1.0`) and `ai-hats self update`
+  pulls them transparently. The worktree engine is importable standalone as
+  `ai_hats_wt` (`WorktreeManager` + the L1–L4 lock model) against a bare git repo
+  with zero ai-hats config.
 - **Tool-call-hygiene `PreToolUse` guard** (HATS-632). The `tool-call-hygiene`
   skill now ships a non-blocking `PreToolUse` Bash runtime hook: when a command
   is a pure invocation of `grep`/`find`/`cat`/`sed -i`/… that a dedicated tool
@@ -1683,7 +1692,9 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/muratovv/ai-hats/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/muratovv/ai-hats/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/muratovv/ai-hats/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/muratovv/ai-hats/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/muratovv/ai-hats/compare/v0.7.0...v0.8.0
