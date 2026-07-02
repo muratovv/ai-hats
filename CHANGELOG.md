@@ -10,6 +10,27 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+
+- **Duplicate-skill-registration warning at session start** (HATS-901). Claude
+  Code registers skills by name, so a same-name dir under `~/.claude/skills/`
+  or `<project>/.claude/skills/` silently doubles the session-plugin delivery.
+  `ai-hats` wrap sessions now intersect the composed skill names with both
+  auto-discovery dirs and surface a pre-launch WARN naming each collision:
+  byte-identical to the plugin copy → "safe to remove"; listed in an
+  `.ai-hats-managed` marker → "removed by the next `self bump`"; otherwise →
+  "review: remove or rename". Fail-open, HITL sessions only.
+
+### Fixed
+
+- **Legacy `.claude/skills/` mirror removed on heal** (HATS-901). HATS-294
+  (v0.7) dropped the permanent skills export but left already-materialized
+  project-level mirrors behind — frozen at their last export and
+  double-registered alongside the session plugin ever since. `self bump` /
+  `self init` / `self update` now discard exactly the skill dirs listed in
+  `.claude/skills/.ai-hats-managed` (plus the marker) via the safe-delete
+  trash bin; user-authored entries survive.
+
 ## [0.12.0] - 2026-07-02
 
 ### Added
