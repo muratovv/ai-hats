@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import click
 
+from ..git_env import scrubbed_git_env
 from ._helpers import _assembler, _project_dir, console, logger
 
 if TYPE_CHECKING:
@@ -164,6 +165,7 @@ def _resolve_ref(repo_url: str, ref: str) -> str | None:
             text=True,
             timeout=10,
             check=False,
+            env=scrubbed_git_env(),
         )
     except (subprocess.TimeoutExpired, OSError):
         return None
@@ -817,16 +819,19 @@ def _repo_head_for_editable() -> str | None:
         sha = subprocess.run(
             ["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
             capture_output=True, text=True, timeout=5, check=False,
+            env=scrubbed_git_env(),
         )
         if sha.returncode != 0:
             return None
         branch = subprocess.run(
             ["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True, text=True, timeout=5, check=False,
+            env=scrubbed_git_env(),
         )
         porcelain = subprocess.run(
             ["git", "-C", str(repo), "status", "--porcelain"],
             capture_output=True, text=True, timeout=5, check=False,
+            env=scrubbed_git_env(),
         )
     except (subprocess.TimeoutExpired, OSError):
         return None
