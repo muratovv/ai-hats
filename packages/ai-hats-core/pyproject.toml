@@ -6,12 +6,29 @@ build-backend = "hatchling.build"
 name = "ai-hats-core"
 version = "0.1.0"
 description = "Dependency-free core primitives for the ai-hats framework (atomic filesystem I/O)."
+readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "muratovv", email = "f@muratovv.me" }, # ai-hats: allow-secret
 ]
+keywords = ["atomic-write", "filesystem", "os.replace", "ai-hats"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/muratovv/ai-hats"
+Repository = "https://github.com/muratovv/ai-hats"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ai_hats_core"]
