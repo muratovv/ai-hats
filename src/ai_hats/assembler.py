@@ -42,6 +42,7 @@ from .paths import (
 )
 from .paths.constants import LIBRARIES_DIRNAME
 from .placeholders import expand_path_placeholders
+from .plugin_dir import drop_legacy_skills_mirror
 from .safe_delete import discard as _safe_discard
 from .safe_delete import replace as _safe_replace
 from .providers import (
@@ -312,15 +313,19 @@ class Assembler:
     def _cleanup_legacy_claude_publish(self) -> None:
         """Remove `.claude/` publish artefacts replaced by the canonical aggregator (HATS-289).
 
-        Idempotent. `.claude/skills/` and any user-authored files are left
-        alone — only the previously-managed publish set is targeted via
-        the legacy `.claude/.ai-hats-managed` manifest. As a safety net
-        we also remove the well-known publish-only files (CLAUDE.md,
-        priorities/role/skills_index, traits/, rules/).
+        Idempotent. User-authored files are left alone — only the
+        previously-managed publish set is targeted via the legacy
+        `.claude/.ai-hats-managed` manifest, plus the pre-HATS-294 skills
+        mirror via its own `.claude/skills/.ai-hats-managed` marker
+        (HATS-901). As a safety net we also remove the well-known
+        publish-only files (CLAUDE.md, priorities/role/skills_index,
+        traits/, rules/).
         """
         claude_dir = self.project_dir / ".claude"
         if not claude_dir.is_dir():
             return
+
+        drop_legacy_skills_mirror(self.project_dir)
 
         manifest = claude_dir / ".ai-hats-managed"
         managed: set[str] = set()

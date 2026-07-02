@@ -977,6 +977,34 @@ def test_warn_orphan_user_level_managed_skills_idempotent(
     assert "Orphan ai-hats marker" in capsys.readouterr().err
 
 
+def _seed_legacy_skills_mirror(project):
+    """Create a pre-HATS-294 `.claude/skills/` mirror: marker + 2 managed
+    skill dirs + 1 user-authored dir NOT listed in the marker."""
+    skills = project / ".claude" / "skills"
+    for name in ("audit-reviewer", "backlog-manager"):
+        (skills / name).mkdir(parents=True)
+        (skills / name / "SKILL.md").write_text("# stale export")
+    (skills / "my-own-skill").mkdir()
+    (skills / "my-own-skill" / "SKILL.md").write_text("# user-authored")
+    (skills / ".ai-hats-managed").write_text("audit-reviewer\nbacklog-manager\n")
+    return skills
+
+
+def test_cleanup_legacy_claude_publish_drops_skills_mirror(project_with_library):
+    """Wiring: the heal-path cleanup reaches the mirror, so existing installs
+    self-heal on their next `self bump` / `self init` / `self update`."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    skills = _seed_legacy_skills_mirror(project)
+
+    asm._cleanup_legacy_claude_publish()
+
+    assert not (skills / ".ai-hats-managed").exists()
+    assert not (skills / "audit-reviewer").exists()
+    assert (skills / "my-own-skill" / "SKILL.md").exists()
+
+
 def test_bump_invokes_legacy_block_sweep(project_with_library):
     """Integration: bump_pipeline chains the sweep so existing users get
     the fix on their next ``ai-hats self bump`` / ``self update``.
