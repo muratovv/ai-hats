@@ -42,6 +42,7 @@ from .paths import (
 )
 from .paths.constants import LIBRARIES_DIRNAME
 from .placeholders import expand_path_placeholders
+from .plugin_dir import drop_legacy_skills_mirror
 from .safe_delete import discard as _safe_discard
 from .safe_delete import replace as _safe_replace
 from .providers import (
@@ -324,7 +325,7 @@ class Assembler:
         if not claude_dir.is_dir():
             return
 
-        self._drop_legacy_skills_mirror()
+        drop_legacy_skills_mirror(self.project_dir)
 
         manifest = claude_dir / ".ai-hats-managed"
         managed: set[str] = set()
@@ -379,37 +380,6 @@ class Assembler:
         try:
             if not any(claude_dir.iterdir()):
                 claude_dir.rmdir()  # safe-delete: ok empty-dir
-        except OSError:
-            pass
-
-    def _drop_legacy_skills_mirror(self) -> None:
-        """Remove the pre-HATS-294 `.claude/skills/` export mirror (HATS-901).
-
-        Marker-scoped: only dirs listed in `.claude/skills/.ai-hats-managed`
-        (+ the marker itself) are discarded — user-authored entries survive.
-        Idempotent: no marker → no-op.
-        """
-        skills_dir = self.project_dir / ".claude" / "skills"
-        marker = skills_dir / ".ai-hats-managed"
-        if not marker.is_file():
-            return
-        for line in marker.read_text().splitlines():
-            name = line.strip()
-            if not name or name.startswith("#"):
-                continue
-            _safe_discard(
-                skills_dir / name,
-                reason="claude-legacy-skills-mirror",
-                project_dir=self.project_dir,
-            )
-        _safe_discard(
-            marker,
-            reason="claude-legacy-skills-mirror",
-            project_dir=self.project_dir,
-        )
-        try:
-            if not any(skills_dir.iterdir()):
-                skills_dir.rmdir()  # safe-delete: ok empty-dir
         except OSError:
             pass
 

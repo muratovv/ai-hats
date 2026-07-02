@@ -201,6 +201,59 @@ def test_concurrent_same_target_is_safe(tmp_path: Path) -> None:
     )
 
 
+# ---------- drop_legacy_skills_mirror (HATS-901) ----------
+
+
+def _seed_mirror(project: Path) -> Path:
+    """Pre-HATS-294 mirror: marker + 2 managed dirs + 1 user-authored dir."""
+    skills = project / ".claude" / "skills"
+    for name in ("audit-reviewer", "backlog-manager"):
+        (skills / name).mkdir(parents=True)
+        (skills / name / "SKILL.md").write_text("# stale export")
+    (skills / "my-own-skill").mkdir()
+    (skills / "my-own-skill" / "SKILL.md").write_text("# user-authored")
+    (skills / ".ai-hats-managed").write_text("audit-reviewer\nbacklog-manager\n")
+    return skills
+
+
+def test_drop_mirror_removes_marker_listed_only(tmp_path: Path) -> None:
+    from ai_hats.plugin_dir import drop_legacy_skills_mirror
+
+    skills = _seed_mirror(tmp_path)
+
+    drop_legacy_skills_mirror(tmp_path)
+
+    assert not (skills / "audit-reviewer").exists()
+    assert not (skills / "backlog-manager").exists()
+    assert not (skills / ".ai-hats-managed").exists()
+    assert (skills / "my-own-skill" / "SKILL.md").exists()
+
+
+def test_drop_mirror_noop_without_marker(tmp_path: Path) -> None:
+    """No marker → never guess ownership, leave the dir alone."""
+    from ai_hats.plugin_dir import drop_legacy_skills_mirror
+
+    skills = tmp_path / ".claude" / "skills"
+    (skills / "my-own-skill").mkdir(parents=True)
+    (skills / "my-own-skill" / "SKILL.md").write_text("# user-authored")
+
+    drop_legacy_skills_mirror(tmp_path)
+
+    assert (skills / "my-own-skill" / "SKILL.md").exists()
+
+
+def test_drop_mirror_idempotent(tmp_path: Path) -> None:
+    from ai_hats.plugin_dir import drop_legacy_skills_mirror
+
+    skills = _seed_mirror(tmp_path)
+
+    drop_legacy_skills_mirror(tmp_path)
+    drop_legacy_skills_mirror(tmp_path)
+
+    assert not (skills / ".ai-hats-managed").exists()
+    assert (skills / "my-own-skill" / "SKILL.md").exists()
+
+
 # ---------- duplicate_skill_registrations (HATS-901) ----------
 
 
