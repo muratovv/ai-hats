@@ -36,16 +36,16 @@ jobs:
             dist-wt/
           if-no-files-found: error
 
-  publish:
-    name: publish (PyPI trusted publishing)
+  # Split per package with a DISTINCT environment each: PyPI forbids two PENDING
+  # trusted publishers sharing one (repo, workflow, environment) tuple, so the
+  # environment is the disambiguator (see docs/RELEASING.md). id-token: write is
+  # held only by these publish jobs.
+  publish-core:
+    name: publish ai-hats-core (PyPI trusted publishing)
     needs: build
     runs-on: ubuntu-latest
-    # Trust is scoped to this environment on the PyPI side. Each package needs a
-    # pending publisher: repo muratovv/ai-hats, workflow release-packages.yml,
-    # environment pypi (see docs/RELEASING.md).
-    environment: pypi
+    environment: pypi-core
     permissions:
-      # OIDC token for trusted publishing — the ONLY privilege this job holds.
       id-token: write
     steps:
       - name: Download dist artifact
@@ -56,6 +56,20 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist-core/
+
+  publish-wt:
+    name: publish ai-hats-wt (PyPI trusted publishing)
+    # Core first — ai-hats-wt depends on it.
+    needs: publish-core
+    runs-on: ubuntu-latest
+    environment: pypi-wt
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: packages-dist
       - name: Publish ai-hats-wt to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
