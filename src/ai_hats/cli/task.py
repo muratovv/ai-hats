@@ -170,13 +170,13 @@ def task_transition(
 ):
     """Transition a task to a new state."""
     from ..models import TaskState
-    from ai_hats_wt import WorktreeBaseBranchError  # HATS-518
-    from ai_hats_wt import WorktreeBaseBranchMismatchError  # HATS-533
-    from ai_hats_wt import WorktreeCreateError  # HATS-517
-    from ai_hats_wt import WorktreeDriftError  # HATS-509
-    from ai_hats_wt import WorktreeMainRepoMidMergeError  # HATS-587 / F4
-    from ai_hats_wt import WorktreeStateIncompleteError  # HATS-714
-    from ai_hats_wt import WorktreeStateLostError  # HATS-541
+    from ai_hats_wt import WorktreeBaseBranchError
+    from ai_hats_wt import WorktreeBaseBranchMismatchError
+    from ai_hats_wt import WorktreeCreateError
+    from ai_hats_wt import WorktreeDriftError
+    from ai_hats_wt import WorktreeMainRepoMidMergeError
+    from ai_hats_wt import WorktreeStateIncompleteError
+    from ai_hats_wt import WorktreeStateLostError
 
     mgr = _task_manager(_project_dir())
     try:
