@@ -2,7 +2,7 @@
 
 This package is the self-contained worktree engine: :class:`WorktreeManager`
 (create / merge / discard / cleanup + the static git probes), the L1–L4
-concurrency model (:mod:`ai_hats.wt.locks`, ADR-0006), the ``IsolationMode``
+concurrency model (:mod:`ai_hats_wt.locks`, ADR-0006), the ``IsolationMode``
 enum, the typed exceptions, and the :class:`WorktreeLifecycle` extension-point
 protocol (default :data:`NOOP_LIFECYCLE`, so a bare core runs no hooks).
 

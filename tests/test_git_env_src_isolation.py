@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 
 from ai_hats.retro.facts import _git as facts_git
-from ai_hats.wt.locks import _stale_index_lock_age
-from ai_hats.wt.manager import WorktreeManager
+from ai_hats_wt.locks import _stale_index_lock_age
+from ai_hats_wt.manager import WorktreeManager
 
 
 def _init_repo(path: Path) -> Path:

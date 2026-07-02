@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.paths import managed_wt_hook_filename, worktrees_dir, wt_hooks_dir
-from ai_hats.wt import WorktreeManager, WorktreeTeardownAborted
+from ai_hats_wt import WorktreeManager, WorktreeTeardownAborted
 from ai_hats.wt_lifecycle import HOOK_LIFECYCLE, WorktreeHookError
 
 
