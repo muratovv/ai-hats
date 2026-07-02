@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import random
 import subprocess
 import time
@@ -76,6 +77,22 @@ class WorktreeLockError(Exception):
     """Raised when acquiring a worktree state lock times out (HATS-121)."""
 
 
+_GIT_PLUMBING_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")
+
+
+def _scrubbed_git_env() -> dict[str, str]:
+    """Return ``os.environ`` minus the 3 GIT_* plumbing vars (HATS-890).
+
+    wt-core copy of ``ai_hats.git_env.scrubbed_git_env`` — ADR-0013 D6 forbids
+    ``wt/`` importing ``ai_hats.*``. An ambient ``GIT_DIR`` would else retarget a
+    cwd-scoped git call onto the wrong ``.git``; identity vars are preserved.
+    """
+    env = dict(os.environ)
+    for var in _GIT_PLUMBING_VARS:
+        env.pop(var, None)
+    return env
+
+
 def _stale_index_lock_age(
     project_dir: Path,
     threshold_s: float = STALE_INDEX_LOCK_THRESHOLD_S,
@@ -103,6 +120,7 @@ def _stale_index_lock_age(
             capture_output=True,
             text=True,
             check=True,
+            env=_scrubbed_git_env(),
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None

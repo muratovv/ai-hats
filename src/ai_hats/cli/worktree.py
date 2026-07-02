@@ -10,6 +10,7 @@ from pathlib import Path
 
 import click
 
+from ..git_env import scrubbed_git_env
 from ..paths import worktrees_dir  # ADR-0013 D4: state-dir base for the wt core
 from ._helpers import _guard_not_inside_linked_worktree, _project_dir, console
 
@@ -80,6 +81,7 @@ def _resolve_worktree(branch: str | None = None):
                 capture_output=True,
                 text=True,
                 check=True,
+                env=scrubbed_git_env(),
             ).stdout.strip()
         except _sp.CalledProcessError:
             return None
@@ -102,6 +104,32 @@ def _resolve_worktree(branch: str | None = None):
     raise click.UsageError(
         f"Multiple active worktrees, specify which one as the first arg: {branches}"
     )
+
+
+def _peel_selector_and_resolve(args: list[str], ambiguity: click.UsageError):
+    """HATS-859: peel a leading worktree selector from ``args`` (in place).
+
+    Only reached when the no-arg :func:`_resolve_worktree` was ambiguous (>1
+    active). Pops ``args[0]`` (and a trailing ``--``) when it names an active
+    worktree and resolves that one; re-raises ``ambiguity`` otherwise.
+    """
+    from ai_hats_wt import WorktreeManager
+    from ..wt_lifecycle import HOOK_LIFECYCLE
+
+    project_dir = _project_dir()
+    active = WorktreeManager.list_active(
+        project_dir, lifecycle=HOOK_LIFECYCLE, state_dir=worktrees_dir(project_dir)
+    )
+    if not (args and any(m.branch_name == args[0] for m in active)):
+        raise ambiguity
+    selector = args.pop(0)
+    # Click strips only a *leading* `--`; one that trailed the selector can
+    # survive in cmd_args — drop it so it never reaches the inner command.
+    if args and args[0] == "--":
+        args.pop(0)
+    if not args:
+        raise click.UsageError("No command to run. Usage: ai-hats wt exec [<branch>] [--] <cmd…>")
+    return _resolve_worktree(selector)
 
 
 @click.group()
@@ -478,22 +506,24 @@ def wt_status():
 @wt.command("exec", context_settings={"ignore_unknown_options": True})
 @click.argument("cmd_args", nargs=-1, type=click.UNPROCESSED, required=True)
 def wt_exec(cmd_args: tuple[str, ...]):
-    """Run a command inside the active worktree (cwd + PYTHONPATH=src).
+    """Run a command inside a worktree (cwd + PYTHONPATH=src).
 
-    Replaces gnarly shell boilerplate like:
-
-    \b
-        WT=/var/folders/.../ai-hats-wt-...
-        PYTHONPATH=$WT/src python -m pytest tests/test_foo.py -xvs
-
-    Use `--` to separate ai-hats args from the inner command:
+    With >1 active worktree, pass one as the first arg (a leading token matching
+    an active branch is the selector); else it is inferred from cwd. `--` optional:
 
     \b
-        ai-hats wt exec -- pytest tests/test_foo.py -xvs
-        ai-hats wt exec -- python -c 'import ai_hats; print(ai_hats.__file__)'
-        ai-hats wt exec -- ruff check src/
+        ai-hats wt exec -- pytest tests/test_foo.py -xvs      # sole/inside wt
+        ai-hats wt exec task/hats-1 -- ruff check src/        # pick a worktree
+        ai-hats wt exec task/hats-1 python -c 'import ai_hats'
     """
-    mgr = _resolve_worktree()
+    args = list(cmd_args)
+    try:
+        mgr = _resolve_worktree()
+    except click.UsageError as ambiguity:
+        # HATS-859: >1 active worktree — exec never peeled the "first arg" the
+        # ambiguity error tells the user to add, so it was run as the command.
+        mgr = _peel_selector_and_resolve(args, ambiguity)
+
     if mgr is None:
         console.print("[yellow]No active worktree[/]")
         sys.exit(1)
@@ -513,7 +543,7 @@ def wt_exec(cmd_args: tuple[str, ...]):
     env["PYTHONPATH"] = f"{src_path}:{existing}" if existing else src_path
 
     try:
-        result = subprocess.run(list(cmd_args), cwd=str(wt_path), env=env)
+        result = subprocess.run(args, cwd=str(wt_path), env=env)
     except FileNotFoundError as e:
         console.print(f"[red]Command not found:[/] {e.filename}")
         sys.exit(127)

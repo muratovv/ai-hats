@@ -33,6 +33,7 @@ from pathlib import Path
 
 import ai_hats
 
+from ..git_env import scrubbed_git_env
 from .cache import CacheEntry, write_cache
 
 
@@ -90,6 +91,7 @@ def _pkg_tracked_by_local_git(pkg_dir: Path) -> bool:
             text=True,
             timeout=REV_PARSE_TIMEOUT,
             check=False,
+            env=scrubbed_git_env(),
         )
     except (FileNotFoundError, subprocess.SubprocessError):
         return False
@@ -114,6 +116,7 @@ def detect_installed_sha() -> str | None:
                 text=True,
                 timeout=REV_PARSE_TIMEOUT,
                 check=False,
+                env=scrubbed_git_env(),
             )
             if result.returncode == 0:
                 sha = result.stdout.strip()
@@ -201,6 +204,7 @@ def fetch_latest_sha(remote_url: str, ref: str = "master") -> str | None:
             text=True,
             timeout=LS_REMOTE_TIMEOUT,
             check=False,
+            env=scrubbed_git_env(),
         )
     except (FileNotFoundError, subprocess.SubprocessError):
         return None
@@ -235,6 +239,7 @@ def _fetch_into_pkg(remote_url: str, ref: str = "master") -> bool:
             text=True,
             timeout=FETCH_TIMEOUT,
             check=False,
+            env=scrubbed_git_env(),
         )
     except (FileNotFoundError, subprocess.SubprocessError):
         return False
@@ -275,6 +280,7 @@ def _ensure_probe_mirror(project_dir: Path) -> Path | None:
             text=True,
             timeout=GIT_QUERY_TIMEOUT,
             check=False,
+            env=scrubbed_git_env(),
         )
     except (FileNotFoundError, subprocess.SubprocessError):
         return None
@@ -306,6 +312,7 @@ def _fetch_into_mirror(mirror: Path, remote_url: str, ref: str) -> bool:
             text=True,
             timeout=FETCH_TIMEOUT,
             check=False,
+            env=scrubbed_git_env(),
         )
     except (FileNotFoundError, subprocess.SubprocessError):
         return False
@@ -346,6 +353,7 @@ def _count_ahead_behind(
             text=True,
             timeout=GIT_QUERY_TIMEOUT,
             check=False,
+            env=scrubbed_git_env(),
         )
     except (FileNotFoundError, subprocess.SubprocessError):
         return None
@@ -378,6 +386,7 @@ def _describe(sha: str, *, git_dir: Path | None = None) -> str | None:
             text=True,
             timeout=GIT_QUERY_TIMEOUT,
             check=False,
+            env=scrubbed_git_env(),
         )
     except (FileNotFoundError, subprocess.SubprocessError):
         return None
