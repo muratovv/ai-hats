@@ -12,7 +12,7 @@
 # [project.scripts] generator was removed so no venv materialises a binary
 # that direnv could prepend ahead of this host launcher and run stale code.
 # The package is always invoked via `python -m ai_hats`, and venv usability is
-# probed via `bin/python` + `python -c "import ai_hats"` rather than the proxy.
+# probed via `bin/python` + a deep import probe (HATS-895) rather than the proxy.
 set -euo pipefail
 
 PROJECT="$(pwd)"
@@ -114,16 +114,32 @@ export AI_HATS_VENV="$VENV"
 
 is_default_venv() { [[ "$VENV" == "$DEFAULT_VENV" ]]; }
 
+# --- HATS-895: deep venv health probe. Bare `import ai_hats` passes on a venv
+# whose editable link moved ahead of its installed deps (a new workspace
+# package merged into the dev repo but never installed here) — the CLI then
+# dies on ModuleNotFoundError at every call, including the `self update` that
+# would fix it. Probe the real entry path plus, for channel:local, every
+# source-side packages/* member (editable dist metadata is frozen at install
+# time, so the dev repo's tree — not Requires-Dist — is the truth).
+probe_imports() {
+    local mods="ai_hats.cli" init
+    if [[ -n "$LOCAL_SRC" ]]; then
+        for init in "$LOCAL_SRC"/packages/*/src/*/__init__.py; do
+            [[ -e "$init" ]] || continue
+            mods+=", $(basename "$(dirname "$init")")"
+        done
+    fi
+    "$VENV/bin/python" -c "import $mods" 2>/dev/null
+}
+
 # --- Idempotent heal: no-op if healthy, recreate if default broken,
 #     refuse if override broken (user-owned). Called from `self update`
 #     and `self init` before delegating, so the user only ever needs one
 #     command for install + heal + (update|init). (HATS-337, HATS-612)
 heal_if_needed() {
-    # HATS-790: healthy ⇔ a runnable interpreter that can import the package.
-    # `python -c "import ai_hats"` replaces the old `-x bin/ai-hats` proxy —
-    # there is no console script to test, and importability is the real signal
-    # that the package installed cleanly into this venv.
-    if [[ -x "$VENV/bin/python" ]] && "$VENV/bin/python" -c "import ai_hats" 2>/dev/null; then
+    # HATS-790: no console script to test — a runnable interpreter passing the
+    # deep import probe (HATS-895) is the signal the venv can actually run.
+    if [[ -x "$VENV/bin/python" ]] && probe_imports; then
         return 0
     fi
     if ! is_default_venv; then
@@ -189,8 +205,9 @@ if [[ ! -x "$VENV/bin/python" ]]; then
     missing_venv_hint
     exit 1
 fi
-if ! "$VENV/bin/python" -c "import ai_hats" 2>/dev/null; then
-    echo "ai-hats: venv exists at $VENV but ai_hats is not importable." >&2
+if ! probe_imports; then
+    echo "ai-hats: venv exists at $VENV but the ai-hats CLI is not importable." >&2
+    echo "  (a workspace package may be missing — HATS-895)" >&2
     missing_venv_hint
     exit 1
 fi
