@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from ai_hats.paths import ai_hats_dir
 from ai_hats.providers import ClaudeProvider
 
@@ -40,6 +42,27 @@ def test_claude_get_env_ai_hats_dir_honours_env_override(
     monkeypatch.setenv("AI_HATS_DIR", str(override))
     env = ClaudeProvider().get_env(tmp_path / "session", tmp_path)
     assert env["AI_HATS_DIR"] == str(override)
+
+
+def test_claude_get_env_exports_project_dir_pair(tmp_path: Path) -> None:
+    # HATS-897: the pin carries its scope — the resolver drops the pair when
+    # it leaks into another project's shell.
+    env = ClaudeProvider().get_env(tmp_path / "session", tmp_path)
+    assert env["AI_HATS_PROJECT_DIR"] == str(tmp_path)
+
+
+def test_claude_get_env_self_heals_foreign_pair(tmp_path: Path, monkeypatch) -> None:
+    # HATS-897: a leaked foreign pair must not be re-pinned into children —
+    # get_env resolves the project's OWN base and pins a fresh pair.
+    foreign_root = tmp_path / "other-repo"
+    monkeypatch.setenv("AI_HATS_DIR", str(foreign_root / ".agent" / "ai-hats"))
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(foreign_root))
+    project = tmp_path / "project"
+    project.mkdir()
+    with pytest.warns(UserWarning, match="AI_HATS_DIR"):
+        env = ClaudeProvider().get_env(tmp_path / "session", project)
+    assert env["AI_HATS_DIR"] == str(project / ".agent" / "ai-hats")
+    assert env["AI_HATS_PROJECT_DIR"] == str(project)
 
 
 def test_ai_hats_dir_survives_wrap_runner_env_merge(tmp_path: Path) -> None:
