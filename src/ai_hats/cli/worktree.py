@@ -10,6 +10,7 @@ from pathlib import Path
 
 import click
 
+from ..git_env import scrubbed_git_env
 from ..paths import worktrees_dir  # ADR-0013 D4: state-dir base for the wt core
 from ._helpers import _guard_not_inside_linked_worktree, _project_dir, console
 
@@ -80,6 +81,7 @@ def _resolve_worktree(branch: str | None = None):
                 capture_output=True,
                 text=True,
                 check=True,
+                env=scrubbed_git_env(),
             ).stdout.strip()
         except _sp.CalledProcessError:
             return None

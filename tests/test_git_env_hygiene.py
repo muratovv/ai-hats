@@ -133,6 +133,61 @@ def _offends(source: str) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# src/** scan (HATS-890): inverted rule. Unlike tests/ (autouse conftest scrubs
+# GIT_* process-wide), src/ has no fixture, so a git subprocess with NO ``env=``
+# inherits an ambient GIT_DIR — an offender. Every cwd-scoped git call must pass
+# a GIT_*-scrubbed env; a call to the ``scrubbed_git_env`` / ``_scrubbed_git_env``
+# helper counts as the strip.
+# --------------------------------------------------------------------------- #
+
+_SRC_DIR = _TESTS_DIR.parent / "src" / "ai_hats"
+_SCRUB_HELPERS = frozenset({"scrubbed_git_env", "_scrubbed_git_env"})
+
+
+def _is_subprocess_like(call: ast.Call) -> bool:
+    """A ``<x>.run/Popen/...`` call for any receiver ``<x>`` (covers the
+    ``import subprocess as _sp`` alias in cli/worktree.py), narrowed to git by
+    :func:`_command_is_git` at the call site."""
+    f = call.func
+    return isinstance(f, ast.Attribute) and f.attr in _SUBPROCESS_FUNCS
+
+
+def _is_scrub_helper_call(node: ast.expr | None) -> bool:
+    """True if ``node`` is a call to the GIT_*-scrub helper (``env=scrubbed_git_env()``)."""
+    if not isinstance(node, ast.Call):
+        return False
+    f = node.func
+    return (isinstance(f, ast.Name) and f.id in _SCRUB_HELPERS) or (
+        isinstance(f, ast.Attribute) and f.attr in _SCRUB_HELPERS
+    )
+
+
+def _src_module_offenders(tree: ast.Module) -> list[int]:
+    """Line numbers of git-subprocess calls in one src tree lacking a scrubbed env."""
+    offenders: list[int] = []
+    scopes = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    scopes.append(tree)
+    for scope in scopes:
+        for call in [n for n in ast.walk(scope) if isinstance(n, ast.Call)]:
+            if not (_is_subprocess_like(call) and _command_is_git(call)):
+                continue
+            env = _env_arg(call)
+            if env is None:
+                offenders.append(call.lineno)  # no env → inherits ambient GIT_DIR
+                continue
+            if _is_scrub_helper_call(env):
+                continue  # env=scrubbed_git_env() — the sanctioned strip
+            related = _env_related_nodes(scope, env)
+            if any(_refs_os_environ(n) for n in related) and not _has_git_strip(related):
+                offenders.append(call.lineno)
+    return sorted(set(offenders))
+
+
+def _src_offends(source: str) -> bool:
+    return bool(_src_module_offenders(ast.parse(source)))
+
+
+# --------------------------------------------------------------------------- #
 
 
 def test_no_unsanitized_git_subprocess_env_in_tests() -> None:
@@ -261,3 +316,47 @@ def test_smoke_hook_strips_git_env_before_pytest() -> None:
     assert "pytest -m smoke" in text, "smoke hook no longer runs `pytest -m smoke`"
     for var in _PLUMBING_VARS:
         assert f"-u {var}" in text, f"smoke hook stopped stripping {var} before pytest"
+
+
+def test_no_unsanitized_git_subprocess_env_in_src() -> None:
+    """HATS-890: no ``src/ai_hats/**`` git subprocess resolves the repo from an
+    ambient GIT_DIR. Every cwd-scoped git call must pass a GIT_*-scrubbed env
+    (``scrubbed_git_env()`` / ``_scrubbed_git_env()``); an ``env=``-less git call
+    inherits the ambient plumbing (no conftest scrub in src). RED-under-revert:
+    drop a site's ``env=`` and this names it."""
+    offenders: dict[str, list[int]] = {}
+    for path in _SRC_DIR.rglob("*.py"):
+        lines = _src_module_offenders(ast.parse(path.read_text()))
+        if lines:
+            offenders[str(path.relative_to(_SRC_DIR))] = lines
+    assert not offenders, (
+        "git-subprocess calls in src/ inherit an ambient GIT_DIR — pass "
+        "`env=scrubbed_git_env()` (or the wt-core `_scrubbed_git_env()`) to strip "
+        f"{list(_PLUMBING_VARS)} (HATS-890): {offenders}."
+    )
+
+
+def test_src_detector_flags_unsanitized_and_ignores_helper() -> None:
+    """Self-test: the src detector FIRES on a no-env / os.environ-derived git call
+    and stays quiet on a helper-scrubbed one — so a green src gate means 'clean',
+    not 'detector broken'."""
+    # Offenders.
+    assert _src_offends('subprocess.run(["git", "status"], cwd=c)')  # no env=
+    assert _src_offends('_sp.run(["git", "status"], cwd=c)')  # aliased subprocess, no env=
+    assert _src_offends('subprocess.run(["git", "x"], env=os.environ.copy())')
+    assert _src_offends('subprocess.run(["git", "x"], cwd=c, env={**os.environ})')
+
+    # Sanctioned.
+    assert not _src_offends('subprocess.run(["git", "x"], cwd=c, env=scrubbed_git_env())')
+    assert not _src_offends('subprocess.run(["git", "x"], cwd=c, env=_scrubbed_git_env())')
+    assert not _src_offends(
+        'env = scrubbed_git_env()\nsubprocess.run(["git", "x"], cwd=c, env=env)'
+    )
+    assert not _src_offends(  # explicit pop-3 strip still counts
+        'env = os.environ.copy()\n'
+        'env.pop("GIT_DIR", None)\n'
+        'env.pop("GIT_WORK_TREE", None)\n'
+        'env.pop("GIT_INDEX_FILE", None)\n'
+        'subprocess.run(["git", "x"], cwd=c, env=env)'
+    )
+    assert not _src_offends('subprocess.run(["ls", "-la"], cwd=c)')  # non-git → no env needed
