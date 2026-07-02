@@ -22,7 +22,6 @@ Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
 from __future__ import annotations
 
 import json
-import os
 import stat
 import subprocess
 from pathlib import Path
@@ -35,6 +34,7 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 HOOK_BASENAMES = ("pre_bash_shared_state_guard.sh", "shared_state_classifier.sh")
 
 # HATS-589: per-xdist-worker private build source (no-op on serial run).
+from _helpers.env import clean_env  # noqa: E402
 from _helpers.project import pin_edge_channel  # noqa: E402
 from _helpers.repo_src import build_src  # noqa: E402
 
@@ -99,18 +99,12 @@ def private_launcher(tmp_path_factory):
     launcher_dest = tmp / "bin" / "ai-hats"
     launcher_dest.parent.mkdir(parents=True)
 
-    env = os.environ.copy()
+    # HATS-904: module setup runs before the autouse env scrub — scrub explicitly.
+    # ai-hats init flow: README.md#2-wire-ai-hats-into-a-project
+    env = clean_env()
     env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
     env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))
     env.pop("AI_HATS_VENV", None)
-    # PYTHONPATH=src (set by ``ai-hats wt exec``) would shadow the
-    # installed ``ai_hats`` package inside the test venv, and the
-    # source ``src/ai_hats`` directory does NOT carry the ``library``
-    # subpackage (mapped to ``<repo>/library`` only at install time
-    # via ``pyproject.toml`` ``package-dir``). Importing the source
-    # copy makes ``importlib.resources.files('ai_hats.library')``
-    # silently resolve to an empty layout → "no roles found".
-    env.pop("PYTHONPATH", None)
     # Isolate from the user's ``~/.ai-hats/`` customizations layer
     # (roles, traits, customizations.yaml) — otherwise the dev env's
     # personal-workflow trait and custom roles bleed into the test
