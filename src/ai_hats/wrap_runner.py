@@ -85,6 +85,23 @@ def _format_hook_heal(changes) -> str:
     return "managed hooks healed at start — " + "; ".join(clauses)
 
 
+_COLLISION_HINTS = {
+    "identical": "exact duplicate of the session plugin — safe to remove",
+    "managed": "stale ai-hats mirror — the next 'ai-hats self bump' removes it",
+    "differs": "content differs from the ai-hats version — review: remove or rename",
+}
+
+
+def _format_skill_collisions(collisions) -> str:
+    """HATS-901: name the skills Claude Code will register twice this session."""
+    lines = [
+        f"{len(collisions)} skill(s) will register twice this session "
+        "(auto-discovery dir + ai-hats session plugin):"
+    ]
+    lines.extend(f"  {c.name} at {c.path} — {_COLLISION_HINTS[c.verdict]}" for c in collisions)
+    return "\n".join(lines)
+
+
 def _format_version_skew(changes) -> str:
     """Warn note when drift exists but the binary is behind upstream (req-7:
     name the unhealed drift rather than skip silently)."""
@@ -144,6 +161,30 @@ class WrapRunner:
             if session is not None:
                 session.log_trace(TraceTag.SYS, f"managed-hook resync FAILED — {summary}")
             return [StartupNotice("warn", summary)]
+
+    def _check_skill_collisions(self, session: Session, result) -> list[StartupNotice]:
+        """HATS-901: WARN when a composed skill will double-register this session.
+
+        Fail-open — a broken auto-discovery dir must never block launch.
+        """
+        from .paths import session_cache_dir
+        from .plugin_dir import duplicate_skill_registrations
+
+        try:
+            collisions = duplicate_skill_registrations(
+                [s.name for s in result.skills],
+                project_dir=self.project_dir,
+                plugin_skills_root=session_cache_dir(self.project_dir, session.session_id)
+                / "plugin"
+                / "skills",
+                home=Path.home(),
+            )
+        except OSError as exc:
+            logger.debug("skill-collision check failed open: %s", exc)
+            return []
+        if not collisions:
+            return []
+        return [StartupNotice("warn", _format_skill_collisions(collisions))]
 
     def _hold_before_launch(self, startup_notices: list[StartupNotice]) -> None:
         """Show any startup notices and hold before the wrapped TUI spawns
@@ -300,6 +341,7 @@ class WrapRunner:
         # surfaces; reuses the composition above and returns startup notices.
         startup_notices: list[StartupNotice] = []
         startup_notices.extend(self._resync_managed_hooks(session, result))
+        startup_notices.extend(self._check_skill_collisions(session, result))
 
         # Build CLI command with session ID for JSONL linkage
         claude_session_id = str(uuid.uuid4())
