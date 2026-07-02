@@ -23,7 +23,7 @@ Pattern (subprocess + ``python -m ai_hats``) mirrors
 checkout-independent (works from main repo or a linked worktree, no
 installed ``ai-hats`` binary required).
 
-dev_rule_e2e_gate (HATS-517 touches ``src/ai_hats/wt/manager.py`` +
+dev_rule_e2e_gate (HATS-517 touches ``packages/ai-hats-wt/src/ai_hats_wt/manager.py`` +
 ``src/ai_hats/cli/task.py``): this file is the gated test. Sanity:
 under ``git stash`` of the HATS-517 classifier in
 ``WorktreeManager.create()``, Case A fails with the original

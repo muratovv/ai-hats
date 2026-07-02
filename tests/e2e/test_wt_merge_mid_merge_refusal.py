@@ -10,7 +10,7 @@ internal ``git merge --no-ff`` exits 128. Pre-587 that surfaced as a raw
 and branch untouched.
 
 Per ``dev_rule_e2e_gate``: change to ``src/ai_hats/cli/worktree.py`` +
-``src/ai_hats/wt/manager.py`` requires a real-launcher + real-binary e2e.
+``packages/ai-hats-wt/src/ai_hats_wt/manager.py`` requires a real-launcher + real-binary e2e.
 CliRunner / pipeline tests do NOT satisfy the gate.
 
 **Fail-under-revert**: remove the ``_refuse_if_mid_merge()`` call from
