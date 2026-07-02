@@ -354,6 +354,46 @@ class TestWtExec:
         finally:
             mgr.cleanup()
 
+    def test_selector_first_arg_routes_and_strips_separator(
+        self, git_project: Path, monkeypatch
+    ) -> None:
+        """HATS-859: a leading token naming an active worktree is the selector;
+        it — and a trailing `--` — are stripped from the executed command, and
+        the command runs in that worktree even when >1 is active (ambiguous)."""
+        monkeypatch.chdir(git_project)
+        mgr_a = WorktreeManager(
+            git_project, branch_name="feat/exec-a", state_dir=worktrees_dir(git_project)
+        )
+        mgr_a.create()
+        mgr_a.save_state()
+        mgr_b = WorktreeManager(
+            git_project, branch_name="feat/exec-b", state_dir=worktrees_dir(git_project)
+        )
+        wt_b = mgr_b.create()
+        mgr_b.save_state()
+        try:
+            captured: dict = {}
+
+            def fake_run(cmd, cwd=None, env=None, **kwargs):
+                captured["cmd"] = cmd
+                captured["cwd"] = cwd
+                return _FakeCompleted(returncode=0)
+
+            self._patch_subprocess(monkeypatch, fake_run)
+            runner = CliRunner()
+            for argv in (
+                ["wt", "exec", "feat/exec-b", "--", "echo", "hi"],
+                ["wt", "exec", "feat/exec-b", "echo", "hi"],
+            ):
+                captured.clear()
+                result = runner.invoke(main, argv)
+                assert result.exit_code == 0, result.output
+                assert captured["cmd"] == ["echo", "hi"], argv
+                assert captured["cwd"] == str(wt_b), argv
+        finally:
+            mgr_a.cleanup()
+            mgr_b.cleanup()
+
 
 class TestWtEnv:
     def test_outputs_exports(self, active_worktree) -> None:
