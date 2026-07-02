@@ -6,6 +6,7 @@ import abc
 import json
 import logging
 import shutil
+import warnings
 from pathlib import Path
 
 from .composer import (
@@ -15,6 +16,7 @@ from .composer import (
     resolve_skill_script,
 )
 from .frontmatter import FrontmatterError, read_frontmatter
+from .paths import AI_HATS_PROJECT_DIR_ENV
 from .paths import CLAUDE_PROJECT_DIR_VAR
 from .paths import ai_hats_dir
 from .paths import hooks_dir as _lib_hooks_dir
@@ -532,7 +534,12 @@ class ClaudeProvider(Provider):
         # source tree (the secret-guard ``.log`` incident). Inherited by hook
         # subprocesses via the launched provider env (``wrap_runner``). Honours
         # an ambient ``AI_HATS_DIR`` override (precedence lives in ``ai_hats_dir``).
-        return {"AI_HATS_DIR": str(ai_hats_dir(project_dir))}
+        # HATS-897: pair var scopes the pin to THIS project — the resolver
+        # drops a leaked foreign pair, so get_env re-pins fresh values here.
+        return {
+            "AI_HATS_DIR": str(ai_hats_dir(project_dir)),
+            AI_HATS_PROJECT_DIR_ENV: str(project_dir),
+        }
 
     # ----- HATS-437: PreToolUse hook auto-wire -----
 
@@ -684,6 +691,15 @@ class ClaudeProvider(Provider):
                 return str(path)
 
         lib = _lib_hooks_dir(project_dir)
+        if not lib.resolve().is_relative_to(project_dir.resolve()):
+            # HATS-897: warn, don't skip — bare out-of-tree AI_HATS_DIR is legit (HATS-380)
+            warnings.warn(
+                f"runtime hook commands will be written to settings.json as "
+                f"absolute paths outside the project: {lib} (AI_HATS_DIR "
+                f"override in effect). If this env leaked from another "
+                f"project's session, unset it and re-run (HATS-897).",
+                stacklevel=2,
+            )
         desired: dict[str, list[dict]] = {}
 
         guard = lib / "pre_bash_shared_state_guard.sh"

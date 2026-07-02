@@ -30,12 +30,17 @@ refuses a non-project root — or a sanctioned explicit ``mkdir`` at a write sit
 from __future__ import annotations
 
 import os
+import warnings
 from pathlib import Path
 from typing import Literal
 
 import yaml
 
 LegacyClass = Literal["sessions", "tracker", "library", "root"]
+
+# Pair var pinned alongside AI_HATS_DIR at session spawn — scopes the pin
+# to the project it was resolved for (HATS-897).
+AI_HATS_PROJECT_DIR_ENV = "AI_HATS_PROJECT_DIR"
 
 # ---------- Base resolver ----------
 
@@ -124,16 +129,38 @@ class NotAnAiHatsProjectError(Exception):
         )
 
 
+def _env_ai_hats_dir(project_dir: Path) -> Path | None:
+    """``AI_HATS_DIR`` env override, scoped by its ``AI_HATS_PROJECT_DIR`` pair.
+
+    HATS-897: wrap pins both vars at spawn; a pair leaked into another
+    project's shell must not redirect that project's writes — on pin mismatch
+    the override is ignored (+warn). A bare ``AI_HATS_DIR`` without the pair
+    keeps its historical env-wins semantics.
+    """
+    raw = os.environ.get("AI_HATS_DIR")
+    if not raw:
+        return None
+    pin = os.environ.get(AI_HATS_PROJECT_DIR_ENV)
+    if pin and Path(pin).expanduser().resolve() != project_dir.resolve():
+        warnings.warn(
+            f"AI_HATS_DIR={raw!r} is pinned to project {pin!r} — foreign to "
+            f"{project_dir}; ignoring the leaked session pin (HATS-897).",
+            stacklevel=4,
+        )
+        return None
+    return Path(raw).expanduser()
+
+
 def _resolve_ai_hats_base(project_dir: Path) -> Path:
     """Pure precedence resolution of the base dir — NO mkdir.
 
-    ``AI_HATS_DIR`` env > yaml ``ai_hats_dir`` > bootstrap ``.agent/ai-hats``.
-    Shared by the pure :func:`ai_hats_dir` and the validating
-    :func:`ensure_ai_hats_dir`.
+    ``AI_HATS_DIR`` env (pair-scoped, HATS-897) > yaml ``ai_hats_dir`` >
+    bootstrap ``.agent/ai-hats``. Shared by the pure :func:`ai_hats_dir` and
+    the validating :func:`ensure_ai_hats_dir`.
     """
-    raw = os.environ.get("AI_HATS_DIR")
-    if raw:
-        return Path(raw).expanduser()
+    env_base = _env_ai_hats_dir(project_dir)
+    if env_base is not None:
+        return env_base
     yaml_value = _read_ai_hats_dir_from_yaml(project_dir)
     return (project_dir / yaml_value) if yaml_value else (project_dir / ".agent" / "ai-hats")
 
@@ -141,10 +168,11 @@ def _resolve_ai_hats_base(project_dir: Path) -> Path:
 def _is_ai_hats_project(project_dir: Path) -> bool:
     """True iff ``project_dir`` is an onboarded ai-hats project, or ``AI_HATS_DIR`` opts in.
 
-    Markers: ``AI_HATS_DIR`` env (explicit runtime opt-in), a pre-existing
+    Markers: ``AI_HATS_DIR`` env (explicit runtime opt-in; pair-scoped per
+    HATS-897 — a leaked foreign pin does not opt in), a pre-existing
     ``ai-hats.yaml``, or a pre-existing ``.agent/`` dir. A stray root has none.
     """
-    if os.environ.get("AI_HATS_DIR"):
+    if _env_ai_hats_dir(project_dir) is not None:
         return True
     if (project_dir / "ai-hats.yaml").exists():
         return True
@@ -602,6 +630,7 @@ def legacy_paths_by_class(
 
 __all__ = [
     "LegacyClass",
+    "AI_HATS_PROJECT_DIR_ENV",
     "_read_ai_hats_dir_from_yaml",
     "_read_venv_path_from_yaml",
     "_is_safe_sha_component",

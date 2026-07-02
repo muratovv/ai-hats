@@ -70,6 +70,49 @@ def test_ai_hats_dir_env_expands_user(tmp_path, monkeypatch):
     assert not base.exists()
 
 
+def test_ai_hats_dir_foreign_pair_ignored(tmp_path, monkeypatch):
+    """HATS-897: a pin pair leaked from ANOTHER project's session is ignored."""
+    foreign_root = tmp_path / "other-repo"
+    monkeypatch.setenv("AI_HATS_DIR", str(foreign_root / ".agent" / "ai-hats"))
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(foreign_root))
+    project = tmp_path / "project"
+    project.mkdir()
+    with pytest.warns(UserWarning, match="AI_HATS_DIR"):
+        base = ai_hats_dir(project)
+    assert base == project / ".agent" / "ai-hats"
+
+
+def test_ai_hats_dir_matching_pair_honored(tmp_path, monkeypatch):
+    """HATS-897: the session's own pin wins even via a symlinked spelling."""
+    project = tmp_path / "project"
+    project.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(project)
+    custom = tmp_path / "custom-runtime"
+    monkeypatch.setenv("AI_HATS_DIR", str(custom))
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(link))
+    assert ai_hats_dir(project) == custom
+
+
+def test_ai_hats_dir_pair_var_alone_is_noop(tmp_path, monkeypatch):
+    """HATS-897: AI_HATS_PROJECT_DIR without AI_HATS_DIR changes nothing."""
+    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(tmp_path / "other-repo"))
+    assert ai_hats_dir(tmp_path) == tmp_path / ".agent" / "ai-hats"
+
+
+def test_ensure_ai_hats_dir_foreign_pair_is_not_optin(tmp_path, monkeypatch):
+    """HATS-897: a leaked pair must not validate write ops in a stray dir."""
+    foreign_root = tmp_path / "other-repo"
+    monkeypatch.setenv("AI_HATS_DIR", str(foreign_root / ".agent" / "ai-hats"))
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(foreign_root))
+    stray = tmp_path / "stray"
+    stray.mkdir()
+    with pytest.warns(UserWarning, match="AI_HATS_DIR"):
+        with pytest.raises(NotAnAiHatsProjectError):
+            ensure_ai_hats_dir(stray)
+
+
 def test_ai_hats_dir_pure_resolution_creates_nothing(tmp_path, monkeypatch):
     """HATS-839: ai_hats_dir resolves a stable path but never creates it."""
     monkeypatch.delenv("AI_HATS_DIR", raising=False)

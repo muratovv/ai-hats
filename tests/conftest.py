@@ -137,6 +137,7 @@ def _isolate_ai_hats_dir(monkeypatch):
     teardown), so they are unaffected.
     """
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv("AI_HATS_PROJECT_DIR", raising=False)  # HATS-897 pair var
     yield
 
 
