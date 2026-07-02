@@ -16,7 +16,7 @@ exercised at the unit level in
 `tests/test_state.py::test_teardown_worktree_raises_when_state_lost_but_branch_exists`.
 
 Per `dev_rule_e2e_gate`: HATS-587 touches `src/ai_hats/cli/` +
-`src/ai_hats/wt/manager.py`, so a real-launcher + real-binary e2e is
+`packages/ai-hats-wt/src/ai_hats_wt/manager.py`, so a real-launcher + real-binary e2e is
 mandatory. CliRunner / pipeline tests do NOT satisfy the gate.
 
 **Fail-under-revert** (HATS-587/F5): restore the
