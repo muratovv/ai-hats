@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
+from ai_hats.git_env import scrubbed_git_env
+
 from .common import SessionArtifacts, SessionLinks, SessionMetrics
 from .window import (
     SESSION_PREFIX,
@@ -172,6 +174,7 @@ def _git(project_dir: Path, args: list[str]) -> str:
             text=True,
             timeout=10,
             check=False,
+            env=scrubbed_git_env(),
         )
         return proc.stdout
     except (subprocess.TimeoutExpired, FileNotFoundError):

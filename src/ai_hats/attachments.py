@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 
+from ai_hats.git_env import scrubbed_git_env
 from ai_hats.models import Attachment, TaskCard
 
 DIGEST_LEN = 12  # truncated SHA-256 (48 bits) — see HATS-402 plan §1.
@@ -95,6 +96,7 @@ def is_git_tracked(path: Path) -> bool:
             cwd=path.parent,
             capture_output=True,
             check=False,
+            env=scrubbed_git_env(),
         )
     except (FileNotFoundError, OSError):
         return False

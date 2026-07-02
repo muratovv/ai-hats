@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .git_env import scrubbed_git_env
 from .paths import (
     CLAUDE_PROJECT_DIR_VAR,
     LEGACY_PATH_MAP,
@@ -473,6 +474,7 @@ def is_file_git_clean(file: Path, project_dir: Path) -> bool:
             cwd=str(project_dir),
             capture_output=True,
             timeout=10,
+            env=scrubbed_git_env(),
         )
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return True  # git unavailable — don't block heal
