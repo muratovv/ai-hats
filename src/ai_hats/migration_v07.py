@@ -23,6 +23,7 @@ from pathlib import Path
 
 from .composer import CompositionResult, ResolvedComponent
 from .frontmatter import FrontmatterError, read_frontmatter
+from .git_env import scrubbed_git_env
 from .models import ProjectConfig
 from .resolver import read_rule_body
 
@@ -564,6 +565,7 @@ def check_branches_modify_paths(
                 "for-each-ref", "--format=%(refname:short)", "refs/heads/",
             ],
             capture_output=True, text=True, timeout=timeout, check=False,
+            env=scrubbed_git_env(),
         )
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return []
@@ -575,6 +577,7 @@ def check_branches_modify_paths(
         head = subprocess.run(
             ["git", "-C", str(project_dir), "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True, text=True, timeout=timeout, check=False,
+            env=scrubbed_git_env(),
         )
         current = head.stdout.strip() if head.returncode == 0 else ""
     except subprocess.TimeoutExpired:
@@ -598,6 +601,7 @@ def check_branches_modify_paths(
                 ["git", "-C", str(project_dir), "diff", "--name-only",
                  f"HEAD..{branch}", "--", *rel_paths],
                 capture_output=True, text=True, timeout=timeout, check=False,
+                env=scrubbed_git_env(),
             )
         except subprocess.TimeoutExpired:
             continue
