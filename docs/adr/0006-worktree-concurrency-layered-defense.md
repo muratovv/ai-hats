@@ -4,7 +4,8 @@
 
 Accepted (HATS-477 epic, 2026-05-25). Realized incrementally by
 HATS-121, HATS-479, HATS-481, HATS-480; hardened post-epic by
-HATS-482 / HATS-486 / HATS-488 (see "Hardening addenda" below).
+HATS-482 / HATS-486 / HATS-488 (see "Hardening addenda" below). The lock model
+now ships in the standalone `ai-hats-wt` package (`ai_hats_wt.locks`, HATS-880).
 
 ## Context
 

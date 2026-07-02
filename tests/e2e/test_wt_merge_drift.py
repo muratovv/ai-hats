@@ -1,7 +1,7 @@
 """End-to-end coverage for ``ai-hats wt merge`` drift guard (HATS-457).
 
 Per ``dev_rule_e2e_gate``: changes that touch ``src/ai_hats/cli/worktree.py``
-or ``src/ai_hats/wt/manager.py`` require an e2e test using the real
+or ``packages/ai-hats-wt/src/ai_hats_wt/manager.py`` require an e2e test using the real
 launcher + real pip install + real ``ai-hats`` binary. The drift guard
 implements HYP-017: between ``wt create`` and ``wt merge`` another
 agent's worktree may have already advanced the local base branch, and

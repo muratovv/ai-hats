@@ -8,7 +8,7 @@ commit succeeds: a failed merge now leaves the worktree dir + branch + state
 fully intact, so the next ``wt merge`` is a clean retry once the operator
 resolves the cause.
 
-Per ``dev_rule_e2e_gate``: change to ``src/ai_hats/wt/manager.py`` (+ CLI)
+Per ``dev_rule_e2e_gate``: change to ``packages/ai-hats-wt/src/ai_hats_wt/manager.py`` (+ CLI)
 requires a real-launcher + real-binary e2e. CliRunner / pipeline tests do
 NOT satisfy the gate.
 
