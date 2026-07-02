@@ -93,13 +93,13 @@ environment. Repeat only when the repo or workflow filename changes.
    *Account settings → Publishing → Add a new pending publisher*. This
    both claims the `ai-hats` name and binds the OIDC trust. Set exactly:
 
-   | Field | Value |
-   |---|---|
-   | PyPI Project Name | `ai-hats` |
-   | Owner | `muratovv` |
-   | Repository name | `ai-hats` |
-   | Workflow name | `release.yml` |
-   | Environment name | `pypi` |
+   | Field             | Value         |
+   | ----------------- | ------------- |
+   | PyPI Project Name | `ai-hats`     |
+   | Owner             | `muratovv`    |
+   | Repository name   | `ai-hats`     |
+   | Workflow name     | `release.yml` |
+   | Environment name  | `pypi`        |
 
    These four binding values must match the workflow verbatim — any
    mismatch fails the publish loud.
@@ -115,6 +115,49 @@ environment. Repeat only when the repo or workflow filename changes.
    environment (repo *Settings → Environments → pypi*) to gate each
    publish behind a manual approval. Off by default: the tag push
    publishes unattended.
+
+### Workspace packages (`ai-hats-core`, `ai-hats-wt`)
+
+The workspace packages under `packages/*` carry their own **static** versions
+(`packages/<pkg>/pyproject.toml`), decoupled from the `ai-hats` `v*` tag. They
+publish through a separate, **manually-triggered** workflow,
+[`release-packages.yml`](../.github/workflows/release-packages.yml) — build both
+with `uv build`, then a per-package OIDC publish **job** each (core first, then
+the wt package that depends on it).
+
+**Distinct environment per package — required, not cosmetic.** PyPI refuses two
+*pending* trusted publishers that share one `(owner, repository, workflow,
+environment)` tuple ("*a pending trusted publisher matching this configuration
+has already been registered for a different project name*"). The environment is
+the disambiguator, so each package's publish job runs in its own environment
+(`pypi-core` / `pypi-wt`) — separate from the `pypi` environment the main
+`ai-hats` release uses.
+
+**One-time setup:**
+
+1. Create the two GitHub environments:
+
+   ```bash
+   gh api -X PUT repos/muratovv/ai-hats/environments/pypi-core
+   gh api -X PUT repos/muratovv/ai-hats/environments/pypi-wt
+   ```
+
+2. Add a pending publisher for **each** package (*PyPI → Account settings →
+   Publishing → Add a new pending publisher*):
+
+   | Field             | `ai-hats-core`         | `ai-hats-wt`           |
+   | ----------------- | ---------------------- | ---------------------- |
+   | PyPI Project Name | `ai-hats-core`         | `ai-hats-wt`           |
+   | Owner             | `muratovv`             | `muratovv`             |
+   | Repository name   | `ai-hats`              | `ai-hats`              |
+   | Workflow name     | `release-packages.yml` | `release-packages.yml` |
+   | Environment name  | `pypi-core`            | `pypi-wt`              |
+
+**To cut a package release:** bump the version in the package's `pyproject.toml`,
+merge to master, then run the workflow (*Actions → release-packages → Run
+workflow*). PyPI rejects re-uploading an existing version, so a re-run without a
+version bump fails loud (no accidental clobber). The integrator `ai-hats` then
+pins the new versions in the root `dependencies`.
 
 ## CHANGELOG flow
 
