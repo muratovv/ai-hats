@@ -312,15 +312,19 @@ class Assembler:
     def _cleanup_legacy_claude_publish(self) -> None:
         """Remove `.claude/` publish artefacts replaced by the canonical aggregator (HATS-289).
 
-        Idempotent. `.claude/skills/` and any user-authored files are left
-        alone — only the previously-managed publish set is targeted via
-        the legacy `.claude/.ai-hats-managed` manifest. As a safety net
-        we also remove the well-known publish-only files (CLAUDE.md,
-        priorities/role/skills_index, traits/, rules/).
+        Idempotent. User-authored files are left alone — only the
+        previously-managed publish set is targeted via the legacy
+        `.claude/.ai-hats-managed` manifest, plus the pre-HATS-294 skills
+        mirror via its own `.claude/skills/.ai-hats-managed` marker
+        (HATS-901). As a safety net we also remove the well-known
+        publish-only files (CLAUDE.md, priorities/role/skills_index,
+        traits/, rules/).
         """
         claude_dir = self.project_dir / ".claude"
         if not claude_dir.is_dir():
             return
+
+        self._drop_legacy_skills_mirror()
 
         manifest = claude_dir / ".ai-hats-managed"
         managed: set[str] = set()
@@ -375,6 +379,37 @@ class Assembler:
         try:
             if not any(claude_dir.iterdir()):
                 claude_dir.rmdir()  # safe-delete: ok empty-dir
+        except OSError:
+            pass
+
+    def _drop_legacy_skills_mirror(self) -> None:
+        """Remove the pre-HATS-294 `.claude/skills/` export mirror (HATS-901).
+
+        Marker-scoped: only dirs listed in `.claude/skills/.ai-hats-managed`
+        (+ the marker itself) are discarded — user-authored entries survive.
+        Idempotent: no marker → no-op.
+        """
+        skills_dir = self.project_dir / ".claude" / "skills"
+        marker = skills_dir / ".ai-hats-managed"
+        if not marker.is_file():
+            return
+        for line in marker.read_text().splitlines():
+            name = line.strip()
+            if not name or name.startswith("#"):
+                continue
+            _safe_discard(
+                skills_dir / name,
+                reason="claude-legacy-skills-mirror",
+                project_dir=self.project_dir,
+            )
+        _safe_discard(
+            marker,
+            reason="claude-legacy-skills-mirror",
+            project_dir=self.project_dir,
+        )
+        try:
+            if not any(skills_dir.iterdir()):
+                skills_dir.rmdir()  # safe-delete: ok empty-dir
         except OSError:
             pass
 

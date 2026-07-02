@@ -977,6 +977,83 @@ def test_warn_orphan_user_level_managed_skills_idempotent(
     assert "Orphan ai-hats marker" in capsys.readouterr().err
 
 
+def _seed_legacy_skills_mirror(project):
+    """Create a pre-HATS-294 `.claude/skills/` mirror: marker + 2 managed
+    skill dirs + 1 user-authored dir NOT listed in the marker."""
+    skills = project / ".claude" / "skills"
+    for name in ("audit-reviewer", "backlog-manager"):
+        (skills / name).mkdir(parents=True)
+        (skills / name / "SKILL.md").write_text("# stale export")
+    (skills / "my-own-skill").mkdir()
+    (skills / "my-own-skill" / "SKILL.md").write_text("# user-authored")
+    (skills / ".ai-hats-managed").write_text("audit-reviewer\nbacklog-manager\n")
+    return skills
+
+
+def test_drop_legacy_skills_mirror_removes_marker_listed_only(project_with_library):
+    """HATS-901: marker-listed skill dirs + marker are removed; a
+    user-authored dir not listed in the marker survives.
+
+    The mirror was the pre-HATS-294 permanent export target; HATS-294
+    dropped the exporter without migrating existing state, so every
+    pre-v0.7 install double-registers skills (project dir + session
+    plugin) forever."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    skills = _seed_legacy_skills_mirror(project)
+
+    asm._drop_legacy_skills_mirror()
+
+    assert not (skills / "audit-reviewer").exists()
+    assert not (skills / "backlog-manager").exists()
+    assert not (skills / ".ai-hats-managed").exists()
+    assert (skills / "my-own-skill" / "SKILL.md").exists()
+
+
+def test_drop_legacy_skills_mirror_noop_without_marker(project_with_library):
+    """No marker → user's `.claude/skills/` is untouched (never guess ownership)."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    skills = project / ".claude" / "skills"
+    (skills / "my-own-skill").mkdir(parents=True)
+    (skills / "my-own-skill" / "SKILL.md").write_text("# user-authored")
+
+    asm._drop_legacy_skills_mirror()
+
+    assert (skills / "my-own-skill" / "SKILL.md").exists()
+
+
+def test_drop_legacy_skills_mirror_idempotent(project_with_library):
+    """Second run after the mirror is gone is a silent no-op."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    skills = _seed_legacy_skills_mirror(project)
+
+    asm._drop_legacy_skills_mirror()
+    asm._drop_legacy_skills_mirror()
+
+    assert not (skills / ".ai-hats-managed").exists()
+    assert (skills / "my-own-skill" / "SKILL.md").exists()
+
+
+def test_cleanup_legacy_claude_publish_drops_skills_mirror(project_with_library):
+    """Wiring: the heal-path cleanup reaches the mirror, so existing installs
+    self-heal on their next `self bump` / `self init` / `self update`."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    skills = _seed_legacy_skills_mirror(project)
+
+    asm._cleanup_legacy_claude_publish()
+
+    assert not (skills / ".ai-hats-managed").exists()
+    assert not (skills / "audit-reviewer").exists()
+    assert (skills / "my-own-skill" / "SKILL.md").exists()
+
+
 def test_bump_invokes_legacy_block_sweep(project_with_library):
     """Integration: bump_pipeline chains the sweep so existing users get
     the fix on their next ``ai-hats self bump`` / ``self update``.
