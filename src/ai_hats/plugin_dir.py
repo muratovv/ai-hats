@@ -12,8 +12,10 @@ plain names.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
 import filelock
@@ -102,3 +104,77 @@ def _rebuild_plugin_dir(
             expanded = expand_path_placeholders(original, project_dir)
             if expanded != original:
                 skill_md.write_text(expanded)
+
+
+@dataclass(frozen=True)
+class SkillCollision:
+    """One composed skill also present in a Claude Code auto-discovery dir (HATS-901).
+
+    ``verdict``:
+        ``"identical"`` — byte-equal to the materialized plugin copy: a
+            redundant duplicate, provably safe to remove.
+        ``"managed"`` — listed in the dir's ``.ai-hats-managed`` marker:
+            a stale ai-hats mirror; the next ``self bump`` removes it.
+        ``"differs"`` — same name, different content: stale ai-hats copy or
+            a user-authored skill — indistinguishable, user must review.
+    """
+
+    name: str
+    path: Path
+    verdict: str
+
+
+def duplicate_skill_registrations(
+    skill_names: list[str],
+    *,
+    project_dir: Path,
+    plugin_skills_root: Path,
+    home: Path,
+) -> list[SkillCollision]:
+    """Detect composed skills that will double-register this session (HATS-901).
+
+    Claude Code registers skills by name, so a same-name dir under
+    ``<home>/.claude/skills/`` or ``<project>/.claude/skills/`` duplicates
+    the session-plugin delivery — the collision condition is exact name
+    equality, no ownership proof needed.
+    """
+    collisions: list[SkillCollision] = []
+    for scope_dir in (home / ".claude" / "skills", project_dir / ".claude" / "skills"):
+        if not scope_dir.is_dir():
+            continue
+        managed = _marker_names(scope_dir / ".ai-hats-managed")
+        for name in skill_names:
+            candidate = scope_dir / name
+            if not candidate.is_dir():
+                continue
+            if name in managed:
+                verdict = "managed"
+            elif _dir_digest(candidate) == _dir_digest(plugin_skills_root / name):
+                verdict = "identical"
+            else:
+                verdict = "differs"
+            collisions.append(SkillCollision(name=name, path=candidate, verdict=verdict))
+    return collisions
+
+
+def _marker_names(marker: Path) -> frozenset[str]:
+    if not marker.is_file():
+        return frozenset()
+    return frozenset(
+        line.strip()
+        for line in marker.read_text().splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    )
+
+
+def _dir_digest(root: Path) -> str:
+    """sha256 over sorted (relpath, bytes) — equal digests ⇔ equal trees."""
+    if not root.is_dir():
+        return ""
+    digest = hashlib.sha256()
+    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        digest.update(str(path.relative_to(root)).encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()

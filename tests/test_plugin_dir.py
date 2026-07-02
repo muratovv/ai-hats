@@ -199,3 +199,97 @@ def test_concurrent_same_target_is_safe(tmp_path: Path) -> None:
     assert got == sorted(s.name for s in skills), (
         f"final skills set {got} != expected {sorted(s.name for s in skills)}"
     )
+
+
+# ---------- duplicate_skill_registrations (HATS-901) ----------
+
+
+def test_duplicate_registration_identical_user_copy(tmp_path: Path) -> None:
+    """A byte-identical copy under `~/.claude/skills/` is a provable redundant
+    duplicate — Claude Code registers it alongside the session plugin."""
+    import shutil
+
+    from ai_hats.plugin_dir import duplicate_skill_registrations
+
+    skills_root = tmp_path / "src"
+    skills_root.mkdir()
+    skill = _make_skill("alpha", skills_root)
+    plugin = materialize_plugin_dir("test-role", [skill], tmp_path, tmp_path / "plugin")
+
+    home = tmp_path / "home"
+    user_copy = home / ".claude" / "skills" / "alpha"
+    shutil.copytree(plugin / "skills" / "alpha", user_copy)
+
+    found = duplicate_skill_registrations(
+        ["alpha"],
+        project_dir=tmp_path,
+        plugin_skills_root=plugin / "skills",
+        home=home,
+    )
+
+    assert [(c.name, c.verdict) for c in found] == [("alpha", "identical")]
+    assert found[0].path == user_copy
+
+
+def test_duplicate_registration_differing_content(tmp_path: Path) -> None:
+    """Same name, different bytes → 'differs' (stale copy vs user-authored is
+    unprovable without library history — user must review)."""
+    from ai_hats.plugin_dir import duplicate_skill_registrations
+
+    skills_root = tmp_path / "src"
+    skills_root.mkdir()
+    skill = _make_skill("alpha", skills_root)
+    plugin = materialize_plugin_dir("test-role", [skill], tmp_path, tmp_path / "plugin")
+
+    home = tmp_path / "home"
+    stale = home / ".claude" / "skills" / "alpha"
+    stale.mkdir(parents=True)
+    (stale / "SKILL.md").write_text("# frozen at an old library version\n")
+
+    found = duplicate_skill_registrations(
+        ["alpha"], project_dir=tmp_path, plugin_skills_root=plugin / "skills", home=home
+    )
+
+    assert [(c.name, c.verdict) for c in found] == [("alpha", "differs")]
+
+
+def test_duplicate_registration_marker_listed_is_managed(tmp_path: Path) -> None:
+    """Project-scope dir listed in `.ai-hats-managed` → ownership proven by the
+    marker; the next `self bump` removes it."""
+    from ai_hats.plugin_dir import duplicate_skill_registrations
+
+    skills_root = tmp_path / "src"
+    skills_root.mkdir()
+    skill = _make_skill("alpha", skills_root)
+    project = tmp_path / "project"
+    plugin = materialize_plugin_dir("test-role", [skill], project, tmp_path / "plugin")
+
+    mirror = project / ".claude" / "skills"
+    (mirror / "alpha").mkdir(parents=True)
+    (mirror / "alpha" / "SKILL.md").write_text("# stale export\n")
+    (mirror / ".ai-hats-managed").write_text("alpha\n")
+
+    found = duplicate_skill_registrations(
+        ["alpha"],
+        project_dir=project,
+        plugin_skills_root=plugin / "skills",
+        home=tmp_path / "home",
+    )
+
+    assert [(c.name, c.verdict) for c in found] == [("alpha", "managed")]
+
+
+def test_duplicate_registration_none_when_clean(tmp_path: Path) -> None:
+    """No same-name dirs anywhere → empty list (the everyday no-op path)."""
+    from ai_hats.plugin_dir import duplicate_skill_registrations
+
+    skills_root = tmp_path / "src"
+    skills_root.mkdir()
+    skill = _make_skill("alpha", skills_root)
+    plugin = materialize_plugin_dir("test-role", [skill], tmp_path, tmp_path / "plugin")
+
+    found = duplicate_skill_registrations(
+        ["alpha"], project_dir=tmp_path, plugin_skills_root=plugin / "skills", home=tmp_path / "home"
+    )
+
+    assert found == []
