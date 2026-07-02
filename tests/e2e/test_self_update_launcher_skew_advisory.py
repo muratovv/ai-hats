@@ -36,6 +36,7 @@ from pathlib import Path
 import pytest
 
 from _helpers.project import pin_edge_channel
+from _helpers.workspace import build_workspace_member_wheels
 
 pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
@@ -118,6 +119,11 @@ def test_e2e_stale_launcher_dormancy_advisory(tmp_path: Path) -> None:
     env["AI_HATS_TRASH_DIR"] = str(tmp_path / "trash")
     env.pop("AI_HATS_VENV", None)
     env.pop("PYTHONPATH", None)
+    # HATS-898: ai-hats requires unpublished ai-hats-core/ai-hats-wt — build the
+    # member wheels from the clone; the shim's pip + self-update's uv resolve them.
+    wsdir = build_workspace_member_wheels(src_repo, tmp_path / "workspace-wheels", env)
+    env["UV_FIND_LINKS"] = str(wsdir)
+    env["PIP_FIND_LINKS"] = str(wsdir)
 
     versions = project / ".agent" / "ai-hats" / "versions"
 

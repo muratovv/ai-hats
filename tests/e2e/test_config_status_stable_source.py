@@ -32,6 +32,7 @@ import pytest
 from _helpers.env import clean_env  # noqa: E402
 from _helpers.repo_src import build_src  # noqa: E402
 from _helpers.venv import network_available, venv_unavailable  # noqa: E402
+from _helpers.workspace import build_workspace_member_wheels  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -80,6 +81,9 @@ def test_e2e_config_status_stable_source(tmp_path):
     wheels = sorted(wheeldir.glob("ai_hats-*.whl"))
     assert wheels, f"no ai-hats wheel built under {wheeldir}"
     version = _wheel_version(wheels[0])
+    # HATS-898: ai-hats requires ai-hats-core/ai-hats-wt (unpublished) — build the
+    # workspace member wheels into the same find-links dir so the install resolves.
+    build_workspace_member_wheels(src, wheeldir, env)
 
     # 2. Fresh venv + install ai-hats BY NAME from the local find-links dir. Pinning
     #    to the exact locally-built (dev+local) version guarantees the local wheel
