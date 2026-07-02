@@ -21,8 +21,8 @@ from pathlib import Path
 import pytest
 
 from ai_hats.paths import worktrees_dir
-from ai_hats.wt import WorktreeBaseBranchError, assert_head_is_canonical_base
-from ai_hats.wt.manager import CANONICAL_BASE_BRANCHES
+from ai_hats_wt import WorktreeBaseBranchError, assert_head_is_canonical_base
+from ai_hats_wt.manager import CANONICAL_BASE_BRANCHES
 
 
 pytestmark = pytest.mark.integration
@@ -186,7 +186,7 @@ class TestCliWtCreate:
         from click.testing import CliRunner
 
         from ai_hats.cli import main as cli_main
-        from ai_hats.wt import WorktreeManager
+        from ai_hats_wt import WorktreeManager
 
         _git(master_project, "checkout", "-b", "feat/foo")
         # `_project_dir()` walks up from cwd looking for `.git` — chdir works.
@@ -205,7 +205,7 @@ class TestCliWtCreate:
         from click.testing import CliRunner
 
         from ai_hats.cli import main as cli_main
-        from ai_hats.wt import WorktreeManager
+        from ai_hats_wt import WorktreeManager
 
         monkeypatch.chdir(master_project)
         result = CliRunner().invoke(cli_main, ["wt", "create", "task/probe"])
@@ -297,7 +297,7 @@ class TestTransitionExecute:
 
     def test_succeeds_when_head_is_master(self, task_mgr) -> None:
         from ai_hats.models import TaskState
-        from ai_hats.wt import WorktreeManager
+        from ai_hats_wt import WorktreeManager
 
         master_project, mgr = task_mgr
         try:

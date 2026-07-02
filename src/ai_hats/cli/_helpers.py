@@ -147,7 +147,7 @@ def _project_dir() -> Path:
             # Gitlink (linked worktree / submodule): for a linked worktree,
             # route to the main checkout's live tracker; otherwise fall back
             # to this dir (current behaviour, never worse).
-            from ..wt import WorktreeManager
+            from ai_hats_wt import WorktreeManager
 
             main_root = WorktreeManager.main_worktree_root(d)
             return main_root if main_root is not None else d
@@ -182,7 +182,7 @@ def _guard_not_inside_linked_worktree() -> None:
     Prints a guidance message and ``sys.exit(1)`` on breach. Returns None
     when CWD is OK (main worktree or non-git path).
     """
-    from ..wt import WorktreeManager
+    from ai_hats_wt import WorktreeManager
 
     cwd = Path.cwd()
     if WorktreeManager.is_inside_linked_worktree(cwd):

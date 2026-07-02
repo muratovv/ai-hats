@@ -189,7 +189,7 @@ class Assembler:
         except (OSError, ValueError):
             return None
 
-        from .wt import WorktreeManager
+        from ai_hats_wt import WorktreeManager
 
         main_root = WorktreeManager.main_worktree_root(cwd)
         if main_root is None or main_root.resolve() != self.project_dir.resolve():
