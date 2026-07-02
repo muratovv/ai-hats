@@ -93,13 +93,13 @@ environment. Repeat only when the repo or workflow filename changes.
    *Account settings → Publishing → Add a new pending publisher*. This
    both claims the `ai-hats` name and binds the OIDC trust. Set exactly:
 
-   | Field | Value |
-   |---|---|
-   | PyPI Project Name | `ai-hats` |
-   | Owner | `muratovv` |
-   | Repository name | `ai-hats` |
-   | Workflow name | `release.yml` |
-   | Environment name | `pypi` |
+   | Field             | Value         |
+   | ----------------- | ------------- |
+   | PyPI Project Name | `ai-hats`     |
+   | Owner             | `muratovv`    |
+   | Repository name   | `ai-hats`     |
+   | Workflow name     | `release.yml` |
+   | Environment name  | `pypi`        |
 
    These four binding values must match the workflow verbatim — any
    mismatch fails the publish loud.
@@ -115,6 +115,33 @@ environment. Repeat only when the repo or workflow filename changes.
    environment (repo *Settings → Environments → pypi*) to gate each
    publish behind a manual approval. Off by default: the tag push
    publishes unattended.
+
+### Workspace packages (`ai-hats-core`, `ai-hats-wt`)
+
+The workspace packages under `packages/*` carry their own **static** versions
+(`packages/<pkg>/pyproject.toml`), decoupled from the `ai-hats` `v*` tag. They
+publish through a separate, **manually-triggered** workflow,
+[`release-packages.yml`](../.github/workflows/release-packages.yml) — build both
+with `uv build`, then two per-package OIDC publish steps (core first, then the wt
+package that depends on it).
+
+**One-time PyPI setup** — add a pending publisher for **each** package
+(*Account settings → Publishing → Add a new pending publisher*), reusing the same
+`pypi` environment created above:
+
+| Field             | `ai-hats-core`         | `ai-hats-wt`           |
+| ----------------- | ---------------------- | ---------------------- |
+| PyPI Project Name | `ai-hats-core`         | `ai-hats-wt`           |
+| Owner             | `muratovv`             | `muratovv`             |
+| Repository name   | `ai-hats`              | `ai-hats`              |
+| Workflow name     | `release-packages.yml` | `release-packages.yml` |
+| Environment name  | `pypi`                 | `pypi`                 |
+
+**To cut a package release:** bump the version in the package's `pyproject.toml`,
+merge to master, then run the workflow (*Actions → release-packages → Run
+workflow*). PyPI rejects re-uploading an existing version, so a re-run without a
+version bump fails loud (no accidental clobber). The integrator `ai-hats` then
+pins the new versions in the root `dependencies`.
 
 ## CHANGELOG flow
 
