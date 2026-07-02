@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-hats-wt"
+version = "0.1.0"
+description = "Hook-agnostic git-worktree engine for the ai-hats framework (WorktreeManager + the L1-L4 concurrency model)."
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "muratovv", email = "f@muratovv.me" }, # ai-hats: allow-secret
+]
+dependencies = [
+    "ai-hats-core",
+    "filelock>=3.12",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_hats_wt"]
+
+[tool.uv.sources]
+ai-hats-core = { workspace = true }

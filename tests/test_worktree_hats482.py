@@ -18,8 +18,8 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.cli.worktree import _resolve_worktree
-from ai_hats.wt import WorktreeManager, WorktreePartialCleanupError
-from ai_hats.wt.locks import _state_key
+from ai_hats_wt import WorktreeManager, WorktreePartialCleanupError
+from ai_hats_wt.locks import _state_key
 from ai_hats.paths import worktrees_dir
 
 
@@ -323,7 +323,7 @@ class TestLinkedWorktreeGuard:
         from ai_hats.cli._helpers import _guard_not_inside_linked_worktree
 
         monkeypatch.setattr(
-            "ai_hats.wt.manager.WorktreeManager.is_inside_linked_worktree",
+            "ai_hats_wt.manager.WorktreeManager.is_inside_linked_worktree",
             staticmethod(lambda _path: True),
         )
         # HATS-788: guard takes no arg now — it checks the raw Path.cwd().
@@ -335,7 +335,7 @@ class TestLinkedWorktreeGuard:
         from ai_hats.cli._helpers import _guard_not_inside_linked_worktree
 
         monkeypatch.setattr(
-            "ai_hats.wt.manager.WorktreeManager.is_inside_linked_worktree",
+            "ai_hats_wt.manager.WorktreeManager.is_inside_linked_worktree",
             staticmethod(lambda _path: False),
         )
         # No exit, no exception.
@@ -348,7 +348,7 @@ class TestLinkedWorktreeGuard:
         runner = CliRunner()
         monkeypatch.chdir(git_project)
         monkeypatch.setattr(
-            "ai_hats.wt.manager.WorktreeManager.is_inside_linked_worktree",
+            "ai_hats_wt.manager.WorktreeManager.is_inside_linked_worktree",
             staticmethod(lambda _path: True),
         )
         result = runner.invoke(main, ["wt", subcmd])

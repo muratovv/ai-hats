@@ -365,7 +365,7 @@ def test_transition_done_lost_state_prints_recovery_hint(
     lifecycle into a CLI-layer test.
     """
     from ai_hats import state as state_module
-    from ai_hats.wt import WorktreeStateLostError
+    from ai_hats_wt import WorktreeStateLostError
 
     _seed_task(project_dir)
     real_transition = state_module.TaskManager.transition

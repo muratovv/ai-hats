@@ -359,7 +359,7 @@ class TaskManager:
                     # inside _setup_worktree (the non-force path), so the force
                     # branch must run it explicitly or a non-canonical merge
                     # target slips through (test_refuses_even_with_force).
-                    from .wt import assert_head_is_canonical_base
+                    from ai_hats_wt import assert_head_is_canonical_base
 
                     assert_head_is_canonical_base(self.project_dir)
                     # HATS-697: forced execute is a manual state correction —
@@ -1008,7 +1008,7 @@ class TaskManager:
         path on the happy path, or None for non-git projects.
         """
         from .paths import worktrees_dir
-        from .wt import (
+        from ai_hats_wt import (
             WorktreeCreateError,
             WorktreeManager,
             assert_head_is_canonical_base,
@@ -1101,7 +1101,7 @@ class TaskManager:
         ``merge=False`` path already discards with ``force=True``.
         """
         from .paths import worktrees_dir
-        from .wt import (
+        from ai_hats_wt import (
             OriginalBranchMissingError,
             WorktreeManager,
             WorktreeStateLostError,

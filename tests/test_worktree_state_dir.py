@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 
 from ai_hats.paths import worktrees_dir
-from ai_hats.wt import NOOP_LIFECYCLE, WorktreeManager
-from ai_hats.wt.locks import _state_key
+from ai_hats_wt import NOOP_LIFECYCLE, WorktreeManager
+from ai_hats_wt.locks import _state_key
 from ai_hats.wt_lifecycle import HOOK_LIFECYCLE
 
 

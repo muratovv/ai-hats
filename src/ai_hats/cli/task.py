@@ -170,13 +170,13 @@ def task_transition(
 ):
     """Transition a task to a new state."""
     from ..models import TaskState
-    from ..wt import WorktreeBaseBranchError  # HATS-518
-    from ..wt import WorktreeBaseBranchMismatchError  # HATS-533
-    from ..wt import WorktreeCreateError  # HATS-517
-    from ..wt import WorktreeDriftError  # HATS-509
-    from ..wt import WorktreeMainRepoMidMergeError  # HATS-587 / F4
-    from ..wt import WorktreeStateIncompleteError  # HATS-714
-    from ..wt import WorktreeStateLostError  # HATS-541
+    from ai_hats_wt import WorktreeBaseBranchError  # HATS-518
+    from ai_hats_wt import WorktreeBaseBranchMismatchError  # HATS-533
+    from ai_hats_wt import WorktreeCreateError  # HATS-517
+    from ai_hats_wt import WorktreeDriftError  # HATS-509
+    from ai_hats_wt import WorktreeMainRepoMidMergeError  # HATS-587 / F4
+    from ai_hats_wt import WorktreeStateIncompleteError  # HATS-714
+    from ai_hats_wt import WorktreeStateLostError  # HATS-541
 
     mgr = _task_manager(_project_dir())
     try:
@@ -243,7 +243,7 @@ def task_transition(
                 console.print(f"  Plan scaffold: {plan_path}")
         elif state == TaskState.EXECUTE:
             from ..paths import worktrees_dir
-            from ..wt import WorktreeManager
+            from ai_hats_wt import WorktreeManager
 
             project_dir = _project_dir()
             active = WorktreeManager.load_for_task(

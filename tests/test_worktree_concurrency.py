@@ -24,8 +24,8 @@ from pathlib import Path
 import pytest
 
 from ai_hats.paths import worktrees_dir
-from ai_hats.wt import WorktreeLockError, WorktreeManager
-from ai_hats.wt.locks import (
+from ai_hats_wt import WorktreeLockError, WorktreeManager
+from ai_hats_wt.locks import (
     GIT_RETRY_MAX,
     MERGE_RETRY_MAX,
     _acquire,
@@ -319,7 +319,7 @@ def _create_worker(
     Stores ``{"path": str|None, "error": str|None}`` under ``key`` so the
     parent test can assert exactly one winner / one loser.
     """
-    from ai_hats.wt import WorktreeCreateError
+    from ai_hats_wt import WorktreeCreateError
 
     project = Path(project_dir)
     mgr = WorktreeManager(project, branch_name=branch, state_dir=worktrees_dir(project))

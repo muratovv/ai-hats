@@ -1,14 +1,14 @@
 """ADR-0013 D9 — standalone consumability smoke test for the ``wt`` core.
 
 Proves the extracted worktree engine is a *self-contained, consumable* surface,
-not merely an isolated one: a third party (or the Option-A ``git filter-repo``
-future) can ``from ai_hats.wt import WorktreeManager`` and drive the full
-create → merge / create → discard lifecycle on a bare ``git init`` with **no**
-``ai-hats.yaml``, **no** composition, **no** tracker — using the **no-op**
-lifecycle bundle and the **project-local** state-dir fallback.
+not merely an isolated one: a third party can ``from ai_hats_wt import
+WorktreeManager`` and drive the full create → merge / create → discard lifecycle
+on a bare ``git init`` with **no** ``ai-hats.yaml``, **no** composition, **no**
+tracker — using the **no-op** lifecycle bundle and the **project-local**
+state-dir fallback.
 
-It deliberately imports ONLY the ``ai_hats.wt`` public surface (the
-``__init__.__all__`` D9 export) — never a submodule (``ai_hats.wt.manager`` /
+It deliberately imports ONLY the ``ai_hats_wt`` public surface (the
+``__init__.__all__`` D9 export) — never a submodule (``ai_hats_wt.manager`` /
 ``.locks``) and never an ai-hats accretion (``ai_hats.paths`` / ``state`` / …).
 That standalone-surface sufficiency is the property this test guards and the
 unit suite (``test_worktree.py``, which reaches into internals + imports
@@ -23,8 +23,8 @@ from pathlib import Path
 
 import pytest
 
-import ai_hats.wt as wt
-from ai_hats.wt import NOOP_LIFECYCLE, WorktreeManager
+import ai_hats_wt as wt
+from ai_hats_wt import NOOP_LIFECYCLE, WorktreeManager
 
 
 # Real ``git`` subprocesses → ``integration`` (out of the fast cross-version unit
@@ -85,7 +85,7 @@ def test_public_surface_is_sufficient() -> None:
     standalone-surface names) fails this assertion.
     """
     assert _STANDALONE_SURFACE <= set(wt.__all__), (
-        f"ai_hats.wt.__all__ must export the standalone-consumer surface "
+        f"ai_hats_wt.__all__ must export the standalone-consumer surface "
         f"{sorted(_STANDALONE_SURFACE)}; missing "
         f"{sorted(_STANDALONE_SURFACE - set(wt.__all__))}"
     )

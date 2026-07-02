@@ -23,7 +23,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.paths import worktrees_dir
-from ai_hats.wt import WorktreeManager, WorktreeRemoveError
+from ai_hats_wt import WorktreeManager, WorktreeRemoveError
 
 
 pytestmark = pytest.mark.integration
@@ -133,7 +133,7 @@ class TestRemoveWorktreeDataPreservation:
 
             with (
                 patch.object(mgr, "_git", side_effect=selective_git),
-                caplog.at_level(logging.WARNING, logger="ai_hats.wt.manager"),
+                caplog.at_level(logging.WARNING, logger="ai_hats_wt.manager"),
             ):
                 mgr._remove_worktree(force_rmtree=True)
 
@@ -177,7 +177,7 @@ class TestRemoveWorktreeDataPreservation:
 
             with (
                 patch.object(mgr, "_git", side_effect=tracker),
-                caplog.at_level(logging.INFO, logger="ai_hats.wt.manager"),
+                caplog.at_level(logging.INFO, logger="ai_hats_wt.manager"),
             ):
                 mgr._remove_worktree()  # must NOT raise
 
@@ -255,7 +255,7 @@ class TestIsInsideLinkedWorktreeSingleRevParse:
         Pre-490 the impl ran two separate subprocess.run calls; post-490
         a single invocation accepts --git-dir + --git-common-dir.
         """
-        import ai_hats.wt.manager as wt_mod
+        import ai_hats_wt.manager as wt_mod
 
         real_run = subprocess.run
         rev_parse_calls = []
@@ -286,7 +286,7 @@ class TestIsInsideLinkedWorktreeSingleRevParse:
 
     def test_git_missing_returns_false(self) -> None:
         """FileNotFoundError handled the same as CalledProcessError."""
-        import ai_hats.wt.manager as wt_mod
+        import ai_hats_wt.manager as wt_mod
 
         def boom(*args, **kwargs):
             raise FileNotFoundError(2, "No such file or directory: 'git'")
