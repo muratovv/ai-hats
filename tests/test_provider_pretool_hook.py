@@ -13,6 +13,7 @@ Covers:
 import json
 from pathlib import Path
 
+import pytest
 
 from ai_hats.composer import CompositionResult, ResolvedComponent
 from ai_hats.models import ComponentType
@@ -98,6 +99,43 @@ def test_guard_command_uses_claude_project_dir_prefix(tmp_path: Path) -> None:
     cmd = _settings(tmp_path)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
     assert cmd.startswith("$CLAUDE_PROJECT_DIR/")
     assert cmd.endswith("/pre_bash_shared_state_guard.sh")
+
+
+def test_out_of_project_hook_paths_warn_loudly(tmp_path: Path, monkeypatch) -> None:
+    # HATS-897 (b-warn): a bare AI_HATS_DIR override legitimately relocates
+    # hooks out of the tree (HATS-380/395) — keep the absolute paths, but
+    # never write them silently: a leaked env produces the same shape.
+    base = tmp_path / "elsewhere" / "ai-hats"
+    monkeypatch.setenv("AI_HATS_DIR", str(base))
+    project = tmp_path / "project"
+    project.mkdir()
+    with pytest.warns(UserWarning, match="outside the project"):
+        ClaudeProvider().ensure_runtime_hooks(project)
+    cmd = _settings(project)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert cmd == str(base / "library" / "hooks" / "pre_bash_shared_state_guard.sh")
+
+
+def test_in_project_hook_paths_do_not_warn(tmp_path: Path, recwarn) -> None:
+    ClaudeProvider().ensure_runtime_hooks(tmp_path)
+    assert not [w for w in recwarn if "outside the project" in str(w.message)]
+
+
+def test_foreign_session_pair_does_not_cross_write_settings(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # HATS-897 incident (PROX-278): env pair pinned by another project's wrap
+    # session leaks into this shell — bump in the victim project must keep its
+    # settings.json on $CLAUDE_PROJECT_DIR paths, not the foreign checkout's.
+    dev_repo = tmp_path / "dev-repo"
+    monkeypatch.setenv("AI_HATS_DIR", str(dev_repo / ".agent" / "ai-hats"))
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(dev_repo))
+    victim = tmp_path / "victim"
+    (victim / ".agent").mkdir(parents=True)
+    with pytest.warns(UserWarning, match="AI_HATS_DIR"):
+        ClaudeProvider().ensure_runtime_hooks(victim)
+    cmd = _settings(victim)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert cmd == EXPECTED_REL
+    assert str(dev_repo) not in (victim / SETTINGS).read_text()
 
 
 def test_claude_double_apply_is_idempotent(tmp_path: Path) -> None:
