@@ -20,7 +20,7 @@ from pathlib import Path
 
 import filelock
 
-from .composer import ResolvedComponent
+from ai_hats_core import ResolvedComponent
 from .paths import claude_skills_dir
 from .placeholders import expand_path_placeholders
 from .safe_delete import discard

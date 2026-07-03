@@ -18,11 +18,8 @@ from pathlib import Path
 
 import yaml
 
-from ai_hats_core import atomic_write_bytes
-from .composer import (
-    Composer,
-    CompositionResult,
-)
+from ai_hats_core import CompositionResult, atomic_write_bytes
+from .composer import Composer
 from .hooks_manager import HooksManager
 from .materialize import compose_for_role
 from .resolver import LibraryResolver

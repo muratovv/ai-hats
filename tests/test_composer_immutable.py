@@ -15,8 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType
+from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 
 
 def _make_minimal_result(
@@ -45,7 +44,7 @@ def test_resolved_component_is_frozen():
     end-to-end (П1 applies to the components too)."""
     c = ResolvedComponent(
         name="rule_x",
-        component_type=ComponentType.RULE,
+        component_type=ComponentKind.RULE,
         source_path=Path("/tmp/rule_x"),
         injection="body",
     )

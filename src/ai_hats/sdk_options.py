@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from claude_agent_sdk import ClaudeAgentOptions
     from claude_agent_sdk.types import SdkPluginConfig, SystemPromptPreset
 
-    from .composer import CompositionResult
+    from ai_hats_core import CompositionResult
 
 
 # ---------------------------------------------------------------------------

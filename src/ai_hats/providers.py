@@ -9,9 +9,9 @@ import shutil
 import warnings
 from pathlib import Path
 
+from ai_hats_core import CompositionResult, ResolvedComponent
+
 from .composer import (
-    CompositionResult,
-    ResolvedComponent,
     collect_runtime_hooks,
     resolve_skill_script,
 )
