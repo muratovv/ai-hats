@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .git_env import scrubbed_git_env
+from ai_hats_core import scrubbed_git_env
 from .paths import (
     CLAUDE_PROJECT_DIR_VAR,
     LEGACY_PATH_MAP,
