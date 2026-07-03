@@ -41,24 +41,11 @@ class ResolvedComponent:
 class CompositionResult:
     """The flattened result of composing a role.
 
-    `injections` is the legacy flat view (trait/role/overlay text, deduped by
-    content). The structured fields carry the same data with provenance for
-    layered writers (HATS-282):
-
-    - `trait_injections` — `{trait_name: text}`, deduped by text: a trait whose
-      text is empty or already recorded elsewhere is absent.
-    - `role_injection` / `overlay_injection` — root role's / overlay's own text
-      (independent of dedup; recorded if non-empty).
-
-    Rules and skills carry provenance via `rules`/`skills` (deduped by name).
-
-    HATS-452 immutability contract: ``frozen=True``, so fields cannot be
-    reassigned. Deriving a *modified* result (e.g. an injection override for a
-    sub-agent) MUST go through the ``with_*`` methods; re-composing the same
-    (role, overlays) pair to obtain a variant is forbidden (П1 in ADR-0005).
-    ``frozen`` guards field reassignment only — the inner list/dict containers
-    stay technically mutable, but by convention callers never mutate them in
-    place (the composer builds them once during ``compose``).
+    ``injections`` is the flat deduped view; ``trait_injections`` /
+    ``role_injection`` / ``overlay_injection`` carry the same data with
+    provenance for layered writers (HATS-282). Frozen (HATS-452): derive
+    variants ONLY via the ``with_*`` methods — re-composing the same
+    (role, overlays) pair for a variant is forbidden (ADR-0005 П1).
     """
 
     name: str
@@ -79,17 +66,9 @@ class CompositionResult:
     # ----- immutable transformations (HATS-452) -----
 
     def with_injection_override(self, text: str) -> "CompositionResult":
-        """Return a copy whose ``injections`` is replaced by a single entry.
+        """Return a copy whose ``injections`` is exactly ``[text]``.
 
-        Used by sub-agent path (HATS-267) to inject a caller-supplied prompt
-        in place of the composed role text while preserving the rest of the
-        composition (rules/skills/hooks/priorities). The new injections list
-        contains exactly the override text; pass an empty string to
-        explicitly clear (rare — the consumer-side filter will then emit no
-        injection section).
-
-        Per П2 in ADR-0005, this method is intended ONLY for the Automate
-        path (``SubAgentRunner``). HITL (``WrapRunner``) does not have an
-        override channel and must not call this.
+        Sub-agent (Automate) path only — HITL has no override channel
+        (ADR-0005 П2).
         """
         return replace(self, injections=[text])
