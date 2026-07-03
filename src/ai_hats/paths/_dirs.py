@@ -375,16 +375,6 @@ def managed_runtime_hook_filename(skill_name: str, script: str) -> str:
 CLAUDE_PROJECT_DIR_VAR: str = "$CLAUDE_PROJECT_DIR/"
 
 
-def claude_skills_dir(base: Path) -> Path:
-    """Claude Code's skill auto-discovery dir under ``base``: ``.claude/skills/``.
-
-    ``base`` is a project root or the user home — Claude Code scans both
-    scopes (HATS-901/907). Names the external-tool dependency explicitly
-    instead of scattering the literal.
-    """
-    return base / ".claude" / "skills"
-
-
 def strip_claude_project_dir(s: str) -> str:
     """Remove a leading ``$CLAUDE_PROJECT_DIR/`` placeholder if present.
 
@@ -675,7 +665,6 @@ __all__ = [
     "managed_wt_hook_filename",
     "managed_runtime_hook_filename",
     "CLAUDE_PROJECT_DIR_VAR",
-    "claude_skills_dir",
     "strip_claude_project_dir",
     "user_hooks_dir",
     "last_backup_path",

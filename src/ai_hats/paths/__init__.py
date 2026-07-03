@@ -8,6 +8,7 @@ keeps working unchanged for every consumer:
     tracker/library dirs, venv + versioned-install layout, legacy migration map).
   - :mod:`.library`    — builtin ``library/`` SOURCE resolution (worktree-aware),
     the single home for ``files(LIBRARY_PKG)``.
+  - :mod:`.claude`     — Claude Code ``.claude/*`` layout conventions (HATS-907).
   - :mod:`.validation` — config-value + library-root validators.
   - :mod:`.constants`  — referenceable named constants for the above.
 
@@ -19,5 +20,6 @@ from __future__ import annotations
 
 from .constants import *  # noqa: F403
 from ._dirs import *  # noqa: F403
+from .claude import *  # noqa: F403
 from .validation import *  # noqa: F403
 from .library import *  # noqa: F403
