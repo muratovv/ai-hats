@@ -29,8 +29,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _ai_hats(binary: Path, *args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    from _helpers.env import checkout_pythonpath
+
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(REPO_ROOT / "src")
+    env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT)
     env["AI_HATS_VENV"] = str(Path(sys.executable).parent.parent)
     env.pop("AI_HATS_DIR", None)  # AI_HATS_DIR would opt-in the gate — keep it unset
     return subprocess.run(

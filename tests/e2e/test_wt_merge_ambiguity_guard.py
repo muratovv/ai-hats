@@ -61,10 +61,10 @@ def _run_hats(
     installed ``ai-hats`` binary.
     """
     env = os.environ.copy()
+    from _helpers.env import checkout_pythonpath
+
     existing_pp = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = (
-        f"{SRC}:{existing_pp}" if existing_pp else str(SRC)
-    )
+    env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, existing_pp)
     return subprocess.run(
         [sys.executable, "-m", "ai_hats", *args],
         cwd=str(project_dir),

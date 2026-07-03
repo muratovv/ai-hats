@@ -143,6 +143,8 @@ def test_ack_override_allows_block(repo: Path, tmp_path: Path):
 def test_real_checker_blocks_dangling_pointer(repo: Path):
     """The actual ai_hats.rule_delivery module, wired through the hook, blocks a
     staged injection that points `see rule X` at an undelivered rule."""
+    from _helpers.env import checkout_pythonpath
+
     _stage_cfg(
         repo,
         "library/core/traits/trait-bad/config.yaml",
@@ -152,7 +154,7 @@ def test_real_checker_blocks_dangling_pointer(repo: Path):
         repo,
         env={
             "AI_HATS_RULE_DELIVERY_CMD": "python3 -m ai_hats.rule_delivery",
-            "PYTHONPATH": str(REPO_ROOT / "src"),
+            "PYTHONPATH": checkout_pythonpath(REPO_ROOT),
         },
     )
     assert res.returncode == 1, res.stderr
