@@ -18,7 +18,7 @@ since the latest tag lives under **Unreleased** until the next release.
   `ai-hats` wrap sessions now intersect the composed skill names with both
   auto-discovery dirs and surface a pre-launch WARN naming each collision:
   byte-identical to the plugin copy → "safe to remove"; listed in an
-  `.ai-hats-managed` marker → "removed by the next `self bump`"; otherwise →
+  `.ai-hats-managed` marker → "removed by the next `self init`"; otherwise →
   "review: remove or rename". Fail-open, HITL sessions only.
 
 ### Fixed
@@ -26,8 +26,8 @@ since the latest tag lives under **Unreleased** until the next release.
 - **Legacy `.claude/skills/` mirror removed on heal** (HATS-901). HATS-294
   (v0.7) dropped the permanent skills export but left already-materialized
   project-level mirrors behind — frozen at their last export and
-  double-registered alongside the session plugin ever since. `self bump` /
-  `self init` / `self update` now discard exactly the skill dirs listed in
+  double-registered alongside the session plugin ever since. `self init` /
+  `self update` now discard exactly the skill dirs listed in
   `.claude/skills/.ai-hats-managed` (plus the marker) via the safe-delete
   trash bin; user-authored entries survive.
 

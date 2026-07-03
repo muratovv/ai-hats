@@ -115,7 +115,7 @@ class SkillCollision:
         ``"identical"`` — byte-equal to the materialized plugin copy: a
             redundant duplicate, provably safe to remove.
         ``"managed"`` — listed in the dir's ``.ai-hats-managed`` marker:
-            a stale ai-hats mirror; the next ``self bump`` removes it.
+            a stale ai-hats mirror; the next ``self init`` removes it.
         ``"differs"`` — same name, different content: stale ai-hats copy or
             a user-authored skill — indistinguishable, user must review.
     """
