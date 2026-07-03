@@ -115,6 +115,10 @@ class Assembler:
         self.agent_dir = project_dir / AGENT_DIR
         self.config_path = project_dir / PROJECT_CONFIG
         self.project_config = ProjectConfig.from_yaml(self.config_path)
+        # Read-path net for a hand-edited ai-hats.yaml: the schema no longer
+        # validates ``provider`` (HATS-863 severed schema→providers).
+        if self.project_config.provider:
+            self._validate_provider(self.project_config.provider)
 
         # HATS-421: user-level customizations layer. Loaded lazily-eagerly here
         # so the global overlay applies to every composer invocation through
