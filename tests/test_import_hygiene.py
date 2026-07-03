@@ -29,10 +29,19 @@ from pathlib import Path
 PKG = "ai_hats"
 SRC = Path(__file__).resolve().parent.parent / "src" / PKG
 # Genuinely dependency-free foundations: they must import nothing first-party at
-# ANY level (incl. deferred / TYPE_CHECKING). NB: `models` is intentionally NOT
-# here — it has real, deferred first-party deps (paths, providers), so it is not
-# a leaf. Keeping the list honest is what the gate enforces.
-LEAF_MODULES = ("constants", "paths")  # HATS-862: git_env + safe_delete -> core
+# ANY level (incl. deferred / TYPE_CHECKING). NB: `config` and the `models`
+# facade are intentionally NOT here — config has real deferred deps (paths),
+# the facade imports the domain modules. Keeping the list honest is what the
+# gate enforces.
+LEAF_MODULES = (
+    "constants",
+    "paths",  # HATS-862: git_env + safe_delete -> core
+    "tracker.models",  # HATS-863: tracker schema is core-only
+)
+
+# HATS-863: schema modules must never regrow the models->providers back-edge —
+# not even deferred (the pre-split cycle lived in a deferred validator import).
+SCHEMA_MODULES = ("models", "config", "tracker.models", "libraries.models")
 
 
 def _module_name(path: Path) -> str:
@@ -181,6 +190,34 @@ def test_leaf_modules_are_pure():
             offenders[leaf] = sorted(set(refs))
     assert not offenders, (
         f"leaf modules must not import first-party (outside their own package): {offenders}"
+    )
+
+
+def test_schema_modules_never_import_providers():
+    """Schema modules carry no ``providers`` reference at ANY level (HATS-863).
+
+    The god-``models`` cycle survived via a deferred import inside a pydantic
+    validator, so unlike the runtime-cycle gate this check walks the FULL tree
+    (deferred imports included). RED under revert of the severing commit.
+    """
+    mods = _modules()
+    nodeset = set(mods)
+    providers = f"{PKG}.providers"
+    offenders: dict[str, list[str]] = {}
+    for schema in SCHEMA_MODULES:
+        name = f"{PKG}.{schema}"
+        path = mods[name]  # KeyError = schema module vanished; fail loud
+        tree = ast.parse(path.read_text())
+        refs = [
+            t
+            for node in _import_nodes(tree, top_level_only=False)
+            for t in _targets(name, path.name == "__init__.py", node, nodeset)
+            if t == providers or t.startswith(providers + ".")
+        ]
+        if refs:
+            offenders[schema] = sorted(set(refs))
+    assert not offenders, (
+        f"schema modules must not import ai_hats.providers (any level): {offenders}"
     )
 
 
