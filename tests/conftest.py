@@ -111,7 +111,7 @@ def _reset_safe_delete_session(monkeypatch):
     final reset because module state is process-local and tests don't
     fork.
     """
-    from ai_hats import safe_delete
+    from ai_hats_core import safe_delete
 
     safe_delete.reset_session()
     monkeypatch.delenv(safe_delete.ENV_TRASH_DIR, raising=False)

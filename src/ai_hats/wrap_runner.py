@@ -217,7 +217,7 @@ class WrapRunner:
         """HATS-907: sweep the marker-proven stale mirror pre-spawn. Gated on
         version-skew + hard-delete mode; fail-open. Rationale: task card."""
         from .plugin_dir import drop_legacy_skills_mirror
-        from .safe_delete import hard_delete_mode, session_root
+        from ai_hats_core.safe_delete import hard_delete_mode, session_root
 
         names = ", ".join(sorted({c.name for c in healable}))
         try:

@@ -36,8 +36,8 @@ from .paths import (
     wt_hooks_dir as _wt_hooks_dir,
 )
 from .providers import get_provider
-from .safe_delete import discard as _safe_discard
-from .safe_delete import replace as _safe_replace
+from ai_hats_core.safe_delete import discard as _safe_discard
+from ai_hats_core.safe_delete import replace as _safe_replace
 
 if TYPE_CHECKING:
     from .models import ProjectConfig, RuntimeHook

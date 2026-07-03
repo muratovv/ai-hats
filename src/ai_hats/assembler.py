@@ -40,8 +40,8 @@ from .paths import (
 from .paths.constants import LIBRARIES_DIRNAME
 from .placeholders import expand_path_placeholders
 from .plugin_dir import drop_legacy_skills_mirror
-from .safe_delete import discard as _safe_discard
-from .safe_delete import replace as _safe_replace
+from ai_hats_core.safe_delete import discard as _safe_discard
+from ai_hats_core.safe_delete import replace as _safe_replace
 from .providers import (
     INJECTION_END,
     INJECTION_START,
