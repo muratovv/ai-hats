@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .constants import GITIGNORE_FILE
-from .safe_delete import discard as _safe_discard
-from .safe_delete import replace as _safe_replace
+from ai_hats_core.safe_delete import discard as _safe_discard
+from ai_hats_core.safe_delete import replace as _safe_replace
 
 if TYPE_CHECKING:
     from .assembler import Assembler

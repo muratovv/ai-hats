@@ -644,7 +644,7 @@ def execute_deletions(
     * ``project_dir`` (when passed) controls trash project-relative
       layout — assembler caller passes ``self.project_dir``.
     """
-    from .safe_delete import TrashFullError, discard
+    from ai_hats_core.safe_delete import TrashFullError, discard
 
     removed: list[Path] = []
     canonical_absolute = canonical_dir.absolute()

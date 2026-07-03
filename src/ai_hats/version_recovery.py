@@ -19,7 +19,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from . import safe_delete
+from ai_hats_core import safe_delete
 from .paths import ai_hats_dir, is_complete, read_current_sha, versions_root
 from .version_refs import current_run_sha, load_refs, ref_is_live
 

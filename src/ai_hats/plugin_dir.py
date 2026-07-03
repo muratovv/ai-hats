@@ -23,7 +23,7 @@ import filelock
 from ai_hats_core import ResolvedComponent
 from .paths import claude_skills_dir
 from .placeholders import expand_path_placeholders
-from .safe_delete import discard
+from ai_hats_core.safe_delete import discard
 
 # HATS-604: two callers can resolve the SAME per-session plugin dir (a
 # session_id collision under high parallel load — see HATS-605 for the

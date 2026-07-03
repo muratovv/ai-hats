@@ -436,7 +436,7 @@ def heal_json_file(path: Path, project_dir: Path) -> int:
     :func:`safe_delete.replace` before the rewrite, so users can recover
     from a faulty heal pass.
     """
-    from .safe_delete import replace as _safe_replace
+    from ai_hats_core.safe_delete import replace as _safe_replace
 
     try:
         raw = path.read_text(encoding="utf-8")
@@ -497,7 +497,7 @@ def heal_text_file(path: Path, project_dir: Path) -> int:
     branch where ``is_file_git_clean`` returns True permissively and
     a faulty regex could otherwise irreversibly mangle user content.
     """
-    from .safe_delete import replace as _safe_replace
+    from ai_hats_core.safe_delete import replace as _safe_replace
 
     try:
         content = path.read_text(encoding="utf-8")
@@ -751,7 +751,7 @@ def _disable_user_hooks_in_settings(
     silently skipped — not Phase 4's responsibility to surface JSON
     syntax errors.
     """
-    from .safe_delete import replace as _safe_replace
+    from ai_hats_core.safe_delete import replace as _safe_replace
 
     try:
         raw = settings_path.read_text(encoding="utf-8")
