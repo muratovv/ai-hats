@@ -9,9 +9,9 @@ import shutil
 import warnings
 from pathlib import Path
 
+from ai_hats_core import CompositionResult, ResolvedComponent
+
 from .composer import (
-    CompositionResult,
-    ResolvedComponent,
     collect_runtime_hooks,
     resolve_skill_script,
 )
@@ -277,7 +277,7 @@ class Provider(abc.ABC):
         return below provides a defense-in-depth no-op if it is invoked
         anyway.
         """
-        from .safe_delete import replace as _safe_replace
+        from ai_hats_core.safe_delete import replace as _safe_replace
 
         prompt_path = self.system_prompt_path(project_dir)
         prompt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -798,7 +798,7 @@ class ClaudeProvider(Provider):
 
     @staticmethod
     def _write_settings(settings_path: Path, data: dict, project_dir: Path) -> None:
-        from .safe_delete import replace as _safe_replace
+        from ai_hats_core.safe_delete import replace as _safe_replace
 
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         # HATS-470: .claude/settings.json is a user-owned file (carries

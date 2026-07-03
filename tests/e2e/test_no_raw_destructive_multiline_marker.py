@@ -35,7 +35,7 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
 
 def _make_repo(tmp_path: Path) -> Path:
     """Ephemeral git repo with the REAL guard wired as the pre-commit hook and
-    a baseline ``src/ai_hats/safe_delete.py`` (the authorised raw-ops site)."""
+    the exempt ``ai_hats_core/safe_delete.py`` core site (HATS-862 layout)."""
     repo = tmp_path / "proj"
     repo.mkdir()
     assert _git(repo, "init", "-q").returncode == 0
@@ -50,7 +50,10 @@ def _make_repo(tmp_path: Path) -> Path:
 
     src = repo / "src" / "ai_hats"
     src.mkdir(parents=True)
-    (src / "safe_delete.py").write_text("def discard(p):\n    p.unlink()\n")
+    (src / "__init__.py").write_text("")
+    core = repo / "packages" / "ai-hats-core" / "src" / "ai_hats_core"
+    core.mkdir(parents=True)
+    (core / "safe_delete.py").write_text("def discard(p):\n    p.unlink()\n")
     return repo
 
 

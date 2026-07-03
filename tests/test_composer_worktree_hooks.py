@@ -5,12 +5,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_hats.composer import (
-    CompositionResult,
-    ResolvedComponent,
-    collect_worktree_hooks,
-)
-from ai_hats.models import ComponentType
+from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
+
+from ai_hats.composer import collect_worktree_hooks
 
 
 def _skill(base: Path, name: str, body: str) -> ResolvedComponent:
@@ -20,7 +17,7 @@ def _skill(base: Path, name: str, body: str) -> ResolvedComponent:
         f"---\nname: {name}\nai_hats:\n  worktree:\n{body}---\n# {name}\n"
     )
     return ResolvedComponent(
-        name=name, component_type=ComponentType.SKILL, source_path=d
+        name=name, component_type=ComponentKind.SKILL, source_path=d
     )
 
 
@@ -57,6 +54,6 @@ def test_skill_without_carry_skipped(tmp_path: Path) -> None:
     plain.mkdir()
     (plain / "SKILL.md").write_text("---\nname: plain\n---\n# plain\n")
     rc = ResolvedComponent(
-        name="plain", component_type=ComponentType.SKILL, source_path=plain
+        name="plain", component_type=ComponentKind.SKILL, source_path=plain
     )
     assert collect_worktree_hooks(_result([rc])) == {}

@@ -1,6 +1,6 @@
 """Shared pytest fixtures for the ai-hats test suite.
 
-HATS-470: :mod:`ai_hats.safe_delete` keeps a per-process trash session
+HATS-470: :mod:`ai_hats_core.safe_delete` keeps a per-process trash session
 in module-level state. Without an autouse reset, the first test to
 trigger a destructive op pins the session for every subsequent test,
 which corrupts assertions about default vs custom trash base, manifest
@@ -111,7 +111,7 @@ def _reset_safe_delete_session(monkeypatch):
     final reset because module state is process-local and tests don't
     fork.
     """
-    from ai_hats import safe_delete
+    from ai_hats_core import safe_delete
 
     safe_delete.reset_session()
     monkeypatch.delenv(safe_delete.ENV_TRASH_DIR, raising=False)

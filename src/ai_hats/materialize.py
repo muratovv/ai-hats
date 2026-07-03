@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .composer import CompositionResult
+from ai_hats_core import CompositionResult
 
 if TYPE_CHECKING:
     from .assembler import Assembler

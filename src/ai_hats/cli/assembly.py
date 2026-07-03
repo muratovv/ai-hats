@@ -304,7 +304,7 @@ def init(
     # re-raise needed here. Wizard path still skips (the wizard role
     # handles its own session-bootstrap surface).
     if already and not use_wizard:
-        from ..safe_delete import session_summary as _trash_summary
+        from ai_hats_core.safe_delete import session_summary as _trash_summary
 
         # HATS-469 R3: re-init is user-initiated → diagnostics OK
         # (set_role / runtime path stays silent).
@@ -1068,7 +1068,7 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
     )
     # HATS-470: surface the trash-bin banner so the user knows where
     # snapshots from this bump live (if any).
-    from ..safe_delete import session_summary as _trash_summary
+    from ai_hats_core.safe_delete import session_summary as _trash_summary
     banner = _trash_summary()
     if banner:
         console.print(f"  [dim]{banner}[/]")

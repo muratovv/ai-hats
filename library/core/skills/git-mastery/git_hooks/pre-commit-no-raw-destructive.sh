@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# HATS-470 — block raw destructive ops outside ai_hats.safe_delete.
+# HATS-470 — block raw destructive ops outside ai_hats_core.safe_delete.
 #
 # Enforces that no new `path.unlink(...)`, `shutil.rmtree(...)`, or
-# `path.rmdir(...)` call sneaks into `src/ai_hats/` without either:
-#   (a) being inside `src/ai_hats/safe_delete.py` (the single authorised
-#       primitive site), OR
+# `path.rmdir(...)` call sneaks into the workspace source trees
+# (`src/ai_hats/` and `packages/*/src/`) without either:
+#   (a) being inside `ai_hats_core/safe_delete.py` (the single authorised
+#       primitive site — HATS-862 moved it into the core package), OR
 #   (b) carrying an explicit `# safe-delete: ok <reason>` marker anywhere in
 #       the call's parenthesised span (reviewer-visible bypass with reason in
 #       the diff). The span-aware match (HATS-757) survives `ruff format`
@@ -16,9 +17,9 @@
 # the data-loss patterns HATS-470 just neutralised (see
 # tracker/backlog/tasks/HATS-470/plan.md, Step 4).
 #
-# Scope: this hook only fires when `src/ai_hats/` exists in the
-# repository — non-ai-hats projects that happen to include the
-# git-mastery skill get a silent no-op.
+# Scope: this hook only fires when `src/ai_hats/` or `packages/*/src/`
+# exists in the repository — non-ai-hats projects that happen to include
+# the git-mastery skill get a silent no-op.
 #
 # Override (single commit):  AI_HATS_NO_RAW_DESTRUCTIVE_SKIP=1 git commit ...
 set -uo pipefail
@@ -33,8 +34,12 @@ fi
 # (--show-toplevel correctly returns the worktree root; we deliberately
 # do NOT use --git-common-dir here, which would jump to main.)
 worktree_root="$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
-src_dir="$worktree_root/src/ai_hats"
-if [[ ! -d "$src_dir" ]]; then
+scan_dirs=()
+[[ -d "$worktree_root/src/ai_hats" ]] && scan_dirs+=("$worktree_root/src/ai_hats")
+for d in "$worktree_root"/packages/*/src; do
+    [[ -d "$d" ]] && scan_dirs+=("$d")
+done
+if [[ ${#scan_dirs[@]} -eq 0 ]]; then
     # Non-ai-hats project — nothing to guard.
     exit 0
 fi
@@ -48,13 +53,13 @@ if command -v rg >/dev/null 2>&1; then
             -e '\.unlink\(' \
             -e 'shutil\.rmtree\(' \
             -e '\.rmdir\(' \
-            "$src_dir"
+            "${scan_dirs[@]}"
     }
 else
     list_files() {
         grep -rl --include='*.py' \
             -E '\.unlink\(|shutil\.rmtree\(|\.rmdir\(' \
-            "$src_dir"
+            "${scan_dirs[@]}"
     }
 fi
 
@@ -95,18 +100,18 @@ scan_file() {
 violators=""
 while IFS= read -r f; do
     [[ -z "$f" ]] && continue
-    [[ "$f" == *"src/ai_hats/safe_delete.py" ]] && continue
+    [[ "$f" == *"/ai_hats_core/safe_delete.py" ]] && continue
     out="$(scan_file "$f")"
     [[ -n "$out" ]] && violators+="${violators:+$'\n'}$out"
 done < <(list_files)
 
 if [[ -n "$violators" ]]; then
     echo "" >&2
-    echo "ERROR (HATS-470): raw destructive call outside ai_hats.safe_delete:" >&2
+    echo "ERROR (HATS-470): raw destructive call outside ai_hats_core.safe_delete:" >&2
     echo "$violators" >&2
     echo "" >&2
     echo "Use one of:" >&2
-    echo "  from ai_hats.safe_delete import discard, replace" >&2
+    echo "  from ai_hats_core.safe_delete import discard, replace" >&2
     echo "  discard(path, reason=\"...\", project_dir=...)" >&2
     echo "  replace(path, new_bytes, reason=\"...\", project_dir=...)" >&2
     echo "" >&2

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import click
 
-from ..git_env import scrubbed_git_env
+from ai_hats_core import scrubbed_git_env
 from ._helpers import _assembler, _project_dir, console, logger
 
 if TYPE_CHECKING:

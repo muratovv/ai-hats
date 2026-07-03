@@ -10,6 +10,25 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Changed
+
+- **ai-hats-core grew from atomic_io into the kernel** (HATS-862, ADR-0014 T2).
+  Moved out of the integrator into `ai-hats-core` 0.2.0: `scrubbed_git_env`,
+  the composition value-types (`CompositionResult`, `ResolvedComponent`) typed
+  by the new narrow `ComponentKind(RULE, SKILL)` enum, `safe_delete`, and the
+  YAML model base (`ai_hats_core.YamlModel`, ex `_YamlModel`). Core's charter
+  changed from "dependency-free" to "minimal deps, each load-bearing" — pydantic
+  is the first sanctioned dep. The full `ComponentType` taxonomy and `Channel`
+  deliberately stay integrator-side (ADR-0014 Amendments, 2026-07-03). The
+  integrator now pins `ai-hats-core>=0.2.0`. Direct repoint, no shims.
+
+- **Workspace import-boundary gate** (HATS-869, ADR-0014 T8).
+  `tests/test_workspace_boundaries.py` enforces the dependency rule
+  (`ai-hats → packages → ai-hats-core`) for every uv-workspace member:
+  allowlists derive from each member's own `pyproject.toml`, the declared
+  first-party graph is tier-checked (no declare-to-evade), and the integrator
+  may import only members it declares. Smoke-marked — rides the pre-push wall.
+
 ### Added
 
 - **Duplicate-skill-registration warning at session start** (HATS-901). Claude

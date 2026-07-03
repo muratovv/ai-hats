@@ -611,7 +611,7 @@ class TaskManager:
             if blob_path.is_file():
                 # HATS-470: user-uploaded blob — route through trash so
                 # accidental detach is recoverable.
-                from .safe_delete import discard as _safe_discard
+                from ai_hats_core.safe_delete import discard as _safe_discard
 
                 _safe_discard(
                     blob_path,
@@ -837,7 +837,7 @@ class TaskManager:
 
     def sync(self) -> int:
         """Synchronize STATE.md with current task cards. Returns task count."""
-        from .safe_delete import discard as _safe_discard
+        from ai_hats_core.safe_delete import discard as _safe_discard
 
         self._ensure_project()
         headers = self._iter_headers()
@@ -1255,7 +1255,7 @@ class TaskManager:
 
     def _update_indexes(self) -> None:
         """Regenerate STATE.md (single source of truth for the task index)."""
-        from .safe_delete import discard as _safe_discard
+        from ai_hats_core.safe_delete import discard as _safe_discard
 
         headers = self._iter_headers()
         self._update_state_md(headers)
@@ -1307,7 +1307,7 @@ class TaskManager:
         # between commands are snapshotted but the steady-state pure regen
         # doesn't churn /tmp. If this proves noisy in practice, convert
         # to a whitelist-marker site (regen is deterministic from tasks/).
-        from .safe_delete import replace as _safe_replace
+        from ai_hats_core.safe_delete import replace as _safe_replace
 
         self.state_md_path.parent.mkdir(parents=True, exist_ok=True)
         _safe_replace(

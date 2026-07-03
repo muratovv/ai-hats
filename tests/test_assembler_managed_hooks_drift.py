@@ -12,8 +12,8 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.hooks_manager import HookChange
-from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType, ProjectConfig
+from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
+from ai_hats.models import ProjectConfig
 from ai_hats.paths import (
     hooks_dir,
     managed_runtime_hook_filename,
@@ -51,7 +51,7 @@ def _skill_runtime(base: Path, name: str, event: str, matcher: str, script: str)
     sp.parent.mkdir(parents=True, exist_ok=True)
     sp.write_text("#!/usr/bin/env bash\nexit 0\n")
     sp.chmod(0o755)
-    return ResolvedComponent(name=name, component_type=ComponentType.SKILL, source_path=d)
+    return ResolvedComponent(name=name, component_type=ComponentKind.SKILL, source_path=d)
 
 
 def _skill_wt(base: Path, name: str, script: str):
@@ -65,7 +65,7 @@ def _skill_wt(base: Path, name: str, script: str):
     sp.parent.mkdir(parents=True, exist_ok=True)
     sp.write_text("#!/usr/bin/env bash\nexit 0\n")
     sp.chmod(0o755)
-    return ResolvedComponent(name=name, component_type=ComponentType.SKILL, source_path=d)
+    return ResolvedComponent(name=name, component_type=ComponentKind.SKILL, source_path=d)
 
 
 # ----- runtime-hook BYTES drift -----

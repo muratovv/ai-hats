@@ -9,8 +9,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.assembler import Assembler
-from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType
+from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.paths import managed_wt_hook_filename, wt_hooks_dir
 
 
@@ -28,7 +27,7 @@ def _skill_with_wt(
         p.write_text("#!/usr/bin/env bash\nexit 0\n")
         p.chmod(0o755)
     return ResolvedComponent(
-        name=name, component_type=ComponentType.SKILL, source_path=d
+        name=name, component_type=ComponentKind.SKILL, source_path=d
     )
 
 
@@ -96,7 +95,7 @@ def test_no_dir_when_no_wt_hooks(assembler, tmp_path):
     plain.mkdir(parents=True)
     (plain / "SKILL.md").write_text("---\nname: plain\n---\n# plain\n")
     rc = ResolvedComponent(
-        name="plain", component_type=ComponentType.SKILL, source_path=plain
+        name="plain", component_type=ComponentKind.SKILL, source_path=plain
     )
     assembler.hooks.materialize_worktree_hooks(_result([rc]))
     assert not wt_hooks_dir(assembler.project_dir).exists()

@@ -22,12 +22,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composer import (
-    CompositionResult,
     collect_runtime_hooks as _collect_runtime_hooks,
     collect_worktree_hooks as _collect_worktree_hooks,
     resolve_skill_script as _resolve_runtime_script,
 )
-from .git_env import scrubbed_git_env
+from ai_hats_core import CompositionResult, scrubbed_git_env
 from .models import SkillMetadata
 from .paths import (
     builtin_library_hooks as _builtin_library_hooks,
@@ -37,8 +36,8 @@ from .paths import (
     wt_hooks_dir as _wt_hooks_dir,
 )
 from .providers import get_provider
-from .safe_delete import discard as _safe_discard
-from .safe_delete import replace as _safe_replace
+from ai_hats_core.safe_delete import discard as _safe_discard
+from ai_hats_core.safe_delete import replace as _safe_replace
 
 if TYPE_CHECKING:
     from .models import ProjectConfig, RuntimeHook
