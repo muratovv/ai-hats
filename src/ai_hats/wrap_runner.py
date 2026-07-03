@@ -87,7 +87,7 @@ def _format_hook_heal(changes) -> str:
 
 _COLLISION_HINTS = {
     "identical": "exact duplicate of the session plugin — safe to remove",
-    "managed": "stale ai-hats mirror — the next 'ai-hats self bump' removes it",
+    "managed": "stale ai-hats mirror — the next 'ai-hats self init' removes it",
     "differs": "content differs from the ai-hats version — review: remove or rename",
 }
 
