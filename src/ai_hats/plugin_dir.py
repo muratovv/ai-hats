@@ -21,6 +21,7 @@ from pathlib import Path
 import filelock
 
 from .composer import ResolvedComponent
+from .paths import claude_skills_dir
 from .placeholders import expand_path_placeholders
 from .safe_delete import discard
 
@@ -141,8 +142,8 @@ def duplicate_skill_registrations(
     """
     collisions: list[SkillCollision] = []
     scopes = (
-        ("home", home / ".claude" / "skills"),
-        ("project", project_dir / ".claude" / "skills"),
+        ("home", claude_skills_dir(home)),
+        ("project", claude_skills_dir(project_dir)),
     )
     for scope, scope_dir in scopes:
         if not scope_dir.is_dir():
@@ -173,14 +174,14 @@ def drop_legacy_skills_mirror(project_dir: Path) -> list[str]:
     a ``skills_dir`` that is (or links to) the user-level ``~/.claude/skills``
     is never swept (HATS-465: ai-hats never wrote there).
     """
-    skills_dir = project_dir / ".claude" / "skills"
+    skills_dir = claude_skills_dir(project_dir)
     marker = skills_dir / ".ai-hats-managed"
     if not marker.is_file():
         return []
     if skills_dir.is_symlink():
         return []
     try:
-        if skills_dir.resolve() == (Path.home() / ".claude" / "skills").resolve():
+        if skills_dir.resolve() == claude_skills_dir(Path.home()).resolve():
             return []
     except OSError:
         return []
