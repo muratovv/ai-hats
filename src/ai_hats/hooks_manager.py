@@ -336,7 +336,7 @@ class HooksManager:
         # don't match the merged repo — name the drift but refuse to heal blind
         # (HATS-833 req-7: never silently skip). Excludes LOCAL channel and a cache
         # about a different build — see `upstream_update` (HATS-846).
-        if self._binary_behind_source():
+        if self.binary_behind_source():
             return HookSyncResult(
                 status=HookSyncStatus.VERSION_SKEW,
                 detail="installed ai-hats is behind upstream — run 'ai-hats self update'",
@@ -479,16 +479,15 @@ class HooksManager:
         manifest = _read_manifest(self.project_dir / GITHOOKS_DIR / GITHOOKS_MANIFEST)
         return git_hooks_drift(self.project_dir, result, manifest)
 
-    def _binary_behind_source(self) -> bool:
+    def binary_behind_source(self) -> bool:
         """True if the installed ai-hats binary is strictly behind upstream.
+        Public since HATS-907: the skills-mirror heal shares this gate.
 
         Routes through the canonical ``update_check.upstream_update`` predicate
-        (HATS-846), so the behind-check honours LOCAL channel + running-SHA match
-        identically to the update banner — heal can no longer diverge from the
-        banner's guard set. On LOCAL this is always False (the dev drives the
-        source with git; the working tree IS the merged source). Best-effort — any
-        error means "unknown", treated as "not behind" so a healthy heal is never
-        blocked by a cold or foreign cache.
+        (HATS-846) — honours LOCAL channel + running-SHA match identically to
+        the update banner (on LOCAL always False: the working tree IS the
+        merged source). Best-effort — any error means "unknown", treated as
+        "not behind" so a healthy heal is never blocked by a cold cache.
         """
         try:
             from .update_check import upstream_update
