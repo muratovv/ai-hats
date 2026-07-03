@@ -27,7 +27,7 @@ from .composer import (
     collect_worktree_hooks as _collect_worktree_hooks,
     resolve_skill_script as _resolve_runtime_script,
 )
-from .git_env import scrubbed_git_env
+from ai_hats_core import scrubbed_git_env
 from .models import SkillMetadata
 from .paths import (
     builtin_library_hooks as _builtin_library_hooks,

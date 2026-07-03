@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
-from ai_hats.git_env import scrubbed_git_env
+from ai_hats_core import scrubbed_git_env
 
 from .common import SessionArtifacts, SessionLinks, SessionMetrics
 from .window import (

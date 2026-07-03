@@ -23,7 +23,7 @@ from pathlib import Path
 
 from .composer import CompositionResult, ResolvedComponent
 from .frontmatter import FrontmatterError, read_frontmatter
-from .git_env import scrubbed_git_env
+from ai_hats_core import scrubbed_git_env
 from .models import ProjectConfig
 from .resolver import read_rule_body
 
