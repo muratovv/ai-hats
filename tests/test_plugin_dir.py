@@ -254,6 +254,93 @@ def test_drop_mirror_idempotent(tmp_path: Path) -> None:
     assert (skills / "my-own-skill" / "SKILL.md").exists()
 
 
+def test_drop_mirror_returns_removed_names(tmp_path: Path) -> None:
+    """HATS-907: the session-start heal note needs the swept names."""
+    from ai_hats.plugin_dir import drop_legacy_skills_mirror
+
+    _seed_mirror(tmp_path)
+
+    assert drop_legacy_skills_mirror(tmp_path) == ["audit-reviewer", "backlog-manager"]
+    assert drop_legacy_skills_mirror(tmp_path) == []  # second call: nothing left
+
+
+def test_drop_mirror_skips_missing_marker_entries(tmp_path: Path) -> None:
+    """A marker line whose dir was hand-deleted is not counted as removed."""
+    from ai_hats.plugin_dir import drop_legacy_skills_mirror
+
+    skills = tmp_path / ".claude" / "skills"
+    (skills / "alpha").mkdir(parents=True)
+    (skills / "alpha" / "SKILL.md").write_text("# stale export")
+    (skills / ".ai-hats-managed").write_text("alpha\ngone-long-ago\n")
+
+    assert drop_legacy_skills_mirror(tmp_path) == ["alpha"]
+
+
+def test_drop_mirror_ignores_traversal_marker_lines(tmp_path: Path) -> None:
+    """HATS-907 P1: marker content is untrusted (committable by a hostile
+    repo) — only plain child names are victims; traversal lines are inert."""
+    from ai_hats.plugin_dir import drop_legacy_skills_mirror
+
+    project = tmp_path / "project"
+    skills = project / ".claude" / "skills"
+    (skills / "alpha").mkdir(parents=True)
+    (skills / "alpha" / "SKILL.md").write_text("# stale export")
+    sibling = project / ".claude" / "settings.json"
+    sibling.write_text("{}")
+    outside = project / ".env"
+    outside.write_text("SECRET=1")
+    abs_target = tmp_path / "abs-target.txt"
+    abs_target.write_text("keep")
+    (skills / ".ai-hats-managed").write_text(
+        f"alpha\n../settings.json\n../../.env\n..\n.\n{abs_target}\n"
+    )
+
+    removed = drop_legacy_skills_mirror(project)
+
+    assert removed == ["alpha"]
+    assert sibling.exists()
+    assert outside.exists()
+    assert abs_target.exists()
+    assert not (skills / "alpha").exists()
+    assert not (skills / ".ai-hats-managed").exists()
+
+
+def test_drop_mirror_refuses_symlinked_skills_dir(tmp_path: Path) -> None:
+    """`.claude/skills` symlinked elsewhere (e.g. ~/.claude/skills): a
+    "project-scope" sweep would gut the link target — refuse wholesale."""
+    from ai_hats.plugin_dir import drop_legacy_skills_mirror
+
+    real = tmp_path / "home" / ".claude" / "skills"
+    (real / "alpha").mkdir(parents=True)
+    (real / "alpha" / "SKILL.md").write_text("# user-level data")
+    (real / ".ai-hats-managed").write_text("alpha\n")
+    project = tmp_path / "project"
+    (project / ".claude").mkdir(parents=True)
+    (project / ".claude" / "skills").symlink_to(real, target_is_directory=True)
+
+    assert drop_legacy_skills_mirror(project) == []
+    assert (real / "alpha" / "SKILL.md").exists()
+    assert (real / ".ai-hats-managed").exists()
+
+
+def test_drop_mirror_refuses_home_aliased_project(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """project_dir == home → `.claude/skills` IS the user-level dir; ai-hats
+    never wrote there (HATS-465) — refuse the sweep."""
+    from ai_hats.plugin_dir import drop_legacy_skills_mirror
+
+    fake_home = tmp_path / "home"
+    skills = fake_home / ".claude" / "skills"
+    (skills / "alpha").mkdir(parents=True)
+    (skills / "alpha" / "SKILL.md").write_text("# user-level data")
+    (skills / ".ai-hats-managed").write_text("alpha\n")
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+    assert drop_legacy_skills_mirror(fake_home) == []
+    assert (skills / "alpha" / "SKILL.md").exists()
+
+
 # ---------- duplicate_skill_registrations (HATS-901) ----------
 
 
@@ -308,7 +395,7 @@ def test_duplicate_registration_differing_content(tmp_path: Path) -> None:
 
 def test_duplicate_registration_marker_listed_is_managed(tmp_path: Path) -> None:
     """Project-scope dir listed in `.ai-hats-managed` → ownership proven by the
-    marker; the next `self bump` removes it."""
+    marker; session start auto-heals it (HATS-907)."""
     from ai_hats.plugin_dir import duplicate_skill_registrations
 
     skills_root = tmp_path / "src"
@@ -330,6 +417,32 @@ def test_duplicate_registration_marker_listed_is_managed(tmp_path: Path) -> None
     )
 
     assert [(c.name, c.verdict) for c in found] == [("alpha", "managed")]
+
+
+def test_duplicate_registration_scope_attribution(tmp_path: Path) -> None:
+    """HATS-907: the session-start heal partitions by scope — home collisions
+    are never healed (HATS-465), project ones may be."""
+    from ai_hats.plugin_dir import duplicate_skill_registrations
+
+    skills_root = tmp_path / "src"
+    skills_root.mkdir()
+    skill = _make_skill("alpha", skills_root)
+    project = tmp_path / "project"
+    plugin = materialize_plugin_dir("test-role", [skill], project, tmp_path / "plugin")
+    home = tmp_path / "home"
+    for base in (home, project):
+        stale = base / ".claude" / "skills" / "alpha"
+        stale.mkdir(parents=True)
+        (stale / "SKILL.md").write_text("# stale\n")
+
+    found = duplicate_skill_registrations(
+        ["alpha"], project_dir=project, plugin_skills_root=plugin / "skills", home=home
+    )
+
+    assert [(c.scope, c.path) for c in found] == [
+        ("home", home / ".claude" / "skills" / "alpha"),
+        ("project", project / ".claude" / "skills" / "alpha"),
+    ]
 
 
 def test_duplicate_registration_none_when_clean(tmp_path: Path) -> None:
