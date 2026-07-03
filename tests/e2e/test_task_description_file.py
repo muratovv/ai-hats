@@ -47,8 +47,10 @@ def _run_hats(
 ) -> subprocess.CompletedProcess[str]:
     """Run ``python -m ai_hats <args>`` against the current checkout's src."""
     env = os.environ.copy()
+    from _helpers.env import checkout_pythonpath
+
     existing = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = f"{SRC}:{existing}" if existing else str(SRC)
+    env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, existing)
     return subprocess.run(
         [sys.executable, "-m", "ai_hats", *args],
         cwd=str(project_dir),
