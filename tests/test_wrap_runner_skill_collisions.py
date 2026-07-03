@@ -45,3 +45,21 @@ def test_clean_project_yields_no_notice(tmp_path, monkeypatch):
     session, result, _ = _setup(project, tmp_path, monkeypatch)
 
     assert WrapRunner(project)._check_skill_collisions(session, result) == []
+
+
+def test_managed_hint_names_existing_cli_verb(tmp_path, monkeypatch):
+    """HATS-906: the 'managed' hint must point at a real CLI verb — a proxmox
+    user followed 'ai-hats self bump' into 'No such command'."""
+    project = tmp_path / "project"
+    project.mkdir()
+    session, result, _ = _setup(project, tmp_path, monkeypatch)
+    mirror = project / ".claude" / "skills"
+    (mirror / "alpha").mkdir(parents=True)
+    (mirror / "alpha" / "SKILL.md").write_text("# stale export\n")
+    (mirror / ".ai-hats-managed").write_text("alpha\n")
+
+    notices = WrapRunner(project)._check_skill_collisions(session, result)
+
+    assert len(notices) == 1
+    assert "self init" in notices[0].text
+    assert "self bump" not in notices[0].text
