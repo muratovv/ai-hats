@@ -5,7 +5,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_hats.models import ProjectConfig, WorktreeHook
+from ai_hats_wt import WorktreeHook
+
+from ai_hats.models import ProjectConfig
 from ai_hats.paths import managed_wt_hook_filename, wt_hooks_dir
 from ai_hats.wt_carry import collect_carry_for_role, serialize_collected_hooks
 
