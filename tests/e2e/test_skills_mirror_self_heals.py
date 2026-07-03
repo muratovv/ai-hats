@@ -100,7 +100,7 @@ def test_session_start_heals_stale_skills_mirror(tmp_path: Path, monkeypatch):
     assert not (mirror / "alpha").exists(), "mirror not swept at session start"
     assert not (mirror / ".ai-hats-managed").exists(), "marker not swept"
     # ... recoverable: the discarded copy sits in this process's trash session.
-    from ai_hats.safe_delete import session_root
+    from ai_hats_core.safe_delete import session_root
 
     trash = session_root()
     assert trash is not None
