@@ -1,6 +1,6 @@
 """Shared pytest fixtures for the ai-hats test suite.
 
-HATS-470: :mod:`ai_hats.safe_delete` keeps a per-process trash session
+HATS-470: :mod:`ai_hats_core.safe_delete` keeps a per-process trash session
 in module-level state. Without an autouse reset, the first test to
 trigger a destructive op pins the session for every subsequent test,
 which corrupts assertions about default vs custom trash base, manifest

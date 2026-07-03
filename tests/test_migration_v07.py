@@ -578,7 +578,7 @@ def test_execute_deletions_logs_and_continues_on_permission_error(
     destructive primitive) since execute_deletions now routes through
     safe_delete.discard().
     """
-    from ai_hats import safe_delete
+    from ai_hats_core import safe_delete
     safe_delete.reset_session()
 
     canonical = tmp_path / "ai-hats"
@@ -627,7 +627,7 @@ def test_execute_deletions_logs_and_continues_on_rmtree_error(
     covers both branches; the historical rmtree-specific branch test
     becomes another move-injection variant.
     """
-    from ai_hats import safe_delete
+    from ai_hats_core import safe_delete
     safe_delete.reset_session()
 
     canonical = tmp_path / "ai-hats"

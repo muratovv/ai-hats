@@ -19,7 +19,8 @@ HOOK_PATH = (
 
 
 def _make_fake_project(tmp_path: Path) -> Path:
-    """Create a minimal git repo with a stub src/ai_hats/ tree."""
+    """Create a minimal git repo with the stub workspace layout (HATS-862):
+    a scanned integrator tree plus the exempt core safe_delete site."""
     project = tmp_path / "proj"
     project.mkdir()
     subprocess.run(["git", "init", "-q", str(project)], check=True)
@@ -34,9 +35,11 @@ def _make_fake_project(tmp_path: Path) -> Path:
     )
     src = project / "src" / "ai_hats"
     src.mkdir(parents=True)
-    # safe_delete.py must exist so the whitelist passes — its raw ops
-    # are intentional.
-    (src / "safe_delete.py").write_text(
+    (src / "__init__.py").write_text("")
+    # The exempt raw-ops site lives in the core package (HATS-862).
+    core = project / "packages" / "ai-hats-core" / "src" / "ai_hats_core"
+    core.mkdir(parents=True)
+    (core / "safe_delete.py").write_text(
         "def discard(p):\n    p.unlink()\n"
     )
     return project
@@ -131,7 +134,7 @@ def test_hook_allows_inline_marker_on_multiline_call(tmp_path):
 
 
 def test_hook_noop_on_non_ai_hats_project(tmp_path):
-    """Project without src/ai_hats/ → silent no-op."""
+    """Project without src/ai_hats/ or packages/*/src/ → silent no-op."""
     project = tmp_path / "other"
     project.mkdir()
     subprocess.run(["git", "init", "-q", str(project)], check=True)
@@ -184,7 +187,7 @@ def test_hook_does_not_flag_safe_delete_module_itself(tmp_path):
     """safe_delete.py is the single legitimate raw-ops site → must not flag."""
     project = _make_fake_project(tmp_path)
     # Add more raw ops to safe_delete.py — should still pass.
-    (project / "src" / "ai_hats" / "safe_delete.py").write_text(
+    (project / "packages" / "ai-hats-core" / "src" / "ai_hats_core" / "safe_delete.py").write_text(
         "import shutil\n"
         "def discard(p):\n"
         "    p.unlink()\n"

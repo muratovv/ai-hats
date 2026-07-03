@@ -624,7 +624,7 @@ def execute_deletions(
 ) -> list[Path]:
     """Move every finding to trash. Sweep empty parent dirs up to ``canonical_dir``.
 
-    HATS-470: routed through :func:`ai_hats.safe_delete.discard` instead
+    HATS-470: routed through :func:`ai_hats_core.safe_delete.discard` instead
     of raw ``unlink`` / ``rmtree``. Victims land under
     ``$TMPDIR/ai-hats/trash-<ts>-<pid>/<relpath>`` for recovery.
 

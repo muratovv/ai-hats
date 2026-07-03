@@ -1,12 +1,26 @@
 # ai-hats-core
 
-Dependency-free core primitives for the
-[ai-hats](https://github.com/muratovv/ai-hats) framework — **pure standard
-library, zero third-party dependencies**.
+Core primitives and shared mechanisms for the
+[ai-hats](https://github.com/muratovv/ai-hats) framework — **minimal
+dependencies, each load-bearing** (currently exactly one: pydantic). No domain
+schemas: each ai-hats package owns its own.
 
-Today it ships the canonical **atomic file-write** helper: write to a unique
-temp file in the same directory, then `os.replace` it into place, so a reader
-never observes a half-written file and a crash never leaves a truncated one.
+It ships five mechanisms:
+
+- **Atomic file writes** — `atomic_write_text` / `atomic_write_bytes`:
+  unique-tmp-in-same-dir + `os.replace`, so a reader never observes a
+  half-written file and a crash never leaves a truncated one.
+- **Composition value-types** — `CompositionResult` / `ResolvedComponent`
+  (frozen dataclasses) + the `ComponentKind` enum: the immutable result
+  contract of role assembly, composed once by the integrator and injected
+  down into packages.
+- **YAML model base** — `YamlModel`: pydantic base for
+  YAML-round-trippable models (`to_dict` / `from_dict`, `extra="ignore"`).
+- **Git-env hygiene** — `scrubbed_git_env()`: `os.environ` copy minus the
+  three `GIT_*` plumbing vars that retarget cwd-scoped git subprocesses.
+- **Safe deletion** — `ai_hats_core.safe_delete`: trash-bin destructive
+  ops (`discard` / `replace`) instead of raw `unlink`/`rmtree`, with a
+  per-process session and recovery summary.
 
 ## Install
 
@@ -20,30 +34,33 @@ Requires Python 3.11+.
 
 ```python
 from pathlib import Path
-from ai_hats_core import atomic_write_text, atomic_write_bytes
+from ai_hats_core import atomic_write_text, scrubbed_git_env
 
 atomic_write_text(Path("config.json"), '{"ok": true}\n')
-atomic_write_bytes(Path("data.bin"), b"\x00\x01", mode=0o600)
-```
 
-Both helpers write atomically (unique-tmp-in-same-dir + `os.replace`); pass
-`mode` to set explicit permissions, otherwise the file lands with the umask
-default.
+import subprocess
+subprocess.run(["git", "status"], cwd=Path("."), env=scrubbed_git_env())
+```
 
 ## Public API
 
 `ai_hats_core.__all__`:
 
-- `atomic_write_text(path, text, *, mode=None)`
-- `atomic_write_bytes(path, data, *, mode=None)`
+- `atomic_write_text(path, text, *, mode=None)` / `atomic_write_bytes(path, data, *, mode=None)`
+- `CompositionResult` / `ResolvedComponent` / `ComponentKind`
+- `YamlModel`
+- `scrubbed_git_env()`
+
+plus the `ai_hats_core.safe_delete` module namespace.
 
 ## Dependencies
 
-None — standard library only.
+`pydantic>=2` — the base of the model layer. Nothing else.
 
 ## Versioning
 
-[SemVer](https://semver.org/). The public API is `ai_hats_core.__all__`.
+[SemVer](https://semver.org/). The public API is `ai_hats_core.__all__` +
+`ai_hats_core.safe_delete`.
 
 ## License
 
