@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType, ProjectConfig
+from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
+from ai_hats.models import ProjectConfig
 from ai_hats import migration_v07 as m
 
 
@@ -286,7 +286,7 @@ def test_render_skills_index_md_top_section(tmp_path):
     (skill_dir / "SKILL.md").write_text('---\ndescription: "alpha skill"\n---\nbody\n')
     rc = ResolvedComponent(
         name="alpha",
-        component_type=ComponentType.SKILL,
+        component_type=ComponentKind.SKILL,
         source_path=skill_dir,
         injection="",
     )
@@ -304,7 +304,7 @@ def test_render_skills_index_md_skips_description_when_equal_to_name(tmp_path):
     # No SKILL.md at all → _skill_description returns "" → bullet without dash-em.
     rc = ResolvedComponent(
         name="beta",
-        component_type=ComponentType.SKILL,
+        component_type=ComponentKind.SKILL,
         source_path=skill_dir,
         injection="",
     )
@@ -321,7 +321,7 @@ def test_skill_description_malformed_warns_then_falls_back(tmp_path, caplog):
     (skill_dir / "SKILL.md").write_text("---\nbad: : indent\n---\nbody\n")
     rc = ResolvedComponent(
         name="gamma",
-        component_type=ComponentType.SKILL,
+        component_type=ComponentKind.SKILL,
         source_path=skill_dir,
         injection="",
     )
@@ -337,7 +337,7 @@ def test_skill_description_absent_is_silent(tmp_path, caplog):
     skill_dir.mkdir()
     rc = ResolvedComponent(
         name="delta",
-        component_type=ComponentType.SKILL,
+        component_type=ComponentKind.SKILL,
         source_path=skill_dir,
         injection="",
     )
@@ -434,7 +434,7 @@ def test_plan_migration_no_user_edits_when_disk_matches_baseline(tmp_path):
         priorities=["Reliability", "Cleanliness"],
         role_injection="role injection text",
         trait_injections={"foo": "trait body"},
-        rules=[ResolvedComponent(name="bar", component_type=ComponentType.RULE,
+        rules=[ResolvedComponent(name="bar", component_type=ComponentKind.RULE,
                                  source_path=tmp_path, injection="rule body")],
     )
 
@@ -463,7 +463,7 @@ def test_plan_migration_flags_user_edits_beyond_whitespace(tmp_path):
         priorities=["Reliability"],
         role_injection="base role",
         trait_injections={"foo": "trait body"},
-        rules=[ResolvedComponent(name="bar", component_type=ComponentType.RULE,
+        rules=[ResolvedComponent(name="bar", component_type=ComponentKind.RULE,
                                  source_path=tmp_path, injection="rule body")],
     )
 

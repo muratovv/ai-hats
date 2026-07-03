@@ -68,8 +68,7 @@ def project_with_two_roles(tmp_path: Path) -> tuple[Path, Path]:
 def test_claude_materialize_runtime_skills_returns_plugin_dir_arg(tmp_path):
     """ClaudeProvider returns --plugin-dir with a directory that holds the skills."""
     import shutil
-    from ai_hats.composer import ResolvedComponent
-    from ai_hats.models import ComponentType
+    from ai_hats_core import ComponentKind, ResolvedComponent
 
     skill_src = tmp_path / "lib" / "guest-only-skill"
     skill_src.mkdir(parents=True)
@@ -80,12 +79,12 @@ def test_claude_materialize_runtime_skills_returns_plugin_dir_arg(tmp_path):
     result_skills = [
         ResolvedComponent(
             name="guest-only-skill",
-            component_type=ComponentType.SKILL,
+            component_type=ComponentKind.SKILL,
             source_path=skill_src,
             injection="",
         )
     ]
-    from ai_hats.composer import CompositionResult
+    from ai_hats_core import CompositionResult
 
     result = CompositionResult(
         name="guest",
@@ -108,7 +107,7 @@ def test_claude_materialize_runtime_skills_returns_plugin_dir_arg(tmp_path):
 
 def test_gemini_materialize_runtime_skills_is_noop(tmp_path):
     """Gemini has no plugin-dir analog (HATS-367 follow-up)."""
-    from ai_hats.composer import CompositionResult
+    from ai_hats_core import CompositionResult
 
     result = CompositionResult(
         name="anything",

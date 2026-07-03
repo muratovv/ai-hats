@@ -8,8 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.composer import ResolvedComponent
-from ai_hats.models import ComponentType
+from ai_hats_core import ComponentKind, ResolvedComponent
 from ai_hats.plugin_dir import materialize_plugin_dir
 
 
@@ -20,7 +19,7 @@ def _make_skill(name: str, root: Path, body: str = "") -> ResolvedComponent:
     (skill_dir / "SKILL.md").write_text(body or f"---\nname: {name}\n---\n# {name}\n")
     return ResolvedComponent(
         name=name,
-        component_type=ComponentType.SKILL,
+        component_type=ComponentKind.SKILL,
         source_path=skill_dir,
         injection=body,
     )
@@ -97,7 +96,7 @@ def test_skips_non_directory_source_path(tmp_path: Path) -> None:
     # must be skipped without raising.
     rogue = ResolvedComponent(
         name="rogue",
-        component_type=ComponentType.SKILL,
+        component_type=ComponentKind.SKILL,
         source_path=tmp_path / "missing-dir",
         injection="",
     )

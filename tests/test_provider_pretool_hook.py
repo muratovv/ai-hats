@@ -15,8 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType
+from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.paths import hooks_dir, managed_runtime_hook_filename
 from ai_hats.providers import ClaudeProvider, GeminiProvider
 
@@ -57,7 +56,7 @@ def _skill_with_runtime_hooks(
     lines += ["---", f"# {name}"]
     (skill_dir / "SKILL.md").write_text("\n".join(lines) + "\n")
     return ResolvedComponent(
-        name=name, component_type=ComponentType.SKILL, source_path=skill_dir
+        name=name, component_type=ComponentKind.SKILL, source_path=skill_dir
     )
 
 

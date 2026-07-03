@@ -15,8 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_hats.cli.reflect import _materialize_target_composition
-from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType
+from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 
 
 SKILL_BODY = "# Demo Skill\n\nThe full body that only reflect needs.\n"
@@ -29,7 +28,7 @@ def _skill_on_disk(tmp_path: Path) -> ResolvedComponent:
     # injection="" mirrors the post-HATS-706 composer: body is lazy, not eager.
     return ResolvedComponent(
         name="demo_skill",
-        component_type=ComponentType.SKILL,
+        component_type=ComponentKind.SKILL,
         source_path=skill_dir,
         injection="",
     )

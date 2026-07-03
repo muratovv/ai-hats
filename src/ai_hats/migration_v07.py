@@ -21,7 +21,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .composer import CompositionResult, ResolvedComponent
+from ai_hats_core import CompositionResult, ResolvedComponent
 from .frontmatter import FrontmatterError, read_frontmatter
 from ai_hats_core import scrubbed_git_env
 from .models import ProjectConfig
