@@ -87,9 +87,18 @@ def _format_hook_heal(changes) -> str:
 
 _COLLISION_HINTS = {
     "identical": "exact duplicate of the session plugin — safe to remove",
-    "managed": "stale ai-hats mirror — the next 'ai-hats self init' removes it",
     "differs": "content differs from the ai-hats version — review: remove or rename",
 }
+
+
+def _collision_hint(c) -> str:
+    """`managed` splits by scope (HATS-907): home is user-owned (HATS-465, no
+    ai-hats verb applies); a project entry here means the auto-heal didn't run."""
+    if c.verdict == "managed":
+        if c.scope == "home":
+            return "ai-hats never manages user-level skills — remove manually if unwanted"
+        return "stale ai-hats mirror — auto-heal did not run this start"
+    return _COLLISION_HINTS[c.verdict]
 
 
 def _format_skill_collisions(collisions) -> str:
@@ -98,8 +107,18 @@ def _format_skill_collisions(collisions) -> str:
         f"{len(collisions)} skill(s) will register twice this session "
         "(auto-discovery dir + ai-hats session plugin):"
     ]
-    lines.extend(f"  {c.name} at {c.path} — {_COLLISION_HINTS[c.verdict]}" for c in collisions)
+    lines.extend(f"  {c.name} at {c.path} — {_collision_hint(c)}" for c in collisions)
     return "\n".join(lines)
+
+
+def _format_mirror_heal(removed: list[str], trash_root) -> str:
+    """HATS-907 heal note: self-serve recovery — names + trash destination."""
+    listed = ", ".join(removed[:6]) + ("" if len(removed) <= 6 else f" (+{len(removed) - 6} more)")
+    where = f" — recoverable in trash: {trash_root}" if trash_root else ""
+    return (
+        f"removed stale ai-hats skills mirror from .claude/skills "
+        f"({len(removed)} skill(s): {listed}){where}"
+    )
 
 
 def _format_version_skew(changes) -> str:
@@ -163,7 +182,8 @@ class WrapRunner:
             return [StartupNotice("warn", summary)]
 
     def _check_skill_collisions(self, session: Session, result) -> list[StartupNotice]:
-        """HATS-901: WARN when a composed skill will double-register this session.
+        """HATS-901: WARN when a composed skill will double-register this session;
+        HATS-907: a marker-proven project-scope mirror is auto-healed instead.
 
         Fail-open — a broken auto-discovery dir must never block launch.
         """
@@ -184,7 +204,51 @@ class WrapRunner:
             return []
         if not collisions:
             return []
-        return [StartupNotice("warn", _format_skill_collisions(collisions))]
+        healable = [c for c in collisions if c.verdict == "managed" and c.scope == "project"]
+        rest = [c for c in collisions if c not in healable]
+        notices: list[StartupNotice] = []
+        if healable:
+            notices.append(self._heal_managed_mirror(session, healable))
+        if rest:
+            notices.append(StartupNotice("warn", _format_skill_collisions(rest)))
+        return notices
+
+    def _heal_managed_mirror(self, session: Session, healable) -> StartupNotice:
+        """HATS-907: sweep the marker-proven stale mirror pre-spawn. Gated on
+        version-skew + hard-delete mode; fail-open. Rationale: task card."""
+        from .plugin_dir import drop_legacy_skills_mirror
+        from .safe_delete import hard_delete_mode, session_root
+
+        names = ", ".join(sorted({c.name for c in healable}))
+        try:
+            if self.assembler.hooks.binary_behind_source():
+                return StartupNotice(
+                    "warn",
+                    f"stale ai-hats skills mirror ({names}) not auto-healed — "
+                    "installed ai-hats is behind upstream. Run 'ai-hats self update'.",
+                )
+            if hard_delete_mode():
+                return StartupNotice(
+                    "warn",
+                    f"stale ai-hats skills mirror ({names}) not auto-healed — "
+                    "AI_HATS_TRASH_DIR=- would make the removal unrecoverable; "
+                    "remove .claude/skills manually or unset it.",
+                )
+            removed = drop_legacy_skills_mirror(self.project_dir)
+            if not removed:
+                return StartupNotice(
+                    "warn",
+                    f"stale ai-hats skills mirror ({names}) detected but the sweep "
+                    "removed nothing — review .claude/skills manually.",
+                )
+            text = _format_mirror_heal(removed, session_root())
+            session.log_trace(TraceTag.SYS, f"skills-mirror heal: {text}")
+            return StartupNotice("note", text)
+        except Exception as exc:
+            logger.warning("skills-mirror heal at session start failed", exc_info=True)
+            summary = f"skills-mirror heal failed: {type(exc).__name__}: {exc}"
+            session.log_trace(TraceTag.SYS, f"skills-mirror heal FAILED — {summary}")
+            return StartupNotice("warn", summary)
 
     def _hold_before_launch(self, startup_notices: list[StartupNotice]) -> None:
         """Show any startup notices and hold before the wrapped TUI spawns

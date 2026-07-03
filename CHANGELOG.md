@@ -18,8 +18,19 @@ since the latest tag lives under **Unreleased** until the next release.
   `ai-hats` wrap sessions now intersect the composed skill names with both
   auto-discovery dirs and surface a pre-launch WARN naming each collision:
   byte-identical to the plugin copy → "safe to remove"; listed in an
-  `.ai-hats-managed` marker → "removed by the next `self init`"; otherwise →
-  "review: remove or rename". Fail-open, HITL sessions only.
+  `.ai-hats-managed` marker → auto-healed at session start (HATS-907, below);
+  otherwise → "review: remove or rename". Fail-open, HITL sessions only.
+- **Session-start auto-heal of the stale skills mirror** (HATS-907). When the
+  HATS-901 collision check proves ownership via the project-scope
+  `.claude/skills/.ai-hats-managed` marker, the stale mirror is now swept
+  pre-spawn instead of asking the user to run `self init` — the current
+  session already launches clean. The green startup note names the removed
+  skills and the trash path (safe-delete, recoverable). Guards: home-scope
+  `~/.claude/skills` is never touched (user-owned, HATS-465); no heal from a
+  binary behind upstream (version-skew, as HATS-833) or under
+  `AI_HATS_TRASH_DIR=-` (removal would be unrecoverable); marker entries are
+  validated as plain child names, so a committed hostile marker cannot
+  traverse outside `.claude/skills/`.
 
 ### Fixed
 

@@ -507,6 +507,12 @@ def replace(
     return True
 
 
+def hard_delete_mode() -> bool:
+    """True when ``AI_HATS_TRASH_DIR=-`` disables the trash (HATS-907: heals
+    that promise recoverability must check this BEFORE discarding)."""
+    return _resolve_base()[1]
+
+
 def session_root() -> Path | None:
     """Current trash session root, or ``None`` if no session created yet.
 

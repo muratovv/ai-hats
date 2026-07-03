@@ -21,6 +21,7 @@ from pathlib import Path
 import filelock
 
 from .composer import ResolvedComponent
+from .paths import claude_skills_dir
 from .placeholders import expand_path_placeholders
 from .safe_delete import discard
 
@@ -111,18 +112,18 @@ def _rebuild_plugin_dir(
 class SkillCollision:
     """One composed skill also present in a Claude Code auto-discovery dir (HATS-901).
 
-    ``verdict``:
-        ``"identical"`` — byte-equal to the materialized plugin copy: a
-            redundant duplicate, provably safe to remove.
-        ``"managed"`` — listed in the dir's ``.ai-hats-managed`` marker:
-            a stale ai-hats mirror; the next ``self init`` removes it.
-        ``"differs"`` — same name, different content: stale ai-hats copy or
-            a user-authored skill — indistinguishable, user must review.
+    ``verdict``: ``"identical"`` — byte-equal to the plugin copy, safe to
+    remove; ``"managed"`` — marker-listed stale ai-hats mirror (session start
+    auto-heals the project scope, HATS-907; home is user-owned, HATS-465);
+    ``"differs"`` — stale copy or user-authored, user must review.
+
+    ``scope``: ``"home"`` or ``"project"`` — the heal partition key (HATS-907).
     """
 
     name: str
     path: Path
     verdict: str
+    scope: str
 
 
 def duplicate_skill_registrations(
@@ -140,7 +141,11 @@ def duplicate_skill_registrations(
     equality, no ownership proof needed.
     """
     collisions: list[SkillCollision] = []
-    for scope_dir in (home / ".claude" / "skills", project_dir / ".claude" / "skills"):
+    scopes = (
+        ("home", claude_skills_dir(home)),
+        ("project", claude_skills_dir(project_dir)),
+    )
+    for scope, scope_dir in scopes:
         if not scope_dir.is_dir():
             continue
         managed = _marker_names(scope_dir / ".ai-hats-managed")
@@ -154,28 +159,62 @@ def duplicate_skill_registrations(
                 verdict = "identical"
             else:
                 verdict = "differs"
-            collisions.append(SkillCollision(name=name, path=candidate, verdict=verdict))
+            collisions.append(
+                SkillCollision(name=name, path=candidate, verdict=verdict, scope=scope)
+            )
     return collisions
 
 
-def drop_legacy_skills_mirror(project_dir: Path) -> None:
-    """Discard the pre-HATS-294 `.claude/skills/` export mirror (HATS-901)."""
-    skills_dir = project_dir / ".claude" / "skills"
+def drop_legacy_skills_mirror(project_dir: Path) -> list[str]:
+    """Discard the pre-HATS-294 `.claude/skills/` export mirror (HATS-901).
+
+    Returns the marker-listed skill names actually removed (HATS-907: the
+    session-start heal note needs them). Runs unattended at session start, so
+    marker content is untrusted — only validated child names are victims, and
+    a ``skills_dir`` that is (or links to) the user-level ``~/.claude/skills``
+    is never swept (HATS-465: ai-hats never wrote there).
+    """
+    skills_dir = claude_skills_dir(project_dir)
     marker = skills_dir / ".ai-hats-managed"
     if not marker.is_file():
-        return
-    for victim in _mirror_victims(skills_dir, marker):
+        return []
+    if skills_dir.is_symlink():
+        return []
+    try:
+        if skills_dir.resolve() == claude_skills_dir(Path.home()).resolve():
+            return []
+    except OSError:
+        return []
+    removed: list[str] = []
+    for name in sorted(_marker_names(marker)):
+        victim = skills_dir / name
+        if not _is_plain_child(skills_dir, name):
+            continue
+        if not victim.exists() and not victim.is_symlink():
+            continue
         discard(victim, reason="claude-legacy-skills-mirror", project_dir=project_dir)
+        removed.append(name)
+    discard(marker, reason="claude-legacy-skills-mirror", project_dir=project_dir)
     try:
         if not any(skills_dir.iterdir()):
             skills_dir.rmdir()  # safe-delete: ok empty-dir
     except OSError:
         pass
+    return removed
 
 
-def _mirror_victims(skills_dir: Path, marker: Path) -> list[Path]:
-    """Marker-listed skill dirs + the marker itself — user-authored entries excluded."""
-    return [skills_dir / name for name in sorted(_marker_names(marker))] + [marker]
+def _is_plain_child(skills_dir: Path, name: str) -> bool:
+    """HATS-907 P1: a marker line names a victim only as a single path
+    component — traversal/absolute lines in a committable marker are inert."""
+    if name in (".", "..") or "/" in name or "\\" in name or Path(name).is_absolute():
+        return False
+    victim = skills_dir / name
+    if victim.is_symlink():
+        return True  # discard unlinks the link only; the target survives
+    try:
+        return victim.resolve().parent == skills_dir.resolve()
+    except OSError:
+        return False
 
 
 def _marker_names(marker: Path) -> frozenset[str]:

@@ -216,7 +216,7 @@ class TestSyncHooksOrchestration:
         monkeypatch.setattr(asm.hooks, "_runtime_hooks_changes", lambda result, provider: runtime)
         monkeypatch.setattr(asm.hooks, "_wt_hooks_changes", lambda result: wt)
         monkeypatch.setattr(asm.hooks, "_git_hooks_changes", lambda result: git)
-        monkeypatch.setattr(asm.hooks, "_binary_behind_source", lambda: behind)
+        monkeypatch.setattr(asm.hooks, "binary_behind_source", lambda: behind)
         monkeypatch.setattr(
             asm.hooks, "materialize_runtime_hooks", lambda result: calls.append("rt_bytes")
         )
