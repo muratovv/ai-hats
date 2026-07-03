@@ -214,13 +214,8 @@ class WrapRunner:
         return notices
 
     def _heal_managed_mirror(self, session: Session, healable) -> StartupNotice:
-        """HATS-907: sweep the marker-proven stale mirror pre-spawn — the user
-        never runs a repair command by hand (HATS-906 principle). The sweep IS
-        ``drop_legacy_skills_mirror`` (HATS-905 absorbs it as the procedure for
-        ``owner_key=skills-export``). Gated on version-skew (HATS-905 P1) and
-        hard-delete mode (the note must never claim recoverability falsely);
-        fail-open like ``_resync_managed_hooks``.
-        """
+        """HATS-907: sweep the marker-proven stale mirror pre-spawn. Gated on
+        version-skew + hard-delete mode; fail-open. Rationale: task card."""
         from .plugin_dir import drop_legacy_skills_mirror
         from .safe_delete import hard_delete_mode, session_root
 
