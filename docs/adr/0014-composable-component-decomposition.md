@@ -968,6 +968,23 @@ consumer? On the pip-dep cutover, can a v2-schema project `library_paths` overla
 on a v3-schema pinned base without the resolver failing loud (last-wins is
 component-granular)?
 
+## Amendments
+
+- **2026-07-03 (HATS-862, T2 execution).** The kernel primitive list in §"Decision"
+  named `_YamlModel · Channel · ComponentType` as core primitives. Implementation
+  narrowed this by the evidence standard "core carries only what composition
+  consumes":
+  - `ComponentType` (rule/skill/trait/role) **stays in the integrator** — the
+    composition value-types only ever carry RULE/SKILL (`composer.py`
+    construction sites); core got the narrow `ComponentKind(RULE, SKILL)` instead.
+    TRAIT/ROLE remain resolver/catalog vocabulary.
+  - `Channel` **stays in the integrator** — all its importers are
+    distribution-domain (channel, cli/maintenance, cli/assembly, update_check);
+    zero package-side consumers.
+  - `_YamlModel` moved as `ai_hats_core.YamlModel` and pulled **pydantic** into
+    core — the first sanctioned dep; core's charter text changed from
+    "dependency-free" to "minimal deps, each load-bearing" (F2, HATS-862 plan).
+
 ## References
 
 - [ADR-0013](0013-wt-core-extraction-boundary.md) — the worktree engine (the first
