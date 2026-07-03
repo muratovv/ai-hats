@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.assembler import Assembler
-from ai_hats.composer import CompositionResult
+from ai_hats_core import CompositionResult
 from ai_hats.materialize import compose_for_role
 from ai_hats.models import ProjectConfig
 REPO_ROOT = Path(__file__).resolve().parent.parent

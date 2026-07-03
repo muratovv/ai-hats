@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats-core"
-version = "0.1.0"
-description = "Dependency-free core primitives for the ai-hats framework (atomic filesystem I/O)."
+version = "0.2.0"
+description = "Core primitives and shared mechanisms for the ai-hats framework — minimal deps, each load-bearing."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -24,7 +24,10 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-dependencies = []
+dependencies = [
+    # HATS-862 F2: the one sanctioned third-party dep — base of the model layer.
+    "pydantic>=2.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/muratovv/ai-hats"

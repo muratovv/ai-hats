@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.composer import Composer, CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType
+from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
+from ai_hats.composer import Composer
 from ai_hats.providers import ALWAYS_ON_RULES, ClaudeProvider, GeminiProvider
 from ai_hats.resolver import LibraryResolver
 from ai_hats.rule_delivery import (
@@ -86,7 +86,7 @@ def test_always_on_rule_body_reaches_prompt(rule_name, provider_cls):
 
     rule = ResolvedComponent(
         name=rule_name,
-        component_type=ComponentType.RULE,
+        component_type=ComponentKind.RULE,
         source_path=rule_dir,
     )
     result = CompositionResult(

@@ -33,7 +33,7 @@ from pathlib import Path
 
 import ai_hats
 
-from ..git_env import scrubbed_git_env
+from ai_hats_core import scrubbed_git_env
 from .cache import CacheEntry, write_cache
 
 

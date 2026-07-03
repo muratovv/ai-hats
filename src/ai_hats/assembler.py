@@ -18,11 +18,8 @@ from pathlib import Path
 
 import yaml
 
-from ai_hats_core import atomic_write_bytes
-from .composer import (
-    Composer,
-    CompositionResult,
-)
+from ai_hats_core import CompositionResult, atomic_write_bytes
+from .composer import Composer
 from .hooks_manager import HooksManager
 from .materialize import compose_for_role
 from .resolver import LibraryResolver
@@ -43,8 +40,8 @@ from .paths import (
 from .paths.constants import LIBRARIES_DIRNAME
 from .placeholders import expand_path_placeholders
 from .plugin_dir import drop_legacy_skills_mirror
-from .safe_delete import discard as _safe_discard
-from .safe_delete import replace as _safe_replace
+from ai_hats_core.safe_delete import discard as _safe_discard
+from ai_hats_core.safe_delete import replace as _safe_replace
 from .providers import (
     INJECTION_END,
     INJECTION_START,

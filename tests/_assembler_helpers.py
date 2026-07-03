@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ai_hats.assembler import Assembler
-    from ai_hats.composer import CompositionResult
+    from ai_hats_core import CompositionResult
 
 
 def bump_pipeline(

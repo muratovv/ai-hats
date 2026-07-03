@@ -14,7 +14,6 @@ from typing import Any, ClassVar
 
 import yaml
 from pydantic import (
-    BaseModel,
     ConfigDict,
     Field,
     PrivateAttr,
@@ -26,7 +25,7 @@ from pydantic import (
 
 from .frontmatter import read_frontmatter
 from .skill_sidecar import _HOOK_KEYS, leftover_sidecar_remedy
-from ai_hats_core import atomic_write_text
+from ai_hats_core import YamlModel, atomic_write_text
 
 logger = logging.getLogger(__name__)
 
@@ -109,24 +108,8 @@ class Channel(str, Enum):
 
 # ----- Base -----
 
-
-class _YamlModel(BaseModel):
-    """Common base for YAML-round-trippable models.
-
-    Defaults to ``extra="ignore"`` (silently drop unknown keys). Subclasses
-    override when needed (e.g. TaskCard needs ``extras`` round-trip).
-    Serialization uses ``mode="json"`` via ``to_dict()`` to coerce enums/Paths
-    to primitives suitable for ``yaml.safe_dump``.
-    """
-
-    model_config = ConfigDict(extra="ignore")
-
-    def to_dict(self) -> dict[str, Any]:
-        return self.model_dump(mode="json")
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any] | None):  # pragma: no cover - trivial
-        return cls.model_validate(data or {})
+# HATS-862: the YAML base moved to core; alias keeps the 16 subclass defs unchanged.
+_YamlModel = YamlModel
 
 
 # ----- Composition + components -----

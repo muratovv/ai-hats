@@ -41,7 +41,7 @@ from .paths import (
     legacy_paths_by_class,
     user_hooks_dir as _user_hooks_dir,
 )
-from .safe_delete import discard as _safe_discard
+from ai_hats_core.safe_delete import discard as _safe_discard
 
 if TYPE_CHECKING:
     from .assembler import Assembler

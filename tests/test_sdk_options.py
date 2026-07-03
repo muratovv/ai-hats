@@ -6,8 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType
+from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.sdk_options import (
     _build_plugins,
     _build_system_prompt,
@@ -40,7 +39,7 @@ def _make_skill(root: Path, name: str, body: str = "# Skill body") -> ResolvedCo
     )
     return ResolvedComponent(
         name=name,
-        component_type=ComponentType.SKILL,
+        component_type=ComponentKind.SKILL,
         source_path=skill_dir,
         injection=body,
     )
@@ -112,7 +111,7 @@ def test_build_options_always_on_rule_appears_in_append(
     (rule_dir / "rule.md").write_text("Don't rm -rf the homedir.")
     always_on = ResolvedComponent(
         name="global_rule_destructive_actions",
-        component_type=ComponentType.RULE,
+        component_type=ComponentKind.RULE,
         source_path=rule_dir,
     )
     comp = CompositionResult(
@@ -138,7 +137,7 @@ def test_build_options_non_always_on_rule_not_inlined(
     rule_dir.mkdir()
     other_rule = ResolvedComponent(
         name="some_optional_rule",
-        component_type=ComponentType.RULE,
+        component_type=ComponentKind.RULE,
         source_path=rule_dir,
         injection="Optional rule body.",
     )

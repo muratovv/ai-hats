@@ -32,7 +32,7 @@ SRC = Path(__file__).resolve().parent.parent / "src" / PKG
 # ANY level (incl. deferred / TYPE_CHECKING). NB: `models` is intentionally NOT
 # here — it has real, deferred first-party deps (paths, providers), so it is not
 # a leaf. Keeping the list honest is what the gate enforces.
-LEAF_MODULES = ("constants", "git_env", "paths", "safe_delete")
+LEAF_MODULES = ("constants", "paths")  # HATS-862: git_env + safe_delete -> core
 
 
 def _module_name(path: Path) -> str:

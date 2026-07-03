@@ -21,9 +21,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .composer import CompositionResult, ResolvedComponent
+from ai_hats_core import CompositionResult, ResolvedComponent
 from .frontmatter import FrontmatterError, read_frontmatter
-from .git_env import scrubbed_git_env
+from ai_hats_core import scrubbed_git_env
 from .models import ProjectConfig
 from .resolver import read_rule_body
 
@@ -624,7 +624,7 @@ def execute_deletions(
 ) -> list[Path]:
     """Move every finding to trash. Sweep empty parent dirs up to ``canonical_dir``.
 
-    HATS-470: routed through :func:`ai_hats.safe_delete.discard` instead
+    HATS-470: routed through :func:`ai_hats_core.safe_delete.discard` instead
     of raw ``unlink`` / ``rmtree``. Victims land under
     ``$TMPDIR/ai-hats/trash-<ts>-<pid>/<relpath>`` for recovery.
 
@@ -644,7 +644,7 @@ def execute_deletions(
     * ``project_dir`` (when passed) controls trash project-relative
       layout — assembler caller passes ``self.project_dir``.
     """
-    from .safe_delete import TrashFullError, discard
+    from ai_hats_core.safe_delete import TrashFullError, discard
 
     removed: list[Path] = []
     canonical_absolute = canonical_dir.absolute()

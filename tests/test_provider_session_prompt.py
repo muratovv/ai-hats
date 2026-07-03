@@ -21,8 +21,8 @@ from pathlib import Path
 import pytest
 
 from ai_hats.assembler import Assembler
-from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType, ProjectConfig
+from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
+from ai_hats.models import ProjectConfig
 from ai_hats.paths import session_cache_dir, session_cache_root
 from ai_hats.providers import (
     ClaudeProvider,
@@ -301,7 +301,7 @@ def _skill_composition(tmp_path: Path) -> CompositionResult:
     )
     skill = ResolvedComponent(
         name="doc-protocol",
-        component_type=ComponentType.SKILL,
+        component_type=ComponentKind.SKILL,
         source_path=skill_dir,
         injection="# body",
     )
@@ -313,7 +313,7 @@ def _skill_composition(tmp_path: Path) -> CompositionResult:
     )
     rule = ResolvedComponent(
         name="dev_rule_tool_call_hygiene",
-        component_type=ComponentType.RULE,
+        component_type=ComponentKind.RULE,
         source_path=rule_dir,
     )
     return CompositionResult(
@@ -375,7 +375,7 @@ def _skill_on_disk(tmp_path: Path, name: str, skill_md: str) -> ResolvedComponen
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(skill_md)
     return ResolvedComponent(
-        name=name, component_type=ComponentType.SKILL, source_path=skill_dir
+        name=name, component_type=ComponentKind.SKILL, source_path=skill_dir
     )
 
 
@@ -409,7 +409,7 @@ def test_extract_description_absent_key_is_silent(tmp_path, caplog):
 def test_extract_description_missing_falls_back_to_name(tmp_path):
     skill = ResolvedComponent(
         name="ghost",
-        component_type=ComponentType.SKILL,
+        component_type=ComponentKind.SKILL,
         source_path=tmp_path / "absent",
     )
     assert _extract_frontmatter_description(skill) == "ghost"

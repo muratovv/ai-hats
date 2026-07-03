@@ -11,14 +11,14 @@ from pathlib import Path
 import pytest
 
 from ai_hats.assembler import Assembler
-from ai_hats.composer import CompositionResult, ResolvedComponent
-from ai_hats.models import ComponentType, RuntimeHook
+from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
+from ai_hats.models import RuntimeHook
 
 
 def _skill(name: str, source_path: Path) -> ResolvedComponent:
     return ResolvedComponent(
         name=name,
-        component_type=ComponentType.SKILL,
+        component_type=ComponentKind.SKILL,
         source_path=source_path,
     )
 

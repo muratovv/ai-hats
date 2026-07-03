@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`ai_hats.safe_delete` — trash-bin destructive ops.
+"""Unit tests for :mod:`ai_hats_core.safe_delete` — trash-bin destructive ops.
 
 HATS-470: every test resets module state in autouse fixture, sets an
 isolated trash base under ``tmp_path``, and asserts on either the
@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats import safe_delete
-from ai_hats.safe_delete import (
+from ai_hats_core import safe_delete
+from ai_hats_core.safe_delete import (
     ENV_TRASH_DIR,
     HARD_DELETE_SENTINEL,
     TrashFullError,
