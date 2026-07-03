@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
+from ai_hats_wt import WorktreeHook, parse_worktree_carry
 
 from .resolver import LibraryResolver
 from .models import (
@@ -12,7 +13,6 @@ from .models import (
     OverlayConfig,
     RuntimeHook,
     SkillMetadata,
-    WorktreeHook,
 )
 
 
@@ -339,13 +339,15 @@ def collect_worktree_hooks(
     """Walk composed skills and group their worktree lifecycle hooks by kind.
 
     Returns ``{"wt_in": [(skill_name, WorktreeHook), ...], "wt_out": [...]}`` —
-    only non-empty kinds appear (HATS-823). Validation (unknown event in ``on``,
-    malformed row) already happened at :meth:`SkillMetadata.from_skill_dir` time
-    and fails loud there. Mirrors :func:`collect_runtime_hooks`.
+    only non-empty kinds appear (HATS-823). This is the compose-time typed
+    chokepoint (HATS-863): ``SkillMetadata`` carries the ``worktree:`` block
+    opaque; :func:`ai_hats_wt.parse_worktree_carry` validates HERE and fails
+    loud on a malformed row. Mirrors :func:`collect_runtime_hooks`.
     """
     collected: dict[str, list[tuple[str, WorktreeHook]]] = {}
     for skill in result.skills:
-        carry = SkillMetadata.from_skill_dir(skill.source_path).worktree
+        raw = SkillMetadata.from_skill_dir(skill.source_path).worktree
+        carry = parse_worktree_carry(raw, skill.name)
         if carry.is_empty():
             continue
         for kind, hooks in (("wt_in", carry.wt_in), ("wt_out", carry.wt_out)):

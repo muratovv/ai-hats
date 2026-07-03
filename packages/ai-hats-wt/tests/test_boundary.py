@@ -17,10 +17,10 @@ PKG = "ai_hats_wt"
 SRC = Path(__file__).resolve().parent.parent / "src" / PKG
 
 # The package's only non-stdlib deps (pyproject ``dependencies``): the ai-hats
-# core primitives and the filelock backend. Anything else — above all the
-# ``ai_hats`` integrator — is a boundary violation.
+# core primitives, the filelock backend, and pydantic (carry schema, HATS-863).
+# Anything else — above all the ``ai_hats`` integrator — is a boundary violation.
 _ALLOWED_FIRST_PARTY = {"ai_hats_core"}
-_ALLOWED_THIRD_PARTY = {"filelock"}
+_ALLOWED_THIRD_PARTY = {"filelock", "pydantic"}
 
 
 def _top_level_import_roots(tree: ast.Module) -> set[str]:
