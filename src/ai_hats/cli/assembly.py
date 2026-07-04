@@ -11,13 +11,27 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 import click
+from ai_hats_core import LockTimeoutError, locked_path
 from rich.tree import Tree
 
 from ..providers import PROVIDERS
 from ._helpers import _assembler, _project_dir, console
+
+
+@contextmanager
+def _config_lock(path: Path) -> Iterator[None]:
+    """Serialize customize's read-modify-write (HATS-526: lost-update race)."""
+    try:
+        with locked_path(path):
+            yield
+    except LockTimeoutError as e:
+        console.print(f"[red]{e}[/]")
+        raise SystemExit(1) from e
 
 
 def _stdin_is_tty() -> bool:
@@ -754,9 +768,10 @@ def customize(
     # ----- RESET mode -----
     if do_reset:
         if is_global:
-            user_cfg = UserConfig.from_yaml(user_path)
-            user_cfg.customizations.pop(role, None)
-            user_cfg.save(user_path)
+            with _config_lock(user_path):
+                user_cfg = UserConfig.from_yaml(user_path)
+                user_cfg.customizations.pop(role, None)
+                user_cfg.save(user_path)
             console.print(
                 f"[green]Reset[/] (global) customizations for [bold]{role}[/] "
                 f"([dim]{user_path}[/])"
@@ -765,9 +780,10 @@ def customize(
         if not project_path.exists():
             console.print("[red]No ai-hats.yaml found[/].")
             raise SystemExit(1)
-        proj_cfg = ProjectConfig.from_yaml(project_path)
-        proj_cfg.customizations.pop(role, None)
-        proj_cfg.save(project_path)
+        with _config_lock(project_path):
+            proj_cfg = ProjectConfig.from_yaml(project_path)
+            proj_cfg.customizations.pop(role, None)
+            proj_cfg.save(project_path)
         console.print(f"[green]Reset[/] (project) customizations for [bold]{role}[/]")
         return
 
@@ -780,20 +796,21 @@ def customize(
         return
 
     if is_global:
-        user_cfg = UserConfig.from_yaml(user_path)
-        overlay = user_cfg.customizations.get(role, OverlayConfig())
-        _apply_overlay_edits(
-            overlay,
-            add_trait=add_trait,
-            remove_trait=remove_trait,
-            add_rule=add_rule,
-            remove_rule=remove_rule,
-            add_skill=add_skill,
-            remove_skill=remove_skill,
-            injection_append=injection_append,
-        )
-        user_cfg.customizations[role] = overlay
-        user_cfg.save(user_path)
+        with _config_lock(user_path):
+            user_cfg = UserConfig.from_yaml(user_path)
+            overlay = user_cfg.customizations.get(role, OverlayConfig())
+            _apply_overlay_edits(
+                overlay,
+                add_trait=add_trait,
+                remove_trait=remove_trait,
+                add_rule=add_rule,
+                remove_rule=remove_rule,
+                add_skill=add_skill,
+                remove_skill=remove_skill,
+                injection_append=injection_append,
+            )
+            user_cfg.customizations[role] = overlay
+            user_cfg.save(user_path)
         console.print(
             f"[green]Updated[/] (global) customizations for [bold]{role}[/] "
             f"([dim]{user_path}[/])"
@@ -807,20 +824,21 @@ def customize(
             "[red]No ai-hats.yaml found[/]. Run: ai-hats config set -r <role> -p <provider>"
         )
         raise SystemExit(1)
-    proj_cfg = ProjectConfig.from_yaml(project_path)
-    overlay = proj_cfg.customizations.get(role, OverlayConfig())
-    _apply_overlay_edits(
-        overlay,
-        add_trait=add_trait,
-        remove_trait=remove_trait,
-        add_rule=add_rule,
-        remove_rule=remove_rule,
-        add_skill=add_skill,
-        remove_skill=remove_skill,
-        injection_append=injection_append,
-    )
-    proj_cfg.customizations[role] = overlay
-    proj_cfg.save(project_path)
+    with _config_lock(project_path):
+        proj_cfg = ProjectConfig.from_yaml(project_path)
+        overlay = proj_cfg.customizations.get(role, OverlayConfig())
+        _apply_overlay_edits(
+            overlay,
+            add_trait=add_trait,
+            remove_trait=remove_trait,
+            add_rule=add_rule,
+            remove_rule=remove_rule,
+            add_skill=add_skill,
+            remove_skill=remove_skill,
+            injection_append=injection_append,
+        )
+        proj_cfg.customizations[role] = overlay
+        proj_cfg.save(project_path)
     console.print(f"[green]Updated[/] (project) customizations for [bold]{role}[/]")
     _print_overlay("project", role, overlay)
 
