@@ -6,7 +6,14 @@ living-owner registry (``ai_hats.owners``) the mechanism is dead — the marker
 victims are swept, but only entries whose CONTENT is proven engine-owned:
 hash recorded in the marker, an embedded ownership string, or the shipped
 legacy semantics of the two pre-HATS-905 dead surfaces.
-"""
+
+Marker convention (HATS-911): new line-manifest markers are written via
+:func:`write_marker` — ``# ai-hats-owner: <owner_key>`` header, then one
+``<sha256-12>  <relpath>`` line per owned entry (dirs hash via
+``plugin_dir._dir_digest``). The hash is the content-proof: sweep discards an
+entry only while its on-disk content still matches; user-modified files are
+kept with a WARN. ``#`` lines are comments, so hash-less readers stay compatible.
+"""  # comment-length: allow — marker-format contract (HATS-911)
 
 from __future__ import annotations
 
@@ -15,7 +22,7 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
 from ai_hats_core.safe_delete import discard, replace
 
@@ -390,6 +397,47 @@ def _digest_of(victim: Path) -> str:
         return hashlib.sha256(victim.read_bytes()).hexdigest()[:_DIGEST_LEN]
     except OSError:
         return ""
+
+
+def write_marker(
+    marker: Path,
+    *,
+    owner_key: str,
+    names: Iterable[str],
+    project_dir: Path,
+    reason: str,
+) -> None:
+    """Write ``marker`` in the hashed owner_key convention (module docstring).
+
+    Hashes are read from disk AFTER materialization — the marker always
+    proves the content that is actually there. Empty ``names`` removes the
+    marker (nothing left to own). An entry missing on disk or escaping the
+    marker's directory is a programmer error — fail loud, never write a
+    marker the sweeper would refuse or mis-prove.
+    """
+    if not owner_key.strip():
+        raise ValueError("write_marker: owner_key must be non-empty")
+    entries = sorted(set(names))
+    if not entries:
+        if marker.exists():
+            discard(marker, reason=reason, project_dir=project_dir)
+        return
+    lines = [f"{OWNER_HEADER_PREFIX} {owner_key}"]
+    for name in entries:
+        if not _is_safe_relative(marker.parent, name):
+            raise ValueError(f"write_marker: unsafe entry {name!r}")
+        digest = _digest_of(marker.parent / name)
+        if not digest:
+            raise ValueError(
+                f"write_marker: entry {name!r} not materialized at {marker.parent / name}"
+            )
+        lines.append(f"{digest}  {name}")
+    replace(
+        marker,
+        ("\n".join(lines) + "\n").encode(),
+        reason=reason,
+        project_dir=project_dir,
+    )
 
 
 def run_unclaimed_sweep(project_dir: Path, *, binary_behind: bool) -> None:
