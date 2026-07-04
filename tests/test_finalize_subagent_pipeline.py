@@ -24,6 +24,7 @@ from pathlib import Path
 
 import yaml
 
+from ai_hats.observe import AuditWriter, Session
 from ai_hats.paths import runs_dir
 from ai_hats.pipeline.loader import load_pipeline
 from ai_hats.pipeline.pipeline import run as run_pipeline
@@ -123,6 +124,8 @@ def test_pipeline_run_spawns_reviewer_when_threshold_met(tmp_path, monkeypatch):
         "claude_session_id": "fake-cid",  # make_audit's JSONL discovery fails gracefully (failure_policy=continue)
         "project_dir": tmp_path,
         "exit_code": 0,
+        "session_factory": Session,
+        "audit_writer_factory": AuditWriter,
     })
 
     assert spawned == [(tmp_path, "test")], (
@@ -155,6 +158,8 @@ def test_pipeline_run_no_spawn_below_threshold(tmp_path, monkeypatch):
         "claude_session_id": "fake-cid",
         "project_dir": tmp_path,
         "exit_code": 0,
+        "session_factory": Session,
+        "audit_writer_factory": AuditWriter,
     })
 
     assert spawned == [], "no spawn must happen below threshold"
@@ -193,6 +198,8 @@ def test_pipeline_run_recursion_guard_blocks_spawn(tmp_path, monkeypatch):
         "claude_session_id": "fake-cid",
         "project_dir": tmp_path,
         "exit_code": 0,
+        "session_factory": Session,
+        "audit_writer_factory": AuditWriter,
     })
 
     assert spawned == [], "HATS_SKIP_RETRO must block spawn in pipeline run"

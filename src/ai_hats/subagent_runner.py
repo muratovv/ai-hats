@@ -307,6 +307,8 @@ class SubAgentRunner:
                         },
                         work_dir=work_dir,
                         static_cost_analyzer=self.payload.static_cost_analyzer,
+                        session_factory=self.payload.session_factory,
+                        audit_writer_factory=self.payload.audit_writer_factory,
                     )
                 else:
                     # Legacy subprocess path (Gemini and future non-SDK providers).

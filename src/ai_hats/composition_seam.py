@@ -99,6 +99,7 @@ def build_composition_payload(
     effect. ``strict=False`` skips the explicit-role raises for tolerant
     callers (retro reviewer spawn — HATS-271 owns its failure mode).
     """
+    from .observe import AuditWriter, Session
     from .providers import get_provider
 
     asm, cfg, effective_role = _project_context(project_dir, role_override)
@@ -134,6 +135,9 @@ def build_composition_payload(
         hooks=asm.hooks,
         static_cost_analyzer=_static_cost_analyzer(project_dir),
         channel=cfg.harness.channel.value,
+        # HATS-867: observe factories threaded runner→finalize pipelines.
+        session_factory=Session,
+        audit_writer_factory=AuditWriter,
     )
 
 
