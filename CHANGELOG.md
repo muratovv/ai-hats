@@ -10,6 +10,21 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+
+- **Owner registry + unclaimed-marker sweeper** (HATS-905 phase 1, HATS-910).
+  Every mechanism materializing files outside `<ai_hats_dir>` registers an
+  `owner_key` in the open registry (`ai_hats.owners`); on `self init`/`bump` a
+  generic sweeper (`ai_hats.sweeper`) reclaims artifacts whose colocated marker
+  names an unregistered (dead) owner — the HATS-901 forgotten-migration class
+  is now healed by the engine. Deletion requires content proof (hash recorded
+  in the marker or an embedded ownership string); user-edited files are left
+  in place with a WARN. Gated off under version skew and hard-delete mode
+  (`AI_HATS_TRASH_DIR=-`), never runs on session-start/`set_role`. The legacy
+  `.claude/` publish and skills-mirror cleanups now ride the same shared
+  procedures (`skills-export`, `claude-publish` owners), and the publish
+  manifest path gained the HATS-907 traversal guard.
+
 ## [0.13.0] - 2026-07-03
 
 ### Changed

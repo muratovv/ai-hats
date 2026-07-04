@@ -129,6 +129,14 @@ def test_e2e_stable_self_update_installs_published_wheel(tmp_path: Path) -> None
     # Load-bearing live check: the run reached the real index (NOT the 404
     # fail-loud path from channel.fetch_latest_stable_version).
     assert "could not resolve latest stable version from PyPI" not in out, out
+    # HATS-916: the version pre-guard reads ai_hats.__version__, which can be
+    # stale editable metadata — the refusal itself is the authoritative
+    # local-is-ahead signal, and the expected between-releases outcome.
+    if res.returncode != 0 and "Refusing to downgrade" in out:
+        pytest.skip(
+            "installed dev build is ahead of the latest published tag; "
+            "stable self update correctly refuses the downgrade"
+        )
     # Epic-close happy path: published >= installed dev build → install proceeds.
     assert res.returncode == 0, f"stable self update failed:\n{out[-1500:]}"
 
