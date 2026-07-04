@@ -5,8 +5,8 @@ outer merge / rebase-todo / git-hook / git-alias context) overrides git's
 cwd-based repo discovery and retargets a ``cwd``-scoped ``git`` subprocess onto
 the wrong ``.git``. :func:`scrubbed_git_env` copies ``os.environ`` minus those
 three plumbing vars, preserving identity vars (``GIT_AUTHOR_*`` etc.) so
-merge-commit identity is unaffected. Extracted to core in HATS-862; the ``wt``
-package keeps its own copy until HATS-909 consolidates it.
+merge-commit identity is unaffected. Extracted to core in HATS-862; sole
+implementation since HATS-909 (the ``wt`` copy is gone).
 """
 
 from __future__ import annotations
