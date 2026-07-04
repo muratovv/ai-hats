@@ -43,6 +43,39 @@ LEAF_MODULES = (
 # not even deferred (the pre-split cycle lived in a deferred validator import).
 SCHEMA_MODULES = ("models", "config", "tracker.models", "libraries.models")
 
+# HATS-865: the composition layer is integrator-only (ADR-0014 Composition rule).
+FORBIDDEN_COMPOSITION = ("composer", "assembler", "materialize", "providers", "resolver")
+
+# Deny-by-default: only these may reference the layer — new modules are
+# guarded automatically; extending the list is a deliberate, reviewed act.
+ALLOWED_COMPOSITION_CONSUMERS = (
+    *FORBIDDEN_COMPOSITION,  # the layer itself
+    "cli",  # integrator orchestration (whole subtree)
+    "migrations",
+    "migration_assert",
+    "migration_healer",
+    "migration_v07",
+    "relocation",
+    "role_catalog",
+)
+
+# HATS-865 ratchet: the shrinking worklist. Exact-match asserted — a revert
+# resurfaces an offender (RED), a landed cut left in the tuple is RED too.
+# Delete the tuple when empty (T5 complete).
+EXPECTED_COMPOSITION_OFFENDERS = (
+    "costs",  # -> ALLOWED in step 2 (supervisor sign-off 2026-07-04)
+    "hooks_manager",
+    "pipeline.steps.compose",
+    "pipeline.steps.compute_usage",
+    "pipeline.steps.materialize",
+    "rule_delivery",
+    "runtime_common",
+    "sdk_options",
+    "subagent_runner",
+    "wrap_runner",
+    "wt_carry",
+)
+
 
 def _module_name(path: Path) -> str:
     parts = [PKG, *path.relative_to(SRC).with_suffix("").parts]
@@ -220,6 +253,38 @@ def test_schema_modules_never_import_providers():
             offenders[schema] = sorted(set(refs))
     assert not offenders, (
         f"schema modules must not import ai_hats.providers (any level): {offenders}"
+    )
+
+
+def test_composition_layer_is_integrator_only():
+    """HATS-865 deny-by-default: outside ALLOWED_COMPOSITION_CONSUMERS no module
+    may reference the composition layer at ANY level (deferred included,
+    TYPE_CHECKING exempt). Exact-match ratchet against
+    EXPECTED_COMPOSITION_OFFENDERS keeps the gate enforcing mid-migration.
+    """
+    mods = _modules()
+    nodeset = set(mods)
+    forbidden = tuple(f"{PKG}.{m}" for m in FORBIDDEN_COMPOSITION)
+    allowed = tuple(f"{PKG}.{m}" for m in ALLOWED_COMPOSITION_CONSUMERS)
+    offenders: dict[str, list[str]] = {}
+    for name, path in mods.items():
+        if any(name == a or name.startswith(a + ".") for a in allowed):
+            continue
+        refs = [
+            t
+            for node in _import_nodes(ast.parse(path.read_text()), top_level_only=False)
+            for t in _targets(name, path.name == "__init__.py", node, nodeset)
+            if any(t == f or t.startswith(f + ".") for f in forbidden)
+        ]
+        if refs:
+            offenders[name.removeprefix(PKG + ".")] = sorted(set(refs))
+    assert set(offenders) == set(EXPECTED_COMPOSITION_OFFENDERS), (
+        "composition-layer import drift (HATS-865).\n"
+        f"NEW offenders (cut them or justify an ALLOWED entry): "
+        f"{sorted(set(offenders) - set(EXPECTED_COMPOSITION_OFFENDERS))}\n"
+        f"STALE ratchet entries (cut landed — remove from tuple): "
+        f"{sorted(set(EXPECTED_COMPOSITION_OFFENDERS) - set(offenders))}\n"
+        f"details: { {k: offenders[k] for k in sorted(offenders)} }"
     )
 
 
