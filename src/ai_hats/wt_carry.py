@@ -42,7 +42,7 @@ def collect_carry_for_role(
     teardown (D7) stays as the last net for a genuinely vanished script.
     """
     from .assembler import Assembler
-    from .composer import collect_worktree_hooks
+    from .hook_collection import collect_worktree_hooks
     from .materialize import compose_for_role
 
     try:

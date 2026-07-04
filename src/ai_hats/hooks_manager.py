@@ -21,7 +21,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .composer import (
+from .hook_collection import (
     collect_runtime_hooks as _collect_runtime_hooks,
     collect_worktree_hooks as _collect_worktree_hooks,
     resolve_skill_script as _resolve_runtime_script,
