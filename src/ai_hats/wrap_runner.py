@@ -23,7 +23,6 @@ from .constants import TraceTag
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
-from .observe import Session, SessionManager, SidecarTracer
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
@@ -40,7 +39,9 @@ from .runtime_common import (
 )
 
 if TYPE_CHECKING:
-    pass
+    from collections.abc import Callable
+
+    from .observe import Session, SessionManager, SidecarTracer
 
 logger = logging.getLogger(__name__)
 
@@ -142,13 +143,23 @@ class WrapRunner:
 
     HATS-865: a brick — receives the ready :class:`CompositionPayload` from
     the integrator compose seam and never touches the composition layer.
+    HATS-867: the observe writer handles (``session_mgr``, ``tracer_factory``)
+    are injected too — the runner never imports observe at runtime.
     """
 
-    def __init__(self, project_dir: Path, payload: CompositionPayload) -> None:
+    def __init__(
+        self,
+        project_dir: Path,
+        payload: CompositionPayload,
+        *,
+        session_mgr: "SessionManager",
+        tracer_factory: "Callable[[Session], SidecarTracer]",
+    ) -> None:
         self.project_dir = project_dir
         self.payload = payload
         self.hooks = payload.hooks
-        self.session_mgr = SessionManager(project_dir)
+        self.session_mgr = session_mgr
+        self.tracer_factory = tracer_factory
 
     def _resync_managed_hooks(
         self, session: Session | None = None, result=None
@@ -446,7 +457,7 @@ class WrapRunner:
         #   3. _print_session_end — green summary (outer finally; SIGINT-safe)
         # Each layer's exceptions are isolated so a downstream crash
         # never prevents the session-id print (HATS-086 invariant).
-        tracer = SidecarTracer(session)
+        tracer = self.tracer_factory(session)
         exit_code = 130  # canonical SIGINT default if _pty_spawn raises pre-assignment
         try:
             # HATS-825: brief pre-launch hold so the start banner + any

@@ -357,12 +357,16 @@ def wrap_runner_factory(tmp_path, monkeypatch):
 
     def make(pty_exit_code: int = 0, finalize_hitl_exc: BaseException | None = None):
         from ai_hats.composition_seam import build_composition_payload
+        from ai_hats.observe import SessionManager, SidecarTracer
 
         # HATS-865: compose at the seam (as the CLI does) and inject.
         payload = build_composition_payload(
             project, provider_name="claude", interactive=True,
         )
-        runner = WrapRunner(project, payload)
+        runner = WrapRunner(
+            project, payload,
+            session_mgr=SessionManager(project), tracer_factory=SidecarTracer,
+        )
 
         def _stub_spawn(self, cmd, env, tracer):
             return pty_exit_code
