@@ -17,6 +17,7 @@ from click.testing import CliRunner
 from ai_hats.cli.task import task
 from ai_hats.linked_context import load_linked_context
 from ai_hats.models import TaskCard, TaskState
+from ai_hats.observe import SessionManager
 from ai_hats.paths import tasks_dir
 from ai_hats.runtime import SubAgentRunner
 
@@ -147,7 +148,9 @@ def test_cli_and_subagent_share_assembler(project_dir: Path):
     assert body  # sanity
 
     # Sub-agent path uses the very same seam (HATS-691 extraction).
-    assert SubAgentRunner(project_dir, _null_payload())._load_linked_context("HATS-902") == body
+    assert SubAgentRunner(
+        project_dir, _null_payload(), session_mgr=SessionManager(project_dir),
+    )._load_linked_context("HATS-902") == body
 
     # CLI path renders that exact assembler output verbatim.
     res = CliRunner().invoke(task, ["show", "HATS-902"])

@@ -1292,7 +1292,11 @@ def test_subagent_meta_prompt_has_no_literal_placeholder(
     asm.set_role("ph-role", provider_name="claude")
     result = asm.composer.compose("ph-role")
 
-    runner = SubAgentRunner(project, _subagent_payload(result))
+    from ai_hats.observe import SessionManager
+
+    runner = SubAgentRunner(
+        project, _subagent_payload(result), session_mgr=SessionManager(project),
+    )
     meta_prompt = runner._build_meta_prompt(
         result=result,
         provider=get_provider("claude"),
@@ -1327,7 +1331,11 @@ def test_subagent_meta_prompt_omits_project_state(project_with_placeholder_libra
         "# Task State\n\n## DONE\n- **HATS-001**: SENTINEL_DONE_TASK\n"
     )
 
-    runner = SubAgentRunner(project, _subagent_payload(result))
+    from ai_hats.observe import SessionManager
+
+    runner = SubAgentRunner(
+        project, _subagent_payload(result), session_mgr=SessionManager(project),
+    )
     meta_prompt = runner._build_meta_prompt(
         result=result,
         provider=get_provider("claude"),
@@ -1357,7 +1365,11 @@ def test_subagent_sdk_first_message_omits_project_state(project_with_placeholder
         "# Task State\n\n## DONE\n- **HATS-001**: SENTINEL_DONE_TASK\n"
     )
 
-    runner = SubAgentRunner(project, _subagent_payload(result))
+    from ai_hats.observe import SessionManager
+
+    runner = SubAgentRunner(
+        project, _subagent_payload(result), session_mgr=SessionManager(project),
+    )
     audit = runner._build_sdk_prompt_audit(
         result=result,
         task="do the real thing",
