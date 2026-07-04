@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
+from .constants import TraceTag
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -22,7 +23,7 @@ from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .harness.diagnostic import diagnose_silent_session
 from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
-from .observe import Session, SessionManager, TraceTag
+from .observe import Session, SessionManager
 from ai_hats_wt import IsolationMode, WorktreeManager
 from .runtime_common import (
     SUBAGENT_SUBPROCESS_TIMEOUT_S,

@@ -29,7 +29,8 @@ import logging
 from pathlib import Path
 from typing import Any, Mapping
 
-from ...observe import AuditWriter, Session, TraceTag
+from ...constants import TraceTag
+from ...observe import AuditWriter, Session
 from ..step import Step, StepIO
 
 logger = logging.getLogger(__name__)
