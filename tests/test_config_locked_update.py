@@ -9,6 +9,7 @@ config fail these; ``locked_update`` re-reads under lock and applies a delta.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,23 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.config.project import ProjectConfig, locked_update
 from ai_hats.models import OverlayConfig
+
+SRC = Path(__file__).resolve().parent.parent / "src" / "ai_hats"
+
+
+def test_no_whole_object_project_config_saves_left() -> None:
+    """Static guard: every ai-hats.yaml write goes through locked_update/save_config.
+
+    A direct ``<x>.project_config.save(...)`` is a whole-object save of state
+    loaded at command start — the exact lost-update shape this task removed.
+    """
+    offenders = [
+        f"{path.relative_to(SRC.parent.parent)}:{lineno}"
+        for path in SRC.rglob("*.py")
+        for lineno, line in enumerate(path.read_text().splitlines(), 1)
+        if re.search(r"project_config\.save\(", line)
+    ]
+    assert not offenders, f"direct whole-object saves reintroduced: {offenders}"
 
 
 def _write_marker(config_path: Path) -> None:
