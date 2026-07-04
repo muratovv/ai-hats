@@ -272,8 +272,8 @@ def test_sync_hooks_ignores_foreign_dispatcher_no_perpetual_heal(project_with_ho
     manifest = asm._read_canonical_manifest(githooks / GITHOOKS_MANIFEST)
     assert git_hooks_changes(project, result, manifest) == []
     # Idempotent across launches — no perpetual re-heal (the P1 symptom).
-    assert asm.hooks.sync_hooks().status == "in-sync"
-    assert asm.hooks.sync_hooks().status == "in-sync"
+    assert asm.hooks.sync_hooks(None).status == "in-sync"
+    assert asm.hooks.sync_hooks(None).status == "in-sync"
 
 
 def test_existing_core_hookspath_other_value_left_alone(project_with_hook_skill, capsys):
@@ -392,7 +392,7 @@ def test_sync_hooks_noop_when_in_sync(project_with_hook_skill):
     installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
     before = installed.stat().st_mtime_ns
 
-    res = asm.hooks.sync_hooks()
+    res = asm.hooks.sync_hooks(None)
     assert res.status == "in-sync"
     # No rewrite when already consistent with source.
     assert installed.stat().st_mtime_ns == before
@@ -407,7 +407,7 @@ def test_sync_hooks_heals_corrupted_hook(project_with_hook_skill):
     installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
     installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")  # simulate drift
 
-    res = asm.hooks.sync_hooks()
+    res = asm.hooks.sync_hooks(None)
     assert res.status == "synced"
     body = installed.read_text()
     assert "check ran" in body
@@ -423,7 +423,7 @@ def test_sync_hooks_heals_deleted_hook(project_with_hook_skill):
     installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
     installed.unlink()
 
-    res = asm.hooks.sync_hooks()
+    res = asm.hooks.sync_hooks(None)
     assert res.status == "synced"
     assert installed.is_file()
     assert "check ran" in installed.read_text()
@@ -477,7 +477,7 @@ def test_sync_hooks_refuses_heal_when_binary_behind(project_with_hook_skill, mon
     installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")  # plant drift
     _write_update_cache(project, behind=7, ahead=0)  # binary is behind upstream
 
-    res = asm.hooks.sync_hooks()
+    res = asm.hooks.sync_hooks(None)
     assert res.status == "version-skew"
     # Refused to materialize blind — the drifted content is left untouched.
     assert "DRIFTED" in installed.read_text()
@@ -495,7 +495,7 @@ def test_sync_hooks_heals_when_binary_in_sync_with_upstream(project_with_hook_sk
     installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")
     _write_update_cache(project, behind=0, ahead=0)
 
-    res = asm.hooks.sync_hooks()
+    res = asm.hooks.sync_hooks(None)
     assert res.status == "synced"
     assert "check ran" in installed.read_text()
 
@@ -517,7 +517,7 @@ def test_sync_hooks_heals_on_local_channel_despite_behind_cache(
     _write_update_cache(project, behind=7, ahead=0)  # stale 'behind' entry
     _set_channel_local(project)
 
-    res = asm.hooks.sync_hooks()
+    res = asm.hooks.sync_hooks(None)
     assert res.status == "synced"
     assert "check ran" in installed.read_text()
 
@@ -536,7 +536,7 @@ def test_sync_hooks_ignores_cache_about_foreign_build(project_with_hook_skill, m
     installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")
     _write_update_cache(project, behind=7, ahead=0)
 
-    res = asm.hooks.sync_hooks()
+    res = asm.hooks.sync_hooks(None)
     assert res.status == "synced"
     assert "check ran" in installed.read_text()
 
@@ -559,7 +559,7 @@ def test_sync_hooks_refuses_when_opted_out_and_genuinely_behind(
     installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")
     _write_update_cache(project, behind=7, ahead=0)
 
-    res = asm.hooks.sync_hooks()
+    res = asm.hooks.sync_hooks(None)
     assert res.status == "version-skew"
     assert "DRIFTED" in installed.read_text()
 
@@ -574,7 +574,7 @@ def test_sync_hooks_heals_when_no_update_cache(project_with_hook_skill):
     installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
     installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")
 
-    res = asm.hooks.sync_hooks()
+    res = asm.hooks.sync_hooks(None)
     assert res.status == "synced"
     assert "check ran" in installed.read_text()
 
@@ -606,7 +606,7 @@ def test_sync_hooks_non_git_still_heals_runtime(tmp_path):
     ).save(project / "ai-hats.yaml")
 
     asm = Assembler(project, library_paths=[lib])
-    res = asm.hooks.sync_hooks()  # must not raise on a non-git project
+    res = asm.hooks.sync_hooks(None)  # must not raise on a non-git project
     # Runtime guards were never materialized → drift detected & healed; git
     # surface is skipped (no repo) so no .githooks/ appears.
     assert res.status in ("synced", "in-sync")

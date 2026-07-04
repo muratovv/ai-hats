@@ -136,6 +136,7 @@ class Assembler:
             self.project_dir,
             self.project_config,
             compose=lambda role: compose_for_role(self, role),
+            resolve_provider=get_provider,  # HATS-865: DI so the brick never imports providers
         )
 
     def _build_library_paths(self, extra: list[Path]) -> list[Path]:
