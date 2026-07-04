@@ -44,7 +44,7 @@ from pathlib import Path
 
 import pytest
 
-_SRC = Path(__file__).resolve().parents[2] / "src"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 # Wedged provider: swallows SIGINT/SIGQUIT, replies "API Error" to any line,
@@ -69,13 +69,13 @@ FAKE_PROVIDER_SOURCE = textwrap.dedent(
 
 
 # Driver: runs the REAL _pty_spawn against the wedged provider and prints
-# whatever it returns between sentinels. Inserts the worktree src FIRST so the
-# editable install (which points at the main checkout) does not shadow this
-# branch's runtime.py.
+# whatever it returns between sentinels. Inserts the worktree src + package
+# srcs FIRST so the editable installs (which point at the main checkout) do
+# not shadow this branch's code (HATS-863).
 DRIVER_SOURCE = textwrap.dedent(
     """\
     import os, sys
-    sys.path.insert(0, {src!r})
+    sys.path[:0] = {src_roots!r}
     from ai_hats.runtime import WrapRunner
 
     class _StubSession:
@@ -146,7 +146,10 @@ def test_triple_ctrl_c_force_exits_wedged_provider(tmp_path):
     provider = tmp_path / "fake_provider.py"
     provider.write_text(FAKE_PROVIDER_SOURCE)
     driver = tmp_path / "driver.py"
-    driver.write_text(DRIVER_SOURCE.format(src=str(_SRC), provider=str(provider)))
+    from _helpers.env import checkout_pythonpath
+
+    src_roots = checkout_pythonpath(_REPO_ROOT).split(os.pathsep)
+    driver.write_text(DRIVER_SOURCE.format(src_roots=src_roots, provider=str(provider)))
 
     proc = PtyProcess.spawn([sys.executable, str(driver)], dimensions=(24, 80))
     try:

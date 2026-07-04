@@ -72,12 +72,16 @@ package-dir = {"" = "src", "ai_hats.library" = "library"}
 packages = [
     "ai_hats",
     "ai_hats.cli",
+    "ai_hats.config",
     "ai_hats.harness",
     "ai_hats.hypothesis",
+    "ai_hats.libraries",
+    "ai_hats.paths",
     "ai_hats.pipeline",
     "ai_hats.pipeline.steps",
     "ai_hats.retro",
     "ai_hats.templates",
+    "ai_hats.tracker",
     "ai_hats.update_check",
     "ai_hats.library",
 ]

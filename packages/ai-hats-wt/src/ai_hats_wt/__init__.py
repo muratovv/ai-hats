@@ -16,6 +16,7 @@ standalone consumer drives — manager-internal constants (e.g.
 
 from __future__ import annotations
 
+from .carry import WT_TEARDOWN_EVENTS, WorktreeCarry, WorktreeHook, parse_worktree_carry
 from .locks import WorktreeLockError
 from .manager import (
     IsolationMode,
@@ -39,6 +40,11 @@ from .manager import (
 )
 
 __all__ = [
+    # Carry schema
+    "WorktreeCarry",
+    "WorktreeHook",
+    "WT_TEARDOWN_EVENTS",
+    "parse_worktree_carry",
     # Engine + git probes
     "WorktreeManager",
     "IsolationMode",
