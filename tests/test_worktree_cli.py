@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -258,8 +259,18 @@ class _FakeCompleted:
 
 @pytest.fixture
 def active_worktree(git_project: Path, monkeypatch):
-    """Create a worktree, save state, and chdir to project. Auto-cleanup."""
+    """Create a worktree, save state, and chdir to project. Auto-cleanup.
+
+    The project carries committed ``packages/*/src`` dirs so the worktree
+    exercises the workspace-aware PYTHONPATH contract (HATS-913).
+    """
     monkeypatch.chdir(git_project)
+    for pkg in ("pkg-a", "pkg-b"):
+        pkg_src = git_project / "packages" / pkg / "src"
+        pkg_src.mkdir(parents=True)
+        (pkg_src / "marker.py").write_text("")
+    _git(git_project, "add", ".")
+    _git(git_project, "commit", "-m", "add workspace packages")
     mgr = WorktreeManager(
         git_project,
         branch_name="feat/exec-test",
@@ -269,6 +280,16 @@ def active_worktree(git_project: Path, monkeypatch):
     mgr.save_state()
     yield git_project, wt
     mgr.cleanup()
+
+
+def _workspace_paths(wt: Path) -> str:
+    return os.pathsep.join(
+        [
+            str(wt / "src"),
+            str(wt / "packages" / "pkg-a" / "src"),
+            str(wt / "packages" / "pkg-b" / "src"),
+        ]
+    )
 
 
 class TestWtExec:
@@ -296,7 +317,7 @@ class TestWtExec:
         assert result.exit_code == 0, result.output
         assert captured["cmd"] == ["pytest", "-xvs"]
         assert captured["cwd"] == str(wt)
-        assert captured["env"]["PYTHONPATH"].startswith(f"{wt}/src")
+        assert captured["env"]["PYTHONPATH"] == _workspace_paths(wt)
 
     def test_pythonpath_prepends_existing(self, active_worktree, monkeypatch) -> None:
         project, wt = active_worktree
@@ -311,7 +332,7 @@ class TestWtExec:
         runner = CliRunner()
         runner.invoke(main, ["wt", "exec", "--", "true"])
 
-        assert captured["env"]["PYTHONPATH"] == f"{wt}/src:/pre/existing"
+        assert captured["env"]["PYTHONPATH"] == f"{_workspace_paths(wt)}{os.pathsep}/pre/existing"
 
     def test_propagates_exit_code(self, active_worktree, monkeypatch) -> None:
         def fake_run(cmd, cwd=None, env=None, **kwargs):
@@ -403,7 +424,7 @@ class TestWtEnv:
 
         assert result.exit_code == 0
         assert f'export WT="{wt}"' in result.output
-        assert f'export PYTHONPATH="{wt}/src' in result.output
+        assert f'export PYTHONPATH="{_workspace_paths(wt)}' in result.output
 
     def test_no_active_worktree_exits_1(self, git_project: Path, monkeypatch) -> None:
         monkeypatch.chdir(git_project)
