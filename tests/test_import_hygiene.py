@@ -206,12 +206,14 @@ def test_schema_modules_never_import_providers():
     offenders: dict[str, list[str]] = {}
     for schema in SCHEMA_MODULES:
         name = f"{PKG}.{schema}"
-        path = mods[name]  # KeyError = schema module vanished; fail loud
-        tree = ast.parse(path.read_text())
+        prefix = name + "."  # cover a schema PACKAGE's whole subtree (e.g. config/)
+        schema_mods = {m: p for m, p in mods.items() if m == name or m.startswith(prefix)}
+        assert schema_mods, f"schema module {name} vanished"
         refs = [
             t
-            for node in _import_nodes(tree, top_level_only=False)
-            for t in _targets(name, path.name == "__init__.py", node, nodeset)
+            for m, path in schema_mods.items()
+            for node in _import_nodes(ast.parse(path.read_text()), top_level_only=False)
+            for t in _targets(m, path.name == "__init__.py", node, nodeset)
             if t == providers or t.startswith(providers + ".")
         ]
         if refs:
