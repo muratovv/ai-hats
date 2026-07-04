@@ -19,12 +19,12 @@ from typing import TYPE_CHECKING
 # beside the other recovery passes (bundled and run at the create_session
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
+from .constants import TraceTag
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
-from .observe import Session, SidecarTracer, TraceTag
 from .paths import claude_transcript_path, claude_transcripts_dir
 
 if TYPE_CHECKING:
-    pass
+    from .observe import Session, SidecarTracer
 
 logger = logging.getLogger(__name__)
 

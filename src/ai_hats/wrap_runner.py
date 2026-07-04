@@ -16,13 +16,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
+from .constants import TraceTag
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
-from .observe import Session, SessionManager, SidecarTracer, TraceTag
+from .observe import Session, SessionManager, SidecarTracer
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .runtime_common import (
     _TERM_RESET_PRELUDE,

@@ -12,19 +12,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ai_hats_core import atomic_write_text
+from .constants import TraceTag
 from .environment_recovery import EnvironmentRecovery, RecoveryProtocol
 from .paths import runs_dir
 
 logger = logging.getLogger(__name__)
-
-
-class TraceTag:
-    REQ = "[REQ]"
-    RES = "[RES]"
-    ACT = "[ACT]"
-    TOOL = "[TOOL]"
-    SYS = "[SYS]"
-    SUB = "[SUB]"
 
 
 class SessionManager:

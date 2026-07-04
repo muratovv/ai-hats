@@ -33,3 +33,13 @@ ALWAYS_ON_RULES = {
     # authoring time; dropped from SUMMARIZED_IN_INJECTION.
     "dev_rule_comment_discipline",
 }
+
+
+# HATS-867: trace-tag vocabulary — leaf home so runtime bricks need no observe import
+class TraceTag:
+    REQ = "[REQ]"
+    RES = "[RES]"
+    ACT = "[ACT]"
+    TOOL = "[TOOL]"
+    SYS = "[SYS]"
+    SUB = "[SUB]"
