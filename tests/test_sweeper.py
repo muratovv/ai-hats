@@ -374,4 +374,80 @@ def test_settings_without_tags_no_report(tmp_path):
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"hooks": {"PreToolUse": [{"matcher": "*"}]}}))
 
+
+# ---- write_marker: the hashed owner_key convention writer (HATS-911) ----
+
+
+def test_write_marker_round_trip_sweepable(tmp_path):
+    base = tmp_path / ".testsurface"
+    (base / "bundle.d").mkdir(parents=True)
+    (base / "hook.sh").write_bytes(b"#!/bin/sh\n")
+    (base / "bundle.d" / "part.sh").write_bytes(b"echo hi\n")
+    marker = base / ".ai-hats-manifest"
+
+    sweeper.write_marker(
+        marker,
+        owner_key="test-mech",
+        names=["hook.sh", "bundle.d/part.sh"],
+        project_dir=tmp_path,
+        reason="test-write",
+    )
+
+    reports = sweeper.sweep_unclaimed(tmp_path, surfaces=(SURFACE,))
+
+    assert sorted(reports[0].swept) == ["bundle.d/part.sh", "hook.sh"]
+    assert reports[0].kept == ()
+    assert reports[0].marker_removed
+
+
+def test_write_marker_directory_entry_uses_dir_digest(tmp_path):
+    base = tmp_path / ".testsurface"
+    (base / "owned-dir").mkdir(parents=True)
+    (base / "owned-dir" / "f.txt").write_bytes(b"payload")
+    marker = base / ".ai-hats-manifest"
+
+    sweeper.write_marker(
+        marker, owner_key="test-mech", names=["owned-dir"],
+        project_dir=tmp_path, reason="test-write",
+    )
+
+    reports = sweeper.sweep_unclaimed(tmp_path, surfaces=(SURFACE,))
+
+    assert reports[0].swept == ("owned-dir",)
+    assert not (base / "owned-dir").exists()
+
+
+def test_write_marker_missing_entry_fails_loud(tmp_path):
+    base = tmp_path / ".testsurface"
+    base.mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="not materialized"):
+        sweeper.write_marker(
+            base / ".ai-hats-manifest", owner_key="test-mech",
+            names=["ghost.sh"], project_dir=tmp_path, reason="test-write",
+        )
+    assert not (base / ".ai-hats-manifest").exists()
+
+
+def test_write_marker_unsafe_entry_fails_loud(tmp_path):
+    base = tmp_path / ".testsurface"
+    base.mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="unsafe entry"):
+        sweeper.write_marker(
+            base / ".ai-hats-manifest", owner_key="test-mech",
+            names=["../escape.sh"], project_dir=tmp_path, reason="test-write",
+        )
+
+
+def test_write_marker_empty_names_removes_marker(tmp_path):
+    base, marker = _seed(tmp_path, f"{_digest(b'x')}  old.txt")
+
+    sweeper.write_marker(
+        marker, owner_key="test-mech", names=[],
+        project_dir=tmp_path, reason="test-write",
+    )
+
+    assert not marker.exists()
+
     assert sweeper.sweep_unclaimed(tmp_path, surfaces=(SETTINGS_SURFACE,)) == []
