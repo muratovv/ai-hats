@@ -58,13 +58,13 @@ ALLOWED_COMPOSITION_CONSUMERS = (
     "relocation",
     "role_catalog",
     "costs",  # HATS-865: composition-tree introspection tooling, not a brick
+    "composition_seam",  # HATS-865: THE integrator compose seam (payload builder)
 )
 
 # HATS-865 ratchet: the shrinking worklist. Exact-match asserted — a revert
 # resurfaces an offender (RED), a landed cut left in the tuple is RED too.
 # Delete the tuple when empty (T5 complete).
 EXPECTED_COMPOSITION_OFFENDERS = (
-    "hooks_manager",
     "pipeline.steps.compose",
     "pipeline.steps.compute_usage",
     "pipeline.steps.materialize",
