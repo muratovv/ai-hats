@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._pytester_env import pythonpath_with_repo_root
 from tests._repo_integrity import diff_repo, snapshot_repo
 
 _CONFTEST = Path(__file__).resolve().parent / "conftest.py"
@@ -132,6 +133,7 @@ def test_tripwire_fires_on_real_repo_mutation(pytester, tmp_path, monkeypatch) -
         """
     )
     monkeypatch.setenv("AI_HATS_REPO_INTEGRITY_ROOT", str(victim))
+    monkeypatch.setenv("PYTHONPATH", pythonpath_with_repo_root())
     result = pytester.runpytest_subprocess("-p", "no:cacheprovider")
 
     assert result.ret != 0, "the tripwire must fail the inner session"
