@@ -402,7 +402,8 @@ def test_exec_fails_when_ai_hats_not_importable(tmp_path):
     _make_executable(python_stub)
     res = _run(["status"], cwd=tmp_path)
     assert res.returncode == 1
-    assert "ai_hats is not importable" in res.stderr
+    # HATS-895 wording: probe covers the whole workspace, message names the CLI.
+    assert "the ai-hats CLI is not importable" in res.stderr
     # Fresh project (no ai-hats.yaml) → bootstrap hint is `self init` (HATS-612).
     assert "ai-hats self init" in res.stderr
 
