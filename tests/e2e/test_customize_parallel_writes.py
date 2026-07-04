@@ -2,9 +2,9 @@
 
 The command's read-modify-write had no mutual exclusion — last writer wins,
 earlier additions silently vanished (plan-stage PoC kept 1 of 3);
-``locked_path`` around the RMW serializes them. Real-binary pattern mirrors
+``file_lock`` around the RMW serializes them. Real-binary pattern mirrors
 ``test_task_description_file.py``. dev_rule_e2e_gate: this is the gated test;
-fail-under-revert — drop the ``locked_path`` wrapping in ``customize`` and
+fail-under-revert — drop the ``file_lock`` wrapping in ``customize`` and
 the all-N assertions fail.
 """
 

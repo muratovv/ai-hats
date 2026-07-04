@@ -1,6 +1,6 @@
 """Cross-process lock for read-modify-write sections (HATS-526).
 
-``atomic_write_text`` (HATS-716) keeps each write torn-proof; ``locked_path``
+``atomic_write_text`` (HATS-716) keeps each write torn-proof; ``file_lock``
 adds mutual exclusion for the surrounding read-modify-write, which is
 otherwise last-writer-wins. Lock files are safe to leave on disk (the kernel
 releases ``flock`` on process death) but must live on a local filesystem —
@@ -19,11 +19,11 @@ DEFAULT_LOCK_TIMEOUT = 10.0  # seconds — guarded RMW sections run in <50ms
 
 
 class LockTimeoutError(TimeoutError):
-    """Raised when acquiring a ``locked_path`` lock exceeds its timeout."""
+    """Raised when acquiring a ``file_lock`` lock exceeds its timeout."""
 
 
 @contextmanager
-def locked_path(path: Path, *, timeout: float = DEFAULT_LOCK_TIMEOUT) -> Iterator[None]:
+def file_lock(path: Path, *, timeout: float = DEFAULT_LOCK_TIMEOUT) -> Iterator[None]:
     """Hold an exclusive cross-process lock scoped to ``path``.
 
     Wrap the full read-modify-write of ``path`` — not just the write — so

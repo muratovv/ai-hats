@@ -8,7 +8,7 @@ No domain schemas (ADR-0014 core contract).
 from ai_hats_core.atomic_io import atomic_write_bytes, atomic_write_text
 from ai_hats_core.composition import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats_core.git_env import scrubbed_git_env
-from ai_hats_core.locks import LockTimeoutError, locked_path
+from ai_hats_core.locks import LockTimeoutError, file_lock
 from ai_hats_core.yaml_model import YamlModel
 
 __all__ = [
@@ -19,6 +19,6 @@ __all__ = [
     "YamlModel",
     "atomic_write_bytes",
     "atomic_write_text",
-    "locked_path",
+    "file_lock",
     "scrubbed_git_env",
 ]

@@ -30,7 +30,7 @@ since the latest tag lives under **Unreleased** until the next release.
 - **Parallel `config customize` no longer loses additions** (HATS-526). The
   command's read-modify-write ran unlocked, so concurrent calls were
   last-writer-wins (3 parallel `--add-trait --global` kept 1 of 3). The full
-  cycle now runs under a cross-process `locked_path` lock (new `ai_hats_core`
+  cycle now runs under a cross-process `file_lock` lock (new `ai_hats_core`
   primitive, `filelock`-backed) on both layers; contention past 10s exits
   with a friendly error instead of hanging.
 
