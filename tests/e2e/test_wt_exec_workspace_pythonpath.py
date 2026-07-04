@@ -15,6 +15,9 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats.paths import tasks_dir
+from ai_hats_wt.env import PACKAGES_DIRNAME, SRC_DIRNAME
+
 pytestmark = pytest.mark.integration
 
 _PLAN = """# Plan
@@ -56,10 +59,6 @@ def _ai_hats(binary: Path, *args: str, cwd: Path, env: dict[str, str]) -> subpro
     )
 
 
-def _tracker(root: Path) -> Path:
-    return root / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
-
-
 def _find_worktree(main: Path) -> Path | None:
     out = _git(main, "worktree", "list", "--porcelain").stdout
     for line in out.splitlines():
@@ -73,7 +72,7 @@ def test_wt_exec_resolves_workspace_package_from_worktree(tmp_project, repo_root
     binary = main.ai_hats_binary
     env = _child_env(repo_root)
 
-    pkg = main.path / "packages" / "mypkg" / "src" / "mypkg"
+    pkg = main.path / PACKAGES_DIRNAME / "mypkg" / SRC_DIRNAME / "mypkg"
     pkg.mkdir(parents=True)
     (pkg / "__init__.py").write_text("")
     (main.path / ".gitignore").write_text(".agent/\nai-hats.yaml\n")
@@ -85,7 +84,7 @@ def test_wt_exec_resolves_workspace_package_from_worktree(tmp_project, repo_root
 
     assert _ai_hats(binary, "task", "create", "A", "--id", "HATS-1", cwd=main.path, env=env).returncode == 0
     assert _ai_hats(binary, "task", "transition", "HATS-1", "plan", cwd=main.path, env=env).returncode == 0
-    (_tracker(main.path) / "HATS-1" / "plan.md").write_text(_PLAN)
+    (tasks_dir(main.path) / "HATS-1" / "plan.md").write_text(_PLAN)
     r = _ai_hats(binary, "task", "transition", "HATS-1", "execute", cwd=main.path, env=env)
     assert r.returncode == 0, r.stderr
     wt = _find_worktree(main.path)
