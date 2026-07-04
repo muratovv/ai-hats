@@ -62,10 +62,8 @@ ALLOWED_COMPOSITION_CONSUMERS = (
     "state",  # TEMP until HATS-866 — tracker-side wt-carry compose seam
 )
 
-# HATS-865 ratchet: the shrinking worklist. Exact-match asserted — a revert
-# resurfaces an offender (RED), a landed cut left in the tuple is RED too.
-# Delete the tuple when empty (T5 complete).
-EXPECTED_COMPOSITION_OFFENDERS = ()
+# HATS-865 T5 complete: the migration ratchet (EXPECTED_COMPOSITION_OFFENDERS)
+# hit zero and was deleted — the gate below asserts NO offenders, ever.
 
 
 def _module_name(path: Path) -> str:
@@ -250,8 +248,8 @@ def test_schema_modules_never_import_providers():
 def test_composition_layer_is_integrator_only():
     """HATS-865 deny-by-default: outside ALLOWED_COMPOSITION_CONSUMERS no module
     may reference the composition layer at ANY level (deferred included,
-    TYPE_CHECKING exempt). Exact-match ratchet against
-    EXPECTED_COMPOSITION_OFFENDERS keeps the gate enforcing mid-migration.
+    TYPE_CHECKING exempt). Bricks receive the ready CompositionPayload from
+    the integrator compose seam instead (ADR-0014 Composition rule).
     """
     mods = _modules()
     nodeset = set(mods)
@@ -269,13 +267,12 @@ def test_composition_layer_is_integrator_only():
         ]
         if refs:
             offenders[name.removeprefix(PKG + ".")] = sorted(set(refs))
-    assert set(offenders) == set(EXPECTED_COMPOSITION_OFFENDERS), (
-        "composition-layer import drift (HATS-865).\n"
-        f"NEW offenders (cut them or justify an ALLOWED entry): "
-        f"{sorted(set(offenders) - set(EXPECTED_COMPOSITION_OFFENDERS))}\n"
-        f"STALE ratchet entries (cut landed — remove from tuple): "
-        f"{sorted(set(EXPECTED_COMPOSITION_OFFENDERS) - set(offenders))}\n"
-        f"details: { {k: offenders[k] for k in sorted(offenders)} }"
+    assert not offenders, (
+        "composition-layer import drift (HATS-865): a non-ALLOWED module "
+        "references the composition layer. Cut the import (inject the "
+        "CompositionPayload / a DI callable instead) or justify a new "
+        "ALLOWED_COMPOSITION_CONSUMERS entry.\n"
+        f"offenders: { {k: offenders[k] for k in sorted(offenders)} }"
     )
 
 
