@@ -17,6 +17,7 @@ standalone consumer drives — manager-internal constants (e.g.
 from __future__ import annotations
 
 from .carry import WT_TEARDOWN_EVENTS, WorktreeCarry, WorktreeHook, parse_worktree_carry
+from .env import workspace_pythonpath
 from .locks import WorktreeLockError
 from .manager import (
     IsolationMode,
@@ -49,6 +50,8 @@ __all__ = [
     "WorktreeManager",
     "IsolationMode",
     "assert_head_is_canonical_base",
+    # Env construction (HATS-913)
+    "workspace_pythonpath",
     # Lifecycle extension-point (ADR-0013 D2)
     "WorktreeLifecycle",
     "LifecycleContext",
