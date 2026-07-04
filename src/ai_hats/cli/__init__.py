@@ -125,19 +125,17 @@ def _launch_session(
     tags: dict[str, str] | None = None,
 ):
     """Launch a wrapped provider CLI session via the ``human`` pipeline."""
+    from ..composition_seam import RoleNotFoundError, build_composition_payload
     from ..pipeline.harness import PipelineHarness
-    from ..pipeline.steps.compose import RoleNotFoundError
     from ._helpers import _handle_role_not_found, _project_dir
 
     project_dir = _project_dir()
-    # NB: role=None is intentional when --role is omitted. WrapRunner
-    # internally resolves to cfg.active_role / cfg.default_role through the
-    # permanent-assembly path. Resolving here would force the shadow-
-    # override path with redundant compose work — keep behaviour identical
-    # to pre-migration.
 
     try:
         with PipelineHarness("human", project_dir) as h:
+            # HATS-865: compose ONCE here (effective-role resolution + the
+            # first-run set_role side effect live in the seam) and seed the
+            # payload into the funnel; the launch step hands it to WrapRunner.
             final = h.run(
                 {
                     "role": role,
@@ -146,6 +144,12 @@ def _launch_session(
                     "provider": provider,
                     "extra_args": list(extra_args or []),
                     "tags": tags,
+                    "composition": build_composition_payload(
+                        project_dir,
+                        role_override=role,
+                        provider_name=provider,
+                        interactive=True,
+                    ),
                 }
             )
     except RoleNotFoundError as exc:

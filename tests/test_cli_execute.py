@@ -134,11 +134,14 @@ def test_execute_batch_routes_to_subagent_runner(
     captured: dict = {}
 
     class _Runner:
-        def __init__(self, _pd):
+        def __init__(self, _pd, payload):
             captured["pd"] = _pd
+            self._payload = payload
 
         def run(self, **kwargs):
-            captured["kwargs"] = kwargs
+            captured["kwargs"] = {
+                "role_name": self._payload.effective_role, **kwargs,
+            }
             return _StubSession(
                 project_dir / ".gitlog" / "session_stub-1", {"exit_code": 0},
             )
@@ -164,11 +167,12 @@ def test_execute_interactive_routes_to_wraprunner(
     captured: dict = {}
 
     class _WrapRunner:
-        def __init__(self, _pd):
+        def __init__(self, _pd, payload):
             captured["pd"] = _pd
+            captured["provider"] = payload.provider.name
+            captured["role"] = payload.effective_role
 
-        def run(self, provider, **kwargs):
-            captured["provider"] = provider
+        def run(self, **kwargs):
             captured.update(kwargs)
             return 0, _StubSession(
                 project_dir / ".gitlog" / "session_wrap-1", {"exit_code": 0},
@@ -183,7 +187,7 @@ def test_execute_interactive_routes_to_wraprunner(
          "reflect-all"],
     )
     assert res.exit_code == 0, res.output
-    assert captured["role_override"] == "judge"
+    assert captured["role"] == "judge"
     assert captured["provider"] == "claude"  # from project ai-hats.yaml
     # prompt prepended as first positional arg
     assert "Reflect-all triage session" in captured["extra_args"][0]
@@ -195,9 +199,9 @@ def test_execute_interactive_no_prompt_passes_empty_extra_args(
     captured: dict = {}
 
     class _WrapRunner:
-        def __init__(self, _pd): pass
+        def __init__(self, _pd, _payload): pass
 
-        def run(self, provider, **kwargs):
+        def run(self, **kwargs):
             captured["extra_args"] = kwargs.get("extra_args")
             return 0, _StubSession(
                 project_dir / ".gitlog" / "session_wrap-1", {"exit_code": 0},

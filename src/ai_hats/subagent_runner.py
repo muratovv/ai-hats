@@ -12,7 +12,7 @@ from pathlib import Path
 
 from typing import TYPE_CHECKING
 
-from .assembler import Assembler
+from .composition_payload import CompositionPayload
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -22,9 +22,7 @@ from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .harness.diagnostic import diagnose_silent_session
 from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
-from .materialize import compose_for_role
 from .observe import Session, SessionManager, TraceTag
-from .providers import get_provider
 from ai_hats_wt import IsolationMode, WorktreeManager
 from .runtime_common import (
     SUBAGENT_SUBPROCESS_TIMEOUT_S,
@@ -33,7 +31,6 @@ from .runtime_common import (
     _cleanup_session_cache,
     _session_timed_out,
     _finalize_sub_agent,
-    _composition_snapshot,
 )
 
 if TYPE_CHECKING:
@@ -43,16 +40,19 @@ logger = logging.getLogger(__name__)
 
 
 class SubAgentRunner:
-    """SDK-based sub-agent executor."""
+    """SDK-based sub-agent executor.
 
-    def __init__(self, project_dir: Path) -> None:
+    HATS-865: a brick — receives the ready :class:`CompositionPayload` from
+    the integrator compose seam and never touches the composition layer.
+    """
+
+    def __init__(self, project_dir: Path, payload: CompositionPayload) -> None:
         self.project_dir = project_dir
-        self.assembler = Assembler(project_dir)
+        self.payload = payload
         self.session_mgr = SessionManager(project_dir)
 
     def run(
         self,
-        role_name: str,
         task: str = "",
         ticket_id: str = "",
         model: str = "",
@@ -62,7 +62,7 @@ class SubAgentRunner:
         system_prompt_override: str | None = None,
         harness_policy: "HarnessPolicy | None" = None,
     ) -> Session:
-        """Execute a sub-agent in isolation.
+        """Execute a sub-agent in isolation (role = ``payload.effective_role``).
 
         ``system_prompt_override`` (HATS-267): when supplied, replaces the
         merged injection in the meta-prompt build while keeping structural
@@ -75,6 +75,10 @@ class SubAgentRunner:
         ``reporting`` is set, the zero-output guard fires after a clean
         run. ``None`` preserves pre-HATS-378 behaviour (timeout returns
         a session with ``timed_out=True``; no zero-output check).
+
+        HATS-865 recorded delta: retry attempts share the ONE payload
+        composition (pre-865 each ``_run_attempt`` re-composed) — an
+        improvement for attempt comparability.
         """
         on_timeout = harness_policy.on_timeout if harness_policy is not None else None
         max_attempts = 1 + (on_timeout.retry if on_timeout is not None else 0)
@@ -90,7 +94,6 @@ class SubAgentRunner:
                 attempt_tags["harness_retry_attempt"] = str(attempt)
 
             last_session = self._run_attempt(
-                role_name=role_name,
                 task=task,
                 ticket_id=ticket_id,
                 model=model,
@@ -125,7 +128,6 @@ class SubAgentRunner:
     def _run_attempt(
         self,
         *,
-        role_name: str,
         task: str,
         ticket_id: str,
         model: str,
@@ -154,9 +156,9 @@ class SubAgentRunner:
         """
         session = self.session_mgr.create_session(parent_session=parent_session)
 
-        # HATS-456: single derivation point for "compose for role X".
-        # Override (HATS-267) stays on the Automate path per ADR-0005 П2.
-        result = compose_for_role(self.assembler, role_name)
+        # HATS-865: the ONE composition arrived in the payload (compose seam).
+        role_name = self.payload.effective_role
+        result = self.payload.result
         # HATS-505 / HATS-452 trap: ``with_injection_override`` REPLACES
         # ``result.injections`` WHOLESALE — every overlay contribution (global +
         # project ``injection_append``, ``add_traits`` bodies) is dropped from
@@ -169,8 +171,8 @@ class SubAgentRunner:
             # HATS-452: explicit immutable transformation via the typed
             # ``with_*`` API on ``CompositionResult`` (П1 in ADR-0005).
             result = result.with_injection_override(system_prompt_override)
-        provider_name = self.assembler.project_config.provider
-        provider = get_provider(provider_name)
+        provider = self.payload.provider
+        provider_name = provider.name
 
         # HATS-474: for the Claude path the meta-prompt stored on disk is
         # a *forensic* artifact — it records what we actually sent to the
@@ -195,7 +197,7 @@ class SubAgentRunner:
             role=role_name,
             provider=provider.name,
             model=model,
-            composition=_composition_snapshot(self.assembler, role_name, result),
+            composition=self.payload.snapshot,
         )
         session.log_trace(TraceTag.SUB, f"Sub-agent started: role={role_name}")
 
@@ -295,6 +297,7 @@ class SubAgentRunner:
                             "stop_reason": run_result.stop_reason,
                         },
                         work_dir=work_dir,
+                        static_cost_analyzer=self.payload.static_cost_analyzer,
                     )
                 else:
                     # Legacy subprocess path (Gemini and future non-SDK providers).
@@ -397,6 +400,7 @@ class SubAgentRunner:
 
         options = build_options(
             result,
+            provider=self.payload.provider,
             project_dir=self.project_dir,
             session_id=session_id,
             work_dir=work_dir,
@@ -435,7 +439,7 @@ class SubAgentRunner:
         """
         from .sdk_options import _build_system_prompt, build_first_user_message
 
-        sp = _build_system_prompt(result, self.project_dir)
+        sp = _build_system_prompt(result, self.project_dir, self.payload.provider)
         system_text = sp.get("append", "")
         initial_message = build_first_user_message(
             ticket_context=self._load_ticket(ticket_id),

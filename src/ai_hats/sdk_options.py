@@ -37,6 +37,8 @@ if TYPE_CHECKING:
 
     from ai_hats_core import CompositionResult
 
+    from .providers import Provider
+
 
 # ---------------------------------------------------------------------------
 # Helpers — kept module-level so unit tests can pin behaviour separately
@@ -47,20 +49,20 @@ if TYPE_CHECKING:
 def _build_system_prompt(
     composition_result: "CompositionResult",
     project_dir: Path,
+    provider: "Provider",
 ) -> "SystemPromptPreset":
     """Return the ``system_prompt`` payload as the SDK's preset+append shape.
 
-    Reuses :meth:`ClaudeProvider.build_system_prompt` so the structured
-    sections (PRIORITIES, merged role injection, always-on RULES) match
-    HITL exactly. There is no AVAILABLE SKILLS index — Claude discovers
-    skills via the materialized SDK plugin (HATS-701); see
-    :func:`_build_plugins`. The ``<ai_hats_dir>`` placeholder is expanded
-    here so the agent never sees the literal token in its system prompt.
+    Reuses :meth:`Provider.build_system_prompt` (the runner's injected
+    provider instance — HATS-865) so the structured sections (PRIORITIES,
+    merged role injection, always-on RULES) match HITL exactly. There is no
+    AVAILABLE SKILLS index — Claude discovers skills via the materialized SDK
+    plugin (HATS-701); see :func:`_build_plugins`. The ``<ai_hats_dir>``
+    placeholder is expanded here so the agent never sees the literal token.
     """
     from .placeholders import expand_path_placeholders
-    from .providers import ClaudeProvider
 
-    text = ClaudeProvider().build_system_prompt(composition_result)
+    text = provider.build_system_prompt(composition_result)
     text = expand_path_placeholders(text, project_dir)
     return {"type": "preset", "preset": "claude_code", "append": text}
 
@@ -69,6 +71,7 @@ def _build_plugins(
     composition_result: "CompositionResult",
     project_dir: Path,
     session_id: str,
+    provider: "Provider",
 ) -> list["SdkPluginConfig"]:
     """Materialize composed skills as a single SDK plugin entry.
 
@@ -85,9 +88,7 @@ def _build_plugins(
     if not composition_result.skills:
         return []
 
-    from .providers import ClaudeProvider
-
-    skill_args = ClaudeProvider().materialize_runtime_skills(
+    skill_args = provider.materialize_runtime_skills(
         project_dir, composition_result, session_id,
     )
     if len(skill_args) >= 2 and skill_args[0] == "--plugin-dir":
@@ -103,6 +104,7 @@ def _build_plugins(
 def build_options(
     composition_result: "CompositionResult",
     *,
+    provider: "Provider",
     project_dir: Path,
     session_id: str,
     work_dir: Path | None = None,
@@ -161,8 +163,8 @@ def build_options(
     from claude_agent_sdk import ClaudeAgentOptions
 
     kwargs: dict = {
-        "system_prompt": _build_system_prompt(composition_result, project_dir),
-        "plugins": _build_plugins(composition_result, project_dir, session_id),
+        "system_prompt": _build_system_prompt(composition_result, project_dir, provider),
+        "plugins": _build_plugins(composition_result, project_dir, session_id, provider),
         "cwd": str(work_dir if work_dir is not None else project_dir),
     }
     if claude_session_id is not None:

@@ -102,9 +102,14 @@ def minimal_claude_project(tmp_path: Path) -> Path:
 def test_subagent_runner_via_sdk_smoke(
     minimal_claude_project: Path, requires_claude_auth
 ) -> None:
+    from ai_hats.composition_seam import build_composition_payload
     from ai_hats.runtime import SubAgentRunner
 
-    runner = SubAgentRunner(minimal_claude_project)
+    # HATS-865: compose once at the integrator seam, inject the payload.
+    payload = build_composition_payload(
+        minimal_claude_project, role_override="probe",
+    )
+    runner = SubAgentRunner(minimal_claude_project, payload)
 
     # Inject a per-call budget via the build_options call site by
     # monkey-patching the wrapper's signature is fragile; instead we
@@ -112,7 +117,6 @@ def test_subagent_runner_via_sdk_smoke(
     # the helper. For this probe a static cap is not wired; we accept
     # the small uncapped cost (~$0.001 with haiku and a 4-char response).
     session = runner.run(
-        role_name="probe",
         task=PROBE_TASK,
         isolation_mode="discard",
         model=PROBE_MODEL,
