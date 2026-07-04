@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 
 
+from ai_hats.paths import claude_settings_json
 from ai_hats.migration_healer import (
     LegacyRef,
     _LEGACY_RE,
@@ -43,11 +44,13 @@ def _init_git_repo(project_dir: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=str(project_dir), check=True)
     subprocess.run(
         ["git", "config", "user.email", "test@example.com"],
-        cwd=str(project_dir), check=True,
+        cwd=str(project_dir),
+        check=True,
     )
     subprocess.run(
         ["git", "config", "user.name", "Test"],
-        cwd=str(project_dir), check=True,
+        cwd=str(project_dir),
+        check=True,
     )
 
 
@@ -55,7 +58,8 @@ def _commit_all(project_dir: Path, msg: str = "seed") -> None:
     subprocess.run(["git", "add", "-A"], cwd=str(project_dir), check=True)
     subprocess.run(
         ["git", "commit", "-q", "-m", msg],
-        cwd=str(project_dir), check=True,
+        cwd=str(project_dir),
+        check=True,
     )
 
 
@@ -100,14 +104,23 @@ def test_legacy_regex_does_not_match_unrelated_paths() -> None:
 
 def test_scan_finds_ref_in_settings_json(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({
-        "hooks": {"PreToolUse": [{
-            "matcher": "Bash",
-            "hooks": [{"command": "$CLAUDE_PROJECT_DIR/.agent/hooks/guard.py"}]
-        }]}
-    }, indent=2))
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [{"command": "$CLAUDE_PROJECT_DIR/.agent/hooks/guard.py"}],
+                        }
+                    ]
+                }
+            },
+            indent=2,
+        )
+    )
     refs = scan_external_refs(p)
     assert len(refs) == 1
     assert refs[0].file == settings
@@ -117,9 +130,7 @@ def test_scan_finds_ref_in_settings_json(tmp_path: Path) -> None:
 
 def test_scan_finds_ref_in_markdown(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
-    (p / "CLAUDE.md").write_text(
-        "Hook lives at `.agent/hooks/foo.py` and is documented.\n"
-    )
+    (p / "CLAUDE.md").write_text("Hook lives at `.agent/hooks/foo.py` and is documented.\n")
     refs = scan_external_refs(p)
     assert len(refs) == 1
     assert refs[0].line == 1
@@ -170,9 +181,7 @@ def test_scan_skips_changelog_md(tmp_path: Path) -> None:
     (p / "CHANGELOG.md").write_text(
         "## [0.6.0]\n- HATS-412 — fix references to `.agent/hooks/` legacy path.\n"
     )
-    (p / "OTHER.md").write_text(
-        "Hook lives at `.agent/hooks/foo.py` and is documented.\n"
-    )
+    (p / "OTHER.md").write_text("Hook lives at `.agent/hooks/foo.py` and is documented.\n")
     refs = scan_external_refs(p)
     ref_files = {r.file.name for r in refs}
     assert "CHANGELOG.md" not in ref_files, "CHANGELOG.md must be skipped"
@@ -202,13 +211,17 @@ def test_scan_ignores_unknown_extensions(tmp_path: Path) -> None:
 
 def test_heal_json_rewrites_hook_path(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
     payload = {
-        "hooks": {"PreToolUse": [{
-            "matcher": "Bash",
-            "hooks": [{"command": "$CLAUDE_PROJECT_DIR/.agent/hooks/guard.py"}]
-        }]}
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [{"command": "$CLAUDE_PROJECT_DIR/.agent/hooks/guard.py"}],
+                }
+            ]
+        }
     }
     settings.write_text(json.dumps(payload, indent=2))
     count = heal_json_file(settings, p)
@@ -221,7 +234,7 @@ def test_heal_json_rewrites_hook_path(tmp_path: Path) -> None:
 
 def test_heal_json_idempotent(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"x": ".agent/hooks/y.py"}, indent=2))
     assert heal_json_file(settings, p) == 1
@@ -230,7 +243,7 @@ def test_heal_json_idempotent(tmp_path: Path) -> None:
 
 def test_heal_json_preserves_trailing_newline(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
     original = json.dumps({"x": ".agent/hooks/y"}, indent=2) + "\n"
     settings.write_text(original)
@@ -240,7 +253,7 @@ def test_heal_json_preserves_trailing_newline(tmp_path: Path) -> None:
 
 def test_heal_json_no_match_returns_zero(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"x": "clean/path"}, indent=2))
     assert heal_json_file(settings, p) == 0
@@ -301,12 +314,16 @@ def test_write_inventory_creates_file_with_entries(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
     refs = [
         LegacyRef(
-            file=p / "CLAUDE.md", line=42,
-            legacy_substr=".agent/hooks/", new_substr=".agent/ai-hats/library/hooks/",
+            file=p / "CLAUDE.md",
+            line=42,
+            legacy_substr=".agent/hooks/",
+            new_substr=".agent/ai-hats/library/hooks/",
         ),
         LegacyRef(
-            file=p / "docs" / "x.md", line=3,
-            legacy_substr=".agent/backlog/", new_substr=".agent/ai-hats/tracker/backlog/",
+            file=p / "docs" / "x.md",
+            line=3,
+            legacy_substr=".agent/backlog/",
+            new_substr=".agent/ai-hats/tracker/backlog/",
         ),
     ]
     out = write_inventory(p, refs)
@@ -338,7 +355,7 @@ def test_heal_external_refs_full_clean_git_tree(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
     _init_git_repo(p)
 
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"cmd": ".agent/hooks/g.py"}, indent=2))
 
@@ -392,7 +409,7 @@ def test_heal_external_refs_json_heals_even_when_other_files_dirty(tmp_path: Pat
     p = _init_project(tmp_path)
     _init_git_repo(p)
 
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"x": "clean"}, indent=2))
     (p / "CLAUDE.md").write_text("clean\n")
@@ -414,7 +431,7 @@ def test_heal_external_refs_json_heals_even_when_other_files_dirty(tmp_path: Pat
 def test_heal_external_refs_idempotent(tmp_path: Path) -> None:
     p = _init_project(tmp_path)
     _init_git_repo(p)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"cmd": ".agent/hooks/g.py"}, indent=2))
     (p / "CLAUDE.md").write_text("see `.agent/hooks/g.py`\n")
@@ -441,12 +458,14 @@ def test_heal_refuses_when_legacy_and_new_both_missing(tmp_path: Path) -> None:
     """
     p = _init_project(tmp_path)
     _init_git_repo(p)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps(
-        {"cmd": "$CLAUDE_PROJECT_DIR/.agent/hooks/lost.py"},
-        indent=2,
-    ))
+    settings.write_text(
+        json.dumps(
+            {"cmd": "$CLAUDE_PROJECT_DIR/.agent/hooks/lost.py"},
+            indent=2,
+        )
+    )
     _commit_all(p)
     # Note: NO .agent/hooks/lost.py on disk anywhere.
 
@@ -469,12 +488,14 @@ def test_heal_proceeds_when_legacy_source_exists(tmp_path: Path) -> None:
     """
     p = _init_project(tmp_path)
     _init_git_repo(p)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps(
-        {"cmd": ".agent/hooks/x.py"},
-        indent=2,
-    ))
+    settings.write_text(
+        json.dumps(
+            {"cmd": ".agent/hooks/x.py"},
+            indent=2,
+        )
+    )
     (p / ".agent" / "hooks").mkdir(parents=True)
     (p / ".agent" / "hooks" / "x.py").write_text("#!/usr/bin/env python3\n")
     _commit_all(p)
@@ -493,12 +514,14 @@ def test_heal_proceeds_when_new_destination_exists(tmp_path: Path) -> None:
     the post-substitution path is valid."""
     p = _init_project(tmp_path)
     _init_git_repo(p)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps(
-        {"cmd": ".agent/hooks/y.py"},
-        indent=2,
-    ))
+    settings.write_text(
+        json.dumps(
+            {"cmd": ".agent/hooks/y.py"},
+            indent=2,
+        )
+    )
     new_loc = p / ".agent" / "ai-hats" / "library" / "hooks"
     new_loc.mkdir(parents=True)
     (new_loc / "y.py").write_text("#!/usr/bin/env python3\n")
@@ -519,12 +542,17 @@ def test_mixed_state_file_invents_whole_file(tmp_path: Path) -> None:
     the dst-missing tag."""
     p = _init_project(tmp_path)
     _init_git_repo(p)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({
-        "a": "$CLAUDE_PROJECT_DIR/.agent/hooks/safe.py",
-        "b": "$CLAUDE_PROJECT_DIR/.agent/hooks/lost.py",
-    }, indent=2))
+    settings.write_text(
+        json.dumps(
+            {
+                "a": "$CLAUDE_PROJECT_DIR/.agent/hooks/safe.py",
+                "b": "$CLAUDE_PROJECT_DIR/.agent/hooks/lost.py",
+            },
+            indent=2,
+        )
+    )
     (p / ".agent" / "hooks").mkdir(parents=True)
     (p / ".agent" / "hooks" / "safe.py").write_text("#!/usr/bin/env python3\n")
     # lost.py NOT created
@@ -547,12 +575,14 @@ def test_inventory_carries_dst_missing_diagnosis(tmp_path: Path) -> None:
     silently broken."""
     p = _init_project(tmp_path)
     _init_git_repo(p)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps(
-        {"cmd": ".agent/hooks/lost.py"},
-        indent=2,
-    ))
+    settings.write_text(
+        json.dumps(
+            {"cmd": ".agent/hooks/lost.py"},
+            indent=2,
+        )
+    )
     _commit_all(p)
 
     report = heal_external_refs(p, verbose=False)
@@ -566,12 +596,14 @@ def test_full_legacy_and_new_paths_captured_during_scan(tmp_path: Path) -> None:
     """LegacyRef carries full pre/post paths so dst-existence checks
     can resolve to a real filesystem location."""
     p = _init_project(tmp_path)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps(
-        {"cmd": "$CLAUDE_PROJECT_DIR/.agent/hooks/x.py"},
-        indent=2,
-    ))
+    settings.write_text(
+        json.dumps(
+            {"cmd": "$CLAUDE_PROJECT_DIR/.agent/hooks/x.py"},
+            indent=2,
+        )
+    )
 
     refs = scan_external_refs(p)
     assert len(refs) == 1
@@ -592,7 +624,7 @@ def test_is_ref_safe_to_heal_handles_claude_project_dir_prefix(tmp_path: Path) -
     (p / ".agent" / "hooks").mkdir(parents=True)
     (p / ".agent" / "hooks" / "real.py").write_text("body\n")
     ref = LegacyRef(
-        file=p / ".claude" / "settings.json",
+        file=claude_settings_json(p),
         line=0,
         legacy_substr=".agent/hooks/",
         new_substr=".agent/ai-hats/library/hooks/",
@@ -613,7 +645,8 @@ def test_legacyref_without_full_paths_treated_as_safe(tmp_path: Path) -> None:
 
     p = _init_project(tmp_path)
     ref = LegacyRef(
-        file=p / "x", line=0,
+        file=p / "x",
+        line=0,
         legacy_substr=".agent/hooks/",
         new_substr=".agent/ai-hats/library/hooks/",
         # full_legacy_path / full_new_path default to "" → safe
@@ -632,17 +665,28 @@ def test_phase4_disables_user_owned_hook_in_settings(tmp_path: Path) -> None:
     File preserved under user-hooks/ for re-enable."""
     p = _init_project(tmp_path)
     _init_git_repo(p)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({
-        "hooks": {"PreToolUse": [{
-            "matcher": "Bash",
-            "hooks": [{
-                "type": "command",
-                "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/my_secret_guard.py",
-            }],
-        }]},
-    }, indent=2))
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/my_secret_guard.py",
+                                }
+                            ],
+                        }
+                    ]
+                },
+            },
+            indent=2,
+        )
+    )
     # User-owned file present (so the disable pre-pass triggers on a
     # basename that's NOT in the package-data whitelist).
     (p / ".agent" / "hooks").mkdir(parents=True)
@@ -654,8 +698,9 @@ def test_phase4_disables_user_owned_hook_in_settings(tmp_path: Path) -> None:
     payload = json.loads(settings.read_text())
     # The PreToolUse list should no longer contain any matcher entry —
     # the lone hook was disabled, the matcher cascade-dropped.
-    assert payload.get("hooks", {}).get("PreToolUse", []) == [] or \
-        "PreToolUse" not in payload.get("hooks", {})
+    assert payload.get("hooks", {}).get("PreToolUse", []) == [] or "PreToolUse" not in payload.get(
+        "hooks", {}
+    )
     # Inventory carries the disable record + re-enable snippet.
     assert len(report.inventoried) == 1
     assert report.inventoried[0].reason == "user-hook-disabled"
@@ -667,17 +712,28 @@ def test_phase4_leaves_ai_hats_owned_hook_alone(tmp_path: Path) -> None:
     NOT disabled — normal heal proceeds as before."""
     p = _init_project(tmp_path)
     _init_git_repo(p)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({
-        "hooks": {"PreToolUse": [{
-            "matcher": "Bash",
-            "hooks": [{
-                "type": "command",
-                "command": ".agent/hooks/pre_bash_shared_state_guard.sh",
-            }],
-        }]},
-    }, indent=2))
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": ".agent/hooks/pre_bash_shared_state_guard.sh",
+                                }
+                            ],
+                        }
+                    ]
+                },
+            },
+            indent=2,
+        )
+    )
     # Legacy source AND new dst both exist (so the dst-missing gate
     # doesn't fire and the normal rewrite path is exercised).
     (p / ".agent" / "hooks").mkdir(parents=True)
@@ -703,20 +759,37 @@ def test_phase4_cascade_drops_empty_hooks_array(tmp_path: Path) -> None:
     block itself is dropped (cascade)."""
     p = _init_project(tmp_path)
     _init_git_repo(p)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({
-        "hooks": {"PreToolUse": [
-            {"matcher": "Bash", "hooks": [{
-                "type": "command",
-                "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/foreign.py",
-            }]},
-            {"matcher": "Edit", "hooks": [{
-                "type": "command",
-                "command": ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh",
-            }]},
-        ]},
-    }, indent=2))
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/foreign.py",
+                                }
+                            ],
+                        },
+                        {
+                            "matcher": "Edit",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh",
+                                }
+                            ],
+                        },
+                    ]
+                },
+            },
+            indent=2,
+        )
+    )
     (p / ".agent" / "hooks").mkdir(parents=True)
     (p / ".agent" / "hooks" / "foreign.py").write_text("#!/usr/bin/env python3\n")
     new_loc = p / ".agent" / "ai-hats" / "library" / "hooks"
@@ -739,18 +812,33 @@ def test_phase4_preserves_managed_marker_on_remaining_matcher(tmp_path: Path) ->
     (matcher/_ai_hats_managed/timeout) is preserved."""
     p = _init_project(tmp_path)
     _init_git_repo(p)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({
-        "hooks": {"PreToolUse": [{
-            "matcher": "Bash",
-            "_ai_hats_managed": "ai-hats:hats-437",
-            "hooks": [
-                {"type": "command", "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/foreign.py"},
-                {"type": "command", "command": ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh"},
-            ],
-        }]},
-    }, indent=2))
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "_ai_hats_managed": "ai-hats:hats-437",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/foreign.py",
+                                },
+                                {
+                                    "type": "command",
+                                    "command": ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh",
+                                },
+                            ],
+                        }
+                    ]
+                },
+            },
+            indent=2,
+        )
+    )
     (p / ".agent" / "hooks").mkdir(parents=True)
     (p / ".agent" / "hooks" / "foreign.py").write_text("#!/usr/bin/env python3\n")
     new_loc = p / ".agent" / "ai-hats" / "library" / "hooks"
@@ -777,17 +865,28 @@ def test_phase4_inventory_includes_reenable_snippet(tmp_path: Path) -> None:
     contract of explicit-disable."""
     p = _init_project(tmp_path)
     _init_git_repo(p)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({
-        "hooks": {"PreToolUse": [{
-            "matcher": "Bash",
-            "hooks": [{
-                "type": "command",
-                "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/foo.py",
-            }],
-        }]},
-    }, indent=2))
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/foo.py",
+                                }
+                            ],
+                        }
+                    ]
+                },
+            },
+            indent=2,
+        )
+    )
     (p / ".agent" / "hooks").mkdir(parents=True)
     (p / ".agent" / "hooks" / "foo.py").write_text("#!/usr/bin/env python3\n")
     _commit_all(p)
@@ -805,15 +904,23 @@ def test_phase4_idempotent_no_op_when_no_user_hooks(tmp_path: Path) -> None:
     must not be touched by the Phase 4 pre-pass."""
     p = _init_project(tmp_path)
     _init_git_repo(p)
-    settings = p / ".claude" / "settings.json"
+    settings = claude_settings_json(p)
     settings.parent.mkdir(parents=True)
-    payload = {"hooks": {"PreToolUse": [{
-        "matcher": "Bash",
-        "hooks": [{
-            "type": "command",
-            "command": ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh",
-        }],
-    }]}}
+    payload = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh",
+                        }
+                    ],
+                }
+            ]
+        }
+    }
     settings.write_text(json.dumps(payload, indent=2))
     new_loc = p / ".agent" / "ai-hats" / "library" / "hooks"
     new_loc.mkdir(parents=True)

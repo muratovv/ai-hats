@@ -9,6 +9,12 @@ from pathlib import Path
 import pytest
 
 from ai_hats_core import ComponentKind, ResolvedComponent
+from ai_hats.paths import (
+    claude_dir,
+    claude_plugin_manifest,
+    claude_settings_json,
+    claude_skills_dir,
+)
 from ai_hats.plugin_dir import materialize_plugin_dir
 
 
@@ -38,7 +44,7 @@ def test_returns_target_plugin_dir(tmp_path: Path) -> None:
 def test_plugin_json_shape(tmp_path: Path) -> None:
     target = tmp_path / "plugin"
     out = materialize_plugin_dir("judge-for-role", [], tmp_path, target)
-    manifest = json.loads((out / ".claude-plugin" / "plugin.json").read_text())
+    manifest = json.loads((claude_plugin_manifest(out)).read_text())
     assert manifest["name"] == "ai-hats-judge-for-role"
     assert "version" in manifest
 
@@ -114,7 +120,7 @@ def test_overwrites_existing_target(tmp_path: Path) -> None:
     (target / "leftover.txt").write_text("stale")
     materialize_plugin_dir("test-role", [], tmp_path, target)
     assert not (target / "leftover.txt").exists()
-    assert (target / ".claude-plugin" / "plugin.json").exists()
+    assert (claude_plugin_manifest(target)).exists()
 
 
 def test_parallel_invocations_with_distinct_targets(tmp_path: Path) -> None:
@@ -167,10 +173,7 @@ def test_concurrent_same_target_is_safe(tmp_path: Path) -> None:
     src.mkdir()
     # A handful of non-trivial skills so each copytree takes long enough to
     # widen the race window.
-    skills = [
-        _make_skill(f"skill-{i}", src, body="x" * 400 + f"\n# skill {i}\n")
-        for i in range(6)
-    ]
+    skills = [_make_skill(f"skill-{i}", src, body="x" * 400 + f"\n# skill {i}\n") for i in range(6)]
     # ALL workers target this ONE dir — models the per-session plugin-dir
     # collision (two processes that resolved the same session_id).
     target = tmp_path / "cache" / "sid" / "plugin"
@@ -187,12 +190,11 @@ def test_concurrent_same_target_is_safe(tmp_path: Path) -> None:
 
     errors = [e for sub in results for e in sub]
     assert not errors, (
-        f"{len(errors)}/{n_procs * iters} concurrent materialize calls raced — "
-        f"sample: {errors[:3]}"
+        f"{len(errors)}/{n_procs * iters} concurrent materialize calls raced — sample: {errors[:3]}"
     )
     # Crash-free is necessary but not sufficient — the final dir must be a
     # VALID plugin (byte-stable-rebuild contract holds under contention).
-    manifest = target / ".claude-plugin" / "plugin.json"
+    manifest = claude_plugin_manifest(target)
     assert manifest.is_file(), "final plugin dir missing manifest"
     got = sorted(p.name for p in (target / "skills").iterdir())
     assert got == sorted(s.name for s in skills), (
@@ -205,7 +207,7 @@ def test_concurrent_same_target_is_safe(tmp_path: Path) -> None:
 
 def _seed_mirror(project: Path) -> Path:
     """Pre-HATS-294 mirror: marker + 2 managed dirs + 1 user-authored dir."""
-    skills = project / ".claude" / "skills"
+    skills = claude_skills_dir(project)
     for name in ("audit-reviewer", "backlog-manager"):
         (skills / name).mkdir(parents=True)
         (skills / name / "SKILL.md").write_text("# stale export")
@@ -232,7 +234,7 @@ def test_drop_mirror_noop_without_marker(tmp_path: Path) -> None:
     """No marker → never guess ownership, leave the dir alone."""
     from ai_hats.plugin_dir import drop_legacy_skills_mirror
 
-    skills = tmp_path / ".claude" / "skills"
+    skills = claude_skills_dir(tmp_path)
     (skills / "my-own-skill").mkdir(parents=True)
     (skills / "my-own-skill" / "SKILL.md").write_text("# user-authored")
 
@@ -267,7 +269,7 @@ def test_drop_mirror_skips_missing_marker_entries(tmp_path: Path) -> None:
     """A marker line whose dir was hand-deleted is not counted as removed."""
     from ai_hats.plugin_dir import drop_legacy_skills_mirror
 
-    skills = tmp_path / ".claude" / "skills"
+    skills = claude_skills_dir(tmp_path)
     (skills / "alpha").mkdir(parents=True)
     (skills / "alpha" / "SKILL.md").write_text("# stale export")
     (skills / ".ai-hats-managed").write_text("alpha\ngone-long-ago\n")
@@ -281,10 +283,10 @@ def test_drop_mirror_ignores_traversal_marker_lines(tmp_path: Path) -> None:
     from ai_hats.plugin_dir import drop_legacy_skills_mirror
 
     project = tmp_path / "project"
-    skills = project / ".claude" / "skills"
+    skills = claude_skills_dir(project)
     (skills / "alpha").mkdir(parents=True)
     (skills / "alpha" / "SKILL.md").write_text("# stale export")
-    sibling = project / ".claude" / "settings.json"
+    sibling = claude_settings_json(project)
     sibling.write_text("{}")
     outside = project / ".env"
     outside.write_text("SECRET=1")
@@ -309,28 +311,26 @@ def test_drop_mirror_refuses_symlinked_skills_dir(tmp_path: Path) -> None:
     "project-scope" sweep would gut the link target — refuse wholesale."""
     from ai_hats.plugin_dir import drop_legacy_skills_mirror
 
-    real = tmp_path / "home" / ".claude" / "skills"
+    real = claude_skills_dir(tmp_path / "home")
     (real / "alpha").mkdir(parents=True)
     (real / "alpha" / "SKILL.md").write_text("# user-level data")
     (real / ".ai-hats-managed").write_text("alpha\n")
     project = tmp_path / "project"
-    (project / ".claude").mkdir(parents=True)
-    (project / ".claude" / "skills").symlink_to(real, target_is_directory=True)
+    claude_dir(project).mkdir(parents=True)
+    (claude_skills_dir(project)).symlink_to(real, target_is_directory=True)
 
     assert drop_legacy_skills_mirror(project) == []
     assert (real / "alpha" / "SKILL.md").exists()
     assert (real / ".ai-hats-managed").exists()
 
 
-def test_drop_mirror_refuses_home_aliased_project(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_drop_mirror_refuses_home_aliased_project(tmp_path: Path, monkeypatch) -> None:
     """project_dir == home → `.claude/skills` IS the user-level dir; ai-hats
     never wrote there (HATS-465) — refuse the sweep."""
     from ai_hats.plugin_dir import drop_legacy_skills_mirror
 
     fake_home = tmp_path / "home"
-    skills = fake_home / ".claude" / "skills"
+    skills = claude_skills_dir(fake_home)
     (skills / "alpha").mkdir(parents=True)
     (skills / "alpha" / "SKILL.md").write_text("# user-level data")
     (skills / ".ai-hats-managed").write_text("alpha\n")
@@ -356,7 +356,7 @@ def test_duplicate_registration_identical_user_copy(tmp_path: Path) -> None:
     plugin = materialize_plugin_dir("test-role", [skill], tmp_path, tmp_path / "plugin")
 
     home = tmp_path / "home"
-    user_copy = home / ".claude" / "skills" / "alpha"
+    user_copy = claude_skills_dir(home) / "alpha"
     shutil.copytree(plugin / "skills" / "alpha", user_copy)
 
     found = duplicate_skill_registrations(
@@ -381,7 +381,7 @@ def test_duplicate_registration_differing_content(tmp_path: Path) -> None:
     plugin = materialize_plugin_dir("test-role", [skill], tmp_path, tmp_path / "plugin")
 
     home = tmp_path / "home"
-    stale = home / ".claude" / "skills" / "alpha"
+    stale = claude_skills_dir(home) / "alpha"
     stale.mkdir(parents=True)
     (stale / "SKILL.md").write_text("# frozen at an old library version\n")
 
@@ -403,7 +403,7 @@ def test_duplicate_registration_marker_listed_is_managed(tmp_path: Path) -> None
     project = tmp_path / "project"
     plugin = materialize_plugin_dir("test-role", [skill], project, tmp_path / "plugin")
 
-    mirror = project / ".claude" / "skills"
+    mirror = claude_skills_dir(project)
     (mirror / "alpha").mkdir(parents=True)
     (mirror / "alpha" / "SKILL.md").write_text("# stale export\n")
     (mirror / ".ai-hats-managed").write_text("alpha\n")
@@ -430,7 +430,7 @@ def test_duplicate_registration_scope_attribution(tmp_path: Path) -> None:
     plugin = materialize_plugin_dir("test-role", [skill], project, tmp_path / "plugin")
     home = tmp_path / "home"
     for base in (home, project):
-        stale = base / ".claude" / "skills" / "alpha"
+        stale = claude_skills_dir(base) / "alpha"
         stale.mkdir(parents=True)
         (stale / "SKILL.md").write_text("# stale\n")
 
@@ -439,8 +439,8 @@ def test_duplicate_registration_scope_attribution(tmp_path: Path) -> None:
     )
 
     assert [(c.scope, c.path) for c in found] == [
-        ("home", home / ".claude" / "skills" / "alpha"),
-        ("project", project / ".claude" / "skills" / "alpha"),
+        ("home", claude_skills_dir(home) / "alpha"),
+        ("project", claude_skills_dir(project) / "alpha"),
     ]
 
 
@@ -454,7 +454,10 @@ def test_duplicate_registration_none_when_clean(tmp_path: Path) -> None:
     plugin = materialize_plugin_dir("test-role", [skill], tmp_path, tmp_path / "plugin")
 
     found = duplicate_skill_registrations(
-        ["alpha"], project_dir=tmp_path, plugin_skills_root=plugin / "skills", home=tmp_path / "home"
+        ["alpha"],
+        project_dir=tmp_path,
+        plugin_skills_root=plugin / "skills",
+        home=tmp_path / "home",
     )
 
     assert found == []
