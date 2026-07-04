@@ -25,6 +25,42 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def collect_carry_for_project(
+    project_dir: Path, role: str = ""
+) -> dict[str, list[dict[str, object]]]:
+    """Compose the effective role (fail-open) and collect its worktree carry.
+
+    HATS-865: composition moved OUT of the ``wt_carry`` brick to this
+    integrator-side caller seam (``_setup_worktree`` + ``wt create`` CLI);
+    the chokepoint receives the ready result + hooks manager. ``role`` falls
+    back to ``active_role`` / ``default_role``; compose failures degrade to
+    an empty carry with a WARN — collection trouble must not block worktree
+    creation. TEMP composition site until HATS-866 (T6 re-cuts tracker→wt
+    via the ``needs_worktree`` effect).
+    """
+    from .assembler import Assembler
+    from .materialize import compose_for_role
+    from .wt_carry import collect_carry_for_role
+
+    try:
+        asm = Assembler(project_dir)
+        cfg = asm.project_config
+        effective = role or cfg.active_role or cfg.default_role
+        if not effective:
+            return {}
+        result = compose_for_role(asm, effective)
+        hooks = asm.hooks
+    except Exception as exc:  # noqa: BLE001 — never block create on carry collection
+        logger.warning(
+            "worktree hooks: could not compose role %r for carry "
+            "collection: %s — dropping carry",
+            role,
+            exc,
+        )
+        return {}
+    return collect_carry_for_role(project_dir, result, hooks)
+
+
 @dataclass(frozen=True)
 class Section:
     """One section of the plan template.
@@ -1013,7 +1049,6 @@ class TaskManager:
             WorktreeManager,
             assert_head_is_canonical_base,
         )
-        from .wt_carry import collect_carry_for_role
         from .wt_lifecycle import HOOK_LIFECYCLE
 
         # ADR-0013 D4: ai-hats injects its state-dir convention at every
@@ -1048,7 +1083,7 @@ class TaskManager:
             lifecycle=HOOK_LIFECYCLE,
             state_dir=wt_state_dir,
         )
-        wt_hooks = collect_carry_for_role(self.project_dir, getattr(task, "role", ""))
+        wt_hooks = collect_carry_for_project(self.project_dir, getattr(task, "role", ""))
         try:
             path = mgr.create(wt_hooks=wt_hooks)
         except WorktreeCreateError:

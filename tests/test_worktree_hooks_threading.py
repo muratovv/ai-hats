@@ -1,5 +1,10 @@
 """HATS-823 — threading helpers: serialize collected hooks for persistence and
-degrade gracefully when no role / composition is available."""
+degrade gracefully when no role / composition is available.
+
+HATS-865: composition moved to the integrator caller seam
+(``state.collect_carry_for_project``); the ``wt_carry`` chokepoint receives
+the ready result + hooks manager. These tests drive the caller seam so the
+whole compose→serialize→materialize→filter chain stays pinned."""
 
 from __future__ import annotations
 
@@ -9,6 +14,7 @@ from ai_hats_wt import WorktreeHook
 
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import managed_wt_hook_filename, wt_hooks_dir
+from ai_hats.state import collect_carry_for_project
 from ai_hats.wt_carry import collect_carry_for_role, serialize_collected_hooks
 
 
@@ -63,14 +69,20 @@ def test_serialize_skips_empty_kinds():
 
 def test_collect_carry_for_non_project_is_empty(tmp_path: Path):
     # No ai-hats.yaml / no role → empty carry, no exception (graceful).
-    assert collect_carry_for_role(tmp_path) == {}
+    assert collect_carry_for_project(tmp_path) == {}
+
+
+def test_chokepoint_without_composition_is_empty(tmp_path: Path):
+    """HATS-865 signature pin: the brick chokepoint takes (project_dir,
+    result, hooks) and degrades to {} when the caller has no composition."""
+    assert collect_carry_for_role(tmp_path, None, None) == {}
 
 
 def test_carry_materializes_backing_script(tmp_path: Path):
     """HATS-833 create-time backstop: a recorded carry row has a backing script
     on disk by construction (materialized at carry-record time)."""
     project, _lib = _project_with_wt_role(tmp_path)
-    carry = collect_carry_for_role(project)
+    carry = collect_carry_for_project(project)
     assert carry.get("wt_out"), f"expected a wt_out carry, got {carry}"
     dest = wt_hooks_dir(project) / managed_wt_hook_filename("drainer", "drain.sh")
     assert dest.is_file(), "recorded carry must have a backing script on disk"
@@ -80,4 +92,4 @@ def test_carry_drops_row_without_resolvable_script(tmp_path: Path):
     """A declared hook whose source can't be resolved is dropped from the carry
     (with a warn) rather than recorded → fail-closed at teardown."""
     project, _lib = _project_with_wt_role(tmp_path, with_script=False)
-    assert collect_carry_for_role(project) == {}
+    assert collect_carry_for_project(project) == {}
