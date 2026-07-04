@@ -37,8 +37,6 @@ def _runner(project):
     return WrapRunner(project, payload)
 
 
-
-
 def _setup(project, tmp_path, monkeypatch, sid="sess-1"):
     """Minimal plugin skills dir + isolated HOME + trace-capturing session."""
     plugin_skills = session_cache_dir(project, sid) / "plugin" / "skills"

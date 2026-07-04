@@ -36,8 +36,6 @@ def _null_payload(**kw):
     )
 
 
-
-
 @pytest.fixture
 def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"

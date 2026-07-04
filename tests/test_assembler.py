@@ -1266,8 +1266,6 @@ def test_claude_build_session_prompt_has_no_literal_placeholder(
     assert ".agent/ai-hats/sessions/audits/" in content
 
 
-
-
 def _subagent_payload(result):
     """Minimal payload for SubAgentRunner helper-method seams (HATS-865)."""
     from ai_hats.composition_payload import CompositionPayload

@@ -190,6 +190,15 @@ Composition rule violation). HATS-865 inverts the direction:
 - **Recorded behavior delta.** `SubAgentRunner` retry attempts share the ONE
   payload composition (previously each `_run_attempt` re-composed). This is
   deliberate — attempts are now comparable like-for-like.
+- **Recorded delta #2 — funnel surface.** The funnel now carries
+  `system_prompt` on default-role runs too (`ComposeRole` projects the
+  always-present seeded payload; pre-865 it returned `{}` without an explicit
+  `role`). No step consumes it — observability/trace surface only.
+- **Recorded delta #3 — `set_role` timing.** The HITL first-run `set_role`
+  side effect fires at payload-build time, before `PipelineHarness.run`
+  (pre-865: mid-`WrapRunner.run`). A launch dying in a pre-launch step now
+  leaves `active_role` persisted; accepted — the write is idempotent and a
+  retried launch lands the same value.
 - **Carve-outs.** Two data-dependent edges keep late binding: the
   `compute_usage` static-cost analyzer (role known only at run time; threaded
   runner → finalize initial state as a callable built at the seam) and

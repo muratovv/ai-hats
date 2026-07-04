@@ -198,7 +198,7 @@ def _finalize_sub_agent(
         # `AuditWriter._render_audit` then read `metrics.get("provider",
         # "unknown")` → audit.md said `Provider: unknown` for every
         # SubAgent / `execute --batch` session. Provider is known by
-        # `SubAgentRunner` (`self.assembler.project_config.provider`)
+        # `SubAgentRunner` (its `CompositionPayload.provider`, HATS-865)
         # and is threaded through here.
         "provider": provider,
         "model": model,
