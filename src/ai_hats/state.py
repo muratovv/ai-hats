@@ -38,8 +38,12 @@ class WorktreeEffects(Protocol):
         """Create/adopt the task's worktree; return its path (None: non-git)."""
         ...
 
-    def teardown(self, task_id: str, *, merge: bool = True, force: bool = False) -> None:
-        """Merge (``merge=True``) or discard the task's worktree."""
+    def teardown(self, task_id: str, *, merge: bool = True, force: bool = False) -> str | None:
+        """Merge (``merge=True``) or discard the task's worktree.
+
+        Returns a short past-tense outcome for the card's work_log
+        ("merged" / "discarded"), or None when nothing happened.
+        """
         ...
 
     def assert_canonical_base(self) -> None:
@@ -393,24 +397,33 @@ class TaskManager:
                     # work, PROX-287). Operator owns the worktree decision.
                     task.log_work("Forced → execute: no worktree created (manual override)")
                 else:
-                    self._worktree_effects.setup(
+                    wt_path = self._worktree_effects.setup(
                         task.id, getattr(task, "role", ""), caller_cwd=caller_cwd
                     )
+                    if wt_path is not None:
+                        # HATS-866/AC5: the card records where the work lives.
+                        task.log_work(f"Worktree: {wt_path}")
             elif new_state == TaskState.DONE:
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 # HATS-596: `force` lets `done --force` bypass _check_clean;
                 # it does NOT relax the HEAD-mismatch correctness guard.
                 if self._worktree_effects is not None:
-                    self._worktree_effects.teardown(task.id, merge=True, force=force)
+                    outcome = self._worktree_effects.teardown(task.id, merge=True, force=force)
+                    if outcome:
+                        task.log_work(f"Worktree {outcome}")
             elif new_state == TaskState.FAILED:
                 if self._worktree_effects is not None:
-                    self._worktree_effects.teardown(task.id, merge=False)
+                    outcome = self._worktree_effects.teardown(task.id, merge=False)
+                    if outcome:
+                        task.log_work(f"Worktree {outcome}")
             elif new_state == TaskState.CANCELLED:
                 # Administrative close: stamp completion time and discard any
                 # in-flight worktree (work isn't being kept).
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 if self._worktree_effects is not None:
-                    self._worktree_effects.teardown(task.id, merge=False)
+                    outcome = self._worktree_effects.teardown(task.id, merge=False)
+                    if outcome:
+                        task.log_work(f"Worktree {outcome}")
 
             self._save_task(task)
             self._update_indexes()

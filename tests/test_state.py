@@ -1912,3 +1912,88 @@ def test_manual_epic_reopen_no_worktree(mgr, monkeypatch):
     mgr.transition("EPIC", TaskState.EXECUTE)  # reopen done → execute
     assert mgr.get_task("EPIC").state == TaskState.EXECUTE
     assert "EPIC" not in setup_calls  # reopened epic: still a tracker, no worktree
+
+
+# -- needs_worktree effect seam (HATS-866) --
+
+
+def test_no_handler_is_pure_fsm(tmp_path):
+    """HATS-866/AC4: without an injected WorktreeEffects the FSM is pure —
+    execute creates no worktree, done tears nothing down, lifecycle completes."""
+    project = tmp_path / "project"
+    project.mkdir()
+    _init_git(project)
+    (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
+    (project / ".agent" / "STATE.md").write_text("")
+    fsm = TaskManager(project, strict_plan_check=False)
+
+    fsm.create_task("T-1", "No worktree")
+    fsm.transition("T-1", TaskState.PLAN)
+    fsm.transition("T-1", TaskState.EXECUTE)
+    assert (
+        WorktreeManager.load_for_task(project, "T-1", state_dir=worktrees_dir(project)) is None
+    )
+    for state in (TaskState.DOCUMENT, TaskState.REVIEW, TaskState.DONE):
+        fsm.transition("T-1", state)
+    done = fsm.get_task("T-1")
+    assert done.state == TaskState.DONE
+    assert not any("Worktree" in e.message for e in done.work_log)
+
+
+class _ExplodingTeardownEffects:
+    def setup(self, task_id, role="", caller_cwd=None):
+        return None
+
+    def teardown(self, task_id, *, merge=True, force=False):
+        raise RuntimeError("merge failed")
+
+    def assert_canonical_base(self):
+        pass
+
+
+def test_handler_teardown_failure_aborts_transition(tmp_path):
+    """HATS-866/AC3: a raising teardown aborts `transition done` before the
+    DONE state is persisted — HATS-481 fail-loud holds through the seam."""
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
+    (project / ".agent" / "STATE.md").write_text("")
+    fsm = TaskManager(
+        project, strict_plan_check=False, worktree_effects=_ExplodingTeardownEffects()
+    )
+
+    fsm.create_task("T-1", "Fail loud")
+    for state in (TaskState.PLAN, TaskState.EXECUTE, TaskState.DOCUMENT, TaskState.REVIEW):
+        fsm.transition("T-1", state)
+    with pytest.raises(RuntimeError, match="merge failed"):
+        fsm.transition("T-1", TaskState.DONE)
+    reloaded = fsm.get_task("T-1")
+    assert reloaded.state == TaskState.REVIEW
+    assert reloaded.completed_at == ""
+
+
+def test_worktree_effects_recorded_in_work_log(git_mgr):
+    """HATS-866/AC5: the card's work_log records where the work lives (execute)
+    and what happened to the worktree on close — no manual handover notes."""
+    git_mgr.create_task("T-1", "Audit trail")
+    git_mgr.transition("T-1", TaskState.PLAN)
+    git_mgr.transition("T-1", TaskState.EXECUTE)
+    active = WorktreeManager.load_for_task(
+        git_mgr.project_dir, "T-1", state_dir=worktrees_dir(git_mgr.project_dir)
+    )
+    logs = [e.message for e in git_mgr.get_task("T-1").work_log]
+    assert f"Worktree: {active.worktree_path}" in logs
+    for state in (TaskState.DOCUMENT, TaskState.REVIEW, TaskState.DONE):
+        git_mgr.transition("T-1", state)
+    logs = [e.message for e in git_mgr.get_task("T-1").work_log]
+    assert "Worktree merged" in logs
+
+
+def test_worktree_discard_recorded_in_work_log(git_mgr):
+    """HATS-866/AC5: cancelled records the discard in the work_log."""
+    git_mgr.create_task("T-2", "Drop me")
+    git_mgr.transition("T-2", TaskState.PLAN)
+    git_mgr.transition("T-2", TaskState.EXECUTE)
+    git_mgr.transition("T-2", TaskState.CANCELLED, resolution="dropped")
+    logs = [e.message for e in git_mgr.get_task("T-2").work_log]
+    assert "Worktree discarded" in logs
