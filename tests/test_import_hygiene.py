@@ -59,14 +59,13 @@ ALLOWED_COMPOSITION_CONSUMERS = (
     "role_catalog",
     "costs",  # HATS-865: composition-tree introspection tooling, not a brick
     "composition_seam",  # HATS-865: THE integrator compose seam (payload builder)
+    "state",  # TEMP until HATS-866 — tracker-side wt-carry compose seam
 )
 
 # HATS-865 ratchet: the shrinking worklist. Exact-match asserted — a revert
 # resurfaces an offender (RED), a landed cut left in the tuple is RED too.
 # Delete the tuple when empty (T5 complete).
-EXPECTED_COMPOSITION_OFFENDERS = (
-    "wt_carry",
-)
+EXPECTED_COMPOSITION_OFFENDERS = ()
 
 
 def _module_name(path: Path) -> str:
