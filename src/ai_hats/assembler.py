@@ -584,8 +584,7 @@ class Assembler:
         # role-git-hooks re-installation — regression vs prior behaviour
         # whenever a user wipes ``.githooks/`` and re-runs ``self init``.
         if role:
-            self.project_config.default_role = role
-            self.project_config.save(self.config_path)
+            self.save_config(default_role=role)
         cfg = self.project_config
         effective_role = role or cfg.active_role or cfg.default_role
         result: CompositionResult | None = (
