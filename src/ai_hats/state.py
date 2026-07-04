@@ -9,7 +9,7 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from filelock import FileLock
 
@@ -25,22 +25,26 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def collect_carry_for_project(
-    project_dir: Path, role: str = ""
-) -> dict[str, list[dict[str, object]]]:
-    """Collect the effective role's worktree carry (fail-open, HATS-865).
+class WorktreeEffects(Protocol):
+    """The ``needs_worktree`` effect seam (ADR-0014 P0 #3 / HATS-866).
 
-    Compose lives in ``composition_seam.compose_for_carry``; the chokepoint
-    receives the ready result + hooks manager.
+    The FSM emits worktree side-effects through this handler; the integrator
+    injects the wt-backed implementation (``wt_effects.WtWorktreeEffects``).
+    Signatures are primitives-only so the tracker never types against wt;
+    handler exceptions propagate — the FSM aborts the transition (HATS-481).
     """
-    from .composition_seam import compose_for_carry
-    from .wt_carry import collect_carry_for_role
 
-    composed = compose_for_carry(project_dir, role)
-    if composed is None:
-        return {}
-    result, hooks = composed
-    return collect_carry_for_role(project_dir, result, hooks)
+    def setup(self, task_id: str, role: str = "", caller_cwd: Path | None = None) -> Path | None:
+        """Create/adopt the task's worktree; return its path (None: non-git)."""
+        ...
+
+    def teardown(self, task_id: str, *, merge: bool = True, force: bool = False) -> None:
+        """Merge (``merge=True``) or discard the task's worktree."""
+        ...
+
+    def assert_canonical_base(self) -> None:
+        """Raise unless HEAD is the canonical merge base (forced-execute guard)."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -157,6 +161,7 @@ class TaskManager:
         prefix: str = "HATS",
         *,
         strict_plan_check: bool = True,
+        worktree_effects: WorktreeEffects | None = None,
     ) -> None:
         from .paths import state_md_path, tasks_dir
 
@@ -164,6 +169,9 @@ class TaskManager:
         self.tasks_dir = tasks_dir(project_dir)
         self.state_md_path = state_md_path(project_dir)
         self.strict_plan_check = strict_plan_check
+        # HATS-866: None → pure FSM (no worktree side effects); the integrator
+        # injects the wt binding at its chokepoint (cli/_helpers._task_manager).
+        self._worktree_effects = worktree_effects
         # Legacy index — removed after unification on STATE.md. Path retained
         # only to clean up stale files left from prior versions on first sync.
         self._legacy_backlog_md_path = project_dir / ".agent" / "backlog.md"
@@ -371,33 +379,38 @@ class TaskManager:
                         raise EmptyPlanError(task.id, plan_path, unfilled)
                 if is_epic:
                     pass  # epics never get a worktree
+                elif self._worktree_effects is None:
+                    pass  # pure FSM — no handler injected (HATS-866)
                 elif force:
                     # HATS-518: --force overrides the FSM arrow, NOT the
                     # canonical-base safety contract. The guard otherwise lives
-                    # inside _setup_worktree (the non-force path), so the force
-                    # branch must run it explicitly or a non-canonical merge
-                    # target slips through (test_refuses_even_with_force).
-                    from ai_hats_wt import assert_head_is_canonical_base
-
-                    assert_head_is_canonical_base(self.project_dir)
+                    # inside the handler's setup (the non-force path), so the
+                    # force branch must run it explicitly or a non-canonical
+                    # merge target slips through (test_refuses_even_with_force).
+                    self._worktree_effects.assert_canonical_base()
                     # HATS-697: forced execute is a manual state correction —
                     # no fresh worktree (spinning one off HEAD orphaned retro
                     # work, PROX-287). Operator owns the worktree decision.
                     task.log_work("Forced → execute: no worktree created (manual override)")
                 else:
-                    self._setup_worktree(task, caller_cwd=caller_cwd)
+                    self._worktree_effects.setup(
+                        task.id, getattr(task, "role", ""), caller_cwd=caller_cwd
+                    )
             elif new_state == TaskState.DONE:
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 # HATS-596: `force` lets `done --force` bypass _check_clean;
                 # it does NOT relax the HEAD-mismatch correctness guard.
-                self._teardown_worktree(task, merge=True, force=force)
+                if self._worktree_effects is not None:
+                    self._worktree_effects.teardown(task.id, merge=True, force=force)
             elif new_state == TaskState.FAILED:
-                self._teardown_worktree(task, merge=False)
+                if self._worktree_effects is not None:
+                    self._worktree_effects.teardown(task.id, merge=False)
             elif new_state == TaskState.CANCELLED:
                 # Administrative close: stamp completion time and discard any
                 # in-flight worktree (work isn't being kept).
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                self._teardown_worktree(task, merge=False)
+                if self._worktree_effects is not None:
+                    self._worktree_effects.teardown(task.id, merge=False)
 
             self._save_task(task)
             self._update_indexes()
@@ -1005,196 +1018,6 @@ class TaskManager:
             self._save_task(epic)
             self._update_indexes()
             return [TaskTransition(epic, from_state, epic.state, reason)]
-
-    def _setup_worktree(self, task: TaskCard, *, caller_cwd: Path | None = None) -> Path | None:
-        """Create or adopt an isolated worktree when task enters execute state.
-
-        HATS-061: each task gets its own worktree state slot — no singleton
-        conflict between parallel tasks.
-
-        HATS-479: if a concurrent ai-hats peer creates the same task's
-        worktree between our pre-check and our ``create()``, the L1+L2
-        defense raises :class:`WorktreeCreateError`. We re-fetch and adopt
-        the peer's worktree — both transitions converge on one worktree.
-
-        HATS-840: the adopt short-circuit keys on ``caller_cwd`` (the operator's raw
-        cwd from the CLI), not the main-hopped ``self.project_dir``; ``None`` falls
-        back to ``self.project_dir``.
-
-        Returns the adopted linked-worktree's own toplevel if invoked from inside
-        one (HATS-060 short-circuit), the existing / created / adopted worktree
-        path on the happy path, or None for non-git projects.
-        """
-        from .paths import worktrees_dir
-        from ai_hats_wt import (
-            WorktreeCreateError,
-            WorktreeManager,
-            assert_head_is_canonical_base,
-        )
-        from .wt_lifecycle import HOOK_LIFECYCLE
-
-        # ADR-0013 D4: ai-hats injects its state-dir convention at every
-        # construct/load so the core never falls back project-local.
-        wt_state_dir = worktrees_dir(self.project_dir)
-
-        # HATS-060 / HATS-840: adopt the worktree the operator is in. Probe the
-        # threaded `caller_cwd`, not the main-hopped `self.project_dir`.
-        adopt_probe = caller_cwd if caller_cwd is not None else self.project_dir
-        if WorktreeManager.is_inside_linked_worktree(adopt_probe):
-            return WorktreeManager.worktree_toplevel(adopt_probe) or adopt_probe
-
-        # Per-task lookup (HATS-061) — fast-path, avoids the create-lock
-        # roundtrip on the common case. The lock is acquired inside create()
-        # for the actual decision.
-        existing = WorktreeManager.load_for_task(self.project_dir, task.id, state_dir=wt_state_dir)
-        if existing is not None:
-            return existing.worktree_path
-
-        # HATS-518: only fires on a fresh create, not on the two adopt paths
-        # above (no new branch capture happens in either). Raises
-        # WorktreeBaseBranchError → caller translates to red exit.
-        assert_head_is_canonical_base(self.project_dir)
-
-        # No existing worktree for this task — create one. HATS-823: thread the
-        # worktree's role carry (wt_in/wt_out hooks) in at create; persisted to
-        # state so teardown runs the create-time set (D3).
-        branch = f"task/{task.id.lower()}"
-        mgr = WorktreeManager(
-            self.project_dir,
-            branch_name=branch,
-            lifecycle=HOOK_LIFECYCLE,
-            state_dir=wt_state_dir,
-        )
-        wt_hooks = collect_carry_for_project(self.project_dir, getattr(task, "role", ""))
-        try:
-            path = mgr.create(wt_hooks=wt_hooks)
-        except WorktreeCreateError:
-            # HATS-479: race-loser — another process won between our
-            # pre-check and the L2 re-check under the create lock. Adopt
-            # the peer's worktree instead of failing the transition.
-            existing = WorktreeManager.load_for_task(
-                self.project_dir, task.id, state_dir=wt_state_dir
-            )
-            if existing is not None:
-                logger.info(
-                    "Adopted concurrently-created worktree for %s at %s",
-                    task.id,
-                    existing.worktree_path,
-                )
-                return existing.worktree_path
-            # Truly failed (state not findable) — propagate.
-            raise
-        if path != self.project_dir:  # git repo — worktree created
-            mgr.save_state()
-            return path
-        return None
-
-    def _teardown_worktree(
-        self, task: TaskCard, *, merge: bool = True, force: bool = False
-    ) -> None:
-        """Merge or discard the worktree for a specific task (HATS-061).
-
-        HATS-481 — fail-loud for merge failures. Previously this method
-        swallowed ALL exceptions at WARNING and let ``transition`` continue
-        to ``_save_task``, marking the task DONE even when merge failed →
-        silent data loss class (same category as GitHub Merge Queue
-        Apr-2026 incident). Now:
-
-        * ``merge=True`` (``transition done``) re-raises any merge failure
-          except :class:`OriginalBranchMissingError` (branch deleted —
-          work is preserved on the worktree branch; user rebases manually).
-          The transition aborts; task stays in ``review`` and the user
-          retries after resolving the contention or conflict.
-        * ``merge=False`` (``transition failed`` / ``transition cancelled``)
-          keeps the swallowing behavior — the user is dropping the work
-          administratively, so an orphaned worktree dir is a minor sin
-          compared to refusing the admin close.
-
-        HATS-596 — ``force`` is forwarded into :meth:`Worktree.merge` on the
-        ``merge=True`` path so a corrective ``transition done --force`` can
-        bypass the uncommitted-changes (``_check_clean``) gate, mirroring
-        ``wt merge --force``. It does NOT relax the HEAD-mismatch guard —
-        that stays a correctness gate against wrong-branch merges. The
-        ``merge=False`` path already discards with ``force=True``.
-        """
-        from .paths import worktrees_dir
-        from ai_hats_wt import (
-            OriginalBranchMissingError,
-            WorktreeManager,
-            WorktreeStateLostError,
-        )
-        from .wt_lifecycle import HOOK_LIFECYCLE
-
-        # ADR-0013 D3: reconstruct the teardown manager with ai-hats's
-        # hook-running bundle so before_teardown fires wt_out hooks fail-closed.
-        # D4: pass the state-dir convention so teardown resolves the same dir
-        # create wrote to (a missing base would orphan the state).
-        active = WorktreeManager.load_for_task(
-            self.project_dir,
-            task.id,
-            lifecycle=HOOK_LIFECYCLE,
-            state_dir=worktrees_dir(self.project_dir),
-        )
-        if active is None:
-            # State JSON gone but the branch may survive (manual rm,
-            # success-path crash, pre-587 orphan). On merge=True a silent
-            # return would stamp DONE with no merge — the HATS-481/541
-            # silent-data-loss class. So when the branch exists:
-            # already-merged → finalize without re-merge (HATS-697, the
-            # state-lost twin of the HATS-596 short-circuit) + drop the stale
-            # ref; genuinely un-merged → fail-loud (force is NOT a data-loss
-            # hatch). Branch absent, or merge=False discard → silent.
-            if merge:
-                branch_name = f"task/{task.id.lower()}"
-                if WorktreeManager.branch_exists(self.project_dir, branch_name):
-                    base = WorktreeManager.branch_merged_into_canonical_base(
-                        self.project_dir, branch_name
-                    )
-                    if base is None:
-                        raise WorktreeStateLostError(task.id, branch_name)
-                    WorktreeManager.delete_merged_branch(self.project_dir, branch_name)
-                    logger.info(
-                        "Task %s branch '%s' already merged into '%s' — "
-                        "finalizing without re-merge (HATS-697)",
-                        task.id,
-                        branch_name,
-                        base,
-                    )
-            return
-
-        try:
-            if merge:
-                active.merge(force=force)  # HATS-596: force reaches merge guards
-            else:
-                active.discard(force=True)  # failed → intentional discard
-        except OriginalBranchMissingError as exc:
-            # Branch deleted between create and teardown — keep current
-            # behavior: warn but let the transition complete. The worktree
-            # branch is preserved by WorktreeManager.merge; user rebases
-            # manually. The work is NOT lost — it's just on a detached branch.
-            logger.warning("Worktree merge skipped: %s", exc)
-        except Exception:
-            if merge:
-                # HATS-481 fail-loud: re-raise so `transition` aborts before
-                # `_save_task` marks the task DONE. Post-HATS-587 (F5) the
-                # worktree dir, branch AND state JSON are all preserved by
-                # WorktreeManager.merge on the exception path — the next
-                # `transition done` is a clean retry once the operator
-                # resolves the conflict (no manual `git merge --no-ff`).
-                logger.error(
-                    "Worktree merge failed for task %s, branch '%s' and "
-                    "worktree preserved. Task NOT marked done — resolve and "
-                    "retry.",
-                    task.id,
-                    active.branch_name,
-                )
-                raise
-            # merge=False (failed / cancelled administrative close): swallow.
-            logger.warning(
-                "Worktree discard failed, branch '%s' preserved",
-                active.branch_name,
-                exc_info=True,
-            )
 
     def _create_plan_scaffold(self, task: TaskCard) -> None:
         """Create plan.md scaffold when task moves to plan state."""
