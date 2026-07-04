@@ -89,7 +89,12 @@ Surface = LineManifestSurface | SettingsTagsSurface | ProcSurface
 
 
 def default_surfaces() -> tuple[Surface, ...]:
-    """Known marker locations — append-only: a location outlives its owner."""
+    """Known marker locations — append-only: a location outlives its owner.
+
+    Imports every registering module itself: liveness must never depend on
+    what the caller happened to import earlier (wrong-sweep of a live surface).
+    """
+    from . import providers  # noqa: F401 — registers runtime-hooks
     from .hooks_manager import (
         GITHOOKS_DIR,
         GITHOOKS_DISPATCHER_MARKER,
@@ -158,7 +163,14 @@ def _sweep_proc(
         return None
     if dry_run:
         return SurfaceSweep(owner_key=surface.owner_key, marker=marker)
-    removed = surface.proc(project_dir)
+    try:
+        removed = surface.proc(project_dir)
+    except Exception as exc:  # noqa: BLE001 — one crashing surface must not abort the bump
+        return SurfaceSweep(
+            owner_key=surface.owner_key,
+            marker=marker,
+            refused=f"sweep procedure crashed: {exc}",
+        )
     return SurfaceSweep(
         owner_key=surface.owner_key,
         marker=marker,

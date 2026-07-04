@@ -325,6 +325,37 @@ def test_proc_surface_living_owner_not_called(tmp_path):
     assert sweeper.sweep_unclaimed(tmp_path, surfaces=(surface,)) == []
 
 
+def test_proc_surface_crash_isolated_as_refused(tmp_path):
+    """HATS-911: a crashing sweep procedure must not abort the bump —
+    the surface reports refused, the remaining surfaces still sweep."""
+    (tmp_path / ".probe").write_text("x\n")
+    (tmp_path / ".probe2").write_text("x\n")
+
+    def bad_proc(project_dir):
+        raise OSError("disk went away")
+
+    def good_proc(project_dir):
+        (tmp_path / ".probe2").unlink()
+        return ["b"]
+
+    reports = sweeper.sweep_unclaimed(
+        tmp_path,
+        surfaces=(
+            sweeper.ProcSurface(
+                owner_key="dead-mech", marker_relpath=".probe", proc=bad_proc
+            ),
+            sweeper.ProcSurface(
+                owner_key="other-mech", marker_relpath=".probe2", proc=good_proc
+            ),
+        ),
+    )
+
+    by_owner = {r.owner_key: r for r in reports}
+    assert "crashed" in by_owner["dead-mech"].refused
+    assert (tmp_path / ".probe").exists()
+    assert by_owner["other-mech"].swept == ("b",)
+
+
 def test_proc_surface_dry_run_reports_without_acting(tmp_path):
     (tmp_path / ".probe").write_text("x\n")
     surface = sweeper.ProcSurface(
