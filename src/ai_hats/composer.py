@@ -346,8 +346,9 @@ def collect_worktree_hooks(
     """
     collected: dict[str, list[tuple[str, WorktreeHook]]] = {}
     for skill in result.skills:
-        raw = SkillMetadata.from_skill_dir(skill.source_path).worktree
-        carry = parse_worktree_carry(raw, skill.name)
+        carry = parse_worktree_carry(
+            SkillMetadata.from_skill_dir(skill.source_path).worktree, skill.name
+        )
         if carry.is_empty():
             continue
         for kind, hooks in (("wt_in", carry.wt_in), ("wt_out", carry.wt_out)):
