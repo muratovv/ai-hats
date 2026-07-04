@@ -14,17 +14,19 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
-_REPO_SRC = Path(__file__).resolve().parents[2] / "src"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_execute_batch_without_role_fails_clean(tmp_project) -> None:
+    from _helpers.env import checkout_pythonpath
+
     prompt = tmp_project.path / "prompt.md"
     prompt.write_text("ping\n")
 
     result = tmp_project.run(
         "execute", "--batch", "--isolation", "discard",
         "--prompt", str(prompt),
-        extra_env={"PYTHONPATH": str(_REPO_SRC)},
+        extra_env={"PYTHONPATH": checkout_pythonpath(_REPO_ROOT)},
     ).expect_failure()
 
     # Click usage error → exit 2 (stable contract; see how-to-orchestration.md).

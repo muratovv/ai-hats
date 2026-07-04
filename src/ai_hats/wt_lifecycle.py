@@ -26,10 +26,9 @@ from __future__ import annotations
 import logging
 from typing import NoReturn
 
-from .models import WT_TEARDOWN_EVENTS
 from .paths import managed_wt_hook_filename, wt_hooks_dir
 from .worktree_hooks import run_worktree_hook
-from ai_hats_wt import LifecycleContext, WorktreeTeardownAborted
+from ai_hats_wt import WT_TEARDOWN_EVENTS, LifecycleContext, WorktreeTeardownAborted
 from ai_hats_wt.locks import _state_key
 
 logger = logging.getLogger(__name__)

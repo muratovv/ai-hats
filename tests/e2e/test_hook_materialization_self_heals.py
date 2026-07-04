@@ -45,8 +45,10 @@ pytestmark = pytest.mark.integration
 def _binary_env() -> dict[str, str]:
     """Env pinning the ``ai-hats`` binary to THIS worktree's code (PYTHONPATH=src
     so the editable install doesn't resolve the main checkout)."""
+    from _helpers.env import checkout_pythonpath
+
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(REPO_ROOT / "src")
+    env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT)
     env["AI_HATS_VENV"] = str(AI_HATS_PYTHON.parent.parent)
     return env
 

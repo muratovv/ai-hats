@@ -540,17 +540,15 @@ def test_from_yaml_wrong_type_still_hard_errors(tmp_path):
         ProjectConfig.from_yaml(path)
 
 
-def test_project_config_rejects_unknown_provider(tmp_path):
+def test_project_config_passes_unknown_provider_through(tmp_path):
+    """HATS-863: the schema no longer knows the provider registry (severed
+    schema→providers back-edge) — an unknown value loads; rejection happens at
+    the assembler read chokepoint (see test_assembler.py)."""
     path = tmp_path / "ai-hats.yaml"
     path.write_text("provider: gemini-2.5\nschema_version: 2\n")
 
-    with pytest.raises(ProjectConfigError) as exc:
-        ProjectConfig.from_yaml(path)
-    msg = str(exc.value)
-    assert "gemini-2.5" in msg
-    # allowed list must be visible so the user can self-correct
-    assert "gemini" in msg
-    assert "claude" in msg
+    cfg = ProjectConfig.from_yaml(path)
+    assert cfg.provider == "gemini-2.5"
 
 
 def test_project_config_valid_load_still_works(tmp_path):
@@ -1074,7 +1072,7 @@ def test_task_card_save_is_atomic_on_serialization_crash(tmp_path, monkeypatch):
     yaml.dump writes a byte); passes once save routes through atomic_io
     (serialize fully, then atomic replace — the target is untouched on failure).
     """
-    import ai_hats.models as models_mod
+    import ai_hats.tracker.models as models_mod
 
     p = tmp_path / "task.yaml"
     TaskCard(id="T-1", title="Original").save(p)
@@ -1091,3 +1089,25 @@ def test_task_card_save_is_atomic_on_serialization_crash(tmp_path, monkeypatch):
     assert p.read_text() == original  # never truncated
     orphans = [f for f in p.parent.iterdir() if f.name.startswith(".task.yaml.")]
     assert orphans == []
+
+
+def test_facade_surface_parity():
+    """HATS-863: the pre-split public surface of ``ai_hats.models`` stays
+    importable through the facade until T16/T18 dismantle it (wt schema
+    deliberately excluded — it moved to ``ai_hats_wt.carry``)."""
+    import ai_hats.models as facade
+
+    expected = {
+        # tracker
+        "Attachment", "TaskCard", "TaskState", "WorkLogEntry",
+        # library
+        "GIT_HOOK_EVENTS", "RUNTIME_HOOK_EVENTS", "ComponentConfig",
+        "ComponentType", "Composition", "LeftoverSidecarHooksError",
+        "RuleMetadata", "RuntimeHook", "SkillMetadata", "resolve_namespace",
+        # config
+        "KNOWN_SCHEMA_VERSION", "Channel", "FeedbackConfig", "FeedbackPolicy",
+        "HarnessConfig", "OverlayConfig", "ProjectConfig", "ProjectConfigError",
+        "SessionRetroConfig", "SmartThreshold", "UserConfig", "UserConfigError",
+    }
+    missing = sorted(n for n in expected if not hasattr(facade, n))
+    assert not missing, f"facade lost re-exports: {missing}"

@@ -36,8 +36,10 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def _child_env(repo_root: Path) -> dict[str, str]:
     """Subprocess env pointed at the checkout under test (worktree or main)."""
+    from _helpers.env import checkout_pythonpath
+
     env = {**os.environ}
-    env["PYTHONPATH"] = str(repo_root / "src")
+    env["PYTHONPATH"] = checkout_pythonpath(repo_root)
     env["AI_HATS_LIBRARY_ROOT"] = str(repo_root / "library")
     return env
 

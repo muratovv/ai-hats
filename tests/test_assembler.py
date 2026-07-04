@@ -1512,3 +1512,15 @@ def test_split_user_hook_command_recognises_post_heal_form():
     # Non-hook paths return None.
     assert _split_user_hook_command("echo hello") is None
     assert _split_user_hook_command(".agent/ai-hats/library/rules/x.md") is None
+
+
+def test_unknown_provider_in_yaml_fails_loud_at_load(tmp_path):
+    """AC-5 parity (HATS-863): the schema no longer validates ``provider``
+    (schema→providers back-edge severed); a hand-edited ai-hats.yaml with an
+    unknown provider must still fail loud at the assembler read chokepoint."""
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "ai-hats.yaml").write_text("provider: bogus-provider\n")
+
+    with pytest.raises(ValueError, match="bogus-provider"):
+        Assembler(project_dir=project)
