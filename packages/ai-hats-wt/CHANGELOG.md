@@ -6,6 +6,11 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- The internal `_scrubbed_git_env` copy is gone; the engine imports
+  `scrubbed_git_env` from `ai-hats-core` (now pinned `>=0.2.0`).
+
 ## [0.1.0]
 
 Initial standalone release: the hook-agnostic git-worktree engine extracted from
