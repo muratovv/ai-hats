@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Iterator
 
 import click
-from ai_hats_core import LockTimeoutError, locked_path
+from ai_hats_core import LockTimeoutError, file_lock
 from rich.tree import Tree
 
 from ..providers import PROVIDERS
@@ -27,7 +27,7 @@ from ._helpers import _assembler, _project_dir, console
 def _config_lock(path: Path) -> Iterator[None]:
     """Serialize customize's read-modify-write (HATS-526: lost-update race)."""
     try:
-        with locked_path(path):
+        with file_lock(path):
             yield
     except LockTimeoutError as e:
         console.print(f"[red]{e}[/]")

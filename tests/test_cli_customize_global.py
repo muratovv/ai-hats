@@ -60,14 +60,14 @@ def test_reset_global_fails_friendly_when_locked(
     from functools import partial
 
     from ai_hats.cli import assembly
-    from ai_hats_core import locked_path
+    from ai_hats_core import file_lock
 
     res = _invoke("maintainer", "--add-trait", "hilt-workflow", "--global")
     assert res.exit_code == 0, res.output
 
     user_path = isolated_home / ".ai-hats" / "customizations.yaml"
-    monkeypatch.setattr(assembly, "locked_path", partial(locked_path, timeout=0.1))
-    with locked_path(user_path):
+    monkeypatch.setattr(assembly, "file_lock", partial(file_lock, timeout=0.1))
+    with file_lock(user_path):
         res = _invoke("maintainer", "--reset", "--global")
 
     assert res.exit_code == 1

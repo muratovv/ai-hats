@@ -1,6 +1,6 @@
 """Tests for the cross-process RMW lock (HATS-526).
 
-Contract: ``locked_path`` serializes a read-modify-write section across
+Contract: ``file_lock`` serializes a read-modify-write section across
 processes (no lost updates), and a held lock surfaces as a friendly
 ``LockTimeoutError`` instead of an indefinite hang.
 """
@@ -19,10 +19,10 @@ from ai_hats_core import locks
 _RMW_SNIPPET = """
 import sys, time
 from pathlib import Path
-from ai_hats_core.locks import locked_path
+from ai_hats_core.locks import file_lock
 
 counter = Path(sys.argv[1])
-with locked_path(counter):
+with file_lock(counter):
     value = int(counter.read_text())
     time.sleep(0.05)  # widen the race window: unlocked RMW reliably loses updates
     counter.write_text(str(value + 1))
@@ -48,9 +48,9 @@ def test_parallel_rmw_loses_no_updates(tmp_path: Path) -> None:
 def test_timeout_raises_friendly_error(tmp_path: Path) -> None:
     target = tmp_path / "config.yaml"
 
-    with locks.locked_path(target):
+    with locks.file_lock(target):
         with pytest.raises(locks.LockTimeoutError) as exc_info:
-            with locks.locked_path(target, timeout=0.1):
+            with locks.file_lock(target, timeout=0.1):
                 pytest.fail("lock must not be acquirable while held")
 
     message = str(exc_info.value)
@@ -60,7 +60,7 @@ def test_timeout_raises_friendly_error(tmp_path: Path) -> None:
 
 def test_released_lock_is_reacquirable(tmp_path: Path) -> None:
     target = tmp_path / "config.yaml"
-    with locks.locked_path(target):
+    with locks.file_lock(target):
         pass
-    with locks.locked_path(target, timeout=0.5):
+    with locks.file_lock(target, timeout=0.5):
         pass
