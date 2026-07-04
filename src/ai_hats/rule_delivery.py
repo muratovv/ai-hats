@@ -21,7 +21,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from .providers import ALWAYS_ON_RULES
+from .constants import ALWAYS_ON_RULES
 
 # Non-always-on rules whose essence is intentionally summarized inline in the
 # injection that points at them. Their full body is NOT delivered (provenance

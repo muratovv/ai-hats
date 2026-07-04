@@ -57,18 +57,17 @@ ALLOWED_COMPOSITION_CONSUMERS = (
     "migration_v07",
     "relocation",
     "role_catalog",
+    "costs",  # HATS-865: composition-tree introspection tooling, not a brick
 )
 
 # HATS-865 ratchet: the shrinking worklist. Exact-match asserted — a revert
 # resurfaces an offender (RED), a landed cut left in the tuple is RED too.
 # Delete the tuple when empty (T5 complete).
 EXPECTED_COMPOSITION_OFFENDERS = (
-    "costs",  # -> ALLOWED in step 2 (supervisor sign-off 2026-07-04)
     "hooks_manager",
     "pipeline.steps.compose",
     "pipeline.steps.compute_usage",
     "pipeline.steps.materialize",
-    "rule_delivery",
     "runtime_common",
     "sdk_options",
     "subagent_runner",

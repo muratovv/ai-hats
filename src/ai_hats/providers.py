@@ -39,36 +39,9 @@ INJECTION_END = "<!-- AI-HATS:END -->"
 PUBLISH_AGGREGATOR_START = "<!-- ai-hats:start -->"
 PUBLISH_AGGREGATOR_END = "<!-- ai-hats:end -->"
 
-# Always-on rules that stay in prompt (safety-critical + framework invariants).
-#
-# HATS-700 delivery contract: this set is the ONLY rule-delivery channel into
-# the system prompt. A rule's full body reaches the agent iff its name is here;
-# the composer no longer eager-loads bodies, so the provider reads these on
-# demand from ``source_path`` (read_rule_body) at prompt-build. Non-always-on
-# rules are composed for provenance but their bodies are intentionally
-# UNDELIVERED — the canonical delivery for them is the compact summary in the
-# owning trait/role injection text. Adding a rule here is a deliberate
-# prompt-budget decision; do not widen it to "fix" an undelivered rule whose
-# essence already rides in an injection summary.
-ALWAYS_ON_RULES = {
-    "global_rule_destructive_actions",
-    "global_rule_resource_hygiene",
-    "dev_rule_secure_coding",
-    "dev_rule_tool_call_hygiene",
-    # HATS-437: primary defense against autonomous shared-state writes.
-    # The PreToolUse / pre-push hooks are a safety net for this rule.
-    "rule_pause_before_shared_state_write",
-    # HATS-452: framework-invariant reminder for any agent that may
-    # touch composition / pipeline / runtime internals. Compact body
-    # (~1.0 KB, HATS-702); acceptable budget for an always-on
-    # architectural guard. Full rationale: docs/adr/0005-*.md.
-    "rule_composition_value_contract",
-    # HATS-842: the calibrating few-shot under-fired while the body was
-    # SUMMARIZED_IN_INJECTION (delivered as a 1-line bullet that omitted
-    # docstrings). Trimmed to ~1.6 KB and promoted so the agent reads the
-    # exact guide at authoring time — also dropped from SUMMARIZED_IN_INJECTION.
-    "dev_rule_comment_discipline",
-}
+# HATS-865: definition moved to the constants leaf; re-exported here for the
+# existing `from ai_hats.providers import ALWAYS_ON_RULES` importers.
+from .constants import ALWAYS_ON_RULES  # noqa: E402
 
 
 def _extract_frontmatter_description(skill: ResolvedComponent) -> str:
