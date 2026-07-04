@@ -21,7 +21,7 @@ from pathlib import Path
 import filelock
 
 from ai_hats_core import ResolvedComponent
-from .paths import claude_skills_dir
+from .paths import AI_HATS_MANAGED_MARKER, claude_dir, claude_skills_dir
 from .placeholders import expand_path_placeholders
 from ai_hats_core.safe_delete import discard
 
@@ -201,6 +201,67 @@ def drop_legacy_skills_mirror(project_dir: Path) -> list[str]:
     except OSError:
         pass
     return removed
+
+
+def drop_legacy_claude_publish(project_dir: Path) -> list[str]:
+    """Discard pre-HATS-289 ``.claude/`` publish artefacts (manifest-listed +
+    well-known belt-and-suspenders set).
+
+    Shared sweep procedure for ``owner_key=claude-publish`` (HATS-905): the
+    scaffold-migration path and the generic unclaimed-marker sweeper call the
+    same code. Returns the relative names actually removed.
+    """
+    base = claude_dir(project_dir)
+    if not base.is_dir():
+        return []
+    manifest = base / AI_HATS_MANAGED_MARKER
+    removed: list[str] = []
+    for rel in sorted(_marker_names(manifest)):
+        if rel.startswith("skills/"):
+            continue
+        if not _is_safe_relative(base, rel):
+            continue
+        target = base / rel
+        if not target.exists() and not target.is_symlink():
+            continue
+        discard(target, reason="claude-legacy-publish", project_dir=project_dir)
+        removed.append(rel)
+    # Well-known publish artefacts — belt-and-suspenders (HATS-289).
+    for rel in ("CLAUDE.md", "priorities.md", "role.md", "skills_index.md", "traits", "rules"):
+        target = base / rel
+        if not target.exists():
+            continue
+        try:
+            discard(target, reason="claude-legacy-publish", project_dir=project_dir)
+            removed.append(rel)
+        except OSError:
+            continue
+    if manifest.is_file():
+        discard(manifest, reason="claude-legacy-manifest", project_dir=project_dir)
+    try:
+        if not any(base.iterdir()):
+            base.rmdir()  # safe-delete: ok empty-dir
+    except OSError:
+        pass
+    return removed
+
+
+def _is_safe_relative(base_dir: Path, name: str) -> bool:
+    """:func:`_is_plain_child` generalized to nested relative entries
+    (HATS-905: githooks/publish manifests list ``a/b`` paths); victims must
+    resolve strictly inside ``base_dir``."""
+    if not name or "\\" in name:
+        return False
+    parts = Path(name).parts
+    if Path(name).is_absolute() or "." in parts or ".." in parts:
+        return False
+    victim = base_dir / name
+    if victim.is_symlink():
+        return True  # discard unlinks the link only; the target survives
+    try:
+        return base_dir.resolve() in victim.resolve().parents
+    except OSError:
+        return False
 
 
 def _is_plain_child(skills_dir: Path, name: str) -> bool:

@@ -36,6 +36,7 @@ from .paths import (
     wt_hooks_dir as _wt_hooks_dir,
 )
 from .providers import get_provider
+from . import owners
 from ai_hats_core.safe_delete import discard as _safe_discard
 from ai_hats_core.safe_delete import replace as _safe_replace
 
@@ -45,6 +46,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _MANAGED_HEADER = "# ai-hats managed — do not edit"
+
+# HATS-905: retiring this mechanism = dropping this line; the unclaimed-marker
+# sweeper then reclaims marker-listed .githooks/ artifacts on next init/bump.
+owners.register_owner("git-hooks", module=__name__)
 
 
 class HookError(Exception):
