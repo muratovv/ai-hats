@@ -62,6 +62,12 @@ ALLOWED_COMPOSITION_CONSUMERS = (
     "sweeper",  # HATS-910 maintenance tooling (provider-managed surface sweep)
 )
 
+# HATS-866: the tracker FSM emits worktree side-effects through the injected
+# WorktreeEffects handler — it must never reference the wt engine or the
+# integrator's wt bundle itself (ADR-0014 P0 #3), not even deferred.
+TRACKER_MODULES = ("state", "tracker")
+FORBIDDEN_WT_FOR_TRACKER = ("ai_hats_wt", f"{PKG}.wt_carry", f"{PKG}.wt_lifecycle")
+
 # HATS-865 T5 complete: the migration ratchet (EXPECTED_COMPOSITION_OFFENDERS)
 # hit zero and was deleted — the gate below asserts NO offenders, ever.
 
@@ -273,6 +279,54 @@ def test_composition_layer_is_integrator_only():
         "CompositionPayload / a DI callable instead) or justify a new "
         "ALLOWED_COMPOSITION_CONSUMERS entry.\n"
         f"offenders: { {k: offenders[k] for k in sorted(offenders)} }"
+    )
+
+
+def test_tracker_never_imports_wt():
+    """Tracker (FSM + schema) carries no wt reference at ANY level (HATS-866).
+
+    The pre-cut edge lived in deferred imports inside ``_setup_worktree`` /
+    ``_teardown_worktree``, so this walks the FULL tree. ``ai_hats_wt`` is a
+    separate workspace package (not in the first-party graph) — checked via raw
+    import statements; ``wt_carry``/``wt_lifecycle``/``paths.worktrees_dir``
+    are the integrator's wt bundle and must not leak back either. RED under
+    revert of the severing commit.
+    """
+    mods = _modules()
+    nodeset = set(mods)
+    offenders: dict[str, list[str]] = {}
+    for tracker in TRACKER_MODULES:
+        name = f"{PKG}.{tracker}"
+        prefix = name + "."
+        tracker_mods = {m: p for m, p in mods.items() if m == name or m.startswith(prefix)}
+        assert tracker_mods, f"tracker module {name} vanished"
+        refs: list[str] = []
+        for m, path in tracker_mods.items():
+            tree = ast.parse(path.read_text())
+            for node in _import_nodes(tree, top_level_only=False):
+                refs += [
+                    t
+                    for t in _targets(m, path.name == "__init__.py", node, nodeset)
+                    if any(t == f or t.startswith(f + ".") for f in FORBIDDEN_WT_FOR_TRACKER)
+                ]
+                if isinstance(node, ast.Import):
+                    refs += [
+                        a.name
+                        for a in node.names
+                        if a.name == "ai_hats_wt" or a.name.startswith("ai_hats_wt.")
+                    ]
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    mod = node.module
+                    if node.level == 0 and (mod == "ai_hats_wt" or mod.startswith("ai_hats_wt.")):
+                        refs.append(mod)
+                    if mod.split(".")[-1] == "paths":
+                        refs += [f"{mod}.{a.name}" for a in node.names if a.name == "worktrees_dir"]
+        if refs:
+            offenders[tracker] = sorted(set(refs))
+    assert not offenders, (
+        "tracker must not reference wt (any level, HATS-866): emit the effect "
+        "through the injected WorktreeEffects handler instead.\n"
+        f"offenders: {offenders}"
     )
 
 

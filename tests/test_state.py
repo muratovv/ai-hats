@@ -8,7 +8,13 @@ from pathlib import Path
 from ai_hats.models import TaskState
 from ai_hats.paths import worktrees_dir
 from ai_hats.state import EmptyPlanError, TaskManager
+from ai_hats.wt_effects import WtWorktreeEffects
 from ai_hats_wt import WorktreeManager
+
+
+def _manager(project: Path, **kwargs) -> TaskManager:
+    """TaskManager wired like production: wt effects injected (HATS-866)."""
+    return TaskManager(project, worktree_effects=WtWorktreeEffects(project), **kwargs)
 
 
 pytestmark = pytest.mark.integration
@@ -20,7 +26,7 @@ def mgr(tmp_path):
     project.mkdir()
     (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
     (project / ".agent" / "STATE.md").write_text("")
-    return TaskManager(project, strict_plan_check=False)
+    return _manager(project, strict_plan_check=False)
 
 
 def test_create_task_with_priority(mgr):
@@ -485,7 +491,7 @@ def git_mgr(tmp_path):
     _init_git(project)
     (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
     (project / ".agent" / "STATE.md").write_text("")
-    return TaskManager(project, strict_plan_check=False)
+    return _manager(project, strict_plan_check=False)
 
 
 def test_execute_creates_worktree(git_mgr):
@@ -1563,7 +1569,11 @@ def test_plan_epic_syncs_via_child_lifecycle(mgr, monkeypatch):
     untouched. Walking its child execute->done activates it (plan->execute) then
     advances it (->review) — without ever creating a worktree for the epic."""
     setup_calls: list[str] = []
-    monkeypatch.setattr(mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id))
+    monkeypatch.setattr(
+        mgr._worktree_effects,
+        "setup",
+        lambda task_id, role="", caller_cwd=None: setup_calls.append(task_id),
+    )
 
     mgr.create_task("EPIC", "Epic")
     mgr.transition("EPIC", TaskState.PLAN)
@@ -1601,7 +1611,11 @@ def test_create_under_done_epic_reopens_without_worktree(mgr, monkeypatch):
     assert mgr.get_task("EPIC").completed_at != ""
 
     setup_calls: list[str] = []
-    monkeypatch.setattr(mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id))
+    monkeypatch.setattr(
+        mgr._worktree_effects,
+        "setup",
+        lambda task_id, role="", caller_cwd=None: setup_calls.append(task_id),
+    )
 
     _card, auto = mgr.create_task("C2", "New child", parent_task="EPIC")
 
@@ -1769,7 +1783,11 @@ def test_brainstorm_epic_activation_no_worktree(mgr, monkeypatch):
     """HATS-789 R3: activating a brainstorm epic via the auto-path gives it no
     worktree (epics are trackers — the multi-hop never calls _setup_worktree)."""
     setup_calls: list[str] = []
-    monkeypatch.setattr(mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id))
+    monkeypatch.setattr(
+        mgr._worktree_effects,
+        "setup",
+        lambda task_id, role="", caller_cwd=None: setup_calls.append(task_id),
+    )
     mgr.create_task("EPIC", "Epic")  # brainstorm
     mgr.create_task("C1", "Child 1", parent_task="EPIC")
     mgr.transition("C1", TaskState.PLAN)
@@ -1828,7 +1846,11 @@ def test_manual_epic_execute_no_worktree(mgr, monkeypatch):
     """HATS-794: manually moving an epic (has children) to execute is a pure state
     flip — no worktree (epics are trackers; symmetric with the auto-path)."""
     setup_calls: list[str] = []
-    monkeypatch.setattr(mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id))
+    monkeypatch.setattr(
+        mgr._worktree_effects,
+        "setup",
+        lambda task_id, role="", caller_cwd=None: setup_calls.append(task_id),
+    )
     mgr.create_task("EPIC", "Epic")
     mgr.create_task("C1", "Child 1", parent_task="EPIC")
     mgr.transition("EPIC", TaskState.PLAN)
@@ -1840,7 +1862,11 @@ def test_manual_epic_execute_no_worktree(mgr, monkeypatch):
 def test_manual_non_epic_execute_still_worktree(mgr, monkeypatch):
     """HATS-794 (regression): a childless task still gets a worktree on execute."""
     setup_calls: list[str] = []
-    monkeypatch.setattr(mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id))
+    monkeypatch.setattr(
+        mgr._worktree_effects,
+        "setup",
+        lambda task_id, role="", caller_cwd=None: setup_calls.append(task_id),
+    )
     mgr.create_task("SOLO", "Lone task")  # no children
     mgr.transition("SOLO", TaskState.PLAN)
     mgr.transition("SOLO", TaskState.EXECUTE)
@@ -1854,8 +1880,7 @@ def test_manual_epic_execute_skips_plan_gate(tmp_path, monkeypatch):
     project.mkdir()
     (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
     (project / ".agent" / "STATE.md").write_text("")
-    strict = TaskManager(project, prefix="T", strict_plan_check=True)
-    monkeypatch.setattr(strict, "_setup_worktree", lambda task, **_kw: None)
+    strict = TaskManager(project, prefix="T", strict_plan_check=True)  # pure FSM: no wt effects
 
     strict.create_task("T-1", "Epic")
     strict.create_task("T-2", "Child", parent_task="T-1")
@@ -1872,7 +1897,11 @@ def test_manual_epic_execute_skips_plan_gate(tmp_path, monkeypatch):
 def test_manual_epic_reopen_no_worktree(mgr, monkeypatch):
     """HATS-794: reopening a done epic (DONE → EXECUTE) takes no worktree either."""
     setup_calls: list[str] = []
-    monkeypatch.setattr(mgr, "_setup_worktree", lambda task, **_kw: setup_calls.append(task.id))
+    monkeypatch.setattr(
+        mgr._worktree_effects,
+        "setup",
+        lambda task_id, role="", caller_cwd=None: setup_calls.append(task_id),
+    )
     mgr.create_task("EPIC", "Epic")
     mgr.create_task("C1", "Child 1", parent_task="EPIC")
     mgr.close_task("C1", "shipped")  # C1 done → EPIC auto-advances to review
