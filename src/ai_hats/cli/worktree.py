@@ -172,8 +172,7 @@ def wt_create(branch: str):
     # WorktreeManager.create() now re-checks under the repo-scoped L1 lock
     # and raises WorktreeCreateError with a friendly message; we just relay.
     # HATS-823: thread the project's effective-role worktree carry (wt_in/wt_out
-    # hooks) in at create; persisted to state for teardown (D3). HATS-865: the
-    # compose-then-collect seam lives in state.collect_carry_for_project.
+    # hooks) in at create; persisted to state for teardown (D3).
     from ..state import collect_carry_for_project
     from ..wt_lifecycle import HOOK_LIFECYCLE
 

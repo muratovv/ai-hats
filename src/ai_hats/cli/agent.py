@@ -78,7 +78,6 @@ def run_subagent(
                 "isolation": isolation,
                 "ticket": ticket or "",
                 "tags": tags or None,
-                # HATS-865: the ONE composition, seeded into the funnel.
                 "composition": build_composition_payload(
                     project_dir, role_override=role,
                 ),

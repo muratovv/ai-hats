@@ -159,7 +159,6 @@ def execute_cmd(
                 "ticket": ticket,
                 "tags": tags or None,
                 "extra_args": list(extra_args),
-                # HATS-865: the ONE composition, seeded into the funnel.
                 "composition": build_composition_payload(
                     project_dir,
                     role_override=role,

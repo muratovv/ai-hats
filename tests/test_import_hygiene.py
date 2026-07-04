@@ -59,7 +59,6 @@ ALLOWED_COMPOSITION_CONSUMERS = (
     "role_catalog",
     "costs",  # HATS-865: composition-tree introspection tooling, not a brick
     "composition_seam",  # HATS-865: THE integrator compose seam (payload builder)
-    "state",  # TEMP until HATS-866 — tracker-side wt-carry compose seam
 )
 
 # HATS-865 T5 complete: the migration ratchet (EXPECTED_COMPOSITION_OFFENDERS)

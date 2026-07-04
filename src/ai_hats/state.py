@@ -28,36 +28,18 @@ logger = logging.getLogger(__name__)
 def collect_carry_for_project(
     project_dir: Path, role: str = ""
 ) -> dict[str, list[dict[str, object]]]:
-    """Compose the effective role (fail-open) and collect its worktree carry.
+    """Collect the effective role's worktree carry (fail-open, HATS-865).
 
-    HATS-865: composition moved OUT of the ``wt_carry`` brick to this
-    integrator-side caller seam (``_setup_worktree`` + ``wt create`` CLI);
-    the chokepoint receives the ready result + hooks manager. ``role`` falls
-    back to ``active_role`` / ``default_role``; compose failures degrade to
-    an empty carry with a WARN — collection trouble must not block worktree
-    creation. TEMP composition site until HATS-866 (T6 re-cuts tracker→wt
-    via the ``needs_worktree`` effect).
+    Compose lives in ``composition_seam.compose_for_carry``; the chokepoint
+    receives the ready result + hooks manager.
     """
-    from .assembler import Assembler
-    from .materialize import compose_for_role
+    from .composition_seam import compose_for_carry
     from .wt_carry import collect_carry_for_role
 
-    try:
-        asm = Assembler(project_dir)
-        cfg = asm.project_config
-        effective = role or cfg.active_role or cfg.default_role
-        if not effective:
-            return {}
-        result = compose_for_role(asm, effective)
-        hooks = asm.hooks
-    except Exception as exc:  # noqa: BLE001 — never block create on carry collection
-        logger.warning(
-            "worktree hooks: could not compose role %r for carry "
-            "collection: %s — dropping carry",
-            role,
-            exc,
-        )
+    composed = compose_for_carry(project_dir, role)
+    if composed is None:
         return {}
+    result, hooks = composed
     return collect_carry_for_role(project_dir, result, hooks)
 
 
