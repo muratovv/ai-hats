@@ -12,6 +12,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats_wt import WorktreeManager
+from ai_hats_wt.env import PACKAGES_DIRNAME, SRC_DIRNAME
 from ai_hats.paths import worktrees_dir
 
 
@@ -266,7 +267,7 @@ def active_worktree(git_project: Path, monkeypatch):
     """
     monkeypatch.chdir(git_project)
     for pkg in ("pkg-a", "pkg-b"):
-        pkg_src = git_project / "packages" / pkg / "src"
+        pkg_src = git_project / PACKAGES_DIRNAME / pkg / SRC_DIRNAME
         pkg_src.mkdir(parents=True)
         (pkg_src / "marker.py").write_text("")
     _git(git_project, "add", ".")
@@ -285,9 +286,9 @@ def active_worktree(git_project: Path, monkeypatch):
 def _workspace_paths(wt: Path) -> str:
     return os.pathsep.join(
         [
-            str(wt / "src"),
-            str(wt / "packages" / "pkg-a" / "src"),
-            str(wt / "packages" / "pkg-b" / "src"),
+            str(wt / SRC_DIRNAME),
+            str(wt / PACKAGES_DIRNAME / "pkg-a" / SRC_DIRNAME),
+            str(wt / PACKAGES_DIRNAME / "pkg-b" / SRC_DIRNAME),
         ]
     )
 

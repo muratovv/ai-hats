@@ -12,6 +12,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# Workspace layout names (mirror pyproject's package-dir / pytest pythonpath).
+# Defined here, not ai_hats.paths — ADR-0013 D6 forbids the wt→ai_hats import.
+SRC_DIRNAME = "src"
+PACKAGES_DIRNAME = "packages"
+
 
 def workspace_pythonpath(root: Path, existing: str = "") -> str:
     """PYTHONPATH that runs the checkout at ``root`` end-to-end.
@@ -19,7 +24,10 @@ def workspace_pythonpath(root: Path, existing: str = "") -> str:
     ``<root>/src``, then each ``<root>/packages/*/src`` (sorted), then
     ``existing`` (dropped when empty), joined with ``os.pathsep``.
     """
-    roots = [root / "src", *sorted((root / "packages").glob("*/src"))]
+    roots = [
+        root / SRC_DIRNAME,
+        *sorted((root / PACKAGES_DIRNAME).glob(f"*/{SRC_DIRNAME}")),
+    ]
     parts = [str(r) for r in roots]
     if existing:
         parts.append(existing)
