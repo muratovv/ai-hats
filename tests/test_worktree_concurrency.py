@@ -453,30 +453,12 @@ def test_parallel_create_different_branches_both_succeed(
 
 
 def _setup_worktree_worker(project_dir: str, task_id: str, result_dict: dict, key: str) -> None:
-    """Child process: invoke TaskManager._setup_worktree, record outcome."""
-    from datetime import datetime, timezone
+    """Child process: invoke WtWorktreeEffects.setup (the HATS-866 seam), record outcome."""
+    from ai_hats.wt_effects import WtWorktreeEffects
 
-    from ai_hats.models import TaskCard, TaskState
-    from ai_hats.state import TaskManager
-
-    tm = TaskManager(Path(project_dir), prefix="HATS")
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    task = TaskCard(
-        id=task_id,
-        title="t",
-        state=TaskState.EXECUTE,
-        description="",
-        priority="medium",
-        role="",
-        reviewer="user",
-        parent_task="",
-        depends_on=[],
-        tags=[],
-        created=now,
-        updated=now,
-    )
+    effects = WtWorktreeEffects(Path(project_dir))
     try:
-        path = tm._setup_worktree(task)
+        path = effects.setup(task_id)
         result_dict[key] = {"path": str(path) if path else None, "error": None}
     except Exception as exc:
         result_dict[key] = {

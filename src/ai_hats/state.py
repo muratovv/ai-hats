@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import re
 import shutil
@@ -21,8 +20,6 @@ if TYPE_CHECKING:
     # TYPE_CHECKING guard keeps the name available to type-checkers / ruff
     # (resolves F821) without importing at module load.
     from .attachments import ReconcileResult
-
-logger = logging.getLogger(__name__)
 
 
 class WorktreeEffects(Protocol):
@@ -409,12 +406,12 @@ class TaskManager:
                 # it does NOT relax the HEAD-mismatch correctness guard.
                 if self._worktree_effects is not None:
                     outcome = self._worktree_effects.teardown(task.id, merge=True, force=force)
-                    if outcome:
+                    if outcome is not None:
                         task.log_work(f"Worktree {outcome}")
             elif new_state == TaskState.FAILED:
                 if self._worktree_effects is not None:
                     outcome = self._worktree_effects.teardown(task.id, merge=False)
-                    if outcome:
+                    if outcome is not None:
                         task.log_work(f"Worktree {outcome}")
             elif new_state == TaskState.CANCELLED:
                 # Administrative close: stamp completion time and discard any
@@ -422,7 +419,7 @@ class TaskManager:
                 task.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 if self._worktree_effects is not None:
                     outcome = self._worktree_effects.teardown(task.id, merge=False)
-                    if outcome:
+                    if outcome is not None:
                         task.log_work(f"Worktree {outcome}")
 
             self._save_task(task)

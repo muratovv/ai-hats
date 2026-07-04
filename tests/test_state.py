@@ -1781,7 +1781,7 @@ def test_reparent_active_child_into_brainstorm_epic_activates(mgr):
 
 def test_brainstorm_epic_activation_no_worktree(mgr, monkeypatch):
     """HATS-789 R3: activating a brainstorm epic via the auto-path gives it no
-    worktree (epics are trackers — the multi-hop never calls _setup_worktree)."""
+    worktree (epics are trackers — the multi-hop never emits the setup effect)."""
     setup_calls: list[str] = []
     monkeypatch.setattr(
         mgr._worktree_effects,
