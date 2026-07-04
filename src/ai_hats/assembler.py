@@ -30,8 +30,12 @@ from .models import (
     UserConfig,
 )
 from .paths import (
+    AI_HATS_MANAGED_MARKER,
     builtin_library_hooks as _builtin_library_hooks,
     builtin_library_layers as _builtin_library_layers,
+    claude_md,
+    claude_skills_dir,
+    gemini_md,
     hooks_dir as _lib_hooks_dir,
     rules_dir as _lib_rules_dir,
     skills_dir as _lib_skills_dir,
@@ -1126,7 +1130,7 @@ class Assembler:
         health: dict[str, str] = {}
         imports_md = self._canonical_dir / "imports.md"
         health["imports.md"] = "OK" if imports_md.exists() else "Missing"
-        prompt_ok = any((self.project_dir / f).exists() for f in ("GEMINI.md", "CLAUDE.md"))
+        prompt_ok = any(f(self.project_dir).exists() for f in (gemini_md, claude_md))
         health["system_prompt"] = "OK" if prompt_ok else "Missing"
         return health
 
@@ -1557,7 +1561,7 @@ class Assembler:
 
         Returns ``True`` when a WARN was emitted (test seam).
         """
-        marker = Path.home() / ".claude" / "skills" / ".ai-hats-managed"
+        marker = claude_skills_dir(Path.home()) / AI_HATS_MANAGED_MARKER
         if not marker.exists():
             return False
         print(

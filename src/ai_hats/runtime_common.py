@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 # ``ai_hats.runtime``.
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .observe import Session, SidecarTracer, TraceTag
+from .paths import claude_transcript_path, claude_transcripts_dir
 
 if TYPE_CHECKING:
     pass
@@ -241,8 +242,7 @@ def _finalize_sub_agent(
 
 def _claude_jsonl_path(project_dir: Path, claude_session_id: str) -> Path | None:
     """Resolve path to Claude Code's JSONL conversation file."""
-    project_key = str(project_dir).replace("/", "-")
-    return Path.home() / ".claude" / "projects" / project_key / f"{claude_session_id}.jsonl"
+    return claude_transcript_path(project_dir, claude_session_id)
 
 
 def _discover_claude_jsonl(project_dir: Path, session_id: str) -> Path | None:
@@ -262,8 +262,7 @@ def _discover_claude_jsonl(project_dir: Path, session_id: str) -> Path | None:
     """
     from datetime import datetime, timezone
 
-    project_key = str(project_dir).replace("/", "-")
-    jsonl_dir = Path.home() / ".claude" / "projects" / project_key
+    jsonl_dir = claude_transcripts_dir(project_dir)
     if not jsonl_dir.is_dir():
         return None
     try:
