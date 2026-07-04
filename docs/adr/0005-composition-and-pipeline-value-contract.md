@@ -45,6 +45,7 @@ Composition snapshots for session audit (`_composition_snapshot` → `Session.in
 ## Consequences
 
 **Code surface changes**
+
 - `CompositionResult` / `ResolvedComponent`: frozen; new method `CompositionResult.with_injection_override(text)`.
 - `WrapRunner.run`: `system_prompt_override` parameter removed; runtime no longer applies overrides for HITL sessions.
 - `SubAgentRunner.run` / `_run_attempt`: unchanged contract; still accepts `system_prompt_override` for the HATS-267 path. Now uses the typed `with_injection_override` method instead of `dataclasses.replace`.
@@ -53,6 +54,7 @@ Composition snapshots for session audit (`_composition_snapshot` → `Session.in
 - `LaunchProvider.run`: interactive branch no longer forwards `system_prompt` to `WrapRunner`.
 
 **New artifacts**
+
 - `library/core/rules/rule_composition_value_contract/` — agent-facing reminder; attached to `trait-agent` and added to `ALWAYS_ON_RULES` so the rule body materializes in every agent session prompt (~600-char budget).
 - `tests/test_composer_immutable.py` — П1 invariants.
 - `tests/test_wraprunner_signature.py` — П2 invariants.
@@ -60,6 +62,7 @@ Composition snapshots for session audit (`_composition_snapshot` → `Session.in
 - `tests/e2e/test_session_prompt_contains_role_injection.py` — the HATS-452 regression itself; turns red on a revert of any of the above mechanical changes.
 
 **What does NOT change**
+
 - Sub-agent path (HATS-267 prompt injection) — `SubAgentRunner.run` keeps `system_prompt_override`. The bug was on the HITL side; Automate side is the legitimate consumer.
 - Public CLI surface — `ai-hats execute --role X`, `ai-hats` (bare) — behavior is unchanged from the user's POV. The fix restores intended behavior; nothing visible breaks.
 - Gemini provider — `GeminiProvider.build_system_prompt` has identical structure; correctness follows automatically once composition + funnel are corrected upstream.
@@ -108,6 +111,13 @@ The Phase-2 drift guard caught the *with-overlays* drift outside the facade. It 
 
 HATS-505 also tightened П2's Automate-side reading. The override channel on `SubAgentRunner.run` is reserved for **explicit caller use** — HATS-267 sub-agent callers (future direct API consumers). The pipeline does **not** pre-fill it: the runner's own `compose_for_role(self.assembler, role_name)` call applies overlays. A pipeline-side pre-fill is, at best, a redundant re-composition; at worst (HATS-501 shape) a partial composition that silently replaces the runner's correctly-composed `injections` list via `with_injection_override`. A warning comment at the runtime call site tells future HATS-267 callers to *augment*, not *replace*.
 
+> **Superseded in part (HATS-865, Phase 5 below).** "The runner's own
+> `compose_for_role` call applies overlays" is no longer how delivery works —
+> runners no longer compose at all. The override-channel discipline itself
+> stands unchanged: the pipeline still never pre-fills
+> `system_prompt_override`, and `with_injection_override` remains the sole
+> transform, applied by `SubAgentRunner` on the injected payload's result.
+
 **Out of scope (deferred):** a `materialize_system_prompt(asm, role, provider) -> str` helper for callers that need only the agent-visible text was proposed in the plan (F1) and removed during execution — every real consumer needs the intermediate `CompositionResult` for hooks install / audit snapshot / stats / override. Re-introduce when a real text-only consumer appears.
 
 ### Phase 4 — silent-key sibling (HATS-515)
@@ -151,6 +161,53 @@ validator that produces a domain-clear error. The silent-key class
 recurs anywhere a YAML dict feeds a model that *intends* to enumerate
 all valid keys but inherits the permissive default.
 
+## Phase 5 — composition inversion: compose once at the integrator (HATS-865)
+
+Phases 1–3 stopped the pipeline from *delivering* a competing composition, but
+the bricks still *derived* their own: `ComposeRole` composed for the funnel
+(observability), then `WrapRunner` / `SubAgentRunner` composed again for
+delivery — two derivations of the same `(role, overlays)` per launch, and 23
+upward imports of the composition layer from runtime bricks (ADR-0014
+Composition rule violation). HATS-865 inverts the direction:
+
+- **One compose seam.** `composition_seam.build_composition_payload` (an
+  integrator module) resolves the effective role, validates explicit roles
+  (`RoleNotFoundError` moved here from the `compose_role` step), performs the
+  HITL first-run `set_role` side effect, composes ONCE via the facade,
+  precomputes the audit snapshot (the private-Assembler walk left
+  `runtime_common`), and resolves the provider — returning a frozen
+  **`CompositionPayload`** (see glossary).
+- **Funnel seeding.** Integrator CLI callers seed the payload into
+  `PipelineHarness.run(initial=...)` under the `composition` key.
+  `ComposeRole` is now a pure projection (`result.merged_injection` →
+  `system_prompt`); `MaterializeSystemPrompt` renders the seeded payload; the
+  `provider` step hands the SAME object to the runner — the funnel object IS
+  the runner object (identity pinned in `tests/test_pipeline_human_yaml.py`).
+- **П1 sharpened.** No second composition of the same `(role, overlays)` for
+  prompt delivery per execution path. `Assembler.set_role` still composes
+  internally for its on-disk write and `HooksManager`'s result-less resync
+  edge may compose (carve-out #2) — neither is prompt delivery.
+- **Recorded behavior delta.** `SubAgentRunner` retry attempts share the ONE
+  payload composition (previously each `_run_attempt` re-composed). This is
+  deliberate — attempts are now comparable like-for-like.
+- **Recorded delta #2 — funnel surface.** The funnel now carries
+  `system_prompt` on default-role runs too (`ComposeRole` projects the
+  always-present seeded payload; pre-865 it returned `{}` without an explicit
+  `role`). No step consumes it — observability/trace surface only.
+- **Recorded delta #3 — `set_role` timing.** The HITL first-run `set_role`
+  side effect fires at payload-build time, before `PipelineHarness.run`
+  (pre-865: mid-`WrapRunner.run`). A launch dying in a pre-launch step now
+  leaves `active_role` persisted; accepted — the write is idempotent and a
+  retried launch lands the same value.
+- **Carve-outs.** Two data-dependent edges keep late binding: the
+  `compute_usage` static-cost analyzer (role known only at run time; threaded
+  runner → finalize initial state as a callable built at the seam) and
+  `HooksManager.compose` for genuinely result-less resync edges.
+
+Enforcement is deny-by-default: `tests/test_import_hygiene.py::`
+`test_composition_layer_is_integrator_only` forbids any module outside the
+explicit ALLOWED set from referencing the composition layer at any level.
+
 ## Related
 
 - HATS-294 — per-session cache + override mechanism (introduced the HATS-267 channel that was later misused).
@@ -162,4 +219,5 @@ all valid keys but inherits the permissive default.
 - HATS-515 — Phase-4 closure: silent-key sibling; `HooksConfig` validates lifecycle event keys at parse, `_merge_hooks` derives event list from `LifecycleEvent`.
 - HATS-506 — umbrella epic for role-delivery harness contracts (sister to HATS-499 which owns library / content side).
 - HATS-523 — П4 application: HITL audit-persistence symmetry. `WrapRunner` now saves the materialized system prompt to `<session_dir>/meta_prompt.txt` (already done by `SubAgentRunner`). `Provider.build_session_prompt` extended to 3-tuple to surface the bytes through to the runner. Contracts П1–П4 unchanged.
+- HATS-865 — Phase-5 closure: composition inverted; the integrator composes once (`composition_seam`), the `CompositionPayload` is funnel-seeded and injected into runners; bricks never import the composition layer (deny-by-default lint).
 - ADR-0001 / ADR-0002 — pipeline / step contracts. П3 is a refinement of the existing funnel semantics, not a new mechanism.

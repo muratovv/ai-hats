@@ -56,8 +56,8 @@ def run_subagent(
     - 124 — timeout (sub-agent exceeded wall-clock limit)
     - other non-zero — forwarded verbatim from provider CLI
     """
+    from ..composition_seam import RoleNotFoundError, build_composition_payload
     from ..pipeline.harness import PipelineHarness
-    from ..pipeline.steps.compose import RoleNotFoundError
     from ..tags import TagValidationError, parse_tags
     from ._helpers import _handle_role_not_found, _project_dir
 
@@ -78,6 +78,9 @@ def run_subagent(
                 "isolation": isolation,
                 "ticket": ticket or "",
                 "tags": tags or None,
+                "composition": build_composition_payload(
+                    project_dir, role_override=role,
+                ),
             })
     except RoleNotFoundError as exc:
         # HATS-545 / S-CLI-05: same friendly handler as ``_launch_session``

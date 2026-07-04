@@ -43,6 +43,28 @@ LEAF_MODULES = (
 # not even deferred (the pre-split cycle lived in a deferred validator import).
 SCHEMA_MODULES = ("models", "config", "tracker.models", "libraries.models")
 
+# HATS-865: the composition layer is integrator-only (ADR-0014 Composition rule).
+FORBIDDEN_COMPOSITION = ("composer", "assembler", "materialize", "providers", "resolver")
+
+# Deny-by-default: only these may reference the layer — new modules are
+# guarded automatically; extending the list is a deliberate, reviewed act.
+ALLOWED_COMPOSITION_CONSUMERS = (
+    *FORBIDDEN_COMPOSITION,  # the layer itself
+    "cli",  # integrator orchestration (whole subtree)
+    "migrations",
+    "migration_assert",
+    "migration_healer",
+    "migration_v07",
+    "relocation",
+    "role_catalog",
+    "costs",  # HATS-865: composition-tree introspection tooling, not a brick
+    "composition_seam",  # HATS-865: THE integrator compose seam (payload builder)
+    "sweeper",  # HATS-910 maintenance tooling (provider-managed surface sweep)
+)
+
+# HATS-865 T5 complete: the migration ratchet (EXPECTED_COMPOSITION_OFFENDERS)
+# hit zero and was deleted — the gate below asserts NO offenders, ever.
+
 
 def _module_name(path: Path) -> str:
     parts = [PKG, *path.relative_to(SRC).with_suffix("").parts]
@@ -220,6 +242,37 @@ def test_schema_modules_never_import_providers():
             offenders[schema] = sorted(set(refs))
     assert not offenders, (
         f"schema modules must not import ai_hats.providers (any level): {offenders}"
+    )
+
+
+def test_composition_layer_is_integrator_only():
+    """HATS-865 deny-by-default: outside ALLOWED_COMPOSITION_CONSUMERS no module
+    may reference the composition layer at ANY level (deferred included,
+    TYPE_CHECKING exempt). Bricks receive the ready CompositionPayload from
+    the integrator compose seam instead (ADR-0014 Composition rule).
+    """
+    mods = _modules()
+    nodeset = set(mods)
+    forbidden = tuple(f"{PKG}.{m}" for m in FORBIDDEN_COMPOSITION)
+    allowed = tuple(f"{PKG}.{m}" for m in ALLOWED_COMPOSITION_CONSUMERS)
+    offenders: dict[str, list[str]] = {}
+    for name, path in mods.items():
+        if any(name == a or name.startswith(a + ".") for a in allowed):
+            continue
+        refs = [
+            t
+            for node in _import_nodes(ast.parse(path.read_text()), top_level_only=False)
+            for t in _targets(name, path.name == "__init__.py", node, nodeset)
+            if any(t == f or t.startswith(f + ".") for f in forbidden)
+        ]
+        if refs:
+            offenders[name.removeprefix(PKG + ".")] = sorted(set(refs))
+    assert not offenders, (
+        "composition-layer import drift (HATS-865): a non-ALLOWED module "
+        "references the composition layer. Cut the import (inject the "
+        "CompositionPayload / a DI callable instead) or justify a new "
+        "ALLOWED_COMPOSITION_CONSUMERS entry.\n"
+        f"offenders: { {k: offenders[k] for k in sorted(offenders)} }"
     )
 
 

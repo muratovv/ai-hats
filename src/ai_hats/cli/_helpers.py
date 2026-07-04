@@ -13,7 +13,7 @@ import click
 from rich.console import Console
 
 if TYPE_CHECKING:
-    from ..pipeline.steps.compose import RoleNotFoundError
+    from ..composition_seam import RoleNotFoundError
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -23,11 +23,12 @@ def _handle_role_not_found(exc: "RoleNotFoundError") -> NoReturn:
     """Render a `RoleNotFoundError` as a friendly stderr message and exit 2.
 
     Single source of truth for the unknown-role UX shared by every CLI
-    entry-point that runs the ``compose_role`` pipeline step (bare
-    ``ai-hats``, ``ai-hats execute``, ``ai-hats agent``, ``ai-hats
-    reflect *``). Before HATS-547 only ``_launch_session`` handled the
-    typed exception; ``execute_cmd`` let it bubble up as a 9-frame
-    traceback (S-CLI-20 — Wave 2 e2e gap).
+    entry-point that composes at the integrator seam (bare ``ai-hats``,
+    ``ai-hats execute``, ``ai-hats agent``, ``ai-hats reflect *`` —
+    HATS-865 moved the raise from the ``compose_role`` step to
+    ``composition_seam.build_composition_payload``). Before HATS-547 only
+    ``_launch_session`` handled the typed exception; ``execute_cmd`` let it
+    bubble up as a 9-frame traceback (S-CLI-20 — Wave 2 e2e gap).
 
     Output contract (asserted by
     ``tests/e2e/test_unknown_role_friendly_error.py``):

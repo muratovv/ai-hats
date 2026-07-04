@@ -81,7 +81,7 @@ def test_reflect_all_full_routes_to_judge(
 
     assert len(mock_runners["wrap_calls"]) == 1
     call = mock_runners["wrap_calls"][0]
-    assert call["role_override"] == "judge"
+    assert call["role"] == "judge"
     # First positional in extra_args = combined preamble + handoff
     first_arg = call["extra_args"][0]
     assert "Reflect-all triage session" in first_arg
