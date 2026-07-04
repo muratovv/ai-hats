@@ -134,8 +134,11 @@ class WtWorktreeEffects:
             return path
         return None
 
-    def teardown(self, task_id: str, *, merge: bool = True, force: bool = False) -> None:
+    def teardown(self, task_id: str, *, merge: bool = True, force: bool = False) -> str | None:
         """Merge or discard the worktree for a specific task (HATS-061).
+
+        Returns "merged" / "discarded" for the card's work_log (HATS-866/AC5),
+        or None when no worktree action actually happened.
 
         HATS-481 — fail-loud for merge failures. Previously this method
         swallowed ALL exceptions at WARNING and let ``transition`` continue
@@ -204,13 +207,15 @@ class WtWorktreeEffects:
                         branch_name,
                         base,
                     )
-            return
+                    return "merged"
+            return None
 
         try:
             if merge:
                 active.merge(force=force)  # HATS-596: force reaches merge guards
-            else:
-                active.discard(force=True)  # failed → intentional discard
+                return "merged"
+            active.discard(force=True)  # failed → intentional discard
+            return "discarded"
         except OriginalBranchMissingError as exc:
             # Branch deleted between create and teardown — keep current
             # behavior: warn but let the transition complete. The worktree
