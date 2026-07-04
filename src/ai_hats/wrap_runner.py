@@ -485,6 +485,8 @@ class WrapRunner:
                         project_dir=self.project_dir,
                         exit_code=exit_code,
                         static_cost_analyzer=payload.static_cost_analyzer,
+                        session_factory=payload.session_factory,
+                        audit_writer_factory=payload.audit_writer_factory,
                     )
                 except (Exception, KeyboardInterrupt):
                     logger.warning("finalize-hitl pipeline failed", exc_info=True)
