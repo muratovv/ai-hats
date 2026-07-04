@@ -1,11 +1,8 @@
-"""Claude Code path conventions — the single home for ``.claude/*`` coupling.
+"""Claude Code path conventions — single home for ``.claude/*`` coupling (HATS-907/908).
 
-ai-hats depends on an external tool's on-disk layout; this module names that
-dependency explicitly instead of scattering literals (HATS-907 review,
-HATS-908). Each layout literal appears exactly once — every other shape
-(base-anchored ``Path``, project-relative string) derives from it. Frozen
-*historical* strings (legacy heal targets) intentionally stay at their call
-sites: they must NOT move when the live layout does.
+Each literal appears once; Path / rel-string forms derive from it. Frozen
+historical strings (legacy heal targets) stay at call sites — they must NOT
+move when the live layout does.
 """
 
 from __future__ import annotations
@@ -16,7 +13,7 @@ from pathlib import Path
 AI_HATS_MANAGED_MARKER = ".ai-hats-managed"
 
 _CLAUDE_DIRNAME = ".claude"
-_SKILLS_DIRNAME = "skills"
+_CLAUDE_SKILLS_DIRNAME = "skills"
 
 # Project-relative string forms — migration allowlists (backup scope, healer /
 # asserter settings targets) match project-relative strings, not Paths.
@@ -36,7 +33,7 @@ def claude_skills_dir(base: Path) -> Path:
     ``base`` is a project root or the user home — Claude Code scans both
     scopes (HATS-901/907).
     """
-    return claude_dir(base) / _SKILLS_DIRNAME
+    return claude_dir(base) / _CLAUDE_SKILLS_DIRNAME
 
 
 def claude_settings_json(base: Path) -> Path:
@@ -81,7 +78,7 @@ def claude_plugin_manifest(plugin_root: Path) -> Path:
 
 def claude_plugin_skills_dir(plugin_root: Path) -> Path:
     """Skill auto-discovery dir inside a plugin: ``<plugin>/skills/``."""
-    return plugin_root / _SKILLS_DIRNAME
+    return plugin_root / _CLAUDE_SKILLS_DIRNAME
 
 
 # Expanded by Claude Code at hook-exec time to the project root; migration
