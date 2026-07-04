@@ -1,9 +1,11 @@
 # Read-only "what would the agent see" pipeline.
 #
-# Composes the active (or --role-overridden) role, renders it through
-# the provider's build_system_prompt, prints the result to stdout.
-# No session created, no provider spawned, no file written — pure
-# preview. Surface: `ai-hats config show-prompt`.
+# Renders the integrator-seeded composition (HATS-865: the caller builds
+# the payload via composition_seam.build_preview_payload and seeds it as
+# `composition` in the initial state) through the provider's
+# build_system_prompt, prints the result to stdout. No session created,
+# no provider spawned, no file written — pure preview.
+# Surface: `ai-hats config show-prompt`.
 #
 # HATS-452 Phase 1: this pipeline is the canonical "materialization"
 # probe, factored out of WrapRunner's inline compose+build. Phase 2

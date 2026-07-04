@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
-from ai_hats.composer import collect_worktree_hooks
+from ai_hats.hook_collection import collect_worktree_hooks
 from ai_hats.models import LeftoverSidecarHooksError, SkillMetadata
 from ai_hats.skill_sidecar import leftover_sidecar_remedy
 

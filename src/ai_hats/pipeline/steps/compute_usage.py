@@ -48,7 +48,10 @@ class ComputeUsage(Step):
             }),
             # ``role`` enables the optional static always-on cross-check; absent
             # (e.g. SubAgent paths that don't thread it) → measured-only report.
-            optional=frozenset({"role"}),
+            # ``static_cost_analyzer`` (HATS-865): runner-threaded carve-out —
+            # the role is known only at run time, so the compose-side analysis
+            # arrives as a callable; absent → measured-only report.
+            optional=frozenset({"role", "static_cost_analyzer"}),
             produces=frozenset({"usage_path"}),
         )
 
@@ -60,6 +63,7 @@ class ComputeUsage(Step):
         claude_session_id: str,
         project_dir: Path,
         role: str | None = None,
+        static_cost_analyzer=None,
         **_: Any,
     ) -> dict[str, Any]:
         from ...runtime import _claude_jsonl_path, _discover_claude_jsonl
@@ -83,8 +87,8 @@ class ComputeUsage(Step):
 
             report = parse_session_usage(jsonl_path)
             self._attach_session_meta(report, session_dir, role)
-            if report.get("role"):
-                self._enrich_static(report, project_dir, report["role"])
+            if report.get("role") and static_cost_analyzer is not None:
+                self._enrich_static(report, static_cost_analyzer, report["role"])
 
             usage_path.write_text(
                 json.dumps(report, ensure_ascii=False, indent=2, default=str),
@@ -120,34 +124,24 @@ class ComputeUsage(Step):
         report["exit_code"] = meta.get("exit_code")
 
     @staticmethod
-    def _enrich_static(report: dict[str, Any], project_dir: Path, role: str) -> None:
-        """Attach a static ``costs.py`` always-on breakdown for cross-check.
+    def _enrich_static(report: dict[str, Any], analyzer, role: str) -> None:
+        """Attach the static always-on breakdown via the threaded ``analyzer``.
 
         Best-effort and live-only — historical transcripts lack the role and
         skip this. The measured proxy (first cache_creation) stays authoritative;
         the static figure is the per-component breakdown the comparison sibling
         diffs against. On any failure, leave ``always_on["static"]`` = None
-        (absent, not a fake zero).
+        (absent, not a fake zero). HATS-865: the composition-layer walk lives in
+        the analyzer callable (built at the compose seam), not here.
         """
         try:
-            from ...assembler import Assembler
-            from ...composer import Composer
-            from ...costs import analyze_composition
-
-            composer = Composer(Assembler(project_dir).resolver)
-            breakdown = analyze_composition(composer, role, exact=False)
+            static = analyzer(role)
+            if static is None:
+                return
             ao = report.get("always_on")
             if ao is None:
                 ao = {}
                 report["always_on"] = ao
-            ao["static"] = {
-                "role": role,
-                "total_tokens": breakdown.total_tokens,
-                "exact": breakdown.exact,
-                "components": [
-                    {"name": c.name, "category": c.category, "tokens": c.tokens}
-                    for c in breakdown.components
-                ],
-            }
+            ao["static"] = static
         except Exception:
             logger.debug("compute_usage: static enrich skipped", exc_info=True)

@@ -2,8 +2,11 @@
 same flat-key state that downstream consumers expect.
 
 Provider spawn is mocked at the runner level — we assert the pipeline
-threads state correctly through compose_role → pre_log → launch_provider
-→ spawn_session_review → post_log without exercising real PTY.
+threads state correctly through compose_role → provider → post steps
+without exercising real PTY. HATS-865: the pipeline no longer composes;
+the integrator seeds a ready ``composition`` payload into the initial
+state, ``compose_role`` projects it, and ``provider`` hands the SAME
+object to the runner (funnel/runner identity — ADR-0005 П1).
 """
 
 from __future__ import annotations
@@ -40,83 +43,67 @@ def test_human_pipeline_e2e(tmp_path: Path):
     fake_runner = MagicMock()
     fake_runner.run.return_value = (0, fake_session)
 
-    fake_assembler = MagicMock()
-    fake_assembler.composer.compose.return_value = MagicMock(
-        errors=[], merged_injection="ROLE PROMPT",
-    )
-    # HATS-507: ComposeRole pre-checks role existence via
-    # resolver.list_components(ROLE) before composing.
-    fake_assembler.resolver.list_components.return_value = ["assistant"]
+    payload = MagicMock(name="composition_payload")
+    payload.result.merged_injection = "ROLE PROMPT"
 
     fake_proc = MagicMock(pid=42)
 
     with patch(
         "ai_hats.runtime.WrapRunner", return_value=fake_runner,
-    ), patch(
-        "ai_hats.assembler.Assembler", return_value=fake_assembler,
-    ), patch(
-        "ai_hats.models.ProjectConfig.from_yaml",
-        return_value=MagicMock(provider="claude"),
-    ), patch(
+    ) as wrap_cls, patch(
         "subprocess.Popen", return_value=fake_proc,
     ):
         final = run_pipeline(pipeline, {
             "role": "assistant",
             "interactive": True,
             "project_dir": tmp_path,
+            "composition": payload,
         })
 
     assert final["session_id"] == "20260101-010101-1"
     assert final["session_dir"] == fake_session.session_dir
     assert final["transcript_path"] == fake_session.trace_path
     assert final["exit_code"] == 0
+    # compose_role is a projection of the seeded payload (HATS-865).
     assert final["system_prompt"] == "ROLE PROMPT"
     # spawn_session_review removed from human.yaml — session-review is now
     # decided by the session_end auto-retro hook (threshold-aware), not
     # forced by the pipeline.
     assert "review_pid" not in final
 
-    # HATS-501: ``ComposeRole`` now routes through the
-    # ``compose_for_role`` facade so the layered composition (built-in
-    # + global + project overlays) reaches the funnel value. The
-    # mocked assembler's ``_get_overlays`` returns a MagicMock; what
-    # matters here is that overlays= is on the call (not omitted).
-    fake_assembler.composer.compose.assert_called_once()
-    _args, kwargs = fake_assembler.composer.compose.call_args
-    assert _args == ("assistant",)
-    assert "overlays" in kwargs
+    # HATS-865 identity assert: the funnel-seeded payload object IS the
+    # object the runner receives — no second composition anywhere in the
+    # pipeline (ADR-0005 П1).
+    wrap_cls.assert_called_once_with(tmp_path, payload)
     fake_runner.run.assert_called_once()
     call_kwargs = fake_runner.run.call_args.kwargs
-    assert call_kwargs["role_override"] == "assistant"
     # HATS-452 (П2 in ADR-0005): WrapRunner has NO system_prompt_override
-    # channel — composition reaches the agent via build_session_prompt
-    # inside run_session, not via a pipeline-side string handoff.
+    # channel — composition reaches the agent via build_session_prompt.
     assert "system_prompt_override" not in call_kwargs
 
 
-def test_human_pipeline_e2e_no_role(tmp_path: Path):
-    """role=None falls through compose_role to empty system_prompt."""
+def test_human_pipeline_e2e_empty_injection_omits_system_prompt(tmp_path: Path):
+    """A payload with an empty merged injection omits the funnel key
+    entirely (HATS-452 П3: never emit ``""`` as absent)."""
     pipeline = load_pipeline(_BUILTIN)
 
     fake_session = _fake_session(tmp_path)
     fake_runner = MagicMock()
     fake_runner.run.return_value = (0, fake_session)
 
+    payload = MagicMock(name="composition_payload")
+    payload.result.merged_injection = ""
+
     with patch(
         "ai_hats.runtime.WrapRunner", return_value=fake_runner,
-    ), patch(
-        "ai_hats.models.ProjectConfig.from_yaml",
-        return_value=MagicMock(provider="claude"),
     ), patch("subprocess.Popen", return_value=MagicMock(pid=1)):
         final = run_pipeline(pipeline, {
             "role": None,
             "interactive": True,
             "project_dir": tmp_path,
+            "composition": payload,
         })
 
-    # HATS-452 (П3): compose_role with role=None omits the key entirely;
-    # downstream consumers treat missing == None == "no override".
     assert "system_prompt" not in final
     assert final["exit_code"] == 0
     fake_runner.run.assert_called_once()
-    assert fake_runner.run.call_args.kwargs["role_override"] is None

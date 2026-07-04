@@ -173,7 +173,7 @@ def wt_create(branch: str):
     # and raises WorktreeCreateError with a friendly message; we just relay.
     # HATS-823: thread the project's effective-role worktree carry (wt_in/wt_out
     # hooks) in at create; persisted to state for teardown (D3).
-    from ..wt_carry import collect_carry_for_role
+    from ..state import collect_carry_for_project
     from ..wt_lifecycle import HOOK_LIFECYCLE
 
     mgr = WorktreeManager(
@@ -183,7 +183,7 @@ def wt_create(branch: str):
         state_dir=worktrees_dir(project_dir),
     )
     try:
-        wt_path = mgr.create(wt_hooks=collect_carry_for_role(project_dir))
+        wt_path = mgr.create(wt_hooks=collect_carry_for_project(project_dir))
     except WorktreeCreateError as exc:
         console.print(f"[red]{exc}[/]")
         sys.exit(1)

@@ -3,9 +3,9 @@
 Asserts that the **with-overlays** ``composer.compose(...)`` form only
 appears inside ``ai_hats/materialize.py`` (the facade) plus this test.
 Every other "compose role X for this project" call must route through
-``compose_for_role`` so the four real-runtime consumers (HITL runner,
-sub-agent runner, on-disk Assembler writer, ``MaterializeSystemPrompt``
-step) cannot drift from each other.
+``compose_for_role`` so the real consumers (the HATS-865 integrator
+compose seam, the on-disk Assembler writer, the carry seam) cannot
+drift from each other.
 
 Allowed exception: the **no-overlay** form (``compose(role)`` without
 ``overlays=``) belongs to deliberately different semantics:
@@ -20,11 +20,13 @@ The first test below (overlays= form) only catches drift where a file
 
 The second test (HATS-505) closes the other half: any
 ``composer.compose(...)`` call inside ``src/ai_hats/pipeline/`` — with
-or without ``overlays=`` — is a drift signal, because pipeline steps
-deliver composition to live agents and MUST route through
-``compose_for_role`` so the layered composition reaches the runner.
-HATS-501 slipped past the original test precisely because the
-no-overlay form wasn't flagged inside pipeline/.
+or without ``overlays=`` — is a drift signal. Since HATS-865 the
+pipeline subtree composes NOTHING (the integrator seam composes once
+and seeds the payload; the deny-by-default import gate in
+``test_import_hygiene`` enforces the import side), so any hit here is a
+regression of the whole inversion. HATS-501 slipped past the original
+test precisely because the no-overlay form wasn't flagged inside
+pipeline/.
 """
 
 from __future__ import annotations

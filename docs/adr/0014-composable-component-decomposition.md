@@ -825,7 +825,10 @@ are contradicted below and must be revised before this ADR is accepted.
    (compose once, immutable `CompositionResult`), the integrator must compose once
    and inject the value **down**; `CompositionResult` becomes a **kernel value-type**
    bricks accept as a parameter. The ADR never specifies this inversion — it is the
-   real precondition, not repo choice.
+   real precondition, not repo choice. *(Resolved by HATS-865: the integrator
+   compose seam builds a `CompositionPayload` injected into runners / seeded into
+   the pipeline funnel; deny-by-default import-lint enforces the direction. See
+   ADR-0005 Phase 5.)*
 2. **Two god-kernels.** `models.py` is the union of all five domains' schemas (wt
    `WorktreeCarry`/`WorktreeHook`, tracker `TaskCard`/`TaskState`, retro
    `FeedbackConfig`, library `SkillMetadata` — which *embeds* `WorktreeCarry` — and

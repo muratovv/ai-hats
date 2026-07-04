@@ -25,6 +25,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def collect_carry_for_project(
+    project_dir: Path, role: str = ""
+) -> dict[str, list[dict[str, object]]]:
+    """Collect the effective role's worktree carry (fail-open, HATS-865).
+
+    Compose lives in ``composition_seam.compose_for_carry``; the chokepoint
+    receives the ready result + hooks manager.
+    """
+    from .composition_seam import compose_for_carry
+    from .wt_carry import collect_carry_for_role
+
+    composed = compose_for_carry(project_dir, role)
+    if composed is None:
+        return {}
+    result, hooks = composed
+    return collect_carry_for_role(project_dir, result, hooks)
+
+
 @dataclass(frozen=True)
 class Section:
     """One section of the plan template.
@@ -1013,7 +1031,6 @@ class TaskManager:
             WorktreeManager,
             assert_head_is_canonical_base,
         )
-        from .wt_carry import collect_carry_for_role
         from .wt_lifecycle import HOOK_LIFECYCLE
 
         # ADR-0013 D4: ai-hats injects its state-dir convention at every
@@ -1048,7 +1065,7 @@ class TaskManager:
             lifecycle=HOOK_LIFECYCLE,
             state_dir=wt_state_dir,
         )
-        wt_hooks = collect_carry_for_role(self.project_dir, getattr(task, "role", ""))
+        wt_hooks = collect_carry_for_project(self.project_dir, getattr(task, "role", ""))
         try:
             path = mgr.create(wt_hooks=wt_hooks)
         except WorktreeCreateError:

@@ -160,7 +160,7 @@ def test_full_runs_both_phases(
     # Phase 2: Wrap + judge
     assert len(mock_runners["wrap_calls"]) == 1
     wcall = mock_runners["wrap_calls"][0]
-    assert wcall["role_override"] == "judge"
+    assert wcall["role"] == "judge"
     # The Phase 2 preamble (with draft inlined) is in extra_args[0]
     first_arg = wcall["extra_args"][0]
     assert "Phase 1 draft" in first_arg, (
@@ -194,7 +194,7 @@ def test_phase1_failure_aborts_phase2(
     import ai_hats.runtime as rt
 
     class _FailingSubAgentRunner:
-        def __init__(self, _pd): pass
+        def __init__(self, _pd, _payload): pass
 
         def run(self, **kwargs):
             mock_runners["sub_calls"].append(kwargs)
