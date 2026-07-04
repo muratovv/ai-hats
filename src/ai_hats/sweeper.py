@@ -357,6 +357,34 @@ def _parse_marker(
     return owner_key or surface.owner_key, entries
 
 
+def read_marker_names(path: Path) -> set[str]:
+    """Entry names from a line-manifest marker, tolerating both formats.
+
+    Reader counterpart of :func:`write_marker` for LIVING mechanisms (drift
+    detect, cleanup): hash column stripped after an owner header, plain
+    name-per-line otherwise. A malformed hashed line falls back to the raw
+    line — readers self-heal on the next rematerialization, only the sweeper
+    refuses."""
+    if not path.exists():
+        return set()
+    names: set[str] = set()
+    hashed = False
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith(OWNER_HEADER_PREFIX):
+            hashed = True
+            continue
+        if line.startswith("#"):
+            continue
+        try:
+            names.add(_parse_entry(line, hashed=hashed).name)
+        except _MarkerRefused:
+            names.add(line)
+    return names
+
+
 def _parse_entry(line: str, *, hashed: bool) -> _Entry:
     if not hashed:
         return _Entry(name=line, digest=None, raw=line)

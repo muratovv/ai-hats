@@ -88,14 +88,10 @@ class HookSyncStatus(StrEnum):
 
 
 def _read_manifest(path: Path) -> set[str]:
-    """Managed names recorded in a ``.manifest`` (one per line, ``#`` comments skipped)."""
-    if not path.exists():
-        return set()
-    return {
-        ln.strip()
-        for ln in path.read_text().splitlines()
-        if ln.strip() and not ln.strip().startswith("#")
-    }
+    """Managed names recorded in a ``.manifest`` — plain or hashed format (HATS-911)."""
+    from .sweeper import read_marker_names
+
+    return read_marker_names(path)
 
 
 def _write_manifest(path: Path, names: set[str], *, reason: str, project_dir: Path) -> None:
@@ -584,9 +580,16 @@ def install_git_hooks(project_dir: Path, result: CompositionResult) -> None:
                 f"unless you wire {event}.d/* into it manually."
             )
 
-    # Persist manifest of files we own.
-    manifest_path = githooks_dir / GITHOOKS_MANIFEST
-    manifest_path.write_text("\n".join(new_manifest) + "\n")
+    # Persist manifest of files we own (hashed owner_key convention, HATS-911).
+    from .sweeper import write_marker
+
+    write_marker(
+        githooks_dir / GITHOOKS_MANIFEST,
+        owner_key="git-hooks",
+        names=new_manifest,
+        project_dir=project_dir,
+        reason="githooks-manifest",
+    )
 
     # Configure core.hooksPath (idempotent + safe).
     _configure_hooks_path(project_dir, warnings)
@@ -645,13 +648,10 @@ def _cleanup_managed_git_hooks(project_dir: Path) -> None:
     if not manifest_path.exists():
         return
     try:
-        entries = manifest_path.read_text().splitlines()
+        entries = _read_manifest(manifest_path)
     except OSError:
         return
-    for entry in entries:
-        entry = entry.strip()
-        if not entry:
-            continue
+    for entry in sorted(entries):
         target = githooks_dir / entry
         if target.is_file():
             # For dispatcher files, only remove if the marker is still ours.
