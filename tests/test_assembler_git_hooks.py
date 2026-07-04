@@ -179,6 +179,55 @@ def test_manifest_written(project_with_hook_skill):
     assert "pre-commit" in manifest
 
 
+def test_manifest_hashed_owner_format(project_with_hook_skill):
+    """HATS-911: the live githooks manifest carries the owner_key convention —
+    header + content-proof hashes the sweeper can act on at retirement."""
+    import hashlib
+
+    from ai_hats import sweeper
+
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    marker = project / GITHOOKS_DIR / GITHOOKS_MANIFEST
+    assert marker.read_text().splitlines()[0] == "# ai-hats-owner: git-hooks"
+
+    surface = next(
+        s for s in sweeper.default_surfaces() if s.owner_key == "git-hooks"
+    )
+    owner_key, entries = sweeper._parse_marker(marker, surface)
+    assert owner_key == "git-hooks"
+    by_name = {e.name: e for e in entries}
+    assert set(by_name) == {"pre-commit", "pre-commit.d/hook_skill-check.sh"}
+    for name, entry in by_name.items():
+        on_disk = (project / GITHOOKS_DIR / name).read_bytes()
+        assert entry.digest == hashlib.sha256(on_disk).hexdigest()[:12], name
+
+
+def test_legacy_hashless_manifest_converges_on_reinstall(project_with_hook_skill):
+    """HATS-911: a consumer's pre-convention manifest is read fine and
+    rewritten in the hashed format on the next rematerialization."""
+    from ai_hats.hooks_manager import _read_manifest
+
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    marker = project / GITHOOKS_DIR / GITHOOKS_MANIFEST
+    names = sorted(_read_manifest(marker))
+    marker.write_text("\n".join(names) + "\n")  # old on-disk format
+
+    asm.set_role("test-role")
+
+    assert marker.read_text().splitlines()[0] == "# ai-hats-owner: git-hooks"
+    assert sorted(_read_manifest(marker)) == names
+    event_d = project / GITHOOKS_DIR / "pre-commit.d"
+    assert sorted(p.name for p in event_d.iterdir()) == ["hook_skill-check.sh"]
+
+
 # ----- No-op when no skill declares hooks -----
 
 
@@ -251,7 +300,7 @@ def test_sync_hooks_ignores_foreign_dispatcher_no_perpetual_heal(project_with_ho
     """HATS-833 P1 regression: a user-owned (foreign) top-level dispatcher
     coexisting with managed ``.d/`` scripts must NOT be detected as drift — else
     the session-start net would re-heal + emit a false note on EVERY launch."""
-    from ai_hats.hooks_manager import GITHOOKS_MANIFEST, git_hooks_changes
+    from ai_hats.hooks_manager import GITHOOKS_MANIFEST, _read_manifest, git_hooks_changes
     from ai_hats.materialize import compose_for_role
 
     project, lib = project_with_hook_skill
@@ -269,7 +318,7 @@ def test_sync_hooks_ignores_foreign_dispatcher_no_perpetual_heal(project_with_ho
     assert (githooks / "pre-commit.d" / "hook_skill-check.sh").is_file()
 
     result = compose_for_role(asm, "test-role")
-    manifest = asm._read_canonical_manifest(githooks / GITHOOKS_MANIFEST)
+    manifest = _read_manifest(githooks / GITHOOKS_MANIFEST)
     assert git_hooks_changes(project, result, manifest) == []
     # Idempotent across launches — no perpetual re-heal (the P1 symptom).
     assert asm.hooks.sync_hooks(None).status == "in-sync"
