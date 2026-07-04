@@ -21,7 +21,14 @@ from pathlib import Path
 import filelock
 
 from ai_hats_core import ResolvedComponent
-from .paths import AI_HATS_MANAGED_MARKER, claude_dir, claude_skills_dir
+from .paths import (
+    AI_HATS_MANAGED_MARKER,
+    claude_dir,
+    claude_plugin_manifest,
+    claude_plugin_manifest_dir,
+    claude_plugin_skills_dir,
+    claude_skills_dir,
+)
 from .placeholders import expand_path_placeholders
 from ai_hats_core.safe_delete import discard
 
@@ -84,13 +91,12 @@ def _rebuild_plugin_dir(
         shutil.rmtree(plugin_dir)  # safe-delete: ok session-plugin-rebuild
     plugin_dir.mkdir(parents=True)
 
-    manifest_dir = plugin_dir / ".claude-plugin"
-    manifest_dir.mkdir()
-    (manifest_dir / "plugin.json").write_text(
+    claude_plugin_manifest_dir(plugin_dir).mkdir()
+    claude_plugin_manifest(plugin_dir).write_text(
         json.dumps({"name": f"ai-hats-{role_name}", "version": "0.0.0"})
     )
 
-    skills_root = plugin_dir / "skills"
+    skills_root = claude_plugin_skills_dir(plugin_dir)
     skills_root.mkdir()
 
     for skill in skills:
