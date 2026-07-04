@@ -21,7 +21,7 @@ def test_execute_interactive_with_prompt(project_dir: Path, mock_runners):
     assert res.exit_code == 0, res.output
     assert len(mock_runners["wrap_calls"]) == 1
     call = mock_runners["wrap_calls"][0]
-    assert call["role_override"] == "judge"
+    assert call["role"] == "judge"
     # prompt prepended as first positional in extra_args
     assert call["extra_args"][0] == "ping"
 

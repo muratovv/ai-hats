@@ -65,13 +65,6 @@ ALLOWED_COMPOSITION_CONSUMERS = (
 # resurfaces an offender (RED), a landed cut left in the tuple is RED too.
 # Delete the tuple when empty (T5 complete).
 EXPECTED_COMPOSITION_OFFENDERS = (
-    "pipeline.steps.compose",
-    "pipeline.steps.compute_usage",
-    "pipeline.steps.materialize",
-    "runtime_common",
-    "sdk_options",
-    "subagent_runner",
-    "wrap_runner",
     "wt_carry",
 )
 
