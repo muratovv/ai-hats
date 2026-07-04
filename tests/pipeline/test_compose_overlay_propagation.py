@@ -198,8 +198,10 @@ def test_runtime_sdk_path_carries_all_overlay_content(
     project, markers = _setup_project_with_overlays(tmp_path, monkeypatch)
 
     asm = Assembler(project)
+    from ai_hats.providers import ClaudeProvider
+
     result = compose_for_role(asm, "maintainer")
-    sdk_payload = _build_system_prompt(result, project)
+    sdk_payload = _build_system_prompt(result, project, ClaudeProvider())
     sdk_text = sdk_payload["append"]
 
     missing = [m for m in markers.values() if m not in sdk_text]

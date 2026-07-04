@@ -17,6 +17,13 @@ from ai_hats.pipeline import run
 from ai_hats.pipeline.presets import execute_pipeline
 
 
+def _fake_payload() -> MagicMock:
+    """Stand-in for the seam-built CompositionPayload (HATS-865)."""
+    payload = MagicMock(name="composition_payload")
+    payload.result.merged_injection = ""
+    return payload
+
+
 def _fake_session(tmp_path: Path) -> MagicMock:
     sess = MagicMock()
     sess.session_id = "sid-test"
@@ -44,6 +51,7 @@ def test_execute_preset_interactive_threads_flat_keys(tmp_path: Path):
             "role": None,
             "project_dir": tmp_path,
             "extra_args": [],
+            "composition": _fake_payload(),
         })
 
     assert state["exit_code"] == 0
@@ -71,6 +79,7 @@ def test_execute_preset_batch_reads_metrics(tmp_path: Path):
             "role": None,
             "project_dir": tmp_path,
             "ticket": "HATS-267",
+            "composition": _fake_payload(),
         })
 
     assert state["exit_code"] == 7
@@ -89,6 +98,7 @@ def test_execute_preset_batch_missing_metrics_defaults_to_one(tmp_path: Path):
             "interactive": False,
             "role": None,
             "project_dir": tmp_path,
+            "composition": _fake_payload(),
         })
 
     assert state["exit_code"] == 1
@@ -100,6 +110,7 @@ def test_execute_pipeline_io_shape():
     # external requires after compose_role made `role` optional
     assert "interactive" in io.requires
     assert "project_dir" in io.requires
+    assert "composition" in io.requires  # HATS-865: funnel-seeded payload
     # produces flat keys per ADR-0002 §Step inventory
     for k in ("session_id", "session_dir", "transcript_path", "exit_code"):
         assert k in io.produces
@@ -139,6 +150,7 @@ def test_execute_preset_log_steps_print(tmp_path: Path, capsys):
             "interactive": True,
             "role": None,
             "project_dir": tmp_path,
+            "composition": _fake_payload(),
         })
 
     err = capsys.readouterr().err

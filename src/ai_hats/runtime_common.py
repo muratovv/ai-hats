@@ -15,8 +15,6 @@ from pathlib import Path
 
 from typing import TYPE_CHECKING
 
-from .assembler import Assembler
-
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
 # chokepoint). Re-exported so existing callers/tests keep importing it from
@@ -158,6 +156,7 @@ def _finalize_sub_agent(
     duration_s: float | None = None,
     extra_metrics: dict | None = None,
     work_dir: Path | None = None,
+    static_cost_analyzer=None,
 ) -> None:
     """Save transcripts and finalize audit with structured metrics.
 
@@ -234,6 +233,7 @@ def _finalize_sub_agent(
                 claude_session_id=claude_session_id,
                 project_dir=work_dir,
                 exit_code=exit_code,
+                static_cost_analyzer=static_cost_analyzer,
             )
         except (Exception, KeyboardInterrupt):
             logger.warning("finalize-subagent pipeline failed", exc_info=True)
@@ -439,44 +439,9 @@ def show_and_hold_startup_notices(notices, *, is_tty, sleep, env=None) -> None:
     sleep(delay)
 
 
-def _composition_snapshot(assembler: Assembler, role_name: str, result) -> dict:
-    """Build the composition snapshot dict for ``Session.init_audit`` (HATS-442).
-
-    Returns a dict with effective ``traits``/``rules``/``skills`` lists plus
-    a ``provenance`` map tagging each name with the contributing layer
-    (``built-in``/``global``/``project``). Used by session-reviewer and any
-    other post-session consumer to know what actually loaded in a session.
-
-    The traits list is computed by walking the role's base composition and
-    re-applying overlays (mirroring ``_build_tree``); composer's output
-    already has the resolved rules/skills.
-    """
-    try:
-        base_cfg = assembler.resolver.resolve_role_config(role_name)
-        effective_traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
-        for layer in (
-            assembler._get_global_overlay(role_name),
-            assembler._get_overlay(role_name),
-        ):
-            if layer is None:
-                continue
-            for name in layer.remove_traits:
-                if name in effective_traits:
-                    effective_traits.remove(name)
-            for name in layer.add_traits:
-                if name not in effective_traits:
-                    effective_traits.append(name)
-        provenance = assembler._get_overlay_provenance(role_name)
-    except Exception:
-        # Defensive: a broken overlay shouldn't kill session start. Fall
-        # back to "no snapshot" — audit.md just won't have the section.
-        return {}
-    return {
-        "traits": effective_traits,
-        "rules": [r.name for r in result.rules],
-        "skills": [s.name for s in result.skills],
-        "provenance": provenance,
-    }
+# HATS-865: ``_composition_snapshot`` moved to ``composition_seam`` — it walks
+# private Assembler API, so the DICT is precomputed at the compose seam and
+# travels down in the CompositionPayload.
 
 
 def _fmt_duration(session_id: str) -> str:
@@ -681,27 +646,30 @@ def _run_finalize_hitl(
     claude_session_id: str,
     project_dir: Path,
     exit_code: int,
+    static_cost_analyzer=None,
 ) -> None:
     """Invoke the ``finalize-hitl`` sub-pipeline (HATS-535).
 
     The pipeline runs ``make_audit`` then ``run_session_end`` (retro banner).
     Caller (WrapRunner.run's finally) wraps this in its own try/except so a
     finalize-pipeline crash never blocks the outer ``_print_session_end``.
+    ``static_cost_analyzer`` (HATS-865): runner-threaded carve-out so
+    ``compute_usage`` can cross-check always-on cost without composing.
     """
     from .pipeline.loader import load_core_pipeline
     from .pipeline.pipeline import run as run_pipeline
 
+    initial: dict = {
+        "session_id": session.session_id,
+        "session_dir": session.session_dir,
+        "claude_session_id": claude_session_id,
+        "project_dir": project_dir,
+        "exit_code": exit_code,
+    }
+    if static_cost_analyzer is not None:
+        initial["static_cost_analyzer"] = static_cost_analyzer
     pipeline = load_core_pipeline("finalize-hitl")
-    final_state = run_pipeline(
-        pipeline,
-        initial={
-            "session_id": session.session_id,
-            "session_dir": session.session_dir,
-            "claude_session_id": claude_session_id,
-            "project_dir": project_dir,
-            "exit_code": exit_code,
-        },
-    )
+    final_state = run_pipeline(pipeline, initial=initial)
     _log_pipeline_errors("finalize-hitl", final_state)
 
 
@@ -711,6 +679,7 @@ def _run_finalize_subagent(
     claude_session_id: str,
     project_dir: Path,
     exit_code: int,
+    static_cost_analyzer=None,
 ) -> None:
     """Invoke the ``finalize-subagent`` sub-pipeline (HATS-535).
 
@@ -721,15 +690,15 @@ def _run_finalize_subagent(
     from .pipeline.loader import load_core_pipeline
     from .pipeline.pipeline import run as run_pipeline
 
+    initial: dict = {
+        "session_id": session.session_id,
+        "session_dir": session.session_dir,
+        "claude_session_id": claude_session_id,
+        "project_dir": project_dir,
+        "exit_code": exit_code,
+    }
+    if static_cost_analyzer is not None:
+        initial["static_cost_analyzer"] = static_cost_analyzer
     pipeline = load_core_pipeline("finalize-subagent")
-    final_state = run_pipeline(
-        pipeline,
-        initial={
-            "session_id": session.session_id,
-            "session_dir": session.session_dir,
-            "claude_session_id": claude_session_id,
-            "project_dir": project_dir,
-            "exit_code": exit_code,
-        },
-    )
+    final_state = run_pipeline(pipeline, initial=initial)
     _log_pipeline_errors("finalize-subagent", final_state)

@@ -15,16 +15,14 @@ from pathlib import Path
 
 from typing import TYPE_CHECKING
 
-from .assembler import Assembler
+from .composition_payload import CompositionPayload
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
-from .materialize import compose_for_role
 from .observe import Session, SessionManager, SidecarTracer, TraceTag
-from .providers import get_provider
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
@@ -34,7 +32,6 @@ from .runtime_common import (
     _cleanup_session_cache,
     _print_session_start,
     show_and_hold_startup_notices,
-    _composition_snapshot,
     _print_session_end,
     _finalize_session_basic,
     _run_finalize_hitl,
@@ -140,11 +137,16 @@ def _format_version_skew(changes) -> str:
 
 
 class WrapRunner:
-    """PTY-proxied CLI wrapper for interactive sessions."""
+    """PTY-proxied CLI wrapper for interactive sessions.
 
-    def __init__(self, project_dir: Path) -> None:
+    HATS-865: a brick — receives the ready :class:`CompositionPayload` from
+    the integrator compose seam and never touches the composition layer.
+    """
+
+    def __init__(self, project_dir: Path, payload: CompositionPayload) -> None:
         self.project_dir = project_dir
-        self.assembler = Assembler(project_dir)
+        self.payload = payload
+        self.hooks = payload.hooks
         self.session_mgr = SessionManager(project_dir)
 
     def _resync_managed_hooks(
@@ -153,7 +155,7 @@ class WrapRunner:
         """Heal drift of ALL managed-hook surfaces at session start (HATS-833,
         generalizing HATS-593 layer B from git-only to runtime + wt + git).
 
-        ``Assembler.hooks.sync_hooks()`` is idempotent, drift-gated, skips a role-less
+        ``HooksManager.sync_hooks()`` is idempotent, drift-gated, skips a role-less
         project, and refuses to heal from a stale binary. Fail-open: a best-effort
         drift-heal must never block session start. The sole trigger is here —
         there is no ``ai-hats self sync-hooks`` command and no git-event hook
@@ -166,7 +168,7 @@ class WrapRunner:
         to avoid a second compose.
         """
         try:
-            res = self.assembler.hooks.sync_hooks(result)
+            res = self.hooks.sync_hooks(result)
             if session is not None:
                 session.log_trace(TraceTag.SYS, f"managed-hook resync: {res.status}")
             if res.status == "synced" and res.changes:
@@ -221,7 +223,7 @@ class WrapRunner:
 
         names = ", ".join(sorted({c.name for c in healable}))
         try:
-            if self.assembler.hooks.binary_behind_source():
+            if self.hooks.binary_behind_source():
                 return StartupNotice(
                     "warn",
                     f"stale ai-hats skills mirror ({names}) not auto-healed — "
@@ -311,51 +313,31 @@ class WrapRunner:
 
     def run(
         self,
-        provider_name: str,
-        role_override: str | None = None,
         extra_args: list[str] | None = None,
         tags: dict[str, str] | None = None,
     ) -> tuple[int, Session]:
         """Launch a wrapped CLI session with PTY proxying.
 
         Returns (exit_code, session) so callers that need the session
-        artefacts (transcript_path, audit, etc.) get them directly. The
-        legacy ``int``-only contract is preserved by ``_do_execute`` which
-        still returns only the exit code to its CLI callers.
+        artefacts (transcript_path, audit, etc.) get them directly.
 
         HATS-452 (П2 in ADR-0005). ``WrapRunner`` is the **HITL** runner —
         a human is at the keyboard and the role's full composition reaches
-        the agent through the composer + ``build_session_prompt`` write.
-        It deliberately has **no** ``system_prompt_override`` channel:
-        prompt injection in HITL is meaningless (the user types into the
-        terminal) and the previously-exposed Optional override was the
-        literal trap that caused HATS-452. Callers needing to inject an
-        explicit prompt should use ``SubAgentRunner`` (Automate path),
-        which takes a required ``task`` argument.
+        the agent through ``build_session_prompt``. It deliberately has
+        **no** ``system_prompt_override`` channel: prompt injection in HITL
+        is meaningless and the previously-exposed Optional override was the
+        literal trap that caused HATS-452. Callers needing an explicit
+        prompt use ``SubAgentRunner`` (Automate path).
+
+        HATS-865: role resolution, the first-run ``set_role`` side effect,
+        and the ONE composition all happened at the integrator compose seam
+        (``composition_seam.build_composition_payload``) — this runner only
+        delivers ``self.payload``.
         """
-        # Resolve provider
-        provider = get_provider(provider_name)
-
-        # Determine which role to use
-        cfg = self.assembler.project_config
-        effective_role = role_override or cfg.active_role or cfg.default_role
-
-        # HATS-294: unified per-session compose. Every session — default role
-        # and explicit --role alike — goes through build_session_prompt. The
-        # composed prompt is written to a per-session temp file (no shared
-        # canonical role-content). set_role still runs on first-run /
-        # provider-switch to sync project_config.active_role, but the session
-        # itself no longer depends on the canonical layout on disk.
-        if effective_role and not role_override:
-            needs_assembly = (
-                not cfg.active_role  # no role set yet
-                or cfg.provider != provider_name  # provider mismatch
-            )
-            if needs_assembly:
-                self.assembler.set_role(effective_role, provider_name)
-                cfg = self.assembler.project_config  # reload
-
-        active_role = role_override or cfg.active_role
+        payload = self.payload
+        provider = payload.provider
+        provider_name = provider.name
+        active_role = payload.effective_role
 
         # HATS-649 (R2): the session-cache sweep + incomplete-version sweep +
         # orphan-version reclaim + this run's liveness-ref write now run inside
@@ -366,10 +348,9 @@ class WrapRunner:
         # session.session_id (HATS-294).
         session = self.session_mgr.create_session()
 
-        # HATS-456: single derivation point for "compose for role X".
-        # HATS-452 (П2): no override channel on WrapRunner — the composition
-        # produced here flows straight into ``build_session_prompt``.
-        result = compose_for_role(self.assembler, effective_role)
+        # HATS-452 (П2): no override channel on WrapRunner — the payload's
+        # composition flows straight into ``build_session_prompt``.
+        result = payload.result
         session_args, session_env, meta_prompt = provider.build_session_prompt(
             self.project_dir,
             result,
@@ -378,7 +359,7 @@ class WrapRunner:
         session.init_audit(
             role=active_role,
             provider=provider_name,
-            composition=_composition_snapshot(self.assembler, effective_role, result),
+            composition=payload.snapshot,
         )
         # HATS-523: persist materialized system prompt to
         # <session_dir>/meta_prompt.txt — symmetric with SubAgentRunner
@@ -449,7 +430,7 @@ class WrapRunner:
             provider_name,
             session.session_id,
             version=__version__,
-            channel=self.assembler.project_config.harness.channel.value,
+            channel=payload.channel,
         )
 
         # PTY proxy via pty.spawn with sidecar trace.
@@ -491,6 +472,7 @@ class WrapRunner:
                         claude_session_id=claude_session_id,
                         project_dir=self.project_dir,
                         exit_code=exit_code,
+                        static_cost_analyzer=payload.static_cost_analyzer,
                     )
                 except (Exception, KeyboardInterrupt):
                     logger.warning("finalize-hitl pipeline failed", exc_info=True)
