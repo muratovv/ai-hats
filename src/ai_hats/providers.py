@@ -25,9 +25,14 @@ from .paths import session_cache_dir
 from .placeholders import expand_path_placeholders
 from .resolver import read_rule_body
 from .role_catalog import expand_role_catalog
+from . import owners
 
 
 logger = logging.getLogger(__name__)
+
+# HATS-905: retiring the managed settings.json hooks mechanism = dropping this
+# line; the unclaimed-marker sweeper then strips ai-hats:* tagged entries.
+owners.register_owner("runtime-hooks", module=__name__)
 
 INJECTION_START = "<!-- AI-HATS:START -->"
 INJECTION_END = "<!-- AI-HATS:END -->"
