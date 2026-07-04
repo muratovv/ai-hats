@@ -11,6 +11,7 @@ import hashlib
 import pytest
 
 from ai_hats import owners, sweeper
+from ai_hats.paths import claude_dir, claude_settings_json, claude_skills_dir
 
 
 @pytest.fixture(autouse=True)
@@ -233,7 +234,7 @@ SETTINGS_SURFACE = sweeper.SettingsTagsSurface(owner_key="tags-mech")
 def _seed_settings(project_dir):
     import json
 
-    settings = project_dir / ".claude" / "settings.json"
+    settings = claude_settings_json(project_dir)
     settings.parent.mkdir(parents=True)
     settings.write_text(
         json.dumps(
@@ -269,9 +270,7 @@ def test_dead_owner_tagged_settings_entries_removed_user_kept(tmp_path):
     data = json.loads(settings.read_text())
     assert data["model"] == "user-choice"
     assert "SessionStart" not in data["hooks"]
-    assert data["hooks"]["PreToolUse"] == [
-        {"matcher": "Bash", "hooks": [{"command": "my-own.sh"}]}
-    ]
+    assert data["hooks"]["PreToolUse"] == [{"matcher": "Bash", "hooks": [{"command": "my-own.sh"}]}]
 
 
 def test_living_owner_settings_untouched(tmp_path):
@@ -286,7 +285,7 @@ def test_living_owner_settings_untouched(tmp_path):
 
 
 def test_broken_settings_json_refused(tmp_path):
-    settings = tmp_path / ".claude" / "settings.json"
+    settings = claude_settings_json(tmp_path)
     settings.parent.mkdir(parents=True)
     settings.write_text("{not json")
 
@@ -305,9 +304,7 @@ def test_proc_surface_dead_owner_runs_shared_procedure(tmp_path):
         return ["a", "b"]
 
     (tmp_path / ".probe").write_text("x\n")
-    surface = sweeper.ProcSurface(
-        owner_key="legacy-mech", marker_relpath=".probe", proc=fake_proc
-    )
+    surface = sweeper.ProcSurface(owner_key="legacy-mech", marker_relpath=".probe", proc=fake_proc)
 
     reports = sweeper.sweep_unclaimed(tmp_path, surfaces=(surface,))
 
@@ -350,13 +347,13 @@ def test_default_surfaces_cover_all_known_owners():
 
 def test_default_surfaces_sweep_real_legacy_leftovers(tmp_path):
     # skills-export mirror (HATS-901 shape)
-    skills = tmp_path / ".claude" / "skills"
+    skills = claude_skills_dir(tmp_path)
     skills.mkdir(parents=True)
     (skills / ".ai-hats-managed").write_text("old-skill\n")
     (skills / "old-skill").mkdir()
     (skills / "old-skill" / "SKILL.md").write_text("stale")
     # claude-publish manifest (pre-HATS-289 shape)
-    claude = tmp_path / ".claude"
+    claude = claude_dir(tmp_path)
     (claude / ".ai-hats-managed").write_text("role.md\nskills/keep\n")
     (claude / "role.md").write_text("legacy publish artefact")
 
@@ -373,7 +370,7 @@ def test_default_surfaces_sweep_real_legacy_leftovers(tmp_path):
 def test_settings_without_tags_no_report(tmp_path):
     import json
 
-    settings = tmp_path / ".claude" / "settings.json"
+    settings = claude_settings_json(tmp_path)
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"hooks": {"PreToolUse": [{"matcher": "*"}]}}))
 
