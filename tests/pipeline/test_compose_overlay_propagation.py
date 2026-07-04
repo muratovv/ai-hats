@@ -5,8 +5,8 @@ Three contracts locked here, all under epic HATS-506:
 1. **HATS-505 (a)** — the pipeline MUST NOT feed a funnel-supplied
    prompt into ``SubAgentRunner.run`` as ``system_prompt_override``.
    The override channel is reserved for explicit HATS-267 callers; the
-   pipeline's role composition reaches the agent via the runner's own
-   ``compose_for_role`` call.
+   role composition reaches the agent via the seam-built payload the
+   runner receives at construction (HATS-865).
 
 2. **HATS-501** — the runtime's own compose + SDK-build path (what
    ``SubAgentRunner._run_attempt`` sends to the Claude SDK as
@@ -139,13 +139,12 @@ def test_pipeline_does_not_feed_subagent_override(
 ) -> None:
     """HATS-505 regression catcher: the pipeline MUST NOT pass
     ``system_prompt_override`` into ``SubAgentRunner.run``. The override
-    channel is reserved for explicit HATS-267 callers
-    (future direct API consumers); the
-    pipeline's role composition reaches the agent via the runner's own
-    ``compose_for_role`` call.
+    channel is reserved for explicit HATS-267 callers (future direct API
+    consumers); the role composition reaches the agent via the seam-built
+    payload injected at runner construction (HATS-865).
 
     Fail-under-revert: re-add ``system_prompt_override=system_prompt``
-    to ``LaunchProvider.run``'s sub-agent branch in
+    to ``Provider.run``'s sub-agent branch in
     ``src/ai_hats/pipeline/steps/launch.py`` and this assertion fires.
     """
     project, _markers = _setup_project_with_overlays(tmp_path, monkeypatch)
@@ -164,9 +163,35 @@ def test_pipeline_does_not_feed_subagent_override(
         "HATS-505 regression: the pipeline is feeding "
         "system_prompt_override into SubAgentRunner.run again. The "
         "override channel is reserved for explicit HATS-267 callers; "
-        "the pipeline's role composition reaches the agent via the "
-        "runner's own compose_for_role call.\n"
+        "the role composition reaches the agent via the seam-built "
+        "payload injected at runner construction (HATS-865).\n"
         f"Got: {funnel_override!r}"
+    )
+
+
+def test_seeded_payload_carries_all_overlay_content(
+    tmp_path: Path, monkeypatch, mock_runners,
+) -> None:
+    """HATS-865 sibling of the HATS-501 catcher: the payload the integrator
+    seam composes and the funnel delivers to the runner MUST carry every
+    overlay-layer contribution — it IS the delivery composition now, not an
+    observability copy."""
+    project, markers = _setup_project_with_overlays(tmp_path, monkeypatch)
+
+    pf = project / "p.txt"
+    pf.write_text("ok")
+    res = CliRunner().invoke(main, [
+        "execute", "--batch", "-r", "maintainer", "--prompt", str(pf),
+    ])
+    assert res.exit_code == 0, res.output
+
+    sub_calls = mock_runners["sub_calls"]
+    assert len(sub_calls) == 1, sub_calls
+    merged = sub_calls[0]["payload"].result.merged_injection
+    missing = [m for m in markers.values() if m not in merged]
+    assert not missing, (
+        "HATS-865 regression: the seam-composed payload is missing overlay "
+        f"content. Missing channels: {missing}"
     )
 
 
