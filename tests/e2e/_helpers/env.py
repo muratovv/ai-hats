@@ -48,16 +48,12 @@ ENV_DENYLIST: frozenset[str] = frozenset(
 def checkout_pythonpath(repo_root: Path, existing: str = "") -> str:
     """PYTHONPATH that runs THIS checkout end-to-end (HATS-863).
 
-    ``src`` alone Franken-mixes: the subprocess gets the checkout's integrator
-    but resolves workspace packages via the venv's editable installs — the MAIN
-    checkout's code. Prepend every ``packages/*/src`` so a worktree run tests
-    the worktree's packages too (mirrors pyproject ``pythonpath``).
+    Delegates to the product contract (HATS-913) so test infra and
+    ``ai-hats wt exec`` can never drift apart.
     """
-    roots = [repo_root / "src", *sorted((repo_root / "packages").glob("*/src"))]
-    parts = [str(r) for r in roots]
-    if existing:
-        parts.append(existing)
-    return os.pathsep.join(parts)
+    from ai_hats_wt import workspace_pythonpath
+
+    return workspace_pythonpath(repo_root, existing)
 
 
 def clean_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
