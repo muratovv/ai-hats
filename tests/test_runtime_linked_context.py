@@ -32,8 +32,6 @@ def _null_payload(**kw):
     )
 
 
-
-
 def _write_card(project_dir: Path, card: TaskCard, plan_body: str | None = None) -> None:
     card_dir = tasks_dir(project_dir) / card.id
     card.save(card_dir / "task.yaml")
