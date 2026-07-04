@@ -32,6 +32,57 @@ class RoleNotFoundError(Exception):
         super().__init__(f"Role {role!r} not found")
 
 
+def _project_context(project_dir: Path, role_override: str | None):
+    """Assembler + cfg + THE role-fallback chain (override → active → default).
+
+    The single home for the chain — build / preview / carry all resolve
+    through here instead of growing copies (review 2026-07-04).
+    """
+    from .assembler import Assembler
+
+    asm = Assembler(project_dir)
+    cfg = asm.project_config
+    return asm, cfg, (role_override or cfg.active_role or cfg.default_role)
+
+
+def _effective_provider(cfg, override: str | None, *, missing_hint: str) -> str:
+    """The provider-fallback chain: override → cfg.provider, loud when absent."""
+    eff = override or cfg.provider
+    if not eff:
+        raise RuntimeError(missing_hint)
+    return eff
+
+
+def _compose_validated(asm, effective_role, *, explicit_role: str | None, label: str):
+    """Compose via the facade; an explicitly requested role validates existence
+    before (``RoleNotFoundError``) and errors after (``RuntimeError``) — the
+    former ``compose_role`` step contract."""
+    from .materialize import compose_for_role
+
+    if explicit_role:
+        from .models import ComponentType
+
+        available = asm.resolver.list_components(ComponentType.ROLE)
+        if explicit_role not in available:
+            raise RoleNotFoundError(explicit_role, available)
+    result = compose_for_role(asm, effective_role)
+    if explicit_role and result.errors:
+        raise RuntimeError(
+            f"{label}: failed to resolve role {explicit_role!r}: {result.errors}"
+        )
+    return result
+
+
+def _maybe_sync_active_role(asm, cfg, effective_role, eff_provider, *, interactive, role_override):
+    """HITL first-run / provider-switch: persist ``active_role`` before the
+    session starts (hoisted from ``WrapRunner.run``, semantics intact)."""
+    first_run_hitl = interactive and effective_role and not role_override
+    if first_run_hitl and (not cfg.active_role or cfg.provider != eff_provider):
+        asm.set_role(effective_role, eff_provider)
+        return asm.project_config
+    return cfg
+
+
 def build_composition_payload(
     project_dir: Path,
     *,
@@ -43,52 +94,37 @@ def build_composition_payload(
     """Compose the effective role once and bundle everything runners need.
 
     Ordering preserves the pre-HATS-865 observable sequence: explicit-role
-    validation (``RoleNotFoundError`` / compose-errors ``RuntimeError`` — the
-    former ``compose_role`` step contract), the interactive provider check
-    (former ``launch_provider`` message), provider resolution, then the HITL
-    first-run / provider-switch ``set_role`` side effect (former
-    ``WrapRunner.run``). ``strict=False`` skips the explicit-role raises for
-    tolerant callers (retro reviewer spawn — HATS-271 owns its failure mode).
+    validation, the interactive provider check (former ``launch_provider``
+    message), provider resolution, then the HITL first-run ``set_role`` side
+    effect. ``strict=False`` skips the explicit-role raises for tolerant
+    callers (retro reviewer spawn — HATS-271 owns its failure mode).
     """
-    from .assembler import Assembler
-    from .materialize import compose_for_role
     from .providers import get_provider
 
-    asm = Assembler(project_dir)
-    cfg = asm.project_config
-    effective_role = role_override or cfg.active_role or cfg.default_role
-
-    if strict and role_override:
-        from .models import ComponentType
-
-        available = asm.resolver.list_components(ComponentType.ROLE)
-        if role_override not in available:
-            raise RoleNotFoundError(role_override, available)
-
-    result = compose_for_role(asm, effective_role)
-    if strict and role_override and result.errors:
-        raise RuntimeError(
-            f"compose_role: failed to resolve role {role_override!r}: {result.errors}"
-        )
+    asm, cfg, effective_role = _project_context(project_dir, role_override)
+    result = _compose_validated(
+        asm,
+        effective_role,
+        explicit_role=role_override if strict else None,
+        label="compose_role",
+    )
 
     if interactive:
-        eff_provider = provider_name or cfg.provider
-        if not eff_provider:
-            raise RuntimeError(
-                "launch_provider: no provider configured. "
-                "Run: ai-hats config set -p <provider>"
-            )
+        eff_provider = _effective_provider(
+            cfg,
+            provider_name,
+            missing_hint="launch_provider: no provider configured. "
+            "Run: ai-hats config set -p <provider>",
+        )
     else:
         # Batch path never honoured a provider flag (SubAgentRunner read cfg).
         eff_provider = cfg.provider
     provider = get_provider(eff_provider)
 
-    if interactive and effective_role and not role_override:
-        # HITL first-run / provider-switch: sync active_role on disk before
-        # the session starts (hoisted from WrapRunner.run, semantics intact).
-        if not cfg.active_role or cfg.provider != eff_provider:
-            asm.set_role(effective_role, eff_provider)
-            cfg = asm.project_config
+    cfg = _maybe_sync_active_role(
+        asm, cfg, effective_role, eff_provider,
+        interactive=interactive, role_override=role_override,
+    )
 
     return CompositionPayload(
         result=result,
@@ -113,25 +149,22 @@ def build_preview_payload(
     agent see". Raises ``RuntimeError`` with the step's historical messages so
     ``config show-prompt`` UX is unchanged.
     """
-    from .assembler import Assembler
     from .materialize import compose_for_role
     from .providers import get_provider
 
-    asm = Assembler(project_dir)
-    cfg = asm.project_config
-    eff_role = role or cfg.active_role or cfg.default_role
+    asm, cfg, eff_role = _project_context(project_dir, role)
     if not eff_role:
         raise RuntimeError(
             "materialize_system_prompt: no role to materialize "
             "(no --role override, no active_role/default_role in "
             "ai-hats.yaml). Set one or pass `role=...` to the step."
         )
-    eff_provider = provider or cfg.provider
-    if not eff_provider:
-        raise RuntimeError(
-            "materialize_system_prompt: no provider configured. "
-            "Set `provider:` in ai-hats.yaml or pass `provider=...`."
-        )
+    eff_provider = _effective_provider(
+        cfg,
+        provider,
+        missing_hint="materialize_system_prompt: no provider configured. "
+        "Set `provider:` in ai-hats.yaml or pass `provider=...`.",
+    )
     result = compose_for_role(asm, eff_role)
     if result.errors:
         raise RuntimeError(
@@ -143,6 +176,28 @@ def build_preview_payload(
         provider=get_provider(eff_provider),
         effective_role=eff_role,
     )
+
+
+def compose_for_carry(project_dir: Path, role: str | None = None):
+    """Fail-open compose for worktree-carry collection; ``(result, hooks)`` or
+    ``None``. Tracker-side callers route here — TEMP until HATS-866 re-cuts
+    tracker→wt via the ``needs_worktree`` effect. Any failure degrades to
+    ``None`` with a WARN: carry trouble must never block worktree creation.
+    """
+    try:
+        asm, _cfg, effective = _project_context(project_dir, role)
+        if not effective:
+            return None
+        from .materialize import compose_for_role
+
+        return compose_for_role(asm, effective), asm.hooks
+    except Exception as exc:  # noqa: BLE001 — never block create on carry collection
+        logger.warning(
+            "worktree carry: could not compose role %r: %s — dropping carry",
+            role,
+            exc,
+        )
+        return None
 
 
 def _composition_snapshot(assembler, role_name: str, result) -> dict:
@@ -168,9 +223,14 @@ def _composition_snapshot(assembler, role_name: str, result) -> dict:
                 if name not in effective_traits:
                     effective_traits.append(name)
         provenance = assembler._get_overlay_provenance(role_name)
-    except Exception:
-        # Defensive: a broken overlay shouldn't kill session start. Fall
-        # back to "no snapshot" — audit.md just won't have the section.
+    except Exception as exc:
+        # Defensive: a broken overlay shouldn't kill session start.
+        logger.warning(
+            "composition snapshot failed for role %r: %s — audit.md will "
+            "lack the composition section",
+            role_name,
+            exc,
+        )
         return {}
     return {
         "traits": effective_traits,

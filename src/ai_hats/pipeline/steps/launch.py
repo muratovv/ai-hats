@@ -45,10 +45,8 @@ class Provider(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="provider",
-            # HATS-865: ``composition`` is the funnel-seeded CompositionPayload
-            # (built once at the integrator compose seam). This step hands the
-            # SAME object to the runner — it never composes and never resolves
-            # providers itself (deny-by-default lint guards it).
+            # HATS-865: funnel-seeded CompositionPayload, handed to the runner
+            # as-is — this step never composes nor resolves providers.
             requires=frozenset({"interactive", "project_dir", "composition"}),
             # HATS-505: ``system_prompt`` is deliberately NOT read here —
             # prompt delivery goes through the payload, not a funnel string.

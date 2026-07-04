@@ -160,7 +160,6 @@ def reflect_all_cmd(dry_run: bool):
             "project_dir": project_dir,
             "prompt_path": h.materialize_prompt(combined),
             "extra_args": [],
-            # HATS-865: the ONE composition, seeded into the funnel.
             "composition": build_composition_payload(
                 project_dir, role_override="judge", interactive=True,
             ),

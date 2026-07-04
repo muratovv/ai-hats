@@ -439,11 +439,6 @@ def show_and_hold_startup_notices(notices, *, is_tty, sleep, env=None) -> None:
     sleep(delay)
 
 
-# HATS-865: ``_composition_snapshot`` moved to ``composition_seam`` — it walks
-# private Assembler API, so the DICT is precomputed at the compose seam and
-# travels down in the CompositionPayload.
-
-
 def _fmt_duration(session_id: str) -> str:
     from datetime import datetime, timezone
 
