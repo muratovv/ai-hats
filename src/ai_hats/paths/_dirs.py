@@ -367,26 +367,6 @@ def managed_runtime_hook_filename(skill_name: str, script: str) -> str:
     return f"{skill_name}-{Path(script).name}"
 
 
-# Claude Code expands ``$CLAUDE_PROJECT_DIR`` at hook-execution time
-# to the project root. Migration callers (healer / asserter) strip the
-# prefix to resolve hook command paths against the project dir
-# statically. HATS-549 review Q.1 — single source of truth, shared
-# across migration_healer / migration_assert / future callers.
-CLAUDE_PROJECT_DIR_VAR: str = "$CLAUDE_PROJECT_DIR/"
-
-
-def strip_claude_project_dir(s: str) -> str:
-    """Remove a leading ``$CLAUDE_PROJECT_DIR/`` placeholder if present.
-
-    Idempotent; non-prefixed strings pass through unchanged. Use when
-    converting a hook command value into a project-relative path for
-    on-disk existence checks.
-    """
-    if s.startswith(CLAUDE_PROJECT_DIR_VAR):
-        return s[len(CLAUDE_PROJECT_DIR_VAR) :]
-    return s
-
-
 def user_hooks_dir(project_dir: Path) -> Path:
     """User-owned hooks sibling: ``<ai_hats_dir>/user-hooks/`` (HATS-549).
 
@@ -664,8 +644,6 @@ __all__ = [
     "wt_hooks_dir",
     "managed_wt_hook_filename",
     "managed_runtime_hook_filename",
-    "CLAUDE_PROJECT_DIR_VAR",
-    "strip_claude_project_dir",
     "user_hooks_dir",
     "last_backup_path",
     "venv_path",
