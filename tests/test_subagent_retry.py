@@ -81,7 +81,7 @@ def test_no_policy_no_retry(tmp_path: Path, monkeypatch) -> None:
     session = _timed_out(tmp_path, "s1")
     runner, calls = _make_runner(monkeypatch, [session], tmp_path)
 
-    result = runner.run("any-role")
+    result = runner.run()
 
     assert len(calls) == 1
     assert result is session
@@ -94,7 +94,7 @@ def test_no_on_timeout_policy_no_retry(tmp_path: Path, monkeypatch) -> None:
     runner, calls = _make_runner(monkeypatch, [session], tmp_path)
 
     result = runner.run(
-        "role", harness_policy=HarnessPolicy(reporting=True, on_timeout=None),
+        harness_policy=HarnessPolicy(reporting=True, on_timeout=None),
     )
 
     assert len(calls) == 1
@@ -113,7 +113,7 @@ def test_retries_once_on_first_timeout_then_succeeds(
         on_timeout=TimeoutPolicy(retry=1, budget_multiplier=2.0),
     )
 
-    result = runner.run("role", harness_policy=policy)
+    result = runner.run(harness_policy=policy)
 
     assert len(calls) == 2
     assert calls[0]["timeout_s"] == SUBAGENT_SUBPROCESS_TIMEOUT_S
@@ -132,7 +132,7 @@ def test_raises_timeout_error_after_exhausted_retries(
     policy = HarnessPolicy(on_timeout=TimeoutPolicy(retry=1))
 
     with pytest.raises(HarnessTimeoutError) as exc_info:
-        runner.run("role", harness_policy=policy)
+        runner.run(harness_policy=policy)
     assert exc_info.value.session_id == "s2"
     assert "sub-session=s2" in str(exc_info.value)
 
@@ -147,7 +147,7 @@ def test_timeout_error_is_harness_reliability(
     policy = HarnessPolicy(on_timeout=TimeoutPolicy(retry=0))
 
     with pytest.raises(HarnessReliabilityError):
-        runner.run("role", harness_policy=policy)
+        runner.run(harness_policy=policy)
 
 
 def test_retry_zero_means_one_attempt_then_escalate(
@@ -159,7 +159,7 @@ def test_retry_zero_means_one_attempt_then_escalate(
     policy = HarnessPolicy(on_timeout=TimeoutPolicy(retry=0))
 
     with pytest.raises(HarnessTimeoutError):
-        runner.run("role", harness_policy=policy)
+        runner.run(harness_policy=policy)
     assert len(calls) == 1
 
 
@@ -170,7 +170,7 @@ def test_success_on_first_attempt_skips_retry(
     runner, calls = _make_runner(monkeypatch, sessions, tmp_path)
     policy = HarnessPolicy(on_timeout=TimeoutPolicy(retry=2, budget_multiplier=3))
 
-    result = runner.run("role", harness_policy=policy)
+    result = runner.run(harness_policy=policy)
 
     assert len(calls) == 1
     assert result.session_id == "s1"
@@ -188,7 +188,7 @@ def test_budget_multiplier_applied_only_to_retries(
     runner, calls = _make_runner(monkeypatch, sessions, tmp_path)
     policy = HarnessPolicy(on_timeout=TimeoutPolicy(retry=2, budget_multiplier=2.5))
 
-    runner.run("role", harness_policy=policy)
+    runner.run(harness_policy=policy)
 
     assert calls[0]["timeout_s"] == SUBAGENT_SUBPROCESS_TIMEOUT_S
     expected = int(SUBAGENT_SUBPROCESS_TIMEOUT_S * 2.5)
@@ -204,7 +204,7 @@ def test_tags_threaded_through_retries(
     runner, calls = _make_runner(monkeypatch, sessions, tmp_path)
     policy = HarnessPolicy(on_timeout=TimeoutPolicy(retry=1))
 
-    runner.run("role", tags={"trace": "abc"}, harness_policy=policy)
+    runner.run(tags={"trace": "abc"}, harness_policy=policy)
 
     assert calls[0]["tags"]["trace"] == "abc"
     assert calls[1]["tags"]["trace"] == "abc"

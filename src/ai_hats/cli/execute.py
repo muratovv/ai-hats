@@ -119,8 +119,8 @@ def execute_cmd(
     extra_args: tuple[str, ...],
 ):
     """Launch a provider session with a composed role + optional initial prompt."""
+    from ..composition_seam import RoleNotFoundError, build_composition_payload
     from ..pipeline.harness import PipelineHarness
-    from ..pipeline.steps.compose import RoleNotFoundError
     from ..tags import TagValidationError, parse_tags
     from ._helpers import _handle_role_not_found
 
@@ -159,6 +159,12 @@ def execute_cmd(
                 "ticket": ticket,
                 "tags": tags or None,
                 "extra_args": list(extra_args),
+                "composition": build_composition_payload(
+                    project_dir,
+                    role_override=role,
+                    provider_name=provider,
+                    interactive=interactive,
+                ),
             })
     except RoleNotFoundError as exc:
         # HATS-547 / S-CLI-20: same friendly handler as ``_launch_session``;

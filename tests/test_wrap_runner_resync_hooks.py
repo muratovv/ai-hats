@@ -22,6 +22,26 @@ from ai_hats.wrap_runner import WrapRunner
 pytestmark = pytest.mark.integration
 
 
+def _runner(project: Path) -> WrapRunner:
+    """WrapRunner wired with the project's real HooksManager (HATS-865: the
+    payload carries it; these seam tests exercise the result-less resync
+    edge, so the composition itself is a placeholder)."""
+    from ai_hats.composition_payload import CompositionPayload
+    from ai_hats_core import CompositionResult
+
+    payload = CompositionPayload(
+        result=CompositionResult(
+            name="t", priorities=[], rules=[], skills=[], injections=[],
+        ),
+        provider=None,
+        effective_role="t",
+        hooks=Assembler(project).hooks,
+    )
+    return WrapRunner(project, payload)
+
+
+
+
 def _git_init(path: Path) -> None:
     subprocess.run(["git", "init", "--quiet"], cwd=str(path), check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=str(path), check=True)
@@ -85,7 +105,7 @@ def test_resync_heals_drifted_hook_and_names_it(project_with_hook_role):
     installed = _installed_hook(project)
     installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")  # rebase/reset drift
 
-    notices = WrapRunner(project)._resync_managed_hooks()
+    notices = _runner(project)._resync_managed_hooks()
 
     # Healed in place ...
     body = installed.read_text()
@@ -102,7 +122,7 @@ def test_resync_heals_drifted_hook_and_names_it(project_with_hook_role):
 
 def test_resync_silent_when_in_sync(project_with_hook_role):
     """A clean (already in-sync) start emits NO notice and holds for nothing."""
-    notices = WrapRunner(project_with_hook_role)._resync_managed_hooks()
+    notices = _runner(project_with_hook_role)._resync_managed_hooks()
     assert notices == []
 
 
@@ -112,7 +132,7 @@ def test_resync_is_failopen_on_roleless_project(tmp_path):
     project.mkdir()
     _git_init(project)
     ProjectConfig(provider="gemini").save(project / "ai-hats.yaml")
-    assert WrapRunner(project)._resync_managed_hooks() == []
+    assert _runner(project)._resync_managed_hooks() == []
 
 
 def test_resync_failure_returns_warn_notice_and_traces(tmp_path):
@@ -124,8 +144,8 @@ def test_resync_failure_returns_warn_notice_and_traces(tmp_path):
     _git_init(project)
     ProjectConfig(provider="gemini").save(project / "ai-hats.yaml")
 
-    runner = WrapRunner(project)
-    runner.assembler.hooks.sync_hooks = lambda *a, **k: (_ for _ in ()).throw(
+    runner = _runner(project)
+    runner.hooks.sync_hooks = lambda *a, **k: (_ for _ in ()).throw(
         RuntimeError("boom")
     )
     session = runner.session_mgr.create_session()

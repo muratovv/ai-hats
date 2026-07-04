@@ -20,7 +20,6 @@ from .runtime_common import (  # noqa: F401
     _claude_jsonl_path,
     _discover_claude_jsonl,
     _print_session_start,
-    _composition_snapshot,
     _fmt_duration,
     _collect_trace_stats,
     _format_tokens,

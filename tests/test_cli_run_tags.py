@@ -37,7 +37,7 @@ class _StubRunner:
 
     last_kwargs: dict | None = None
 
-    def __init__(self, project_dir: Path) -> None:
+    def __init__(self, project_dir: Path, _payload) -> None:
         self.project_dir = project_dir
 
     def run(self, **kwargs):

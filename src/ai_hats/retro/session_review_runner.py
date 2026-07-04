@@ -319,8 +319,17 @@ class SessionReviewRunner:
     def _get_runner(self) -> "SubAgentRunner":
         if self._subagent_runner is not None:
             return self._subagent_runner
+        from ..composition_seam import build_composition_payload
         from ..runtime import SubAgentRunner
-        return SubAgentRunner(self.project_dir)
+
+        # HATS-865: compose ONCE at this integrator-side seam; the retry loop
+        # in _run_and_validate shares the composition. strict=False — a broken
+        # session-reviewer role surfaces via HATS-271 (empty transcript), not
+        # a seam raise.
+        payload = build_composition_payload(
+            self.project_dir, role_override="session-reviewer", strict=False,
+        )
+        return SubAgentRunner(self.project_dir, payload)
 
     def _review_model(self) -> str:
         """Read ``feedback.session_retro.review_model`` (with deprecated alias).
@@ -356,7 +365,6 @@ class SessionReviewRunner:
         last_md = ""
         while True:
             session = runner.run(
-                role_name="session-reviewer",
                 task=current_prompt,
                 model=review_model,
                 # NONE: sub-agent needs access to real .agent/ (gitignored,
