@@ -981,7 +981,7 @@ class TaskManager:
                 epic.completed_at = ""
                 reason = f"reopened: live child {child.id} ({child.state.value})"
                 epic.log_work(f"Auto-reopened done → execute ({reason})")
-                # No _setup_worktree — auto-reopened epics get no worktree.
+                # No worktree effect — auto-reopened epics get no worktree.
             elif epic.state in (
                 TaskState.BRAINSTORM,
                 TaskState.PLAN,
@@ -1022,7 +1022,7 @@ class TaskManager:
                     epic.transition_to(TaskState.EXECUTE)
                     reason = f"activated: child {child.id} ({child.state.value}) taken"
                     epic.log_work(f"Auto-activated {from_state.value} -> execute ({reason})")
-                    # No _setup_worktree — epics never get a worktree here.
+                    # No worktree effect — epics never get a worktree here.
 
             if reason is None:
                 return []
