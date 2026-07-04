@@ -40,7 +40,7 @@ from .manager import (
 )
 
 __all__ = [
-    # Carry schema (HATS-863; ADR-0014 §2 — the wt package owns its schema)
+    # Carry schema
     "WorktreeCarry",
     "WorktreeHook",
     "WT_TEARDOWN_EVENTS",
