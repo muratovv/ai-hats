@@ -27,12 +27,16 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
-- **Parallel `config customize` no longer loses additions** (HATS-526). The
-  command's read-modify-write ran unlocked, so concurrent calls were
-  last-writer-wins (3 parallel `--add-trait --global` kept 1 of 3). The full
-  cycle now runs under a cross-process `file_lock` lock (new `ai_hats_core`
-  primitive, `filelock`-backed) on both layers; contention past 10s exits
-  with a friendly error instead of hanging.
+- **Concurrent `ai-hats.yaml` / `customizations.yaml` writers no longer lose
+  each other's changes** (HATS-526). Every config writer (customize, `config
+  set`, `init`/`bump`, session-start `set_role`, relocate, feedback) loaded
+  the file at command start, mutated and saved the whole object — any
+  concurrent write since the load was silently dropped (3 parallel
+  `customize --add-trait --global` kept 1 of 3). Writes now go through
+  `locked_update`: a cross-process `file_lock` (new `ai_hats_core` primitive,
+  `filelock`-backed) around a fresh re-read plus only the caller's field
+  delta. Contention past 10s exits with a friendly error instead of hanging;
+  a static guard test keeps whole-object saves from coming back.
 
 ## [0.13.0] - 2026-07-03
 
