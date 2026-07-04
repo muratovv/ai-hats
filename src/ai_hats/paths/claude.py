@@ -14,15 +14,31 @@ from __future__ import annotations
 from pathlib import Path
 
 
+AI_HATS_MANAGED_MARKER = ".ai-hats-managed"
+
+
+def claude_dir(base: Path) -> Path:
+    """Claude Code's config dir under ``base``: ``.claude/``."""
+    return base / ".claude"
+
+
 def claude_skills_dir(base: Path) -> Path:
     """Claude Code's skill auto-discovery dir under ``base``: ``.claude/skills/``.
 
     ``base`` is a project root or the user home — Claude Code scans both
     scopes (HATS-901/907).
     """
-    return base / ".claude" / "skills"
+    return claude_dir(base) / "skills"
+
+
+def claude_settings_json(base: Path) -> Path:
+    """Claude Code's project settings file: ``.claude/settings.json``."""
+    return claude_dir(base) / "settings.json"
 
 
 __all__ = [
+    "AI_HATS_MANAGED_MARKER",
+    "claude_dir",
+    "claude_settings_json",
     "claude_skills_dir",
 ]

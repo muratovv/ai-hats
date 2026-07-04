@@ -39,7 +39,7 @@ from .paths import (
 )
 from .paths.constants import LIBRARIES_DIRNAME
 from .placeholders import expand_path_placeholders
-from .plugin_dir import drop_legacy_skills_mirror
+from .plugin_dir import drop_legacy_claude_publish, drop_legacy_skills_mirror
 from ai_hats_core.safe_delete import discard as _safe_discard
 from ai_hats_core.safe_delete import replace as _safe_replace
 from .providers import (
@@ -313,77 +313,11 @@ class Assembler:
         self._cleanup_legacy_claude_publish()
 
     def _cleanup_legacy_claude_publish(self) -> None:
-        """Remove `.claude/` publish artefacts replaced by the canonical aggregator (HATS-289).
-
-        Idempotent. User-authored files are left alone — only the
-        previously-managed publish set is targeted via the legacy
-        `.claude/.ai-hats-managed` manifest, plus the pre-HATS-294 skills
-        mirror via its own `.claude/skills/.ai-hats-managed` marker
-        (HATS-901). As a safety net we also remove the well-known
-        publish-only files (CLAUDE.md, priorities/role/skills_index,
-        traits/, rules/).
-        """
-        claude_dir = self.project_dir / ".claude"
-        if not claude_dir.is_dir():
-            return
-
+        """Thin seam over the shared legacy sweeps (HATS-905): the generic
+        unclaimed-marker sweeper runs the same procedures at bump; this path
+        keeps them firing on every refresh as before."""
         drop_legacy_skills_mirror(self.project_dir)
-
-        manifest = claude_dir / ".ai-hats-managed"
-        managed: set[str] = set()
-        if manifest.exists():
-            for line in manifest.read_text().splitlines():
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    managed.add(line)
-
-        # Manifest-listed files (excluding skills/, never managed by publish).
-        # HATS-470: routed via safe_delete so the .claude/role.md etc.
-        # belt-and-suspenders sweep is recoverable from trash.
-        for rel in managed:
-            if rel.startswith("skills/"):
-                continue
-            target = claude_dir / rel
-            _safe_discard(
-                target,
-                reason="claude-legacy-publish",
-                project_dir=self.project_dir,
-            )
-
-        # Well-known publish artefacts as belt-and-suspenders.
-        for rel in ("CLAUDE.md", "priorities.md", "role.md", "skills_index.md"):
-            _safe_discard(
-                claude_dir / rel,
-                reason="claude-legacy-publish",
-                project_dir=self.project_dir,
-            )
-        for sub in ("traits", "rules"):
-            sub_dir = claude_dir / sub
-            if sub_dir.is_dir():
-                # Preserve permissive "ignore_errors=True" semantics —
-                # original code chose best-effort cleanup for these dirs.
-                try:
-                    _safe_discard(
-                        sub_dir,
-                        reason="claude-legacy-publish",
-                        project_dir=self.project_dir,
-                    )
-                except OSError:
-                    pass
-
-        _safe_discard(
-            manifest,
-            reason="claude-legacy-manifest",
-            project_dir=self.project_dir,
-        )
-
-        # Best-effort empty-dir cleanup of `.claude/` itself if `skills/`
-        # is also absent — but never delete `.claude/skills/` content.
-        try:
-            if not any(claude_dir.iterdir()):
-                claude_dir.rmdir()  # safe-delete: ok empty-dir
-        except OSError:
-            pass
+        drop_legacy_claude_publish(self.project_dir)
 
     @staticmethod
     def _cleanup_obsolete_files(project_dir: Path) -> list[str]:
@@ -927,6 +861,11 @@ class Assembler:
 
             run_pending(self)
 
+        # 1b. Unclaimed-marker sweep — install_time only (HATS-905): dead
+        # mechanisms' leftovers reclaimed on init/bump, never on set_role.
+        if install_time:
+            self._sweep_unclaimed_markers()
+
         # 2. Heal — always.
         provider = get_provider(self.project_config.provider)
         self._ensure_scaffold(provider)
@@ -937,6 +876,14 @@ class Assembler:
         # inside materialize(), so non-git project dirs skip git hooks silently.
         # All idempotent and REQUIRED on set_role first-session bootstrap.
         self.hooks.materialize(result)
+
+    def _sweep_unclaimed_markers(self) -> None:
+        """Thin seam onto :func:`sweeper.run_unclaimed_sweep` (HATS-905)."""
+        from . import sweeper
+
+        sweeper.run_unclaimed_sweep(
+            self.project_dir, binary_behind=self.hooks.binary_behind_source()
+        )
 
     def _run_diagnostics(self) -> None:
         """Surface state-condition diagnostics on user-initiated paths only.

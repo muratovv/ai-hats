@@ -533,14 +533,15 @@ def wt_exec(cmd_args: tuple[str, ...]):
         console.print("[red]Active worktree has no path[/]")
         sys.exit(1)
 
+    from ai_hats_wt import workspace_pythonpath
+
     # HATS-887: strip GIT_* plumbing so `ai-hats wt exec -- git …` resolves from
     # the worktree (cwd), not an ambient GIT_DIR a merge/hook context exports.
     env = os.environ.copy()
     for _var in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
         env.pop(_var, None)
-    src_path = str(wt_path / "src")
-    existing = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = f"{src_path}:{existing}" if existing else src_path
+    # HATS-913: src alone Franken-mixes — packages/*/src must come from the worktree
+    env["PYTHONPATH"] = workspace_pythonpath(wt_path, env.get("PYTHONPATH", ""))
 
     try:
         result = subprocess.run(args, cwd=str(wt_path), env=env)
@@ -570,5 +571,8 @@ def wt_env():
         click.echo("# active worktree has no path", err=True)
         sys.exit(1)
 
+    from ai_hats_wt import workspace_pythonpath
+
     click.echo(f'export WT="{wt_path}"')
-    click.echo(f'export PYTHONPATH="{wt_path}/src${{PYTHONPATH:+:$PYTHONPATH}}"')
+    paths = workspace_pythonpath(wt_path)
+    click.echo(f'export PYTHONPATH="{paths}${{PYTHONPATH:+:$PYTHONPATH}}"')
