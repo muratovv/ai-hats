@@ -70,6 +70,9 @@ def config_feedback_session_retro(
     if background is not None:
         sr.background = background
 
-    cfg.save(path)
+    # Delta-write only the session_retro subtree this command owns (HATS-526).
+    from ..config.project import locked_update
+
+    locked_update(path, lambda c: setattr(c.feedback, "session_retro", sr))
     console.print("[green]Updated[/] feedback.session_retro")
     config_feedback_show.invoke(click.Context(config_feedback_show))

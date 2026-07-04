@@ -89,6 +89,26 @@ def test_parallel_global_customize_keeps_all_additions(
         assert roles[f"role-{i}"]["add"]["traits"] == [f"trait-{i}"]
 
 
+def test_parallel_set_and_customize_cross_command(project: Path) -> None:
+    """HATS-526 review extension: `config set` no longer wipes concurrent customize."""
+    procs = [
+        _spawn_hats(
+            project, "config", "customize", f"role-{i}",
+            "--add-trait", f"trait-{i}",
+        )
+        for i in range(N)
+    ]
+    procs.append(_spawn_hats(project, "config", "set", "--task-prefix", "ACME"))
+    _drain(procs)
+
+    on_disk = yaml.safe_load((project / "ai-hats.yaml").read_text())
+    assert on_disk["task_prefix"] == "ACME"
+    roles = on_disk.get("customizations", {})
+    assert sorted(roles) == [f"role-{i}" for i in range(N)], (
+        f"lost update: expected all {N} roles beside task_prefix, got {sorted(roles)}"
+    )
+
+
 def test_parallel_project_customize_keeps_all_additions(project: Path) -> None:
     procs = [
         _spawn_hats(

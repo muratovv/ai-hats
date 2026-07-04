@@ -473,8 +473,7 @@ def set_role(
         except ValueError as err:
             console.print(f"[red]Error[/]: {err}")
             raise SystemExit(1)
-        asm.project_config.provider = provider
-        asm.project_config.save(asm.config_path)
+        asm.save_config(provider=provider)
 
     # task-prefix is set independently of role/provider, and overwrites
     # any existing value (unlike `self init` which refuses conflicts).
@@ -484,8 +483,7 @@ def set_role(
         except ValueError as err:
             console.print(f"[red]Error[/]: {err}")
             raise SystemExit(1)
-        asm.project_config.task_prefix = validated
-        asm.project_config.save(asm.config_path)
+        asm.save_config(task_prefix=validated)
         console.print(f"[green]Task prefix set[/]: [bold]{validated}[/]")
 
     # --venv / --no-venv — pure yaml field, no filesystem state.
@@ -503,8 +501,7 @@ def set_role(
         if asm.project_config.venv_path == new_venv:
             console.print("[dim]venv_path unchanged[/]")
         else:
-            asm.project_config.venv_path = new_venv
-            asm.project_config.save(asm.config_path)
+            asm.save_config(venv_path=new_venv)
             label = new_venv if new_venv is not None else "managed (default)"
             console.print(f"[green]Updated[/]: venv_path = [bold]{label}[/]")
 
@@ -534,8 +531,7 @@ def set_role(
         if current == new_harness:
             console.print("[dim]harness unchanged[/]")
         else:
-            asm.project_config.harness = new_harness
-            asm.project_config.save(asm.config_path)
+            asm.save_config(harness=new_harness)
             console.print(f"[green]Updated[/]: channel = [bold]{new_channel.value}[/]")
 
     # --manage-gitignore / --no-manage-gitignore — pure yaml toggle.
@@ -543,8 +539,7 @@ def set_role(
         if asm.project_config.manage_gitignore == manage_gitignore:
             console.print("[dim]manage_gitignore unchanged[/]")
         else:
-            asm.project_config.manage_gitignore = manage_gitignore
-            asm.project_config.save(asm.config_path)
+            asm.save_config(manage_gitignore=manage_gitignore)
             console.print(
                 f"[green]Updated[/]: manage_gitignore = [bold]{manage_gitignore}[/]"
             )
