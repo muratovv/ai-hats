@@ -300,6 +300,7 @@ class SubAgentRunner:
                         tags=tags,
                         duration_s=time.monotonic() - t0,
                         extra_metrics={
+                            # metrics.json field vocabulary, not the funnel key
                             "claude_session_id": run_result.claude_session_id,
                             "total_cost_usd": run_result.total_cost_usd,
                             "num_turns": run_result.num_turns,

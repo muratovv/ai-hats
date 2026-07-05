@@ -23,6 +23,7 @@ from .constants import TraceTag, ENV_ROLE, PROVIDER_CLAUDE
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
+from .pipeline.keys import PIPELINE_FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
@@ -428,7 +429,7 @@ class WrapRunner:
         try:
             from .pipeline.loader import load_core_pipeline
 
-            load_core_pipeline("finalize-hitl")
+            load_core_pipeline(PIPELINE_FINALIZE_HITL)
         except Exception as exc:
             logger.warning("finalize-hitl preload failed", exc_info=True)
             summary = f"finalize-hitl preload failed: {type(exc).__name__}: {exc}"
