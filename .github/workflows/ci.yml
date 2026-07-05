@@ -26,7 +26,7 @@ jobs:
       - name: Install ruff
         run: pip install "ruff>=0.4"
       - name: ruff check
-        run: ruff check .
+        run: bash scripts/ci-local.sh lint
 
   test:
     name: test (py${{ matrix.python-version }})
@@ -44,7 +44,7 @@ jobs:
       - name: Install package + dev deps
         run: pip install -e ".[dev]"
       - name: Run unit suite across versions
-        run: pytest -m "not integration" -q
+        run: bash scripts/ci-local.sh unit
 
   coverage:
     # Authoritative coverage gate. Runs the unit suite PLUS the real-git
@@ -68,13 +68,7 @@ jobs:
           git config --global user.name "ai-hats CI"
           git config --global init.defaultBranch main
       - name: Run unit + non-e2e integration with coverage gate
-        run: |
-          pytest --ignore=tests/e2e/ \
-            --cov=ai_hats \
-            --cov-report=term-missing \
-            --cov-report=xml \
-            --cov-fail-under=78 \
-            -q
+        run: bash scripts/ci-local.sh coverage
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v7
         with:
@@ -94,10 +88,8 @@ jobs:
           cache: pip
       - name: Install package + security tools
         run: pip install -e ".[dev]"
-      - name: Bandit SAST (fail on medium+ severity)
-        run: bandit -r src/ -ll -q
-      - name: pip-audit (known CVEs in deps)
-        run: pip-audit
+      - name: Bandit SAST (fail on medium+ severity) + pip-audit
+        run: bash scripts/ci-local.sh security
 
   install-smoke:
     name: install-smoke (launcher)
@@ -145,4 +137,4 @@ jobs:
           git config --global user.name "ai-hats CI"
           git config --global init.defaultBranch main
       - name: Run curated e2e smoke subset
-        run: pytest -m "smoke and not quarantine and not live_claude" tests/e2e/ -q
+        run: bash scripts/ci-local.sh merge-smoke
