@@ -19,6 +19,7 @@ import click
 from ai_hats_core import LockTimeoutError, file_lock
 from rich.tree import Tree
 
+from ..paths import PROJECT_CONFIG
 from ..providers import PROVIDERS
 from ._helpers import _assembler, _project_dir, console
 
@@ -223,7 +224,7 @@ def init(
     for CI and scripted invocations.
     """
     project_dir = _project_dir()
-    already = (project_dir / "ai-hats.yaml").exists()
+    already = (project_dir / PROJECT_CONFIG).exists()
 
     # HATS-549: pre-bump snapshot for re-init paths (non-greenfield).
     # Greenfield init has nothing to back up — the project tree is
@@ -456,7 +457,7 @@ def set_role(
     asm = _assembler(project_dir)
 
     # Auto-init if project not yet initialized
-    if not (project_dir / "ai-hats.yaml").exists():
+    if not (project_dir / PROJECT_CONFIG).exists():
         try:
             asm.init(provider=provider, task_prefix=task_prefix)
         except ValueError as err:
@@ -477,7 +478,7 @@ def set_role(
 
     # task-prefix is set independently of role/provider, and overwrites
     # any existing value (unlike `self init` which refuses conflicts).
-    if task_prefix is not None and (project_dir / "ai-hats.yaml").exists():
+    if task_prefix is not None and (project_dir / PROJECT_CONFIG).exists():
         try:
             validated = ProjectConfig.validate_task_prefix(task_prefix)
         except ValueError as err:
@@ -730,7 +731,7 @@ def customize(
         raise click.UsageError("--global and --project are mutually exclusive")
 
     project_dir = _project_dir()
-    project_path = project_dir / "ai-hats.yaml"
+    project_path = project_dir / PROJECT_CONFIG
     user_path = UserConfig.default_path()
 
     # ----- SHOW mode -----

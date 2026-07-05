@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..models import FeedbackPolicy, ProjectConfig
+from ..paths import PROJECT_CONFIG
 
 
 RETRO_LOG_FILENAME = "retro.log"
@@ -84,7 +85,7 @@ def make_decision(
     """
     from ..paths import retros_dir, runs_dir
 
-    config_path = project_dir / "ai-hats.yaml"
+    config_path = project_dir / PROJECT_CONFIG
     metrics_path = runs_dir(project_dir) / f"session_{session_id}" / "metrics.json"
     try:
         action, reason = should_run(config_path, metrics_path)
@@ -217,7 +218,7 @@ def main() -> None:
 
     from ..paths import runs_dir
 
-    config_path = project_dir / "ai-hats.yaml"
+    config_path = project_dir / PROJECT_CONFIG
     metrics_path = runs_dir(project_dir) / f"session_{session_id}" / "metrics.json"
 
     action, reason = should_run(config_path, metrics_path)
