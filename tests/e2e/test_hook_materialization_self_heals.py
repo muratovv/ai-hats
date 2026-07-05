@@ -31,6 +31,8 @@ from click.testing import CliRunner
 from ai_hats.assembler import Assembler
 from ai_hats.cli import main
 from ai_hats.paths import hooks_dir, managed_runtime_hook_filename
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
+from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -49,7 +51,7 @@ def _binary_env() -> dict[str, str]:
 
     env = dict(os.environ)
     env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT)
-    env["AI_HATS_VENV"] = str(AI_HATS_PYTHON.parent.parent)
+    env[ENV_AI_HATS_VENV] = str(AI_HATS_PYTHON.parent.parent)
     return env
 
 
@@ -123,7 +125,7 @@ def _make_runtime_hook_project(tmp_path: Path) -> tuple[Path, Path]:
         "name: rt-role\npriorities: [Quality]\n"
         "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
     )
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
         "active_role: rt-role\n"
@@ -148,8 +150,8 @@ def test_session_start_heals_drifted_runtime_hook(tmp_path: Path, monkeypatch):
     # exactly the silent stale state HATS-833 targets (composed but not on disk).
     script.unlink()
     data = json.loads(settings.read_text())
-    data["hooks"]["PreToolUse"] = [
-        e for e in data["hooks"]["PreToolUse"] if "rt_skill" not in json.dumps(e)
+    data["hooks"][HOOK_PRE_TOOL_USE] = [
+        e for e in data["hooks"][HOOK_PRE_TOOL_USE] if "rt_skill" not in json.dumps(e)
     ]
     settings.write_text(json.dumps(data))
     assert "rt_skill" not in settings.read_text()
@@ -217,7 +219,7 @@ def _make_gate_project(tmp_path: Path) -> tuple[Path, Path]:
         "name: gate-role\npriorities: [Quality]\n"
         "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
     )
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "provider: gemini\nlibrary_paths:\n  - " + str(lib) + "\n"
     )
     return project, lib

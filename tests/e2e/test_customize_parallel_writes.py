@@ -20,6 +20,7 @@ import yaml
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 pytestmark = pytest.mark.integration
 
@@ -57,7 +58,7 @@ def _drain(procs: list[subprocess.Popen[str]]) -> None:
 def project(tmp_path: Path) -> Path:
     proj = tmp_path / "project"
     proj.mkdir()
-    ProjectConfig(provider="claude", library_paths=[]).save(proj / "ai-hats.yaml")
+    ProjectConfig(provider="claude", library_paths=[]).save(proj / PROJECT_CONFIG)
     Assembler(proj).init()
     return proj
 
@@ -101,7 +102,7 @@ def test_parallel_set_and_customize_cross_command(project: Path) -> None:
     procs.append(_spawn_hats(project, "config", "set", "--task-prefix", "ACME"))
     _drain(procs)
 
-    on_disk = yaml.safe_load((project / "ai-hats.yaml").read_text())
+    on_disk = yaml.safe_load((project / PROJECT_CONFIG).read_text())
     assert on_disk["task_prefix"] == "ACME"
     roles = on_disk.get("customizations", {})
     assert sorted(roles) == [f"role-{i}" for i in range(N)], (
@@ -119,7 +120,7 @@ def test_parallel_project_customize_keeps_all_additions(project: Path) -> None:
     ]
     _drain(procs)
 
-    on_disk = yaml.safe_load((project / "ai-hats.yaml").read_text())
+    on_disk = yaml.safe_load((project / PROJECT_CONFIG).read_text())
     roles = on_disk["customizations"]
     assert sorted(roles) == [f"role-{i}" for i in range(N)], (
         f"lost update: expected all {N} roles, got {sorted(roles)}"

@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from ai_hats.constants import HOOK_POST_TOOL_USE
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = (
@@ -32,7 +33,7 @@ def _run(file_path, *, env_extra=None, raw=None, with_ruff=True):
     else:
         payload = json.dumps(
             {
-                "hook_event_name": "PostToolUse",
+                "hook_event_name": HOOK_POST_TOOL_USE,
                 "tool_name": "Edit",
                 "tool_input": {"file_path": str(file_path)},
             }

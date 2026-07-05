@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def _make_project(tmp_path: Path, *, ai_hats_dir: str = ".agent/ai-hats", venv_path: str | None = None, manage_gitignore: bool = True) -> Path:
@@ -20,7 +21,7 @@ def _make_project(tmp_path: Path, *, ai_hats_dir: str = ".agent/ai-hats", venv_p
         venv_path=venv_path,
         manage_gitignore=manage_gitignore,
     )
-    config.save(project / "ai-hats.yaml")
+    config.save(project / PROJECT_CONFIG)
 
     # Populate the ai_hats_dir with realistic content.
     base = project / ai_hats_dir
@@ -64,7 +65,7 @@ def test_relocate_happy_path(tmp_path):
     assert not (project / ".agent" / "ai-hats").exists()
 
     # yaml updated
-    cfg = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    cfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert cfg.ai_hats_dir == ".foo"
 
     # .gitignore swapped
@@ -95,7 +96,7 @@ def test_relocate_destination_collision_raises(tmp_path):
         asm.relocate(".foo")
 
     # yaml NOT updated on failure
-    cfg = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    cfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert cfg.ai_hats_dir == ".agent/ai-hats"
 
 

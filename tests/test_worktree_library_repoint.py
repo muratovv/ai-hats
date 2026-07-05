@@ -21,6 +21,7 @@ from pathlib import Path
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats_wt import WorktreeManager
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def _git(cwd: Path, *args: str) -> None:
@@ -39,7 +40,7 @@ def _make_downstream_project(root: Path) -> None:
     _init_repo(root)
     (root / "libraries" / "skills" / "demo").mkdir(parents=True)
     (root / "libraries" / "skills" / "demo" / "SKILL.md").write_text("main copy\n")
-    ProjectConfig(provider="gemini").save(root / "ai-hats.yaml")
+    ProjectConfig(provider="gemini").save(root / PROJECT_CONFIG)
     _git(root, "add", "libraries")  # ai-hats.yaml is gitignored by convention
     _git(root, "commit", "-m", "init", "--no-verify")
 
@@ -135,6 +136,6 @@ def test_only_the_libraries_layer_repoints_everything_else_stays_main(tmp_path, 
     monkeypatch.chdir(wt)
     asm = Assembler(proj)
 
-    assert asm.config_path == proj / "ai-hats.yaml"  # overlay stays MAIN
+    assert asm.config_path == proj / PROJECT_CONFIG  # overlay stays MAIN
     assert asm.agent_dir == proj / ".agent"  # tracker/sessions stay MAIN
     assert asm.project_dir == proj  # the hop target is untouched

@@ -20,6 +20,7 @@ from ai_hats.paths import (
 # HATS-469: ``Assembler.bump()`` was removed; use the test-side pipeline
 # helper that mirrors ``cli/assembly.py::do_bump``.
 from tests._assembler_helpers import bump_pipeline
+from ai_hats.paths import PROJECT_CONFIG
 
 
 @pytest.fixture
@@ -88,7 +89,7 @@ injection: Other role injection.
         library_paths=[str(lib)],
         migration_step=latest_step(),
     )
-    config.save(project / "ai-hats.yaml")
+    config.save(project / PROJECT_CONFIG)
 
     return project, lib
 
@@ -96,7 +97,7 @@ injection: Other role injection.
 def test_init_creates_structure(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
-    ProjectConfig().save(project / "ai-hats.yaml")
+    ProjectConfig().save(project / PROJECT_CONFIG)
 
     asm = Assembler(project)
     asm.init()
@@ -106,14 +107,14 @@ def test_init_creates_structure(tmp_path):
     assert (hooks_dir(project)).is_dir()
     assert (tasks_dir(project)).is_dir()
     assert (runs_dir(project)).is_dir()
-    assert (project / "ai-hats.yaml").exists()
+    assert (project / PROJECT_CONFIG).exists()
     assert (state_md_path(project)).exists()
 
 
 def test_init_is_idempotent(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
-    ProjectConfig().save(project / "ai-hats.yaml")
+    ProjectConfig().save(project / PROJECT_CONFIG)
 
     asm = Assembler(project)
     asm.init()
@@ -352,7 +353,7 @@ def test_bump_persists_default_role_heal(project_with_library):
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     # Write a yaml that triggers the heal: active_role set + default_role empty.
-    config_path = project / "ai-hats.yaml"
+    config_path = project / PROJECT_CONFIG
     config_path.write_text(
         "schema_version: 4\n"
         "provider: claude\n"
@@ -397,7 +398,7 @@ def test_bump_persists_deprecated_field_strip(project_with_library):
     import yaml as _yaml
 
     project, lib = project_with_library
-    config_path = project / "ai-hats.yaml"
+    config_path = project / PROJECT_CONFIG
     # Rewind migration_step to 0 + add deprecated ghost BEFORE init so
     # the first registry pass picks it up.
     raw = _yaml.safe_load(config_path.read_text())
@@ -422,7 +423,7 @@ def test_bump_no_op_when_yaml_already_normalized(project_with_library):
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    config_path = project / "ai-hats.yaml"
+    config_path = project / PROJECT_CONFIG
 
     # First bump: drives migration_step → latest_step via the registry runner,
     # plus any HATS-413 yaml heal still pending from the fixture's bare save.
@@ -456,7 +457,7 @@ def test_bump_skips_normalize_when_v07_migration_refuses(project_with_library):
     asm.init()
     asm.set_role("test-role")
 
-    config_path = project / "ai-hats.yaml"
+    config_path = project / PROJECT_CONFIG
     # Re-write with v0.6-shape yaml (deprecated field + empty default_role).
     config_path.write_text(
         "schema_version: 4\n"
@@ -503,7 +504,7 @@ def test_set_role_then_switch_provider(project_with_library):
     # Profile must track the new provider
     from ai_hats.models import ProjectConfig
 
-    profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    profile = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert profile.provider == "claude"
     assert profile.active_role == "test-role"
 
@@ -522,7 +523,7 @@ def test_wrap_reassembles_on_provider_mismatch(project_with_library):
     # Simulate what WrapRunner.run() does on provider mismatch
     from ai_hats.models import ProjectConfig
 
-    profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    profile = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert profile.provider == "gemini"
 
     target_provider = "claude"
@@ -536,7 +537,7 @@ def test_wrap_reassembles_on_provider_mismatch(project_with_library):
     assert "Role injection" in asm.composer.compose("test-role").role_injection
 
     # Profile updated
-    profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    profile = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert profile.provider == "claude"
 
 
@@ -546,9 +547,9 @@ def test_wrap_uses_default_role_when_no_active_role(project_with_library):
     # Set default_role in config
     from ai_hats.models import ProjectConfig
 
-    config = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    config = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     config.default_role = "test-role"
-    config.save(project / "ai-hats.yaml")
+    config.save(project / PROJECT_CONFIG)
 
     asm = Assembler(project, library_paths=[lib])
     asm.init()
@@ -556,7 +557,7 @@ def test_wrap_uses_default_role_when_no_active_role(project_with_library):
 
     from ai_hats.models import ProjectConfig
 
-    profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    profile = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert profile.active_role == ""  # No role set yet
 
     # Simulate what WrapRunner does: pick default_role
@@ -1021,7 +1022,7 @@ def test_bump_invokes_legacy_block_sweep(project_with_library):
     import yaml as _yaml
 
     project, lib = project_with_library
-    config_path = project / "ai-hats.yaml"
+    config_path = project / PROJECT_CONFIG
     raw = _yaml.safe_load(config_path.read_text())
     raw["migration_step"] = 0
     config_path.write_text(_yaml.safe_dump(raw))
@@ -1185,7 +1186,7 @@ def project_with_placeholder_library(tmp_path):
     )
 
     config = ProjectConfig(provider="claude", library_paths=[str(lib)])
-    config.save(project / "ai-hats.yaml")
+    config.save(project / PROJECT_CONFIG)
     return project, lib
 
 
@@ -1550,7 +1551,7 @@ def test_unknown_provider_in_yaml_fails_loud_at_load(tmp_path):
     unknown provider must still fail loud at the assembler read chokepoint."""
     project = tmp_path / "project"
     project.mkdir()
-    (project / "ai-hats.yaml").write_text("provider: bogus-provider\n")
+    (project / PROJECT_CONFIG).write_text("provider: bogus-provider\n")
 
     with pytest.raises(ValueError, match="bogus-provider"):
         Assembler(project_dir=project)

@@ -22,6 +22,7 @@ from click.testing import CliRunner
 from ai_hats.assembler import Assembler
 from ai_hats.cli import main
 from ai_hats.models import ProjectConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -47,7 +48,7 @@ def project_with_maintainer(tmp_path: Path, monkeypatch) -> Path:
         ai_hats_dir=".agent/ai-hats",
         active_role="maintainer",
         default_role="maintainer",
-    ).save(project / "ai-hats.yaml")
+    ).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[LIB_CORE, LIB_USAGE])
     asm.init()
     asm.set_role("maintainer", provider_name="claude")

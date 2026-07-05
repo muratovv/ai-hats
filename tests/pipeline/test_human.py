@@ -13,6 +13,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.paths import runs_dir
+from ai_hats.paths import METRICS_JSON, TRACE_LOG
 
 
 
@@ -53,5 +54,5 @@ def test_human_creates_session_artifacts(project_dir: Path, mock_runners):
     session_dirs = list(runs_dir(project_dir).glob("session_*"))
     assert len(session_dirs) == 1
     sd = session_dirs[0]
-    assert (sd / "trace.log").exists()
-    assert (sd / "metrics.json").exists()
+    assert (sd / TRACE_LOG).exists()
+    assert (sd / METRICS_JSON).exists()

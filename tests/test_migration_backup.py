@@ -27,6 +27,7 @@ from ai_hats.migration_backup import (
     _project_slug,
     snapshot_pre_bump,
 )
+from ai_hats.paths import PROJECT_CONFIG
 
 
 # ---------- Helpers ----------
@@ -34,7 +35,7 @@ from ai_hats.migration_backup import (
 
 def _seed_project(project_dir: Path) -> None:
     """Build a minimal post-bump-shape project: yaml, .agent/, settings."""
-    (project_dir / "ai-hats.yaml").write_text(
+    (project_dir / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
     agent = project_dir / ".agent" / "ai-hats" / "library" / "hooks"
@@ -76,7 +77,7 @@ def test_snapshot_captures_all_declared_scope_paths(
     with tarfile.open(snap, "r:gz") as tar:
         names = set(tar.getnames())
     # Files we seeded must be present
-    assert "ai-hats.yaml" in names
+    assert PROJECT_CONFIG in names
     assert "CLAUDE.md" in names
     assert ".gitignore" in names
     assert ".agent" in names
@@ -90,7 +91,7 @@ def test_snapshot_skips_paths_not_on_disk(tmp_path: Path, monkeypatch: pytest.Mo
     .githooks/) are silently skipped — not an error."""
     project = tmp_path / "proj"
     project.mkdir()
-    (project / "ai-hats.yaml").write_text("schema_version: 4\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 4\n")
     _isolate_backup_dir(monkeypatch, tmp_path)
 
     snap = snapshot_pre_bump(project)
@@ -98,7 +99,7 @@ def test_snapshot_skips_paths_not_on_disk(tmp_path: Path, monkeypatch: pytest.Mo
     assert snap is not None
     with tarfile.open(snap, "r:gz") as tar:
         names = set(tar.getnames())
-    assert names == {"ai-hats.yaml"}
+    assert names == {PROJECT_CONFIG}
 
 
 def test_snapshot_works_on_empty_greenfield(
@@ -123,7 +124,7 @@ def test_snapshot_preserves_file_modes(tmp_path: Path, monkeypatch: pytest.Monke
     restore is byte-AND-mode-identical."""
     project = tmp_path / "proj"
     project.mkdir()
-    (project / "ai-hats.yaml").write_text("schema_version: 4\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 4\n")
     hook = project / ".agent" / "ai-hats" / "library" / "hooks" / "x.sh"
     hook.parent.mkdir(parents=True)
     hook.write_text("#!/bin/sh\n")
@@ -152,14 +153,14 @@ def test_snapshot_round_trip_restores_state_byte_for_byte(
     _seed_project(project)
     _isolate_backup_dir(monkeypatch, tmp_path)
     original_settings = (claude_settings_json(project)).read_bytes()
-    original_yaml = (project / "ai-hats.yaml").read_bytes()
+    original_yaml = (project / PROJECT_CONFIG).read_bytes()
 
     snap = snapshot_pre_bump(project)
     assert snap is not None
 
     # Simulate a destructive bump: mutate the files.
     (claude_settings_json(project)).write_text('{"DESTROYED": true}')
-    (project / "ai-hats.yaml").write_text("DESTROYED")
+    (project / PROJECT_CONFIG).write_text("DESTROYED")
     (
         project / ".agent" / "ai-hats" / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
     ).unlink()
@@ -169,7 +170,7 @@ def test_snapshot_round_trip_restores_state_byte_for_byte(
         tar.extractall(path=project, filter="data")
 
     assert (claude_settings_json(project)).read_bytes() == original_settings
-    assert (project / "ai-hats.yaml").read_bytes() == original_yaml
+    assert (project / PROJECT_CONFIG).read_bytes() == original_yaml
     assert (
         project / ".agent" / "ai-hats" / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
     ).exists()
@@ -368,7 +369,7 @@ def test_scope_paths_includes_critical_files() -> None:
     guard against accidentally dropping an entry."""
     assert ".agent" in BACKUP_SCOPE_PATHS
     assert ".claude/settings.json" in BACKUP_SCOPE_PATHS
-    assert "ai-hats.yaml" in BACKUP_SCOPE_PATHS
+    assert PROJECT_CONFIG in BACKUP_SCOPE_PATHS
 
 
 # ---------- Exclusions (.venv, __pycache__, bytecode) ----------
@@ -406,7 +407,7 @@ def test_venv_and_pycache_excluded_from_tarball(
     assert not any(".cache" in n.split("/") for n in names)
     assert not any(n.endswith(".pyc") for n in names)
     # Sanity: non-excluded content still present.
-    assert "ai-hats.yaml" in names
+    assert PROJECT_CONFIG in names
     assert ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh" in names
 
 
@@ -454,4 +455,4 @@ def test_snapshot_drops_symlinks_from_tarball(
         names = set(tar.getnames())
     assert ".agent/external-link" not in names
     # Sanity: non-symlink content still captured.
-    assert "ai-hats.yaml" in names
+    assert PROJECT_CONFIG in names

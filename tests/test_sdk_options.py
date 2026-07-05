@@ -14,6 +14,7 @@ from ai_hats.sdk_options import (
     build_first_user_message,
     build_options,
 )
+from ai_hats.constants import ENV_ROLE
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +322,7 @@ def test_build_options_settings_passthrough(project_dir: Path) -> None:
 
 
 def test_build_options_extra_env_copied(project_dir: Path) -> None:
-    env = {"AI_HATS_ROLE": "maintainer", "FOO": "bar"}
+    env = {ENV_ROLE: "maintainer", "FOO": "bar"}
     opts = build_options(
         _empty_composition(),
         provider=ClaudeProvider(),

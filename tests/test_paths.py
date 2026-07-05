@@ -42,11 +42,12 @@ from ai_hats.paths import (
     versions_root,
     worktrees_dir,
 )
+from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR, ENV_AI_HATS_VENV, PROJECT_CONFIG
 
 
 def test_ai_hats_dir_default(tmp_path, monkeypatch):
     """No env override → default <project>/.agent/ai-hats/."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     base = ai_hats_dir(tmp_path)
     assert base == tmp_path / ".agent" / "ai-hats"
     assert not base.exists()  # HATS-839: pure resolution, nothing created
@@ -55,7 +56,7 @@ def test_ai_hats_dir_default(tmp_path, monkeypatch):
 def test_ai_hats_dir_env_override(tmp_path, monkeypatch):
     """AI_HATS_DIR overrides default. Project dir ignored."""
     custom = tmp_path / "custom-runtime"
-    monkeypatch.setenv("AI_HATS_DIR", str(custom))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(custom))
     base = ai_hats_dir(tmp_path / "project")
     assert base == custom
     assert not base.exists()
@@ -64,7 +65,7 @@ def test_ai_hats_dir_env_override(tmp_path, monkeypatch):
 def test_ai_hats_dir_env_expands_user(tmp_path, monkeypatch):
     """AI_HATS_DIR with ~ gets expanded."""
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("AI_HATS_DIR", "~/my-ai-hats")
+    monkeypatch.setenv(ENV_AI_HATS_DIR, "~/my-ai-hats")
     base = ai_hats_dir(tmp_path / "project")
     assert base == tmp_path / "my-ai-hats"
     assert not base.exists()
@@ -73,11 +74,11 @@ def test_ai_hats_dir_env_expands_user(tmp_path, monkeypatch):
 def test_ai_hats_dir_foreign_pair_ignored(tmp_path, monkeypatch):
     """HATS-897: a pin pair leaked from ANOTHER project's session is ignored."""
     foreign_root = tmp_path / "other-repo"
-    monkeypatch.setenv("AI_HATS_DIR", str(foreign_root / ".agent" / "ai-hats"))
-    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(foreign_root))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(foreign_root / ".agent" / "ai-hats"))
+    monkeypatch.setenv(AI_HATS_PROJECT_DIR_ENV, str(foreign_root))
     project = tmp_path / "project"
     project.mkdir()
-    with pytest.warns(UserWarning, match="AI_HATS_DIR"):
+    with pytest.warns(UserWarning, match=ENV_AI_HATS_DIR):
         base = ai_hats_dir(project)
     assert base == project / ".agent" / "ai-hats"
 
@@ -89,33 +90,33 @@ def test_ai_hats_dir_matching_pair_honored(tmp_path, monkeypatch):
     link = tmp_path / "link"
     link.symlink_to(project)
     custom = tmp_path / "custom-runtime"
-    monkeypatch.setenv("AI_HATS_DIR", str(custom))
-    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(link))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(custom))
+    monkeypatch.setenv(AI_HATS_PROJECT_DIR_ENV, str(link))
     assert ai_hats_dir(project) == custom
 
 
 def test_ai_hats_dir_pair_var_alone_is_noop(tmp_path, monkeypatch):
     """HATS-897: AI_HATS_PROJECT_DIR without AI_HATS_DIR changes nothing."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(tmp_path / "other-repo"))
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
+    monkeypatch.setenv(AI_HATS_PROJECT_DIR_ENV, str(tmp_path / "other-repo"))
     assert ai_hats_dir(tmp_path) == tmp_path / ".agent" / "ai-hats"
 
 
 def test_ensure_ai_hats_dir_foreign_pair_is_not_optin(tmp_path, monkeypatch):
     """HATS-897: a leaked pair must not validate write ops in a stray dir."""
     foreign_root = tmp_path / "other-repo"
-    monkeypatch.setenv("AI_HATS_DIR", str(foreign_root / ".agent" / "ai-hats"))
-    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(foreign_root))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(foreign_root / ".agent" / "ai-hats"))
+    monkeypatch.setenv(AI_HATS_PROJECT_DIR_ENV, str(foreign_root))
     stray = tmp_path / "stray"
     stray.mkdir()
-    with pytest.warns(UserWarning, match="AI_HATS_DIR"):
+    with pytest.warns(UserWarning, match=ENV_AI_HATS_DIR):
         with pytest.raises(NotAnAiHatsProjectError):
             ensure_ai_hats_dir(stray)
 
 
 def test_ai_hats_dir_pure_resolution_creates_nothing(tmp_path, monkeypatch):
     """HATS-839: ai_hats_dir resolves a stable path but never creates it."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     first = ai_hats_dir(tmp_path)
     second = ai_hats_dir(tmp_path)
     assert first == second
@@ -124,7 +125,7 @@ def test_ai_hats_dir_pure_resolution_creates_nothing(tmp_path, monkeypatch):
 
 def test_traces_dir_under_ai_hats(tmp_path, monkeypatch):
     """traces_dir is <ai_hats_dir>/traces — pure resolution, not created (HATS-839)."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     td = traces_dir(tmp_path)
     assert td == tmp_path / ".agent" / "ai-hats" / "traces"
     assert not td.exists()
@@ -133,7 +134,7 @@ def test_traces_dir_under_ai_hats(tmp_path, monkeypatch):
 def test_traces_dir_respects_env_override(tmp_path, monkeypatch):
     """AI_HATS_DIR cascades: traces_dir lives under the override."""
     custom = tmp_path / "custom"
-    monkeypatch.setenv("AI_HATS_DIR", str(custom))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(custom))
     td = traces_dir(tmp_path / "project")
     assert td == custom / "traces"
     assert not td.exists()
@@ -141,7 +142,7 @@ def test_traces_dir_respects_env_override(tmp_path, monkeypatch):
 
 def test_pipeline_steps_dir_under_ai_hats(tmp_path, monkeypatch):
     """pipeline_steps_dir is <ai_hats_dir>/pipeline_steps/."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     psd = pipeline_steps_dir(tmp_path)
     assert psd == tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
     assert not psd.exists()
@@ -150,7 +151,7 @@ def test_pipeline_steps_dir_under_ai_hats(tmp_path, monkeypatch):
 def test_pipeline_steps_dir_respects_env_override(tmp_path, monkeypatch):
     """AI_HATS_DIR cascades into pipeline_steps_dir resolution too."""
     custom = tmp_path / "custom"
-    monkeypatch.setenv("AI_HATS_DIR", str(custom))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(custom))
     psd = pipeline_steps_dir(tmp_path / "project")
     assert psd == custom / "pipeline_steps"
     assert not psd.exists()
@@ -161,7 +162,7 @@ def test_pipeline_steps_dir_respects_env_override(tmp_path, monkeypatch):
 
 def test_ensure_ai_hats_dir_raises_for_non_project(tmp_path, monkeypatch):
     """A bare dir (no marker, no env) is not an ai-hats project → refuse, create nothing."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     with pytest.raises(NotAnAiHatsProjectError):
         ensure_ai_hats_dir(tmp_path)
     assert not (tmp_path / ".agent").exists()
@@ -169,8 +170,8 @@ def test_ensure_ai_hats_dir_raises_for_non_project(tmp_path, monkeypatch):
 
 def test_ensure_ai_hats_dir_creates_with_yaml_marker(tmp_path, monkeypatch):
     """`ai-hats.yaml` marks an onboarded project → create + return the base."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    (tmp_path / "ai-hats.yaml").write_text("schema_version: 4\nprovider: claude\n")
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
+    (tmp_path / PROJECT_CONFIG).write_text("schema_version: 4\nprovider: claude\n")
     base = ensure_ai_hats_dir(tmp_path)
     assert base == tmp_path / ".agent" / "ai-hats"
     assert base.is_dir()
@@ -178,7 +179,7 @@ def test_ensure_ai_hats_dir_creates_with_yaml_marker(tmp_path, monkeypatch):
 
 def test_ensure_ai_hats_dir_creates_with_agent_marker(tmp_path, monkeypatch):
     """A pre-existing `.agent/` marks an onboarded project → create + return the base."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     (tmp_path / ".agent").mkdir()
     base = ensure_ai_hats_dir(tmp_path)
     assert base == tmp_path / ".agent" / "ai-hats"
@@ -188,7 +189,7 @@ def test_ensure_ai_hats_dir_creates_with_agent_marker(tmp_path, monkeypatch):
 def test_ensure_ai_hats_dir_creates_with_env_optin(tmp_path, monkeypatch):
     """`AI_HATS_DIR` is an explicit opt-in → create + return the override path."""
     custom = tmp_path / "runtime"
-    monkeypatch.setenv("AI_HATS_DIR", str(custom))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(custom))
     base = ensure_ai_hats_dir(tmp_path / "project")
     assert base == custom
     assert base.is_dir()
@@ -199,8 +200,8 @@ def test_ensure_ai_hats_dir_creates_with_env_optin(tmp_path, monkeypatch):
 
 def test_ai_hats_dir_reads_yaml(tmp_path, monkeypatch):
     """ai-hats.yaml `ai_hats_dir` field takes precedence over bootstrap default."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    (tmp_path / "ai-hats.yaml").write_text(
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: custom/runtime\nprovider: claude\n"
     )
     base = ai_hats_dir(tmp_path)
@@ -210,26 +211,26 @@ def test_ai_hats_dir_reads_yaml(tmp_path, monkeypatch):
 
 def test_ai_hats_dir_env_overrides_yaml(tmp_path, monkeypatch):
     """env AI_HATS_DIR beats yaml ai_hats_dir."""
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: from-yaml\nprovider: claude\n"
     )
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "from-env"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "from-env"))
     base = ai_hats_dir(tmp_path)
     assert base == tmp_path / "from-env"
 
 
 def test_ai_hats_dir_falls_back_when_yaml_missing_field(tmp_path, monkeypatch):
     """yaml without ai_hats_dir field → bootstrap default (e.g. v3 yaml before migration)."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    (tmp_path / "ai-hats.yaml").write_text("schema_version: 3\nprovider: claude\n")
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
+    (tmp_path / PROJECT_CONFIG).write_text("schema_version: 3\nprovider: claude\n")
     base = ai_hats_dir(tmp_path)
     assert base == tmp_path / ".agent" / "ai-hats"
 
 
 def test_ai_hats_dir_handles_corrupt_yaml(tmp_path, monkeypatch):
     """Malformed yaml → bootstrap default (no crash)."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    (tmp_path / "ai-hats.yaml").write_text("not: valid: yaml: [\n")
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
+    (tmp_path / PROJECT_CONFIG).write_text("not: valid: yaml: [\n")
     base = ai_hats_dir(tmp_path)
     assert base == tmp_path / ".agent" / "ai-hats"
 
@@ -249,7 +250,7 @@ def test_ai_hats_dir_handles_corrupt_yaml(tmp_path, monkeypatch):
     ],
 )
 def test_sessions_class_resolvers(tmp_path, monkeypatch, fn, subpath):
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     result = fn(tmp_path)
     assert result == tmp_path / ".agent" / "ai-hats" / subpath
     # New resolvers are pure: they don't mkdir the leaf.
@@ -257,7 +258,7 @@ def test_sessions_class_resolvers(tmp_path, monkeypatch, fn, subpath):
 
 
 def test_sessions_resolvers_respect_env_override(tmp_path, monkeypatch):
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "custom"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "custom"))
     assert runs_dir(tmp_path) == tmp_path / "custom" / "sessions" / "runs"
 
 
@@ -277,13 +278,13 @@ def test_sessions_resolvers_respect_env_override(tmp_path, monkeypatch):
     ],
 )
 def test_tracker_class_resolvers(tmp_path, monkeypatch, fn, subpath):
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     assert fn(tmp_path) == tmp_path / ".agent" / "ai-hats" / subpath
 
 
 def test_tracker_resolvers_respect_yaml(tmp_path, monkeypatch):
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    (tmp_path / "ai-hats.yaml").write_text("schema_version: 4\nai_hats_dir: ah\nprovider: claude\n")
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
+    (tmp_path / PROJECT_CONFIG).write_text("schema_version: 4\nai_hats_dir: ah\nprovider: claude\n")
     assert tasks_dir(tmp_path) == tmp_path / "ah" / "tracker" / "backlog" / "tasks"
     assert state_md_path(tmp_path) == tmp_path / "ah" / "STATE.md"
 
@@ -301,7 +302,7 @@ def test_tracker_resolvers_respect_yaml(tmp_path, monkeypatch):
     ],
 )
 def test_library_class_resolvers(tmp_path, monkeypatch, fn, subpath):
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     assert fn(tmp_path) == tmp_path / ".agent" / "ai-hats" / subpath
 
 
@@ -309,7 +310,7 @@ def test_library_class_resolvers(tmp_path, monkeypatch, fn, subpath):
 
 
 def test_last_backup_path(tmp_path, monkeypatch):
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     assert last_backup_path(tmp_path) == tmp_path / ".agent" / "ai-hats" / ".last_backup"
 
 
@@ -328,7 +329,7 @@ def _seed_legacy_layout(project_dir):
 
 
 def test_legacy_paths_by_class_filters(tmp_path, monkeypatch):
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     _seed_legacy_layout(tmp_path)
     sessions = legacy_paths_by_class(tmp_path, "sessions")
     tracker = legacy_paths_by_class(tmp_path, "tracker")
@@ -347,7 +348,7 @@ def test_legacy_paths_by_class_filters(tmp_path, monkeypatch):
 
 
 def test_legacy_paths_by_class_empty_project(tmp_path, monkeypatch):
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     for class_ in ("sessions", "tracker", "library", "root"):
         assert legacy_paths_by_class(tmp_path, class_) == []
 
@@ -382,16 +383,16 @@ def test_normalize_ai_hats_dir_rejects(bad):
 
 def test_venv_path_default(tmp_path, monkeypatch):
     """No env, no yaml → <ai_hats_dir>/.venv."""
-    monkeypatch.delenv("AI_HATS_VENV", raising=False)
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_VENV, raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     assert venv_path(tmp_path) == tmp_path / ".agent" / "ai-hats" / ".venv"
 
 
 def test_venv_path_yaml_relative(tmp_path, monkeypatch):
     """yaml.venv_path relative → resolved against project_dir."""
-    monkeypatch.delenv("AI_HATS_VENV", raising=False)
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    (tmp_path / "ai-hats.yaml").write_text(
+    monkeypatch.delenv(ENV_AI_HATS_VENV, raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
         "venv_path: .venv\nprovider: claude\n"
     )
@@ -400,10 +401,10 @@ def test_venv_path_yaml_relative(tmp_path, monkeypatch):
 
 def test_venv_path_yaml_absolute(tmp_path, monkeypatch):
     """yaml.venv_path absolute → returned as-is."""
-    monkeypatch.delenv("AI_HATS_VENV", raising=False)
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_VENV, raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     abs_target = tmp_path / "shared-venv"
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         f"schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
         f"venv_path: {abs_target}\nprovider: claude\n"
     )
@@ -412,27 +413,27 @@ def test_venv_path_yaml_absolute(tmp_path, monkeypatch):
 
 def test_venv_path_env_overrides_yaml(tmp_path, monkeypatch):
     """AI_HATS_VENV env beats yaml.venv_path."""
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
         "venv_path: .venv\nprovider: claude\n"
     )
     override = tmp_path / "env-override"
-    monkeypatch.setenv("AI_HATS_VENV", str(override))
+    monkeypatch.setenv(ENV_AI_HATS_VENV, str(override))
     assert venv_path(tmp_path) == override
 
 
 def test_venv_path_env_expands_user(tmp_path, monkeypatch):
     """AI_HATS_VENV with ~ gets expanded."""
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("AI_HATS_VENV", "~/my-venv")
+    monkeypatch.setenv(ENV_AI_HATS_VENV, "~/my-venv")
     assert venv_path(tmp_path / "project") == tmp_path / "my-venv"
 
 
 def test_venv_path_handles_corrupt_yaml(tmp_path, monkeypatch):
     """Malformed yaml → fall through to default (no crash)."""
-    monkeypatch.delenv("AI_HATS_VENV", raising=False)
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
-    (tmp_path / "ai-hats.yaml").write_text("not: valid: yaml: [\n")
+    monkeypatch.delenv(ENV_AI_HATS_VENV, raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
+    (tmp_path / PROJECT_CONFIG).write_text("not: valid: yaml: [\n")
     assert venv_path(tmp_path) == tmp_path / ".agent" / "ai-hats" / ".venv"
 
 
@@ -552,7 +553,7 @@ def _seed_version(
 
 def test_versions_layout_paths(tmp_path, monkeypatch):
     """versions_root / version_dir / current_pointer compose under ai_hats_dir."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     base = tmp_path / ".agent" / "ai-hats" / "versions"
     assert versions_root(tmp_path) == base
     assert version_dir(tmp_path, "abc123") == base / "abc123"
@@ -561,20 +562,20 @@ def test_versions_layout_paths(tmp_path, monkeypatch):
 
 def test_read_current_sha_present(tmp_path, monkeypatch):
     """Pointer present + versions/<sha>/ dir present → returns the sha."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     _seed_version(tmp_path, "deadbeef")
     assert read_current_sha(tmp_path) == "deadbeef"
 
 
 def test_read_current_sha_missing_pointer(tmp_path, monkeypatch):
     """No pointer at all → None (legacy install, not yet versioned)."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     assert read_current_sha(tmp_path) is None
 
 
 def test_read_current_sha_dangling(tmp_path, monkeypatch):
     """Pointer present but versions/<sha>/ dir absent → None (dangling)."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     _seed_version(tmp_path, "deadbeef", make_dir=False)
     assert read_current_sha(tmp_path) is None
 
@@ -585,7 +586,7 @@ def test_read_current_sha_corrupt_venv(tmp_path, monkeypatch):
     (HATS-647 review-finding #1), distinct from the incompleteness gate. HATS-790:
     runnability now keys on bin/python (the launcher execs `python -m ai_hats`),
     not the removed bin/ai-hats console script."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     _seed_version(tmp_path, "deadbeef", complete=False, sentinel=True)
     assert read_current_sha(tmp_path) is None
 
@@ -594,7 +595,7 @@ def test_read_current_sha_no_sentinel(tmp_path, monkeypatch):
     """HATS-648: bin/python present but no .complete sentinel (install killed
     mid-pip) → None. The sentinel is the completeness authority; an incomplete
     install is never resolved as current."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     _seed_version(tmp_path, "deadbeef", complete=True, sentinel=False)
     assert read_current_sha(tmp_path) is None
 
@@ -604,7 +605,7 @@ def test_read_current_sha_broken_python(tmp_path, monkeypatch):
     upgrade dangles the interpreter symlink) → None. The venv is complete but NOT
     runnable, so self update must NOT see already_current and must rebuild it; the
     HATS-655 dormancy advisory must not false-fire."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     _seed_version(tmp_path, "deadbeef", complete=True, sentinel=True, python=False)
     assert read_current_sha(tmp_path) is None
 
@@ -613,7 +614,7 @@ def test_is_usable_version_requires_python(tmp_path, monkeypatch):
     """HATS-657 / HATS-790: is_usable_version is True only when sentinel AND
     bin/python are present — stronger than is_complete (sentinel only). The old
     bin/ai-hats clause was dropped with the console script (HATS-790)."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     # Fully usable venv.
     _seed_version(tmp_path, "deadbeef", complete=True, sentinel=True, pointer=False)
     assert is_complete(tmp_path, "deadbeef") is True
@@ -627,7 +628,7 @@ def test_is_usable_version_requires_python(tmp_path, monkeypatch):
 def test_is_complete_gates_on_sentinel(tmp_path, monkeypatch):
     """is_complete is True iff the .complete sentinel is present — independent
     of bin/python (HATS-648)."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     _seed_version(tmp_path, "deadbeef", complete=True, sentinel=False, pointer=False)
     assert is_complete(tmp_path, "deadbeef") is False
     assert complete_sentinel(tmp_path, "deadbeef") == version_dir(
@@ -640,7 +641,7 @@ def test_is_complete_gates_on_sentinel(tmp_path, monkeypatch):
 @pytest.mark.parametrize("corrupt", ["", "  ", "..", "a/b", "../escape", "x\ny"])
 def test_read_current_sha_corrupt(tmp_path, monkeypatch, corrupt):
     """Empty / dotdot / path-separator pointer content → None (never escapes)."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     root = tmp_path / ".agent" / "ai-hats" / "versions"
     root.mkdir(parents=True, exist_ok=True)
     (root / "current").write_text(corrupt, encoding="utf-8")
@@ -649,24 +650,24 @@ def test_read_current_sha_corrupt(tmp_path, monkeypatch, corrupt):
 
 def test_venv_path_resolves_versioned(tmp_path, monkeypatch):
     """No env/yaml override + valid versions/current → versions/<sha>/."""
-    monkeypatch.delenv("AI_HATS_VENV", raising=False)
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_VENV, raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     _seed_version(tmp_path, "cafef00d")
     assert venv_path(tmp_path) == version_dir(tmp_path, "cafef00d")
 
 
 def test_venv_path_dangling_pointer_falls_back_to_legacy(tmp_path, monkeypatch):
     """Dangling versions/current → legacy .venv (lazy migration keeps working)."""
-    monkeypatch.delenv("AI_HATS_VENV", raising=False)
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_VENV, raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     _seed_version(tmp_path, "deadbeef", make_dir=False)
     assert venv_path(tmp_path) == tmp_path / ".agent" / "ai-hats" / ".venv"
 
 
 def test_venv_path_env_override_beats_versions(tmp_path, monkeypatch):
     """Explicit AI_HATS_VENV wins over a valid versions/current (HATS-339 override)."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     _seed_version(tmp_path, "cafef00d")
     override = tmp_path / "user-owned-venv"
-    monkeypatch.setenv("AI_HATS_VENV", str(override))
+    monkeypatch.setenv(ENV_AI_HATS_VENV, str(override))
     assert venv_path(tmp_path) == override

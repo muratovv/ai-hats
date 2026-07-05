@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner
 from ai_hats.update_check.cache import CacheEntry, write_cache
+from ai_hats.paths import ENV_AI_HATS_DIR, PROJECT_CONFIG
 
 # Cached installed SHA used by the fixtures below; tests that want the banner to
 # render patch ``detect_installed_sha`` to return this so the HATS-781 SHA-match
@@ -81,7 +82,7 @@ def test_step_is_continue_on_failure():
 def test_renders_banner_when_update_available_fallback_shas(tmp_path, monkeypatch, capsys):
     """No describe labels — banner uses short SHAs + ``+<behind> commits`` suffix."""
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _entry_with_update())
     step = RenderUpdateBanner()
     with patch(
@@ -105,7 +106,7 @@ def test_renders_banner_with_describe_labels(tmp_path, monkeypatch, capsys):
     suffix because the label already conveys the delta (e.g. ``v0.6.0-19-g…``).
     """
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(
         tmp_path,
         _entry_with_update(
@@ -132,7 +133,7 @@ def test_renders_banner_with_describe_labels(tmp_path, monkeypatch, capsys):
 
 def test_silent_when_no_update(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _entry_no_update())
     step = RenderUpdateBanner()
     step.run(project_dir=tmp_path)
@@ -143,7 +144,7 @@ def test_silent_when_no_update(tmp_path, monkeypatch, capsys):
 def test_silent_when_installed_ahead(tmp_path, monkeypatch, capsys):
     """HATS-432 regression: HEAD ahead of cached upstream must NOT fire banner."""
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _entry_installed_ahead())
     step = RenderUpdateBanner()
     step.run(project_dir=tmp_path)
@@ -154,7 +155,7 @@ def test_silent_when_installed_ahead(tmp_path, monkeypatch, capsys):
 def test_silent_when_diverged(tmp_path, monkeypatch, capsys):
     """Both sides carry unique commits → no clean fast-forward → no banner."""
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _entry_diverged())
     step = RenderUpdateBanner()
     step.run(project_dir=tmp_path)
@@ -164,7 +165,7 @@ def test_silent_when_diverged(tmp_path, monkeypatch, capsys):
 
 def test_silent_when_no_cache(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     step = RenderUpdateBanner()
     step.run(project_dir=tmp_path)
     captured = capsys.readouterr()
@@ -173,7 +174,7 @@ def test_silent_when_no_cache(tmp_path, monkeypatch, capsys):
 
 def test_silent_when_disabled(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _entry_with_update())
     step = RenderUpdateBanner()
     step.run(project_dir=tmp_path)
@@ -189,7 +190,7 @@ def test_silent_when_installed_sha_differs(tmp_path, monkeypatch, capsys):
     ``installed_sha`` — never render a banner about a build you are not
     running (the reported delta would be for the wrong commit)."""
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _entry_with_update())
     step = RenderUpdateBanner()
     with patch(
@@ -204,7 +205,7 @@ def test_silent_when_installed_sha_differs(tmp_path, monkeypatch, capsys):
 def test_renders_when_installed_sha_matches_short(tmp_path, monkeypatch, capsys):
     """Prefix-tolerant: a 9-char baked SHA matches its full rev-parse form."""
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _entry_with_update())
     step = RenderUpdateBanner()
     with patch(
@@ -219,7 +220,7 @@ def test_renders_when_installed_sha_matches_short(tmp_path, monkeypatch, capsys)
 def test_renders_when_installed_sha_unknown(tmp_path, monkeypatch, capsys):
     """Cannot detect the running SHA → preserve prior behaviour (render)."""
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _entry_with_update())
     step = RenderUpdateBanner()
     with patch(
@@ -234,8 +235,8 @@ def test_renders_when_installed_sha_unknown(tmp_path, monkeypatch, capsys):
 def test_silent_when_local_channel(tmp_path, monkeypatch, capsys):
     """LOCAL editable harness → banner hidden even with a matching update."""
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
-    (tmp_path / "ai-hats.yaml").write_text("harness:\n  channel: local\n  path: .\n")
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
+    (tmp_path / PROJECT_CONFIG).write_text("harness:\n  channel: local\n  path: .\n")
     write_cache(tmp_path, _entry_with_update())
     step = RenderUpdateBanner()
     with patch(

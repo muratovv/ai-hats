@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats.constants import HOOK_PRE_TOOL_USE
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = REPO_ROOT / "library/core/skills/worktree-isolation/hooks/wt_gate.py"
 
@@ -47,7 +49,7 @@ def _run(file_path, *, env_extra=None, raw=None):
         if raw is not None
         else json.dumps(
             {
-                "hook_event_name": "PreToolUse",
+                "hook_event_name": HOOK_PRE_TOOL_USE,
                 "tool_name": "Edit",
                 "tool_input": {"file_path": str(file_path)},
             }

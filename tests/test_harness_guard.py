@@ -12,6 +12,7 @@ from ai_hats.harness.diagnostic import diagnose_silent_session, is_zero_output
 from ai_hats.harness.errors import HarnessReliabilityError, HarnessZeroOutputError
 from ai_hats.harness.guard import apply_post_run_guard
 from ai_hats.pipeline.harness_policy import HarnessPolicy
+from ai_hats.paths import METRICS_JSON, REASONING_LOG
 
 
 # ---- fake session ----
@@ -26,7 +27,7 @@ class FakeSession:
 
     @property
     def metrics_path(self) -> Path:
-        return self.session_dir / "metrics.json"
+        return self.session_dir / METRICS_JSON
 
 
 def _make_session(tmp_path: Path, metrics: dict | None = None, *, stderr: str = ""):
@@ -34,7 +35,7 @@ def _make_session(tmp_path: Path, metrics: dict | None = None, *, stderr: str = 
     if metrics is not None:
         session.metrics_path.write_text(json.dumps(metrics))
     if stderr:
-        (tmp_path / "reasoning.log").write_text(stderr)
+        (tmp_path / REASONING_LOG).write_text(stderr)
     return session
 
 

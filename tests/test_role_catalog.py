@@ -27,6 +27,7 @@ from ai_hats.role_catalog import (
     expand_role_catalog,
     render_role_catalog,
 )
+from ai_hats.paths import PROJECT_CONFIG
 
 
 # --------------------------------------------------------------------- #
@@ -148,7 +149,7 @@ def test_wizard_session_prompt_lists_live_roles(tmp_path):
     project = tmp_path / "proj"
     project.mkdir()
     ProjectConfig(provider="claude", library_paths=_WT_LIBRARY_PATHS).save(
-        project / "ai-hats.yaml"
+        project / PROJECT_CONFIG
     )
     asm = Assembler(project)
     asm.init()
@@ -176,7 +177,7 @@ def test_non_wizard_prompt_has_no_catalog(tmp_path):
     project = tmp_path / "proj"
     project.mkdir()
     ProjectConfig(provider="claude", library_paths=_WT_LIBRARY_PATHS).save(
-        project / "ai-hats.yaml"
+        project / PROJECT_CONFIG
     )
     asm = Assembler(project)
     asm.init()

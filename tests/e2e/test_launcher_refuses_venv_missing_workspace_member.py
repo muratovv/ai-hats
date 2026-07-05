@@ -20,6 +20,8 @@ from pathlib import Path
 import pytest
 
 from tests.e2e._helpers.workspace import workspace_members
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 pytestmark = pytest.mark.install_heavy  # real uv installs at call time → capped via conftest
 
@@ -50,7 +52,7 @@ def test_e2e_regular_call_refused_for_each_missing_member(tmp_path: Path) -> Non
     project.mkdir()
 
     subprocess.run(["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)], check=True)
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "ai_hats_dir: .agent/ai-hats\n"
         "provider: claude\n"
@@ -60,9 +62,9 @@ def test_e2e_regular_call_refused_for_each_missing_member(tmp_path: Path) -> Non
     )
 
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher)
-    env["AI_HATS_REPO_URL"] = str(src_repo)
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher)
+    env[ENV_REPO_URL] = str(src_repo)
+    env.pop(ENV_AI_HATS_VENV, None)
     env.pop("PYTHONPATH", None)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)

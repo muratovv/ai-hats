@@ -25,6 +25,8 @@ import sys
 from pathlib import Path
 
 import pytest
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
+from ai_hats.constants import ENV_REPO_URL
 
 # Make ``_helpers`` importable as a flat package, rooted at tests/e2e/.
 # pytest doesn't treat tests/e2e/ as a package (no ``__init__.py`` at
@@ -250,7 +252,7 @@ def tmp_project(tmp_path: Path, ai_hats_shim: Path):
     project_path = tmp_path / "project"
     project_path.mkdir()
     ProjectConfig(provider="claude", library_paths=[]).save(
-        project_path / "ai-hats.yaml"
+        project_path / PROJECT_CONFIG
     )
     Assembler(project_path).init()
     return Project(
@@ -371,8 +373,8 @@ def tmp_venv_project(tmp_path: Path, _shared_launcher_venv, repo_root: Path):
         path=project_path, ai_hats_binary=launcher,
         env={
             # HATS-589: per-worker private build source (no-op on serial).
-            "AI_HATS_REPO_URL": str(build_src(repo_root)),
-            "AI_HATS_VENV": str(shared_venv),
+            ENV_REPO_URL: str(build_src(repo_root)),
+            ENV_AI_HATS_VENV: str(shared_venv),
         },
     )
 

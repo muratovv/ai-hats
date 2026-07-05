@@ -16,6 +16,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
+from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 
 def _run(cmd, *, cwd, env, timeout=60, expect_exit=0):
@@ -58,7 +60,7 @@ def _seed_project(project: Path, env: dict[str, str]) -> dict[str, Path]:
     mechanism (``install_git_hooks`` → cleanup) nor ``ensure_runtime_hooks``
     touches the seeded surfaces — only the generic sweeper acts on them.
     """
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: gemini\n"
         "ai_hats_dir: .agent/ai-hats\n"
@@ -86,7 +88,7 @@ def _seed_project(project: Path, env: dict[str, str]) -> dict[str, Path]:
     settings.parent.mkdir()
     settings.write_text(json.dumps({
         "hooks": {
-            "PreToolUse": [
+            HOOK_PRE_TOOL_USE: [
                 {
                     "matcher": "Bash",
                     "_ai_hats_managed": "ai-hats:hats-437",
@@ -134,7 +136,7 @@ def test_e2e_bump_sweeps_dead_owner_marker(swept_env, tmp_path):
     before_commits = _git_log_count(project, env)
 
     res = _run(
-        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal"],
+        [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
         cwd=project, env=env,
     )
 
@@ -173,13 +175,13 @@ def test_e2e_second_bump_repeats_warn_for_contested_entry(swept_env, tmp_path):
     paths = _seed_project(project, env)
 
     _run(
-        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal"],
+        [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
         cwd=project, env=env,
     )
     marker_after_first = paths["marker"].read_bytes()
 
     res = _run(
-        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal"],
+        [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
         cwd=project, env=env,
     )
 

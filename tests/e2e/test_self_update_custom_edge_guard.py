@@ -46,6 +46,8 @@ from pathlib import Path
 import pytest
 
 from _helpers.project import pin_edge_channel
+from ai_hats.paths import ENV_AI_HATS_VENV
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
@@ -120,9 +122,9 @@ def test_e2e_edge_guard_probes_custom_repo_default_branch(tmp_path: Path) -> Non
 
     # ----- bootstrap: launcher + venv (first install from src-repo) -----
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(src_repo)
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(src_repo)
+    env.pop(ENV_AI_HATS_VENV, None)
     env.pop("PYTHONPATH", None)  # must resolve ai_hats from the project venv only
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
@@ -152,7 +154,7 @@ def test_e2e_edge_guard_probes_custom_repo_default_branch(tmp_path: Path) -> Non
     # ----- swap probe target to the trunk-default fake remote (git+ form) -----
     # git+ prefix exercises the bare-URL coercion (_coerce_to_https) before
     # `git ls-remote`, which rejects a git+ argument outright.
-    env["AI_HATS_REPO_URL"] = f"git+file://{fake_remote}"
+    env[ENV_REPO_URL] = f"git+file://{fake_remote}"
 
     # ----- assertion: guard fires against trunk HEAD, exit 3 -----
     refuse = _run(
