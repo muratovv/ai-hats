@@ -17,23 +17,24 @@ from ..step import Step, StepIO
 
 class ExtractMarker(Step):
     failure_policy = "continue"
+    _NAME = "extract_marker"
 
     def __init__(self, params: Mapping[str, Any]) -> None:
         for required in ("start", "end", "out_key"):
             if required not in params:
-                raise ValueError(f"extract_marker: missing param {required!r}")
+                raise ValueError(f"{self._NAME}: missing param {required!r}")
         self.start: str = params["start"]
         self.end: str = params["end"]
         self.out_key: str = params["out_key"]
         if not self.out_key.isidentifier():
             raise ValueError(
-                f"extract_marker: out_key {self.out_key!r} is not a valid identifier"
+                f"{self._NAME}: out_key {self.out_key!r} is not a valid identifier"
             )
 
     @property
     def io(self) -> StepIO:
         return StepIO(
-            name="extract_marker",
+            name=self._NAME,
             requires=frozenset({"transcript_path"}),
             produces=frozenset({self.out_key}),
         )
