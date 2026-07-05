@@ -27,6 +27,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -85,7 +86,7 @@ def _seed_v06_project(project_dir: Path) -> dict[str, Path]:
     Returns a name → absolute path map so tests can refer back to seeded
     artefacts without re-deriving paths.
     """
-    (project_dir / "ai-hats.yaml").write_text(
+    (project_dir / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
@@ -174,11 +175,11 @@ def test_e2e_refuse_on_user_edit_default_behavior(installed_launcher, tmp_path):
 
     original_role = paths["role"].read_bytes()
     original_priorities = paths["priorities"].read_bytes()
-    original_yaml = (project / "ai-hats.yaml").read_bytes()
+    original_yaml = (project / PROJECT_CONFIG).read_bytes()
     before_commits = _git_log_count(project, env)
 
     res = _run(
-        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal"],
+        [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
         cwd=project, env=env, timeout=60, expect_exit=1,
     )
 
@@ -192,7 +193,7 @@ def test_e2e_refuse_on_user_edit_default_behavior(installed_launcher, tmp_path):
     # No writes anywhere — bump refused before any sweep / yaml normalize.
     assert paths["role"].read_bytes() == original_role
     assert paths["priorities"].read_bytes() == original_priorities
-    assert (project / "ai-hats.yaml").read_bytes() == original_yaml
+    assert (project / PROJECT_CONFIG).read_bytes() == original_yaml
     assert paths["library_rule_md"].is_file()
     assert paths["user_rule"].read_text() == "# user rule — DO NOT TOUCH\n"
 
@@ -229,7 +230,7 @@ def test_e2e_migrate_force_bypass_sweeps_without_commit(installed_launcher, tmp_
     before_commits = _git_log_count(project, env)
 
     res = _run(
-        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
+        [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
         cwd=project, env=env, timeout=60, expect_exit=0,
     )
 
@@ -261,7 +262,7 @@ def test_e2e_migrate_force_bypass_sweeps_without_commit(installed_launcher, tmp_
 
     # Yaml hardened on disk by ``_normalize_yaml`` (runs after migration).
     import yaml as _yaml
-    saved = _yaml.safe_load((project / "ai-hats.yaml").read_text())
+    saved = _yaml.safe_load((project / PROJECT_CONFIG).read_text())
     assert "imports_order" not in saved, saved
     assert saved.get("default_role") == "assistant", saved
 
@@ -291,7 +292,7 @@ def test_e2e_idempotent_rerun(installed_launcher, tmp_path):
     _git_init_commit(project, env)
 
     _run(
-        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
+        [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
         cwd=project, env=env, timeout=60, expect_exit=0,
     )
     # Snapshot the canonical dir after first run.
@@ -303,7 +304,7 @@ def test_e2e_idempotent_rerun(installed_launcher, tmp_path):
     }
 
     res = _run(
-        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
+        [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
         cwd=project, env=env, timeout=60, expect_exit=0,
     )
 
@@ -344,7 +345,7 @@ def test_e2e_check_branches_warns(installed_launcher, tmp_path):
     _git(project, "checkout", "-q", "main", env=env)
 
     res = _run(
-        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal", "--check-branches"],
+        [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal", "--check-branches"],
         cwd=project, env=env, timeout=60, expect_exit=1,
     )
 

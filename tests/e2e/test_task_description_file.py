@@ -23,6 +23,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 pytestmark = pytest.mark.integration
 
@@ -63,7 +64,7 @@ def project(tmp_path: Path) -> Path:
     """Minimal ai-hats project (no git needed for create/show)."""
     proj = tmp_path / "project"
     proj.mkdir()
-    ProjectConfig(provider="claude", library_paths=[]).save(proj / "ai-hats.yaml")
+    ProjectConfig(provider="claude", library_paths=[]).save(proj / PROJECT_CONFIG)
     Assembler(proj).init()
     return proj
 

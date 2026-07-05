@@ -11,6 +11,7 @@ from ai_hats.update_check.cache import (
     read_cache,
     write_cache,
 )
+from ai_hats.paths import ENV_AI_HATS_DIR
 
 
 def _entry(
@@ -36,18 +37,18 @@ def _entry(
 
 
 def test_cache_path_is_under_ai_hats_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     p = cache_path(tmp_path)
     assert p == tmp_path / "ai-hats-data" / ".cache" / "update-check.json"
 
 
 def test_read_cache_missing(tmp_path, monkeypatch):
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     assert read_cache(tmp_path) is None
 
 
 def test_write_then_read_roundtrip(tmp_path, monkeypatch):
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     original = _entry(
         "a" * 40,
         "b" * 40,
@@ -111,7 +112,7 @@ def test_has_update_false_when_counts_unknown():
 
 
 def test_corrupt_cache_returns_none(tmp_path, monkeypatch):
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     p = cache_path(tmp_path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("{not valid json")
@@ -119,7 +120,7 @@ def test_corrupt_cache_returns_none(tmp_path, monkeypatch):
 
 
 def test_missing_key_returns_none(tmp_path, monkeypatch):
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     p = cache_path(tmp_path)
     p.parent.mkdir(parents=True, exist_ok=True)
     # Missing remote_url — should fail the schema check gracefully.
@@ -133,7 +134,7 @@ def test_legacy_cache_without_counts_parses_but_suppresses_banner(tmp_path, monk
     stays False until the next probe rewrites with the new schema. This
     is the migration path; no explicit cache wipe needed.
     """
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     p = cache_path(tmp_path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(

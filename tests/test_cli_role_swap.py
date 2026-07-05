@@ -18,6 +18,7 @@ from ai_hats.assembler import Assembler
 
 # HATS-469: ``Assembler.bump()`` removed; use the test pipeline helper.
 from tests._assembler_helpers import bump_pipeline
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def md5(path: Path) -> str:
@@ -39,7 +40,7 @@ def project_two_roles(tmp_path: Path) -> Path:
         (d / "config.yaml").write_text(
             f"name: {name}\npriorities:\n  - Reliability\ninjection: |\n  {text}\n"
         )
-    (project / "ai-hats.yaml").write_text("schema_version: 3\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 3\nprovider: claude\n")
     return project
 
 
@@ -68,17 +69,17 @@ def test_role_swap_tracks_active_role_in_profile(
     asm = Assembler(project_two_roles)
     asm.init(provider="claude")
     asm.set_role("role-a", provider_name="claude")
-    profile = ProjectConfig.from_yaml(project_two_roles / "ai-hats.yaml")
+    profile = ProjectConfig.from_yaml(project_two_roles / PROJECT_CONFIG)
     assert profile.active_role == "role-a"
     assert "Role A injection." in asm.composer.compose("role-a").role_injection
 
     asm.set_role("role-b", provider_name="claude")
-    profile = ProjectConfig.from_yaml(project_two_roles / "ai-hats.yaml")
+    profile = ProjectConfig.from_yaml(project_two_roles / PROJECT_CONFIG)
     assert profile.active_role == "role-b"
     assert "Role B injection." in asm.composer.compose("role-b").role_injection
 
     asm.set_role("role-a", provider_name="claude")
-    profile = ProjectConfig.from_yaml(project_two_roles / "ai-hats.yaml")
+    profile = ProjectConfig.from_yaml(project_two_roles / PROJECT_CONFIG)
     assert profile.active_role == "role-a"
 
 
@@ -114,7 +115,7 @@ def test_set_role_gemini_still_inline(tmp_path: Path) -> None:
     (role_dir / "config.yaml").write_text(
         "name: r1\npriorities:\n  - Reliability\ninjection: |\n  Gemini role text.\n"
     )
-    (project / "ai-hats.yaml").write_text("schema_version: 3\nprovider: gemini\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 3\nprovider: gemini\n")
 
     Assembler(project).set_role("r1", provider_name="gemini")
     body = (project / "GEMINI.md").read_text()

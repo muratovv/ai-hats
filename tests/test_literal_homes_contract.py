@@ -204,9 +204,7 @@ def test_judge_markers_taught_where_extracted():
                         if end_marker:
                             markers_to_yaml[end_marker] = yaml_file.name
         except Exception as e:
-            raise AssertionError(
-                f"Failed to parse {yaml_file.name}: {e}"
-            ) from e
+            raise AssertionError(f"Failed to parse {yaml_file.name}: {e}") from e
 
     # Verify each marker is taught in library
     skills_dir = Path("library/core/skills")

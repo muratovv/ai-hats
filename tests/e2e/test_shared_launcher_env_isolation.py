@@ -35,6 +35,7 @@ from pathlib import Path
 import pytest
 
 from _helpers.env import launcher_subprocess_env
+from ai_hats.constants import ENV_REPO_URL
 
 
 @pytest.mark.integration
@@ -48,7 +49,7 @@ def test_absolute_pythonpath_leak_does_not_hide_builtin_roles(
     leaked_base = {**base_env, "PYTHONPATH": str(repo_root / "src")}
     env = launcher_subprocess_env(
         leaked_base,
-        repo_url=base_env["AI_HATS_REPO_URL"],
+        repo_url=base_env[ENV_REPO_URL],
         venv=shared_venv,
         user_home=tmp_path_factory.mktemp("isolation-user-home"),
     )

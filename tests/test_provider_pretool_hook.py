@@ -18,6 +18,8 @@ import pytest
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.paths import claude_dir, hooks_dir, managed_runtime_hook_filename
 from ai_hats.providers import ClaudeProvider, GeminiProvider
+from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
+from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 
 
 SETTINGS = Path(".claude") / "settings.json"
@@ -77,7 +79,7 @@ def _managed_command(project: Path, skill: str, script: str) -> str:
 def test_claude_writes_fresh_settings(tmp_path: Path) -> None:
     ClaudeProvider().ensure_runtime_hooks(tmp_path)
     data = _settings(tmp_path)
-    entries = data["hooks"]["PreToolUse"]
+    entries = data["hooks"][HOOK_PRE_TOOL_USE]
     assert len(entries) == 1
     entry = entries[0]
     assert entry["matcher"] == "Bash"
@@ -95,7 +97,7 @@ def test_guard_command_uses_claude_project_dir_prefix(tmp_path: Path) -> None:
     the bare-relative revert.
     """
     ClaudeProvider().ensure_runtime_hooks(tmp_path)
-    cmd = _settings(tmp_path)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    cmd = _settings(tmp_path)["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
     assert cmd.startswith("$CLAUDE_PROJECT_DIR/")
     assert cmd.endswith("/pre_bash_shared_state_guard.sh")
 
@@ -105,12 +107,12 @@ def test_out_of_project_hook_paths_warn_loudly(tmp_path: Path, monkeypatch) -> N
     # hooks out of the tree (HATS-380/395) — keep the absolute paths, but
     # never write them silently: a leaked env produces the same shape.
     base = tmp_path / "elsewhere" / "ai-hats"
-    monkeypatch.setenv("AI_HATS_DIR", str(base))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(base))
     project = tmp_path / "project"
     project.mkdir()
     with pytest.warns(UserWarning, match="outside the project"):
         ClaudeProvider().ensure_runtime_hooks(project)
-    cmd = _settings(project)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    cmd = _settings(project)["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
     assert cmd == str(base / "library" / "hooks" / "pre_bash_shared_state_guard.sh")
 
 
@@ -124,13 +126,13 @@ def test_foreign_session_pair_does_not_cross_write_settings(tmp_path: Path, monk
     # session leaks into this shell — bump in the victim project must keep its
     # settings.json on $CLAUDE_PROJECT_DIR paths, not the foreign checkout's.
     dev_repo = tmp_path / "dev-repo"
-    monkeypatch.setenv("AI_HATS_DIR", str(dev_repo / ".agent" / "ai-hats"))
-    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(dev_repo))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(dev_repo / ".agent" / "ai-hats"))
+    monkeypatch.setenv(AI_HATS_PROJECT_DIR_ENV, str(dev_repo))
     victim = tmp_path / "victim"
     (victim / ".agent").mkdir(parents=True)
-    with pytest.warns(UserWarning, match="AI_HATS_DIR"):
+    with pytest.warns(UserWarning, match=ENV_AI_HATS_DIR):
         ClaudeProvider().ensure_runtime_hooks(victim)
-    cmd = _settings(victim)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    cmd = _settings(victim)["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
     assert cmd == EXPECTED_REL
     assert str(dev_repo) not in (victim / SETTINGS).read_text()
 
@@ -141,7 +143,7 @@ def test_claude_double_apply_is_idempotent(tmp_path: Path) -> None:
     ClaudeProvider().ensure_runtime_hooks(tmp_path)
     second = _settings(tmp_path)
     assert first == second
-    assert len(second["hooks"]["PreToolUse"]) == 1
+    assert len(second["hooks"][HOOK_PRE_TOOL_USE]) == 1
 
 
 def test_claude_preserves_user_authored_entries(tmp_path: Path) -> None:
@@ -151,7 +153,7 @@ def test_claude_preserves_user_authored_entries(tmp_path: Path) -> None:
             {
                 "permissions": {"allow": ["Bash(ls:*)"]},
                 "hooks": {
-                    "PreToolUse": [
+                    HOOK_PRE_TOOL_USE: [
                         {
                             "matcher": "Bash",
                             "hooks": [{"type": "command", "command": "user/own.sh"}],
@@ -165,7 +167,7 @@ def test_claude_preserves_user_authored_entries(tmp_path: Path) -> None:
     ClaudeProvider().ensure_runtime_hooks(tmp_path)
     data = _settings(tmp_path)
     assert data["permissions"] == {"allow": ["Bash(ls:*)"]}
-    entries = data["hooks"]["PreToolUse"]
+    entries = data["hooks"][HOOK_PRE_TOOL_USE]
     # User entry kept + managed entry appended.
     assert len(entries) == 2
     commands = [e["hooks"][0]["command"] for e in entries]
@@ -186,7 +188,7 @@ def test_claude_lookalike_user_hook_does_not_suppress_managed_guard(tmp_path: Pa
         json.dumps(
             {
                 "hooks": {
-                    "PreToolUse": [
+                    HOOK_PRE_TOOL_USE: [
                         {
                             "matcher": "Bash",
                             "hooks": [
@@ -202,7 +204,7 @@ def test_claude_lookalike_user_hook_does_not_suppress_managed_guard(tmp_path: Pa
         )
     )
     ClaudeProvider().ensure_runtime_hooks(tmp_path)
-    entries = _settings(tmp_path)["hooks"]["PreToolUse"]
+    entries = _settings(tmp_path)["hooks"][HOOK_PRE_TOOL_USE]
     tags = [e.get("_ai_hats_managed") for e in entries]
     assert "ai-hats:hats-437" in tags, "managed guard suppressed by a look-alike user hook"
     commands = [e["hooks"][0]["command"] for e in entries]
@@ -217,7 +219,7 @@ def test_claude_respects_existing_manual_wiring(tmp_path: Path) -> None:
         json.dumps(
             {
                 "hooks": {
-                    "PreToolUse": [
+                    HOOK_PRE_TOOL_USE: [
                         {
                             "matcher": "Bash",
                             "hooks": [
@@ -233,7 +235,7 @@ def test_claude_respects_existing_manual_wiring(tmp_path: Path) -> None:
         )
     )
     ClaudeProvider().ensure_runtime_hooks(tmp_path)
-    entries = _settings(tmp_path)["hooks"]["PreToolUse"]
+    entries = _settings(tmp_path)["hooks"][HOOK_PRE_TOOL_USE]
     assert len(entries) == 1
     # Untouched
     assert entries[0]["hooks"][0]["command"] == "custom/pre_bash_shared_state_guard.sh"
@@ -248,9 +250,9 @@ def test_claude_updates_managed_entry_in_place(tmp_path: Path) -> None:
         "_ai_hats_managed": "ai-hats:hats-437",
         "hooks": [{"type": "command", "command": "stale/path.sh"}],
     }
-    (tmp_path / SETTINGS).write_text(json.dumps({"hooks": {"PreToolUse": [stale]}}))
+    (tmp_path / SETTINGS).write_text(json.dumps({"hooks": {HOOK_PRE_TOOL_USE: [stale]}}))
     ClaudeProvider().ensure_runtime_hooks(tmp_path)
-    entries = _settings(tmp_path)["hooks"]["PreToolUse"]
+    entries = _settings(tmp_path)["hooks"][HOOK_PRE_TOOL_USE]
     assert len(entries) == 1
     assert entries[0]["hooks"][0]["command"] == EXPECTED_REL
 
@@ -279,10 +281,12 @@ def test_non_object_root_leaves_file_untouched(tmp_path: Path) -> None:
 def test_pretool_list_user_shaped_object_left_alone(tmp_path: Path) -> None:
     """If hooks.PreToolUse is an object (not list), bail out cleanly."""
     claude_dir(tmp_path).mkdir()
-    (tmp_path / SETTINGS).write_text(json.dumps({"hooks": {"PreToolUse": {"unexpected": "shape"}}}))
+    (tmp_path / SETTINGS).write_text(
+        json.dumps({"hooks": {HOOK_PRE_TOOL_USE: {"unexpected": "shape"}}})
+    )
     ClaudeProvider().ensure_runtime_hooks(tmp_path)
     data = _settings(tmp_path)
-    assert data["hooks"]["PreToolUse"] == {"unexpected": "shape"}
+    assert data["hooks"][HOOK_PRE_TOOL_USE] == {"unexpected": "shape"}
 
 
 # ----- HATS-597: skill-declared runtime hooks -----
@@ -298,15 +302,15 @@ def test_claude_wires_skill_runtime_hooks_under_each_event(tmp_path: Path) -> No
         tmp_path / "skills",
         "skill-x",
         {
-            "PreToolUse": [("Bash", "hooks/pre.sh")],
-            "PostToolUse": [("Edit|Write", "hooks/post.sh")],
+            HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")],
+            HOOK_POST_TOOL_USE: [("Edit|Write", "hooks/post.sh")],
         },
     )
     ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
     data = _settings(proj)
 
     # hats-437 guard still present under PreToolUse.
-    pre = data["hooks"]["PreToolUse"]
+    pre = data["hooks"][HOOK_PRE_TOOL_USE]
     guard = [e for e in pre if e.get("_ai_hats_managed") == "ai-hats:hats-437"]
     assert len(guard) == 1
 
@@ -319,7 +323,7 @@ def test_claude_wires_skill_runtime_hooks_under_each_event(tmp_path: Path) -> No
     ]
 
     # Skill PostToolUse entry under the PostToolUse event.
-    post = data["hooks"]["PostToolUse"]
+    post = data["hooks"][HOOK_POST_TOOL_USE]
     pe = [e for e in post if e.get("_ai_hats_managed") == "ai-hats:skill-x:PostToolUse:Edit|Write"]
     assert len(pe) == 1
     assert pe[0]["matcher"] == "Edit|Write"
@@ -332,7 +336,7 @@ def test_claude_skill_hooks_idempotent(tmp_path: Path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
     skill = _skill_with_runtime_hooks(
-        tmp_path / "skills", "skill-x", {"PreToolUse": [("Bash", "hooks/pre.sh")]}
+        tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
     )
     ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
     first = _settings(proj)
@@ -350,7 +354,7 @@ def test_claude_removing_skill_sweeps_entries_keeps_guard_and_user(
         json.dumps(
             {
                 "hooks": {
-                    "PostToolUse": [
+                    HOOK_POST_TOOL_USE: [
                         {"matcher": "Bash", "hooks": [{"type": "command", "command": "user/p.sh"}]}
                     ]
                 }
@@ -360,7 +364,10 @@ def test_claude_removing_skill_sweeps_entries_keeps_guard_and_user(
     skill = _skill_with_runtime_hooks(
         tmp_path / "skills",
         "skill-x",
-        {"PreToolUse": [("Bash", "hooks/pre.sh")], "PostToolUse": [("Write", "hooks/post.sh")]},
+        {
+            HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")],
+            HOOK_POST_TOOL_USE: [("Write", "hooks/post.sh")],
+        },
     )
     ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
     # Skill leaves the composition → re-apply with no skills.
@@ -377,7 +384,7 @@ def test_claude_removing_skill_sweeps_entries_keeps_guard_and_user(
     assert "ai-hats:hats-437" in tags
     assert not any(t and t.startswith("ai-hats:skill-x") for t in tags)
     # User PostToolUse entry preserved.
-    post_cmds = [e["hooks"][0]["command"] for e in data["hooks"]["PostToolUse"]]
+    post_cmds = [e["hooks"][0]["command"] for e in data["hooks"][HOOK_POST_TOOL_USE]]
     assert "user/p.sh" in post_cmds
 
 
@@ -389,10 +396,10 @@ def test_claude_two_matchers_same_event_no_tag_collision(tmp_path: Path) -> None
     skill = _skill_with_runtime_hooks(
         tmp_path / "skills",
         "skill-x",
-        {"PreToolUse": [("Bash", "hooks/a.sh"), ("Edit", "hooks/b.sh")]},
+        {HOOK_PRE_TOOL_USE: [("Bash", "hooks/a.sh"), ("Edit", "hooks/b.sh")]},
     )
     ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
-    pre = _settings(proj)["hooks"]["PreToolUse"]
+    pre = _settings(proj)["hooks"][HOOK_PRE_TOOL_USE]
     skill_tags = {
         e["_ai_hats_managed"]
         for e in pre

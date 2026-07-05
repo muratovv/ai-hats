@@ -20,6 +20,7 @@ from ai_hats.runtime import (
     SUBAGENT_EXIT_TIMEOUT,
     _finalize_sub_agent,
 )
+from ai_hats.paths import REASONING_LOG, TRANSCRIPT_TXT
 
 
 def _make_session(tmp_path, *, provider: str = "claude") -> Session:
@@ -54,8 +55,8 @@ def test_success_saves_outputs_and_exit_code(tmp_path):
         stderr="log line\n",
     )
 
-    assert (session.session_dir / "transcript.txt").read_text() == "final answer\n"
-    assert (session.session_dir / "reasoning.log").read_text() == "log line\n"
+    assert (session.session_dir / TRANSCRIPT_TXT).read_text() == "final answer\n"
+    assert (session.session_dir / REASONING_LOG).read_text() == "log line\n"
     m = _read_metrics(session)
     assert m["exit_code"] == 0
     assert m["role"] == "primary"
@@ -79,8 +80,8 @@ def test_success_no_stderr_skips_reasoning_log(tmp_path):
         stderr="",
     )
 
-    assert (session.session_dir / "transcript.txt").exists()
-    assert not (session.session_dir / "reasoning.log").exists()
+    assert (session.session_dir / TRANSCRIPT_TXT).exists()
+    assert not (session.session_dir / REASONING_LOG).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -104,8 +105,8 @@ def test_timeout_with_partial_output_saved(tmp_path):
         timed_out=True,
     )
 
-    assert (session.session_dir / "transcript.txt").read_text() == "partial transcript before kill\n"
-    assert (session.session_dir / "reasoning.log").read_text() == "some reasoning before timeout\n"
+    assert (session.session_dir / TRANSCRIPT_TXT).read_text() == "partial transcript before kill\n"
+    assert (session.session_dir / REASONING_LOG).read_text() == "some reasoning before timeout\n"
     m = _read_metrics(session)
     assert m["exit_code"] == SUBAGENT_EXIT_TIMEOUT == 124
     assert m["timed_out"] is True
@@ -130,8 +131,8 @@ def test_timeout_with_no_output_still_finalizes(tmp_path):
         timed_out=True,
     )
 
-    assert not (session.session_dir / "transcript.txt").exists()
-    assert not (session.session_dir / "reasoning.log").exists()
+    assert not (session.session_dir / TRANSCRIPT_TXT).exists()
+    assert not (session.session_dir / REASONING_LOG).exists()
     m = _read_metrics(session)
     assert m["exit_code"] == 124
     assert m["timed_out"] is True
@@ -198,7 +199,7 @@ def test_timeout_finalize_is_provider_agnostic(tmp_path, provider):
         "timed_out": True,
     }
     # Transcript saved identically.
-    assert (session.session_dir / "transcript.txt").read_text() == "partial\n"
+    assert (session.session_dir / TRANSCRIPT_TXT).read_text() == "partial\n"
 
 
 @pytest.mark.parametrize("provider", ["claude", "gemini"])

@@ -18,6 +18,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli.assembly import customize
 from ai_hats.models import ProjectConfig, UserConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 
 @pytest.fixture
@@ -37,7 +38,7 @@ def project(monkeypatch, tmp_path: Path):
     """Minimal project dir with an ai-hats.yaml; cwd = project."""
     pdir = tmp_path / "project"
     pdir.mkdir()
-    (pdir / "ai-hats.yaml").write_text(
+    (pdir / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
@@ -89,7 +90,7 @@ def test_global_write_creates_user_file(isolated_home: Path, project: Path):
 def test_global_write_does_not_touch_project_yaml(isolated_home: Path, project: Path):
     res = _invoke("maintainer", "--add-trait", "hilt-workflow", "--global")
     assert res.exit_code == 0, res.output
-    proj_cfg = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    proj_cfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert "maintainer" not in proj_cfg.customizations
 
 
@@ -98,7 +99,7 @@ def test_project_write_does_not_touch_user_file(isolated_home: Path, project: Pa
     res = _invoke("maintainer", "--add-trait", "debug-skill")
     assert res.exit_code == 0, res.output
     assert not user_path.exists()
-    proj_cfg = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    proj_cfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert proj_cfg.customizations["maintainer"].add_traits == ["debug-skill"]
 
 
@@ -144,7 +145,7 @@ def test_reset_global_clears_only_global(isolated_home: Path, project: Path):
         cfg = UserConfig.from_yaml(user_path)
         assert "maintainer" not in cfg.customizations
     # else: file was deleted because no remaining customizations — equivalent
-    proj_cfg = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    proj_cfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert proj_cfg.customizations["maintainer"].add_traits == ["debug-skill"]
 
 
@@ -154,7 +155,7 @@ def test_reset_project_clears_only_project(isolated_home: Path, project: Path):
     res = _invoke("maintainer", "--reset")
     assert res.exit_code == 0, res.output
 
-    proj_cfg = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    proj_cfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert "maintainer" not in proj_cfg.customizations
     user_cfg = UserConfig.from_yaml(isolated_home / ".ai-hats" / "customizations.yaml")
     assert user_cfg.customizations["maintainer"].add_traits == ["hilt-workflow"]

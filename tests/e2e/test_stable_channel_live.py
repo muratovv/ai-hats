@@ -38,6 +38,8 @@ from pathlib import Path
 import pytest
 
 from _helpers.repo_src import build_src
+from ai_hats.paths import ENV_AI_HATS_VENV
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
@@ -101,12 +103,12 @@ def test_e2e_stable_self_update_installs_published_wheel(tmp_path: Path) -> None
     project.mkdir()
 
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher)
+    env[ENV_LAUNCHER_DEST] = str(launcher)
     # Local source feeds ONLY the launcher heal (gives a working binary); the
     # stable `self update` below installs ai-hats==<published> from PyPI
     # regardless of AI_HATS_REPO_URL (it drives the edge path, not stable).
-    env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_REPO_URL] = str(build_src(REPO_ROOT))
+    env.pop(ENV_AI_HATS_VENV, None)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
 

@@ -39,6 +39,7 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.providers import ClaudeProvider
+from ai_hats.paths import PROJECT_CONFIG
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -127,7 +128,7 @@ def project_with_assistant_default(tmp_path):
         provider="claude",
         library_paths=[str(lib)],
         ai_hats_dir=".agent/ai-hats",
-    ).save(project / "ai-hats.yaml")
+    ).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("assistant", provider_name="claude")

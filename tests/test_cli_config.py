@@ -6,6 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli import main
+from ai_hats.paths import PROJECT_CONFIG
 
 
 @pytest.fixture()
@@ -14,7 +15,7 @@ def cli_project(tmp_path, monkeypatch):
     project.mkdir()
     monkeypatch.chdir(project)
     # Minimal ai-hats.yaml (v2)
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 2\nprovider: claude\nactive_role: assistant\ndefault_role: ''\nlibrary_paths: []\n"
     )
     return project, CliRunner()
@@ -22,7 +23,7 @@ def cli_project(tmp_path, monkeypatch):
 
 def _load_config(project):
     import yaml
-    return yaml.safe_load((project / "ai-hats.yaml").read_text())
+    return yaml.safe_load((project / PROJECT_CONFIG).read_text())
 
 
 def test_config_feedback_show(cli_project):

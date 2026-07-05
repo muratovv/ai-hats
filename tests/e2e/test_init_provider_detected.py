@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 
 from _helpers.hitl import strip_ansi
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 
 
 pytestmark = pytest.mark.integration
@@ -85,7 +86,7 @@ def _drive_init_menu(venv_python: Path, project: Path, home: Path) -> tuple[str,
 
 
 def test_e2e_init_marks_every_detected_provider(tmp_venv_project, tmp_path):
-    venv_python = Path(tmp_venv_project.env["AI_HATS_VENV"]) / "bin" / "python"
+    venv_python = Path(tmp_venv_project.env[ENV_AI_HATS_VENV]) / "bin" / "python"
     assert venv_python.is_file(), f"venv python missing: {venv_python}"
 
     home = tmp_path / "home"
@@ -100,6 +101,6 @@ def test_e2e_init_marks_every_detected_provider(tmp_venv_project, tmp_path):
     assert "recommended" not in plain, plain[-1200:]
 
     # The chosen provider was written to ai-hats.yaml (selection took effect).
-    yaml = tmp_venv_project.path / "ai-hats.yaml"
+    yaml = tmp_venv_project.path / PROJECT_CONFIG
     assert yaml.is_file(), f"init did not write ai-hats.yaml; status={status}\n{plain[-1200:]}"
     assert "provider: claude" in yaml.read_text()

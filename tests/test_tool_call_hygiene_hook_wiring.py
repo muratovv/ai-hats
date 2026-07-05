@@ -8,6 +8,7 @@ materialization + settings.json wiring itself is covered generically by
 from pathlib import Path
 
 from ai_hats.models import RuntimeHook, SkillMetadata
+from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILL_DIR = REPO_ROOT / "library/core/skills/tool-call-hygiene"
@@ -15,7 +16,7 @@ SKILL_DIR = REPO_ROOT / "library/core/skills/tool-call-hygiene"
 
 def test_declares_pretooluse_bash_guard():
     meta = SkillMetadata.from_skill_dir(SKILL_DIR)
-    pre = meta.runtime_hooks.get("PreToolUse", [])
+    pre = meta.runtime_hooks.get(HOOK_PRE_TOOL_USE, [])
     assert (
         RuntimeHook(matcher="Bash", script="hooks/tool_call_hygiene_guard.sh") in pre
     ), f"tool-call-hygiene must declare its PreToolUse Bash guard; got {pre!r}"

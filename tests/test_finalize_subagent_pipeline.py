@@ -28,6 +28,8 @@ from ai_hats.observe import AuditWriter, Session
 from ai_hats.paths import runs_dir
 from ai_hats.pipeline.loader import load_pipeline
 from ai_hats.pipeline.pipeline import run as run_pipeline
+from ai_hats.constants import ENV_SKIP_RETRO
+from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG
 
 
 # Locate the worktree's library/ — the test file lives in <wt>/tests/.
@@ -45,7 +47,7 @@ def _seed_project_with_retro_policy(
     metrics: dict,
 ) -> Path:
     """Write ai-hats.yaml + metrics.json under runs_dir; return session_dir."""
-    (tmp_path / "ai-hats.yaml").write_text(yaml.dump({
+    (tmp_path / PROJECT_CONFIG).write_text(yaml.dump({
         "schema_version": 2,
         "provider": "claude",
         "active_role": "primary",
@@ -63,7 +65,7 @@ def _seed_project_with_retro_policy(
     }))
     session_dir = runs_dir(tmp_path) / "session_test"
     session_dir.mkdir(parents=True, exist_ok=True)
-    (session_dir / "metrics.json").write_text(json.dumps(metrics))
+    (session_dir / METRICS_JSON).write_text(json.dumps(metrics))
     return session_dir
 
 
@@ -115,7 +117,7 @@ def test_pipeline_run_spawns_reviewer_when_threshold_met(tmp_path, monkeypatch):
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         lambda pd, sid: spawned.append((pd, sid)),
     )
-    monkeypatch.delenv("HATS_SKIP_RETRO", raising=False)
+    monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     pipe = load_pipeline(FINALIZE_SUBAGENT_YAML)
     final = run_pipeline(pipe, initial={
@@ -149,7 +151,7 @@ def test_pipeline_run_no_spawn_below_threshold(tmp_path, monkeypatch):
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         lambda pd, sid: spawned.append((pd, sid)),
     )
-    monkeypatch.delenv("HATS_SKIP_RETRO", raising=False)
+    monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     pipe = load_pipeline(FINALIZE_SUBAGENT_YAML)
     final = run_pipeline(pipe, initial={
@@ -189,7 +191,7 @@ def test_pipeline_run_recursion_guard_blocks_spawn(tmp_path, monkeypatch):
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         lambda pd, sid: spawned.append((pd, sid)),
     )
-    monkeypatch.setenv("HATS_SKIP_RETRO", "1")
+    monkeypatch.setenv(ENV_SKIP_RETRO, "1")
 
     pipe = load_pipeline(FINALIZE_SUBAGENT_YAML)
     run_pipeline(pipe, initial={

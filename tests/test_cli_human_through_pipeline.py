@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def test_launch_session_invokes_human_pipeline(tmp_path: Path):
@@ -52,7 +53,7 @@ def test_launch_session_propagates_nonzero_exit(tmp_path: Path):
     from ai_hats.cli import _launch_session
 
     # _launch_session reads ProjectConfig when role is unset.
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 2\nprovider: claude\nactive_role: assistant\n"
     )
 

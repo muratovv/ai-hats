@@ -35,6 +35,9 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
+
 pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
@@ -80,7 +83,7 @@ def test_e2e_self_update_blue_green_versioned(tmp_path: Path) -> None:
     # HATS-764: pin the edge channel so `self update` resolves the local
     # src-repo HEAD (the upstream-master probe names a different repo). With no
     # harness block the channel defaults to stable → PyPI (unpublished → 404).
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "ai_hats_dir: .agent/ai-hats\n"
         "provider: claude\n"
@@ -102,9 +105,9 @@ def test_e2e_self_update_blue_green_versioned(tmp_path: Path) -> None:
     sha_a = _head_sha(src_repo)
 
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(src_repo)
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(src_repo)
+    env.pop(ENV_AI_HATS_VENV, None)
     env.pop("PYTHONPATH", None)
 
     # ----- 1. install launcher + first self update (managed, non-editable) -----
@@ -143,5 +146,5 @@ def test_e2e_self_update_blue_green_versioned(tmp_path: Path) -> None:
     assert marker.read_text() == "pinned\n", "versions/<shaA>/ was rebuilt in place"
 
     # ----- 4. the real launcher (no env) resolves the new current end-to-end -----
-    clean = {k: v for k, v in env.items() if k != "AI_HATS_VENV"}
+    clean = {k: v for k, v in env.items() if k != ENV_AI_HATS_VENV}
     _run([str(launcher_dest), "--help"], cwd=project, env=clean, timeout=60)

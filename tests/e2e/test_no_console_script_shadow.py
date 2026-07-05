@@ -28,6 +28,7 @@ from pathlib import Path
 import pytest
 
 from _helpers.workspace import build_workspace_member_wheels  # noqa: E402
+from ai_hats.paths import ENV_AI_HATS_VENV
 
 pytestmark = pytest.mark.install_heavy  # real wheel build + install at call time → capped via conftest
 
@@ -72,7 +73,7 @@ def test_wheel_install_has_no_console_script_and_module_runs(tmp_path: Path) -> 
         pytest.skip("uv is required to provision the throwaway venv")
 
     env = os.environ.copy()
-    env.pop("AI_HATS_VENV", None)
+    env.pop(ENV_AI_HATS_VENV, None)
     env.pop("PYTHONPATH", None)  # do not leak the editable src onto the install venv
 
     wheel = _build_wheel(tmp_path / "dist", env)

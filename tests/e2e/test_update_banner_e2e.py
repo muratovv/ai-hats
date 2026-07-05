@@ -38,6 +38,8 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 # HATS-589: per-xdist-worker private build source (no-op on serial run).
 from _helpers.repo_src import build_src  # noqa: E402
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL  # noqa: E402
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG  # noqa: E402
 
 pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
@@ -118,9 +120,9 @@ def test_update_banner_e2e(tmp_path):
     pin_edge_channel(project)  # HATS-764: edge so self update resolves the local source
 
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(build_src(REPO_ROOT))
+    env.pop(ENV_AI_HATS_VENV, None)
     env.pop("AI_HATS_NO_UPDATE_CHECK", None)
 
     # ---- 1. install launcher ----
@@ -157,7 +159,7 @@ def test_update_banner_e2e(tmp_path):
 
     # ---- 3. self init ----
     ai_hats("self", "init", "-r", "assistant", "-p", "claude")
-    assert (project / "ai-hats.yaml").is_file()
+    assert (project / PROJECT_CONFIG).is_file()
 
     # ---- 4. YAML wiring visible from the installed loader ----
     # The loader's `__main__` prints the resolved step graph; that

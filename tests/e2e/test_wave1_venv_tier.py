@@ -25,6 +25,7 @@ cache). Build budget: <120s for first test, <5s for the reuse check.
 from __future__ import annotations
 
 import pytest
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 
 
 pytestmark = pytest.mark.integration
@@ -33,9 +34,9 @@ pytestmark = pytest.mark.integration
 def test_self_init_is_idempotent_on_repeat(tmp_venv_project) -> None:
     """``self init`` twice with the same flags exits 0 both times."""
     args = ("self", "init", "-r", "assistant", "-p", "claude", "--no-update")
-    tmp_venv_project.run(*args, timeout=120).expect_ok().expect_file("ai-hats.yaml")
+    tmp_venv_project.run(*args, timeout=120).expect_ok().expect_file(PROJECT_CONFIG)
     tmp_venv_project.run(*args, timeout=120).expect_ok().expect_file(
-        "ai-hats.yaml", contains="default_role: assistant",
+        PROJECT_CONFIG, contains="default_role: assistant",
     )
 
 
@@ -46,7 +47,7 @@ def test_shared_venv_reused_across_tests(tmp_venv_project) -> None:
     disk, and the project's own ``.agent/`` hasn't been populated
     yet (clean slate)."""
     from pathlib import Path
-    shared_venv = Path(tmp_venv_project.env["AI_HATS_VENV"])
+    shared_venv = Path(tmp_venv_project.env[ENV_AI_HATS_VENV])
     assert (shared_venv / "bin" / "python").is_file(), \
         "shared venv not visible to second test — reuse broken"
     assert not tmp_venv_project.yaml.exists(), \

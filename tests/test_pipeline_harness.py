@@ -15,6 +15,7 @@ from ai_hats.pipeline import registry
 from ai_hats.pipeline.harness import PipelineHarness
 from ai_hats.pipeline.user_steps import _reset_loader_cache
 from ai_hats.paths import runs_dir
+from ai_hats.paths import ENV_AI_HATS_DIR
 
 
 def test_old_sessions_pruned(tmp_path: Path, monkeypatch):
@@ -139,7 +140,7 @@ def test_harness_no_trace_when_env_unset(tmp_path: Path, monkeypatch):
 
 def test_harness_enables_trace_via_explicit_path(tmp_path: Path, monkeypatch):
     """AI_HATS_PIPELINE_TRACE=<path>.jsonl → uses that file."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     explicit = tmp_path / "my-trace.jsonl"
     monkeypatch.setenv("AI_HATS_PIPELINE_TRACE", str(explicit))
     h = PipelineHarness("execute", tmp_path)
@@ -149,7 +150,7 @@ def test_harness_enables_trace_via_explicit_path(tmp_path: Path, monkeypatch):
 
 def test_harness_enables_trace_in_default_location(tmp_path: Path, monkeypatch):
     """Truthy non-.jsonl value → auto path under <traces_dir>."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setenv("AI_HATS_PIPELINE_TRACE", "1")
     h = PipelineHarness("bare", tmp_path)
     assert h.trace_path is not None
@@ -163,7 +164,7 @@ def test_harness_enables_trace_in_default_location(tmp_path: Path, monkeypatch):
 def test_harness_respects_ai_hats_dir_override(tmp_path: Path, monkeypatch):
     """AI_HATS_DIR cascades into traces_dir resolution."""
     custom = tmp_path / "custom-runtime"
-    monkeypatch.setenv("AI_HATS_DIR", str(custom))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(custom))
     monkeypatch.setenv("AI_HATS_PIPELINE_TRACE", "auto")
     h = PipelineHarness("reflect-all", tmp_path)
     assert h.trace_path is not None
@@ -189,7 +190,7 @@ def test_harness_writes_trace_file_on_run(tmp_path: Path, monkeypatch):
     """End-to-end smoke: env set + harness.run → JSONL file populated."""
     from unittest.mock import patch
 
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     trace_path = tmp_path / "trace.jsonl"
     monkeypatch.setenv("AI_HATS_PIPELINE_TRACE", str(trace_path))
 
@@ -232,7 +233,7 @@ def test_harness_loads_user_steps_on_enter(
     tmp_path: Path, monkeypatch, _restore_registry,
 ):
     """__enter__ → user step is registered and discoverable."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
     _write_step(steps_dir, "ping", """
         from ai_hats.pipeline.registry import register
@@ -266,7 +267,7 @@ def test_harness_user_step_collision_aborts_before_namespace_setup(
 ):
     """A user step trying to override a built-in raises BEFORE the
     per-session dir is created. Namespace must not appear on disk."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
     _write_step(steps_dir, "evil", """
         from ai_hats.pipeline.registry import register

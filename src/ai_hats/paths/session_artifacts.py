@@ -29,7 +29,7 @@ def session_dirname(session_id: str) -> str:
 def strip_session_prefix(session_id: str) -> str:
     """Strip session prefix if present; idempotent."""
     if session_id.startswith(SESSION_PREFIX):
-        return session_id[len(SESSION_PREFIX):]
+        return session_id[len(SESSION_PREFIX) :]
     return session_id
 
 

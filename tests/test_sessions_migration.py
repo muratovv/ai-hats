@@ -13,11 +13,12 @@ from ai_hats.paths import (
     sessions_dir,
     worktrees_dir,
 )
+from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG
 
 
 def _seed_session_legacy(project_dir: Path) -> dict[str, Path]:
     """Populate every legacy session-class path with a marker file."""
-    (project_dir / "ai-hats.yaml").write_text(
+    (project_dir / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
     seeds: dict[str, Path] = {}
@@ -28,8 +29,8 @@ def _seed_session_legacy(project_dir: Path) -> dict[str, Path]:
     seeds["pipeline"] = pl / "manifest.yaml"
     sess = project_dir / ".gitlog" / "session_20260101-000000-1"
     sess.mkdir(parents=True)
-    (sess / "metrics.json").write_text("{}")
-    seeds["session"] = sess / "metrics.json"
+    (sess / METRICS_JSON).write_text("{}")
+    seeds["session"] = sess / METRICS_JSON
     # retros / audits / handoffs / experiments
     for name, sub in [
         ("retro", "retrospectives"),
@@ -69,7 +70,7 @@ def test_sessions_migration_moves_all_paths(tmp_path: Path) -> None:
     # Pipeline run moved into sessions/runs/pipeline_runs/...
     assert (runs_dir(tmp_path) / "pipeline_runs" / "execute" / "run-1" / "manifest.yaml").exists()
     # session_<id>/ trace dir moved into sessions/runs/session_.../
-    assert (runs_dir(tmp_path) / "session_20260101-000000-1" / "metrics.json").exists()
+    assert (runs_dir(tmp_path) / "session_20260101-000000-1" / METRICS_JSON).exists()
     # Per-class .agent/ subdirs landed under sessions/{retros,audits,handoffs,experiments}/
     assert (retros_dir(tmp_path) / "2026-01-01-marker.md").exists()
     assert (audits_dir(tmp_path) / "2026-01-01-marker.md").exists()
@@ -107,7 +108,7 @@ def test_sessions_migration_idempotent(tmp_path: Path) -> None:
 
 def test_sessions_migration_merge_when_target_exists(tmp_path: Path) -> None:
     """Pre-existing files at the new location are preserved; partial old content merges in."""
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
     # Legacy: two files
@@ -130,7 +131,7 @@ def test_sessions_migration_merge_when_target_exists(tmp_path: Path) -> None:
 
 def test_sessions_migration_noop_on_clean_project(tmp_path: Path) -> None:
     """No legacy paths → nothing created or raised."""
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
     asm = Assembler(tmp_path)

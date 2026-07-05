@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pytest
 
+from ai_hats.constants import HOOK_PRE_TOOL_USE
 from ai_hats.frontmatter import (
     FrontmatterError,
     parse_frontmatter,
@@ -36,7 +37,7 @@ def test_parse_nested_metadata_block():
     )
     data = parse_frontmatter(text)
     assert data["description"] == "guards every Bash call"
-    hooks = data["metadata"]["ai_hats"]["runtime_hooks"]["PreToolUse"]
+    hooks = data["metadata"]["ai_hats"]["runtime_hooks"][HOOK_PRE_TOOL_USE]
     assert hooks == [{"matcher": "Bash", "script": "hooks/guard.sh"}]
 
 

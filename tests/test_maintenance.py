@@ -29,7 +29,9 @@ from ai_hats.cli.maintenance import (
     _invalidate_update_cache,
     update,
 )
+from ai_hats.constants import ENV_REPO_URL
 from ai_hats.models import ProjectConfigError
+from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.update_check.cache import CacheEntry, cache_path, write_cache
 from datetime import datetime, timezone
 
@@ -73,7 +75,7 @@ def _seed_update_cache(project: Path) -> Path:
 
 
 def test_invalidate_update_cache_removes_file(tmp_path, monkeypatch):
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     p = _seed_update_cache(tmp_path)
     assert p.exists()
     _invalidate_update_cache(tmp_path)
@@ -81,7 +83,7 @@ def test_invalidate_update_cache_removes_file(tmp_path, monkeypatch):
 
 
 def test_invalidate_update_cache_idempotent_when_missing(tmp_path, monkeypatch):
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     # No cache written — must not raise.
     _invalidate_update_cache(tmp_path)
     _invalidate_update_cache(tmp_path)
@@ -248,7 +250,7 @@ def _setup_update_test_env(tmp_path: Path) -> Path:
     """Seed a minimal project with active role so ``update`` reaches step 5."""
     project = tmp_path / "proj"
     project.mkdir()
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
@@ -728,7 +730,7 @@ def test_active_venv_root_uses_prefix_not_resolved_symlink(tmp_path, monkeypatch
 
 def test_is_managed_default_venv(tmp_path, monkeypatch):
     """Active venv (sys.prefix) == <ai_hats_dir>/.venv → managed."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     venv = tmp_path / ".agent" / "ai-hats" / ".venv"
     monkeypatch.setattr(_mnt.sys, "prefix", str(venv))
@@ -737,7 +739,7 @@ def test_is_managed_default_venv(tmp_path, monkeypatch):
 
 def test_is_managed_versioned_venv(tmp_path, monkeypatch):
     """Active venv (sys.prefix) under versions/<sha>/ → managed."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     venv = tmp_path / ".agent" / "ai-hats" / "versions" / "deadbeef"
     monkeypatch.setattr(_mnt.sys, "prefix", str(venv))
@@ -746,7 +748,7 @@ def test_is_managed_versioned_venv(tmp_path, monkeypatch):
 
 def test_is_managed_override_venv_is_false(tmp_path, monkeypatch):
     """Active venv (sys.prefix) is a user-owned path elsewhere → not managed."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     venv = tmp_path / "user-owned"
     monkeypatch.setattr(_mnt.sys, "prefix", str(venv))
@@ -758,7 +760,7 @@ def test_is_managed_override_venv_is_false(tmp_path, monkeypatch):
 
 def _on_venv(tmp_path, monkeypatch):
     """Make sys.prefix the legacy default .venv (managed, current_run_sha None)."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     monkeypatch.setattr(
         _mnt.sys, "prefix", str(tmp_path / ".agent" / "ai-hats" / ".venv")
@@ -781,7 +783,7 @@ def test_dormant_false_on_first_migration(tmp_path, monkeypatch):
 
 
 def test_dormant_false_when_running_from_versioned(tmp_path, monkeypatch):
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     monkeypatch.setattr(
         _mnt.sys, "prefix",
@@ -793,7 +795,7 @@ def test_dormant_false_when_running_from_versioned(tmp_path, monkeypatch):
 
 
 def test_dormant_false_on_override(tmp_path, monkeypatch):
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     monkeypatch.setattr(_mnt.sys, "prefix", str(tmp_path / "user-owned"))
     assert _mnt._versioned_layout_dormant(
@@ -802,7 +804,7 @@ def test_dormant_false_on_override(tmp_path, monkeypatch):
 
 
 def test_dormant_false_on_editable(tmp_path, monkeypatch):
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (True, "file:///src"))
     monkeypatch.setattr(
         _mnt.sys, "prefix", str(tmp_path / ".agent" / "ai-hats" / ".venv")
@@ -816,10 +818,10 @@ def test_installed_launcher_path_resolution(tmp_path, monkeypatch):
     import shutil
 
     # 1. AI_HATS_LAUNCHER_DEST wins.
-    monkeypatch.setenv("AI_HATS_LAUNCHER_DEST", str(tmp_path / "custom" / "ai-hats"))
+    monkeypatch.setenv(ENV_LAUNCHER_DEST, str(tmp_path / "custom" / "ai-hats"))
     assert _mnt._installed_launcher_path() == tmp_path / "custom" / "ai-hats"
     # 2. unset + on PATH → which().
-    monkeypatch.delenv("AI_HATS_LAUNCHER_DEST", raising=False)
+    monkeypatch.delenv(ENV_LAUNCHER_DEST, raising=False)
     monkeypatch.setattr(shutil, "which", lambda _: "/opt/bin/ai-hats")
     assert _mnt._installed_launcher_path() == Path("/opt/bin/ai-hats")
     # 3. unset + not on PATH → documented default.
@@ -840,7 +842,7 @@ def test_build_install_cmd_passes_spec_through():
 
 def test_flip_current_atomic_write(tmp_path, monkeypatch):
     """_flip_current writes the sha to versions/current and is overwrite-safe."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     _flip_current(tmp_path, "aaaa1111")
     assert current_pointer(tmp_path).read_text().strip() == "aaaa1111"
     _flip_current(tmp_path, "bbbb2222")  # idempotent overwrite
@@ -886,7 +888,7 @@ def _versioned_fake_run(*, fail_at=None, bump_rec=None):
 def test_managed_update_happy_path_flips_current(tmp_path, monkeypatch):
     """Full managed update: installs into versions/<sha>, flips current, bumps
     with the NEW venv python."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
     bump_rec: list[str] = []
     with patch("subprocess.run", side_effect=_versioned_fake_run(bump_rec=bump_rec)):
@@ -906,7 +908,7 @@ def test_managed_update_happy_path_flips_current(tmp_path, monkeypatch):
 def test_managed_update_venv_create_failure_exits_1(tmp_path, monkeypatch):
     """HATS-718: ``python -m venv`` failure → exit 1 (not a bare return/exit 0),
     and current is NOT flipped."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     with patch("subprocess.run", side_effect=_versioned_fake_run(fail_at="venv")):
         with pytest.raises(SystemExit) as exc:
             _run_managed_versioned_update(
@@ -921,7 +923,7 @@ def test_managed_update_venv_create_failure_exits_1(tmp_path, monkeypatch):
 def test_managed_update_install_failure_does_not_flip(tmp_path, monkeypatch):
     """pip install fails → exit 1 (HATS-718), current is NOT flipped (tool stays
     on old sha) and no bump runs."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     bump_rec: list[str] = []
     with patch("subprocess.run",
                side_effect=_versioned_fake_run(fail_at="install", bump_rec=bump_rec)):
@@ -941,7 +943,7 @@ def test_managed_update_verify_failure_does_not_flip(tmp_path, monkeypatch):
     """Post-install verify fails → exit 1 (HATS-718), current is NOT flipped, and
     the residual dir carries NO .complete sentinel (HATS-648) so the recovery
     sweep reclaims it and read_current_sha never trusts it."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     with patch("subprocess.run", side_effect=_versioned_fake_run(fail_at="verify")):
         with pytest.raises(SystemExit) as exc:
             _run_managed_versioned_update(
@@ -958,7 +960,7 @@ def test_managed_update_verify_failure_does_not_flip(tmp_path, monkeypatch):
 
 def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
     """current already == target + dir present → no venv/pip/verify, bump only."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     # Pre-seed: a USABLE versions/cafef00d/ venv (bin/python + .complete
     # sentinel) and current → it. HATS-648: completeness requires the sentinel;
     # HATS-657: read_current_sha additionally requires bin/python. HATS-790
@@ -1002,7 +1004,7 @@ def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
     #2 The HATS-655 dormancy advisory must NOT false-fire: pre_existing_versioned
        is False (the pre-existing versioned was not usable), so the heal is silent
        — the launcher correctly skipped a BROKEN venv, it is not stale."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     # This run came from the (healed) legacy .venv — the post-HATS-656 reality.
@@ -1050,7 +1052,7 @@ def test_managed_update_sweeps_incomplete_residue_before_build(tmp_path, monkeyp
     import os
     import time
 
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
     monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
     # Plant aged incomplete residue (no .complete sentinel) from a past crash.
@@ -1074,7 +1076,7 @@ def test_managed_update_reuses_complete_dir_without_reinstall(tmp_path, monkeypa
     """HATS-648 safety guard: a COMPLETE versions/<sha>/ that is NOT current is
     reused (current re-flips to it) WITHOUT rmtree+reinstall — a blind reinstall
     would destroy a dir that may be a live pinned run's frozen env."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
     # Pre-seed a complete versions/cafef00d/ (sentinel) but point current ELSEWHERE.
     vbin = version_dir(tmp_path, "cafef00d") / "bin"
@@ -1105,7 +1107,7 @@ def test_managed_update_reuses_complete_dir_without_reinstall(tmp_path, monkeypa
 def test_managed_update_reclaims_legacy_venv_when_on_versioned(tmp_path, monkeypatch):
     """HATS-653: an updater already running from a versioned venv (current_run_sha
     not None) reclaims the orphaned legacy .venv during the update."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
     monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
     # This updater runs FROM versions/0ldc0de0 → current_run_sha resolves.
@@ -1126,7 +1128,7 @@ def test_managed_update_reclaims_legacy_venv_when_on_versioned(tmp_path, monkeyp
 def test_managed_update_keeps_legacy_venv_when_on_venv(tmp_path, monkeypatch):
     """HATS-653: the first migration update runs FROM .venv (current_run_sha None)
     → the legacy .venv is kept (never deleted out from under the live process)."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
     monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
     legacy = tmp_path / ".agent" / "ai-hats" / ".venv"
@@ -1155,7 +1157,7 @@ def _capture_prints(monkeypatch):
 def test_managed_update_warns_when_launcher_dormant(tmp_path, monkeypatch):
     """HATS-655: a versioned install pre-existed AND this update ran from the
     legacy .venv → the dormant-layout hint fires."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     monkeypatch.setattr(
@@ -1188,7 +1190,7 @@ def test_managed_update_warns_when_launcher_dormant(tmp_path, monkeypatch):
 
 def test_managed_update_no_dormant_hint_on_first_migration(tmp_path, monkeypatch):
     """No versioned install pre-existed → running from .venv is expected, no hint."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     monkeypatch.setattr(
@@ -1212,12 +1214,14 @@ from ai_hats.cli.maintenance import (  # noqa: E402
     _build_managed_resolution,
     _classify_semver_downgrade,
 )
+from ai_hats.constants import ENV_LAUNCHER_DEST  # noqa: E402
+from ai_hats.paths import ENV_AI_HATS_DIR  # noqa: E402
 
 
 def _setup_channel_env(tmp_path: Path, channel: str, *, extra: str = "") -> Path:
     project = tmp_path / "proj"
     project.mkdir()
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
@@ -1260,7 +1264,7 @@ def test_build_managed_resolution_revision_pin_wins_over_channel():
 
 
 def test_build_managed_resolution_edge_fetches_repo_head(monkeypatch):
-    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
     # version_id comes from the edge repo's actual HEAD (ls-remote), not the
     # upstream-master probe (which is hardwired to a possibly-different repo).
     monkeypatch.setattr("ai_hats.channel.fetch_edge_head_sha", lambda repo: "feed1234")
@@ -1275,7 +1279,7 @@ def test_build_managed_resolution_edge_fetches_repo_head(monkeypatch):
 
 
 def test_build_managed_resolution_edge_offline_exits_2(monkeypatch):
-    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
     monkeypatch.setattr("ai_hats.channel.fetch_edge_head_sha", lambda repo: None)
     with pytest.raises(SystemExit) as exc:
         _build_managed_resolution(

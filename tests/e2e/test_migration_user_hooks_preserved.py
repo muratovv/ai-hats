@@ -25,10 +25,12 @@ from pathlib import Path
 import pytest
 
 from _helpers.project import pin_edge_channel
+from ai_hats.paths import PROJECT_CONFIG
+from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 
 def _seed(project_path: Path) -> None:
-    (project_path / "ai-hats.yaml").write_text(
+    (project_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
@@ -47,7 +49,7 @@ def _seed(project_path: Path) -> None:
     claude = project_path / ".claude"
     claude.mkdir()
     (claude / "settings.json").write_text(json.dumps({
-        "hooks": {"PreToolUse": [{
+        "hooks": {HOOK_PRE_TOOL_USE: [{
             "matcher": "Bash",
             "hooks": [{
                 "type": "command",

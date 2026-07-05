@@ -33,6 +33,7 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.state import PLAN_SCAFFOLD
+from ai_hats.paths import PROJECT_CONFIG
 
 pytestmark = pytest.mark.integration
 
@@ -62,7 +63,7 @@ def project(tmp_path: Path) -> Path:
     """Role-less ai-hats project (no git — transition→plan never needs it)."""
     p = tmp_path / "project"
     p.mkdir()
-    ProjectConfig(provider="claude", library_paths=[]).save(p / "ai-hats.yaml")
+    ProjectConfig(provider="claude", library_paths=[]).save(p / PROJECT_CONFIG)
     Assembler(p).init()
     return p
 

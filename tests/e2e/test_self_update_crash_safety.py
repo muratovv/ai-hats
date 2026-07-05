@@ -30,6 +30,8 @@ from pathlib import Path
 import pytest
 
 from _helpers.project import pin_edge_channel
+from ai_hats.paths import ENV_AI_HATS_VENV
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
@@ -81,10 +83,10 @@ def _bootstrap(tmp_path: Path):
     sha_a = _head_sha(src_repo)
 
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(src_repo)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(src_repo)
     env["AI_HATS_TRASH_DIR"] = str(tmp_path / "trash")  # deterministic discard
-    env.pop("AI_HATS_VENV", None)
+    env.pop(ENV_AI_HATS_VENV, None)
     env.pop("PYTHONPATH", None)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
@@ -104,7 +106,7 @@ def test_e2e_self_update_writes_complete_sentinel(tmp_path: Path) -> None:
     assert (versions / sha_a / ".complete").is_file(), \
         "versions/<shaA>/.complete sentinel not written on a successful install"
     # The launcher resolves the complete current end-to-end (no env pin).
-    clean = {k: v for k, v in env.items() if k != "AI_HATS_VENV"}
+    clean = {k: v for k, v in env.items() if k != ENV_AI_HATS_VENV}
     _run([str(launcher_dest), "--help"], cwd=project, env=clean, timeout=60)
 
 

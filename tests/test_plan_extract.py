@@ -14,6 +14,7 @@ from ai_hats.models import TaskState
 from ai_hats.plan_extract import extract_candidates, mark_extracted
 from ai_hats.state import TaskManager
 from ai_hats.paths import state_md_path, tasks_dir
+from ai_hats.paths import PROJECT_CONFIG
 
 
 pytestmark = pytest.mark.integration
@@ -126,7 +127,7 @@ def _setup_project(tmp_path: Path) -> Path:
     )
     (tasks_dir(project)).mkdir(parents=True)
     (state_md_path(project)).write_text("")
-    (project / "ai-hats.yaml").write_text("task_prefix: TST\n")
+    (project / PROJECT_CONFIG).write_text("task_prefix: TST\n")
     return project
 
 

@@ -18,6 +18,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
+from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -50,7 +52,7 @@ def _seed_legacy_project(project_dir: Path) -> None:
     Drops a legacy hook script under ``.agent/hooks/``, a ``.claude/settings.json``
     pointing at it, and ``CLAUDE.md`` / docs mentioning legacy paths in prose.
     """
-    (project_dir / "ai-hats.yaml").write_text(
+    (project_dir / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
     hooks = project_dir / ".agent" / "hooks"
@@ -62,7 +64,7 @@ def _seed_legacy_project(project_dir: Path) -> None:
     claude_dir.mkdir()
     (claude_dir / "settings.json").write_text(json.dumps({
         "hooks": {
-            "PreToolUse": [{
+            HOOK_PRE_TOOL_USE: [{
                 "matcher": "Bash",
                 "hooks": [{
                     "type": "command",
@@ -125,7 +127,7 @@ def test_e2e_healer_rewrites_settings_and_clean_markdown(installed_launcher, tmp
     _git_init_commit(project, env)
 
     res = _run(
-        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal"],
+        [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
         cwd=project, env=env, timeout=120,
     )
 
@@ -189,7 +191,7 @@ def test_e2e_healer_dirty_markdown_falls_back_to_inventory(installed_launcher, t
     )
 
     res = _run(
-        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal"],
+        [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
         cwd=project, env=env, timeout=120,
     )
 
@@ -221,7 +223,7 @@ def test_e2e_healer_idempotent_rerun(installed_launcher, tmp_path):
     _seed_legacy_project(project)
     _git_init_commit(project, env)
 
-    _run([f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal"], cwd=project, env=env, timeout=120)
+    _run([f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"], cwd=project, env=env, timeout=120)
     # Commit the heal so the tree is clean again
     _git(project, "add", "-A", env=env)
     _git(project, "commit", "-q", "-m", "post-heal", env=env)
@@ -230,7 +232,7 @@ def test_e2e_healer_idempotent_rerun(installed_launcher, tmp_path):
     before = {p.name for p in audits.glob("*")} if audits.exists() else set()
 
     res = _run(
-        [f"{env['AI_HATS_VENV']}/bin/python", "-m", "ai_hats._bump_internal"],
+        [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
         cwd=project, env=env, timeout=120,
     )
 

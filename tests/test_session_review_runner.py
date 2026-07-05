@@ -23,6 +23,7 @@ from ai_hats.retro.session_review_schema import SessionReviewV1
 from ai_hats.retro.common import SessionArtifacts, SessionLinks, SessionMetrics
 from ai_hats.retro.loader import load
 from ai_hats.paths import hypotheses_dir
+from ai_hats.paths import METRICS_JSON, REASONING_LOG, TRANSCRIPT_TXT
 
 
 SID = "20260506-100000-1"
@@ -346,13 +347,13 @@ class _FakeSubAgentSession:
     ) -> None:
         self.session_dir = session_dir
         self.session_id = session_id
-        self.metrics_path = session_dir / "metrics.json"
+        self.metrics_path = session_dir / METRICS_JSON
         if write_transcript:
-            (session_dir / "transcript.txt").write_text(transcript_text)
+            (session_dir / TRANSCRIPT_TXT).write_text(transcript_text)
         if metrics is not None:
             self.metrics_path.write_text(json.dumps(metrics))
         if reasoning is not None:
-            (session_dir / "reasoning.log").write_text(reasoning)
+            (session_dir / REASONING_LOG).write_text(reasoning)
 
 
 class _FakeSubAgentRunner:

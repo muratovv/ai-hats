@@ -26,6 +26,8 @@ from ai_hats.migration_healer import (
     scan_external_refs,
     write_inventory,
 )
+from ai_hats.paths import PROJECT_CONFIG
+from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 
 # ---------- Helpers ----------
@@ -33,7 +35,7 @@ from ai_hats.migration_healer import (
 
 def _init_project(tmp_path: Path) -> Path:
     """Seed a project root with minimal ai-hats.yaml so paths.py resolves cleanly."""
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
     return tmp_path
@@ -110,7 +112,7 @@ def test_scan_finds_ref_in_settings_json(tmp_path: Path) -> None:
         json.dumps(
             {
                 "hooks": {
-                    "PreToolUse": [
+                    HOOK_PRE_TOOL_USE: [
                         {
                             "matcher": "Bash",
                             "hooks": [{"command": "$CLAUDE_PROJECT_DIR/.agent/hooks/guard.py"}],
@@ -215,7 +217,7 @@ def test_heal_json_rewrites_hook_path(tmp_path: Path) -> None:
     settings.parent.mkdir(parents=True)
     payload = {
         "hooks": {
-            "PreToolUse": [
+            HOOK_PRE_TOOL_USE: [
                 {
                     "matcher": "Bash",
                     "hooks": [{"command": "$CLAUDE_PROJECT_DIR/.agent/hooks/guard.py"}],
@@ -227,7 +229,7 @@ def test_heal_json_rewrites_hook_path(tmp_path: Path) -> None:
     count = heal_json_file(settings, p)
     assert count == 1
     new_data = json.loads(settings.read_text())
-    cmd = new_data["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    cmd = new_data["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
     assert ".agent/hooks/" not in cmd
     assert "library/hooks/guard.py" in cmd
 
@@ -671,7 +673,7 @@ def test_phase4_disables_user_owned_hook_in_settings(tmp_path: Path) -> None:
         json.dumps(
             {
                 "hooks": {
-                    "PreToolUse": [
+                    HOOK_PRE_TOOL_USE: [
                         {
                             "matcher": "Bash",
                             "hooks": [
@@ -698,9 +700,9 @@ def test_phase4_disables_user_owned_hook_in_settings(tmp_path: Path) -> None:
     payload = json.loads(settings.read_text())
     # The PreToolUse list should no longer contain any matcher entry —
     # the lone hook was disabled, the matcher cascade-dropped.
-    assert payload.get("hooks", {}).get("PreToolUse", []) == [] or "PreToolUse" not in payload.get(
-        "hooks", {}
-    )
+    assert payload.get("hooks", {}).get(
+        HOOK_PRE_TOOL_USE, []
+    ) == [] or HOOK_PRE_TOOL_USE not in payload.get("hooks", {})
     # Inventory carries the disable record + re-enable snippet.
     assert len(report.inventoried) == 1
     assert report.inventoried[0].reason == "user-hook-disabled"
@@ -718,7 +720,7 @@ def test_phase4_leaves_ai_hats_owned_hook_alone(tmp_path: Path) -> None:
         json.dumps(
             {
                 "hooks": {
-                    "PreToolUse": [
+                    HOOK_PRE_TOOL_USE: [
                         {
                             "matcher": "Bash",
                             "hooks": [
@@ -746,7 +748,7 @@ def test_phase4_leaves_ai_hats_owned_hook_alone(tmp_path: Path) -> None:
     report = heal_external_refs(p, verbose=False)
 
     payload = json.loads(settings.read_text())
-    cmd = payload["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    cmd = payload["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
     # Path rewritten to new location, entry NOT dropped.
     assert "ai-hats/library/hooks" in cmd
     # Inventory empty (no disable + no dst-missing on a healthy path).
@@ -765,7 +767,7 @@ def test_phase4_cascade_drops_empty_hooks_array(tmp_path: Path) -> None:
         json.dumps(
             {
                 "hooks": {
-                    "PreToolUse": [
+                    HOOK_PRE_TOOL_USE: [
                         {
                             "matcher": "Bash",
                             "hooks": [
@@ -800,7 +802,7 @@ def test_phase4_cascade_drops_empty_hooks_array(tmp_path: Path) -> None:
     heal_external_refs(p, verbose=False)
 
     payload = json.loads(settings.read_text())
-    matchers = payload["hooks"]["PreToolUse"]
+    matchers = payload["hooks"][HOOK_PRE_TOOL_USE]
     # Bash matcher cascade-dropped; Edit matcher (ai-hats-owned) stays.
     assert len(matchers) == 1
     assert matchers[0]["matcher"] == "Edit"
@@ -818,7 +820,7 @@ def test_phase4_preserves_managed_marker_on_remaining_matcher(tmp_path: Path) ->
         json.dumps(
             {
                 "hooks": {
-                    "PreToolUse": [
+                    HOOK_PRE_TOOL_USE: [
                         {
                             "matcher": "Bash",
                             "_ai_hats_managed": "ai-hats:hats-437",
@@ -849,7 +851,7 @@ def test_phase4_preserves_managed_marker_on_remaining_matcher(tmp_path: Path) ->
     heal_external_refs(p, verbose=False)
 
     payload = json.loads(settings.read_text())
-    matcher = payload["hooks"]["PreToolUse"][0]
+    matcher = payload["hooks"][HOOK_PRE_TOOL_USE][0]
     assert matcher["_ai_hats_managed"] == "ai-hats:hats-437"
     assert matcher["matcher"] == "Bash"
     assert len(matcher["hooks"]) == 1
@@ -871,7 +873,7 @@ def test_phase4_inventory_includes_reenable_snippet(tmp_path: Path) -> None:
         json.dumps(
             {
                 "hooks": {
-                    "PreToolUse": [
+                    HOOK_PRE_TOOL_USE: [
                         {
                             "matcher": "Bash",
                             "hooks": [
@@ -908,7 +910,7 @@ def test_phase4_idempotent_no_op_when_no_user_hooks(tmp_path: Path) -> None:
     settings.parent.mkdir(parents=True)
     payload = {
         "hooks": {
-            "PreToolUse": [
+            HOOK_PRE_TOOL_USE: [
                 {
                     "matcher": "Bash",
                     "hooks": [

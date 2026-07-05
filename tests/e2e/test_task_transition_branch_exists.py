@@ -44,6 +44,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 
 pytestmark = pytest.mark.integration
@@ -82,7 +83,7 @@ def initialised_git_project(tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
     ProjectConfig(provider="claude", library_paths=[]).save(
-        project / "ai-hats.yaml"
+        project / PROJECT_CONFIG
     )
     Assembler(project).init()
     _git(project, "init")

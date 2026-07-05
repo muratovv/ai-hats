@@ -14,6 +14,7 @@ import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli import main
+from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, TRACE_LOG
 
 
 class _StubSession:
@@ -23,9 +24,9 @@ class _StubSession:
         self.session_id = session_dir.name.removeprefix("session_")
         self.session_dir = session_dir
         session_dir.mkdir(parents=True, exist_ok=True)
-        self.trace_path = session_dir / "trace.log"
+        self.trace_path = session_dir / TRACE_LOG
         self.trace_path.write_text("(stub)")
-        self.metrics_path = session_dir / "metrics.json"
+        self.metrics_path = session_dir / METRICS_JSON
         self.metrics_path.write_text(json.dumps(metrics))
 
 
@@ -49,7 +50,7 @@ def _install_stub_runner(monkeypatch, project_dir: Path, metrics: dict):
 @pytest.fixture
 def project_dir(tmp_path: Path) -> Path:
     (tmp_path / ".gitlog").mkdir()
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 2\nprovider: claude\nactive_role: test-agent\n"
     )
     return tmp_path
@@ -154,9 +155,9 @@ def test_missing_metrics_defaults_to_exit_1(cli, monkeypatch, project_dir):
             self.session_id = "bare"
             self.session_dir = project_dir / ".gitlog" / "session_bare"
             self.session_dir.mkdir(parents=True, exist_ok=True)
-            self.trace_path = self.session_dir / "trace.log"
+            self.trace_path = self.session_dir / TRACE_LOG
             self.trace_path.write_text("(stub)")
-            self.metrics_path = self.session_dir / "metrics.json"  # does not exist
+            self.metrics_path = self.session_dir / METRICS_JSON  # does not exist
 
     class _Runner:
         def __init__(self, _project_dir, _payload, *, session_mgr=None):
