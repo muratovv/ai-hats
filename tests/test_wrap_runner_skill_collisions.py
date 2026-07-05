@@ -8,7 +8,7 @@ and is covered there. The heal flow itself is e2e-covered in
 
 from types import SimpleNamespace
 
-from ai_hats.paths import session_cache_dir
+from ai_hats.paths import runs_dir, session_cache_dir
 from ai_hats.wrap_runner import WrapRunner
 
 
@@ -37,7 +37,8 @@ def _runner(project):
     )
     return WrapRunner(
         project, payload,
-        session_mgr=SessionManager(project), tracer_factory=SidecarTracer,
+        session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
+        tracer_factory=SidecarTracer,
     )
 
 

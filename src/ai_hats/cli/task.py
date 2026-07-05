@@ -953,8 +953,9 @@ def task_show(task_id: str, short: bool):
     # a spawned sub-agent gets. `--short` skips it.
     if not short:
         from ..linked_context import load_linked_context
+        from ..paths import tasks_dir
 
-        linked = load_linked_context(project_dir, task_id)
+        linked = load_linked_context(tasks_root=tasks_dir(project_dir), ticket_id=task_id)
         if linked:
             console.print("\n  [bold]Linked context:[/]")
             # markup=False: the body carries literal `[parent_task]` / `[related]`
