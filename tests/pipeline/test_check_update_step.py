@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from ai_hats.pipeline.steps.check_update import CheckUpdateAsync
 from ai_hats.update_check.cache import CacheEntry, write_cache
+from ai_hats.paths import ENV_AI_HATS_DIR, PROJECT_CONFIG
 
 
 def _fresh_entry() -> CacheEntry:
@@ -40,7 +41,7 @@ def test_step_is_continue_on_failure():
 
 def test_skips_spawn_when_disabled(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     step = CheckUpdateAsync()
     with patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen:
         result = step.run(project_dir=tmp_path)
@@ -50,7 +51,7 @@ def test_skips_spawn_when_disabled(tmp_path, monkeypatch):
 
 def test_skips_spawn_when_cache_fresh_and_sha_matches(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _fresh_entry())  # installed_sha = "a" * 40
     step = CheckUpdateAsync()
     with patch(
@@ -65,7 +66,7 @@ def test_skips_spawn_when_cache_fresh_and_sha_matches(tmp_path, monkeypatch):
 def test_skips_spawn_when_fresh_and_sha_unknown(tmp_path, monkeypatch):
     """Cannot detect the running SHA → do NOT churn a probe every session."""
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _fresh_entry())
     step = CheckUpdateAsync()
     with patch(
@@ -80,7 +81,7 @@ def test_spawns_when_fresh_but_sha_changed(tmp_path, monkeypatch):
     """HATS-781: a reinstall within the 24h TTL changes the installed SHA — the
     fresh cache no longer describes the running build, so re-probe."""
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _fresh_entry())  # installed_sha = "a" * 40
     step = CheckUpdateAsync()
     with patch(
@@ -94,8 +95,8 @@ def test_spawns_when_fresh_but_sha_changed(tmp_path, monkeypatch):
 def test_skips_spawn_when_local_channel(tmp_path, monkeypatch):
     """LOCAL editable harness → no background probe at all."""
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
-    (tmp_path / "ai-hats.yaml").write_text("harness:\n  channel: local\n  path: .\n")
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
+    (tmp_path / PROJECT_CONFIG).write_text("harness:\n  channel: local\n  path: .\n")
     step = CheckUpdateAsync()
     with patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen:
         step.run(project_dir=tmp_path)
@@ -104,7 +105,7 @@ def test_skips_spawn_when_local_channel(tmp_path, monkeypatch):
 
 def test_spawns_when_cache_stale(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     write_cache(tmp_path, _stale_entry())
     step = CheckUpdateAsync()
     with patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen:
@@ -119,7 +120,7 @@ def test_spawns_when_cache_stale(tmp_path, monkeypatch):
 
 def test_spawns_when_cache_missing(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     step = CheckUpdateAsync()
     with patch("ai_hats.pipeline.steps.check_update.subprocess.Popen") as popen:
         step.run(project_dir=tmp_path)
@@ -128,7 +129,7 @@ def test_spawns_when_cache_missing(tmp_path, monkeypatch):
 
 def test_swallows_oserror_from_popen(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     step = CheckUpdateAsync()
     with patch(
         "ai_hats.pipeline.steps.check_update.subprocess.Popen",

@@ -36,6 +36,8 @@ from _helpers.repo_src import build_src  # noqa: E402
 # HATS-685: build the subprocess env without inherited PYTHONPATH/redirect vars
 # so the real-pip install is exercised, not the source tree.
 from _helpers.env import clean_env  # noqa: E402
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG  # noqa: E402
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL  # noqa: E402
 
 pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
@@ -102,9 +104,9 @@ def test_e2e_install_init_break_heal(tmp_path):
                    check=True)
 
     env = clean_env()  # HATS-685: drop inherited PYTHONPATH/redirect vars
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(src_repo)  # local install, no network for ai-hats itself
-    env.pop("AI_HATS_VENV", None)  # never leak from outer test runs
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(src_repo)  # local install, no network for ai-hats itself
+    env.pop(ENV_AI_HATS_VENV, None)  # never leak from outer test runs
 
     # ---- 1. install-launcher.sh ----
     res = _run(
@@ -145,9 +147,9 @@ def test_e2e_install_init_break_heal(tmp_path):
 
     # ---- 3. self init ----
     res = ai_hats("self", "init", "-r", "assistant", "-p", "claude")
-    assert (project / "ai-hats.yaml").is_file()
+    assert (project / PROJECT_CONFIG).is_file()
     assert (project / "CLAUDE.md").is_file()
-    yaml_text = (project / "ai-hats.yaml").read_text()
+    yaml_text = (project / PROJECT_CONFIG).read_text()
     # HATS-407: init writes default_role; active_role stays empty
     # (runtime cache, written by session-bootstrap only).
     assert "default_role: assistant" in yaml_text
@@ -231,9 +233,9 @@ def test_e2e_fresh_init_heals(tmp_path):
     project.mkdir()
 
     env = clean_env()  # HATS-685: drop inherited PYTHONPATH/redirect vars
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))  # local install, no network
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(build_src(REPO_ROOT))  # local install, no network
+    env.pop(ENV_AI_HATS_VENV, None)
 
     # ---- 1. install launcher ----
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
@@ -263,8 +265,8 @@ def test_e2e_fresh_init_heals(tmp_path):
     )
 
     # Init configured the project in the same command.
-    assert (project / "ai-hats.yaml").is_file()
+    assert (project / PROJECT_CONFIG).is_file()
     assert (project / "CLAUDE.md").is_file()
-    yaml_text = (project / "ai-hats.yaml").read_text()
+    yaml_text = (project / PROJECT_CONFIG).read_text()
     assert "default_role: assistant" in yaml_text
     assert "provider: claude" in yaml_text

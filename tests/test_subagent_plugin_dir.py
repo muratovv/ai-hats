@@ -21,6 +21,7 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.providers import ClaudeProvider, GeminiProvider
+from ai_hats.paths import PROJECT_CONFIG
 
 
 @pytest.fixture
@@ -60,7 +61,7 @@ def project_with_two_roles(tmp_path: Path) -> tuple[Path, Path]:
     )
 
     ProjectConfig(provider="claude", library_paths=[str(lib)]).save(
-        project / "ai-hats.yaml"
+        project / PROJECT_CONFIG
     )
     return project, lib
 

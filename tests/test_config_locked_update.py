@@ -17,6 +17,7 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.config.project import ProjectConfig, locked_update
 from ai_hats.models import OverlayConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 SRC = Path(__file__).resolve().parent.parent / "src" / "ai_hats"
 
@@ -57,12 +58,12 @@ def _assert_marker_alive(config_path: Path) -> None:
 def project(tmp_path: Path) -> Path:
     proj = tmp_path / "project"
     proj.mkdir()
-    ProjectConfig(provider="claude", library_paths=[]).save(proj / "ai-hats.yaml")
+    ProjectConfig(provider="claude", library_paths=[]).save(proj / PROJECT_CONFIG)
     return proj
 
 
 def test_locked_update_applies_delta_over_fresh_state(project: Path) -> None:
-    config_path = project / "ai-hats.yaml"
+    config_path = project / PROJECT_CONFIG
     _write_marker(config_path)
 
     updated = locked_update(config_path, lambda c: setattr(c, "task_prefix", "ACME"))

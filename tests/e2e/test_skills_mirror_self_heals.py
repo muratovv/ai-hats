@@ -22,6 +22,7 @@ from click.testing import CliRunner
 
 from ai_hats.assembler import Assembler
 from ai_hats.cli import main
+from ai_hats.paths import PROJECT_CONFIG
 
 pytestmark = pytest.mark.integration
 
@@ -55,7 +56,7 @@ def _make_project(tmp_path: Path) -> tuple[Path, Path]:
         "name: mirror-role\npriorities: [Quality]\n"
         "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
     )
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
         "active_role: mirror-role\n"

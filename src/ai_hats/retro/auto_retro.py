@@ -22,9 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..models import FeedbackPolicy, ProjectConfig
-
-
-RETRO_LOG_FILENAME = "retro.log"
+from ..paths import METRICS_JSON, PROJECT_CONFIG, RETRO_LOG, session_dirname
+from ..constants import ENV_SESSION_ID, ENV_SKIP_RETRO
 
 
 def should_run(
@@ -84,8 +83,8 @@ def make_decision(
     """
     from ..paths import retros_dir, runs_dir
 
-    config_path = project_dir / "ai-hats.yaml"
-    metrics_path = runs_dir(project_dir) / f"session_{session_id}" / "metrics.json"
+    config_path = project_dir / PROJECT_CONFIG
+    metrics_path = runs_dir(project_dir) / session_dirname(session_id) / METRICS_JSON
     try:
         action, reason = should_run(config_path, metrics_path)
         config = ProjectConfig.from_yaml(config_path)
@@ -168,7 +167,7 @@ def _parens_safe(reason: str) -> str:
 def _retro_log_path(project_dir: Path, session_id: str) -> Path:
     from ..paths import runs_dir
 
-    return runs_dir(project_dir) / f"session_{session_id}" / RETRO_LOG_FILENAME
+    return runs_dir(project_dir) / session_dirname(session_id) / RETRO_LOG
 
 
 def write_retro_log(
@@ -203,13 +202,13 @@ def main() -> None:
     are running inside the session-reviewer's own sub-Claude process. Returning
     early breaks the otherwise unbounded spawn loop.
     """
-    session_id = os.environ.get("AI_HATS_SESSION_ID", "")
+    session_id = os.environ.get(ENV_SESSION_ID, "")
     if not session_id:
         return
 
     project_dir = Path.cwd()
 
-    if os.environ.get("HATS_SKIP_RETRO") == "1":
+    if os.environ.get(ENV_SKIP_RETRO) == "1":
         write_retro_log(
             project_dir, session_id, "auto_retro", "skip", "recursion-guard",
         )
@@ -217,8 +216,8 @@ def main() -> None:
 
     from ..paths import runs_dir
 
-    config_path = project_dir / "ai-hats.yaml"
-    metrics_path = runs_dir(project_dir) / f"session_{session_id}" / "metrics.json"
+    config_path = project_dir / PROJECT_CONFIG
+    metrics_path = runs_dir(project_dir) / session_dirname(session_id) / METRICS_JSON
 
     action, reason = should_run(config_path, metrics_path)
 
@@ -260,7 +259,7 @@ def _spawn_session_reviewer_background(
 
     log_path = _retro_log_path(project_dir, session_id)
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    env = {**os.environ, "HATS_SKIP_RETRO": "1"}
+    env = {**os.environ, ENV_SKIP_RETRO: "1"}
     try:
         with open(log_path, "a") as f:
             proc = sp.Popen(

@@ -34,6 +34,7 @@ from pathlib import Path
 import ai_hats
 
 from ai_hats_core import scrubbed_git_env
+from ..constants import ENV_REPO_URL
 from .cache import CacheEntry, write_cache
 
 
@@ -175,7 +176,7 @@ def _coerce_to_https(url: str) -> str:
 
 def detect_remote_url() -> str:
     """Resolve the upstream repo URL — env override > metadata > fallback."""
-    env_url = os.environ.get("AI_HATS_REPO_URL")
+    env_url = os.environ.get(ENV_REPO_URL)
     if env_url and "://" in env_url:
         return _coerce_to_https(env_url)
     try:

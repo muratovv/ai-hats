@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir, runs_dir
+from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, TRACE_LOG, session_dirname
 
 
 class _StubSession:
@@ -27,11 +28,11 @@ class _StubSession:
         exit_code: int = 0,
     ) -> None:
         self.session_id = session_id
-        self.session_dir = runs_dir(project_dir) / f"session_{session_id}"
+        self.session_dir = runs_dir(project_dir) / session_dirname(session_id)
         self.session_dir.mkdir(parents=True, exist_ok=True)
-        self.trace_path = self.session_dir / "trace.log"
+        self.trace_path = self.session_dir / TRACE_LOG
         self.trace_path.write_text("(trace)")
-        self.metrics_path = self.session_dir / "metrics.json"
+        self.metrics_path = self.session_dir / METRICS_JSON
         self.metrics_path.write_text(
             json.dumps({"exit_code": exit_code, "session_id": session_id,
                         "role": "test", "duration_s": 0.1})
@@ -45,7 +46,7 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
     runs_dir(pd).mkdir(parents=True, exist_ok=True)
     (hypotheses_dir(pd)).mkdir(parents=True)
     (proposals_dir(pd)).mkdir(parents=True)
-    (pd / "ai-hats.yaml").write_text(
+    (pd / PROJECT_CONFIG).write_text(
         "schema_version: 2\nprovider: claude\nactive_role: test-agent\n"
     )
     monkeypatch.chdir(pd)

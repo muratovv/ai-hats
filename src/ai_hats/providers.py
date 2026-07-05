@@ -16,7 +16,7 @@ from .hook_collection import (
     resolve_skill_script,
 )
 from .frontmatter import FrontmatterError, read_frontmatter
-from .paths import AI_HATS_PROJECT_DIR_ENV
+from .paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
 from .paths import CLAUDE_PROJECT_DIR_VAR
 from .paths import GEMINI_CLI_PROJECT_RULES_PATH_ENV
 from .paths import ai_hats_dir
@@ -48,7 +48,12 @@ PUBLISH_AGGREGATOR_END = "<!-- ai-hats:end -->"
 
 # HATS-865: definition moved to the constants leaf; re-exported here for the
 # existing `from ai_hats.providers import ALWAYS_ON_RULES` importers.
-from .constants import ALWAYS_ON_RULES  # noqa: E402
+from .constants import (  # noqa: E402
+    ALWAYS_ON_RULES,
+    HOOK_PRE_TOOL_USE,
+    PROVIDER_CLAUDE,
+    PROVIDER_GEMINI,
+)
 
 
 def _extract_frontmatter_description(skill: ResolvedComponent) -> str:
@@ -299,7 +304,7 @@ class Provider(abc.ABC):
 class GeminiProvider(Provider):
     @property
     def name(self) -> str:
-        return "gemini"
+        return PROVIDER_GEMINI
 
     def system_prompt_path(self, project_dir: Path) -> Path:
         return gemini_md(project_dir)
@@ -380,7 +385,7 @@ class GeminiProvider(Provider):
 class ClaudeProvider(Provider):
     @property
     def name(self) -> str:
-        return "claude"
+        return PROVIDER_CLAUDE
 
     def system_prompt_path(self, project_dir: Path) -> Path:
         return claude_md(project_dir)
@@ -517,7 +522,7 @@ class ClaudeProvider(Provider):
         # HATS-897: pair var scopes the pin to THIS project — the resolver
         # drops a leaked foreign pair, so get_env re-pins fresh values here.
         return {
-            "AI_HATS_DIR": str(ai_hats_dir(project_dir)),
+            ENV_AI_HATS_DIR: str(ai_hats_dir(project_dir)),
             AI_HATS_PROJECT_DIR_ENV: str(project_dir),
         }
 
@@ -683,7 +688,7 @@ class ClaudeProvider(Provider):
         desired: dict[str, list[dict]] = {}
 
         guard = lib / "pre_bash_shared_state_guard.sh"
-        desired.setdefault("PreToolUse", []).append({
+        desired.setdefault(HOOK_PRE_TOOL_USE, []).append({
             "matcher": "Bash",
             "_ai_hats_managed": self._MANAGED_HOOK_TAG,
             "hooks": [{"type": "command", "command": rel(guard)}],
@@ -793,8 +798,8 @@ class ClaudeProvider(Provider):
 
 
 PROVIDERS: dict[str, type[Provider]] = {
-    "gemini": GeminiProvider,
-    "claude": ClaudeProvider,
+    PROVIDER_GEMINI: GeminiProvider,
+    PROVIDER_CLAUDE: ClaudeProvider,
 }
 
 

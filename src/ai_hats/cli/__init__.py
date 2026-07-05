@@ -18,6 +18,7 @@ import sys
 import click
 
 from .. import __version__
+from ..paths import ENV_AI_HATS_VENV
 from ._helpers import console
 
 
@@ -128,24 +129,37 @@ def _launch_session(
     from ..composition_seam import RoleNotFoundError, build_composition_payload
     from ..observe import SessionManager, SidecarTracer
     from ..pipeline.harness import PipelineHarness
+    from ..pipeline.keys import (
+        KEY_COMPOSITION,
+        KEY_EXIT_CODE,
+        KEY_EXTRA_ARGS,
+        KEY_INTERACTIVE,
+        KEY_PROJECT_DIR,
+        KEY_PROVIDER,
+        KEY_ROLE,
+        KEY_SESSION_MGR,
+        KEY_TAGS,
+        KEY_TRACER_FACTORY,
+        PIPELINE_HUMAN,
+    )
     from ._helpers import _handle_role_not_found, _project_dir
 
     project_dir = _project_dir()
 
     try:
-        with PipelineHarness("human", project_dir) as h:
+        with PipelineHarness(PIPELINE_HUMAN, project_dir) as h:
             # HATS-865: compose ONCE here (effective-role resolution + the
             # first-run set_role side effect live in the seam) and seed the
             # payload into the funnel; the launch step hands it to WrapRunner.
             final = h.run(
                 {
-                    "role": role,
-                    "interactive": True,
-                    "project_dir": project_dir,
-                    "provider": provider,
-                    "extra_args": list(extra_args or []),
-                    "tags": tags,
-                    "composition": build_composition_payload(
+                    KEY_ROLE: role,
+                    KEY_INTERACTIVE: True,
+                    KEY_PROJECT_DIR: project_dir,
+                    KEY_PROVIDER: provider,
+                    KEY_EXTRA_ARGS: list(extra_args or []),
+                    KEY_TAGS: tags,
+                    KEY_COMPOSITION: build_composition_payload(
                         project_dir,
                         role_override=role,
                         provider_name=provider,
@@ -153,8 +167,8 @@ def _launch_session(
                     ),
                     # HATS-867: the CLI (integrator) injects the observe writer
                     # handles — runners no longer construct them.
-                    "session_mgr": SessionManager(project_dir),
-                    "tracer_factory": SidecarTracer,
+                    KEY_SESSION_MGR: SessionManager(project_dir),
+                    KEY_TRACER_FACTORY: SidecarTracer,
                 }
             )
     except RoleNotFoundError as exc:
@@ -162,7 +176,7 @@ def _launch_session(
         # exit 2; no traceback. See ``_handle_role_not_found`` for the
         # full output shape.
         _handle_role_not_found(exc)
-    sys.exit(int(final.get("exit_code", 1)))
+    sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
 
 
 # ----- Command registration -----
@@ -343,7 +357,7 @@ def _guard_self_location() -> None:
         # The launcher pins the resolved venv via AI_HATS_VENV (HATS-647
         # pin-at-spawn); honour it verbatim so launcher and guard agree. Else
         # resolve from the project (venv_path already reads AI_HATS_VENV first).
-        pinned = os.environ.get("AI_HATS_VENV")
+        pinned = os.environ.get(ENV_AI_HATS_VENV)
         resolved_path = Path(pinned) if pinned else venv_path(_project_dir())
         # HATS-791 refinement: only a managed venv that ACTUALLY EXISTS can be
         # "shadowed". If the resolved venv is absent (no managed install for this

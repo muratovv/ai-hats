@@ -16,13 +16,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .constants import TraceTag
+from .constants import TraceTag, ENV_ROLE, PROVIDER_CLAUDE
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
+from .pipeline.keys import PIPELINE_FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
@@ -391,7 +392,7 @@ class WrapRunner:
             **session.get_env(),
             **provider.get_env(session.session_dir, self.project_dir),
             **session_env,
-            "AI_HATS_ROLE": active_role,
+            ENV_ROLE: active_role,
         }
 
         # HATS-833: fail-open session-start drift net for all managed-hook
@@ -408,7 +409,7 @@ class WrapRunner:
         # an existing session — it already has its own id, and Claude CLI
         # rejects --session-id + --resume without --fork-session.
         _resuming = extra_args and any(f in extra_args for f in ("--resume", "--continue", "-c"))
-        if provider_name == "claude" and not _resuming:
+        if provider_name == PROVIDER_CLAUDE and not _resuming:
             cmd += ["--session-id", claude_session_id]
         session.log_trace(TraceTag.SYS, f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")
@@ -428,7 +429,7 @@ class WrapRunner:
         try:
             from .pipeline.loader import load_core_pipeline
 
-            load_core_pipeline("finalize-hitl")
+            load_core_pipeline(PIPELINE_FINALIZE_HITL)
         except Exception as exc:
             logger.warning("finalize-hitl preload failed", exc_info=True)
             summary = f"finalize-hitl preload failed: {type(exc).__name__}: {exc}"

@@ -16,6 +16,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.paths import hypotheses_dir
+from ai_hats.paths import METRICS_JSON, TRACE_LOG, TRANSCRIPT_TXT, session_dirname
 
 
 def _install_subagent_trace(monkeypatch, project_dir: Path, body: str) -> dict:
@@ -29,16 +30,16 @@ def _install_subagent_trace(monkeypatch, project_dir: Path, body: str) -> dict:
         def __init__(self, sid: str = "intake-1") -> None:
             self.session_id = sid
             self.session_dir = (
-                project_dir / ".gitlog" / f"session_{sid}"
+                project_dir / ".gitlog" / session_dirname(sid)
             )
             self.session_dir.mkdir(parents=True, exist_ok=True)
-            self.trace_path = self.session_dir / "trace.log"
+            self.trace_path = self.session_dir / TRACE_LOG
             self.trace_path.write_text("(sub-agent system events only)\n")
             # _finalize_sub_agent writes LLM stdout to transcript.txt;
             # launch_provider exposes that file as transcript_path for
             # non-interactive runs.
-            (self.session_dir / "transcript.txt").write_text(body)
-            self.metrics_path = self.session_dir / "metrics.json"
+            (self.session_dir / TRANSCRIPT_TXT).write_text(body)
+            self.metrics_path = self.session_dir / METRICS_JSON
             self.metrics_path.write_text(
                 json.dumps({
                     "exit_code": 0,

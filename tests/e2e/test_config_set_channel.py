@@ -17,6 +17,7 @@ import subprocess
 
 import pytest
 import yaml
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def _run(cmd, *, cwd, env, timeout=120):
@@ -30,7 +31,7 @@ def test_e2e_config_set_channel_roundtrips(shared_launcher, tmp_path):
     launcher, env, _venv = shared_launcher
     project = tmp_path / "project"
     project.mkdir()
-    yaml_path = project / "ai-hats.yaml"
+    yaml_path = project / PROJECT_CONFIG
 
     # Init the project (auto-init via provider-only set).
     init = _run([str(launcher), "config", "set", "-p", "claude"], cwd=project, env=env)

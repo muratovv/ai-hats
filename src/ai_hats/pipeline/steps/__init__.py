@@ -28,35 +28,38 @@ from .spawn_review import SpawnSessionReview
 from .update_banner import RenderUpdateBanner
 
 
-_BUILTINS = {
-    "check_update_async": CheckUpdateAsync,
-    "compose_role": ComposeRole,
-    "materialize_system_prompt": MaterializeSystemPrompt,
-    "resolve_prompt": ResolvePrompt,
-    "build_handoff": BuildHandoff,
-    "pre_log": PreLog,
-    # HATS-535: ``launch_provider`` retained as a deprecated alias for
-    # ``provider`` so externally-loaded YAML pipelines that pre-date the
-    # split keep loading. Both resolve to the same class; the new YAML
-    # convention is ``provider``.
-    "launch_provider": LaunchProvider,
-    "provider": Provider,
-    "make_audit": MakeAudit,
-    # HATS-664: sibling of make_audit — emits usage.json (usage/v1).
-    "compute_usage": ComputeUsage,
-    # HATS-530: shared by both finalize-hitl and finalize-subagent.
-    "maybe_spawn_session_reviewer": MaybeSpawnSessionReviewer,
-    "run_session_end": RunSessionEnd,
-    # HATS-769: deterministic safe-close sweep, tail of finalize-hitl only.
-    "quorum_autoclose": QuorumAutoclose,
-    "spawn_session_review": SpawnSessionReview,
-    "extract_marker": ExtractMarker,
-    "save_artifact": SaveArtifact,
-    "post_log": PostLog,
-    "run_session_review": RunSessionReview,
-    "render_update_banner": RenderUpdateBanner,
-    "emit_stdout": EmitStdout,
-}
+_BUILTIN_CLASSES = (
+    CheckUpdateAsync,
+    ComposeRole,
+    MaterializeSystemPrompt,
+    ResolvePrompt,
+    BuildHandoff,
+    PreLog,
+    Provider,
+    MakeAudit,
+    ComputeUsage,
+    MaybeSpawnSessionReviewer,
+    RunSessionEnd,
+    QuorumAutoclose,
+    SpawnSessionReview,
+    ExtractMarker,
+    SaveArtifact,
+    PostLog,
+    RunSessionReview,
+    RenderUpdateBanner,
+    EmitStdout,
+)
+
+
+def _step_name(cls: type) -> str:
+    return getattr(cls, "_NAME", None) or cls().io.name
+
+
+# Registry key derives from each step's own StepIO declaration (HATS-917) —
+# the YAML id is spelled once, in the step.
+_BUILTINS = {_step_name(cls): cls for cls in _BUILTIN_CLASSES}
+# HATS-535: pre-split YAML pipelines still load ``launch_provider``.
+_BUILTINS["launch_provider"] = LaunchProvider
 
 
 def _register_builtins() -> None:

@@ -12,13 +12,14 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.migrations import latest_step
+from ai_hats.paths import PROJECT_CONFIG
 
 
 @pytest.fixture
 def asm(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
-    ProjectConfig(migration_step=latest_step()).save(project / "ai-hats.yaml")
+    ProjectConfig(migration_step=latest_step()).save(project / PROJECT_CONFIG)
     return Assembler(project)
 
 

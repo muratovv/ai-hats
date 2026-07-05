@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from ai_hats.paths import ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
 
 pytestmark = pytest.mark.integration
 
@@ -33,8 +34,8 @@ def _ai_hats(binary: Path, *args: str, cwd: Path) -> subprocess.CompletedProcess
 
     env = dict(os.environ)
     env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT)
-    env["AI_HATS_VENV"] = str(Path(sys.executable).parent.parent)
-    env.pop("AI_HATS_DIR", None)  # AI_HATS_DIR would opt-in the gate — keep it unset
+    env[ENV_AI_HATS_VENV] = str(Path(sys.executable).parent.parent)
+    env.pop(ENV_AI_HATS_DIR, None)  # AI_HATS_DIR would opt-in the gate — keep it unset
     return subprocess.run(
         [str(binary), *args],
         cwd=str(cwd),

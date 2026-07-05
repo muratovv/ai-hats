@@ -32,9 +32,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
+from ai_hats.constants import ENV_REPO_URL, HOOK_PRE_TOOL_USE
 
 # Load-bearing files whose pre-bump bytes the round-trip check restores.
-_ROUND_TRIP_FILES = ("ai-hats.yaml", ".claude/settings.json", ".agent/hooks/guard.py")
+_ROUND_TRIP_FILES = (PROJECT_CONFIG, ".claude/settings.json", ".agent/hooks/guard.py")
 
 
 def _sha256(path: Path) -> str:
@@ -43,7 +45,7 @@ def _sha256(path: Path) -> str:
 
 def _seed_proxmox_shape(project_path: Path) -> None:
     """v3-shape project: yaml + user-owned legacy hook + settings.json."""
-    (project_path / "ai-hats.yaml").write_text(
+    (project_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
@@ -58,7 +60,7 @@ def _seed_proxmox_shape(project_path: Path) -> None:
     claude = project_path / ".claude"
     claude.mkdir()
     (claude / "settings.json").write_text(json.dumps({
-        "hooks": {"PreToolUse": [{
+        "hooks": {HOOK_PRE_TOOL_USE: [{
             "matcher": "Bash",
             "hooks": [{
                 "type": "command",
@@ -124,8 +126,8 @@ def bumped(tmp_path_factory, _shared_launcher_venv, repo_root: Path):
         ai_hats_binary=launcher,
         env={
             # HATS-589: per-worker private build source (no-op on serial).
-            "AI_HATS_REPO_URL": str(build_src(repo_root)),
-            "AI_HATS_VENV": str(shared_venv),
+            ENV_REPO_URL: str(build_src(repo_root)),
+            ENV_AI_HATS_VENV: str(shared_venv),
         },
     )
 
@@ -212,7 +214,7 @@ def test_backup_captures_scoped_surface(bumped) -> None:
     # The PRE-bump state was captured — legacy .agent/hooks/guard.py
     # must be in the tarball even though it's gone from the working
     # tree after bump.
-    assert "ai-hats.yaml" in names
+    assert PROJECT_CONFIG in names
     assert ".claude/settings.json" in names
     assert "CLAUDE.md" in names
     # Pre-bump .agent/hooks/ entries are inside the captured .agent/

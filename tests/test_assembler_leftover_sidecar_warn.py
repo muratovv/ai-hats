@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def _lib_with_skill(root: Path, name: str, sidecar: str | None) -> Path:
@@ -27,7 +28,7 @@ def _lib_with_skill(root: Path, name: str, sidecar: str | None) -> Path:
 def _assembler(tmp_path: Path) -> Assembler:
     project = tmp_path / "project"
     project.mkdir()
-    ProjectConfig().save(project / "ai-hats.yaml")
+    ProjectConfig().save(project / PROJECT_CONFIG)
     return Assembler(project)
 
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from ai_hats.paths import METRICS_JSON, USAGE_JSON, session_dirname
 
 # smoke: also run by the merge-to-master CI gate (HATS-783)
 pytestmark = [pytest.mark.integration, pytest.mark.smoke]
@@ -39,15 +40,15 @@ _USAGE = {
 
 def test_session_show_renders_usage_section(tmp_project):
     sid = "20260605-100000-1"
-    sdir = tmp_project.agent_dir / "sessions" / "runs" / f"session_{sid}"
+    sdir = tmp_project.agent_dir / "sessions" / "runs" / session_dirname(sid)
     sdir.mkdir(parents=True)
-    (sdir / "metrics.json").write_text(
+    (sdir / METRICS_JSON).write_text(
         json.dumps({
             "role": "maintainer", "provider": "claude", "exit_code": 0,
             "turns": 4, "tool_calls": 16,
         })
     )
-    (sdir / "usage.json").write_text(json.dumps(_USAGE))
+    (sdir / USAGE_JSON).write_text(json.dumps(_USAGE))
 
     result = tmp_project.run("session", "show", sid)
     result.expect_ok()
@@ -56,5 +57,5 @@ def test_session_show_renders_usage_section(tmp_project):
         "always_on (measured)",
         "18,204",
         "backlog-manager x1",
-        "usage.json",
+        USAGE_JSON,
     )

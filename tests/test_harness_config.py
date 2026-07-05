@@ -13,13 +13,14 @@ from ai_hats.models import (
     ProjectConfig,
     ProjectConfigError,
 )
+from ai_hats.paths import PROJECT_CONFIG
 
 # Minimal valid v4 ai-hats.yaml prelude (ai_hats_dir required, provider valid).
 BASE = "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: gemini\n"
 
 
 def _write(tmp_path, body: str):
-    p = tmp_path / "ai-hats.yaml"
+    p = tmp_path / PROJECT_CONFIG
     p.write_text(body)
     return p
 
@@ -76,7 +77,7 @@ def test_local_path_serialized():
 
 def test_roundtrip_byte_clean_with_block(tmp_path):
     cfg = ProjectConfig(harness=HarnessConfig(channel=Channel.EDGE, repo="https://x/y.git"))
-    p = tmp_path / "ai-hats.yaml"
+    p = tmp_path / PROJECT_CONFIG
     cfg.save(p)
     first = p.read_text()
     reloaded = ProjectConfig.from_yaml(p)
@@ -169,7 +170,7 @@ def test_harness_still_round_trips_byte_clean_with_extra_seam(tmp_path):
     byte-clean, and the default harness stays omitted, with the _extra seam in
     place (a clean config carries no extras, so nothing changes)."""
     cfg = ProjectConfig(harness=HarnessConfig(channel=Channel.EDGE, repo="https://x/y.git"))
-    p = tmp_path / "ai-hats.yaml"
+    p = tmp_path / PROJECT_CONFIG
     cfg.save(p)
     first = p.read_text()
     reloaded = ProjectConfig.from_yaml(p)

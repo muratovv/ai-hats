@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from ai_hats.observe import Session, SidecarTracer
+from ai_hats.paths import TRANSCRIPT_TXT
 
 
 def make_test_session(tmp_path) -> Session:
@@ -390,7 +391,7 @@ def test_build_folds_transcript_when_no_turns(tmp_path):
     session.finalize_audit({"role": "hypothesis-intake", "provider": "claude"})
 
     draft = "BEGIN_INTAKE_RESULT\naction: create\ndraft: editable install mismatch\nEND_INTAKE_RESULT"
-    (session.session_dir / "transcript.txt").write_text(draft)
+    (session.session_dir / TRANSCRIPT_TXT).write_text(draft)
     session.trace_path.write_text("")  # empty trace → no parseable turns
 
     AuditWriter().build(session, jsonl_path=None, keep_raw=False)
@@ -420,7 +421,7 @@ def test_build_skips_transcript_when_turns_present(tmp_path):
         '"usage": {"input_tokens": 10, "output_tokens": 5}}}\n'
     )
 
-    (session.session_dir / "transcript.txt").write_text("SHOULD_NOT_APPEAR_TWICE")
+    (session.session_dir / TRANSCRIPT_TXT).write_text("SHOULD_NOT_APPEAR_TWICE")
 
     AuditWriter().build(session, jsonl_path=jsonl)
     audit = session.audit_path.read_text()

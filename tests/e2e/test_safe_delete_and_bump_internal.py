@@ -25,6 +25,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from ai_hats.paths import PROJECT_CONFIG
+from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -179,7 +181,7 @@ def test_e2e_init_creates_trash_session_on_legacy_ref_heal(
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     legacy_settings = {
         "hooks": {
-            "PreToolUse": [{
+            HOOK_PRE_TOOL_USE: [{
                 "matcher": "Bash",
                 "hooks": [{
                     "type": "command",
@@ -198,7 +200,7 @@ def test_e2e_init_creates_trash_session_on_legacy_ref_heal(
     # legacy ref, rewind ``migration_step`` below step 4 so the next
     # registry pass replays ``heal_external_refs``.
     import yaml as _yaml
-    cfg_path = project / "ai-hats.yaml"
+    cfg_path = project / PROJECT_CONFIG
     cfg_data = _yaml.safe_load(cfg_path.read_text())
     cfg_data["migration_step"] = 3
     cfg_path.write_text(_yaml.safe_dump(cfg_data))

@@ -16,11 +16,12 @@ import pytest
 
 from ai_hats import version_refs
 from ai_hats.paths import version_dir, versions_root
+from ai_hats.paths import ENV_AI_HATS_DIR
 
 
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch):
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
 
 
 def _pin(monkeypatch, project_dir, sha):

@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 from ai_hats.retro.facts import _parse_composition
+from ai_hats.paths import METRICS_JSON
 
 
 def _make_session_dir(tmp_path: Path, metrics: dict | None) -> Path:
@@ -19,7 +20,7 @@ def _make_session_dir(tmp_path: Path, metrics: dict | None) -> Path:
     sdir = tmp_path / "session_test"
     sdir.mkdir()
     if metrics is not None:
-        (sdir / "metrics.json").write_text(json.dumps(metrics))
+        (sdir / METRICS_JSON).write_text(json.dumps(metrics))
     return sdir
 
 
@@ -39,7 +40,7 @@ def test_metrics_without_composition_returns_none(tmp_path: Path):
 def test_malformed_json_returns_none(tmp_path: Path):
     sdir = tmp_path / "session_bad"
     sdir.mkdir()
-    (sdir / "metrics.json").write_text("{not valid json")
+    (sdir / METRICS_JSON).write_text("{not valid json")
     assert _parse_composition(sdir) is None
 
 

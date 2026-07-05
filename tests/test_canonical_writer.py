@@ -23,6 +23,7 @@ from ai_hats.assembler import (
     USER_RULES_SUBDIR,
     Assembler,
 )
+from ai_hats.paths import PROJECT_CONFIG
 
 
 @pytest.fixture
@@ -61,7 +62,7 @@ def project_with_library(tmp_path: Path) -> Path:
         "injection: |\n  Role injection text.\n"
     )
 
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
     return project

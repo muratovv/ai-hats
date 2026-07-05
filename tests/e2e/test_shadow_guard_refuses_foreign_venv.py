@@ -37,6 +37,7 @@ from pathlib import Path
 import pytest
 
 from _helpers.workspace import build_workspace_member_wheels  # noqa: E402
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 
 pytestmark = pytest.mark.install_heavy  # real wheel build + install at call time → capped via conftest
 
@@ -92,7 +93,7 @@ def test_foreign_venv_invocation_is_refused(tmp_path: Path) -> None:
     """`<foreign>/bin/python -m ai_hats config status` from a project whose
     resolved venv differs → refuse-and-instruct + nonzero; skip env disables it."""
     env = os.environ.copy()
-    env.pop("AI_HATS_VENV", None)  # MUST NOT pin — pinning sanctions the foreign venv
+    env.pop(ENV_AI_HATS_VENV, None)  # MUST NOT pin — pinning sanctions the foreign venv
     env.pop("PYTHONPATH", None)  # do not leak the editable src onto the foreign venv
     env.pop("AI_HATS_SKIP_SELF_LOCATION_GUARD", None)
 
@@ -104,7 +105,7 @@ def test_foreign_venv_invocation_is_refused(tmp_path: Path) -> None:
     # to anchor here and venv_path to resolve the managed default.
     project = tmp_path / "project"
     project.mkdir()
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
     )
     # HATS-791 refinement: the guard only refuses when a managed venv ACTUALLY

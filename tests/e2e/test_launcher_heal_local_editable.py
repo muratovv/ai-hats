@@ -31,6 +31,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 pytestmark = pytest.mark.install_heavy  # real uv install at call time → capped via conftest
 
@@ -64,7 +66,7 @@ def test_e2e_launcher_heal_channel_local_is_editable(tmp_path: Path) -> None:
     # launcher's PIP_TARGET at the same real checkout so the revert path
     # (non-editable PIP_TARGET) is deterministic + offline yet still NON-editable.
     subprocess.run(["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)], check=True)
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "ai_hats_dir: .agent/ai-hats\n"
         "provider: claude\n"
@@ -74,9 +76,9 @@ def test_e2e_launcher_heal_channel_local_is_editable(tmp_path: Path) -> None:
     )
 
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(src_repo)  # PIP_TARGET source (revert path)
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(src_repo)  # PIP_TARGET source (revert path)
+    env.pop(ENV_AI_HATS_VENV, None)
     env.pop("PYTHONPATH", None)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)

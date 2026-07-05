@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 
 from ai_hats.pipeline import run
 from ai_hats.pipeline.presets import execute_pipeline
+from ai_hats.paths import METRICS_JSON, TRACE_LOG
 
 
 def _fake_payload() -> MagicMock:
@@ -29,9 +30,9 @@ def _fake_session(tmp_path: Path) -> MagicMock:
     sess.session_id = "sid-test"
     sess.session_dir = tmp_path / "sd"
     sess.session_dir.mkdir(parents=True, exist_ok=True)
-    sess.trace_path = sess.session_dir / "trace.log"
+    sess.trace_path = sess.session_dir / TRACE_LOG
     sess.trace_path.write_text("(empty)")
-    sess.metrics_path = sess.session_dir / "metrics.json"
+    sess.metrics_path = sess.session_dir / METRICS_JSON
     return sess
 
 

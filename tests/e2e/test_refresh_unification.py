@@ -43,6 +43,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from ai_hats.paths import PROJECT_CONFIG
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -113,7 +114,7 @@ def test_e2e_greenfield_init_silent_registry_and_diagnostics(
     assert EMPTY_AGENT_NOTE_FRAGMENT not in res.stderr
 
     # Sanity: yaml is seeded.
-    cfg_path = project / "ai-hats.yaml"
+    cfg_path = project / PROJECT_CONFIG
     assert cfg_path.exists()
     raw = yaml.safe_load(cfg_path.read_text())
     # Whatever ``latest_step()`` is at install time — just assert it's
@@ -150,7 +151,7 @@ def test_e2e_reinit_replays_registry_once_and_runs_diagnostics(
     # migration_step to 0 to emulate a project upgrading from a pre-
     # HATS-471 release.
     _init(launcher, project, env, "-p", "gemini", "--no-wizard")
-    cfg_path = project / "ai-hats.yaml"
+    cfg_path = project / PROJECT_CONFIG
     raw = yaml.safe_load(cfg_path.read_text())
     raw["migration_step"] = 0
     cfg_path.write_text(yaml.safe_dump(raw))

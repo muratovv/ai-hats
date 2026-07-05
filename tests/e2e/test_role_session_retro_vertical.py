@@ -54,6 +54,8 @@ from _helpers.sessions import (
     snapshot_session_dirs,
     wait_for_new_session_dir,
 )
+from ai_hats.paths import AUDIT_MD, META_PROMPT_TXT, TRANSCRIPT_TXT
+from ai_hats.constants import ENV_SKIP_RETRO
 
 
 pytestmark = pytest.mark.integration
@@ -255,7 +257,7 @@ def phase_setup(project: Project) -> SetupContext:
         # session-reviewer spawn. Force-unset by passing an empty string,
         # which the production code treats as "not set" via the
         # ``os.environ.get("HATS_SKIP_RETRO") != "1"`` check.
-        "HATS_SKIP_RETRO": "",
+        ENV_SKIP_RETRO: "",
     }
 
     magic_token = _new_magic_token()
@@ -502,9 +504,9 @@ def phase_assert_drive_session(
     # artefacts (HATS-523 for meta_prompt; _finalize_sub_agent for
     # transcript / metrics / audit).
     metrics = read_metrics(sd)
-    meta_prompt = (sd / "meta_prompt.txt").read_text()
-    transcript = (sd / "transcript.txt").read_text()
-    audit_md = (sd / "audit.md").read_text()
+    meta_prompt = (sd / META_PROMPT_TXT).read_text()
+    transcript = (sd / TRANSCRIPT_TXT).read_text()
+    audit_md = (sd / AUDIT_MD).read_text()
 
     composition = metrics["composition"]
     # Claim #1 — role lives at top level of metrics (verified at pre-freeze;
@@ -608,7 +610,7 @@ def phase_invoke_reviewer(
         timeout=5.0, interval=0.2,  # session retro is synchronous; dir exists immediately on return
     )
     metrics = read_metrics(reviewer_dir)
-    meta_prompt = (reviewer_dir / "meta_prompt.txt").read_text()
+    meta_prompt = (reviewer_dir / META_PROMPT_TXT).read_text()
     # Claim #6 — config layer (role at top-level of metrics, see Phase 3 note)
     assert metrics["role"] == "session-reviewer", (
         f"reviewer metrics.role={metrics['role']!r}"

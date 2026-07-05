@@ -13,6 +13,7 @@ ProjectConfig.from_yaml must:
 from __future__ import annotations
 
 from ai_hats.models import ProjectConfig, _DEPRECATED_PROJECT_FIELDS
+from ai_hats.paths import PROJECT_CONFIG
 
 
 # -- Deprecated-field stripping --
@@ -20,7 +21,7 @@ from ai_hats.models import ProjectConfig, _DEPRECATED_PROJECT_FIELDS
 
 def test_imports_order_stripped_and_warned(tmp_path, capsys):
     """v0.6 yaml carrying the `imports_order` ghost loads cleanly with a single stderr WARN."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "schema_version: 4\n"
         "provider: claude\n"
@@ -49,7 +50,7 @@ def test_imports_order_stripped_and_warned(tmp_path, capsys):
 
 def test_clean_yaml_emits_no_deprecated_warn(tmp_path, capsys):
     """Regression: clean yaml stays silent (no false-positive WARNs)."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "schema_version: 4\n"
         "provider: claude\n"
@@ -66,7 +67,7 @@ def test_clean_yaml_emits_no_deprecated_warn(tmp_path, capsys):
 
 def test_idempotent_rerun_no_warn(tmp_path, capsys):
     """Second from_yaml on the same (clean) file emits no WARN — strip helper is pure."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "schema_version: 4\n"
         "provider: claude\n"
@@ -89,7 +90,7 @@ def test_unknown_non_deprecated_key_stripped_with_warn(tmp_path, capsys):
     binary wrote). Previously these hit ``extra="forbid"`` and raised; the
     forward-compat strip supersedes that for top-level keys.
     """
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "schema_version: 4\n"
         "provider: claude\n"
@@ -116,7 +117,7 @@ def test_deprecated_constant_is_frozen():
 
 def test_default_role_healed_from_active_role(tmp_path, capsys):
     """v0.6 yaml with active_role + empty default_role → default_role := active_role + WARN."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "schema_version: 4\n"
         "provider: claude\n"
@@ -137,7 +138,7 @@ def test_default_role_healed_from_active_role(tmp_path, capsys):
 
 def test_default_role_heal_no_op_when_both_set(tmp_path, capsys):
     """No heal when default_role already populated, even if it differs from active_role."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "schema_version: 4\n"
         "provider: claude\n"
@@ -156,7 +157,7 @@ def test_default_role_heal_no_op_when_both_set(tmp_path, capsys):
 
 def test_default_role_heal_no_op_when_both_empty(tmp_path, capsys):
     """Greenfield project (no active_role, no default_role) → no heal, no WARN."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "schema_version: 4\n"
         "provider: claude\n"
@@ -173,7 +174,7 @@ def test_default_role_heal_no_op_when_both_empty(tmp_path, capsys):
 
 def test_default_role_heal_explicit_empty_string(tmp_path, capsys):
     """v0.6 sometimes wrote `default_role: ''` literally — must still heal."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "schema_version: 4\n"
         "provider: claude\n"
@@ -203,7 +204,7 @@ def test_save_after_load_preserves_user_fields(tmp_path, capsys):
     manage_gitignore) — that would erase user settings."""
     import yaml
 
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     # A "loaded" v0.6 yaml with every reasonable user customisation set.
     # Note: ``customizations`` wire format is NESTED add/remove (not flat
     # add_traits) — see OverlayConfig.from_dict/to_dict.
@@ -254,7 +255,7 @@ def test_save_after_strip_preserves_round_trip_for_deprecated_yaml(tmp_path, cap
     byte-stable + user fields survive both passes."""
     import yaml
 
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "schema_version: 4\n"
         "provider: claude\n"
@@ -282,7 +283,7 @@ def test_save_after_strip_preserves_round_trip_for_deprecated_yaml(tmp_path, cap
 
 def test_strip_and_heal_independent_warns(tmp_path, capsys):
     """A v0.6 yaml that needs both fixes emits BOTH WARNs in a single from_yaml call."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "schema_version: 4\n"
         "provider: claude\n"

@@ -62,6 +62,7 @@ from pathlib import Path
 import pytest
 
 from _helpers.hitl import drive_bare_hitl
+from ai_hats.paths import AUDIT_MD, PROJECT_CONFIG
 
 
 pytestmark = pytest.mark.integration
@@ -116,7 +117,7 @@ def test_golden_path_install_init_execute_batch(
     ).expect_ok().expect_stdout_contains(
         "Default role: assistant", "Provider: claude",
     ).expect_file(
-        "ai-hats.yaml", contains="default_role: assistant",
+        PROJECT_CONFIG, contains="default_role: assistant",
     )
 
     # ---- 2. show-prompt surfaces composed role markers ----
@@ -187,7 +188,7 @@ def test_golden_path_install_init_execute_batch(
     assert not errored, f"pipeline steps errored: {errored}"
 
     # ---- 6. audit.md = durable post-session record ----
-    audit = (session_dir / "audit.md").read_text()
+    audit = (session_dir / AUDIT_MD).read_text()
     for marker in (
         "- **Role**: assistant",
         "- **Provider**: claude",
@@ -198,7 +199,7 @@ def test_golden_path_install_init_execute_batch(
     ):
         assert marker in audit, (
             f"audit.md missing marker {marker!r}\n"
-            f"path: {session_dir / 'audit.md'}\n"
+            f"path: {session_dir / AUDIT_MD}\n"
             f"audit tail (300):\n{audit[-300:]}"
         )
 

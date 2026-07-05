@@ -18,6 +18,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
+from ai_hats.paths import TRACE_LOG, TRANSCRIPT_TXT
 
 
 def _make_hyp(pd: Path, hyp_id: str):
@@ -59,9 +60,9 @@ def _seed_draft_transcript(session_dir: Path, body: str = "") -> Path:
             "## Proposed mutations\n\n(none)\n"
         )
     framed = f"BEGIN_JUDGE_DRAFT\n{body}\nEND_JUDGE_DRAFT\n"
-    (session_dir / "transcript.txt").write_text(framed)
-    (session_dir / "trace.log").write_text("(trace)")
-    return session_dir / "transcript.txt"
+    (session_dir / TRANSCRIPT_TXT).write_text(framed)
+    (session_dir / TRACE_LOG).write_text("(trace)")
+    return session_dir / TRANSCRIPT_TXT
 
 
 def _seed_report_trace(session_dir: Path) -> Path:
@@ -74,8 +75,8 @@ def _seed_report_trace(session_dir: Path) -> Path:
         "## Hypotheses\n\nHYP-001 — kept\n"
     )
     framed = f"BEGIN_JUDGE\n{body}\nEND_JUDGE\n"
-    (session_dir / "trace.log").write_text(framed)
-    return session_dir / "trace.log"
+    (session_dir / TRACE_LOG).write_text(framed)
+    return session_dir / TRACE_LOG
 
 
 # --- dry-run ----------------------------------------------------------------
@@ -239,10 +240,10 @@ def test_phase1_empty_draft_aborts_phase2(
     from ai_hats.paths import runs_dir
     sub_session_dir = runs_dir(project_dir) / "session_sub-1"
     sub_session_dir.mkdir(parents=True, exist_ok=True)
-    (sub_session_dir / "transcript.txt").write_text(
+    (sub_session_dir / TRANSCRIPT_TXT).write_text(
         "(judge-auditor produced free-form text without markers)\n"
     )
-    (sub_session_dir / "trace.log").write_text("(trace)")
+    (sub_session_dir / TRACE_LOG).write_text("(trace)")
 
     res = CliRunner().invoke(main, ["reflect", "hypothesis"])
     assert res.exit_code != 0, (
