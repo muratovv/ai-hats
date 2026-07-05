@@ -26,6 +26,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from ai_hats.constants import ENV_LAUNCHER_DEST
 
 pytestmark = pytest.mark.integration
 
@@ -82,7 +83,7 @@ def test_repair_warns_on_stray_launcher(tmp_path: Path) -> None:
     project.mkdir()
 
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
     # PATH carries the stray dir + system bins (bash/uv resolution); deliberately
     # NOT the sanctioned dir, so the detector sees exactly one stray.
     env["PATH"] = os.pathsep.join([str(stray_dir), env.get("PATH", "/usr/bin:/bin")])

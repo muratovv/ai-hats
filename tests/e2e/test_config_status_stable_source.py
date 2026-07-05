@@ -33,6 +33,7 @@ from _helpers.env import clean_env  # noqa: E402
 from _helpers.repo_src import build_src  # noqa: E402
 from _helpers.venv import network_available, venv_unavailable  # noqa: E402
 from _helpers.workspace import build_workspace_member_wheels  # noqa: E402
+from ai_hats.paths import ENV_AI_HATS_VENV
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -71,7 +72,7 @@ def test_e2e_config_status_stable_source(tmp_path):
         venv_unavailable("uv not on PATH — cannot build/install the stable wheel")
 
     env = clean_env()  # HATS-685: drop inherited PYTHONPATH/redirect vars
-    env.pop("AI_HATS_VENV", None)  # never leak from outer test runs
+    env.pop(ENV_AI_HATS_VENV, None)  # never leak from outer test runs
 
     # 1. Build the ai-hats wheel from a per-worker private clone (no in-tree race).
     src = build_src(REPO_ROOT)

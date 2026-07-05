@@ -26,6 +26,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from ai_hats.paths import ENV_AI_HATS_VENV
 
 pytestmark = pytest.mark.integration
 
@@ -75,7 +76,7 @@ def test_launcher_execs_python_m_on_scriptless_venv(tmp_path: Path) -> None:
     assert not (venv / "bin" / "ai-hats").exists()  # precondition: no console script
 
     env = os.environ.copy()
-    env.pop("AI_HATS_VENV", None)  # resolve the default .venv, not an inherited override
+    env.pop(ENV_AI_HATS_VENV, None)  # resolve the default .venv, not an inherited override
     env.pop("PYTHONPATH", None)
 
     result = subprocess.run(

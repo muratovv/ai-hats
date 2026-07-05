@@ -18,6 +18,12 @@ from pathlib import Path
 import pytest
 
 from ai_hats.assembler import AssemblyError
+from ai_hats.constants import (
+    HOOK_PRE_TOOL_USE,
+    HOOK_SESSION_END,
+    HOOK_SESSION_START,
+    HOOK_USER_PROMPT_SUBMIT,
+)
 from ai_hats.paths import claude_settings_json, claude_settings_local_json
 from ai_hats.migration_assert import (
     BrokenHookRef,
@@ -69,7 +75,7 @@ def test_resolves_claude_project_dir_variable(tmp_path: Path) -> None:
         tmp_path,
         {
             "hooks": {
-                "PreToolUse": [
+                HOOK_PRE_TOOL_USE: [
                     {
                         "matcher": "Bash",
                         "hooks": [
@@ -95,7 +101,7 @@ def test_resolves_project_relative_path(tmp_path: Path) -> None:
         tmp_path,
         {
             "hooks": {
-                "PreToolUse": [
+                HOOK_PRE_TOOL_USE: [
                     {
                         "matcher": "Bash",
                         "hooks": [
@@ -119,7 +125,7 @@ def test_resolves_absolute_path(tmp_path: Path) -> None:
         tmp_path,
         {
             "hooks": {
-                "PreToolUse": [
+                HOOK_PRE_TOOL_USE: [
                     {
                         "matcher": "Bash",
                         "hooks": [{"type": "command", "command": str(hook)}],
@@ -208,7 +214,7 @@ def test_detects_missing_hook_under_claude_project_dir(tmp_path: Path) -> None:
         tmp_path,
         {
             "hooks": {
-                "PreToolUse": [
+                HOOK_PRE_TOOL_USE: [
                     {
                         "matcher": "Bash",
                         "hooks": [
@@ -225,7 +231,7 @@ def test_detects_missing_hook_under_claude_project_dir(tmp_path: Path) -> None:
 
     broken = find_broken_hook_refs(tmp_path)
     assert len(broken) == 1
-    assert broken[0].event == "PreToolUse"
+    assert broken[0].event == HOOK_PRE_TOOL_USE
     assert "lost.py" in broken[0].command
     assert not broken[0].resolved_path.exists()
 
@@ -236,7 +242,7 @@ def test_detects_missing_hook_in_settings_local_json(tmp_path: Path) -> None:
         tmp_path,
         {
             "hooks": {
-                "PreToolUse": [
+                HOOK_PRE_TOOL_USE: [
                     {
                         "matcher": "Bash",
                         "hooks": [{"type": "command", "command": ".agent/missing.sh"}],
@@ -258,19 +264,19 @@ def test_detects_across_multiple_hook_events(tmp_path: Path) -> None:
         tmp_path,
         {
             "hooks": {
-                "PreToolUse": [
+                HOOK_PRE_TOOL_USE: [
                     {
                         "matcher": "Bash",
                         "hooks": [{"type": "command", "command": ".agent/a.sh"}],
                     }
                 ],
-                "SessionEnd": [
+                HOOK_SESSION_END: [
                     {
                         "matcher": "",
                         "hooks": [{"type": "command", "command": ".agent/b.sh"}],
                     }
                 ],
-                "UserPromptSubmit": [
+                HOOK_USER_PROMPT_SUBMIT: [
                     {
                         "hooks": [{"type": "command", "command": ".agent/c.sh"}],
                     }
@@ -281,7 +287,7 @@ def test_detects_across_multiple_hook_events(tmp_path: Path) -> None:
 
     broken = find_broken_hook_refs(tmp_path)
     events = {b.event for b in broken}
-    assert events == {"PreToolUse", "SessionEnd", "UserPromptSubmit"}
+    assert events == {HOOK_PRE_TOOL_USE, HOOK_SESSION_END, HOOK_USER_PROMPT_SUBMIT}
 
 
 def test_partial_resolution_returns_only_broken(tmp_path: Path) -> None:
@@ -292,7 +298,7 @@ def test_partial_resolution_returns_only_broken(tmp_path: Path) -> None:
         tmp_path,
         {
             "hooks": {
-                "PreToolUse": [
+                HOOK_PRE_TOOL_USE: [
                     {
                         "matcher": "Bash",
                         "hooks": [
@@ -331,7 +337,7 @@ def test_skips_shell_commands_without_slash(tmp_path: Path) -> None:
         tmp_path,
         {
             "hooks": {
-                "SessionStart": [
+                HOOK_SESSION_START: [
                     {
                         "hooks": [
                             {"type": "command", "command": "echo hello"},
@@ -354,7 +360,7 @@ def test_skips_non_command_hook_entries(tmp_path: Path) -> None:
         tmp_path,
         {
             "hooks": {
-                "PreToolUse": [
+                HOOK_PRE_TOOL_USE: [
                     {
                         "matcher": "Bash",
                         "hooks": [
@@ -399,7 +405,7 @@ def test_assert_raises_on_broken_ref(tmp_path: Path) -> None:
         tmp_path,
         {
             "hooks": {
-                "PreToolUse": [
+                HOOK_PRE_TOOL_USE: [
                     {
                         "matcher": "Bash",
                         "hooks": [
@@ -418,7 +424,7 @@ def test_assert_raises_on_broken_ref(tmp_path: Path) -> None:
         assert_runtime_hooks_resolve(tmp_path)
     msg = str(exc_info.value)
     assert "missing.sh" in msg
-    assert "PreToolUse" in msg
+    assert HOOK_PRE_TOOL_USE in msg
 
 
 def test_assert_includes_backup_recovery_hint(tmp_path: Path) -> None:
@@ -428,7 +434,7 @@ def test_assert_includes_backup_recovery_hint(tmp_path: Path) -> None:
         tmp_path,
         {
             "hooks": {
-                "PreToolUse": [
+                HOOK_PRE_TOOL_USE: [
                     {
                         "matcher": "Bash",
                         "hooks": [
@@ -459,7 +465,7 @@ def test_assert_skips_recovery_hint_when_no_backup_path(tmp_path: Path) -> None:
         tmp_path,
         {
             "hooks": {
-                "PreToolUse": [
+                HOOK_PRE_TOOL_USE: [
                     {
                         "matcher": "Bash",
                         "hooks": [
@@ -488,7 +494,7 @@ def test_assert_lists_every_broken_ref(tmp_path: Path) -> None:
         tmp_path,
         {
             "hooks": {
-                "PreToolUse": [
+                HOOK_PRE_TOOL_USE: [
                     {
                         "matcher": "Bash",
                         "hooks": [
@@ -527,7 +533,7 @@ def test_broken_hook_ref_is_frozen_dataclass() -> None:
     set member if a future caller wants to dedupe."""
     ref = BrokenHookRef(
         settings_file=".claude/settings.json",
-        event="PreToolUse",
+        event=HOOK_PRE_TOOL_USE,
         command="x",
         resolved_path=Path("/tmp/x"),
     )

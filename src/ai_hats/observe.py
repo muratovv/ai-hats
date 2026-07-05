@@ -12,8 +12,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ai_hats_core import atomic_write_text
-from .constants import TraceTag
+from .constants import TraceTag, ENV_SESSION_ID
 from .environment_recovery import EnvironmentRecovery, RecoveryProtocol
+# HATS-864: artifact NAMES are the brick's shared vocabulary (leaf submodule,
+# lint-exempt); directory RESOLUTION (runs_dir) is injected integrator policy.
+from .paths.session_artifacts import (
+    AUDIT_MD,
+    META_PROMPT_TXT,
+    METRICS_JSON,
+    PTY_RAW_LOG,
+    REASONING_LOG,
+    TRACE_LOG,
+    TRANSCRIPT_TXT,
+    USAGE_JSON,
+    session_dirname,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +69,13 @@ class SessionManager:
         else:
             session_id = f"{base_id}-{self._counter}"
 
-        session_dir = self.gitlog_dir / f"session_{session_id}"
+        session_dir = self.gitlog_dir / session_dirname(session_id)
         session_dir.mkdir(parents=True, exist_ok=True)
         return Session(session_id=session_id, session_dir=session_dir)
 
     def get_session(self, session_id: str) -> Session | None:
         """Load an existing session."""
-        session_dir = self.gitlog_dir / f"session_{session_id}"
+        session_dir = self.gitlog_dir / session_dirname(session_id)
         if not session_dir.exists():
             return None
         return Session(session_id=session_id, session_dir=session_dir)
@@ -145,20 +158,20 @@ class Session:
     def __init__(self, session_id: str, session_dir: Path) -> None:
         self.session_id = session_id
         self.session_dir = session_dir
-        self.trace_path = session_dir / "trace.log"
-        self.audit_path = session_dir / "audit.md"
-        self.reasoning_path = session_dir / "reasoning.log"
-        self.metrics_path = session_dir / "metrics.json"
+        self.trace_path = session_dir / TRACE_LOG
+        self.audit_path = session_dir / AUDIT_MD
+        self.reasoning_path = session_dir / REASONING_LOG
+        self.metrics_path = session_dir / METRICS_JSON
         # HATS-664 producer / HATS-734 consumer: machine-readable usage/v1
         # report (measured always-on, aggregates, timeline). Read by
         # ``session show``'s Usage section.
-        self.usage_path = session_dir / "usage.json"
-        self.meta_prompt_path = session_dir / "meta_prompt.txt"
+        self.usage_path = session_dir / USAGE_JSON
+        self.meta_prompt_path = session_dir / META_PROMPT_TXT
         # HATS-220: pre-strip raw byte dump from PTY (master + stdin). Captures
         # CSI escapes (kitty-keyboard push/pop, DEC modes) that strip_ansi
         # erases from trace.log — needed to diagnose terminal-mode regressions
         # like the Enter-as-newline bug. Created lazily on first write.
-        self.pty_raw_path = session_dir / "pty_raw.log"
+        self.pty_raw_path = session_dir / PTY_RAW_LOG
 
     def is_productive(self) -> bool:
         """Return True if this session had meaningful work (turns > 0 and tool_calls > 0)."""
@@ -284,7 +297,7 @@ class Session:
     def get_env(self) -> dict[str, str]:
         """Environment variables for this session."""
         return {
-            "AI_HATS_SESSION_ID": self.session_id,
+            ENV_SESSION_ID: self.session_id,
             "TRACE_LOG_PATH": str(self.trace_path),
         }
 
@@ -726,7 +739,7 @@ class AuditWriter:
         Oversize transcripts are still bounded downstream by
         ``SessionReviewRunner._truncate_audit``.
         """
-        transcript = session.session_dir / "transcript.txt"
+        transcript = session.session_dir / TRANSCRIPT_TXT
         if not transcript.exists():
             return audit_content
         text = transcript.read_text().strip()

@@ -17,12 +17,13 @@ from ai_hats.paths import (
     version_dir,
     versions_root,
 )
+from ai_hats.paths import ENV_AI_HATS_DIR
 
 
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path, monkeypatch):
     """No AI_HATS_DIR override; trash to a tmp dir so discard never escapes."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
 
 

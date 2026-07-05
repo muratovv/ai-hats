@@ -21,6 +21,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .assembler import AssemblyError
+from .constants import (
+    HOOK_PRE_TOOL_USE,
+    HOOK_POST_TOOL_USE,
+    HOOK_SESSION_START,
+    HOOK_SESSION_END,
+    HOOK_USER_PROMPT_SUBMIT,
+    HOOK_STOP,
+    HOOK_SUBAGENT_STOP,
+    HOOK_NOTIFICATION,
+)
 from .paths import (
     CLAUDE_PROJECT_DIR_VAR,
     CLAUDE_SETTINGS_JSON_REL,
@@ -50,14 +60,14 @@ SETTINGS_TARGETS: tuple[str, ...] = (
 # under any hook event is in scope.
 _HOOK_EVENT_KEYS: frozenset[str] = frozenset(
     {
-        "PreToolUse",
-        "PostToolUse",
-        "SessionStart",
-        "SessionEnd",
-        "UserPromptSubmit",
-        "Stop",
-        "SubagentStop",
-        "Notification",
+        HOOK_PRE_TOOL_USE,
+        HOOK_POST_TOOL_USE,
+        HOOK_SESSION_START,
+        HOOK_SESSION_END,
+        HOOK_USER_PROMPT_SUBMIT,
+        HOOK_STOP,
+        HOOK_SUBAGENT_STOP,
+        HOOK_NOTIFICATION,
         "PreCompact",
     }
 )

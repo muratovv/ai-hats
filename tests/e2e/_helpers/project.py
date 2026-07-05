@@ -13,6 +13,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def pin_edge_channel(project_path) -> None:
@@ -23,7 +24,7 @@ def pin_edge_channel(project_path) -> None:
     API (the ``ai-hats`` name is unpublished until HATS-765 → 404, fail-loud).
     Appends to an existing config; writes a minimal valid one otherwise.
     """
-    p = Path(project_path) / "ai-hats.yaml"
+    p = Path(project_path) / PROJECT_CONFIG
     if p.exists():
         text = p.read_text()
         if "harness:" not in text:
@@ -122,7 +123,7 @@ class Project:
 
     @property
     def yaml(self) -> Path:
-        return self.path / "ai-hats.yaml"
+        return self.path / PROJECT_CONFIG
 
     @property
     def agent_dir(self) -> Path:

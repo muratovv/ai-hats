@@ -31,6 +31,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.paths import strip_claude_project_dir
+from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -109,7 +110,7 @@ def test_e2e_runtime_hook_body_runs_for_both_events(installed_launcher, tmp_path
 
     # Feed the script the exact payload shape Claude's hook channel sends,
     # once per event. The hook appends hook_event_name to the marker.
-    for event, command in (("PreToolUse", pre_cmd), ("PostToolUse", post_cmd)):
+    for event, command in ((HOOK_PRE_TOOL_USE, pre_cmd), (HOOK_POST_TOOL_USE, post_cmd)):
         payload = json.dumps({
             "hook_event_name": event,
             "tool_name": "Bash",
@@ -128,5 +129,5 @@ def test_e2e_runtime_hook_body_runs_for_both_events(installed_launcher, tmp_path
     # Side-effect proves both hook bodies executed end-to-end.
     assert marker.is_file(), "hook never wrote its marker — body did not run"
     recorded = marker.read_text().split()
-    assert "PreToolUse" in recorded, f"PreToolUse hook body did not run: {recorded}"
-    assert "PostToolUse" in recorded, f"PostToolUse hook body did not run: {recorded}"
+    assert HOOK_PRE_TOOL_USE in recorded, f"PreToolUse hook body did not run: {recorded}"
+    assert HOOK_POST_TOOL_USE in recorded, f"PostToolUse hook body did not run: {recorded}"

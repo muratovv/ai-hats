@@ -28,6 +28,7 @@ from ai_hats.runtime import (
     _format_tokens,
     _print_session_end,
 )
+from ai_hats.paths import PROJECT_CONFIG, RETRO_LOG
 
 
 def make_session(tmp_path) -> Session:
@@ -216,7 +217,7 @@ def test_print_session_end_with_retro_one_line(tmp_path, capsys, action, expecte
         "mode": "llm",
         "background": True,
         "retro_path": str(tmp_path / "retros" / "llm" / "test.md"),
-        "log_path": str(runs_dir(tmp_path) / "session_test" / "retro.log"),
+        "log_path": str(runs_dir(tmp_path) / "session_test" / RETRO_LOG),
     }
     _print_session_end(session, trace_stats={"trace_size": 0, "req_count": 0}, retro=decision)
 
@@ -348,7 +349,7 @@ def wrap_runner_factory(tmp_path, monkeypatch):
         ai_hats_dir=".agent/ai-hats",
         active_role="maintainer",
         default_role="maintainer",
-    ).save(project / "ai-hats.yaml")
+    ).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[library])
     asm.init()
     asm.set_role("maintainer", provider_name="claude")

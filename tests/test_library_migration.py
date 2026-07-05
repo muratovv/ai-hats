@@ -5,11 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_hats.assembler import Assembler
-from ai_hats.paths import rules_dir, skills_dir, user_hooks_dir
+from ai_hats.paths import PROJECT_CONFIG, rules_dir, skills_dir, user_hooks_dir
 
 
 def _seed_library_legacy(project_dir: Path) -> dict[str, Path]:
-    (project_dir / "ai-hats.yaml").write_text(
+    (project_dir / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
     seeds: dict[str, Path] = {}
@@ -74,7 +74,7 @@ def test_library_migration_preserves_claude_skills(tmp_path: Path) -> None:
 
 
 def test_library_migration_noop_on_clean_project(tmp_path: Path) -> None:
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
     asm = Assembler(tmp_path)

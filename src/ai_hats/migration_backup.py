@@ -33,6 +33,7 @@ from .paths import (
     CLAUDE_SETTINGS_JSON_REL,
     CLAUDE_SETTINGS_LOCAL_JSON_REL,
     GEMINI_MD_FILENAME,
+    PROJECT_CONFIG,
 )
 
 __all__ = [
@@ -60,7 +61,7 @@ BACKUP_SCOPE_PATHS: tuple[str, ...] = (
     ".agent",
     CLAUDE_SETTINGS_JSON_REL,
     CLAUDE_SETTINGS_LOCAL_JSON_REL,
-    "ai-hats.yaml",
+    PROJECT_CONFIG,
     CLAUDE_MD_FILENAME,
     GEMINI_MD_FILENAME,
     ".githooks",

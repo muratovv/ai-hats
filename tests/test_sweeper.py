@@ -12,6 +12,7 @@ import pytest
 
 from ai_hats import owners, sweeper
 from ai_hats.paths import claude_dir, claude_settings_json, claude_skills_dir
+from ai_hats.constants import HOOK_PRE_TOOL_USE, HOOK_SESSION_START
 
 
 @pytest.fixture(autouse=True)
@@ -241,11 +242,11 @@ def _seed_settings(project_dir):
             {
                 "model": "user-choice",
                 "hooks": {
-                    "PreToolUse": [
+                    HOOK_PRE_TOOL_USE: [
                         {"matcher": "Bash", "_ai_hats_managed": "ai-hats:hats-437"},
                         {"matcher": "Bash", "hooks": [{"command": "my-own.sh"}]},
                     ],
-                    "SessionStart": [
+                    HOOK_SESSION_START: [
                         {"_ai_hats_managed": "ai-hats:skill:SessionStart:*"},
                     ],
                 },
@@ -269,8 +270,8 @@ def test_dead_owner_tagged_settings_entries_removed_user_kept(tmp_path):
     ]
     data = json.loads(settings.read_text())
     assert data["model"] == "user-choice"
-    assert "SessionStart" not in data["hooks"]
-    assert data["hooks"]["PreToolUse"] == [{"matcher": "Bash", "hooks": [{"command": "my-own.sh"}]}]
+    assert HOOK_SESSION_START not in data["hooks"]
+    assert data["hooks"][HOOK_PRE_TOOL_USE] == [{"matcher": "Bash", "hooks": [{"command": "my-own.sh"}]}]
 
 
 def test_living_owner_settings_untouched(tmp_path):
@@ -403,7 +404,7 @@ def test_settings_without_tags_no_report(tmp_path):
 
     settings = claude_settings_json(tmp_path)
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({"hooks": {"PreToolUse": [{"matcher": "*"}]}}))
+    settings.write_text(json.dumps({"hooks": {HOOK_PRE_TOOL_USE: [{"matcher": "*"}]}}))
 
 
 # ---- write_marker: the hashed owner_key convention writer (HATS-911) ----

@@ -17,6 +17,7 @@ import pytest
 from ai_hats.pipeline import registry
 from ai_hats.pipeline.harness import PipelineHarness
 from ai_hats.pipeline.user_steps import _reset_loader_cache, load_user_steps
+from ai_hats.paths import ENV_AI_HATS_DIR
 
 
 @pytest.fixture(autouse=True)
@@ -47,7 +48,7 @@ def test_no_steps_dir_silent_noop(tmp_path):
 
 
 def test_step_registers_via_module_top_level(tmp_path, monkeypatch):
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
     _write_step(steps_dir, "echo", """
         from ai_hats.pipeline.registry import register
@@ -84,7 +85,7 @@ def test_step_registers_via_module_top_level(tmp_path, monkeypatch):
 
 def test_underscore_prefix_modules_skipped(tmp_path, monkeypatch):
     """Files starting with _ are private helpers, not auto-loaded."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
     # If this module ran, it would raise — proves it was NOT executed.
     _write_step(steps_dir, "_helpers", """
@@ -95,7 +96,7 @@ def test_underscore_prefix_modules_skipped(tmp_path, monkeypatch):
 
 def test_loader_idempotent_within_process(tmp_path, monkeypatch):
     """Re-loading does not fire register() twice → no StepRegistryError."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
     _write_step(steps_dir, "noop", """
         from ai_hats.pipeline.registry import register
@@ -127,7 +128,7 @@ def test_loader_idempotent_within_process(tmp_path, monkeypatch):
 
 def test_conflict_with_builtin_raises(tmp_path, monkeypatch):
     """User module trying to override a built-in → StepRegistryError."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
     _write_step(steps_dir, "shadow", """
         from ai_hats.pipeline.registry import register
@@ -157,7 +158,7 @@ def test_conflict_with_builtin_raises(tmp_path, monkeypatch):
 
 def test_invalid_step_class_surfaces_error(tmp_path, monkeypatch):
     """A broken module raises at import — surfaces, not swallowed."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
     _write_step(steps_dir, "broken", """
         raise ValueError("intentional import-time failure")
@@ -170,7 +171,7 @@ def test_ai_hats_dir_override_for_user_steps(tmp_path, monkeypatch):
     """AI_HATS_DIR=<custom> → loader looks under <custom>/pipeline_steps/,
     NOT under <project>/.agent/ai-hats/pipeline_steps/."""
     custom = tmp_path / "custom-runtime"
-    monkeypatch.setenv("AI_HATS_DIR", str(custom))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(custom))
     project_dir = tmp_path / "project"
     project_dir.mkdir()
 
@@ -209,7 +210,7 @@ def test_step_runs_in_pipeline_e2e(tmp_path, monkeypatch):
     """End-to-end: user drops a step file + a YAML pipeline; harness
     runs them. No mocks inside pipeline-core or registry — this is the
     exact path a real user takes."""
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
 
     # 1. The user-authored step file (echoes ``text`` into ``echoed``,
     #    plus prepends a banner so we can verify it actually ran).

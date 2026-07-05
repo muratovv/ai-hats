@@ -16,6 +16,8 @@ roles vanish. The scrub removes that class of leak.
 from __future__ import annotations
 
 from _helpers.env import ENV_DENYLIST, clean_env, launcher_subprocess_env
+from ai_hats.paths import ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 
 def test_clean_env_strips_denylist_keeps_rest():
@@ -24,14 +26,14 @@ def test_clean_env_strips_denylist_keeps_rest():
         "VIRTUAL_ENV": "/leak/venv",
         "PYTHONHOME": "/leak/home",
         "PYTHONSTARTUP": "/leak/startup.py",
-        "AI_HATS_DIR": "/leak/.agent",
+        ENV_AI_HATS_DIR: "/leak/.agent",
         "AI_HATS_USER_HOME": "/leak/home",
         "GIT_DIR": "/leak/.git",
         "GIT_WORK_TREE": "/leak",
         "GIT_INDEX_FILE": "/leak/.git/index",
         "PATH": "/usr/bin",
         "HOME": "/home/me",
-        "AI_HATS_REPO_URL": "/repo",
+        ENV_REPO_URL: "/repo",
     }
     out = clean_env(base)
 
@@ -41,7 +43,7 @@ def test_clean_env_strips_denylist_keeps_rest():
     # Non-denylist vars are preserved verbatim.
     assert out["PATH"] == "/usr/bin"
     assert out["HOME"] == "/home/me"
-    assert out["AI_HATS_REPO_URL"] == "/repo"
+    assert out[ENV_REPO_URL] == "/repo"
     # The input dict is not mutated.
     assert "PYTHONPATH" in base
 
@@ -73,7 +75,7 @@ def test_launcher_subprocess_env_isolates_and_pins(tmp_path):
         # An inherited user-home that must NOT win over the explicit pin.
         "AI_HATS_USER_HOME": "/dev/.config",
         # A stray launcher-dest that could redirect a child install.
-        "AI_HATS_LAUNCHER_DEST": "/leak/bin/ai-hats",
+        ENV_LAUNCHER_DEST: "/leak/bin/ai-hats",
         # Innocuous vars that MUST be preserved (HOME → warm uv cache + auth).
         "PATH": "/usr/bin",
         "HOME": "/home/me",
@@ -84,12 +86,12 @@ def test_launcher_subprocess_env_isolates_and_pins(tmp_path):
 
     # The leak is gone.
     assert "PYTHONPATH" not in out
-    assert "AI_HATS_LAUNCHER_DEST" not in out
+    assert ENV_LAUNCHER_DEST not in out
     # AI_HATS_USER_HOME is re-pinned to the explicit empty dir, not the inherited.
     assert out["AI_HATS_USER_HOME"] == str(user_home)
     # Install-source knobs are set.
-    assert out["AI_HATS_REPO_URL"] == "/clone"
-    assert out["AI_HATS_VENV"] == "/venv"
+    assert out[ENV_REPO_URL] == "/clone"
+    assert out[ENV_AI_HATS_VENV] == "/venv"
     # HOME (and other innocuous vars) ride through untouched.
     assert out["HOME"] == "/home/me"
     assert out["PATH"] == "/usr/bin"

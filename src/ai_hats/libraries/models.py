@@ -14,6 +14,10 @@ from pydantic import ConfigDict, Field, model_validator
 
 from ai_hats_core import YamlModel as _YamlModel
 
+from ..constants import (
+    HOOK_PRE_TOOL_USE,
+    HOOK_POST_TOOL_USE,
+)
 from ..frontmatter import read_frontmatter
 from ..skill_sidecar import _HOOK_KEYS, leftover_sidecar_remedy
 
@@ -90,8 +94,8 @@ GIT_HOOK_EVENTS: tuple[str, ...] = (
 # implements PreToolUse + PostToolUse; the set is open — adding an event is a
 # one-line data change here plus provider support, no structural edit.
 RUNTIME_HOOK_EVENTS: tuple[str, ...] = (
-    "PreToolUse",
-    "PostToolUse",
+    HOOK_PRE_TOOL_USE,
+    HOOK_POST_TOOL_USE,
 )
 
 

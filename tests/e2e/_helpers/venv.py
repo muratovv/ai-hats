@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import NoReturn
 
 import pytest
+from ai_hats.paths import ENV_AI_HATS_VENV
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 
 # HATS-645: the master pre-push e2e gate sets this to "1" so a venv-tier that
@@ -79,9 +81,9 @@ def build_launcher_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
     from _helpers.repo_src import build_src
 
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher)
-    env["AI_HATS_REPO_URL"] = str(build_src(repo_root))
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher)
+    env[ENV_REPO_URL] = str(build_src(repo_root))
+    env.pop(ENV_AI_HATS_VENV, None)
 
     subprocess.run(
         ["bash", str(install_script)],

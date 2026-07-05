@@ -30,6 +30,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -83,7 +84,7 @@ def _init_minimal_project(launcher: Path, env: dict, project: Path) -> None:
 
 def _managed_guard_command(project: Path) -> str:
     data = json.loads((project / SETTINGS).read_text())
-    pre = data["hooks"]["PreToolUse"]
+    pre = data["hooks"][HOOK_PRE_TOOL_USE]
     guard = [e for e in pre if e.get("_ai_hats_managed") == GUARD_TAG]
     assert len(guard) == 1, f"expected one managed guard entry, got: {pre}"
     return guard[0]["hooks"][0]["command"]

@@ -12,6 +12,7 @@ keeps working unchanged for every consumer:
   - :mod:`.gemini`     — Gemini CLI layout/channel conventions (HATS-908).
   - :mod:`.validation` — config-value + library-root validators.
   - :mod:`.constants`  — referenceable named constants for the above.
+  - :mod:`.session_artifacts` — session-dir artifact names (HATS-917).
 
 This package is a dependency-free leaf (``test_import_hygiene``): its submodules
 import only stdlib, ``yaml``, and each other — never a higher-level ai-hats module.
@@ -25,3 +26,4 @@ from .claude import *  # noqa: F403
 from .gemini import *  # noqa: F403
 from .validation import *  # noqa: F403
 from .library import *  # noqa: F403
+from .session_artifacts import *  # noqa: F403

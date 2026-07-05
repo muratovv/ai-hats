@@ -12,6 +12,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import OverlayConfig, ProjectConfig, UserConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 
 @pytest.fixture
@@ -54,7 +55,7 @@ def fixture_library(tmp_path: Path) -> Path:
 def project(monkeypatch, tmp_path: Path):
     pdir = tmp_path / "project"
     pdir.mkdir()
-    (pdir / "ai-hats.yaml").write_text(
+    (pdir / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
@@ -108,9 +109,9 @@ def test_project_overlay_overrides_global_provenance(isolated_home, project, fix
         customizations={"demo": OverlayConfig(add_traits=["trait-project-only"])}
     ).save(isolated_home / ".ai-hats" / "customizations.yaml")
     # Project layer also adds it (rewrites ai-hats.yaml with customizations)
-    pcfg = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    pcfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     pcfg.customizations["demo"] = OverlayConfig(add_traits=["trait-project-only"])
-    pcfg.save(project / "ai-hats.yaml")
+    pcfg.save(project / PROJECT_CONFIG)
     asm = _assembler(project, fixture_library)
     st = asm.status()
     assert st["tree"]["provenance"]["traits"]["trait-project-only"] == "project"
@@ -132,9 +133,9 @@ def test_project_re_adds_what_global_removed(isolated_home, project, fixture_lib
     UserConfig(
         customizations={"demo": OverlayConfig(remove_traits=["trait-base"])}
     ).save(isolated_home / ".ai-hats" / "customizations.yaml")
-    pcfg = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    pcfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     pcfg.customizations["demo"] = OverlayConfig(add_traits=["trait-base"])
-    pcfg.save(project / "ai-hats.yaml")
+    pcfg.save(project / PROJECT_CONFIG)
     asm = _assembler(project, fixture_library)
     st = asm.status()
     assert "trait-base" in st["tree"]["traits"]

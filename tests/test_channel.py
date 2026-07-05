@@ -18,6 +18,7 @@ from ai_hats.channel import (
     resolve_channel,
     resolve_edge_repo,
 )
+from ai_hats.constants import ENV_REPO_URL
 from ai_hats.models import Channel
 
 
@@ -107,12 +108,12 @@ class _FakeResp:
 
 
 def test_resolve_edge_repo_default_upstream(monkeypatch):
-    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
     assert resolve_edge_repo() == "git+https://github.com/muratovv/ai-hats.git"
 
 
 def test_resolve_edge_repo_coerces_ssh_yaml_repo(monkeypatch):
-    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
     assert (
         resolve_edge_repo("git@github.com:acme/ai-hats.git")
         == "git+https://github.com/acme/ai-hats.git"
@@ -120,7 +121,7 @@ def test_resolve_edge_repo_coerces_ssh_yaml_repo(monkeypatch):
 
 
 def test_resolve_edge_repo_env_beats_yaml(monkeypatch):
-    monkeypatch.setenv("AI_HATS_REPO_URL", "https://github.com/env/ai-hats.git")
+    monkeypatch.setenv(ENV_REPO_URL, "https://github.com/env/ai-hats.git")
     assert (
         resolve_edge_repo("https://github.com/yaml/ai-hats.git")
         == "git+https://github.com/env/ai-hats.git"
@@ -128,7 +129,7 @@ def test_resolve_edge_repo_env_beats_yaml(monkeypatch):
 
 
 def test_resolve_edge_repo_local_path_stays_bare(monkeypatch):
-    monkeypatch.setenv("AI_HATS_REPO_URL", "/tmp/checkout")
+    monkeypatch.setenv(ENV_REPO_URL, "/tmp/checkout")
     assert resolve_edge_repo() == "/tmp/checkout"
 
 

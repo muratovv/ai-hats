@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Protocol
 from filelock import FileLock
 
 from .models import TaskCard, TaskState
+from .constants import ENV_SESSION_ID
 from .tracker.layout import TrackerPaths
 
 if TYPE_CHECKING:
@@ -443,7 +444,7 @@ class TaskManager:
                 raise ValueError(f"Task '{task_id}' not found")
 
             if not session_id:
-                session_id = os.environ.get("AI_HATS_SESSION_ID", "")
+                session_id = os.environ.get(ENV_SESSION_ID, "")
 
             task.log_work(message, session_id=session_id)
             task.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1126,15 +1127,15 @@ class TaskManager:
             by_state.setdefault(h["state"], []).append(h)
 
         state_order = [
-            "execute",
-            "document",
-            "plan",
-            "brainstorm",
-            "review",
-            "blocked",
-            "failed",
-            "done",
-            "cancelled",
+            TaskState.EXECUTE.value,
+            TaskState.DOCUMENT.value,
+            TaskState.PLAN.value,
+            TaskState.BRAINSTORM.value,
+            TaskState.REVIEW.value,
+            TaskState.BLOCKED.value,
+            TaskState.FAILED.value,
+            TaskState.DONE.value,
+            TaskState.CANCELLED.value,
         ]
         for state_name in state_order:
             state_tasks = by_state.get(state_name, [])

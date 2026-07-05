@@ -15,6 +15,7 @@ from pathlib import Path
 
 from ai_hats.observe import Session
 from ai_hats.pipeline.steps.compute_usage import ComputeUsage
+from ai_hats.paths import METRICS_JSON, USAGE_JSON
 
 TRANSCRIPTS = Path(__file__).parent / "fixtures" / "transcripts"
 
@@ -79,7 +80,7 @@ def test_writes_usage_json_from_configured_jsonl(tmp_path, monkeypatch):
         project_dir=project_dir,
     )
 
-    usage_path = session.session_dir / "usage.json"
+    usage_path = session.session_dir / USAGE_JSON
     assert delta == {"usage_path": usage_path}
     assert usage_path.exists()
     report = json.loads(usage_path.read_text())
@@ -125,7 +126,7 @@ def test_falls_back_to_discovered_jsonl_when_configured_path_missing(
         project_dir=project_dir,
     )
 
-    usage_path = session.session_dir / "usage.json"
+    usage_path = session.session_dir / USAGE_JSON
     assert delta == {"usage_path": usage_path}, (
         "HATS-734: discovery must run off session_id, not the claude uuid"
     )
@@ -139,7 +140,7 @@ def test_session_meta_filled_from_metrics_json(tmp_path, monkeypatch):
     (written upstream) so usage.json self-describes which composition ran."""
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
     session = make_session(tmp_path)
-    (session.session_dir / "metrics.json").write_text(
+    (session.session_dir / METRICS_JSON).write_text(
         json.dumps({"role": "maintainer", "provider": "claude", "exit_code": 0})
     )
     project_dir = tmp_path / "proj"
@@ -157,7 +158,7 @@ def test_session_meta_filled_from_metrics_json(tmp_path, monkeypatch):
         project_dir=project_dir,
     )
 
-    report = json.loads((session.session_dir / "usage.json").read_text())
+    report = json.loads((session.session_dir / USAGE_JSON).read_text())
     assert report["role"] == "maintainer"
     assert report["provider"] == "claude"
     assert report["exit_code"] == 0
@@ -167,7 +168,7 @@ def test_funnel_role_overrides_metrics_json(tmp_path, monkeypatch):
     """A live ``role`` from the pipeline funnel wins over the persisted value."""
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
     session = make_session(tmp_path)
-    (session.session_dir / "metrics.json").write_text(
+    (session.session_dir / METRICS_JSON).write_text(
         json.dumps({"role": "stale-role", "provider": "claude"})
     )
     project_dir = tmp_path / "proj"
@@ -186,7 +187,7 @@ def test_funnel_role_overrides_metrics_json(tmp_path, monkeypatch):
         role="live-role",
     )
 
-    report = json.loads((session.session_dir / "usage.json").read_text())
+    report = json.loads((session.session_dir / USAGE_JSON).read_text())
     assert report["role"] == "live-role"
 
 
@@ -209,7 +210,7 @@ def test_session_meta_null_when_no_metrics(tmp_path, monkeypatch):
         project_dir=project_dir,
     )
 
-    report = json.loads((session.session_dir / "usage.json").read_text())
+    report = json.loads((session.session_dir / USAGE_JSON).read_text())
     assert report["role"] is None
     assert report["provider"] is None
 
@@ -230,7 +231,7 @@ def test_missing_jsonl_returns_empty_delta_no_crash(tmp_path, monkeypatch):
     )
 
     assert delta == {}
-    assert not (session.session_dir / "usage.json").exists()
+    assert not (session.session_dir / USAGE_JSON).exists()
 
 
 def test_parser_exception_is_swallowed(tmp_path, monkeypatch):

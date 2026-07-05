@@ -37,6 +37,8 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 # HATS-589: per-xdist-worker private build source (no-op on serial run).
 from _helpers.repo_src import build_src  # noqa: E402
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG  # noqa: E402
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL, HOOK_PRE_TOOL_USE  # noqa: E402
 
 pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
@@ -71,9 +73,9 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
 
     # HATS-887: strip GIT_* so nothing here inherits an ambient GIT_DIR (real .git).
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(build_src(REPO_ROOT))
+    env.pop(ENV_AI_HATS_VENV, None)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
 
@@ -103,7 +105,7 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
     settings.parent.mkdir(parents=True, exist_ok=True)
     settings.write_text(json.dumps({
         "hooks": {
-            "PreToolUse": [{
+            HOOK_PRE_TOOL_USE: [{
                 "matcher": "Bash",
                 "hooks": [{
                     "type": "command",
@@ -119,7 +121,7 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
     # Rewind below step 4 so the subsequent ``self update`` actually
     # replays the heal entry against our planted legacy file.
     import yaml as _yaml
-    cfg_path = project / "ai-hats.yaml"
+    cfg_path = project / PROJECT_CONFIG
     cfg_data = _yaml.safe_load(cfg_path.read_text())
     cfg_data["migration_step"] = 3
     cfg_data["harness"] = {"channel": "edge"}  # HATS-764: edge for the 2nd update
@@ -184,9 +186,9 @@ def test_e2e_python_dash_m_ai_hats_self_bump_invokable(tmp_path: Path) -> None:
 
     # HATS-887: strip GIT_* so nothing here inherits an ambient GIT_DIR (real .git).
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(build_src(REPO_ROOT))
+    env.pop(ENV_AI_HATS_VENV, None)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
     _run(

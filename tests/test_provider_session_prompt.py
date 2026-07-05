@@ -30,6 +30,7 @@ from ai_hats.providers import (
     _extract_frontmatter_description,
 )
 from ai_hats.runtime import _cleanup_session_cache, _sweep_orphan_session_caches
+from ai_hats.paths import PROJECT_CONFIG
 
 
 @pytest.fixture
@@ -61,7 +62,7 @@ def project_with_library(tmp_path):
         "injection: Role body.\n"
     )
 
-    ProjectConfig(provider="claude", library_paths=[str(lib)]).save(project / "ai-hats.yaml")
+    ProjectConfig(provider="claude", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
     return project, lib
 
 
@@ -190,7 +191,7 @@ def test_sweep_removes_orphans_older_than_ttl(tmp_path):
     """Orphan session dirs with mtime >24h are removed; recent dirs survive."""
     project = tmp_path / "project"
     project.mkdir()
-    ProjectConfig().save(project / "ai-hats.yaml")
+    ProjectConfig().save(project / PROJECT_CONFIG)
     root = session_cache_root(project)
     root.mkdir(parents=True)
 
@@ -215,7 +216,7 @@ def test_sweep_is_idempotent_on_empty_cache_root(tmp_path):
     """No cache root present yet → sweep is a no-op (no crash)."""
     project = tmp_path / "project"
     project.mkdir()
-    ProjectConfig().save(project / "ai-hats.yaml")
+    ProjectConfig().save(project / PROJECT_CONFIG)
     # No <ai_hats_dir>/.cache/sessions/ exists.
     _sweep_orphan_session_caches(project)  # must not raise
 
@@ -224,7 +225,7 @@ def test_cleanup_session_cache_removes_specific_sid(tmp_path):
     """_cleanup_session_cache drops the named sid dir but leaves others alone."""
     project = tmp_path / "project"
     project.mkdir()
-    ProjectConfig().save(project / "ai-hats.yaml")
+    ProjectConfig().save(project / PROJECT_CONFIG)
     root = session_cache_root(project)
     root.mkdir(parents=True)
 
@@ -246,7 +247,7 @@ def test_cleanup_session_cache_is_idempotent(tmp_path):
     """Missing sid dir → cleanup is a no-op."""
     project = tmp_path / "project"
     project.mkdir()
-    ProjectConfig().save(project / "ai-hats.yaml")
+    ProjectConfig().save(project / PROJECT_CONFIG)
     # No cache root, no sid dir. Must not raise.
     _cleanup_session_cache(project, "does-not-exist")
 

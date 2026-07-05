@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from tests._cli_helpers import assert_command_exists
+from ai_hats.constants import ENV_LAUNCHER_DEST
 
 
 pytestmark = pytest.mark.integration
@@ -67,7 +68,7 @@ def _setup_fake_scripts(scripts_dir: Path, launcher_calls_log: Path) -> Path:
 
 def _run_bootstrap(bootstrap, *args, cwd, launcher_dest, env_extra=None):
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
     if env_extra:
         env.update(env_extra)
     return subprocess.run(

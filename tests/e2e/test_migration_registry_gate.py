@@ -32,6 +32,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from ai_hats.paths import PROJECT_CONFIG
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -76,7 +77,7 @@ def _seed_pre_hats471_yaml(project: Path) -> None:
     shape of every project upgrading from a release that predates HATS-471.
     """
     project.mkdir(parents=True, exist_ok=True)
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: gemini\n"
         "ai_hats_dir: .agent/ai-hats\n"
@@ -103,7 +104,7 @@ def test_e2e_first_bump_replays_registry_and_persists_step(
     )
 
     # yaml persisted with the registry's latest step.
-    raw = yaml.safe_load((project / "ai-hats.yaml").read_text())
+    raw = yaml.safe_load((project / PROJECT_CONFIG).read_text())
     assert "migration_step" in raw, (
         f"migration_step missing from persisted yaml:\n{raw}"
     )
@@ -171,7 +172,7 @@ def test_e2e_greenfield_init_seeds_latest_step(installed_launcher, tmp_path):
     )
 
     # yaml carries the latest step from the very first save.
-    raw = yaml.safe_load((project / "ai-hats.yaml").read_text())
+    raw = yaml.safe_load((project / PROJECT_CONFIG).read_text())
     latest_step_proc = _run(
         [
             f"{venv}/bin/python", "-c",

@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats.constants import HOOK_PRE_TOOL_USE
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 GUARD = (
     REPO_ROOT
@@ -30,7 +32,7 @@ def _run(command: str | None, *, env: dict | None = None, raw: str | None = None
     else:
         stdin = json.dumps(
             {
-                "hook_event_name": "PreToolUse",
+                "hook_event_name": HOOK_PRE_TOOL_USE,
                 "tool_name": "Bash",
                 "tool_input": {"command": command},
             }

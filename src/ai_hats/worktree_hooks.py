@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ai_hats_wt.locks import LIFECYCLE_LOCK_TIMEOUT
+from .paths import AI_HATS_PROJECT_DIR_ENV
 
 # Default per-hook wall-clock budget. Strictly below LIFECYCLE_LOCK_TIMEOUT so
 # the timeout — not the lock — is what bounds a hung hook (see module docstring).
@@ -101,7 +102,7 @@ def run_worktree_hook(
     env = {
         **os.environ,
         "AI_HATS_WORKTREE_PATH": str(worktree_path),
-        "AI_HATS_PROJECT_DIR": str(project_dir),
+        AI_HATS_PROJECT_DIR_ENV: str(project_dir),
         "AI_HATS_BRANCH_NAME": branch_name,
         "AI_HATS_EVENT": event,
     }

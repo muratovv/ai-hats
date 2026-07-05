@@ -37,6 +37,8 @@ import pytest
 
 from _helpers.project import pin_edge_channel
 from _helpers.workspace import build_workspace_member_wheels
+from ai_hats.paths import ENV_AI_HATS_VENV
+from ai_hats.constants import ENV_REPO_URL
 
 pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
@@ -115,9 +117,9 @@ def test_e2e_stale_launcher_dormancy_advisory(tmp_path: Path) -> None:
     launcher_bytes_before = launcher.read_bytes()
 
     env = os.environ.copy()
-    env["AI_HATS_REPO_URL"] = str(src_repo)
+    env[ENV_REPO_URL] = str(src_repo)
     env["AI_HATS_TRASH_DIR"] = str(tmp_path / "trash")
-    env.pop("AI_HATS_VENV", None)
+    env.pop(ENV_AI_HATS_VENV, None)
     env.pop("PYTHONPATH", None)
     # HATS-898: ai-hats requires unpublished ai-hats-core/ai-hats-wt — build the
     # member wheels from the clone; the shim's pip + self-update's uv resolve them.

@@ -14,10 +14,11 @@ from ai_hats.paths import (
     state_md_path,
     tasks_dir,
 )
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def _seed_tracker_legacy(project_dir: Path) -> dict[str, Path]:
-    (project_dir / "ai-hats.yaml").write_text(
+    (project_dir / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
     seeds: dict[str, Path] = {}
@@ -97,7 +98,7 @@ def test_tracker_migration_e2e_task_visible(tmp_path: Path) -> None:
 
 
 def test_tracker_migration_noop_on_clean_project(tmp_path: Path) -> None:
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
     asm = Assembler(tmp_path)

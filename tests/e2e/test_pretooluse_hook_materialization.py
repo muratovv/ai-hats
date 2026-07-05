@@ -37,6 +37,8 @@ HOOK_BASENAMES = ("pre_bash_shared_state_guard.sh", "shared_state_classifier.sh"
 from _helpers.env import clean_env  # noqa: E402
 from _helpers.project import pin_edge_channel  # noqa: E402
 from _helpers.repo_src import build_src  # noqa: E402
+from ai_hats.paths import ENV_AI_HATS_VENV  # noqa: E402
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL  # noqa: E402
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
@@ -102,9 +104,9 @@ def private_launcher(tmp_path_factory):
     # HATS-904: module setup runs before the autouse env scrub — scrub explicitly.
     # ai-hats init flow: README.md#2-wire-ai-hats-into-a-project
     env = clean_env()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(build_src(REPO_ROOT))
+    env.pop(ENV_AI_HATS_VENV, None)
     # Isolate from the user's ``~/.ai-hats/`` customizations layer
     # (roles, traits, customizations.yaml) — otherwise the dev env's
     # personal-workflow trait and custom roles bleed into the test
@@ -134,7 +136,7 @@ def private_launcher(tmp_path_factory):
     )
     shared_venv = bootstrap_proj / ".agent" / "ai-hats" / ".venv"
     assert shared_venv.is_dir(), "bootstrap did not create shared venv"
-    env["AI_HATS_VENV"] = str(shared_venv)
+    env[ENV_AI_HATS_VENV] = str(shared_venv)
     return launcher_dest, env, shared_venv
 
 

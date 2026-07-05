@@ -9,6 +9,7 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats.cli import main
+from ai_hats.paths import PROJECT_CONFIG
 
 
 @pytest.fixture()
@@ -16,7 +17,7 @@ def cli_project(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
     monkeypatch.chdir(project)
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
         "active_role: ''\ndefault_role: ''\nlibrary_paths: []\n"
     )
@@ -30,7 +31,7 @@ def cli_project(tmp_path, monkeypatch):
 
 
 def _load(project):
-    return yaml.safe_load((project / "ai-hats.yaml").read_text())
+    return yaml.safe_load((project / PROJECT_CONFIG).read_text())
 
 
 def test_no_args_errors(cli_project):

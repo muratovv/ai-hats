@@ -21,6 +21,7 @@ from .checker import (
     run_check,
     sha_matches,
 )
+from ..paths import PROJECT_CONFIG
 
 OPT_OUT_ENV = "AI_HATS_NO_UPDATE_CHECK"
 
@@ -46,7 +47,7 @@ def is_local_channel(project_dir: Path) -> bool:
 
     from ..models import Channel, ProjectConfig, ProjectConfigError
 
-    config_path = project_dir / "ai-hats.yaml"
+    config_path = project_dir / PROJECT_CONFIG
     if not config_path.exists():
         return False
     try:

@@ -14,6 +14,7 @@ from ai_hats.hooks_manager import (  # HATS-837: git-hook mechanics merged into 
     GITHOOKS_MANIFEST,
 )
 from ai_hats.models import GIT_HOOK_EVENTS, Channel, HarnessConfig, ProjectConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 
 pytestmark = pytest.mark.integration
@@ -93,7 +94,7 @@ def project_with_hook_skill(tmp_path):
     )
 
     config = ProjectConfig(provider="gemini", library_paths=[str(lib)])
-    config.save(project / "ai-hats.yaml")
+    config.save(project / PROJECT_CONFIG)
 
     return project, lib
 
@@ -135,7 +136,7 @@ def project_no_hook_skill(tmp_path):
     )
 
     config = ProjectConfig(provider="gemini", library_paths=[str(lib)])
-    config.save(project / "ai-hats.yaml")
+    config.save(project / PROJECT_CONFIG)
     return project, lib
 
 
@@ -383,7 +384,7 @@ def test_unknown_event_silently_skipped(tmp_path):
         "    - trait-base\n"
     )
     ProjectConfig(provider="gemini", library_paths=[str(lib)]).save(
-        project / "ai-hats.yaml",
+        project / PROJECT_CONFIG,
     )
 
     asm = Assembler(project, library_paths=[lib])
@@ -503,9 +504,9 @@ def _write_update_cache(project, *, behind, ahead):
 def _set_channel_local(project: Path) -> None:
     """Flip the on-disk harness channel to LOCAL, preserving everything else
     (``is_local_channel`` reads the file fresh at sync time)."""
-    cfg = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    cfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     cfg.model_copy(update={"harness": HarnessConfig(channel=Channel.LOCAL)}).save(
-        project / "ai-hats.yaml"
+        project / PROJECT_CONFIG
     )
 
 
@@ -652,7 +653,7 @@ def test_sync_hooks_non_git_still_heals_runtime(tmp_path):
     )
     ProjectConfig(
         provider="gemini", library_paths=[str(lib)], active_role="test-role"
-    ).save(project / "ai-hats.yaml")
+    ).save(project / PROJECT_CONFIG)
 
     asm = Assembler(project, library_paths=[lib])
     res = asm.hooks.sync_hooks(None)  # must not raise on a non-git project
@@ -726,7 +727,7 @@ def project_with_self_heal_skill(tmp_path):
         "name: test-role\npriorities: [Quality]\n"
         "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
     )
-    ProjectConfig(provider="gemini", library_paths=[str(lib)]).save(project / "ai-hats.yaml")
+    ProjectConfig(provider="gemini", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
     return project, lib
 
 

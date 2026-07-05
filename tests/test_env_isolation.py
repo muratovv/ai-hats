@@ -18,11 +18,12 @@ import os
 from pathlib import Path
 
 from ai_hats.pipeline.steps.save import SaveArtifact
+from ai_hats.paths import ENV_AI_HATS_DIR
 
 
 def test_ambient_ai_hats_dir_is_neutralized():
     """The autouse guard clears any ambient ``AI_HATS_DIR`` for every test."""
-    assert os.environ.get("AI_HATS_DIR") is None
+    assert os.environ.get(ENV_AI_HATS_DIR) is None
 
 
 def test_save_artifact_judge_template_stays_in_project_dir(tmp_path: Path):

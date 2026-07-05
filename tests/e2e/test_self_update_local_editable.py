@@ -24,6 +24,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 pytestmark = pytest.mark.install_heavy  # real uv install at call time → capped via conftest
 
@@ -56,7 +58,7 @@ def test_e2e_self_update_local_editable_in_place(tmp_path: Path) -> None:
     subprocess.run(["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)], check=True)
 
     # Pin channel: local at the cloned src checkout.
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "ai_hats_dir: .agent/ai-hats\n"
         "provider: claude\n"
@@ -66,9 +68,9 @@ def test_e2e_self_update_local_editable_in_place(tmp_path: Path) -> None:
     )
 
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(src_repo)  # launcher bootstrap source
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(src_repo)  # launcher bootstrap source
+    env.pop(ENV_AI_HATS_VENV, None)
     env.pop("PYTHONPATH", None)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
@@ -95,5 +97,5 @@ def test_e2e_self_update_local_editable_in_place(tmp_path: Path) -> None:
     )
 
     # 3. The launcher resolves the editable install end-to-end (no env pin).
-    clean = {k: v for k, v in env.items() if k != "AI_HATS_VENV"}
+    clean = {k: v for k, v in env.items() if k != ENV_AI_HATS_VENV}
     _run([str(launcher_dest), "--help"], cwd=project, env=clean, timeout=60)

@@ -21,7 +21,22 @@ from typing import TYPE_CHECKING
 # ``ai_hats.runtime``.
 from .constants import TraceTag
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
-from .paths import claude_transcript_path, claude_transcripts_dir
+from .paths import (
+    REASONING_LOG,
+    TRANSCRIPT_TXT,
+    claude_transcript_path,
+    claude_transcripts_dir,
+)
+from .pipeline.keys import (
+    KEY_CLAUDE_SESSION_ID,
+    KEY_ERRORS,
+    KEY_EXIT_CODE,
+    KEY_PROJECT_DIR,
+    KEY_SESSION_DIR,
+    KEY_SESSION_ID,
+    PIPELINE_FINALIZE_HITL,
+    PIPELINE_FINALIZE_SUBAGENT,
+)
 
 if TYPE_CHECKING:
     from .observe import Session, SidecarTracer
@@ -188,9 +203,9 @@ def _finalize_sub_agent(
     enrichment, no behaviour change for the unfixed callsites.
     """
     if stdout:
-        (session.session_dir / "transcript.txt").write_text(stdout)
+        (session.session_dir / TRANSCRIPT_TXT).write_text(stdout)
     if stderr:
-        (session.session_dir / "reasoning.log").write_text(stderr)
+        (session.session_dir / REASONING_LOG).write_text(stderr)
 
     metrics: dict = {
         "exit_code": exit_code,
@@ -627,7 +642,7 @@ def _log_pipeline_errors(pipeline_name: str, final_state: dict) -> None:
     silently no-opping due to a fresh bug) we'd see nothing — hence the
     explicit drain.
     """
-    errors = final_state.get("errors") or {}
+    errors = final_state.get(KEY_ERRORS) or {}
     for step_name, exc in errors.items():
         logger.warning(
             "%s step %s failed: %s: %s",
@@ -660,11 +675,11 @@ def _run_finalize_hitl(
     from .pipeline.pipeline import run as run_pipeline
 
     initial: dict = {
-        "session_id": session.session_id,
-        "session_dir": session.session_dir,
-        "claude_session_id": claude_session_id,
-        "project_dir": project_dir,
-        "exit_code": exit_code,
+        KEY_SESSION_ID: session.session_id,
+        KEY_SESSION_DIR: session.session_dir,
+        KEY_CLAUDE_SESSION_ID: claude_session_id,
+        KEY_PROJECT_DIR: project_dir,
+        KEY_EXIT_CODE: exit_code,
     }
     if static_cost_analyzer is not None:
         initial["static_cost_analyzer"] = static_cost_analyzer
@@ -673,9 +688,9 @@ def _run_finalize_hitl(
         initial["session_factory"] = session_factory
     if audit_writer_factory is not None:
         initial["audit_writer_factory"] = audit_writer_factory
-    pipeline = load_core_pipeline("finalize-hitl")
+    pipeline = load_core_pipeline(PIPELINE_FINALIZE_HITL)
     final_state = run_pipeline(pipeline, initial=initial)
-    _log_pipeline_errors("finalize-hitl", final_state)
+    _log_pipeline_errors(PIPELINE_FINALIZE_HITL, final_state)
 
 
 def _run_finalize_subagent(
@@ -698,11 +713,11 @@ def _run_finalize_subagent(
     from .pipeline.pipeline import run as run_pipeline
 
     initial: dict = {
-        "session_id": session.session_id,
-        "session_dir": session.session_dir,
-        "claude_session_id": claude_session_id,
-        "project_dir": project_dir,
-        "exit_code": exit_code,
+        KEY_SESSION_ID: session.session_id,
+        KEY_SESSION_DIR: session.session_dir,
+        KEY_CLAUDE_SESSION_ID: claude_session_id,
+        KEY_PROJECT_DIR: project_dir,
+        KEY_EXIT_CODE: exit_code,
     }
     if static_cost_analyzer is not None:
         initial["static_cost_analyzer"] = static_cost_analyzer
@@ -711,6 +726,6 @@ def _run_finalize_subagent(
         initial["session_factory"] = session_factory
     if audit_writer_factory is not None:
         initial["audit_writer_factory"] = audit_writer_factory
-    pipeline = load_core_pipeline("finalize-subagent")
+    pipeline = load_core_pipeline(PIPELINE_FINALIZE_SUBAGENT)
     final_state = run_pipeline(pipeline, initial=initial)
-    _log_pipeline_errors("finalize-subagent", final_state)
+    _log_pipeline_errors(PIPELINE_FINALIZE_SUBAGENT, final_state)

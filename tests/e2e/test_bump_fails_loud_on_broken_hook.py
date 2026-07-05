@@ -27,6 +27,8 @@ from pathlib import Path
 import pytest
 
 from _helpers.project import pin_edge_channel
+from ai_hats.paths import PROJECT_CONFIG
+from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 
 def _seed_stuck_state(project_path: Path) -> None:
@@ -38,7 +40,7 @@ def _seed_stuck_state(project_path: Path) -> None:
     directly — exactly what a project caught between an older
     auto-heal and a Phase 4-aware bump looks like.
     """
-    (project_path / "ai-hats.yaml").write_text(
+    (project_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
@@ -63,7 +65,7 @@ def _seed_stuck_state(project_path: Path) -> None:
     # to simulate post-hoc damage. For this fixture we just write the
     # settings entry and let the test path delete the file).
     (claude / "settings.json").write_text(json.dumps({
-        "hooks": {"PreToolUse": [{
+        "hooks": {HOOK_PRE_TOOL_USE: [{
             "matcher": "Bash",
             "_ai_hats_managed": "ai-hats:hats-437",
             "hooks": [{
@@ -114,7 +116,7 @@ def test_bump_fails_loud_when_settings_points_at_missing_hook(
     # path that materialization will never write.)
     (tmp_venv_project.path / ".claude" / "settings.json").write_text(
         json.dumps({
-            "hooks": {"PreToolUse": [{
+            "hooks": {HOOK_PRE_TOOL_USE: [{
                 "matcher": "Bash",
                 "hooks": [{
                     "type": "command",
@@ -175,7 +177,7 @@ def test_bump_passes_smoke_assert_on_clean_state(
     # Minimal greenfield-ish layout: no .claude/settings.json yet —
     # the bump's provider.ensure_runtime_hooks writes the managed
     # entry pointing at the materialized .sh, which exists.
-    (tmp_venv_project.path / "ai-hats.yaml").write_text(
+    (tmp_venv_project.path / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
