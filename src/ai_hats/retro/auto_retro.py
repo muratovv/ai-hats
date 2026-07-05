@@ -22,10 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..models import FeedbackPolicy, ProjectConfig
-from ..paths import PROJECT_CONFIG
-
-
-RETRO_LOG_FILENAME = "retro.log"
+from ..paths import METRICS_JSON, PROJECT_CONFIG, RETRO_LOG, session_dirname
 
 
 def should_run(
@@ -86,7 +83,7 @@ def make_decision(
     from ..paths import retros_dir, runs_dir
 
     config_path = project_dir / PROJECT_CONFIG
-    metrics_path = runs_dir(project_dir) / f"session_{session_id}" / "metrics.json"
+    metrics_path = runs_dir(project_dir) / session_dirname(session_id) / METRICS_JSON
     try:
         action, reason = should_run(config_path, metrics_path)
         config = ProjectConfig.from_yaml(config_path)
@@ -169,7 +166,7 @@ def _parens_safe(reason: str) -> str:
 def _retro_log_path(project_dir: Path, session_id: str) -> Path:
     from ..paths import runs_dir
 
-    return runs_dir(project_dir) / f"session_{session_id}" / RETRO_LOG_FILENAME
+    return runs_dir(project_dir) / session_dirname(session_id) / RETRO_LOG
 
 
 def write_retro_log(
@@ -219,7 +216,7 @@ def main() -> None:
     from ..paths import runs_dir
 
     config_path = project_dir / PROJECT_CONFIG
-    metrics_path = runs_dir(project_dir) / f"session_{session_id}" / "metrics.json"
+    metrics_path = runs_dir(project_dir) / session_dirname(session_id) / METRICS_JSON
 
     action, reason = should_run(config_path, metrics_path)
 

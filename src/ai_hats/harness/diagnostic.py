@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from ..paths import REASONING_LOG
+
 if TYPE_CHECKING:
     from ..observe import Session
 
@@ -58,7 +60,7 @@ def diagnose_silent_session(session: "Session") -> str:
                     bits.append(f"{key}={metrics[key]}")
     except (OSError, ValueError):
         bits.append("metrics=unreadable")
-    reasoning = session.session_dir / "reasoning.log"
+    reasoning = session.session_dir / REASONING_LOG
     if reasoning.exists():
         try:
             tail = reasoning.read_text()[-300:].strip()

@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from typing import TypedDict
 
+from ..paths import METRICS_JSON, session_dirname
 from .window import (
     compute_session_end,
     parse_session_start,
@@ -42,8 +43,8 @@ def evaluate_wrap_up(
     """
     from ..paths import runs_dir
 
-    sdir = runs_dir(project_dir) / f"session_{session_id}"
-    metrics_path = sdir / "metrics.json"
+    sdir = runs_dir(project_dir) / session_dirname(session_id)
+    metrics_path = sdir / METRICS_JSON
     if not metrics_path.exists():
         return None
     try:

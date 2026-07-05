@@ -28,6 +28,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..paths import RETRO_LOG, session_dirname
+
 import click
 
 from ..hypothesis import (
@@ -100,7 +102,7 @@ def _spawn_detached(session_id: str, max_retries: int) -> None:
     from ..paths import runs_dir
 
     project_dir = _project_dir()
-    log_path = runs_dir(project_dir) / f"session_{session_id}" / "retro.log"
+    log_path = runs_dir(project_dir) / session_dirname(session_id) / RETRO_LOG
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with open(log_path, "a") as f:
         proc = subprocess.Popen(

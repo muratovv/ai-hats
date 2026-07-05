@@ -20,9 +20,9 @@ from pathlib import Path
 
 from ai_hats_core import scrubbed_git_env
 
+from ..paths import AUDIT_MD, METRICS_JSON, session_dirname, strip_session_prefix
 from .common import SessionArtifacts, SessionLinks, SessionMetrics
 from .window import (
-    SESSION_PREFIX,
     compute_session_end,
     parse_session_start,
     tasks_closed_in_window,
@@ -55,7 +55,7 @@ def compute_facts(project_dir: Path, session_id: str) -> SessionFacts:
     from ..paths import runs_dir
 
     sid = _normalize(session_id)
-    session_dir = runs_dir(project_dir) / f"{SESSION_PREFIX}{sid}"
+    session_dir = runs_dir(project_dir) / session_dirname(sid)
     if not session_dir.exists():
         raise FileNotFoundError(f"Session not found: {sid}")
 
@@ -75,10 +75,10 @@ def compute_facts(project_dir: Path, session_id: str) -> SessionFacts:
     # <ai_hats_dir>/sessions/runs/session_<sid>/ — one ".." up gets us
     # back to the sessions/ root.
     links = SessionLinks(
-        audit=f"../runs/{SESSION_PREFIX}{sid}/audit.md",
+        audit=f"../runs/{session_dirname(sid)}/{AUDIT_MD}",
         metrics=(
-            f"../runs/{SESSION_PREFIX}{sid}/metrics.json"
-            if (session_dir / "metrics.json").exists()
+            f"../runs/{session_dirname(sid)}/{METRICS_JSON}"
+            if (session_dir / METRICS_JSON).exists()
             else None
         ),
     )
@@ -103,7 +103,7 @@ def _parse_composition(session_dir: Path) -> dict | None:
     Returns ``None`` for old sessions that lack the field (pre-HATS-442)
     or any session whose metrics.json is missing/unparsable.
     """
-    metrics_path = session_dir / "metrics.json"
+    metrics_path = session_dir / METRICS_JSON
     if not metrics_path.exists():
         return None
     try:
@@ -117,13 +117,11 @@ def _parse_composition(session_dir: Path) -> dict | None:
 
 
 def _normalize(session_id: str) -> str:
-    if session_id.startswith(SESSION_PREFIX):
-        return session_id[len(SESSION_PREFIX):]
-    return session_id
+    return strip_session_prefix(session_id)
 
 
 def _parse_metrics(session_dir: Path) -> SessionMetrics:
-    metrics_path = session_dir / "metrics.json"
+    metrics_path = session_dir / METRICS_JSON
     if not metrics_path.exists():
         return SessionMetrics(exit_code=0, turns=0, tool_calls=0)
     try:
@@ -144,7 +142,7 @@ def _parse_metrics(session_dir: Path) -> SessionMetrics:
 
 def _parse_role(session_dir: Path) -> str:
     """Read role from metrics.json; fall back to audit.md header; finally 'unknown'."""
-    metrics_path = session_dir / "metrics.json"
+    metrics_path = session_dir / METRICS_JSON
     if metrics_path.exists():
         try:
             data = json.loads(metrics_path.read_text())
@@ -153,7 +151,7 @@ def _parse_role(session_dir: Path) -> str:
                 return str(role)
         except json.JSONDecodeError:
             pass
-    audit_path = session_dir / "audit.md"
+    audit_path = session_dir / AUDIT_MD
     if audit_path.exists():
         for line in audit_path.read_text().splitlines()[:10]:
             m = re.search(r"\*\*Role\*\*:\s*(\S+)", line)

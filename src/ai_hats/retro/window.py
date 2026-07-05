@@ -12,16 +12,14 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ..paths import PROJECT_CONFIG
+from ..paths import METRICS_JSON, PROJECT_CONFIG, strip_session_prefix
 
 logger = logging.getLogger(__name__)
-
-SESSION_PREFIX = "session_"
 
 
 def parse_session_start(session_id: str) -> datetime:
     """Parse `YYYYMMDD-HHMMSS-N` (or `session_<id>`) into a UTC datetime."""
-    sid = session_id[len(SESSION_PREFIX):] if session_id.startswith(SESSION_PREFIX) else session_id
+    sid = strip_session_prefix(session_id)
     try:
         return datetime.strptime(sid[:15], "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
     except ValueError as e:
@@ -36,7 +34,7 @@ def compute_session_end(
     The window upper bound matters: without it artifacts and tasks_closed
     leak into repo-wide history (HATS-212).
     """
-    metrics_path = session_dir / "metrics.json"
+    metrics_path = session_dir / METRICS_JSON
     if metrics_path.exists():
         try:
             data = json.loads(metrics_path.read_text())
@@ -101,7 +99,6 @@ def parse_task_timestamp(value: str) -> datetime | None:
 
 
 __all__ = [
-    "SESSION_PREFIX",
     "compute_session_end",
     "parse_session_start",
     "parse_task_timestamp",

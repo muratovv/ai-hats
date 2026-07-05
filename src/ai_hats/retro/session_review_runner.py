@@ -25,7 +25,7 @@ from pydantic import ValidationError
 from ..harness.diagnostic import diagnose_silent_session
 from ..harness.errors import HarnessReliabilityError
 from ..hypothesis import HypothesisStore, ProposalStore
-from ..paths import PROJECT_CONFIG
+from ..paths import AUDIT_MD, METRICS_JSON, PROJECT_CONFIG, TRANSCRIPT_TXT, session_dirname
 from .facts import compute_facts
 from .loader import parse
 from .reflect_session_schema import HypothesisVerdict, ProposalAction
@@ -242,9 +242,9 @@ class SessionReviewRunner:
         return "\n".join(lines)
 
     def _render_session_evidence(self, session_id: str) -> str:
-        sdir = self.gitlog_dir / f"session_{session_id}"
+        sdir = self.gitlog_dir / session_dirname(session_id)
         parts = [f"## Session evidence for {session_id}"]
-        metrics_path = sdir / "metrics.json"
+        metrics_path = sdir / METRICS_JSON
         if metrics_path.exists():
             try:
                 metrics = json.loads(metrics_path.read_text())
@@ -254,7 +254,7 @@ class SessionReviewRunner:
                 )
             except json.JSONDecodeError:
                 pass
-        audit_path = sdir / "audit.md"
+        audit_path = sdir / AUDIT_MD
         if audit_path.exists():
             audit_text = self._truncate_audit(audit_path.read_text())
             parts.append(f"audit.md:\n```\n{audit_text}\n```")
@@ -378,7 +378,7 @@ class SessionReviewRunner:
                 isolation_mode="none",
                 harness_policy=harness_policy,
             )
-            transcript_path = session.session_dir / "transcript.txt"
+            transcript_path = session.session_dir / TRANSCRIPT_TXT
             transcript = (
                 transcript_path.read_text() if transcript_path.exists() else ""
             )
