@@ -25,6 +25,7 @@ from pydantic import ValidationError
 from ..harness.diagnostic import diagnose_silent_session
 from ..harness.errors import HarnessReliabilityError
 from ..hypothesis import HypothesisStore, ProposalStore
+from ..paths import PROJECT_CONFIG
 from .facts import compute_facts
 from .loader import parse
 from .reflect_session_schema import HypothesisVerdict, ProposalAction
@@ -342,7 +343,7 @@ class SessionReviewRunner:
         """
         from ..models import ProjectConfig
 
-        cfg_path = self.project_dir / "ai-hats.yaml"
+        cfg_path = self.project_dir / PROJECT_CONFIG
         if not cfg_path.exists():
             return ""
         try:

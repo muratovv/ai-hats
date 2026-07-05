@@ -9,7 +9,6 @@ share them without any cycle. ``assembler`` re-imports them, so
 """
 
 AGENT_DIR = ".agent"
-PROJECT_CONFIG = "ai-hats.yaml"
 GITIGNORE_FILE = ".gitignore"
 
 # HATS-282 — canonical layered layer

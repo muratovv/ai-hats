@@ -12,6 +12,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from ..paths import PROJECT_CONFIG
+
 logger = logging.getLogger(__name__)
 
 SESSION_PREFIX = "session_"
@@ -67,7 +69,7 @@ def tasks_closed_in_window(
         return []
     try:
         prefix = ProjectConfig.resolve_task_prefix(
-            project_dir, project_dir / "ai-hats.yaml"
+            project_dir, project_dir / PROJECT_CONFIG
         )
         tm = TaskManager(project_dir, prefix=prefix, strict_plan_check=False)
         done = tm.list_tasks(state=TaskState.DONE)

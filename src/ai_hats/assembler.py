@@ -41,7 +41,7 @@ from .paths import (
     skills_dir as _lib_skills_dir,
     user_home,
 )
-from .paths.constants import LIBRARIES_DIRNAME
+from .paths.constants import LIBRARIES_DIRNAME, PROJECT_CONFIG
 from .placeholders import expand_path_placeholders
 from .plugin_dir import drop_legacy_claude_publish, drop_legacy_skills_mirror
 from ai_hats_core.safe_delete import discard as _safe_discard
@@ -60,7 +60,6 @@ from .constants import (
     CANONICAL_DIR,
     CANONICAL_MANIFEST,
     GITIGNORE_FILE,
-    PROJECT_CONFIG,
     USER_RULES_SUBDIR,
 )
 

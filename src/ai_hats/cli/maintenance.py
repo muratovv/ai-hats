@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import click
 
 from ai_hats_core import scrubbed_git_env
+from ..paths import PROJECT_CONFIG
 from ._helpers import _assembler, _project_dir, console, logger
 
 if TYPE_CHECKING:
@@ -777,7 +778,7 @@ def _resolved_via_heuristic(venv: Path) -> str:
     # ai-hats.yaml venv_path (relative to project_dir, expanded by paths.py).
     try:
         project_dir = _project_dir()
-        yaml_path = project_dir / "ai-hats.yaml"
+        yaml_path = project_dir / PROJECT_CONFIG
         if yaml_path.is_file():
             # Lightweight grep — matches the launcher's bash-side scan
             # (scripts/ai-hats-launcher) rather than loading the full
@@ -1138,7 +1139,7 @@ def _read_harness(project_dir: Path):
 
     from ..models import Channel, ProjectConfig, ProjectConfigError
 
-    config_path = project_dir / "ai-hats.yaml"
+    config_path = project_dir / PROJECT_CONFIG
     if not config_path.exists():
         return Channel.STABLE, None, None  # greenfield → documented default
     try:
@@ -1472,7 +1473,7 @@ def update(
     # 1. Snapshot before update
     before_lib = _snapshot_library()
     before_deps = _snapshot_dep_versions()
-    config_path = project_dir / "ai-hats.yaml"
+    config_path = project_dir / PROJECT_CONFIG
     active_role = None
     before_rules: set[str] = set()
     before_skills: set[str] = set()

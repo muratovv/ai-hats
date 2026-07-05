@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import click
 
+from ..paths import PROJECT_CONFIG
 from ._helpers import _project_dir, console
 
 
@@ -22,7 +23,7 @@ def config_feedback_show():
     """Display current feedback configuration."""
     from ..models import ProjectConfig
 
-    cfg = ProjectConfig.from_yaml(_project_dir() / "ai-hats.yaml")
+    cfg = ProjectConfig.from_yaml(_project_dir() / PROJECT_CONFIG)
     sr = cfg.feedback.session_retro
 
     console.print("[bold]Feedback config[/]")
@@ -44,7 +45,7 @@ def config_feedback_session_retro(
     """Configure session-retro policy and options."""
     from ..models import FeedbackPolicy, ProjectConfig
 
-    path = _project_dir() / "ai-hats.yaml"
+    path = _project_dir() / PROJECT_CONFIG
     cfg = ProjectConfig.from_yaml(path)
     sr = cfg.feedback.session_retro
 
