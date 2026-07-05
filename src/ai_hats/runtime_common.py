@@ -21,7 +21,12 @@ from typing import TYPE_CHECKING
 # ``ai_hats.runtime``.
 from .constants import TraceTag
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
-from .paths import claude_transcript_path, claude_transcripts_dir
+from .paths import (
+    REASONING_LOG,
+    TRANSCRIPT_TXT,
+    claude_transcript_path,
+    claude_transcripts_dir,
+)
 
 if TYPE_CHECKING:
     from .observe import Session, SidecarTracer
@@ -188,9 +193,9 @@ def _finalize_sub_agent(
     enrichment, no behaviour change for the unfixed callsites.
     """
     if stdout:
-        (session.session_dir / "transcript.txt").write_text(stdout)
+        (session.session_dir / TRANSCRIPT_TXT).write_text(stdout)
     if stderr:
-        (session.session_dir / "reasoning.log").write_text(stderr)
+        (session.session_dir / REASONING_LOG).write_text(stderr)
 
     metrics: dict = {
         "exit_code": exit_code,

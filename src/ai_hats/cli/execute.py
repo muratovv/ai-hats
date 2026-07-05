@@ -24,6 +24,7 @@ from pathlib import Path
 
 import click
 
+from ..paths import METRICS_JSON
 from ._helpers import _project_dir, console
 
 
@@ -184,7 +185,7 @@ def execute_cmd(
     # Batch mode: read metrics for --json output, print summary, exit.
     session_id = final["session_id"]
     session_dir = final["session_dir"]
-    metrics_path = session_dir / "metrics.json"
+    metrics_path = session_dir / METRICS_JSON
     metrics: dict = {}
     if metrics_path.exists():
         try:
