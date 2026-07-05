@@ -71,6 +71,17 @@ FORBIDDEN_WT_FOR_TRACKER = ("ai_hats_wt", f"{PKG}.wt_carry", f"{PKG}.wt_lifecycl
 # HATS-865 T5 complete: the migration ratchet (EXPECTED_COMPOSITION_OFFENDERS)
 # hit zero and was deleted — the gate below asserts NO offenders, ever.
 
+# HATS-867 (T6b): session logging is integrator-only — runtime bricks receive
+# the observe writer handle (SessionManager / Session+AuditWriter factories)
+# injected from the integrator instead of importing observe.
+FORBIDDEN_OBSERVE = ("observe",)
+ALLOWED_OBSERVE_CONSUMERS = (
+    "observe",  # the module itself
+    "cli",  # integrator orchestration — seeds the writer handles (whole subtree)
+    "retro",  # integrator-tier reflection (builds SessionManager for reviewer spawn)
+    "composition_seam",  # HATS-867: populates payload session/audit factories
+)
+
 
 def _module_name(path: Path) -> str:
     parts = [PKG, *path.relative_to(SRC).with_suffix("").parts]
@@ -257,10 +268,25 @@ def test_composition_layer_is_integrator_only():
     TYPE_CHECKING exempt). Bricks receive the ready CompositionPayload from
     the integrator compose seam instead (ADR-0014 Composition rule).
     """
+    offenders = _deny_by_default_offenders(FORBIDDEN_COMPOSITION, ALLOWED_COMPOSITION_CONSUMERS)
+    assert not offenders, (
+        "composition-layer import drift (HATS-865): a non-ALLOWED module "
+        "references the composition layer. Cut the import (inject the "
+        "CompositionPayload / a DI callable instead) or justify a new "
+        "ALLOWED_COMPOSITION_CONSUMERS entry.\n"
+        f"offenders: { {k: offenders[k] for k in sorted(offenders)} }"
+    )
+
+
+def _deny_by_default_offenders(
+    forbidden_names: tuple[str, ...], allowed_names: tuple[str, ...]
+) -> dict[str, list[str]]:
+    """Full-AST offender scan: non-ALLOWED modules referencing a FORBIDDEN one
+    at any level (deferred included, TYPE_CHECKING exempt)."""
     mods = _modules()
     nodeset = set(mods)
-    forbidden = tuple(f"{PKG}.{m}" for m in FORBIDDEN_COMPOSITION)
-    allowed = tuple(f"{PKG}.{m}" for m in ALLOWED_COMPOSITION_CONSUMERS)
+    forbidden = tuple(f"{PKG}.{m}" for m in forbidden_names)
+    allowed = tuple(f"{PKG}.{m}" for m in allowed_names)
     offenders: dict[str, list[str]] = {}
     for name, path in mods.items():
         if any(name == a or name.startswith(a + ".") for a in allowed):
@@ -273,11 +299,22 @@ def test_composition_layer_is_integrator_only():
         ]
         if refs:
             offenders[name.removeprefix(PKG + ".")] = sorted(set(refs))
+    return offenders
+
+
+def test_observe_is_integrator_only():
+    """HATS-867 deny-by-default: outside ALLOWED_OBSERVE_CONSUMERS no module may
+    reference ``observe`` at ANY level (deferred included, TYPE_CHECKING
+    exempt). Runtime bricks receive the observe writer handle injected —
+    ``session_mgr``/``tracer_factory`` via runner ctors, ``session_factory``/
+    ``audit_writer_factory`` via CompositionPayload (ADR-0014 tier option A).
+    """
+    offenders = _deny_by_default_offenders(FORBIDDEN_OBSERVE, ALLOWED_OBSERVE_CONSUMERS)
     assert not offenders, (
-        "composition-layer import drift (HATS-865): a non-ALLOWED module "
-        "references the composition layer. Cut the import (inject the "
-        "CompositionPayload / a DI callable instead) or justify a new "
-        "ALLOWED_COMPOSITION_CONSUMERS entry.\n"
+        "observe import drift (HATS-867): a non-ALLOWED module references "
+        "ai_hats.observe. Cut the import (inject the writer handle — "
+        "session_mgr/tracer_factory ctor params or payload factories) or "
+        "justify a new ALLOWED_OBSERVE_CONSUMERS entry.\n"
         f"offenders: { {k: offenders[k] for k in sorted(offenders)} }"
     )
 

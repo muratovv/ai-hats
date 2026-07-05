@@ -210,8 +210,7 @@ def relocate(a: "Assembler", new_dir: str) -> "RelocationResult":
             )
             venv_removed = True
 
-    a.project_config.ai_hats_dir = new_rel
-    a.project_config.save(a.config_path)
+    a.save_config(ai_hats_dir=new_rel)
 
     gitignore_updated = False
     if a.project_config.manage_gitignore:

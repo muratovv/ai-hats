@@ -53,6 +53,29 @@ def _invoke(*args: str):
     return runner.invoke(customize, list(args), catch_exceptions=False)
 
 
+def test_reset_global_fails_friendly_when_locked(
+    isolated_home: Path, project: Path, monkeypatch
+):
+    """HATS-526: a held lock surfaces as exit 1 + message, and the RMW never runs."""
+    from functools import partial
+
+    from ai_hats.cli import assembly
+    from ai_hats_core import file_lock
+
+    res = _invoke("maintainer", "--add-trait", "hilt-workflow", "--global")
+    assert res.exit_code == 0, res.output
+
+    user_path = isolated_home / ".ai-hats" / "customizations.yaml"
+    monkeypatch.setattr(assembly, "file_lock", partial(file_lock, timeout=0.1))
+    with file_lock(user_path):
+        res = _invoke("maintainer", "--reset", "--global")
+
+    assert res.exit_code == 1
+    assert "lock" in res.output.lower(), res.output
+    cfg = UserConfig.from_yaml(user_path)
+    assert cfg.customizations["maintainer"].add_traits == ["hilt-workflow"]
+
+
 def test_global_write_creates_user_file(isolated_home: Path, project: Path):
     user_path = isolated_home / ".ai-hats" / "customizations.yaml"
     assert not user_path.exists()

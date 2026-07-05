@@ -320,6 +320,7 @@ class SessionReviewRunner:
         if self._subagent_runner is not None:
             return self._subagent_runner
         from ..composition_seam import build_composition_payload
+        from ..observe import SessionManager
         from ..runtime import SubAgentRunner
 
         # HATS-865: compose ONCE at this integrator-side seam; the retry loop
@@ -329,7 +330,9 @@ class SessionReviewRunner:
         payload = build_composition_payload(
             self.project_dir, role_override="session-reviewer", strict=False,
         )
-        return SubAgentRunner(self.project_dir, payload)
+        return SubAgentRunner(
+            self.project_dir, payload, session_mgr=SessionManager(self.project_dir),
+        )
 
     def _review_model(self) -> str:
         """Read ``feedback.session_retro.review_model`` (with deprecated alias).

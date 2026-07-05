@@ -18,7 +18,9 @@ from .hook_collection import (
 from .frontmatter import FrontmatterError, read_frontmatter
 from .paths import AI_HATS_PROJECT_DIR_ENV
 from .paths import CLAUDE_PROJECT_DIR_VAR
+from .paths import GEMINI_CLI_PROJECT_RULES_PATH_ENV
 from .paths import ai_hats_dir
+from .paths import claude_md, claude_settings_json, gemini_md
 from .paths import hooks_dir as _lib_hooks_dir
 from .paths import managed_runtime_hook_filename
 from .paths import session_cache_dir
@@ -300,7 +302,7 @@ class GeminiProvider(Provider):
         return "gemini"
 
     def system_prompt_path(self, project_dir: Path) -> Path:
-        return project_dir / "GEMINI.md"
+        return gemini_md(project_dir)
 
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"
@@ -351,7 +353,7 @@ class GeminiProvider(Provider):
         # Write mandatory role override (00_ prefix = highest priority)
         (rules_dir / "00_MANDATORY_ROLE.md").write_text(prompt_content)
 
-        return [], {"GEMINI_CLI_PROJECT_RULES_PATH": str(rules_dir)}, prompt_content
+        return [], {GEMINI_CLI_PROJECT_RULES_PATH_ENV: str(rules_dir)}, prompt_content
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         cmd = ["gemini"]
@@ -371,7 +373,7 @@ class GeminiProvider(Provider):
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         return {
-            "GEMINI_CLI_PROJECT_RULES_PATH": str(self.rules_dir(session_dir)),
+            GEMINI_CLI_PROJECT_RULES_PATH_ENV: str(self.rules_dir(session_dir)),
         }
 
 
@@ -381,7 +383,7 @@ class ClaudeProvider(Provider):
         return "claude"
 
     def system_prompt_path(self, project_dir: Path) -> Path:
-        return project_dir / "CLAUDE.md"
+        return claude_md(project_dir)
 
     def scaffold_template_relpath(self) -> str | None:
         return "templates/claude/CLAUDE.md.template"
@@ -575,7 +577,7 @@ class ClaudeProvider(Provider):
         ``data`` is ``None`` when the file is user-shaped / malformed and must be
         left untouched (then ``changed`` is False, ``changed_tags`` empty).
         """
-        settings_path = project_dir / ".claude" / "settings.json"
+        settings_path = claude_settings_json(project_dir)
         desired = self._desired_runtime_entries(project_dir, result)
         desired_by_tag = {
             entry["_ai_hats_managed"]: entry

@@ -18,6 +18,7 @@ def _runner(project):
     from ai_hats.composition_payload import CompositionPayload
     from ai_hats.hooks_manager import HooksManager
     from ai_hats.models import ProjectConfig
+    from ai_hats.observe import SessionManager, SidecarTracer
     from ai_hats_core import CompositionResult
 
     hooks = HooksManager(
@@ -34,7 +35,10 @@ def _runner(project):
         effective_role="t",
         hooks=hooks,
     )
-    return WrapRunner(project, payload)
+    return WrapRunner(
+        project, payload,
+        session_mgr=SessionManager(project), tracer_factory=SidecarTracer,
+    )
 
 
 def _setup(project, tmp_path, monkeypatch, sid="sess-1"):
