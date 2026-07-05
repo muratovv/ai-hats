@@ -23,6 +23,7 @@ from pathlib import Path
 
 from ..models import FeedbackPolicy, ProjectConfig
 from ..paths import METRICS_JSON, PROJECT_CONFIG, RETRO_LOG, session_dirname
+from ..constants import ENV_SESSION_ID, ENV_SKIP_RETRO
 
 
 def should_run(
@@ -201,13 +202,13 @@ def main() -> None:
     are running inside the session-reviewer's own sub-Claude process. Returning
     early breaks the otherwise unbounded spawn loop.
     """
-    session_id = os.environ.get("AI_HATS_SESSION_ID", "")
+    session_id = os.environ.get(ENV_SESSION_ID, "")
     if not session_id:
         return
 
     project_dir = Path.cwd()
 
-    if os.environ.get("HATS_SKIP_RETRO") == "1":
+    if os.environ.get(ENV_SKIP_RETRO) == "1":
         write_retro_log(
             project_dir, session_id, "auto_retro", "skip", "recursion-guard",
         )
@@ -258,7 +259,7 @@ def _spawn_session_reviewer_background(
 
     log_path = _retro_log_path(project_dir, session_id)
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    env = {**os.environ, "HATS_SKIP_RETRO": "1"}
+    env = {**os.environ, ENV_SKIP_RETRO: "1"}
     try:
         with open(log_path, "a") as f:
             proc = sp.Popen(

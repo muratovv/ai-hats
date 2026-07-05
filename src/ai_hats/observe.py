@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ai_hats_core import atomic_write_text
-from .constants import TraceTag
+from .constants import TraceTag, ENV_SESSION_ID
 from .environment_recovery import EnvironmentRecovery, RecoveryProtocol
 from .paths import (
     AUDIT_MD,
@@ -295,7 +295,7 @@ class Session:
     def get_env(self) -> dict[str, str]:
         """Environment variables for this session."""
         return {
-            "AI_HATS_SESSION_ID": self.session_id,
+            ENV_SESSION_ID: self.session_id,
             "TRACE_LOG_PATH": str(self.trace_path),
         }
 

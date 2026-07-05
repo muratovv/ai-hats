@@ -34,6 +34,14 @@ ALWAYS_ON_RULES = {
 }
 
 
+# Env-var names shared across modules (HATS-917); single-file knobs stay local
+ENV_SESSION_ID = "AI_HATS_SESSION_ID"
+ENV_REPO_URL = "AI_HATS_REPO_URL"
+ENV_ROLE = "AI_HATS_ROLE"
+ENV_LAUNCHER_DEST = "AI_HATS_LAUNCHER_DEST"
+ENV_SKIP_RETRO = "HATS_SKIP_RETRO"
+
+
 # HATS-867: trace-tag vocabulary — leaf home so runtime bricks need no observe import
 class TraceTag:
     REQ = "[REQ]"

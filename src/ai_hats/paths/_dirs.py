@@ -36,7 +36,7 @@ from typing import Literal
 
 import yaml
 
-from .constants import PROJECT_CONFIG
+from .constants import PROJECT_CONFIG, ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
 
 LegacyClass = Literal["sessions", "tracker", "library", "root"]
 
@@ -139,7 +139,7 @@ def _env_ai_hats_dir(project_dir: Path) -> Path | None:
     the override is ignored (+warn). A bare ``AI_HATS_DIR`` without the pair
     keeps its historical env-wins semantics.
     """
-    raw = os.environ.get("AI_HATS_DIR")
+    raw = os.environ.get(ENV_AI_HATS_DIR)
     if not raw:
         return None
     pin = os.environ.get(AI_HATS_PROJECT_DIR_ENV)
@@ -409,7 +409,7 @@ def venv_path(project_dir: Path) -> Path:
     Returns the absolute path without ``mkdir`` — venv creation is owned
     by ``bash bootstrap`` / ``self update`` (HATS-339), not by callers.
     """
-    raw_env = os.environ.get("AI_HATS_VENV")
+    raw_env = os.environ.get(ENV_AI_HATS_VENV)
     if raw_env:
         return Path(raw_env).expanduser()
     raw_yaml = _read_venv_path_from_yaml(project_dir)
