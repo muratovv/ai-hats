@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,7 @@ from pydantic import (
 )
 
 from ai_hats_core import YamlModel as _YamlModel
-from ai_hats_core import atomic_write_text
+from ai_hats_core import atomic_write_text, file_lock
 
 from .harness import FeedbackConfig, HarnessConfig
 from .migrations import _migrate_v1_to_v2, _migrate_v2_to_v3, _migrate_v3_to_v4
@@ -382,6 +383,20 @@ class ProjectConfig(_YamlModel):
         if len(prefixes) == 1:
             return prefixes.pop()
         return None
+
+
+def locked_update(path: Path, apply: Callable[[ProjectConfig], None]) -> ProjectConfig:
+    """Serialized read-modify-write of an ai-hats.yaml (HATS-526).
+
+    Re-reads the on-disk state under a cross-process ``file_lock``, applies the
+    caller's delta, saves. Put ONLY your own field changes in ``apply`` —
+    concurrent writers' fields survive via the fresh read.
+    """
+    with file_lock(path):
+        cfg = ProjectConfig.from_yaml(path) if path.exists() else ProjectConfig()
+        apply(cfg)
+        cfg.save(path)
+    return cfg
 
 
 def _format_project_config_error(path: Path, err: ValidationError) -> str:

@@ -11,13 +11,27 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 import click
+from ai_hats_core import LockTimeoutError, file_lock
 from rich.tree import Tree
 
 from ..providers import PROVIDERS
 from ._helpers import _assembler, _project_dir, console
+
+
+@contextmanager
+def _config_lock(path: Path) -> Iterator[None]:
+    """Serialize customize's read-modify-write (HATS-526: lost-update race)."""
+    try:
+        with file_lock(path):
+            yield
+    except LockTimeoutError as e:
+        console.print(f"[red]{e}[/]")
+        raise SystemExit(1) from e
 
 
 def _stdin_is_tty() -> bool:
@@ -459,8 +473,7 @@ def set_role(
         except ValueError as err:
             console.print(f"[red]Error[/]: {err}")
             raise SystemExit(1)
-        asm.project_config.provider = provider
-        asm.project_config.save(asm.config_path)
+        asm.save_config(provider=provider)
 
     # task-prefix is set independently of role/provider, and overwrites
     # any existing value (unlike `self init` which refuses conflicts).
@@ -470,8 +483,7 @@ def set_role(
         except ValueError as err:
             console.print(f"[red]Error[/]: {err}")
             raise SystemExit(1)
-        asm.project_config.task_prefix = validated
-        asm.project_config.save(asm.config_path)
+        asm.save_config(task_prefix=validated)
         console.print(f"[green]Task prefix set[/]: [bold]{validated}[/]")
 
     # --venv / --no-venv — pure yaml field, no filesystem state.
@@ -489,8 +501,7 @@ def set_role(
         if asm.project_config.venv_path == new_venv:
             console.print("[dim]venv_path unchanged[/]")
         else:
-            asm.project_config.venv_path = new_venv
-            asm.project_config.save(asm.config_path)
+            asm.save_config(venv_path=new_venv)
             label = new_venv if new_venv is not None else "managed (default)"
             console.print(f"[green]Updated[/]: venv_path = [bold]{label}[/]")
 
@@ -520,8 +531,7 @@ def set_role(
         if current == new_harness:
             console.print("[dim]harness unchanged[/]")
         else:
-            asm.project_config.harness = new_harness
-            asm.project_config.save(asm.config_path)
+            asm.save_config(harness=new_harness)
             console.print(f"[green]Updated[/]: channel = [bold]{new_channel.value}[/]")
 
     # --manage-gitignore / --no-manage-gitignore — pure yaml toggle.
@@ -529,8 +539,7 @@ def set_role(
         if asm.project_config.manage_gitignore == manage_gitignore:
             console.print("[dim]manage_gitignore unchanged[/]")
         else:
-            asm.project_config.manage_gitignore = manage_gitignore
-            asm.project_config.save(asm.config_path)
+            asm.save_config(manage_gitignore=manage_gitignore)
             console.print(
                 f"[green]Updated[/]: manage_gitignore = [bold]{manage_gitignore}[/]"
             )
@@ -754,9 +763,10 @@ def customize(
     # ----- RESET mode -----
     if do_reset:
         if is_global:
-            user_cfg = UserConfig.from_yaml(user_path)
-            user_cfg.customizations.pop(role, None)
-            user_cfg.save(user_path)
+            with _config_lock(user_path):
+                user_cfg = UserConfig.from_yaml(user_path)
+                user_cfg.customizations.pop(role, None)
+                user_cfg.save(user_path)
             console.print(
                 f"[green]Reset[/] (global) customizations for [bold]{role}[/] "
                 f"([dim]{user_path}[/])"
@@ -765,9 +775,10 @@ def customize(
         if not project_path.exists():
             console.print("[red]No ai-hats.yaml found[/].")
             raise SystemExit(1)
-        proj_cfg = ProjectConfig.from_yaml(project_path)
-        proj_cfg.customizations.pop(role, None)
-        proj_cfg.save(project_path)
+        with _config_lock(project_path):
+            proj_cfg = ProjectConfig.from_yaml(project_path)
+            proj_cfg.customizations.pop(role, None)
+            proj_cfg.save(project_path)
         console.print(f"[green]Reset[/] (project) customizations for [bold]{role}[/]")
         return
 
@@ -780,20 +791,21 @@ def customize(
         return
 
     if is_global:
-        user_cfg = UserConfig.from_yaml(user_path)
-        overlay = user_cfg.customizations.get(role, OverlayConfig())
-        _apply_overlay_edits(
-            overlay,
-            add_trait=add_trait,
-            remove_trait=remove_trait,
-            add_rule=add_rule,
-            remove_rule=remove_rule,
-            add_skill=add_skill,
-            remove_skill=remove_skill,
-            injection_append=injection_append,
-        )
-        user_cfg.customizations[role] = overlay
-        user_cfg.save(user_path)
+        with _config_lock(user_path):
+            user_cfg = UserConfig.from_yaml(user_path)
+            overlay = user_cfg.customizations.get(role, OverlayConfig())
+            _apply_overlay_edits(
+                overlay,
+                add_trait=add_trait,
+                remove_trait=remove_trait,
+                add_rule=add_rule,
+                remove_rule=remove_rule,
+                add_skill=add_skill,
+                remove_skill=remove_skill,
+                injection_append=injection_append,
+            )
+            user_cfg.customizations[role] = overlay
+            user_cfg.save(user_path)
         console.print(
             f"[green]Updated[/] (global) customizations for [bold]{role}[/] "
             f"([dim]{user_path}[/])"
@@ -807,20 +819,21 @@ def customize(
             "[red]No ai-hats.yaml found[/]. Run: ai-hats config set -r <role> -p <provider>"
         )
         raise SystemExit(1)
-    proj_cfg = ProjectConfig.from_yaml(project_path)
-    overlay = proj_cfg.customizations.get(role, OverlayConfig())
-    _apply_overlay_edits(
-        overlay,
-        add_trait=add_trait,
-        remove_trait=remove_trait,
-        add_rule=add_rule,
-        remove_rule=remove_rule,
-        add_skill=add_skill,
-        remove_skill=remove_skill,
-        injection_append=injection_append,
-    )
-    proj_cfg.customizations[role] = overlay
-    proj_cfg.save(project_path)
+    with _config_lock(project_path):
+        proj_cfg = ProjectConfig.from_yaml(project_path)
+        overlay = proj_cfg.customizations.get(role, OverlayConfig())
+        _apply_overlay_edits(
+            overlay,
+            add_trait=add_trait,
+            remove_trait=remove_trait,
+            add_rule=add_rule,
+            remove_rule=remove_rule,
+            add_skill=add_skill,
+            remove_skill=remove_skill,
+            injection_append=injection_append,
+        )
+        proj_cfg.customizations[role] = overlay
+        proj_cfg.save(project_path)
     console.print(f"[green]Updated[/] (project) customizations for [bold]{role}[/]")
     _print_overlay("project", role, overlay)
 
