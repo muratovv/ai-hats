@@ -8,9 +8,10 @@ versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - `file_lock` context manager + `LockTimeoutError` — read-modify-write file lock
-  helper (HATS-526). Consumed by `ai_hats.cli.assembly`. Bump published so a
-  fresh install no longer resolves the stale `0.2.0` release that lacked these
-  symbols (HATS-923).
+  helper (HATS-526). Consumed by `ai_hats.cli.assembly`. Version bumped so the
+  workspace/uv install resolves the local wheel over the stale published `0.2.0`
+  that lacked these symbols; publishing 0.3.0 to PyPI + raising the consumer floor
+  pin to `>=0.3.0` is a release follow-up (HATS-923).
 
 ## [0.2.0] - 2026-07-03
 
