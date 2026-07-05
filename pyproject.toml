@@ -28,7 +28,7 @@ dependencies = [
     # First-party workspace packages (uv sources below) — the kernel (HATS-862:
     # composition value-types, YamlModel, git_env, safe_delete, atomic_io) lives
     # in ai-hats-core; the worktree engine (ai_hats_wt) lives in ai-hats-wt.
-    "ai-hats-core>=0.2.0",
+    "ai-hats-core>=0.3.0",
     "ai-hats-wt>=0.1.0",
     "click>=8.1",
     "pyyaml>=6.0",
