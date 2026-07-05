@@ -14,6 +14,7 @@ from filelock import FileLock
 
 from .models import TaskCard, TaskState
 from .constants import ENV_SESSION_ID
+from .tracker.layout import TrackerPaths
 
 if TYPE_CHECKING:
     # Annotation-only import for attach_add's return type. A runtime import
@@ -162,21 +163,22 @@ class TaskManager:
         project_dir: Path,
         prefix: str = "HATS",
         *,
+        layout: TrackerPaths,
         strict_plan_check: bool = True,
         worktree_effects: WorktreeEffects | None = None,
     ) -> None:
-        from .paths import state_md_path, tasks_dir
-
         self.project_dir = project_dir
-        self.tasks_dir = tasks_dir(project_dir)
-        self.state_md_path = state_md_path(project_dir)
+        # HATS-864: layout is injected integrator policy (paths.tracker_paths).
+        self._layout = layout
+        self.tasks_dir = layout.tasks_dir
+        self.state_md_path = layout.state_md_path
         self.strict_plan_check = strict_plan_check
         # HATS-866: None → pure FSM (no worktree side effects); the integrator
         # injects the wt binding at its chokepoint (cli/_helpers._task_manager).
         self._worktree_effects = worktree_effects
         # Legacy index — removed after unification on STATE.md. Path retained
         # only to clean up stale files left from prior versions on first sync.
-        self._legacy_backlog_md_path = project_dir / ".agent" / "backlog.md"
+        self._legacy_backlog_md_path = layout.legacy_backlog_md
         self.prefix = prefix
         # Note: tasks_dir is created lazily on first write
         # (create_task / transition / log_work / update_task).
@@ -197,13 +199,12 @@ class TaskManager:
     def _ensure_project(self) -> None:
         """HATS-839: refuse a write op at a non-project root before any mkdir.
 
-        Validates + creates the base via ``ensure_ai_hats_dir``; a stray root raises
-        ``NotAnAiHatsProjectError`` so no phantom tracker is bootstrapped (the
-        id-collision engine behind HATS-788).
+        Delegates to the injected ``layout.ensure_base`` (the integrator wires
+        ``ensure_ai_hats_dir`` — a stray root raises ``NotAnAiHatsProjectError``
+        so no phantom tracker is bootstrapped, the id-collision engine behind
+        HATS-788).
         """
-        from .paths import ensure_ai_hats_dir
-
-        ensure_ai_hats_dir(self.project_dir)
+        self._layout.ensure()
 
     def create_task(
         self,

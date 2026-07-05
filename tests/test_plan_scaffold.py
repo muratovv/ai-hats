@@ -15,6 +15,7 @@ import pytest
 
 from ai_hats.models import TaskState
 from ai_hats.state import EmptyPlanError, PLAN_SCAFFOLD, TaskManager
+from ai_hats.tracker_wiring import tracker_paths
 
 
 pytestmark = pytest.mark.integration
@@ -43,7 +44,7 @@ def project(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def mgr(project: Path) -> TaskManager:
-    return TaskManager(project, prefix="HATS")
+    return TaskManager(project, prefix="HATS", layout=tracker_paths(project))
 
 
 def test_transition_plan_writes_scaffold(mgr: TaskManager) -> None:

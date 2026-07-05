@@ -1296,7 +1296,9 @@ def test_subagent_meta_prompt_has_no_literal_placeholder(
     from ai_hats.observe import SessionManager
 
     runner = SubAgentRunner(
-        project, _subagent_payload(result), session_mgr=SessionManager(project),
+        project,
+        _subagent_payload(result),
+        session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
     )
     meta_prompt = runner._build_meta_prompt(
         result=result,
@@ -1335,7 +1337,9 @@ def test_subagent_meta_prompt_omits_project_state(project_with_placeholder_libra
     from ai_hats.observe import SessionManager
 
     runner = SubAgentRunner(
-        project, _subagent_payload(result), session_mgr=SessionManager(project),
+        project,
+        _subagent_payload(result),
+        session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
     )
     meta_prompt = runner._build_meta_prompt(
         result=result,
@@ -1369,7 +1373,9 @@ def test_subagent_sdk_first_message_omits_project_state(project_with_placeholder
     from ai_hats.observe import SessionManager
 
     runner = SubAgentRunner(
-        project, _subagent_payload(result), session_mgr=SessionManager(project),
+        project,
+        _subagent_payload(result),
+        session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
     )
     audit = runner._build_sdk_prompt_audit(
         result=result,

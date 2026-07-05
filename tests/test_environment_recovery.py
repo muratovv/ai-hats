@@ -17,6 +17,7 @@ from ai_hats.observe import SessionManager
 from ai_hats.paths import (
     complete_sentinel,
     current_pointer,
+    runs_dir,
     session_cache_root,
     version_dir,
     versions_root,
@@ -183,7 +184,7 @@ class _SpyRecovery:
 
 def test_session_manager_calls_recovery_once_per_create(tmp_path):
     spy = _SpyRecovery()
-    mgr = SessionManager(tmp_path, recovery=spy)
+    mgr = SessionManager(tmp_path, runs_dir=runs_dir(tmp_path), recovery=spy)
     mgr.create_session()
     mgr.create_session()
     assert spy.calls == 2
@@ -193,7 +194,7 @@ def test_session_manager_noop_recovery_no_fs_effects(tmp_path, monkeypatch):
     """NoOpRecovery → create_session works and writes no liveness ref."""
     pinned = _mk_complete_version(tmp_path, "cafef00d")
     monkeypatch.setattr(sys, "prefix", str(pinned))
-    mgr = SessionManager(tmp_path, recovery=NoOpRecovery())
+    mgr = SessionManager(tmp_path, runs_dir=runs_dir(tmp_path), recovery=NoOpRecovery())
     session = mgr.create_session()
     assert session.session_id
     assert not (versions_root(tmp_path) / ".refs").exists()
@@ -204,5 +205,5 @@ def test_session_manager_default_recovery_is_real(tmp_path, monkeypatch):
     pinned = _mk_complete_version(tmp_path, "cafef00d")
     current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
     monkeypatch.setattr(sys, "prefix", str(pinned))
-    SessionManager(tmp_path).create_session()
+    SessionManager(tmp_path, runs_dir=runs_dir(tmp_path)).create_session()
     assert (versions_root(tmp_path) / ".refs" / f"{os.getpid()}.json").exists()

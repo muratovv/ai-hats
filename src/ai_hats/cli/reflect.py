@@ -36,7 +36,7 @@ from ..hypothesis import (
     HypothesisStore,
     ProposalStore,
 )
-from ..paths import hypotheses_dir, proposals_dir
+from ..paths import hypotheses_dir, proposals_dir, runs_dir
 from ..pipeline.keys import (
     KEY_COMPOSITION,
     KEY_EXIT_CODE,
@@ -189,7 +189,7 @@ def reflect_all_cmd(dry_run: bool):
             KEY_COMPOSITION: build_composition_payload(
                 project_dir, role_override="judge", interactive=True,
             ),
-            KEY_SESSION_MGR: SessionManager(project_dir),
+            KEY_SESSION_MGR: SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
             KEY_TRACER_FACTORY: SidecarTracer,
         })
     sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
@@ -256,7 +256,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
             KEY_COMPOSITION: build_composition_payload(
                 project_dir, role_override="judge-auditor",
             ),
-            KEY_SESSION_MGR: SessionManager(project_dir),
+            KEY_SESSION_MGR: SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
             KEY_TRACER_FACTORY: SidecarTracer,
         })
 
@@ -308,7 +308,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
             KEY_COMPOSITION: build_composition_payload(
                 project_dir, role_override="judge", interactive=True,
             ),
-            KEY_SESSION_MGR: SessionManager(project_dir),
+            KEY_SESSION_MGR: SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
             KEY_TRACER_FACTORY: SidecarTracer,
         })
     sys.exit(int(r2.get(KEY_EXIT_CODE, 1)))
@@ -414,7 +414,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
             KEY_COMPOSITION: build_composition_payload(
                 project_dir, role_override="judge-for-role", interactive=True,
             ),
-            KEY_SESSION_MGR: SessionManager(project_dir),
+            KEY_SESSION_MGR: SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
             KEY_TRACER_FACTORY: SidecarTracer,
         })
     saved = final.get(KEY_SAVED_PATH)
@@ -560,7 +560,7 @@ def _run_intake_pipeline(
             KEY_COMPOSITION: build_composition_payload(
                 project_dir, role_override="hypothesis-intake",
             ),
-            KEY_SESSION_MGR: SessionManager(project_dir),
+            KEY_SESSION_MGR: SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
             KEY_TRACER_FACTORY: SidecarTracer,
         })
     return (

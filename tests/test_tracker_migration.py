@@ -85,12 +85,13 @@ def test_tracker_migration_idempotent(tmp_path: Path) -> None:
 def test_tracker_migration_e2e_task_visible(tmp_path: Path) -> None:
     """End-to-end: after migration, TaskManager finds the task via new paths."""
     from ai_hats.state import TaskManager
+    from ai_hats.tracker_wiring import tracker_paths
 
     _seed_tracker_legacy(tmp_path)
     asm = Assembler(tmp_path)
     asm._migrate_layout_v4_tracker()
 
-    mgr = TaskManager(tmp_path, prefix="HATS")
+    mgr = TaskManager(tmp_path, prefix="HATS", layout=tracker_paths(tmp_path))
     task = mgr.get_task("HATS-001")
     assert task is not None
     assert task.title == "x"

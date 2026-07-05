@@ -11,13 +11,14 @@ import pytest
 from pathlib import Path
 
 from ai_hats.state import PLAN_SCAFFOLD, PLAN_SECTIONS, TaskManager
+from ai_hats.tracker_wiring import tracker_paths
 
 
 @pytest.fixture
 def mgr(tmp_path: Path) -> TaskManager:
     project = tmp_path / "project"
     (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
-    return TaskManager(project, strict_plan_check=False)
+    return TaskManager(project, strict_plan_check=False, layout=tracker_paths(project))
 
 
 def _write_plan(mgr: TaskManager, body: str) -> object:

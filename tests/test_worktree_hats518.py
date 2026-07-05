@@ -246,6 +246,7 @@ class TestTransitionExecute:
         """
         from ai_hats.models import TaskState
         from ai_hats.state import TaskManager
+        from ai_hats.tracker_wiring import tracker_paths
         from ai_hats.wt_effects import WtWorktreeEffects
 
         (master_project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
@@ -255,6 +256,7 @@ class TestTransitionExecute:
             master_project,
             prefix="T",
             strict_plan_check=False,
+            layout=tracker_paths(master_project),
             worktree_effects=WtWorktreeEffects(master_project),
         )
         mgr.create_task("T-1", "HATS-518 probe")

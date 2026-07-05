@@ -14,6 +14,11 @@ from click.testing import CliRunner
 from ai_hats.cli import main
 from ai_hats.models import TaskState
 from ai_hats.state import TaskManager
+from ai_hats.tracker_wiring import tracker_paths
+
+
+def _mgr(project_dir: Path, **kw) -> TaskManager:
+    return TaskManager(project_dir, prefix="T", layout=tracker_paths(project_dir), **kw)
 
 
 @pytest.fixture
@@ -31,7 +36,7 @@ def cli(monkeypatch, project_dir):
 
 
 def _seed_task(project_dir: Path, task_id: str = "T-1") -> None:
-    TaskManager(project_dir, prefix="T").create_task(task_id, "Sample task")
+    _mgr(project_dir).create_task(task_id, "Sample task")
 
 
 def test_transition_cancelled_requires_resolution(cli, project_dir):
@@ -44,7 +49,7 @@ def test_transition_cancelled_requires_resolution(cli, project_dir):
     assert "resolution" in result.output.lower()
 
     # Card untouched — still in brainstorm.
-    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    t = _mgr(project_dir).get_task("T-1")
     assert t.state == TaskState.BRAINSTORM
 
 
@@ -57,7 +62,7 @@ def test_transition_cancelled_with_resolution_succeeds(cli, project_dir):
     )
     assert result.exit_code == 0, result.output
 
-    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    t = _mgr(project_dir).get_task("T-1")
     assert t.state == TaskState.CANCELLED
     assert t.resolution == "duplicate of T-99"
     assert t.completed_at != ""
@@ -82,13 +87,13 @@ def test_transition_to_other_states_does_not_require_resolution(cli, project_dir
     result = cli.invoke(main, ["task", "transition", "T-1", "plan"])
     assert result.exit_code == 0, result.output
 
-    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    t = _mgr(project_dir).get_task("T-1")
     assert t.state == TaskState.PLAN
 
 
 def test_task_list_hides_cancelled_by_default(cli, project_dir):
     """`task list` (default) hides cancelled the same way it hides done/failed."""
-    mgr = TaskManager(project_dir, prefix="T")
+    mgr = _mgr(project_dir)
     mgr.create_task("T-1", "Active task")
     mgr.create_task("T-2", "Closed task")
     mgr.transition("T-2", TaskState.CANCELLED, resolution="dup")
@@ -108,7 +113,7 @@ def test_task_list_hides_cancelled_by_default(cli, project_dir):
 
 def test_create_with_parent_and_depends_flags(cli, project_dir):
     """`task create --parent-task X --depends-on Y --depends-on Z` wires both fields."""
-    mgr = TaskManager(project_dir, prefix="T")
+    mgr = _mgr(project_dir)
     mgr.create_task("T-0", "Epic")
     mgr.create_task("T-9", "Blocker A")
     mgr.create_task("T-8", "Blocker B")
@@ -122,7 +127,7 @@ def test_create_with_parent_and_depends_flags(cli, project_dir):
     ])
     assert result.exit_code == 0, result.output
 
-    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    t = _mgr(project_dir).get_task("T-1")
     assert t.parent_task == "T-0"
     assert t.depends_on == ["T-9", "T-8"]
 
@@ -140,7 +145,7 @@ def test_create_warns_on_missing_refs(cli, project_dir):
     assert "T-NOPE" in result.output
     assert "T-99" in result.output
 
-    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    t = _mgr(project_dir).get_task("T-1")
     assert t is not None
     assert t.parent_task == "T-NOPE"
     assert t.depends_on == ["T-99"]
@@ -148,7 +153,7 @@ def test_create_warns_on_missing_refs(cli, project_dir):
 
 def test_create_duplicate_id_rejected(cli, project_dir):
     """`task create --id X` must refuse to overwrite an existing task."""
-    mgr = TaskManager(project_dir, prefix="T")
+    mgr = _mgr(project_dir)
     mgr.create_task("T-1", "Original", description="keep me")
 
     result = cli.invoke(main, [
@@ -159,7 +164,7 @@ def test_create_duplicate_id_rejected(cli, project_dir):
     assert result.exit_code == 1, result.output
     assert "already exists" in result.output.lower()
 
-    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    t = _mgr(project_dir).get_task("T-1")
     assert t.title == "Original"
     assert t.description == "keep me"
 
@@ -172,25 +177,25 @@ def test_create_self_reference_rejected(cli, project_dir):
     ])
     assert result.exit_code == 1, result.output
     assert "own parent" in result.output.lower()
-    assert TaskManager(project_dir, prefix="T").get_task("T-1") is None
+    assert _mgr(project_dir).get_task("T-1") is None
 
 
 def test_update_set_and_clear_parent(cli, project_dir):
-    mgr = TaskManager(project_dir, prefix="T")
+    mgr = _mgr(project_dir)
     mgr.create_task("T-0", "Epic")
     mgr.create_task("T-1", "Child")
 
     r1 = cli.invoke(main, ["task", "update", "T-1", "--parent-task", "T-0"])
     assert r1.exit_code == 0, r1.output
-    assert TaskManager(project_dir, prefix="T").get_task("T-1").parent_task == "T-0"
+    assert _mgr(project_dir).get_task("T-1").parent_task == "T-0"
 
     r2 = cli.invoke(main, ["task", "update", "T-1", "--clear-parent"])
     assert r2.exit_code == 0, r2.output
-    assert TaskManager(project_dir, prefix="T").get_task("T-1").parent_task == ""
+    assert _mgr(project_dir).get_task("T-1").parent_task == ""
 
 
 def test_update_parent_and_clear_parent_mutually_exclusive(cli, project_dir):
-    TaskManager(project_dir, prefix="T").create_task("T-1", "Sample")
+    _mgr(project_dir).create_task("T-1", "Sample")
     result = cli.invoke(main, [
         "task", "update", "T-1",
         "--parent-task", "T-0",
@@ -201,7 +206,7 @@ def test_update_parent_and_clear_parent_mutually_exclusive(cli, project_dir):
 
 
 def test_update_add_remove_depends(cli, project_dir):
-    mgr = TaskManager(project_dir, prefix="T")
+    mgr = _mgr(project_dir)
     mgr.create_task("T-9", "Dep A")
     mgr.create_task("T-8", "Dep B")
     mgr.create_task("T-7", "Dep C")
@@ -214,14 +219,14 @@ def test_update_add_remove_depends(cli, project_dir):
     ])
     assert result.exit_code == 0, result.output
 
-    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    t = _mgr(project_dir).get_task("T-1")
     assert "T-7" in t.depends_on
     assert "T-9" not in t.depends_on
     assert "T-8" in t.depends_on
 
 
 def test_show_displays_blocked_by_section(cli, project_dir):
-    mgr = TaskManager(project_dir, prefix="T")
+    mgr = _mgr(project_dir)
     mgr.create_task("T-9", "Blocker title")
     mgr.create_task("T-1", "Blocked", depends_on=["T-9"])
 
@@ -236,7 +241,7 @@ def test_show_displays_blocked_by_section(cli, project_dir):
 
 
 def test_list_search_matches_depends(cli, project_dir):
-    mgr = TaskManager(project_dir, prefix="T")
+    mgr = _mgr(project_dir)
     mgr.create_task("T-9", "Some blocker")
     mgr.create_task("T-1", "First", depends_on=["T-9"])
     mgr.create_task("T-2", "Unrelated")
@@ -267,14 +272,14 @@ def test_close_from_brainstorm(cli, project_dir):
     )
     assert result.exit_code == 0, result.output
     assert "Closed" in result.output
-    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    t = _mgr(project_dir).get_task("T-1")
     assert t.state == TaskState.DONE
     assert t.resolution == "shipped in 6e7ddd5"
 
 
 def test_force_transition_with_reason(cli, project_dir):
     _seed_task(project_dir)
-    mgr = TaskManager(project_dir, prefix="T", strict_plan_check=False)
+    mgr = _mgr(project_dir, strict_plan_check=False)
     mgr.transition("T-1", TaskState.PLAN)
 
     result = cli.invoke(
@@ -286,13 +291,13 @@ def test_force_transition_with_reason(cli, project_dir):
     )
     assert result.exit_code == 0, result.output
     assert "Forced" in result.output
-    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    t = _mgr(project_dir).get_task("T-1")
     assert t.state == TaskState.BRAINSTORM
 
 
 def test_force_without_reason_rejected(cli, project_dir):
     _seed_task(project_dir)
-    mgr = TaskManager(project_dir, prefix="T", strict_plan_check=False)
+    mgr = _mgr(project_dir, strict_plan_check=False)
     mgr.transition("T-1", TaskState.PLAN)
 
     result = cli.invoke(
@@ -303,7 +308,7 @@ def test_force_without_reason_rejected(cli, project_dir):
 
 
 def test_link_related_then_show_renders_both_sides(cli, project_dir):
-    mgr = TaskManager(project_dir, prefix="T")
+    mgr = _mgr(project_dir)
     mgr.create_task("T-1", "First")
     mgr.create_task("T-2", "Second")
 
@@ -320,7 +325,7 @@ def test_link_related_then_show_renders_both_sides(cli, project_dir):
 
 
 def test_link_fold_then_show_renders_subsumed_on_target(cli, project_dir):
-    mgr = TaskManager(project_dir, prefix="T")
+    mgr = _mgr(project_dir)
     mgr.create_task("T-1", "Folded")
     mgr.create_task("T-2", "Keeper")
 
@@ -337,7 +342,7 @@ def test_link_fold_then_show_renders_subsumed_on_target(cli, project_dir):
 
 
 def test_unlink_removes_relation(cli, project_dir):
-    mgr = TaskManager(project_dir, prefix="T")
+    mgr = _mgr(project_dir)
     mgr.create_task("T-1", "A")
     mgr.create_task("T-2", "B")
     mgr.add_link("T-1", "T-2", link_type="related")
@@ -417,7 +422,7 @@ def test_create_description_file_preserves_content(cli, project_dir):
     )
     assert result.exit_code == 0, result.output
 
-    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    t = _mgr(project_dir).get_task("T-1")
     assert t.description == _GNARLY_DESC
 
 
@@ -458,18 +463,18 @@ def test_create_description_file_empty_yields_empty(cli, project_dir):
     ])
     assert result.exit_code == 0, result.output
 
-    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    t = _mgr(project_dir).get_task("T-1")
     assert t.description == ""
 
 
 def test_update_description_file_replaces_verbatim(cli, project_dir):
     """`task update --description-file F` rewrites the description from F verbatim."""
-    TaskManager(project_dir, prefix="T").create_task("T-1", "Title", description="old")
+    _mgr(project_dir).create_task("T-1", "Title", description="old")
     desc = project_dir / "new.md"
     desc.write_text(_GNARLY_DESC)
 
     result = cli.invoke(main, ["task", "update", "T-1", "--description-file", str(desc)])
     assert result.exit_code == 0, result.output
 
-    t = TaskManager(project_dir, prefix="T").get_task("T-1")
+    t = _mgr(project_dir).get_task("T-1")
     assert t.description == _GNARLY_DESC

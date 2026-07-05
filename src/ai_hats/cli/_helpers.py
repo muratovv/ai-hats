@@ -210,11 +210,17 @@ def _task_manager(project_dir: Path | None = None):
     """
     from ..models import ProjectConfig
     from ..state import TaskManager
+    from ..tracker_wiring import tracker_paths
     from ..wt_effects import WtWorktreeEffects
 
     pdir = project_dir or _project_dir()
     config_path = pdir / PROJECT_CONFIG
     prefix = ProjectConfig.resolve_task_prefix(pdir, config_path)
-    # HATS-866: the CLI is the integrator chokepoint binding the FSM's
-    # needs_worktree effect to the wt engine.
-    return TaskManager(pdir, prefix=prefix, worktree_effects=WtWorktreeEffects(pdir))
+    # HATS-866/864: the CLI is the integrator chokepoint binding the FSM's
+    # needs_worktree effect to the wt engine and the layout to TrackerPaths.
+    return TaskManager(
+        pdir,
+        prefix=prefix,
+        layout=tracker_paths(pdir),
+        worktree_effects=WtWorktreeEffects(pdir),
+    )
