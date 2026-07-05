@@ -3,6 +3,15 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-06
+
+### Added
+
+- `file_lock` context manager + `LockTimeoutError` — read-modify-write file lock
+  helper (HATS-526). Consumed by `ai_hats.cli.assembly`. Bump published so a
+  fresh install no longer resolves the stale `0.2.0` release that lacked these
+  symbols (HATS-923).
+
 ## [0.2.0] - 2026-07-03
 
 ### Added
