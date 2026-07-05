@@ -21,7 +21,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .assembler import AssemblyError
-from .paths import CLAUDE_PROJECT_DIR_VAR, strip_claude_project_dir
+from .paths import (
+    CLAUDE_PROJECT_DIR_VAR,
+    CLAUDE_SETTINGS_JSON_REL,
+    CLAUDE_SETTINGS_LOCAL_JSON_REL,
+    strip_claude_project_dir,
+)
 
 __all__ = [
     "assert_runtime_hooks_resolve",
@@ -34,8 +39,8 @@ __all__ = [
 # allowlist so the asserter sees the same write surface the healer
 # could have touched.
 SETTINGS_TARGETS: tuple[str, ...] = (
-    ".claude/settings.json",
-    ".claude/settings.local.json",
+    CLAUDE_SETTINGS_JSON_REL,
+    CLAUDE_SETTINGS_LOCAL_JSON_REL,
 )
 
 # Hook event types the asserter walks. Claude Code's settings.json
@@ -43,17 +48,19 @@ SETTINGS_TARGETS: tuple[str, ...] = (
 # ``{matcher, hooks: [{type, command, ...}]}`` blocks. The asserter
 # treats the list as opaque — anything with a ``command`` string
 # under any hook event is in scope.
-_HOOK_EVENT_KEYS: frozenset[str] = frozenset({
-    "PreToolUse",
-    "PostToolUse",
-    "SessionStart",
-    "SessionEnd",
-    "UserPromptSubmit",
-    "Stop",
-    "SubagentStop",
-    "Notification",
-    "PreCompact",
-})
+_HOOK_EVENT_KEYS: frozenset[str] = frozenset(
+    {
+        "PreToolUse",
+        "PostToolUse",
+        "SessionStart",
+        "SessionEnd",
+        "UserPromptSubmit",
+        "Stop",
+        "SubagentStop",
+        "Notification",
+        "PreCompact",
+    }
+)
 
 # Variable prefix Claude Code expands at hook-execution time. Stripped
 # during the on-disk existence check. Canonical definition lives in
@@ -183,12 +190,14 @@ def find_broken_hook_refs(project_dir: Path) -> list[BrokenHookRef]:
             resolved = _resolve(command, project_dir)
             if resolved.is_file():
                 continue
-            broken.append(BrokenHookRef(
-                settings_file=rel,
-                event=event,
-                command=command,
-                resolved_path=resolved,
-            ))
+            broken.append(
+                BrokenHookRef(
+                    settings_file=rel,
+                    event=event,
+                    command=command,
+                    resolved_path=resolved,
+                )
+            )
     return broken
 
 
@@ -235,15 +244,11 @@ def assert_runtime_hooks_resolve(
             rel_resolved = ref.resolved_path.relative_to(project_dir).as_posix()
         except ValueError:
             rel_resolved = str(ref.resolved_path)
-        lines.append(
-            f"  {ref.settings_file} | {ref.event} | {ref.command}"
-        )
+        lines.append(f"  {ref.settings_file} | {ref.event} | {ref.command}")
         lines.append(f"    → not found at: {rel_resolved}")
     if backup_path is not None:
         lines.append("")
-        lines.append(
-            f"Recovery: tar -xzf {backup_path} -C {project_dir}"
-        )
+        lines.append(f"Recovery: tar -xzf {backup_path} -C {project_dir}")
         lines.append(
             "  (restores the project tree to its pre-bump state; then "
             "either remove the broken hook entry from settings.json or "

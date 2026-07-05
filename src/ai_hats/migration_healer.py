@@ -38,6 +38,8 @@ from pathlib import Path
 from ai_hats_core import scrubbed_git_env
 from .paths import (
     CLAUDE_PROJECT_DIR_VAR,
+    CLAUDE_SETTINGS_JSON_REL,
+    CLAUDE_SETTINGS_LOCAL_JSON_REL,
     LEGACY_PATH_MAP,
     ai_hats_dir,
     audits_dir,
@@ -97,8 +99,8 @@ class HealReport:
 
 # Stage A1: structured JSON integration points (always auto-healed).
 JSON_TARGETS: tuple[str, ...] = (
-    ".claude/settings.json",
-    ".claude/settings.local.json",
+    CLAUDE_SETTINGS_JSON_REL,
+    CLAUDE_SETTINGS_LOCAL_JSON_REL,
 )
 
 # Stage A2: extensions eligible for text-substring auto-heal (gated by

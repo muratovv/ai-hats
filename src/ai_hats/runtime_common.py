@@ -19,11 +19,12 @@ from typing import TYPE_CHECKING
 # beside the other recovery passes (bundled and run at the create_session
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
+from .constants import TraceTag
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
-from .observe import Session, SidecarTracer, TraceTag
+from .paths import claude_transcript_path, claude_transcripts_dir
 
 if TYPE_CHECKING:
-    pass
+    from .observe import Session, SidecarTracer
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,8 @@ def _finalize_sub_agent(
     extra_metrics: dict | None = None,
     work_dir: Path | None = None,
     static_cost_analyzer=None,
+    session_factory=None,
+    audit_writer_factory=None,
 ) -> None:
     """Save transcripts and finalize audit with structured metrics.
 
@@ -234,6 +237,8 @@ def _finalize_sub_agent(
                 project_dir=work_dir,
                 exit_code=exit_code,
                 static_cost_analyzer=static_cost_analyzer,
+                session_factory=session_factory,
+                audit_writer_factory=audit_writer_factory,
             )
         except (Exception, KeyboardInterrupt):
             logger.warning("finalize-subagent pipeline failed", exc_info=True)
@@ -241,8 +246,7 @@ def _finalize_sub_agent(
 
 def _claude_jsonl_path(project_dir: Path, claude_session_id: str) -> Path | None:
     """Resolve path to Claude Code's JSONL conversation file."""
-    project_key = str(project_dir).replace("/", "-")
-    return Path.home() / ".claude" / "projects" / project_key / f"{claude_session_id}.jsonl"
+    return claude_transcript_path(project_dir, claude_session_id)
 
 
 def _discover_claude_jsonl(project_dir: Path, session_id: str) -> Path | None:
@@ -262,8 +266,7 @@ def _discover_claude_jsonl(project_dir: Path, session_id: str) -> Path | None:
     """
     from datetime import datetime, timezone
 
-    project_key = str(project_dir).replace("/", "-")
-    jsonl_dir = Path.home() / ".claude" / "projects" / project_key
+    jsonl_dir = claude_transcripts_dir(project_dir)
     if not jsonl_dir.is_dir():
         return None
     try:
@@ -642,6 +645,8 @@ def _run_finalize_hitl(
     project_dir: Path,
     exit_code: int,
     static_cost_analyzer=None,
+    session_factory=None,
+    audit_writer_factory=None,
 ) -> None:
     """Invoke the ``finalize-hitl`` sub-pipeline (HATS-535).
 
@@ -663,6 +668,11 @@ def _run_finalize_hitl(
     }
     if static_cost_analyzer is not None:
         initial["static_cost_analyzer"] = static_cost_analyzer
+    # HATS-867: observe factories for make_audit — None-filtered (funnel v-contract).
+    if session_factory is not None:
+        initial["session_factory"] = session_factory
+    if audit_writer_factory is not None:
+        initial["audit_writer_factory"] = audit_writer_factory
     pipeline = load_core_pipeline("finalize-hitl")
     final_state = run_pipeline(pipeline, initial=initial)
     _log_pipeline_errors("finalize-hitl", final_state)
@@ -675,6 +685,8 @@ def _run_finalize_subagent(
     project_dir: Path,
     exit_code: int,
     static_cost_analyzer=None,
+    session_factory=None,
+    audit_writer_factory=None,
 ) -> None:
     """Invoke the ``finalize-subagent`` sub-pipeline (HATS-535).
 
@@ -694,6 +706,11 @@ def _run_finalize_subagent(
     }
     if static_cost_analyzer is not None:
         initial["static_cost_analyzer"] = static_cost_analyzer
+    # HATS-867: observe factories for make_audit — None-filtered (funnel v-contract).
+    if session_factory is not None:
+        initial["session_factory"] = session_factory
+    if audit_writer_factory is not None:
+        initial["audit_writer_factory"] = audit_writer_factory
     pipeline = load_core_pipeline("finalize-subagent")
     final_state = run_pipeline(pipeline, initial=initial)
     _log_pipeline_errors("finalize-subagent", final_state)

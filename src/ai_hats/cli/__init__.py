@@ -126,6 +126,7 @@ def _launch_session(
 ):
     """Launch a wrapped provider CLI session via the ``human`` pipeline."""
     from ..composition_seam import RoleNotFoundError, build_composition_payload
+    from ..observe import SessionManager, SidecarTracer
     from ..pipeline.harness import PipelineHarness
     from ._helpers import _handle_role_not_found, _project_dir
 
@@ -150,6 +151,10 @@ def _launch_session(
                         provider_name=provider,
                         interactive=True,
                     ),
+                    # HATS-867: the CLI (integrator) injects the observe writer
+                    # handles — runners no longer construct them.
+                    "session_mgr": SessionManager(project_dir),
+                    "tracer_factory": SidecarTracer,
                 }
             )
     except RoleNotFoundError as exc:

@@ -120,6 +120,7 @@ def execute_cmd(
 ):
     """Launch a provider session with a composed role + optional initial prompt."""
     from ..composition_seam import RoleNotFoundError, build_composition_payload
+    from ..observe import SessionManager, SidecarTracer
     from ..pipeline.harness import PipelineHarness
     from ..tags import TagValidationError, parse_tags
     from ._helpers import _handle_role_not_found
@@ -165,6 +166,10 @@ def execute_cmd(
                     provider_name=provider,
                     interactive=interactive,
                 ),
+                # HATS-867: the CLI (integrator) injects the observe writer
+                # handles — runners no longer construct them.
+                "session_mgr": SessionManager(project_dir),
+                "tracer_factory": SidecarTracer,
             })
     except RoleNotFoundError as exc:
         # HATS-547 / S-CLI-20: same friendly handler as ``_launch_session``;

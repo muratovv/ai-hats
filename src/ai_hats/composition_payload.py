@@ -30,3 +30,6 @@ class CompositionPayload:
     hooks: "HooksManager | None" = None
     static_cost_analyzer: "Callable[[str], dict | None] | None" = None
     channel: str = ""
+    # HATS-867: observe factories for make_audit (static_cost_analyzer precedent).
+    session_factory: "Callable[..., object] | None" = None
+    audit_writer_factory: "Callable[[], object] | None" = None

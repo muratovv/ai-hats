@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
+from .constants import TraceTag
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -22,7 +23,6 @@ from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .harness.diagnostic import diagnose_silent_session
 from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
-from .observe import Session, SessionManager, TraceTag
 from ai_hats_wt import IsolationMode, WorktreeManager
 from .runtime_common import (
     SUBAGENT_SUBPROCESS_TIMEOUT_S,
@@ -34,6 +34,7 @@ from .runtime_common import (
 )
 
 if TYPE_CHECKING:
+    from .observe import Session, SessionManager
     from .pipeline.harness_policy import HarnessPolicy
 
 logger = logging.getLogger(__name__)
@@ -44,12 +45,20 @@ class SubAgentRunner:
 
     HATS-865: a brick — receives the ready :class:`CompositionPayload` from
     the integrator compose seam and never touches the composition layer.
+    HATS-867: the observe writer handle (``session_mgr``) is injected too —
+    the runner never imports observe at runtime.
     """
 
-    def __init__(self, project_dir: Path, payload: CompositionPayload) -> None:
+    def __init__(
+        self,
+        project_dir: Path,
+        payload: CompositionPayload,
+        *,
+        session_mgr: "SessionManager",
+    ) -> None:
         self.project_dir = project_dir
         self.payload = payload
-        self.session_mgr = SessionManager(project_dir)
+        self.session_mgr = session_mgr
 
     def run(
         self,
@@ -298,6 +307,8 @@ class SubAgentRunner:
                         },
                         work_dir=work_dir,
                         static_cost_analyzer=self.payload.static_cost_analyzer,
+                        session_factory=self.payload.session_factory,
+                        audit_writer_factory=self.payload.audit_writer_factory,
                     )
                 else:
                     # Legacy subprocess path (Gemini and future non-SDK providers).

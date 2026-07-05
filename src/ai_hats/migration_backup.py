@@ -28,6 +28,13 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .paths import (
+    CLAUDE_MD_FILENAME,
+    CLAUDE_SETTINGS_JSON_REL,
+    CLAUDE_SETTINGS_LOCAL_JSON_REL,
+    GEMINI_MD_FILENAME,
+)
+
 __all__ = [
     "snapshot_pre_bump",
     "BackupError",
@@ -51,11 +58,11 @@ MAX_RETENTION = 10
 # exists on the gemini provider, etc.).
 BACKUP_SCOPE_PATHS: tuple[str, ...] = (
     ".agent",
-    ".claude/settings.json",
-    ".claude/settings.local.json",
+    CLAUDE_SETTINGS_JSON_REL,
+    CLAUDE_SETTINGS_LOCAL_JSON_REL,
     "ai-hats.yaml",
-    "CLAUDE.md",
-    "GEMINI.md",
+    CLAUDE_MD_FILENAME,
+    GEMINI_MD_FILENAME,
     ".githooks",
     ".gitignore",
 )
@@ -64,12 +71,14 @@ BACKUP_SCOPE_PATHS: tuple[str, ...] = (
 # (venv, bytecode, caches, node_modules) whose inclusion would inflate the
 # tarball ~100x (the venv alone is ~85 MB) for zero recovery value — rebuilt by
 # `pip install -e` / bytecode recompile.
-EXCLUDED_BASENAMES: frozenset[str] = frozenset({
-    ".venv",
-    "__pycache__",
-    ".cache",
-    "node_modules",
-})
+EXCLUDED_BASENAMES: frozenset[str] = frozenset(
+    {
+        ".venv",
+        "__pycache__",
+        ".cache",
+        "node_modules",
+    }
+)
 
 
 def _should_exclude(arcname: str) -> bool:
