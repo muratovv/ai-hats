@@ -25,6 +25,7 @@ import os
 from pathlib import Path
 from typing import Any, Mapping
 
+from ...constants import ENV_SKIP_RETRO
 from ..step import Step, StepIO
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ class MaybeSpawnSessionReviewer(Step):
         if (
             retro_decision is not None
             and retro_decision.get("action") == "run"
-            and os.environ.get("HATS_SKIP_RETRO") != "1"
+            and os.environ.get(ENV_SKIP_RETRO) != "1"
         ):
             try:
                 _spawn_session_reviewer_background(project_dir, session_id)

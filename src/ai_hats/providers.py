@@ -16,7 +16,7 @@ from .hook_collection import (
     resolve_skill_script,
 )
 from .frontmatter import FrontmatterError, read_frontmatter
-from .paths import AI_HATS_PROJECT_DIR_ENV
+from .paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
 from .paths import CLAUDE_PROJECT_DIR_VAR
 from .paths import GEMINI_CLI_PROJECT_RULES_PATH_ENV
 from .paths import ai_hats_dir
@@ -517,7 +517,7 @@ class ClaudeProvider(Provider):
         # HATS-897: pair var scopes the pin to THIS project — the resolver
         # drops a leaked foreign pair, so get_env re-pins fresh values here.
         return {
-            "AI_HATS_DIR": str(ai_hats_dir(project_dir)),
+            ENV_AI_HATS_DIR: str(ai_hats_dir(project_dir)),
             AI_HATS_PROJECT_DIR_ENV: str(project_dir),
         }
 

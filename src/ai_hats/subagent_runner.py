@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .constants import TraceTag
+from .constants import TraceTag, ENV_ROLE
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -220,11 +220,11 @@ class SubAgentRunner:
         env = {
             **os.environ,
             **session.get_env(),
-            "AI_HATS_ROLE": role_name,
+            ENV_ROLE: role_name,
         }
         sdk_env_overlay = {
             **session.get_env(),
-            "AI_HATS_ROLE": role_name,
+            ENV_ROLE: role_name,
         }
 
         # Legacy subprocess path still needs cmd / skill_args precomputed.

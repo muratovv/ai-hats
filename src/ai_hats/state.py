@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Protocol
 from filelock import FileLock
 
 from .models import TaskCard, TaskState
+from .constants import ENV_SESSION_ID
 
 if TYPE_CHECKING:
     # Annotation-only import for attach_add's return type. A runtime import
@@ -442,7 +443,7 @@ class TaskManager:
                 raise ValueError(f"Task '{task_id}' not found")
 
             if not session_id:
-                session_id = os.environ.get("AI_HATS_SESSION_ID", "")
+                session_id = os.environ.get(ENV_SESSION_ID, "")
 
             task.log_work(message, session_id=session_id)
             task.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

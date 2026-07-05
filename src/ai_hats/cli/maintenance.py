@@ -14,7 +14,8 @@ from typing import TYPE_CHECKING
 import click
 
 from ai_hats_core import scrubbed_git_env
-from ..paths import PROJECT_CONFIG
+from ..paths import PROJECT_CONFIG, ENV_AI_HATS_VENV
+from ..constants import ENV_REPO_URL, ENV_LAUNCHER_DEST
 from ._helpers import _assembler, _project_dir, console, logger
 
 if TYPE_CHECKING:
@@ -54,7 +55,7 @@ def _require_uv() -> None:
 # HATS-766: public default is anonymous git+https (override still accepts ssh/local).
 def _git_install_url() -> str:
     return os.environ.get(
-        "AI_HATS_REPO_URL", "git+https://github.com/muratovv/ai-hats.git"
+        ENV_REPO_URL, "git+https://github.com/muratovv/ai-hats.git"
     )
 
 
@@ -257,7 +258,7 @@ def _installed_launcher_path() -> Path:
     """
     import shutil
 
-    dest = os.environ.get("AI_HATS_LAUNCHER_DEST")
+    dest = os.environ.get(ENV_LAUNCHER_DEST)
     if dest:
         return Path(dest).expanduser()
     found = shutil.which("ai-hats")
@@ -277,7 +278,7 @@ def _sanctioned_launcher_dest() -> Path:
     ``$PATH`` against the sanctioned target, so resolving to whatever PATH finds
     would defeat the detector.
     """
-    dest = os.environ.get("AI_HATS_LAUNCHER_DEST")
+    dest = os.environ.get(ENV_LAUNCHER_DEST)
     if dest:
         return Path(dest).expanduser()
     return Path.home() / ".local" / "bin" / "ai-hats"
@@ -647,7 +648,7 @@ def _run_managed_versioned_update(
         # Pin the bump child to the venv it actually runs in (the new sha),
         # not the old AI_HATS_VENV inherited from the launcher — so any
         # venv_path() resolution inside the bump agrees with sys.prefix.
-        bump_env = {**os.environ, "AI_HATS_VENV": str(vdir)}
+        bump_env = {**os.environ, ENV_AI_HATS_VENV: str(vdir)}
         proc = subprocess.run(
             bump_cmd, cwd=str(project_dir), env=bump_env, check=False,
         )
@@ -769,7 +770,7 @@ def _resolved_via_heuristic(venv: Path) -> str:
     except OSError:
         venv_real = venv
 
-    env_val = os.environ.get("AI_HATS_VENV")
+    env_val = os.environ.get(ENV_AI_HATS_VENV)
     if env_val:
         env_path = Path(env_val.replace("~", str(Path.home()))).resolve()
         if env_path == venv_real:
@@ -1449,7 +1450,7 @@ def update(
         from ..update_check.checker import FALLBACK_REMOTE_URL, _coerce_to_https
 
         raw_edge = (
-            os.environ.get("AI_HATS_REPO_URL") or harness_repo or FALLBACK_REMOTE_URL
+            os.environ.get(ENV_REPO_URL) or harness_repo or FALLBACK_REMOTE_URL
         )
         probe_url = _coerce_to_https(raw_edge)
         probe = (

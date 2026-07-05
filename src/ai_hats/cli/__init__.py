@@ -18,6 +18,7 @@ import sys
 import click
 
 from .. import __version__
+from ..paths import ENV_AI_HATS_VENV
 from ._helpers import console
 
 
@@ -343,7 +344,7 @@ def _guard_self_location() -> None:
         # The launcher pins the resolved venv via AI_HATS_VENV (HATS-647
         # pin-at-spawn); honour it verbatim so launcher and guard agree. Else
         # resolve from the project (venv_path already reads AI_HATS_VENV first).
-        pinned = os.environ.get("AI_HATS_VENV")
+        pinned = os.environ.get(ENV_AI_HATS_VENV)
         resolved_path = Path(pinned) if pinned else venv_path(_project_dir())
         # HATS-791 refinement: only a managed venv that ACTUALLY EXISTS can be
         # "shadowed". If the resolved venv is absent (no managed install for this
