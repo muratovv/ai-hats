@@ -35,11 +35,12 @@ def _parse_template_keys(template: str) -> frozenset[str]:
 
 class SaveArtifact(Step):
     failure_policy = "halt"
+    _NAME = "save_artifact"
 
     def __init__(self, params: Mapping[str, Any]) -> None:
         for required in ("key", "out_path_template"):
             if required not in params:
-                raise ValueError(f"save_artifact: missing param {required!r}")
+                raise ValueError(f"{self._NAME}: missing param {required!r}")
         self.key: str = params["key"]
         self.out_path_template: str = params["out_path_template"]
         self._template_keys = _parse_template_keys(self.out_path_template)
@@ -51,7 +52,7 @@ class SaveArtifact(Step):
         if self._needs_project_dir:
             requires = requires | frozenset({"project_dir"})
         return StepIO(
-            name="save_artifact",
+            name=self._NAME,
             requires=requires,
             produces=frozenset({"saved_path"}),
         )
