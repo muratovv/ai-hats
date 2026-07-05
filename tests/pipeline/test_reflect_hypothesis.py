@@ -194,7 +194,7 @@ def test_phase1_failure_aborts_phase2(
     import ai_hats.runtime as rt
 
     class _FailingSubAgentRunner:
-        def __init__(self, _pd, _payload): pass
+        def __init__(self, _pd, _payload, *, session_mgr=None): pass
 
         def run(self, **kwargs):
             mock_runners["sub_calls"].append(kwargs)

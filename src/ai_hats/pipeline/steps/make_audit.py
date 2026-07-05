@@ -29,7 +29,7 @@ import logging
 from pathlib import Path
 from typing import Any, Mapping
 
-from ...observe import AuditWriter, Session, TraceTag
+from ...constants import TraceTag
 from ..step import Step, StepIO
 
 logger = logging.getLogger(__name__)
@@ -45,9 +45,11 @@ class MakeAudit(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="make_audit",
+            # HATS-867: Session/AuditWriter arrive injected — no observe import.
             requires=frozenset({
                 "session_id", "session_dir", "claude_session_id",
                 "project_dir", "exit_code",
+                "session_factory", "audit_writer_factory",
             }),
             produces=frozenset({"audit_path"}),
         )
@@ -60,6 +62,8 @@ class MakeAudit(Step):
         claude_session_id: str,
         project_dir: Path,
         exit_code: int,
+        session_factory: Any,
+        audit_writer_factory: Any,
         **_: Any,
     ) -> dict[str, Any]:
         # Import inside run() to avoid steps→runtime circular at module
@@ -69,7 +73,7 @@ class MakeAudit(Step):
 
         del exit_code  # contract-required key; AuditWriter reads metrics.json instead
 
-        session = Session(session_id=session_id, session_dir=session_dir)
+        session = session_factory(session_id=session_id, session_dir=session_dir)
 
         try:
             jsonl_path = _claude_jsonl_path(project_dir, claude_session_id)
@@ -81,7 +85,7 @@ class MakeAudit(Step):
                         f"JSONL discovered via mtime fallback: {discovered.name}",
                     )
                     jsonl_path = discovered
-            AuditWriter().build(session, jsonl_path=jsonl_path)
+            audit_writer_factory().build(session, jsonl_path=jsonl_path)
         except (Exception, KeyboardInterrupt):
             logger.warning("audit writer failed", exc_info=True)
 

@@ -52,6 +52,8 @@ def test_execute_preset_interactive_threads_flat_keys(tmp_path: Path):
             "project_dir": tmp_path,
             "extra_args": [],
             "composition": _fake_payload(),
+            "session_mgr": MagicMock(name="session_mgr"),
+            "tracer_factory": MagicMock(name="tracer_factory"),
         })
 
     assert state["exit_code"] == 0
@@ -80,6 +82,8 @@ def test_execute_preset_batch_reads_metrics(tmp_path: Path):
             "project_dir": tmp_path,
             "ticket": "HATS-267",
             "composition": _fake_payload(),
+            "session_mgr": MagicMock(name="session_mgr"),
+            "tracer_factory": MagicMock(name="tracer_factory"),
         })
 
     assert state["exit_code"] == 7
@@ -99,6 +103,8 @@ def test_execute_preset_batch_missing_metrics_defaults_to_one(tmp_path: Path):
             "role": None,
             "project_dir": tmp_path,
             "composition": _fake_payload(),
+            "session_mgr": MagicMock(name="session_mgr"),
+            "tracer_factory": MagicMock(name="tracer_factory"),
         })
 
     assert state["exit_code"] == 1
@@ -151,6 +157,8 @@ def test_execute_preset_log_steps_print(tmp_path: Path, capsys):
             "role": None,
             "project_dir": tmp_path,
             "composition": _fake_payload(),
+            "session_mgr": MagicMock(name="session_mgr"),
+            "tracer_factory": MagicMock(name="tracer_factory"),
         })
 
     err = capsys.readouterr().err

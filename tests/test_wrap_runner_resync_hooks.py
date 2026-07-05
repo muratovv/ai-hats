@@ -27,6 +27,7 @@ def _runner(project: Path) -> WrapRunner:
     payload carries it; these seam tests exercise the result-less resync
     edge, so the composition itself is a placeholder)."""
     from ai_hats.composition_payload import CompositionPayload
+    from ai_hats.observe import SessionManager, SidecarTracer
     from ai_hats_core import CompositionResult
 
     payload = CompositionPayload(
@@ -37,7 +38,10 @@ def _runner(project: Path) -> WrapRunner:
         effective_role="t",
         hooks=Assembler(project).hooks,
     )
-    return WrapRunner(project, payload)
+    return WrapRunner(
+        project, payload,
+        session_mgr=SessionManager(project), tracer_factory=SidecarTracer,
+    )
 
 
 

@@ -34,7 +34,7 @@ def _install_stub_runner(monkeypatch, project_dir: Path, metrics: dict):
     the provided metrics dict."""
 
     class _Runner:
-        def __init__(self, _project_dir, _payload):
+        def __init__(self, _project_dir, _payload, *, session_mgr=None):
             pass
 
         def run(self, **_kwargs):
@@ -159,7 +159,7 @@ def test_missing_metrics_defaults_to_exit_1(cli, monkeypatch, project_dir):
             self.metrics_path = self.session_dir / "metrics.json"  # does not exist
 
     class _Runner:
-        def __init__(self, _project_dir, _payload):
+        def __init__(self, _project_dir, _payload, *, session_mgr=None):
             pass
 
         def run(self, **_kwargs):
