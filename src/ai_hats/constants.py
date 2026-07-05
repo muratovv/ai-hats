@@ -50,3 +50,20 @@ class TraceTag:
     TOOL = "[TOOL]"
     SYS = "[SYS]"
     SUB = "[SUB]"
+
+
+# Claude Code hook-event names (HATS-917). Engine vocabularies (HATS-915)
+# compose from these; leaf home so libraries/models needs no providers import.
+HOOK_PRE_TOOL_USE = "PreToolUse"
+HOOK_POST_TOOL_USE = "PostToolUse"
+HOOK_SESSION_START = "SessionStart"
+HOOK_SESSION_END = "SessionEnd"
+HOOK_USER_PROMPT_SUBMIT = "UserPromptSubmit"
+HOOK_STOP = "Stop"
+HOOK_SUBAGENT_STOP = "SubagentStop"
+HOOK_NOTIFICATION = "Notification"
+
+
+# Provider registry names (HATS-917) — leaf home: runners must not import providers.
+PROVIDER_CLAUDE = "claude"
+PROVIDER_GEMINI = "gemini"

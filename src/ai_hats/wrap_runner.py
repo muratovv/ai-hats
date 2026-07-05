@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .constants import TraceTag, ENV_ROLE
+from .constants import TraceTag, ENV_ROLE, PROVIDER_CLAUDE
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -408,7 +408,7 @@ class WrapRunner:
         # an existing session — it already has its own id, and Claude CLI
         # rejects --session-id + --resume without --fork-session.
         _resuming = extra_args and any(f in extra_args for f in ("--resume", "--continue", "-c"))
-        if provider_name == "claude" and not _resuming:
+        if provider_name == PROVIDER_CLAUDE and not _resuming:
             cmd += ["--session-id", claude_session_id]
         session.log_trace(TraceTag.SYS, f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")

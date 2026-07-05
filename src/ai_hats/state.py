@@ -1126,15 +1126,15 @@ class TaskManager:
             by_state.setdefault(h["state"], []).append(h)
 
         state_order = [
-            "execute",
-            "document",
-            "plan",
-            "brainstorm",
-            "review",
-            "blocked",
-            "failed",
-            "done",
-            "cancelled",
+            TaskState.EXECUTE.value,
+            TaskState.DOCUMENT.value,
+            TaskState.PLAN.value,
+            TaskState.BRAINSTORM.value,
+            TaskState.REVIEW.value,
+            TaskState.BLOCKED.value,
+            TaskState.FAILED.value,
+            TaskState.DONE.value,
+            TaskState.CANCELLED.value,
         ]
         for state_name in state_order:
             state_tasks = by_state.get(state_name, [])

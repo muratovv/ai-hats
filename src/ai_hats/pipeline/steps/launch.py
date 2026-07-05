@@ -32,6 +32,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from ai_hats_wt import IsolationMode
 from ...paths import TRANSCRIPT_TXT
 from ..step import Step, StepIO
 
@@ -74,7 +75,7 @@ class Provider(Step):
         tracer_factory: Any,
         prompt_text: str = "",
         model: str = "",
-        isolation: str = "discard",
+        isolation: str = IsolationMode.DISCARD.value,
         ticket: str = "",
         tags: dict[str, str] | None = None,
         extra_args: list[str] | None = None,
