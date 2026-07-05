@@ -20,26 +20,32 @@ and advances the step only after the function returns):
 ``_migrate_claude_md_to_v3``) also run directly from ``init`` / ``set_role``, so
 idempotency must hold for those direct invocations, not just the gated replay.
 
-The ``Migration.run`` callable takes the ``Assembler`` (wrappers need
-``self.provider`` / ``agent_dir`` / ``composer.resolver``), so this is an
-Assembler-internal registry, not a generic framework — do not import
-``MIGRATIONS`` from outside Assembler-aware code. Additive for now; an
+The generic step-gated *runner* now lives in ``ai_hats_core.migrations``
+(``Migration[Ctx]`` / ``run_pending`` / ``latest_step``, HATS-868 T7); this
+module is its **Assembler-bound instance** — the ``MIGRATIONS`` registry (each
+entry's ``run`` takes the ``Assembler`` for ``self.provider`` / ``agent_dir`` /
+``composer.resolver``) plus the banner + step-binding adapter below. Do not
+import ``MIGRATIONS`` from outside Assembler-aware code. Additive for now; an
 ``OLDEST_SUPPORTED_STEP`` guard will prune old entries later.
-"""
+"""  # comment-length: allow — migration-registry contract + core-split note
 
 from __future__ import annotations
 
 import logging
 import shutil
 import sys
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from .constants import AGENT_DIR
 from .paths import (
     hooks_dir as _lib_hooks_dir,
     legacy_paths_by_class,
     user_hooks_dir as _user_hooks_dir,
+)
+from ai_hats_core.migrations import (
+    Migration,
+    latest_step as _latest_step,
+    run_pending as _run_pending,
 )
 from ai_hats_core.safe_delete import discard as _safe_discard
 
@@ -55,25 +61,9 @@ logger = logging.getLogger(__name__)
 _RUNNING_BANNER = "[ai-hats] running migration step={step} label={label}"
 
 
-@dataclass(frozen=True)
-class Migration:
-    """One entry in the migration registry.
-
-    Attributes:
-        step: Post-migration value of ``ProjectConfig.migration_step``.
-            Strictly monotonic across the registry (each entry has a unique
-            step, listed in ascending order).
-        run: Callable receiving the :class:`Assembler` instance. Must be
-            idempotent and atomically-safe (see module docstring).
-        label: Human-readable identifier. Surfaces in the stable banner
-            ``"[ai-hats] running migration step=N label=..."`` printed
-            to stderr (and emitted via ``logger.info``) — the E2E gate
-            test relies on this exact prefix as the spy contract.
-    """
-
-    step: int
-    run: Callable[["Assembler"], None]
-    label: str
+# ``Migration`` (the registry-entry dataclass) now lives in
+# ``ai_hats_core.migrations``, re-exported above; this module owns only the
+# Assembler-bound registry + adapter (HATS-868 T7).
 
 
 # ----- migration wrappers --------------------------------------------------
@@ -336,54 +326,42 @@ MIGRATIONS: list[Migration] = [
 
 
 def latest_step() -> int:
-    """Highest ``step`` in the registry — the value a fully-migrated
-    project should carry. Use this for seeding greenfield projects and
-    for completeness assertions in tests.
+    """Highest ``step`` in the registry — the value a fully-migrated project
+    should carry. Seeds greenfield projects and completeness assertions.
     """
-    return MIGRATIONS[-1].step
+    return _latest_step(MIGRATIONS)
+
+
+def _set_migration_step(assembler: "Assembler", step: int) -> None:
+    assembler.project_config.migration_step = step
+
+
+def _emit_banner(step: int, label: str) -> None:
+    """Dual-channel migration banner (the E2E gate's stderr spy contract).
+
+    ``print(file=sys.stderr)`` surfaces regardless of subprocess logging config;
+    ``logger.info`` lets structured callers capture the same line.
+    """
+    banner = _RUNNING_BANNER.format(step=step, label=label)
+    print(banner, file=sys.stderr)
+    logger.info(banner)
 
 
 def run_pending(assembler: "Assembler") -> int:
-    """Run every registry entry with ``step > current_step``.
+    """Run every registry entry with ``step > migration_step`` via the generic
+    ``ai_hats_core.migrations.run_pending``.
 
-    Persists ``migration_step`` after each successful entry so a partial
-    failure leaves the project at the last good step (the next ``bump``
-    resumes from there). The runner does **not** catch exceptions —
-    callers see the original failure with its stack.
-
-    Returns the number of migrations actually executed (0 when the project
-    was already at ``latest_step``).
+    Binds the Assembler's config counter (read / in-memory set / persist) and
+    the stderr+logger banner to the domain-free core runner. Persists after each
+    entry so a partial failure resumes from the last good step on the next
+    ``bump``; exceptions propagate with their stack. Returns the number of
+    entries executed (0 when already at ``latest_step``).
     """
-    cfg = assembler.project_config
-    ran = 0
-    for migration in MIGRATIONS:
-        if cfg.migration_step >= migration.step:
-            continue
-        # Print to stderr (not ``logger.info``) so the banner surfaces
-        # regardless of subprocess logging config — the rest of the
-        # codebase uses the same channel for one-shot WARN/NOTE rows
-        # (``_strip_deprecated_fields``, ``_heal_default_role``, etc.).
-        # Also emitted via ``logger.info`` so structured callers can
-        # capture it through standard logging.
-        banner = _RUNNING_BANNER.format(
-            step=migration.step,
-            label=migration.label,
-        )
-        print(banner, file=sys.stderr)
-        logger.info(banner)
-        migration.run(assembler)
-        # Transactional mutation: bump the in-memory counter and persist
-        # in one step. If persistence raises (disk full, read-only fs,
-        # `_safe_replace` failure), roll back so in-memory state matches
-        # on-disk truth. Prevents the "in-memory ahead of disk" drift
-        # any caller relying on ``cfg.migration_step`` after a partial
-        # bump would otherwise observe.
-        prev_step = cfg.migration_step
-        cfg.migration_step = migration.step
-        try:
-            assembler._persist_migration_step(migration.step)
-        except Exception:
-            cfg.migration_step = prev_step
-            raise
-        ran += 1
-    return ran
+    return _run_pending(
+        assembler,
+        MIGRATIONS,
+        read_step=lambda a: a.project_config.migration_step,
+        set_step=_set_migration_step,
+        persist_step=lambda a, step: a._persist_migration_step(step),
+        emit_banner=_emit_banner,
+    )
