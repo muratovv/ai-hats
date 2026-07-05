@@ -511,8 +511,9 @@ class SubAgentRunner:
     def _load_ticket(self, ticket_id: str) -> str:
         """Load ticket context from task card (delegates to ``linked_context``)."""
         from .linked_context import load_ticket
+        from .paths import tasks_dir
 
-        return load_ticket(self.project_dir, ticket_id)
+        return load_ticket(tasks_root=tasks_dir(self.project_dir), ticket_id=ticket_id)
 
     def _load_linked_context(self, ticket_id: str) -> str:
         """Assemble the ``LINKED_CONTEXT`` body for a ticket's direct links.
@@ -522,5 +523,8 @@ class SubAgentRunner:
         show`` (HATS-691) — a single seam, not two divergent paths.
         """
         from .linked_context import load_linked_context
+        from .paths import tasks_dir
 
-        return load_linked_context(self.project_dir, ticket_id)
+        return load_linked_context(
+            tasks_root=tasks_dir(self.project_dir), ticket_id=ticket_id
+        )

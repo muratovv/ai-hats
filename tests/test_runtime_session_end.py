@@ -365,7 +365,8 @@ def wrap_runner_factory(tmp_path, monkeypatch):
         )
         runner = WrapRunner(
             project, payload,
-            session_mgr=SessionManager(project), tracer_factory=SidecarTracer,
+            session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
+            tracer_factory=SidecarTracer,
         )
 
         def _stub_spawn(self, cmd, env, tracer):

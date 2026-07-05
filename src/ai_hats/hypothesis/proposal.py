@@ -1,6 +1,6 @@
 """Proposal schema (PROP-NNN.yaml) — improvement suggestions from reflect-session.
 
-Proposals live in `.agent/backlog/proposals/PROP-NNN.yaml` next to tasks/.
+Proposals live under the injected proposals dir (`paths.proposals_dir`).
 Status field regulates visibility — no physical archive directory.
 """
 

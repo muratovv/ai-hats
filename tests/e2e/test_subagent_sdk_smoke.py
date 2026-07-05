@@ -104,6 +104,7 @@ def test_subagent_runner_via_sdk_smoke(
 ) -> None:
     from ai_hats.composition_seam import build_composition_payload
     from ai_hats.observe import SessionManager
+    from ai_hats.paths import runs_dir
     from ai_hats.runtime import SubAgentRunner
 
     # HATS-865: compose once at the integrator seam, inject the payload.
@@ -112,7 +113,9 @@ def test_subagent_runner_via_sdk_smoke(
     )
     runner = SubAgentRunner(
         minimal_claude_project, payload,
-        session_mgr=SessionManager(minimal_claude_project),
+        session_mgr=SessionManager(
+            minimal_claude_project, runs_dir=runs_dir(minimal_claude_project)
+        ),
     )
 
     # Inject a per-call budget via the build_options call site by

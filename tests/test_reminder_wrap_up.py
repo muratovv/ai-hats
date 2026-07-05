@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ai_hats.retro.reminder import evaluate_wrap_up
 from ai_hats.state import TaskManager
+from ai_hats.tracker_wiring import tracker_paths
 from ai_hats.paths import runs_dir, state_md_path, tasks_dir
 
 
@@ -43,7 +44,9 @@ def _write_metrics(project: Path, **overrides) -> None:
 def _create_done_task(
     project: Path, task_id: str, updated: datetime
 ) -> None:
-    mgr = TaskManager(project, prefix="TST", strict_plan_check=False)
+    mgr = TaskManager(
+        project, prefix="TST", strict_plan_check=False, layout=tracker_paths(project)
+    )
     mgr.create_task(task_id, f"task {task_id}")
     # Mark as done by writing the yaml directly with the desired updated/state.
     # Going through transition() would require plan content, which the wrap-up

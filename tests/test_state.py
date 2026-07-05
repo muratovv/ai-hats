@@ -8,13 +8,19 @@ from pathlib import Path
 from ai_hats.models import TaskState
 from ai_hats.paths import worktrees_dir
 from ai_hats.state import EmptyPlanError, TaskManager
+from ai_hats.tracker_wiring import tracker_paths
 from ai_hats.wt_effects import WtWorktreeEffects
 from ai_hats_wt import WorktreeManager
 
 
 def _manager(project: Path, **kwargs) -> TaskManager:
     """TaskManager wired like production: wt effects injected (HATS-866)."""
-    return TaskManager(project, worktree_effects=WtWorktreeEffects(project), **kwargs)
+    return TaskManager(
+        project,
+        layout=tracker_paths(project),
+        worktree_effects=WtWorktreeEffects(project),
+        **kwargs,
+    )
 
 
 pytestmark = pytest.mark.integration
@@ -50,7 +56,7 @@ def test_auto_id_empty(mgr):
 def test_auto_id_respects_custom_prefix(tmp_path):
     project = tmp_path / "project"
     (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
-    mgr = TaskManager(project, prefix="ACME")
+    mgr = TaskManager(project, prefix="ACME", layout=tracker_paths(project))
     assert mgr.next_id() == "ACME-001"
     mgr.create_task("ACME-001", "First")
     assert mgr.next_id() == "ACME-002"
@@ -60,10 +66,10 @@ def test_auto_id_ignores_foreign_prefix(tmp_path):
     """next_id for prefix X ignores tasks authored under prefix Y."""
     project = tmp_path / "project"
     (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
-    legacy = TaskManager(project, prefix="HATS")
+    legacy = TaskManager(project, prefix="HATS", layout=tracker_paths(project))
     legacy.create_task("HATS-010", "Legacy")
 
-    fresh = TaskManager(project, prefix="TASK")
+    fresh = TaskManager(project, prefix="TASK", layout=tracker_paths(project))
     assert fresh.next_id() == "TASK-001"
 
 
@@ -75,7 +81,7 @@ def test_write_op_refused_at_non_project_root(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     stray = tmp_path / "stray"  # no .agent/, no ai-hats.yaml
     stray.mkdir()
-    mgr = TaskManager(stray, strict_plan_check=False)
+    mgr = TaskManager(stray, strict_plan_check=False, layout=tracker_paths(stray))
     with pytest.raises(NotAnAiHatsProjectError):
         mgr.create_task("X-1", "should be refused")
     assert not (stray / ".agent").exists(), "phantom tracker bootstrapped at a stray root"
@@ -206,7 +212,9 @@ def test_final_state_not_written_when_transition_fails(tmp_path):
     project.mkdir()
     (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
     (project / ".agent" / "STATE.md").write_text("")
-    strict = TaskManager(project, prefix="T", strict_plan_check=True)
+    strict = TaskManager(
+        project, prefix="T", strict_plan_check=True, layout=tracker_paths(project)
+    )
 
     strict.create_task("T-9", "Empty plan")
     strict.transition("T-9", TaskState.PLAN)  # empty scaffold → execute blocked
@@ -806,7 +814,7 @@ def test_execute_inside_linked_worktree_does_not_nest(tmp_path):
     wt.save_state()
 
     # Step 2: create + plan the task (the CLI does this from MAIN).
-    mgr = TaskManager(project, strict_plan_check=False)
+    mgr = TaskManager(project, strict_plan_check=False, layout=tracker_paths(project))
     mgr.create_task("T-1", "Created from main, executed from inside a worktree")
     mgr.transition("T-1", TaskState.PLAN)
 
@@ -852,7 +860,7 @@ def test_execute_from_hopped_main_adopts_via_caller_cwd(tmp_path):
 
     # TaskManager is constructed with MAIN — the value `_project_dir()` hops to
     # when the operator's shell is inside the worktree.
-    main_mgr = TaskManager(project, strict_plan_check=False)
+    main_mgr = TaskManager(project, strict_plan_check=False, layout=tracker_paths(project))
     main_mgr.create_task("T-9", "Created from main, executed from inside a worktree")
     main_mgr.transition("T-9", TaskState.PLAN)
 
@@ -1880,7 +1888,9 @@ def test_manual_epic_execute_skips_plan_gate(tmp_path, monkeypatch):
     project.mkdir()
     (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
     (project / ".agent" / "STATE.md").write_text("")
-    strict = TaskManager(project, prefix="T", strict_plan_check=True)  # pure FSM: no wt effects
+    strict = TaskManager(  # pure FSM: no wt effects
+        project, prefix="T", strict_plan_check=True, layout=tracker_paths(project)
+    )
 
     strict.create_task("T-1", "Epic")
     strict.create_task("T-2", "Child", parent_task="T-1")
@@ -1925,7 +1935,7 @@ def test_no_handler_is_pure_fsm(tmp_path):
     _init_git(project)
     (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
     (project / ".agent" / "STATE.md").write_text("")
-    fsm = TaskManager(project, strict_plan_check=False)
+    fsm = TaskManager(project, strict_plan_check=False, layout=tracker_paths(project))
 
     fsm.create_task("T-1", "No worktree")
     fsm.transition("T-1", TaskState.PLAN)
@@ -1959,7 +1969,10 @@ def test_handler_teardown_failure_aborts_transition(tmp_path):
     (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
     (project / ".agent" / "STATE.md").write_text("")
     fsm = TaskManager(
-        project, strict_plan_check=False, worktree_effects=_ExplodingTeardownEffects()
+        project,
+        strict_plan_check=False,
+        layout=tracker_paths(project),
+        worktree_effects=_ExplodingTeardownEffects(),
     )
 
     fsm.create_task("T-1", "Fail loud")

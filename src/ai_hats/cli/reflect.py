@@ -34,7 +34,7 @@ from ..hypothesis import (
     HypothesisStore,
     ProposalStore,
 )
-from ..paths import hypotheses_dir, proposals_dir
+from ..paths import hypotheses_dir, proposals_dir, runs_dir
 from ..retro.session_review_runner import SessionReviewError
 from ._helpers import _project_dir, console
 
@@ -164,7 +164,7 @@ def reflect_all_cmd(dry_run: bool):
             "composition": build_composition_payload(
                 project_dir, role_override="judge", interactive=True,
             ),
-            "session_mgr": SessionManager(project_dir),
+            "session_mgr": SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
             "tracer_factory": SidecarTracer,
         })
     sys.exit(int(final.get("exit_code", 1)))
@@ -231,7 +231,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
             "composition": build_composition_payload(
                 project_dir, role_override="judge-auditor",
             ),
-            "session_mgr": SessionManager(project_dir),
+            "session_mgr": SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
             "tracer_factory": SidecarTracer,
         })
 
@@ -283,7 +283,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
             "composition": build_composition_payload(
                 project_dir, role_override="judge", interactive=True,
             ),
-            "session_mgr": SessionManager(project_dir),
+            "session_mgr": SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
             "tracer_factory": SidecarTracer,
         })
     sys.exit(int(r2.get("exit_code", 1)))
@@ -389,7 +389,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
             "composition": build_composition_payload(
                 project_dir, role_override="judge-for-role", interactive=True,
             ),
-            "session_mgr": SessionManager(project_dir),
+            "session_mgr": SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
             "tracer_factory": SidecarTracer,
         })
     saved = final.get("saved_path")
@@ -535,7 +535,7 @@ def _run_intake_pipeline(
             "composition": build_composition_payload(
                 project_dir, role_override="hypothesis-intake",
             ),
-            "session_mgr": SessionManager(project_dir),
+            "session_mgr": SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
             "tracer_factory": SidecarTracer,
         })
     return (

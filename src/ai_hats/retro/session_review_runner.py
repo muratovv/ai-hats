@@ -321,6 +321,7 @@ class SessionReviewRunner:
             return self._subagent_runner
         from ..composition_seam import build_composition_payload
         from ..observe import SessionManager
+        from ..paths import runs_dir
         from ..runtime import SubAgentRunner
 
         # HATS-865: compose ONCE at this integrator-side seam; the retry loop
@@ -331,7 +332,11 @@ class SessionReviewRunner:
             self.project_dir, role_override="session-reviewer", strict=False,
         )
         return SubAgentRunner(
-            self.project_dir, payload, session_mgr=SessionManager(self.project_dir),
+            self.project_dir,
+            payload,
+            session_mgr=SessionManager(
+                self.project_dir, runs_dir=runs_dir(self.project_dir)
+            ),
         )
 
     def _review_model(self) -> str:

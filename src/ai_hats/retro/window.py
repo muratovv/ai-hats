@@ -63,13 +63,19 @@ def tasks_closed_in_window(
     try:
         from ..models import ProjectConfig, TaskState
         from ..state import TaskManager
+        from ..tracker_wiring import tracker_paths
     except ImportError:
         return []
     try:
         prefix = ProjectConfig.resolve_task_prefix(
             project_dir, project_dir / "ai-hats.yaml"
         )
-        tm = TaskManager(project_dir, prefix=prefix, strict_plan_check=False)
+        tm = TaskManager(
+            project_dir,
+            prefix=prefix,
+            layout=tracker_paths(project_dir),
+            strict_plan_check=False,
+        )
         done = tm.list_tasks(state=TaskState.DONE)
     except Exception:
         return []

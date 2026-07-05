@@ -14,6 +14,7 @@ from ai_hats.models import TaskState
 from ai_hats.plan_extract import extract_candidates, mark_extracted
 from ai_hats.state import TaskManager
 from ai_hats.paths import state_md_path, tasks_dir
+from ai_hats.tracker_wiring import tracker_paths
 
 
 pytestmark = pytest.mark.integration
@@ -130,8 +131,14 @@ def _setup_project(tmp_path: Path) -> Path:
     return project
 
 
+def _mgr(project: Path) -> TaskManager:
+    return TaskManager(
+        project, prefix="TST", strict_plan_check=False, layout=tracker_paths(project)
+    )
+
+
 def _seed_task_with_plan(project: Path, task_id: str, plan_body: str) -> Path:
-    mgr = TaskManager(project, prefix="TST", strict_plan_check=False)
+    mgr = _mgr(project)
     mgr.create_task(task_id, "parent task")
     mgr.transition(task_id, TaskState.PLAN)
     plan = tasks_dir(project) / task_id / "plan.md"
@@ -156,7 +163,7 @@ def test_plan_extract_dry_run_does_not_create(
     assert result.exit_code == 0, result.output
     assert "One" in result.output and "Two" in result.output
 
-    mgr = TaskManager(project, prefix="TST", strict_plan_check=False)
+    mgr = _mgr(project)
     children = [t for t in mgr.list_tasks() if t.parent_task == "TST-001"]
     assert children == []
 
@@ -172,7 +179,7 @@ def test_plan_extract_auto_creates_all_and_marks(
     result = runner.invoke(main, ["task", "plan-extract", "TST-001", "--auto"])
     assert result.exit_code == 0, result.output
 
-    mgr = TaskManager(project, prefix="TST", strict_plan_check=False)
+    mgr = _mgr(project)
     children = sorted(
         (t for t in mgr.list_tasks() if t.parent_task == "TST-001"),
         key=lambda t: t.id,
@@ -211,7 +218,7 @@ def test_plan_extract_missing_plan_exits_nonzero(
     tmp_path: Path, runner: CliRunner, monkeypatch
 ) -> None:
     project = _setup_project(tmp_path)
-    mgr = TaskManager(project, prefix="TST", strict_plan_check=False)
+    mgr = _mgr(project)
     mgr.create_task("TST-001", "no plan")
     # No transition → no plan.md
     monkeypatch.chdir(project)
@@ -224,7 +231,7 @@ def test_plan_extract_empty_scaffold_exits_nonzero(
     tmp_path: Path, runner: CliRunner, monkeypatch
 ) -> None:
     project = _setup_project(tmp_path)
-    mgr = TaskManager(project, prefix="TST", strict_plan_check=False)
+    mgr = _mgr(project)
     mgr.create_task("TST-001", "scaffold only")
     mgr.transition("TST-001", TaskState.PLAN)
     monkeypatch.chdir(project)
