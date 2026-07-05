@@ -31,7 +31,7 @@ def _lock_for(path: Path) -> FileLock:
 
 
 class HypothesisStore:
-    """Read/write HYP-*.yaml under .agent/hypotheses/."""
+    """Read/write HYP-*.yaml under the injected ``hypotheses_dir``."""
 
     def __init__(self, hypotheses_dir: Path) -> None:
         self.dir = hypotheses_dir
@@ -139,7 +139,7 @@ class HypothesisStore:
 
 
 class ProposalStore:
-    """Read/write PROP-*.yaml under .agent/backlog/proposals/."""
+    """Read/write PROP-*.yaml under the injected ``proposals_dir``."""
 
     def __init__(self, proposals_dir: Path) -> None:
         self.dir = proposals_dir

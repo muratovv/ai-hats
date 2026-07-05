@@ -17,18 +17,22 @@ from __future__ import annotations
 from pathlib import Path
 
 from .models import TaskCard
-from .paths import tasks_dir
 
 
-def load_ticket(project_dir: Path, ticket_id: str) -> str:
-    """Return the raw ``task.yaml`` text for a ticket (``""`` if absent)."""
-    task_file = tasks_dir(project_dir) / ticket_id / "task.yaml"
+def load_ticket(*, tasks_root: Path, ticket_id: str) -> str:
+    """Return the raw ``task.yaml`` text for a ticket (``""`` if absent).
+
+    ``tasks_root`` is injected integrator policy (``paths.tasks_dir``, HATS-864);
+    keyword-only so a ``project_dir`` can never silently slot in (both are Path
+    and this module degrades gracefully instead of raising).
+    """
+    task_file = tasks_root / ticket_id / "task.yaml"
     if task_file.exists():
         return task_file.read_text()
     return ""
 
 
-def load_linked_context(project_dir: Path, ticket_id: str) -> str:
+def load_linked_context(*, tasks_root: Path, ticket_id: str) -> str:
     """Assemble the linked-context body for a ticket's direct links.
 
     Links are pulled in salience order ``parent_task → depends_on → related →
@@ -43,7 +47,7 @@ def load_linked_context(project_dir: Path, ticket_id: str) -> str:
     """
     if not ticket_id:
         return ""
-    base = tasks_dir(project_dir)
+    base = tasks_root
     card_path = base / ticket_id / "task.yaml"
     if not card_path.exists():
         return ""

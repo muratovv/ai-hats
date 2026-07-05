@@ -18,6 +18,7 @@ from ..paths import (
     TRACE_LOG,
     TRANSCRIPT_TXT,
     USAGE_JSON,
+    runs_dir,
 )
 from ._helpers import _project_dir, console, exec_claude_with_retro
 
@@ -36,7 +37,8 @@ def session_audit(session_id: str | None):
     """Show the audit log for a session (defaults to the most recent)."""
     from ..observe import SessionManager
 
-    mgr = SessionManager(_project_dir())
+    pd = _project_dir()
+    mgr = SessionManager(pd, runs_dir=runs_dir(pd))
 
     if session_id:
         s = mgr.get_session(session_id)
@@ -79,7 +81,9 @@ def session_retro(
     project_dir = _project_dir()
 
     if use_last or not session_id:
-        sessions = SessionManager(project_dir).list_sessions(last_n=1)
+        sessions = SessionManager(
+            project_dir, runs_dir=runs_dir(project_dir)
+        ).list_sessions(last_n=1)
         if not sessions:
             console.print("[red]No sessions found[/]")
             sys.exit(1)
@@ -173,7 +177,8 @@ def session_list(
     except TagValidationError as e:
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
-    mgr = SessionManager(_project_dir())
+    pd = _project_dir()
+    mgr = SessionManager(pd, runs_dir=runs_dir(pd))
     sessions = mgr.list_sessions(
         productive_only=productive,
         role_eq=role_filter,
@@ -380,7 +385,8 @@ def session_show(session_id: str):
 
     from ..observe import SessionManager
 
-    mgr = SessionManager(_project_dir())
+    pd = _project_dir()
+    mgr = SessionManager(pd, runs_dir=runs_dir(pd))
     s = mgr.get_session(session_id)
     if s is None:
         console.print(f"[red]Session {session_id} not found[/]")

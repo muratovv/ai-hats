@@ -71,6 +71,13 @@ FORBIDDEN_WT_FOR_TRACKER = ("ai_hats_wt", f"{PKG}.wt_carry", f"{PKG}.wt_lifecycl
 # HATS-865 T5 complete: the migration ratchet (EXPECTED_COMPOSITION_OFFENDERS)
 # hit zero and was deleted — the gate below asserts NO offenders, ever.
 
+# HATS-864 (T4): layout is integrator policy (ADR-0014 P0 #2) — bricks get
+# dirs injected (TrackerPaths / runs_dir / tasks_root), never via ai_hats.paths.
+LAYOUT_INJECTED_BRICKS = ("state", "tracker", "observe", "linked_context", "hypothesis")
+# Artifact-NAME vocabulary (HATS-917) is not layout resolution — bricks may
+# import it, but only via the explicit submodule (never bare ai_hats.paths).
+LAYOUT_EXEMPT_SUBMODULES = ("paths.session_artifacts",)
+
 # HATS-867 (T6b): session logging is integrator-only — runtime bricks receive
 # the observe writer handle (SessionManager / Session+AuditWriter factories)
 # injected from the integrator instead of importing observe.
@@ -364,6 +371,44 @@ def test_tracker_never_imports_wt():
         "tracker must not reference wt (any level, HATS-866): emit the effect "
         "through the injected WorktreeEffects handler instead.\n"
         f"offenders: {offenders}"
+    )
+
+
+def test_layout_is_injected():
+    """Brick modules carry no ``ai_hats.paths`` reference at ANY level (HATS-864).
+
+    Layout is integrator policy (ADR-0014 P0 #2, D4 generalized): tracker gets
+    ``TrackerPaths`` via ``tracker_wiring.tracker_paths()``, observe gets
+    ``runs_dir=``, linked_context gets ``tasks_root=``. Deferred imports
+    included, TYPE_CHECKING exempt; artifact-NAME vocabulary submodules
+    (LAYOUT_EXEMPT_SUBMODULES) are allowed. RED under revert of the severing
+    commit.
+    """
+    mods = _modules()
+    nodeset = set(mods)
+    paths_mod = f"{PKG}.paths"
+    exempt = tuple(f"{PKG}.{m}" for m in LAYOUT_EXEMPT_SUBMODULES)
+    offenders: dict[str, list[str]] = {}
+    for brick in LAYOUT_INJECTED_BRICKS:
+        name = f"{PKG}.{brick}"
+        prefix = name + "."
+        brick_mods = {m: p for m, p in mods.items() if m == name or m.startswith(prefix)}
+        assert brick_mods, f"brick module {name} vanished"
+        refs = [
+            t
+            for m, path in brick_mods.items()
+            for node in _import_nodes(ast.parse(path.read_text()), top_level_only=False)
+            for t in _targets(m, path.name == "__init__.py", node, nodeset)
+            if (t == paths_mod or t.startswith(paths_mod + "."))
+            and not any(t == e or t.startswith(e + ".") for e in exempt)
+        ]
+        if refs:
+            offenders[brick] = sorted(set(refs))
+    assert not offenders, (
+        "layout import drift (HATS-864): a brick module references ai_hats.paths. "
+        "Inject the directory instead (TrackerPaths / runs_dir= / tasks_root=) — "
+        "layout is integrator policy.\n"
+        f"offenders: { {k: offenders[k] for k in sorted(offenders)} }"
     )
 
 

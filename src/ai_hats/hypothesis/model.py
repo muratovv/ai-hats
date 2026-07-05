@@ -1,6 +1,6 @@
 """Hypothesis schema (HYP-NNN.yaml) — single source of truth for HYP backlog.
 
-Hypotheses live in `.agent/hypotheses/HYP-NNN.yaml`. Schema is intentionally
+Hypotheses live under the injected hypotheses dir (`paths.hypotheses_dir`). Schema is intentionally
 permissive on extras (legacy entries pre-HATS-210 carry custom keys we want
 to preserve). New entries written via `ai-hats task hyp append-verdict` follow
 the strict ValidationLogEntry shape.

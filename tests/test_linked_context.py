@@ -55,7 +55,7 @@ def test_load_linked_context_module_assembles_links(tmp_path: Path) -> None:
         ),
     )
 
-    body = load_linked_context(project_dir, "HATS-902")
+    body = load_linked_context(tasks_root=tasks_dir(project_dir), ticket_id="HATS-902")
     assert "EPIC DESCRIPTION BODY" in body
     assert "EPIC PLAN BODY" in body
     assert "RELEASE BODY" in body
@@ -67,14 +67,16 @@ def test_load_linked_context_module_empty_when_no_links(tmp_path: Path) -> None:
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
     _write_card(project_dir, TaskCard(id="HATS-902", title="lonely", state=TaskState.EXECUTE))
-    assert load_linked_context(project_dir, "HATS-902") == ""
-    assert load_linked_context(project_dir, "HATS-404") == ""
-    assert load_linked_context(project_dir, "") == ""
+    root = tasks_dir(project_dir)
+    assert load_linked_context(tasks_root=root, ticket_id="HATS-902") == ""
+    assert load_linked_context(tasks_root=root, ticket_id="HATS-404") == ""
+    assert load_linked_context(tasks_root=root, ticket_id="") == ""
 
 
 def test_load_ticket_module(tmp_path: Path) -> None:
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
     _write_card(project_dir, TaskCard(id="HATS-902", title="t", state=TaskState.EXECUTE))
-    assert "HATS-902" in load_ticket(project_dir, "HATS-902")
-    assert load_ticket(project_dir, "HATS-404") == ""
+    root = tasks_dir(project_dir)
+    assert "HATS-902" in load_ticket(tasks_root=root, ticket_id="HATS-902")
+    assert load_ticket(tasks_root=root, ticket_id="HATS-404") == ""

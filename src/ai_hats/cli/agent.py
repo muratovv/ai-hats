@@ -77,6 +77,7 @@ def run_subagent(
     """
     from ..composition_seam import RoleNotFoundError, build_composition_payload
     from ..observe import SessionManager, SidecarTracer
+    from ..paths import runs_dir
     from ..pipeline.harness import PipelineHarness
     from ..tags import TagValidationError, parse_tags
     from ._helpers import _handle_role_not_found, _project_dir
@@ -103,7 +104,7 @@ def run_subagent(
                 ),
                 # HATS-867: the CLI (integrator) injects the observe writer
                 # handles — runners no longer construct them.
-                KEY_SESSION_MGR: SessionManager(project_dir),
+                KEY_SESSION_MGR: SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
                 KEY_TRACER_FACTORY: SidecarTracer,
             })
     except RoleNotFoundError as exc:

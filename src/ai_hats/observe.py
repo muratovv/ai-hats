@@ -14,7 +14,9 @@ from pathlib import Path
 from ai_hats_core import atomic_write_text
 from .constants import TraceTag, ENV_SESSION_ID
 from .environment_recovery import EnvironmentRecovery, RecoveryProtocol
-from .paths import (
+# HATS-864: artifact NAMES are the brick's shared vocabulary (leaf submodule,
+# lint-exempt); directory RESOLUTION (runs_dir) is injected integrator policy.
+from .paths.session_artifacts import (
     AUDIT_MD,
     META_PROMPT_TXT,
     METRICS_JSON,
@@ -23,7 +25,6 @@ from .paths import (
     TRACE_LOG,
     TRANSCRIPT_TXT,
     USAGE_JSON,
-    runs_dir,
     session_dirname,
 )
 
@@ -37,12 +38,13 @@ class SessionManager:
         self,
         project_dir: Path,
         *,
+        runs_dir: Path,
         recovery: RecoveryProtocol | None = None,
     ) -> None:
-        # HATS-312: session trace dirs live under <ai_hats_dir>/sessions/runs/.
+        # HATS-864: the runs root is injected integrator policy (paths.runs_dir).
         # The `gitlog_dir` attribute name is preserved for backwards source
-        # compatibility; semantically it's the runs root now.
-        self.gitlog_dir = runs_dir(project_dir)
+        # compatibility; semantically it's the runs root.
+        self.gitlog_dir = runs_dir
         self.gitlog_dir.mkdir(parents=True, exist_ok=True)
         self._counter = 0
         # HATS-649 (R2): convergent environment recovery runs at this universal
