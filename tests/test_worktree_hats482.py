@@ -155,7 +155,7 @@ class TestStateKeyCasePreserving:
         mgr.save_state()
         try:
             states = worktrees_dir(git_project)
-            before = sorted(p.name for p in states.iterdir())
+            before = sorted(p.name for p in states.iterdir() if p.suffix == ".json")
             assert before == ["task-hats-086.json"], before
 
             # Uppercase task_id (project convention) must resolve to the
@@ -169,7 +169,7 @@ class TestStateKeyCasePreserving:
             assert loaded.branch_name == "task/hats-086"
             loaded.save_state()
 
-            after = sorted(p.name for p in states.iterdir())
+            after = sorted(p.name for p in states.iterdir() if p.suffix == ".json")
             assert after == ["task-hats-086.json"], (
                 f"save_state after load_for_task forked into a second key "
                 f"on case-sensitive FS — load_for_task didn't match the "
