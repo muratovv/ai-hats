@@ -64,7 +64,7 @@ from .constants import (
     USER_RULES_SUBDIR,
 )
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .relocation import RelocationResult
@@ -456,9 +456,9 @@ class Assembler:
         if venv_path is not None:
             venv_path = normalize_venv_path(venv_path)
 
-        # Apply path overrides to the in-memory config BEFORE resolving any
-        # paths, so runs_dir / tasks_dir see the new location.
-        save_config_early = False
+        # Collect path overrides as a delta; save_config applies them to a
+        # fresh on-disk read AND refreshes the in-memory config (HATS-526).
+        early_delta: dict[str, Any] = {}
         if ai_hats_dir is not None:
             existing_dir = self.project_config.ai_hats_dir
             if self.config_path.exists() and existing_dir != ai_hats_dir:
@@ -468,24 +468,21 @@ class Assembler:
                     "framework directory is not automated — move the directory "
                     "manually and edit the yaml."
                 )
-            self.project_config.ai_hats_dir = ai_hats_dir
-            save_config_early = True
+            early_delta["ai_hats_dir"] = ai_hats_dir
         if venv_path is not None:
-            self.project_config.venv_path = venv_path
-            save_config_early = True
+            early_delta["venv_path"] = venv_path
         if manage_gitignore is not None:
-            self.project_config.manage_gitignore = manage_gitignore
-            save_config_early = True
+            early_delta["manage_gitignore"] = manage_gitignore
 
         # Persist path overrides NOW so subsequent path resolution
         # (runs_dir / tasks_dir) reads the new ai_hats_dir from yaml.
-        if save_config_early:
+        if early_delta:
             # Provider must be set before the very first save (yaml is
             # rejected without it). Pick the requested value, fall back
             # to whatever's already on the config, finally gemini.
             if not self.config_path.exists() and not self.project_config.provider:
-                self.project_config.provider = provider or "gemini"
-            self.project_config.save(self.config_path)
+                early_delta["provider"] = provider or "gemini"
+            self.save_config(**early_delta)
 
         # HATS-312 / HATS-313 / HATS-314: all framework roots live under
         # <ai_hats_dir>/. .agent/ itself is no longer populated by ai-hats.
@@ -504,26 +501,23 @@ class Assembler:
         #   - skipping _run_v07_migration on greenfield (nothing to heal)
         greenfield = not self.config_path.exists()
 
-        # Create/update ai-hats.yaml
-        save_config = False
+        # Create/update ai-hats.yaml (delta-write, HATS-526)
+        delta: dict[str, Any] = {}
         if greenfield:
-            self.project_config.provider = provider or "gemini"
+            delta["provider"] = provider or "gemini"
             if role:
-                self.project_config.default_role = role
+                delta["default_role"] = role
             # HATS-471: greenfield projects start at the latest migration
             # step. No registry entry needs to run — the directory is fresh.
             from .migrations import latest_step
 
-            self.project_config.migration_step = latest_step()
-            save_config = True
+            delta["migration_step"] = latest_step()
         elif provider:
-            self.project_config.provider = provider
-            save_config = True
+            delta["provider"] = provider
         if task_prefix is not None:
-            self.project_config.task_prefix = task_prefix
-            save_config = True
-        if save_config:
-            self.project_config.save(self.config_path)
+            delta["task_prefix"] = task_prefix
+        if delta:
+            self.save_config(**delta)
 
         # Create STATE.md
         from .paths import state_md_path
@@ -595,8 +589,7 @@ class Assembler:
         # role-git-hooks re-installation — regression vs prior behaviour
         # whenever a user wipes ``.githooks/`` and re-runs ``self init``.
         if role:
-            self.project_config.default_role = role
-            self.project_config.save(self.config_path)
+            self.save_config(default_role=role)
         cfg = self.project_config
         effective_role = role or cfg.active_role or cfg.default_role
         result: CompositionResult | None = (
@@ -723,9 +716,7 @@ class Assembler:
         if cfg.default_role == role_name and cfg.provider == new_provider:
             return result  # idempotent no-op
 
-        cfg.default_role = role_name
-        cfg.provider = new_provider
-        cfg.save(self.config_path)
+        self.save_config(default_role=role_name, provider=new_provider)
         return result
 
     def set_role(self, role_name: str, provider_name: str | None = None) -> CompositionResult:
@@ -795,9 +786,7 @@ class Assembler:
             provider.update_system_prompt(self.project_dir, prompt_content)
 
         # Persist active_role + provider.
-        self.project_config.active_role = role_name
-        self.project_config.provider = provider.name
-        self.project_config.save(self.config_path)
+        self.save_config(active_role=role_name, provider=provider.name)
 
         return result
 
@@ -1403,7 +1392,29 @@ class Assembler:
         raw_default = raw.get("default_role") or ""
         heal_pending = bool(self.project_config.default_role) and not raw_default
         if has_deprecated or heal_pending:
-            self.project_config.save(self.config_path)
+            heal: dict[str, Any] = (
+                {"default_role": self.project_config.default_role} if heal_pending else {}
+            )
+            self.save_config(**heal)
+
+    def save_config(self, **fields: Any) -> None:
+        """Locked delta-write of ai-hats.yaml; refreshes the in-memory config (HATS-526).
+
+        Pass ONLY the fields this operation changes — the on-disk state is
+        re-read under the lock, so concurrent writers' fields survive.
+        """
+        from .config.project import locked_update
+
+        def _apply(cfg: ProjectConfig) -> None:
+            for name, value in fields.items():
+                setattr(cfg, name, value)
+
+        merged = locked_update(self.config_path, _apply)
+        # In-place refresh: callers alias project_config (e.g. the migration
+        # runner) — replacing the object would strand their mutations.
+        for name in type(merged).model_fields:
+            setattr(self.project_config, name, getattr(merged, name))
+        self.project_config._extra = merged._extra
 
     def _persist_migration_step(self, step: int) -> None:
         """HATS-471: persist ``ProjectConfig.migration_step`` to disk after
@@ -1428,7 +1439,7 @@ class Assembler:
                 f"_persist_migration_step({step}) called while in-memory "
                 f"config has migration_step={self.project_config.migration_step}"
             )
-        self.project_config.save(self.config_path)
+        self.save_config(migration_step=step)
 
     @staticmethod
     def _read_canonical_manifest(path: Path) -> set[str]:
