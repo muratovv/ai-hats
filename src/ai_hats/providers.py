@@ -48,7 +48,12 @@ PUBLISH_AGGREGATOR_END = "<!-- ai-hats:end -->"
 
 # HATS-865: definition moved to the constants leaf; re-exported here for the
 # existing `from ai_hats.providers import ALWAYS_ON_RULES` importers.
-from .constants import ALWAYS_ON_RULES  # noqa: E402
+from .constants import (  # noqa: E402
+    ALWAYS_ON_RULES,
+    HOOK_PRE_TOOL_USE,
+    PROVIDER_CLAUDE,
+    PROVIDER_GEMINI,
+)
 
 
 def _extract_frontmatter_description(skill: ResolvedComponent) -> str:
@@ -299,7 +304,7 @@ class Provider(abc.ABC):
 class GeminiProvider(Provider):
     @property
     def name(self) -> str:
-        return "gemini"
+        return PROVIDER_GEMINI
 
     def system_prompt_path(self, project_dir: Path) -> Path:
         return gemini_md(project_dir)
@@ -380,7 +385,7 @@ class GeminiProvider(Provider):
 class ClaudeProvider(Provider):
     @property
     def name(self) -> str:
-        return "claude"
+        return PROVIDER_CLAUDE
 
     def system_prompt_path(self, project_dir: Path) -> Path:
         return claude_md(project_dir)
@@ -683,7 +688,7 @@ class ClaudeProvider(Provider):
         desired: dict[str, list[dict]] = {}
 
         guard = lib / "pre_bash_shared_state_guard.sh"
-        desired.setdefault("PreToolUse", []).append({
+        desired.setdefault(HOOK_PRE_TOOL_USE, []).append({
             "matcher": "Bash",
             "_ai_hats_managed": self._MANAGED_HOOK_TAG,
             "hooks": [{"type": "command", "command": rel(guard)}],
@@ -793,8 +798,8 @@ class ClaudeProvider(Provider):
 
 
 PROVIDERS: dict[str, type[Provider]] = {
-    "gemini": GeminiProvider,
-    "claude": ClaudeProvider,
+    PROVIDER_GEMINI: GeminiProvider,
+    PROVIDER_CLAUDE: ClaudeProvider,
 }
 
 

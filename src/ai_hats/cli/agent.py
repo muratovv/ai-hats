@@ -7,6 +7,7 @@ import sys
 
 import click
 
+from ai_hats_wt import IsolationMode
 from ..paths import METRICS_JSON
 from ._helpers import console
 
@@ -18,8 +19,8 @@ from ._helpers import console
 @click.option("--task", default=None, help="Task description")
 @click.option(
     "--isolation",
-    default="discard",
-    type=click.Choice(["discard", "squash", "branch"]),
+    default=IsolationMode.DISCARD.value,
+    type=click.Choice([IsolationMode.DISCARD.value, IsolationMode.SQUASH.value, IsolationMode.BRANCH.value]),
     help="Worktree isolation mode (default: discard)",
 )
 @click.option(

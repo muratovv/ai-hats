@@ -24,6 +24,7 @@ from pathlib import Path
 
 import click
 
+from ai_hats_wt import IsolationMode
 from ..paths import METRICS_JSON
 from ._helpers import _project_dir, console
 
@@ -89,8 +90,8 @@ def _resolve_prompt(arg: str | None, project_dir: Path) -> str | None:
 @click.option("--model", default="", help="Model override (batch only).")
 @click.option(
     "--isolation",
-    default="discard",
-    type=click.Choice(["discard", "squash", "branch"]),
+    default=IsolationMode.DISCARD.value,
+    type=click.Choice([IsolationMode.DISCARD.value, IsolationMode.SQUASH.value, IsolationMode.BRANCH.value]),
     help="Worktree isolation (batch only).",
 )
 @click.option("--ticket", default="", help="Ticket id for context (batch only).")

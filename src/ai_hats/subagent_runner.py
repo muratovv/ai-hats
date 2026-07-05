@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .constants import TraceTag, ENV_ROLE
+from .constants import TraceTag, ENV_ROLE, PROVIDER_CLAUDE
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -66,7 +66,7 @@ class SubAgentRunner:
         ticket_id: str = "",
         model: str = "",
         parent_session: str | None = None,
-        isolation_mode: str = "discard",
+        isolation_mode: str = IsolationMode.DISCARD.value,
         tags: dict[str, str] | None = None,
         system_prompt_override: str | None = None,
         harness_policy: "HarnessPolicy | None" = None,
@@ -188,7 +188,7 @@ class SubAgentRunner:
         # SDK (system_prompt + initial user message), not what the legacy
         # ``-p`` arg would have looked like. For non-Claude providers we
         # keep the legacy structure intact.
-        if provider_name == "claude":
+        if provider_name == PROVIDER_CLAUDE:
             meta_prompt = self._build_sdk_prompt_audit(
                 result=result,
                 task=task,
@@ -233,7 +233,7 @@ class SubAgentRunner:
         # ``materialize_runtime_skills`` call when provider is claude
         # (the cache dir is produced inside the SDK builder instead).
         cmd: list[str] = []
-        if provider_name != "claude":
+        if provider_name != PROVIDER_CLAUDE:
             cmd = provider.get_cli_command()
             # HATS-307: materialize spawned role's skills for the sub-agent.
             # For Gemini this is currently a no-op (HATS-367 follow-up).
@@ -265,7 +265,7 @@ class SubAgentRunner:
             session.log_trace(TraceTag.SUB, f"Working directory: {work_dir}")
             t0 = time.monotonic()
             try:
-                if provider_name == "claude":
+                if provider_name == PROVIDER_CLAUDE:
                     # HATS-474 Phase 2: SDK engine.
                     run_result = self._run_via_sdk(
                         result=result,
