@@ -71,18 +71,33 @@ def mock_runners(monkeypatch, project_dir, captured):
     pd = project_dir
     cap = captured
 
+    # HATS-865: runners receive the seam-built CompositionPayload at
+    # construction; stubs surface payload-derived keys ("role" / "role_name" /
+    # "provider") so assertions read like the old kwargs.
     class _WrapRunner:
-        def __init__(self, _pd): pass
+        # HATS-867: session_mgr/tracer_factory injected by the CLI seeds.
+        def __init__(self, _pd, payload, *, session_mgr=None, tracer_factory=None):
+            self._payload = payload
 
-        def run(self, provider, **kwargs):
-            cap["wrap_calls"].append({"provider": provider, **kwargs})
+        def run(self, **kwargs):
+            cap["wrap_calls"].append({
+                "payload": self._payload,
+                "role": self._payload.effective_role,
+                "provider": self._payload.provider.name,
+                **kwargs,
+            })
             return 0, _StubSession(pd, "wrap-1")
 
     class _SubAgentRunner:
-        def __init__(self, _pd): pass
+        def __init__(self, _pd, payload, *, session_mgr=None):
+            self._payload = payload
 
         def run(self, **kwargs):
-            cap["sub_calls"].append(kwargs)
+            cap["sub_calls"].append({
+                "payload": self._payload,
+                "role_name": self._payload.effective_role,
+                **kwargs,
+            })
             return _StubSession(pd, "sub-1")
 
     class _SessionReviewRunner:

@@ -47,7 +47,7 @@ def test_io_contract():
     assert io.requires == frozenset({
         "session_id", "session_dir", "claude_session_id", "project_dir",
     })
-    assert io.optional == frozenset({"role"})
+    assert io.optional == frozenset({"role", "static_cost_analyzer"})
     assert io.produces == frozenset({"usage_path"})
 
 

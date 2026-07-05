@@ -129,6 +129,8 @@ def _spawn_detached(session_id: str, max_retries: int) -> None:
 def reflect_all_cmd(dry_run: bool):
     """Interactive HYP closure + proposal triage via the `judge` role."""
     from ..assembler import Assembler
+    from ..composition_seam import build_composition_payload
+    from ..observe import SessionManager, SidecarTracer
     from ..pipeline.harness import PipelineHarness
 
     project_dir = _project_dir()
@@ -159,6 +161,11 @@ def reflect_all_cmd(dry_run: bool):
             "project_dir": project_dir,
             "prompt_path": h.materialize_prompt(combined),
             "extra_args": [],
+            "composition": build_composition_payload(
+                project_dir, role_override="judge", interactive=True,
+            ),
+            "session_mgr": SessionManager(project_dir),
+            "tracer_factory": SidecarTracer,
         })
     sys.exit(int(final.get("exit_code", 1)))
 
@@ -188,6 +195,8 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     state-mutating CLI calls possible by L0 contract).
     """
     from ..assembler import Assembler
+    from ..composition_seam import build_composition_payload
+    from ..observe import SessionManager, SidecarTracer
     from ..pipeline.harness import PipelineHarness
 
     project_dir = _project_dir()
@@ -219,6 +228,11 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
             "project_dir": project_dir,
             "prompt_path": h1.materialize_prompt(combined1),
             "extra_args": [],
+            "composition": build_composition_payload(
+                project_dir, role_override="judge-auditor",
+            ),
+            "session_mgr": SessionManager(project_dir),
+            "tracer_factory": SidecarTracer,
         })
 
     # Fail closed: Phase 1 errored OR did not produce a usable draft.
@@ -266,6 +280,11 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
             "project_dir": project_dir,
             "prompt_path": h2.materialize_prompt(combined2),
             "extra_args": [],
+            "composition": build_composition_payload(
+                project_dir, role_override="judge", interactive=True,
+            ),
+            "session_mgr": SessionManager(project_dir),
+            "tracer_factory": SidecarTracer,
         })
     sys.exit(int(r2.get("exit_code", 1)))
 
@@ -316,6 +335,8 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
     receiving everything inlined in the prompt.
     """
     from ..assembler import Assembler
+    from ..composition_seam import build_composition_payload
+    from ..observe import SessionManager, SidecarTracer
     from ..pipeline.harness import PipelineHarness
 
     assembler = Assembler(project_dir)
@@ -365,6 +386,11 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
             "project_dir": project_dir,
             "prompt_path": h.materialize_prompt(preamble),
             "extra_args": [],
+            "composition": build_composition_payload(
+                project_dir, role_override="judge-for-role", interactive=True,
+            ),
+            "session_mgr": SessionManager(project_dir),
+            "tracer_factory": SidecarTracer,
         })
     saved = final.get("saved_path")
     if saved:
@@ -495,6 +521,8 @@ def _run_intake_pipeline(
     Empty ``intake_result_text`` means the marker block was missing in the
     transcript. Caller treats that as a pipeline failure.
     """
+    from ..composition_seam import build_composition_payload
+    from ..observe import SessionManager, SidecarTracer
     from ..pipeline.harness import PipelineHarness
 
     with PipelineHarness("reflect-issue", project_dir) as h:
@@ -504,6 +532,11 @@ def _run_intake_pipeline(
             "project_dir": project_dir,
             "prompt_path": h.materialize_prompt(prompt_text),
             "model": INTAKE_MODEL,
+            "composition": build_composition_payload(
+                project_dir, role_override="hypothesis-intake",
+            ),
+            "session_mgr": SessionManager(project_dir),
+            "tracer_factory": SidecarTracer,
         })
     return (
         final.get("intake_result", "") or "",

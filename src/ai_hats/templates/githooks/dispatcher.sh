@@ -24,6 +24,10 @@ if [[ -f "$MANIFEST" ]]; then
     while IFS= read -r entry; do
         entry="${entry%$'\r'}"   # tolerate CRLF manifests
         [[ -z "$entry" || "$entry" == \#* ]] && continue
+        # hashed owner_key convention (HATS-911): "<sha256-12>  <relpath>"
+        if [[ "$entry" =~ ^[0-9a-f]{12}\ \ (.+)$ ]]; then
+            entry="${BASH_REMATCH[1]}"
+        fi
         # Only managed `.d/` entries for THIS event.
         [[ "$entry" == "${EVENT}.d/"* ]] || continue
         expected="${GITHOOKS_DIR}/${entry}"

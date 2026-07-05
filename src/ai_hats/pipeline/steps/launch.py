@@ -45,19 +45,18 @@ class Provider(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="provider",
-            requires=frozenset({"interactive", "project_dir"}),
-            # HATS-505: ``system_prompt`` is no longer in the optional set.
-            # ``ComposeRole`` still emits it for ``PreLog`` (observability),
-            # but ``LaunchProvider`` deliberately does not read it — neither
-            # the HITL branch (composes via ``WrapRunner.build_session_prompt``)
-            # nor the sub-agent branch (composes via
-            # ``SubAgentRunner._run_attempt → compose_for_role``) needs a
-            # funnel-supplied prompt. ``SubAgentRunner.run``'s
-            # ``system_prompt_override`` parameter survives for explicit
-            # HATS-267 callers; the pipeline is no longer one of them.
+            # HATS-865: funnel-seeded CompositionPayload, handed to the runner
+            # as-is — this step never composes nor resolves providers.
+            # HATS-867: observe writer handles are funnel-seeded too.
+            requires=frozenset({
+                "interactive", "project_dir", "composition",
+                "session_mgr", "tracer_factory",
+            }),
+            # HATS-505: ``system_prompt`` is deliberately NOT read here —
+            # prompt delivery goes through the payload, not a funnel string.
             optional=frozenset({
-                "role", "provider", "prompt_text",
-                "model", "isolation", "ticket", "tags", "extra_args",
+                "prompt_text", "model", "isolation", "ticket", "tags",
+                "extra_args",
             }),
             produces=frozenset({
                 "session_id", "session_dir", "transcript_path", "exit_code",
@@ -69,8 +68,9 @@ class Provider(Step):
         *,
         interactive: bool,
         project_dir: Path,
-        role: str | None = None,
-        provider: str | None = None,
+        composition: Any,
+        session_mgr: Any,
+        tracer_factory: Any,
         prompt_text: str = "",
         model: str = "",
         isolation: str = "discard",
@@ -80,34 +80,20 @@ class Provider(Step):
         **_: Any,
     ) -> dict[str, Any]:
         from ...harness.guard import apply_post_run_guard
-        from ...models import ProjectConfig
         from ...runtime import SubAgentRunner, WrapRunner
 
         if interactive:
-            cfg = ProjectConfig.from_yaml(project_dir / "ai-hats.yaml")
-            eff_provider = provider or cfg.provider
-            if not eff_provider:
-                raise RuntimeError(
-                    "launch_provider: no provider configured. "
-                    "Run: ai-hats config set -p <provider>"
-                )
             eff_extra = list(extra_args or [])
             if prompt_text:
                 eff_extra = [prompt_text, *eff_extra]
-            runner = WrapRunner(project_dir)
             # HATS-452 (П2 in ADR-0005): WrapRunner is HITL — no override
-            # channel. The role's full composition reaches the agent via
-            # ``build_session_prompt`` inside ``run_session``. HATS-505:
-            # the sub-agent branch below also no longer consumes a
-            # funnel-supplied ``system_prompt`` — only explicit HATS-267
-            # callers use ``SubAgentRunner.run``'s
-            # ``system_prompt_override`` channel.
-            exit_code, session = runner.run(
-                eff_provider,
-                role_override=role,
-                extra_args=eff_extra,
-                tags=tags,
+            # channel; the payload's composition reaches the agent via
+            # ``build_session_prompt`` inside ``run``.
+            runner = WrapRunner(
+                project_dir, composition,
+                session_mgr=session_mgr, tracer_factory=tracer_factory,
             )
+            exit_code, session = runner.run(extra_args=eff_extra, tags=tags)
             # HATS-378: universal zero-output guard for reporting steps.
             # Interactive (main) sessions have trace-enriched metrics by
             # the time WrapRunner returns, so the token/tool_calls
@@ -120,20 +106,13 @@ class Provider(Step):
                 "exit_code": int(exit_code),
             }
 
-        runner = SubAgentRunner(project_dir)
+        runner = SubAgentRunner(project_dir, composition, session_mgr=session_mgr)
         # HATS-378: SubAgentRunner internally applies timeout retry and
         # zero-output guard when ``harness_policy`` is supplied — no
         # external guard call needed for the sub-agent branch.
-        # HATS-505: do NOT forward a funnel-supplied prompt as
-        # ``system_prompt_override``. The runner composes the role itself
-        # via ``compose_for_role`` (full overlay layering); pre-feeding the
-        # override would only re-apply the same composition (no value) while
-        # leaving the HATS-452-class trap (``with_injection_override``
-        # wholesale-replace) wired to a pipeline funnel value. The override
-        # parameter on ``SubAgentRunner.run`` survives for explicit HATS-267
-        # callers, which the pipeline is not.
+        # HATS-505: no funnel-supplied ``system_prompt_override`` — the
+        # override channel stays reserved for explicit HATS-267 callers.
         session = runner.run(
-            role_name=role or "",
             task=prompt_text,
             ticket_id=ticket,
             model=model,

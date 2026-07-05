@@ -24,6 +24,16 @@ since the latest tag lives under **Unreleased** until the next release.
   `.claude/` publish and skills-mirror cleanups now ride the same shared
   procedures (`skills-export`, `claude-publish` owners), and the publish
   manifest path gained the HATS-907 traversal guard.
+- **Hashed `owner_key` marker convention** (HATS-905 phase 2, HATS-911).
+  Line-manifest markers are written via `ai_hats.sweeper.write_marker`: an
+  `# ai-hats-owner: <key>` header plus a `<sha256-12>  <relpath>` content
+  hash per entry — the sweep-time proof that an entry is still engine-owned.
+  The live `.githooks/.ai-hats-manifest` now uses this format (readers accept
+  both; old hash-less manifests converge on the next rematerialization). A
+  coverage test pins every mechanism materializing outside `<ai_hats_dir>`
+  to a registered owner; sweep liveness no longer depends on import order,
+  and a crashing legacy sweep procedure defers with a WARN instead of
+  aborting the bump.
 
 ### Fixed
 

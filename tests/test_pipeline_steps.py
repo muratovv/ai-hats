@@ -24,58 +24,34 @@ from ai_hats.paths import runs_dir
 
 # ---------------- compose_role ----------------
 
-def test_compose_role_omits_key_when_role_none(tmp_path: Path):
-    """HATS-452 / П3: when no role is requested, the step OMITS the
-    ``system_prompt`` key entirely (rather than emitting ``""``). The
-    pipeline funnel + downstream consumers (``LaunchProvider`` →
-    ``WrapRunner``) treat missing == None == "no override".
-    """
+def test_compose_role_omits_key_when_no_composition(tmp_path: Path):
+    """HATS-452 / П3 + HATS-865: without a seeded ``composition`` payload the
+    step OMITS ``system_prompt`` entirely (rather than emitting ``""``)."""
     step = ComposeRole()
     out = step.run(project_dir=tmp_path, role=None)
     assert out == {}, (
-        "compose_role must NOT emit system_prompt='' for missing role "
-        "(HATS-452); the empty-string-as-absent trap broke composition "
-        "delivery in WrapRunner."
+        "compose_role must NOT emit system_prompt='' when no composition is "
+        "seeded (HATS-452); empty-string-as-absent broke delivery once."
     )
 
 
-def test_compose_role_routes_through_facade(tmp_path: Path):
-    """HATS-501: ``ComposeRole`` MUST route through the
-    ``compose_for_role`` facade (HATS-456 single-derivation-point
-    invariant) — bypassing it is the HATS-501 bug.
-
-    Structural-only check: both ``Assembler`` and ``compose_for_role``
-    are mocked, so this test asserts *which function is called* with
-    *which arguments*, not that overlays actually land in the result.
-    The real layered-composition assertion lives in
-    ``tests/pipeline/test_compose_overlay_propagation.py``.
-    """
-    step = ComposeRole()
-    fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
-    fake_assembler = MagicMock()
-    # HATS-507: ComposeRole pre-checks role existence via
-    # resolver.list_components(ROLE); the mock must report it as available
-    # so the test reaches the facade rather than RoleNotFoundError.
-    fake_assembler.resolver.list_components.return_value = ["judge"]
-    with patch("ai_hats.assembler.Assembler", return_value=fake_assembler), \
-         patch("ai_hats.materialize.compose_for_role",
-               return_value=fake_result) as facade:
-        out = step.run(project_dir=tmp_path, role="judge")
-    assert out == {"system_prompt": "ROLE PROMPT"}
-    facade.assert_called_once_with(fake_assembler, "judge")
+def test_compose_role_projects_seeded_payload():
+    """HATS-865: ``compose_role`` is a pure projection of the funnel-seeded
+    CompositionPayload — it never composes (deny-by-default lint enforces
+    the import side; this pins the value contract)."""
+    payload = MagicMock(name="composition_payload")
+    payload.result.merged_injection = "ROLE PROMPT"
+    assert ComposeRole().run(composition=payload) == {
+        "system_prompt": "ROLE PROMPT"
+    }
 
 
-def test_compose_role_raises_on_compose_errors(tmp_path: Path):
-    step = ComposeRole()
-    fake_result = MagicMock(errors=["role not found"])
-    fake_assembler = MagicMock()
-    # HATS-507: pass the existence pre-check so the test exercises the
-    # downstream ``compose_for_role`` errors branch (not RoleNotFoundError).
-    fake_assembler.resolver.list_components.return_value = ["ghost"]
-    with patch("ai_hats.assembler.Assembler", return_value=fake_assembler), \
-         patch("ai_hats.materialize.compose_for_role", return_value=fake_result):
-        with pytest.raises(RuntimeError, match="failed to resolve role"):
-            step.run(project_dir=tmp_path, role="ghost")
+def test_compose_role_empty_injection_omits_key():
+    """П3: empty merged injection → key omitted (None-filtered), never ""."""
+    payload = MagicMock(name="composition_payload")
+    payload.result.merged_injection = ""
+    out = ComposeRole().run(composition=payload)
+    assert out == {"system_prompt": None}  # None-filtered at the merge boundary
 
 
 # ---------------- resolve_prompt ----------------

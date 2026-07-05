@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 
-from ai_hats.composer import collect_worktree_hooks
+from ai_hats.hook_collection import collect_worktree_hooks
 
 
 def _skill(base: Path, name: str, body: str) -> ResolvedComponent:

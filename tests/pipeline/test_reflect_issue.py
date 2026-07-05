@@ -49,11 +49,13 @@ def _install_subagent_trace(monkeypatch, project_dir: Path, body: str) -> dict:
             )
 
     class _Runner:
-        def __init__(self, _pd) -> None:
-            pass
+        def __init__(self, _pd, payload, *, session_mgr=None) -> None:
+            self._payload = payload
 
         def run(self, **kwargs):
-            captured["calls"].append(kwargs)
+            captured["calls"].append(
+                {"role_name": self._payload.effective_role, **kwargs}
+            )
             return _Session()
 
     import ai_hats.runtime as rt
