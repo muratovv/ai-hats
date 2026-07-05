@@ -11,6 +11,7 @@ import hashlib
 import pytest
 
 from ai_hats import owners, sweeper
+from ai_hats.paths import claude_dir, claude_settings_json, claude_skills_dir
 
 
 @pytest.fixture(autouse=True)
@@ -233,7 +234,7 @@ SETTINGS_SURFACE = sweeper.SettingsTagsSurface(owner_key="tags-mech")
 def _seed_settings(project_dir):
     import json
 
-    settings = project_dir / ".claude" / "settings.json"
+    settings = claude_settings_json(project_dir)
     settings.parent.mkdir(parents=True)
     settings.write_text(
         json.dumps(
@@ -269,9 +270,7 @@ def test_dead_owner_tagged_settings_entries_removed_user_kept(tmp_path):
     data = json.loads(settings.read_text())
     assert data["model"] == "user-choice"
     assert "SessionStart" not in data["hooks"]
-    assert data["hooks"]["PreToolUse"] == [
-        {"matcher": "Bash", "hooks": [{"command": "my-own.sh"}]}
-    ]
+    assert data["hooks"]["PreToolUse"] == [{"matcher": "Bash", "hooks": [{"command": "my-own.sh"}]}]
 
 
 def test_living_owner_settings_untouched(tmp_path):
@@ -286,7 +285,7 @@ def test_living_owner_settings_untouched(tmp_path):
 
 
 def test_broken_settings_json_refused(tmp_path):
-    settings = tmp_path / ".claude" / "settings.json"
+    settings = claude_settings_json(tmp_path)
     settings.parent.mkdir(parents=True)
     settings.write_text("{not json")
 
@@ -305,9 +304,7 @@ def test_proc_surface_dead_owner_runs_shared_procedure(tmp_path):
         return ["a", "b"]
 
     (tmp_path / ".probe").write_text("x\n")
-    surface = sweeper.ProcSurface(
-        owner_key="legacy-mech", marker_relpath=".probe", proc=fake_proc
-    )
+    surface = sweeper.ProcSurface(owner_key="legacy-mech", marker_relpath=".probe", proc=fake_proc)
 
     reports = sweeper.sweep_unclaimed(tmp_path, surfaces=(surface,))
 
@@ -326,6 +323,37 @@ def test_proc_surface_living_owner_not_called(tmp_path):
     )
 
     assert sweeper.sweep_unclaimed(tmp_path, surfaces=(surface,)) == []
+
+
+def test_proc_surface_crash_isolated_as_refused(tmp_path):
+    """HATS-911: a crashing sweep procedure must not abort the bump —
+    the surface reports refused, the remaining surfaces still sweep."""
+    (tmp_path / ".probe").write_text("x\n")
+    (tmp_path / ".probe2").write_text("x\n")
+
+    def bad_proc(project_dir):
+        raise OSError("disk went away")
+
+    def good_proc(project_dir):
+        (tmp_path / ".probe2").unlink()
+        return ["b"]
+
+    reports = sweeper.sweep_unclaimed(
+        tmp_path,
+        surfaces=(
+            sweeper.ProcSurface(
+                owner_key="dead-mech", marker_relpath=".probe", proc=bad_proc
+            ),
+            sweeper.ProcSurface(
+                owner_key="other-mech", marker_relpath=".probe2", proc=good_proc
+            ),
+        ),
+    )
+
+    by_owner = {r.owner_key: r for r in reports}
+    assert "crashed" in by_owner["dead-mech"].refused
+    assert (tmp_path / ".probe").exists()
+    assert by_owner["other-mech"].swept == ("b",)
 
 
 def test_proc_surface_dry_run_reports_without_acting(tmp_path):
@@ -350,13 +378,13 @@ def test_default_surfaces_cover_all_known_owners():
 
 def test_default_surfaces_sweep_real_legacy_leftovers(tmp_path):
     # skills-export mirror (HATS-901 shape)
-    skills = tmp_path / ".claude" / "skills"
+    skills = claude_skills_dir(tmp_path)
     skills.mkdir(parents=True)
     (skills / ".ai-hats-managed").write_text("old-skill\n")
     (skills / "old-skill").mkdir()
     (skills / "old-skill" / "SKILL.md").write_text("stale")
     # claude-publish manifest (pre-HATS-289 shape)
-    claude = tmp_path / ".claude"
+    claude = claude_dir(tmp_path)
     (claude / ".ai-hats-managed").write_text("role.md\nskills/keep\n")
     (claude / "role.md").write_text("legacy publish artefact")
 
@@ -373,8 +401,84 @@ def test_default_surfaces_sweep_real_legacy_leftovers(tmp_path):
 def test_settings_without_tags_no_report(tmp_path):
     import json
 
-    settings = tmp_path / ".claude" / "settings.json"
+    settings = claude_settings_json(tmp_path)
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"hooks": {"PreToolUse": [{"matcher": "*"}]}}))
+
+
+# ---- write_marker: the hashed owner_key convention writer (HATS-911) ----
+
+
+def test_write_marker_round_trip_sweepable(tmp_path):
+    base = tmp_path / ".testsurface"
+    (base / "bundle.d").mkdir(parents=True)
+    (base / "hook.sh").write_bytes(b"#!/bin/sh\n")
+    (base / "bundle.d" / "part.sh").write_bytes(b"echo hi\n")
+    marker = base / ".ai-hats-manifest"
+
+    sweeper.write_marker(
+        marker,
+        owner_key="test-mech",
+        names=["hook.sh", "bundle.d/part.sh"],
+        project_dir=tmp_path,
+        reason="test-write",
+    )
+
+    reports = sweeper.sweep_unclaimed(tmp_path, surfaces=(SURFACE,))
+
+    assert sorted(reports[0].swept) == ["bundle.d/part.sh", "hook.sh"]
+    assert reports[0].kept == ()
+    assert reports[0].marker_removed
+
+
+def test_write_marker_directory_entry_uses_dir_digest(tmp_path):
+    base = tmp_path / ".testsurface"
+    (base / "owned-dir").mkdir(parents=True)
+    (base / "owned-dir" / "f.txt").write_bytes(b"payload")
+    marker = base / ".ai-hats-manifest"
+
+    sweeper.write_marker(
+        marker, owner_key="test-mech", names=["owned-dir"],
+        project_dir=tmp_path, reason="test-write",
+    )
+
+    reports = sweeper.sweep_unclaimed(tmp_path, surfaces=(SURFACE,))
+
+    assert reports[0].swept == ("owned-dir",)
+    assert not (base / "owned-dir").exists()
+
+
+def test_write_marker_missing_entry_fails_loud(tmp_path):
+    base = tmp_path / ".testsurface"
+    base.mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="not materialized"):
+        sweeper.write_marker(
+            base / ".ai-hats-manifest", owner_key="test-mech",
+            names=["ghost.sh"], project_dir=tmp_path, reason="test-write",
+        )
+    assert not (base / ".ai-hats-manifest").exists()
+
+
+def test_write_marker_unsafe_entry_fails_loud(tmp_path):
+    base = tmp_path / ".testsurface"
+    base.mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="unsafe entry"):
+        sweeper.write_marker(
+            base / ".ai-hats-manifest", owner_key="test-mech",
+            names=["../escape.sh"], project_dir=tmp_path, reason="test-write",
+        )
+
+
+def test_write_marker_empty_names_removes_marker(tmp_path):
+    base, marker = _seed(tmp_path, f"{_digest(b'x')}  old.txt")
+
+    sweeper.write_marker(
+        marker, owner_key="test-mech", names=[],
+        project_dir=tmp_path, reason="test-write",
+    )
+
+    assert not marker.exists()
 
     assert sweeper.sweep_unclaimed(tmp_path, surfaces=(SETTINGS_SURFACE,)) == []

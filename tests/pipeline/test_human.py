@@ -23,7 +23,7 @@ def test_human_no_role(project_dir: Path, mock_runners):
     # Routed to WrapRunner
     assert len(mock_runners["wrap_calls"]) == 1
     call = mock_runners["wrap_calls"][0]
-    assert call["role_override"] is None
+    assert call["role"] == "test-agent"  # HATS-865: seam resolved active_role
     assert call["provider"] == "claude"
     assert call["extra_args"] == []
     # NB: session-review spawn is NOT done by the pipeline anymore — the
@@ -36,7 +36,7 @@ def test_human_with_role(project_dir: Path, mock_runners):
 
     assert res.exit_code == 0, res.output
     call = mock_runners["wrap_calls"][0]
-    assert call["role_override"] == "assistant"
+    assert call["role"] == "assistant"
     # HATS-452 (П2 in ADR-0005): WrapRunner has NO system_prompt_override
     # channel — the role's composition reaches the agent via
     # ``build_session_prompt`` inside ``run_session``, not via a

@@ -13,8 +13,24 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_hats.models import TaskCard, TaskState, WorkLogEntry
+from ai_hats.observe import SessionManager
 from ai_hats.paths import tasks_dir
 from ai_hats.runtime import SubAgentRunner
+
+
+def _null_payload(**kw):
+    """Minimal CompositionPayload for helper-method seams (HATS-865)."""
+    from ai_hats.composition_payload import CompositionPayload
+    from ai_hats_core import CompositionResult
+
+    return CompositionPayload(
+        result=CompositionResult(
+            name="t", priorities=[], rules=[], skills=[], injections=[],
+        ),
+        provider=None,
+        effective_role="t",
+        **kw,
+    )
 
 
 def _write_card(project_dir: Path, card: TaskCard, plan_body: str | None = None) -> None:
@@ -63,7 +79,7 @@ def test_load_linked_context_happy_path_and_ordering(tmp_path: Path) -> None:
         ),
     )
 
-    body = SubAgentRunner(project_dir)._load_linked_context("HATS-902")
+    body = SubAgentRunner(project_dir, _null_payload(), session_mgr=SessionManager(project_dir))._load_linked_context("HATS-902")
 
     # Parent epic: trimmed card + plan.md.
     assert "HATS-900" in body
@@ -86,7 +102,7 @@ def test_load_linked_context_no_links_returns_empty(tmp_path: Path) -> None:
         project_dir,
         TaskCard(id="HATS-902", title="lonely ticket", state=TaskState.EXECUTE),
     )
-    assert SubAgentRunner(project_dir)._load_linked_context("HATS-902") == ""
+    assert SubAgentRunner(project_dir, _null_payload(), session_mgr=SessionManager(project_dir))._load_linked_context("HATS-902") == ""
 
 
 def test_load_linked_context_missing_target_is_skipped(tmp_path: Path) -> None:
@@ -111,7 +127,7 @@ def test_load_linked_context_missing_target_is_skipped(tmp_path: Path) -> None:
             related=["HATS-404"],  # dangling: no such card
         ),
     )
-    body = SubAgentRunner(project_dir)._load_linked_context("HATS-902")
+    body = SubAgentRunner(project_dir, _null_payload(), session_mgr=SessionManager(project_dir))._load_linked_context("HATS-902")
     assert "REAL EPIC BODY" in body
     assert "HATS-404" not in body  # graceful skip, no crash
 
@@ -138,7 +154,7 @@ def test_load_linked_context_epic_without_plan_is_card_only(tmp_path: Path) -> N
             parent_task="HATS-900",
         ),
     )
-    body = SubAgentRunner(project_dir)._load_linked_context("HATS-902")
+    body = SubAgentRunner(project_dir, _null_payload(), session_mgr=SessionManager(project_dir))._load_linked_context("HATS-902")
     assert "EPIC CARD ONLY" in body
     assert "plan.md" not in body
 
@@ -146,8 +162,8 @@ def test_load_linked_context_epic_without_plan_is_card_only(tmp_path: Path) -> N
 def test_load_linked_context_unknown_ticket_returns_empty(tmp_path: Path) -> None:
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
-    assert SubAgentRunner(project_dir)._load_linked_context("HATS-999") == ""
-    assert SubAgentRunner(project_dir)._load_linked_context("") == ""
+    assert SubAgentRunner(project_dir, _null_payload(), session_mgr=SessionManager(project_dir))._load_linked_context("HATS-999") == ""
+    assert SubAgentRunner(project_dir, _null_payload(), session_mgr=SessionManager(project_dir))._load_linked_context("") == ""
 
 
 # --- wiring into the two live prompt channels ---
@@ -200,7 +216,7 @@ def test_build_meta_prompt_wires_linked_context_section(tmp_path: Path) -> None:
             parent_task="HATS-900",
         ),
     )
-    out = SubAgentRunner(project_dir)._build_meta_prompt(
+    out = SubAgentRunner(project_dir, _null_payload(), session_mgr=SessionManager(project_dir))._build_meta_prompt(
         result=_stub_result(), provider=None, task="go", ticket_id="HATS-902"
     )
     assert "# TICKET_CONTEXT" in out
@@ -213,7 +229,7 @@ def test_build_meta_prompt_wires_linked_context_section(tmp_path: Path) -> None:
         project_dir,
         TaskCard(id="HATS-903", title="lonely", state=TaskState.EXECUTE),
     )
-    out_nolinks = SubAgentRunner(project_dir)._build_meta_prompt(
+    out_nolinks = SubAgentRunner(project_dir, _null_payload(), session_mgr=SessionManager(project_dir))._build_meta_prompt(
         result=_stub_result(), provider=None, task="go", ticket_id="HATS-903"
     )
     assert "# LINKED_CONTEXT" not in out_nolinks

@@ -8,6 +8,7 @@ E2E coverage (real ``ai-hats self update`` subprocess writing a real
 tarball under a real ``/tmp/``) lives in
 ``tests/e2e/test_bump_backup_round_trip.py``.
 """
+
 from __future__ import annotations
 
 import tarfile
@@ -16,6 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
+from ai_hats.paths import claude_dir, claude_settings_json
 from ai_hats.migration_backup import (
     BACKUP_SCOPE_PATHS,
     ENV_BACKUP_DIR,
@@ -39,7 +41,7 @@ def _seed_project(project_dir: Path) -> None:
     agent.mkdir(parents=True)
     (agent / "pre_bash_shared_state_guard.sh").write_text("#!/bin/sh\nexit 0\n")
     (agent / ".manifest").write_text("pre_bash_shared_state_guard.sh\n")
-    claude = project_dir / ".claude"
+    claude = claude_dir(project_dir)
     claude.mkdir()
     (claude / "settings.json").write_text('{"hooks": {}}\n')
     (project_dir / "CLAUDE.md").write_text("# system prompt\n")
@@ -83,9 +85,7 @@ def test_snapshot_captures_all_declared_scope_paths(
     assert ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh" in names
 
 
-def test_snapshot_skips_paths_not_on_disk(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_snapshot_skips_paths_not_on_disk(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Missing scope paths (e.g. no GEMINI.md on claude projects, no
     .githooks/) are silently skipped — not an error."""
     project = tmp_path / "proj"
@@ -118,9 +118,7 @@ def test_snapshot_works_on_empty_greenfield(
         assert list(tar.getnames()) == []
 
 
-def test_snapshot_preserves_file_modes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_snapshot_preserves_file_modes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Hook scripts ship chmod +x — the backup must preserve mode so
     restore is byte-AND-mode-identical."""
     project = tmp_path / "proj"
@@ -153,24 +151,28 @@ def test_snapshot_round_trip_restores_state_byte_for_byte(
     project.mkdir()
     _seed_project(project)
     _isolate_backup_dir(monkeypatch, tmp_path)
-    original_settings = (project / ".claude" / "settings.json").read_bytes()
+    original_settings = (claude_settings_json(project)).read_bytes()
     original_yaml = (project / "ai-hats.yaml").read_bytes()
 
     snap = snapshot_pre_bump(project)
     assert snap is not None
 
     # Simulate a destructive bump: mutate the files.
-    (project / ".claude" / "settings.json").write_text('{"DESTROYED": true}')
+    (claude_settings_json(project)).write_text('{"DESTROYED": true}')
     (project / "ai-hats.yaml").write_text("DESTROYED")
-    (project / ".agent" / "ai-hats" / "library" / "hooks" / "pre_bash_shared_state_guard.sh").unlink()
+    (
+        project / ".agent" / "ai-hats" / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
+    ).unlink()
 
     # Recover via tarball.
     with tarfile.open(snap, "r:gz") as tar:
         tar.extractall(path=project, filter="data")
 
-    assert (project / ".claude" / "settings.json").read_bytes() == original_settings
+    assert (claude_settings_json(project)).read_bytes() == original_settings
     assert (project / "ai-hats.yaml").read_bytes() == original_yaml
-    assert (project / ".agent" / "ai-hats" / "library" / "hooks" / "pre_bash_shared_state_guard.sh").exists()
+    assert (
+        project / ".agent" / "ai-hats" / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
+    ).exists()
 
 
 # ---------- Env overrides ----------
@@ -197,9 +199,7 @@ def test_hard_disable_sentinel_returns_none_and_writes_nothing(
     assert not sentinel_base.exists()
 
 
-def test_custom_backup_dir_via_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_custom_backup_dir_via_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """AI_HATS_BUMP_BACKUP_DIR=<path> redirects the base dir."""
     project = tmp_path / "proj"
     project.mkdir()
@@ -288,9 +288,7 @@ def test_retention_isolates_per_project_slug(
     assert len(b_remaining) == MAX_RETENTION + 5
 
 
-def test_sweep_swallows_unlink_failures(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_sweep_swallows_unlink_failures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A flaky unlink (concurrent removal, permission flap) must NOT
     block the new snapshot from being written."""
     project = tmp_path / "proj"
@@ -321,9 +319,7 @@ def test_sweep_swallows_unlink_failures(
 # ---------- Filename + stderr UX ----------
 
 
-def test_filename_carries_label(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_filename_carries_label(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The label argument lands in the filename so users can grep by
     which entry-point fired the snapshot."""
     project = tmp_path / "proj"

@@ -172,8 +172,14 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(
         "ai_hats.sdk_runner.run_claude_sdk_blocking", _fake_sdk,
     )
 
-    runner = runtime_mod.SubAgentRunner(project)
-    runner.run(role_name="guest", task="hi", isolation_mode="discard")
+    from ai_hats.composition_seam import build_composition_payload
+    from ai_hats.observe import SessionManager
+
+    payload = build_composition_payload(project, role_override="guest")
+    runner = runtime_mod.SubAgentRunner(
+        project, payload, session_mgr=SessionManager(project),
+    )
+    runner.run(task="hi", isolation_mode="discard")
 
     assert len(captured["plugins"]) == 1, captured["plugins"]
     plugin = captured["plugins"][0]

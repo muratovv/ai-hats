@@ -5,7 +5,17 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import hooks_dir, rules_dir, runs_dir, skills_dir, state_md_path, tasks_dir
+from ai_hats.paths import (
+    AI_HATS_MANAGED_MARKER,
+    claude_plugin_manifest,
+    claude_skills_dir,
+    hooks_dir,
+    rules_dir,
+    runs_dir,
+    skills_dir,
+    state_md_path,
+    tasks_dir,
+)
 
 # HATS-469: ``Assembler.bump()`` was removed; use the test-side pipeline
 # helper that mirrors ``cli/assembly.py::do_bump``.
@@ -270,15 +280,14 @@ def test_bump_force_v07_migration_overwrites_user_edits(project_with_library, ca
     asm.set_role("test-role")
 
     canonical = project / ".agent" / "ai-hats"
-    (canonical / "priorities.md").write_text(
-        "# Priorities\n\n1. user-edited\n"
-    )
+    (canonical / "priorities.md").write_text("# Priorities\n\n1. user-edited\n")
 
     # No raise — force bypasses the AssemblyError.
     bump_pipeline(asm, force_v07_migration=True)
 
-    assert not (canonical / "priorities.md").exists(), \
+    assert not (canonical / "priorities.md").exists(), (
         "force_v07_migration must sweep the user-edited file"
+    )
     captured = capsys.readouterr()
     assert "WARN: v07-migrate: overwriting" in captured.err
     assert "priorities.md" in captured.err
@@ -360,6 +369,7 @@ def test_bump_persists_default_role_heal(project_with_library):
 
     # Yaml on disk now has the healed value persisted.
     import yaml as _yaml
+
     saved = _yaml.safe_load(config_path.read_text())
     assert saved["default_role"] == "test-role"
 
@@ -457,9 +467,7 @@ def test_bump_skips_normalize_when_v07_migration_refuses(project_with_library):
         "imports_order: role-first\n"
     )
     canonical = project / ".agent" / "ai-hats"
-    (canonical / "priorities.md").write_text(
-        "# Priorities\n\n1. user-edited\n"
-    )
+    (canonical / "priorities.md").write_text("# Priorities\n\n1. user-edited\n")
     pre_bytes = config_path.read_bytes()
 
     asm2 = Assembler(project, library_paths=[lib])
@@ -625,6 +633,7 @@ def test_claude_build_session_prompt_creates_temp_file(project_with_library):
     # Cleanup
     override_path.unlink()
     import shutil as _shutil
+
     _shutil.rmtree(plugin_dir, ignore_errors=True)
 
 
@@ -647,7 +656,7 @@ def test_claude_build_session_prompt_materializes_role_skills_in_plugin_dir(proj
     assert "--plugin-dir" in args
     plugin_dir = Path(args[args.index("--plugin-dir") + 1])
     try:
-        assert (plugin_dir / ".claude-plugin" / "plugin.json").exists()
+        assert claude_plugin_manifest(plugin_dir).exists()
         assert (plugin_dir / "skills" / "test_skill" / "SKILL.md").exists()
     finally:
         Path(args[1]).unlink()
@@ -675,6 +684,7 @@ def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_w
     Path(args[1]).unlink()
     if "--plugin-dir" in args:
         import shutil as _shutil
+
         _shutil.rmtree(args[args.index("--plugin-dir") + 1], ignore_errors=True)
 
 
@@ -810,11 +820,7 @@ def test_strip_legacy_managed_block_removes_block(project_with_library):
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     gi = project / ".gitignore"
-    gi.write_text(
-        "# user header\n*.pyc\n.agent/\n\n"
-        + _LEGACY_BLOCK
-        + "user-tail\n"
-    )
+    gi.write_text("# user header\n*.pyc\n.agent/\n\n" + _LEGACY_BLOCK + "user-tail\n")
 
     changed = asm._strip_legacy_managed_block()
 
@@ -900,11 +906,9 @@ def test_strip_legacy_managed_block_unclosed_marker_left_alone(project_with_libr
 
 def _seed_orphan_marker(fake_home):
     """Create `~/.claude/skills/.ai-hats-managed` under a fake HOME."""
-    skills_dir = fake_home / ".claude" / "skills"
+    skills_dir = claude_skills_dir(fake_home)
     skills_dir.mkdir(parents=True)
-    (skills_dir / ".ai-hats-managed").write_text(
-        "audit-reviewer\nbacklog-manager\n"
-    )
+    (skills_dir / ".ai-hats-managed").write_text("audit-reviewer\nbacklog-manager\n")
 
 
 def test_warn_orphan_user_level_managed_skills_emits_warn(
@@ -934,7 +938,7 @@ def test_warn_orphan_user_level_managed_skills_emits_warn(
     assert "~/.claude/skills/.ai-hats-managed" in err
     assert "rm -rf ~/.claude/skills/" in err
     # Marker MUST still exist — we never delete user data ourselves.
-    assert (fake_home / ".claude" / "skills" / ".ai-hats-managed").exists()
+    assert (claude_skills_dir(fake_home) / AI_HATS_MANAGED_MARKER).exists()
 
 
 def test_warn_orphan_user_level_managed_skills_silent_when_absent(
@@ -980,7 +984,7 @@ def test_warn_orphan_user_level_managed_skills_idempotent(
 def _seed_legacy_skills_mirror(project):
     """Create a pre-HATS-294 `.claude/skills/` mirror: marker + 2 managed
     skill dirs + 1 user-authored dir NOT listed in the marker."""
-    skills = project / ".claude" / "skills"
+    skills = claude_skills_dir(project)
     for name in ("audit-reviewer", "backlog-manager"):
         (skills / name).mkdir(parents=True)
         (skills / name / "SKILL.md").write_text("# stale export")
@@ -1119,9 +1123,7 @@ def test_tool_call_hygiene_is_always_on(tmp_path):
     # HATS-700: the always-on body is read on demand from source_path/rule.md.
     rule_dir = tmp_path / "dev_rule_tool_call_hygiene"
     rule_dir.mkdir()
-    (rule_dir / "rule.md").write_text(
-        "# Rule: Tool-Call Hygiene\nUse dedicated tools over Bash."
-    )
+    (rule_dir / "rule.md").write_text("# Rule: Tool-Call Hygiene\nUse dedicated tools over Bash.")
     rule = ResolvedComponent(
         name="dev_rule_tool_call_hygiene",
         component_type=ComponentKind.RULE,
@@ -1266,6 +1268,15 @@ def test_claude_build_session_prompt_has_no_literal_placeholder(
     assert ".agent/ai-hats/sessions/audits/" in content
 
 
+def _subagent_payload(result):
+    """Minimal payload for SubAgentRunner helper-method seams (HATS-865)."""
+    from ai_hats.composition_payload import CompositionPayload
+    from ai_hats.providers import get_provider
+
+    return CompositionPayload(
+        result=result, provider=get_provider("claude"), effective_role=result.name,
+    )
+
 def test_subagent_meta_prompt_has_no_literal_placeholder(
     project_with_placeholder_library,
 ):
@@ -1281,9 +1292,16 @@ def test_subagent_meta_prompt_has_no_literal_placeholder(
     asm.set_role("ph-role", provider_name="claude")
     result = asm.composer.compose("ph-role")
 
-    runner = SubAgentRunner(project)
+    from ai_hats.observe import SessionManager
+
+    runner = SubAgentRunner(
+        project, _subagent_payload(result), session_mgr=SessionManager(project),
+    )
     meta_prompt = runner._build_meta_prompt(
-        result=result, provider=get_provider("claude"), task="", ticket_id="",
+        result=result,
+        provider=get_provider("claude"),
+        task="",
+        ticket_id="",
     )
 
     assert "<ai_hats_dir>" not in meta_prompt
@@ -1313,10 +1331,16 @@ def test_subagent_meta_prompt_omits_project_state(project_with_placeholder_libra
         "# Task State\n\n## DONE\n- **HATS-001**: SENTINEL_DONE_TASK\n"
     )
 
-    runner = SubAgentRunner(project)
+    from ai_hats.observe import SessionManager
+
+    runner = SubAgentRunner(
+        project, _subagent_payload(result), session_mgr=SessionManager(project),
+    )
     meta_prompt = runner._build_meta_prompt(
-        result=result, provider=get_provider("claude"),
-        task="do the real thing", ticket_id="",
+        result=result,
+        provider=get_provider("claude"),
+        task="do the real thing",
+        ticket_id="",
     )
 
     assert "# TASK" in meta_prompt  # the real task still lands
@@ -1341,9 +1365,15 @@ def test_subagent_sdk_first_message_omits_project_state(project_with_placeholder
         "# Task State\n\n## DONE\n- **HATS-001**: SENTINEL_DONE_TASK\n"
     )
 
-    runner = SubAgentRunner(project)
+    from ai_hats.observe import SessionManager
+
+    runner = SubAgentRunner(
+        project, _subagent_payload(result), session_mgr=SessionManager(project),
+    )
     audit = runner._build_sdk_prompt_audit(
-        result=result, task="do the real thing", ticket_id="",
+        result=result,
+        task="do the real thing",
+        ticket_id="",
     )
 
     assert "# TASK" in audit  # the real task still lands
@@ -1358,6 +1388,7 @@ def test_v4_partition_routes_user_hook_to_user_hooks_namespace(project_with_libr
     """User-authored .py under .agent/hooks/ lands under <ai_hats_dir>/user-hooks/
     (NOT under the managed library/hooks/ namespace)."""
     from ai_hats.assembler import Assembler
+
     project_dir, _ = project_with_library
     # Seed v3 user-owned hook
     legacy_dir = project_dir / ".agent" / "hooks"
@@ -1501,12 +1532,11 @@ def test_split_user_hook_command_recognises_post_heal_form():
     pre-HATS-549 stuck states heal cleanly (review fix A.4)."""
     from ai_hats.migration_healer import _split_user_hook_command
 
-    assert _split_user_hook_command(
-        "$CLAUDE_PROJECT_DIR/.agent/ai-hats/library/hooks/foreign.py"
-    ) == "foreign.py"
-    assert _split_user_hook_command(
-        ".agent/ai-hats/library/hooks/foreign.py"
-    ) == "foreign.py"
+    assert (
+        _split_user_hook_command("$CLAUDE_PROJECT_DIR/.agent/ai-hats/library/hooks/foreign.py")
+        == "foreign.py"
+    )
+    assert _split_user_hook_command(".agent/ai-hats/library/hooks/foreign.py") == "foreign.py"
     # Legacy form still works.
     assert _split_user_hook_command(".agent/hooks/foreign.py") == "foreign.py"
     # Non-hook paths return None.

@@ -399,9 +399,21 @@ the runner from its `finally` block via the `finalize-hitl` /
 your top-level pipeline. `launch_provider` survives as a deprecated
 alias for `provider`, but new pipelines should use the canonical name.
 
+Since HATS-865 pipelines never compose: the launcher composes ONCE via the
+integrator seam and seeds the result under the `composition` initial key —
+`compose_role`, `materialize_system_prompt`, and `provider` all read that
+seeded value (launching without it fails the `provider` step's `requires`
+validation upfront):
+
+```python
+from ai_hats.composition_seam import build_composition_payload
+payload = build_composition_payload(project_dir)
+PipelineHarness("smoke", project_dir).run({"composition": payload})
+```
+
 > **Limitation today**: there is no public CLI flag to invoke an arbitrary
 > custom pipeline by name. Custom pipelines can only be launched from Python
-> via `PipelineHarness("smoke", project_dir).run({...})`. A public
+> via `PipelineHarness` as above. A public
 > `ai-hats pipeline run <name>` command is planned under HATS-268
 > (epic HATS-095: developer experience & tooling). Until that lands,
 > custom pipelines are useful mainly as scaffolding for future engine work,

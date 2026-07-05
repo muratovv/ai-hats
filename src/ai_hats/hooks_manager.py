@@ -6,8 +6,9 @@ their ``.claude/settings.json`` wiring, worktree-hook scripts
 HATS-833 drift detectors and the session-start :meth:`HooksManager.sync_hooks`.
 
 Narrow DI: ``project_dir`` + a live ``project_config`` reference + a ``compose``
-callable (the only back-coupling into the assembler's composition layer). This
-module never imports ``Assembler`` — the dependency runs the other way.
+callable (carve-out #2, HATS-865: result-less resync edges only) + a
+``resolve_provider`` callable. This module never imports ``Assembler`` or the
+composition layer — the dependency runs the other way.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .composer import (
+from .hook_collection import (
     collect_runtime_hooks as _collect_runtime_hooks,
     collect_worktree_hooks as _collect_worktree_hooks,
     resolve_skill_script as _resolve_runtime_script,
@@ -35,13 +36,13 @@ from .paths import (
     managed_wt_hook_filename as _managed_wt_hook_filename,
     wt_hooks_dir as _wt_hooks_dir,
 )
-from .providers import get_provider
 from . import owners
 from ai_hats_core.safe_delete import discard as _safe_discard
 from ai_hats_core.safe_delete import replace as _safe_replace
 
 if TYPE_CHECKING:
     from .models import ProjectConfig, RuntimeHook
+    from .providers import Provider
 
 logger = logging.getLogger(__name__)
 
@@ -87,14 +88,10 @@ class HookSyncStatus(StrEnum):
 
 
 def _read_manifest(path: Path) -> set[str]:
-    """Managed names recorded in a ``.manifest`` (one per line, ``#`` comments skipped)."""
-    if not path.exists():
-        return set()
-    return {
-        ln.strip()
-        for ln in path.read_text().splitlines()
-        if ln.strip() and not ln.strip().startswith("#")
-    }
+    """Managed names recorded in a ``.manifest`` — plain or hashed format (HATS-911)."""
+    from .sweeper import read_marker_names
+
+    return read_marker_names(path)
 
 
 def _write_manifest(path: Path, names: set[str], *, reason: str, project_dir: Path) -> None:
@@ -148,10 +145,14 @@ class HooksManager:
         project_config: "ProjectConfig",
         *,
         compose: Callable[[str], CompositionResult],
+        resolve_provider: "Callable[[str], Provider]",
     ) -> None:
+        # HATS-865: provider lookup is DI'd (like ``compose``) so this brick
+        # never imports the composition layer.
         self.project_dir = project_dir
         self.project_config = project_config
         self.compose = compose
+        self.resolve_provider = resolve_provider
 
     # ----- materialization (the init/materialization-phase facade) -----
 
@@ -162,7 +163,7 @@ class HooksManager:
         settings.json wiring + the three surfaces. The git-repo guard lives here,
         not in the caller — a non-git project dir simply skips git hooks.
         """
-        provider = get_provider(self.project_config.provider)
+        provider = self.resolve_provider(self.project_config.provider)
         provider.ensure_runtime_hooks(self.project_dir, result)
         self.materialize_runtime_hooks(result)
         self.materialize_worktree_hooks(result)
@@ -237,7 +238,8 @@ class HooksManager:
                 )
         return names
 
-    def materialize_worktree_hooks(self, result: "CompositionResult | None" = None) -> None:
+    # HATS-865: ``result`` is required — the runtime callers always have one.
+    def materialize_worktree_hooks(self, result: "CompositionResult | None") -> None:
         """Materialize skill ``wt_in`` / ``wt_out`` scripts to ``library/wt-hooks/`` (HATS-823).
 
         Mirrors :meth:`materialize_runtime_hooks` (managed dir + manifest + sweep),
@@ -312,7 +314,9 @@ class HooksManager:
 
     # ----- HATS-593/833: drift-detecting re-materialization -----
 
-    def sync_hooks(self, result: CompositionResult | None = None) -> HookSyncResult:
+    # HATS-865: ``result`` required-explicit; ``None`` marks the genuinely
+    # result-less resync edge where the compose carve-out (#2) fires.
+    def sync_hooks(self, result: CompositionResult | None) -> HookSyncResult:
         """Re-materialize ANY drifted managed-hook surface (HATS-593 → HATS-833).
 
         Generalizes the git-only drift net to all three surfaces that
@@ -330,7 +334,7 @@ class HooksManager:
             return HookSyncResult(status=HookSyncStatus.SKIPPED, detail="no active role")
         if result is None:
             result = self.compose(effective_role)
-        provider = get_provider(cfg.provider)
+        provider = self.resolve_provider(cfg.provider)
 
         changes = self._detect_changes(result, provider)
         if not changes:
@@ -576,9 +580,16 @@ def install_git_hooks(project_dir: Path, result: CompositionResult) -> None:
                 f"unless you wire {event}.d/* into it manually."
             )
 
-    # Persist manifest of files we own.
-    manifest_path = githooks_dir / GITHOOKS_MANIFEST
-    manifest_path.write_text("\n".join(new_manifest) + "\n")
+    # Persist manifest of files we own (hashed owner_key convention, HATS-911).
+    from .sweeper import write_marker
+
+    write_marker(
+        githooks_dir / GITHOOKS_MANIFEST,
+        owner_key="git-hooks",
+        names=new_manifest,
+        project_dir=project_dir,
+        reason="githooks-manifest",
+    )
 
     # Configure core.hooksPath (idempotent + safe).
     _configure_hooks_path(project_dir, warnings)
@@ -637,13 +648,10 @@ def _cleanup_managed_git_hooks(project_dir: Path) -> None:
     if not manifest_path.exists():
         return
     try:
-        entries = manifest_path.read_text().splitlines()
+        entries = _read_manifest(manifest_path)
     except OSError:
         return
-    for entry in entries:
-        entry = entry.strip()
-        if not entry:
-            continue
+    for entry in sorted(entries):
         target = githooks_dir / entry
         if target.is_file():
             # For dispatcher files, only remove if the marker is still ours.

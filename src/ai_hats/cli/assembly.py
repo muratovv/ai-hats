@@ -966,6 +966,7 @@ def show_prompt(role: str | None, provider: str | None, stats: bool):
     ai-hats config show-prompt --stats            # structured JSON
     ai-hats config show-prompt | grep "E2E gate"  # marker presence
     """
+    from ..composition_seam import build_preview_payload
     from ..pipeline.pipeline import build as build_pipeline
     from ..pipeline.steps.emit import EmitStdout
     from ..pipeline.steps.materialize import MaterializeSystemPrompt
@@ -987,10 +988,11 @@ def show_prompt(role: str | None, provider: str | None, stats: bool):
         name="preview",
     )
     try:
+        # HATS-865: compose at the seam, seed the payload into the pipeline.
         pipeline.run(
-            project_dir=project_dir,
-            role=role,
-            provider=provider,
+            composition=build_preview_payload(
+                project_dir, role=role, provider=provider,
+            ),
         )
     except RuntimeError as e:
         console.print(f"[red]{e}[/red]")

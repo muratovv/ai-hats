@@ -356,7 +356,17 @@ def wrap_runner_factory(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_QUIET", "1")
 
     def make(pty_exit_code: int = 0, finalize_hitl_exc: BaseException | None = None):
-        runner = WrapRunner(project)
+        from ai_hats.composition_seam import build_composition_payload
+        from ai_hats.observe import SessionManager, SidecarTracer
+
+        # HATS-865: compose at the seam (as the CLI does) and inject.
+        payload = build_composition_payload(
+            project, provider_name="claude", interactive=True,
+        )
+        runner = WrapRunner(
+            project, payload,
+            session_mgr=SessionManager(project), tracer_factory=SidecarTracer,
+        )
 
         def _stub_spawn(self, cmd, env, tracer):
             return pty_exit_code
@@ -392,7 +402,7 @@ def test_wrap_runner_finally_prints_summary_on_happy_path(
     _print_session_end fires the green summary."""
     runner, project = wrap_runner_factory(pty_exit_code=0)
 
-    exit_code, session = runner.run("claude")
+    exit_code, session = runner.run()
 
     assert exit_code == 0
     out = capsys.readouterr().out
@@ -412,7 +422,7 @@ def test_wrap_runner_finally_prints_summary_when_finalize_hitl_raises(
         finalize_hitl_exc=RuntimeError("finalize-hitl boom"),
     )
 
-    exit_code, session = runner.run("claude")
+    exit_code, session = runner.run()
 
     assert exit_code == 0
     out = capsys.readouterr().out
@@ -433,7 +443,7 @@ def test_wrap_runner_finally_prints_summary_when_finalize_hitl_keyboard_interrup
         finalize_hitl_exc=KeyboardInterrupt(),
     )
 
-    exit_code, session = runner.run("claude")
+    exit_code, session = runner.run()
 
     assert exit_code == 130
     out = capsys.readouterr().out
