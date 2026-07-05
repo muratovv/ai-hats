@@ -303,6 +303,9 @@ class TestWtExec:
 
     def test_runs_in_worktree_cwd_with_pythonpath(self, active_worktree, monkeypatch) -> None:
         project, wt = active_worktree
+        # Hermetic: the runner may itself carry PYTHONPATH (nested `wt exec`,
+        # HATS-918) — exec appends it by contract, breaking exact equality.
+        monkeypatch.delenv("PYTHONPATH", raising=False)
         captured: dict = {}
 
         def fake_run(cmd, cwd=None, env=None, **kwargs):
