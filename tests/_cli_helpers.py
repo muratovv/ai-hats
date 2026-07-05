@@ -12,33 +12,27 @@ file as a test module.
 from __future__ import annotations
 
 import subprocess
+import sys
 
 
 def assert_command_exists(*path: str) -> None:
-    """Assert ``ai-hats <path>`` exists in the installed click tree.
+    """Assert the ``ai-hats <path>`` click command exists (e.g. ``("self", "init")``).
 
-    Examples::
-
-        assert_command_exists("agent")                  # top-level
-        assert_command_exists("self", "init")           # 2-level
-        assert_command_exists("task", "hyp", "create")  # 3-level
-
-    Invokes ``ai-hats <path> --help`` and asserts the subprocess exits 0.
-    Click resolves ``--help`` before any command callback runs, so this has
-    no side effects beyond argv parsing.
-
-    Tests using this helper must be marked ``@pytest.mark.integration`` —
-    it spawns a real ``ai-hats`` subprocess.
+    Runs ``python -m ai_hats <path> --help`` and asserts exit 0. Click resolves
+    ``--help`` before any callback, so there are no side effects beyond argv
+    parsing. Mark callers ``@pytest.mark.integration`` — this spawns a subprocess.
 
     Raises:
-        AssertionError: command path does not resolve. Message includes the
-            full path and captured stderr.
+        AssertionError: command path does not resolve; message carries stderr.
     """
+    # HATS-922: invoke via `python -m ai_hats`, not the bare `ai-hats` binary —
+    # there is no console script (HATS-790), so the binary is absent in CI's
+    # `pip install -e` env and this stayed green only on dev PATH.
     if not path:
         raise ValueError("assert_command_exists requires at least one path segment")
 
     result = subprocess.run(
-        ["ai-hats", *path, "--help"],
+        [sys.executable, "-m", "ai_hats", *path, "--help"],
         capture_output=True,
         text=True,
         check=False,
