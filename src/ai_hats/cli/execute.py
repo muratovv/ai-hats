@@ -26,6 +26,25 @@ import click
 
 from ai_hats_wt import IsolationMode
 from ..paths import METRICS_JSON
+from ..pipeline.keys import (
+    KEY_COMPOSITION,
+    KEY_EXIT_CODE,
+    KEY_EXTRA_ARGS,
+    KEY_INTERACTIVE,
+    KEY_ISOLATION,
+    KEY_MODEL,
+    KEY_PROMPT_PATH,
+    KEY_PROJECT_DIR,
+    KEY_PROVIDER,
+    KEY_ROLE,
+    KEY_SESSION_DIR,
+    KEY_SESSION_ID,
+    KEY_SESSION_MGR,
+    KEY_TAGS,
+    KEY_TICKET,
+    KEY_TRACER_FACTORY,
+    PIPELINE_EXECUTE,
+)
 from ._helpers import _project_dir, console
 
 
@@ -145,24 +164,24 @@ def execute_cmd(
     prompt_text = _resolve_prompt(prompt_arg, project_dir)
 
     try:
-        with PipelineHarness("execute", project_dir) as h:
+        with PipelineHarness(PIPELINE_EXECUTE, project_dir) as h:
             # Interactive mode: provider CLI receives prompt as the first
             # positional arg in extra_args. The pipeline's resolve_prompt
             # step reads prompt_path → prompt_text and launch_provider then
             # prepends prompt_text to extra_args. We materialize the prompt
             # here so the harness contract (Path-only inputs) is preserved.
             final = h.run({
-                "role": role,
-                "interactive": interactive,
-                "project_dir": project_dir,
-                "prompt_path": h.materialize_prompt(prompt_text),
-                "provider": provider,
-                "model": model,
-                "isolation": isolation,
-                "ticket": ticket,
-                "tags": tags or None,
-                "extra_args": list(extra_args),
-                "composition": build_composition_payload(
+                KEY_ROLE: role,
+                KEY_INTERACTIVE: interactive,
+                KEY_PROJECT_DIR: project_dir,
+                KEY_PROMPT_PATH: h.materialize_prompt(prompt_text),
+                KEY_PROVIDER: provider,
+                KEY_MODEL: model,
+                KEY_ISOLATION: isolation,
+                KEY_TICKET: ticket,
+                KEY_TAGS: tags or None,
+                KEY_EXTRA_ARGS: list(extra_args),
+                KEY_COMPOSITION: build_composition_payload(
                     project_dir,
                     role_override=role,
                     provider_name=provider,
@@ -170,8 +189,8 @@ def execute_cmd(
                 ),
                 # HATS-867: the CLI (integrator) injects the observe writer
                 # handles — runners no longer construct them.
-                "session_mgr": SessionManager(project_dir),
-                "tracer_factory": SidecarTracer,
+                KEY_SESSION_MGR: SessionManager(project_dir),
+                KEY_TRACER_FACTORY: SidecarTracer,
             })
     except RoleNotFoundError as exc:
         # HATS-547 / S-CLI-20: same friendly handler as ``_launch_session``;
@@ -181,11 +200,11 @@ def execute_cmd(
         _handle_role_not_found(exc)
 
     if interactive:
-        sys.exit(int(final.get("exit_code", 1)))
+        sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
 
     # Batch mode: read metrics for --json output, print summary, exit.
-    session_id = final["session_id"]
-    session_dir = final["session_dir"]
+    session_id = final[KEY_SESSION_ID]
+    session_dir = final[KEY_SESSION_DIR]
     metrics_path = session_dir / METRICS_JSON
     metrics: dict = {}
     if metrics_path.exists():
@@ -205,4 +224,4 @@ def execute_cmd(
         console.print(f"[green]Sub-agent completed[/]: {session_id}")
         console.print(f"  Session dir: {session_dir}")
 
-    sys.exit(int(final.get("exit_code", metrics.get("exit_code", 1))))
+    sys.exit(int(final.get(KEY_EXIT_CODE, metrics.get("exit_code", 1))))

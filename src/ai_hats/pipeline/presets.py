@@ -8,6 +8,7 @@ kept for tests that exercise the pipeline core without YAML parsing.
 
 from __future__ import annotations
 
+from .keys import PIPELINE_EXECUTE
 from .pipeline import build
 from .steps.check_update import CheckUpdateAsync
 from .steps.compose import ComposeRole
@@ -27,5 +28,5 @@ execute_pipeline = build(
     SpawnSessionReview({"max_retries": 1}),
     PostLog({"keys": ["session_id", "exit_code", "review_pid"]}),
     RenderUpdateBanner(),
-    name="execute",
+    name=PIPELINE_EXECUTE,
 )

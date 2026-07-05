@@ -129,24 +129,37 @@ def _launch_session(
     from ..composition_seam import RoleNotFoundError, build_composition_payload
     from ..observe import SessionManager, SidecarTracer
     from ..pipeline.harness import PipelineHarness
+    from ..pipeline.keys import (
+        KEY_COMPOSITION,
+        KEY_EXIT_CODE,
+        KEY_EXTRA_ARGS,
+        KEY_INTERACTIVE,
+        KEY_PROJECT_DIR,
+        KEY_PROVIDER,
+        KEY_ROLE,
+        KEY_SESSION_MGR,
+        KEY_TAGS,
+        KEY_TRACER_FACTORY,
+        PIPELINE_HUMAN,
+    )
     from ._helpers import _handle_role_not_found, _project_dir
 
     project_dir = _project_dir()
 
     try:
-        with PipelineHarness("human", project_dir) as h:
+        with PipelineHarness(PIPELINE_HUMAN, project_dir) as h:
             # HATS-865: compose ONCE here (effective-role resolution + the
             # first-run set_role side effect live in the seam) and seed the
             # payload into the funnel; the launch step hands it to WrapRunner.
             final = h.run(
                 {
-                    "role": role,
-                    "interactive": True,
-                    "project_dir": project_dir,
-                    "provider": provider,
-                    "extra_args": list(extra_args or []),
-                    "tags": tags,
-                    "composition": build_composition_payload(
+                    KEY_ROLE: role,
+                    KEY_INTERACTIVE: True,
+                    KEY_PROJECT_DIR: project_dir,
+                    KEY_PROVIDER: provider,
+                    KEY_EXTRA_ARGS: list(extra_args or []),
+                    KEY_TAGS: tags,
+                    KEY_COMPOSITION: build_composition_payload(
                         project_dir,
                         role_override=role,
                         provider_name=provider,
@@ -154,8 +167,8 @@ def _launch_session(
                     ),
                     # HATS-867: the CLI (integrator) injects the observe writer
                     # handles — runners no longer construct them.
-                    "session_mgr": SessionManager(project_dir),
-                    "tracer_factory": SidecarTracer,
+                    KEY_SESSION_MGR: SessionManager(project_dir),
+                    KEY_TRACER_FACTORY: SidecarTracer,
                 }
             )
     except RoleNotFoundError as exc:
@@ -163,7 +176,7 @@ def _launch_session(
         # exit 2; no traceback. See ``_handle_role_not_found`` for the
         # full output shape.
         _handle_role_not_found(exc)
-    sys.exit(int(final.get("exit_code", 1)))
+    sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
 
 
 # ----- Command registration -----
