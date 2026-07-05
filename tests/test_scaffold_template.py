@@ -14,6 +14,7 @@ from ai_hats.providers import (
     PUBLISH_AGGREGATOR_START,
     ClaudeProvider,
 )
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def _builtin_template_path() -> Path:
@@ -42,7 +43,7 @@ def test_scaffold_template_asset_exists() -> None:
 def test_resolve_scaffold_template_finds_builtin(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     project.mkdir()
-    (project / "ai-hats.yaml").write_text("schema_version: 2\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 2\nprovider: claude\n")
 
     asm = Assembler(project)
     resolved = asm._resolve_scaffold_template("templates/claude/CLAUDE.md.template")
@@ -55,7 +56,7 @@ def test_resolve_scaffold_template_project_override(tmp_path: Path) -> None:
     """Project-local libraries/ wins over builtin (last-wins resolver order)."""
     project = tmp_path / "proj"
     project.mkdir()
-    (project / "ai-hats.yaml").write_text("schema_version: 2\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 2\nprovider: claude\n")
 
     override = project / "libraries" / "templates" / "claude" / "CLAUDE.md.template"
     override.parent.mkdir(parents=True)
@@ -187,7 +188,7 @@ def test_set_role_on_legacy_project_migrates_to_v3(tmp_path: Path) -> None:
     (role_dir / "config.yaml").write_text(
         "name: r1\npriorities:\n  - Reliability\ninjection: |\n  Role X.\n"
     )
-    (project / "ai-hats.yaml").write_text("schema_version: 2\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 2\nprovider: claude\n")
 
     asm = Assembler(project)
     asm.set_role("r1", provider_name="claude")
@@ -205,7 +206,7 @@ def test_set_role_on_legacy_project_migrates_to_v3(tmp_path: Path) -> None:
 def test_ensure_scaffold_idempotent(tmp_path: Path, idem_calls: int) -> None:
     project = tmp_path / "proj"
     project.mkdir()
-    (project / "ai-hats.yaml").write_text("schema_version: 2\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 2\nprovider: claude\n")
 
     asm = Assembler(project)
     for _ in range(idem_calls):

@@ -9,6 +9,7 @@ from pathlib import Path
 from ai_hats.retro.reminder import evaluate_wrap_up
 from ai_hats.state import TaskManager
 from ai_hats.paths import runs_dir, state_md_path, tasks_dir
+from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, session_dirname
 
 
 SESSION_ID = "20260101-120000-1"
@@ -20,8 +21,8 @@ def _setup_project(tmp_path: Path) -> Path:
     project.mkdir()
     (tasks_dir(project)).mkdir(parents=True)
     (state_md_path(project)).write_text("")
-    (project / "ai-hats.yaml").write_text("task_prefix: TST\n")
-    sdir = runs_dir(project) / f"session_{SESSION_ID}"
+    (project / PROJECT_CONFIG).write_text("task_prefix: TST\n")
+    sdir = runs_dir(project) / session_dirname(SESSION_ID)
     sdir.mkdir(parents=True)
     return project
 
@@ -35,7 +36,7 @@ def _write_metrics(project: Path, **overrides) -> None:
         "tokens": {"cache_read": 12_500_000},  # 12 MB by default
     }
     metrics.update(overrides)
-    (runs_dir(project) / f"session_{SESSION_ID}" / "metrics.json").write_text(
+    (runs_dir(project) / session_dirname(SESSION_ID) / METRICS_JSON).write_text(
         json.dumps(metrics)
     )
 

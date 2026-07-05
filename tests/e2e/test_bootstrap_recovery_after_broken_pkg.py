@@ -35,6 +35,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from ai_hats.paths import ENV_AI_HATS_VENV
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 pytestmark = pytest.mark.install_heavy  # real launcher build + self update at call time → capped via conftest
 
@@ -125,13 +127,13 @@ def test_bootstrap_repair_rebuilds_broken_venv(tmp_path: Path) -> None:
     # --- repair out-of-band: fetched-fresh bootstrap, file:// launcher URL,
     #     local repo source. No network. ---
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher)
+    env[ENV_LAUNCHER_DEST] = str(launcher)
     env["AI_HATS_INSTALL_LAUNCHER_URL"] = f"file://{INSTALL_LAUNCHER}"
     env["AI_HATS_LAUNCHER_URL"] = f"file://{LAUNCHER_SRC}"
     from _helpers.repo_src import build_src
 
-    env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))
-    env.pop("AI_HATS_VENV", None)  # let repair target the managed default venv
+    env[ENV_REPO_URL] = str(build_src(REPO_ROOT))
+    env.pop(ENV_AI_HATS_VENV, None)  # let repair target the managed default venv
     env.pop("PYTHONPATH", None)
 
     repair = subprocess.run(

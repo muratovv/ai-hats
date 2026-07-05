@@ -45,6 +45,8 @@ from pathlib import Path
 import pytest
 
 from _helpers.project import pin_edge_channel
+from ai_hats.paths import ENV_AI_HATS_VENV
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
@@ -132,9 +134,9 @@ def test_e2e_self_update_refuses_silent_downgrade(tmp_path: Path) -> None:
 
     # ----- bootstrap: launcher + venv (uses src-repo for first install) -----
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(src_repo)
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(src_repo)
+    env.pop(ENV_AI_HATS_VENV, None)
     # PYTHONPATH from the test runner can shadow the venv's editable install
     # by adding the worktree's ``src/`` to sys.path ahead of site-packages.
     # The subprocess MUST resolve ``ai_hats`` from the project venv only.
@@ -187,7 +189,7 @@ def test_e2e_self_update_refuses_silent_downgrade(tmp_path: Path) -> None:
     )
 
     # ----- swap probe target to the fake remote (behind installed by 1) -----
-    env["AI_HATS_REPO_URL"] = f"git+file://{fake_remote}"
+    env[ENV_REPO_URL] = f"git+file://{fake_remote}"
 
     # ----- assertion 1: gate refuses, exit 3 -----
     refuse = _run(

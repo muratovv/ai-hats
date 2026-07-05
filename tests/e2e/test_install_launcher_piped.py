@@ -24,6 +24,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from ai_hats.constants import ENV_LAUNCHER_DEST
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LAUNCHER_SRC = REPO_ROOT / "scripts" / "ai-hats-launcher"
@@ -35,7 +36,7 @@ def test_e2e_install_launcher_piped_from_file_url(tmp_path: Path) -> None:
     """Piped (stdin) install via a file:// launcher URL installs an https-default launcher."""
     dest = tmp_path / "bin" / "ai-hats"
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(dest)
+    env[ENV_LAUNCHER_DEST] = str(dest)
     env["AI_HATS_LAUNCHER_URL"] = f"file://{LAUNCHER_SRC}"
 
     # Feed the installer to bash over stdin → no BASH_SOURCE → SRC stays empty →

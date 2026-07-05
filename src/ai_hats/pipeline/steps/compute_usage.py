@@ -28,6 +28,8 @@ import logging
 from pathlib import Path
 from typing import Any, Mapping
 
+from ...paths import METRICS_JSON, USAGE_JSON
+
 from ..step import Step, StepIO
 
 logger = logging.getLogger(__name__)
@@ -69,7 +71,7 @@ class ComputeUsage(Step):
         from ...runtime import _claude_jsonl_path, _discover_claude_jsonl
         from ...usage import parse_session_usage
 
-        usage_path = session_dir / "usage.json"
+        usage_path = session_dir / USAGE_JSON
         try:
             jsonl_path = _claude_jsonl_path(project_dir, claude_session_id)
             if jsonl_path is None or not jsonl_path.exists():
@@ -113,7 +115,7 @@ class ComputeUsage(Step):
         read error the placeholders stay ``None`` (absent, not a fake value).
         """
         meta: dict[str, Any] = {}
-        metrics_path = session_dir / "metrics.json"
+        metrics_path = session_dir / METRICS_JSON
         if metrics_path.exists():
             try:
                 meta = json.loads(metrics_path.read_text())

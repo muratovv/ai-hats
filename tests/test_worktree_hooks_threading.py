@@ -17,6 +17,7 @@ from ai_hats.models import ProjectConfig
 from ai_hats.paths import managed_wt_hook_filename, wt_hooks_dir
 from ai_hats.wt_effects import collect_carry_for_project
 from ai_hats.wt_carry import collect_carry_for_role, serialize_collected_hooks
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def _project_with_wt_role(tmp_path: Path, *, with_script: bool = True):
@@ -47,7 +48,7 @@ def _project_with_wt_role(tmp_path: Path, *, with_script: bool = True):
     )
     ProjectConfig(
         provider="gemini", library_paths=[str(lib)], active_role="wt-role"
-    ).save(project / "ai-hats.yaml")
+    ).save(project / PROJECT_CONFIG)
     return project, lib
 
 

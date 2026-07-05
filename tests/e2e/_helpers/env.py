@@ -23,6 +23,8 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from pathlib import Path
+from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 # Redirect vars that must not leak into a real-install e2e subprocess. PYTHONPATH
 # is the proven culprit (HATS-685); the rest are defensive siblings that could
@@ -33,8 +35,8 @@ ENV_DENYLIST: frozenset[str] = frozenset(
         "PYTHONHOME",
         "PYTHONSTARTUP",
         "VIRTUAL_ENV",
-        "AI_HATS_DIR",
-        "AI_HATS_PROJECT_DIR",
+        ENV_AI_HATS_DIR,
+        AI_HATS_PROJECT_DIR_ENV,
         "AI_HATS_USER_HOME",
         # HATS-887: session-scoped shared_launcher captures env before the
         # function-scoped GIT_* strip, so plumbing vars must be denied here too.
@@ -104,8 +106,8 @@ def launcher_subprocess_env(
     launcher install. Pure: never mutates ``base``.
     """
     env = clean_env(base)
-    env["AI_HATS_REPO_URL"] = str(repo_url)
-    env["AI_HATS_VENV"] = str(venv)
+    env[ENV_REPO_URL] = str(repo_url)
+    env[ENV_AI_HATS_VENV] = str(venv)
     env["AI_HATS_USER_HOME"] = str(Path(user_home))
-    env.pop("AI_HATS_LAUNCHER_DEST", None)
+    env.pop(ENV_LAUNCHER_DEST, None)
     return env

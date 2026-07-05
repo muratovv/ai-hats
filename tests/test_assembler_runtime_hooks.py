@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.assembler import Assembler
+from ai_hats.constants import HOOK_PRE_TOOL_USE, HOOK_POST_TOOL_USE
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.models import RuntimeHook
 
@@ -71,23 +72,23 @@ class TestCollectSkillRuntimeHooks:
         s1 = _make_skill_with_runtime_hooks(
             tmp_path / "skills",
             "skill-a",
-            {"PreToolUse": [("Bash", "hooks/a.sh")]},
+            {HOOK_PRE_TOOL_USE: [("Bash", "hooks/a.sh")]},
         )
         s2 = _make_skill_with_runtime_hooks(
             tmp_path / "skills",
             "skill-b",
             {
-                "PreToolUse": [("Edit", "hooks/b.sh")],
-                "PostToolUse": [("Write", "hooks/c.sh")],
+                HOOK_PRE_TOOL_USE: [("Edit", "hooks/b.sh")],
+                HOOK_POST_TOOL_USE: [("Write", "hooks/c.sh")],
             },
         )
         collected = assembler.hooks._collect_skill_runtime_hooks(_result([s1, s2]))
 
-        assert set(collected) == {"PreToolUse", "PostToolUse"}
-        pre = collected["PreToolUse"]
+        assert set(collected) == {HOOK_PRE_TOOL_USE, HOOK_POST_TOOL_USE}
+        pre = collected[HOOK_PRE_TOOL_USE]
         assert ("skill-a", RuntimeHook(matcher="Bash", script="hooks/a.sh")) in pre
         assert ("skill-b", RuntimeHook(matcher="Edit", script="hooks/b.sh")) in pre
-        post = collected["PostToolUse"]
+        post = collected[HOOK_POST_TOOL_USE]
         assert post == [("skill-b", RuntimeHook(matcher="Write", script="hooks/c.sh"))]
 
     def test_empty_when_no_skill_declares(self, assembler, tmp_path):
@@ -119,7 +120,7 @@ class TestMaterializeRuntimeHooks:
         s = _make_skill_with_runtime_hooks(
             tmp_path / "skills",
             "skill-a",
-            {"PreToolUse": [("Bash", "hooks/guard.sh")]},
+            {HOOK_PRE_TOOL_USE: [("Bash", "hooks/guard.sh")]},
         )
         assembler.hooks.materialize_runtime_hooks(_result([s]))
 
@@ -139,7 +140,7 @@ class TestMaterializeRuntimeHooks:
         s = _make_skill_with_runtime_hooks(
             tmp_path / "skills",
             "skill-a",
-            {"PreToolUse": [("Bash", "hooks/guard.sh")]},
+            {HOOK_PRE_TOOL_USE: [("Bash", "hooks/guard.sh")]},
         )
         target = hooks_dir(assembler.project_dir)
         dest = target / managed_runtime_hook_filename("skill-a", "hooks/guard.sh")

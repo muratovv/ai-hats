@@ -46,6 +46,7 @@ from click.testing import CliRunner
 from ai_hats.assembler import Assembler
 from ai_hats.cli import main
 from ai_hats.models import ProjectConfig
+from ai_hats.paths import META_PROMPT_TXT, PROJECT_CONFIG
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -77,7 +78,7 @@ def project_with_maintainer_default(tmp_path: Path, monkeypatch) -> Path:
         ai_hats_dir=".agent/ai-hats",
         active_role="maintainer",
         default_role="maintainer",
-    ).save(project / "ai-hats.yaml")
+    ).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[LIBRARY_DIR])
     asm.init()
     asm.set_role("maintainer", provider_name="claude")
@@ -145,7 +146,7 @@ def test_hitl_session_persists_meta_prompt_to_session_dir(
     )
 
     session_dir = _find_latest_session_dir(project_with_maintainer_default)
-    meta_prompt_path = session_dir / "meta_prompt.txt"
+    meta_prompt_path = session_dir / META_PROMPT_TXT
 
     assert meta_prompt_path.exists(), (
         f"HATS-523 regression: <session_dir>/meta_prompt.txt missing.\n"
@@ -218,7 +219,7 @@ def test_hitl_meta_prompt_matches_system_prompt_file_bytes(
     assert cache_text, "did not capture --system-prompt-file contents"
 
     session_dir = _find_latest_session_dir(project_with_maintainer_default)
-    persisted_text = (session_dir / "meta_prompt.txt").read_text()
+    persisted_text = (session_dir / META_PROMPT_TXT).read_text()
 
     assert persisted_text == cache_text, (
         "HATS-523 contract: meta_prompt.txt must be byte-identical to the "

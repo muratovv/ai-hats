@@ -7,10 +7,11 @@ editable checkout — the dev drives updates with ``git``, not ``self update``.
 from __future__ import annotations
 
 from ai_hats.update_check import is_local_channel
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def _write_yaml(project_dir, body: str) -> None:
-    (project_dir / "ai-hats.yaml").write_text(body)
+    (project_dir / PROJECT_CONFIG).write_text(body)
 
 
 def test_false_when_no_config(tmp_path):

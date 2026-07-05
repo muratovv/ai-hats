@@ -17,6 +17,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.paths import runs_dir
+from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, USAGE_JSON, session_dirname
 
 SID = "20260605-100000-1"
 
@@ -50,22 +51,22 @@ _USAGE = {
 
 
 def _make_session(project_dir: Path, *, usage: dict | str | None) -> None:
-    sdir = runs_dir(project_dir) / f"session_{SID}"
+    sdir = runs_dir(project_dir) / session_dirname(SID)
     sdir.mkdir(parents=True)
-    (sdir / "metrics.json").write_text(json.dumps({
+    (sdir / METRICS_JSON).write_text(json.dumps({
         "role": "maintainer", "provider": "claude", "exit_code": 0,
         "turns": 4, "tool_calls": 16,
     }))
     if usage is None:
         return
-    (sdir / "usage.json").write_text(
+    (sdir / USAGE_JSON).write_text(
         usage if isinstance(usage, str) else json.dumps(usage)
     )
 
 
 @pytest.fixture
 def project_dir(tmp_path: Path) -> Path:
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 2\nprovider: claude\nactive_role: maintainer\n"
     )
     return tmp_path
@@ -97,7 +98,7 @@ def test_usage_json_listed_in_artifacts(cli, project_dir):
     result = cli.invoke(main, ["session", "show", SID])
     assert result.exit_code == 0, result.output
     assert "Artifacts:" in result.output
-    assert "usage.json" in result.output
+    assert USAGE_JSON in result.output
 
 
 def test_no_usage_section_when_file_absent(cli, project_dir):

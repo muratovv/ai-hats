@@ -9,7 +9,6 @@ share them without any cycle. ``assembler`` re-imports them, so
 """
 
 AGENT_DIR = ".agent"
-PROJECT_CONFIG = "ai-hats.yaml"
 GITIGNORE_FILE = ".gitignore"
 
 # HATS-282 — canonical layered layer
@@ -35,6 +34,14 @@ ALWAYS_ON_RULES = {
 }
 
 
+# Env-var names shared across modules (HATS-917); single-file knobs stay local
+ENV_SESSION_ID = "AI_HATS_SESSION_ID"
+ENV_REPO_URL = "AI_HATS_REPO_URL"
+ENV_ROLE = "AI_HATS_ROLE"
+ENV_LAUNCHER_DEST = "AI_HATS_LAUNCHER_DEST"
+ENV_SKIP_RETRO = "HATS_SKIP_RETRO"
+
+
 # HATS-867: trace-tag vocabulary — leaf home so runtime bricks need no observe import
 class TraceTag:
     REQ = "[REQ]"
@@ -43,3 +50,20 @@ class TraceTag:
     TOOL = "[TOOL]"
     SYS = "[SYS]"
     SUB = "[SUB]"
+
+
+# Claude Code hook-event names (HATS-917). Engine vocabularies (HATS-915)
+# compose from these; leaf home so libraries/models needs no providers import.
+HOOK_PRE_TOOL_USE = "PreToolUse"
+HOOK_POST_TOOL_USE = "PostToolUse"
+HOOK_SESSION_START = "SessionStart"
+HOOK_SESSION_END = "SessionEnd"
+HOOK_USER_PROMPT_SUBMIT = "UserPromptSubmit"
+HOOK_STOP = "Stop"
+HOOK_SUBAGENT_STOP = "SubagentStop"
+HOOK_NOTIFICATION = "Notification"
+
+
+# Provider registry names (HATS-917) — leaf home: runners must not import providers.
+PROVIDER_CLAUDE = "claude"
+PROVIDER_GEMINI = "gemini"

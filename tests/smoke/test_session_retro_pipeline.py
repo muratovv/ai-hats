@@ -37,11 +37,12 @@ import pytest
 import yaml
 
 from ai_hats.observe import Session
-from ai_hats.paths import runs_dir
+from ai_hats.paths import runs_dir, PROJECT_CONFIG, RETRO_LOG
 from ai_hats.pipeline.steps.maybe_spawn_session_reviewer import (
     MaybeSpawnSessionReviewer,
 )
 from ai_hats.retro import auto_retro
+from ai_hats.constants import ENV_SKIP_RETRO
 
 
 def _make_session(tmp_path: Path) -> Session:
@@ -52,7 +53,7 @@ def _make_session(tmp_path: Path) -> Session:
 
 def _write_run_policy_yaml(tmp_path: Path) -> None:
     """Force the policy decision to ``run`` so the dispatch branch fires."""
-    (tmp_path / "ai-hats.yaml").write_text(yaml.dump({
+    (tmp_path / PROJECT_CONFIG).write_text(yaml.dump({
         "schema_version": 2,
         "provider": "claude",
         "active_role": "primary",
@@ -97,7 +98,7 @@ def test_run_action_dispatches_session_reviewer(tmp_path, monkeypatch, capsys):
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         lambda pd, sid: spawned.append((pd, sid)),
     )
-    monkeypatch.delenv("HATS_SKIP_RETRO", raising=False)
+    monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     _run_step(tmp_path)
 
@@ -116,7 +117,7 @@ def test_recursion_guard_suppresses_dispatch(tmp_path, monkeypatch, capsys):
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         lambda pd, sid: spawned.append((pd, sid)),
     )
-    monkeypatch.setenv("HATS_SKIP_RETRO", "1")
+    monkeypatch.setenv(ENV_SKIP_RETRO, "1")
 
     _run_step(tmp_path)
 
@@ -129,7 +130,7 @@ def test_recursion_guard_suppresses_dispatch(tmp_path, monkeypatch, capsys):
 @pytest.mark.smoke
 def test_skip_action_does_not_dispatch(tmp_path, monkeypatch, capsys):
     """Policy=off → action=skip → no spawn (negative control)."""
-    (tmp_path / "ai-hats.yaml").write_text(yaml.dump({
+    (tmp_path / PROJECT_CONFIG).write_text(yaml.dump({
         "schema_version": 2,
         "provider": "claude",
         "active_role": "primary",
@@ -146,7 +147,7 @@ def test_skip_action_does_not_dispatch(tmp_path, monkeypatch, capsys):
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         lambda pd, sid: spawned.append((pd, sid)),
     )
-    monkeypatch.delenv("HATS_SKIP_RETRO", raising=False)
+    monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     _run_step(tmp_path)
 
@@ -179,6 +180,6 @@ def test_spawner_uses_start_new_session(tmp_path, monkeypatch):
         "start_new_session=True is the SIGHUP-immunity guarantee — do not "
         "drop it without re-validating the terminal-detach e2e step."
     )
-    assert captured["env"]["HATS_SKIP_RETRO"] == "1"
-    log = runs_dir(tmp_path) / "session_SID" / "retro.log"
+    assert captured["env"][ENV_SKIP_RETRO] == "1"
+    log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
     assert "session-reviewer\tspawn" in log.read_text()

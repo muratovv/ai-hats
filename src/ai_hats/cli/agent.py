@@ -7,6 +7,25 @@ import sys
 
 import click
 
+from ai_hats_wt import IsolationMode
+from ..paths import METRICS_JSON
+from ..pipeline.keys import (
+    KEY_COMPOSITION,
+    KEY_EXIT_CODE,
+    KEY_INTERACTIVE,
+    KEY_ISOLATION,
+    KEY_MODEL,
+    KEY_PROMPT_PATH,
+    KEY_PROJECT_DIR,
+    KEY_ROLE,
+    KEY_SESSION_DIR,
+    KEY_SESSION_ID,
+    KEY_SESSION_MGR,
+    KEY_TAGS,
+    KEY_TICKET,
+    KEY_TRACER_FACTORY,
+    PIPELINE_EXECUTE,
+)
 from ._helpers import console
 
 
@@ -17,8 +36,8 @@ from ._helpers import console
 @click.option("--task", default=None, help="Task description")
 @click.option(
     "--isolation",
-    default="discard",
-    type=click.Choice(["discard", "squash", "branch"]),
+    default=IsolationMode.DISCARD.value,
+    type=click.Choice([IsolationMode.DISCARD.value, IsolationMode.SQUASH.value, IsolationMode.BRANCH.value]),
     help="Worktree isolation mode (default: discard)",
 )
 @click.option(
@@ -69,23 +88,23 @@ def run_subagent(
 
     project_dir = _project_dir()
     try:
-        with PipelineHarness("execute", project_dir) as h:
+        with PipelineHarness(PIPELINE_EXECUTE, project_dir) as h:
             final = h.run({
-                "role": role,
-                "interactive": False,
-                "project_dir": project_dir,
-                "prompt_path": h.materialize_prompt(task),
-                "model": model or "",
-                "isolation": isolation,
-                "ticket": ticket or "",
-                "tags": tags or None,
-                "composition": build_composition_payload(
+                KEY_ROLE: role,
+                KEY_INTERACTIVE: False,
+                KEY_PROJECT_DIR: project_dir,
+                KEY_PROMPT_PATH: h.materialize_prompt(task),
+                KEY_MODEL: model or "",
+                KEY_ISOLATION: isolation,
+                KEY_TICKET: ticket or "",
+                KEY_TAGS: tags or None,
+                KEY_COMPOSITION: build_composition_payload(
                     project_dir, role_override=role,
                 ),
                 # HATS-867: the CLI (integrator) injects the observe writer
                 # handles — runners no longer construct them.
-                "session_mgr": SessionManager(project_dir),
-                "tracer_factory": SidecarTracer,
+                KEY_SESSION_MGR: SessionManager(project_dir),
+                KEY_TRACER_FACTORY: SidecarTracer,
             })
     except RoleNotFoundError as exc:
         # HATS-545 / S-CLI-05: same friendly handler as ``_launch_session``
@@ -94,9 +113,9 @@ def run_subagent(
         # share the helper (HATS-547 set the precedent).
         _handle_role_not_found(exc)
 
-    session_id = final["session_id"]
-    session_dir = final["session_dir"]
-    metrics_path = session_dir / "metrics.json"
+    session_id = final[KEY_SESSION_ID]
+    session_dir = final[KEY_SESSION_DIR]
+    metrics_path = session_dir / METRICS_JSON
     metrics: dict = {}
     if metrics_path.exists():
         try:
@@ -115,4 +134,4 @@ def run_subagent(
         console.print(f"[green]Sub-agent completed[/]: {session_id}")
         console.print(f"  Session dir: {session_dir}")
 
-    sys.exit(int(final.get("exit_code", metrics.get("exit_code", 1))))
+    sys.exit(int(final.get(KEY_EXIT_CODE, metrics.get("exit_code", 1))))

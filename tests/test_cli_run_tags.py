@@ -13,6 +13,7 @@ import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli import main
+from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, TRACE_LOG
 
 
 class _StubSession:
@@ -24,9 +25,9 @@ class _StubSession:
         self.session_dir.mkdir(parents=True, exist_ok=True)
         # Pipeline LaunchProvider step reads trace_path/metrics_path —
         # provide both so post-pipeline flat state is well-formed.
-        self.trace_path = self.session_dir / "trace.log"
+        self.trace_path = self.session_dir / TRACE_LOG
         self.trace_path.write_text("(stub)")
-        self.metrics_path = self.session_dir / "metrics.json"
+        self.metrics_path = self.session_dir / METRICS_JSON
         self.metrics_path.write_text(
             json.dumps({"exit_code": 0, "role": "test-agent"})
         )
@@ -49,7 +50,7 @@ class _StubRunner:
 def project_dir(tmp_path: Path) -> Path:
     (tmp_path / ".gitlog").mkdir()
     # Minimal ai-hats.yaml so _project_dir() resolves here.
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 2\nprovider: claude\nactive_role: test-agent\n"
     )
     return tmp_path

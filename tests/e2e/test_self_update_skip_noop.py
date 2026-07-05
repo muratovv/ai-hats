@@ -37,6 +37,8 @@ from pathlib import Path
 import pytest
 
 from _helpers.project import pin_edge_channel
+from ai_hats.paths import ENV_AI_HATS_VENV
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
@@ -111,9 +113,9 @@ def test_e2e_self_update_skips_pip_when_in_sync(tmp_path: Path) -> None:
 
     # ----- bootstrap: launcher + venv (uses src-repo for first install) -----
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(src_repo)
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(src_repo)
+    env.pop(ENV_AI_HATS_VENV, None)
     env.pop("PYTHONPATH", None)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
@@ -162,7 +164,7 @@ def test_e2e_self_update_skips_pip_when_in_sync(tmp_path: Path) -> None:
     )
 
     # ----- swap probe target to the fake remote (master == src-repo HEAD) -----
-    env["AI_HATS_REPO_URL"] = f"git+file://{fake_remote}"
+    env[ENV_REPO_URL] = f"git+file://{fake_remote}"
 
     # ----- assertion 1: skip hint visible, no pip install ran -----
     started = time.monotonic()

@@ -20,6 +20,7 @@ import urllib.request
 from dataclasses import dataclass
 
 from .models import Channel
+from .constants import ENV_REPO_URL
 
 # PyPI JSON API for the latest published ai-hats version (stable channel).
 PYPI_JSON_URL = "https://pypi.org/pypi/ai-hats/json"
@@ -140,7 +141,7 @@ def resolve_edge_repo(yaml_repo: str | None = None) -> str:
     """
     from .update_check.checker import FALLBACK_REMOTE_URL
 
-    raw = os.environ.get("AI_HATS_REPO_URL") or yaml_repo or FALLBACK_REMOTE_URL
+    raw = os.environ.get(ENV_REPO_URL) or yaml_repo or FALLBACK_REMOTE_URL
     return _git_https_repo(raw)
 
 

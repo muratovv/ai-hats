@@ -21,6 +21,7 @@ from ai_hats.providers import (
     PUBLISH_AGGREGATOR_START,
     ClaudeProvider,
 )
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def test_schema_default_is_v3() -> None:
@@ -29,7 +30,7 @@ def test_schema_default_is_v3() -> None:
 
 
 def test_from_yaml_bumps_v2_to_v3(tmp_path: Path) -> None:
-    yaml_path = tmp_path / "ai-hats.yaml"
+    yaml_path = tmp_path / PROJECT_CONFIG
     yaml_path.write_text("schema_version: 2\nprovider: claude\n")
 
     cfg = ProjectConfig.from_yaml(yaml_path)
@@ -37,7 +38,7 @@ def test_from_yaml_bumps_v2_to_v3(tmp_path: Path) -> None:
 
 
 def test_from_yaml_v1_chained_through_v3(tmp_path: Path) -> None:
-    yaml_path = tmp_path / "ai-hats.yaml"
+    yaml_path = tmp_path / PROJECT_CONFIG
     yaml_path.write_text("schema_version: 1\nprovider: claude\n")
 
     cfg = ProjectConfig.from_yaml(yaml_path)
@@ -49,7 +50,7 @@ def test_migrate_claude_md_strips_legacy_block(tmp_path: Path) -> None:
     project.mkdir()
     legacy = f"{INJECTION_START}\n[old huge inline blob]\n{INJECTION_END}\n"
     (project / "CLAUDE.md").write_text(legacy)
-    (project / "ai-hats.yaml").write_text("schema_version: 2\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 2\nprovider: claude\n")
 
     asm = Assembler(project)
     asm._migrate_claude_md_to_v3(ClaudeProvider())
@@ -69,7 +70,7 @@ def test_migrate_claude_md_idempotent_on_lowercase(tmp_path: Path) -> None:
         f"{PUBLISH_AGGREGATOR_START}\n@./.agent/ai-hats/imports.md\n{PUBLISH_AGGREGATOR_END}\n"
     )
     (project / "CLAUDE.md").write_text(scaffold)
-    (project / "ai-hats.yaml").write_text("schema_version: 2\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 2\nprovider: claude\n")
 
     asm = Assembler(project)
     first_mtime = (project / "CLAUDE.md").stat().st_mtime_ns
@@ -83,7 +84,7 @@ def test_migrate_claude_md_idempotent_on_lowercase(tmp_path: Path) -> None:
 def test_migrate_claude_md_no_file_creates_scaffold(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     project.mkdir()
-    (project / "ai-hats.yaml").write_text("schema_version: 2\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 2\nprovider: claude\n")
 
     asm = Assembler(project)
     asm._migrate_claude_md_to_v3(ClaudeProvider())
@@ -98,7 +99,7 @@ def test_migrate_claude_md_preserves_user_content_around_markers(tmp_path: Path)
     project.mkdir()
     legacy = f"# My Project\n\n{INJECTION_START}\n[old blob]\n{INJECTION_END}\n\nMore notes.\n"
     (project / "CLAUDE.md").write_text(legacy)
-    (project / "ai-hats.yaml").write_text("schema_version: 2\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 2\nprovider: claude\n")
 
     asm = Assembler(project)
     asm._migrate_claude_md_to_v3(ClaudeProvider())
@@ -118,7 +119,7 @@ def test_migrate_claude_md_no_markers_prepends_scaffold(tmp_path: Path) -> None:
     project.mkdir()
     user_only = "# Pure user content\n\nNo ai-hats markers anywhere.\n"
     (project / "CLAUDE.md").write_text(user_only)
-    (project / "ai-hats.yaml").write_text("schema_version: 2\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 2\nprovider: claude\n")
 
     asm = Assembler(project)
     asm._migrate_claude_md_to_v3(ClaudeProvider())
@@ -159,7 +160,7 @@ def test_set_role_on_legacy_project_migrates(tmp_path: Path) -> None:
         "name: r1\npriorities:\n  - Reliability\n"
         "composition:\n  rules:\n    - rule_x\ninjection: |\n  Role X.\n"
     )
-    (project / "ai-hats.yaml").write_text("schema_version: 2\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 2\nprovider: claude\n")
     legacy = f"{INJECTION_START}\n[old]\n{INJECTION_END}\n"
     (project / "CLAUDE.md").write_text(legacy)
 
@@ -183,7 +184,7 @@ def test_bump_migrates_then_assembles(tmp_path: Path) -> None:
     (role_dir / "config.yaml").write_text(
         "name: r1\npriorities:\n  - Reliability\ninjection: |\n  Role X.\n"
     )
-    (project / "ai-hats.yaml").write_text("schema_version: 2\nprovider: claude\nactive_role: r1\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 2\nprovider: claude\nactive_role: r1\n")
     legacy = f"{INJECTION_START}\n[old huge content]\n{INJECTION_END}\n"
     (project / "CLAUDE.md").write_text(legacy)
 
@@ -201,7 +202,7 @@ def test_obsolete_files_cleanup_in_bump(tmp_path: Path) -> None:
     (project / ".agent").mkdir()
     legacy_md = project / ".agent" / "backlog.md"
     legacy_md.write_text("# obsolete\n")
-    (project / "ai-hats.yaml").write_text("schema_version: 2\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 2\nprovider: claude\n")
 
     asm = Assembler(project)
     bump_pipeline(asm)  # no active role, but cleanup still runs
@@ -222,7 +223,7 @@ def test_migrate_cli_command_removed(tmp_path: Path, monkeypatch) -> None:
 
 def test_to_dict_emits_v3(tmp_path: Path) -> None:
     cfg = ProjectConfig(provider="claude")
-    yaml_path = tmp_path / "ai-hats.yaml"
+    yaml_path = tmp_path / PROJECT_CONFIG
     cfg.save(yaml_path)
     raw = yaml.safe_load(yaml_path.read_text())
     assert raw["schema_version"] == 4
@@ -239,7 +240,7 @@ def test_migrate_rewrites_legacy_publish_import_line(tmp_path: Path) -> None:
         f"{PUBLISH_AGGREGATOR_START}\n@./.claude/CLAUDE.md\n{PUBLISH_AGGREGATOR_END}\n"
     )
     (project / "CLAUDE.md").write_text(legacy_scaffold)
-    (project / "ai-hats.yaml").write_text("schema_version: 3\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 3\nprovider: claude\n")
 
     bump_pipeline(Assembler(project))
 
@@ -271,7 +272,7 @@ def test_migrate_cleans_legacy_claude_publish(tmp_path: Path) -> None:
         "# stale\nCLAUDE.md\nrules/stale.md\ntraits/stale.md\npriorities.md\nrole.md\n"
     )
     (claude / "skills" / "my_skill" / "SKILL.md").write_text("# user skill\n")
-    (project / "ai-hats.yaml").write_text("schema_version: 3\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 3\nprovider: claude\n")
 
     bump_pipeline(Assembler(project))
 
@@ -292,7 +293,7 @@ def test_migrate_legacy_publish_cleanup_idempotent(tmp_path: Path) -> None:
     (project / "CLAUDE.md").write_text(
         f"{PUBLISH_AGGREGATOR_START}\n@./.agent/ai-hats/imports.md\n{PUBLISH_AGGREGATOR_END}\n"
     )
-    (project / "ai-hats.yaml").write_text("schema_version: 3\nprovider: claude\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 3\nprovider: claude\n")
 
     bump_pipeline(Assembler(project))
     bump_pipeline(Assembler(project))  # second run — no error, no diff

@@ -33,6 +33,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from ai_hats.paths import METRICS_JSON
 
 
 def _runs_dir(project_root: Path) -> Path:
@@ -84,7 +85,7 @@ def read_metrics(session_dir: Path) -> dict:
     :func:`wait_for_new_session_dir` returned (which requires metrics
     to be present).
     """
-    return json.loads((session_dir / "metrics.json").read_text())
+    return json.loads((session_dir / METRICS_JSON).read_text())
 
 
 def wait_for_new_session_dir(
@@ -148,7 +149,7 @@ def wait_for_new_session_dir(
                     continue
                 if entry in exclude_dirs:
                     continue
-                metrics_path = entry / "metrics.json"
+                metrics_path = entry / METRICS_JSON
                 if not metrics_path.exists():
                     observed[entry.name] = "no metrics.json yet"
                     continue

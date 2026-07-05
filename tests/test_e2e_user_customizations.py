@@ -23,6 +23,7 @@ from click.testing import CliRunner
 from ai_hats.assembler import Assembler
 from ai_hats.cli.assembly import customize as customize_cmd
 from ai_hats.models import ProjectConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 
 @pytest.fixture
@@ -61,7 +62,7 @@ def fixture_library(tmp_path: Path) -> Path:
 def project_dir(monkeypatch, tmp_path: Path) -> Path:
     pdir = tmp_path / "project"
     pdir.mkdir()
-    (pdir / "ai-hats.yaml").write_text(
+    (pdir / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
@@ -195,7 +196,7 @@ def test_e2e_layered_reorder_via_in_layer_add_remove(
 
     pdir = tmp_path / "project"
     pdir.mkdir()
-    (pdir / "ai-hats.yaml").write_text(
+    (pdir / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
@@ -205,14 +206,14 @@ def test_e2e_layered_reorder_via_in_layer_add_remove(
     monkeypatch.chdir(pdir)
 
     # Project overlay: move trait-a to the tail by removing then re-adding.
-    pcfg = ProjectConfig.from_yaml(pdir / "ai-hats.yaml")
+    pcfg = ProjectConfig.from_yaml(pdir / PROJECT_CONFIG)
     from ai_hats.models import OverlayConfig
 
     pcfg.customizations["worker"] = OverlayConfig(
         remove_traits=["trait-a"],
         add_traits=["trait-a"],
     )
-    pcfg.save(pdir / "ai-hats.yaml")
+    pcfg.save(pdir / PROJECT_CONFIG)
 
     asm = Assembler(pdir, library_paths=[lib])
     result = asm.composer.compose("worker", overlays=asm._get_overlays("worker"))

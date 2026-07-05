@@ -43,6 +43,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from ai_hats.paths import PROJECT_CONFIG
 
 
 pytestmark = pytest.mark.integration
@@ -116,7 +117,7 @@ def test_init_writes_yaml_scaffold_and_user_rules_aggregator_only(fresh_project)
     )
 
     # ai-hats.yaml created with default_role + active_role split per HATS-407.
-    yaml_path = project / "ai-hats.yaml"
+    yaml_path = project / PROJECT_CONFIG
     assert yaml_path.exists(), "ai-hats.yaml not created"
     body = yaml_path.read_text()
     assert "default_role: assistant" in body, body
@@ -184,7 +185,7 @@ def test_config_set_role_is_yaml_only(fresh_project):
     assert "Default role" in res.stdout, res.stdout
 
     # default_role flipped; active_role stays empty (runtime cache).
-    body = (project / "ai-hats.yaml").read_text()
+    body = (project / PROJECT_CONFIG).read_text()
     assert "default_role: sre" in body, body
     assert "active_role: ''" in body or "active_role: \"\"" in body, body
 

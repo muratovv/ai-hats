@@ -28,13 +28,15 @@ from pathlib import Path
 
 import pytest
 
+# HATS-589: per-xdist-worker private build source (no-op on serial run).
+from _helpers.project import pin_edge_channel
+from _helpers.repo_src import build_src
+
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
+from ai_hats.paths import PROJECT_CONFIG
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
-
-# HATS-589: per-xdist-worker private build source (no-op on serial run).
-from _helpers.project import pin_edge_channel  # noqa: E402
-from _helpers.repo_src import build_src  # noqa: E402
 
 pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
@@ -83,8 +85,8 @@ def _bootstrap(tmp_path: Path) -> tuple[Path, Path, dict]:
         and k not in ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT", "PYTHONPATH")
     }
     env["AI_HATS_USER_HOME"] = str(user_home)
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(build_src(REPO_ROOT))
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(build_src(REPO_ROOT))
     env["AI_HATS_BUMP_BACKUP_DIR"] = str(backups)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
@@ -114,7 +116,7 @@ def test_update_survives_unknown_config_key(tmp_path: Path) -> None:
     """
     launcher_dest, project, env = _bootstrap(tmp_path)
 
-    cfg_path = project / "ai-hats.yaml"
+    cfg_path = project / PROJECT_CONFIG
     # Deliberately break the schema with a key the binary doesn't know.
     cfg_path.write_text(cfg_path.read_text() + "future_field: 99\n")
     assert "future_field" in cfg_path.read_text()
@@ -156,7 +158,7 @@ def test_update_survives_garbage_config_value(tmp_path: Path) -> None:
     """
     launcher_dest, project, env = _bootstrap(tmp_path)
 
-    cfg_path = project / "ai-hats.yaml"
+    cfg_path = project / PROJECT_CONFIG
     # ``manage_gitignore`` is a known bool field; a non-bool value is a
     # validation error the unknown-key strip cannot heal (Fix #1 territory).
     # (We avoid breaking ``schema_version`` itself — a non-int there would

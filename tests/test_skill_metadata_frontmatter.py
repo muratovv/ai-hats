@@ -10,6 +10,7 @@ import pytest
 
 from ai_hats.models import LeftoverSidecarHooksError, SkillMetadata
 from ai_hats.skill_sidecar import leftover_sidecar_remedy
+from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 
 def _skill(tmp_path: Path, frontmatter: str, *, sidecar: str | None = None) -> Path:
@@ -52,8 +53,8 @@ def test_reads_runtime_hooks_from_frontmatter(tmp_path: Path) -> None:
         "# Demo\n",
     )
     md = SkillMetadata.from_skill_dir(d)
-    assert "PreToolUse" in md.runtime_hooks
-    row = md.runtime_hooks["PreToolUse"][0]
+    assert HOOK_PRE_TOOL_USE in md.runtime_hooks
+    row = md.runtime_hooks[HOOK_PRE_TOOL_USE][0]
     assert row.matcher == "Bash"
     assert row.script == "hooks/guard.sh"
 

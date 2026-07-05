@@ -9,6 +9,7 @@ from pathlib import Path
 
 import yaml
 
+from ai_hats.constants import HOOK_POST_TOOL_USE
 from ai_hats.models import RuntimeHook, SkillMetadata
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -19,7 +20,7 @@ TRAIT_CFG = REPO_ROOT / "library/usage/traits/dev/python/config.yaml"
 
 def test_declares_posttooluse_hook():
     meta = SkillMetadata.from_skill_dir(SKILL_DIR)
-    post = meta.runtime_hooks.get("PostToolUse", [])
+    post = meta.runtime_hooks.get(HOOK_POST_TOOL_USE, [])
     assert (
         RuntimeHook(matcher="Edit|Write|MultiEdit", script="hooks/comment_length_lint.py")
         in post

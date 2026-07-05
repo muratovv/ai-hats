@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 from ai_hats.update_check import upstream_update
 from ai_hats.update_check.cache import CacheEntry, write_cache
+from ai_hats.paths import ENV_AI_HATS_DIR, PROJECT_CONFIG
 
 _SHA = "a" * 40
 
@@ -38,21 +39,21 @@ def _patch_detect(monkeypatch, value) -> None:
 
 def test_local_channel_returns_none(tmp_path, monkeypatch):
     """LOCAL is git-driven — 'behind upstream' is meaningless, never suppress heal."""
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "data"))
-    (tmp_path / "ai-hats.yaml").write_text("harness:\n  channel: local\n  path: .\n")
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "data"))
+    (tmp_path / PROJECT_CONFIG).write_text("harness:\n  channel: local\n  path: .\n")
     _seed_cache(tmp_path)
     _patch_detect(monkeypatch, _SHA)  # even matching SHA must not matter
     assert upstream_update(tmp_path) is None
 
 
 def test_no_cache_returns_none(tmp_path, monkeypatch):
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "data"))
     _patch_detect(monkeypatch, _SHA)
     assert upstream_update(tmp_path) is None
 
 
 def test_behind_with_matching_sha_returns_entry(tmp_path, monkeypatch):
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "data"))
     _seed_cache(tmp_path, installed_sha=_SHA, behind=7, ahead=0)
     _patch_detect(monkeypatch, _SHA)
     entry = upstream_update(tmp_path)
@@ -62,7 +63,7 @@ def test_behind_with_matching_sha_returns_entry(tmp_path, monkeypatch):
 
 def test_behind_with_foreign_sha_returns_none(tmp_path, monkeypatch):
     """Cache describes a build we are not running → not our 'behind'."""
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "data"))
     _seed_cache(tmp_path, installed_sha=_SHA, behind=7, ahead=0)
     _patch_detect(monkeypatch, "f" * 40)
     assert upstream_update(tmp_path) is None
@@ -70,7 +71,7 @@ def test_behind_with_foreign_sha_returns_none(tmp_path, monkeypatch):
 
 def test_not_behind_returns_none(tmp_path, monkeypatch):
     """installed ahead of cached upstream → has_update False → None."""
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "data"))
     _seed_cache(tmp_path, installed_sha=_SHA, behind=0, ahead=5)
     _patch_detect(monkeypatch, _SHA)
     assert upstream_update(tmp_path) is None
@@ -79,7 +80,7 @@ def test_not_behind_returns_none(tmp_path, monkeypatch):
 def test_unknown_current_sha_returns_entry(tmp_path, monkeypatch):
     """Running SHA unknown (detect → None) → treat the entry as about-us,
     NOT suppressed — mirrors the banner's long-standing behaviour."""
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "data"))
     _seed_cache(tmp_path, installed_sha=_SHA, behind=7, ahead=0)
     _patch_detect(monkeypatch, None)
     assert upstream_update(tmp_path) is not None
