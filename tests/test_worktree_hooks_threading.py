@@ -2,9 +2,10 @@
 degrade gracefully when no role / composition is available.
 
 HATS-865: composition moved to the integrator caller seam
-(``state.collect_carry_for_project``); the ``wt_carry`` chokepoint receives
-the ready result + hooks manager. These tests drive the caller seam so the
-whole compose→serialize→materialize→filter chain stays pinned."""
+(``wt_effects.collect_carry_for_project``, relocated from ``state`` by
+HATS-866); the ``wt_carry`` chokepoint receives the ready result + hooks
+manager. These tests drive the caller seam so the whole
+compose→serialize→materialize→filter chain stays pinned."""
 
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ from ai_hats_wt import WorktreeHook
 
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import managed_wt_hook_filename, wt_hooks_dir
-from ai_hats.state import collect_carry_for_project
+from ai_hats.wt_effects import collect_carry_for_project
 from ai_hats.wt_carry import collect_carry_for_role, serialize_collected_hooks
 
 

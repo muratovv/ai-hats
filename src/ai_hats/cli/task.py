@@ -399,7 +399,7 @@ def task_transition(
         # `task transition` flag, which does NOT exist.
         #
         # Card stays in `review`: HATS-481 fail-loud guarantees the
-        # `_teardown_worktree` raise propagates before `_save_task`.
+        # worktree-effect teardown raise propagates before `_save_task`.
         from rich.markup import escape as _escape
 
         project_dir = _project_dir()

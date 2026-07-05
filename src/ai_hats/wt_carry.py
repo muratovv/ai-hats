@@ -5,7 +5,7 @@ The create-time chokepoint that serializes a composed role's worktree hooks
 into a JSON-safe carry record, to be threaded into
 ``WorktreeManager.create(wt_hooks=...)`` and persisted to state for teardown.
 HATS-865: composition happens at the integrator callers
-(``state.collect_carry_for_project`` / ``wt create`` CLI) — this brick
+(``wt_effects.collect_carry_for_project`` / ``wt create`` CLI) — this brick
 receives the READY result + the project's HooksManager and never imports the
 composition layer. The hook *execution* policy lives in
 :mod:`ai_hats.wt_lifecycle`; the bounded hook *run* primitive stays in
@@ -34,7 +34,7 @@ def collect_carry_for_role(
     """Serialize the composed role's worktree carry (+ materialize backstop).
 
     ``result``/``hooks`` come from the create-time caller
-    (``state.collect_carry_for_project`` / ``wt create`` CLI — HATS-865);
+    (``wt_effects.collect_carry_for_project`` / ``wt create`` CLI — HATS-865);
     ``None`` degrades to an empty carry. Serialize/materialize failures also
     degrade to empty with a WARN — collection trouble must not block worktree
     creation.

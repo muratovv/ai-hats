@@ -246,11 +246,17 @@ class TestTransitionExecute:
         """
         from ai_hats.models import TaskState
         from ai_hats.state import TaskManager
+        from ai_hats.wt_effects import WtWorktreeEffects
 
         (master_project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
         (master_project / ".agent" / "STATE.md").write_text("")
 
-        mgr = TaskManager(master_project, prefix="T", strict_plan_check=False)
+        mgr = TaskManager(
+            master_project,
+            prefix="T",
+            strict_plan_check=False,
+            worktree_effects=WtWorktreeEffects(master_project),
+        )
         mgr.create_task("T-1", "HATS-518 probe")
         # Promote the seeded card to PLAN by direct file mutation — avoids
         # the BRAINSTORM→PLAN transition path entirely.
@@ -297,13 +303,18 @@ class TestTransitionExecute:
 
     def test_succeeds_when_head_is_master(self, task_mgr) -> None:
         from ai_hats.models import TaskState
+        from ai_hats.paths import worktrees_dir
         from ai_hats_wt import WorktreeManager
 
         master_project, mgr = task_mgr
+        state_dir = worktrees_dir(master_project)  # D4: where the seam persists state
         try:
             t, _ = mgr.transition("T-1", TaskState.EXECUTE)
             assert t.state == TaskState.EXECUTE
+            # The wired seam really created the worktree — a silently degraded
+            # pure-FSM pass must fail here (HATS-866 review).
+            assert WorktreeManager.load_for_task(master_project, "T-1", state_dir=state_dir) is not None
         finally:
-            wt = WorktreeManager.load_for_task(master_project, "T-1")
+            wt = WorktreeManager.load_for_task(master_project, "T-1", state_dir=state_dir)
             if wt is not None:
                 wt.cleanup()

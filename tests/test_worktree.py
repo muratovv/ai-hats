@@ -424,8 +424,8 @@ class TestBranchExistsClassifier:
         """Case A: `git branch task/foo` then create() must attach, not fail.
 
         State persistence is the caller's responsibility (mirrors the
-        original happy path — `_setup_worktree` calls `save_state()` after
-        `create()`); we only assert that the worktree exists on the
+        original happy path — `WtWorktreeEffects.setup` calls `save_state()`
+        after `create()`); we only assert that the worktree exists on the
         pre-existing branch.
         """
         _git(git_project, "branch", "task/foo")
