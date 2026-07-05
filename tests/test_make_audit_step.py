@@ -13,7 +13,6 @@ import os
 from pathlib import Path
 
 
-from ai_hats import observe as observe_module
 from ai_hats.observe import Session
 from ai_hats.pipeline.steps.make_audit import MakeAudit
 
@@ -47,6 +46,7 @@ def test_io_contract():
     assert io.requires == frozenset({
         "session_id", "session_dir", "claude_session_id",
         "project_dir", "exit_code",
+        "session_factory", "audit_writer_factory",
     })
     assert io.produces == frozenset({"audit_path"})
 
@@ -83,8 +83,6 @@ def test_passes_configured_jsonl_path_when_present(tmp_path, monkeypatch):
             captured["jsonl_path"] = jsonl_path
             captured["session"] = session
 
-    monkeypatch.setattr(observe_module.AuditWriter, "build", _CapturingAuditWriter().build)
-
     step = MakeAudit()
     delta = step.run(
         session_id=session.session_id,
@@ -92,6 +90,8 @@ def test_passes_configured_jsonl_path_when_present(tmp_path, monkeypatch):
         claude_session_id=csid,
         project_dir=project_dir,
         exit_code=0,
+        session_factory=Session,
+        audit_writer_factory=_CapturingAuditWriter,
     )
 
     assert captured["jsonl_path"] == real_jsonl
@@ -123,8 +123,6 @@ def test_falls_back_to_discovered_jsonl_when_configured_path_missing(
         def build(self, session, jsonl_path=None, keep_raw=False):
             captured["jsonl_path"] = jsonl_path
 
-    monkeypatch.setattr(observe_module.AuditWriter, "build", _CapturingAuditWriter().build)
-
     step = MakeAudit()
     step.run(
         session_id=session.session_id,
@@ -132,6 +130,8 @@ def test_falls_back_to_discovered_jsonl_when_configured_path_missing(
         claude_session_id="dead-uuid-never-passed-to-claude",
         project_dir=project_dir,
         exit_code=0,
+        session_factory=Session,
+        audit_writer_factory=_CapturingAuditWriter,
     )
 
     assert captured["jsonl_path"] == real_jsonl, (
@@ -140,7 +140,7 @@ def test_falls_back_to_discovered_jsonl_when_configured_path_missing(
     )
 
 
-def test_swallows_audit_writer_exception(tmp_path, monkeypatch):
+def test_swallows_audit_writer_exception(tmp_path):
     """AuditWriter raising MUST NOT propagate — failure_policy is continue
     but the step itself wraps the body too (HATS-086 invariant inherited
     from pre-refactor ``_finalize_session``)."""
@@ -150,8 +150,6 @@ def test_swallows_audit_writer_exception(tmp_path, monkeypatch):
         def build(self, *args, **kwargs):
             raise RuntimeError("audit boom")
 
-    monkeypatch.setattr(observe_module, "AuditWriter", _ExplodingAuditWriter)
-
     step = MakeAudit()
     # Must not raise.
     delta = step.run(
@@ -160,20 +158,20 @@ def test_swallows_audit_writer_exception(tmp_path, monkeypatch):
         claude_session_id="any",
         project_dir=tmp_path,
         exit_code=0,
+        session_factory=Session,
+        audit_writer_factory=_ExplodingAuditWriter,
     )
     # Even on failure, the contract returns audit_path (may not exist on disk).
     assert delta == {"audit_path": session.audit_path}
 
 
-def test_swallows_audit_writer_keyboard_interrupt(tmp_path, monkeypatch):
+def test_swallows_audit_writer_keyboard_interrupt(tmp_path):
     """A second Ctrl+C during AuditWriter.build MUST NOT propagate."""
     session = make_session(tmp_path)
 
     class _InterruptingAuditWriter:
         def build(self, *args, **kwargs):
             raise KeyboardInterrupt()
-
-    monkeypatch.setattr(observe_module, "AuditWriter", _InterruptingAuditWriter)
 
     step = MakeAudit()
     step.run(
@@ -182,4 +180,6 @@ def test_swallows_audit_writer_keyboard_interrupt(tmp_path, monkeypatch):
         claude_session_id="any",
         project_dir=tmp_path,
         exit_code=0,
+        session_factory=Session,
+        audit_writer_factory=_InterruptingAuditWriter,
     )  # must not raise

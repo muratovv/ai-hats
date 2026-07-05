@@ -134,7 +134,7 @@ def test_execute_batch_routes_to_subagent_runner(
     captured: dict = {}
 
     class _Runner:
-        def __init__(self, _pd, payload):
+        def __init__(self, _pd, payload, *, session_mgr=None):
             captured["pd"] = _pd
             self._payload = payload
 
@@ -167,7 +167,7 @@ def test_execute_interactive_routes_to_wraprunner(
     captured: dict = {}
 
     class _WrapRunner:
-        def __init__(self, _pd, payload):
+        def __init__(self, _pd, payload, *, session_mgr=None, tracer_factory=None):
             captured["pd"] = _pd
             captured["provider"] = payload.provider.name
             captured["role"] = payload.effective_role
@@ -199,7 +199,7 @@ def test_execute_interactive_no_prompt_passes_empty_extra_args(
     captured: dict = {}
 
     class _WrapRunner:
-        def __init__(self, _pd, _payload): pass
+        def __init__(self, _pd, _payload, *, session_mgr=None, tracer_factory=None): pass
 
         def run(self, **kwargs):
             captured["extra_args"] = kwargs.get("extra_args")

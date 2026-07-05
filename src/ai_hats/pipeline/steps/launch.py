@@ -47,7 +47,11 @@ class Provider(Step):
             name="provider",
             # HATS-865: funnel-seeded CompositionPayload, handed to the runner
             # as-is — this step never composes nor resolves providers.
-            requires=frozenset({"interactive", "project_dir", "composition"}),
+            # HATS-867: observe writer handles are funnel-seeded too.
+            requires=frozenset({
+                "interactive", "project_dir", "composition",
+                "session_mgr", "tracer_factory",
+            }),
             # HATS-505: ``system_prompt`` is deliberately NOT read here —
             # prompt delivery goes through the payload, not a funnel string.
             optional=frozenset({
@@ -65,6 +69,8 @@ class Provider(Step):
         interactive: bool,
         project_dir: Path,
         composition: Any,
+        session_mgr: Any,
+        tracer_factory: Any,
         prompt_text: str = "",
         model: str = "",
         isolation: str = "discard",
@@ -83,7 +89,10 @@ class Provider(Step):
             # HATS-452 (П2 in ADR-0005): WrapRunner is HITL — no override
             # channel; the payload's composition reaches the agent via
             # ``build_session_prompt`` inside ``run``.
-            runner = WrapRunner(project_dir, composition)
+            runner = WrapRunner(
+                project_dir, composition,
+                session_mgr=session_mgr, tracer_factory=tracer_factory,
+            )
             exit_code, session = runner.run(extra_args=eff_extra, tags=tags)
             # HATS-378: universal zero-output guard for reporting steps.
             # Interactive (main) sessions have trace-enriched metrics by
@@ -97,7 +106,7 @@ class Provider(Step):
                 "exit_code": int(exit_code),
             }
 
-        runner = SubAgentRunner(project_dir, composition)
+        runner = SubAgentRunner(project_dir, composition, session_mgr=session_mgr)
         # HATS-378: SubAgentRunner internally applies timeout retry and
         # zero-output guard when ``harness_policy`` is supplied — no
         # external guard call needed for the sub-agent branch.

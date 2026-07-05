@@ -49,7 +49,7 @@ def _install_subagent_trace(monkeypatch, project_dir: Path, body: str) -> dict:
             )
 
     class _Runner:
-        def __init__(self, _pd, payload) -> None:
+        def __init__(self, _pd, payload, *, session_mgr=None) -> None:
             self._payload = payload
 
         def run(self, **kwargs):

@@ -130,6 +130,7 @@ def reflect_all_cmd(dry_run: bool):
     """Interactive HYP closure + proposal triage via the `judge` role."""
     from ..assembler import Assembler
     from ..composition_seam import build_composition_payload
+    from ..observe import SessionManager, SidecarTracer
     from ..pipeline.harness import PipelineHarness
 
     project_dir = _project_dir()
@@ -163,6 +164,8 @@ def reflect_all_cmd(dry_run: bool):
             "composition": build_composition_payload(
                 project_dir, role_override="judge", interactive=True,
             ),
+            "session_mgr": SessionManager(project_dir),
+            "tracer_factory": SidecarTracer,
         })
     sys.exit(int(final.get("exit_code", 1)))
 
@@ -193,6 +196,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     """
     from ..assembler import Assembler
     from ..composition_seam import build_composition_payload
+    from ..observe import SessionManager, SidecarTracer
     from ..pipeline.harness import PipelineHarness
 
     project_dir = _project_dir()
@@ -227,6 +231,8 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
             "composition": build_composition_payload(
                 project_dir, role_override="judge-auditor",
             ),
+            "session_mgr": SessionManager(project_dir),
+            "tracer_factory": SidecarTracer,
         })
 
     # Fail closed: Phase 1 errored OR did not produce a usable draft.
@@ -277,6 +283,8 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
             "composition": build_composition_payload(
                 project_dir, role_override="judge", interactive=True,
             ),
+            "session_mgr": SessionManager(project_dir),
+            "tracer_factory": SidecarTracer,
         })
     sys.exit(int(r2.get("exit_code", 1)))
 
@@ -328,6 +336,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
     """
     from ..assembler import Assembler
     from ..composition_seam import build_composition_payload
+    from ..observe import SessionManager, SidecarTracer
     from ..pipeline.harness import PipelineHarness
 
     assembler = Assembler(project_dir)
@@ -380,6 +389,8 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
             "composition": build_composition_payload(
                 project_dir, role_override="judge-for-role", interactive=True,
             ),
+            "session_mgr": SessionManager(project_dir),
+            "tracer_factory": SidecarTracer,
         })
     saved = final.get("saved_path")
     if saved:
@@ -511,6 +522,7 @@ def _run_intake_pipeline(
     transcript. Caller treats that as a pipeline failure.
     """
     from ..composition_seam import build_composition_payload
+    from ..observe import SessionManager, SidecarTracer
     from ..pipeline.harness import PipelineHarness
 
     with PipelineHarness("reflect-issue", project_dir) as h:
@@ -523,6 +535,8 @@ def _run_intake_pipeline(
             "composition": build_composition_payload(
                 project_dir, role_override="hypothesis-intake",
             ),
+            "session_mgr": SessionManager(project_dir),
+            "tracer_factory": SidecarTracer,
         })
     return (
         final.get("intake_result", "") or "",
