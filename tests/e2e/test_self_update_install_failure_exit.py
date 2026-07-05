@@ -41,6 +41,8 @@ from pathlib import Path
 import pytest
 
 from _helpers.project import pin_edge_channel
+from ai_hats.paths import ENV_AI_HATS_VENV
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
@@ -96,9 +98,9 @@ def test_e2e_self_update_install_failure_exits_nonzero(tmp_path: Path) -> None:
     sha_a = _head_sha(src_repo)
 
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(src_repo)
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(src_repo)
+    env.pop(ENV_AI_HATS_VENV, None)
     env.pop("PYTHONPATH", None)
 
     # ----- 1. install launcher + first self update (managed, non-editable) -----

@@ -20,6 +20,8 @@ from ai_hats.models import (
     TaskState,
     resolve_namespace,
 )
+from ai_hats.paths import PROJECT_CONFIG
+from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 
 
 def test_resolve_namespace():
@@ -382,7 +384,7 @@ def test_project_config_customizations_roundtrip(tmp_path):
             "sre": OverlayConfig(add_traits=["my-trait"], remove_skills=["old-skill"]),
         },
     )
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     config.save(path)
 
     loaded = ProjectConfig.from_yaml(path)
@@ -393,7 +395,7 @@ def test_project_config_customizations_roundtrip(tmp_path):
 
 def test_project_config_no_customizations_backward_compat(tmp_path):
     """Existing ai-hats.yaml without customizations field should load fine."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text("provider: claude\ndefault_role: assistant\nschema_version: 1\n")
 
     config = ProjectConfig.from_yaml(path)
@@ -404,7 +406,7 @@ def test_project_config_no_customizations_backward_compat(tmp_path):
 def test_project_config_empty_customizations_not_serialized(tmp_path):
     """Empty customizations should not appear in saved YAML."""
     config = ProjectConfig(provider="claude", customizations={})
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     config.save(path)
 
     content = path.read_text()
@@ -421,7 +423,7 @@ def test_from_yaml_strips_unknown_future_key(tmp_path, capsys):
     """HATS-581: an unknown top-level key no longer hard-crashes. It is
     stripped with a stderr WARN so an OLDER binary survives a yaml a NEWER
     binary wrote (the recovery command must keep working)."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "provider: claude\nschema_version: 4\n"
         "ai_hats_dir: .agent/ai-hats\nfuture_field: 7\n"
@@ -444,7 +446,7 @@ def test_from_yaml_strips_migration_step_on_old_schema(tmp_path, capsys, monkeyp
     old_fields.pop("migration_step")
     monkeypatch.setattr(ProjectConfig, "model_fields", old_fields)
 
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "provider: claude\nschema_version: 4\n"
         "ai_hats_dir: .agent/ai-hats\nmigration_step: 6\n"
@@ -460,7 +462,7 @@ def test_from_yaml_strips_migration_step_on_old_schema(tmp_path, capsys, monkeyp
 def test_from_yaml_deprecated_field_keeps_specific_message(tmp_path, capsys):
     """HATS-581: deprecated ghosts are stripped FIRST, so they keep the
     'deprecated' message and never fall through to the generic 'unknown' one."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "provider: claude\nschema_version: 4\n"
         "ai_hats_dir: .agent/ai-hats\nimports_order: []\n"
@@ -486,7 +488,7 @@ def test_from_yaml_preserves_unknown_top_level_field_round_trip(tmp_path, capsys
     """HATS-792: a same-version unknown top-level key is captured into ``_extra``
     on load and merged back by ``to_dict``, so read→write→read preserves it
     (HATS-581 no longer means silent loss). The WARN still fires."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "provider: claude\nschema_version: 4\n"
         "ai_hats_dir: .agent/ai-hats\nfuture_field: 7\n"
@@ -505,7 +507,7 @@ def test_from_yaml_preserves_unknown_top_level_field_round_trip(tmp_path, capsys
 def test_from_yaml_fails_loud_on_newer_schema_version(tmp_path):
     """HATS-792: schema_version 5 (> KNOWN 4) is refused with a typed error +
     remediation instead of being silently treated as v4."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "provider: claude\nschema_version: 5\nai_hats_dir: .agent/ai-hats\n"
     )
@@ -519,7 +521,7 @@ def test_from_yaml_fails_loud_on_newer_schema_version(tmp_path):
 
 def test_from_yaml_missing_ai_hats_dir_still_hard_errors(tmp_path):
     """HATS-581: the unknown-key strip must NOT weaken the required-field gate."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text("provider: claude\nschema_version: 4\n")
 
     with pytest.raises(ProjectConfigError) as exc:
@@ -530,7 +532,7 @@ def test_from_yaml_missing_ai_hats_dir_still_hard_errors(tmp_path):
 def test_from_yaml_wrong_type_still_hard_errors(tmp_path):
     """HATS-581: stripping unknown keys must not mask genuine type errors —
     those are Fix #1 (config-tolerant update) territory, not Fix #2's."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "provider: claude\nschema_version: 4\n"
         "ai_hats_dir: .agent/ai-hats\nmanage_gitignore: not-a-bool\n"
@@ -544,7 +546,7 @@ def test_project_config_passes_unknown_provider_through(tmp_path):
     """HATS-863: the schema no longer knows the provider registry (severed
     schema→providers back-edge) — an unknown value loads; rejection happens at
     the assembler read chokepoint (see test_assembler.py)."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text("provider: gemini-2.5\nschema_version: 2\n")
 
     cfg = ProjectConfig.from_yaml(path)
@@ -553,7 +555,7 @@ def test_project_config_passes_unknown_provider_through(tmp_path):
 
 def test_project_config_valid_load_still_works(tmp_path):
     """Regression: a clean ai-hats.yaml continues to load without error."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text("provider: claude\nactive_role: assistant\nschema_version: 2\n")
 
     config = ProjectConfig.from_yaml(path)
@@ -566,7 +568,7 @@ def test_project_config_valid_load_still_works(tmp_path):
 
 def test_project_config_venv_path_relative_roundtrip(tmp_path):
     config = ProjectConfig(provider="claude", venv_path=".venv")
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     config.save(path)
 
     loaded = ProjectConfig.from_yaml(path)
@@ -575,7 +577,7 @@ def test_project_config_venv_path_relative_roundtrip(tmp_path):
 
 def test_project_config_venv_path_absolute_roundtrip(tmp_path):
     config = ProjectConfig(provider="claude", venv_path="/opt/myvenv")
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     config.save(path)
 
     loaded = ProjectConfig.from_yaml(path)
@@ -585,7 +587,7 @@ def test_project_config_venv_path_absolute_roundtrip(tmp_path):
 def test_project_config_venv_path_omitted_when_none(tmp_path):
     """venv_path is opt-in — saved yaml stays clean when field unused."""
     config = ProjectConfig(provider="claude")
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     config.save(path)
 
     assert "venv_path" not in path.read_text()
@@ -593,7 +595,7 @@ def test_project_config_venv_path_omitted_when_none(tmp_path):
 
 def test_project_config_backward_compat_yaml_without_venv_path(tmp_path):
     """v4 yaml without venv_path field loads fine with venv_path=None."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "provider: claude\nschema_version: 4\nai_hats_dir: .agent/ai-hats\n"
     )
@@ -604,7 +606,7 @@ def test_project_config_backward_compat_yaml_without_venv_path(tmp_path):
 
 def test_project_config_rejects_invalid_venv_path(tmp_path):
     """Invalid venv_path (dotdot escape) raises ProjectConfigError on load."""
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     path.write_text(
         "provider: claude\nschema_version: 4\n"
         "ai_hats_dir: .agent/ai-hats\nvenv_path: '../escape'\n"
@@ -741,7 +743,7 @@ def test_project_config_v2_roundtrip(tmp_path):
             session_retro=SessionRetroConfig(policy=FeedbackPolicy.HINT),
         ),
     )
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     config.save(path)
 
     loaded = ProjectConfig.from_yaml(path)
@@ -753,7 +755,7 @@ def test_project_config_v2_roundtrip(tmp_path):
 
 def test_project_config_v2_default_feedback_not_serialized(tmp_path):
     config = ProjectConfig(provider="claude", active_role="assistant")
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     config.save(path)
 
     content = path.read_text()
@@ -767,7 +769,7 @@ def test_project_config_v2_non_default_feedback_serialized(tmp_path):
             session_retro=SessionRetroConfig(policy=FeedbackPolicy.OFF),
         ),
     )
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     config.save(path)
 
     import yaml as _yaml
@@ -784,7 +786,7 @@ def test_migration_v1_to_v2_merges_profile(tmp_path):
     """v1 ai-hats.yaml + profile.json → merged v2 ai-hats.yaml."""
     import json
 
-    yaml_path = tmp_path / "ai-hats.yaml"
+    yaml_path = tmp_path / PROJECT_CONFIG
     yaml_path.write_text("provider: gemini\ndefault_role: sre\nschema_version: 1\n")
 
     profile_path = tmp_path / "profile.json"
@@ -814,7 +816,7 @@ def test_migration_v1_to_v2_merges_profile(tmp_path):
 
 def test_migration_v1_without_profile(tmp_path):
     """v1 ai-hats.yaml without profile.json still migrates to v2."""
-    yaml_path = tmp_path / "ai-hats.yaml"
+    yaml_path = tmp_path / PROJECT_CONFIG
     yaml_path.write_text("provider: claude\ndefault_role: go-dev\nschema_version: 1\n")
 
     config = ProjectConfig.from_yaml(yaml_path)
@@ -827,7 +829,7 @@ def test_migration_v1_without_profile(tmp_path):
 def test_migration_idempotent(tmp_path):
     """Loading a v2 config does not re-migrate."""
     config = ProjectConfig(provider="claude", active_role="sre")
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     config.save(path)
 
     loaded = ProjectConfig.from_yaml(path)
@@ -895,8 +897,8 @@ def test_runtime_hooks_parses_pre_and_post_tool_use(tmp_path):
     )
     meta = SkillMetadata.from_yaml(path)
     assert meta.runtime_hooks == {
-        "PreToolUse": [RuntimeHook(matcher="Bash", script="hooks/guard.sh")],
-        "PostToolUse": [RuntimeHook(matcher="Edit|Write", script="hooks/after.sh")],
+        HOOK_PRE_TOOL_USE: [RuntimeHook(matcher="Bash", script="hooks/guard.sh")],
+        HOOK_POST_TOOL_USE: [RuntimeHook(matcher="Edit|Write", script="hooks/after.sh")],
     }
 
 
@@ -981,8 +983,8 @@ def test_runtime_hooks_same_script_across_events_ok(tmp_path):
         "      script: hooks/probe.sh\n"
     )
     meta = SkillMetadata.from_yaml(path)
-    assert meta.runtime_hooks["PreToolUse"][0].script == "hooks/probe.sh"
-    assert meta.runtime_hooks["PostToolUse"][0].script == "hooks/probe.sh"
+    assert meta.runtime_hooks[HOOK_PRE_TOOL_USE][0].script == "hooks/probe.sh"
+    assert meta.runtime_hooks[HOOK_POST_TOOL_USE][0].script == "hooks/probe.sh"
 
 
 # ---------- Attachment / TaskCard.attachments (HATS-402) ----------

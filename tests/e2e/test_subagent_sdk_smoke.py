@@ -36,6 +36,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
+from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, TRANSCRIPT_TXT
 
 
 pytestmark = pytest.mark.integration
@@ -90,7 +91,7 @@ def minimal_claude_project(tmp_path: Path) -> Path:
     )
 
     ProjectConfig(provider="claude", library_paths=[str(lib)]).save(
-        project / "ai-hats.yaml"
+        project / PROJECT_CONFIG
     )
 
     asm = Assembler(project)
@@ -129,7 +130,7 @@ def test_subagent_runner_via_sdk_smoke(
         model=PROBE_MODEL,
     )
 
-    metrics_path = session.session_dir / "metrics.json"
+    metrics_path = session.session_dir / METRICS_JSON
     assert metrics_path.is_file(), "metrics.json missing — finalize did not run"
     metrics = json.loads(metrics_path.read_text())
 
@@ -152,7 +153,7 @@ def test_subagent_runner_via_sdk_smoke(
     assert metrics.get("num_turns", 0) >= 1
     assert metrics.get("stop_reason"), "stop_reason missing from metrics.json"
 
-    transcript = (session.session_dir / "transcript.txt").read_text()
+    transcript = (session.session_dir / TRANSCRIPT_TXT).read_text()
     assert transcript.strip(), "transcript empty — formatter produced no output"
     # The agent was asked to reply "PONG"; allow some flexibility but
     # require recognizable echo (case-insensitive, may include

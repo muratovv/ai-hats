@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from ai_hats.models import ProjectConfig, ProjectConfigError
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def _write_yaml(path, data):
@@ -14,7 +15,7 @@ def _write_yaml(path, data):
 
 def test_migrate_v3_yaml_writes_ai_hats_dir_to_disk(tmp_path):
     """Loading a v3 yaml triggers migration that writes ai_hats_dir explicitly."""
-    yaml_path = tmp_path / "ai-hats.yaml"
+    yaml_path = tmp_path / PROJECT_CONFIG
     _write_yaml(yaml_path, {"schema_version": 3, "provider": "claude"})
 
     cfg = ProjectConfig.from_yaml(yaml_path)
@@ -29,7 +30,7 @@ def test_migrate_v3_yaml_writes_ai_hats_dir_to_disk(tmp_path):
 
 def test_v4_yaml_explicit_value_is_respected(tmp_path):
     """An explicit ai_hats_dir already in yaml is preserved, no rewrite."""
-    yaml_path = tmp_path / "ai-hats.yaml"
+    yaml_path = tmp_path / PROJECT_CONFIG
     _write_yaml(
         yaml_path,
         {
@@ -48,7 +49,7 @@ def test_v4_yaml_explicit_value_is_respected(tmp_path):
 
 def test_v4_yaml_missing_field_raises(tmp_path):
     """v4 yaml without ai_hats_dir is a loud error (user manually deleted it)."""
-    yaml_path = tmp_path / "ai-hats.yaml"
+    yaml_path = tmp_path / PROJECT_CONFIG
     _write_yaml(yaml_path, {"schema_version": 4, "provider": "claude"})
 
     with pytest.raises(ProjectConfigError) as excinfo:
@@ -90,7 +91,7 @@ def test_validator_rejects_dot():
 
 def test_v3_with_explicit_field_does_not_overwrite(tmp_path):
     """If a v3 yaml somehow already has ai_hats_dir, migration keeps it."""
-    yaml_path = tmp_path / "ai-hats.yaml"
+    yaml_path = tmp_path / PROJECT_CONFIG
     _write_yaml(
         yaml_path,
         {"schema_version": 3, "ai_hats_dir": "preexisting/value", "provider": "claude"},

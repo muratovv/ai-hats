@@ -11,12 +11,13 @@ from ai_hats.hooks_manager import (
     HookSyncStatus,
 )
 from ai_hats.models import ProjectConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def test_assembler_accepts_injected_hooks_manager(tmp_path, monkeypatch):
     """A1: HooksManager is injectable, so Assembler can be tested with a fake/mock."""
     monkeypatch.setenv("AI_HATS_USER_HOME", str(tmp_path / "home"))
-    ProjectConfig(provider="claude").save(tmp_path / "ai-hats.yaml")
+    ProjectConfig(provider="claude").save(tmp_path / PROJECT_CONFIG)
     sentinel = object()
     asm = Assembler(tmp_path, hooks=sentinel)
     assert asm.hooks is sentinel
@@ -24,7 +25,7 @@ def test_assembler_accepts_injected_hooks_manager(tmp_path, monkeypatch):
 
 def test_default_hooks_manager_is_wired_when_not_injected(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_USER_HOME", str(tmp_path / "home"))
-    ProjectConfig(provider="claude").save(tmp_path / "ai-hats.yaml")
+    ProjectConfig(provider="claude").save(tmp_path / PROJECT_CONFIG)
     asm = Assembler(tmp_path)
     from ai_hats.hooks_manager import HooksManager
 

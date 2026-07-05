@@ -11,6 +11,7 @@ from ai_hats.cli import main
 from ai_hats.resolver import LibraryResolver
 from ai_hats.models import ComponentType
 from ai_hats.paths import rules_dir, skills_dir, tasks_dir
+from ai_hats.paths import PROJECT_CONFIG
 
 
 @pytest.fixture(autouse=True)
@@ -57,7 +58,7 @@ def _pin_edge(project):
     the git ahead/diverged + in-place path these pre-channel tests assert,
     instead of the new default-stable PyPI path (which 404s — name unpublished
     until HATS-765). Channel-specific routing has its own dedicated tests."""
-    p = project / "ai-hats.yaml"
+    p = project / PROJECT_CONFIG
     p.write_text(p.read_text() + "harness:\n  channel: edge\n")
 
 
@@ -68,7 +69,7 @@ def test_set_creates_project(cli_project):
     result = runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
 
     assert result.exit_code == 0, result.output
-    assert (project / "ai-hats.yaml").exists()
+    assert (project / PROJECT_CONFIG).exists()
     assert (rules_dir(project)).is_dir()
     assert (skills_dir(project)).is_dir()
     assert (tasks_dir(project)).is_dir()
@@ -147,7 +148,7 @@ def test_init_unknown_role_fails_loud(cli_project):
     assert "Available roles" in result.output
     assert "Initialized" not in result.output
     # No filesystem artifacts should have been created.
-    assert not (project / "ai-hats.yaml").exists()
+    assert not (project / PROJECT_CONFIG).exists()
     assert not (project / ".agent").exists()
     assert not (project / "CLAUDE.md").exists()
 
@@ -161,7 +162,7 @@ def test_init_unknown_provider_fails_loud(cli_project):
     assert result.exit_code != 0, result.output
     assert "bogus-provider" in result.output
     assert "Initialized" not in result.output
-    assert not (project / "ai-hats.yaml").exists()
+    assert not (project / PROJECT_CONFIG).exists()
     assert not (project / ".agent").exists()
 
 
@@ -189,7 +190,7 @@ def test_set_unknown_provider_only_fails_loud(cli_project):
 
     from ai_hats.models import ProjectConfig
 
-    cfg_before = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    cfg_before = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert cfg_before.provider == "claude"
 
     result = runner.invoke(main, ["config", "set", "-p", "bogus-provider"])
@@ -197,7 +198,7 @@ def test_set_unknown_provider_only_fails_loud(cli_project):
     assert result.exit_code != 0, result.output
     assert "bogus-provider" in result.output
     # Provider in ai-hats.yaml must not have been overwritten.
-    cfg_after = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    cfg_after = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert cfg_after.provider == "claude"
 
 
@@ -322,7 +323,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
     # Init + set base role. HATS-407: CLI writes default_role, not active_role.
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
     original_claude = (project / "CLAUDE.md").read_text()
-    original_profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    original_profile = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert original_profile.default_role == "assistant"
     assert original_profile.active_role == ""  # runtime-only field
 
@@ -341,7 +342,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
 
     # Project files NOT modified
     assert (project / "CLAUDE.md").read_text() == original_claude
-    after_profile = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    after_profile = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert after_profile.default_role == "assistant"
     assert after_profile.active_role == ""
 
@@ -493,7 +494,7 @@ def test_migrate_cleanup_sweeps_stale_last_backup_pointer(tmp_path):
 
     from ai_hats.assembler import Assembler
 
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
     canon = tmp_path / ".agent" / "ai-hats"
@@ -523,7 +524,7 @@ def test_migrate_cleanup_sweeps_stale_last_backup_as_directory(tmp_path):
     migration), `_cleanup_obsolete_files` removes the directory."""
     from ai_hats.assembler import Assembler
 
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
     canon = tmp_path / ".agent" / "ai-hats"
@@ -543,7 +544,7 @@ def test_migrate_cleanup_ignores_non_tmp_pointer_target(tmp_path):
     Pointer file itself is still removed."""
     from ai_hats.assembler import Assembler
 
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
     canon = tmp_path / ".agent" / "ai-hats"
@@ -724,7 +725,7 @@ def test_init_task_prefix_flag(cli_project):
     assert "Task prefix" in result.output
     assert "ACME" in result.output
 
-    raw = yaml.safe_load((project / "ai-hats.yaml").read_text())
+    raw = yaml.safe_load((project / PROJECT_CONFIG).read_text())
     assert raw["task_prefix"] == "ACME"
 
     r = runner.invoke(main, ["task", "create", "First"])
@@ -739,7 +740,7 @@ def test_init_task_prefix_rejects_bad_format(cli_project):
     result = runner.invoke(main, ["self", "init", "-p", "claude", "--task-prefix", "bad prefix"])
     assert result.exit_code != 0, result.output
     assert "task_prefix" in result.output.lower() or "Invalid" in result.output
-    assert not (project / "ai-hats.yaml").exists()
+    assert not (project / PROJECT_CONFIG).exists()
     assert not (project / ".agent").exists()
 
 
@@ -754,7 +755,7 @@ def test_init_task_prefix_reinit_conflict(cli_project):
     assert result.exit_code != 0, result.output
     assert "conflict" in result.output.lower() or "ACME" in result.output
 
-    raw = yaml.safe_load((project / "ai-hats.yaml").read_text())
+    raw = yaml.safe_load((project / PROJECT_CONFIG).read_text())
     assert raw["task_prefix"] == "ACME"
     # Re-running with the SAME prefix is a no-op.
     r = runner.invoke(main, ["self", "init", "-p", "claude", "--task-prefix", "ACME"])
@@ -773,14 +774,14 @@ def test_init_idempotent_on_existing_yaml(cli_project):
         ["config", "feedback", "session-retro", "smart", "--threshold", "turns=99,tool_calls=99"],
     )
 
-    yaml_before = (project / "ai-hats.yaml").read_text()
+    yaml_before = (project / PROJECT_CONFIG).read_text()
     assert "99" in yaml_before
 
     # Re-init must not modify an already-existing yaml.
     r = runner.invoke(main, ["self", "init", "-p", "claude"])
     assert r.exit_code == 0, r.output
 
-    yaml_after = (project / "ai-hats.yaml").read_text()
+    yaml_after = (project / PROJECT_CONFIG).read_text()
     assert yaml_before == yaml_after, "re-init should not modify an existing yaml"
 
 
@@ -791,7 +792,7 @@ def test_task_prefix_honored_from_yaml(cli_project):
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
-    cfg_path = project / "ai-hats.yaml"
+    cfg_path = project / PROJECT_CONFIG
     raw = yaml.safe_load(cfg_path.read_text()) or {}
     raw["task_prefix"] = "ACME"
     cfg_path.write_text(yaml.dump(raw))
@@ -816,7 +817,7 @@ def test_task_prefix_auto_detected_from_legacy_tasks(cli_project):
     (tasks_dir(project) / legacy_id / "task.yaml").write_text(
         "id: HATS-042\ntitle: Legacy\nstate: done\npriority: low\ncreated: 2025-01-01T00:00:00Z\nupdated: 2025-01-01T00:00:00Z\n"
     )
-    cfg_path = project / "ai-hats.yaml"
+    cfg_path = project / PROJECT_CONFIG
     raw = yaml.safe_load(cfg_path.read_text()) or {}
     raw.pop("task_prefix", None)
     cfg_path.write_text(yaml.dump(raw))
@@ -1044,7 +1045,7 @@ def test_config_set_channel_edge_roundtrips(cli_project):
     runner.invoke(main, ["config", "set", "-p", "claude"])
     r = runner.invoke(main, ["config", "set", "--channel", "edge"])
     assert r.exit_code == 0, r.output
-    raw = yaml.safe_load((project / "ai-hats.yaml").read_text())
+    raw = yaml.safe_load((project / PROJECT_CONFIG).read_text())
     assert raw["harness"] == {"channel": "edge"}
     s = runner.invoke(main, ["config", "status"])
     assert s.exit_code == 0, s.output
@@ -1058,7 +1059,7 @@ def test_config_set_channel_local_with_path(cli_project):
     runner.invoke(main, ["config", "set", "-p", "claude"])
     r = runner.invoke(main, ["config", "set", "--channel", "local", "--path", "."])
     assert r.exit_code == 0, r.output
-    raw = yaml.safe_load((project / "ai-hats.yaml").read_text())
+    raw = yaml.safe_load((project / PROJECT_CONFIG).read_text())
     assert raw["harness"] == {"channel": "local", "path": "."}
 
 
@@ -1068,7 +1069,7 @@ def test_config_set_stable_is_byte_clean(cli_project):
     r = runner.invoke(main, ["config", "set", "--channel", "stable"])
     assert r.exit_code == 0, r.output
     # stable is the default → omitted from yaml (no spurious harness: block).
-    assert "harness" not in (project / "ai-hats.yaml").read_text()
+    assert "harness" not in (project / PROJECT_CONFIG).read_text()
 
 
 def test_config_set_repo_rejected_without_edge(cli_project):

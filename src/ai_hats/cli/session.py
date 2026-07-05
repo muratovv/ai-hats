@@ -10,7 +10,16 @@ from pathlib import Path
 
 import click
 
-from ..paths import runs_dir
+from ..paths import (
+    AUDIT_MD,
+    META_PROMPT_TXT,
+    METRICS_JSON,
+    REASONING_LOG,
+    TRACE_LOG,
+    TRANSCRIPT_TXT,
+    USAGE_JSON,
+    runs_dir,
+)
 from ._helpers import _project_dir, console, exec_claude_with_retro
 
 
@@ -403,7 +412,7 @@ def session_show(session_id: str):
     _render_usage(s)
 
     artifacts = []
-    for name in ("audit.md", "metrics.json", "usage.json", "trace.log", "transcript.txt", "reasoning.log", "meta_prompt.txt"):
+    for name in (AUDIT_MD, METRICS_JSON, USAGE_JSON, TRACE_LOG, TRANSCRIPT_TXT, REASONING_LOG, META_PROMPT_TXT):
         p = s.session_dir / name
         if p.exists() and p.stat().st_size > 0:
             artifacts.append(f"{name} ({p.stat().st_size:,}b)")

@@ -35,6 +35,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.paths import CLAUDE_PROJECT_DIR_VAR
+from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -114,7 +115,7 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
     by_event = _managed_entries(settings)
 
     # A. PreToolUse managed entry for the skill, tagged with the matcher.
-    pre = by_event.get("PreToolUse", [])
+    pre = by_event.get(HOOK_PRE_TOOL_USE, [])
     sp = [e for e in pre if e.get("_ai_hats_managed") == "ai-hats:e2e-rthook:PreToolUse:Bash"]
     assert len(sp) == 1, f"missing PreToolUse skill entry in {pre}"
     assert sp[0]["matcher"] == "Bash"
@@ -123,7 +124,7 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
     assert any(e.get("_ai_hats_managed") == "ai-hats:hats-437" for e in pre)
 
     # A. PostToolUse managed entry under its own event.
-    post = by_event.get("PostToolUse", [])
+    post = by_event.get(HOOK_POST_TOOL_USE, [])
     pe = [
         e for e in post
         if e.get("_ai_hats_managed") == "ai-hats:e2e-rthook:PostToolUse:Edit|Write"

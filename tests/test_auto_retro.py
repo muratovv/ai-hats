@@ -8,6 +8,8 @@ import yaml
 
 from ai_hats.retro.auto_retro import should_run
 from ai_hats.paths import runs_dir
+from ai_hats.constants import ENV_SESSION_ID, ENV_SKIP_RETRO
+from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, RETRO_LOG, session_dirname
 
 
 def _write_config(path, *, policy="smart", min_turns=5, min_tool_calls=10):
@@ -39,8 +41,8 @@ def _write_metrics(path, *, turns=6, tool_calls=15):
 
 class TestPolicyOff:
     def test_skip(self, tmp_path):
-        config = tmp_path / "ai-hats.yaml"
-        metrics = tmp_path / "metrics.json"
+        config = tmp_path / PROJECT_CONFIG
+        metrics = tmp_path / METRICS_JSON
         _write_config(config, policy="off")
         _write_metrics(metrics)
 
@@ -50,8 +52,8 @@ class TestPolicyOff:
 
 class TestPolicyAlways:
     def test_run(self, tmp_path):
-        config = tmp_path / "ai-hats.yaml"
-        metrics = tmp_path / "metrics.json"
+        config = tmp_path / PROJECT_CONFIG
+        metrics = tmp_path / METRICS_JSON
         _write_config(config, policy="always")
         _write_metrics(metrics, turns=1, tool_calls=0)
 
@@ -61,8 +63,8 @@ class TestPolicyAlways:
 
 class TestPolicySmart:
     def test_skip_both_below(self, tmp_path):
-        config = tmp_path / "ai-hats.yaml"
-        metrics = tmp_path / "metrics.json"
+        config = tmp_path / PROJECT_CONFIG
+        metrics = tmp_path / METRICS_JSON
         _write_config(config, min_turns=5, min_tool_calls=10)
         _write_metrics(metrics, turns=3, tool_calls=5)
 
@@ -70,8 +72,8 @@ class TestPolicySmart:
         assert action == "skip"
 
     def test_run_turns_met(self, tmp_path):
-        config = tmp_path / "ai-hats.yaml"
-        metrics = tmp_path / "metrics.json"
+        config = tmp_path / PROJECT_CONFIG
+        metrics = tmp_path / METRICS_JSON
         _write_config(config, min_turns=5, min_tool_calls=10)
         _write_metrics(metrics, turns=7, tool_calls=5)
 
@@ -79,8 +81,8 @@ class TestPolicySmart:
         assert action == "run"
 
     def test_run_tool_calls_met(self, tmp_path):
-        config = tmp_path / "ai-hats.yaml"
-        metrics = tmp_path / "metrics.json"
+        config = tmp_path / PROJECT_CONFIG
+        metrics = tmp_path / METRICS_JSON
         _write_config(config, min_turns=5, min_tool_calls=10)
         _write_metrics(metrics, turns=3, tool_calls=15)
 
@@ -88,8 +90,8 @@ class TestPolicySmart:
         assert action == "run"
 
     def test_run_both_met(self, tmp_path):
-        config = tmp_path / "ai-hats.yaml"
-        metrics = tmp_path / "metrics.json"
+        config = tmp_path / PROJECT_CONFIG
+        metrics = tmp_path / METRICS_JSON
         _write_config(config, min_turns=5, min_tool_calls=10)
         _write_metrics(metrics, turns=10, tool_calls=20)
 
@@ -99,8 +101,8 @@ class TestPolicySmart:
 
 class TestPolicyHint:
     def test_hint_when_threshold_met(self, tmp_path):
-        config = tmp_path / "ai-hats.yaml"
-        metrics = tmp_path / "metrics.json"
+        config = tmp_path / PROJECT_CONFIG
+        metrics = tmp_path / METRICS_JSON
         _write_config(config, policy="hint", min_turns=5)
         _write_metrics(metrics, turns=10)
 
@@ -108,8 +110,8 @@ class TestPolicyHint:
         assert action == "hint"
 
     def test_skip_when_below(self, tmp_path):
-        config = tmp_path / "ai-hats.yaml"
-        metrics = tmp_path / "metrics.json"
+        config = tmp_path / PROJECT_CONFIG
+        metrics = tmp_path / METRICS_JSON
         _write_config(config, policy="hint", min_turns=5, min_tool_calls=10)
         _write_metrics(metrics, turns=2, tool_calls=3)
 
@@ -121,14 +123,14 @@ class TestEdgeCases:
     def test_missing_config_uses_defaults(self, tmp_path):
         """No ai-hats.yaml → defaults (smart, threshold 5/10)."""
         config = tmp_path / "nonexistent.yaml"
-        metrics = tmp_path / "metrics.json"
+        metrics = tmp_path / METRICS_JSON
         _write_metrics(metrics, turns=10, tool_calls=20)
 
         action, _ = should_run(config, metrics)
         assert action == "run"
 
     def test_missing_metrics_skip(self, tmp_path):
-        config = tmp_path / "ai-hats.yaml"
+        config = tmp_path / PROJECT_CONFIG
         metrics = tmp_path / "nonexistent.json"
         _write_config(config, policy="smart")
 
@@ -136,8 +138,8 @@ class TestEdgeCases:
         assert action == "skip"
 
     def test_malformed_metrics_skip(self, tmp_path):
-        config = tmp_path / "ai-hats.yaml"
-        metrics = tmp_path / "metrics.json"
+        config = tmp_path / PROJECT_CONFIG
+        metrics = tmp_path / METRICS_JSON
         _write_config(config, policy="smart")
         metrics.write_text("not json{{{")
 
@@ -147,8 +149,8 @@ class TestEdgeCases:
 
 def _setup_project(tmp_path, session_id="SID", **config_kwargs):
     """Create project dir with ai-hats.yaml + metrics.json for make_decision tests."""
-    _write_config(tmp_path / "ai-hats.yaml", **config_kwargs)
-    metrics = runs_dir(tmp_path) / f"session_{session_id}" / "metrics.json"
+    _write_config(tmp_path / PROJECT_CONFIG, **config_kwargs)
+    metrics = runs_dir(tmp_path) / session_dirname(session_id) / METRICS_JSON
     metrics.parent.mkdir(parents=True)
     return metrics
 
@@ -159,7 +161,7 @@ class TestWriteRetroLog:
 
         write_retro_log(tmp_path, "SID", "runtime", "decision", "skip: below threshold")
 
-        log = runs_dir(tmp_path) / "session_SID" / "retro.log"
+        log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
         assert log.exists()
         line = log.read_text().rstrip("\n")
         parts = line.split("\t")
@@ -175,7 +177,7 @@ class TestWriteRetroLog:
         write_retro_log(tmp_path, "SID", "hook", "spawn", "pid=1234")
         write_retro_log(tmp_path, "SID", "builder", "saved", "/path/to/retro.md")
 
-        log = runs_dir(tmp_path) / "session_SID" / "retro.log"
+        log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
         lines = log.read_text().strip().split("\n")
         assert len(lines) == 3
         assert "decision" in lines[0] and "runtime" in lines[0]
@@ -186,7 +188,7 @@ class TestWriteRetroLog:
         from ai_hats.retro.auto_retro import write_retro_log
 
         write_retro_log(tmp_path, "SID", "hook", "skip", "a\tb\nc")
-        line = (runs_dir(tmp_path) / "session_SID" / "retro.log").read_text().rstrip("\n")
+        line = (runs_dir(tmp_path) / "session_SID" / RETRO_LOG).read_text().rstrip("\n")
         # Split on the SEPARATOR tabs (4 parts), then check the last field.
         parts = line.split("\t")
         assert parts[3] == "a b c"
@@ -271,10 +273,10 @@ class TestMainHookWritesLog:
         metrics.write_text(json.dumps({"turns": 0, "tool_calls": 0}))
 
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("AI_HATS_SESSION_ID", "SID")
+        monkeypatch.setenv(ENV_SESSION_ID, "SID")
         auto_retro.main()
 
-        log = runs_dir(tmp_path) / "session_SID" / "retro.log"
+        log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
         assert log.exists()
         content = log.read_text()
         assert "hook" in content
@@ -288,10 +290,10 @@ class TestMainHookWritesLog:
         metrics.write_text(json.dumps({"turns": 10, "tool_calls": 20}))
 
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("AI_HATS_SESSION_ID", "SID")
+        monkeypatch.setenv(ENV_SESSION_ID, "SID")
         auto_retro.main()
 
-        log = runs_dir(tmp_path) / "session_SID" / "retro.log"
+        log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
         content = log.read_text()
         assert "hint" in content
         assert "threshold met" in content
@@ -316,8 +318,8 @@ class TestRecursionGuard:
 
         # No config / metrics — the guard fires before policy logic runs.
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("AI_HATS_SESSION_ID", "SID")
-        monkeypatch.setenv("HATS_SKIP_RETRO", "1")
+        monkeypatch.setenv(ENV_SESSION_ID, "SID")
+        monkeypatch.setenv(ENV_SKIP_RETRO, "1")
 
         # Sentinel — should_run must NOT be reached.
         called: list[bool] = []
@@ -329,7 +331,7 @@ class TestRecursionGuard:
         auto_retro.main()
 
         assert called == []
-        log = runs_dir(tmp_path) / "session_SID" / "retro.log"
+        log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
         content = log.read_text()
         assert "auto_retro\tskip\trecursion-guard" in content
 
@@ -350,9 +352,9 @@ class TestRecursionGuard:
         monkeypatch.setattr("subprocess.Popen", fake_popen)
         auto_retro._spawn_session_reviewer_background(tmp_path, "SID")
 
-        assert captured["env"]["HATS_SKIP_RETRO"] == "1"
+        assert captured["env"][ENV_SKIP_RETRO] == "1"
         # ai_hats.cli.reflect_session_main is the harness entry-point.
         assert "ai_hats.cli.reflect_session_main" in captured["cmd"]
         assert "SID" in captured["cmd"]
-        log = runs_dir(tmp_path) / "session_SID" / "retro.log"
+        log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
         assert "session-reviewer\tspawn" in log.read_text()

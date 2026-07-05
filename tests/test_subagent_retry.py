@@ -23,6 +23,7 @@ from ai_hats.harness.errors import (
 )
 from ai_hats.pipeline.harness_policy import HarnessPolicy, TimeoutPolicy
 from ai_hats.runtime import SUBAGENT_SUBPROCESS_TIMEOUT_S, SubAgentRunner
+from ai_hats.paths import METRICS_JSON
 
 
 # ---- fake sessions ----
@@ -35,13 +36,13 @@ class _FakeSession:
 
     @property
     def metrics_path(self) -> Path:
-        return self.session_dir / "metrics.json"
+        return self.session_dir / METRICS_JSON
 
 
 def _make_session(tmp_path: Path, sid: str, *, metrics: dict) -> _FakeSession:
     sdir = tmp_path / sid
     sdir.mkdir(exist_ok=True)
-    (sdir / "metrics.json").write_text(json.dumps(metrics))
+    (sdir / METRICS_JSON).write_text(json.dumps(metrics))
     return _FakeSession(session_id=sid, session_dir=sdir)
 
 

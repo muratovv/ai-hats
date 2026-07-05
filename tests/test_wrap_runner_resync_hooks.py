@@ -18,6 +18,7 @@ from ai_hats.assembler import Assembler
 from ai_hats.hooks_manager import GITHOOKS_DIR
 from ai_hats.models import ProjectConfig
 from ai_hats.wrap_runner import WrapRunner
+from ai_hats.paths import PROJECT_CONFIG
 
 pytestmark = pytest.mark.integration
 
@@ -92,7 +93,7 @@ def project_with_hook_role(tmp_path):
     )
 
     config = ProjectConfig(provider="gemini", library_paths=[str(lib)])
-    config.save(project / "ai-hats.yaml")
+    config.save(project / PROJECT_CONFIG)
 
     # Install hooks + persist active role so WrapRunner(project) resolves both
     # from ai-hats.yaml (it builds Assembler(project_dir) without explicit paths).
@@ -137,7 +138,7 @@ def test_resync_is_failopen_on_roleless_project(tmp_path):
     project = tmp_path / "plain"
     project.mkdir()
     _git_init(project)
-    ProjectConfig(provider="gemini").save(project / "ai-hats.yaml")
+    ProjectConfig(provider="gemini").save(project / PROJECT_CONFIG)
     assert _runner(project)._resync_managed_hooks() == []
 
 
@@ -148,7 +149,7 @@ def test_resync_failure_returns_warn_notice_and_traces(tmp_path):
     project = tmp_path / "plain"
     project.mkdir()
     _git_init(project)
-    ProjectConfig(provider="gemini").save(project / "ai-hats.yaml")
+    ProjectConfig(provider="gemini").save(project / PROJECT_CONFIG)
 
     runner = _runner(project)
     runner.hooks.sync_hooks = lambda *a, **k: (_ for _ in ()).throw(

@@ -27,6 +27,7 @@ class EmitStdout(Step):
     """
 
     failure_policy = "halt"
+    _NAME = "emit_stdout"
 
     def __init__(self, params: Mapping[str, Any] | None = None) -> None:
         if not params or "key" not in params:
@@ -41,7 +42,7 @@ class EmitStdout(Step):
     @property
     def io(self) -> StepIO:
         return StepIO(
-            name="emit_stdout",
+            name=self._NAME,
             requires=frozenset({self._key}),
             optional=frozenset(),
             produces=frozenset(),

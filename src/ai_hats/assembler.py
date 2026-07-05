@@ -41,7 +41,7 @@ from .paths import (
     skills_dir as _lib_skills_dir,
     user_home,
 )
-from .paths.constants import LIBRARIES_DIRNAME
+from .paths.constants import LIBRARIES_DIRNAME, PROJECT_CONFIG
 from .placeholders import expand_path_placeholders
 from .plugin_dir import drop_legacy_claude_publish, drop_legacy_skills_mirror
 from ai_hats_core.safe_delete import discard as _safe_discard
@@ -60,8 +60,8 @@ from .constants import (
     CANONICAL_DIR,
     CANONICAL_MANIFEST,
     GITIGNORE_FILE,
-    PROJECT_CONFIG,
     USER_RULES_SUBDIR,
+    PROVIDER_GEMINI,
 )
 
 from typing import TYPE_CHECKING, Any
@@ -481,7 +481,7 @@ class Assembler:
             # rejected without it). Pick the requested value, fall back
             # to whatever's already on the config, finally gemini.
             if not self.config_path.exists() and not self.project_config.provider:
-                early_delta["provider"] = provider or "gemini"
+                early_delta["provider"] = provider or PROVIDER_GEMINI
             self.save_config(**early_delta)
 
         # HATS-312 / HATS-313 / HATS-314: all framework roots live under
@@ -504,7 +504,7 @@ class Assembler:
         # Create/update ai-hats.yaml (delta-write, HATS-526)
         delta: dict[str, Any] = {}
         if greenfield:
-            delta["provider"] = provider or "gemini"
+            delta["provider"] = provider or PROVIDER_GEMINI
             if role:
                 delta["default_role"] = role
             # HATS-471: greenfield projects start at the latest migration

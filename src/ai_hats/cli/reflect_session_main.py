@@ -22,6 +22,13 @@ from pydantic import ValidationError
 from ..harness.errors import HarnessReliabilityError
 from ..hypothesis import HypothesisStore, Proposal, ProposalStore, next_proposal_id
 from ..pipeline.harness import PipelineHarness
+from ..pipeline.keys import (
+    KEY_MAX_RETRIES,
+    KEY_PROJECT_DIR,
+    KEY_REVIEW_PATH,
+    KEY_SESSION_ID,
+    PIPELINE_REFLECT_SESSION,
+)
 from ..retro.session_review_runner import SessionReviewError
 
 
@@ -49,13 +56,13 @@ def main() -> int:
     harness_error: HarnessReliabilityError | None = None
     saved_path: Path | None = None
     try:
-        with PipelineHarness("reflect-session", project_dir) as h:
+        with PipelineHarness(PIPELINE_REFLECT_SESSION, project_dir) as h:
             final = h.run({
-                "session_id": session_id,
-                "project_dir": project_dir,
-                "max_retries": max_retries,
+                KEY_SESSION_ID: session_id,
+                KEY_PROJECT_DIR: project_dir,
+                KEY_MAX_RETRIES: max_retries,
             })
-            saved_path = final.get("review_path")
+            saved_path = final.get(KEY_REVIEW_PATH)
     except HarnessReliabilityError as exc:
         # HATS-378: harness-layer failure (timeout, zero-output guard) →
         # file under target=harness-incident, NOT session-reviewer.

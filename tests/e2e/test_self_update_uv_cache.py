@@ -48,6 +48,8 @@ from pathlib import Path
 import pytest
 
 from _helpers.project import pin_edge_channel
+from ai_hats.paths import ENV_AI_HATS_VENV
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 pytestmark = pytest.mark.install_heavy  # HATS-678: real install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
@@ -112,10 +114,10 @@ def test_e2e_self_update_completes_via_uv(tmp_path: Path) -> None:
 
     # ----- bootstrap env: dedicated uv cache, isolated from host -----
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(src_repo)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(src_repo)
     env["UV_CACHE_DIR"] = str(uv_cache)
-    env.pop("AI_HATS_VENV", None)
+    env.pop(ENV_AI_HATS_VENV, None)
     env.pop("PYTHONPATH", None)
 
     # ----- bootstrap: install launcher + first self update -----
@@ -124,7 +126,7 @@ def test_e2e_self_update_completes_via_uv(tmp_path: Path) -> None:
          cwd=project, env=env, timeout=300)  # HATS-675: 300s = -n8 gate suite norm
 
     # Switch to git+file:// so --revision is reachable.
-    env["AI_HATS_REPO_URL"] = f"git+file://{src_repo}"
+    env[ENV_REPO_URL] = f"git+file://{src_repo}"
 
     # ----- assertion 1: production code path exits 0 -----
     _run(

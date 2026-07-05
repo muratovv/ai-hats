@@ -14,6 +14,7 @@ import yaml
 from ai_hats.assembler import Assembler
 from ai_hats.migrations import MIGRATIONS, Migration, latest_step, run_pending
 from ai_hats.models import ProjectConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 
 # ----- registry shape ------------------------------------------------------
@@ -67,7 +68,7 @@ def _bootstrap_project(tmp_path, migration_step: int) -> Assembler:
     project = tmp_path / "project"
     project.mkdir()
     cfg = ProjectConfig(provider="gemini", migration_step=migration_step)
-    cfg.save(project / "ai-hats.yaml")
+    cfg.save(project / PROJECT_CONFIG)
     return Assembler(project)
 
 
@@ -257,7 +258,7 @@ def test_migration_step_defaults_to_zero():
 
 
 def test_migration_step_round_trips_through_yaml(tmp_path):
-    path = tmp_path / "ai-hats.yaml"
+    path = tmp_path / PROJECT_CONFIG
     cfg = ProjectConfig(provider="gemini", migration_step=4)
     cfg.save(path)
 
@@ -280,7 +281,7 @@ def test_init_seeds_migration_step_to_latest_for_greenfield(tmp_path):
     asm = Assembler(project)
     asm.init()
 
-    cfg = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    cfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert cfg.migration_step == latest_step()
 
 
@@ -292,11 +293,11 @@ def test_existing_project_without_migration_step_seeds_to_zero(tmp_path):
     project.mkdir()
     # Hand-craft a v4 yaml WITHOUT migration_step (representing an
     # upgrade from a release that pre-dates HATS-471).
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "ai_hats_dir: .agent/ai-hats\n"
         "provider: gemini\n"
     )
 
-    cfg = ProjectConfig.from_yaml(project / "ai-hats.yaml")
+    cfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert cfg.migration_step == 0  # seeds the registry replay

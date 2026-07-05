@@ -32,6 +32,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
+from ai_hats.paths import PROJECT_CONFIG
 
 # smoke: also run by the merge-to-master CI gate (HATS-783)
 pytestmark = [pytest.mark.integration, pytest.mark.smoke]
@@ -63,7 +64,7 @@ def project(tmp_path: Path) -> Path:
     worktree setup)."""
     p = tmp_path / "project"
     p.mkdir()
-    ProjectConfig(provider="claude", library_paths=[]).save(p / "ai-hats.yaml")
+    ProjectConfig(provider="claude", library_paths=[]).save(p / PROJECT_CONFIG)
     Assembler(p).init()
     return p
 

@@ -136,6 +136,8 @@ def _isolate_ai_hats_dir(monkeypatch):
     re-set it via ``monkeypatch.setenv`` (runs after this clear, undone at
     teardown), so they are unaffected.
     """
+    # raw names on purpose: pytester copies this conftest into a tmp dir where
+    # ai_hats resolves to the editable install, which may predate the constants
     monkeypatch.delenv("AI_HATS_DIR", raising=False)
     monkeypatch.delenv("AI_HATS_PROJECT_DIR", raising=False)  # HATS-897 pair var
     yield

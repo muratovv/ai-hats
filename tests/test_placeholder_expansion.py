@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.placeholders import expand_path_placeholders
+from ai_hats.paths import ENV_AI_HATS_DIR, PROJECT_CONFIG
 
 
 def test_default_substitutes_to_relative_agent_path(tmp_path: Path) -> None:
@@ -30,7 +31,7 @@ def test_idempotent(tmp_path: Path) -> None:
 
 def test_respects_custom_ai_hats_dir_yaml(tmp_path: Path) -> None:
     # Custom ai_hats_dir via ai-hats.yaml.
-    (tmp_path / "ai-hats.yaml").write_text("ai_hats_dir: custom/hats\n")
+    (tmp_path / PROJECT_CONFIG).write_text("ai_hats_dir: custom/hats\n")
     out = expand_path_placeholders("path: <ai_hats_dir>/state", tmp_path)
     assert "custom/hats/state" in out
     assert "<ai_hats_dir>" not in out
@@ -40,7 +41,7 @@ def test_respects_env_override_inside_project(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     target = tmp_path / "env-hats"
-    monkeypatch.setenv("AI_HATS_DIR", str(target))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(target))
     out = expand_path_placeholders("<ai_hats_dir>/foo", tmp_path)
     assert "<ai_hats_dir>" not in out
     # Absolute env path is outside project_dir relativization → falls back to
@@ -54,7 +55,7 @@ def test_env_outside_project_falls_back_to_absolute(
     project = tmp_path / "proj"
     project.mkdir()
     outside = tmp_path / "elsewhere"
-    monkeypatch.setenv("AI_HATS_DIR", str(outside))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(outside))
     out = expand_path_placeholders("<ai_hats_dir>/x", project)
     assert "<ai_hats_dir>" not in out
     assert str(outside).replace("\\", "/") + "/x" in out

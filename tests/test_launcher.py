@@ -13,6 +13,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from ai_hats.constants import ENV_REPO_URL
+from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 
 
 pytestmark = pytest.mark.integration
@@ -114,7 +116,7 @@ def _fake_uv_with_venv_creator(stub_dir: Path) -> Path:
 def _run(args, *, cwd, env=None):
     base_env = os.environ.copy()
     # Default: clean AI_HATS_VENV unless caller explicitly sets it.
-    base_env.pop("AI_HATS_VENV", None)
+    base_env.pop(ENV_AI_HATS_VENV, None)
     if env:
         base_env.update(env)
     return subprocess.run(
@@ -144,7 +146,7 @@ def test_resolve_default_no_yaml_no_env_missing_venv(tmp_path):
 def test_fallback_hint_is_update_when_yaml_present(tmp_path):
     """Initialized project (ai-hats.yaml present) whose default venv is missing
     → heal-recovery hint stays `self update`, not a re-init (HATS-612)."""
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
     )
     res = _run(["status"], cwd=tmp_path)
@@ -167,7 +169,7 @@ def test_resolve_yaml_relative_venv_path(tmp_path):
     """yaml.venv_path relative → resolved against $(pwd)."""
     venv = tmp_path / "myvenv"
     _fake_venv(venv, ai_hats_echo="rel-stub")
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
         "venv_path: myvenv\nprovider: claude\n"
     )
@@ -180,7 +182,7 @@ def test_resolve_yaml_absolute_venv_path(tmp_path):
     """yaml.venv_path absolute → used as-is."""
     venv = tmp_path / "abs-venv"
     _fake_venv(venv, ai_hats_echo="abs-stub")
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
         f"venv_path: {venv}\nprovider: claude\n"
     )
@@ -193,7 +195,7 @@ def test_resolve_yaml_with_inline_comment_stripped(tmp_path):
     """yaml.venv_path with trailing `# comment` → comment dropped."""
     venv = tmp_path / "commented"
     _fake_venv(venv, ai_hats_echo="cmt-stub")
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
         "venv_path: commented  # my override\nprovider: claude\n"
     )
@@ -208,11 +210,11 @@ def test_env_overrides_yaml(tmp_path):
     env_venv = tmp_path / "from-env"
     _fake_venv(yaml_venv, ai_hats_echo="yaml-stub")
     _fake_venv(env_venv, ai_hats_echo="env-stub")
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
         "venv_path: from-yaml\nprovider: claude\n"
     )
-    res = _run(["whoami"], cwd=tmp_path, env={"AI_HATS_VENV": str(env_venv)})
+    res = _run(["whoami"], cwd=tmp_path, env={ENV_AI_HATS_VENV: str(env_venv)})
     assert res.returncode == 0, res.stderr
     assert "env-stub: whoami" in res.stdout
 
@@ -281,7 +283,7 @@ def test_self_update_refuses_recreate_override(tmp_path):
     """Override venv broken → exits 1 with user-owned explanation."""
     override = tmp_path / "user-venv"
     override.mkdir()  # exists but no bin/python — broken
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
         f"venv_path: {override}\nprovider: claude\n"
     )
@@ -301,7 +303,7 @@ def test_self_update_with_local_path_repo_url(tmp_path):
     fake_repo.mkdir()
     env = {
         "PATH": f"{stub_dir}:{os.environ['PATH']}",
-        "AI_HATS_REPO_URL": str(fake_repo),
+        ENV_REPO_URL: str(fake_repo),
     }
     res = _run(["self", "update"], cwd=tmp_path, env=env)
     assert res.returncode == 0, res.stderr
@@ -320,7 +322,7 @@ def test_self_update_channel_local_heals_editable(tmp_path):
     stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
     src = tmp_path / "src-tree"
     src.mkdir()
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
         f"harness:\n  channel: local\n  path: {src}\n"
     )
@@ -338,7 +340,7 @@ def test_self_update_channel_local_default_path_is_editable(tmp_path):
     """HATS-766: `channel: local` with no explicit `path` → editable install of
     the project root (the resolve_channel default), still `-e`."""
     stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
         "harness:\n  channel: local\n"
     )
@@ -354,7 +356,7 @@ def test_self_update_channel_edge_heals_non_editable(tmp_path):
     """HATS-766 branch boundary: `channel: edge` keeps the non-editable
     PIP_TARGET rebuild — only `local` heals editable."""
     stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
-    (tmp_path / "ai-hats.yaml").write_text(
+    (tmp_path / PROJECT_CONFIG).write_text(
         "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: claude\n"
         "harness:\n  channel: edge\n"
     )
@@ -483,7 +485,7 @@ def test_env_venv_beats_versions_current(tmp_path):
     _versions_layout(tmp_path, "cafef00d", ai_hats_echo="ver-stub")
     env_venv = tmp_path / "user-owned"
     _fake_venv(env_venv, ai_hats_echo="env-stub")
-    res = _run(["status"], cwd=tmp_path, env={"AI_HATS_VENV": str(env_venv)})
+    res = _run(["status"], cwd=tmp_path, env={ENV_AI_HATS_VENV: str(env_venv)})
     assert res.returncode == 0, res.stderr
     assert "env-stub: status" in res.stdout
 

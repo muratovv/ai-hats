@@ -50,6 +50,8 @@ from pathlib import Path
 import pytest
 
 from _helpers.project import pin_edge_channel
+from ai_hats.paths import ENV_AI_HATS_VENV
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
@@ -137,9 +139,9 @@ def test_e2e_update_banner_fires_for_non_editable_install(tmp_path: Path) -> Non
 
     # ----- bootstrap launcher + non-editable install from src-repo -----
     env = os.environ.copy()
-    env["AI_HATS_LAUNCHER_DEST"] = str(launcher_dest)
-    env["AI_HATS_REPO_URL"] = str(src_repo)
-    env.pop("AI_HATS_VENV", None)
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(src_repo)
+    env.pop(ENV_AI_HATS_VENV, None)
     # The test runner sets PYTHONPATH=src to point at the worktree's
     # source; that would shadow the venv install and break the
     # non-editable-install premise.
@@ -172,7 +174,7 @@ def test_e2e_update_banner_fires_for_non_editable_install(tmp_path: Path) -> Non
     # unreachable. This is the regime HATS-458 targets.
 
     # ----- swap probe target + run background check ----
-    env["AI_HATS_REPO_URL"] = f"git+file://{fake_remote}"
+    env[ENV_REPO_URL] = f"git+file://{fake_remote}"
     _run(
         [str(venv_python), "-m", "ai_hats.update_check", str(project)],
         cwd=project, env=env, timeout=60,

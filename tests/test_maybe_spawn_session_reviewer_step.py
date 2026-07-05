@@ -18,6 +18,8 @@ from ai_hats.paths import runs_dir
 from ai_hats.pipeline.steps.maybe_spawn_session_reviewer import (
     MaybeSpawnSessionReviewer,
 )
+from ai_hats.constants import ENV_SKIP_RETRO
+from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, RETRO_LOG
 
 
 def _make_session(tmp_path: Path) -> Session:
@@ -35,7 +37,7 @@ def _seed_project(
     background: bool = True,
 ) -> Path:
     """Write ai-hats.yaml + ensure session dir; return path to metrics.json."""
-    (tmp_path / "ai-hats.yaml").write_text(yaml.dump({
+    (tmp_path / PROJECT_CONFIG).write_text(yaml.dump({
         "schema_version": 2,
         "provider": "claude",
         "active_role": "primary",
@@ -53,7 +55,7 @@ def _seed_project(
     }))
     metrics_dir = runs_dir(tmp_path) / "session_test"
     metrics_dir.mkdir(parents=True, exist_ok=True)
-    return metrics_dir / "metrics.json"
+    return metrics_dir / METRICS_JSON
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +92,7 @@ def test_writes_runtime_decision_line_for_skip(tmp_path):
         project_dir=tmp_path,
     )
 
-    log = runs_dir(tmp_path) / "session_test" / "retro.log"
+    log = runs_dir(tmp_path) / "session_test" / RETRO_LOG
     assert log.exists()
     content = log.read_text()
     assert "runtime\tdecision" in content
@@ -116,7 +118,7 @@ def test_spawns_reviewer_when_threshold_met(tmp_path, monkeypatch):
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         lambda pd, sid: spawned.append((pd, sid)),
     )
-    monkeypatch.delenv("HATS_SKIP_RETRO", raising=False)
+    monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()
     delta = step.run(
@@ -145,7 +147,7 @@ def test_recursion_guard_blocks_spawn(tmp_path, monkeypatch):
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         lambda pd, sid: spawned.append((pd, sid)),
     )
-    monkeypatch.setenv("HATS_SKIP_RETRO", "1")
+    monkeypatch.setenv(ENV_SKIP_RETRO, "1")
 
     step = MaybeSpawnSessionReviewer()
     delta = step.run(
@@ -176,7 +178,7 @@ def test_does_not_raise_when_spawn_fails(tmp_path, monkeypatch):
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         _boom,
     )
-    monkeypatch.delenv("HATS_SKIP_RETRO", raising=False)
+    monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()
     # Must not raise.
@@ -201,7 +203,7 @@ def test_does_not_raise_when_spawn_keyboard_interrupt(tmp_path, monkeypatch):
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         _interrupt,
     )
-    monkeypatch.delenv("HATS_SKIP_RETRO", raising=False)
+    monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     step = MaybeSpawnSessionReviewer()
     # Must not raise.

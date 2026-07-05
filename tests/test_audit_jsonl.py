@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.observe import AuditWriter, Session
+from ai_hats.paths import METRICS_JSON
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -18,7 +19,7 @@ def make_session(tmp_path) -> Session:
     session_dir.mkdir()
     s = Session(session_id="20260327-181454-1", session_dir=session_dir)
     s.init_audit(role="assistant", provider="claude")
-    (session_dir / "metrics.json").write_text(
+    (session_dir / METRICS_JSON).write_text(
         json.dumps({"role": "assistant", "provider": "claude", "exit_code": 0})
     )
     return s

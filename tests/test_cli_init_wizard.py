@@ -9,6 +9,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.cli.assembly import _detected_providers, _wizard_provider_prompt
+from ai_hats.paths import PROJECT_CONFIG
 
 
 @pytest.fixture()
@@ -125,7 +126,7 @@ def test_init_with_both_flags_skips_wizard(fresh_project):
             main, ["self", "init", "-p", "claude", "-r", "assistant"],
         )
     assert result.exit_code == 0, result.output
-    assert (fresh_project / "ai-hats.yaml").exists()
+    assert (fresh_project / PROJECT_CONFIG).exists()
     launch.assert_not_called()
 
 
@@ -166,7 +167,7 @@ def test_init_wizard_invokes_launch_after_provider_prompt(fresh_project, monkeyp
             main, ["self", "init", "--no-update"], input="claude\n",
         )
     assert result.exit_code == 0, result.output
-    assert (fresh_project / "ai-hats.yaml").exists()
+    assert (fresh_project / PROJECT_CONFIG).exists()
     launch.assert_called_once()
     upd.assert_not_called()
 
@@ -235,7 +236,7 @@ def test_init_flag_only_persists_paths(fresh_project):
             ],
         )
     assert result.exit_code == 0, result.output
-    data = yaml.safe_load((fresh_project / "ai-hats.yaml").read_text())
+    data = yaml.safe_load((fresh_project / PROJECT_CONFIG).read_text())
     assert data["ai_hats_dir"] == "agents"
     assert data["venv_path"]  # any non-empty value
     assert data["manage_gitignore"] is False

@@ -11,6 +11,7 @@ from ai_hats.state import EmptyPlanError, TaskManager
 from ai_hats.tracker_wiring import tracker_paths
 from ai_hats.wt_effects import WtWorktreeEffects
 from ai_hats_wt import WorktreeManager
+from ai_hats.paths import ENV_AI_HATS_DIR
 
 
 def _manager(project: Path, **kwargs) -> TaskManager:
@@ -78,7 +79,7 @@ def test_write_op_refused_at_non_project_root(tmp_path, monkeypatch):
     NotAnAiHatsProjectError and bootstraps no phantom .agent/ tracker."""
     from ai_hats.paths import NotAnAiHatsProjectError
 
-    monkeypatch.delenv("AI_HATS_DIR", raising=False)
+    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     stray = tmp_path / "stray"  # no .agent/, no ai-hats.yaml
     stray.mkdir()
     mgr = TaskManager(stray, strict_plan_check=False, layout=tracker_paths(stray))

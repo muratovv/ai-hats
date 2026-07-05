@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.assembler import Assembler
+from ai_hats.constants import HOOK_PRE_TOOL_USE, HOOK_POST_TOOL_USE
 from ai_hats.hooks_manager import HookChange
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.models import ProjectConfig
@@ -19,6 +20,7 @@ from ai_hats.paths import (
     managed_runtime_hook_filename,
     managed_wt_hook_filename,
     wt_hooks_dir,
+    PROJECT_CONFIG,
 )
 from ai_hats.providers import ClaudeProvider
 
@@ -73,13 +75,13 @@ def _skill_wt(base: Path, name: str, script: str):
 
 class TestRuntimeBytesDrift:
     def test_in_sync_after_materialize(self, assembler, tmp_path):
-        s = _skill_runtime(tmp_path / "sk", "sa", "PreToolUse", "Bash", "h/a.sh")
+        s = _skill_runtime(tmp_path / "sk", "sa", HOOK_PRE_TOOL_USE, "Bash", "h/a.sh")
         res = _result([s])
         assembler.hooks.materialize_runtime_hooks(res)
         assert assembler.hooks._runtime_bytes_changes(res) == []
 
     def test_missing_script_reported(self, assembler, tmp_path):
-        s = _skill_runtime(tmp_path / "sk", "sa", "PreToolUse", "Bash", "h/a.sh")
+        s = _skill_runtime(tmp_path / "sk", "sa", HOOK_PRE_TOOL_USE, "Bash", "h/a.sh")
         res = _result([s])
         assembler.hooks.materialize_runtime_hooks(res)
         dest = hooks_dir(assembler.project_dir) / managed_runtime_hook_filename(
@@ -90,7 +92,7 @@ class TestRuntimeBytesDrift:
         assert (dest.name, "missing") in changes
 
     def test_content_drift_reported(self, assembler, tmp_path):
-        s = _skill_runtime(tmp_path / "sk", "sa", "PreToolUse", "Bash", "h/a.sh")
+        s = _skill_runtime(tmp_path / "sk", "sa", HOOK_PRE_TOOL_USE, "Bash", "h/a.sh")
         res = _result([s])
         assembler.hooks.materialize_runtime_hooks(res)
         dest = hooks_dir(assembler.project_dir) / managed_runtime_hook_filename(
@@ -101,7 +103,7 @@ class TestRuntimeBytesDrift:
         assert (dest.name, "content") in changes
 
     def test_stale_reported_when_skill_leaves(self, assembler, tmp_path):
-        s = _skill_runtime(tmp_path / "sk", "sa", "PreToolUse", "Bash", "h/a.sh")
+        s = _skill_runtime(tmp_path / "sk", "sa", HOOK_PRE_TOOL_USE, "Bash", "h/a.sh")
         assembler.hooks.materialize_runtime_hooks(_result([s]))
         # Skill gone from composition, file+manifest still list it → stale.
         name = managed_runtime_hook_filename("sa", "h/a.sh")
@@ -150,12 +152,12 @@ class TestRuntimeWiringDrift:
         project = tmp_path / "proj"
         project.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=project, check=True)
-        ProjectConfig(provider="claude").save(project / "ai-hats.yaml")
+        ProjectConfig(provider="claude").save(project / PROJECT_CONFIG)
         return Assembler(project_dir=project)
 
     def test_in_sync_after_ensure(self, tmp_path):
         asm = self._claude_project(tmp_path)
-        s = _skill_runtime(tmp_path / "sk", "mf", "PostToolUse", "Write", "h/f.sh")
+        s = _skill_runtime(tmp_path / "sk", "mf", HOOK_POST_TOOL_USE, "Write", "h/f.sh")
         res = _result([s])
         prov = ClaudeProvider()
         prov.ensure_runtime_hooks(asm.project_dir, res)
@@ -163,14 +165,14 @@ class TestRuntimeWiringDrift:
 
     def test_unwired_managed_entry_reported(self, tmp_path):
         asm = self._claude_project(tmp_path)
-        s = _skill_runtime(tmp_path / "sk", "mf", "PostToolUse", "Write", "h/f.sh")
+        s = _skill_runtime(tmp_path / "sk", "mf", HOOK_POST_TOOL_USE, "Write", "h/f.sh")
         res = _result([s])
         prov = ClaudeProvider()
         prov.ensure_runtime_hooks(asm.project_dir, res)
         # Strip the skill's managed PostToolUse entry → wiring drift.
         sp = asm.project_dir / ".claude" / "settings.json"
         data = json.loads(sp.read_text())
-        data["hooks"]["PostToolUse"] = []
+        data["hooks"][HOOK_POST_TOOL_USE] = []
         sp.write_text(json.dumps(data))
         names = [n for n, kind in prov.runtime_wiring_changes(asm.project_dir, res)]
         assert any("mf" in n for n in names)
@@ -180,7 +182,7 @@ class TestRuntimeWiringDrift:
         basename suppresses the managed entry — the detector must inherit that
         and NOT report perpetual drift."""
         asm = self._claude_project(tmp_path)
-        s = _skill_runtime(tmp_path / "sk", "mf", "PostToolUse", "Write", "h/f.sh")
+        s = _skill_runtime(tmp_path / "sk", "mf", HOOK_POST_TOOL_USE, "Write", "h/f.sh")
         res = _result([s])
         prov = ClaudeProvider()
         prov.ensure_runtime_hooks(asm.project_dir, res)  # writes guard + skill entry
@@ -189,7 +191,7 @@ class TestRuntimeWiringDrift:
         # Replace the skill's MANAGED PostToolUse entry with a USER entry wiring
         # the same script basename (no _ai_hats_managed tag).
         basename = managed_runtime_hook_filename("mf", "h/f.sh")
-        data["hooks"]["PostToolUse"] = [
+        data["hooks"][HOOK_POST_TOOL_USE] = [
             {"matcher": "Write", "hooks": [{"type": "command", "command": f"./{basename}"}]}
         ]
         sp.write_text(json.dumps(data))
@@ -207,7 +209,7 @@ class TestSyncHooksOrchestration:
         project.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=project, check=True)
         ProjectConfig(provider="claude", active_role="r", default_role="r").save(
-            project / "ai-hats.yaml"
+            project / PROJECT_CONFIG
         )
         return Assembler(project_dir=project)
 

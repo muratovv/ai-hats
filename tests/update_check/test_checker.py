@@ -17,6 +17,8 @@ from ai_hats.update_check.checker import (
     run_check,
     sha_matches,
 )
+from ai_hats.paths import ENV_AI_HATS_DIR
+from ai_hats.constants import ENV_REPO_URL
 
 
 # ---------- detect_installed_sha ----------
@@ -148,14 +150,14 @@ def test_coerce_to_https(inp, expected):
 
 
 def test_detect_remote_url_env_override(monkeypatch):
-    monkeypatch.setenv("AI_HATS_REPO_URL", "git+ssh://git@github.com/fork/ai-hats.git")
+    monkeypatch.setenv(ENV_REPO_URL, "git+ssh://git@github.com/fork/ai-hats.git")  # ai-hats: allow-secret
     assert detect_remote_url() == "https://github.com/fork/ai-hats.git"
 
 
 def test_detect_remote_url_env_ignored_when_local_path(monkeypatch):
     # Path-style values (no scheme) are used by bootstrap.sh for local installs
     # and are useless for ls-remote — we ignore them and fall through.
-    monkeypatch.setenv("AI_HATS_REPO_URL", "/local/path/ai-hats")
+    monkeypatch.setenv(ENV_REPO_URL, "/local/path/ai-hats")
     monkeypatch.delenv("AI_HATS_NO_UPDATE_CHECK", raising=False)
     url = detect_remote_url()
     # Should fall through to metadata or fallback — not the local path.
@@ -163,7 +165,7 @@ def test_detect_remote_url_env_ignored_when_local_path(monkeypatch):
 
 
 def test_detect_remote_url_fallback_when_metadata_silent(monkeypatch):
-    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
     fake_meta = MagicMock()
     fake_meta.get_all.return_value = []
     with patch.object(checker, "metadata", return_value=fake_meta):
@@ -171,7 +173,7 @@ def test_detect_remote_url_fallback_when_metadata_silent(monkeypatch):
 
 
 def test_detect_remote_url_from_metadata_source(monkeypatch):
-    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
     fake_meta = MagicMock()
     fake_meta.get_all.return_value = [
         "Homepage, https://ai-hats.example/site",
@@ -225,8 +227,8 @@ def test_fetch_latest_sha_returns_none_on_empty_output():
 
 
 def test_run_check_writes_cache_on_success(tmp_path, monkeypatch):
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
-    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
     with patch.object(checker, "detect_installed_sha", return_value="a" * 40), \
          patch.object(checker, "detect_remote_url", return_value="https://example.git"), \
          patch.object(checker, "fetch_latest_sha", return_value="b" * 40), \
@@ -253,8 +255,8 @@ def test_run_check_persists_unknown_counts_when_git_fails(tmp_path, monkeypatch)
     """Both pkg-checkout and mirror fallback fail → entry preserves
     installed/latest SHAs but axes/labels stay None (banner silent).
     """
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
-    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
     with patch.object(checker, "detect_installed_sha", return_value="a" * 40), \
          patch.object(checker, "detect_remote_url", return_value="https://example.git"), \
          patch.object(checker, "fetch_latest_sha", return_value="b" * 40), \
@@ -276,8 +278,8 @@ def test_run_check_falls_back_to_mirror_when_pkg_path_unusable(tmp_path, monkeyp
     """Editable fast path fails (HATS-441 guard) → mirror path produces
     correct ahead/behind/labels and entry.has_update fires.
     """
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
-    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
     fake_mirror = tmp_path / "ai-hats-data" / ".cache" / "probe-mirror"
 
     with patch.object(checker, "detect_installed_sha", return_value="a" * 40), \
@@ -318,8 +320,8 @@ def test_run_check_mirror_fetch_failure_records_none_axes(tmp_path, monkeypatch)
     Defensive: validates that an offline / unreachable remote degrades
     to "banner silent" rather than emitting a half-known entry.
     """
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
-    monkeypatch.delenv("AI_HATS_REPO_URL", raising=False)
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
     fake_mirror = tmp_path / "ai-hats-data" / ".cache" / "probe-mirror"
 
     with patch.object(checker, "detect_installed_sha", return_value="a" * 40), \
@@ -440,13 +442,13 @@ def test_describe_uses_git_dir_param(tmp_path):
 
 
 def test_run_check_skips_when_installed_unknown(tmp_path, monkeypatch):
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     with patch.object(checker, "detect_installed_sha", return_value=None):
         assert run_check(tmp_path) is None
 
 
 def test_run_check_skips_when_remote_unreachable(tmp_path, monkeypatch):
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "ai-hats-data"))
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     with patch.object(checker, "detect_installed_sha", return_value="a" * 40), \
          patch.object(checker, "detect_remote_url", return_value="https://example.git"), \
          patch.object(checker, "fetch_latest_sha", return_value=None):

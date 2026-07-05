@@ -11,6 +11,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.cli.execute import _resolve_prompt
+from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, TRACE_LOG
 
 
 # ---------- _resolve_prompt ----------
@@ -58,7 +59,7 @@ def test_resolve_prompt_project_library_overrides_builtin(
     """
     project = tmp_path / "proj"
     project.mkdir()
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 2\nprovider: claude\nactive_role: maintainer\n"
     )
     inj_dir = project / "libraries" / "initial_injections"
@@ -77,7 +78,7 @@ def test_resolve_prompt_project_library_ships_custom_injection(
     """
     project = tmp_path / "proj"
     project.mkdir()
-    (project / "ai-hats.yaml").write_text(
+    (project / PROJECT_CONFIG).write_text(
         "schema_version: 2\nprovider: claude\nactive_role: maintainer\n"
     )
     inj_dir = project / "libraries" / "initial_injections"
@@ -110,7 +111,7 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
     pd.mkdir()
     (pd / ".gitlog").mkdir()
-    (pd / "ai-hats.yaml").write_text(
+    (pd / PROJECT_CONFIG).write_text(
         "schema_version: 2\nprovider: claude\nactive_role: primary\n"
     )
     monkeypatch.chdir(pd)
@@ -122,9 +123,9 @@ class _StubSession:
         self.session_id = session_dir.name.removeprefix("session_")
         self.session_dir = session_dir
         session_dir.mkdir(parents=True, exist_ok=True)
-        self.trace_path = session_dir / "trace.log"
+        self.trace_path = session_dir / TRACE_LOG
         self.trace_path.write_text("(stub)")
-        self.metrics_path = session_dir / "metrics.json"
+        self.metrics_path = session_dir / METRICS_JSON
         self.metrics_path.write_text(json.dumps(metrics))
 
 
