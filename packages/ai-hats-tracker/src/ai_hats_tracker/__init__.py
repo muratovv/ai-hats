@@ -10,11 +10,13 @@ the public surface a standalone consumer drives.
 
 from __future__ import annotations
 
+from .layout import TrackerPaths
 from .models import Attachment, TaskCard, TaskState, WorkLogEntry
 
 __all__ = [
     "Attachment",
     "TaskCard",
     "TaskState",
+    "TrackerPaths",
     "WorkLogEntry",
 ]
