@@ -25,7 +25,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "ai-hats-core>=0.3.0",
+    "ai-hats-core>=0.4.0",  # imports ai_hats_core.migrations (seam); 0.4.0 on PyPI (HATS-937)
     "filelock>=3.12",
     "pydantic>=2.0",
     "pyyaml>=6.0",
