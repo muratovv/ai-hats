@@ -15,3 +15,8 @@ tests/fixtures/transcripts/*.jsonl
 # detects, so its examples (home paths, credentialed DB URIs, token prefixes)
 # are pattern-shaped by design — documentation of the scanner, not a real leak.
 library/core/skills/git-mastery/SKILL.md
+
+# HATS-934: the tracker backlog-CLI modules are decorator-dense — `@click.group`
+# / `@click.command` match the email detector exactly as `@pytest.*` does above
+# (same false-positive class). Command glue, no credentials.
+packages/ai-hats-tracker/src/ai_hats_tracker/cli/*.py

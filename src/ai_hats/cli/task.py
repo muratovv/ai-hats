@@ -9,7 +9,7 @@ import click
 
 from ai_hats_core import atomic_write_text
 from ..state import EmptyPlanError
-from . import _seam
+from ai_hats_tracker.cli import _seam
 
 
 def _resolve_description(

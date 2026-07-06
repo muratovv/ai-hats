@@ -26,9 +26,11 @@ classifiers = [
 ]
 dependencies = [
     "ai-hats-core>=0.4.0",  # imports ai_hats_core.migrations (seam); 0.4.0 on PyPI (HATS-937)
+    "click>=8.1",  # backlog CLI (HATS-934)
     "filelock>=3.12",
     "pydantic>=2.0",
     "pyyaml>=6.0",
+    "rich>=13.0",  # backlog CLI console output (HATS-934)
 ]
 
 [project.urls]

@@ -1,7 +1,7 @@
 """Workspace-boundary import-lint for the standalone ``ai_hats_tracker`` package.
 
 ADR-0014 Phase 2 (HATS-933). Every ``ai_hats_tracker`` import must resolve to
-stdlib, ``pydantic``, ``yaml``, ``filelock``, ``ai_hats_core``, or intra-package
+stdlib, ``pydantic``/``yaml``/``filelock``/``click``/``rich``, ``ai_hats_core``, or intra-package
 — NEVER the ``ai_hats`` integrator and NEVER ``ai_hats_wt`` (one-directional:
 ai_hats -> ai_hats_tracker, never back). That allowlist is what lets the package
 install + run standalone (runtime proof: ``test_tracker_standalone``); this is
@@ -17,11 +17,11 @@ from pathlib import Path
 PKG = "ai_hats_tracker"
 SRC = Path(__file__).resolve().parent.parent / "src" / PKG
 
-# The package's only non-stdlib deps (pyproject ``dependencies``): the ai-hats
-# core primitives, plus pydantic/yaml (schema) and filelock (FSM lock). Anything
-# else — above all ``ai_hats`` and ``ai_hats_wt`` — is a boundary violation.
+# Non-stdlib deps (pyproject ``dependencies``): ai-hats-core, pydantic/yaml
+# (schema), filelock (FSM lock), click/rich (backlog CLI — HATS-934). Anything
+# else — above all ``ai_hats`` / ``ai_hats_wt`` — is a boundary violation.
 _ALLOWED_FIRST_PARTY = {"ai_hats_core"}
-_ALLOWED_THIRD_PARTY = {"pydantic", "yaml", "filelock"}
+_ALLOWED_THIRD_PARTY = {"pydantic", "yaml", "filelock", "click", "rich"}
 
 
 def _top_level_import_roots(tree: ast.Module) -> set[str]:
@@ -61,7 +61,7 @@ def test_ai_hats_tracker_imports_only_declared_deps():
             offenders[path.name] = bad
     assert not offenders, (
         "ai_hats_tracker must import only stdlib + pydantic + yaml + filelock + "
-        f"ai_hats_core (never ai_hats / ai_hats_wt): {offenders}"
+        f"click + rich + ai_hats_core (never ai_hats / ai_hats_wt): {offenders}"
     )
 
 
