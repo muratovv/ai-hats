@@ -59,10 +59,26 @@ if [[ "$HARNESS_CHANNEL" == "local" ]]; then
     [[ "${LOCAL_SRC:0:1}" != "/" ]] && LOCAL_SRC="$PROJECT/$LOCAL_SRC"
 fi
 
+# --- HATS-944: pin-scope guard mirroring HATS-897. An inherited AI_HATS_VENV
+# paired with an AI_HATS_PROJECT_DIR that resolves to a *different* project is a
+# leaked session pin (an agent shell cd'd into another project) — honoring it
+# would run this project's commands (incl. self update heal/reinstall) against
+# the wrong venv. Ignore + warn, then re-resolve below. A bare AI_HATS_VENV with
+# no pair keeps historical env-wins semantics (explicit user override).
+inherited_venv="${AI_HATS_VENV:-}"
+if [[ -n "$inherited_venv" && -n "${AI_HATS_PROJECT_DIR:-}" ]]; then
+    pin_proj="${AI_HATS_PROJECT_DIR/#\~/$HOME}"
+    pin_real="$(cd "$pin_proj" 2>/dev/null && pwd -P || echo "$pin_proj")"
+    if [[ "$pin_real" != "$(pwd -P)" ]]; then
+        echo "ai-hats: AI_HATS_VENV=$inherited_venv is pinned to project $pin_proj — foreign to $PROJECT; ignoring the leaked session pin (HATS-944)." >&2
+        inherited_venv=""
+    fi
+fi
+
 # --- Resolve venv (mirrors paths.venv_path precedence) ---
 VENV=""
-if [[ -n "${AI_HATS_VENV:-}" ]]; then
-    VENV="${AI_HATS_VENV/#\~/$HOME}"
+if [[ -n "$inherited_venv" ]]; then
+    VENV="${inherited_venv/#\~/$HOME}"
 elif [[ -f "$PROJECT/ai-hats.yaml" ]]; then
     # Single-line scalar grep: `venv_path: <value>` (no multi-line / no
     # nested support — out of scope per HATS-339).
@@ -111,6 +127,10 @@ fi
 # flips mid-run. A child launcher sees AI_HATS_VENV set and honors it
 # verbatim instead of re-resolving the pointer.
 export AI_HATS_VENV="$VENV"
+# HATS-944: pin the project alongside the venv so the pair is self-describing —
+# a launcher→launcher chain (no Python session to set it) still scopes the pin,
+# and the guard above can reject it when a descendant cd's into another project.
+export AI_HATS_PROJECT_DIR="$PROJECT"
 
 is_default_venv() { [[ "$VENV" == "$DEFAULT_VENV" ]]; }
 
