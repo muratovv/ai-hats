@@ -532,7 +532,7 @@ def task_plan_extract(task_id: str, auto: bool, dry_run: bool, as_json: bool):
     """
     import json
 
-    from ..plan_extract import Candidate, extract_candidates, mark_extracted
+    from ai_hats_tracker.plan_extract import Candidate, extract_candidates, mark_extracted
 
     mgr = _task_manager(_project_dir())
     task = mgr.get_task(task_id)
