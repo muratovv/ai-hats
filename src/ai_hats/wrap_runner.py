@@ -92,8 +92,9 @@ _COLLISION_HINTS = {
 
 
 def _collision_hint(c) -> str:
-    """`managed` splits by scope (HATS-907): home is user-owned (HATS-465, no
-    ai-hats verb applies); a project entry here means the auto-heal didn't run."""
+    """Post-HATS-931 the warn list is home-scope only (project collisions
+    auto-heal; HATS-465 keeps home user-owned); the project branch is a
+    defensive fallback for a collision the heal unexpectedly left behind."""
     if c.verdict == "managed":
         if c.scope == "home":
             return "ai-hats never manages user-level skills — remove manually if unwanted"
@@ -219,7 +220,10 @@ class WrapRunner:
             return []
         if not collisions:
             return []
-        healable = [c for c in collisions if c.verdict == "managed" and c.scope == "project"]
+        # HATS-931: every project-scope collision is heal-eligible — a name in
+        # project .claude/skills that matches a composed skill is ai-hats-owned
+        # (not a user-authoring surface), marker or not. Home scope → warn only.
+        healable = [c for c in collisions if c.scope == "project"]
         rest = [c for c in collisions if c not in healable]
         notices: list[StartupNotice] = []
         if healable:
@@ -249,7 +253,7 @@ class WrapRunner:
                     "AI_HATS_TRASH_DIR=- would make the removal unrecoverable; "
                     "remove .claude/skills manually or unset it.",
                 )
-            removed = drop_legacy_skills_mirror(self.project_dir)
+            removed = drop_legacy_skills_mirror(self.project_dir, names={c.name for c in healable})
             if not removed:
                 return StartupNotice(
                     "warn",
