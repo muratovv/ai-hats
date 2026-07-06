@@ -14,7 +14,7 @@ from filelock import FileLock, Timeout
 
 from .models import TaskCard, TaskState
 from .constants import ENV_SESSION_ID
-from .tracker.layout import TrackerPaths
+from ai_hats_tracker.layout import TrackerPaths
 
 if TYPE_CHECKING:
     # Annotation-only import for attach_add's return type. A runtime import

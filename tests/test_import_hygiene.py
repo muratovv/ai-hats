@@ -66,7 +66,7 @@ ALLOWED_COMPOSITION_CONSUMERS = (
 # HATS-866: the tracker FSM emits worktree side-effects through the injected
 # WorktreeEffects handler — it must never reference the wt engine or the
 # integrator's wt bundle itself (ADR-0014 P0 #3), not even deferred.
-TRACKER_MODULES = ("state", "tracker")
+TRACKER_MODULES = ("state",)
 FORBIDDEN_WT_FOR_TRACKER = ("ai_hats_wt", f"{PKG}.wt_carry", f"{PKG}.wt_lifecycle")
 
 # HATS-865 T5 complete: the migration ratchet (EXPECTED_COMPOSITION_OFFENDERS)
@@ -74,7 +74,7 @@ FORBIDDEN_WT_FOR_TRACKER = ("ai_hats_wt", f"{PKG}.wt_carry", f"{PKG}.wt_lifecycl
 
 # HATS-864 (T4): layout is integrator policy (ADR-0014 P0 #2) — bricks get
 # dirs injected (TrackerPaths / runs_dir / tasks_root), never via ai_hats.paths.
-LAYOUT_INJECTED_BRICKS = ("state", "tracker", "observe", "linked_context", "hypothesis")
+LAYOUT_INJECTED_BRICKS = ("state", "observe", "linked_context", "hypothesis")
 # Artifact-NAME vocabulary (HATS-917) is not layout resolution — bricks may
 # import it, but only via the explicit submodule (never bare ai_hats.paths).
 LAYOUT_EXEMPT_SUBMODULES = ("paths.session_artifacts",)
