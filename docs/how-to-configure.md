@@ -39,21 +39,21 @@ library_paths:                 # extra component sources (last wins)
 # venv_path: /opt/shared/ai-hats-venv   # optional override (see §6)
 ```
 
-| Field               | Meaning                                                                                                       |
-| ------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `schema_version`    | Config schema version (yaml format). Set by init; do not edit.                                                |
-| `migration_step`    | Counter for one-shot migrations replayed at bump time (HATS-471). Set by init / advanced automatically by `ai-hats self update`; do not edit. |
-| `provider`          | Target LLM CLI — see [1].                                                                                     |
-| `active_role`       | Role injected on the next `ai-hats` launch.                                                                   |
-| `default_role`      | Role used when `--role` is omitted (usually identical to `active_role`).                                      |
-| `task_prefix`       | Prefix for `ai-hats task create` IDs.                                                                         |
-| `ai_hats_dir`       | Framework state directory (library, tracker, sessions, STATE.md). Default `.agent/ai-hats`. To relocate post-init: `ai-hats config set --ai-hats-dir <PATH>` — do **not** hand-edit (it leaves orphaned files). |
-| `customizations`    | Per-role overlays — see §4.                                                                                   |
-| `feedback`          | Session-retro policy and threshold — see §5.                                                                  |
-| `library_paths`     | Extra directories ai-hats walks for components — see [3] for full precedence.                                 |
-| `venv_path`         | Override the framework-managed venv — see §6.                                                                 |
-| `manage_gitignore`  | When `true` (default) ai-hats adds `<ai_hats_dir>/` to `.gitignore` once at init. Toggle via `ai-hats config set --no-manage-gitignore`. |
-| `harness`           | Install-source channel `ai-hats self update` pulls from (HATS-764): `channel: local` (editable working tree, `path:`), `edge` (own repo HEAD, `repo:`), or `stable` (latest PyPI release — the default; omitted from yaml when unset). Set via `ai-hats config set --channel {local\|edge\|stable} [--repo URL] [--path DIR]` — do **not** hand-edit. `AI_HATS_REPO_URL` overrides the edge repo. See [1]. |
+| Field              | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_version`   | Config schema version (yaml format). Set by init; do not edit.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `migration_step`   | Counter for one-shot migrations replayed at bump time (HATS-471). Set by init / advanced automatically by `ai-hats self update`; do not edit.                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `provider`         | Target LLM CLI — see [1].                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `active_role`      | Role injected on the next `ai-hats` launch.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `default_role`     | Role used when `--role` is omitted (usually identical to `active_role`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `task_prefix`      | Prefix for `ai-hats task create` IDs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `ai_hats_dir`      | Framework state directory (library, tracker, sessions, STATE.md). Default `.agent/ai-hats`. To relocate post-init: `ai-hats config set --ai-hats-dir <PATH>` — do **not** hand-edit (it leaves orphaned files).                                                                                                                                                                                                                                                                                                                                                 |
+| `customizations`   | Per-role overlays — see §4.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `feedback`         | Session-retro policy and threshold — see §5.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `library_paths`    | Extra directories ai-hats walks for components — see [3] for full precedence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `venv_path`        | Override the framework-managed venv — see §6.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `manage_gitignore` | When `true` (default) ai-hats adds `<ai_hats_dir>/` to `.gitignore` once at init. Toggle via `ai-hats config set --no-manage-gitignore`.                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `harness`          | Install-source channel `ai-hats self update` pulls from (HATS-764): `channel: local` (editable working tree, `path:`), `edge` (own repo HEAD, `repo:`), or `stable` (latest PyPI release — the default; omitted from yaml when unset). Set via `ai-hats config set --channel {local\|edge\|stable} [--repo URL] [--path DIR]` — do **not** hand-edit. On a dev host whose ai-hats is an editable clone, `ai-hats self init` auto-seeds `channel: local` (HATS-938; override with `self init --channel …`). `AI_HATS_REPO_URL` overrides the edge repo. See [1]. |
 
 ---
 
@@ -70,15 +70,15 @@ ai-hats self init
 
 The CLI asks for the provider, writes a minimal `ai-hats.yaml` (provider, `ai_hats_dir`, `schema_version`, `task_prefix=TASK`), runs `ai-hats self update` to provision the venv, then hands off to the `initial-wizard` LLM session for seven steps:
 
-| Step | What the wizard does                                                                                                                                                                                                                            |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | **Language.** Asks English / Russian / other; mirrors that for the rest of the session.                                                                                                                                                          |
-| 2    | **Workspace setup (optional).** Single y/N gate; on `y` walks through `ai_hats_dir`, `venv_path`, `manage_gitignore` with trade-off explanations and applies via `ai-hats config set --ai-hats-dir / --venv / --no-manage-gitignore`. Most users skip. |
+| Step | What the wizard does                                                                                                                                                                                                                                                      |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | **Language.** Asks English / Russian / other; mirrors that for the rest of the session.                                                                                                                                                                                   |
+| 2    | **Workspace setup (optional).** Single y/N gate; on `y` walks through `ai_hats_dir`, `venv_path`, `manage_gitignore` with trade-off explanations and applies via `ai-hats config set --ai-hats-dir / --venv / --no-manage-gitignore`. Most users skip.                    |
 | 3    | **Stack detection + role recommendation.** Reads `go.mod`, `pyproject.toml`, `setup.py`, `package.json`, `Cargo.toml`, `Makefile`. Mapping: `go.mod` → `go-dev`, `pyproject.toml`/`setup.py` → `dev-python` (clean Python baseline), others → `assistant` (safe default). |
-| 4    | **Customization (optional).** Shows the role's composition (`ai-hats config status`). Offers to add / remove traits, rules, skills via `ai-hats config customize …`.                                                                              |
-| 5    | **Task-id prefix.** Asks for 3–6 uppercase letters (e.g. `ACME`). Default is `TASK`.                                                                                                                                                              |
-| 6    | **Feedback policy.** Walks the four policies (`off` / `hint` / `smart` / `always`) — see §5. Recommends `smart`.                                                                                                                                  |
-| 7    | **Finalize.** Runs `ai-hats config status` and summarizes what's in the yaml.                                                                                                                                                                     |
+| 4    | **Customization (optional).** Shows the role's composition (`ai-hats config status`). Offers to add / remove traits, rules, skills via `ai-hats config customize …`.                                                                                                      |
+| 5    | **Task-id prefix.** Asks for 3–6 uppercase letters (e.g. `ACME`). Default is `TASK`.                                                                                                                                                                                      |
+| 6    | **Feedback policy.** Walks the four policies (`off` / `hint` / `smart` / `always`) — see §5. Recommends `smart`.                                                                                                                                                          |
+| 7    | **Finalize.** Runs `ai-hats config status` and summarizes what's in the yaml.                                                                                                                                                                                             |
 
 > Authoritative source for the steps above is [7]. If the wizard drifts from this doc, the wizard is right — open a PR to sync the doc.
 
@@ -107,9 +107,9 @@ Wizard is one-shot — to change provider / role / prefix later use `ai-hats con
 
 A role is a composition of traits + rules + skills + injection — definition in [1]. The shipped library is layered:
 
-| Layer                  | Roles                                                                                              | When to pick                  |
-| ---------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `library/usage/roles/` | `assistant`, `dev-python`, `dev-web`, `architect`, `sre`, `go-dev`, `go-dev-full`                   | Curated user-facing — pick one. |
+| Layer                  | Roles                                                                                                                  | When to pick                                       |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `library/usage/roles/` | `assistant`, `dev-python`, `dev-web`, `architect`, `sre`, `go-dev`, `go-dev-full`                                      | Curated user-facing — pick one.                    |
 | `library/core/roles/`  | `initial-wizard`, `session-reviewer`, `judge`, `judge-for-role`, `auditor-for-role`, `hypothesis-intake`, `test-agent` | Engine-internal — do **not** pick as your primary. |
 
 Bring-your-own roles go under `~/.ai-hats/roles/<name>/` or `<project>/libraries/roles/<name>/`. Override precedence and full library layout — see [3].
@@ -189,11 +189,11 @@ project).
 final composition. **Project wins on conflict** because it is applied
 last:
 
-| global | project | result                  |
-| ------ | ------- | ----------------------- |
-| `add: X`    | `remove: X`  | no `X`             |
-| `remove: X` | `add: X`     | `X` at the tail    |
-| `add: X`    | `add: X`     | `X` (deduplicated) |
+| global      | project     | result             |
+| ----------- | ----------- | ------------------ |
+| `add: X`    | `remove: X` | no `X`             |
+| `remove: X` | `add: X`    | `X` at the tail    |
+| `add: X`    | `add: X`    | `X` (deduplicated) |
 
 Putting the same name in both `add` and `remove` **within a single layer**
 is a documented "move-to-end" reorder operation — see the recipe in
@@ -216,12 +216,12 @@ ai-hats config feedback session-retro smart
 ai-hats config feedback show
 ```
 
-| Policy   | Behaviour                                                                                                                                                                                | Cost                                                                       |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `off`    | No retro.                                                                                                                                                                                | Zero overhead. You contribute nothing back to the framework.               |
-| `hint`   | At session end you get a one-line nudge (`run \`ai-hats reflect\``). You decide whether to actually run it.                                                                              | Lowest friction; nothing runs behind your back.                            |
-| `smart`  | A small LLM judge (default `claude-sonnet-4-6`) decides if the session was substantive enough to warrant a retro. Runs in background. **Recommended.**                                   | One small LLM call per session-end; useful retros only.                    |
-| `always` | Retro after every session, regardless of triviality.                                                                                                                                     | Highest signal volume — and highest noise.                                 |
+| Policy   | Behaviour                                                                                                                                              | Cost                                                         |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `off`    | No retro.                                                                                                                                              | Zero overhead. You contribute nothing back to the framework. |
+| `hint`   | At session end you get a one-line nudge (`run \`ai-hats reflect\``). You decide whether to actually run it.                                            | Lowest friction; nothing runs behind your back.              |
+| `smart`  | A small LLM judge (default `claude-sonnet-4-6`) decides if the session was substantive enough to warrant a retro. Runs in background. **Recommended.** | One small LLM call per session-end; useful retros only.      |
+| `always` | Retro after every session, regardless of triviality.                                                                                                   | Highest signal volume — and highest noise.                   |
 
 Tune the smart threshold or toggle background mode:
 
