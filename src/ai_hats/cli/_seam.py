@@ -1,0 +1,57 @@
+"""wt-injection seam for the wt-optional backlog CLI (HATS-934).
+
+The tracker CLI (`task`, `attach`) defaults to worktree-free constructors so it
+runs with only ai-hats-core. The integrator overrides these module globals at
+mount (`cli/__init__.py`) with the wt-wired `_helpers` versions, restoring
+`ai-hats task`'s worktree UX. Reference the slots as ``_seam.<slot>`` (attribute
+access at call time) so one integrator override reaches every importer.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from rich.console import Console
+
+
+def _default_project_dir() -> Path:
+    """Resolve the project root by walking up from CWD, wt-free.
+
+    Mirrors the integrator's ``_helpers._project_dir`` minus the linked-worktree
+    hop: on a ``.git`` *file* (gitlink) it returns the holding dir instead of
+    hopping to the main checkout (that hop needs ai-hats-wt).
+    """
+    cwd = Path.cwd()
+    candidates = [cwd, *cwd.parents]
+    for d in candidates:
+        if (d / ".agent").is_dir():
+            return d
+    for d in candidates:
+        git = d / ".git"
+        if git.is_dir() or git.is_file():
+            return d
+    return cwd
+
+
+def _default_task_manager(project_dir: Path | None = None):
+    """Construct a wt-free ``TaskManager`` (``worktree_effects=None``)."""
+    from ..models import ProjectConfig
+    from ..paths import PROJECT_CONFIG
+    from ..state import TaskManager
+    from ..tracker_wiring import tracker_paths
+
+    pdir = project_dir or _default_project_dir()
+    prefix = ProjectConfig.resolve_task_prefix(pdir, pdir / PROJECT_CONFIG)
+    return TaskManager(pdir, prefix=prefix, layout=tracker_paths(pdir), worktree_effects=None)
+
+
+def _default_guard_not_inside_linked_worktree() -> None:
+    """No-op without ai-hats-wt: there are no linked worktrees to guard."""
+    return None
+
+
+# Injectable slots — the integrator overrides these at mount (cli/__init__.py).
+_MANAGER_FACTORY = _default_task_manager
+_PROJECT_DIR = _default_project_dir
+_GUARD_LINKED_WT = _default_guard_not_inside_linked_worktree
+_CONSOLE = Console()

@@ -9,12 +9,7 @@ import click
 
 from ai_hats_core import atomic_write_text
 from ..state import EmptyPlanError
-from ._helpers import (
-    _guard_not_inside_linked_worktree,
-    _project_dir,
-    _task_manager,
-    console,
-)
+from . import _seam
 
 
 def _resolve_description(
@@ -89,7 +84,7 @@ def task_create(
     """Create a new task card. ID is auto-generated if omitted."""
 
     description = _resolve_description(description, description_file, default="")
-    mgr = _task_manager(_project_dir())
+    mgr = _seam._MANAGER_FACTORY(_seam._PROJECT_DIR())
     # task_id is None when the user gave no --id: let create_task allocate it
     # atomically under the alloc lock (HATS-936) rather than a racy pre-read.
     try:
@@ -105,10 +100,10 @@ def task_create(
             tags=list(tag),
         )
     except ValueError as e:
-        console.print(f"[red]Error[/]: {e}")
+        _seam._CONSOLE.print(f"[red]Error[/]: {e}")
         sys.exit(1)
     _warn_missing_refs(mgr, parent_task, list(depends_on))
-    console.print(f"[green]Created[/]: {t.id} — {t.title} [{t.state.value}] ({t.priority})")
+    _seam._CONSOLE.print(f"[green]Created[/]: {t.id} — {t.title} [{t.state.value}] ({t.priority})")
     _print_auto_transitions(auto)
 
 
@@ -120,7 +115,7 @@ def _print_auto_transitions(transitions) -> None:
     reopen of a parent epic is never silent.
     """
     for tr in transitions:
-        console.print(
+        _seam._CONSOLE.print(
             f"  [cyan]Epic auto-transition[/]: {tr.ticket.id} "
             f"{tr.from_state.value} → {tr.to_state.value} ({tr.reason})"
         )
@@ -136,7 +131,7 @@ def _warn_missing_refs(mgr, parent: str, depends: list[str]) -> None:
     refs = ([parent] if parent else []) + depends
     missing = mgr.missing_refs(refs)
     if missing:
-        console.print(f"[yellow]Warning[/]: unknown ref(s): {', '.join(missing)}")
+        _seam._CONSOLE.print(f"[yellow]Warning[/]: unknown ref(s): {', '.join(missing)}")
 
 
 @task.command("transition")
@@ -199,23 +194,23 @@ def task_transition(
 
         class WorktreeStateLostError(Exception): ...
 
-    mgr = _task_manager(_project_dir())
+    mgr = _seam._MANAGER_FACTORY(_seam._PROJECT_DIR())
     try:
         state = TaskState(new_state)
     except ValueError:
-        console.print(f"[red]Invalid state[/]: {new_state}")
-        console.print(f"Valid states: {[s.value for s in TaskState]}")
+        _seam._CONSOLE.print(f"[red]Invalid state[/]: {new_state}")
+        _seam._CONSOLE.print(f"Valid states: {[s.value for s in TaskState]}")
         sys.exit(1)
 
     if state == TaskState.CANCELLED and not (resolution and resolution.strip()):
-        console.print(
+        _seam._CONSOLE.print(
             "[red]Error[/]: --resolution is required when transitioning to cancelled "
             "(record why: duplicate, won't-fix, obsolete, etc.)"
         )
         sys.exit(1)
 
     if force and not (reason and reason.strip()):
-        console.print(
+        _seam._CONSOLE.print(
             "[red]Error[/]: --force requires --reason (the override is "
             "recorded in work_log for audit)"
         )
@@ -225,7 +220,7 @@ def task_transition(
     # the review transition. Reject it loudly on any other target rather than
     # parsing and silently dropping it (option-parsed-then-ignored class).
     if final_state and state != TaskState.REVIEW:
-        console.print(
+        _seam._CONSOLE.print(
             "[red]Error[/]: --final-state is only valid with the review "
             f"transition (got target '{state.value}')"
         )
@@ -237,7 +232,7 @@ def task_transition(
     # `ai-hats` mis-resolves the tracker. Refuse before the manager runs;
     # the guard prints the `cd <main-checkout>` recovery.
     if state in (TaskState.DONE, TaskState.FAILED, TaskState.CANCELLED):
-        _guard_not_inside_linked_worktree()
+        _seam._GUARD_LINKED_WT()
 
     try:
         # final_state rides the transition's lock window (HATS-723) so a failed
@@ -255,13 +250,13 @@ def task_transition(
             caller_cwd=caller_cwd,
         )
         prefix = "[yellow]Forced[/]" if force else "[green]Transitioned[/]"
-        console.print(f"{prefix}: {t.id} → {t.state.value}")
+        _seam._CONSOLE.print(f"{prefix}: {t.id} → {t.state.value}")
         if force:
-            console.print(f"  Reason: {reason}")
+            _seam._CONSOLE.print(f"  Reason: {reason}")
         if state == TaskState.PLAN:
             plan_path = mgr.tasks_dir / task_id / "plan.md"
             if plan_path.exists():
-                console.print(f"  Plan scaffold: {plan_path}")
+                _seam._CONSOLE.print(f"  Plan scaffold: {plan_path}")
         elif state == TaskState.EXECUTE:
             try:
                 from ai_hats_wt import WorktreeManager
@@ -271,45 +266,49 @@ def task_transition(
             if WorktreeManager is not None:
                 from ..paths import worktrees_dir
 
-                project_dir = _project_dir()
+                project_dir = _seam._PROJECT_DIR()
                 active = WorktreeManager.load_for_task(
                     project_dir, task_id, state_dir=worktrees_dir(project_dir)
                 )
                 if active and active.worktree_path:
-                    console.print(f"  Worktree: {active.worktree_path}")
-                    console.print(f"  Branch: {active.branch_name}")
-                    console.print(f"  [dim]cd {active.worktree_path}[/]")
+                    _seam._CONSOLE.print(f"  Worktree: {active.worktree_path}")
+                    _seam._CONSOLE.print(f"  Branch: {active.branch_name}")
+                    _seam._CONSOLE.print(f"  [dim]cd {active.worktree_path}[/]")
                 elif WorktreeManager.is_inside_linked_worktree(caller_cwd):
                     # HATS-060 / HATS-840: adopted the caller's worktree (detect via cwd).
                     adopted = WorktreeManager.worktree_toplevel(caller_cwd) or caller_cwd
-                    console.print(f"  Worktree: {adopted} [dim](adopted — already cwd)[/]")
+                    _seam._CONSOLE.print(f"  Worktree: {adopted} [dim](adopted — already cwd)[/]")
                 elif force:
                     # HATS-697: a forced execute is a manual state correction and
                     # deliberately creates no worktree.
-                    console.print(
+                    _seam._CONSOLE.print(
                         "  [dim]No worktree created (forced) — "
                         "`ai-hats wt create` if you want isolation.[/]"
                     )
         elif state == TaskState.DONE:
-            console.print("  Worktree merged")
+            _seam._CONSOLE.print("  Worktree merged")
         elif state == TaskState.FAILED:
-            console.print("  Worktree discarded")
+            _seam._CONSOLE.print("  Worktree discarded")
         elif state == TaskState.CANCELLED:
-            console.print(f"  Resolution: {t.resolution}")
-            console.print("  Worktree discarded")
+            _seam._CONSOLE.print(f"  Resolution: {t.resolution}")
+            _seam._CONSOLE.print("  Worktree discarded")
         _print_auto_transitions(auto)
     except EmptyPlanError as e:
-        console.print(f"[red]Plan is incomplete[/] — cannot transition {e.task_id} to execute.")
+        _seam._CONSOLE.print(
+            f"[red]Plan is incomplete[/] — cannot transition {e.task_id} to execute."
+        )
         if e.empty_sections:
-            console.print(f"  Empty required section(s): [yellow]{', '.join(e.empty_sections)}[/]")
-        console.print(f"  Plan path: {e.plan_path}")
-        console.print("  Fill the named section(s) in plan.md, then retry.")
+            _seam._CONSOLE.print(
+                f"  Empty required section(s): [yellow]{', '.join(e.empty_sections)}[/]"
+            )
+        _seam._CONSOLE.print(f"  Plan path: {e.plan_path}")
+        _seam._CONSOLE.print("  Fill the named section(s) in plan.md, then retry.")
         sys.exit(2)
     except WorktreeBaseBranchError as e:
         # HATS-518: main-repo HEAD wasn't on a canonical base when we tried
         # to create the execute worktree. Card stays in its prior state —
         # the transition's _save_task was never reached.
-        console.print(f"[red]{e}[/]")
+        _seam._CONSOLE.print(f"[red]{e}[/]")
         sys.exit(1)
     except WorktreeBaseBranchMismatchError as e:
         # HATS-533: main-repo HEAD wandered off the merge target captured
@@ -318,19 +317,21 @@ def task_transition(
         # Card stays in `review` (HATS-481 fail-loud).
         from rich.markup import escape as _escape
 
-        project_dir = _project_dir()
-        console.print(f"[red]Refused (base branch mismatch)[/] — cannot merge for {task_id}.")
-        console.print(_escape(str(e)))
-        console.print("")
-        console.print("Switch the main repo to the merge target, then retry:")
+        project_dir = _seam._PROJECT_DIR()
+        _seam._CONSOLE.print(
+            f"[red]Refused (base branch mismatch)[/] — cannot merge for {task_id}."
+        )
+        _seam._CONSOLE.print(_escape(str(e)))
+        _seam._CONSOLE.print("")
+        _seam._CONSOLE.print("Switch the main repo to the merge target, then retry:")
         # soft_wrap=True so long main-repo paths stay on one line for
         # copy-paste (HATS-509 precedent).
-        console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
-        console.print(
+        _seam._CONSOLE.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
+        _seam._CONSOLE.print(
             f"  [cyan]git checkout {_escape(e.expected)}[/]",
             soft_wrap=True,
         )
-        console.print(
+        _seam._CONSOLE.print(
             f"  [cyan]ai-hats task transition {task_id} done[/]",
             soft_wrap=True,
         )
@@ -343,17 +344,17 @@ def task_transition(
         # resolve recipe instead of a raw exit-128 traceback.
         from rich.markup import escape as _escape
 
-        project_dir = _project_dir()
-        console.print(f"[red]Refused (main repo mid-merge)[/] — cannot merge for {task_id}.")
-        console.print(_escape(str(e)))
-        console.print("")
-        console.print("Resolve the in-progress merge first, then retry:")
-        console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
-        console.print(
+        project_dir = _seam._PROJECT_DIR()
+        _seam._CONSOLE.print(f"[red]Refused (main repo mid-merge)[/] — cannot merge for {task_id}.")
+        _seam._CONSOLE.print(_escape(str(e)))
+        _seam._CONSOLE.print("")
+        _seam._CONSOLE.print("Resolve the in-progress merge first, then retry:")
+        _seam._CONSOLE.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
+        _seam._CONSOLE.print(
             "  [cyan]git merge --abort[/]  [dim]# or resolve conflicts + git commit[/]",
             soft_wrap=True,
         )
-        console.print(
+        _seam._CONSOLE.print(
             f"  [cyan]ai-hats task transition {task_id} done[/]",
             soft_wrap=True,
         )
@@ -365,7 +366,7 @@ def task_transition(
         # in `review` (HATS-481 fail-loud: the raise precedes `_save_task`).
         from rich.markup import escape as _escape
 
-        console.print(f"[red]Refused (incomplete worktree state)[/]: {_escape(str(e))}")
+        _seam._CONSOLE.print(f"[red]Refused (incomplete worktree state)[/]: {_escape(str(e))}")
         sys.exit(1)
     except WorktreeStateLostError as e:
         # State JSON gone, branch preserved → card stays in `review`. Post
@@ -373,40 +374,40 @@ def task_transition(
         # means the branch genuinely diverges (un-merged wording is accurate).
         from rich.markup import escape as _escape
 
-        project_dir = _project_dir()
-        console.print(
+        project_dir = _seam._PROJECT_DIR()
+        _seam._CONSOLE.print(
             f"[red]Refused (worktree state lost)[/] — task {task_id} "
             f"cannot be silently marked DONE."
         )
-        console.print(
+        _seam._CONSOLE.print(
             f"Branch '{_escape(e.branch_name)}' has commits that are NOT in "
             f"the base branch (an already-merged branch would finalize on its "
             f"own — HATS-697)."
         )
-        console.print(
+        _seam._CONSOLE.print(
             "Likely cause: the auto-worktree was removed by hand, or an "
             "earlier `task transition <id> done` attempt's merge failed "
             "(conflict, lock contention, untracked file collision)."
         )
-        console.print("")
-        console.print("Apply the un-merged work, then finalize:")
+        _seam._CONSOLE.print("")
+        _seam._CONSOLE.print("Apply the un-merged work, then finalize:")
         # soft_wrap=True keeps each recipe line intact for copy-paste.
-        console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
-        console.print(
+        _seam._CONSOLE.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
+        _seam._CONSOLE.print(
             "  [cyan]git merge --abort[/]  [dim]# if main repo is mid-merge[/]",
             soft_wrap=True,
         )
-        console.print(
+        _seam._CONSOLE.print(
             f"  [cyan]git merge --no-ff {_escape(e.branch_name)}[/]  "
             "[dim]# apply the un-merged work[/]",
             soft_wrap=True,
         )
-        console.print(
+        _seam._CONSOLE.print(
             f"  [cyan]ai-hats task transition {task_id} done[/]  [dim]# update tracker[/]",
             soft_wrap=True,
         )
-        console.print("")
-        console.print(
+        _seam._CONSOLE.print("")
+        _seam._CONSOLE.print(
             f"[dim]Abandoning the work instead? "
             f"`git branch -D {_escape(e.branch_name)}` then re-run done, or "
             f"`task transition {task_id} cancelled`.[/]",
@@ -428,26 +429,30 @@ def task_transition(
         # worktree-effect teardown raise propagates before `_save_task`.
         from rich.markup import escape as _escape
 
-        project_dir = _project_dir()
-        console.print(f"[red]Worktree drifted vs original branch[/] — cannot merge for {task_id}.")
+        project_dir = _seam._PROJECT_DIR()
+        _seam._CONSOLE.print(
+            f"[red]Worktree drifted vs original branch[/] — cannot merge for {task_id}."
+        )
         # Preserve the drift summary verbatim (commits + affected paths
         # from WorktreeManager._drift_summary) — it's informational.
         # Escape: drift summary embeds filenames, and a hostile filename
         # like `[red]boom[/]` would inject Rich markup into the
         # operator's terminal. Mirrors cli/worktree.py wt_merge handler.
-        console.print(_escape(str(e)))
-        console.print("")
-        console.print("Re-verify your changes against the new base, then run:")
+        _seam._CONSOLE.print(_escape(str(e)))
+        _seam._CONSOLE.print("")
+        _seam._CONSOLE.print("Re-verify your changes against the new base, then run:")
         # soft_wrap=True keeps each recipe line intact for copy-paste
         # even on narrow terminals (default Rich console width when
         # stdout is a pipe is 80 cols, which truncates long project paths).
-        console.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
-        console.print("  [cyan]ai-hats wt merge --accept-drift[/]", soft_wrap=True)
-        console.print(
+        _seam._CONSOLE.print(f"  [cyan]cd {project_dir}[/]", soft_wrap=True)
+        _seam._CONSOLE.print("  [cyan]ai-hats wt merge --accept-drift[/]", soft_wrap=True)
+        _seam._CONSOLE.print(
             f"  [cyan]ai-hats task transition {task_id} done[/]",
             soft_wrap=True,
         )
-        console.print("[dim]Note: --accept-drift belongs to `wt merge`, not `task transition`.[/]")
+        _seam._CONSOLE.print(
+            "[dim]Note: --accept-drift belongs to `wt merge`, not `task transition`.[/]"
+        )
         sys.exit(1)
     except WorktreeCreateError as e:
         # HATS-517: defense-in-depth handler for the branch-exists
@@ -461,10 +466,10 @@ def task_transition(
         # Distinct exit code 2 separates "worktree setup refused with
         # actionable hint" from FSM / validation exit 1. The exception
         # message already carries multi-line guidance — print verbatim.
-        console.print(f"[red]Cannot create worktree[/]: {e}")
+        _seam._CONSOLE.print(f"[red]Cannot create worktree[/]: {e}")
         sys.exit(2)
     except ValueError as e:
-        console.print(f"[red]Error[/]: {e}")
+        _seam._CONSOLE.print(f"[red]Error[/]: {e}")
         sys.exit(1)
 
 
@@ -481,14 +486,14 @@ def task_close(task_id: str, resolution: str):
     Use when the work has already shipped (e.g. direct commit on master)
     and the full execute/document/review walk would just be bookkeeping.
     """
-    mgr = _task_manager(_project_dir())
+    mgr = _seam._MANAGER_FACTORY(_seam._PROJECT_DIR())
     try:
         t, auto = mgr.close_task(task_id, resolution)
     except ValueError as e:
-        console.print(f"[red]Error[/]: {e}")
+        _seam._CONSOLE.print(f"[red]Error[/]: {e}")
         sys.exit(1)
-    console.print(f"[green]Closed[/]: {t.id} → {t.state.value}")
-    console.print(f"  Resolution: {t.resolution}")
+    _seam._CONSOLE.print(f"[green]Closed[/]: {t.id} → {t.state.value}")
+    _seam._CONSOLE.print(f"  Resolution: {t.resolution}")
     _print_auto_transitions(auto)
 
 
@@ -510,17 +515,17 @@ def task_link(from_id: str, to_id: str, link_type: str):
     see-also  — symmetric, lighter cross-reference
     fold      — directional: FROM is folded into TO (FROM.folded_into = TO)
     """
-    mgr = _task_manager(_project_dir())
+    mgr = _seam._MANAGER_FACTORY(_seam._PROJECT_DIR())
     try:
         a, _ = mgr.add_link(from_id, to_id, link_type=link_type)
     except ValueError as e:
-        console.print(f"[red]Error[/]: {e}")
+        _seam._CONSOLE.print(f"[red]Error[/]: {e}")
         sys.exit(1)
     if link_type == "fold":
-        console.print(f"[green]Folded[/]: {a.id} → {to_id}")
+        _seam._CONSOLE.print(f"[green]Folded[/]: {a.id} → {to_id}")
     else:
         # Parens around link_type — rich would strip `[related]` as malformed markup.
-        console.print(f"[green]Linked[/] ({link_type}): {from_id} ↔ {to_id}")
+        _seam._CONSOLE.print(f"[green]Linked[/] ({link_type}): {from_id} ↔ {to_id}")
 
 
 @task.command("unlink")
@@ -535,13 +540,13 @@ def task_link(from_id: str, to_id: str, link_type: str):
 )
 def task_unlink(from_id: str, to_id: str, link_type: str):
     """Remove a cross-reference between two task cards. No-op if absent."""
-    mgr = _task_manager(_project_dir())
+    mgr = _seam._MANAGER_FACTORY(_seam._PROJECT_DIR())
     try:
         mgr.remove_link(from_id, to_id, link_type=link_type)
     except ValueError as e:
-        console.print(f"[red]Error[/]: {e}")
+        _seam._CONSOLE.print(f"[red]Error[/]: {e}")
         sys.exit(1)
-    console.print(f"[green]Unlinked[/] ({link_type}): {from_id} ⇎ {to_id}")
+    _seam._CONSOLE.print(f"[green]Unlinked[/] ({link_type}): {from_id} ⇎ {to_id}")
 
 
 @task.command("plan-extract")
@@ -560,24 +565,26 @@ def task_plan_extract(task_id: str, auto: bool, dry_run: bool, as_json: bool):
 
     from ai_hats_tracker.plan_extract import Candidate, extract_candidates, mark_extracted
 
-    mgr = _task_manager(_project_dir())
+    mgr = _seam._MANAGER_FACTORY(_seam._PROJECT_DIR())
     task = mgr.get_task(task_id)
     if task is None:
-        console.print(f"[red]Error[/]: task {task_id} not found")
+        _seam._CONSOLE.print(f"[red]Error[/]: task {task_id} not found")
         sys.exit(1)
 
     plan_path = mgr.tasks_dir / task_id / "plan.md"
     if not plan_path.exists():
-        console.print(f"[red]Error[/]: plan.md not found at {plan_path}")
+        _seam._CONSOLE.print(f"[red]Error[/]: plan.md not found at {plan_path}")
         sys.exit(1)
     if mgr._is_empty_scaffold(task):
-        console.print(f"[red]Plan is empty scaffold[/] — nothing to extract from {plan_path}")
+        _seam._CONSOLE.print(
+            f"[red]Plan is empty scaffold[/] — nothing to extract from {plan_path}"
+        )
         sys.exit(2)
 
     plan_text = plan_path.read_text()
     candidates = extract_candidates(plan_text)
     if not candidates:
-        console.print(
+        _seam._CONSOLE.print(
             "No candidates found (looked for `## Subtasks`, `## Steps`, "
             "numbered `### N. …` / `### Phase N: …` headings)."
         )
@@ -600,9 +607,9 @@ def task_plan_extract(task_id: str, auto: bool, dry_run: bool, as_json: bool):
         sys.exit(0)
 
     if dry_run:
-        console.print(f"[dim]Found {len(candidates)} candidate(s):[/]")
+        _seam._CONSOLE.print(f"[dim]Found {len(candidates)} candidate(s):[/]")
         for c in candidates:
-            console.print(f"  [{c.kind}] line {c.line_no}: {c.title}")
+            _seam._CONSOLE.print(f"  [{c.kind}] line {c.line_no}: {c.title}")
         sys.exit(0)
 
     selected: list[tuple[Candidate, str]] = []  # (candidate, final_title)
@@ -610,7 +617,7 @@ def task_plan_extract(task_id: str, auto: bool, dry_run: bool, as_json: bool):
         if auto:
             selected.append((c, c.title))
             continue
-        console.print(f"\n[{c.kind}] line {c.line_no}: [bold]{c.title}[/]")
+        _seam._CONSOLE.print(f"\n[{c.kind}] line {c.line_no}: [bold]{c.title}[/]")
         choice = (
             click.prompt(
                 "  [y]es / [n]o / [e]dit / [q]uit",
@@ -633,7 +640,7 @@ def task_plan_extract(task_id: str, auto: bool, dry_run: bool, as_json: bool):
             selected.append((c, c.title))
 
     if not selected:
-        console.print("Nothing extracted.")
+        _seam._CONSOLE.print("Nothing extracted.")
         sys.exit(0)
 
     text = plan_text
@@ -650,16 +657,16 @@ def task_plan_extract(task_id: str, auto: bool, dry_run: bool, as_json: bool):
             )
             child_id = child.id
         except Exception as exc:  # pragma: no cover — defensive only
-            console.print(f"[red]Failed to create task for[/] {title!r}: {exc}")
+            _seam._CONSOLE.print(f"[red]Failed to create task for[/] {title!r}: {exc}")
             continue
         text = mark_extracted(text, cand.line_no, child_id)
         created.append(f"{child_id}: {title}")
 
     if created:
         atomic_write_text(plan_path, text)
-        console.print(f"\n[green]Created {len(created)} subtask(s):[/]")
+        _seam._CONSOLE.print(f"\n[green]Created {len(created)} subtask(s):[/]")
         for line in created:
-            console.print(f"  {line}")
+            _seam._CONSOLE.print(f"  {line}")
 
 
 @task.command("update")
@@ -721,10 +728,12 @@ def task_update(
     """Update task card fields."""
 
     description = _resolve_description(description, description_file, default=None)
-    mgr = _task_manager(_project_dir())
+    mgr = _seam._MANAGER_FACTORY(_seam._PROJECT_DIR())
 
     if clear_parent and parent_task is not None:
-        console.print("[red]Error[/]: --clear-parent and --parent-task are mutually exclusive")
+        _seam._CONSOLE.print(
+            "[red]Error[/]: --clear-parent and --parent-task are mutually exclusive"
+        )
         sys.exit(1)
     parent_arg = "" if clear_parent else parent_task
 
@@ -744,7 +753,7 @@ def task_update(
         ]
     )
     if not has_changes:
-        console.print(
+        _seam._CONSOLE.print(
             "[yellow]No changes specified[/]. Use --title, --priority, --description, etc."
         )
         return
@@ -765,10 +774,10 @@ def task_update(
             remove_depends=list(remove_depends) if remove_depends else None,
         )
     except ValueError as e:
-        console.print(f"[red]Error[/]: {e}")
+        _seam._CONSOLE.print(f"[red]Error[/]: {e}")
         sys.exit(1)
     _warn_missing_refs(mgr, parent_arg or "", list(add_depends))
-    console.print(f"[green]Updated[/]: {t.id} — {t.title} [{t.priority}]")
+    _seam._CONSOLE.print(f"[green]Updated[/]: {t.id} — {t.title} [{t.priority}]")
     _print_auto_transitions(auto)
 
 
@@ -779,12 +788,12 @@ def task_update(
 def task_log(task_id: str, message: str, session: str | None):
     """Log work progress on a task."""
 
-    mgr = _task_manager(_project_dir())
+    mgr = _seam._MANAGER_FACTORY(_seam._PROJECT_DIR())
     try:
         t = mgr.log_work(task_id, message, session_id=session or "")
-        console.print(f"[green]Logged[/]: {t.id} — {message}")
+        _seam._CONSOLE.print(f"[green]Logged[/]: {t.id} — {message}")
     except ValueError as e:
-        console.print(f"[red]Error[/]: {e}")
+        _seam._CONSOLE.print(f"[red]Error[/]: {e}")
         sys.exit(1)
 
 
@@ -819,7 +828,7 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
     }
     PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
-    mgr = _task_manager(_project_dir())
+    mgr = _seam._MANAGER_FACTORY(_seam._PROJECT_DIR())
     filter_state = TaskState(state) if state else None
     tasks = mgr.list_tasks(state=filter_state, priority=priority)
 
@@ -834,7 +843,7 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
         try:
             pattern = _re.compile(search, _re.IGNORECASE)
         except _re.error as e:
-            console.print(f"[red]Bad regex[/]: {e}")
+            _seam._CONSOLE.print(f"[red]Bad regex[/]: {e}")
             sys.exit(1)
         tasks = [
             t
@@ -857,7 +866,7 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
         ]
 
     if not tasks:
-        console.print("[dim]No tasks[/]")
+        _seam._CONSOLE.print("[dim]No tasks[/]")
         return
 
     tasks.sort(key=lambda t: (STATE_ORDER.get(t.state, 99), PRIORITY_ORDER.get(t.priority, 99)))
@@ -889,7 +898,7 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
             t.parent_task or "",
         )
 
-    console.print(table)
+    _seam._CONSOLE.print(table)
 
 
 @task.command("show")
@@ -913,43 +922,43 @@ def task_show(task_id: str, short: bool):
 
     from rich.markup import escape as _escape
 
-    project_dir = _project_dir()
-    mgr = _task_manager(project_dir)
+    project_dir = _seam._PROJECT_DIR()
+    mgr = _seam._MANAGER_FACTORY(project_dir)
     t = mgr.get_task(task_id)
     if t is None:
-        console.print(f"[red]Task not found[/]: {task_id}")
+        _seam._CONSOLE.print(f"[red]Task not found[/]: {task_id}")
         sys.exit(1)
     # markup=False: card field values (title / description / work_log …) are
     # user-controlled; without it a card titled `[red]X[/]` would be eaten /
     # recolored as Rich markup. The dump loop carries no intentional markup.
     for k, v in t.to_dict().items():
         if v:
-            console.print(f"  {k}: {v}", markup=False, highlight=False)
+            _seam._CONSOLE.print(f"  {k}: {v}", markup=False, highlight=False)
     # Resolve depends_on into "Blocked by:" with each blocker's current state.
     # The raw `depends_on: [PROJ-X, PROJ-Y]` line above is opaque on its own —
     # this section answers "is this task actually unblocked yet?".
     if t.depends_on:
-        console.print("\n  [bold]Blocked by:[/]")
+        _seam._CONSOLE.print("\n  [bold]Blocked by:[/]")
         for dep_id in t.depends_on:
             dep = mgr.get_task(dep_id)
             if dep is None:
-                console.print(f"    {dep_id} [red](missing)[/]")
+                _seam._CONSOLE.print(f"    {dep_id} [red](missing)[/]")
             else:
                 # Use parens around state — rich interprets `[brainstorm]` as a
                 # malformed markup tag and silently drops it. Escape the title:
                 # it is user-controlled and sits on an intentional-markup line.
-                console.print(f"    {dep_id} ({dep.state.value}) — {_escape(dep.title)}")
+                _seam._CONSOLE.print(f"    {dep_id} ({dep.state.value}) — {_escape(dep.title)}")
 
     # Link sections — render each outbound relation with the target's state
     # so the cross-reference answers "is this still relevant?" at a glance.
     def _render_links(label: str, ids: list[str]) -> None:
-        console.print(f"\n  [bold]{label}:[/]")
+        _seam._CONSOLE.print(f"\n  [bold]{label}:[/]")
         for ref_id in ids:
             other = mgr.get_task(ref_id)
             if other is None:
-                console.print(f"    {ref_id} [red](missing)[/]")
+                _seam._CONSOLE.print(f"    {ref_id} [red](missing)[/]")
             else:
-                console.print(f"    {ref_id} ({other.state.value}) — {_escape(other.title)}")
+                _seam._CONSOLE.print(f"    {ref_id} ({other.state.value}) — {_escape(other.title)}")
 
     if t.related:
         _render_links("Related", t.related)
@@ -957,11 +966,13 @@ def task_show(task_id: str, short: bool):
         _render_links("See also", t.see_also)
     if t.folded_into:
         target = mgr.get_task(t.folded_into)
-        console.print("\n  [bold]Folded into:[/]")
+        _seam._CONSOLE.print("\n  [bold]Folded into:[/]")
         if target is None:
-            console.print(f"    {t.folded_into} [red](missing)[/]")
+            _seam._CONSOLE.print(f"    {t.folded_into} [red](missing)[/]")
         else:
-            console.print(f"    {t.folded_into} ({target.state.value}) — {_escape(target.title)}")
+            _seam._CONSOLE.print(
+                f"    {t.folded_into} ({target.state.value}) — {_escape(target.title)}"
+            )
     # Inbound "Subsumed:" — scan all cards for folded_into pointing here.
     subsumed = mgr.find_subsumed_by(task_id)
     if subsumed:
@@ -969,9 +980,9 @@ def task_show(task_id: str, short: bool):
 
     # Show work log nicely
     if t.work_log:
-        console.print("\n  [bold]Work Log:[/]")
+        _seam._CONSOLE.print("\n  [bold]Work Log:[/]")
         for entry in t.work_log:
-            console.print(f"    {entry.timestamp} — {entry.message}")
+            _seam._CONSOLE.print(f"    {entry.timestamp} — {entry.message}")
 
     # Linked context (HATS-691): by default, append the full linked-task bodies
     # — parity with the sub-agent's LINKED_CONTEXT (HATS-689). The link index
@@ -984,22 +995,22 @@ def task_show(task_id: str, short: bool):
 
         linked = load_linked_context(tasks_root=tasks_dir(project_dir), ticket_id=task_id)
         if linked:
-            console.print("\n  [bold]Linked context:[/]")
+            _seam._CONSOLE.print("\n  [bold]Linked context:[/]")
             # markup=False: the body carries literal `[parent_task]` / `[related]`
             # tags and arbitrary card/plan text that rich would mis-parse as
             # markup (same hazard the link index avoids with parens, above).
-            console.print(linked, markup=False, highlight=False)
+            _seam._CONSOLE.print(linked, markup=False, highlight=False)
             # A parent epic's plan.md can run to tens of KB; hint at the compact
             # view when the block is long, without overriding the full-by-default
             # contract (HATS-691 Q1).
             if linked.count("\n") >= 30:
-                console.print("\n  [dim]tip: pass --short for the compact index only[/]")
+                _seam._CONSOLE.print("\n  [dim]tip: pass --short for the compact index only[/]")
 
 
 @task.command("sync")
 def task_sync():
     """Synchronize STATE.md with task cards."""
 
-    mgr = _task_manager(_project_dir())
+    mgr = _seam._MANAGER_FACTORY(_seam._PROJECT_DIR())
     count = mgr.sync()
-    console.print(f"[green]Synced[/]: {count} tasks")
+    _seam._CONSOLE.print(f"[green]Synced[/]: {count} tasks")

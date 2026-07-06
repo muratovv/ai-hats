@@ -257,6 +257,21 @@ task.task.add_command(proposal_mod.proposal)
 task.task.add_command(attach_mod.attach)
 main.add_command(task.task)
 
+# HATS-934: tracker CLI (task/attach) defaults to wt-free constructors; the
+# integrator wires the wt-coupled `_helpers` versions here so `ai-hats task`
+# keeps its worktree UX (override the shared `_seam` — reaches every importer).
+from . import _seam  # noqa: E402
+from ._helpers import (  # noqa: E402
+    _guard_not_inside_linked_worktree,
+    _project_dir,
+    _task_manager,
+)
+
+_seam._MANAGER_FACTORY = _task_manager
+_seam._PROJECT_DIR = _project_dir
+_seam._GUARD_LINKED_WT = _guard_not_inside_linked_worktree
+_seam._CONSOLE = console
+
 # Reflect (post-session retro)
 main.add_command(reflect_mod.reflect)
 
