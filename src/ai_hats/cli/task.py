@@ -90,8 +90,8 @@ def task_create(
 
     description = _resolve_description(description, description_file, default="")
     mgr = _task_manager(_project_dir())
-    if task_id is None:
-        task_id = mgr.next_id()
+    # task_id is None when the user gave no --id: let create_task allocate it
+    # atomically under the alloc lock (HATS-936) rather than a racy pre-read.
     try:
         t, auto = mgr.create_task(
             task_id,
@@ -614,14 +614,15 @@ def task_plan_extract(task_id: str, auto: bool, dry_run: bool, as_json: bool):
     created: list[str] = []
     for cand, title in selected:
         try:
-            child_id = mgr.next_id()
-            mgr.create_task(
-                task_id=child_id,
+            # Atomic allocate+reserve (HATS-936); read the id back off the card.
+            child, _ = mgr.create_task(
+                task_id=None,
                 title=title,
                 priority="medium",
                 tags=["extracted-from-plan"],
                 parent_task=task_id,
             )
+            child_id = child.id
         except Exception as exc:  # pragma: no cover — defensive only
             console.print(f"[red]Failed to create task for[/] {title!r}: {exc}")
             continue

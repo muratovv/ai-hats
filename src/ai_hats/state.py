@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
 from .models import TaskCard, TaskState
 from .constants import ENV_SESSION_ID
@@ -155,6 +155,11 @@ _EPIC_ACTIVE_STATES: frozenset[TaskState] = frozenset(
 )
 
 
+# HATS-936: id allocation is a sub-second fs op, so a wait this long means a
+# stuck/dead lock holder, not real contention (mirrors plugin_dir's 30s).
+_ALLOC_LOCK_TIMEOUT = 30.0
+
+
 class TaskManager:
     """Manages task cards and state transitions with file-lock protection."""
 
@@ -196,6 +201,10 @@ class TaskManager:
                         max_num = max(max_num, int(match.group(1)))
         return f"{self.prefix}-{max_num + 1:03d}"
 
+    def _alloc_lock_path(self) -> Path:
+        # Inside tasks_dir but ignored by scans — not a `<prefix>-N` card dir.
+        return self.tasks_dir / ".alloc.lock"
+
     def _ensure_project(self) -> None:
         """HATS-839: refuse a write op at a non-project root before any mkdir.
 
@@ -208,8 +217,8 @@ class TaskManager:
 
     def create_task(
         self,
-        task_id: str,
-        title: str,
+        task_id: str | None = None,
+        title: str = "",
         description: str = "",
         priority: str = "medium",
         role: str = "",
@@ -220,37 +229,52 @@ class TaskManager:
     ) -> tuple[TaskCard, list[TaskTransition]]:
         """Create a new task card.
 
-        ``parent_task`` and ``depends_on`` are validated for self-reference
-        and (for depends_on) immediate A↔B cycles. Missing references are
-        accepted silently at the manager level — surface warnings at the
-        CLI edge via :meth:`missing_refs` so write paths remain pure.
+        ``task_id=None`` → allocate the next sequential id atomically under the
+        directory-scoped alloc lock (HATS-936); an explicit id is validated for
+        prior existence inside that same lock. ``parent_task`` / ``depends_on``
+        are validated for self-reference and immediate A↔B cycles.
         """
         self._ensure_project()
+        # next_id + reserve must be atomic across processes or two racers
+        # cross-write one id (HATS-936). One directory-scoped lock serialises
+        # the ID namespace; mkdir tasks_dir first so the lock file has a home.
+        self.tasks_dir.mkdir(parents=True, exist_ok=True)
         depends = list(depends_on or [])
-        self._reject_self_or_cycle(task_id, parent_task, depends)
-        if (self.tasks_dir / task_id / "task.yaml").exists():
-            raise ValueError(f"Task '{task_id}' already exists")
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        task = TaskCard(
-            id=task_id,
-            title=title,
-            state=TaskState.BRAINSTORM,
-            description=description,
-            priority=priority,
-            role=role,
-            reviewer=reviewer,
-            parent_task=parent_task,
-            depends_on=depends,
-            tags=tags or [],
-            created=now,
-            updated=now,
-        )
-        task_dir = self.tasks_dir / task_id
-        task_dir.mkdir(parents=True, exist_ok=True)
-        self._save_task(task)
-        self._update_indexes()
-        # New work under a `done` epic auto-reopens it (HATS-690 Q3). create_task
-        # has no lock window, so this post-write call honours the "post-lock" rule.
+        lock = FileLock(str(self._alloc_lock_path()), timeout=_ALLOC_LOCK_TIMEOUT)
+        try:
+            with lock:
+                if task_id is None:
+                    task_id = self.next_id()
+                self._reject_self_or_cycle(task_id, parent_task, depends)
+                if (self.tasks_dir / task_id / "task.yaml").exists():
+                    raise ValueError(f"Task '{task_id}' already exists")
+                now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                task = TaskCard(
+                    id=task_id,
+                    title=title,
+                    state=TaskState.BRAINSTORM,
+                    description=description,
+                    priority=priority,
+                    role=role,
+                    reviewer=reviewer,
+                    parent_task=parent_task,
+                    depends_on=depends,
+                    tags=tags or [],
+                    created=now,
+                    updated=now,
+                )
+                task_dir = self.tasks_dir / task_id
+                task_dir.mkdir(parents=True, exist_ok=True)
+                self._save_task(task)
+                self._update_indexes()
+        except Timeout as exc:
+            raise RuntimeError(
+                f"task-id allocation blocked >{_ALLOC_LOCK_TIMEOUT:.0f}s on "
+                f"{self._alloc_lock_path()} — a stuck ai-hats process likely "
+                "holds it. If safe, remove the lock file and retry."
+            ) from exc
+        # Epic auto-reopen takes the epic's own lock — run it AFTER the alloc
+        # lock releases (mirrors transition's post-lock rule; no nested locks).
         return task, self._propagate_to_parent(task)
 
     def missing_refs(self, ids: list[str]) -> list[str]:
