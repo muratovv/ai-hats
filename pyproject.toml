@@ -30,6 +30,7 @@ dependencies = [
     # in ai-hats-core; the worktree engine (ai_hats_wt) lives in ai-hats-wt.
     "ai-hats-core>=0.4.0",  # imports ai_hats_core.migrations; 0.4.0 on PyPI (HATS-937)
     "ai-hats-wt>=0.2.1",    # imports WorktreeHook/parse_worktree_carry; 0.2.1 on PyPI (HATS-928)
+    "ai-hats-tracker>=0.1.0",  # facade re-exports TaskCard/TaskState schema (HATS-933)
     "click>=8.1",
     "pyyaml>=6.0",
     "pydantic>=2.0",
@@ -81,7 +82,6 @@ packages = [
     "ai_hats.pipeline.steps",
     "ai_hats.retro",
     "ai_hats.templates",
-    "ai_hats.tracker",
     "ai_hats.update_check",
     "ai_hats.library",
 ]
@@ -96,13 +96,19 @@ members = ["packages/*"]
 [tool.uv.sources]
 ai-hats-core = { workspace = true }
 ai-hats-wt = { workspace = true }
+ai-hats-tracker = { workspace = true }
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "packages/ai-hats-core/tests", "packages/ai-hats-wt/tests"]
+testpaths = [
+    "tests",
+    "packages/ai-hats-core/tests",
+    "packages/ai-hats-wt/tests",
+    "packages/ai-hats-tracker/tests",
+]
 # HATS-508: prepend ./src to sys.path so ``python -m pytest`` from a
 # linked worktree imports the worktree's own ``ai_hats`` package
 # rather than the editable install pointing at the main checkout.
@@ -110,7 +116,12 @@ testpaths = ["tests", "packages/ai-hats-core/tests", "packages/ai-hats-wt/tests"
 # when running from inside it). Zero behavioural change for the main
 # checkout — both the worktree's ``src/ai_hats`` and the installed
 # editable point at the same files there.
-pythonpath = ["src", "packages/ai-hats-core/src", "packages/ai-hats-wt/src"]
+pythonpath = [
+    "src",
+    "packages/ai-hats-core/src",
+    "packages/ai-hats-wt/src",
+    "packages/ai-hats-tracker/src",
+]
 filterwarnings = [
     # Python 3.14 deprecates forkpty() in multi-threaded processes.
     # ptyprocess (used by WrapRunner._pty_spawn and exercised in test_observe.py)

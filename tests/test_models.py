@@ -1074,7 +1074,7 @@ def test_task_card_save_is_atomic_on_serialization_crash(tmp_path, monkeypatch):
     yaml.dump writes a byte); passes once save routes through atomic_io
     (serialize fully, then atomic replace — the target is untouched on failure).
     """
-    import ai_hats.tracker.models as models_mod
+    import ai_hats_tracker.models as models_mod
 
     p = tmp_path / "task.yaml"
     TaskCard(id="T-1", title="Original").save(p)

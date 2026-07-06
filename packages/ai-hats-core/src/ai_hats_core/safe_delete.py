@@ -275,12 +275,13 @@ def _hard_delete(path: Path) -> None:
         path.unlink(missing_ok=True)
 
 
-def _move_to_trash(src: Path, dest: Path) -> None:
+def _move_to_trash(src: Path, dest: Path) -> bool:
     """Move ``src`` to ``dest`` creating parent dirs. Translates ENOSPC.
 
-    Symlinks: link itself unlinked, target preserved. Sidecar file
-    ``<dest>.symlink`` records the original target string so the user
-    can reconstruct the link if needed.
+    Returns True on a real move; False if ``src`` vanished first — HATS-941: a
+    concurrent ``discard`` won the move, a benign no-op keeping ``discard``
+    idempotent under concurrency. Symlinks: link unlinked, target preserved in
+    a ``<dest>.symlink`` sidecar for reconstruction.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -289,8 +290,15 @@ def _move_to_trash(src: Path, dest: Path) -> None:
             sidecar = dest.parent / f"{dest.name}.symlink"
             sidecar.write_text(target)
             src.unlink()
-            return
+            return True
         shutil.move(str(src), str(dest))
+        return True
+    except FileNotFoundError:
+        # A peer discard already trashed src. If it's truly gone, no-op;
+        # otherwise (src still present) it's a real error — re-raise.
+        if not src.exists() and not src.is_symlink():
+            return False
+        raise
     except OSError as e:
         if e.errno == errno.ENOSPC:
             raise TrashFullError(
@@ -299,36 +307,37 @@ def _move_to_trash(src: Path, dest: Path) -> None:
         raise
 
 
+def _umask_perms() -> int:
+    """Perms ``open(path, "w")`` would create under the current umask."""
+    current = os.umask(0)
+    os.umask(current)
+    return 0o666 & ~current
+
+
 def _write_atomic(path: Path, content: bytes, mode: int | None = None) -> None:
-    """Atomic write: tmp + rename. Internal helper (NOT routed through trash).
+    """Atomic write via UNIQUE tmp + rename. Leaf-module copy of the atomic_io
+    primitive (HATS-716: safe_delete imports nothing first-party).
 
-    Intentionally NOT delegated to ``ai_hats_core.atomic_io`` (HATS-716): ``safe_delete``
-    is a designated leaf module (``test_import_hygiene.LEAF_MODULES``) that must
-    import nothing first-party, so it keeps its own copy of the tmp+replace
-    primitive. The ``.tmp`` file lives for milliseconds and never carries user data
-    — the standard atomic-write pattern. Lint-whitelisted within safe_delete.py.
-
-    When ``mode`` is given, ``chmod`` is applied to the ``.tmp`` BEFORE
-    the atomic rename, so the final path appears with the requested
-    permission bits in a single fs operation — no window where the file
-    exists with default umask perms (HATS-467).
+    HATS-936: unique ``mkstemp`` tmp (not a deterministic ``<name>.tmp``) so
+    concurrent writers of the SAME target (STATE.md regen) never collide.
+    ``mode`` (else umask default — ``mkstemp`` is 0o600) is chmod'd pre-rename
+    so the final path never appears with tightened/default-umask perms (HATS-467).
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    tmp = Path(tmp_name)
     try:
-        tmp.write_bytes(content)
-        if mode is not None:
-            tmp.chmod(mode)
+        with os.fdopen(fd, "wb") as f:
+            f.write(content)
+        tmp.chmod(mode if mode is not None else _umask_perms())
         tmp.replace(path)
     except OSError as e:
         try:
-            tmp.unlink()
+            tmp.unlink()  # safe-delete: ok ephemeral atomic-write tmp (never user data)
         except OSError:
             pass
         if e.errno == errno.ENOSPC:
-            raise TrashFullError(
-                f"Cannot write {path}: no space left."
-            ) from e
+            raise TrashFullError(f"Cannot write {path}: no space left.") from e
         raise
 
 
@@ -420,7 +429,8 @@ def discard(
         return None
 
     dest = _resolve_dest(path, project_dir, session)
-    _move_to_trash(path, dest)
+    if not _move_to_trash(path, dest):
+        return None  # HATS-941: a concurrent discard already trashed it
     _record(session, "discard", reason, path, dest)
     return dest
 

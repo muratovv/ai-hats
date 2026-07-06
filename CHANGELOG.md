@@ -10,6 +10,18 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Marker-less pre-marker `.claude/skills/` mirror now auto-heals** (HATS-931).
+  A stale project-scope skills mirror written by a pre-marker ai-hats version
+  (no `.ai-hats-managed` marker) used to warn about a double skill registration
+  every session with no way to clear it — the auto-heal was gated on the marker.
+  Session start now treats any project-scope `.claude/skills/<name>` that
+  collides with a composed skill as ai-hats-owned (project `.claude/skills` is
+  not a user-authoring surface) and sweeps it to the recoverable trash with a
+  heal NOTE. Home-scope collisions (`~/.claude/skills`) are still only warned
+  about, never touched (HATS-465).
+
 ## [0.13.1] - 2026-07-06
 
 ### Added
