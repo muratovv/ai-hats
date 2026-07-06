@@ -13,14 +13,26 @@ from __future__ import annotations
 from .layout import TrackerPaths
 from .models import Attachment, TaskCard, TaskState, WorkLogEntry
 from .plan_extract import Candidate, extract_candidates, mark_extracted
+from .state import (
+    PLAN_SCAFFOLD,
+    PLAN_SECTIONS,
+    EmptyPlanError,
+    TaskManager,
+    WorktreeEffects,
+)
 
 __all__ = [
     "Attachment",
     "Candidate",
+    "EmptyPlanError",
+    "PLAN_SCAFFOLD",
+    "PLAN_SECTIONS",
     "TaskCard",
+    "TaskManager",
     "TaskState",
     "TrackerPaths",
     "WorkLogEntry",
+    "WorktreeEffects",
     "extract_candidates",
     "mark_extracted",
 ]
