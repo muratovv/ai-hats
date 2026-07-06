@@ -12,11 +12,15 @@ from __future__ import annotations
 
 from .layout import TrackerPaths
 from .models import Attachment, TaskCard, TaskState, WorkLogEntry
+from .plan_extract import Candidate, extract_candidates, mark_extracted
 
 __all__ = [
     "Attachment",
+    "Candidate",
     "TaskCard",
     "TaskState",
     "TrackerPaths",
     "WorkLogEntry",
+    "extract_candidates",
+    "mark_extracted",
 ]
