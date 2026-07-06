@@ -132,6 +132,35 @@ probe_imports() {
     "$VENV/bin/python" -c "import $mods" 2>/dev/null
 }
 
+# --- HATS-938: editable host source for `self init`. Printed to stdout (empty
+#     if none), exported as AI_HATS_INIT_SRC so a fresh project auto-seeds
+#     harness.channel:local without a manual yaml edit. Detection, in order:
+#       1. the resolved venv is an editable install → its PEP 610 file:// path
+#          (covers AI_HATS_VENV → editable dev clone, the common dev case);
+#       2. the install source is a local directory (channel:local path, or a
+#          local AI_HATS_REPO_URL) → that dir.
+#     Fail-open: any probe error yields empty (init falls back to STABLE).
+detect_init_src() {
+    if [[ -x "$VENV/bin/python" ]]; then
+        local src
+        src="$("$VENV/bin/python" -c '
+import json
+from importlib.metadata import distribution
+try:
+    raw = distribution("ai-hats").read_text("direct_url.json") or "{}"
+    info = json.loads(raw)
+except Exception:
+    info = {}
+u = info.get("url") or ""
+print(u[7:] if (info.get("dir_info") or {}).get("editable") and u.startswith("file://") else "")
+' 2>/dev/null || true)"
+        if [[ -n "$src" ]]; then printf '%s' "$src"; return 0; fi
+    fi
+    if [[ -n "$LOCAL_SRC" && -d "$LOCAL_SRC" ]]; then printf '%s' "$LOCAL_SRC"; return 0; fi
+    if [[ "$REPO_URL" != *"://"* && -d "$REPO_URL" ]]; then printf '%s' "$REPO_URL"; return 0; fi
+    return 0
+}
+
 # --- Idempotent heal: no-op if healthy, recreate if default broken,
 #     refuse if override broken (user-owned). Called from `self update`
 #     and `self init` before delegating, so the user only ever needs one
@@ -180,6 +209,12 @@ heal_if_needed() {
 #     default venv here instead of forcing a separate `self update` first
 #     (HATS-612). ---
 if [[ "${1:-}" == "self" && ( "${2:-}" == "update" || "${2:-}" == "init" ) ]]; then
+    # HATS-938: detect the editable host source BEFORE heal (which may rebuild a
+    # fresh remote venv), so `self init` seeds channel:local deterministically.
+    if [[ "${2:-}" == "init" && -z "${AI_HATS_INIT_SRC:-}" ]]; then
+        _init_src="$(detect_init_src)"
+        [[ -n "$_init_src" ]] && export AI_HATS_INIT_SRC="$_init_src"
+    fi
     heal_if_needed
     # Fall through to default exec below — python self update / init runs there.
 fi
