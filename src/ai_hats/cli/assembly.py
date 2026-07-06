@@ -201,6 +201,21 @@ def _launch_wizard_session() -> None:
     default=False,
     help="Skip the `self update` step that wizard-path init normally runs.",
 )
+@click.option(  # ai-hats: allow-secret — privacy-hook FP: diff `+@click.option` matches its email regex
+    "--channel",
+    "channel",
+    type=click.Choice(["local", "edge", "stable"]),
+    default=None,
+    help="Harness source channel (HATS-938): overrides the auto-default "
+    "(local when the host ai-hats is an editable dev clone, else stable).",
+)
+@click.option(  # ai-hats: allow-secret — privacy-hook FP: diff `+@click.option` matches its email regex
+    "--harness-path",
+    "harness_path",
+    default=None,
+    help="Local-only: editable source path for --channel local "
+    "(default: detected editable source, else project root).",
+)
 def init(
     provider: str | None,
     role: str | None,
@@ -210,6 +225,8 @@ def init(
     no_manage_gitignore: bool,
     no_wizard: bool,
     no_update: bool,
+    channel: str | None,
+    harness_path: str | None,
 ):
     """Initialize ai-hats in the current directory.
 
@@ -225,6 +242,12 @@ def init(
     """
     project_dir = _project_dir()
     already = (project_dir / PROJECT_CONFIG).exists()
+
+    # HATS-938: mirror the `config --channel` guard — a path only means the
+    # local channel.
+    if harness_path is not None and channel != "local":
+        console.print("[red]Error[/]: --harness-path is only valid with --channel local.")
+        raise SystemExit(2)
 
     # HATS-549: pre-bump snapshot for re-init paths (non-greenfield).
     # Greenfield init has nothing to back up — the project tree is
@@ -288,10 +311,23 @@ def init(
             ai_hats_dir=ai_hats_dir,
             venv_path=venv_path,
             manage_gitignore=manage_gitignore,
+            channel=channel,
+            harness_path=harness_path,
         )
     except ValueError as err:
         console.print(f"[red]Error[/]: {err}")
         raise SystemExit(1)
+
+    # HATS-938: surface a non-default harness so an auto-seeded channel:local
+    # (editable host) or an explicit --channel is visible, not silent.
+    from ..models import Channel as _Channel
+
+    seeded = asm.project_config.harness
+    if seeded.channel is not _Channel.STABLE:
+        loc = f" → {seeded.path}" if seeded.path else ""
+        console.print(
+            f"[green]✓[/] harness channel: [bold]{seeded.channel.value}[/]{loc}"
+        )
 
     # HATS-549 Phase 3: end-of-init smoke-assert. Mirrors do_bump's
     # final step — every hook command path in .claude/settings.json

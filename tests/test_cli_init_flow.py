@@ -1078,3 +1078,45 @@ def test_config_set_repo_rejected_without_edge(cli_project):
     r = runner.invoke(main, ["config", "set", "--channel", "local", "--repo", "https://x/y.git"])
     assert r.exit_code == 1
     assert "--repo is only valid with --channel edge" in r.output
+
+
+# ---------- HATS-938: self init --channel / --harness-path ----------
+
+
+def test_init_channel_local_flag_seeds_path(cli_project):
+    """`self init --channel local --harness-path X` writes that harness verbatim."""
+    import yaml
+
+    project, runner = cli_project
+    r = runner.invoke(
+        main,
+        ["self", "init", "-p", "claude", "--channel", "local", "--harness-path", "/opt/src"],
+    )
+    assert r.exit_code == 0, r.output
+    raw = yaml.safe_load((project / PROJECT_CONFIG).read_text())
+    assert raw["harness"] == {"channel": "local", "path": "/opt/src"}
+
+
+def test_init_explicit_stable_beats_editable_auto(cli_project):
+    """--channel stable wins over the editable-host auto-seed → no harness block.
+
+    The suite runs under the editable dev .venv, so a bare `self init` would
+    auto-seed channel:local; the explicit flag must override that to stable
+    (default → omitted from yaml).
+    """
+    project, runner = cli_project
+    r = runner.invoke(main, ["self", "init", "-p", "claude", "--channel", "stable"])
+    assert r.exit_code == 0, r.output
+    assert "harness" not in (project / PROJECT_CONFIG).read_text()
+
+
+def test_init_harness_path_requires_local_channel(cli_project):
+    """--harness-path without --channel local fails loud, leaves no artifacts."""
+    project, runner = cli_project
+    r = runner.invoke(
+        main,
+        ["self", "init", "-p", "claude", "--channel", "stable", "--harness-path", "/opt/src"],
+    )
+    assert r.exit_code != 0, r.output
+    assert "--harness-path is only valid with --channel local" in r.output
+    assert not (project / PROJECT_CONFIG).exists()

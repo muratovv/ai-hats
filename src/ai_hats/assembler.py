@@ -25,6 +25,7 @@ from .materialize import compose_for_role
 from .resolver import LibraryResolver
 from .models import (
     ComponentType,
+    HarnessConfig,
     OverlayConfig,
     ProjectConfig,
     UserConfig,
@@ -414,6 +415,8 @@ class Assembler:
         ai_hats_dir: str | None = None,
         venv_path: str | None = None,
         manage_gitignore: bool | None = None,
+        channel: str | None = None,
+        harness_path: str | None = None,
     ) -> None:
         """Initialize project structure. Idempotent.
 
@@ -519,6 +522,13 @@ class Assembler:
         if delta:
             self.save_config(**delta)
 
+        # HATS-938: seed harness.channel:local when the host ai-hats is editable,
+        # so a fresh project heals editable-from-local, not the remote release.
+        # Auto-detect is greenfield-only; an explicit --channel always applies.
+        harness_seed = self._resolve_init_harness(channel, harness_path, greenfield)
+        if harness_seed is not None:
+            self.save_config(harness=harness_seed)
+
         # Create STATE.md
         from .paths import state_md_path
 
@@ -600,6 +610,47 @@ class Assembler:
         # install_time=True → registry fires (gated by migration_step;
         # greenfield no-ops via the R2 seed above).
         self._refresh(install_time=True, result=result)
+
+    def _resolve_init_harness(
+        self, channel: str | None, harness_path: str | None, greenfield: bool
+    ) -> "HarnessConfig | None":
+        """Harness to seed at init, or None to leave the config default (STABLE).
+
+        Precedence: explicit ``--channel`` (always) → editable-source auto-detect
+        (greenfield only). Re-init never clobbers an existing harness on auto.
+        """
+        from .models import Channel
+
+        if channel is not None:
+            ch = Channel(channel)
+            path = harness_path
+            if ch is Channel.LOCAL and path is None:
+                path = self._detect_editable_src()
+            return HarnessConfig(channel=ch, path=path)
+        if not greenfield:
+            return None
+        src = self._detect_editable_src()
+        return HarnessConfig(channel=Channel.LOCAL, path=src) if src else None
+
+    def _detect_editable_src(self) -> str | None:
+        """Absolute path of the editable ai-hats source, or None if not editable.
+
+        Launcher-exported ``AI_HATS_INIT_SRC`` wins (robust to venv-bootstrap
+        ordering); else the running interpreter's PEP 610 ``file://`` editable url.
+        """
+        import os
+
+        from .constants import ENV_AI_HATS_INIT_SRC
+
+        env_src = (os.environ.get(ENV_AI_HATS_INIT_SRC) or "").strip()
+        if env_src:
+            return env_src
+        from .cli.maintenance import _is_editable_install
+
+        editable, url = _is_editable_install()
+        if editable and url and url.startswith("file://"):
+            return url.removeprefix("file://")
+        return None
 
     def _get_overlay(self, role_name: str) -> OverlayConfig | None:
         """Get the **project** overlay for a role, or ``None`` if absent/empty.
