@@ -10,4 +10,11 @@ the public surface a standalone consumer drives.
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from .models import Attachment, TaskCard, TaskState, WorkLogEntry
+
+__all__ = [
+    "Attachment",
+    "TaskCard",
+    "TaskState",
+    "WorkLogEntry",
+]

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 
 def test_import_ai_hats_tracker():
-    import ai_hats_tracker
+    from ai_hats_tracker import TaskCard, TaskState
 
-    assert ai_hats_tracker.__all__ == []
+    assert TaskState.BRAINSTORM.value == "brainstorm"
+    assert TaskCard(id="T-1", title="probe").id == "T-1"

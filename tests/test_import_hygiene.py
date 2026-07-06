@@ -36,12 +36,13 @@ SRC = Path(__file__).resolve().parent.parent / "src" / PKG
 LEAF_MODULES = (
     "constants",
     "paths",  # HATS-862: git_env + safe_delete -> core
-    "tracker.models",  # HATS-863: tracker schema is core-only
 )
 
 # HATS-863: schema modules must never regrow the models->providers back-edge —
 # not even deferred (the pre-split cycle lived in a deferred validator import).
-SCHEMA_MODULES = ("models", "config", "tracker.models", "libraries.models")
+# tracker.models left for ai-hats-tracker (HATS-933); its purity is now the
+# package's own test_boundary.py.
+SCHEMA_MODULES = ("models", "config", "libraries.models")
 
 # HATS-865: the composition layer is integrator-only (ADR-0014 Composition rule).
 FORBIDDEN_COMPOSITION = ("composer", "assembler", "materialize", "providers", "resolver")
