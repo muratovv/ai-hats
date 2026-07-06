@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .paths import ensure_ai_hats_dir, state_md_path, tasks_dir
-from .tracker.layout import TrackerPaths
+from ai_hats_tracker.layout import TrackerPaths
 
 
 def tracker_paths(project_dir: Path) -> TrackerPaths:
