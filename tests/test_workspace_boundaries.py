@@ -65,9 +65,13 @@ def _members() -> dict[str, dict]:
             if not pyproject.is_file():
                 continue
             project = _project(pyproject)
+            optional = project.get("optional-dependencies", {})
             members[project["name"]] = {
                 "src": member_dir / "src" / _import_root(project["name"]),
                 "deps": [_dep_name(s) for s in project.get("dependencies", [])],
+                "optional_deps": [
+                    _dep_name(s) for specs in optional.values() for s in specs
+                ],
             }
     return members
 
@@ -117,7 +121,10 @@ def test_member_imports_only_declared_deps():
     """Rule 1: a member imports only stdlib / intra-package / declared deps."""
     offenders: dict[str, dict[str, list[str]]] = {}
     for name, member in _members().items():
-        allowed = {_import_root(name)} | {_import_root(d) for d in member["deps"]}
+        # A soft, guarded import of an optional extra is legal (e.g. tracker's wt
+        # extra — HATS-934); Rule 2's tier check stays on hard deps only.
+        declared = member["deps"] + member["optional_deps"]
+        allowed = {_import_root(name)} | {_import_root(d) for d in declared}
         bad = _boundary_offenders(member["src"], allowed)
         if bad:
             offenders[name] = bad

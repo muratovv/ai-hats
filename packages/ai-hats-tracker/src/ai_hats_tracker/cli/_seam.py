@@ -63,3 +63,6 @@ _MANAGER_FACTORY = _default_task_manager
 _PROJECT_DIR = _default_project_dir
 _GUARD_LINKED_WT = _default_guard_not_inside_linked_worktree
 _CONSOLE = Console()
+# Integrator-only wt-state-dir resolver (``ai_hats.paths.worktrees_dir``); None
+# standalone → the wt-present post-execute worktree display stays dark.
+_WORKTREES_DIR = None
