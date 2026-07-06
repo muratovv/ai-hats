@@ -102,7 +102,12 @@ target-version = "py311"
 line-length = 100
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "packages/ai-hats-core/tests", "packages/ai-hats-wt/tests"]
+testpaths = [
+    "tests",
+    "packages/ai-hats-core/tests",
+    "packages/ai-hats-wt/tests",
+    "packages/ai-hats-tracker/tests",
+]
 # HATS-508: prepend ./src to sys.path so ``python -m pytest`` from a
 # linked worktree imports the worktree's own ``ai_hats`` package
 # rather than the editable install pointing at the main checkout.
@@ -110,7 +115,12 @@ testpaths = ["tests", "packages/ai-hats-core/tests", "packages/ai-hats-wt/tests"
 # when running from inside it). Zero behavioural change for the main
 # checkout — both the worktree's ``src/ai_hats`` and the installed
 # editable point at the same files there.
-pythonpath = ["src", "packages/ai-hats-core/src", "packages/ai-hats-wt/src"]
+pythonpath = [
+    "src",
+    "packages/ai-hats-core/src",
+    "packages/ai-hats-wt/src",
+    "packages/ai-hats-tracker/src",
+]
 filterwarnings = [
     # Python 3.14 deprecates forkpty() in multi-threaded processes.
     # ptyprocess (used by WrapRunner._pty_spawn and exercised in test_observe.py)
