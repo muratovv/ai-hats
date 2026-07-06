@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats-tracker"
-version = "0.1.0"
-description = "Standalone task-card schema + worktree-free task FSM for the ai-hats framework (TaskCard + TaskManager)."
+version = "0.2.0"
+description = "Standalone task-card schema, worktree-free task FSM, and backlog CLI for the ai-hats framework (TaskCard + TaskManager + `task`/`attach`)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

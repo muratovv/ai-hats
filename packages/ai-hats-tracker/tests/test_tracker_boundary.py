@@ -92,3 +92,12 @@ def test_boundary_lint_self_test():
         )
     )
     assert allowed and all(_is_allowed(r) for r in allowed)
+
+
+def test_boundary_covers_cli_subpackage():
+    """The lint walks the ``cli/`` backlog-CLI modules (HATS-934), not just the
+    schema/FSM core — else a wt-optional CLI file could smuggle a forbidden
+    ``ai_hats`` import past the gate."""
+    scanned = {p.relative_to(SRC).as_posix() for p in SRC.rglob("*.py")}
+    assert "cli/task.py" in scanned, scanned
+    assert "cli/attach.py" in scanned, scanned
