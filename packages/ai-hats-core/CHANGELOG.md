@@ -3,6 +3,18 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-07-06
+
+### Added
+
+- `ai_hats_core.migrations` — generic step-gated `Migration[Ctx]` runner
+  (`run_pending` / `latest_step`, HATS-868). Consumed by `ai_hats.migrations`.
+  Version bumped so a remote-channel install resolves a local/published wheel
+  that carries the module: the published `0.3.0` predates it, so the floor pin
+  `ai-hats-core>=0.3.0` was resolving a `core` without `.migrations`
+  (`ModuleNotFoundError`, HATS-937 — same skew class as HATS-923). Publishing
+  0.4.0 to PyPI + raising the consumer pin to `>=0.4.0` closes it.
+
 ## [0.3.0] - 2026-07-06
 
 ### Added
