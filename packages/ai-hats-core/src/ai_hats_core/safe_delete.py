@@ -299,36 +299,37 @@ def _move_to_trash(src: Path, dest: Path) -> None:
         raise
 
 
+def _umask_perms() -> int:
+    """Perms ``open(path, "w")`` would create under the current umask."""
+    current = os.umask(0)
+    os.umask(current)
+    return 0o666 & ~current
+
+
 def _write_atomic(path: Path, content: bytes, mode: int | None = None) -> None:
-    """Atomic write: tmp + rename. Internal helper (NOT routed through trash).
+    """Atomic write via UNIQUE tmp + rename. Leaf-module copy of the atomic_io
+    primitive (HATS-716: safe_delete imports nothing first-party).
 
-    Intentionally NOT delegated to ``ai_hats_core.atomic_io`` (HATS-716): ``safe_delete``
-    is a designated leaf module (``test_import_hygiene.LEAF_MODULES``) that must
-    import nothing first-party, so it keeps its own copy of the tmp+replace
-    primitive. The ``.tmp`` file lives for milliseconds and never carries user data
-    — the standard atomic-write pattern. Lint-whitelisted within safe_delete.py.
-
-    When ``mode`` is given, ``chmod`` is applied to the ``.tmp`` BEFORE
-    the atomic rename, so the final path appears with the requested
-    permission bits in a single fs operation — no window where the file
-    exists with default umask perms (HATS-467).
+    HATS-936: unique ``mkstemp`` tmp (not a deterministic ``<name>.tmp``) so
+    concurrent writers of the SAME target (STATE.md regen) never collide.
+    ``mode`` (else umask default — ``mkstemp`` is 0o600) is chmod'd pre-rename
+    so the final path never appears with tightened/default-umask perms (HATS-467).
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    tmp = Path(tmp_name)
     try:
-        tmp.write_bytes(content)
-        if mode is not None:
-            tmp.chmod(mode)
+        with os.fdopen(fd, "wb") as f:
+            f.write(content)
+        tmp.chmod(mode if mode is not None else _umask_perms())
         tmp.replace(path)
     except OSError as e:
         try:
-            tmp.unlink()
+            tmp.unlink()  # safe-delete: ok ephemeral atomic-write tmp (never user data)
         except OSError:
             pass
         if e.errno == errno.ENOSPC:
-            raise TrashFullError(
-                f"Cannot write {path}: no space left."
-            ) from e
+            raise TrashFullError(f"Cannot write {path}: no space left.") from e
         raise
 
 
