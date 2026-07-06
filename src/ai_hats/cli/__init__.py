@@ -260,7 +260,7 @@ main.add_command(task.task)
 # HATS-934: tracker CLI (task/attach) defaults to wt-free constructors; the
 # integrator wires the wt-coupled `_helpers` versions here so `ai-hats task`
 # keeps its worktree UX (override the shared `_seam` — reaches every importer).
-from . import _seam  # noqa: E402
+from ai_hats_tracker.cli import _seam  # noqa: E402
 from ._helpers import (  # noqa: E402
     _guard_not_inside_linked_worktree,
     _project_dir,

@@ -34,15 +34,23 @@ def _default_project_dir() -> Path:
 
 
 def _default_task_manager(project_dir: Path | None = None):
-    """Construct a wt-free ``TaskManager`` (``worktree_effects=None``)."""
-    from ..models import ProjectConfig
-    from ..paths import PROJECT_CONFIG
+    """Construct a wt-free ``TaskManager`` on a project-local ``.agent`` layout.
+
+    Standalone default (``worktree_effects=None``, no ``ai-hats.yaml``); the
+    integrator overrides this slot with its wt-wired, yaml-aware factory.
+    """
+    from ..layout import TrackerPaths
     from ..state import TaskManager
-    from ..tracker_wiring import tracker_paths
 
     pdir = project_dir or _default_project_dir()
-    prefix = ProjectConfig.resolve_task_prefix(pdir, pdir / PROJECT_CONFIG)
-    return TaskManager(pdir, prefix=prefix, layout=tracker_paths(pdir), worktree_effects=None)
+    agent = pdir / ".agent"
+    layout = TrackerPaths(
+        tasks_dir=agent / "tasks",
+        state_md_path=agent / "STATE.md",
+        legacy_backlog_md=agent / "BACKLOG.md",
+        ensure_base=None,
+    )
+    return TaskManager(pdir, layout=layout, worktree_effects=None)
 
 
 def _default_guard_not_inside_linked_worktree() -> None:
