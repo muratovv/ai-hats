@@ -170,13 +170,34 @@ def task_transition(
 ):
     """Transition a task to a new state."""
     from ..models import TaskState
-    from ai_hats_wt import WorktreeBaseBranchError
-    from ai_hats_wt import WorktreeBaseBranchMismatchError
-    from ai_hats_wt import WorktreeCreateError
-    from ai_hats_wt import WorktreeDriftError
-    from ai_hats_wt import WorktreeMainRepoMidMergeError
-    from ai_hats_wt import WorktreeStateIncompleteError
-    from ai_hats_wt import WorktreeStateLostError
+
+    try:
+        from ai_hats_wt import (
+            WorktreeBaseBranchError,
+            WorktreeBaseBranchMismatchError,
+            WorktreeCreateError,
+            WorktreeDriftError,
+            WorktreeMainRepoMidMergeError,
+            WorktreeStateIncompleteError,
+            WorktreeStateLostError,
+        )
+    except ImportError:
+        # wt-optional (HATS-934): without ai-hats-wt the wt-free TaskManager
+        # raises none of these, so the except-ladder below just needs concrete
+        # types to name. Distinct sentinels keep every `except` reachable.
+        class WorktreeBaseBranchError(Exception): ...
+
+        class WorktreeBaseBranchMismatchError(Exception): ...
+
+        class WorktreeCreateError(Exception): ...
+
+        class WorktreeDriftError(Exception): ...
+
+        class WorktreeMainRepoMidMergeError(Exception): ...
+
+        class WorktreeStateIncompleteError(Exception): ...
+
+        class WorktreeStateLostError(Exception): ...
 
     mgr = _task_manager(_project_dir())
     try:
@@ -242,28 +263,33 @@ def task_transition(
             if plan_path.exists():
                 console.print(f"  Plan scaffold: {plan_path}")
         elif state == TaskState.EXECUTE:
-            from ..paths import worktrees_dir
-            from ai_hats_wt import WorktreeManager
+            try:
+                from ai_hats_wt import WorktreeManager
+            except ImportError:
+                WorktreeManager = None  # wt-free: no worktree to display
 
-            project_dir = _project_dir()
-            active = WorktreeManager.load_for_task(
-                project_dir, task_id, state_dir=worktrees_dir(project_dir)
-            )
-            if active and active.worktree_path:
-                console.print(f"  Worktree: {active.worktree_path}")
-                console.print(f"  Branch: {active.branch_name}")
-                console.print(f"  [dim]cd {active.worktree_path}[/]")
-            elif WorktreeManager.is_inside_linked_worktree(caller_cwd):
-                # HATS-060 / HATS-840: adopted the caller's worktree (detect via cwd).
-                adopted = WorktreeManager.worktree_toplevel(caller_cwd) or caller_cwd
-                console.print(f"  Worktree: {adopted} [dim](adopted — already cwd)[/]")
-            elif force:
-                # HATS-697: a forced execute is a manual state correction and
-                # deliberately creates no worktree.
-                console.print(
-                    "  [dim]No worktree created (forced) — "
-                    "`ai-hats wt create` if you want isolation.[/]"
+            if WorktreeManager is not None:
+                from ..paths import worktrees_dir
+
+                project_dir = _project_dir()
+                active = WorktreeManager.load_for_task(
+                    project_dir, task_id, state_dir=worktrees_dir(project_dir)
                 )
+                if active and active.worktree_path:
+                    console.print(f"  Worktree: {active.worktree_path}")
+                    console.print(f"  Branch: {active.branch_name}")
+                    console.print(f"  [dim]cd {active.worktree_path}[/]")
+                elif WorktreeManager.is_inside_linked_worktree(caller_cwd):
+                    # HATS-060 / HATS-840: adopted the caller's worktree (detect via cwd).
+                    adopted = WorktreeManager.worktree_toplevel(caller_cwd) or caller_cwd
+                    console.print(f"  Worktree: {adopted} [dim](adopted — already cwd)[/]")
+                elif force:
+                    # HATS-697: a forced execute is a manual state correction and
+                    # deliberately creates no worktree.
+                    console.print(
+                        "  [dim]No worktree created (forced) — "
+                        "`ai-hats wt create` if you want isolation.[/]"
+                    )
         elif state == TaskState.DONE:
             console.print("  Worktree merged")
         elif state == TaskState.FAILED:
