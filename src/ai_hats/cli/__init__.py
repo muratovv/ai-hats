@@ -261,6 +261,7 @@ main.add_command(task.task)
 # integrator wires the wt-coupled `_helpers` versions here so `ai-hats task`
 # keeps its worktree UX (override the shared `_seam` — reaches every importer).
 from ai_hats_tracker.cli import _seam  # noqa: E402
+from ..paths import worktrees_dir  # noqa: E402
 from ._helpers import (  # noqa: E402
     _guard_not_inside_linked_worktree,
     _project_dir,
@@ -271,6 +272,7 @@ _seam._MANAGER_FACTORY = _task_manager
 _seam._PROJECT_DIR = _project_dir
 _seam._GUARD_LINKED_WT = _guard_not_inside_linked_worktree
 _seam._CONSOLE = console
+_seam._WORKTREES_DIR = worktrees_dir
 
 # Reflect (post-session retro)
 main.add_command(reflect_mod.reflect)

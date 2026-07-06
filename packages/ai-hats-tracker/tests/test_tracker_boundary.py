@@ -1,11 +1,12 @@
 """Workspace-boundary import-lint for the standalone ``ai_hats_tracker`` package.
 
-ADR-0014 Phase 2 (HATS-933). Every ``ai_hats_tracker`` import must resolve to
-stdlib, ``pydantic``/``yaml``/``filelock``/``click``/``rich``, ``ai_hats_core``, or intra-package
-— NEVER the ``ai_hats`` integrator and NEVER ``ai_hats_wt`` (one-directional:
-ai_hats -> ai_hats_tracker, never back). That allowlist is what lets the package
-install + run standalone (runtime proof: ``test_tracker_standalone``); this is
-the static, dependency-free guard.
+ADR-0014 Phase 2 (HATS-933, HATS-934). Every ``ai_hats_tracker`` import must
+resolve to stdlib, ``pydantic``/``yaml``/``filelock``/``click``/``rich``,
+``ai_hats_core``, or intra-package — NEVER the ``ai_hats`` integrator (one-
+directional: ai_hats -> ai_hats_tracker, never back). ``ai_hats_wt`` is a soft
+optional extra tolerated ONLY in the ``cli/`` subpackage; the schema/FSM core
+stays wt-free. That allowlist is what lets the package install + run standalone
+(runtime proof: ``test_tracker_standalone``); this is the static guard.
 """
 
 from __future__ import annotations
@@ -51,17 +52,23 @@ def _is_allowed(root: str) -> bool:
 
 
 def test_ai_hats_tracker_imports_only_declared_deps():
-    """ai_hats_tracker imports only stdlib / pydantic / yaml / filelock /
-    ai_hats_core / intra-package — never ai_hats or ai_hats_wt."""
+    """ai_hats_tracker imports only stdlib / pydantic / yaml / filelock / click /
+    rich / ai_hats_core / intra-package — never ai_hats. ``ai_hats_wt`` is a soft
+    optional extra permitted ONLY in the ``cli/`` subpackage (HATS-934); the
+    FSM/schema core must never touch it. Runtime wt-free proof: the CLI standalone
+    test asserts ``import ai_hats_tracker.cli.task`` pulls no ``ai_hats_wt``."""
     offenders: dict[str, list[str]] = {}
     for path in sorted(SRC.rglob("*.py")):
         roots = _top_level_import_roots(ast.parse(path.read_text()))
-        bad = sorted(r for r in roots if not _is_allowed(r))
+        # ai_hats_wt is an optional extra, soft-imported by the backlog CLI only.
+        allowed_extra = {"ai_hats_wt"} if path.parent.name == "cli" else set()
+        bad = sorted(r for r in roots if not _is_allowed(r) and r not in allowed_extra)
         if bad:
             offenders[path.name] = bad
     assert not offenders, (
         "ai_hats_tracker must import only stdlib + pydantic + yaml + filelock + "
-        f"click + rich + ai_hats_core (never ai_hats / ai_hats_wt): {offenders}"
+        f"click + rich + ai_hats_core (ai_hats_wt soft in cli/ only; never "
+        f"ai_hats): {offenders}"
     )
 
 
