@@ -275,12 +275,13 @@ def _hard_delete(path: Path) -> None:
         path.unlink(missing_ok=True)
 
 
-def _move_to_trash(src: Path, dest: Path) -> None:
+def _move_to_trash(src: Path, dest: Path) -> bool:
     """Move ``src`` to ``dest`` creating parent dirs. Translates ENOSPC.
 
-    Symlinks: link itself unlinked, target preserved. Sidecar file
-    ``<dest>.symlink`` records the original target string so the user
-    can reconstruct the link if needed.
+    Returns True on a real move; False if ``src`` vanished first — HATS-941: a
+    concurrent ``discard`` won the move, a benign no-op keeping ``discard``
+    idempotent under concurrency. Symlinks: link unlinked, target preserved in
+    a ``<dest>.symlink`` sidecar for reconstruction.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -289,8 +290,15 @@ def _move_to_trash(src: Path, dest: Path) -> None:
             sidecar = dest.parent / f"{dest.name}.symlink"
             sidecar.write_text(target)
             src.unlink()
-            return
+            return True
         shutil.move(str(src), str(dest))
+        return True
+    except FileNotFoundError:
+        # A peer discard already trashed src. If it's truly gone, no-op;
+        # otherwise (src still present) it's a real error — re-raise.
+        if not src.exists() and not src.is_symlink():
+            return False
+        raise
     except OSError as e:
         if e.errno == errno.ENOSPC:
             raise TrashFullError(
@@ -421,7 +429,8 @@ def discard(
         return None
 
     dest = _resolve_dest(path, project_dir, session)
-    _move_to_trash(path, dest)
+    if not _move_to_trash(path, dest):
+        return None  # HATS-941: a concurrent discard already trashed it
     _record(session, "discard", reason, path, dest)
     return dest
 
