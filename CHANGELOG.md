@@ -10,8 +10,15 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-07-06
+
 ### Added
 
+- **Worktree lifecycle effects recorded in the task card** (HATS-866).
+  `ai-hats wt create` / `merge` / `discard` now append a structured effect line
+  to the card's `work_log/` (branch, worktree path, merge SHA), so the tracker
+  carries the worktree history. Routed through a `WorktreeEffects` seam that
+  decouples `state` from `wt`.
 - **Owner registry + unclaimed-marker sweeper** (HATS-905 phase 1, HATS-910).
   Every mechanism materializing files outside `<ai_hats_dir>` registers an
   `owner_key` in the open registry (`ai_hats.owners`); on `self init`/`bump` a
@@ -47,6 +54,18 @@ since the latest tag lives under **Unreleased** until the next release.
   `filelock`-backed) around a fresh re-read plus only the caller's field
   delta. Contention past 10s exits with a friendly error instead of hanging;
   a static guard test keeps whole-object saves from coming back.
+- **Worktree runs and sub-agents resolve the workspace packages** (HATS-913).
+  `ai-hats wt exec` and the worktree env thread `packages/*/src` (ai_hats_core,
+  ai_hats_wt) into `PYTHONPATH`, so code run inside a linked worktree imports the
+  worktree's own workspace sources instead of the main checkout's (or failing to
+  import them).
+- **A fresh `pip install ai-hats` can no longer resolve stale workspace
+  subpackages** (HATS-923, HATS-928). `ai-hats-core` published at 0.3.0 (adds the
+  `file_lock` / `LockTimeoutError` RMW-lock helper) and `ai-hats-wt` at 0.2.1
+  (adds `WorktreeHook` / `parse_worktree_carry`); the prior 0.2.0 / 0.1.0
+  releases lacked these symbols, so a subprocess importing them raised
+  `ImportError`. The integrator now floor-pins `ai-hats-core>=0.3.0` and
+  `ai-hats-wt>=0.2.1`.
 
 ## [0.13.0] - 2026-07-03
 
@@ -1783,7 +1802,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/muratovv/ai-hats/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/muratovv/ai-hats/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/muratovv/ai-hats/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/muratovv/ai-hats/compare/v0.10.0...v0.11.0
