@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats-tracker"
-version = "0.1.0"
-description = "Standalone task-card schema + worktree-free task FSM for the ai-hats framework (TaskCard + TaskManager)."
+version = "0.2.0"
+description = "Standalone task-card schema, worktree-free task FSM, and backlog CLI for the ai-hats framework (TaskCard + TaskManager + `task`/`attach`)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -26,10 +26,18 @@ classifiers = [
 ]
 dependencies = [
     "ai-hats-core>=0.4.0",  # imports ai_hats_core.migrations (seam); 0.4.0 on PyPI (HATS-937)
+    "click>=8.1",  # backlog CLI (HATS-934)
     "filelock>=3.12",
     "pydantic>=2.0",
     "pyyaml>=6.0",
+    "rich>=13.0",  # backlog CLI console output (HATS-934)
 ]
+
+# The backlog CLI soft-imports ai_hats_wt for its worktree UX; install the extra
+# (or let the ai-hats integrator inject it) to enable it. Never a hard dep — the
+# CLI runs wt-free without it (HATS-934).
+[project.optional-dependencies]
+wt = ["ai-hats-wt>=0.2.1"]
 
 [project.urls]
 Homepage = "https://github.com/muratovv/ai-hats"
@@ -41,3 +49,4 @@ packages = ["src/ai_hats_tracker"]
 
 [tool.uv.sources]
 ai-hats-core = { workspace = true }
+ai-hats-wt = { workspace = true }
