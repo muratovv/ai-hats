@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -118,12 +119,13 @@ def _rebuild_plugin_dir(
 class SkillCollision:
     """One composed skill also present in a Claude Code auto-discovery dir (HATS-901).
 
-    ``verdict``: ``"identical"`` — byte-equal to the plugin copy, safe to
-    remove; ``"managed"`` — marker-listed stale ai-hats mirror (session start
-    auto-heals the project scope, HATS-907; home is user-owned, HATS-465);
-    ``"differs"`` — stale copy or user-authored, user must review.
+    ``scope`` is the heal partition key (HATS-931): a ``"project"`` collision
+    always auto-heals at session start — project `.claude/skills` is ai-hats-owned,
+    not a user-authoring surface — while a ``"home"`` collision only warns (HATS-465).
 
-    ``scope``: ``"home"`` or ``"project"`` — the heal partition key (HATS-907).
+    ``verdict`` refines the warn wording for home collisions: ``"identical"`` —
+    byte-equal to the plugin copy; ``"managed"`` — marker-listed; ``"differs"`` —
+    a drifted or user copy to review.
     """
 
     name: str
@@ -171,18 +173,23 @@ def duplicate_skill_registrations(
     return collisions
 
 
-def drop_legacy_skills_mirror(project_dir: Path) -> list[str]:
-    """Discard the pre-HATS-294 `.claude/skills/` export mirror (HATS-901).
+def drop_legacy_skills_mirror(project_dir: Path, names: Iterable[str] | None = None) -> list[str]:
+    """Discard a stale ai-hats `.claude/skills/` export mirror (HATS-901, HATS-931).
 
-    Returns the marker-listed skill names actually removed (HATS-907: the
-    session-start heal note needs them). Runs unattended at session start, so
-    marker content is untrusted — only validated child names are victims, and
-    a ``skills_dir`` that is (or links to) the user-level ``~/.claude/skills``
-    is never swept (HATS-465: ai-hats never wrote there).
+    Victims = marker-listed names (when `.ai-hats-managed` exists) ∪ ``names`` —
+    HATS-931 passes the project-scope collision names so pre-marker (marker-less)
+    mirrors heal too; ownership proof is the composed-skill name match (see task
+    card). Returns the names removed. Every candidate is re-validated as a plain
+    child; a ``skills_dir`` that is/links to ``~/.claude/skills`` is never swept
+    (HATS-465).
     """
     skills_dir = claude_skills_dir(project_dir)
     marker = skills_dir / ".ai-hats-managed"
-    if not marker.is_file():
+    has_marker = marker.is_file()
+    victims = set(_marker_names(marker))
+    if names:
+        victims |= set(names)
+    if not victims:
         return []
     if skills_dir.is_symlink():
         return []
@@ -192,15 +199,16 @@ def drop_legacy_skills_mirror(project_dir: Path) -> list[str]:
     except OSError:
         return []
     removed: list[str] = []
-    for name in sorted(_marker_names(marker)):
-        victim = skills_dir / name
+    for name in sorted(victims):
         if not _is_plain_child(skills_dir, name):
             continue
+        victim = skills_dir / name
         if not victim.exists() and not victim.is_symlink():
             continue
         discard(victim, reason="claude-legacy-skills-mirror", project_dir=project_dir)
         removed.append(name)
-    discard(marker, reason="claude-legacy-skills-mirror", project_dir=project_dir)
+    if has_marker:
+        discard(marker, reason="claude-legacy-skills-mirror", project_dir=project_dir)
     try:
         if not any(skills_dir.iterdir()):
             skills_dir.rmdir()  # safe-delete: ok empty-dir
