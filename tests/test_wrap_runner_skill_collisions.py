@@ -29,14 +29,19 @@ def _runner(project):
     )
     payload = CompositionPayload(
         result=CompositionResult(
-            name="t", priorities=[], rules=[], skills=[], injections=[],
+            name="t",
+            priorities=[],
+            rules=[],
+            skills=[],
+            injections=[],
         ),
         provider=None,
         effective_role="t",
         hooks=hooks,
     )
     return WrapRunner(
-        project, payload,
+        project,
+        payload,
         session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
         tracer_factory=SidecarTracer,
     )
@@ -64,19 +69,41 @@ def _plant_managed_mirror(base):
     return mirror
 
 
-def test_collision_yields_warn_notice(tmp_path, monkeypatch):
+def test_markerless_project_mirror_auto_heals(tmp_path, monkeypatch):
+    """HATS-931: a pre-marker project mirror (no ``.ai-hats-managed``) whose name
+    collides with a composed skill is ai-hats-owned by that collision alone —
+    project ``.claude/skills`` is not a user-authoring surface — so it heals like
+    the marker-proven case, no marker required."""
     project = tmp_path / "project"
     project.mkdir()
-    session, result, _, _ = _setup(project, tmp_path, monkeypatch)
+    session, result, _, traces = _setup(project, tmp_path, monkeypatch)
     stale = project / ".claude" / "skills" / "alpha"
     stale.mkdir(parents=True)
     (stale / "SKILL.md").write_text("# stale export\n")
 
     notices = _runner(project)._check_skill_collisions(session, result)
 
-    assert [n.level for n in notices] == ["warn"]
+    assert [n.level for n in notices] == ["note"]
     assert "alpha" in notices[0].text
-    assert str(stale) in notices[0].text
+    assert "trash" in notices[0].text
+    assert not stale.exists()
+    assert any("skills-mirror heal" in t for t in traces)
+
+
+def test_home_scope_markerless_differs_stays_warn(tmp_path, monkeypatch):
+    """HATS-465/931: the project-scope auto-heal must NOT reach the user-level
+    catalog — a home marker-less collision still only warns and is left in place."""
+    project = tmp_path / "project"
+    project.mkdir()
+    session, result, fake_home, _ = _setup(project, tmp_path, monkeypatch)
+    stale = fake_home / ".claude" / "skills" / "alpha"
+    stale.mkdir(parents=True)
+    (stale / "SKILL.md").write_text("# user copy\n")
+
+    notices = _runner(project)._check_skill_collisions(session, result)
+
+    assert [n.level for n in notices] == ["warn"]
+    assert stale.exists()
 
 
 def test_clean_project_yields_no_notice(tmp_path, monkeypatch):
@@ -167,7 +194,7 @@ def test_heal_failure_fails_open(tmp_path, monkeypatch):
     session, result, _, _ = _setup(project, tmp_path, monkeypatch)
     _plant_managed_mirror(project)
 
-    def boom(project_dir):
+    def boom(project_dir, names=None):
         raise RuntimeError("disk on fire")
 
     monkeypatch.setattr("ai_hats.plugin_dir.drop_legacy_skills_mirror", boom)
