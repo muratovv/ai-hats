@@ -37,6 +37,9 @@ ALWAYS_ON_RULES = {
 # Env-var names shared across modules (HATS-917); single-file knobs stay local
 ENV_SESSION_ID = "AI_HATS_SESSION_ID"
 ENV_REPO_URL = "AI_HATS_REPO_URL"
+# HATS-938: launcher → `self init` channel for the editable host source, so init
+# seeds `harness.channel: local` without depending on which interpreter it runs under.
+ENV_AI_HATS_INIT_SRC = "AI_HATS_INIT_SRC"
 ENV_ROLE = "AI_HATS_ROLE"
 ENV_LAUNCHER_DEST = "AI_HATS_LAUNCHER_DEST"
 ENV_SKIP_RETRO = "HATS_SKIP_RETRO"
