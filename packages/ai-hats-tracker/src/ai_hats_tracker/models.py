@@ -1,5 +1,5 @@
 """Tracker domain schema (HATS-863, ex ``ai_hats.models``) — task cards + FSM
-states. T16 (HATS-874) lifts this module into the ``ai-hats-tracker`` package.
+states. Lifted into the ``ai-hats-tracker`` package by T16a (HATS-933).
 """
 
 from __future__ import annotations

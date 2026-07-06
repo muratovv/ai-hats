@@ -37,10 +37,17 @@ def _dep_name(spec: str) -> str:
     return match.group(0)
 
 
+# Dist name -> import root only where they diverge (HATS-933: ai-hats-tracker is
+# the first member to declare pyyaml, whose import name is `yaml`). A minimal
+# exception list, not a full mapping table (the plan's kill-criteria).
+_DIST_IMPORT_OVERRIDES = {"pyyaml": "yaml"}
+
+
 def _import_root(dist_name: str) -> str:
-    # ai-hats-core -> ai_hats_core. If a member ever declares a dep whose import
-    # name differs from its dist name (pyyaml->yaml), extend HERE — the plan's
-    # kill-criteria forbids a full mapping table.
+    # ai-hats-core -> ai_hats_core; diverging names go through the override map.
+    override = _DIST_IMPORT_OVERRIDES.get(dist_name.lower())
+    if override is not None:
+        return override
     return dist_name.replace("-", "_").replace(".", "_")
 
 

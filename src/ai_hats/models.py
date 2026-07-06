@@ -34,7 +34,7 @@ from .libraries.models import (  # noqa: F401
     SkillMetadata,
     resolve_namespace,
 )
-from .tracker.models import (  # noqa: F401
+from ai_hats_tracker.models import (  # noqa: F401
     Attachment,
     TaskCard,
     TaskState,
