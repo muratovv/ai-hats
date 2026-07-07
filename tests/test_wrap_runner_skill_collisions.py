@@ -56,7 +56,14 @@ def _setup(project, tmp_path, monkeypatch, sid="sess-1"):
     fake_home.mkdir(exist_ok=True)
     monkeypatch.setattr("ai_hats.wrap_runner.Path.home", lambda: fake_home)
     traces: list[str] = []
-    session = SimpleNamespace(session_id=sid, log_trace=lambda tag, msg: traces.append(msg))
+    # HATS-948: mirror Session's semantic tag methods (log_sys/sub/res) the runner now calls.
+    session = SimpleNamespace(
+        session_id=sid,
+        log_trace=lambda tag, msg: traces.append(msg),
+        log_sys=lambda msg: traces.append(msg),
+        log_sub=lambda msg: traces.append(msg),
+        log_res=lambda msg: traces.append(msg),
+    )
     result = SimpleNamespace(skills=[SimpleNamespace(name="alpha")])
     return session, result, fake_home, traces
 

@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING
 # beside the other recovery passes (bundled and run at the create_session
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
-from .constants import TraceTag
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .paths import (
     REASONING_LOG,
@@ -588,7 +587,7 @@ def _finalize_session_basic(
         logger.warning("tracer cleanup failed", exc_info=True)
 
     try:
-        session.log_trace(TraceTag.SYS, f"Session ended: exit_code={exit_code}")
+        session.log_sys(f"Session ended: exit_code={exit_code}")
         session.append_audit(f"Session ended with code {exit_code}")
     except (Exception, KeyboardInterrupt):
         logger.warning("session trace/audit append failed", exc_info=True)
