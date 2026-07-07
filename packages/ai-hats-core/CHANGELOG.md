@@ -12,6 +12,9 @@ versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
   promoted from `ai_hats.paths` so `ai_hats_observe` (T15) and the integrator
   share one home (ADR-0014 Phase 1, HATS-948). `ai_hats.paths.session_artifacts`
   is now a re-export shim; the consumer floor rises to `>=0.5.0`.
+- `ai_hats_core.trace` — `TraceTag` (trace-line tag vocabulary) + `ENV_SESSION_ID`
+  (the sidecar/runtime session handshake), promoted from `ai_hats.constants`
+  (HATS-948). `ai_hats.constants` re-exports both, unchanged for its consumers.
 
 ## [0.4.0] - 2026-07-06
 

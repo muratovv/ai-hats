@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ai_hats_core import atomic_write_text
-from .constants import TraceTag, ENV_SESSION_ID
+from ai_hats_core.trace import ENV_SESSION_ID, TraceTag
 from .environment_recovery import EnvironmentRecovery, RecoveryProtocol
 # HATS-948: artifact NAMES are shared core vocabulary; directory RESOLUTION
 # (runs_dir) stays injected integrator policy (HATS-864).
