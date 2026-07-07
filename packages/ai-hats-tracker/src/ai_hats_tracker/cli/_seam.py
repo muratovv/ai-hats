@@ -58,6 +58,21 @@ def _default_guard_not_inside_linked_worktree() -> None:
     return None
 
 
+def _default_hypotheses_dir(project_dir: Path) -> Path:
+    """Standalone hypotheses dir: ``<project>/.agent/hypotheses`` (wt-free).
+
+    The integrator overrides this with ``ai_hats.paths.hypotheses_dir``, which
+    honours ``AI_HATS_DIR``/yaml precedence — a package hardcode would be wrong
+    there, so the resolver is injected rather than derived here.
+    """
+    return project_dir / ".agent" / "hypotheses"
+
+
+def _default_proposals_dir(project_dir: Path) -> Path:
+    """Standalone proposals dir: ``<project>/.agent/proposals`` (wt-free)."""
+    return project_dir / ".agent" / "proposals"
+
+
 # Injectable slots — the integrator overrides these at mount (cli/__init__.py).
 _MANAGER_FACTORY = _default_task_manager
 _PROJECT_DIR = _default_project_dir
@@ -66,3 +81,7 @@ _CONSOLE = Console()
 # Integrator-only wt-state-dir resolver (``ai_hats.paths.worktrees_dir``); None
 # standalone → the wt-present post-execute worktree display stays dark.
 _WORKTREES_DIR = None
+# hyp/prop path resolvers (HATS-935). Integrator overrides with
+# ``ai_hats.paths.{hypotheses_dir,proposals_dir}`` (AI_HATS_DIR/yaml-aware).
+_HYPOTHESES_DIR = _default_hypotheses_dir
+_PROPOSALS_DIR = _default_proposals_dir
