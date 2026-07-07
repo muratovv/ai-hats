@@ -1,11 +1,9 @@
 """Recovery collaborator contract + the pure no-op (HATS-948, T15).
 
-``SessionManager`` (``ai_hats_observe``) depends only on this ``run()`` contract
-and defaults to ``NoOpRecovery`` — a package-pure default that touches nothing.
-The heavy concrete ``EnvironmentRecovery`` (version GC + liveness refs) stays in
-the ``ai_hats`` integrator and is injected at the compose/CLI seam. Promoting the
-contract + no-op to core lets observe drop its eager integrator import
-(ADR-0014 Phase 1).
+A domain-agnostic DI seam: a caller depends only on the ``run()`` contract and
+defaults to ``NoOpRecovery`` (touches nothing); a heavier concrete recovery is
+injected by whoever wires the caller. Kept in core so a package can depend on the
+contract without importing the integrator that owns the concrete (ADR-0014 Phase 1).
 """
 
 from __future__ import annotations
