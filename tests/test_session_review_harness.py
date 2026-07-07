@@ -15,7 +15,7 @@ from ai_hats.cli.reflect_session_main import (
     _file_meta_proposal,
     _harness_check,
 )
-from ai_hats.hypothesis import ProposalStore
+from ai_hats_tracker.hypothesis import ProposalStore
 from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
 
 

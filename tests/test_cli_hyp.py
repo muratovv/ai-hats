@@ -9,7 +9,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from ai_hats.cli.hyp import hyp
+from ai_hats_tracker.cli.hyp import hyp
 from ai_hats.paths import hypotheses_dir, proposals_dir
 
 

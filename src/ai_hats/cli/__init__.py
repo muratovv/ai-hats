@@ -188,17 +188,19 @@ def _launch_session(
 from . import (  # noqa: E402
     agent as agent_mod,
     assembly,
-    attach as attach_mod,
     config as config_mod,
     execute as execute_mod,
-    hyp as hyp_mod,
     list_cmd,
     maintenance,
-    proposal as proposal_mod,
     reflect as reflect_mod,
     session,
-    task,
     worktree,
+)
+from ai_hats_tracker.cli import (  # noqa: E402
+    attach as attach_mod,
+    hyp as hyp_mod,
+    proposal as proposal_mod,
+    task,
 )
 
 # Config — set + customize + status nest under it (HATS-241, HATS-242).

@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.models import TaskState
-from ai_hats.state import EmptyPlanError, PLAN_SCAFFOLD, TaskManager
+from ai_hats_tracker.state import EmptyPlanError, PLAN_SCAFFOLD, TaskManager
 from ai_hats.tracker_wiring import tracker_paths
 
 
