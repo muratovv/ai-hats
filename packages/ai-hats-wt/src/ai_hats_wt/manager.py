@@ -239,12 +239,11 @@ class WorktreeBaseBranchError(Exception):
         self.current = current
         self.canonical = canonical
         super().__init__(
-            f"Refused: main repo HEAD is '{current}', not a canonical base "
-            f"branch ({', '.join(canonical)}). Worktrees inherit their merge "
-            f"target from the current branch — creating one from a feature "
-            f"branch leads to merges landing on that feature branch, not "
-            f"master (HATS-518). Run `git checkout <base>` in the main repo "
-            f"first, then retry."
+            f"Refused: main repo HEAD is '{current}', not the worktree "
+            f"merge target ({', '.join(canonical)}). Worktrees inherit their "
+            f"merge target from the current branch — creating one from another "
+            f"branch leads to merges landing on the wrong branch (HATS-518). "
+            f"Run `git checkout {canonical[0]}` in the main repo first, then retry."
         )
 
 
@@ -334,18 +333,17 @@ class WorktreeMainRepoMidMergeError(Exception):
 CANONICAL_BASE_BRANCHES: tuple[str, ...] = ("master", "main")
 
 
-def assert_head_is_canonical_base(project_dir: Path) -> None:
-    """Refuse if main-repo HEAD is not on a canonical base branch.
+def assert_head_is_canonical_base(project_dir: Path, merge_target: str | None = None) -> None:
+    """Refuse if main-repo HEAD is not on the worktree merge target.
 
-    No-op when:
-      * not a git repo (no ``.git`` dir — caller has its own short-circuit);
-      * HEAD is detached (no branch name to compare against);
-      * none of :data:`CANONICAL_BASE_BRANCHES` exist in this repo
-        (exotic naming — no canon to compare against, pass through rather
-        than block valid workflows).
+    ``merge_target`` (HATS-942): ``None`` => today's set-membership against
+    :data:`CANONICAL_BASE_BRANCHES` (byte-identical); a configured value
+    (already validated to exist by the resolver) => HEAD must equal it exactly.
+    No-op on: non-git dir; detached HEAD; and — default only — a repo with no
+    canonical branch (exotic naming, pass through rather than block).
 
-    :raises WorktreeBaseBranchError: HEAD is on a named branch, at least
-        one canonical base exists, and HEAD is not one of them.
+    :raises WorktreeBaseBranchError: HEAD is on a named branch and does not
+        match the resolved target (configured branch, or any existing canonical).
     """
     if not (project_dir / ".git").exists():
         return
@@ -368,6 +366,13 @@ def assert_head_is_canonical_base(project_dir: Path) -> None:
     if head == "HEAD":
         return
 
+    # HATS-942: a configured merge_target narrows the guard to that single
+    # branch (resolver already validated it exists).
+    if merge_target is not None:
+        if head == merge_target:
+            return
+        raise WorktreeBaseBranchError(current=head, canonical=[merge_target])
+
     existing_canonical: list[str] = []
     for name in CANONICAL_BASE_BRANCHES:
         try:
@@ -389,6 +394,32 @@ def assert_head_is_canonical_base(project_dir: Path) -> None:
         return
 
     raise WorktreeBaseBranchError(current=head, canonical=existing_canonical)
+
+
+def _current_head_branch(project_dir: Path) -> str:
+    """``git rev-parse --abbrev-ref HEAD`` — the branch name, or ``"HEAD"`` when
+    detached. Raises on a non-git dir (callers gate on ``_check_is_git`` first)."""
+    return subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+        check=True,
+        env=scrubbed_git_env(),
+    ).stdout.strip()
+
+
+def get_default_base_branch(project_dir: Path) -> str:
+    """HATS-942: the branch a worktree is cut FROM when `worktree.base_branch` is
+    unset — the current HEAD branch (git's implicit start-point today)."""
+    return _current_head_branch(project_dir)
+
+
+def get_default_merge_branch(project_dir: Path) -> str:
+    """HATS-942: the branch `wt merge` lands INTO when `worktree.merge_target` is
+    unset — the current HEAD branch (today's `_original_branch`). Coincides with
+    :func:`get_default_base_branch` at HEAD; named apart as they are distinct knobs."""
+    return _current_head_branch(project_dir)
 
 
 class IsolationMode(str, Enum):
@@ -530,6 +561,8 @@ class WorktreeManager:
         isolation_mode: IsolationMode = IsolationMode.DISCARD,
         *,
         branch_name: str = "",
+        base_branch: str | None = None,
+        merge_target: str | None = None,
         lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
         state_dir: Path | None = None,
     ) -> None:
@@ -537,6 +570,13 @@ class WorktreeManager:
         self.role_name = role_name
         self.session_id = session_id
         self.isolation_mode = isolation_mode
+        # HATS-942: base_branch = start-point (None => HEAD); merge_target =
+        # where `wt merge` lands (None => HEAD-following canonical). Trusted to be
+        # existing branches — the caller validates via resolve_worktree_branches;
+        # garbage still fails loud at `git worktree add` (no silent wrong-branch).
+        self._base_branch = base_branch
+        self._merge_target = merge_target
+        self._resolved_base_branch: str | None = None  # concrete start-point, set in create()
         self.worktree_path: Path | None = None
         # HATS-827: backstop — empty role yields the git-invalid branch
         # agent//<sid>; fail at construction, not deep in create().
@@ -601,7 +641,10 @@ class WorktreeManager:
             )
 
         self._is_git = True
-        self._original_branch = self._get_current_branch()
+        # HATS-942: derive the concrete base (start-point) + merge target at
+        # create-start. Configured value wins; else the default = current HEAD.
+        self._resolved_base_branch = self._base_branch or get_default_base_branch(self.project_dir)
+        self._original_branch = self._merge_target or get_default_merge_branch(self.project_dir)
         # HATS-457: snapshot the base SHA so `wt merge` can detect drift if the
         # original branch advances between create and merge (concurrent agent
         # worktrees, manual `git pull`, etc.).
@@ -708,6 +751,7 @@ class WorktreeManager:
                     self.branch_name,
                     self.worktree_path,
                     create_branch=not attach_existing_branch,
+                    start_point=self._resolved_base_branch,  # HATS-942: cut from base
                 )
             except subprocess.CalledProcessError as exc:
                 # L4: cleanup leaked tempdir + (only-our) branch.

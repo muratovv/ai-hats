@@ -20,3 +20,4 @@ from .project import (  # noqa: F401
     _DEPRECATED_PROJECT_FIELDS,
 )
 from .user import UserConfig, UserConfigError  # noqa: F401
+from .worktree import WorktreeConfig  # noqa: F401
