@@ -15,6 +15,10 @@ versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 - `ai_hats_core.trace` — `TraceTag` (trace-line tag vocabulary) + `ENV_SESSION_ID`
   (the sidecar/runtime session handshake), promoted from `ai_hats.constants`
   (HATS-948). `ai_hats.constants` re-exports both, unchanged for its consumers.
+- `ai_hats_core.recovery` — the `RecoveryProtocol` (`run()` contract) +
+  `NoOpRecovery` (the package-pure default), promoted from
+  `ai_hats.environment_recovery` (HATS-948). The heavy `EnvironmentRecovery`
+  stays in the integrator; `ai_hats.environment_recovery` re-exports the pair.
 
 ## [0.4.0] - 2026-07-06
 
