@@ -138,3 +138,30 @@ jobs:
           git config --global init.defaultBranch main
       - name: Run curated e2e smoke subset
         run: bash scripts/ci-local.sh merge-smoke
+
+  version-skew-guard:
+    # HATS-943: block the HATS-923/937 skew class — a `packages/<pkg>/src/**`
+    # change whose version isn't bumped above the published PyPI wheel. Runs on
+    # PRs (base = merge-base) AND direct pushes to master (base = event.before,
+    # the pre-merge tip) so the direct `wt merge` → push flow is covered too.
+    name: version-skew-guard (workspace pkgs vs PyPI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install packaging
+        run: pip install "packaging>=23.0"
+      - name: Resolve diff base
+        id: base
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            base="$(git rev-parse HEAD~1)"
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+      - name: Check workspace packages are ahead of PyPI
+        run: python scripts/check_pkg_version_skew.py "${{ steps.base.outputs.sha }}"
