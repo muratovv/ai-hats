@@ -131,6 +131,38 @@ class TestRefuses:
 
 
 # ---------------------------------------------------------------------------
+# HATS-942: configured merge_target narrows the guard to a single branch
+# ---------------------------------------------------------------------------
+
+
+class TestConfiguredMergeTarget:
+    def test_passes_when_head_equals_merge_target(self, master_project: Path) -> None:
+        _git(master_project, "branch", "fork-main")
+        _git(master_project, "checkout", "fork-main")
+        # No raise — HEAD is the configured merge target, even though it is not
+        # a canonical name.
+        assert_head_is_canonical_base(master_project, merge_target="fork-main")
+
+    def test_refuses_when_head_not_merge_target_and_names_it(self, master_project: Path) -> None:
+        _git(master_project, "branch", "fork-main")
+        # HEAD is on `master` (a canonical!), but the configured target is
+        # `fork-main` — the guard must still refuse and name the target.
+        with pytest.raises(WorktreeBaseBranchError) as excinfo:
+            assert_head_is_canonical_base(master_project, merge_target="fork-main")
+        exc = excinfo.value
+        assert exc.current == "master"
+        assert exc.canonical == ["fork-main"]
+        assert "fork-main" in str(exc)
+
+    def test_merge_target_none_keeps_set_membership(self, master_project: Path) -> None:
+        # Explicit None == today's canonical set-membership (byte-identical):
+        # both canonicals exist, HEAD on `main` → pass.
+        _git(master_project, "branch", "main")
+        _git(master_project, "checkout", "main")
+        assert_head_is_canonical_base(master_project, merge_target=None)
+
+
+# ---------------------------------------------------------------------------
 # No-op edge cases — pass through without raising
 # ---------------------------------------------------------------------------
 

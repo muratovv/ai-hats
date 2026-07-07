@@ -360,9 +360,10 @@ def _retry_worktree_add(
     worktree_path: Path,
     *,
     create_branch: bool = True,
+    start_point: str | None = None,
     sleep=time.sleep,
 ) -> None:
-    """Run ``git worktree add [-b] <branch> <path>`` with bounded retry.
+    """Run ``git worktree add [-b] <branch> <path> [<start_point>]`` with bounded retry.
 
     HATS-479 L3. Retries only on stderr patterns from
     :data:`_RETRIABLE_STDERR_PATTERNS`. Any other error fails fast.
@@ -377,12 +378,19 @@ def _retry_worktree_add(
     :param create_branch: ``True`` to pass ``-b <branch>`` (creates the
         branch). ``False`` to attach an existing branch to a new worktree
         (positional ``<path> <branch>``).
+    :param start_point: HATS-942 — when ``create_branch`` is ``True``, the ref
+        the new branch is cut FROM (``git worktree add -b <branch> <path>
+        <start_point>``). ``None`` => cut from the main-repo HEAD (today's
+        behavior). Ignored when ``create_branch`` is ``False`` (the existing
+        branch already has a tip).
     :param sleep: injected for tests; defaults to :func:`time.sleep`.
     :raises subprocess.CalledProcessError: on non-retriable error, or after
         exhausting :data:`GIT_RETRY_MAX` retriable attempts.
     """
     if create_branch:
         cmd_args = ("worktree", "add", "-b", branch, str(worktree_path))
+        if start_point is not None:
+            cmd_args += (start_point,)
     else:
         # `git worktree add <path> <branch>` — attaches the existing branch.
         cmd_args = ("worktree", "add", str(worktree_path), branch)

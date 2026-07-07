@@ -38,6 +38,8 @@ from .manager import (
     WorktreeStateLostError,
     WorktreeTeardownAborted,
     assert_head_is_canonical_base,
+    get_default_base_branch,
+    get_default_merge_branch,
 )
 
 __all__ = [
@@ -50,6 +52,8 @@ __all__ = [
     "WorktreeManager",
     "IsolationMode",
     "assert_head_is_canonical_base",
+    "get_default_base_branch",
+    "get_default_merge_branch",
     # Env construction (HATS-913)
     "workspace_pythonpath",
     # Lifecycle extension-point (ADR-0013 D2)
