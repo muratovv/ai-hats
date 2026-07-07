@@ -58,7 +58,7 @@ def test_create_duplicate_id_rejected(project_dir: Path, monkeypatch):
     # Force next_proposal_id to collide by pre-creating PROP-002 then stubbing the id generator.
     p = proposals_dir(project_dir) / "PROP-001.yaml"
     original = p.read_text()
-    monkeypatch.setattr("ai_hats.cli.proposal.next_proposal_id", lambda _d: "PROP-001")
+    monkeypatch.setattr("ai_hats_tracker.cli.proposal.next_proposal_id", lambda _d: "PROP-001")
     res2 = _create(title="duplicate")
     assert res2.exit_code == 1, res2.output
     assert "already exists" in res2.output.lower()

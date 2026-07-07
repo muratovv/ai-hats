@@ -33,6 +33,8 @@ def _pin_wt_free_seam(monkeypatch) -> None:
     monkeypatch.setattr(_seam, "_PROJECT_DIR", _seam._default_project_dir)
     monkeypatch.setattr(_seam, "_GUARD_LINKED_WT", _seam._default_guard_not_inside_linked_worktree)
     monkeypatch.setattr(_seam, "_WORKTREES_DIR", None)
+    monkeypatch.setattr(_seam, "_HYPOTHESES_DIR", _seam._default_hypotheses_dir)
+    monkeypatch.setattr(_seam, "_PROPOSALS_DIR", _seam._default_proposals_dir)
 
 
 def test_cli_task_import_pulls_no_ai_hats_wt():
