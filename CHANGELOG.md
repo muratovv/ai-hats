@@ -12,6 +12,14 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **ai-hats-wt 0.3.0 + integrator pin `>=0.3.0`** (HATS-942 drift). The
+  configurable base/merge-target work grew the `ai_hats_wt` public surface
+  (`get_default_base_branch`, `get_default_merge_branch`) and edited
+  `locks.py` / `manager.py` after 0.2.1 shipped to PyPI, without a bump —
+  caught by the HATS-921 drift guard, which resolvers would otherwise have
+  ignored while serving fresh installs the stale 0.2.1 wheel. Minor bump
+  (new public API); publish rides the release flow.
+
 - **ai-hats-core 0.4.1 + integrator pin `>=0.4.1`, published-version drift
   guard** (HATS-921). `safe_delete.py` was patched twice after 0.4.0 shipped to
   PyPI (concurrent-discard idempotency, unique-tmp atomic write) without a bump,
