@@ -13,6 +13,21 @@ from ai_hats_tracker.cli.hyp import hyp
 from ai_hats.paths import hypotheses_dir, proposals_dir
 
 
+@pytest.fixture(autouse=True)
+def _integrator_seam(monkeypatch):
+    """Pin the shared ``_seam`` to the integrator's AI_HATS_DIR/yaml-aware dir
+    resolvers so this integrator test is self-contained (HATS-935).
+
+    In the product the override lands as a side effect of importing
+    ``ai_hats.cli``; without it the moved CLI would resolve the wt-free
+    standalone default and miss these fixtures' integrator-layout dirs.
+    """
+    from ai_hats_tracker.cli import _seam
+
+    monkeypatch.setattr(_seam, "_HYPOTHESES_DIR", hypotheses_dir)
+    monkeypatch.setattr(_seam, "_PROPOSALS_DIR", proposals_dir)
+
+
 @pytest.fixture
 def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
