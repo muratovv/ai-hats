@@ -12,6 +12,17 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **ai-hats-core 0.4.1 + integrator pin `>=0.4.1`, published-version drift
+  guard** (HATS-921). `safe_delete.py` was patched twice after 0.4.0 shipped to
+  PyPI (concurrent-discard idempotency, unique-tmp atomic write) without a bump,
+  so resolvers preferred the stale equal-version index wheel over the fresh
+  local build and served fresh installs code missing both fixes. The patch bump
+  moves the local source past the published wheel; a new drift-guard test
+  (`tests/test_package_version_drift.py`) byte-compares every published
+  `packages/*` version against local source and fails on unbumped drift. Until
+  0.4.1 is published, fresh installs fail loud ("no matching distribution") —
+  deliberate interim (publish rides the release flow).
+
 - **Marker-less pre-marker `.claude/skills/` mirror now auto-heals** (HATS-931).
   A stale project-scope skills mirror written by a pre-marker ai-hats version
   (no `.ai-hats-managed` marker) used to warn about a double skill registration
