@@ -25,6 +25,7 @@ from ..constants import PROVIDER_GEMINI
 from .harness import FeedbackConfig, HarnessConfig
 from .migrations import _migrate_v1_to_v2, _migrate_v2_to_v3, _migrate_v3_to_v4
 from .overlay import OverlayConfig
+from .worktree import WorktreeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ class ProjectConfig(_YamlModel):
     manage_gitignore: bool = True
     task_prefix: str = "TASK"
     harness: HarnessConfig = Field(default_factory=HarnessConfig)  # HATS-764: self-update channel
+    worktree: WorktreeConfig = Field(default_factory=WorktreeConfig)  # HATS-942: base/merge-target
 
     # HATS-792: unknown top-level keys preserved for round-trip. PrivateAttr, not
     # a field: extra="forbid" pre-strips them in from_yaml before validation.
@@ -283,6 +285,10 @@ class ProjectConfig(_YamlModel):
         # repo/path) so existing yamls without the block stay byte-clean.
         if not self.harness.is_default:
             d["harness"] = self.harness.to_dict()
+        # HATS-942: worktree base/merge-target is opt-in — omitted when default
+        # so existing yamls without the block stay byte-clean.
+        if not self.worktree.is_default:
+            d["worktree"] = self.worktree.to_dict()
         # HATS-792: round-trip same-version unknown top-level keys captured on
         # load (mirrors TaskCard.to_dict). Known fields take precedence on an
         # accidental collision; _extra should never hold a known key since

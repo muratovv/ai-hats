@@ -48,7 +48,10 @@ class WtWorktreeEffects:
         """HATS-518 guard for the forced-execute path (no worktree is created)."""
         from ai_hats_wt import assert_head_is_canonical_base
 
-        assert_head_is_canonical_base(self.project_dir)
+        from .wt_config import resolve_worktree_branches
+
+        _base, merge_target = resolve_worktree_branches(self.project_dir)  # HATS-942
+        assert_head_is_canonical_base(self.project_dir, merge_target)
 
     def setup(self, task_id: str, role: str = "", caller_cwd: Path | None = None) -> Path | None:
         """Create or adopt the task's isolated worktree on ``→ execute``.
@@ -79,12 +82,17 @@ class WtWorktreeEffects:
         if existing is not None:
             return existing.worktree_path
 
-        assert_head_is_canonical_base(self.project_dir)
+        from .wt_config import resolve_worktree_branches
+
+        base_branch, merge_target = resolve_worktree_branches(self.project_dir)  # HATS-942
+        assert_head_is_canonical_base(self.project_dir, merge_target)
 
         branch = f"task/{task_id.lower()}"
         mgr = WorktreeManager(
             self.project_dir,
             branch_name=branch,
+            base_branch=base_branch,
+            merge_target=merge_target,
             lifecycle=HOOK_LIFECYCLE,
             state_dir=wt_state_dir,
         )

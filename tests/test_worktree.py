@@ -167,6 +167,57 @@ class TestWorktreeCreate:
         finally:
             mgr.cleanup()
 
+
+class TestWorktreeBaseAndMergeTarget:
+    """HATS-942: cut the worktree FROM base_branch, record merge_target as base."""
+
+    @staticmethod
+    def _divergent_branches(project: Path) -> tuple[str, str]:
+        """`upstream` carries a unique commit B; `trunk` sits back at A. Returns
+        (head_branch, upstream_sha)."""
+        head = _git(project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        _git(project, "checkout", "-b", "upstream")
+        (project / "UP.md").write_text("upstream-only")
+        _git(project, "add", ".")
+        _git(project, "commit", "-m", "B: upstream only")
+        upstream_sha = _git(project, "rev-parse", "HEAD").stdout.strip()
+        _git(project, "checkout", head)
+        _git(project, "checkout", "-b", "trunk")
+        return head, upstream_sha
+
+    def test_cuts_from_base_and_records_merge_target(self, git_project: Path) -> None:
+        _head, upstream_sha = self._divergent_branches(git_project)
+        mgr = WorktreeManager(
+            git_project,
+            "tester",
+            "sess-b1",
+            branch_name="task/probe",
+            base_branch="upstream",
+            merge_target="trunk",
+        )
+        wt = mgr.create()
+        try:
+            # Worktree cut from `upstream` (start-point) — carries commit B.
+            assert (wt / "UP.md").exists()
+            assert _git(wt, "rev-parse", "HEAD").stdout.strip() == upstream_sha
+            # Merge lands on `trunk` (merge_target), not the base.
+            assert mgr._original_branch == "trunk"
+            assert mgr._base_sha_at_create == _git(git_project, "rev-parse", "trunk").stdout.strip()
+        finally:
+            mgr.cleanup()
+
+    def test_no_config_cuts_from_head(self, git_project: Path) -> None:
+        # No base/merge config → today's behavior: cut from HEAD, target = HEAD.
+        head = _git(git_project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        head_sha = _git(git_project, "rev-parse", "HEAD").stdout.strip()
+        mgr = WorktreeManager(git_project, "tester", "sess-b2", branch_name="task/probe2")
+        wt = mgr.create()
+        try:
+            assert _git(wt, "rev-parse", "HEAD").stdout.strip() == head_sha
+            assert mgr._original_branch == head
+        finally:
+            mgr.cleanup()
+
     def test_create_raises_on_unborn_head(self, tmp_path: Path) -> None:
         """HATS-143: fresh `git init` without commits must raise a readable error."""
         project = tmp_path / "empty"
