@@ -33,7 +33,10 @@ import logging
 import shutil
 import time
 from pathlib import Path
-from typing import Protocol
+
+# HATS-948: RecoveryProtocol + NoOpRecovery promoted to core; re-exported here so
+# consumers (observe, tests) import unchanged. EnvironmentRecovery stays integrator.
+from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol  # noqa: F401
 
 from .paths import session_cache_root, versions_root
 from .version_lock import GC_LOCK_TIMEOUT, VersionLockError, versions_lock
@@ -71,12 +74,6 @@ def _sweep_orphan_session_caches(
                 shutil.rmtree(entry, ignore_errors=True)  # safe-delete: ok session-cache (TTL sweep)
         except OSError:
             pass
-
-
-class RecoveryProtocol(Protocol):
-    """The collaborator contract ``SessionManager`` depends on."""
-
-    def run(self) -> None: ...
 
 
 class EnvironmentRecovery:
@@ -132,10 +129,3 @@ class EnvironmentRecovery:
         reclaimed_venv = reclaim_legacy_venv(self.project_dir)
         if reclaimed_venv is not None:
             logger.info("reclaimed legacy .venv: %s", reclaimed_venv)
-
-
-class NoOpRecovery:
-    """No-op recovery — for unit tests / contexts that must not touch the FS."""
-
-    def run(self) -> None:
-        return
