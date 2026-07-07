@@ -183,7 +183,11 @@ def hyp_autoclose(k: int | None, dry_run: bool):
     validation_log and reversed with `set-status --status active` (HATS-769).
     This is the same sweep the `finalize-hitl` pipeline runs after each session.
     """
-    from ..hypothesis.quorum import DEFAULT_QUORUM_K, apply_closure, find_quorum_closures
+    from ai_hats_tracker.hypothesis.quorum import (
+        DEFAULT_QUORUM_K,
+        apply_closure,
+        find_quorum_closures,
+    )
 
     threshold = DEFAULT_QUORUM_K if k is None else k
     if threshold < 1:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ai_hats.hypothesis.intake import (
+from ai_hats_tracker.hypothesis.intake import (
     CreateAction,
     IntakeParseError,
     MergeAction,

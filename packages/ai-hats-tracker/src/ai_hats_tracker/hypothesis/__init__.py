@@ -1,30 +1,34 @@
-"""Back-compat shim — hypotheses/proposals moved to ai_hats_tracker (HATS-935).
+"""Hypothesis backlog: pydantic models, atomic IO for HYP and PROP files.
 
-Retires in HATS-935 slice 19 (direct repoint + delete). Submodule reaches
-(``..hypothesis.quorum`` etc.) cannot be synthesized by a package ``__init__``
-shim — those importers are repointed directly.
+Used by reflect-session role and ai-hats task hyp/proposal CLIs (HATS-210).
 """
 
-from ai_hats_tracker.hypothesis import (  # noqa: F401
+from .model import (
     Baseline,
-    CreateAction,
     ExitCriteria,
     Hypothesis,
     HypothesisStatus,
+    ValidationLogEntry,
+    VerdictKind,
+)
+from .proposal import (
+    Proposal,
+    ProposalCategory,
+    ProposalStatus,
+    Vote,
+)
+from .io import (
     HypothesisStore,
+    ProposalStore,
+    next_hypothesis_id,
+    next_proposal_id,
+)
+from .intake import (
+    CreateAction,
     IntakeDraft,
     IntakeParseError,
     IntakeResult,
     MergeAction,
-    Proposal,
-    ProposalCategory,
-    ProposalStatus,
-    ProposalStore,
-    ValidationLogEntry,
-    VerdictKind,
-    Vote,
-    next_hypothesis_id,
-    next_proposal_id,
     parse_intake_yaml,
 )
 

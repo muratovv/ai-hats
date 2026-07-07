@@ -10,6 +10,28 @@ the public surface a standalone consumer drives.
 
 from __future__ import annotations
 
+from .hypothesis import (
+    Baseline,
+    CreateAction,
+    ExitCriteria,
+    Hypothesis,
+    HypothesisStatus,
+    HypothesisStore,
+    IntakeDraft,
+    IntakeParseError,
+    IntakeResult,
+    MergeAction,
+    Proposal,
+    ProposalCategory,
+    ProposalStatus,
+    ProposalStore,
+    ValidationLogEntry,
+    VerdictKind,
+    Vote,
+    next_hypothesis_id,
+    next_proposal_id,
+    parse_intake_yaml,
+)
 from .layout import TrackerPaths
 from .models import Attachment, TaskCard, TaskState, WorkLogEntry
 from .plan_extract import Candidate, extract_candidates, mark_extracted
@@ -23,16 +45,36 @@ from .state import (
 
 __all__ = [
     "Attachment",
+    "Baseline",
     "Candidate",
+    "CreateAction",
     "EmptyPlanError",
+    "ExitCriteria",
+    "Hypothesis",
+    "HypothesisStatus",
+    "HypothesisStore",
+    "IntakeDraft",
+    "IntakeParseError",
+    "IntakeResult",
+    "MergeAction",
     "PLAN_SCAFFOLD",
     "PLAN_SECTIONS",
+    "Proposal",
+    "ProposalCategory",
+    "ProposalStatus",
+    "ProposalStore",
     "TaskCard",
     "TaskManager",
     "TaskState",
     "TrackerPaths",
+    "ValidationLogEntry",
+    "VerdictKind",
+    "Vote",
     "WorkLogEntry",
     "WorktreeEffects",
     "extract_candidates",
     "mark_extracted",
+    "next_hypothesis_id",
+    "next_proposal_id",
+    "parse_intake_yaml",
 ]

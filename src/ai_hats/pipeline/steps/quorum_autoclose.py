@@ -32,7 +32,7 @@ class QuorumAutoclose(Step):
     failure_policy = "continue"
 
     def __init__(self, params: Mapping[str, Any] | None = None) -> None:
-        from ...hypothesis.quorum import DEFAULT_QUORUM_K
+        from ai_hats_tracker.hypothesis.quorum import DEFAULT_QUORUM_K
 
         params = params or {}
         self.k = int(params.get("k", DEFAULT_QUORUM_K))
@@ -49,7 +49,7 @@ class QuorumAutoclose(Step):
 
     def run(self, *, project_dir: Path, **_: Any) -> dict[str, Any]:
         from ...hypothesis import HypothesisStore
-        from ...hypothesis.quorum import autoclose_quorum
+        from ai_hats_tracker.hypothesis.quorum import autoclose_quorum
         from ...paths import hypotheses_dir
 
         store = HypothesisStore(hypotheses_dir(project_dir))
