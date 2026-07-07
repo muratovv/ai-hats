@@ -66,4 +66,4 @@ machine extracted from ai-hats.
   `linked_context` / `attachments` submodules.
 - A core-wired migration seam (`migrations.run_pending`, empty registry).
 - Standalone operation on a bare directory (no ai-hats config), proven by
-  `test_tracker_standalone.py` and guarded by `test_boundary.py`.
+  `test_tracker_standalone.py` and guarded by `test_tracker_boundary.py`.

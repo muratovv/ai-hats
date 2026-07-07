@@ -63,7 +63,9 @@ def _default_hypotheses_dir(project_dir: Path) -> Path:
 
     The integrator overrides this with ``ai_hats.paths.hypotheses_dir``, which
     honours ``AI_HATS_DIR``/yaml precedence — a package hardcode would be wrong
-    there, so the resolver is injected rather than derived here.
+    there, so the resolver is injected rather than derived here. Like the
+    standalone task dir, this flat ``.agent/<kind>`` layout deliberately differs
+    from the integrator's ``<ai_hats_dir>/tracker/…`` subtree.
     """
     return project_dir / ".agent" / "hypotheses"
 
