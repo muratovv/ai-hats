@@ -23,18 +23,12 @@ from ..hypothesis import (
     Vote,
     next_proposal_id,
 )
-from ._helpers import _project_dir, console
-
-
-def _proposals_dir(project_dir: Path) -> Path:
-    from ..paths import proposals_dir
-
-    return proposals_dir(project_dir)
+from . import _seam
 
 
 def _store(project_dir: Path | None = None) -> ProposalStore:
-    pd = project_dir or _project_dir()
-    return ProposalStore(_proposals_dir(pd))
+    pd = project_dir or _seam._PROJECT_DIR()
+    return ProposalStore(_seam._PROPOSALS_DIR(pd))
 
 
 @click.group()
@@ -134,12 +128,12 @@ def proposal_create(
     try:
         store.create(p)
     except FileExistsError as e:
-        console.print(f"[red]Error[/]: {e}")
+        _seam._CONSOLE.print(f"[red]Error[/]: {e}")
         sys.exit(1)
     if as_json:
         click.echo(json.dumps({"id": new_id, "session": session_id}))
     else:
-        console.print(f"[green]✓[/green] Created {new_id} ({category}/{target})")
+        _seam._CONSOLE.print(f"[green]✓[/green] Created {new_id} ({category}/{target})")
 
 
 @proposal.command("vote")
@@ -157,7 +151,7 @@ def proposal_vote(prop_id, session_id, reasoning):
         reasoning=reasoning,
     )
     p = store.add_vote(prop_id, v)
-    console.print(
+    _seam._CONSOLE.print(
         f"[green]✓[/green] {prop_id}: vote added ({len(p.votes)} total)"
     )
 
@@ -175,4 +169,4 @@ def proposal_status(prop_id, status):
     if not store.path(prop_id).exists():
         raise click.ClickException(f"{prop_id} not found")
     p = store.set_status(prop_id, status)
-    console.print(f"[green]✓[/green] {prop_id}: status={p.status}")
+    _seam._CONSOLE.print(f"[green]✓[/green] {prop_id}: status={p.status}")

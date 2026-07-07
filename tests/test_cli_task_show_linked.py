@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from ai_hats.cli.task import task
+from ai_hats_tracker.cli.task import task
 from ai_hats.models import TaskCard, TaskState
 from ai_hats.paths import tasks_dir
 

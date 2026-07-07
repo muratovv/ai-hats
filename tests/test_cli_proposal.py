@@ -9,8 +9,22 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from ai_hats.cli.proposal import proposal
+from ai_hats_tracker.cli.proposal import proposal
 from ai_hats.paths import proposals_dir
+
+
+@pytest.fixture(autouse=True)
+def _integrator_seam(monkeypatch):
+    """Pin the shared ``_seam`` to the integrator's AI_HATS_DIR/yaml-aware
+    proposals resolver so this integrator test is self-contained (HATS-935).
+
+    In the product the override lands as a side effect of importing
+    ``ai_hats.cli``; without it the moved CLI would resolve the wt-free
+    standalone default and miss these fixtures' integrator-layout dir.
+    """
+    from ai_hats_tracker.cli import _seam
+
+    monkeypatch.setattr(_seam, "_PROPOSALS_DIR", proposals_dir)
 
 
 @pytest.fixture
@@ -58,7 +72,7 @@ def test_create_duplicate_id_rejected(project_dir: Path, monkeypatch):
     # Force next_proposal_id to collide by pre-creating PROP-002 then stubbing the id generator.
     p = proposals_dir(project_dir) / "PROP-001.yaml"
     original = p.read_text()
-    monkeypatch.setattr("ai_hats.cli.proposal.next_proposal_id", lambda _d: "PROP-001")
+    monkeypatch.setattr("ai_hats_tracker.cli.proposal.next_proposal_id", lambda _d: "PROP-001")
     res2 = _create(title="duplicate")
     assert res2.exit_code == 1, res2.output
     assert "already exists" in res2.output.lower()

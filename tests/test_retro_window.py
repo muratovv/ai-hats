@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ai_hats.paths import state_md_path, tasks_dir
 from ai_hats.retro.window import tasks_closed_in_window
-from ai_hats.state import TaskManager
+from ai_hats_tracker.state import TaskManager
 from ai_hats.tracker_wiring import tracker_paths
 
 _UPDATED = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)

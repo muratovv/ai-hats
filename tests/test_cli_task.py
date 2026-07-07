@@ -13,7 +13,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.models import TaskState
-from ai_hats.state import TaskManager
+from ai_hats_tracker.state import TaskManager
 from ai_hats.tracker_wiring import tracker_paths
 
 
@@ -369,7 +369,7 @@ def test_transition_done_lost_state_prints_recovery_hint(
     ``TaskManager.transition`` — avoids dragging the full worktree
     lifecycle into a CLI-layer test.
     """
-    from ai_hats import state as state_module
+    from ai_hats_tracker import state as state_module
     from ai_hats_wt import WorktreeStateLostError
 
     _seed_task(project_dir)

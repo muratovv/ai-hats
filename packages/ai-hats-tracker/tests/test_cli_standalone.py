@@ -17,6 +17,7 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from ai_hats_tracker.cli import _seam
+from ai_hats_tracker.cli.attach import attach
 from ai_hats_tracker.cli.task import task
 
 _WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
@@ -33,6 +34,8 @@ def _pin_wt_free_seam(monkeypatch) -> None:
     monkeypatch.setattr(_seam, "_PROJECT_DIR", _seam._default_project_dir)
     monkeypatch.setattr(_seam, "_GUARD_LINKED_WT", _seam._default_guard_not_inside_linked_worktree)
     monkeypatch.setattr(_seam, "_WORKTREES_DIR", None)
+    monkeypatch.setattr(_seam, "_HYPOTHESES_DIR", _seam._default_hypotheses_dir)
+    monkeypatch.setattr(_seam, "_PROPOSALS_DIR", _seam._default_proposals_dir)
 
 
 def test_cli_task_import_pulls_no_ai_hats_wt():
@@ -93,3 +96,46 @@ def test_standalone_backlog_cli_drives_fsm(tmp_path: Path, monkeypatch) -> None:
     # The card landed on disk under the wt-free `.agent` layout the default
     # factory injects — proof the whole flow ran without an integrator.
     assert (tmp_path / ".agent" / "tasks" / task_id / "task.yaml").exists()
+
+
+def test_standalone_link_extract_attach_wt_free(tmp_path: Path, monkeypatch) -> None:
+    """link → plan-extract → attach on a bare dir with the wt-free factory — the
+    remaining DoD commands (HATS-934) proven standalone, no integrator override."""
+    (tmp_path / ".agent").mkdir()
+    monkeypatch.chdir(tmp_path)
+    _pin_wt_free_seam(monkeypatch)
+    runner = CliRunner()
+
+    def _create(title: str) -> str:
+        res = runner.invoke(task, ["create", title])
+        assert res.exit_code == 0, res.output
+        m = re.search(r"(HATS-\d+)", res.output)
+        assert m, res.output
+        return m.group(1)
+
+    a = _create("Parent probe")
+    b = _create("Child probe")
+
+    # link: a → b, then show a surfaces the ref
+    linked = runner.invoke(task, ["link", a, b, "--type", "related"])
+    assert linked.exit_code == 0, linked.output
+    shown = runner.invoke(task, ["show", a])
+    assert shown.exit_code == 0 and b in shown.output, shown.output
+
+    # plan-extract: parse a real Subtasks block (dry-run via --json, mutates nothing)
+    runner.invoke(task, ["transition", a, "plan"])
+    plan_md = tmp_path / ".agent" / "tasks" / a / "plan.md"
+    plan_md.write_text("# Plan\n\n## Subtasks\n\n- Carve out the widget\n- Wire the seam\n")
+    extracted = runner.invoke(task, ["plan-extract", a, "--json"])
+    assert extracted.exit_code == 0, extracted.output
+    assert "Carve out the widget" in extracted.output, extracted.output
+
+    # attach: add → list → verify a real file under the wt-free layout
+    doc = tmp_path / "note.md"
+    doc.write_text("evidence\n")
+    added = runner.invoke(attach, ["add", a, str(doc)])
+    assert added.exit_code == 0, added.output
+    listed = runner.invoke(attach, ["list", a])
+    assert listed.exit_code == 0 and "note.md" in listed.output, listed.output
+    verified = runner.invoke(attach, ["verify", a])
+    assert verified.exit_code == 0, verified.output

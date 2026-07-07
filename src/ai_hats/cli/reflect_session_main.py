@@ -20,7 +20,7 @@ import yaml
 from pydantic import ValidationError
 
 from ..harness.errors import HarnessReliabilityError
-from ..hypothesis import HypothesisStore, Proposal, ProposalStore, next_proposal_id
+from ai_hats_tracker.hypothesis import HypothesisStore, Proposal, ProposalStore, next_proposal_id
 from ..pipeline.harness import PipelineHarness
 from ..pipeline.keys import (
     KEY_MAX_RETRIES,

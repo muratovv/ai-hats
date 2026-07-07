@@ -32,7 +32,7 @@ from ..paths import RETRO_LOG, session_dirname
 
 import click
 
-from ..hypothesis import (
+from ai_hats_tracker.hypothesis import (
     HypothesisStore,
     ProposalStore,
 )
@@ -576,7 +576,7 @@ def _minimal_create_action(text: str):
     cannot deduplicate). The supervisor still gets a HYP file to edit; all
     schema-optional fields are left empty for a later pass.
     """
-    from ..hypothesis import CreateAction, IntakeDraft
+    from ai_hats_tracker.hypothesis import CreateAction, IntakeDraft
 
     title = text.strip().splitlines()[0][:60] or "supervisor observation"
     return CreateAction(
@@ -589,7 +589,7 @@ def _format_preview(action) -> str:
     """Pretty-print an IntakeResult for the interactive confirmation prompt."""
     import yaml as _yaml
 
-    from ..hypothesis import CreateAction, MergeAction
+    from ai_hats_tracker.hypothesis import CreateAction, MergeAction
 
     if isinstance(action, MergeAction):
         body = {
@@ -618,7 +618,7 @@ def _write_intake(
     """Materialize the intake decision via HypothesisStore. Returns HYP id."""
     from datetime import date, datetime, timezone
 
-    from ..hypothesis import (
+    from ai_hats_tracker.hypothesis import (
         CreateAction,
         ExitCriteria,
         Hypothesis,
@@ -759,7 +759,7 @@ def reflect_issue_cmd(
     By default writes immediately on success. Use ``--preview`` to inspect
     the draft and confirm interactively, or ``--bg`` to detach.
     """
-    from ..hypothesis import IntakeParseError, parse_intake_yaml
+    from ai_hats_tracker.hypothesis import IntakeParseError, parse_intake_yaml
 
     if background and preview_mode:
         raise click.ClickException(
@@ -822,7 +822,7 @@ def reflect_issue_cmd(
         project_dir, action,
         text=text, session_id=session_id, task_id=task_id,
     )
-    from ..hypothesis import MergeAction
+    from ai_hats_tracker.hypothesis import MergeAction
 
     if isinstance(action, MergeAction):
         console.print(

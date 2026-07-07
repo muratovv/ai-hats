@@ -32,7 +32,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.state import PLAN_SCAFFOLD
+from ai_hats_tracker.state import PLAN_SCAFFOLD
 from ai_hats.paths import PROJECT_CONFIG
 
 pytestmark = pytest.mark.integration

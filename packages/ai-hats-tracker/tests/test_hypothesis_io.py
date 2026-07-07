@@ -8,7 +8,7 @@ from pathlib import Path
 
 import yaml
 
-from ai_hats.hypothesis import (
+from ai_hats_tracker.hypothesis import (
     HypothesisStore,
     Proposal,
     ProposalStore,

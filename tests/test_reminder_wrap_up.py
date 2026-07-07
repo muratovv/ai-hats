@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ai_hats.retro.reminder import evaluate_wrap_up
-from ai_hats.state import TaskManager
+from ai_hats_tracker.state import TaskManager
 from ai_hats.tracker_wiring import tracker_paths
 from ai_hats.paths import runs_dir, state_md_path, tasks_dir
 from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, session_dirname
