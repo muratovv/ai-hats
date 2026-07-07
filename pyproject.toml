@@ -30,7 +30,7 @@ dependencies = [
     # in ai-hats-core; the worktree engine (ai_hats_wt) lives in ai-hats-wt.
     "ai-hats-core>=0.4.0",  # imports ai_hats_core.migrations; 0.4.0 on PyPI (HATS-937)
     "ai-hats-wt>=0.2.1",    # imports WorktreeHook/parse_worktree_carry; 0.2.1 on PyPI (HATS-928)
-    "ai-hats-tracker>=0.1.0",  # facade re-exports TaskCard/TaskState schema (HATS-933)
+    "ai-hats-tracker>=0.3.0",  # facade schema + ai_hats_tracker.cli (0.2.0) + .hypothesis (0.3.0)
     "click>=8.1",
     "pyyaml>=6.0",
     "pydantic>=2.0",
@@ -75,7 +75,6 @@ packages = [
     "ai_hats.cli",
     "ai_hats.config",
     "ai_hats.harness",
-    "ai_hats.hypothesis",
     "ai_hats.libraries",
     "ai_hats.paths",
     "ai_hats.pipeline",

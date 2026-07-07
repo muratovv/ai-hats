@@ -630,7 +630,7 @@ inexpressible as "raise-to-abort + core per-route handling" — none is known
 - `src/ai_hats/worktree_hooks.py` — `run_worktree_hook` (stays ai-hats, D1/D8);
   `collect_carry_for_role` (`:67`) + `serialize_collected_hooks` (the collection
   chokepoint lifted in P1).
-- `src/ai_hats/state.py` — `_setup_worktree` (`:981`, the `create` + carry-collect
+- `packages/ai-hats-tracker/src/ai_hats_tracker/state.py` — `_setup_worktree` (`:981`, the `create` + carry-collect
   call site, `:1030`) / `_teardown_worktree` (`:1051`, `load_for_task` `:1085`).
 - `src/ai_hats/cli/worktree.py` — the `wt` Click group; `_helpers` imports
   (`:13`) that keep the CLI an ai-hats wrapper (D7).
