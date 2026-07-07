@@ -3,11 +3,11 @@
 Only place tests duplicate raw literals; typos in constants fall here and only here.
 """  # comment-length: allow
 
+from ai_hats_observe.trace import ENV_SESSION_ID  # HATS-948: observe owns the session env var
 from ai_hats.constants import (
     ENV_LAUNCHER_DEST,
     ENV_REPO_URL,
     ENV_ROLE,
-    ENV_SESSION_ID,
     ENV_SKIP_RETRO,
     HOOK_NOTIFICATION,
     HOOK_POST_TOOL_USE,

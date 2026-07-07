@@ -1,9 +1,9 @@
-"""Trace vocabulary + the session-id env var (HATS-948, T15).
+"""Trace vocabulary + the session-id env var — observe's trace schema (HATS-948).
 
-Shared by the observe writer/sidecar and the runtime bricks: the sidecar reads
-``ENV_SESSION_ID`` to know which session's ``trace.log`` to append, and tags each
-line with a ``TraceTag``. Promoted to core so ``ai_hats_observe`` and the
-integrator share one home (ADR-0014 Phase 1).
+``TraceTag`` (trace-line tags) + ``ENV_SESSION_ID`` (the sidecar/runtime session
+handshake). A pure leaf; the writer/sidecar use it intra-package. Runtime bricks
+never import it — they write via ``Session.log_sys/log_sub/log_res`` on the
+injected session. observe owns this schema (ADR-0014); NOT core.
 """
 
 from __future__ import annotations

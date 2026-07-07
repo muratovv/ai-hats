@@ -8,7 +8,8 @@ import yaml
 
 from ai_hats.retro.auto_retro import should_run
 from ai_hats.paths import runs_dir
-from ai_hats.constants import ENV_SESSION_ID, ENV_SKIP_RETRO
+from ai_hats.constants import ENV_SKIP_RETRO
+from ai_hats_observe.trace import ENV_SESSION_ID
 from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, RETRO_LOG, session_dirname
 
 

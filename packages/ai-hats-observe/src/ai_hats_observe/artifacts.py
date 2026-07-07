@@ -1,8 +1,9 @@
-"""Session-dir artifact names — the shared naming vocabulary (HATS-917, T15).
+"""Session-dir artifact names — observe's session-dir schema (HATS-948, T15).
 
-Domain-agnostic filename constants + the session-dir helpers used by the observe
-writer and the retro/cli consumers. Promoted to core so ``ai_hats_observe`` and
-the integrator share one home for these names (ADR-0014 Phase 1).
+Filename constants + the session-dir helpers. A pure leaf (imports nothing) so
+the observe writer uses it intra-package and integrator name-consumers
+(retro/cli/pipeline) import it without dragging the writer. observe owns this
+schema (ADR-0014); it does NOT belong in core.
 """
 
 from __future__ import annotations
