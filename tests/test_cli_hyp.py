@@ -9,8 +9,23 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from ai_hats.cli.hyp import hyp
+from ai_hats_tracker.cli.hyp import hyp
 from ai_hats.paths import hypotheses_dir, proposals_dir
+
+
+@pytest.fixture(autouse=True)
+def _integrator_seam(monkeypatch):
+    """Pin the shared ``_seam`` to the integrator's AI_HATS_DIR/yaml-aware dir
+    resolvers so this integrator test is self-contained (HATS-935).
+
+    In the product the override lands as a side effect of importing
+    ``ai_hats.cli``; without it the moved CLI would resolve the wt-free
+    standalone default and miss these fixtures' integrator-layout dirs.
+    """
+    from ai_hats_tracker.cli import _seam
+
+    monkeypatch.setattr(_seam, "_HYPOTHESES_DIR", hypotheses_dir)
+    monkeypatch.setattr(_seam, "_PROPOSALS_DIR", proposals_dir)
 
 
 @pytest.fixture
@@ -121,7 +136,7 @@ def test_create_duplicate_id_rejected(project_dir: Path, monkeypatch):
     FileExistsError path we stub it to return an id that already exists.
     """
     _write_hyp(project_dir, "HYP-001", title="original")
-    monkeypatch.setattr("ai_hats.cli.hyp.next_hypothesis_id", lambda _d: "HYP-001")
+    monkeypatch.setattr("ai_hats_tracker.cli.hyp.next_hypothesis_id", lambda _d: "HYP-001")
     res = _invoke(
         [
             "create",

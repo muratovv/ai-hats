@@ -1,4 +1,4 @@
-"""Unit tests for ``ai_hats.attachments`` domain logic (HATS-402)."""
+"""Unit tests for ``ai_hats_tracker.attachments`` domain logic (HATS-402)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 
-from ai_hats.attachments import (
+from ai_hats_tracker.attachments import (
     DIGEST_LEN,
     DivergenceKind,
     FileOp,

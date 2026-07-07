@@ -95,9 +95,20 @@ def test_boundary_lint_self_test():
 
 
 def test_boundary_covers_cli_subpackage():
-    """The lint walks the ``cli/`` backlog-CLI modules (HATS-934), not just the
+    """The lint walks the ``cli/`` backlog-CLI modules (HATS-934/935), not just the
     schema/FSM core — else a wt-optional CLI file could smuggle a forbidden
     ``ai_hats`` import past the gate."""
     scanned = {p.relative_to(SRC).as_posix() for p in SRC.rglob("*.py")}
     assert "cli/task.py" in scanned, scanned
     assert "cli/attach.py" in scanned, scanned
+    assert "cli/hyp.py" in scanned, scanned
+    assert "cli/proposal.py" in scanned, scanned
+
+
+def test_boundary_covers_hypothesis_subpackage():
+    """The lint walks the ``hypothesis/`` tree (HATS-935) — the stores/quorum/intake
+    moved here core-only, so the static guard must scan them for a stray ``ai_hats``
+    reach just like the schema/FSM core."""
+    scanned = {p.relative_to(SRC).as_posix() for p in SRC.rglob("*.py")}
+    for mod in ("io.py", "model.py", "proposal.py", "quorum.py", "intake.py"):
+        assert f"hypothesis/{mod}" in scanned, scanned

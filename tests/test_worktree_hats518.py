@@ -245,7 +245,7 @@ class TestTransitionExecute:
         gain refusal semantics later for unrelated reasons).
         """
         from ai_hats.models import TaskState
-        from ai_hats.state import TaskManager
+        from ai_hats_tracker.state import TaskManager
         from ai_hats.tracker_wiring import tracker_paths
         from ai_hats.wt_effects import WtWorktreeEffects
 

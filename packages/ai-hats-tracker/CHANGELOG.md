@@ -6,6 +6,29 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0]
+
+Hypotheses and proposals. The `hypothesis/` domain (stores, quorum, intake) and
+the `task hyp` / `task proposal` Click groups move into the package; the tracker
+package now owns the full backlog domain, still core-only.
+
+### Added
+
+- `ai_hats_tracker.hypothesis` — `HypothesisStore`, `ProposalStore`, the models
+  (`Hypothesis`, `Proposal`, `ValidationLogEntry`, `Vote`, …), quorum
+  (`autoclose_quorum`, `find_quorum_closures`, `DEFAULT_QUORUM_K`), and intake.
+  Re-exported from `ai_hats_tracker.__init__`. Standalone drive proven by
+  `test_hypothesis_standalone.py`.
+- `ai_hats_tracker.cli.hyp` / `ai_hats_tracker.cli.proposal` — the `task hyp` and
+  `task proposal` Click groups, driven by the wt-free `_seam`.
+- `_seam._HYPOTHESES_DIR` / `_seam._PROPOSALS_DIR` — path-resolver slots (wt-free
+  `.agent`-derived defaults; the integrator overrides them at mount with the
+  `AI_HATS_DIR`/yaml-aware `ai_hats.paths` versions).
+
+### Changed
+
+- The tracker `__all__` surface gains the hypotheses/proposals symbols.
+
 ## [0.2.0]
 
 The standalone backlog CLI. The `task` and `attach` Click groups move into the
@@ -43,4 +66,4 @@ machine extracted from ai-hats.
   `linked_context` / `attachments` submodules.
 - A core-wired migration seam (`migrations.run_pending`, empty registry).
 - Standalone operation on a bare directory (no ai-hats config), proven by
-  `test_tracker_standalone.py` and guarded by `test_boundary.py`.
+  `test_tracker_standalone.py` and guarded by `test_tracker_boundary.py`.

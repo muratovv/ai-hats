@@ -209,7 +209,7 @@ def _task_manager(project_dir: Path | None = None):
     legacy repos on their historical prefix without manual migration.
     """
     from ..models import ProjectConfig
-    from ..state import TaskManager
+    from ai_hats_tracker.state import TaskManager
     from ..tracker_wiring import tracker_paths
     from ..wt_effects import WtWorktreeEffects
 

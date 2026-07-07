@@ -188,17 +188,19 @@ def _launch_session(
 from . import (  # noqa: E402
     agent as agent_mod,
     assembly,
-    attach as attach_mod,
     config as config_mod,
     execute as execute_mod,
-    hyp as hyp_mod,
     list_cmd,
     maintenance,
-    proposal as proposal_mod,
     reflect as reflect_mod,
     session,
-    task,
     worktree,
+)
+from ai_hats_tracker.cli import (  # noqa: E402
+    attach as attach_mod,
+    hyp as hyp_mod,
+    proposal as proposal_mod,
+    task,
 )
 
 # Config — set + customize + status nest under it (HATS-241, HATS-242).
@@ -261,7 +263,7 @@ main.add_command(task.task)
 # integrator wires the wt-coupled `_helpers` versions here so `ai-hats task`
 # keeps its worktree UX (override the shared `_seam` — reaches every importer).
 from ai_hats_tracker.cli import _seam  # noqa: E402
-from ..paths import worktrees_dir  # noqa: E402
+from ..paths import hypotheses_dir, proposals_dir, worktrees_dir  # noqa: E402
 from ._helpers import (  # noqa: E402
     _guard_not_inside_linked_worktree,
     _project_dir,
@@ -273,6 +275,9 @@ _seam._PROJECT_DIR = _project_dir
 _seam._GUARD_LINKED_WT = _guard_not_inside_linked_worktree
 _seam._CONSOLE = console
 _seam._WORKTREES_DIR = worktrees_dir
+# hyp/prop path resolvers (HATS-935) — AI_HATS_DIR/yaml-aware integrator versions.
+_seam._HYPOTHESES_DIR = hypotheses_dir
+_seam._PROPOSALS_DIR = proposals_dir
 
 # Reflect (post-session retro)
 main.add_command(reflect_mod.reflect)

@@ -17,7 +17,7 @@ from ai_hats_tracker.layout import TrackerPaths
 
 
 def tracker_paths(project_dir: Path) -> TrackerPaths:
-    """Bind the project's tracker layout for :class:`ai_hats.state.TaskManager`."""
+    """Bind the project's tracker layout for :class:`ai_hats_tracker.state.TaskManager`."""
     return TrackerPaths(
         tasks_dir=tasks_dir(project_dir),
         state_md_path=state_md_path(project_dir),

@@ -20,23 +20,22 @@ import click
 import yaml
 
 from ai_hats_core import atomic_write_text
+
 from ..hypothesis import (
     Hypothesis,
     HypothesisStore,
     ValidationLogEntry,
     next_hypothesis_id,
 )
-from ._helpers import _project_dir, console
+from . import _seam
 
 
 def _hyp_dir(project_dir: Path) -> Path:
-    from ..paths import hypotheses_dir
-
-    return hypotheses_dir(project_dir)
+    return _seam._HYPOTHESES_DIR(project_dir)
 
 
 def _store(project_dir: Path | None = None) -> HypothesisStore:
-    pd = project_dir or _project_dir()
+    pd = project_dir or _seam._PROJECT_DIR()
     return HypothesisStore(_hyp_dir(pd))
 
 
@@ -149,12 +148,12 @@ def hyp_create(
     try:
         store.create(h)
     except FileExistsError as e:
-        console.print(f"[red]Error[/]: {e}")
+        _seam._CONSOLE.print(f"[red]Error[/]: {e}")
         sys.exit(1)
     if as_json:
         click.echo(json.dumps({"id": new_id}))
     else:
-        console.print(f"[green]✓[/green] Created {new_id} (status=active)")
+        _seam._CONSOLE.print(f"[green]✓[/green] Created {new_id} (status=active)")
 
 
 @hyp.command("set-status")
@@ -170,7 +169,7 @@ def hyp_set_status(hyp_id: str, status: str):
     if not store.path(hyp_id).exists():
         raise click.ClickException(f"{hyp_id} not found")
     h = store.set_status(hyp_id, status)
-    console.print(f"[green]✓[/green] {hyp_id}: status={h.status}")
+    _seam._CONSOLE.print(f"[green]✓[/green] {hyp_id}: status={h.status}")
 
 
 @hyp.command("autoclose")
@@ -183,7 +182,11 @@ def hyp_autoclose(k: int | None, dry_run: bool):
     validation_log and reversed with `set-status --status active` (HATS-769).
     This is the same sweep the `finalize-hitl` pipeline runs after each session.
     """
-    from ..hypothesis.quorum import DEFAULT_QUORUM_K, apply_closure, find_quorum_closures
+    from ..hypothesis.quorum import (
+        DEFAULT_QUORUM_K,
+        apply_closure,
+        find_quorum_closures,
+    )
 
     threshold = DEFAULT_QUORUM_K if k is None else k
     if threshold < 1:
@@ -191,20 +194,20 @@ def hyp_autoclose(k: int | None, dry_run: bool):
     store = _store()
     closures = find_quorum_closures(store, threshold)
     if not closures:
-        console.print("closed: none")
+        _seam._CONSOLE.print("closed: none")
         return
     if dry_run:
         for c in closures:
-            console.print(
+            _seam._CONSOLE.print(
                 f"[yellow]would close[/yellow] {c.hyp_id} "
                 f"(refuted by {len(c.refute_sessions)} independent sessions: "
                 f"{', '.join(c.refute_sessions)})"
             )
-        console.print(f"(dry-run) {len(closures)} candidate(s); nothing mutated")
+        _seam._CONSOLE.print(f"(dry-run) {len(closures)} candidate(s); nothing mutated")
         return
     for c in closures:
         apply_closure(store, c)
-    console.print(f"[green]✓[/green] closed: {', '.join(c.hyp_id for c in closures)}")
+    _seam._CONSOLE.print(f"[green]✓[/green] closed: {', '.join(c.hyp_id for c in closures)}")
 
 
 @hyp.command("append-verdict")
@@ -249,7 +252,7 @@ def hyp_append_verdict(
         timestamp=datetime.now(tz=timezone.utc),
     )
     h = store.append_verdict(hyp_id, entry)
-    console.print(
+    _seam._CONSOLE.print(
         f"[green]✓[/green] {hyp_id}: appended {verdict} verdict "
         f"({len(h.validation_log)} entries total)"
     )
@@ -259,7 +262,7 @@ def hyp_append_verdict(
 @click.option("--dry-run", is_flag=True, help="Print what would change")
 def hyp_migrate(dry_run: bool):
     """One-shot normalize all HYP-*.yaml under current schema (idempotent)."""
-    project_dir = _project_dir()
+    project_dir = _seam._PROJECT_DIR()
     d = _hyp_dir(project_dir)
     if not d.exists():
         raise click.ClickException(f"No hypotheses dir at {d}")
@@ -274,22 +277,20 @@ def hyp_migrate(dry_run: bool):
             continue
         changed += 1
         if dry_run:
-            console.print(f"[yellow]would change[/yellow] {p.name}")
+            _seam._CONSOLE.print(f"[yellow]would change[/yellow] {p.name}")
         else:
             atomic_write_text(p, yaml.safe_dump(normalized, sort_keys=False, allow_unicode=True))
-            console.print(f"[green]✓[/green] {p.name}")
+            _seam._CONSOLE.print(f"[green]✓[/green] {p.name}")
 
     # Ensure proposals dir + .gitkeep exists for downstream PROP CLI.
-    from ..paths import proposals_dir
-
-    proposals = proposals_dir(project_dir)
+    proposals = _seam._PROPOSALS_DIR(project_dir)
     if not dry_run:
         proposals.mkdir(parents=True, exist_ok=True)
         gk = proposals / ".gitkeep"
         if not gk.exists():
             gk.write_text("")
 
-    console.print(
+    _seam._CONSOLE.print(
         f"\nMigration {'(dry-run) ' if dry_run else ''}complete: {changed} file(s) changed"
     )
 
