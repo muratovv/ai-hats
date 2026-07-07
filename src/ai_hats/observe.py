@@ -14,9 +14,9 @@ from pathlib import Path
 from ai_hats_core import atomic_write_text
 from .constants import TraceTag, ENV_SESSION_ID
 from .environment_recovery import EnvironmentRecovery, RecoveryProtocol
-# HATS-864: artifact NAMES are the brick's shared vocabulary (leaf submodule,
-# lint-exempt); directory RESOLUTION (runs_dir) is injected integrator policy.
-from .paths.session_artifacts import (
+# HATS-948: artifact NAMES are shared core vocabulary; directory RESOLUTION
+# (runs_dir) stays injected integrator policy (HATS-864).
+from ai_hats_core.session_artifacts import (
     AUDIT_MD,
     META_PROMPT_TXT,
     METRICS_JSON,

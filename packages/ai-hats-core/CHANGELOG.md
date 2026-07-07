@@ -3,6 +3,16 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-07
+
+### Added
+
+- `ai_hats_core.session_artifacts` — the shared session-dir naming vocabulary
+  (artifact filename constants + `session_dirname`/`strip_session_prefix`),
+  promoted from `ai_hats.paths` so `ai_hats_observe` (T15) and the integrator
+  share one home (ADR-0014 Phase 1, HATS-948). `ai_hats.paths.session_artifacts`
+  is now a re-export shim; the consumer floor rises to `>=0.5.0`.
+
 ## [0.4.0] - 2026-07-06
 
 ### Added
