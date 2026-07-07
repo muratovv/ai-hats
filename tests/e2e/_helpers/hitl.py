@@ -30,11 +30,14 @@ Public surface::
 
 from __future__ import annotations
 
+import fcntl
+import json
 import os
 import re
 import subprocess
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
@@ -196,6 +199,36 @@ def _build_env(
     return env
 
 
+def _seed_folder_trust(project_path: str) -> None:
+    """Pre-accept claude's folder-trust dialog for ``project_path`` (HATS-945).
+
+    claude 2.1.x blocks the interactive TUI behind a "trust this folder" dialog
+    unless ``projects[<abspath>].hasTrustDialogAccepted`` is set in the REAL
+    ``~/.claude.json`` — a fresh tmp dir never is, so the driver hangs. Auth is
+    bound to the default config dir (a relocated ``CLAUDE_CONFIG_DIR`` reports
+    "Not logged in"), so trust MUST be seeded in place. Safe: the ``live_claude``
+    cohort is one serial xdist group, and claude rewrites this file every run.
+    """
+    # comment-length: allow — records the auth-binding constraint that forces
+    # the in-place write (see HATS-945 plan for the PoC).
+    cfg = Path.home() / ".claude.json"
+    key = os.path.realpath(project_path)
+    with open(cfg.with_name(".claude.json.ai-hats-trust.lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            data = json.loads(cfg.read_text()) if cfg.exists() else {}
+        except (json.JSONDecodeError, OSError):
+            data = {}
+        entry = data.setdefault("projects", {}).setdefault(key, {})
+        if entry.get("hasTrustDialogAccepted") is True:
+            return  # already trusted — no rewrite
+        entry["hasTrustDialogAccepted"] = True
+        data.setdefault("hasCompletedOnboarding", True)
+        tmp = cfg.with_name(f".claude.json.ai-hats-{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(data))
+        os.replace(tmp, cfg)  # atomic in-place swap
+
+
 def drive_bare_hitl(
     project: "Project",
     *,
@@ -261,6 +294,9 @@ def drive_bare_hitl(
     cmd += tuple(extra_args)
 
     env = _build_env(project.env, env_allowlist)
+    # HATS-945: pre-accept claude's folder-trust dialog for this cwd, else the
+    # interactive TUI hangs waiting on it and the run times out.
+    _seed_folder_trust(os.path.realpath(str(project.path)))
 
     t0 = time.monotonic()
     timed_out = False
