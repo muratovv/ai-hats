@@ -7,18 +7,14 @@ versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `ai_hats_core.session_artifacts` — the shared session-dir naming vocabulary
-  (artifact filename constants + `session_dirname`/`strip_session_prefix`),
-  promoted from `ai_hats.paths` so `ai_hats_observe` (T15) and the integrator
-  share one home (ADR-0014 Phase 1, HATS-948). `ai_hats.paths.session_artifacts`
-  is now a re-export shim; the consumer floor rises to `>=0.5.0`.
-- `ai_hats_core.trace` — `TraceTag` (trace-line tag vocabulary) + `ENV_SESSION_ID`
-  (the sidecar/runtime session handshake), promoted from `ai_hats.constants`
-  (HATS-948). `ai_hats.constants` re-exports both, unchanged for its consumers.
 - `ai_hats_core.recovery` — the `RecoveryProtocol` (`run()` contract) +
   `NoOpRecovery` (the package-pure default), promoted from
-  `ai_hats.environment_recovery` (HATS-948). The heavy `EnvironmentRecovery`
-  stays in the integrator; `ai_hats.environment_recovery` re-exports the pair.
+  `ai_hats.environment_recovery` (HATS-948, T15). A domain-agnostic DI seam so
+  `ai_hats_observe`'s `SessionManager` defaults to a no-op recovery; the heavy
+  `EnvironmentRecovery` stays in the integrator and is injected at the run-path
+  seam. `ai_hats.environment_recovery` re-exports the pair; consumer floor
+  `>=0.5.0`. (Session/trace vocab stays in `ai_hats_observe`, NOT core — each
+  module owns its schema.)
 
 ## [0.4.0] - 2026-07-06
 

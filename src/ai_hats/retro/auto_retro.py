@@ -23,7 +23,8 @@ from pathlib import Path
 
 from ..models import FeedbackPolicy, ProjectConfig
 from ..paths import METRICS_JSON, PROJECT_CONFIG, RETRO_LOG, session_dirname
-from ..constants import ENV_SESSION_ID, ENV_SKIP_RETRO
+from ..constants import ENV_SKIP_RETRO
+from ai_hats_observe.trace import ENV_SESSION_ID
 
 
 def should_run(

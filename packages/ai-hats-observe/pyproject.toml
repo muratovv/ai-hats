@@ -25,8 +25,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    # imports ai_hats_core.session_artifacts (0.5.0, HATS-948); slices 3-4 add
-    # TraceTag/ENV_SESSION_ID + RecoveryProtocol to the same core minor.
+    # SessionManager defaults to ai_hats_core.recovery.NoOpRecovery (0.5.0, HATS-948).
     "ai-hats-core>=0.5.0",
 ]
 
