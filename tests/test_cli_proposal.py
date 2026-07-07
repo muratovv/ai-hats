@@ -9,7 +9,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from ai_hats.cli.proposal import proposal
+from ai_hats_tracker.cli.proposal import proposal
 from ai_hats.paths import proposals_dir
 
 

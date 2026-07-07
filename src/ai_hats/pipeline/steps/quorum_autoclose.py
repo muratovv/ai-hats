@@ -48,7 +48,7 @@ class QuorumAutoclose(Step):
         )
 
     def run(self, *, project_dir: Path, **_: Any) -> dict[str, Any]:
-        from ...hypothesis import HypothesisStore
+        from ai_hats_tracker.hypothesis import HypothesisStore
         from ai_hats_tracker.hypothesis.quorum import autoclose_quorum
         from ...paths import hypotheses_dir
 

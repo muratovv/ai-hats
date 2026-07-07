@@ -283,7 +283,7 @@ def test_build_intake_prompt_includes_recent_evidence(project_dir):
     from datetime import date
 
     from ai_hats.cli.reflect import _build_intake_prompt
-    from ai_hats.hypothesis import Hypothesis, ValidationLogEntry
+    from ai_hats_tracker.hypothesis import Hypothesis, ValidationLogEntry
 
     h = Hypothesis(
         id="HYP-001",
@@ -322,7 +322,7 @@ def test_build_intake_prompt_omits_evidence_when_empty(project_dir):
     from datetime import date
 
     from ai_hats.cli.reflect import _build_intake_prompt
-    from ai_hats.hypothesis import Hypothesis
+    from ai_hats_tracker.hypothesis import Hypothesis
 
     h = Hypothesis(
         id="HYP-001",

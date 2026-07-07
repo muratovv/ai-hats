@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ai_hats.models import TaskState
 from ai_hats.paths import worktrees_dir
-from ai_hats.state import EmptyPlanError, TaskManager
+from ai_hats_tracker.state import EmptyPlanError, TaskManager
 from ai_hats.tracker_wiring import tracker_paths
 from ai_hats.wt_effects import WtWorktreeEffects
 from ai_hats_wt import WorktreeManager

@@ -84,7 +84,7 @@ def test_tracker_migration_idempotent(tmp_path: Path) -> None:
 
 def test_tracker_migration_e2e_task_visible(tmp_path: Path) -> None:
     """End-to-end: after migration, TaskManager finds the task via new paths."""
-    from ai_hats.state import TaskManager
+    from ai_hats_tracker.state import TaskManager
     from ai_hats.tracker_wiring import tracker_paths
 
     _seed_tracker_legacy(tmp_path)

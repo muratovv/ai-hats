@@ -511,7 +511,7 @@ class SubAgentRunner:
 
     def _load_ticket(self, ticket_id: str) -> str:
         """Load ticket context from task card (delegates to ``linked_context``)."""
-        from .linked_context import load_ticket
+        from ai_hats_tracker.linked_context import load_ticket
         from .paths import tasks_dir
 
         return load_ticket(tasks_root=tasks_dir(self.project_dir), ticket_id=ticket_id)
@@ -519,11 +519,11 @@ class SubAgentRunner:
     def _load_linked_context(self, ticket_id: str) -> str:
         """Assemble the ``LINKED_CONTEXT`` body for a ticket's direct links.
 
-        HATS-689 logic now lives in :mod:`ai_hats.linked_context` so the same
+        HATS-689 logic now lives in :mod:`ai_hats_tracker.linked_context` so the same
         assembly serves both the sub-agent prompt (here) and ``ai-hats task
         show`` (HATS-691) — a single seam, not two divergent paths.
         """
-        from .linked_context import load_linked_context
+        from ai_hats_tracker.linked_context import load_linked_context
         from .paths import tasks_dir
 
         return load_linked_context(

@@ -62,7 +62,7 @@ def tasks_closed_in_window(
         return []
     try:
         from ..models import ProjectConfig, TaskState
-        from ..state import TaskManager
+        from ai_hats_tracker.state import TaskManager
         from ..tracker_wiring import tracker_paths
     except ImportError:
         return []

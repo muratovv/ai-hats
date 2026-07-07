@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from pathlib import Path
 
-from ai_hats.state import PLAN_SCAFFOLD, PLAN_SECTIONS, TaskManager
+from ai_hats_tracker.state import PLAN_SCAFFOLD, PLAN_SECTIONS, TaskManager
 from ai_hats.tracker_wiring import tracker_paths
 
 
