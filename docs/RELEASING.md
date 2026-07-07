@@ -120,10 +120,15 @@ environment. Repeat only when the repo or workflow filename changes.
 
 The workspace packages under `packages/*` carry their own **static** versions
 (`packages/<pkg>/pyproject.toml`), decoupled from the `ai-hats` `v*` tag. They
-publish through a separate, **manually-triggered** workflow,
+publish through a separate workflow,
 [`release-packages.yml`](../.github/workflows/release-packages.yml) — build both
 with `uv build`, then a per-package OIDC publish **job** each (core first, then
-the wt package that depends on it).
+the wt package that depends on it). It runs on **manual dispatch** and
+**auto-triggers** on a push to master that touches `packages/*/pyproject.toml`
+(HATS-943 — bump⇒publish is one step; `skip-existing` no-ops an unchanged
+version). A final `verify-remote-install` job then does a fresh-venv
+`git+https` install and imports `ai_hats_core.migrations`, so a version-skewed
+release fails loud instead of shipping a DOA remote channel.
 
 **Distinct environment per package — required, not cosmetic.** PyPI refuses two
 *pending* trusted publishers that share one `(owner, repository, workflow,
@@ -153,11 +158,18 @@ the disambiguator, so each package's publish job runs in its own environment
    | Workflow name     | `release-packages.yml` | `release-packages.yml` |
    | Environment name  | `pypi-core`            | `pypi-wt`              |
 
-**To cut a package release:** bump the version in the package's `pyproject.toml`,
-merge to master, then run the workflow (*Actions → release-packages → Run
-workflow*). PyPI rejects re-uploading an existing version, so a re-run without a
-version bump fails loud (no accidental clobber). The integrator `ai-hats` then
-pins the new versions in the root `dependencies`.
+**To cut a package release:** bump the version in the package's `pyproject.toml`
+and merge to master — the push auto-triggers the publish (or run it manually via
+*Actions → release-packages → Run workflow*). PyPI rejects re-uploading an
+existing version, so a re-run without a version bump fails loud (no accidental
+clobber). The integrator `ai-hats` then pins the new versions in the root
+`dependencies`.
+
+**The `version-skew-guard` CI job enforces the bump:** any change to
+`packages/<pkg>/src/**` whose version is not strictly above the published PyPI
+version fails CI (`scripts/check_pkg_version_skew.py`). This is the barrier that
+would have caught HATS-923 / HATS-937 — a `core` module added without a version
+bump, so the remote channel resolved a stale wheel (`ModuleNotFoundError`).
 
 ## CHANGELOG flow
 

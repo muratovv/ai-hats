@@ -64,6 +64,14 @@ ci_merge_smoke() {
     "$PY" -m pytest -m "smoke and not quarantine and not live_claude" tests/e2e/ -q
 }
 
+# NOTE: excluded from the local `all` bundle — it queries PyPI, so an offline
+# dev box would fail a legitimate push. CI is authoritative; run explicitly
+# (optionally SKEW_BASE=<sha>) to reproduce.
+ci_version_skew() {
+    echo "[ci-local] version-skew (workspace pkgs ahead of PyPI)" >&2
+    "$PY" scripts/check_pkg_version_skew.py "${SKEW_BASE:-origin/master}"
+}
+
 stage="${1:-all}"
 case "$stage" in
     lint) ci_lint ;;
@@ -71,6 +79,7 @@ case "$stage" in
     coverage) ci_coverage ;;
     security) ci_security ;;
     merge-smoke) ci_merge_smoke ;;
+    version-skew) ci_version_skew ;;
     all)
         # security is intentionally omitted — pip-audit is env-scoped (see NOTE).
         ci_lint
@@ -81,7 +90,7 @@ case "$stage" in
         ;;
     *)
         echo "[ci-local] unknown stage: $stage" >&2
-        echo "  stages: lint | unit | coverage | security | merge-smoke | all" >&2
+        echo "  stages: lint | unit | coverage | security | merge-smoke | version-skew | all" >&2
         exit 2
         ;;
 esac

@@ -11,6 +11,13 @@ name: release-packages
 # upload; core first, then the wt package that depends on it).
 on:
   workflow_dispatch:
+  # HATS-943 #3: auto-publish when a workspace package version bump lands on
+  # master, so bump⇒publish is one step, not two (the HATS-928 lag). Safe on a
+  # non-version edit: `skip-existing` no-ops an already-published version.
+  push:
+    branches: [master]
+    paths:
+      - "packages/*/pyproject.toml"
 
 permissions:
   contents: read
@@ -76,3 +83,32 @@ jobs:
         with:
           packages-dir: dist-wt/
           skip-existing: true
+
+  verify-remote-install:
+    # HATS-943 #2: reproduce the remote channel post-publish — a fresh venv
+    # resolves ai-hats-core from PyPI (not the workspace) and imports the module
+    # HATS-937 crashed on. Fails a skewed release loudly instead of DOA installs.
+    # Retries tolerate PyPI CDN propagation lag right after upload.
+    name: verify remote-channel install (post-publish)
+    needs: publish-wt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+      - name: Fresh venv + remote install + import
+        run: |
+          set -euo pipefail
+          ok=""
+          for attempt in 1 2 3 4 5; do
+            rm -rf /tmp/verify-venv
+            uv venv --python 3.11 /tmp/verify-venv
+            if uv pip install --python /tmp/verify-venv/bin/python --refresh \
+                 "ai-hats @ git+https://github.com/${{ github.repository }}.git"; then
+              ok=1; break
+            fi
+            echo "install attempt $attempt failed (PyPI CDN lag?) — retry in 20s" >&2
+            sleep 20
+          done
+          test -n "$ok" || { echo "remote install never succeeded" >&2; exit 1; }
+          /tmp/verify-venv/bin/python -c \
+            "import ai_hats_core.migrations; import ai_hats; print('remote-channel OK')"
