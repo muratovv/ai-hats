@@ -121,7 +121,7 @@ def test_create_duplicate_id_rejected(project_dir: Path, monkeypatch):
     FileExistsError path we stub it to return an id that already exists.
     """
     _write_hyp(project_dir, "HYP-001", title="original")
-    monkeypatch.setattr("ai_hats.cli.hyp.next_hypothesis_id", lambda _d: "HYP-001")
+    monkeypatch.setattr("ai_hats_tracker.cli.hyp.next_hypothesis_id", lambda _d: "HYP-001")
     res = _invoke(
         [
             "create",
