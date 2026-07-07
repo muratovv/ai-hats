@@ -185,29 +185,11 @@ This re-copies all skills to `.claude/skills/` and `.agent/ai-hats/library/skill
 - **Working without committing inside a worktree** — uncommitted work in a worktree is NOT protected. The worktree is a filesystem directory that parallel sessions, cleanup hooks, or `git worktree remove --force` can destroy without warning, and there is **no recovery** for uncommitted changes. Commit at every meaningful checkpoint (every passing test run, every completed sub-task). If a step could be reverted with `git checkout HEAD -- .`, you've waited too long to commit.
 - **Finishing the worktree cycle with raw git** — running `git merge --no-ff <task-branch>`, `git worktree remove`, or a manual `git push` to the base branch instead of `ai-hats wt merge` / `ai-hats task transition <id> done`. The CLI wrappers run the FSM lifecycle hooks — per-branch + base-branch merge-locks, drift-check, stale-lock recovery, state cleanup (HATS-477/484). Raw git skips every one of them and re-opens the race/drift bugs those epics closed; a manual merge *before* FSM-`done` also produces a double-merge conflict that then needs `--force` (HYP-023). **Scope:** this targets the **lifecycle transitions only** (merge-to-base + cleanup + done). Raw git for *inspection* (`git status`/`log`/`diff`, `git worktree list`) and for *in-worktree conflict resolution* during a rebase stays fine.
 
-## Fork workflow (base ≠ merge target)
+## Specific base or target branch
 
-For fork/dogfood repos where the dev trunk is not the upstream default branch
-(e.g. `main` = pristine upstream mirror, `fork-main` = local integration trunk),
-configure the split in `ai-hats.yaml` (HATS-942):
-
-```yaml
-worktree:
-  base_branch: main        # cut task worktrees FROM this (clean upstream base)
-  merge_target: fork-main  # `wt merge` / `transition done` land HERE
-```
-
-Operating rules once configured:
-
-- **Stay on `merge_target` (`fork-main`) for the whole task lifecycle** — the
-  create-time guard and the merge-time guard (HATS-533) both require HEAD to be
-  on it. No mid-task `git checkout`.
-- **Never develop on `base_branch` (`main`)** — ai-hats reads it only as the
-  `git worktree add` start-point; your working checkout never sits on it, so it
-  stays a pristine mirror.
-- Both keys are optional and default to today's behavior (`base_branch` unset →
-  cut from HEAD; `merge_target` unset → `master`/`main` set-membership). A
-  configured branch that does not exist fails loud.
+Fork/dogfood repos can cut worktrees from one branch and merge them into another
+(base ≠ merge-target) via the `worktree` block in `ai-hats.yaml`. Rarely needed —
+see [`docs/how-to-configure.md` › the `worktree` block](../../../../docs/how-to-configure.md#1a-the-worktree-block--fork-workflows-base--merge-target) (HATS-942) when a project's dev trunk is not its upstream default branch.
 
 ## If You End Up With a Stray Worktree
 

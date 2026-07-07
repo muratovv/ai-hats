@@ -168,6 +168,24 @@ class TestWorktreeCreate:
             mgr.cleanup()
 
 
+class TestDefaultBranchHelpers:
+    """HATS-942: default base/merge derive from the current HEAD branch."""
+
+    def test_defaults_are_current_head_branch(self, git_project: Path) -> None:
+        from ai_hats_wt import get_default_base_branch, get_default_merge_branch
+
+        head = _git(git_project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        assert get_default_base_branch(git_project) == head
+        assert get_default_merge_branch(git_project) == head
+
+    def test_defaults_follow_head_after_checkout(self, git_project: Path) -> None:
+        from ai_hats_wt import get_default_base_branch, get_default_merge_branch
+
+        _git(git_project, "checkout", "-b", "fork-main")
+        assert get_default_base_branch(git_project) == "fork-main"
+        assert get_default_merge_branch(git_project) == "fork-main"
+
+
 class TestWorktreeBaseAndMergeTarget:
     """HATS-942: cut the worktree FROM base_branch, record merge_target as base."""
 
