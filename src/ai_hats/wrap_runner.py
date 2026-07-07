@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .constants import TraceTag, ENV_ROLE, PROVIDER_CLAUDE
+from .constants import ENV_ROLE, PROVIDER_CLAUDE
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -184,7 +184,7 @@ class WrapRunner:
         try:
             res = self.hooks.sync_hooks(result)
             if session is not None:
-                session.log_trace(TraceTag.SYS, f"managed-hook resync: {res.status}")
+                session.log_sys(f"managed-hook resync: {res.status}")
             if res.status == "synced" and res.changes:
                 return [StartupNotice("note", _format_hook_heal(res.changes))]
             if res.status == "version-skew":
@@ -194,7 +194,7 @@ class WrapRunner:
             logger.warning("managed-hook resync at session start failed", exc_info=True)
             summary = f"managed-hook resync failed: {type(exc).__name__}: {exc}"
             if session is not None:
-                session.log_trace(TraceTag.SYS, f"managed-hook resync FAILED — {summary}")
+                session.log_sys(f"managed-hook resync FAILED — {summary}")
             return [StartupNotice("warn", summary)]
 
     def _check_skill_collisions(self, session: Session, result) -> list[StartupNotice]:
@@ -261,12 +261,12 @@ class WrapRunner:
                     "removed nothing — review .claude/skills manually.",
                 )
             text = _format_mirror_heal(removed, session_root())
-            session.log_trace(TraceTag.SYS, f"skills-mirror heal: {text}")
+            session.log_sys(f"skills-mirror heal: {text}")
             return StartupNotice("note", text)
         except Exception as exc:
             logger.warning("skills-mirror heal at session start failed", exc_info=True)
             summary = f"skills-mirror heal failed: {type(exc).__name__}: {exc}"
-            session.log_trace(TraceTag.SYS, f"skills-mirror heal FAILED — {summary}")
+            session.log_sys(f"skills-mirror heal FAILED — {summary}")
             return StartupNotice("warn", summary)
 
     def _hold_before_launch(self, startup_notices: list[StartupNotice]) -> None:
@@ -384,7 +384,7 @@ class WrapRunner:
         # HATS-380 placeholder expansion). Saved before hooks / _pty_spawn so
         # the artefact survives early failures.
         session.save_meta_prompt(meta_prompt)
-        session.log_trace(TraceTag.SYS, f"Session started: role={active_role}")
+        session.log_sys(f"Session started: role={active_role}")
 
         # Log CLI restart gap from previous session (helps judge distinguish
         # restarts from provider stalls).
@@ -415,7 +415,7 @@ class WrapRunner:
         _resuming = extra_args and any(f in extra_args for f in ("--resume", "--continue", "-c"))
         if provider_name == PROVIDER_CLAUDE and not _resuming:
             cmd += ["--session-id", claude_session_id]
-        session.log_trace(TraceTag.SYS, f"Launching: {' '.join(cmd)}")
+        session.log_sys(f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")
 
         # HATS-566: eager-load finalize pipeline NOW so its YAML is
@@ -437,7 +437,7 @@ class WrapRunner:
         except Exception as exc:
             logger.warning("finalize-hitl preload failed", exc_info=True)
             summary = f"finalize-hitl preload failed: {type(exc).__name__}: {exc}"
-            session.log_trace(TraceTag.SYS, f"finalize-hitl preload FAILED — {summary}")
+            session.log_sys(f"finalize-hitl preload FAILED — {summary}")
             startup_notices.append(StartupNotice("warn", summary))
 
         from . import __version__
@@ -536,7 +536,7 @@ class WrapRunner:
                 else:
                     gap_str = f"{gap_secs}s"
                 session.append_audit(f"🔄 CLI restarted — {gap_str} since previous session")
-                session.log_trace(TraceTag.SYS, f"CLI restart gap: {gap_str}")
+                session.log_sys(f"CLI restart gap: {gap_str}")
         except (ValueError, IndexError, OSError):
             logger.debug("CLI restart-gap detection failed", exc_info=True)
 
@@ -666,8 +666,7 @@ class WrapRunner:
                             cur = termios.tcgetattr(stdin_fd)
                             if cur[0] & (termios.ICRNL | termios.INLCR | termios.IGNCR):
                                 tty.setraw(stdin_fd)
-                                tracer.session.log_trace(
-                                    TraceTag.SYS,
+                                tracer.session.log_sys(
                                     f"HATS-220 termios drift on stdin (iflag={cur[0]:#x}) — restored raw",
                                 )
                         except termios.error:

@@ -188,6 +188,17 @@ class Session:
         with open(self.trace_path, "a") as f:
             f.write(entry)
 
+    # HATS-948: semantic tag methods keep `TraceTag` private to observe — runtime
+    # bricks write traces through the injected session, importing no observe symbol.
+    def log_sys(self, message: str) -> None:
+        self.log_trace(TraceTag.SYS, message)
+
+    def log_sub(self, message: str) -> None:
+        self.log_trace(TraceTag.SUB, message)
+
+    def log_res(self, message: str) -> None:
+        self.log_trace(TraceTag.RES, message)
+
     def init_audit(
         self,
         role: str,
