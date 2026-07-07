@@ -17,6 +17,25 @@ from .composition_payload import CompositionPayload
 logger = logging.getLogger(__name__)
 
 
+def make_session_manager(project_dir: Path):
+    """A run-path ``SessionManager`` with the real ``EnvironmentRecovery`` wired.
+
+    observe defaults to a package-pure no-op recovery (HATS-948); the integrator
+    injects the version-GC recovery at this seam so it fires at the
+    ``create_session`` chokepoint on every run (HATS-649). Read-only ``session``
+    CLI paths never create sessions, so they keep the bare no-op default.
+    """
+    from .environment_recovery import EnvironmentRecovery
+    from .observe import SessionManager
+    from .paths import runs_dir
+
+    return SessionManager(
+        project_dir,
+        runs_dir=runs_dir(project_dir),
+        recovery=EnvironmentRecovery(project_dir),
+    )
+
+
 class RoleNotFoundError(Exception):
     """Raised by the compose seam when an explicitly requested role is unknown.
 

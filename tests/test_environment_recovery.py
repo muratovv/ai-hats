@@ -200,10 +200,25 @@ def test_session_manager_noop_recovery_no_fs_effects(tmp_path, monkeypatch):
     assert not (versions_root(tmp_path) / ".refs").exists()
 
 
-def test_session_manager_default_recovery_is_real(tmp_path, monkeypatch):
-    """Default (no injection) runs the real recovery: a pinned process writes a ref."""
+def test_run_path_seam_runs_real_recovery(tmp_path, monkeypatch):
+    """The run-path seam injects real recovery: a pinned process writes a ref.
+
+    HATS-948: observe's default is now a no-op (package-pure); the version-GC
+    recovery is wired by ``make_session_manager``, not by the bare constructor.
+    """
+    from ai_hats.composition_seam import make_session_manager
+
+    pinned = _mk_complete_version(tmp_path, "cafef00d")
+    current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "prefix", str(pinned))
+    make_session_manager(tmp_path).create_session()
+    assert (versions_root(tmp_path) / ".refs" / f"{os.getpid()}.json").exists()
+
+
+def test_session_manager_default_recovery_is_noop(tmp_path, monkeypatch):
+    """HATS-948: the bare default no longer touches the version subsystem."""
     pinned = _mk_complete_version(tmp_path, "cafef00d")
     current_pointer(tmp_path).write_text("cafef00d\n", encoding="utf-8")
     monkeypatch.setattr(sys, "prefix", str(pinned))
     SessionManager(tmp_path, runs_dir=runs_dir(tmp_path)).create_session()
-    assert (versions_root(tmp_path) / ".refs" / f"{os.getpid()}.json").exists()
+    assert not (versions_root(tmp_path) / ".refs" / f"{os.getpid()}.json").exists()
