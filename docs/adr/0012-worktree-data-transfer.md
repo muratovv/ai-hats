@@ -198,7 +198,7 @@ materialized, logged scripts — `src/ai_hats/composer.py`,
 What is genuinely new (architect review, BLOCKING): there is no hook invocation in
 the worktree lifecycle today, and collected declarations do not reach it.
 `StateManager._setup_worktree()` constructs `WorktreeManager(...).create()` with
-**no composition context** (`src/ai_hats/state.py`). So the mechanism owns:
+**no composition context** (`packages/ai-hats-tracker/src/ai_hats_tracker/state.py`). So the mechanism owns:
 
 1. **Application points** — the `wt_in` / `wt_out` invocation sites in `create()`
    and all teardown routes (D2).
@@ -549,7 +549,7 @@ today omits the `.agent/`-is-main-repo-only rule (a gap the sweep confirmed).
 - `src/ai_hats/worktree.py` — `create()` (`wt_in` site), `merge()` / `discard()` /
   `cleanup()` + the HATS-596 short-circuit (`wt_out` sites), `_check_clean` (the
   tracked-only guard that misses gitignored sidecars).
-- `src/ai_hats/state.py` — `_setup_worktree()`, the `create()` call site that must
+- `packages/ai-hats-tracker/src/ai_hats_tracker/state.py` — `_setup_worktree()`, the `create()` call site that must
   thread carry declarations (D3).
 - `src/ai_hats/composer.py` / `materialize.py` / `assembler.py` — the
   collection / materialization infra reused by D3.
