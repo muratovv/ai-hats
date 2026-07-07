@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from ai_hats.hypothesis import (
+from ai_hats_tracker.hypothesis import (
     ExitCriteria,
     Hypothesis,
     Proposal,

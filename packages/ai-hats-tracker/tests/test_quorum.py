@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ai_hats.hypothesis import HypothesisStore
-from ai_hats.hypothesis.quorum import (
+from ai_hats_tracker.hypothesis import HypothesisStore
+from ai_hats_tracker.hypothesis.quorum import (
     AUTO_SESSION_ID,
     DEFAULT_QUORUM_K,
     QuorumClosure,
