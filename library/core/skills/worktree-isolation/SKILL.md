@@ -188,8 +188,9 @@ This re-copies all skills to `.claude/skills/` and `.agent/ai-hats/library/skill
 ## Specific base or target branch
 
 Fork/dogfood repos can cut worktrees from one branch and merge them into another
-(base ≠ merge-target) via the `worktree` block in `ai-hats.yaml`. Rarely needed —
-see [`docs/how-to-configure.md` › the `worktree` block](../../../../docs/how-to-configure.md#1a-the-worktree-block--fork-workflows-base--merge-target) (HATS-942) when a project's dev trunk is not its upstream default branch.
+(base ≠ merge-target) via the `worktree` block in `ai-hats.yaml`. Rarely needed;
+full contract in `docs/how-to-configure.md`, section "The `worktree` block"
+(HATS-942) — for a project whose dev trunk is not its upstream default branch.
 
 ## If You End Up With a Stray Worktree
 
