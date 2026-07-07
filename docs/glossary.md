@@ -166,7 +166,7 @@ Two visually similar blocks fire at the end of a [Session](#session). Use these 
 
 ## Canonical base branch
 
-The name (or names) of the branch that worktrees are expected to be created from and merged back into. Hardcoded to `master` and `main`, in that priority order (HATS-518); the first one that actually exists in the repo is the comparison target.
+The name (or names) of the branch that worktrees are expected to be created from and merged back into. Defaults to `master` and `main`, in that priority order (HATS-518); the first one that actually exists in the repo is the comparison target. A project can override the split via `worktree.base_branch` / `worktree.merge_target` in `ai-hats.yaml` (HATS-942 — see [Base branch / Merge target](#base-branch--merge-target)).
 
 - **Why it matters.** `WorktreeManager.create()` captures whatever branch the main repo's HEAD currently points at as the worktree's `_original_branch` — and that is the branch `ai-hats wt merge` later lands commits on. Two silent-wrong-branch failure modes:
   - *Create-time.* Operator parks the main repo on a feature branch before `wt create` / `task transition <ID> execute`. The worktree quietly inherits that branch as its merge target; CLI reports "merged" while master never sees the work.
@@ -178,7 +178,16 @@ The name (or names) of the branch that worktrees are expected to be created from
   - *Merge-time refusal* (HATS-533) — the worktree dir and worktree branch are preserved untouched; the refusal happens before `_check_clean` / `_check_drift` / the actual `git merge`. Retry from the corrected HEAD finishes the merge as if the refusal hadn't happened.
     Both CLI surfaces (direct `wt merge` and `task transition done`) emit a copy-pasteable recipe.
 - **`--force` / `--accept-drift` do NOT bypass either guard.** `--force` is the dirty-worktree consent; `--accept-drift` is the moved-base consent. Neither addresses wrong-branch protection — three independent safety contracts, three independent flags.
-- **Not configurable.** Hardcoded two-name list, no override flag. If a project needs a different base, raise a ticket with the second use case — until then, KISS / design-minimalism.
+- **Configurable per project (HATS-942).** The default is the `master`/`main` two-name set, but a fork/dogfood repo can point the split at its own branches via `worktree.base_branch` / `worktree.merge_target` — see [Base branch / Merge target](#base-branch--merge-target). When unset, behavior is byte-identical to the historical hardcoded set.
+
+## Base branch / Merge target
+
+The two halves of the [Canonical base branch](#canonical-base-branch) concept, made configurable per project via the `worktree:` block in `ai-hats.yaml` (HATS-942) for fork/dogfood workflows where the dev trunk is not the upstream default branch.
+
+- **`base_branch`** — the branch new task worktrees are cut FROM (a `git worktree add` start-point). Unset → cut from the main-repo HEAD (today's behavior).
+- **`merge_target`** — the branch `ai-hats wt merge` / `task transition <id> done` lands INTO, and the branch the create-time HEAD guard requires. Unset → falls back to `base_branch`, else the `master`/`main` set-membership.
+- **Motivating case (`hunk` fork).** `main` = pristine mirror of the upstream default branch (cut task branches from it for an eventual upstream MR); `fork-main` = local integration trunk (merge task results here for dogfooding). Config: `base_branch: main`, `merge_target: fork-main`. The operator sits on `fork-main` for the whole task; `main` is never checked out for dev, so it stays a clean mirror.
+- **Contract.** Both keys optional; **both unset ⇒ behavior byte-identical to the historical hardcoded `("master","main")`**. A configured branch that does not exist in the repo fails loud.
 
 ## Worktree data-transfer
 

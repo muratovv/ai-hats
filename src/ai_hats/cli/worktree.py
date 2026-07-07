@@ -156,11 +156,21 @@ def wt_create(branch: str):
     # (helper-extracted in HATS-482 / B-08 so merge/discard/list share it).
     _guard_not_inside_linked_worktree()
 
-    # HATS-518: refuse if main-repo HEAD is not on a canonical base branch.
-    # Otherwise the worktree captures the feature branch as its merge target
-    # and `wt merge` silently lands on the feature branch, not master.
+    # HATS-942: resolve the configured base/merge-target (both None => today's
+    # canonical behavior); fail loud on a configured-but-absent branch.
+    from ..wt_config import WorktreeConfigError, resolve_worktree_branches
+
     try:
-        assert_head_is_canonical_base(project_dir)
+        base_branch, merge_target = resolve_worktree_branches(project_dir)
+    except WorktreeConfigError as exc:
+        console.print(f"[red]{exc}[/]")
+        sys.exit(1)
+
+    # HATS-518/942: refuse if main-repo HEAD is not on the worktree merge target
+    # (canonical set when unconfigured). Otherwise the worktree captures the
+    # wrong merge target and `wt merge` silently lands on it.
+    try:
+        assert_head_is_canonical_base(project_dir, merge_target)
     except WorktreeBaseBranchError as exc:
         console.print(f"[red]{exc}[/]")
         sys.exit(1)
@@ -179,6 +189,8 @@ def wt_create(branch: str):
     mgr = WorktreeManager(
         project_dir,
         branch_name=branch,
+        base_branch=base_branch,
+        merge_target=merge_target,
         lifecycle=HOOK_LIFECYCLE,
         state_dir=worktrees_dir(project_dir),
     )

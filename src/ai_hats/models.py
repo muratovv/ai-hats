@@ -21,6 +21,7 @@ from .config import (  # noqa: F401
     SmartThreshold,
     UserConfig,
     UserConfigError,
+    WorktreeConfig,
     _DEPRECATED_PROJECT_FIELDS,
 )
 from .libraries.models import (  # noqa: F401

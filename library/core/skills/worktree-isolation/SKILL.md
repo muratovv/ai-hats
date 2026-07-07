@@ -181,9 +181,33 @@ This re-copies all skills to `.claude/skills/` and `.agent/ai-hats/library/skill
 - Multiple active worktrees without tracking — leads to forgotten branches
 - Running `ai-hats wt create` / `wt merge` / `wt discard` / `task transition <id> done|failed|cancelled` from inside a linked worktree — all blocked (HATS-788). The teardown commands run `git worktree remove` on the very cwd you are standing in, orphaning your shell so every later `ai-hats` mis-resolves the tracker. Always `cd` back to the main repo first; use `ai-hats wt exec` / `ai-hats wt env` to act on a worktree without leaving it.
 - Mixing manual `wt create` with `task transition execute` from the main repo — if you created a worktree manually and want the task to use it, `cd` into the worktree first, then transition. Otherwise the transition errors out with a clear remediation message.
-- Invoking `ai-hats wt create` (or `task transition <ID> execute`) while the main repo's HEAD is on a feature branch — blocked with a "Refused: HEAD is not a canonical base" error (HATS-518). Worktrees inherit their merge target from the current branch, so creating from a feature branch causes `wt merge` to silently land on it instead of master. Recovery: `git checkout master` in the main repo, then retry.
+- Invoking `ai-hats wt create` (or `task transition <ID> execute`) while the main repo's HEAD is not on the worktree merge target — blocked with a "Refused: … not the worktree merge target" error (HATS-518). The worktree inherits its merge target from the current branch, so creating from the wrong branch causes `wt merge` to silently land on it. The target is `master`/`main` by default, or a configured `worktree.merge_target` (see the fork-workflow note below). Recovery: the error names the branch — `git checkout <that branch>` in the main repo, then retry.
 - **Working without committing inside a worktree** — uncommitted work in a worktree is NOT protected. The worktree is a filesystem directory that parallel sessions, cleanup hooks, or `git worktree remove --force` can destroy without warning, and there is **no recovery** for uncommitted changes. Commit at every meaningful checkpoint (every passing test run, every completed sub-task). If a step could be reverted with `git checkout HEAD -- .`, you've waited too long to commit.
 - **Finishing the worktree cycle with raw git** — running `git merge --no-ff <task-branch>`, `git worktree remove`, or a manual `git push` to the base branch instead of `ai-hats wt merge` / `ai-hats task transition <id> done`. The CLI wrappers run the FSM lifecycle hooks — per-branch + base-branch merge-locks, drift-check, stale-lock recovery, state cleanup (HATS-477/484). Raw git skips every one of them and re-opens the race/drift bugs those epics closed; a manual merge *before* FSM-`done` also produces a double-merge conflict that then needs `--force` (HYP-023). **Scope:** this targets the **lifecycle transitions only** (merge-to-base + cleanup + done). Raw git for *inspection* (`git status`/`log`/`diff`, `git worktree list`) and for *in-worktree conflict resolution* during a rebase stays fine.
+
+## Fork workflow (base ≠ merge target)
+
+For fork/dogfood repos where the dev trunk is not the upstream default branch
+(e.g. `main` = pristine upstream mirror, `fork-main` = local integration trunk),
+configure the split in `ai-hats.yaml` (HATS-942):
+
+```yaml
+worktree:
+  base_branch: main        # cut task worktrees FROM this (clean upstream base)
+  merge_target: fork-main  # `wt merge` / `transition done` land HERE
+```
+
+Operating rules once configured:
+
+- **Stay on `merge_target` (`fork-main`) for the whole task lifecycle** — the
+  create-time guard and the merge-time guard (HATS-533) both require HEAD to be
+  on it. No mid-task `git checkout`.
+- **Never develop on `base_branch` (`main`)** — ai-hats reads it only as the
+  `git worktree add` start-point; your working checkout never sits on it, so it
+  stays a pristine mirror.
+- Both keys are optional and default to today's behavior (`base_branch` unset →
+  cut from HEAD; `merge_target` unset → `master`/`main` set-membership). A
+  configured branch that does not exist fails loud.
 
 ## If You End Up With a Stray Worktree
 
