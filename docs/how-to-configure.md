@@ -54,7 +54,24 @@ library_paths:                 # extra component sources (last wins)
 | `venv_path`        | Override the framework-managed venv — see §6.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `manage_gitignore` | When `true` (default) ai-hats adds `<ai_hats_dir>/` to `.gitignore` once at init. Toggle via `ai-hats config set --no-manage-gitignore`.                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `harness`          | Install-source channel `ai-hats self update` pulls from (HATS-764): `channel: local` (editable working tree, `path:`), `edge` (own repo HEAD, `repo:`), or `stable` (latest PyPI release — the default; omitted from yaml when unset). Set via `ai-hats config set --channel {local\|edge\|stable} [--repo URL] [--path DIR]` — do **not** hand-edit. On a dev host whose ai-hats is an editable clone, `ai-hats self init` auto-seeds `channel: local` (HATS-938; override with `self init --channel …`). `AI_HATS_REPO_URL` overrides the edge repo. See [1]. |
-| `worktree`         | Fork/dogfood base ≠ merge-target for the worktree FSM (HATS-942): `base_branch` = branch task worktrees are cut FROM, `merge_target` = branch `wt merge` / `transition done` land INTO. Both optional; unset ⇒ today's `master`/`main` behavior byte-identical. Example: `worktree:` `{base_branch: main, merge_target: fork-main}` for a fork whose dev trunk is `fork-main`. A configured branch that does not exist fails loud. Omitted from yaml when unset.                                                                                                |
+| `worktree`         | Base ≠ merge-target for the worktree FSM (fork/dogfood workflows, HATS-942). Optional; unset ⇒ today's `master`/`main` behavior. See [The `worktree` block](#the-worktree-block--fork-workflows-base--merge-target) below.                                                                                                                                                                                                                                                                                                                                      |
+
+---
+
+## 1a. The `worktree` block — fork workflows (base ≠ merge target)
+
+For a fork/dogfood repo whose dev trunk is **not** the upstream default branch — e.g. `main` is a pristine mirror of upstream and `fork-main` is the local integration trunk — point the worktree FSM at the split (HATS-942):
+
+```yaml
+worktree:
+  base_branch: main        # task worktrees are cut FROM this (clean upstream base)
+  merge_target: fork-main  # `wt merge` / `task transition <id> done` land HERE
+```
+
+- **`base_branch`** — the `git worktree add` start-point. Unset ⇒ cut from the main-repo HEAD (today's behavior).
+- **`merge_target`** — where `wt merge` lands, and the branch the create-time HEAD guard requires. Unset ⇒ falls back to `base_branch`, else the `master`/`main` set-membership.
+- **Operating rule.** Stay on `merge_target` (`fork-main`) for the whole task lifecycle — both the create-time and merge-time guards require HEAD there. `base_branch` (`main`) is only read as a start-point; you never check it out for dev, so it stays a clean mirror.
+- **Contract.** Both keys optional; **both unset ⇒ behavior byte-identical to the historical hardcoded `("master","main")`**. A configured branch that does not exist in the repo fails loud.
 
 ---
 
