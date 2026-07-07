@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats-core"
-version = "0.4.1"
+version = "0.5.0"
 description = "Core primitives and shared mechanisms for the ai-hats framework — minimal deps, each load-bearing."
 readme = "README.md"
 requires-python = ">=3.11"

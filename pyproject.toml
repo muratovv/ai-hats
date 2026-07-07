@@ -28,7 +28,7 @@ dependencies = [
     # First-party workspace packages (uv sources below) — the kernel (HATS-862:
     # composition value-types, YamlModel, git_env, safe_delete, atomic_io) lives
     # in ai-hats-core; the worktree engine (ai_hats_wt) lives in ai-hats-wt.
-    "ai-hats-core>=0.4.1",  # safe_delete concurrency fixes drifted past 0.4.0 wheel (HATS-921)
+    "ai-hats-core>=0.5.0",  # imports ai_hats_core.migrations + .session_artifacts (0.5.0, HATS-948)
     "ai-hats-wt>=0.3.0",    # get_default_base/merge_branch new public API drifted past 0.2.1 wheel (HATS-942)
     "ai-hats-tracker>=0.3.0",  # facade schema + ai_hats_tracker.cli (0.2.0) + .hypothesis (0.3.0)
     "click>=8.1",
