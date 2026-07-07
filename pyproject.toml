@@ -96,6 +96,7 @@ members = ["packages/*"]
 ai-hats-core = { workspace = true }
 ai-hats-wt = { workspace = true }
 ai-hats-tracker = { workspace = true }
+ai-hats-observe = { workspace = true }
 
 [tool.ruff]
 target-version = "py311"
@@ -107,6 +108,7 @@ testpaths = [
     "packages/ai-hats-core/tests",
     "packages/ai-hats-wt/tests",
     "packages/ai-hats-tracker/tests",
+    "packages/ai-hats-observe/tests",
 ]
 # HATS-508: prepend ./src to sys.path so ``python -m pytest`` from a
 # linked worktree imports the worktree's own ``ai_hats`` package
@@ -120,6 +122,7 @@ pythonpath = [
     "packages/ai-hats-core/src",
     "packages/ai-hats-wt/src",
     "packages/ai-hats-tracker/src",
+    "packages/ai-hats-observe/src",
 ]
 filterwarnings = [
     # Python 3.14 deprecates forkpty() in multi-threaded processes.
