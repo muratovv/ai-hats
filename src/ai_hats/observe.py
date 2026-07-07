@@ -12,9 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ai_hats_core import atomic_write_text
-from ai_hats_core.recovery import RecoveryProtocol
+from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol
 from ai_hats_core.trace import ENV_SESSION_ID, TraceTag
-from .environment_recovery import EnvironmentRecovery
 # HATS-948: artifact NAMES are shared core vocabulary; directory RESOLUTION
 # (runs_dir) stays injected integrator policy (HATS-864).
 from ai_hats_core.session_artifacts import (
@@ -37,24 +36,21 @@ class SessionManager:
 
     def __init__(
         self,
-        project_dir: Path,
+        project_dir: Path | None = None,
         *,
         runs_dir: Path,
         recovery: RecoveryProtocol | None = None,
     ) -> None:
         # HATS-864: the runs root is injected integrator policy (paths.runs_dir).
-        # The `gitlog_dir` attribute name is preserved for backwards source
-        # compatibility; semantically it's the runs root.
+        # `gitlog_dir` name kept for backwards source compat; it's the runs root.
         self.gitlog_dir = runs_dir
         self.gitlog_dir.mkdir(parents=True, exist_ok=True)
         self._counter = 0
-        # HATS-649 (R2): convergent environment recovery runs at this universal
-        # chokepoint — both WrapRunner and SubAgentRunner traverse it. Injected
-        # so unit tests can swap a NoOpRecovery. Default = real recovery, which
-        # is a near-no-op when there is no versions/ layout (the common test
-        # case): it only stat-checks a few dirs and writes no ref unless this
-        # process actually runs from a managed versions/<sha>/.
-        self._recovery: RecoveryProtocol = recovery or EnvironmentRecovery(project_dir)
+        self.project_dir = project_dir
+        # HATS-948: package-pure default = no-op recovery; the integrator injects
+        # the real EnvironmentRecovery at the run-path seam (make_session_manager).
+        # HATS-649: recovery runs at this create_session chokepoint on every run.
+        self._recovery: RecoveryProtocol = recovery or NoOpRecovery()
 
     def create_session(self, parent_session: str | None = None) -> Session:
         """Create a new session with a unique ID."""
