@@ -74,7 +74,8 @@ is reopened (`set-status active`) does not start pre-loaded with one vote.
 ## Consequences
 
 **New artifacts**
-- `src/ai_hats/hypothesis/quorum.py` — pure core (`find_quorum_closures`,
+
+- `packages/ai-hats-tracker/src/ai_hats_tracker/hypothesis/quorum.py` — pure core (`find_quorum_closures`,
   `apply_closure`, `autoclose_quorum`).
 - `src/ai_hats/pipeline/steps/quorum_autoclose.py` — the deterministic step,
   registered in `_BUILTINS`.
@@ -82,9 +83,11 @@ is reopened (`set-status active`) does not start pre-loaded with one vote.
   sharing the same core.
 
 **Modified surfaces**
+
 - `library/core/pipelines/finalize-hitl.yaml` — `quorum_autoclose` appended.
 
 **Scope limits (deliberate)**
+
 - **HYP only.** PROP has no refuted-quorum analog: a `Vote` carries only support
   `reasoning`, and "close-as-gone" for a proposal (e.g. PROP-020 satisfied by
   HATS-676) is a linked-task-done / human signal, not a quorum. PROP auto-close
@@ -99,6 +102,7 @@ is reopened (`set-status active`) does not start pre-loaded with one vote.
   fields are intentionally left untouched.
 
 **Risks**
+
 - A `refuted` verdict means "this session did not observe the behaviour" —
   absence of evidence, not proof of absence. Three independent non-observations
   can in principle still be a flaky miss. Accepted under П1: the close is cheap

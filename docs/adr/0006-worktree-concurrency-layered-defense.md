@@ -243,7 +243,7 @@ flags HATS-481 already passes).
 - HATS-488 — teardown hardening (B-03/R-04/B-06).
 - `src/ai_hats/wt/locks.py` module docstring — canonical
   in-code reference; mirror this ADR's П2 hierarchy.
-- `src/ai_hats/state.py:_teardown_worktree` — site of L4' re-raise
+- `packages/ai-hats-tracker/src/ai_hats_tracker/state.py:_teardown_worktree` — site of L4' re-raise
   (data-integrity gate).
 - `tests/test_worktree_concurrency.py` — TC-N1..N20 fail-under-revert
   matrix.
