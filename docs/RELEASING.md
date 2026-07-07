@@ -116,14 +116,14 @@ environment. Repeat only when the repo or workflow filename changes.
    publish behind a manual approval. Off by default: the tag push
    publishes unattended.
 
-### Workspace packages (`ai-hats-core`, `ai-hats-wt`)
+### Workspace packages (`ai-hats-core`, `ai-hats-wt`, `ai-hats-tracker`)
 
 The workspace packages under `packages/*` carry their own **static** versions
 (`packages/<pkg>/pyproject.toml`), decoupled from the `ai-hats` `v*` tag. They
 publish through a separate workflow,
-[`release-packages.yml`](../.github/workflows/release-packages.yml) — build both
+[`release-packages.yml`](../.github/workflows/release-packages.yml) — build each
 with `uv build`, then a per-package OIDC publish **job** each (core first, then
-the wt package that depends on it). It runs on **manual dispatch** and
+the `wt` and `tracker` packages that depend on it). It runs on **manual dispatch** and
 **auto-triggers** on a push to master that touches `packages/*/pyproject.toml`
 (HATS-943 — bump⇒publish is one step; `skip-existing` no-ops an unchanged
 version). A final `verify-remote-install` job then does a fresh-venv
@@ -135,8 +135,8 @@ release fails loud instead of shipping a DOA remote channel.
 environment)` tuple ("*a pending trusted publisher matching this configuration
 has already been registered for a different project name*"). The environment is
 the disambiguator, so each package's publish job runs in its own environment
-(`pypi-core` / `pypi-wt`) — separate from the `pypi` environment the main
-`ai-hats` release uses.
+(`pypi-core` / `pypi-wt` / `pypi-tracker`) — separate from the `pypi` environment
+the main `ai-hats` release uses.
 
 **One-time setup:**
 
@@ -145,18 +145,19 @@ the disambiguator, so each package's publish job runs in its own environment
    ```bash
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-core
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-wt
+   gh api -X PUT repos/muratovv/ai-hats/environments/pypi-tracker
    ```
 
 2. Add a pending publisher for **each** package (*PyPI → Account settings →
    Publishing → Add a new pending publisher*):
 
-   | Field             | `ai-hats-core`         | `ai-hats-wt`           |
-   | ----------------- | ---------------------- | ---------------------- |
-   | PyPI Project Name | `ai-hats-core`         | `ai-hats-wt`           |
-   | Owner             | `muratovv`             | `muratovv`             |
-   | Repository name   | `ai-hats`              | `ai-hats`              |
-   | Workflow name     | `release-packages.yml` | `release-packages.yml` |
-   | Environment name  | `pypi-core`            | `pypi-wt`              |
+   | Field             | `ai-hats-core`         | `ai-hats-wt`           | `ai-hats-tracker`      |
+   | ----------------- | ---------------------- | ---------------------- | ---------------------- |
+   | PyPI Project Name | `ai-hats-core`         | `ai-hats-wt`           | `ai-hats-tracker`      |
+   | Owner             | `muratovv`             | `muratovv`             | `muratovv`             |
+   | Repository name   | `ai-hats`              | `ai-hats`              | `ai-hats`              |
+   | Workflow name     | `release-packages.yml` | `release-packages.yml` | `release-packages.yml` |
+   | Environment name  | `pypi-core`            | `pypi-wt`              | `pypi-tracker`         |
 
 **To cut a package release:** bump the version in the package's `pyproject.toml`
 and merge to master — the push auto-triggers the publish (or run it manually via
