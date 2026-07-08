@@ -453,15 +453,15 @@ def test_extract_user_text_filters_skill_body_injection():
     text message ("Base directory for this skill: …"). It is 100% redundant
     with the `🔧 Skill: <name>` tool line and must be filtered like a
     tool_result, not rendered as a verbatim 👤 turn."""
-    from ai_hats.observe import AuditWriter
+    from ai_hats_observe.parsers.claude import ClaudeParser
 
     skill_body = (
         "Base directory for this skill: /Users/x/.agent/ai-hats/skills/backlog-manager\n\n"
         "# Backlog Manager\n\nOrchestrate the lifecycle ...\n" + ("blah " * 2000)
     )
-    assert AuditWriter._extract_user_text(skill_body) is None
+    assert ClaudeParser._extract_user_text(skill_body) is None
     # A real user message is untouched.
-    assert AuditWriter._extract_user_text("давай возьмем 666 задачку") == "давай возьмем 666 задачку"
+    assert ClaudeParser._extract_user_text("давай возьмем 666 задачку") == "давай возьмем 666 задачку"
 
 
 def test_format_audit_preserves_full_user_input(tmp_path):

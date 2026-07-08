@@ -1,210 +1,38 @@
-"""Post-session audit writer — trace.log/JSONL → enriched audit.md (HATS-948, T15).
+"""Post-session audit writer — surface-agnostic (HATS-948, T15).
 
-``AuditWriter`` reconstructs turns (from the ``claude`` JSONL when present, else
-the trace-chrome fallback), formats ``audit.md`` and enriches ``metrics.json``.
-Depends only on ``ai_hats_core`` + observe's ``Session``/vocab — no integrator.
+``AuditWriter`` orchestrates the audit: it asks its injected ``TranscriptParser``
+for a ``ParsedTranscript``, formats ``audit.md``, and enriches ``metrics.json``.
+It holds ZERO provider parsing — every JSONL/trace assumption lives in the parser
+(``ai_hats_observe.parsers``), so a new surface adds a parser, not a writer branch.
 """
 
 from __future__ import annotations
 
 import json
-import logging
-import re
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ai_hats_core import atomic_write_text
 
 from .artifacts import TRANSCRIPT_TXT
+from .parsers.claude import ClaudeParser
 from .session import AUDIT_SCHEMA_VERSION, Session, _load_metrics_safe
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from pathlib import Path
 
-
-@dataclass
-class TraceEntry:
-    timestamp: str
-    tag: str
-    content: str
-
-
-@dataclass
-class Turn:
-    timestamp: str
-    user_input: str | None = None
-    tools: list[str] = field(default_factory=list)
-    response: str = ""
-    thinking_secs: int = 0
+    from .parsers.base import TranscriptParser, Turn
 
 
 class AuditWriter:
-    """Post-processes trace.log into enriched audit.md after session ends."""
+    """Post-processes a session record into enriched audit.md after it ends.
 
-    _LINE_RE = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{3})\s+\[(\w+)\]\s+(.*)$")
-    _SPINNER_CHARS = set("✢✳✶✻*·⠐⠂⠁⠈⠌⠘⠠⠤⠸")
-    _THINKING_WORDS = {"Pondering…", "Fermenting…", "Reticulating…", "Effecting…"}
-    _UI_CHARS = set("╭╮╰╯│─━┃┏┓┗┛┣┫")
-    _TOOL_PATTERNS = [
-        (re.compile(r"Searching for (\d+) pattern"), "Search: {0} pattern"),
-        (re.compile(r"Read\((.+?)\)"), "Read: {0}"),
-        (re.compile(r"read (\d+) file"), "Read: {0} files"),
-        (re.compile(r"Bash\((.+?)\)"), "Bash: {0}"),
-        (re.compile(r"Edit\((.+?)\)"), "Edit: {0}"),
-        (re.compile(r"Write\((.+?)\)"), "Write: {0}"),
-        (re.compile(r"Glob\((.+?)\)"), "Glob: {0}"),
-        (re.compile(r"Grep\((.+?)\)"), "Grep: {0}"),
-    ]
-    _UI_PHRASES = {"? for shortcuts", "esc to interrupt", "● high", "ctrl+o to expand"}
-    _ZELLIJ_NOISE = re.compile(r"(?:[>|]+Zellij\(\d+\))+[a-z]{0,2}")
+    The parser is injected (default ``ClaudeParser`` for standalone/back-compat);
+    the integrator seam supplies ``provider.transcript_parser()``.
+    """
 
-    @staticmethod
-    def _parse_line(line: str) -> TraceEntry | None:
-        m = AuditWriter._LINE_RE.match(line.strip())
-        if not m:
-            return None
-        return TraceEntry(timestamp=m.group(1), tag=m.group(2), content=m.group(3))
-
-    @staticmethod
-    def _is_noise(text: str) -> bool:
-        if len(text) <= 3:
-            return True
-        if text[0] in AuditWriter._SPINNER_CHARS:
-            return True
-        if "(thinking with high effort)" in text:
-            return True
-        for w in AuditWriter._THINKING_WORDS:
-            if w in text:
-                return True
-        if any(c in AuditWriter._UI_CHARS for c in text[:3]):
-            return True
-        for phrase in AuditWriter._UI_PHRASES:
-            if phrase in text:
-                return True
-        if re.match(r"^\d+;", text):
-            return True
-        return False
-
-    _UI_TRIM = re.compile(r"[─╭╮╰╯│━❯┃┏┓┗┛┣┫].*$")
-    _OSC8_REMNANT = re.compile(r"8;(?:id=[^;]*;)?(?:file://)?[^;]*8;;")
-    _RESPONSE_TAIL_NOISE = re.compile(r"\s*[✢✳✶✻*·⏵⏸]\w+….*$")
-    _TIP_NOISE = re.compile(r"\s*⎿\s+Tip:.*$")
-
-    @staticmethod
-    def _extract_pio_content(text: str) -> str | None:
-        """Extract text after ⏺, trimming TUI chrome and noise. Returns None if no ⏺ found.
-
-        Trace-fallback path only — used by ``_extract_turns`` when the
-        canonical ``claude`` JSONL session log is not available and we
-        have to reconstruct turns from ``trace.log``. Unrelated to the
-        removed live-PTY ⏺-marker accumulator (Path A, HATS-529).
-        """
-        if "⏺" not in text:
-            return None
-        idx = text.index("⏺")
-        after = text[idx + 1:].strip()
-        after = AuditWriter._UI_TRIM.sub("", after).strip()
-        after = AuditWriter._OSC8_REMNANT.sub("", after).strip()
-        after = AuditWriter._RESPONSE_TAIL_NOISE.sub("", after).strip()
-        after = AuditWriter._TIP_NOISE.sub("", after).strip()
-        return after if after else None
-
-    @staticmethod
-    def _extract_tool(text: str) -> str | None:
-        content = AuditWriter._extract_pio_content(text)
-        if content is None:
-            return None
-        for pattern, fmt in AuditWriter._TOOL_PATTERNS:
-            m = pattern.search(content)
-            if m:
-                return fmt.format(*m.groups())
-        return None
-
-    @staticmethod
-    def _is_thinking(text: str) -> bool:
-        if "(thinking with high effort)" in text:
-            return True
-        stripped = text.lstrip("✢✳✶✻*· ")
-        return stripped in AuditWriter._THINKING_WORDS
-
-    @staticmethod
-    def _thinking_duration(entries: list[TraceEntry]) -> int:
-        thinking = [e for e in entries if AuditWriter._is_thinking(e.content)]
-        if len(thinking) < 2:
-            return len(thinking)
-        t0 = thinking[0].timestamp
-        t1 = thinking[-1].timestamp
-        try:
-            fmt = "%H:%M:%S.%f"
-            d0 = datetime.strptime(t0, fmt)
-            d1 = datetime.strptime(t1, fmt)
-            return max(1, int((d1 - d0).total_seconds()))
-        except Exception:
-            return len(thinking)
-
-    def _parse_trace(self, trace_path: Path) -> list[TraceEntry]:
-        if not trace_path.exists():
-            return []
-        entries = []
-        for line in trace_path.read_text().splitlines():
-            entry = self._parse_line(line)
-            if entry:
-                entries.append(entry)
-            elif entries and line.strip():
-                # Orphan line (continuation of multi-line PTY output) — append to previous
-                entries[-1].content += " " + line.strip()
-        return entries
-
-    def _clean_req(self, text: str) -> str | None:
-        cleaned = self._ZELLIJ_NOISE.sub("", text).strip()
-        cleaned = re.sub(r"[\t\x7f\x00-\x1f]", "", cleaned)
-        # Deduplicate repeated chars (кк → к)
-        cleaned = re.sub(r"(.)\1{2,}", r"\1", cleaned)
-        if len(cleaned) < 3:
-            return None
-        return cleaned
-
-    def _extract_turns(self, entries: list[TraceEntry]) -> list[Turn]:
-        turns: list[Turn] = []
-        current: Turn | None = None
-        thinking_entries: list[TraceEntry] = []
-
-        for entry in entries:
-            if entry.tag == "REQ":
-                # Flush previous turn
-                if current:
-                    current.thinking_secs = self._thinking_duration(thinking_entries)
-                    turns.append(current)
-                    thinking_entries = []
-                user_input = self._clean_req(entry.content)
-                current = Turn(timestamp=entry.timestamp, user_input=user_input)
-
-            elif entry.tag == "RES" and current:
-                if "⏺" in entry.content:
-                    tool = self._extract_tool(entry.content)
-                    if tool:
-                        current.tools.append(tool)
-                    else:
-                        pio = self._extract_pio_content(entry.content)
-                        if pio:
-                            current.response = pio  # last wins
-                elif self._is_thinking(entry.content):
-                    thinking_entries.append(entry)
-
-        # Flush last turn
-        if current:
-            current.thinking_secs = self._thinking_duration(thinking_entries)
-            turns.append(current)
-
-        # Dedup tools per turn
-        for turn in turns:
-            seen = []
-            for t in turn.tools:
-                if t not in seen:
-                    seen.append(t)
-            turn.tools = seen
-
-        return turns
+    def __init__(self, parser: TranscriptParser | None = None) -> None:
+        self.parser: TranscriptParser = parser or ClaudeParser()
 
     def _format_audit(
         self,
@@ -325,26 +153,14 @@ class AuditWriter:
         jsonl_path: Path | None = None,
         keep_raw: bool = False,
     ) -> None:
-        """Build enriched audit.md + metrics.json. Uses JSONL if available.
+        """Build enriched audit.md + metrics.json via the injected parser.
 
         Deletes trace.log after successful audit unless keep_raw=True.
         """
-        if jsonl_path and jsonl_path.exists():
-            turns, model_stats, agg_usage = self._parse_jsonl(jsonl_path)
-            audit_content = self._format_audit(session, turns, model_stats=model_stats)
-            self._write_metrics(session, turns, model_stats, agg_usage)
-        else:
-            if jsonl_path:
-                logger.debug("JSONL not found at %s — falling back to trace", jsonl_path)
-            entries = self._parse_trace(session.trace_path)
-            turns = self._extract_turns(entries)
-            audit_content = self._format_audit(session, turns)
-            # Write partial metrics from trace (no token data available)
-            self._write_metrics(
-                session, turns, model_stats={},
-                agg_usage={"input_tokens": 0, "output_tokens": 0,
-                           "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
-            )
+        parsed = self.parser.parse(jsonl_path, session.trace_path)
+        turns = parsed.turns
+        audit_content = self._format_audit(session, turns, model_stats=parsed.model_stats)
+        self._write_metrics(session, turns, parsed.model_stats, parsed.agg_usage)
         if not turns:
             audit_content = self._with_transcript_fallback(session, audit_content)
         session.audit_path.write_text(audit_content)
@@ -391,7 +207,7 @@ class AuditWriter:
         model_stats: dict[str, dict],
         agg_usage: dict,
     ) -> None:
-        """Overwrite metrics.json with enriched data from JSONL."""
+        """Overwrite metrics.json with enriched data from the parse."""
         existing = _load_metrics_safe(session) or {}
 
         existing.update({
@@ -415,127 +231,3 @@ class AuditWriter:
         })
 
         atomic_write_text(session.metrics_path, json.dumps(existing, indent=2))
-
-    def _parse_jsonl(self, jsonl_path: Path) -> tuple[list[Turn], dict[str, dict], dict]:
-        """Parse Claude Code JSONL → (turns, per-model stats, aggregated usage)."""
-        turns: list[Turn] = []
-        current: Turn | None = None
-        model_stats: dict[str, dict] = {}
-        agg_usage: dict[str, int] = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "cache_read_input_tokens": 0,
-            "cache_creation_input_tokens": 0,
-        }
-        prev_model: str | None = None
-
-        for line in jsonl_path.read_text().splitlines():
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            msg_type = obj.get("type")
-            ts = obj.get("timestamp", "")[:19]
-            message = obj.get("message", {})
-            content = message.get("content", [])
-
-            if msg_type == "user":
-                user_text = self._extract_user_text(content)
-                if user_text:
-                    current = Turn(timestamp=ts, user_input=user_text)
-                    turns.append(current)
-
-            elif msg_type == "assistant" and current is not None:
-                model = message.get("model", "unknown")
-                usage = message.get("usage", {})
-                tok_in = usage.get("input_tokens", 0)
-                tok_out = usage.get("output_tokens", 0)
-
-                if model not in model_stats:
-                    model_stats[model] = {"in": 0, "out": 0, "calls": 0}
-                model_stats[model]["in"] += tok_in
-                model_stats[model]["out"] += tok_out
-                model_stats[model]["calls"] += 1
-
-                agg_usage["input_tokens"] += tok_in
-                agg_usage["output_tokens"] += tok_out
-                agg_usage["cache_read_input_tokens"] += usage.get("cache_read_input_tokens", 0)
-                agg_usage["cache_creation_input_tokens"] += usage.get("cache_creation_input_tokens", 0)
-
-                # Track model switches within turns
-                if prev_model and model != prev_model:
-                    current.tools.append(f"⚙️ Model: {model}")
-                prev_model = model
-
-                if isinstance(content, list):
-                    for block in content:
-                        if not isinstance(block, dict):
-                            continue
-                        bt = block.get("type")
-                        if bt == "thinking":
-                            thinking = block.get("thinking", "")
-                            if thinking:
-                                current.thinking_secs = max(1, len(thinking) // 200)
-                            else:
-                                current.thinking_secs = max(current.thinking_secs, 1)
-                        elif bt == "tool_use":
-                            name = block.get("name", "?")
-                            inp = block.get("input", {})
-                            summary = self._summarize_tool_input(name, inp)
-                            current.tools.append(f"{name}: {summary}")
-                        elif bt == "text":
-                            text = block.get("text", "").strip()
-                            if text:
-                                current.response = text
-
-        return turns, model_stats, agg_usage
-
-    @staticmethod
-    def _extract_user_text(content) -> str | None:
-        """Extract user text from message content, filtering system/command messages."""
-        if isinstance(content, str):
-            text = content.strip()
-        elif isinstance(content, list):
-            has_tool_result = any(
-                isinstance(c, dict) and c.get("type") == "tool_result" for c in content
-            )
-            if has_tool_result:
-                return None
-            parts = [
-                c["text"] for c in content
-                if isinstance(c, dict) and c.get("type") == "text"
-            ]
-            text = " ".join(parts).strip()
-        else:
-            return None
-
-        if not text:
-            return None
-        # Filter Claude Code system messages
-        if text.startswith(("<", "/")):
-            return None
-        # HATS-666: a Skill invocation re-injects the full SKILL.md as a user
-        # text message ("Base directory for this skill: <path>"). That body is
-        # 100% redundant with the `🔧 Skill: <name>` tool line the audit already
-        # renders — filter it like a tool_result so it never becomes a 👤 turn.
-        if text.startswith("Base directory for this skill:"):
-            return None
-        return text
-
-    @staticmethod
-    def _summarize_tool_input(name: str, inp: dict) -> str:
-        """Summarize tool input to a short string."""
-        if name == "Bash":
-            return inp.get("command", inp.get("description", ""))[:100]
-        if name in ("Read", "Write", "Edit"):
-            return inp.get("file_path", "")
-        if name in ("Grep", "Glob"):
-            return inp.get("pattern", "")
-        if name == "Agent":
-            return inp.get("description", inp.get("prompt", ""))[:80]
-        # Generic: show first string value
-        for v in inp.values():
-            if isinstance(v, str) and v:
-                return v[:80]
-        return str(inp)[:80]

@@ -14,7 +14,9 @@ import importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # re-export stubs for static checkers; runtime uses __getattr__
-    from .audit import AuditWriter, TraceEntry, Turn  # noqa: F401
+    from .audit import AuditWriter  # noqa: F401
+    from .parsers.base import Turn  # noqa: F401
+    from .parsers.trace import TraceEntry  # noqa: F401
     from .session import Session, SessionManager  # noqa: F401
     from .sidecar import SidecarTracer  # noqa: F401
 
@@ -24,8 +26,8 @@ _LAZY_EXPORTS = {
     "Session": "session",
     "SidecarTracer": "sidecar",
     "AuditWriter": "audit",
-    "TraceEntry": "audit",
-    "Turn": "audit",
+    "TraceEntry": "parsers.trace",
+    "Turn": "parsers.base",
 }
 
 __all__ = sorted(_LAZY_EXPORTS)
