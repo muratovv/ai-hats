@@ -191,6 +191,7 @@ def test_timeout_finalize_is_provider_agnostic(tmp_path, provider):
     # HATS-561: ``provider`` lands in metrics so post-session audit
     # rebuild stops emitting ``Provider: unknown``.
     assert m == {
+        "schema_version": "audit/v1",  # HATS-948: versioned metrics surface
         "exit_code": 124,
         "role": "primary",
         "provider": provider,
@@ -223,6 +224,7 @@ def test_success_finalize_is_provider_agnostic(tmp_path, provider):
     # HATS-561: ``provider`` lands in metrics so post-session audit
     # rebuild stops emitting ``Provider: unknown``.
     assert m == {
+        "schema_version": "audit/v1",  # HATS-948: versioned metrics surface
         "exit_code": 0,
         "role": "primary",
         "provider": provider,
