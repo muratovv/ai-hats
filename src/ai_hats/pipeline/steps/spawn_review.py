@@ -28,7 +28,8 @@ class SpawnSessionReview(Step):
     def run(
         self, *, session_id: str, project_dir: Path, **_: Any,
     ) -> dict[str, Any]:
-        from ...paths import RETRO_LOG, runs_dir, session_dirname
+        from ai_hats_observe.artifacts import RETRO_LOG, session_dirname
+        from ...paths import runs_dir
 
         log_path = runs_dir(project_dir) / session_dirname(session_id) / RETRO_LOG
         log_path.parent.mkdir(parents=True, exist_ok=True)

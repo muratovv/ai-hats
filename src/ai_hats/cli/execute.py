@@ -25,7 +25,7 @@ from pathlib import Path
 import click
 
 from ai_hats_wt import IsolationMode
-from ..paths import METRICS_JSON
+from ai_hats_observe.artifacts import METRICS_JSON
 from ..pipeline.keys import (
     KEY_COMPOSITION,
     KEY_EXIT_CODE,

@@ -19,7 +19,8 @@ from ai_hats.pipeline.steps.maybe_spawn_session_reviewer import (
     MaybeSpawnSessionReviewer,
 )
 from ai_hats.constants import ENV_SKIP_RETRO
-from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, RETRO_LOG
+from ai_hats_observe.artifacts import METRICS_JSON, RETRO_LOG
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def _make_session(tmp_path: Path) -> Session:

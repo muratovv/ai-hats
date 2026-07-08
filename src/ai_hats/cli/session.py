@@ -10,7 +10,7 @@ from pathlib import Path
 
 import click
 
-from ..paths import (
+from ai_hats_observe.artifacts import (
     AUDIT_MD,
     META_PROMPT_TXT,
     METRICS_JSON,
@@ -18,8 +18,8 @@ from ..paths import (
     TRACE_LOG,
     TRANSCRIPT_TXT,
     USAGE_JSON,
-    runs_dir,
 )
+from ..paths import runs_dir
 from ._helpers import _project_dir, console, exec_claude_with_retro
 
 

@@ -8,7 +8,7 @@ import sys
 import pytest
 
 from ai_hats_observe import Session, SidecarTracer
-from ai_hats.paths import TRANSCRIPT_TXT
+from ai_hats_observe.artifacts import TRANSCRIPT_TXT
 
 
 def make_test_session(tmp_path) -> Session:

@@ -25,7 +25,8 @@ from pydantic import ValidationError
 from ..harness.diagnostic import diagnose_silent_session
 from ..harness.errors import HarnessReliabilityError
 from ai_hats_tracker.hypothesis import HypothesisStore, ProposalStore
-from ..paths import AUDIT_MD, METRICS_JSON, PROJECT_CONFIG, TRANSCRIPT_TXT, session_dirname
+from ai_hats_observe.artifacts import AUDIT_MD, METRICS_JSON, TRANSCRIPT_TXT, session_dirname
+from ..paths import PROJECT_CONFIG
 from .facts import compute_facts
 from .loader import parse
 from .reflect_session_schema import HypothesisVerdict, ProposalAction

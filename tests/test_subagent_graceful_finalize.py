@@ -20,7 +20,7 @@ from ai_hats.runtime import (
     SUBAGENT_EXIT_TIMEOUT,
     _finalize_sub_agent,
 )
-from ai_hats.paths import REASONING_LOG, TRANSCRIPT_TXT
+from ai_hats_observe.artifacts import REASONING_LOG, TRANSCRIPT_TXT
 
 
 def _make_session(tmp_path, *, provider: str = "claude") -> Session:

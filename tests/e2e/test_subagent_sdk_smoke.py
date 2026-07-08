@@ -36,7 +36,8 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, TRANSCRIPT_TXT
+from ai_hats_observe.artifacts import METRICS_JSON, TRANSCRIPT_TXT
+from ai_hats.paths import PROJECT_CONFIG
 
 
 pytestmark = pytest.mark.integration

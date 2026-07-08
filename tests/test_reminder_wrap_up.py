@@ -10,7 +10,8 @@ from ai_hats.retro.reminder import evaluate_wrap_up
 from ai_hats_tracker.state import TaskManager
 from ai_hats.tracker_wiring import tracker_paths
 from ai_hats.paths import runs_dir, state_md_path, tasks_dir
-from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, session_dirname
+from ai_hats_observe.artifacts import METRICS_JSON, session_dirname
+from ai_hats.paths import PROJECT_CONFIG
 
 
 SESSION_ID = "20260101-120000-1"

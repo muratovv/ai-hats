@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ai_hats_wt import IsolationMode
-from ...paths import TRANSCRIPT_TXT
+from ai_hats_observe.artifacts import TRANSCRIPT_TXT
 from ..step import Step, StepIO
 
 

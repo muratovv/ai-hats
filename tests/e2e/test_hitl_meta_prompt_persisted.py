@@ -46,7 +46,8 @@ from click.testing import CliRunner
 from ai_hats.assembler import Assembler
 from ai_hats.cli import main
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import META_PROMPT_TXT, PROJECT_CONFIG
+from ai_hats_observe.artifacts import META_PROMPT_TXT
+from ai_hats.paths import PROJECT_CONFIG
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
