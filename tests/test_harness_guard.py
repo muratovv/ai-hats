@@ -12,7 +12,7 @@ from ai_hats.harness.diagnostic import diagnose_silent_session, is_zero_output
 from ai_hats.harness.errors import HarnessReliabilityError, HarnessZeroOutputError
 from ai_hats.harness.guard import apply_post_run_guard
 from ai_hats.pipeline.harness_policy import HarnessPolicy
-from ai_hats.paths import METRICS_JSON, REASONING_LOG
+from ai_hats_observe.artifacts import METRICS_JSON, REASONING_LOG
 
 
 # ---- fake session ----

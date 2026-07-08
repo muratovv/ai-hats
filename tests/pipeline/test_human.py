@@ -13,7 +13,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.paths import runs_dir
-from ai_hats.paths import METRICS_JSON, TRACE_LOG
+from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG
 
 
 

@@ -17,7 +17,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir, runs_dir
-from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, TRACE_LOG, session_dirname
+from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG, session_dirname
+from ai_hats.paths import PROJECT_CONFIG
 
 
 class _StubSession:

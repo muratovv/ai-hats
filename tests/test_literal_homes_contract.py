@@ -20,14 +20,10 @@ from ai_hats.constants import (
     PROVIDER_CLAUDE,
     PROVIDER_GEMINI,
 )
-from ai_hats.paths import (
-    AI_HATS_PROJECT_DIR_ENV,
+from ai_hats_observe.artifacts import (
     AUDIT_MD,
-    ENV_AI_HATS_DIR,
-    ENV_AI_HATS_VENV,
     META_PROMPT_TXT,
     METRICS_JSON,
-    PROJECT_CONFIG,
     PTY_RAW_LOG,
     REASONING_LOG,
     RETRO_LOG,
@@ -37,6 +33,12 @@ from ai_hats.paths import (
     USAGE_JSON,
     session_dirname,
     strip_session_prefix,
+)
+from ai_hats.paths import (
+    AI_HATS_PROJECT_DIR_ENV,
+    ENV_AI_HATS_DIR,
+    ENV_AI_HATS_VENV,
+    PROJECT_CONFIG,
 )
 from ai_hats.pipeline import keys
 from ai_hats.pipeline.steps import _BUILTINS

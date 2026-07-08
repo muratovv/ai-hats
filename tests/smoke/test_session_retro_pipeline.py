@@ -37,7 +37,8 @@ import pytest
 import yaml
 
 from ai_hats_observe import Session
-from ai_hats.paths import runs_dir, PROJECT_CONFIG, RETRO_LOG
+from ai_hats_observe.artifacts import RETRO_LOG
+from ai_hats.paths import runs_dir, PROJECT_CONFIG
 from ai_hats.pipeline.steps.maybe_spawn_session_reviewer import (
     MaybeSpawnSessionReviewer,
 )

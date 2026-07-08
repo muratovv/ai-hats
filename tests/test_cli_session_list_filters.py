@@ -15,7 +15,8 @@ import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli import main
-from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, runs_dir, session_dirname
+from ai_hats_observe.artifacts import METRICS_JSON, session_dirname
+from ai_hats.paths import PROJECT_CONFIG, runs_dir
 
 
 def _make_session(

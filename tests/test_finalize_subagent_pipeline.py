@@ -29,7 +29,8 @@ from ai_hats.paths import runs_dir
 from ai_hats.pipeline.loader import load_pipeline
 from ai_hats.pipeline.pipeline import run as run_pipeline
 from ai_hats.constants import ENV_SKIP_RETRO
-from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG
+from ai_hats_observe.artifacts import METRICS_JSON
+from ai_hats.paths import PROJECT_CONFIG
 
 
 # Locate the worktree's library/ — the test file lives in <wt>/tests/.

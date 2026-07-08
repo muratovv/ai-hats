@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 from ai_hats.retro.facts import _parse_composition
-from ai_hats.paths import METRICS_JSON
+from ai_hats_observe.artifacts import METRICS_JSON
 
 
 def _make_session_dir(tmp_path: Path, metrics: dict | None) -> Path:

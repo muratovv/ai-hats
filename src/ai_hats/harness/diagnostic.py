@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from ..paths import REASONING_LOG
+from ai_hats_observe.artifacts import REASONING_LOG
 
 if TYPE_CHECKING:
     from ai_hats_observe import Session

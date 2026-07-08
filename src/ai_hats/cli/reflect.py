@@ -28,7 +28,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..paths import RETRO_LOG, session_dirname
+from ai_hats_observe.artifacts import RETRO_LOG, session_dirname
 
 import click
 

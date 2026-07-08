@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import TypedDict
 
-from ..paths import METRICS_JSON, session_dirname
+from ai_hats_observe.artifacts import METRICS_JSON, session_dirname
 from .window import (
     compute_session_end,
     parse_session_start,

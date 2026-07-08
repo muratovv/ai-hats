@@ -17,7 +17,8 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.paths import runs_dir
-from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, USAGE_JSON, session_dirname
+from ai_hats_observe.artifacts import METRICS_JSON, USAGE_JSON, session_dirname
+from ai_hats.paths import PROJECT_CONFIG
 
 SID = "20260605-100000-1"
 

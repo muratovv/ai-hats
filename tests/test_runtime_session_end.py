@@ -28,7 +28,8 @@ from ai_hats.runtime import (
     _format_tokens,
     _print_session_end,
 )
-from ai_hats.paths import PROJECT_CONFIG, RETRO_LOG
+from ai_hats_observe.artifacts import RETRO_LOG
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def make_session(tmp_path) -> Session:

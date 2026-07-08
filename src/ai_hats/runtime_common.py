@@ -20,9 +20,11 @@ from typing import TYPE_CHECKING
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
-from .paths import (
+from ai_hats_observe.artifacts import (
     REASONING_LOG,
     TRANSCRIPT_TXT,
+)
+from .paths import (
     claude_transcript_path,
     claude_transcripts_dir,
 )
