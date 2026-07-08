@@ -35,7 +35,7 @@ def session():
 @click.argument("session_id", required=False)
 def session_audit(session_id: str | None):
     """Show the audit log for a session (defaults to the most recent)."""
-    from ..observe import SessionManager
+    from ai_hats_observe import SessionManager
 
     pd = _project_dir()
     mgr = SessionManager(pd, runs_dir=runs_dir(pd))
@@ -75,7 +75,7 @@ def session_retro(
     interactive: bool,
 ):
     """Generate a structured session review (hats-session-review/v1, single LLM call)."""
-    from ..observe import SessionManager
+    from ai_hats_observe import SessionManager
     from ..retro.session_review_runner import SessionReviewError, SessionReviewRunner
 
     project_dir = _project_dir()
@@ -169,7 +169,7 @@ def session_list(
     """List sessions with key metrics."""
     import json
 
-    from ..observe import SessionManager
+    from ai_hats_observe import SessionManager
     from ..tags import TagValidationError, parse_tag_filters
 
     try:
@@ -383,7 +383,7 @@ def session_show(session_id: str):
     """Show detailed metrics for a session."""
     import json
 
-    from ..observe import SessionManager
+    from ai_hats_observe import SessionManager
 
     pd = _project_dir()
     mgr = SessionManager(pd, runs_dir=runs_dir(pd))

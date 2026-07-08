@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ai_hats.observe import AuditWriter, Session
+from ai_hats_observe import AuditWriter, Session
 from ai_hats.runtime import _finalize_sub_agent
 
 

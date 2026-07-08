@@ -18,7 +18,7 @@ def _runner(project):
     from ai_hats.composition_payload import CompositionPayload
     from ai_hats.hooks_manager import HooksManager
     from ai_hats.models import ProjectConfig
-    from ai_hats.observe import SessionManager, SidecarTracer
+    from ai_hats_observe import SessionManager, SidecarTracer
     from ai_hats_core import CompositionResult
 
     hooks = HooksManager(

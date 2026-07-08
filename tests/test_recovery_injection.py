@@ -14,7 +14,7 @@ from pathlib import Path
 from ai_hats_core.recovery import NoOpRecovery
 from ai_hats.environment_recovery import EnvironmentRecovery
 from ai_hats.composition_seam import make_session_manager
-from ai_hats.observe import SessionManager
+from ai_hats_observe import SessionManager
 from ai_hats.paths import runs_dir
 
 

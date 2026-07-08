@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from ai_hats.observe import Session
+from ai_hats_observe import Session
 from ai_hats.paths import runs_dir
 from ai_hats.pipeline.steps.maybe_spawn_session_reviewer import (
     MaybeSpawnSessionReviewer,
