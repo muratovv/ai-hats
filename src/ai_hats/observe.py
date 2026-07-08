@@ -9,7 +9,9 @@ remains.
 
 from __future__ import annotations
 
-from ai_hats_observe.audit import AuditWriter, TraceEntry, Turn
+from ai_hats_observe.audit import AuditWriter
+from ai_hats_observe.parsers.base import Turn
+from ai_hats_observe.parsers.trace import TraceEntry
 from ai_hats_observe.session import Session, SessionManager
 from ai_hats_observe.sidecar import SidecarTracer
 

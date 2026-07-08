@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.observe import AuditWriter, Session
+from ai_hats_observe.parsers.claude import ClaudeParser
 
 FIXTURE = (
     Path(__file__).parent
@@ -30,7 +31,7 @@ FIXTURE = (
 @pytest.fixture
 def parsed():
     """Parse the fixture once per test that needs it."""
-    return AuditWriter()._parse_jsonl(FIXTURE)
+    return ClaudeParser()._parse_jsonl(FIXTURE)
 
 
 # ---------------------------------------------------------------- _parse_jsonl
@@ -120,7 +121,7 @@ def test_rendered_audit_contains_user_bot_and_tool_markers(tmp_path):
     session.metrics_path.write_text('{"role": "test", "provider": "claude"}')
 
     writer = AuditWriter()
-    turns, model_stats, _ = writer._parse_jsonl(FIXTURE)
+    turns, model_stats, _ = ClaudeParser()._parse_jsonl(FIXTURE)
     rendered = writer._format_audit(session, turns, model_stats=model_stats)
 
     # Turn 1 — text-only.
