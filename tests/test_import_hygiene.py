@@ -66,26 +66,10 @@ ALLOWED_COMPOSITION_CONSUMERS = (
 # HATS-865 T5 complete: the migration ratchet (EXPECTED_COMPOSITION_OFFENDERS)
 # hit zero and was deleted — the gate below asserts NO offenders, ever.
 
-# HATS-864 (T4): layout is integrator policy (ADR-0014 P0 #2) — bricks get
-# dirs injected (TrackerPaths / runs_dir / tasks_root), never via ai_hats.paths.
-# T16c (HATS-935): state/linked_context/hypothesis moved to ai_hats_tracker,
-# where test_tracker_boundary enforces the no-ai_hats(.paths) rule; only the
-# integrator-resident `observe` brick is checked here now.
-LAYOUT_INJECTED_BRICKS = ("observe",)
-# Artifact-NAME vocabulary (HATS-917) is not layout resolution — bricks may
-# import it, but only via the explicit submodule (never bare ai_hats.paths).
-LAYOUT_EXEMPT_SUBMODULES = ("paths.session_artifacts",)
-
-# HATS-867 (T6b): session logging is integrator-only — runtime bricks receive
-# the observe writer handle (SessionManager / Session+AuditWriter factories)
-# injected from the integrator instead of importing observe.
-FORBIDDEN_OBSERVE = ("observe",)
-ALLOWED_OBSERVE_CONSUMERS = (
-    "observe",  # the module itself
-    "cli",  # integrator orchestration — seeds the writer handles (whole subtree)
-    "retro",  # integrator-tier reflection (builds SessionManager for reviewer spawn)
-    "composition_seam",  # HATS-867: populates payload session/audit factories
-)
+# HATS-864 `test_layout_is_injected` + HATS-867 `test_observe_is_integrator_only`
+# retired in T15 (HATS-948): observe left the integrator for `ai_hats_observe`
+# (no `ai_hats.observe` module, no `paths.session_artifacts` shim), where
+# `test_observe_boundary` / `test_workspace_boundaries` enforce the core-only package.
 
 
 def _module_name(path: Path) -> str:
@@ -307,64 +291,9 @@ def _deny_by_default_offenders(
     return offenders
 
 
-def test_observe_is_integrator_only():
-    """HATS-867 deny-by-default: outside ALLOWED_OBSERVE_CONSUMERS no module may
-    reference ``observe`` at ANY level (deferred included, TYPE_CHECKING
-    exempt). Runtime bricks receive the observe writer handle injected —
-    ``session_mgr``/``tracer_factory`` via runner ctors, ``session_factory``/
-    ``audit_writer_factory`` via CompositionPayload (ADR-0014 tier option A).
-    """
-    offenders = _deny_by_default_offenders(FORBIDDEN_OBSERVE, ALLOWED_OBSERVE_CONSUMERS)
-    assert not offenders, (
-        "observe import drift (HATS-867): a non-ALLOWED module references "
-        "ai_hats.observe. Cut the import (inject the writer handle — "
-        "session_mgr/tracer_factory ctor params or payload factories) or "
-        "justify a new ALLOWED_OBSERVE_CONSUMERS entry.\n"
-        f"offenders: { {k: offenders[k] for k in sorted(offenders)} }"
-    )
-
-
 # HATS-866 `test_tracker_never_imports_wt` retired in T16c (HATS-935): the tracker
 # FSM left the integrator for `ai_hats_tracker`, where `test_tracker_boundary`
 # structurally enforces the wt-free core (`ai_hats_wt` tolerated only in `cli/`).
-
-
-def test_layout_is_injected():
-    """Brick modules carry no ``ai_hats.paths`` reference at ANY level (HATS-864).
-
-    Layout is integrator policy (ADR-0014 P0 #2, D4 generalized): tracker gets
-    ``TrackerPaths`` via ``tracker_wiring.tracker_paths()``, observe gets
-    ``runs_dir=``, linked_context gets ``tasks_root=``. Deferred imports
-    included, TYPE_CHECKING exempt; artifact-NAME vocabulary submodules
-    (LAYOUT_EXEMPT_SUBMODULES) are allowed. RED under revert of the severing
-    commit.
-    """
-    mods = _modules()
-    nodeset = set(mods)
-    paths_mod = f"{PKG}.paths"
-    exempt = tuple(f"{PKG}.{m}" for m in LAYOUT_EXEMPT_SUBMODULES)
-    offenders: dict[str, list[str]] = {}
-    for brick in LAYOUT_INJECTED_BRICKS:
-        name = f"{PKG}.{brick}"
-        prefix = name + "."
-        brick_mods = {m: p for m, p in mods.items() if m == name or m.startswith(prefix)}
-        assert brick_mods, f"brick module {name} vanished"
-        refs = [
-            t
-            for m, path in brick_mods.items()
-            for node in _import_nodes(ast.parse(path.read_text()), top_level_only=False)
-            for t in _targets(m, path.name == "__init__.py", node, nodeset)
-            if (t == paths_mod or t.startswith(paths_mod + "."))
-            and not any(t == e or t.startswith(e + ".") for e in exempt)
-        ]
-        if refs:
-            offenders[brick] = sorted(set(refs))
-    assert not offenders, (
-        "layout import drift (HATS-864): a brick module references ai_hats.paths. "
-        "Inject the directory instead (TrackerPaths / runs_dir= / tasks_root=) — "
-        "layout is integrator policy.\n"
-        f"offenders: { {k: offenders[k] for k in sorted(offenders)} }"
-    )
 
 
 def test_detector_flags_a_synthetic_cycle():

@@ -33,7 +33,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from ai_hats.paths import METRICS_JSON
+from ai_hats_observe.artifacts import METRICS_JSON
 
 
 def _runs_dir(project_root: Path) -> Path:

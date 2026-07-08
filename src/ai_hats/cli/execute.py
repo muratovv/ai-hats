@@ -25,7 +25,7 @@ from pathlib import Path
 import click
 
 from ai_hats_wt import IsolationMode
-from ..paths import METRICS_JSON
+from ai_hats_observe.artifacts import METRICS_JSON
 from ..pipeline.keys import (
     KEY_COMPOSITION,
     KEY_EXIT_CODE,
@@ -141,8 +141,8 @@ def execute_cmd(
 ):
     """Launch a provider session with a composed role + optional initial prompt."""
     from ..composition_seam import RoleNotFoundError, build_composition_payload
-    from ..observe import SessionManager, SidecarTracer
-    from ..paths import runs_dir
+    from ai_hats_observe import SidecarTracer
+    from ..composition_seam import make_session_manager
     from ..pipeline.harness import PipelineHarness
     from ..tags import TagValidationError, parse_tags
     from ._helpers import _handle_role_not_found
@@ -190,7 +190,7 @@ def execute_cmd(
                 ),
                 # HATS-867: the CLI (integrator) injects the observe writer
                 # handles — runners no longer construct them.
-                KEY_SESSION_MGR: SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
+                KEY_SESSION_MGR: make_session_manager(project_dir),
                 KEY_TRACER_FACTORY: SidecarTracer,
             })
     except RoleNotFoundError as exc:

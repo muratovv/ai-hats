@@ -10,11 +10,31 @@ receive the ready payload; they never import the composition layer.
 from __future__ import annotations
 
 import logging
+from functools import partial
 from pathlib import Path
 
 from .composition_payload import CompositionPayload
 
 logger = logging.getLogger(__name__)
+
+
+def make_session_manager(project_dir: Path):
+    """A run-path ``SessionManager`` with the real ``EnvironmentRecovery`` wired.
+
+    observe defaults to a package-pure no-op recovery (HATS-948); the integrator
+    injects the version-GC recovery at this seam so it fires at the
+    ``create_session`` chokepoint on every run (HATS-649). Read-only ``session``
+    CLI paths never create sessions, so they keep the bare no-op default.
+    """
+    from .environment_recovery import EnvironmentRecovery
+    from ai_hats_observe import SessionManager
+    from .paths import runs_dir
+
+    return SessionManager(
+        project_dir,
+        runs_dir=runs_dir(project_dir),
+        recovery=EnvironmentRecovery(project_dir),
+    )
 
 
 class RoleNotFoundError(Exception):
@@ -99,7 +119,7 @@ def build_composition_payload(
     effect. ``strict=False`` skips the explicit-role raises for tolerant
     callers (retro reviewer spawn — HATS-271 owns its failure mode).
     """
-    from .observe import AuditWriter, Session
+    from ai_hats_observe import AuditWriter, Session
     from .providers import get_provider
 
     asm, cfg, effective_role = _project_context(project_dir, role_override)
@@ -136,8 +156,11 @@ def build_composition_payload(
         static_cost_analyzer=_static_cost_analyzer(project_dir),
         channel=cfg.harness.channel.value,
         # HATS-867: observe factories threaded runner→finalize pipelines.
+        # HATS-948: the audit writer carries the provider's transcript parser.
         session_factory=Session,
-        audit_writer_factory=AuditWriter,
+        audit_writer_factory=partial(
+            AuditWriter, parser=provider.transcript_parser()
+        ),
     )
 
 

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.observe import AuditWriter, Session
-from ai_hats.paths import METRICS_JSON
+from ai_hats_observe import AuditWriter, Session
+from ai_hats_observe.artifacts import METRICS_JSON
 
 
 FIXTURES = Path(__file__).parent / "fixtures"

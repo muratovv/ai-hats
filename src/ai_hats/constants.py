@@ -6,6 +6,7 @@ high-level ``assembler`` "god module" — that re-created a module-level import
 cycle. Keeping the names in a leaf with **no internal imports** lets every layer
 share them without any cycle. ``assembler`` re-imports them, so
 ``from ai_hats.assembler import AGENT_DIR`` keeps working unchanged.
+HATS-948: ``TraceTag``/``ENV_SESSION_ID`` moved to ``ai_hats_observe.trace``.
 """
 
 AGENT_DIR = ".agent"
@@ -34,8 +35,8 @@ ALWAYS_ON_RULES = {
 }
 
 
-# Env-var names shared across modules (HATS-917); single-file knobs stay local
-ENV_SESSION_ID = "AI_HATS_SESSION_ID"
+# Env-var names shared across modules (HATS-917); single-file knobs stay local.
+# (ENV_SESSION_ID lives in ai_hats_observe.trace — observe's schema, HATS-948.)
 ENV_REPO_URL = "AI_HATS_REPO_URL"
 # HATS-938: launcher → `self init` channel for the editable host source, so init
 # seeds `harness.channel: local` without depending on which interpreter it runs under.
@@ -43,16 +44,6 @@ ENV_AI_HATS_INIT_SRC = "AI_HATS_INIT_SRC"
 ENV_ROLE = "AI_HATS_ROLE"
 ENV_LAUNCHER_DEST = "AI_HATS_LAUNCHER_DEST"
 ENV_SKIP_RETRO = "HATS_SKIP_RETRO"
-
-
-# HATS-867: trace-tag vocabulary — leaf home so runtime bricks need no observe import
-class TraceTag:
-    REQ = "[REQ]"
-    RES = "[RES]"
-    ACT = "[ACT]"
-    TOOL = "[TOOL]"
-    SYS = "[SYS]"
-    SUB = "[SUB]"
 
 
 # Claude Code hook-event names (HATS-917). Engine vocabularies (HATS-915)

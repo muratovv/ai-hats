@@ -19,7 +19,7 @@ from .diagnostic import diagnose_silent_session, is_zero_output
 from .errors import HarnessZeroOutputError
 
 if TYPE_CHECKING:
-    from ..observe import Session
+    from ai_hats_observe import Session
     from ..pipeline.harness_policy import HarnessPolicy
 
 

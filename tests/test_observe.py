@@ -7,8 +7,8 @@ import sys
 
 import pytest
 
-from ai_hats.observe import Session, SidecarTracer
-from ai_hats.paths import TRANSCRIPT_TXT
+from ai_hats_observe import Session, SidecarTracer
+from ai_hats_observe.artifacts import TRANSCRIPT_TXT
 
 
 def make_test_session(tmp_path) -> Session:
@@ -357,7 +357,7 @@ def test_audit_writer_preserves_composition_after_rebuild(tmp_path, monkeypatch)
     survive the rebuild (read back from metrics.json which preserves
     existing keys via existing.update)."""
     import json
-    from ai_hats.observe import AuditWriter
+    from ai_hats_observe import AuditWriter
 
     session = make_test_session(tmp_path)
     composition = _sample_composition()
@@ -384,7 +384,7 @@ def test_build_folds_transcript_when_no_turns(tmp_path):
     a non-empty transcript.txt (stdout) but no reachable JSONL and no trace.log,
     so AuditWriter.build() parses zero structured turns. The real work must not
     be lost — the transcript content is folded into the audit body."""
-    from ai_hats.observe import AuditWriter
+    from ai_hats_observe import AuditWriter
 
     session = make_test_session(tmp_path)
     session.init_audit(role="hypothesis-intake", provider="claude")
@@ -406,7 +406,7 @@ def test_build_skips_transcript_when_turns_present(tmp_path):
     """HATS-682 R2: when the JSONL yields real structured turns, the transcript
     fallback must NOT fire — no duplication of content already rendered as
     👤/👾 turns."""
-    from ai_hats.observe import AuditWriter
+    from ai_hats_observe import AuditWriter
 
     session = make_test_session(tmp_path)
     session.init_audit(role="assistant", provider="claude")
@@ -434,7 +434,7 @@ def test_build_skips_transcript_when_turns_present(tmp_path):
 def test_build_no_turns_no_transcript_is_metaonly(tmp_path):
     """HATS-682 R3: no turns AND no transcript.txt (genuinely empty/aborted) →
     meta-only audit, no Transcript section, no crash."""
-    from ai_hats.observe import AuditWriter
+    from ai_hats_observe import AuditWriter
 
     session = make_test_session(tmp_path)
     session.init_audit(role="maintainer", provider="claude")
@@ -453,15 +453,15 @@ def test_extract_user_text_filters_skill_body_injection():
     text message ("Base directory for this skill: …"). It is 100% redundant
     with the `🔧 Skill: <name>` tool line and must be filtered like a
     tool_result, not rendered as a verbatim 👤 turn."""
-    from ai_hats.observe import AuditWriter
+    from ai_hats_observe.parsers.claude import ClaudeParser
 
     skill_body = (
         "Base directory for this skill: /Users/x/.agent/ai-hats/skills/backlog-manager\n\n"
         "# Backlog Manager\n\nOrchestrate the lifecycle ...\n" + ("blah " * 2000)
     )
-    assert AuditWriter._extract_user_text(skill_body) is None
+    assert ClaudeParser._extract_user_text(skill_body) is None
     # A real user message is untouched.
-    assert AuditWriter._extract_user_text("давай возьмем 666 задачку") == "давай возьмем 666 задачку"
+    assert ClaudeParser._extract_user_text("давай возьмем 666 задачку") == "давай возьмем 666 задачку"
 
 
 def test_format_audit_preserves_full_user_input(tmp_path):
@@ -470,7 +470,7 @@ def test_format_audit_preserves_full_user_input(tmp_path):
     delivery layer — `_truncate_audit`, HATS-684 — not by destroying the
     canonical record. The skill-body filter, HATS-666, stays the lossless way
     to drop pure noise.)"""
-    from ai_hats.observe import AuditWriter, Turn
+    from ai_hats_observe import AuditWriter, Turn
 
     session = make_test_session(tmp_path)
     big = "Z" * 50000
@@ -490,7 +490,7 @@ def test_audit_build_survives_corrupt_metrics_json(tmp_path):
     that raised JSONDecodeError; make_audit swallowed it into a logger.warning
     and the structured audit silently vanished for that session.
     """
-    from ai_hats.observe import AuditWriter
+    from ai_hats_observe import AuditWriter
 
     session = make_test_session(tmp_path)
     session.metrics_path.write_text("{ this is not valid json ]]")  # torn file

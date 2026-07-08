@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from ai_hats.paths import METRICS_JSON, USAGE_JSON, session_dirname
+from ai_hats_observe.artifacts import METRICS_JSON, USAGE_JSON, session_dirname
 
 # smoke: also run by the merge-to-master CI gate (HATS-783)
 pytestmark = [pytest.mark.integration, pytest.mark.smoke]

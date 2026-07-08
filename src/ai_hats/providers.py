@@ -8,8 +8,14 @@ import logging
 import shutil
 import warnings
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ai_hats_core import CompositionResult, ResolvedComponent
+from ai_hats_observe.parsers.claude import ClaudeParser
+from ai_hats_observe.parsers.trace import TraceParser
+
+if TYPE_CHECKING:
+    from ai_hats_observe.parsers.base import TranscriptParser
 
 from .hook_collection import (
     collect_runtime_hooks,
@@ -95,6 +101,15 @@ class Provider(abc.ABC):
     @abc.abstractmethod
     def build_system_prompt(self, result: CompositionResult) -> str:
         """Build the complete system prompt from composition result."""
+
+    def transcript_parser(self) -> TranscriptParser:
+        """The parser ``AuditWriter`` uses for this surface's session record.
+
+        HATS-948: the parser rides the provider (no separate registry). Default
+        is trace-only; a surface with a structured session log (Claude JSONL)
+        overrides with a richer parser.
+        """
+        return TraceParser()
 
     def _compose_sections(
         self, result: CompositionResult, *, include_skills: bool
@@ -386,6 +401,10 @@ class ClaudeProvider(Provider):
     @property
     def name(self) -> str:
         return PROVIDER_CLAUDE
+
+    def transcript_parser(self) -> TranscriptParser:
+        # HATS-948: Claude emits a structured JSONL session log → richer parse.
+        return ClaudeParser()
 
     def system_prompt_path(self, project_dir: Path) -> Path:
         return claude_md(project_dir)

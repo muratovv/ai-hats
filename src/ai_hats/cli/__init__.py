@@ -127,8 +127,8 @@ def _launch_session(
 ):
     """Launch a wrapped provider CLI session via the ``human`` pipeline."""
     from ..composition_seam import RoleNotFoundError, build_composition_payload
-    from ..observe import SessionManager, SidecarTracer
-    from ..paths import runs_dir
+    from ai_hats_observe import SidecarTracer
+    from ..composition_seam import make_session_manager
     from ..pipeline.harness import PipelineHarness
     from ..pipeline.keys import (
         KEY_COMPOSITION,
@@ -168,7 +168,7 @@ def _launch_session(
                     ),
                     # HATS-867: the CLI (integrator) injects the observe writer
                     # handles — runners no longer construct them.
-                    KEY_SESSION_MGR: SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
+                    KEY_SESSION_MGR: make_session_manager(project_dir),
                     KEY_TRACER_FACTORY: SidecarTracer,
                 }
             )

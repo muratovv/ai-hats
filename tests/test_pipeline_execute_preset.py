@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 from ai_hats.pipeline import run
 from ai_hats.pipeline.presets import execute_pipeline
-from ai_hats.paths import METRICS_JSON, TRACE_LOG
+from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG
 
 
 def _fake_payload() -> MagicMock:

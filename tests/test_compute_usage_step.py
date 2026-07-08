@@ -13,9 +13,9 @@ import json
 import os
 from pathlib import Path
 
-from ai_hats.observe import Session
+from ai_hats_observe import Session
 from ai_hats.pipeline.steps.compute_usage import ComputeUsage
-from ai_hats.paths import METRICS_JSON, USAGE_JSON
+from ai_hats_observe.artifacts import METRICS_JSON, USAGE_JSON
 
 TRANSCRIPTS = Path(__file__).parent / "fixtures" / "transcripts"
 

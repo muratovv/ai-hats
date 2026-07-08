@@ -12,7 +12,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ..paths import METRICS_JSON, PROJECT_CONFIG, strip_session_prefix
+from ai_hats_observe.artifacts import METRICS_JSON, strip_session_prefix
+from ..paths import PROJECT_CONFIG
 
 logger = logging.getLogger(__name__)
 

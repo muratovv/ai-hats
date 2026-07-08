@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.observe import Session
+from ai_hats_observe import Session
 from ai_hats.paths import runs_dir
 from ai_hats.runtime import (
     _discover_claude_jsonl,
@@ -28,7 +28,8 @@ from ai_hats.runtime import (
     _format_tokens,
     _print_session_end,
 )
-from ai_hats.paths import PROJECT_CONFIG, RETRO_LOG
+from ai_hats_observe.artifacts import RETRO_LOG
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def make_session(tmp_path) -> Session:
@@ -358,7 +359,7 @@ def wrap_runner_factory(tmp_path, monkeypatch):
 
     def make(pty_exit_code: int = 0, finalize_hitl_exc: BaseException | None = None):
         from ai_hats.composition_seam import build_composition_payload
-        from ai_hats.observe import SessionManager, SidecarTracer
+        from ai_hats_observe import SessionManager, SidecarTracer
 
         # HATS-865: compose at the seam (as the CLI does) and inject.
         payload = build_composition_payload(

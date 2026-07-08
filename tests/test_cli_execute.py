@@ -11,7 +11,8 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.cli.execute import _resolve_prompt
-from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, TRACE_LOG
+from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG
+from ai_hats.paths import PROJECT_CONFIG
 
 
 # ---------- _resolve_prompt ----------

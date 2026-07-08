@@ -19,11 +19,12 @@ from typing import TYPE_CHECKING
 # beside the other recovery passes (bundled and run at the create_session
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
-from .constants import TraceTag
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
-from .paths import (
+from ai_hats_observe.artifacts import (
     REASONING_LOG,
     TRANSCRIPT_TXT,
+)
+from .paths import (
     claude_transcript_path,
     claude_transcripts_dir,
 )
@@ -39,7 +40,7 @@ from .pipeline.keys import (
 )
 
 if TYPE_CHECKING:
-    from .observe import Session, SidecarTracer
+    from ai_hats_observe import Session, SidecarTracer
 
 logger = logging.getLogger(__name__)
 
@@ -588,7 +589,7 @@ def _finalize_session_basic(
         logger.warning("tracer cleanup failed", exc_info=True)
 
     try:
-        session.log_trace(TraceTag.SYS, f"Session ended: exit_code={exit_code}")
+        session.log_sys(f"Session ended: exit_code={exit_code}")
         session.append_audit(f"Session ended with code {exit_code}")
     except (Exception, KeyboardInterrupt):
         logger.warning("session trace/audit append failed", exc_info=True)

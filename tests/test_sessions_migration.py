@@ -13,7 +13,8 @@ from ai_hats.paths import (
     sessions_dir,
     worktrees_dir,
 )
-from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG
+from ai_hats_observe.artifacts import METRICS_JSON
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def _seed_session_legacy(project_dir: Path) -> dict[str, Path]:

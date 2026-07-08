@@ -36,7 +36,8 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, TRANSCRIPT_TXT
+from ai_hats_observe.artifacts import METRICS_JSON, TRANSCRIPT_TXT
+from ai_hats.paths import PROJECT_CONFIG
 
 
 pytestmark = pytest.mark.integration
@@ -104,7 +105,7 @@ def test_subagent_runner_via_sdk_smoke(
     minimal_claude_project: Path, requires_claude_auth
 ) -> None:
     from ai_hats.composition_seam import build_composition_payload
-    from ai_hats.observe import SessionManager
+    from ai_hats_observe import SessionManager
     from ai_hats.paths import runs_dir
     from ai_hats.runtime import SubAgentRunner
 

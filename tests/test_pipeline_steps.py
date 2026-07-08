@@ -20,7 +20,7 @@ from ai_hats.pipeline.steps.save import SaveArtifact
 from ai_hats.pipeline.steps.session_review import RunSessionReview
 from ai_hats.pipeline.steps.spawn_review import SpawnSessionReview
 from ai_hats.paths import runs_dir
-from ai_hats.paths import RETRO_LOG
+from ai_hats_observe.artifacts import RETRO_LOG
 
 
 # ---------------- compose_role ----------------

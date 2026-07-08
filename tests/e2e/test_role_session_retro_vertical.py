@@ -54,7 +54,7 @@ from _helpers.sessions import (
     snapshot_session_dirs,
     wait_for_new_session_dir,
 )
-from ai_hats.paths import AUDIT_MD, META_PROMPT_TXT, TRANSCRIPT_TXT
+from ai_hats_observe.artifacts import AUDIT_MD, META_PROMPT_TXT, TRANSCRIPT_TXT
 from ai_hats.constants import ENV_SKIP_RETRO
 
 

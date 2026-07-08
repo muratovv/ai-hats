@@ -20,7 +20,7 @@ from pathlib import Path
 
 from ai_hats_core import scrubbed_git_env
 
-from ..paths import AUDIT_MD, METRICS_JSON, session_dirname, strip_session_prefix
+from ai_hats_observe.artifacts import AUDIT_MD, METRICS_JSON, session_dirname, strip_session_prefix
 from .common import SessionArtifacts, SessionLinks, SessionMetrics
 from .window import (
     compute_session_end,

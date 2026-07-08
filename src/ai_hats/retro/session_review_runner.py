@@ -25,7 +25,8 @@ from pydantic import ValidationError
 from ..harness.diagnostic import diagnose_silent_session
 from ..harness.errors import HarnessReliabilityError
 from ai_hats_tracker.hypothesis import HypothesisStore, ProposalStore
-from ..paths import AUDIT_MD, METRICS_JSON, PROJECT_CONFIG, TRANSCRIPT_TXT, session_dirname
+from ai_hats_observe.artifacts import AUDIT_MD, METRICS_JSON, TRANSCRIPT_TXT, session_dirname
+from ..paths import PROJECT_CONFIG
 from .facts import compute_facts
 from .loader import parse
 from .reflect_session_schema import HypothesisVerdict, ProposalAction
@@ -320,9 +321,7 @@ class SessionReviewRunner:
     def _get_runner(self) -> "SubAgentRunner":
         if self._subagent_runner is not None:
             return self._subagent_runner
-        from ..composition_seam import build_composition_payload
-        from ..observe import SessionManager
-        from ..paths import runs_dir
+        from ..composition_seam import build_composition_payload, make_session_manager
         from ..runtime import SubAgentRunner
 
         # HATS-865: compose ONCE at this integrator-side seam; the retry loop
@@ -335,9 +334,7 @@ class SessionReviewRunner:
         return SubAgentRunner(
             self.project_dir,
             payload,
-            session_mgr=SessionManager(
-                self.project_dir, runs_dir=runs_dir(self.project_dir)
-            ),
+            session_mgr=make_session_manager(self.project_dir),
         )
 
     def _review_model(self) -> str:
