@@ -26,6 +26,10 @@ from .artifacts import (
 )
 from .trace import ENV_SESSION_ID, TraceTag
 
+# HATS-948: the metrics.json (machine-readable audit) schema tag — observe's
+# first versioned surface (mirrors usage/v1). Bumped by the migration seam.
+AUDIT_SCHEMA_VERSION = "audit/v1"
+
 
 class SessionManager:
     """Manages session lifecycle and directories."""
@@ -288,7 +292,7 @@ class Session:
 
         # Save metrics as JSON too — fold in the composition snapshot
         # if init_audit was called with one.
-        out = dict(metrics)
+        out = {"schema_version": AUDIT_SCHEMA_VERSION, **metrics}
         composition = getattr(self, "_composition", None)
         if composition is not None:
             out["composition"] = composition

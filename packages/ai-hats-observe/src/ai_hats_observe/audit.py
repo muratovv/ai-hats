@@ -17,7 +17,7 @@ from pathlib import Path
 from ai_hats_core import atomic_write_text
 
 from .artifacts import TRANSCRIPT_TXT
-from .session import Session, _load_metrics_safe
+from .session import AUDIT_SCHEMA_VERSION, Session, _load_metrics_safe
 
 logger = logging.getLogger(__name__)
 
@@ -301,6 +301,7 @@ class AuditWriter:
         _header_keys = {
             "role", "provider", "exit_code", "duration",
             "composition", "models",
+            "schema_version",  # machine-only tag (metrics.json), not human MD
         }
         for k, v in metrics.items():
             if k in _header_keys:
@@ -394,6 +395,7 @@ class AuditWriter:
         existing = _load_metrics_safe(session) or {}
 
         existing.update({
+            "schema_version": AUDIT_SCHEMA_VERSION,
             "turns": len(turns),
             "tokens": {
                 "input": agg_usage.get("input_tokens", 0),
