@@ -38,7 +38,7 @@ from .pipeline.keys import (
 )
 
 if TYPE_CHECKING:
-    from .observe import Session, SidecarTracer
+    from ai_hats_observe import Session, SidecarTracer
 
 logger = logging.getLogger(__name__)
 

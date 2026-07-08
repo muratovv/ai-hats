@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_hats.observe import SessionManager
+from ai_hats_observe import SessionManager
 from ai_hats.paths import runs_dir
 
 

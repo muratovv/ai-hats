@@ -42,7 +42,7 @@ from .runtime_common import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from .observe import Session, SessionManager, SidecarTracer
+    from ai_hats_observe import Session, SessionManager, SidecarTracer
 
 logger = logging.getLogger(__name__)
 

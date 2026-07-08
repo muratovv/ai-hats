@@ -27,7 +27,7 @@ def make_session_manager(project_dir: Path):
     CLI paths never create sessions, so they keep the bare no-op default.
     """
     from .environment_recovery import EnvironmentRecovery
-    from .observe import SessionManager
+    from ai_hats_observe import SessionManager
     from .paths import runs_dir
 
     return SessionManager(
@@ -119,7 +119,7 @@ def build_composition_payload(
     effect. ``strict=False`` skips the explicit-role raises for tolerant
     callers (retro reviewer spawn — HATS-271 owns its failure mode).
     """
-    from .observe import AuditWriter, Session
+    from ai_hats_observe import AuditWriter, Session
     from .providers import get_provider
 
     asm, cfg, effective_role = _project_context(project_dir, role_override)

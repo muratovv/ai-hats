@@ -76,7 +76,7 @@ def run_subagent(
     - other non-zero — forwarded verbatim from provider CLI
     """
     from ..composition_seam import RoleNotFoundError, build_composition_payload
-    from ..observe import SidecarTracer
+    from ai_hats_observe import SidecarTracer
     from ..composition_seam import make_session_manager
     from ..pipeline.harness import PipelineHarness
     from ..tags import TagValidationError, parse_tags

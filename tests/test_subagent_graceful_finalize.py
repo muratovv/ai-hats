@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from ai_hats.observe import Session
+from ai_hats_observe import Session
 from ai_hats.runtime import (
     SUBAGENT_EXIT_ERROR,
     SUBAGENT_EXIT_TIMEOUT,

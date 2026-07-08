@@ -155,7 +155,7 @@ def reflect_all_cmd(dry_run: bool):
     """Interactive HYP closure + proposal triage via the `judge` role."""
     from ..assembler import Assembler
     from ..composition_seam import build_composition_payload
-    from ..observe import SidecarTracer
+    from ai_hats_observe import SidecarTracer
     from ..composition_seam import make_session_manager
     from ..pipeline.harness import PipelineHarness
 
@@ -222,7 +222,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     """
     from ..assembler import Assembler
     from ..composition_seam import build_composition_payload
-    from ..observe import SidecarTracer
+    from ai_hats_observe import SidecarTracer
     from ..composition_seam import make_session_manager
     from ..pipeline.harness import PipelineHarness
 
@@ -363,7 +363,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
     """
     from ..assembler import Assembler
     from ..composition_seam import build_composition_payload
-    from ..observe import SidecarTracer
+    from ai_hats_observe import SidecarTracer
     from ..composition_seam import make_session_manager
     from ..pipeline.harness import PipelineHarness
 
@@ -550,7 +550,7 @@ def _run_intake_pipeline(
     transcript. Caller treats that as a pipeline failure.
     """
     from ..composition_seam import build_composition_payload
-    from ..observe import SidecarTracer
+    from ai_hats_observe import SidecarTracer
     from ..composition_seam import make_session_manager
     from ..pipeline.harness import PipelineHarness
 

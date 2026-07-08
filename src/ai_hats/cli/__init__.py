@@ -127,7 +127,7 @@ def _launch_session(
 ):
     """Launch a wrapped provider CLI session via the ``human`` pipeline."""
     from ..composition_seam import RoleNotFoundError, build_composition_payload
-    from ..observe import SidecarTracer
+    from ai_hats_observe import SidecarTracer
     from ..composition_seam import make_session_manager
     from ..pipeline.harness import PipelineHarness
     from ..pipeline.keys import (

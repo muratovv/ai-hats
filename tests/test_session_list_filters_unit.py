@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.observe import SessionManager
+from ai_hats_observe import SessionManager
 from ai_hats.paths import runs_dir
 from ai_hats.paths import METRICS_JSON, session_dirname
 

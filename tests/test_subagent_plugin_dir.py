@@ -174,7 +174,7 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(
     )
 
     from ai_hats.composition_seam import build_composition_payload
-    from ai_hats.observe import SessionManager
+    from ai_hats_observe import SessionManager
     from ai_hats.paths import runs_dir
 
     payload = build_composition_payload(project, role_override="guest")

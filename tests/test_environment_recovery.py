@@ -13,7 +13,7 @@ from ai_hats.environment_recovery import (
     NoOpRecovery,
     _sweep_orphan_session_caches,
 )
-from ai_hats.observe import SessionManager
+from ai_hats_observe import SessionManager
 from ai_hats.paths import (
     complete_sentinel,
     current_pointer,

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.observe import AuditWriter, Session
+from ai_hats_observe import AuditWriter, Session
 from ai_hats_observe.parsers.trace import TraceEntry, TraceParser
 
 
