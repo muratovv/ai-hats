@@ -10,6 +10,7 @@ receive the ready payload; they never import the composition layer.
 from __future__ import annotations
 
 import logging
+from functools import partial
 from pathlib import Path
 
 from .composition_payload import CompositionPayload
@@ -155,8 +156,11 @@ def build_composition_payload(
         static_cost_analyzer=_static_cost_analyzer(project_dir),
         channel=cfg.harness.channel.value,
         # HATS-867: observe factories threaded runner→finalize pipelines.
+        # HATS-948: the audit writer carries the provider's transcript parser.
         session_factory=Session,
-        audit_writer_factory=AuditWriter,
+        audit_writer_factory=partial(
+            AuditWriter, parser=provider.transcript_parser()
+        ),
     )
 
 
