@@ -62,7 +62,8 @@ from pathlib import Path
 import pytest
 
 from _helpers.hitl import drive_bare_hitl
-from ai_hats.paths import AUDIT_MD, PROJECT_CONFIG
+from ai_hats_observe.artifacts import AUDIT_MD
+from ai_hats.paths import PROJECT_CONFIG
 
 
 pytestmark = pytest.mark.integration

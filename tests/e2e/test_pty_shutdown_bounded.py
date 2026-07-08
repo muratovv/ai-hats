@@ -265,7 +265,7 @@ def test_e2e_pty_spawn_wired_path_executes_bounded_shutdown(
     shape that detects the regression at e2e level, and it cannot be
     reproduced from pure Python userspace.
     """
-    from ai_hats.observe import Session, SidecarTracer
+    from ai_hats_observe import Session, SidecarTracer
     from ai_hats.runtime import WrapRunner
 
     child_path = _write_child(tmp_path, "wired_child.py", WIRED_CHILD_SOURCE)
@@ -309,7 +309,7 @@ def test_e2e_pty_spawn_returns_124_when_shutdown_unresolved(
     """
     # HATS-715: WrapRunner moved to wrap_runner — patch there (where _pty_spawn looks).
     from ai_hats import wrap_runner as runtime_mod
-    from ai_hats.observe import Session, SidecarTracer
+    from ai_hats_observe import Session, SidecarTracer
     from ai_hats.wrap_runner import WrapRunner
 
     child_path = _write_child(tmp_path, "wired_child.py", WIRED_CHILD_SOURCE)

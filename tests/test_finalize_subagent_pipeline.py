@@ -24,12 +24,13 @@ from pathlib import Path
 
 import yaml
 
-from ai_hats.observe import AuditWriter, Session
+from ai_hats_observe import AuditWriter, Session
 from ai_hats.paths import runs_dir
 from ai_hats.pipeline.loader import load_pipeline
 from ai_hats.pipeline.pipeline import run as run_pipeline
 from ai_hats.constants import ENV_SKIP_RETRO
-from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG
+from ai_hats_observe.artifacts import METRICS_JSON
+from ai_hats.paths import PROJECT_CONFIG
 
 
 # Locate the worktree's library/ — the test file lives in <wt>/tests/.
@@ -108,7 +109,7 @@ def test_pipeline_run_spawns_reviewer_when_threshold_met(tmp_path, monkeypatch):
     # and would otherwise reset our seeded metrics to turns=0 via the
     # trace-fallback path).
     monkeypatch.setattr(
-        "ai_hats.observe.AuditWriter._write_metrics",
+        "ai_hats_observe.audit.AuditWriter._write_metrics",
         lambda *a, **kw: None,
     )
 
@@ -182,7 +183,7 @@ def test_pipeline_run_recursion_guard_blocks_spawn(tmp_path, monkeypatch):
         metrics={"turns": 5, "tool_calls": 10},
     )
     monkeypatch.setattr(
-        "ai_hats.observe.AuditWriter._write_metrics",
+        "ai_hats_observe.audit.AuditWriter._write_metrics",
         lambda *a, **kw: None,
     )
 

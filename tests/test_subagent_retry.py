@@ -23,7 +23,7 @@ from ai_hats.harness.errors import (
 )
 from ai_hats.pipeline.harness_policy import HarnessPolicy, TimeoutPolicy
 from ai_hats.runtime import SUBAGENT_SUBPROCESS_TIMEOUT_S, SubAgentRunner
-from ai_hats.paths import METRICS_JSON
+from ai_hats_observe.artifacts import METRICS_JSON
 
 
 # ---- fake sessions ----

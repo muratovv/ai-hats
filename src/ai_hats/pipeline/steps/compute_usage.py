@@ -28,7 +28,7 @@ import logging
 from pathlib import Path
 from typing import Any, Mapping
 
-from ...paths import METRICS_JSON, USAGE_JSON
+from ai_hats_observe.artifacts import METRICS_JSON, USAGE_JSON
 
 from ..step import Step, StepIO
 

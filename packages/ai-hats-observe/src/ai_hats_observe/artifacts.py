@@ -1,7 +1,9 @@
-"""Single home for session-dir artifact names (HATS-917).
+"""Session-dir artifact names — observe's session-dir schema (HATS-948, T15).
 
-Session class (observe.py) and retro/cli consumers use these names
-to standardize session artifact naming.
+Filename constants + the session-dir helpers. A pure leaf (imports nothing) so
+the observe writer uses it intra-package and integrator name-consumers
+(retro/cli/pipeline) import it without dragging the writer. observe owns this
+schema (ADR-0014); it does NOT belong in core.
 """
 
 from __future__ import annotations

@@ -29,7 +29,6 @@ import logging
 from pathlib import Path
 from typing import Any, Mapping
 
-from ...constants import TraceTag
 from ..step import Step, StepIO
 
 logger = logging.getLogger(__name__)
@@ -80,9 +79,8 @@ class MakeAudit(Step):
             if jsonl_path is None or not jsonl_path.exists():
                 discovered = _discover_claude_jsonl(project_dir, session_id)
                 if discovered is not None:
-                    session.log_trace(
-                        TraceTag.SYS,
-                        f"JSONL discovered via mtime fallback: {discovered.name}",
+                    session.log_sys(
+                        f"JSONL discovered via mtime fallback: {discovered.name}"
                     )
                     jsonl_path = discovered
             audit_writer_factory().build(session, jsonl_path=jsonl_path)

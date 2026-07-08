@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .constants import TraceTag, ENV_ROLE, PROVIDER_CLAUDE
+from .constants import ENV_ROLE, PROVIDER_CLAUDE
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -34,7 +34,7 @@ from .runtime_common import (
 )
 
 if TYPE_CHECKING:
-    from .observe import Session, SessionManager
+    from ai_hats_observe import Session, SessionManager
     from .pipeline.harness_policy import HarnessPolicy
 
 logger = logging.getLogger(__name__)
@@ -208,7 +208,7 @@ class SubAgentRunner:
             model=model,
             composition=self.payload.snapshot,
         )
-        session.log_trace(TraceTag.SUB, f"Sub-agent started: role={role_name}")
+        session.log_sub(f"Sub-agent started: role={role_name}")
 
         # HATS-474 review fix: keep the env we pass to a *subprocess* (Gemini
         # path) as the full inherited environment — subprocess.run replaces
@@ -244,10 +244,10 @@ class SubAgentRunner:
                 session.session_id,
             )
             cmd = cmd + skill_args
-            session.log_trace(TraceTag.SUB, f"Executing: {' '.join(cmd)}")
+            session.log_sub(f"Executing: {' '.join(cmd)}")
 
         mode = IsolationMode(isolation_mode)
-        session.log_trace(TraceTag.SUB, f"Isolation: {mode.value}")
+        session.log_sub(f"Isolation: {mode.value}")
 
         # ADR-0013 D3: the context-manager cleanup() fires before_teardown from
         # __exit__, so the manager must carry ai-hats's hook-running bundle.
@@ -262,7 +262,7 @@ class SubAgentRunner:
             lifecycle=HOOK_LIFECYCLE,
             state_dir=worktrees_dir(self.project_dir),
         ) as work_dir:
-            session.log_trace(TraceTag.SUB, f"Working directory: {work_dir}")
+            session.log_sub(f"Working directory: {work_dir}")
             t0 = time.monotonic()
             try:
                 if provider_name == PROVIDER_CLAUDE:
@@ -277,14 +277,10 @@ class SubAgentRunner:
                         model=model,
                         timeout_s=timeout_s,
                     )
-                    session.log_trace(
-                        TraceTag.RES,
-                        f"Exit code: {run_result.exit_code}",
-                    )
+                    session.log_res(f"Exit code: {run_result.exit_code}")
                     if run_result.claude_session_id:
-                        session.log_trace(
-                            TraceTag.SUB,
-                            f"Claude session_id: {run_result.claude_session_id}",
+                        session.log_sub(
+                            f"Claude session_id: {run_result.claude_session_id}"
                         )
                     _finalize_sub_agent(
                         session,
@@ -326,7 +322,7 @@ class SubAgentRunner:
                         text=True,
                         timeout=timeout_s,
                     )
-                    session.log_trace(TraceTag.RES, f"Exit code: {proc.returncode}")
+                    session.log_res(f"Exit code: {proc.returncode}")
                     _finalize_sub_agent(
                         session,
                         role=role_name,
@@ -342,10 +338,7 @@ class SubAgentRunner:
                     )
 
             except subprocess.TimeoutExpired as exc:
-                session.log_trace(
-                    TraceTag.SYS,
-                    f"Sub-agent timed out after {timeout_s}s",
-                )
+                session.log_sys(f"Sub-agent timed out after {timeout_s}s")
                 _finalize_sub_agent(
                     session,
                     role=role_name,
@@ -365,7 +358,7 @@ class SubAgentRunner:
                 # in depth. ``run_claude_sdk_blocking`` is designed not to
                 # raise, but ``asyncio.run`` itself can fail in weird envs
                 # (running event loop, etc.) — surface as a clean error.
-                session.log_trace(TraceTag.SYS, f"Sub-agent error: {e}")
+                session.log_sys(f"Sub-agent error: {e}")
                 _finalize_sub_agent(
                     session,
                     role=role_name,

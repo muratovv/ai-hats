@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 
-from ai_hats.observe import Session
+from ai_hats_observe import Session
 from ai_hats.pipeline.steps.make_audit import MakeAudit
 
 

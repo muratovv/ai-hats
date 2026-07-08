@@ -28,9 +28,10 @@ dependencies = [
     # First-party workspace packages (uv sources below) — the kernel (HATS-862:
     # composition value-types, YamlModel, git_env, safe_delete, atomic_io) lives
     # in ai-hats-core; the worktree engine (ai_hats_wt) lives in ai-hats-wt.
-    "ai-hats-core>=0.4.1",  # safe_delete concurrency fixes drifted past 0.4.0 wheel (HATS-921)
+    "ai-hats-core>=0.5.0",  # imports ai_hats_core.migrations + .recovery (0.5.0, HATS-948)
     "ai-hats-wt>=0.3.0",    # get_default_base/merge_branch new public API drifted past 0.2.1 wheel (HATS-942)
     "ai-hats-tracker>=0.3.0",  # facade schema + ai_hats_tracker.cli (0.2.0) + .hypothesis (0.3.0)
+    "ai-hats-observe>=0.1.0",  # session/trace vocab leaves (artifacts/trace) — T15 (HATS-948)
     "click>=8.1",
     "pyyaml>=6.0",
     "pydantic>=2.0",
@@ -96,6 +97,7 @@ members = ["packages/*"]
 ai-hats-core = { workspace = true }
 ai-hats-wt = { workspace = true }
 ai-hats-tracker = { workspace = true }
+ai-hats-observe = { workspace = true }
 
 [tool.ruff]
 target-version = "py311"
@@ -107,6 +109,7 @@ testpaths = [
     "packages/ai-hats-core/tests",
     "packages/ai-hats-wt/tests",
     "packages/ai-hats-tracker/tests",
+    "packages/ai-hats-observe/tests",
 ]
 # HATS-508: prepend ./src to sys.path so ``python -m pytest`` from a
 # linked worktree imports the worktree's own ``ai_hats`` package
@@ -120,6 +123,7 @@ pythonpath = [
     "packages/ai-hats-core/src",
     "packages/ai-hats-wt/src",
     "packages/ai-hats-tracker/src",
+    "packages/ai-hats-observe/src",
 ]
 filterwarnings = [
     # Python 3.14 deprecates forkpty() in multi-threaded processes.

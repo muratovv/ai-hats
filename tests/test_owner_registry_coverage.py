@@ -46,6 +46,8 @@ def _fresh_living_owners() -> set[str]:
         [
             str(REPO_ROOT / "src"),
             str(REPO_ROOT / "packages" / "ai-hats-core" / "src"),
+            # HATS-948: the integrator imports ai_hats_observe (session/trace vocab).
+            str(REPO_ROOT / "packages" / "ai-hats-observe" / "src"),
         ]
     )
     res = subprocess.run(  # noqa: S603 — fixed argv, our own interpreter

@@ -16,7 +16,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.paths import hypotheses_dir
-from ai_hats.paths import METRICS_JSON, TRACE_LOG, TRANSCRIPT_TXT, session_dirname
+from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG, TRANSCRIPT_TXT, session_dirname
 
 
 def _install_subagent_trace(monkeypatch, project_dir: Path, body: str) -> dict:

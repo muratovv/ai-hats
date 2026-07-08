@@ -14,13 +14,13 @@ import json
 
 import pytest
 
-from ai_hats.observe import Session
+from ai_hats_observe import Session
 from ai_hats.runtime import (
     SUBAGENT_EXIT_ERROR,
     SUBAGENT_EXIT_TIMEOUT,
     _finalize_sub_agent,
 )
-from ai_hats.paths import REASONING_LOG, TRANSCRIPT_TXT
+from ai_hats_observe.artifacts import REASONING_LOG, TRANSCRIPT_TXT
 
 
 def _make_session(tmp_path, *, provider: str = "claude") -> Session:
@@ -191,6 +191,7 @@ def test_timeout_finalize_is_provider_agnostic(tmp_path, provider):
     # HATS-561: ``provider`` lands in metrics so post-session audit
     # rebuild stops emitting ``Provider: unknown``.
     assert m == {
+        "schema_version": "audit/v1",  # HATS-948: versioned metrics surface
         "exit_code": 124,
         "role": "primary",
         "provider": provider,
@@ -223,6 +224,7 @@ def test_success_finalize_is_provider_agnostic(tmp_path, provider):
     # HATS-561: ``provider`` lands in metrics so post-session audit
     # rebuild stops emitting ``Provider: unknown``.
     assert m == {
+        "schema_version": "audit/v1",  # HATS-948: versioned metrics surface
         "exit_code": 0,
         "role": "primary",
         "provider": provider,

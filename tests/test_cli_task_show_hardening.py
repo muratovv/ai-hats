@@ -17,7 +17,7 @@ from click.testing import CliRunner
 from ai_hats_tracker.cli.task import task
 from ai_hats_tracker.linked_context import load_linked_context
 from ai_hats.models import TaskCard, TaskState
-from ai_hats.observe import SessionManager
+from ai_hats_observe import SessionManager
 from ai_hats.paths import runs_dir, tasks_dir
 from ai_hats.runtime import SubAgentRunner
 

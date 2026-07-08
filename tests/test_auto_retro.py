@@ -8,8 +8,10 @@ import yaml
 
 from ai_hats.retro.auto_retro import should_run
 from ai_hats.paths import runs_dir
-from ai_hats.constants import ENV_SESSION_ID, ENV_SKIP_RETRO
-from ai_hats.paths import METRICS_JSON, PROJECT_CONFIG, RETRO_LOG, session_dirname
+from ai_hats.constants import ENV_SKIP_RETRO
+from ai_hats_observe.trace import ENV_SESSION_ID
+from ai_hats_observe.artifacts import METRICS_JSON, RETRO_LOG, session_dirname
+from ai_hats.paths import PROJECT_CONFIG
 
 
 def _write_config(path, *, policy="smart", min_turns=5, min_tool_calls=10):

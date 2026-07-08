@@ -81,6 +81,12 @@ DRIVER_SOURCE = textwrap.dedent(
     class _StubSession:
         def log_trace(self, *a, **k):
             pass
+        def log_sys(self, *a, **k):  # HATS-948: semantic tag methods
+            pass
+        def log_sub(self, *a, **k):
+            pass
+        def log_res(self, *a, **k):
+            pass
 
     class _StubTracer:
         def __init__(self):

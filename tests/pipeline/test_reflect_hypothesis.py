@@ -18,7 +18,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
-from ai_hats.paths import TRACE_LOG, TRANSCRIPT_TXT
+from ai_hats_observe.artifacts import TRACE_LOG, TRANSCRIPT_TXT
 
 
 def _make_hyp(pd: Path, hyp_id: str):

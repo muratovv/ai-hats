@@ -3,6 +3,19 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-07
+
+### Added
+
+- `ai_hats_core.recovery` — the `RecoveryProtocol` (`run()` contract) +
+  `NoOpRecovery` (the package-pure default), promoted from
+  `ai_hats.environment_recovery` (HATS-948, T15). A domain-agnostic DI seam so
+  `ai_hats_observe`'s `SessionManager` defaults to a no-op recovery; the heavy
+  `EnvironmentRecovery` stays in the integrator and is injected at the run-path
+  seam. `ai_hats.environment_recovery` re-exports the pair; consumer floor
+  `>=0.5.0`. (Session/trace vocab stays in `ai_hats_observe`, NOT core — each
+  module owns its schema.)
+
 ## [0.4.0] - 2026-07-06
 
 ### Added
