@@ -27,6 +27,8 @@ classifiers = [
 dependencies = [
     # SessionManager defaults to ai_hats_core.recovery.NoOpRecovery (0.5.0, HATS-948).
     "ai-hats-core>=0.5.0",
+    "click>=8.1",  # session-browse CLI (HATS-952)
+    "rich>=13.0",  # session-browse CLI console/table output (HATS-952)
 ]
 
 [project.urls]
