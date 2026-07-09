@@ -1671,8 +1671,10 @@ class Assembler:
         try:
             raw = settings.read_text()
             data = json.loads(raw) if raw.strip() else {}
-        except (OSError, json.JSONDecodeError):
-            return False  # user-owned / unreadable — leave untouched
+        except (OSError, ValueError):
+            # ValueError covers JSONDecodeError + UnicodeDecodeError (binary /
+            # non-UTF8 file) — a detector must never crash the update path.
+            return False
         if not isinstance(data, dict):
             return False
         hooks_root = data.get("hooks")
