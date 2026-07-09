@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import abc
+import importlib.metadata
 import json
 import logging
 import shutil
@@ -858,4 +859,36 @@ def _reset_for_tests() -> None:
     _PROVIDER_REGISTRY.clear()
 
 
+# HATS-870 / T10: the IoC seam. An out-of-tree package advertises a Provider
+# under this group; ai-hats discovers + registers it without importing the package.
+PROVIDER_ENTRY_POINT_GROUP = "ai_hats.providers"
+
+
+def _provider_entry_points():
+    """Entry points advertised under the provider group (isolated for tests)."""
+    return importlib.metadata.entry_points(group=PROVIDER_ENTRY_POINT_GROUP)
+
+
+def _load_provider_entry_points() -> None:
+    """Discover + register out-of-tree providers via entry points (IoC).
+
+    A built-in already self-registered wins (silent skip); a broken or duplicate
+    entry point is warned and skipped — discovery never breaks import.
+    """
+    try:
+        entry_points = list(_provider_entry_points())
+    except Exception as exc:  # noqa: BLE001 - discovery must never break import
+        logger.warning("provider entry-point discovery failed: %s", exc)
+        return
+    for ep in entry_points:
+        if ep.name in _PROVIDER_REGISTRY:
+            continue
+        try:
+            cls = ep.load()
+            register_provider(ep.name, cls)
+        except Exception as exc:  # noqa: BLE001 - one bad plugin must not break the rest
+            logger.warning("skipping provider entry point %r: %s", ep.name, exc)
+
+
 _register_builtins()
+_load_provider_entry_points()
