@@ -50,13 +50,11 @@ class ClineProvider(Provider):
         return session_dir / "rules"
 
     def build_system_prompt(self, result: CompositionResult) -> str:
-        # HATS-963: `.cline/skills/` native registry is populated by
-        # materialize_runtime_skills, so the text index would be a duplicate.
-        # BUT: the flip to include_skills=False is gated on a live smoke
-        # (plan Step 3→4, R7 kill criteria) proving /skills works in the TUI.
-        # Until verified, keep the index as the safe fallback — removing it
-        # before registry discovery is confirmed leaves NO skill channel.
-        return self._compose_sections(result, include_skills=True)
+        # HATS-963: skills reach cline via the native `.cline/skills/` registry
+        # (materialize_runtime_skills). Live smoke confirmed /skills works in
+        # the TUI, so the text index is a duplicate — suppress it (~1.5k
+        # tok/session saving). Claude precedent: providers.py:420-424.
+        return self._compose_sections(result, include_skills=False)
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         cmd = ["cline"]
