@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats-cline"
-version = "0.1.0"
+version = "0.3.0"
 description = "Cline surface plugin for the ai-hats framework — registers the `cline` CLI as an ai-hats provider via the `ai_hats.providers` entry point."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,10 +26,11 @@ classifiers = [
 ]
 # ADR-0014: an entry-point provider plugin depends on the `ai-hats` integrator
 # (for the `Provider` ABC) and registers via entry points (IoC) — NOT a
-# core-only leaf. `ai-hats-observe` is added when the follow-up `ClineParser`
-# lands (it needs `ParsedTranscript`/`Turn`); the MVP provider imports neither.
+# core-only leaf. `ai-hats-observe>=0.3.0` carries the `TranscriptParser` base +
+# `usage/v1` schema that `ClineParser` (HATS-960) subclasses/reuses.
 dependencies = [
     "ai-hats",
+    "ai-hats-observe>=0.3.0",
     "filelock>=3.0",  # HATS-963: concurrent-session guard for .cline/skills/ rebuild
 ]
 
@@ -48,3 +49,4 @@ packages = ["src/ai_hats_cline"]
 
 [tool.uv.sources]
 ai-hats = { workspace = true }
+ai-hats-observe = { workspace = true }

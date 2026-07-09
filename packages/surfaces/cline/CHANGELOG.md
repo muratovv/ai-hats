@@ -6,7 +6,29 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0]
+
+`ClineParser` (Adapter B, HATS-960) — cline sessions now record structured turns
+and token telemetry, not just a trace. Follows HATS-956, which shipped the
+provider and descoped the parser.
+
+### Added
+
+- `ai_hats_cline.ClineParser` — a `TranscriptParser` that normalizes cline's
+  single-object `<id>.messages.json` into observe's `ParsedTranscript` (turns +
+  `model_stats` + `agg_usage`) and a full `usage/v1` report (always-on proxy,
+  reconstructed-attribution timeline, tool aggregates). Wired via
+  `ClineProvider.transcript_parser()` (HATS-948), replacing the default
+  trace-only parse.
+
+### Changed
+
+- Depends on `ai-hats-observe>=0.3.0` (the `TranscriptParser` base + `usage/v1`
+  schema `ClineParser` reuses) — the MVP omitted it.
+
 ## [0.2.0]
+
+Native skill materialization into `.cline/skills/` (HATS-963).
 
 ### Added
 
