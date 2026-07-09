@@ -23,6 +23,18 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **Worktree-isolation gate no longer fires on unrelated repos** (HATS-959). The
+  `wt_gate.py` PreToolUse guard classified the *edited file's own* repository, so
+  an Edit/Write to a tracked file in a different repo than the session — e.g.
+  `~/dotfiles/.claude/settings.json` — was hard-denied, and the recovery text told
+  the agent to branch that unrelated repo. The gate now scopes to the session's own
+  repository (keyed on the payload `cwd`'s `--git-common-dir`, shared across a
+  repo's main checkout and its linked worktrees): a file in a different repo is
+  silent, while same-repo main-checkout edits — including editing main from inside a
+  linked worktree — still deny. An unresolvable `cwd` (absent / non-git) falls back
+  to the prior location-only behaviour, so scoping only ever suppresses a deny,
+  never adds one.
+
 - **ai-hats-wt 0.3.0 + integrator pin `>=0.3.0`** (HATS-942 drift). The
   configurable base/merge-target work grew the `ai_hats_wt` public surface
   (`get_default_base_branch`, `get_default_merge_branch`) and edited

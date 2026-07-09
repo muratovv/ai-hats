@@ -105,12 +105,14 @@ def _nearest_existing_dir(file_path: str) -> str | None:
     return str(d) if d.exists() else None
 
 
-def _git_info(directory: str) -> tuple[str, Path | None]:
-    """Classify `directory` as ('main'|'linked'|'nongit', repo_toplevel|None).
+def _git_info(directory: str) -> tuple[str, Path | None, Path | None]:
+    """Classify `directory` as ('main'|'linked'|'nongit', repo_toplevel, common_dir).
 
     One ``git rev-parse`` (HATS-490): 'main' iff a git work tree whose
     --git-dir == --git-common-dir; 'linked' iff they differ; 'nongit' on any
-    error (fail-safe). Mirrors WorktreeManager.is_inside_linked_worktree inline
+    error (fail-safe). The resolved --git-common-dir is the repo *identity* shared
+    across a repo's main checkout and all its linked worktrees — the session-scope
+    key (HATS-959). Mirrors WorktreeManager.is_inside_linked_worktree inline
     because the hook runs under the system interpreter without ai_hats."""
     try:
         result = subprocess.run(
@@ -125,13 +127,14 @@ def _git_info(directory: str) -> tuple[str, Path | None]:
             timeout=5,
         )
     except (subprocess.SubprocessError, OSError):
-        return ("nongit", None)
+        return ("nongit", None, None)
     lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
     if len(lines) != 3:
-        return ("nongit", None)
+        return ("nongit", None, None)
     toplevel, git_dir, common_dir = lines
-    loc = "linked" if Path(git_dir).resolve() != Path(common_dir).resolve() else "main"
-    return (loc, Path(toplevel))
+    common = Path(common_dir).resolve()
+    loc = "linked" if Path(git_dir).resolve() != common else "main"
+    return (loc, Path(toplevel), common)
 
 
 def _is_git_ignored(file_path: str, directory: str) -> bool:
@@ -169,9 +172,18 @@ def main() -> int:
     directory = _nearest_existing_dir(file_path)
     if directory is None:
         return 0  # unresolvable path -> silent
-    location, repo_root = _git_info(directory)
+    location, repo_root, file_common = _git_info(directory)
     if location != "main":
         return 0  # non-git path or already inside a linked worktree -> silent
+
+    # HATS-959: a main-checkout file in a DIFFERENT repo than the session cwd (e.g.
+    # ~/dotfiles) is outside this project's worktree discipline -> silent. Key on
+    # --git-common-dir (shared main+worktrees); unresolved cwd falls back to old deny.
+    cwd = (payload.get("cwd") or "").strip()
+    if cwd:
+        _, _, session_common = _git_info(cwd)
+        if session_common is not None and file_common != session_common:
+            return 0  # file belongs to another repo than the session -> silent
 
     if Path(file_path).suffix not in _load_extensions(repo_root):
         return 0  # docs / non-triggering file -> silent
