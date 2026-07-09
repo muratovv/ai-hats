@@ -816,15 +816,46 @@ class ClaudeProvider(Provider):
         )
 
 
-PROVIDERS: dict[str, type[Provider]] = {
-    PROVIDER_GEMINI: GeminiProvider,
-    PROVIDER_CLAUDE: ClaudeProvider,
-}
+# HATS-870 / T10: closed ``PROVIDERS`` dict → open registry (plug in against the
+# ``Provider`` ABC). Built-ins self-register gemini→claude — call sites need that order.
+_PROVIDER_REGISTRY: dict[str, type[Provider]] = {}
+
+
+class ProviderRegistryError(RuntimeError):
+    """Raised when a provider name is already registered."""
+
+
+def register_provider(name: str, cls: type[Provider]) -> None:
+    """Register a provider class under ``name`` (dup-guarded)."""
+    if name in _PROVIDER_REGISTRY:
+        raise ProviderRegistryError(f"provider already registered: {name!r}")
+    _PROVIDER_REGISTRY[name] = cls
+
+
+def provider_names() -> list[str]:
+    """Registered provider names in registration order (deterministic)."""
+    return list(_PROVIDER_REGISTRY)
 
 
 def get_provider(name: str) -> Provider:
     """Get a provider instance by name."""
-    cls = PROVIDERS.get(name)
+    cls = _PROVIDER_REGISTRY.get(name)
     if cls is None:
-        raise ValueError(f"Unknown provider: {name}. Available: {list(PROVIDERS.keys())}")
+        raise ValueError(f"Unknown provider: {name}. Available: {provider_names()}")
     return cls()
+
+
+def _register_builtins() -> None:
+    """Self-register the in-tree providers (order preserved for call sites)."""
+    for name, cls in ((PROVIDER_GEMINI, GeminiProvider), (PROVIDER_CLAUDE, ClaudeProvider)):
+        if name in _PROVIDER_REGISTRY:
+            continue
+        register_provider(name, cls)
+
+
+def _reset_for_tests() -> None:
+    """Clear the registry. Tests snapshot/restore around this."""
+    _PROVIDER_REGISTRY.clear()
+
+
+_register_builtins()
