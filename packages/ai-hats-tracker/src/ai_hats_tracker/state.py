@@ -493,6 +493,29 @@ class TaskManager:
         """Drop the task's ownership record (terminal transition / close)."""
         ownership.finish(self._ownership_path(), task_id)
 
+    def stop(self, task_id: str, *, force: bool = False) -> bool:
+        """Release ownership of a task without changing its state (`task stop`).
+
+        Drops the current session's claim; ``force`` drops any owner. Returns
+        True if a record was removed.
+        """
+        reg = self._ownership_path()
+        current = ownership.owner_of(reg, task_id)
+        if current is None:
+            return False
+        if force:
+            ownership.finish(reg, task_id)
+            return True
+        session_id = os.environ.get(ENV_SESSION_ID, "")
+        if current.get("session_id") == session_id:
+            ownership.release(reg, task_id, session_id)
+            return True
+        return False
+
+    def ownership_of(self, task_id: str) -> dict | None:
+        """The task's owner record augmented with ``is_live``, or None."""
+        return ownership.owner_of(self._ownership_path(), task_id)
+
     def log_work(self, task_id: str, message: str, session_id: str = "") -> TaskCard:
         """Append a work log entry to a task."""
         self._ensure_project()
