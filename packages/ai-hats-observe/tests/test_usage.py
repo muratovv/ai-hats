@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.usage import SCHEMA_VERSION, parse_session_usage
+from ai_hats_observe.usage import SCHEMA_VERSION, parse_session_usage
 
 TRANSCRIPTS = Path(__file__).parent / "fixtures" / "transcripts"
 
