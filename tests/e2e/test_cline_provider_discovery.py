@@ -34,10 +34,10 @@ def _entry_point_body(repo_root: Path) -> str:
 def _write_dist_info(root: Path, ep_body: str) -> Path:
     """A synthetic installed dist advertising the real cline entry point."""
     root.mkdir(parents=True, exist_ok=True)
-    dist_info = root / "ai_hats_cline-0.1.0.dist-info"
+    dist_info = root / "ai_hats_cline-0.2.0.dist-info"
     dist_info.mkdir()
     (dist_info / "METADATA").write_text(
-        "Metadata-Version: 2.1\nName: ai-hats-cline\nVersion: 0.1.0\n"
+        "Metadata-Version: 2.1\nName: ai-hats-cline\nVersion: 0.2.0\n"
     )
     (dist_info / "entry_points.txt").write_text(f"[ai_hats.providers]\n{ep_body}\n")
     return root
