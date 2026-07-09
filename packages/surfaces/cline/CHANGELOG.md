@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `ensure_runtime_hooks` override — materializes a TS plugin wrapper
+  (`ai-hats-hooks.ts`) + hook index (`ai-hats-hooks.json`) into
+  `<project>/.cline/plugins/` (HATS-964). Cline auto-discovers the plugin;
+  its `beforeTool` hook bridges cline's AgentPlugin lifecycle to ai-hats's
+  existing bash guard (`pre_bash_shared_state_guard.sh`), translating
+  `context.input` → `{"tool_input":{"command":...}}` and blocking on
+  non-zero exit (explicit fail_closed). `.cline/plugins/` auto-gitignored.
+- `get_env` now sets `AI_HATS_DIR` + `AI_HATS_PROJECT_DIR` so the plugin
+  can locate the materialized guard scripts at runtime.
+
 ## [0.2.0]
 
 ### Added
