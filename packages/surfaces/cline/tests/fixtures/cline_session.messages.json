@@ -1,0 +1,81 @@
+{
+  "version": "1.0",
+  "updated_at": 1780000008000,
+  "agent": "assistant",
+  "sessionId": "fixture-cline-0001",
+  "system_prompt": "You are a helpful assistant.",
+  "messages": [
+    {
+      "id": "m0",
+      "role": "user",
+      "ts": 1780000000000,
+      "content": [{ "type": "text", "text": "Fix the failing test" }]
+    },
+    {
+      "id": "m1",
+      "role": "assistant",
+      "ts": 1780000001000,
+      "modelInfo": { "id": "glm-5.2", "provider": "zai" },
+      "metrics": { "inputTokens": 1000, "outputTokens": 50, "cacheReadTokens": 0, "cacheWriteTokens": 800 },
+      "content": [
+        { "type": "thinking", "thinking": "Let me load the backlog skill to check the task." },
+        { "type": "text", "text": "On it — checking the task first." },
+        { "type": "tool_use", "id": "t1", "name": "Skill", "input": { "skill": "backlog-manager", "args": "show" } }
+      ]
+    },
+    {
+      "id": "m2",
+      "role": "user",
+      "ts": 1780000002000,
+      "content": [{ "type": "tool_result", "tool_use_id": "t1", "content": "skill loaded" }]
+    },
+    {
+      "id": "m3",
+      "role": "assistant",
+      "ts": 1780000003000,
+      "modelInfo": { "id": "glm-5.2", "provider": "zai" },
+      "metrics": { "inputTokens": 1200, "outputTokens": 40, "cacheReadTokens": 1000, "cacheWriteTokens": 1500 },
+      "content": [
+        { "type": "text", "text": "Found the root cause." },
+        { "type": "tool_use", "id": "t2", "name": "Read", "input": { "file_path": "/proj/library/skills/backlog-manager/references/lifecycle.md" } }
+      ]
+    },
+    {
+      "id": "m4",
+      "role": "user",
+      "ts": 1780000004000,
+      "content": [{ "type": "tool_result", "tool_use_id": "t2", "content": "file contents" }]
+    },
+    {
+      "id": "m5",
+      "role": "assistant",
+      "ts": 1780000005000,
+      "modelInfo": { "id": "glm-4.6", "provider": "zai" },
+      "metrics": { "inputTokens": 1300, "outputTokens": 20, "cacheReadTokens": 1200, "cacheWriteTokens": 600 },
+      "content": [
+        { "type": "text", "text": "Patched and green." },
+        { "type": "tool_use", "id": "t3", "name": "Bash", "input": { "command": "pytest -q", "description": "run tests" } }
+      ]
+    },
+    {
+      "id": "m6",
+      "role": "user",
+      "ts": 1780000006000,
+      "content": [{ "type": "tool_result", "tool_use_id": "t3", "content": "1 passed" }]
+    },
+    {
+      "id": "m7",
+      "role": "user",
+      "ts": 1780000007000,
+      "content": [{ "type": "text", "text": "Ship it" }]
+    },
+    {
+      "id": "m8",
+      "role": "assistant",
+      "ts": 1780000008000,
+      "modelInfo": { "id": "glm-4.6", "provider": "zai" },
+      "metrics": { "inputTokens": 1400, "outputTokens": 15, "cacheReadTokens": 1300, "cacheWriteTokens": 0 },
+      "content": [{ "type": "text", "text": "Shipped." }]
+    }
+  ]
+}
