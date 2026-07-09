@@ -126,3 +126,48 @@ def test_heal_noop_when_nothing_broken(tmp_path) -> None:
         tmp_path, broken=[], mapping={}, installer=lambda p: None, verifier=lambda m: True,
     )
     assert result.is_noop()
+
+
+# ---- run_editable_heal orchestration (repo-root resolve + fast-path + lock) ----
+
+def _with_surfaces(tmp_path):
+    (tmp_path / "packages" / "surfaces").mkdir(parents=True)
+    return tmp_path
+
+
+def test_run_editable_heal_noop_when_not_editable(monkeypatch) -> None:
+    monkeypatch.setattr("ai_hats.paths.editable_install_root", lambda name="ai-hats": None)
+    assert self_heal.run_editable_heal() is None
+
+
+def test_run_editable_heal_noop_when_no_surfaces_dir(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(self_heal, "find_broken_surface_providers", lambda: [_bp()])
+    assert self_heal.run_editable_heal(tmp_path, lock_path=tmp_path / "l.lock") is None
+
+
+def test_run_editable_heal_noop_when_nothing_broken(monkeypatch, tmp_path) -> None:
+    _with_surfaces(tmp_path)
+    monkeypatch.setattr(self_heal, "find_broken_surface_providers", lambda: [])
+    assert self_heal.run_editable_heal(tmp_path, lock_path=tmp_path / "l.lock") is None
+
+
+def test_run_editable_heal_heals_under_lock(monkeypatch, tmp_path) -> None:
+    _with_surfaces(tmp_path)
+    monkeypatch.setattr(self_heal, "find_broken_surface_providers", lambda: [_bp()])
+    sentinel = self_heal.HealResult(healed=[], warned=[])
+    seen: dict = {}
+
+    def fake_heal(root):
+        seen["root"] = root
+        return sentinel
+
+    monkeypatch.setattr(self_heal, "heal_surface_editables", fake_heal)
+    result = self_heal.run_editable_heal(tmp_path, lock_path=tmp_path / "l.lock")
+    assert result is sentinel
+    assert seen["root"] == tmp_path
+
+
+def test_editable_install_root_none_for_unknown_dist() -> None:
+    from ai_hats.paths import editable_install_root
+
+    assert editable_install_root("no-such-dist-hats966") is None

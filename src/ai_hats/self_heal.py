@@ -17,6 +17,9 @@ from pathlib import Path
 
 from .providers import PROVIDER_ENTRY_POINT_GROUP, _provider_entry_points
 
+# Repo layout: surface-plugin members live at ``<repo>/packages/surfaces/<name>``.
+SURFACES_SUBPATH = ("packages", "surfaces")
+
 
 @dataclass(frozen=True)
 class BrokenProvider:
@@ -80,7 +83,7 @@ def surface_editable_map(repo_root: Path) -> dict[str, Path]:
     ``EntryPoint.dist`` being populated.
     """
     out: dict[str, Path] = {}
-    surfaces = repo_root / "packages" / "surfaces"
+    surfaces = repo_root.joinpath(*SURFACES_SUBPATH)
     if not surfaces.is_dir():
         return out
     for member in sorted(p for p in surfaces.iterdir() if p.is_dir()):
@@ -166,13 +169,51 @@ def heal_surface_editables(
     return HealResult(healed=healed, warned=warned)
 
 
+def _default_lock_path() -> Path:
+    """Venv-scoped lock file — serializes heals across concurrent launches/updates."""
+    return Path(sys.executable).resolve().parent.parent / ".ai-hats-heal.lock"
+
+
+def run_editable_heal(
+    repo_root: Path | None = None,
+    *,
+    lock_path: Path | None = None,
+    lock_timeout: float = 120,
+) -> HealResult | None:
+    """Detect + re-point stale surface-plugin editables (HATS-966).
+
+    Business logic only — the caller renders the result. Returns ``None`` when
+    there is nothing to do: not an editable dev checkout, or no broken provider
+    (fast path, no lock taken). Otherwise serialized behind a venv-scoped filelock
+    so concurrent launches/updates never race on ``uv pip install``; a held lock
+    is best-effort skipped (a peer is already healing).
+    """
+    from filelock import FileLock, Timeout
+
+    from .paths import editable_install_root
+
+    if repo_root is None:
+        repo_root = editable_install_root("ai-hats")
+    if repo_root is None or not repo_root.joinpath(*SURFACES_SUBPATH).is_dir():
+        return None
+    if not find_broken_surface_providers():
+        return None
+    try:
+        with FileLock(str(lock_path or _default_lock_path()), timeout=lock_timeout):
+            return heal_surface_editables(repo_root)
+    except Timeout:
+        return None
+
+
 __all__ = [
     "PROVIDER_ENTRY_POINT_GROUP",
+    "SURFACES_SUBPATH",
     "BrokenProvider",
     "HealResult",
     "Healed",
     "Warned",
     "find_broken_surface_providers",
     "heal_surface_editables",
+    "run_editable_heal",
     "surface_editable_map",
 ]
