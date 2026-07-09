@@ -14,11 +14,13 @@ to [Semantic Versioning](https://semver.org/).
   into `<project>/.cline/skills/` (cline's native discovery path, HATS-963).
   `/skills` in the TUI now shows the role's skills; `/skill-name` loads bodies.
   Idempotent; user-authored skills preserved via `.ai-hats-managed` marker.
+  `filelock` guards the wipe-and-rebuild against concurrent sessions.
+- `.cline/skills/` auto-added to project `.gitignore` (materialized mirror).
 
 ### Changed
 
-- `build_system_prompt` now uses `include_skills=False` — the native
-  `.cline/skills/` registry replaces the text index (~1.5k tok/session saving).
+- `include_skills=True` kept as safe fallback — flip to `False` gated on a
+  live smoke proving `/skills` works in the TUI (plan R7 kill criteria).
 
 ## [0.1.0]
 
