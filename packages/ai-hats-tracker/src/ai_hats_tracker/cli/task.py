@@ -800,12 +800,24 @@ def task_log(task_id: str, message: str, session: str | None):
 @click.option("--priority", default=None, help="Filter by priority (low/medium/high)")
 @click.option("--all", "-a", "show_all", is_flag=True, help="Include done/failed tasks")
 @click.option(
+    "--reclaimable",
+    is_flag=True,
+    default=False,
+    help="Only execute-state tasks whose owner is dead/absent (safe to pick up)",
+)
+@click.option(
     "--search",
     "-s",
     default=None,
     help="Regex search across id, title, description, tags, parent_task, depends_on",
 )
-def task_list(state: str | None, priority: str | None, show_all: bool, search: str | None):
+def task_list(
+    state: str | None,
+    priority: str | None,
+    show_all: bool,
+    reclaimable: bool,
+    search: str | None,
+):
     """List all task cards."""
     import re as _re
 
@@ -835,6 +847,14 @@ def task_list(state: str | None, priority: str | None, show_all: bool, search: s
             t
             for t in tasks
             if t.state not in (TaskState.DONE, TaskState.FAILED, TaskState.CANCELLED)
+        ]
+
+    if reclaimable:
+        tasks = [
+            t
+            for t in tasks
+            if t.state == TaskState.EXECUTE
+            and ((o := mgr.ownership_of(t.id)) is None or not o.get("is_live"))
         ]
 
     if search:

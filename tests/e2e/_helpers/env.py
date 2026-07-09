@@ -43,6 +43,11 @@ ENV_DENYLIST: frozenset[str] = frozenset(
         "GIT_DIR",
         "GIT_WORK_TREE",
         "GIT_INDEX_FILE",
+        # HATS-955: task ownership keys off these; a leaked dev session would make
+        # `ai-hats task` claim/refuse non-deterministically in e2e subprocesses.
+        # Tests that exercise ownership set them explicitly after copying env.
+        "AI_HATS_SESSION_ID",
+        "AI_HATS_ROOT_PID",
     }
 )
 
