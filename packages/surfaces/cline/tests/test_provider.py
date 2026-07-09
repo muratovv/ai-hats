@@ -77,7 +77,11 @@ def test_get_run_command_preserves_passthrough_args() -> None:
 
 def test_get_env_does_not_isolate_data_dir(tmp_path) -> None:
     # R10: isolating CLINE_DATA_DIR would cut off the machine's cline auth.
-    assert ClineProvider().get_env(tmp_path / "session", tmp_path) == {}
+    # R7 (HATS-964): AI_HATS_DIR is needed so the TS plugin can find guard scripts.
+    env = ClineProvider().get_env(tmp_path / "session", tmp_path)
+    assert "CLINE_DATA_DIR" not in env
+    assert env["AI_HATS_DIR"]
+    assert env["AI_HATS_PROJECT_DIR"] == str(tmp_path)
 
 
 def test_update_system_prompt_is_noop(tmp_path) -> None:
@@ -211,3 +215,88 @@ def test_materialize_gitignore_is_idempotent(tmp_path) -> None:
     provider.materialize_runtime_skills(tmp_path, _fake_result(skills=[skill]), "s2")
     gitignore = (tmp_path / ".gitignore").read_text()
     assert gitignore.count(".cline/skills/") == 1
+
+
+# ---- HATS-964: .cline/plugins/ hooks materialization ----
+
+
+def test_ensure_runtime_hooks_writes_plugin(tmp_path) -> None:
+    ClineProvider().ensure_runtime_hooks(tmp_path)
+    plugin = tmp_path / ".cline" / "plugins" / "ai-hats-hooks.ts"
+    assert plugin.exists()
+    # the plugin must export a default AgentPlugin with hooks
+    ts = plugin.read_text()
+    assert "export default plugin" in ts
+    assert "beforeTool" in ts
+
+
+def test_ensure_runtime_hooks_writes_index(tmp_path) -> None:
+    import json
+
+    ClineProvider().ensure_runtime_hooks(tmp_path)
+    index = json.loads(
+        (tmp_path / ".cline" / "plugins" / "ai-hats-hooks.json").read_text()
+    )
+    # guard entry is unconditional
+    assert len(index) >= 1
+    guard = index[0]
+    assert guard["event"] == "PreToolUse"
+    assert guard["cline_tool"] == "bash"
+    assert guard["script"] == "pre_bash_shared_state_guard.sh"
+
+
+def test_ensure_runtime_hooks_gitignores_plugins(tmp_path) -> None:
+    ClineProvider().ensure_runtime_hooks(tmp_path)
+    gitignore = (tmp_path / ".gitignore").read_text()
+    assert ".cline/plugins/" in gitignore
+
+
+def test_ensure_runtime_hooks_is_idempotent(tmp_path) -> None:
+    provider = ClineProvider()
+    provider.ensure_runtime_hooks(tmp_path)
+    first = (tmp_path / ".cline" / "plugins" / "ai-hats-hooks.ts").read_text()
+    provider.ensure_runtime_hooks(tmp_path)
+    second = (tmp_path / ".cline" / "plugins" / "ai-hats-hooks.ts").read_text()
+    assert first == second
+    # no duplicate gitignore entries
+    gitignore = (tmp_path / ".gitignore").read_text()
+    assert gitignore.count(".cline/plugins/") == 1
+
+
+def test_build_session_prompt_materializes_hooks(tmp_path) -> None:
+    ClineProvider().build_session_prompt(tmp_path, _fake_result(), "sid-1")
+    assert (tmp_path / ".cline" / "plugins" / "ai-hats-hooks.ts").exists()
+    assert (tmp_path / ".cline" / "plugins" / "ai-hats-hooks.json").exists()
+
+
+def test_guard_bridge_blocks_irreversible(tmp_path) -> None:
+    """R1: stdin the plugin produces → real guard → blocks force-push (exit 2)."""
+    import json
+    import subprocess
+
+    repo_root = Path(__file__).resolve().parents[4]
+    guard = repo_root / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
+    if not guard.exists():
+        return  # running outside monorepo
+    stdin = json.dumps({"tool_input": {"command": "git push --force origin main"}})
+    res = subprocess.run(
+        ["bash", str(guard)], input=stdin, capture_output=True, text=True, timeout=10,
+    )
+    assert res.returncode == 2
+    assert "BLOCKED" in res.stderr
+
+
+def test_guard_bridge_allows_safe(tmp_path) -> None:
+    """R1: safe commands pass through the guard (exit 0)."""
+    import json
+    import subprocess
+
+    repo_root = Path(__file__).resolve().parents[4]
+    guard = repo_root / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
+    if not guard.exists():
+        return
+    stdin = json.dumps({"tool_input": {"command": "echo hello"}})
+    res = subprocess.run(
+        ["bash", str(guard)], input=stdin, capture_output=True, text=True, timeout=10,
+    )
+    assert res.returncode == 0
