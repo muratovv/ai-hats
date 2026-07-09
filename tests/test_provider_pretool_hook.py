@@ -409,3 +409,101 @@ def test_claude_two_matchers_same_event_no_tag_collision(tmp_path: Path) -> None
         "ai-hats:skill-x:PreToolUse:Bash",
         "ai-hats:skill-x:PreToolUse:Edit",
     }
+
+
+# ----- HATS-961: leaked user-global project-hook detector -----
+
+# A tagged guard leak ($CLAUDE_PROJECT_DIR-prefixed) as the incident had it.
+LEAKED_GUARD = PREFIX + ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh"
+
+
+def _seed_global_leak(home: Path, extra: list[dict] | None = None) -> Path:
+    """Seed <home>/.claude/settings.json with a leaked ai-hats project hook."""
+    settings = home / SETTINGS
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    entries = [
+        {
+            "matcher": "Bash",
+            "_ai_hats_managed": "ai-hats:hats-437",
+            "hooks": [{"type": "command", "command": LEAKED_GUARD}],
+        }
+    ]
+    if extra:
+        entries.extend(extra)
+    settings.write_text(json.dumps({"hooks": {HOOK_PRE_TOOL_USE: entries}}))
+    return settings
+
+
+def test_leak_detector_returns_tagged_and_untagged(tmp_path: Path) -> None:
+    """Both a tagged ($CLAUDE_PROJECT_DIR) and an untagged bare-relative leak are
+    caught — detection is by command substring, not the ``_ai_hats_managed`` tag."""
+    home = tmp_path / "home"
+    untagged = ".agent/ai-hats/library/hooks/tool-call-hygiene-posttooluse.sh"
+    _seed_global_leak(
+        home,
+        extra=[{"matcher": "Write", "hooks": [{"type": "command", "command": untagged}]}],
+    )
+    assert ClaudeProvider().leaked_user_global_project_hooks(home) == [LEAKED_GUARD, untagged]
+
+
+def test_leak_detector_does_not_mutate_settings(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    settings = _seed_global_leak(home)
+    before = settings.read_text()
+    ClaudeProvider().leaked_user_global_project_hooks(home)
+    assert settings.read_text() == before
+
+
+def test_leak_detector_clean_when_only_user_hooks(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    settings = home / SETTINGS
+    settings.parent.mkdir(parents=True)
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    HOOK_PRE_TOOL_USE: [
+                        {"matcher": "Bash", "hooks": [{"type": "command", "command": "~/mine.sh"}]}
+                    ]
+                }
+            }
+        )
+    )
+    assert ClaudeProvider().leaked_user_global_project_hooks(home) == []
+
+
+def test_leak_detector_empty_when_no_file(tmp_path: Path) -> None:
+    assert ClaudeProvider().leaked_user_global_project_hooks(tmp_path / "home") == []
+
+
+def test_leak_detector_tolerates_malformed_json(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    settings = home / SETTINGS
+    settings.parent.mkdir(parents=True)
+    settings.write_text("{ not valid json ,,,")
+    assert ClaudeProvider().leaked_user_global_project_hooks(home) == []
+
+
+def test_leak_detector_tolerates_binary(tmp_path: Path) -> None:
+    """Non-UTF8 file → [] (UnicodeDecodeError is a ValueError) — never crashes update."""
+    home = tmp_path / "home"
+    settings = home / SETTINGS
+    settings.parent.mkdir(parents=True)
+    settings.write_bytes(b"\xff\xfe\x00\x01garbage")
+    assert ClaudeProvider().leaked_user_global_project_hooks(home) == []
+
+
+def test_leak_detector_empty_on_non_object_root(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    settings = home / SETTINGS
+    settings.parent.mkdir(parents=True)
+    settings.write_text("[]")
+    assert ClaudeProvider().leaked_user_global_project_hooks(home) == []
+
+
+def test_base_surface_reports_no_leaks(tmp_path: Path) -> None:
+    """Gemini (base default) manages no user-global hooks → [] even with a seeded
+    Claude leak. Each surface owns its own detection (HATS-961)."""
+    home = tmp_path / "home"
+    _seed_global_leak(home)
+    assert GeminiProvider().leaked_user_global_project_hooks(home) == []
