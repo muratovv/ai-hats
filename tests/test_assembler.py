@@ -1114,6 +1114,26 @@ def test_warn_leaked_user_global_project_hooks_silent_when_malformed(
     assert capsys.readouterr().err == ""
 
 
+def test_warn_leaked_user_global_project_hooks_silent_when_binary(
+    project_with_library, tmp_path, monkeypatch, capsys
+):
+    """Non-UTF8 / binary settings.json → tolerated, no WARN, no crash of the
+    update path (UnicodeDecodeError is a ValueError, not an OSError)."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    monkeypatch.setattr("ai_hats.assembler.Path.home", lambda: fake_home)
+    settings = claude_settings_json(fake_home)
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_bytes(b"\xff\xfe\x00\x01garbage")
+
+    assert asm._warn_leaked_user_global_project_hooks() is False
+    assert capsys.readouterr().err == ""
+
+
 def test_warn_leaked_user_global_project_hooks_idempotent(
     project_with_library, tmp_path, monkeypatch, capsys
 ):
