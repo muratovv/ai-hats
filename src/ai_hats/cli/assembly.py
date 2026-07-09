@@ -20,7 +20,7 @@ from ai_hats_core import LockTimeoutError, file_lock
 from rich.tree import Tree
 
 from ..paths import PROJECT_CONFIG
-from ..providers import PROVIDERS
+from ..providers import provider_names
 from ._helpers import _assembler, _project_dir, console
 
 
@@ -43,13 +43,13 @@ def _stdin_is_tty() -> bool:
 def _detected_providers() -> list[str]:
     """Providers whose home-config directory (``~/.<provider>``) exists.
 
-    Returns EVERY match in PROVIDERS insertion order (deterministic), not
+    Returns EVERY match in provider registration order (deterministic), not
     just the first — the wizard marks each as ``detected`` and refuses to
     silently prefer one when several are present (HATS-613). Empty list
     when no provider home directory is found.
     """
     home = Path.home()
-    return [name for name in PROVIDERS if (home / f".{name}").is_dir()]
+    return [name for name in provider_names() if (home / f".{name}").is_dir()]
 
 
 def _wizard_provider_prompt(detected: list[str]) -> str:
@@ -61,7 +61,7 @@ def _wizard_provider_prompt(detected: list[str]) -> str:
     ambiguous, so the user picks explicitly rather than silently inheriting
     the dict-first provider (HATS-613).
     """
-    names = list(PROVIDERS.keys())
+    names = provider_names()
     console.print("[bold]Choose provider:[/]")
     for idx, name in enumerate(names, start=1):
         marker = f" [dim](detected — found ~/.{name})[/]" if name in detected else ""

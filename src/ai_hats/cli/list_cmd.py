@@ -54,10 +54,10 @@ def list_roles():
 @list_cmd.command("providers")
 def list_providers():
     """List available providers."""
-    from ..providers import PROVIDERS
+    from ..providers import get_provider, provider_names
 
-    for name in sorted(PROVIDERS):
-        provider = PROVIDERS[name]()
+    for name in sorted(provider_names()):
+        provider = get_provider(name)
         console.print(f"  [cyan]{name}[/]  →  {provider.system_prompt_path(Path('.'))}")
 
 

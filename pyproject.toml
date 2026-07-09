@@ -66,6 +66,13 @@ aggregation = [
     "rapidfuzz>=3.0",
 ]
 
+# HATS-870 / T10: the provider IoC seam. An out-of-tree package advertising a
+# Provider under this group is discovered + registered without ai-hats importing
+# it (built-ins are listed too — they self-register first, discovery no-ops them).
+[project.entry-points."ai_hats.providers"]
+claude = "ai_hats.providers:ClaudeProvider"
+gemini = "ai_hats.providers:GeminiProvider"
+
 [tool.setuptools_scm]
 version_file = "src/ai_hats/_version.py"
 
