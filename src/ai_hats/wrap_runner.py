@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .constants import ENV_ROLE, PROVIDER_CLAUDE
+from .constants import ENV_ROLE, ENV_ROOT_PID, PROVIDER_CLAUDE
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -397,6 +397,7 @@ class WrapRunner:
             **provider.get_env(session.session_dir, self.project_dir),
             **session_env,
             ENV_ROLE: active_role,
+            ENV_ROOT_PID: str(os.getpid()),  # HATS-955: ownership liveness anchor
         }
 
         # HATS-833: fail-open session-start drift net for all managed-hook

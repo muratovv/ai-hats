@@ -42,6 +42,10 @@ ENV_REPO_URL = "AI_HATS_REPO_URL"
 # seeds `harness.channel: local` without depending on which interpreter it runs under.
 ENV_AI_HATS_INIT_SRC = "AI_HATS_INIT_SRC"
 ENV_ROLE = "AI_HATS_ROLE"
+# HATS-955: this durable session process's pid, exported to the child so the
+# ephemeral `ai-hats task` subprocess can anchor ownership liveness on it.
+# Duplicated in ai_hats_tracker.constants (the consumer, across the boundary).
+ENV_ROOT_PID = "AI_HATS_ROOT_PID"
 ENV_LAUNCHER_DEST = "AI_HATS_LAUNCHER_DEST"
 ENV_SKIP_RETRO = "HATS_SKIP_RETRO"
 

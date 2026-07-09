@@ -72,6 +72,8 @@ there is inert plan-mode scratch, not the plan. Discipline + draft→tracker
 procedure — skill `plan-discipline`; readiness routing — skill `plan-gate`;
 per-section enforcement — the engine gate (HATS-635).
 
+- **Task ownership registry** — a single local, gitignored file recording which live session is *executing* each task, so a second agent can safely reclaim a task left mid-flight by a dead owner (`transition <id> execute` again — the `execute → execute` reclaim self-loop) and a live owner is never stolen (HATS-955). Reclaim-on-certain-death (owner pid + OS start-time, no TTL), single-slot per agent, ownership orthogonal to task state and anchored on `AI_HATS_ROOT_PID`. Full design — see [ADR-0015](adr/0015-task-ownership.md).
+
 ## Attachment
 
 A file attached to a Task via `ai-hats task attach add`. Blob lives in
