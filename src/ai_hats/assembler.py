@@ -50,8 +50,8 @@ from ai_hats_core.safe_delete import replace as _safe_replace
 from .providers import (
     INJECTION_END,
     INJECTION_START,
-    PROVIDERS,
     PUBLISH_AGGREGATOR_END,
+    provider_names,
     PUBLISH_AGGREGATOR_START,
     Provider,
     get_provider,
@@ -1110,10 +1110,10 @@ class Assembler:
     @staticmethod
     def _validate_provider(provider_name: str) -> None:
         """Raise ValueError if `provider_name` is not a registered provider."""
-        if provider_name in PROVIDERS:
+        if provider_name in provider_names():
             return
         raise ValueError(
-            f"Unknown provider: {provider_name}. Available: {sorted(PROVIDERS.keys())}"
+            f"Unknown provider: {provider_name}. Available: {sorted(provider_names())}"
         )
 
     def _build_tree(self, result: CompositionResult) -> dict:
