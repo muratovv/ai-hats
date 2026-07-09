@@ -10,6 +10,7 @@ from ai_hats_core.composition import ComponentKind, CompositionResult, ResolvedC
 from ai_hats_core.git_env import scrubbed_git_env
 from ai_hats_core.locks import LockTimeoutError, file_lock
 from ai_hats_core.migrations import Migration, latest_step, run_pending
+from ai_hats_core.paths import default_project_dir
 from ai_hats_core.yaml_model import YamlModel
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "YamlModel",
     "atomic_write_bytes",
     "atomic_write_text",
+    "default_project_dir",
     "file_lock",
     "latest_step",
     "run_pending",

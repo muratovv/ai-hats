@@ -17,8 +17,11 @@ from pathlib import Path
 PKG = "ai_hats_observe"
 SRC = Path(__file__).resolve().parent.parent / "src" / PKG
 
-# The observe core is core-only: no third-party deps beyond ai_hats_core.
+# First-party: ai_hats_core only — NEVER the ai_hats integrator.
 _ALLOWED_FIRST_PARTY = {"ai_hats_core"}
+# Non-stdlib deps (pyproject ``dependencies``): click/rich power the
+# session-browse CLI (HATS-952). Anything else here would be an undeclared dep.
+_ALLOWED_THIRD_PARTY = {"click", "rich"}
 
 
 def _top_level_import_roots(tree: ast.Module) -> set[str]:
@@ -41,6 +44,7 @@ def _is_allowed(root: str) -> bool:
     return (
         root == PKG
         or root in _ALLOWED_FIRST_PARTY
+        or root in _ALLOWED_THIRD_PARTY
         or root in sys.stdlib_module_names
     )
 
@@ -56,8 +60,8 @@ def test_observe_imports_only_core_and_stdlib() -> None:
         if bad:
             offenders[str(path.relative_to(SRC))] = bad
     assert not offenders, (
-        "ai_hats_observe must import only stdlib + ai_hats_core + intra-package "
-        f"(never ai_hats): {offenders}"
+        "ai_hats_observe must import only stdlib + ai_hats_core + click/rich + "
+        f"intra-package (never ai_hats): {offenders}"
     )
 
 
@@ -72,6 +76,8 @@ def test_boundary_lint_self_test() -> None:
     allowed = _top_level_import_roots(
         ast.parse(
             "import os\n"
+            "import click\n"
+            "from rich.console import Console\n"
             "from ai_hats_core import atomic_write_text\n"
             "from .session import Session\n"
         )

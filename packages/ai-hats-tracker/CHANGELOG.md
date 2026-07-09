@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0]
+
+### Changed
+
+- The wt-free `_seam` project-root default now delegates to the shared
+  `ai_hats_core.paths.default_project_dir` (HATS-952) instead of carrying its own
+  copy of the `.agent`/`.git` walk-up — the same primitive the observe CLI uses.
+  No behaviour change. Core floor rises to `ai-hats-core>=0.5.0`.
+
 ## [0.3.0]
 
 Hypotheses and proposals. The `hypothesis/` domain (stores, quorum, intake) and
