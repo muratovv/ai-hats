@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-hats-cline"
+version = "0.1.0"
+description = "Cline surface plugin for the ai-hats framework — registers the `cline` CLI as an ai-hats provider via the `ai_hats.providers` entry point."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "muratovv", email = "f@muratovv.me" }, # ai-hats: allow-secret
+]
+keywords = ["cline", "provider", "surface", "ai-hats", "llm", "agent"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+# ADR-0014: an entry-point provider plugin depends on the `ai-hats` integrator
+# (for the `Provider` ABC) and registers via entry points (IoC) — NOT a
+# core-only leaf. `ai-hats-observe` is added when the follow-up `ClineParser`
+# lands (it needs `ParsedTranscript`/`Turn`); the MVP provider imports neither.
+dependencies = [
+    "ai-hats",
+]
+
+# HATS-870 / T10: the provider IoC seam. ai-hats discovers + registers this
+# without importing the package (built-ins self-register first).
+[project.entry-points."ai_hats.providers"]
+cline = "ai_hats_cline:ClineProvider"
+
+[project.urls]
+Homepage = "https://github.com/muratovv/ai-hats"
+Repository = "https://github.com/muratovv/ai-hats"
+Changelog = "https://github.com/muratovv/ai-hats/blob/master/packages/surfaces/cline/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_hats_cline"]
+
+[tool.uv.sources]
+ai-hats = { workspace = true }
