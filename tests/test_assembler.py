@@ -1,5 +1,7 @@
 """Tests for assembly engine."""
 
+import json
+
 import pytest
 from pathlib import Path
 
@@ -8,6 +10,7 @@ from ai_hats.models import ProjectConfig
 from ai_hats.paths import (
     AI_HATS_MANAGED_MARKER,
     claude_plugin_manifest,
+    claude_settings_json,
     claude_skills_dir,
     hooks_dir,
     rules_dir,
@@ -980,6 +983,154 @@ def test_warn_orphan_user_level_managed_skills_idempotent(
     capsys.readouterr()  # drain
     assert asm._warn_orphan_user_level_managed_skills() is True
     assert "Orphan ai-hats marker" in capsys.readouterr().err
+
+
+# --- HATS-961: leaked project-relative ai-hats hooks in user-global settings ---
+
+
+def _seed_leaked_global_hooks(fake_home, extra_entries=None):
+    """Write `~/.claude/settings.json` with a leaked ai-hats project hook.
+
+    Mirrors the incident: a PreToolUse entry whose command points at the
+    project-relative `.agent/ai-hats/library/hooks/` guard — the shape ai-hats
+    only ever writes to *project* settings, never user-global."""
+    settings = claude_settings_json(fake_home)
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    hooks = {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "_ai_hats_managed": "ai-hats:hats-437",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "$CLAUDE_PROJECT_DIR/.agent/ai-hats/library/hooks/"
+                        "pre_bash_shared_state_guard.sh",
+                    }
+                ],
+            },
+        ],
+    }
+    if extra_entries:
+        hooks["PreToolUse"].extend(extra_entries)
+    settings.write_text(json.dumps({"hooks": hooks}, indent=2))
+    return settings
+
+
+def test_warn_leaked_user_global_project_hooks_emits_warn(
+    project_with_library, tmp_path, monkeypatch, capsys
+):
+    """HATS-961: leaked ai-hats project hook in `~/.claude/settings.json` → WARN.
+
+    ai-hats never writes user-global settings; a project hook copied there
+    double-fires and 404s off-root. Surface it on the diagnostics path without
+    mutating the file (same non-destructive contract as HATS-465)."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    monkeypatch.setattr("ai_hats.assembler.Path.home", lambda: fake_home)
+    settings = _seed_leaked_global_hooks(fake_home)
+    before = settings.read_text()
+
+    emitted = asm._warn_leaked_user_global_project_hooks()
+
+    assert emitted is True
+    err = capsys.readouterr().err
+    assert "~/.claude/settings.json" in err
+    assert "pre_bash_shared_state_guard.sh" in err
+    # Never mutate user-global settings — WARN only.
+    assert settings.read_text() == before
+
+
+def test_warn_leaked_user_global_project_hooks_silent_when_no_ai_hats_hooks(
+    project_with_library, tmp_path, monkeypatch, capsys
+):
+    """User-global settings with only non-ai-hats hooks → no WARN, returns False."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    monkeypatch.setattr("ai_hats.assembler.Path.home", lambda: fake_home)
+    settings = claude_settings_json(fake_home)
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {"type": "command", "command": "~/.claude/hooks/mine.sh"}
+                            ],
+                        }
+                    ]
+                }
+            }
+        )
+    )
+
+    assert asm._warn_leaked_user_global_project_hooks() is False
+    assert capsys.readouterr().err == ""
+
+
+def test_warn_leaked_user_global_project_hooks_silent_when_no_file(
+    project_with_library, tmp_path, monkeypatch, capsys
+):
+    """No `~/.claude/settings.json` at all → no WARN, returns False."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    monkeypatch.setattr("ai_hats.assembler.Path.home", lambda: fake_home)
+
+    assert asm._warn_leaked_user_global_project_hooks() is False
+    assert capsys.readouterr().err == ""
+
+
+def test_warn_leaked_user_global_project_hooks_silent_when_malformed(
+    project_with_library, tmp_path, monkeypatch, capsys
+):
+    """Malformed / user-shaped settings.json → tolerated, no WARN, no raise."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    monkeypatch.setattr("ai_hats.assembler.Path.home", lambda: fake_home)
+    settings = claude_settings_json(fake_home)
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text("{ not valid json ,,,")
+
+    assert asm._warn_leaked_user_global_project_hooks() is False
+    assert capsys.readouterr().err == ""
+
+
+def test_warn_leaked_user_global_project_hooks_idempotent(
+    project_with_library, tmp_path, monkeypatch, capsys
+):
+    """Re-running emits WARN every time — the fix is user-side (remove entries)."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    monkeypatch.setattr("ai_hats.assembler.Path.home", lambda: fake_home)
+    _seed_leaked_global_hooks(fake_home)
+
+    assert asm._warn_leaked_user_global_project_hooks() is True
+    capsys.readouterr()  # drain
+    assert asm._warn_leaked_user_global_project_hooks() is True
+    assert "~/.claude/settings.json" in capsys.readouterr().err
 
 
 def _seed_legacy_skills_mirror(project):
