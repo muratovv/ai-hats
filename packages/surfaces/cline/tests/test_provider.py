@@ -103,18 +103,18 @@ def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
     # the -s value IS the persisted meta-prompt bytes (HATS-523 symmetry)
     assert args[2] == meta_prompt
     assert "## PRIORITIES" in meta_prompt
-    assert "## PRIORITIES" in meta_prompt
     assert env == {}
 
 
 # ---- HATS-963: .cline/skills/ materialization ----
 
 
-def test_build_system_prompt_suppresses_skills_index(tmp_path) -> None:
-    # HATS-963: skills delivered via .cline/skills/ native registry, not text
+def test_build_system_prompt_keeps_skills_index(tmp_path) -> None:
+    # HATS-963: include_skills=True kept until live smoke proves /skills works
+    # in the TUI (plan R7 kill criteria). Registry materialized separately.
     skill_path = _make_skill(tmp_path, "my-skill")
     out = ClineProvider().build_system_prompt(_fake_result(skills=[skill_path]))
-    assert "## AVAILABLE SKILLS" not in out
+    assert "## AVAILABLE SKILLS" in out
 
 
 def test_materialize_writes_skills_to_cline_dir(tmp_path) -> None:
@@ -190,3 +190,23 @@ def test_build_session_prompt_materializes_skills(tmp_path) -> None:
         tmp_path, _fake_result(skills=[skill]), "sid-1"
     )
     assert (tmp_path / ".cline" / "skills" / "deploy-skill" / "SKILL.md").exists()
+
+
+def test_materialize_gitignores_cline_skills(tmp_path) -> None:
+    # R4c: the materialized mirror must not surface as untracked.
+    skill = _make_skill(tmp_path, "my-skill")
+    ClineProvider().materialize_runtime_skills(
+        tmp_path, _fake_result(skills=[skill]), "sid-1"
+    )
+    gitignore = (tmp_path / ".gitignore").read_text()
+    assert ".cline/skills/" in gitignore
+
+
+def test_materialize_gitignore_is_idempotent(tmp_path) -> None:
+    # Re-materialization must not duplicate the .gitignore entry.
+    skill = _make_skill(tmp_path, "my-skill")
+    provider = ClineProvider()
+    provider.materialize_runtime_skills(tmp_path, _fake_result(skills=[skill]), "s1")
+    provider.materialize_runtime_skills(tmp_path, _fake_result(skills=[skill]), "s2")
+    gitignore = (tmp_path / ".gitignore").read_text()
+    assert gitignore.count(".cline/skills/") == 1
