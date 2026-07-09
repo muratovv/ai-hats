@@ -98,7 +98,10 @@ packages = [
 "ai_hats.library" = ["**/*"]
 
 [tool.uv.workspace]
-members = ["packages/*"]
+# HATS-956: surface plugins (out-of-tree providers) live under packages/surfaces/.
+# Exclude the category dir itself — it carries no pyproject, only member subdirs.
+members = ["packages/*", "packages/surfaces/*"]
+exclude = ["packages/surfaces"]
 
 [tool.uv.sources]
 ai-hats-core = { workspace = true }
@@ -117,6 +120,7 @@ testpaths = [
     "packages/ai-hats-wt/tests",
     "packages/ai-hats-tracker/tests",
     "packages/ai-hats-observe/tests",
+    "packages/surfaces/cline/tests",
 ]
 # HATS-508: prepend ./src to sys.path so ``python -m pytest`` from a
 # linked worktree imports the worktree's own ``ai_hats`` package
@@ -131,6 +135,7 @@ pythonpath = [
     "packages/ai-hats-wt/src",
     "packages/ai-hats-tracker/src",
     "packages/ai-hats-observe/src",
+    "packages/surfaces/cline/src",
 ]
 filterwarnings = [
     # Python 3.14 deprecates forkpty() in multi-threaded processes.

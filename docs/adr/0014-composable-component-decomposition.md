@@ -93,11 +93,21 @@ load-bearing **rules** are:
 | **`ai-hats-core`** (kernel) | tiny, stable: primitives + `CompositionResult` + domain-agnostic shared *mechanisms* (file-locks, env-access, parse/`_YamlModel`, base `Error`+logging, **CLI-kit**); **no domain schemas**; FSM-primitive **deferred** (HATS-801) | `ai-hats-core`                                                        |
 | **Modules**                 | independent engines, each owns its schema + migrations, depend only on core                                                                                                                                                        | `ai-hats-wt`, `ai-hats-tracker`, `ai-hats-observe`, `ai-hats-library` |
 | **Integrator**              | *the combine*: composer/assembler/providers, subagent, retro, pipeline-steps, **CLI commands + aggregation**, init/wizard, hooks — composes & pins every module                                                                    | `ai-hats`                                                             |
+| **Surfaces** (HATS-956)     | in-tree entry-point plugins that dogfood the IoC seam — depend UP on the integrator (`Provider` ABC is integrator-bound, P0#4) + core; register via `ai_hats.providers`. The first consumer tier above the integrator              | `packages/surfaces/*` (e.g. `ai-hats-cline`)                          |
 
 The **role-model + provider-materialization** and **init/wizard** are integrator, not
 modules — the layer that "takes different projects into itself." Full `ai-hats-core`
 contract (in/out tables + open-field boundary rule + shared-mechanism litmus):
 §2 (Repository topology).
+
+**Amendment (HATS-956) — the in-tree surface tier.** The COMMERCIAL/IoC box (§below)
+reserved entry-point plugins for *separate repos* because the **module** tier forbids
+depending *up* on the integrator. HATS-956 adds an in-tree **surface** tier
+(`packages/surfaces/*`) that MAY depend on `ai-hats` + core: a surface is an
+entry-point provider plugin (integrator-bound `Provider`, P0#4) kept in the workspace
+to dogfood the seam. The dependency-rule import-lint
+(`tests/test_workspace_boundaries.py`) blesses `packages/surfaces/* -> ai-hats` and
+nothing else new — modules still depend only on core.
 
 **The dependency rule as a picture — who may import what from whom:**
 
