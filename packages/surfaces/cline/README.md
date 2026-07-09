@@ -14,6 +14,10 @@ $ ai-hats list providers
   cline   →  CLINE.md
 ```
 
+(The `→ CLINE.md` column is nominal — cline takes the role inline via `-s`, so
+no `CLINE.md` file is ever written; it is just this provider's system-prompt
+path label.)
+
 Then compose any role onto cline:
 
 ```console
