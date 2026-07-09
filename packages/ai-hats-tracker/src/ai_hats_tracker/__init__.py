@@ -34,6 +34,7 @@ from .hypothesis import (
 )
 from .layout import TrackerPaths
 from .models import Attachment, TaskCard, TaskState, WorkLogEntry
+from .ownership import OwnershipRefused
 from .plan_extract import Candidate, extract_candidates, mark_extracted
 from .state import (
     PLAN_SCAFFOLD,
@@ -57,6 +58,7 @@ __all__ = [
     "IntakeParseError",
     "IntakeResult",
     "MergeAction",
+    "OwnershipRefused",
     "PLAN_SCAFFOLD",
     "PLAN_SECTIONS",
     "Proposal",
