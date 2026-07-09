@@ -369,7 +369,10 @@ class TaskManager:
 
             old_state = task.state
             if force:
-                if old_state == new_state:
+                # HATS-955: execute→execute is the reclaim self-loop, so a forced
+                # same-state transition is legal only there (force-steal a live
+                # owner); every other same-state force is still a no-op error.
+                if old_state == new_state and new_state != TaskState.EXECUTE:
                     raise ValueError(f"Task '{task_id}' is already in state '{new_state.value}'")
                 task.state = new_state
                 task.log_work(f"Forced transition {old_state.value} → {new_state.value}: {reason}")

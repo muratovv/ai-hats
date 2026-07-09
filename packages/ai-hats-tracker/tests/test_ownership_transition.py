@@ -10,6 +10,8 @@ covered separately once its verb lands.
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -97,3 +99,56 @@ def test_ownership_inert_without_session(tmp_path: Path, monkeypatch) -> None:
     _to_execute(mgr, "T1")
     _to_execute(mgr, "T2")
     assert not reg.exists()  # no registry written at all
+
+
+def _dead_pid() -> int:
+    """A pid that is certainly dead (spawned and reaped)."""
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    return proc.pid
+
+
+def test_execute_self_loop_idempotent_for_owner(tmp_path: Path, as_agent_a) -> None:
+    mgr, reg = _mgr(tmp_path)
+    t1 = _to_execute(mgr, "T1")
+    card, _ = mgr.transition(t1, TaskState.EXECUTE)  # A re-enters its own task
+    assert card.state == TaskState.EXECUTE
+    assert ownership.owner_of(reg, t1)["session_id"] == "sess-a"
+
+
+def test_reclaim_dead_owner_via_execute_self_loop(tmp_path: Path, monkeypatch) -> None:
+    mgr, reg = _mgr(tmp_path)
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-a")
+    monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
+    t1 = _to_execute(mgr, "T1")
+    ownership.take(reg, t1, "sess-a", _dead_pid())  # A crashed → its record is dead
+
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-b")  # B, live
+    card, _ = mgr.transition(t1, TaskState.EXECUTE)  # reclaim self-loop
+    assert card.state == TaskState.EXECUTE
+    assert ownership.owner_of(reg, t1)["session_id"] == "sess-b"
+
+
+def test_live_owner_blocks_reclaim(tmp_path: Path, monkeypatch) -> None:
+    mgr, reg = _mgr(tmp_path)
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-a")
+    monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
+    t1 = _to_execute(mgr, "T1")  # A owns, live (this process)
+
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-b")  # B, also live
+    with pytest.raises(OwnershipRefused):
+        mgr.transition(t1, TaskState.EXECUTE)
+    assert ownership.owner_of(reg, t1)["session_id"] == "sess-a"  # unchanged
+    assert mgr.get_task(t1).state == TaskState.EXECUTE
+
+
+def test_force_steals_from_live_owner(tmp_path: Path, monkeypatch) -> None:
+    mgr, reg = _mgr(tmp_path)
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-a")
+    monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
+    t1 = _to_execute(mgr, "T1")
+
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-b")
+    card, _ = mgr.transition(t1, TaskState.EXECUTE, force=True, reason="force-steal")
+    assert card.state == TaskState.EXECUTE
+    assert ownership.owner_of(reg, t1)["session_id"] == "sess-b"

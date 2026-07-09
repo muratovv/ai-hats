@@ -37,6 +37,10 @@ class TaskState(str, Enum):
             TaskState.BRAINSTORM: [TaskState.PLAN, TaskState.BLOCKED, TaskState.CANCELLED],
             TaskState.PLAN: [TaskState.EXECUTE, TaskState.BLOCKED, TaskState.CANCELLED],
             TaskState.EXECUTE: [
+                # HATS-955: reclaim self-loop — a second agent re-enters execute
+                # to take over a task its dead owner left mid-flight. Gated by the
+                # ownership claim in state.transition, not by the FSM.
+                TaskState.EXECUTE,
                 TaskState.DOCUMENT,
                 TaskState.BLOCKED,
                 TaskState.FAILED,
