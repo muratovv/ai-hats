@@ -258,11 +258,21 @@ def _render_usage(session) -> None:
     if isinstance(measured, int) and measured > 0:
         lines.append(f"  always_on (measured): {measured:,} tok")
     static = ao.get("static") or {}
-    static_total = static.get("total_tokens")
-    if isinstance(static_total, int):
-        role = static.get("role")
-        suffix = f" ({role})" if role else ""
-        lines.append(f"  always_on (static): {static_total:,} tok{suffix}")
+    role = static.get("role")
+    suffix = f" ({role})" if role else ""
+    # HATS-957: prefer the honest always-on figure (injection + rule bodies +
+    # skill name/description); skill BODIES load on demand and are shown apart.
+    always_on_static = static.get("always_on_tokens")
+    if isinstance(always_on_static, int):
+        lines.append(f"  always_on (static): {always_on_static:,} tok{suffix}")
+        on_demand = static.get("on_demand_tokens")
+        if isinstance(on_demand, int) and on_demand > 0:
+            lines.append(f"  on-demand skills (if invoked): {on_demand:,} tok")
+    else:
+        # Pre-HATS-957 usage.json recorded only the conflated total.
+        static_total = static.get("total_tokens")
+        if isinstance(static_total, int):
+            lines.append(f"  always_on (static): {static_total:,} tok{suffix}")
 
     agg = u.get("aggregates") or {}
     skills = agg.get("skill_loads") or {}
