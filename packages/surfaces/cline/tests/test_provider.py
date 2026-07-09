@@ -109,12 +109,13 @@ def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
 # ---- HATS-963: .cline/skills/ materialization ----
 
 
-def test_build_system_prompt_keeps_skills_index(tmp_path) -> None:
-    # HATS-963: include_skills=True kept until live smoke proves /skills works
-    # in the TUI (plan R7 kill criteria). Registry materialized separately.
+def test_build_system_prompt_suppresses_skills_index(tmp_path) -> None:
+    # HATS-963: skills delivered via .cline/skills/ native registry (confirmed
+    # by live smoke). The text index is suppressed — Claude precedent
+    # (providers.py:420-424, include_skills=False).
     skill_path = _make_skill(tmp_path, "my-skill")
     out = ClineProvider().build_system_prompt(_fake_result(skills=[skill_path]))
-    assert "## AVAILABLE SKILLS" in out
+    assert "## AVAILABLE SKILLS" not in out
 
 
 def test_materialize_writes_skills_to_cline_dir(tmp_path) -> None:
