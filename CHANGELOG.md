@@ -10,6 +10,17 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+
+- **Provider open-registry + entry-points IoC seam** (HATS-870, T10). The closed
+  `PROVIDERS` dict is now an open registry: built-ins self-register at import and
+  third parties register via `register_provider()` or the `ai_hats.providers`
+  entry-point group — ai-hats discovers and registers an out-of-tree provider
+  without importing its package (a broken or duplicate entry point is warned and
+  skipped, never fatal). `get_provider()` behaviour is unchanged. Extracting the
+  built-in providers into their own packages stays a separate future arc
+  (providers remain integrator-bound per ADR-0014 P0 #4).
+
 ### Fixed
 
 - **ai-hats-wt 0.3.0 + integrator pin `>=0.3.0`** (HATS-942 drift). The
