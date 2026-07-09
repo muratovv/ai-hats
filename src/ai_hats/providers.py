@@ -888,11 +888,23 @@ def provider_names() -> list[str]:
     return list(_PROVIDER_REGISTRY)
 
 
+class UnknownProviderError(ValueError):
+    """Unknown provider name at ``get_provider``. Subclasses ``ValueError`` so
+    existing ``except ValueError`` catchers keep working; carries ``name`` +
+    ``available`` for the friendly CLI launch handler (mirrors
+    ``RoleNotFoundError`` — HATS-965)."""
+
+    def __init__(self, name: str, available: list[str]) -> None:
+        self.name = name
+        self.available = available
+        super().__init__(f"Unknown provider: {name}. Available: {available}")
+
+
 def get_provider(name: str) -> Provider:
     """Get a provider instance by name."""
     cls = _PROVIDER_REGISTRY.get(name)
     if cls is None:
-        raise ValueError(f"Unknown provider: {name}. Available: {provider_names()}")
+        raise UnknownProviderError(name, provider_names())
     return cls()
 
 
