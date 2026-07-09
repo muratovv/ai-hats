@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .constants import ENV_ROLE, PROVIDER_CLAUDE
+from .constants import ENV_ROLE, ENV_ROOT_PID, PROVIDER_CLAUDE
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -221,10 +221,12 @@ class SubAgentRunner:
             **os.environ,
             **session.get_env(),
             ENV_ROLE: role_name,
+            ENV_ROOT_PID: str(os.getpid()),  # HATS-955: ownership liveness anchor
         }
         sdk_env_overlay = {
             **session.get_env(),
             ENV_ROLE: role_name,
+            ENV_ROOT_PID: str(os.getpid()),  # HATS-955: ownership liveness anchor
         }
 
         # Legacy subprocess path still needs cmd / skill_args precomputed.
