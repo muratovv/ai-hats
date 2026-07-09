@@ -10,7 +10,9 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
+from .. import usage as _usage
 from .base import ParsedTranscript, Turn
 from .trace import TraceParser
 
@@ -38,6 +40,14 @@ class ClaudeParser:
         if jsonl_path:
             logger.debug("JSONL not found at %s — falling back to trace", jsonl_path)
         return self._trace.parse(None, trace_path)
+
+    def parse_usage(
+        self, jsonl_path: Path | None, trace_path: Path
+    ) -> dict[str, Any]:
+        """JSONL present → the measured ``usage/v1`` report; else trace fallback."""
+        if jsonl_path and jsonl_path.exists():
+            return _usage.parse_session_usage(jsonl_path)
+        return self._trace.parse_usage(None, trace_path)
 
     def _parse_jsonl(self, jsonl_path: Path) -> tuple[list[Turn], dict[str, dict], dict]:
         """Parse Claude Code JSONL → (turns, per-model stats, aggregated usage)."""

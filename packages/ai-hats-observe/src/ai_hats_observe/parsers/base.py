@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 @dataclass
@@ -56,3 +56,14 @@ class TranscriptParser(Protocol):
     def parse(
         self, jsonl_path: Path | None, trace_path: Path
     ) -> ParsedTranscript: ...
+
+    def parse_usage(
+        self, jsonl_path: Path | None, trace_path: Path
+    ) -> dict[str, Any]:
+        """Build this surface's ``usage/v1`` report (context-cost + timeline).
+
+        A distinct, richer parse than ``parse`` — a surface with a structured
+        log populates it; a trace-only surface returns a well-formed empty
+        report (no token telemetry).
+        """
+        ...
