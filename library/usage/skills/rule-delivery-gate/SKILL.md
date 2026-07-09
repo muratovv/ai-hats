@@ -10,6 +10,7 @@ ai_hats:
   git_hooks:
     pre-commit:
       - git_hooks/pre-commit-rule-delivery.sh
+license: MIT
 ---
 # Rule Delivery Gate
 

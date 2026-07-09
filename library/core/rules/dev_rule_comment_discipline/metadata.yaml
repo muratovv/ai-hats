@@ -1,4 +1,5 @@
 name: dev_rule_comment_discipline
+license: MIT
 description: Default to no comment; write one only for a non-obvious WHY (one line); history is a `# TASK-NNN` ticket pointer not a retelling; never write a stale-able count
 author: ai-hats
 tags: [development, code-health, dx, comments]

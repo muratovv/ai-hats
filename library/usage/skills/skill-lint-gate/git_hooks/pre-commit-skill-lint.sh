@@ -31,6 +31,49 @@ if [[ "${AI_HATS_SKILL_LINT_ACK:-}" == "1" ]]; then
     exit 0
 fi
 
+# HATS-877 — license/provenance regression-guard. Pure bash (no agnix/node), so
+# it is always-on and NOT fail-open, unlike the agnix stanza below. Its scope
+# deliberately does NOT exclude golang-*: that pack is exactly the third-party
+# derived content this guard protects. Rules: R1 every SKILL.md carries a
+# `license:`; R2 a declared-derived skill (sibling metadata.yaml has `upstream:`)
+# ships its co-located LICENSE.
+lic_files=()
+while IFS= read -r _f; do
+    [[ -n "$_f" ]] && lic_files+=("$_f")
+done < <(
+    git diff --cached --name-only --diff-filter=ACM \
+        | grep -E '^library/.*/SKILL\.md$' \
+        || true
+)
+
+lic_violations=()
+for _sk in "${lic_files[@]:-}"; do
+    [[ -z "$_sk" ]] && continue
+    # R1 — non-empty `license:` in the top `---`…`---` frontmatter block.
+    _fm="$(awk 'NR==1 && $0=="---"{f=1; next} f && $0=="---"{exit} f{print}' "$_sk" 2>/dev/null)"
+    if ! printf '%s\n' "$_fm" | grep -Eq '^license:[[:space:]]*[^[:space:]]'; then
+        lic_violations+=("$_sk — missing non-empty 'license:' frontmatter")
+    fi
+    # R2 — declared-derived (upstream: in metadata.yaml) ⇒ co-located LICENSE.
+    _dir="$(dirname "$_sk")"
+    if [[ -f "$_dir/metadata.yaml" ]] && grep -Eq '^upstream:' "$_dir/metadata.yaml"; then
+        [[ -f "$_dir/LICENSE" ]] || lic_violations+=("$_dir — declared-derived (upstream:) but no co-located LICENSE")
+    fi
+done
+
+if [[ ${#lic_violations[@]} -gt 0 ]]; then
+    {
+        echo "[skill-lint] BLOCKED — license/provenance regression (HATS-877):"
+        for _v in "${lic_violations[@]}"; do echo "  ! $_v"; done
+        echo ""
+        echo "Every library SKILL.md must carry a 'license:'; a derived skill"
+        echo "(upstream: in metadata.yaml) must ship its co-located LICENSE."
+        echo "Fix, or skip this single commit after confirming intent:"
+        echo "  AI_HATS_SKILL_LINT_ACK=1 git commit ..."
+    } >&2
+    exit 1
+fi
+
 # Staged (added/copied/modified) library SKILL.md, excluding the golang-* pack.
 # Collected without `mapfile` (bash 4+) so the hook runs on macOS system bash 3.2.
 files=()

@@ -1,6 +1,7 @@
 ---
 name: backlog-create
 description: "Narrow shim for filing tasks via `ai-hats task create` from roles that mutate the backlog only at L1 (task-create only). Use when your role's mutation policy permits filing new tasks but forbids state transitions, hypothesis/proposal mutations, or direct backlog edits, and you need to file a fix task or follow-up from a finding and nothing more."
+license: MIT
 ---
 
 # Backlog Create

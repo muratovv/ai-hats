@@ -1,7 +1,9 @@
 ---
 name: review-hypothesis
 description: Vote on one active hypothesis (HYP-NNN) against session evidence — pick confirmed/refuted/inconclusive/n-a + a recommendation and persist via ai-hats task hyp. Use when sweeping active hypotheses during a session review (reflect-session, session-reviewer, or judge).
+license: MIT
 ---
+
 # Review Hypothesis
 
 Vote on one active hypothesis (`HYP-NNN`). Role-agnostic: same procedure
@@ -9,6 +11,7 @@ whether you are running as `reflect-session`, `session-reviewer`, `judge`,
 or any other reviewer.
 
 > **Harness shell prelude.** Before any `ai-hats` invocation:
+>
 > ```bash
 > ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # HATS-790: no bin/ai-hats console script
 > ```
@@ -82,12 +85,12 @@ phase is constrained by it** — Step 1.5 tells you what to extract.
 
 ### Step 3 — Choose verdict
 
-| Value | Use when |
-|---|---|
-| `confirmed` | Evidence directly supports the hypothesis (criterion met). |
-| `refuted` | Evidence contradicts (baseline pattern persists or got worse). |
-| `inconclusive` | Session has relevant data but is mixed/insufficient. |
-| `n/a` | This session physically cannot test the hypothesis. |
+| Value          | Use when                                                       |
+| -------------- | -------------------------------------------------------------- |
+| `confirmed`    | Evidence directly supports the hypothesis (criterion met).     |
+| `refuted`      | Evidence contradicts (baseline pattern persists or got worse). |
+| `inconclusive` | Session has relevant data but is mixed/insufficient.           |
+| `n/a`          | This session physically cannot test the hypothesis.            |
 
 **`n/a` is reserved** for sessions that physically cannot test the hypothesis
 (e.g. trait/role doesn't apply). If you are *unsure* whether the hypothesis
@@ -96,12 +99,12 @@ and write `inconclusive`.
 
 ### Step 4 — Choose recommendation
 
-| Value | Use when |
-|---|---|
+| Value             | Use when                                    |
+| ----------------- | ------------------------------------------- |
 | `close_confirmed` | Verdict + observation_window threshold met. |
-| `close_refuted` | Verdict + rollback path is clear. |
-| `keep` | Continue observing. |
-| `extend_window` | Window expired without enough evidence. |
+| `close_refuted`   | Verdict + rollback path is clear.           |
+| `keep`            | Continue observing.                         |
+| `extend_window`   | Window expired without enough evidence.     |
 
 ### Step 5 — Persist via CLI
 
