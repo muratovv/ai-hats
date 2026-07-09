@@ -6,6 +6,23 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0]
+
+Standalone session-browse CLI (ADR-0014 Phase 1, T15/0.2.0). The `ai-hats session`
+browse commands are lifted out of the integrator into the package, so a third
+party can browse recorded sessions with only `ai-hats-observe` installed.
+
+### Added
+
+- `ai_hats_observe.cli` — the `session` Click group with `list` / `show` /
+  `audit`, plus a `_seam` of injectable resolvers (`_PROJECT_DIR`, `_RUNS_DIR`,
+  `_TAG_FILTER_PARSER`, `_CONSOLE`) defaulting to worktree-free, project-local
+  values (`<project>/.agent/sessions/runs`). Standalone drive proven on a bare
+  tmp dir (`test_session_cli_standalone.py`). `click` / `rich` join the deps.
+- The ai-hats integrator overrides the `_seam` resolvers with its
+  AI_HATS_DIR/yaml-aware versions at mount and re-attaches the retro subcommands
+  (`retro` / `retro-validate`, downstream consumers that stay integrator-side).
+
 ## [0.1.0]
 
 Observe core (ADR-0014 Phase 1, T15). The session/trace/audit domain is extracted

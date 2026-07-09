@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats-observe"
-version = "0.1.0"
+version = "0.2.0"
 description = "Session logging engine for the ai-hats framework — session lifecycle, versioned trace/audit schema, and a surface-agnostic transcript-parser adapter."
 readme = "README.md"
 requires-python = ">=3.11"
