@@ -982,6 +982,56 @@ def test_warn_orphan_user_level_managed_skills_idempotent(
     assert "Orphan ai-hats marker" in capsys.readouterr().err
 
 
+# --- HATS-961: assembler WARN delegates leak detection to the provider ---
+
+
+class _FakeLeakProvider:
+    """Stand-in exposing only the detection seam the WARN consumes — proves the
+    logic (provider) / UI (assembler print) split, no filesystem needed."""
+
+    def __init__(self, leaked):
+        self._leaked = leaked
+
+    def leaked_user_global_project_hooks(self, home):
+        return self._leaked
+
+
+def test_warn_leaked_user_global_project_hooks_emits_when_provider_reports(
+    project_with_library, capsys
+):
+    """HATS-961: provider reports leaked commands → WARN lists each + names the
+    user-global file. The assembler only presents; detection is the provider's."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    provider = _FakeLeakProvider(
+        [
+            "$CLAUDE_PROJECT_DIR/.agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh",
+            ".agent/ai-hats/library/hooks/tool-call-hygiene-posttooluse.sh",
+        ]
+    )
+
+    emitted = asm._warn_leaked_user_global_project_hooks(provider)
+
+    assert emitted is True
+    err = capsys.readouterr().err
+    assert "~/.claude/settings.json" in err
+    assert "pre_bash_shared_state_guard.sh" in err
+    assert "tool-call-hygiene-posttooluse.sh" in err
+
+
+def test_warn_leaked_user_global_project_hooks_silent_when_provider_clean(
+    project_with_library, capsys
+):
+    """Provider reports nothing → no WARN, returns False."""
+    project, lib = project_with_library
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+
+    assert asm._warn_leaked_user_global_project_hooks(_FakeLeakProvider([])) is False
+    assert capsys.readouterr().err == ""
+
+
 def _seed_legacy_skills_mirror(project):
     """Create a pre-HATS-294 `.claude/skills/` mirror: marker + 2 managed
     skill dirs + 1 user-authored dir NOT listed in the marker."""

@@ -30,6 +30,7 @@ classifiers = [
 # lands (it needs `ParsedTranscript`/`Turn`); the MVP provider imports neither.
 dependencies = [
     "ai-hats",
+    "filelock>=3.0",  # HATS-963: concurrent-session guard for .cline/skills/ rebuild
 ]
 
 # HATS-870 / T10: the provider IoC seam. ai-hats discovers + registers this
