@@ -247,13 +247,9 @@ def test_parser_exception_is_swallowed(tmp_path, monkeypatch):
     def _boom(_path):
         raise RuntimeError("parser boom")
 
-    monkeypatch.setattr(
-        "ai_hats.pipeline.steps.compute_usage.parse_session_usage",
-        _boom,
-        raising=False,
-    )
-    # parse_session_usage is imported inside run(); patch the source symbol.
-    monkeypatch.setattr("ai_hats.usage.parse_session_usage", _boom)
+    # ClaudeParser.parse_usage delegates to the module-level parse_session_usage
+    # (imported at call time inside run()); patch the source symbol.
+    monkeypatch.setattr("ai_hats_observe.usage.parse_session_usage", _boom)
 
     delta = ComputeUsage().run(  # must not raise
         session_id=session.session_id,

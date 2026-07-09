@@ -68,8 +68,9 @@ class ComputeUsage(Step):
         static_cost_analyzer=None,
         **_: Any,
     ) -> dict[str, Any]:
+        from ai_hats_observe.usage import parse_session_usage
+
         from ...runtime import _claude_jsonl_path, _discover_claude_jsonl
-        from ...usage import parse_session_usage
 
         usage_path = session_dir / USAGE_JSON
         try:
