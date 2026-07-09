@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     # Re-exported by the integrator; import here keeps the plugin's only
     # first-party root `ai_hats` (workspace-boundary Rule 1, HATS-869).
     from ai_hats.providers import CompositionResult
+    from ai_hats_observe.parsers.base import TranscriptParser
 
 # Marker file tracking which skill dirs under `.cline/skills/` are ai-hats-owned
 # (so user-authored skills are preserved on re-materialization). Mirrors the
@@ -34,6 +35,14 @@ class ClineProvider(Provider):
     @property
     def name(self) -> str:
         return "cline"
+
+    def transcript_parser(self) -> TranscriptParser:
+        # HATS-960: cline emits a structured `.messages.json` → richer parse than
+        # the default trace-only. Lazy import so entry-point discovery of the
+        # provider class never eager-loads the observe parsers.
+        from ai_hats_cline.parser import ClineParser
+
+        return ClineParser()
 
     def system_prompt_path(self, project_dir: Path) -> Path:
         # Vestigial: cline takes the role inline via `-s`, so this path is never

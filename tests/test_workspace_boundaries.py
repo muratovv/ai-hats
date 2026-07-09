@@ -144,12 +144,15 @@ def _topology_offenders(
     """Tier violations in the declared first-party dep graph, as edge strings.
 
     core declares no first-party; a module declares at most core; a surface
-    plugin (packages/surfaces/*, HATS-956) may also declare the integrator; the
-    integrator may declare any module (and no module may declare the integrator).
+    (packages/surfaces/*) may declare the integrator plus any module below it
+    (HATS-960: observe for the TranscriptParser base) but never another surface;
+    the integrator may declare any module (no module declares the integrator).
     """
+    modules = set(declared) - surfaces - {CORE, INTEGRATOR}
     first_party = set(declared) | {INTEGRATOR}
     limits = {
-        name: ({CORE, INTEGRATOR} if name in surfaces else {CORE}) for name in declared
+        name: ({CORE, INTEGRATOR} | modules if name in surfaces else {CORE})
+        for name in declared
     }
     limits[CORE] = set()
     limits[INTEGRATOR] = set(declared)
@@ -184,6 +187,18 @@ def test_topology_detector_self_test():
     surface = {CORE: [], "ai-hats-cline": [CORE, INTEGRATOR], INTEGRATOR: []}
     assert _topology_offenders(surface, frozenset({"ai-hats-cline"})) == []
     assert _topology_offenders(surface) == ["ai-hats-cline -> ai-hats"]
+
+    # HATS-960: a surface may depend DOWN on a module (observe) whose contract it
+    # implements; a surface->surface edge stays forbidden.
+    surf_mod = {
+        CORE: [],
+        "ai-hats-observe": [CORE],
+        "ai-hats-cline": [CORE, INTEGRATOR, "ai-hats-observe"],
+        "ai-hats-other": [CORE, "ai-hats-cline"],
+        INTEGRATOR: ["ai-hats-observe"],
+    }
+    surfs = frozenset({"ai-hats-cline", "ai-hats-other"})
+    assert _topology_offenders(surf_mod, surfs) == ["ai-hats-other -> ai-hats-cline"]
 
     rogue = {
         CORE: ["ai-hats-x"],

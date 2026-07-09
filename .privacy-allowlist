@@ -20,6 +20,11 @@ tests/fixtures/transcripts/*.jsonl
 # its usage-parser tests are self-contained (usage/v1 moved behind the adapter).
 packages/ai-hats-observe/tests/fixtures/transcripts/*.jsonl
 
+# HATS-960: hand-authored cline transcript fixture for ClineParser. Same
+# transcript-shaped false-positive class (a fake `sessionId` + tool blocks) —
+# fabricated content, no real session id / cwd / prompts.
+packages/surfaces/cline/tests/fixtures/*.messages.json
+
 # HATS-633: the git-mastery skill doc *catalogues* the secret patterns the hook
 # detects, so its examples (home paths, credentialed DB URIs, token prefixes)
 # are pattern-shaped by design — documentation of the scanner, not a real leak.
