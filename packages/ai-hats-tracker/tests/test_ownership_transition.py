@@ -152,3 +152,25 @@ def test_force_steals_from_live_owner(tmp_path: Path, monkeypatch) -> None:
     card, _ = mgr.transition(t1, TaskState.EXECUTE, force=True, reason="force-steal")
     assert card.state == TaskState.EXECUTE
     assert ownership.owner_of(reg, t1)["session_id"] == "sess-b"
+
+
+def test_stop_releases_own_without_state_change(tmp_path: Path, as_agent_a) -> None:
+    mgr, reg = _mgr(tmp_path)
+    t1 = _to_execute(mgr, "T1")
+    assert mgr.ownership_of(t1)["session_id"] == "sess-a"
+    assert mgr.stop(t1) is True
+    assert mgr.ownership_of(t1) is None
+    assert mgr.get_task(t1).state == TaskState.EXECUTE  # state untouched
+
+
+def test_stop_noop_for_non_owner_unless_forced(tmp_path: Path, monkeypatch) -> None:
+    mgr, _ = _mgr(tmp_path)
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-a")
+    monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
+    t1 = _to_execute(mgr, "T1")
+
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-b")
+    assert mgr.stop(t1) is False  # not B's claim to release
+    assert mgr.ownership_of(t1)["session_id"] == "sess-a"
+    assert mgr.stop(t1, force=True) is True  # force drops any owner
+    assert mgr.ownership_of(t1) is None
