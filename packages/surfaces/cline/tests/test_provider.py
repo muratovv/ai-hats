@@ -55,6 +55,12 @@ def test_get_run_command_drops_stale_interactive_base() -> None:
     assert cmd == ["cline", "--yolo", "--json", "task"]
 
 
+def test_get_run_command_preserves_passthrough_args() -> None:
+    # Non-interactive passthrough (e.g. future skill args) survives the rebuild.
+    cmd = ClineProvider().get_run_command(["cline", "--plugin-dir", "/x"], "task")
+    assert cmd == ["cline", "--plugin-dir", "/x", "--yolo", "--json", "task"]
+
+
 def test_get_env_does_not_isolate_data_dir(tmp_path) -> None:
     # R10: isolating CLINE_DATA_DIR would cut off the machine's cline auth.
     assert ClineProvider().get_env(tmp_path / "session", tmp_path) == {}

@@ -8,8 +8,8 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [0.1.0]
 
-First cut of the Cline surface plugin (HATS-956) — the first out-of-tree consumer
-of the provider IoC seam (HATS-870). Registers `cline` as an ai-hats provider via
+First cut of the Cline surface plugin (HATS-956) — the first in-tree consumer of
+the provider IoC seam (HATS-870). Registers `cline` as an ai-hats provider via
 the `ai_hats.providers` entry point, with zero edits to `src/ai_hats/**`.
 
 ### Added

@@ -56,11 +56,12 @@ class ClineProvider(Provider):
         *,
         model: str | None = None,
     ) -> list[str]:
-        # Headless one-shot. Rebuild from the binary so a HITL `-i` (if present)
-        # never collides with `--yolo`. Task prompt is positional (last).
-        base = cmd[0] if cmd else "cline"
+        # Headless one-shot. Strip only the interactive flags so a HITL `-i`
+        # never collides with `--yolo`, while other passthrough (e.g. future
+        # skill args) survives. Task prompt is positional (last).
+        kept = [a for a in (cmd or ["cline"]) if a not in ("-i", "--tui")]
         extra = ["--model", model] if model else []
-        return [base, "--yolo", "--json", *extra, meta_prompt]
+        return [*kept, "--yolo", "--json", *extra, meta_prompt]
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         # MVP (HATS-956 R10): do not isolate CLINE_DATA_DIR — keep the machine's
