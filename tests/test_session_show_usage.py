@@ -94,6 +94,35 @@ def test_usage_section_rendered_from_usage_json(cli, project_dir):
     assert "success_rate 0.75" in out
 
 
+def test_static_split_shows_always_on_and_on_demand(cli, project_dir):
+    """HATS-957: honest always-on figure + a separate on-demand-skills line."""
+    usage = json.loads(json.dumps(_USAGE))
+    usage["always_on"]["static"] = {
+        "role": "maintainer", "exact": False,
+        "total_tokens": 42000,
+        "always_on_tokens": 6100,
+        "on_demand_tokens": 35900,
+        "components": [],
+    }
+    _make_session(project_dir, usage=usage)
+    result = cli.invoke(main, ["session", "show", SID])
+    assert result.exit_code == 0, result.output
+    out = result.output
+    assert "always_on (static): 6,100 tok" in out
+    assert "on-demand skills (if invoked): 35,900 tok" in out
+    # the conflated total must NOT masquerade as the always-on figure
+    assert "42,000" not in out
+
+
+def test_static_backcompat_total_only_has_no_on_demand_line(cli, project_dir):
+    """Pre-HATS-957 usage.json (only total_tokens) still renders, no on-demand line."""
+    _make_session(project_dir, usage=_USAGE)
+    result = cli.invoke(main, ["session", "show", SID])
+    assert result.exit_code == 0, result.output
+    assert "always_on (static): 17,000 tok" in result.output
+    assert "on-demand skills" not in result.output
+
+
 def test_usage_json_listed_in_artifacts(cli, project_dir):
     _make_session(project_dir, usage=_USAGE)
     result = cli.invoke(main, ["session", "show", SID])
