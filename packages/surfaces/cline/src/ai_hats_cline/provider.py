@@ -2,10 +2,12 @@
 
 Inline-`-s` surface registered via the `ai_hats.providers` entry point (HATS-870).
 Verified cline-v3.0.3 flag facts + the CLINE_DATA_DIR/auth rationale: HATS-956.
+Skill materialization into `.cline/skills/` native registry: HATS-963.
 """
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -15,6 +17,11 @@ if TYPE_CHECKING:
     # Re-exported by the integrator; import here keeps the plugin's only
     # first-party root `ai_hats` (workspace-boundary Rule 1, HATS-869).
     from ai_hats.providers import CompositionResult
+
+# Marker file tracking which skill dirs under `.cline/skills/` are ai-hats-owned
+# (so user-authored skills are preserved on re-materialization). Mirrors the
+# `.ai-hats-managed` convention from plugin_dir.py (HATS-901).
+_MANAGED_MARKER = ".ai-hats-managed"
 
 
 class ClineProvider(Provider):
@@ -39,9 +46,11 @@ class ClineProvider(Provider):
         return session_dir / "rules"
 
     def build_system_prompt(self, result: CompositionResult) -> str:
-        # No native cline skill registry (MVP) → keep the AVAILABLE SKILLS index
-        # as the discovery channel, like Gemini (HATS-701).
-        return self._compose_sections(result, include_skills=True)
+        # HATS-963: skills now reach cline via the native `.cline/skills/`
+        # registry (materialize_runtime_skills), so suppress the text index
+        # to avoid the duplicate (~1.5k tok/session). Claude precedent:
+        # providers.py:420-424 (include_skills=False).
+        return self._compose_sections(result, include_skills=False)
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         cmd = ["cline"]
@@ -69,6 +78,71 @@ class ClineProvider(Provider):
         del session_dir, project_dir
         return {}
 
+    def materialize_runtime_skills(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+    ) -> list[str]:
+        """Materialize the composed role's skills into `.cline/skills/`.
+
+        HATS-963: cline discovers skills by convention from `<project>/.cline/
+        skills/` (docs.cline.bot/features/skills). No `--skills-dir` flag —
+        returns ``[]`` (discovery is purely directory-based).
+
+        Idempotent: re-materialization sweeps stale ai-hats-managed skills
+        (role changed: skill A → B → A removed) while preserving user-authored
+        skill dirs (tracked via the ``.ai-hats-managed`` marker, mirroring
+        plugin_dir.py's HATS-901 convention).
+        """
+        from ai_hats.placeholders import expand_path_placeholders
+
+        del session_id  # project-scoped, not session-scoped
+        skills_dir = project_dir / ".cline" / "skills"
+        marker = skills_dir / _MANAGED_MARKER
+
+        skills_dir.mkdir(parents=True, exist_ok=True)
+
+        # Read previously managed skill names (to sweep stale ones).
+        prev_managed: set[str] = set()
+        if marker.is_file():
+            prev_managed = {
+                line.strip()
+                for line in marker.read_text().splitlines()
+                if line.strip()
+            }
+
+        # Compose the desired set from the role's skills.
+        desired = {s.name for s in result.skills if s.source_path.is_dir()}
+
+        # Sweep stale managed skills (were managed, no longer desired).
+        for name in prev_managed - desired:
+            stale = skills_dir / name
+            if stale.is_dir():
+                shutil.rmtree(stale)
+
+        # Materialize each desired skill (copytree + placeholder expansion).
+        for skill in result.skills:
+            if not skill.source_path.is_dir():
+                continue
+            dest = skills_dir / skill.name
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(skill.source_path, dest)
+            # HATS-380 parity: expand <ai_hats_dir> in SKILL.md before cline
+            # reads it. Other assets (hooks, fixtures) are copied verbatim.
+            skill_md = dest / "SKILL.md"
+            if skill_md.exists():
+                original = skill_md.read_text()
+                expanded = expand_path_placeholders(original, project_dir)
+                if expanded != original:
+                    skill_md.write_text(expanded)
+
+        # Write the marker so the next run knows which dirs ai-hats owns.
+        marker.write_text("\n".join(sorted(desired)) + "\n" if desired else "")
+
+        return []  # no CLI flag — cline discovers .cline/skills/ by convention
+
     def build_session_prompt(
         self,
         project_dir: Path,
@@ -86,8 +160,13 @@ class ClineProvider(Provider):
         from ai_hats.placeholders import expand_path_placeholders
         from ai_hats.role_catalog import expand_role_catalog
 
-        del session_id
         prompt_content = self.build_system_prompt(result)
         prompt_content = expand_path_placeholders(prompt_content, project_dir)
         prompt_content = expand_role_catalog(prompt_content, project_dir)
+
+        # HATS-963: materialize the role's skills into .cline/skills/ before
+        # the TUI launches, so /skills discovers them. Mirrors Claude's
+        # build_session_prompt calling materialize_runtime_skills (providers.py:492).
+        self.materialize_runtime_skills(project_dir, result, session_id)
+
         return ["-i", "-s", prompt_content], {}, prompt_content
