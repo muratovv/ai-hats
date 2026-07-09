@@ -45,7 +45,7 @@ def _is_reference_path(file_path: str) -> bool:
     return file_path.endswith("SKILL.md") or any(m in file_path for m in _REF_MARKERS)
 
 
-def _empty_report(source: str) -> dict[str, Any]:
+def empty_usage_report(source: str) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "source": source,
@@ -91,7 +91,7 @@ def parse_session_usage(jsonl_path: str | Path) -> dict[str, Any]:
     any content problem; raises only if ``jsonl_path`` cannot be opened at all.
     """
     path = Path(jsonl_path)
-    report = _empty_report(path.name)
+    report = empty_usage_report(path.name)
     flags: list[str] = report["flags"]
 
     try:
