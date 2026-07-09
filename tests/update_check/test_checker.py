@@ -121,6 +121,39 @@ def test_detect_installed_sha_returns_none_when_both_fail():
         sys.modules.pop("ai_hats._version", None)
 
 
+def test_detect_installed_sha_from_version_local_segment_hatch_vcs():
+    """HATS-861: hatch-vcs writes __commit_id__ = None → recover the SHA from the
+    __version__ PEP 440 local segment, ignoring the .dYYYYMMDD dirty suffix."""
+    fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+    import sys
+    import types
+    sys.modules["ai_hats._version"] = types.SimpleNamespace(
+        __commit_id__=None,
+        commit_id=None,
+        __version__="0.13.3.dev0+ge67dbdbbf.d20260709",
+    )
+    try:
+        with patch.object(subprocess, "run", return_value=fail):
+            assert detect_installed_sha() == "e67dbdbbf"
+    finally:
+        sys.modules.pop("ai_hats._version", None)
+
+
+def test_detect_installed_sha_version_local_segment_clean_edge():
+    """HATS-861: a clean edge build (no dirty suffix) still yields the SHA."""
+    fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+    import sys
+    import types
+    sys.modules["ai_hats._version"] = types.SimpleNamespace(
+        __version__="0.13.3.dev5+ge67dbdbbf",
+    )
+    try:
+        with patch.object(subprocess, "run", return_value=fail):
+            assert detect_installed_sha() == "e67dbdbbf"
+    finally:
+        sys.modules.pop("ai_hats._version", None)
+
+
 def test_detect_installed_sha_handles_git_missing():
     with patch.object(subprocess, "run", side_effect=FileNotFoundError):
         # Without _version module loadable, should return None.
