@@ -20,6 +20,13 @@ since the latest tag lives under **Unreleased** until the next release.
   skipped, never fatal). `get_provider()` behaviour is unchanged. Extracting the
   built-in providers into their own packages stays a separate future arc
   (providers remain integrator-bound per ADR-0014 P0 #4).
+- **Cline surface plugin** (HATS-956) — `ai-hats-cline`, the first in-tree
+  consumer of the provider IoC seam, registers the `cline` CLI as a provider via
+  the `ai_hats.providers` entry point (`ai-hats -p cline`). Lives under the new
+  `packages/surfaces/` category; ADR-0014 gains a **surface** tier that may
+  depend up on the integrator, enforced by the workspace-boundary lint. Inline
+  `-s` role delivery, interactive TUI for HITL, headless `--yolo --json` for the
+  automate path. The transcript parser (`ClineParser`) is a follow-up.
 
 ### Fixed
 

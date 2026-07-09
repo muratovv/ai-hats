@@ -72,6 +72,10 @@ def _members() -> dict[str, dict]:
                 "optional_deps": [
                     _dep_name(s) for specs in optional.values() for s in specs
                 ],
+                # HATS-956: surface plugins (packages/surfaces/*) are a consumer
+                # tier ABOVE the integrator — the Provider ABC is integrator-bound
+                # (ADR-0014 P0#4), so a surface may depend UP on `ai-hats`.
+                "is_surface": "surfaces" in member_dir.relative_to(ROOT).parts,
             }
     return members
 
@@ -134,14 +138,19 @@ def test_member_imports_only_declared_deps():
     )
 
 
-def _topology_offenders(declared: dict[str, list[str]]) -> list[str]:
+def _topology_offenders(
+    declared: dict[str, list[str]], surfaces: frozenset[str] = frozenset()
+) -> list[str]:
     """Tier violations in the declared first-party dep graph, as edge strings.
 
-    core declares no first-party; a package declares at most core; the
-    integrator may declare any member (and nobody may declare the integrator).
+    core declares no first-party; a module declares at most core; a surface
+    plugin (packages/surfaces/*, HATS-956) may also declare the integrator; the
+    integrator may declare any module (and no module may declare the integrator).
     """
     first_party = set(declared) | {INTEGRATOR}
-    limits = {name: {CORE} for name in declared}
+    limits = {
+        name: ({CORE, INTEGRATOR} if name in surfaces else {CORE}) for name in declared
+    }
     limits[CORE] = set()
     limits[INTEGRATOR] = set(declared)
     return [
@@ -159,7 +168,8 @@ def test_declared_first_party_topology():
     declared[INTEGRATOR] = [
         _dep_name(s) for s in _project(ROOT / "pyproject.toml")["dependencies"]
     ]
-    problems = _topology_offenders(declared)
+    surfaces = frozenset(n for n, m in members.items() if m["is_surface"])
+    problems = _topology_offenders(declared, surfaces)
     assert not problems, f"ADR-0014 tier violations in declared deps: {problems}"
 
 
@@ -168,6 +178,12 @@ def test_topology_detector_self_test():
     quiet on the legal shape."""
     legal = {CORE: [], "ai-hats-x": [CORE, "filelock"], INTEGRATOR: ["ai-hats-x"]}
     assert _topology_offenders(legal) == []
+
+    # HATS-956: a surface plugin MAY depend up on the integrator; the SAME edge
+    # stays a violation for a plain module (only the surface blessing legalises it).
+    surface = {CORE: [], "ai-hats-cline": [CORE, INTEGRATOR], INTEGRATOR: []}
+    assert _topology_offenders(surface, frozenset({"ai-hats-cline"})) == []
+    assert _topology_offenders(surface) == ["ai-hats-cline -> ai-hats"]
 
     rogue = {
         CORE: ["ai-hats-x"],

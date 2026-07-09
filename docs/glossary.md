@@ -8,9 +8,13 @@ This file is the naming source-of-truth. When another doc needs to define a core
 
 ## Provider
 
-A target LLM CLI that ai-hats wraps: `claude` or `gemini`. The choice lives in `ai-hats.yaml` (`provider:`). One role composition produces two injection targets — `CLAUDE.md` or `GEMINI.md` — built during `ai-hats self init` / `self update` (the `self bump` CLI verb was removed in HATS-470; bump runs implicitly inside those flows via `ai_hats._bump_internal`). Switching keeps composition intact: `ai-hats config set -p <provider>`.
+A target LLM CLI that ai-hats wraps. The built-ins are `claude` and `gemini`; the set is an **open registry** (HATS-870) — any package outside `src/ai_hats/**` can register another provider (e.g. `cline`, see [Surface plugin](#surface-plugin)) under the `ai_hats.providers` entry point. The choice lives in `ai-hats.yaml` (`provider:`). A role composition is injected per provider — into `CLAUDE.md` / `GEMINI.md` for the scaffold-based built-ins, or inline (cline's `-s`) for an inline surface — built during `ai-hats self init` / `self update` (the `self bump` CLI verb was removed in HATS-470; bump runs implicitly inside those flows via `ai_hats._bump_internal`). Switching keeps composition intact: `ai-hats config set -p <provider>`.
 
 Detail — see [1].
+
+## Surface plugin
+
+An entry-point plugin — a package outside `src/ai_hats/**` — that registers a [Provider](#provider) for another agent CLI through the `ai_hats.providers` entry point (HATS-870), giving ai-hats a new surface. Surface plugins may ship in-tree under `packages/surfaces/<name>/` or as separate out-of-tree repos; `ai-hats-cline` (the `cline` CLI) is the first, in-tree (HATS-956). A surface may also ship a `TranscriptParser` that rides the provider (`Provider.transcript_parser`, HATS-948) to normalize its session log into audit + usage.
 
 ## Session
 
