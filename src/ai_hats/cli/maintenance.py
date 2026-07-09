@@ -144,6 +144,56 @@ def _is_editable_install() -> tuple[bool, str | None]:
     return (bool(dir_info.get("editable")), data.get("url"))
 
 
+def _editable_repo_root() -> Path | None:
+    """Repo root of the editable ai-hats install (home of ``packages/surfaces/*``),
+    or ``None`` when not an editable dev checkout (HATS-966)."""
+    is_editable, url = _is_editable_install()
+    if not is_editable or not url:
+        return None
+    path = url[len("file://"):] if url.startswith("file://") else url
+    root = Path(path)
+    return root if (root / "packages" / "surfaces").is_dir() else None
+
+
+def _run_editable_heal(*, quiet: bool = False) -> None:
+    """Detect + re-point stale surface-plugin editables (HATS-966).
+
+    No-op unless this is an editable dev checkout with a broken surface provider.
+    Serialized behind a venv-scoped filelock so concurrent launches/updates never
+    race on ``uv pip install``. Best-effort: a held lock or resolution miss simply
+    skips — never blocks the caller.
+    """
+    from filelock import FileLock, Timeout
+
+    from ..self_heal import find_broken_surface_providers, heal_surface_editables
+
+    repo_root = _editable_repo_root()
+    if repo_root is None or not find_broken_surface_providers():
+        return  # fast path: nothing to do — no lock, no output
+    lock_path = Path(sys.executable).resolve().parent.parent / ".ai-hats-heal.lock"
+    try:
+        with FileLock(str(lock_path), timeout=120):
+            result = heal_surface_editables(repo_root)
+    except Timeout:
+        return  # a peer holds the lock and is healing — skip
+    if quiet:
+        return
+    for h in result.healed:
+        console.print(
+            f"[green]· self-heal[/] re-pointed [bold]{h.provider.module}[/] → {h.canonical}"
+        )
+    for w in result.warned:
+        console.print(
+            f"[yellow]· self-heal[/] {w.provider.module}: {w.reason}\n    fix: {w.fix}"
+        )
+
+
+@click.command("heal-editables", hidden=True)  # ai-hats: allow-secret (decorator, not an email)
+def heal_editables() -> None:
+    """Re-point stale surface-plugin editables (internal; called by the launcher)."""
+    _run_editable_heal()
+
+
 def _resolve_ref(repo_url: str, ref: str) -> str | None:
     """Validate ``ref`` against ``repo_url`` via ``git ls-remote``.
 
@@ -1361,6 +1411,10 @@ def update(
         console.print(f"[dim]Target venv:[/] {sys.executable}")
 
     project_dir = _project_dir()
+
+    # HATS-966: repair a stale surface-plugin editable (e.g. a `cline` `.pth` left
+    # dangling by a torn-down worktree) as part of the canonical "fix my env" run.
+    _run_editable_heal()
 
     # HATS-764: the harness channel (config) selects BOTH the install source and
     # the downgrade guard. Read it up front, degrading to the stable default if

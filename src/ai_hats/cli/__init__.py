@@ -237,6 +237,9 @@ def self_group():
 self_group.add_command(assembly.init)
 # HATS-833: ``self sync-hooks`` removed — drift healing consolidated to session start.
 self_group.add_command(maintenance.update)
+# HATS-966: hidden self-heal for stale surface-plugin editables; the launcher
+# calls it before exec when its probe flags a broken plugin (also runs in `update`).
+self_group.add_command(maintenance.heal_editables)
 # HATS-415: ``self migrate-v07`` removed — migration is inline in ``bump``.
 # HATS-470: ``self bump`` removed from CLI surface; the operation now runs
 # via :mod:`ai_hats._bump_internal` (subprocess from ``self update``,
