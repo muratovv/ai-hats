@@ -24,14 +24,14 @@ def test_default_runs_dir_is_project_local_agent_subtree(tmp_path: Path) -> None
     assert _seam._default_runs_dir(tmp_path) == tmp_path / ".agent" / "sessions" / "runs"
 
 
-def test_default_project_dir_prefers_agent_holder(tmp_path: Path, monkeypatch) -> None:
+def test_project_dir_default_is_the_shared_core_resolver() -> None:
+    """The wt-free project-dir default delegates to ``ai_hats_core`` (HATS-952) —
+    the walk-up behaviour itself is covered by core's ``test_paths.py``."""
+    from ai_hats_core.paths import default_project_dir
+
     from ai_hats_observe.cli import _seam
 
-    (tmp_path / ".agent").mkdir()
-    sub = tmp_path / "a" / "b"
-    sub.mkdir(parents=True)
-    monkeypatch.chdir(sub)
-    assert _seam._default_project_dir() == tmp_path
+    assert _seam._default_project_dir is default_project_dir
 
 
 def test_default_tag_filter_parser_splits_kv() -> None:
