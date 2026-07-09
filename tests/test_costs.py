@@ -21,10 +21,16 @@ def library(tmp_path):
     (rule_dir / "rule.md").write_text("# Rule\nDo the right thing.")
     (rule_dir / "metadata.yaml").write_text("name: test_rule\n")
 
-    # Skill: 40 chars
+    # Skill: frontmatter (name + description, always-on) + body (on-demand)
     skill_dir = lib / "skills" / "test_skill"
     skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("# Skill\nThis skill does important work.")
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: test_skill\n"
+        "description: Does important work when invoked.\n"
+        "---\n"
+        "# Skill\nThis skill does important work."
+    )
 
     # trait-base: injection 20 chars
     trait_base = lib / "traits" / "trait-base"
@@ -96,6 +102,41 @@ def test_analyze_role_total_is_sum(composer):
     breakdown = analyze_composition(composer, "test-role")
     assert breakdown.total_tokens == sum(c.tokens for c in breakdown.components)
     assert breakdown.total_tokens > 0
+
+
+# --- HATS-957: always-on vs on-demand split ---
+
+
+def test_split_totals_sum_to_total(composer):
+    """always_on + on_demand must equal total — no double count, no loss."""
+    b = analyze_composition(composer, "test-role", exact=False)
+    assert b.always_on_tokens + b.on_demand_tokens == b.total_tokens
+
+
+def test_skill_body_is_on_demand_not_always_on(composer):
+    """A skill's body loads on demand; only its name+description stays resident."""
+    b = analyze_composition(composer, "test-role", exact=False)
+    skill = next(c for c in b.components if c.category == "skill")
+    assert skill.on_demand_tokens > 0
+    assert 0 < skill.always_on_tokens < skill.tokens
+    assert skill.always_on_tokens + skill.on_demand_tokens == skill.tokens
+
+
+def test_skill_description_counted_in_always_on(composer):
+    """The resident slice equals count of '<name>: <description>'."""
+    b = analyze_composition(composer, "test-role", exact=False)
+    skill = next(c for c in b.components if c.category == "skill")
+    expected = count_tokens_approx("test_skill: Does important work when invoked.")
+    assert skill.always_on_tokens == expected
+
+
+def test_rules_and_injection_are_fully_always_on(composer):
+    """Rule bodies and injections are inlined in the base prompt: no on-demand part."""
+    b = analyze_composition(composer, "test-role", exact=False)
+    for c in b.components:
+        if c.category in ("rule", "injection"):
+            assert c.on_demand_tokens == 0
+            assert c.always_on_tokens == c.tokens
 
 
 def test_analyze_trait_standalone(composer):
