@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats-tracker"
-version = "0.3.0"
+version = "0.4.0"
 description = "Standalone task-card schema, worktree-free task FSM, and backlog CLI for the ai-hats framework (TaskCard + TaskManager + `task`/`attach`)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,7 +25,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "ai-hats-core>=0.4.0",  # imports ai_hats_core.migrations (seam); 0.4.0 on PyPI (HATS-937)
+    "ai-hats-core>=0.5.0",  # + ai_hats_core.paths.default_project_dir (shared wt-free resolver, HATS-952)
     "click>=8.1",  # backlog CLI (HATS-934)
     "filelock>=3.12",
     "pydantic>=2.0",

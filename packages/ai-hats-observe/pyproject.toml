@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats-observe"
-version = "0.1.0"
+version = "0.2.0"
 description = "Session logging engine for the ai-hats framework — session lifecycle, versioned trace/audit schema, and a surface-agnostic transcript-parser adapter."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,6 +27,8 @@ classifiers = [
 dependencies = [
     # SessionManager defaults to ai_hats_core.recovery.NoOpRecovery (0.5.0, HATS-948).
     "ai-hats-core>=0.5.0",
+    "click>=8.1",  # session-browse CLI (HATS-952)
+    "rich>=13.0",  # session-browse CLI console/table output (HATS-952)
 ]
 
 [project.urls]

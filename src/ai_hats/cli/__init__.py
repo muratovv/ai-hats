@@ -279,6 +279,18 @@ _seam._WORKTREES_DIR = worktrees_dir
 _seam._HYPOTHESES_DIR = hypotheses_dir
 _seam._PROPOSALS_DIR = proposals_dir
 
+# HATS-952: observe session-browse CLI (list/show/audit) defaults to wt-free
+# resolvers; inject the integrator's AI_HATS_DIR/yaml-aware layout so
+# `ai-hats session` keeps its exact paths + tag semantics.
+from ai_hats_observe.cli import _seam as _observe_seam  # noqa: E402
+from ..paths import runs_dir  # noqa: E402
+from ..tags import parse_tag_filters  # noqa: E402
+
+_observe_seam._PROJECT_DIR = _project_dir
+_observe_seam._RUNS_DIR = runs_dir
+_observe_seam._TAG_FILTER_PARSER = parse_tag_filters
+_observe_seam._CONSOLE = console
+
 # Reflect (post-session retro)
 main.add_command(reflect_mod.reflect)
 
