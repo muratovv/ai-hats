@@ -1,6 +1,7 @@
 ---
 name: trust-boundary-mapping
 description: Map trust boundaries and guardrails for AI-augmented systems (Tool Boundary, Defense-in-Depth, Kill Switch, Decision Trail). Use when drafting architecture for an agent that touches production, reviewing a design that lets an agent shell out or modify infrastructure, doing post-incident root-cause for prompt-injection or hallucination-driven outages, or writing an ADR for a new MCP server or tool integration.
+license: MIT
 ---
 # Trust Boundary Mapping
 

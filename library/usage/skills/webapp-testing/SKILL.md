@@ -1,6 +1,7 @@
 ---
 name: webapp-testing
 description: "Verify a local web app actually renders and behaves in a real browser via Playwright — start the dev server, drive a headless browser, assert on DOM/visible text/navigation, check console errors, capture screenshots. Use as the task_complete gate for any UI change, or to debug 'it compiles but the page is broken'."
+license: MIT
 ---
 # Webapp Testing
 

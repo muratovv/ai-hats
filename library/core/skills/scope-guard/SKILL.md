@@ -1,12 +1,15 @@
 ---
 name: scope-guard
 description: "Enforce user-defined task boundaries to prevent scope creep and over-implementation. Use after receiving a task with explicit constraints (\"only X\", \"don't do Y\", \"focus on Z\"), before starting each new sub-step during execution, or when tempted to add helpful work not explicitly requested."
+license: MIT
 ---
+
 # Scope Guard
 
 Enforce user-defined task boundaries. Prevent scope creep and over-implementation.
 
 ## When to Use
+
 Execution-time guard against doing *more* than the user asked. Its sibling at
 plan stage is **design-minimalism**, which strips speculative primitives from a
 plan before any code exists; scope-guard instead holds the line on explicit user
@@ -17,12 +20,14 @@ to bolt on unrequested "helpful" work, that's this skill.
 ## Checklist
 
 ### Before Starting Execution
+
 1. **Extract constraints:** List every explicit limitation from the user's request
    (e.g., "signatures only", "no tests", "just the plan")
 2. **Record constraints** in plan.md under a `## Scope Constraints` section
 3. **Define "done":** What is the minimum deliverable that satisfies the request?
 
 ### Before Each Action
+
 4. **Scope check:** Is this action within the recorded constraints?
    - YES → proceed
    - NO → go to step 5
@@ -31,6 +36,7 @@ to bolt on unrequested "helpful" work, that's this skill.
    Never silently expand scope.
 
 ### Execution Checkpoints
+
 6. **Checkpoint rule:** After every **5 significant tool calls** (Edit, Write, Bash that changes state),
    pause and deliver a brief status:
    - What was done so far (1-2 lines)
@@ -49,10 +55,12 @@ to bolt on unrequested "helpful" work, that's this skill.
    before executing. One paragraph, not a wall of text. Wait for confirmation.
 
 ### After Completing Work
+
 6. **Scope audit:** Compare what you delivered against the original constraints.
    Did you do more than asked? Flag it.
 
 ## Completion
+
 - Constraints recorded in plan.md
 - Every action within recorded constraints, or user approved the deviation
 - No unrequested work delivered without explicit approval
@@ -62,12 +70,12 @@ to bolt on unrequested "helpful" work, that's this skill.
 Scope creep arrives as a thought you tell yourself *before* the action. Catch
 the rationalization, not just the regret:
 
-| Rationalization (what you tell yourself) | Why it's wrong |
-|---|---|
-| "I'll just add this helper while I'm here" | Not requested — the user scopes, your convenience doesn't |
+| Rationalization (what you tell yourself)            | Why it's wrong                                                                                                         |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| "I'll just add this helper while I'm here"          | Not requested — the user scopes, your convenience doesn't                                                              |
 | "Skeleton/infra obviously means wire up everything" | Defaults to *only what was named*; ask with a concrete enumeration (HATS-265: switched 4 handlers, user rolled back 3) |
-| "It won't compile without this extra bit" | Maybe — but that is an escalation ("ASK first"), not a licence to expand silently |
-| "Faster to do it all now than to ask" | The ask round-trip is cheaper than the rollback |
+| "It won't compile without this extra bit"           | Maybe — but that is an escalation ("ASK first"), not a licence to expand silently                                      |
+| "Faster to do it all now than to ask"               | The ask round-trip is cheaper than the rollback                                                                        |
 
 **Red-flag words in your own reasoning:** "while I'm here", "just also", "might
 as well", "obviously they'd want", "to be safe". Any of these → re-run the scope
@@ -79,6 +87,7 @@ before the action. (Rationalization-table discipline adapted from
 obra/superpowers, MIT.)
 
 ## Anti-Patterns
+
 - "I'll just add this helper since I'm here" — scope creep
 - Justifying scope expansion internally without asking — the user decides, not you
 - Writing full implementations when asked for signatures/interfaces

@@ -1,12 +1,15 @@
 ---
 name: plan-discipline
 description: Get a plan into its one canonical home — the tracker plan.md — never .claude/plans. Run this skill when you enter plan mode (EnterPlanMode), when you have a plan draft (incl. plan-mode / ExitPlanMode output), or when a task enters brainstorm→plan. It walks task creation and draft→tracker authoring, including the plan-mode two-phase flow.
+license: MIT
 ---
+
 # Plan Discipline
 
 A plan is always a task, authored into `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md`. Nowhere else.
 
 ## When to Use
+
 - **On `EnterPlanMode`, recall this skill** — so you treat the plan-mode draft as
   scratch and persist it into the tracker the moment you exit (see the two-phase
   flow below). Plan mode is for *designing + approval*; the plan of record still
@@ -27,17 +30,21 @@ Run all `task` / `wt` CLI from the **main repo** — the tracker lives under the
 gitignored `.agent/`, so a linked worktree has no real tracker.
 
 ### Preferred — plan directly in the tracker (no plan mode)
+
 When you control the flow, skip Claude Code plan mode and author straight into the
 tracker — zero round-trip, no `.claude/plans` file.
+
 1. **Make the task** (if none): `ai-hats task create "<title>" -d "<intent>" [-p high|medium|low] [--id PROJ-NNN]` — starts in `brainstorm`; clarify scope there if fuzzy.
 2. **Scaffold:** `ai-hats task transition <ID> plan` → empty `tasks/<ID>/plan.md`.
 3. **Author into it** (Write/Edit), filling the required sections (route each via
    `plan-gate`). `transition <ID> execute` stays blocked until they're non-empty.
 
 ### In Claude Code plan mode — two phases
+
 Plan mode is **read-only**: it blocks `task` CLI and every write except
 `.claude/plans/<slug>.md`, so the tracker flow is impossible *until you exit*.
 That's expected — don't fight it, and don't apologise for the draft.
+
 - **Phase 1 — in plan mode:** design; draft into `.claude/plans/<slug>.md`;
   present via `ExitPlanMode`. Do **not** attempt `task create` / `transition` /
   tracker writes — they are blocked. The draft is scratch, not the plan of record.
@@ -48,11 +55,13 @@ That's expected — don't fight it, and don't apologise for the draft.
   is no auto-sync (HATS-637); the `.claude/plans` file is now inert, leave or delete.
 
 ## Completion
+
 - `tasks/<ID>/plan.md` holds the real plan; no task-bearing file remains in
   `.claude/plans`; `transition <ID> execute` passes the gate.
 - Handoff: plan in tracker → `plan-gate` (section quality) → engine gate → execute.
 
 ## Anti-Patterns
+
 - Treating the plan-mode `.claude/plans/<slug>.md` as the plan — in plan mode it is
   Phase-1 scratch; the plan isn't real until transferred to the tracker on exit.
 - Skipping the Phase-2 transfer (or deferring it behind other execute work) —

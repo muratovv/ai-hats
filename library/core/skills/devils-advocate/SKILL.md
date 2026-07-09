@@ -1,7 +1,9 @@
 ---
 name: devils-advocate
 description: The Approach & counter stage of the plan-gate — a skeptic value-counter that steelmans the value, then challenges whether the work is worth doing (needed? missed anything? another way?) before scoping. Reached through plan-gate, not as an independent trigger.
+license: MIT
 ---
+
 # Devil's Advocate
 
 The **Approach & counter stage of `plan-gate`**: a structured skeptic pass that
@@ -80,11 +82,11 @@ together). The split was refuted *before* execute — exactly the
 The skeptic pass is the easiest stage to talk yourself out of. These are the
 rationalizations that precede a skipped or hollow counter:
 
-| Rationalization (what you tell yourself) | Why it's wrong |
-|---|---|
-| "This is obviously worth doing — write N/A" | Reflex `N/A` on a non-trivial plan is the exact failure this stage prevents; a steelman + one real counter costs little |
-| "I already know the answer is proceed" | Then *record* the counter you considered and why it fails — a resolution, not a skipped step |
-| "Questioning it now will just slow us down" | Redirecting before execute is cheap; rebuilding after shipping the wrong thing is not |
+| Rationalization (what you tell yourself)                                                                    | Why it's wrong                                                                                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "This is obviously worth doing — write N/A"                                                                 | Reflex `N/A` on a non-trivial plan is the exact failure this stage prevents; a steelman + one real counter costs little                                                                                               |
+| "I already know the answer is proceed"                                                                      | Then *record* the counter you considered and why it fails — a resolution, not a skipped step                                                                                                                          |
+| "Questioning it now will just slow us down"                                                                 | Redirecting before execute is cheap; rebuilding after shipping the wrong thing is not                                                                                                                                 |
 | "This counter already ran at authoring — no need to re-run" (on a resumed / bounced / premise-changed plan) | The premise that changed is exactly what the prior counter never tested; a resumed plan gets a fresh counter scoped to what moved (see `rule_backlog_discipline §6` — a retracted premise bounces the task back here) |
 
 **Red-flag words in your own reasoning:** "obviously", "clearly worth it", "no

@@ -1,6 +1,7 @@
 ---
 name: llm-output-validation
 description: Post-schema semantic validation checklist for structured LLM output. Use when writing code that calls an LLM and parses the response into a data model, reviewing code that consumes structured LLM output, or debugging cases where an LLM returned valid but wrong data.
+license: MIT
 ---
 # LLM Output Validation
 

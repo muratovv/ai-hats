@@ -7,24 +7,28 @@ ai_hats:
   git_hooks:
     pre-commit:
       - git_hooks/pre-commit-attachments.sh
+license: MIT
 ---
+
 # Backlog Manager
 
 Orchestrate the lifecycle of all three backlog item types via the `ai-hats task` CLI:
 
-| Type | ID prefix | YAML location | State machine |
-|---|---|---|---|
-| **Task** | `<PROJ>-NNN` (e.g. `HATS-NNN`) | `<ai_hats_dir>/tracker/backlog/tasks/<ID>/task.yaml` | `brainstorm → plan → execute → document → review → done` (+ `blocked`, `failed`, `cancelled`) |
-| **Hypothesis** | `HYP-NNN` | `<ai_hats_dir>/tracker/hypotheses/HYP-NNN.yaml` | `active → confirmed \| refuted \| stalled` |
-| **Proposal** | `PROP-NNN` | `<ai_hats_dir>/tracker/backlog/proposals/PROP-NNN.yaml` | `open → accepted \| rejected \| deferred \| duplicate` |
+| Type           | ID prefix                      | YAML location                                           | State machine                                                                                 |
+| -------------- | ------------------------------ | ------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Task**       | `<PROJ>-NNN` (e.g. `HATS-NNN`) | `<ai_hats_dir>/tracker/backlog/tasks/<ID>/task.yaml`    | `brainstorm → plan → execute → document → review → done` (+ `blocked`, `failed`, `cancelled`) |
+| **Hypothesis** | `HYP-NNN`                      | `<ai_hats_dir>/tracker/hypotheses/HYP-NNN.yaml`         | `active → confirmed \| refuted \| stalled`                                                    |
+| **Proposal**   | `PROP-NNN`                     | `<ai_hats_dir>/tracker/backlog/proposals/PROP-NNN.yaml` | `open → accepted \| rejected \| deferred \| duplicate`                                        |
 
 CLI-only enforcement is owned by rule **rule_backlog_discipline**: never read or edit `<ai_hats_dir>/tracker/backlog/**` or `<ai_hats_dir>/tracker/hypotheses/**` directly — always through the verbs documented below.
 
 This SKILL.md is the **index** (overview, core task CLI, FSM, state→skill routing); per-domain detail lives one level deep in `references/` — pull it only when you work in that domain.
 
 ## When to Use
+
 This is the *full-lifecycle* backlog skill — transitions, hyp/proposal verbs,
 work-log cadence, `plan-extract`, sub-agent coordination. Two boundaries:
+
 - **Restricted L1 roles** that may only *file* tasks (no transitions, no
   hyp/proposal mutation) compose **backlog-create** instead — the file-only
   subset.
@@ -36,10 +40,12 @@ work-log cadence, `plan-extract`, sub-agent coordination. Two boundaries:
 **All backlog operations MUST use the `ai-hats task` CLI. Never create task directories or YAML files manually.**
 
 > **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. Before running any `ai-hats` command, define a resolver once (the host launcher on PATH, else the project venv's interpreter — there is no `bin/ai-hats` console script since HATS-790):
+>
 > ```bash
 > ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
 > ah task list
 > ```
+>
 > If neither works, the project's venv interpreter lives at `./.venv/bin/python` (invoke the package as `./.venv/bin/python -m ai_hats …`). Resolve the path explicitly — falling back blindly wastes a turn.
 
 > **Run from the main repo, never a linked worktree.** The tracker
@@ -121,17 +127,17 @@ Each state hands off to the skill that owns its quality gate. Full per-state
 procedure, the two plan→execute flows, and edge-case gotchas →
 `references/lifecycle.md`.
 
-| State | Invoke | Key CLI |
-|---|---|---|
-| **brainstorm** | requirements-interview, request-supervisor | `task create` → `transition plan` |
-| **plan** | plan-discipline (authoring), context-handoff | `transition execute` |
-| **execute** | scope-guard, git-mastery, request-supervisor, context-reset | `task log`; commit each checkpoint |
-| **document** | — | `transition review` |
-| **review** | self-retrospective, task-summary | `transition done` |
-| **review → done** | task-summary, worktree-isolation | `wt merge`; `transition done`; `task sync` |
-| **failed** | self-retrospective, worktree-isolation | `transition brainstorm` |
-| **blocked** | request-supervisor | `transition blocked` |
-| **cancelled** | — | `transition cancelled --resolution "<why>"` |
+| State             | Invoke                                                      | Key CLI                                     |
+| ----------------- | ----------------------------------------------------------- | ------------------------------------------- |
+| **brainstorm**    | requirements-interview, request-supervisor                  | `task create` → `transition plan`           |
+| **plan**          | plan-discipline (authoring), context-handoff                | `transition execute`                        |
+| **execute**       | scope-guard, git-mastery, request-supervisor, context-reset | `task log`; commit each checkpoint          |
+| **document**      | —                                                           | `transition review`                         |
+| **review**        | self-retrospective, task-summary                            | `transition done`                           |
+| **review → done** | task-summary, worktree-isolation                            | `wt merge`; `transition done`; `task sync`  |
+| **failed**        | self-retrospective, worktree-isolation                      | `transition brainstorm`                     |
+| **blocked**       | request-supervisor                                          | `transition blocked`                        |
+| **cancelled**     | —                                                           | `transition cancelled --resolution "<why>"` |
 
 ### Pre-execute re-validation (premise freshness)
 
@@ -159,6 +165,7 @@ One level deep — pull only the domain you're working in:
 - `references/relationships.md` — `parent_task` vs `depends_on`: intent, CLI, validation behavior.
 
 ## Anti-Patterns
+
 - Skipping states — each transition must be explicit, no brainstorm→execute jumps
 - Working without a task card — all work must be tracked
 - Forgetting work_log updates — the card becomes useless for handover

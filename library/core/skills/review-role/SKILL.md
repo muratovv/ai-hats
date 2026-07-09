@@ -1,7 +1,9 @@
 ---
 name: review-role
 description: Audit a role composition for coherence — injection/skill/rule mismatches and composer gaps
+license: MIT
 ---
+
 # Review Role
 
 Audit a role composition for internal coherence — find injection ↔ skill
@@ -11,6 +13,7 @@ report listing findings with concrete fix proposals (rule edits, skill
 edits, composer changes).
 
 > **Harness shell prelude.** Before any `ai-hats` invocation:
+>
 > ```bash
 > ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # HATS-790: no bin/ai-hats console script
 > ```

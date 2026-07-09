@@ -1,4 +1,5 @@
 name: rule_composition_value_contract
+license: MIT
 description: Composition is an immutable first-class object; pipeline funnel treats None == missing key; HITL has no override channel
 author: ai-hats
 tags: [development, framework-invariants, composition, pipeline, runtime, hats-452]
