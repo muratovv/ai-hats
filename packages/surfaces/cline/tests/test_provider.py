@@ -1,24 +1,38 @@
-"""Contract tests for ``ClineProvider`` (HATS-956).
+"""Contract tests for ``ClineProvider`` (HATS-956, HATS-963).
 
-Pure-method assertions (no real cline, no auth): the CLI-shape, env, and inline
-`-s` role delivery the ai-hats runners depend on.
+Pure-method assertions (no real cline, no auth): the CLI-shape, env, inline
+`-s` role delivery, and `.cline/skills/` materialization the ai-hats runners
+depend on.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from ai_hats_cline import ClineProvider
 
 
-def _fake_result() -> SimpleNamespace:
+def _fake_result(skills: list[Path] | None = None) -> SimpleNamespace:
     """A minimal duck-typed ``CompositionResult`` for ``_compose_sections``."""
+    skill_objs = []
+    if skills:
+        for p in skills:
+            skill_objs.append(SimpleNamespace(name=p.name, source_path=p))
     return SimpleNamespace(
         priorities=["Reliability"],
         merged_injection="## ROLE\nbody",
         rules=[],
-        skills=[],
+        skills=skill_objs,
     )
+
+
+def _make_skill(tmp_path: Path, name: str, body: str = "instructions") -> Path:
+    """Create a fake skill source dir with a SKILL.md."""
+    d = tmp_path / "sources" / name
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: test\n---\n{body}\n")
+    return d
 
 
 def test_name_is_cline() -> None:
@@ -89,4 +103,90 @@ def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
     # the -s value IS the persisted meta-prompt bytes (HATS-523 symmetry)
     assert args[2] == meta_prompt
     assert "## PRIORITIES" in meta_prompt
+    assert "## PRIORITIES" in meta_prompt
     assert env == {}
+
+
+# ---- HATS-963: .cline/skills/ materialization ----
+
+
+def test_build_system_prompt_suppresses_skills_index(tmp_path) -> None:
+    # HATS-963: skills delivered via .cline/skills/ native registry, not text
+    skill_path = _make_skill(tmp_path, "my-skill")
+    out = ClineProvider().build_system_prompt(_fake_result(skills=[skill_path]))
+    assert "## AVAILABLE SKILLS" not in out
+
+
+def test_materialize_writes_skills_to_cline_dir(tmp_path) -> None:
+    skill_a = _make_skill(tmp_path, "skill-a")
+    skill_b = _make_skill(tmp_path, "skill-b")
+    ClineProvider().materialize_runtime_skills(
+        tmp_path, _fake_result(skills=[skill_a, skill_b]), "sid-1"
+    )
+    skills_dir = tmp_path / ".cline" / "skills"
+    assert (skills_dir / "skill-a" / "SKILL.md").exists()
+    assert (skills_dir / "skill-b" / "SKILL.md").exists()
+
+
+def test_materialize_is_idempotent(tmp_path) -> None:
+    skill = _make_skill(tmp_path, "my-skill")
+    result = _fake_result(skills=[skill])
+    ClineProvider().materialize_runtime_skills(tmp_path, result, "sid-1")
+    first = sorted(p.name for p in (tmp_path / ".cline" / "skills").iterdir())
+    ClineProvider().materialize_runtime_skills(tmp_path, result, "sid-2")
+    second = sorted(p.name for p in (tmp_path / ".cline" / "skills").iterdir())
+    assert first == second
+
+
+def test_materialize_preserves_user_skills(tmp_path) -> None:
+    user_skill = tmp_path / ".cline" / "skills" / "user-skill"
+    user_skill.mkdir(parents=True)
+    (user_skill / "SKILL.md").write_text("---\nname: user-skill\n---\nmine\n")
+    ai_skill = _make_skill(tmp_path, "ai-skill")
+    ClineProvider().materialize_runtime_skills(
+        tmp_path, _fake_result(skills=[ai_skill]), "sid-1"
+    )
+    assert (user_skill / "SKILL.md").read_text() == "---\nname: user-skill\n---\nmine\n"
+    assert (tmp_path / ".cline" / "skills" / "ai-skill" / "SKILL.md").exists()
+
+
+def test_materialize_sweeps_stale_skills(tmp_path) -> None:
+    skill_a = _make_skill(tmp_path, "skill-a")
+    skill_b = _make_skill(tmp_path, "skill-b")
+    provider = ClineProvider()
+    provider.materialize_runtime_skills(
+        tmp_path, _fake_result(skills=[skill_a, skill_b]), "sid-1"
+    )
+    provider.materialize_runtime_skills(
+        tmp_path, _fake_result(skills=[skill_a]), "sid-2"
+    )
+    assert (tmp_path / ".cline" / "skills" / "skill-a").exists()
+    assert not (tmp_path / ".cline" / "skills" / "skill-b").exists()
+
+
+def test_materialize_marker_lists_managed_skills(tmp_path) -> None:
+    skill_a = _make_skill(tmp_path, "skill-a")
+    skill_b = _make_skill(tmp_path, "skill-b")
+    ClineProvider().materialize_runtime_skills(
+        tmp_path, _fake_result(skills=[skill_a, skill_b]), "sid-1"
+    )
+    marker = (tmp_path / ".cline" / "skills" / ".ai-hats-managed").read_text()
+    assert "skill-a" in marker
+    assert "skill-b" in marker
+    assert "user-skill" not in marker
+
+
+def test_materialize_returns_no_cli_args(tmp_path) -> None:
+    skill = _make_skill(tmp_path, "my-skill")
+    args = ClineProvider().materialize_runtime_skills(
+        tmp_path, _fake_result(skills=[skill]), "sid-1"
+    )
+    assert args == []
+
+
+def test_build_session_prompt_materializes_skills(tmp_path) -> None:
+    skill = _make_skill(tmp_path, "deploy-skill")
+    ClineProvider().build_session_prompt(
+        tmp_path, _fake_result(skills=[skill]), "sid-1"
+    )
+    assert (tmp_path / ".cline" / "skills" / "deploy-skill" / "SKILL.md").exists()
