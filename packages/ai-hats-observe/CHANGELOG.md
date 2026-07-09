@@ -6,6 +6,25 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0]
+
+`usage/v1` behind the transcript-parser adapter (ADR-0014 Phase 1, T15/0.3.0).
+The context-cost usage report is folded into the package as a parser output, so
+a surface's parser produces its own report rather than the writer/step hardcoding
+Claude JSONL — the last Claude-JSONL assumption living outside the parsers.
+
+### Added
+
+- `ai_hats_observe.usage` — the pure `parse_session_usage` producer of the
+  `usage/v1` report (measured always-on, ordered timeline, aggregates, sidechain
+  linkage), plus `empty_usage_report` / `SCHEMA_VERSION`. Runnable standalone as
+  `python -m ai_hats_observe.usage <transcript.jsonl>`.
+- `TranscriptParser.parse_usage(jsonl_path, trace_path)` — a second parse method
+  on the adapter: `ClaudeParser` builds the measured report from JSONL (else the
+  trace fallback); `TraceParser` returns a well-formed empty report (the trace
+  surface carries no token telemetry). Standalone drive proven on a bare tmp dir
+  (`test_usage_standalone.py`).
+
 ## [0.2.0]
 
 Standalone session-browse CLI (ADR-0014 Phase 1, T15/0.2.0). The `ai-hats session`

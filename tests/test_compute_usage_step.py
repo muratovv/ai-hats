@@ -2,8 +2,9 @@
 
 Sibling of ``test_make_audit_step.py``. Verifies the live-session driver:
 JSONL resolution (configured + discovery fallback), usage.json persistence,
-the StepIO contract, and fail-soft behaviour. The pure parser is covered
-separately in ``test_usage.py``.
+the StepIO contract, fail-soft behaviour, and routing through the injected
+surface parser (HATS-953). The pure parser is covered separately in the
+package's ``test_usage.py``.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import calendar
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 from ai_hats_observe import Session
 from ai_hats.pipeline.steps.compute_usage import ComputeUsage
@@ -48,7 +50,9 @@ def test_io_contract():
     assert io.requires == frozenset({
         "session_id", "session_dir", "claude_session_id", "project_dir",
     })
-    assert io.optional == frozenset({"role", "static_cost_analyzer"})
+    assert io.optional == frozenset({
+        "role", "static_cost_analyzer", "audit_writer_factory",
+    })
     assert io.produces == frozenset({"usage_path"})
 
 
@@ -247,13 +251,9 @@ def test_parser_exception_is_swallowed(tmp_path, monkeypatch):
     def _boom(_path):
         raise RuntimeError("parser boom")
 
-    monkeypatch.setattr(
-        "ai_hats.pipeline.steps.compute_usage.parse_session_usage",
-        _boom,
-        raising=False,
-    )
-    # parse_session_usage is imported inside run(); patch the source symbol.
-    monkeypatch.setattr("ai_hats.usage.parse_session_usage", _boom)
+    # ClaudeParser.parse_usage calls usage.parse_session_usage via the module,
+    # so patching the source symbol reaches it.
+    monkeypatch.setattr("ai_hats_observe.usage.parse_session_usage", _boom)
 
     delta = ComputeUsage().run(  # must not raise
         session_id=session.session_id,
@@ -262,3 +262,35 @@ def test_parser_exception_is_swallowed(tmp_path, monkeypatch):
         project_dir=project_dir,
     )
     assert delta == {}
+
+
+def test_routes_through_injected_parser(tmp_path, monkeypatch):
+    """usage/v1 is produced by the injected surface parser (HATS-953).
+
+    RED-under-revert: re-inlining parse_session_usage into the step (bypassing
+    audit_writer_factory().parser) makes the sentinel below unreachable.
+    """
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    session = make_session(tmp_path)
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
+    csid = "routed-uuid"
+    (claude_dir / f"{csid}.jsonl").write_text(
+        (TRANSCRIPTS / "normal.jsonl").read_text()
+    )
+
+    class _FakeParser:
+        def parse_usage(self, jsonl_path, trace_path):
+            return {"schema_version": "usage/v1", "source": "injected-parser", "flags": []}
+
+    ComputeUsage().run(
+        session_id=session.session_id,
+        session_dir=session.session_dir,
+        claude_session_id=csid,
+        project_dir=project_dir,
+        audit_writer_factory=lambda: SimpleNamespace(parser=_FakeParser()),
+    )
+
+    report = json.loads((session.session_dir / USAGE_JSON).read_text())
+    assert report["source"] == "injected-parser"

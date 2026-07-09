@@ -11,6 +11,10 @@ tests/e2e/conftest.py
 # (sess-normal / sess-mal / sess-sub), no real session IDs or prompts.
 tests/fixtures/transcripts/*.jsonl
 
+# HATS-953: same synthetic fixtures, copied into the ai-hats-observe package so
+# its usage-parser tests are self-contained (usage/v1 moved behind the adapter).
+packages/ai-hats-observe/tests/fixtures/transcripts/*.jsonl
+
 # HATS-633: the git-mastery skill doc *catalogues* the secret patterns the hook
 # detects, so its examples (home paths, credentialed DB URIs, token prefixes)
 # are pattern-shaped by design — documentation of the scanner, not a real leak.

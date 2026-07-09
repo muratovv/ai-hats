@@ -45,7 +45,7 @@ def _is_reference_path(file_path: str) -> bool:
     return file_path.endswith("SKILL.md") or any(m in file_path for m in _REF_MARKERS)
 
 
-def _empty_report(source: str) -> dict[str, Any]:
+def empty_usage_report(source: str) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "source": source,
@@ -91,7 +91,7 @@ def parse_session_usage(jsonl_path: str | Path) -> dict[str, Any]:
     any content problem; raises only if ``jsonl_path`` cannot be opened at all.
     """
     path = Path(jsonl_path)
-    report = _empty_report(path.name)
+    report = empty_usage_report(path.name)
     flags: list[str] = report["flags"]
 
     try:
@@ -298,14 +298,14 @@ def _process_system(
 
 
 def _main(argv: list[str]) -> int:
-    """Bash-composable JSON-only stdout entry: ``python -m ai_hats.usage <jsonl>``.
+    """Bash-composable JSON-only stdout entry: ``python -m ai_hats_observe.usage <jsonl>``.
 
     Emits the ``usage/v1`` report as JSON to stdout. The single bash-composable
     primitive behind the retroactive 547-session sweep (no shipped ``--all``).
     """
     if len(argv) != 1:
         import sys
-        print("usage: python -m ai_hats.usage <transcript.jsonl>", file=sys.stderr)
+        print("usage: python -m ai_hats_observe.usage <transcript.jsonl>", file=sys.stderr)
         return 2
     report = parse_session_usage(argv[0])
     print(json.dumps(report, ensure_ascii=False, default=str))

@@ -28,7 +28,7 @@ import logging
 from pathlib import Path
 from typing import Any, Mapping
 
-from ai_hats_observe.artifacts import METRICS_JSON, USAGE_JSON
+from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG, USAGE_JSON
 
 from ..step import Step, StepIO
 
@@ -48,12 +48,12 @@ class ComputeUsage(Step):
             requires=frozenset({
                 "session_id", "session_dir", "claude_session_id", "project_dir",
             }),
-            # ``role`` enables the optional static always-on cross-check; absent
-            # (e.g. SubAgent paths that don't thread it) → measured-only report.
-            # ``static_cost_analyzer`` (HATS-865): runner-threaded carve-out —
-            # the role is known only at run time, so the compose-side analysis
-            # arrives as a callable; absent → measured-only report.
-            optional=frozenset({"role", "static_cost_analyzer"}),
+            # Runner-threaded carve-outs, absent on paths that don't inject them:
+            # role + static_cost_analyzer (HATS-865) drive the static cross-check;
+            # audit_writer_factory (HATS-953) carries the surface parser (.parser).
+            optional=frozenset({
+                "role", "static_cost_analyzer", "audit_writer_factory",
+            }),
             produces=frozenset({"usage_path"}),
         )
 
@@ -66,10 +66,20 @@ class ComputeUsage(Step):
         project_dir: Path,
         role: str | None = None,
         static_cost_analyzer=None,
+        audit_writer_factory=None,
         **_: Any,
     ) -> dict[str, Any]:
+        from ai_hats_observe.parsers.claude import ClaudeParser
+
         from ...runtime import _claude_jsonl_path, _discover_claude_jsonl
-        from ...usage import parse_session_usage
+
+        # usage/v1 rides the surface's transcript parser (HATS-953); the seam
+        # injects it via audit_writer_factory, standalone defaults to Claude.
+        parser = (
+            audit_writer_factory().parser
+            if audit_writer_factory is not None
+            else ClaudeParser()
+        )
 
         usage_path = session_dir / USAGE_JSON
         try:
@@ -87,7 +97,7 @@ class ComputeUsage(Step):
                 logger.debug("compute_usage: no JSONL for %s", claude_session_id)
                 return {}
 
-            report = parse_session_usage(jsonl_path)
+            report = parser.parse_usage(jsonl_path, session_dir / TRACE_LOG)
             self._attach_session_meta(report, session_dir, role)
             if report.get("role") and static_cost_analyzer is not None:
                 self._enrich_static(report, static_cost_analyzer, report["role"])
