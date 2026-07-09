@@ -11,7 +11,6 @@ were removed — git owns user recovery.
 
 from __future__ import annotations
 
-import json
 import logging
 import shutil
 import sys
@@ -36,7 +35,6 @@ from .paths import (
     builtin_library_hooks as _builtin_library_hooks,
     builtin_library_layers as _builtin_library_layers,
     claude_md,
-    claude_settings_json,
     claude_skills_dir,
     gemini_md,
     hooks_dir as _lib_hooks_dir,
@@ -950,7 +948,9 @@ class Assembler:
         - Greenfield ``init`` — nothing to diagnose on a fresh project.
         """
         self._warn_orphan_user_level_managed_skills()
-        self._warn_leaked_user_global_project_hooks()
+        if self.project_config.provider:
+            provider = get_provider(self.project_config.provider)
+            self._warn_leaked_user_global_project_hooks(provider)
         self._note_empty_legacy_agent_dir()
         self._warn_leftover_hook_sidecars()
 
@@ -1643,60 +1643,14 @@ class Assembler:
         )
         return True
 
-    def _warn_leaked_user_global_project_hooks(self) -> bool:
-        """HATS-961: WARN when `~/.claude/settings.json` wires ai-hats project hooks.
-
-        ai-hats writes hook entries only to *project* `.claude/settings.json`
-        (:func:`claude_settings_json` is project-scope); it never touches
-        user-global settings. A project hook block copied there — by hand or an
-        old engine — then double-fires every hook (also wired at project scope)
-        and 404s whenever ``cwd ≠ project-root`` for any entry left with a bare
-        ``.agent/ai-hats/library/hooks/…`` command (no ``$CLAUDE_PROJECT_DIR/``
-        prefix), all while freezing in an old shape as the engine keeps migrating
-        the project copy.
-
-        Detect by ``command`` substring, not the ``_ai_hats_managed`` tag: a
-        half-migrated leak carries some tagged and some untagged entries, and the
-        ``ai-hats/library/hooks/`` path is the invariant across every one.
-
-        WARN only — never mutate user-global settings (not ai-hats's file; same
-        non-destructive contract as :meth:`_warn_orphan_user_level_managed_skills`).
-        Idempotent / non-self-healing: re-fires until the user removes them.
-
-        Returns ``True`` when a WARN was emitted (test seam).
-        """
-        settings = claude_settings_json(Path.home())
-        if not settings.exists():
-            return False
-        try:
-            raw = settings.read_text()
-            data = json.loads(raw) if raw.strip() else {}
-        except (OSError, ValueError):
-            # ValueError covers JSONDecodeError + UnicodeDecodeError (binary /
-            # non-UTF8 file) — a detector must never crash the update path.
-            return False
-        if not isinstance(data, dict):
-            return False
-        hooks_root = data.get("hooks")
-        if not isinstance(hooks_root, dict):
-            return False
-
-        leaked: list[str] = []
-        for event_list in hooks_root.values():
-            if not isinstance(event_list, list):
-                continue
-            for entry in event_list:
-                if not isinstance(entry, dict):
-                    continue
-                for hook in entry.get("hooks", []) or []:
-                    if not isinstance(hook, dict):
-                        continue
-                    command = str(hook.get("command", ""))
-                    if "ai-hats/library/hooks/" in command:
-                        leaked.append(command)
+    def _warn_leaked_user_global_project_hooks(self, provider: Provider) -> bool:
+        """HATS-961: WARN when the active surface leaked ai-hats project hooks into
+        user-global config (double-fires + 404s off project-root). Detection is the
+        provider's (Claude surface); this only reports. WARN only — never mutate.
+        Returns ``True`` when a WARN was emitted (test seam)."""
+        leaked = provider.leaked_user_global_project_hooks(Path.home())
         if not leaked:
             return False
-
         listing = "\n".join(f"    {cmd}" for cmd in leaked)
         print(
             "[Warning] ⚠️  Leaked ai-hats project hooks in user-global "
