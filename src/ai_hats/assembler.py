@@ -948,6 +948,9 @@ class Assembler:
         - Greenfield ``init`` — nothing to diagnose on a fresh project.
         """
         self._warn_orphan_user_level_managed_skills()
+        if self.project_config.provider:
+            provider = get_provider(self.project_config.provider)
+            self._warn_leaked_user_global_project_hooks(provider)
         self._note_empty_legacy_agent_dir()
         self._warn_leftover_hook_sidecars()
 
@@ -1636,6 +1639,27 @@ class Assembler:
             "`cp -r .claude/skills/ ~/.claude/skills/`; the directory "
             "will drift from source-of-truth.\n"
             "  Safe to remove: `rm -rf ~/.claude/skills/`",
+            file=sys.stderr,
+        )
+        return True
+
+    def _warn_leaked_user_global_project_hooks(self, provider: Provider) -> bool:
+        """HATS-961: WARN when the active surface leaked ai-hats project hooks into
+        user-global config (double-fires + 404s off project-root). Detection is the
+        provider's (Claude surface); this only reports. WARN only — never mutate.
+        Returns ``True`` when a WARN was emitted (test seam)."""
+        leaked = provider.leaked_user_global_project_hooks(Path.home())
+        if not leaked:
+            return False
+        listing = "\n".join(f"    {cmd}" for cmd in leaked)
+        print(
+            "[Warning] ⚠️  Leaked ai-hats project hooks in user-global "
+            "~/.claude/settings.json:\n"
+            f"{listing}\n"
+            "  ai-hats never writes user-global settings; these copies double-fire "
+            "every hook and 404 off project-root.\n"
+            "  These project hooks belong only in project `.claude/settings.json` "
+            "— remove them from `~/.claude/settings.json`.",
             file=sys.stderr,
         )
         return True

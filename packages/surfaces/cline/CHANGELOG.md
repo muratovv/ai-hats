@@ -6,6 +6,22 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0]
+
+### Added
+
+- `materialize_runtime_skills` override — copies the composed role's skills
+  into `<project>/.cline/skills/` (cline's native discovery path, HATS-963).
+  `/skills` in the TUI now shows the role's skills; `/skill-name` loads bodies.
+  Idempotent; user-authored skills preserved via `.ai-hats-managed` marker.
+  `filelock` guards the wipe-and-rebuild against concurrent sessions.
+- `.cline/skills/` auto-added to project `.gitignore` (materialized mirror).
+
+### Changed
+
+- `include_skills=True` kept as safe fallback — flip to `False` gated on a
+  live smoke proving `/skills` works in the TUI (plan R7 kill criteria).
+
 ## [0.1.0]
 
 First cut of the Cline surface plugin (HATS-956) — the first in-tree consumer of
