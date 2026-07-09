@@ -32,7 +32,10 @@ $ ai-hats -p cline -r <role>          # HITL: launches an interactive cline TUI
   - HITL launches the interactive TUI (`cline -i`); the automate path runs
     headless (`cline --yolo --json "<prompt>"`);
   - `--worktree` is never passed (ai-hats-wt owns isolation), and
-    `CLINE_DATA_DIR` is left ambient so cline keeps the machine's auth.
+    `CLINE_DATA_DIR` is left ambient so cline keeps the machine's auth;
+  - the role's skills are materialized into `.cline/skills/` (cline's native
+    discovery path) so `/skills` shows them and `/skill-name` loads bodies
+    (HATS-963). User-authored skills in `.cline/skills/` are preserved.
 
 ## Requirements
 

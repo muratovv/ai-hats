@@ -6,6 +6,7 @@ ai_hats:
     PostToolUse:
       - matcher: Edit|Write|MultiEdit
         script: hooks/py_security_lint.py
+license: MIT
 ---
 
 # py-security-lint

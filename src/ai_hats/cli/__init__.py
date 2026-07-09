@@ -143,7 +143,12 @@ def _launch_session(
         KEY_TRACER_FACTORY,
         PIPELINE_HUMAN,
     )
-    from ._helpers import _handle_role_not_found, _project_dir
+    from ..providers import UnknownProviderError
+    from ._helpers import (
+        _handle_role_not_found,
+        _handle_unknown_provider,
+        _project_dir,
+    )
 
     project_dir = _project_dir()
 
@@ -177,6 +182,10 @@ def _launch_session(
         # exit 2; no traceback. See ``_handle_role_not_found`` for the
         # full output shape.
         _handle_role_not_found(exc)
+    except UnknownProviderError as exc:
+        # HATS-965: friendly stderr + exit 2 for an unavailable ``-p`` provider,
+        # mirroring the RoleNotFoundError arm. See ``_handle_unknown_provider``.
+        _handle_unknown_provider(exc)
     sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
 
 

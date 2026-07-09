@@ -1,7 +1,9 @@
 ---
 name: review-proposal
 description: Triage one improvement opportunity — vote on an existing PROP or create a novel one via ai-hats task proposal. Use when you spot an improvement (rule/skill/code/process/doc) during a session review, or are sweeping the open proposal inbox for triage.
+license: MIT
 ---
+
 # Review Proposal
 
 Triage one improvement opportunity → vote on existing PROP or create new.
@@ -9,6 +11,7 @@ Role-agnostic: same procedure whether you are running as `reflect-session`,
 `session-reviewer`, `judge`, or any other reviewer.
 
 > **Harness shell prelude.** Before any `ai-hats` invocation:
+>
 > ```bash
 > ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # HATS-790: no bin/ai-hats console script
 > ```
@@ -82,9 +85,9 @@ ah task proposal status --prop PROP-NNN --status duplicate
 **Cost-citation heuristic** — drives *how long* a PROP stays open, not
 cosmetic framing:
 
-| `--rationale` content | Triage default |
-|---|---|
-| Concrete cited cost (`9 tests`, `2h`, `1 incident`, plan pivots) | **Patience**: keep open across multiple sweep cycles, especially for `rule` / `process` categories. Wait for votes / additional evidence. |
+| `--rationale` content                                                     | Triage default                                                                                                                                       |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Concrete cited cost (`9 tests`, `2h`, `1 incident`, plan pivots)          | **Patience**: keep open across multiple sweep cycles, especially for `rule` / `process` categories. Wait for votes / additional evidence.            |
 | Uncited pain claim ("feels wrong", "process is off") open ≥ 1 sweep cycle | **Faster close**: `defer` (if ≥1 vote shows others see something) or `reject` (no votes). Don't let pseudo-pain proposals occupy inbox indefinitely. |
 
 The point: critical-category PROPs deserve long observation windows

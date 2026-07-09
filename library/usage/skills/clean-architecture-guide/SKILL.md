@@ -1,6 +1,7 @@
 ---
 name: clean-architecture-guide
 description: Audit a codebase for DDD/Hexagonal/Ports-and-Adapters compliance. Use when reviewing a module that owns business logic, in a pre-merge audit when a PR touches domain types, repositories, or transport layers, when drafting an ADR for a new bounded context, or triaging a codebase drifting toward a Big Ball of Mud.
+license: MIT
 ---
 # Clean Architecture Guide
 

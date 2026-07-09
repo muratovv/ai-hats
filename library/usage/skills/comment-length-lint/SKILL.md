@@ -6,6 +6,7 @@ ai_hats:
     PostToolUse:
       - matcher: Edit|Write|MultiEdit
         script: hooks/comment_length_lint.py
+license: MIT
 ---
 
 # comment-length-lint

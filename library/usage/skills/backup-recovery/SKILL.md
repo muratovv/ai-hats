@@ -1,6 +1,7 @@
 ---
 name: backup-recovery
 description: 3-2-1 backup strategy with verified restore procedures. Use when setting up or reviewing backup infrastructure, before risky data migrations or destructive operations, or after adding new persistent storage such as a database or volume.
+license: MIT
 ---
 # Backup & Recovery
 

@@ -1,6 +1,7 @@
 ---
 name: ui-ux-review
 description: "Two-mode UI/UX skill — guide mode applies cognitive UX rules while building (do/don't per page type), review mode audits an existing interface into P0/P1/P2 findings with executable fixes + acceptance criteria. Use when building or reviewing any web/app UI, when an LLM-generated interface 'works but looks like a prototype', or before shipping a user-facing screen."
+license: MIT
 ---
 # UI/UX Review
 
