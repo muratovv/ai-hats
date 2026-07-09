@@ -795,22 +795,6 @@ def task_log(task_id: str, message: str, session: str | None):
         sys.exit(1)
 
 
-@task.command("stop")
-@click.argument("task_id")
-@click.option("--force", is_flag=True, default=False, help="Drop any owner, not just yours")
-def task_stop(task_id: str, force: bool):
-    """Release ownership of a task without changing its state.
-
-    Frees a task you hold so another agent can pick it up (it stays in execute).
-    Use before switching tasks; --force drops another session's claim.
-    """
-    mgr = _seam._MANAGER_FACTORY(_seam._PROJECT_DIR())
-    if mgr.stop(task_id, force=force):
-        _seam._CONSOLE.print(f"[green]Stopped[/]: {task_id} — ownership released")
-    else:
-        _seam._CONSOLE.print(f"[dim]No owned claim to release for {task_id}[/]")
-
-
 @task.command("list")
 @click.option("--state", default=None, help="Filter by state")
 @click.option("--priority", default=None, help="Filter by priority (low/medium/high)")

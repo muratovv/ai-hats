@@ -368,11 +368,15 @@ class TaskManager:
                 raise ValueError("force=True requires a non-empty reason")
 
             old_state = task.state
+            is_epic = bool(self._children_of(task.id))
+
+            # HATS-955: an agent works one task at a time — refuse transitioning
+            # this task while the session still owns another (dangling) one.
+            if not is_epic:
+                self._assert_no_dangling(task.id)
+
             if force:
-                # HATS-955: execute→execute is the reclaim self-loop, so a forced
-                # same-state transition is legal only there (force-steal a live
-                # owner); every other same-state force is still a no-op error.
-                if old_state == new_state and new_state != TaskState.EXECUTE:
+                if old_state == new_state:
                     raise ValueError(f"Task '{task_id}' is already in state '{new_state.value}'")
                 task.state = new_state
                 task.log_work(f"Forced transition {old_state.value} → {new_state.value}: {reason}")
@@ -390,10 +394,7 @@ class TaskManager:
             elif new_state == TaskState.EXECUTE:
                 # HATS-794: an epic (a task with children) is a tracker, not a
                 # unit of executable work — entering execute is a pure state flip
-                # with no worktree and no plan-gate, symmetric with the auto-path
-                # (`_propagate_to_parent` reaches epic-execute via `transition_to`
-                # with neither). Detection is emergent (`_children_of`).
-                is_epic = bool(self._children_of(task.id))
+                # with no worktree, plan-gate, or ownership (`is_epic` above).
                 if old_state == TaskState.DONE:
                     # Reopen path (HATS-328): coming back from DONE — clear the
                     # completion timestamp and record the reopen in work_log so the
@@ -409,9 +410,9 @@ class TaskManager:
                         plan_path = self.tasks_dir / task.id / "plan.md"
                         raise EmptyPlanError(task.id, plan_path, unfilled)
                 if not is_epic:
-                    # HATS-955: claim before the worktree so a refusal (live
-                    # owner / single-slot) aborts with no side effect.
-                    self._claim_ownership(task.id, force=force)
+                    # HATS-955: claim before the worktree so a live-owner refusal
+                    # aborts with no side effect. force does NOT bypass ownership.
+                    self._claim_ownership(task.id)
                 if is_epic:
                     pass  # epics never get a worktree
                 elif self._worktree_effects is None:
@@ -456,9 +457,11 @@ class TaskManager:
                     if outcome is not None:
                         task.log_work(f"Worktree {outcome}")
 
-            if old_state == TaskState.EXECUTE and new_state != TaskState.EXECUTE:
-                # HATS-955: ownership is tied to the execute state — leaving it
-                # (document / blocked / failed / cancelled) frees the task.
+            leaving_execute = old_state == TaskState.EXECUTE and new_state != TaskState.EXECUTE
+            terminal = new_state in (TaskState.DONE, TaskState.FAILED, TaskState.CANCELLED)
+            if not is_epic and (leaving_execute or terminal):
+                # HATS-955: free ownership on leaving execute or reaching a
+                # terminal state (idempotent; epics never hold ownership).
                 self._release_ownership(task.id)
 
             self._save_task(task)
@@ -473,44 +476,44 @@ class TaskManager:
         """Local ownership registry, alongside the injected tasks dir."""
         return self.tasks_dir.parent / "ownership.json"
 
-    def _claim_ownership(self, task_id: str, *, force: bool) -> None:
-        """Claim task ownership for the current session (HATS-955).
+    def _session_id(self) -> str:
+        return os.environ.get(ENV_SESSION_ID, "")
+
+    def _assert_no_dangling(self, task_id: str) -> None:
+        """Refuse if this session still owns a task other than ``task_id``.
+
+        The single-slot invariant enforced on *every* transition (HATS-955): an
+        agent finishes or leaves execute on its current task before touching
+        another. No-op without a session identity.
+        """
+        session_id = self._session_id()
+        if not session_id:
+            return
+        dangling = [t for t in ownership.held_by(self._ownership_path(), session_id) if t != task_id]
+        if dangling:
+            raise ownership.OwnershipRefused(
+                task_id, reason=f"session still holds {dangling}; finish/leave execute on it first"
+            )
+
+    def _claim_ownership(self, task_id: str) -> None:
+        """Claim task ownership for the current session on entering execute.
 
         No-op without ``AI_HATS_SESSION_ID`` (a harness-less run has no agent
-        identity → ownership is inert). Raises ``ownership.OwnershipRefused`` on a
-        live-owner or single-slot conflict unless ``force``.
+        identity → ownership is inert). Raises ``ownership.OwnershipRefused`` when
+        a live *other* agent owns the task; ``force`` does not bypass this.
         """
-        session_id = os.environ.get(ENV_SESSION_ID, "")
+        session_id = self._session_id()
         if not session_id:
             return
         try:
             root_pid = int(os.environ.get(ENV_ROOT_PID, "") or 0)
         except ValueError:
             root_pid = 0
-        ownership.take(self._ownership_path(), task_id, session_id, root_pid, force=force)
+        ownership.take(self._ownership_path(), task_id, session_id, root_pid)
 
     def _release_ownership(self, task_id: str) -> None:
-        """Drop the task's ownership record (terminal transition / close)."""
+        """Drop the task's ownership record (leaving execute / terminal)."""
         ownership.finish(self._ownership_path(), task_id)
-
-    def stop(self, task_id: str, *, force: bool = False) -> bool:
-        """Release ownership of a task without changing its state (`task stop`).
-
-        Drops the current session's claim; ``force`` drops any owner. Returns
-        True if a record was removed.
-        """
-        reg = self._ownership_path()
-        current = ownership.owner_of(reg, task_id)
-        if current is None:
-            return False
-        if force:
-            ownership.finish(reg, task_id)
-            return True
-        session_id = os.environ.get(ENV_SESSION_ID, "")
-        if current.get("session_id") == session_id:
-            ownership.release(reg, task_id, session_id)
-            return True
-        return False
 
     def ownership_of(self, task_id: str) -> dict | None:
         """The task's owner record augmented with ``is_live``, or None."""

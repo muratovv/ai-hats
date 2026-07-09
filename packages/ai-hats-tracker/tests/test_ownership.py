@@ -90,20 +90,6 @@ def test_reexecute_same_task_is_idempotent(reg: Path, live: _Liveness) -> None:
     assert ownership.held_by(reg, "sess-a") == ["T-1"]
 
 
-def test_force_bypasses_live_owner(reg: Path, live: _Liveness) -> None:
-    live.add(100, 200)
-    ownership.take(reg, "T-1", "sess-a", 100, is_live=live)
-    ownership.take(reg, "T-1", "sess-b", 200, force=True, is_live=live)
-    assert ownership.owner_of(reg, "T-1", is_live=live)["session_id"] == "sess-b"
-
-
-def test_force_records_claim_over_single_slot(reg: Path, live: _Liveness) -> None:
-    live.add(100)
-    ownership.take(reg, "T-1", "sess-a", 100, is_live=live)
-    ownership.take(reg, "T-2", "sess-a", 100, force=True, is_live=live)
-    assert ownership.owner_of(reg, "T-2", is_live=live)["session_id"] == "sess-a"
-
-
 def test_release_drops_own_only(reg: Path, live: _Liveness) -> None:
     live.add(100)
     ownership.take(reg, "T-1", "sess-a", 100, is_live=live)
@@ -171,7 +157,7 @@ def test_owner_of_marks_dead_owner(reg: Path, live: _Liveness) -> None:
 
 def test_record_is_live_real_pids() -> None:
     """The real (un-faked) liveness: this process is live; a reaped pid is dead."""
-    alive = {"root_pid": os.getpid(), "start_time": ownership._proc_start_time(os.getpid())}
+    alive = {"root_pid": os.getpid(), "start_time": ownership._capture_start_time(os.getpid())}
     assert ownership.record_is_live(alive) is True
 
     proc = subprocess.Popen([sys.executable, "-c", "pass"])

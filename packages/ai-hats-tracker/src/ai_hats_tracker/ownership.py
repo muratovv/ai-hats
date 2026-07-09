@@ -38,12 +38,12 @@ class OwnershipRefused(Exception):
 # --------------------------------------------------------------------------- #
 # Inline liveness (deliberate copy of version_refs; see module docstring).
 # --------------------------------------------------------------------------- #
-def _proc_start_time(pid: int) -> str | None:
-    """OS-reported start time of ``pid`` as an opaque string, or ``None``.
-
-    ``ps -o lstart=`` (POSIX; macOS + Linux, second precision). ``None`` = no
-    such process **or** ``ps`` unavailable; the raw string is stored and compared
-    verbatim, never parsed.
+def _proc_start_time(pid: int) -> tuple[bool, str | None]:
+    """OS start time of ``pid`` as ``(determined, value)`` — errors must not read
+    as death, so "no such process" and "couldn't tell" stay distinct:
+    ``(True, "<lstart>")`` exists; ``(True, None)`` ps ran, gone → dead;
+    ``(False, None)`` ps errored → undetermined (caller must not reclaim).
+    ``ps -o lstart=`` (POSIX); the raw string is stored/compared verbatim.
     """
     try:
         out = subprocess.run(
@@ -53,15 +53,23 @@ def _proc_start_time(pid: int) -> str | None:
             timeout=5,
         )
     except (OSError, subprocess.SubprocessError):
-        return None
+        return (False, None)  # ps unavailable → undetermined
     if out.returncode != 0:
+        return (True, None)  # ps ran, no such process → dead
+    return (True, out.stdout.strip())  # exists (string, possibly empty)
+
+
+def _capture_start_time(pid: int) -> str | None:
+    """The ``start_time`` to store at claim time, or ``None`` if unknown."""
+    if not isinstance(pid, int) or pid <= 0:
         return None
-    return out.stdout.strip() or None
+    determined, value = _proc_start_time(pid)
+    return value if determined else None
 
 
 def _pid_alive(pid: int) -> bool:
-    """Conservative ``os.kill(pid, 0)`` fallback when ``start_time`` is
-    unavailable — no reuse detection (a reused pid reads as alive)."""
+    """Conservative ``os.kill(pid, 0)`` fallback when ``ps`` is unavailable — no
+    reuse detection (a reused pid reads as alive); biased to keep the claim."""
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -74,21 +82,27 @@ def _pid_alive(pid: int) -> bool:
 
 
 def record_is_live(record: dict) -> bool:
-    """True iff the process that claimed ``record`` is still alive.
+    """Whether ``record``'s owner process is still alive.
 
-    Precise path: recorded and current ``start_time`` both known and equal ⇒ same
-    process ⇒ live; differ ⇒ pid reused ⇒ dead. Fallback (``ps`` unavailable):
-    ``os.kill`` liveness. A record without an integer ``root_pid`` (e.g. a
-    harness-less run that never captured one) protects nothing ⇒ dead.
+    ``record`` = a registry entry ``{session_id, root_pid, start_time, ...}``.
+    ``True`` = owner alive → task NOT reclaimable; ``False`` = certainly dead →
+    safe to reclaim/sweep. **Biased to True on uncertainty**: a transient ``ps``
+    failure must never read as death (else a neighbour's task gets stolen).
+    ``False`` only on proof — no ``root_pid``, ``ps`` says no such process, or a
+    reused pid (``start_time`` mismatch). ``ps`` unavailable ⇒ ``os.kill``.
     """
     pid = record.get("root_pid")
     if not isinstance(pid, int) or pid <= 0:
-        return False
+        return False  # no anchor was ever captured → not a live claim
+    determined, current = _proc_start_time(pid)
+    if not determined:
+        return _pid_alive(pid)  # ps unavailable → conservative os.kill
+    if current is None:
+        return False  # ps ran, process gone → certainly dead
     recorded = record.get("start_time")
-    current = _proc_start_time(pid)
-    if recorded is not None and current is not None:
-        return current == recorded
-    return _pid_alive(pid)
+    if recorded is None:
+        return True  # process exists, no baseline to compare → assume live
+    return current == recorded
 
 
 LiveFn = Callable[[dict], bool]
@@ -134,37 +148,34 @@ def take(
     session_id: str,
     root_pid: int,
     *,
-    force: bool = False,
     is_live: LiveFn = record_is_live,
 ) -> None:
-    """Claim ``task_id`` for ``session_id``. Raises :class:`OwnershipRefused`
-    unless ``force``.
+    """Claim ``task_id`` for ``session_id``, or raise :class:`OwnershipRefused`.
 
     Under the registry lock: sweep dead records, then refuse if a live *other*
     session owns the task (reclaim guard) or if this session already holds a
-    different task (single-slot). ``force`` skips the refusals but still records
-    the claim, so a force-executed task is never left unowned.
+    different task (single-slot). Ownership is never forcibly overridden — a live
+    owner is respected; a stuck one is reclaimed only once its process dies.
     """
     with _lock(path):
         reg = _load(path)
         owners = {t: r for t, r in reg["owners"].items() if is_live(r)}
 
         current = owners.get(task_id)
-        if not force:
-            if current is not None and current.get("session_id") != session_id:
-                raise OwnershipRefused(
-                    task_id, reason="held by a live agent", holder=current.get("session_id", "")
-                )
-            others = [t for t, r in owners.items() if r.get("session_id") == session_id and t != task_id]
-            if others:
-                raise OwnershipRefused(
-                    task_id, reason=f"session already holds {sorted(others)}; stop/close it first"
-                )
+        if current is not None and current.get("session_id") != session_id:
+            raise OwnershipRefused(
+                task_id, reason="held by a live agent", holder=current.get("session_id", "")
+            )
+        others = [t for t, r in owners.items() if r.get("session_id") == session_id and t != task_id]
+        if others:
+            raise OwnershipRefused(
+                task_id, reason=f"session already holds {sorted(others)}; finish it first"
+            )
 
         owners[task_id] = {
             "session_id": session_id,
             "root_pid": root_pid,
-            "start_time": _proc_start_time(root_pid) if isinstance(root_pid, int) and root_pid > 0 else None,
+            "start_time": _capture_start_time(root_pid),
             "claimed_at": _now(),
         }
         reg["owners"] = owners
@@ -202,9 +213,14 @@ def finish(path: Path, task_id: str) -> None:
 def owner_of(path: Path, task_id: str, *, is_live: LiveFn = record_is_live) -> dict | None:
     """Return ``task_id``'s owner record augmented with ``is_live: bool``, or
     ``None`` if unowned. Liveness is computed here so CLI callers render it
-    without importing any liveness primitive."""
-    reg = _load(path)
-    record = reg["owners"].get(task_id)
+    without importing any liveness primitive.
+
+    Read under the lock: ``filelock`` has no shared/read mode, so a plain
+    exclusive acquire serialises against a concurrent ``take``/``release`` and
+    never returns a torn or already-superseded owner.
+    """
+    with _lock(path):
+        record = _load(path)["owners"].get(task_id)
     if record is None:
         return None
     return {**record, "is_live": is_live(record)}
@@ -214,10 +230,12 @@ def held_by(path: Path, session_id: str) -> list[str]:
     """Task ids currently recorded for ``session_id`` (single-slot check).
 
     No liveness filter: the calling session is alive by definition and a record
-    with its id was written by this run, so presence == held.
+    with its id was written by this run, so presence == held. Read under the lock
+    for the same reason as ``owner_of``.
     """
-    reg = _load(path)
-    return sorted(t for t, r in reg["owners"].items() if r.get("session_id") == session_id)
+    with _lock(path):
+        owners = _load(path)["owners"]
+    return sorted(t for t, r in owners.items() if r.get("session_id") == session_id)
 
 
 def sweep(path: Path, *, is_live: LiveFn = record_is_live) -> int:
