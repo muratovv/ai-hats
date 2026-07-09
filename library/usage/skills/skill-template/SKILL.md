@@ -1,6 +1,7 @@
 ---
 name: skill-template
 description: Canonical template and validation guide for ai-hats skills. Use when creating a new skill, reviewing an existing one for structural compliance, or deciding which pattern fits a new behavior.
+license: MIT
 ---
 
 # Skill Template

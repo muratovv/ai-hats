@@ -1,4 +1,5 @@
 name: dev_rule_e2e_gate
+license: MIT
 description: Require an e2e integration test (real bash + real pip + real ai-hats binary) before transitioning CLI/shell/pip-touching tasks to done
 author: ai-hats
 tags: [development, testing, lifecycle, cli, gate]

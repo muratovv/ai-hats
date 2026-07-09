@@ -1,6 +1,7 @@
 ---
 name: agentic-topology-design
 description: Choose a multi-agent topology and enforce structured contracts between sub-agents. Use when designing a flow with two or more sub-agents (code-review pipeline, deep research, incident triage, batch refactor), replacing a monolithic prompt agent showing attention dilution, or drafting an ADR for an agentic feature.
+license: MIT
 ---
 # Agentic Topology Design
 

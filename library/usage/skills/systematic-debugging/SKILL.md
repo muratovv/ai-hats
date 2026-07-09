@@ -1,6 +1,7 @@
 ---
 name: systematic-debugging
 description: 4-phase bug-fix protocol (evidence, pattern, hypothesis, verify). Use when investigating any error, failure, or unexpected behavior, handling bug reports from users or monitoring, or diagnosing test failures with non-obvious causes.
+license: MIT
 ---
 # Systematic Debugging
 

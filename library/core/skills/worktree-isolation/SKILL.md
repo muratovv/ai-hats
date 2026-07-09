@@ -6,6 +6,7 @@ ai_hats:
     PreToolUse:
       - matcher: Edit|Write|MultiEdit
         script: hooks/wt_gate.py
+license: MIT
 ---
 
 # Worktree Isolation

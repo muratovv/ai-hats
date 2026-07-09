@@ -1,7 +1,9 @@
 ---
 name: predictive-accounting
 description: For shrink/refactor/optimize/cleanup tasks — present baseline + predicted delta + dependency cost BEFORE implementation, not after
+license: MIT
 ---
+
 # Predictive Accounting
 
 For tasks in the **shrink / refactor / extract / optimize / cleanup** family —
@@ -37,11 +39,11 @@ Ask for confirmation **before** starting implementation. Do not arrive at
 
 Show a table:
 
-| Change | Short-term delta | Long-term delta | Dependency | Work cost |
-|--------|------------------|-----------------|------------|-----------|
-| Inline skill X into trait Y | +1086 tokens | -458 tokens | requires HATS-307 | 1 commit |
-| Collapse traits A+B+C → D | -205 tokens | -205 tokens | none | 1 commit |
-| ... | ... | ... | ... | ... |
+| Change                      | Short-term delta | Long-term delta | Dependency        | Work cost |
+| --------------------------- | ---------------- | --------------- | ----------------- | --------- |
+| Inline skill X into trait Y | +1086 tokens     | -458 tokens     | requires HATS-307 | 1 commit  |
+| Collapse traits A+B+C → D   | -205 tokens      | -205 tokens     | none              | 1 commit  |
+| ...                         | ...              | ...             | ...               | ...       |
 
 Wait for explicit confirmation. If short-term is **negative**, the user
 should be able to choose: "skip", "do only the dependency-free wins",

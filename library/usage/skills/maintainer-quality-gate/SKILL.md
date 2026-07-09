@@ -11,6 +11,7 @@ ai_hats:
   git_hooks:
     pre-push:
       - git_hooks/pre-push-e2e-master.sh
+license: MIT
 ---
 # maintainer-quality-gate
 

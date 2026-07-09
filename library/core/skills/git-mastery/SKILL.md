@@ -22,6 +22,7 @@ ai_hats:
       - git_hooks/pre-push-shared-state.sh
     # No post-merge/post-checkout self-heal: .githooks/ drift is re-healed by the
     # session-start managed-hook net (Assembler.sync_hooks), not a git-event hook.
+license: MIT
 ---
 
 # Git Mastery
