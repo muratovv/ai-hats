@@ -11,26 +11,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ai_hats_core.paths import default_project_dir
 from rich.console import Console
 
-
-def _default_project_dir() -> Path:
-    """Resolve the project root by walking up from CWD, wt-free.
-
-    Mirrors the integrator's ``_helpers._project_dir`` minus the linked-worktree
-    hop: on a ``.git`` *file* (gitlink) it returns the holding dir instead of
-    hopping to the main checkout (that hop needs ai-hats-wt).
-    """
-    cwd = Path.cwd()
-    candidates = [cwd, *cwd.parents]
-    for d in candidates:
-        if (d / ".agent").is_dir():
-            return d
-    for d in candidates:
-        git = d / ".git"
-        if git.is_dir() or git.is_file():
-            return d
-    return cwd
+# The wt-free project-root resolver is shared via core (HATS-952) — the observe
+# seam delegates to the same primitive; the integrator injects its wt-coupled one
+# (``_helpers._project_dir``, which adds the linked-worktree hop that needs wt).
+_default_project_dir = default_project_dir
 
 
 def _default_task_manager(project_dir: Path | None = None):

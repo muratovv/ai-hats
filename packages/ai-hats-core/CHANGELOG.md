@@ -7,6 +7,10 @@ versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `ai_hats_core.paths.default_project_dir` — the worktree-free project-root
+  resolver (walk up for `.agent`/`.git`), shared by the tracker and observe
+  standalone CLIs so the walk-up is no longer copied per package (HATS-952). The
+  integrator keeps its richer wt-coupled `_project_dir` (linked-worktree hop).
 - `ai_hats_core.recovery` — the `RecoveryProtocol` (`run()` contract) +
   `NoOpRecovery` (the package-pure default), promoted from
   `ai_hats.environment_recovery` (HATS-948, T15). A domain-agnostic DI seam so

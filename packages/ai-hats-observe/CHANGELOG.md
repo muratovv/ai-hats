@@ -17,8 +17,10 @@ party can browse recorded sessions with only `ai-hats-observe` installed.
 - `ai_hats_observe.cli` — the `session` Click group with `list` / `show` /
   `audit`, plus a `_seam` of injectable resolvers (`_PROJECT_DIR`, `_RUNS_DIR`,
   `_TAG_FILTER_PARSER`, `_CONSOLE`) defaulting to worktree-free, project-local
-  values (`<project>/.agent/sessions/runs`). Standalone drive proven on a bare
-  tmp dir (`test_session_cli_standalone.py`). `click` / `rich` join the deps.
+  values (`<project>/.agent/sessions/runs`). `_PROJECT_DIR` delegates to the
+  shared `ai_hats_core.paths.default_project_dir` (same primitive the tracker CLI
+  uses). Standalone drive proven on a bare tmp dir
+  (`test_session_cli_standalone.py`). `click` / `rich` join the deps.
 - The ai-hats integrator overrides the `_seam` resolvers with its
   AI_HATS_DIR/yaml-aware versions at mount and re-attaches the retro subcommands
   (`retro` / `retro-validate`, downstream consumers that stay integrator-side).
