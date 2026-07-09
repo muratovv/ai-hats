@@ -43,18 +43,15 @@ def repos(tmp_path):
     return main, linked
 
 
-def _run(file_path, *, env_extra=None, raw=None):
-    payload = (
-        raw
-        if raw is not None
-        else json.dumps(
-            {
-                "hook_event_name": HOOK_PRE_TOOL_USE,
-                "tool_name": "Edit",
-                "tool_input": {"file_path": str(file_path)},
-            }
-        )
-    )
+def _run(file_path, *, env_extra=None, raw=None, cwd=None):
+    body = {
+        "hook_event_name": HOOK_PRE_TOOL_USE,
+        "tool_name": "Edit",
+        "tool_input": {"file_path": str(file_path)},
+    }
+    if cwd is not None:
+        body["cwd"] = str(cwd)  # HATS-959: session repo the gate scopes to
+    payload = raw if raw is not None else json.dumps(body)
     env = os.environ.copy()
     env.pop("AI_HATS_WT_GATE_OFF", None)
     if env_extra:
@@ -166,3 +163,68 @@ def test_malformed_payload_fails_open(raw):
     res = _run(None, raw=raw)
     assert res.returncode == 0, res.stderr
     assert _decision(res) == (None, None), f"malformed payload must fail open, {res.stdout!r}"
+
+
+# --- HATS-959: the gate must scope to the SESSION's own repo (payload `cwd`) -----------
+
+
+@pytest.fixture
+def foreign(tmp_path):
+    """A second, unrelated main checkout (e.g. ~/dotfiles) with a tracked config file."""
+    repo = tmp_path / "foreign"
+    (repo / ".claude").mkdir(parents=True)
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "t@t.io")
+    _git(repo, "config", "user.name", "t")
+    (repo / ".claude" / "settings.json").write_text("{}\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "init")
+    return repo
+
+
+@pytest.mark.integration
+def test_file_in_foreign_repo_is_silent(repos, foreign):
+    # The reported bug: a session in project A edits a tracked config in an unrelated
+    # repo B. B's file is a main-checkout, trigger-ext, non-gitignored file, so the
+    # pre-HATS-959 gate denied it. With cwd scoping it is out of project -> silent.
+    main, _ = repos
+    res = _run(foreign / ".claude" / "settings.json", cwd=main)
+    assert res.returncode == 0, res.stderr
+    assert _decision(res) == (None, None), f"foreign-repo edit must be silent, {res.stdout!r}"
+
+
+@pytest.mark.integration
+def test_same_repo_main_is_denied_with_cwd(repos):
+    # Primary protection preserved: cwd and file share the session repo -> deny.
+    main, _ = repos
+    res = _run(main / "service.py", cwd=main)
+    assert res.returncode == 0, res.stderr
+    assert _decision(res)[0] == "deny", f"same-repo main edit should deny, {res.stdout!r}"
+
+
+@pytest.mark.integration
+def test_worktree_session_editing_main_is_denied(repos):
+    # cwd inside a linked worktree, file in that repo's MAIN checkout: same
+    # git-common-dir -> still the collision case HATS-526 guards -> deny.
+    main, linked = repos
+    res = _run(main / "service.py", cwd=linked)
+    assert res.returncode == 0, res.stderr
+    assert _decision(res)[0] == "deny", f"worktree->main edit should deny, {res.stdout!r}"
+
+
+@pytest.mark.integration
+def test_missing_cwd_falls_back_to_old_behavior(repos):
+    # cwd absent: cannot scope -> fall back to location-only deny (R4).
+    main, _ = repos
+    res = _run(main / "service.py")  # no cwd in payload
+    assert res.returncode == 0, res.stderr
+    assert _decision(res)[0] == "deny", f"no-cwd main edit should deny, {res.stdout!r}"
+
+
+@pytest.mark.integration
+def test_non_git_cwd_falls_back_to_old_behavior(repos, tmp_path):
+    # cwd present but not a git repo: session repo unresolvable -> old deny (R4).
+    main, _ = repos
+    res = _run(main / "service.py", cwd=tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert _decision(res)[0] == "deny", f"non-git cwd main edit should deny, {res.stdout!r}"
