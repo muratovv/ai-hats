@@ -1,4 +1,5 @@
 name: rule_core_vs_usage_split
+license: MIT
 description: When creating a new rule/skill/trait, first decide universal-vs-project-specific — universal goes to library/core/, project-specific gets a dedicated library/usage/ trait + role wiring
 author: ai-hats
 tags: [framework, component-lifecycle, library-split, decision-rule]

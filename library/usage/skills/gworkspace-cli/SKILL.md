@@ -1,6 +1,7 @@
 ---
 name: gworkspace-cli
 description: Google Workspace via the gws CLI (Drive/Sheets/Docs/Gmail/Calendar/Chat/Admin). Use when the agent needs to read or write any Workspace data such as Drive files, Sheets values, Docs content, Gmail messages, Calendar events, Chat messages, or Admin SDK objects.
+license: MIT
 ---
 # Google Workspace CLI (gws)
 

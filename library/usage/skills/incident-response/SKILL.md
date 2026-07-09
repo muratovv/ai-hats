@@ -1,6 +1,7 @@
 ---
 name: incident-response
 description: Structured procedure for investigating and resolving production incidents. Use when a service or infrastructure component is down or degraded, when alerts fire for critical thresholds (disk, CPU, connectivity), or when a user reports a production issue.
+license: MIT
 ---
 # Incident Response
 

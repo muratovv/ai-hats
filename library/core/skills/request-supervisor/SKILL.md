@@ -1,12 +1,15 @@
 ---
 name: request-supervisor
 description: Decision protocol for when to act autonomously vs escalate to supervisor. Use before any communication with the user or parent-agent, or whenever uncertain whether to act autonomously or escalate.
+license: MIT
 ---
+
 # Request Supervisor
 
 Protocol for deciding whether to request help from supervisor (user or parent-agent).
 
 ## When to Use
+
 This is the *escalation gate*, and over-using it defeats the autonomy it guards.
 Do **not** invoke for decisions you can resolve yourself from the code, project
 conventions, or a sensible default — act, and note the choice. Reserve it for
@@ -35,12 +38,14 @@ cheap ways to disambiguate.
 4. **If it fails** — read the error, debug the root cause. Do not retry blindly or suggest reinstall as first fix.
 
 ## Valid Reasons to Request
+
 - Authentication or authorization you cannot perform
 - Approval for destructive or irreversible actions
 - Business decisions or priority calls
 - Access to systems you have no tools for
 
 ## Invalid Reasons (Do It Yourself)
+
 - Running commands or scripts
 - Checking endpoint availability
 - Reading or writing files
@@ -51,5 +56,6 @@ cheap ways to disambiguate.
 - Asking user to run something you can run via Bash tool
 
 ## Completion
+
 - Decision made: either acted autonomously or sent a focused request
 - If requesting: specific question with context, not a vague "what should I do?"

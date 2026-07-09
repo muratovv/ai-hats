@@ -1,4 +1,5 @@
 name: rule_pause_before_shared_state_write
+license: MIT
 description: Pause and ask for confirmation before any shared-state write (gh pr/issue/release, git push, TaskCreate)
 author: ai-hats
 tags: [safety, agent, shared-state, hyp-026, hyp-027]

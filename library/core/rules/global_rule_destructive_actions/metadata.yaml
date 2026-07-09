@@ -1,4 +1,5 @@
 name: global_rule_destructive_actions
+license: MIT
 description: Protect sacred files, confirm before any destructive operation
 author: ai-hats
 tags: [safety, global, destructive]

@@ -1,7 +1,9 @@
 ---
 name: design-minimalism
 description: The Scope & Out-of-scope stage of the plan-gate — every primitive (class, abstraction, option, new step) in plan.md must be justified by a concrete current-epic use case; speculative additions go to Out of scope. Reached through plan-gate, not as an independent trigger.
+license: MIT
 ---
+
 # Design Minimalism
 
 The **Scope & Out-of-scope stage of `plan-gate`**: each primitive (class,
@@ -19,6 +21,7 @@ This complements `trait-se-mindset`'s "Simplicity first" — that rule is about
 Reach this stage through `plan-gate`, not as a standalone brainstorm→plan
 trigger — `plan-gate` is the single entry point and routes here to fill the
 `Scope & Out-of-scope` section of `plan.md`.
+
 - Run it when that section is being written, or a plan proposes new abstractions, options, or sub-systems.
 - Trigger inside it: noticing the urge to "future-proof" or "add for completeness".
 - Sibling stage: `requirements-interview` owns the adjacent `Requirements` section — clarify *what* to build there, *how much* here.
@@ -50,13 +53,13 @@ Ask:
 
 User explicitly rejected, across iterations:
 
-| Proposed | Rejected because |
-|----------|------------------|
-| `MutableStateEnvelope` class | speculative — no current step needed mutation |
-| Central state schema with enumerated keys | speculative — closed schema blocks user extension |
-| `SaveArtifact` pipeline step | speculative — no current pipeline declared persistence |
-| YAML pipeline manifests | speculative — bash-compose covers all current use cases |
-| 15 pre-listed child task IDs | speculative — child tasks file at start of phase when design is stable |
+| Proposed                                  | Rejected because                                                       |
+| ----------------------------------------- | ---------------------------------------------------------------------- |
+| `MutableStateEnvelope` class              | speculative — no current step needed mutation                          |
+| Central state schema with enumerated keys | speculative — closed schema blocks user extension                      |
+| `SaveArtifact` pipeline step              | speculative — no current pipeline declared persistence                 |
+| YAML pipeline manifests                   | speculative — bash-compose covers all current use cases                |
+| 15 pre-listed child task IDs              | speculative — child tasks file at start of phase when design is stable |
 
 Each was framed as "future-proofing". Each cost user time to read and reject.
 A `## Out of scope` section listing them once with rejection rationale would
@@ -88,14 +91,14 @@ step) — the rest of this skill governs.
 
 ### The ladder
 
-| Rung | Layer | Cost | Description |
-|---|---|---|---|
-| 1 | **text-in-YAML** | trivial | New field round-trips via `extra="allow"` or a free-form string in an existing config. No schema change. |
-| 2 | **skill text** | low | Edit an existing `SKILL.md` or add a new one under `library/`. No engine touch. |
-| 3 | **trait wiring** | low | Attach an existing skill to a trait's composition, or add an injection bullet to a trait. No engine touch. |
-| 4 | **handoff / runner code** | medium | Minimal Python under `src/ai_hats/retro/` or `src/ai_hats/cli/` to surface or consume a YAML field. Unit-tested. |
-| 5 | **CLI flags** | medium-high | Typed flags on an existing CLI command. Requires `dev_rule_e2e_gate` coverage. |
-| 6 | **typed schema** | high | Pydantic model fields, migrations, validators. Reserve for "shape is stable and we need rejection at the storage layer". |
+| Rung | Layer                     | Cost        | Description                                                                                                              |
+| ---- | ------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 1    | **text-in-YAML**          | trivial     | New field round-trips via `extra="allow"` or a free-form string in an existing config. No schema change.                 |
+| 2    | **skill text**            | low         | Edit an existing `SKILL.md` or add a new one under `library/`. No engine touch.                                          |
+| 3    | **trait wiring**          | low         | Attach an existing skill to a trait's composition, or add an injection bullet to a trait. No engine touch.               |
+| 4    | **handoff / runner code** | medium      | Minimal Python under `src/ai_hats/retro/` or `src/ai_hats/cli/` to surface or consume a YAML field. Unit-tested.         |
+| 5    | **CLI flags**             | medium-high | Typed flags on an existing CLI command. Requires `dev_rule_e2e_gate` coverage.                                           |
+| 6    | **typed schema**          | high        | Pydantic model fields, migrations, validators. Reserve for "shape is stable and we need rejection at the storage layer". |
 
 ### Don't skip rungs
 

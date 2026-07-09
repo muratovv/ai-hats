@@ -1,4 +1,5 @@
 name: global_rule_resource_hygiene
+license: MIT
 description: Clean up temp artifacts you create before reporting done
 author: ai-hats
 tags: [hygiene, global, cleanup]

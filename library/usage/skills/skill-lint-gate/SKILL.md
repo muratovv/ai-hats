@@ -10,6 +10,7 @@ ai_hats:
   git_hooks:
     pre-commit:
       - git_hooks/pre-commit-skill-lint.sh
+license: MIT
 ---
 # Skill Lint Gate
 
