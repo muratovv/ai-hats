@@ -14,7 +14,9 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
+from ..usage import empty_usage_report
 from .base import ParsedTranscript, Turn
 
 
@@ -203,3 +205,11 @@ class TraceParser:
     ) -> ParsedTranscript:
         entries = self._parse_trace(trace_path)
         return ParsedTranscript(turns=self._extract_turns(entries))
+
+    def parse_usage(
+        self, jsonl_path: Path | None, trace_path: Path
+    ) -> dict[str, Any]:
+        """No token telemetry on this surface → a well-formed empty ``usage/v1``."""
+        report = empty_usage_report(trace_path.name)
+        report["flags"].append("no-structured-transcript")
+        return report
