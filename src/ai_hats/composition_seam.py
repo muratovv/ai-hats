@@ -282,9 +282,19 @@ def _static_cost_analyzer(project_dir: Path):
         return {
             "role": role,
             "total_tokens": breakdown.total_tokens,
+            # HATS-957: skill bodies load on demand, not always-on. Split so the
+            # reported "always-on" figure excludes them (they show separately).
+            "always_on_tokens": breakdown.always_on_tokens,
+            "on_demand_tokens": breakdown.on_demand_tokens,
             "exact": breakdown.exact,
             "components": [
-                {"name": c.name, "category": c.category, "tokens": c.tokens}
+                {
+                    "name": c.name,
+                    "category": c.category,
+                    "tokens": c.tokens,
+                    "always_on_tokens": c.always_on_tokens,
+                    "on_demand_tokens": c.on_demand_tokens,
+                }
                 for c in breakdown.components
             ],
         }
