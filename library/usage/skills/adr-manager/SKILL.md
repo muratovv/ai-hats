@@ -1,6 +1,7 @@
 ---
 name: adr-manager
 description: "Document architectural decisions using the Michael Nygard ADR format. Use when a significant architectural choice is made: picking a database, deciding on an API protocol, adopting a new pattern, or choosing between competing approaches."
+license: MIT
 ---
 # ADR Manager
 

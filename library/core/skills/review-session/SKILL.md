@@ -1,7 +1,9 @@
 ---
 name: review-session
 description: Single-pass review of one session run, producing a hats-reflect-session/v1 document (summary, observations, one hypothesis verdict per active HYP, proposal actions). Use when running as reflect-session or session-reviewer over a specific session id.
+license: MIT
 ---
+
 # Review Session
 
 Single-pass review of one `<ai_hats_dir>/sessions/runs/session_<sid>/` — produces a
@@ -10,6 +12,7 @@ verdict per active HYP) + **review-proposal** (vote/create on improvement
 opportunities) + a free-form summary and observations.
 
 > **Harness shell prelude.** Before any `ai-hats` invocation:
+>
 > ```bash
 > ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # HATS-790: no bin/ai-hats console script
 > ```

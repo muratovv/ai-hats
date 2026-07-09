@@ -1,6 +1,7 @@
 ---
 name: ansible-ops
 description: Ansible playbook management covering inventory, vault, syntax checks, and idempotency. Use when writing or running Ansible playbooks, configuring servers or deploying services, or managing secrets with Ansible Vault.
+license: MIT
 ---
 # Ansible Ops
 

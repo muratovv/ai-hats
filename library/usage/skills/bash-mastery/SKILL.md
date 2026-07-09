@@ -1,6 +1,7 @@
 ---
 name: bash-mastery
 description: Shell scripting, Makefile conventions, and modern CLI tooling. Use when writing or reviewing shell scripts, creating or modifying Makefiles, or choosing CLI tools for automation tasks.
+license: MIT
 ---
 # Bash Mastery
 

@@ -1,6 +1,7 @@
 ---
 name: security-expert
 description: Infrastructure security covering secrets, access control, and environment hardening. Use when configuring access control, SSH, or API keys, reviewing infrastructure for security posture, before committing code that touches secrets or credentials, or setting up new servers or services.
+license: MIT
 ---
 # Infrastructure Security Expert
 

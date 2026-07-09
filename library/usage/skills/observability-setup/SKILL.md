@@ -1,6 +1,7 @@
 ---
 name: observability-setup
 description: Logging, metrics, alerting, and dashboards setup using the RED method. Use when deploying a new service or container, reviewing observability gaps after an incident, or setting up monitoring infrastructure.
+license: MIT
 ---
 # Observability Setup
 
