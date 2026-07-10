@@ -342,6 +342,26 @@ def test_existing_core_hookspath_other_value_left_alone(project_with_hook_skill,
     assert "core.hooksPath is already set" in out
 
 
+def test_existing_core_hookspath_absolute_ai_hats_dir_no_warning(project_with_hook_skill, capsys):
+    """HATS-969: an absolute core.hooksPath equal to the ai-hats .githooks dir must
+    normalize equal to the relative GITHOOKS_DIR — no false-positive warning."""
+    project, lib = project_with_hook_skill
+    abs_hooks = str((project / GITHOOKS_DIR).resolve())
+    subprocess.run(
+        ["git", "config", "core.hooksPath", abs_hooks],
+        cwd=str(project), check=True,
+    )
+
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    out = capsys.readouterr().out
+    assert "core.hooksPath is already set" not in out
+    # Left as the (equivalent) absolute path — accepted as already-correct.
+    assert _git_get(project, "core.hooksPath") == abs_hooks
+
+
 def test_unknown_event_silently_skipped(tmp_path):
     """A skill declaring an unknown git event is silently ignored.
 
@@ -462,6 +482,28 @@ def test_sync_hooks_heals_corrupted_hook(project_with_hook_skill):
     body = installed.read_text()
     assert "check ran" in body
     assert "DRIFTED" not in body
+
+
+def test_sync_hooks_surfaces_git_warning_for_hold(project_with_hook_skill):
+    """HATS-969 R3: a hooks warning raised while healing the git surface at session
+    start must ride out in HookSyncResult.warnings (for the read-hold), not be printed."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    # Foreign core.hooksPath → the git-surface heal will warn "already set".
+    subprocess.run(
+        ["git", "config", "core.hooksPath", "custom-hooks"],
+        cwd=str(project), check=True,
+    )
+    # Induce git-surface drift so sync_hooks actually re-runs install_git_hooks.
+    installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
+    installed.write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")
+
+    res = asm.hooks.sync_hooks(None)
+    assert res.status == "synced"
+    assert any("core.hooksPath is already set" in w for w in res.warnings)
 
 
 def test_sync_hooks_heals_deleted_hook(project_with_hook_skill):
