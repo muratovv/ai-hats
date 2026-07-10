@@ -201,7 +201,7 @@ def _launch_wizard_session() -> None:
     default=False,
     help="Skip the `self update` step that wizard-path init normally runs.",
 )
-@click.option(  # ai-hats: allow-secret — privacy-hook FP: diff `+@click.option` matches its email regex
+@click.option(
     "--channel",
     "channel",
     type=click.Choice(["local", "edge", "stable"]),
@@ -209,7 +209,7 @@ def _launch_wizard_session() -> None:
     help="Harness source channel (HATS-938): overrides the auto-default "
     "(local when the host ai-hats is an editable dev clone, else stable).",
 )
-@click.option(  # ai-hats: allow-secret — privacy-hook FP: diff `+@click.option` matches its email regex
+@click.option(
     "--harness-path",
     "harness_path",
     default=None,
