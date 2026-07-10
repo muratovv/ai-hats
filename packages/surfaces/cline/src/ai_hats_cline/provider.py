@@ -35,74 +35,16 @@ _INDEX_FILENAME = "ai-hats-hooks.json"
 
 # HATS-964 R1: the guard reads .tool_input.command (guard L41). The TS plugin
 # must emit this exact stdin shape — the card's {tool,command} shape produces
-# an empty extraction → silent allow. Proven by offline PoC (5/5 pass).
+# an empty extraction → silent allow.
 _GUARD_HOOK_INDEX = [
     {"event": "PreToolUse", "cline_tool": "bash",
      "script": "pre_bash_shared_state_guard.sh"},
 ]
 
-# HATS-964: the TS plugin (single-file AgentPlugin). Cline auto-discovers
-# .cline/plugins/*.ts (same convention as .cline/skills/, confirmed HATS-963).
-# beforeTool bridges cline's lifecycle hook to the bash guard: translates
-# context.input → {"tool_input":{"command":...}} (R1), spawnSyncs the guard,
-# throws on non-zero/error = explicit fail_closed (R2 — failureMode enum
-# values absent from the cline binary, so the plugin enforces fail_closed
-# itself rather than relying on a framework policy).
-_PLUGIN_TS = r"""import { spawnSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
-
-const AI_HATS_DIR = process.env.AI_HATS_DIR ?? "";
-const PROJECT_DIR = process.env.AI_HATS_PROJECT_DIR ?? "";
-const HOOKS_DIR = join(AI_HATS_DIR, "library", "hooks");
-const INDEX_PATH = join(PROJECT_DIR, ".cline", "plugins", "ai-hats-hooks.json");
-
-interface HookEntry { event: string; cline_tool: string; script: string }
-
-let _index: HookEntry[] | null = null;
-function loadIndex(): HookEntry[] {
-  if (_index !== null) return _index;
-  try {
-    const raw = existsSync(INDEX_PATH) ? readFileSync(INDEX_PATH, "utf8") : "[]";
-    _index = JSON.parse(raw) as HookEntry[];
-  } catch {
-    _index = [];
-  }
-  return _index;
-}
-
-function buildStdin(input: Record<string, unknown>): string {
-  return JSON.stringify({ tool_input: { command: (input.command as string) ?? "" } });
-}
-
-function runHook(script: string, stdin: string): void {
-  const path = join(HOOKS_DIR, script);
-  if (!existsSync(path)) throw new Error("[ai-hats] hook not found: " + path);
-  const res = spawnSync(path, [], { input: stdin, encoding: "utf8", timeout: 10000 });
-  if (res.error) throw new Error("[ai-hats] hook spawn error: " + script + "\n" + res.error.message);
-  if (res.status !== 0) throw new Error("[ai-hats] BLOCKED by " + script + ":\n" + (res.stderr?.trim() ?? ""));
-}
-
-const plugin = {
-  name: "ai-hats-hooks",
-  manifest: { capabilities: ["hooks"] },
-  setup() {},
-  hooks: {
-    beforeTool(context: { toolCall: { name: string }; input: Record<string, unknown> }) {
-      for (const h of loadIndex()) {
-        if (h.event !== "PreToolUse") continue;
-        if (context.toolCall.name !== h.cline_tool) continue;
-        runHook(h.script, buildStdin(context.input));
-      }
-    },
-    afterTool() {
-      // MVP stub — PostToolUse linters via follow-up.
-    },
-  },
-};
-
-export default plugin;
-"""
+# HATS-964: the TS plugin lives as a separate template file (see
+# templates/ai-hats-hooks.ts). Cline plugin model + lifecycle hooks:
+# https://docs.cline.bot/sdk/plugins  (AgentPlugin/hooks/beforeTool).
+_PLUGIN_TS_PATH = Path(__file__).parent / "templates" / _PLUGIN_FILENAME
 
 
 class ClineProvider(Provider):
@@ -154,14 +96,12 @@ class ClineProvider(Provider):
         return [*kept, "--yolo", "--json", *extra, meta_prompt]
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
-        # HATS-956 R10: do not isolate CLINE_DATA_DIR — keep the machine's cline
-        # auth; ai-hats-wt already provides worktree isolation.
         # HATS-964 R7: the TS plugin reads AI_HATS_DIR to locate guard scripts
         # (same shape as ClaudeProvider, providers.py:554-557).
         from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
         from ai_hats.paths import ai_hats_dir
 
-        del session_dir
+        _session_dir = session_dir  # unused: cline has no session-scoped env
         return {
             ENV_AI_HATS_DIR: str(ai_hats_dir(project_dir)),
             AI_HATS_PROJECT_DIR_ENV: str(project_dir),
@@ -172,20 +112,56 @@ class ClineProvider(Provider):
     ) -> None:
         """Materialize the TS plugin + hook index into ``.cline/plugins/``.
 
-        HATS-964: cline auto-discovers ``.cline/plugins/*.ts`` (same convention
-        as ``.cline/skills/``, confirmed HATS-963). The plugin bridges cline's
-        AgentPlugin lifecycle hooks to ai-hats's existing bash guard scripts:
-        ``beforeTool`` → translate context → spawnSync guard → throw on block.
-
-        Idempotent: re-running overwrites the same files (no duplication).
+        HATS-964: cline auto-discovers ``.cline/plugins/*.ts`` (plugin model:
+        https://docs.cline.bot/sdk/plugins). The plugin template lives in
+        ``templates/ai-hats-hooks.ts``. Sweeps stale managed plugins on each
+        run (idempotent). Filelock serializes concurrent sessions sharing one
+        project dir (two sessions with different roles must not race the dir).
         """
+        import filelock
+
         del result  # MVP: guard is unconditional; skill-declared hooks → follow-up.
         plugins_dir = project_dir / ".cline" / "plugins"
         plugins_dir.mkdir(parents=True, exist_ok=True)
         self._ensure_gitignored(project_dir, ".cline/plugins/")
-        (plugins_dir / _PLUGIN_FILENAME).write_text(_PLUGIN_TS)
+
+        lock_path = plugins_dir / ".lock"
+        lock = filelock.FileLock(str(lock_path), timeout=_LOCK_TIMEOUT)
+        try:
+            with lock:
+                self._rebuild_plugins(plugins_dir)
+        except filelock.Timeout as exc:
+            raise RuntimeError(
+                f"cline plugins materialization blocked >{_LOCK_TIMEOUT:.0f}s "
+                f"on lock {lock_path}."
+            ) from exc
+
+    @staticmethod
+    def _rebuild_plugins(plugins_dir: Path) -> None:
+        """Sweep stale + write plugin files. Caller holds the lock."""
+        # Sweep stale managed files (orphaned from a previous session/role).
+        managed_marker = plugins_dir / ".ai-hats-managed"
+        prev_managed: set[str] = set()
+        if managed_marker.is_file():
+            prev_managed = {
+                line.strip()
+                for line in managed_marker.read_text().splitlines()
+                if line.strip()
+            }
+        for name in prev_managed:
+            stale = plugins_dir / name
+            if stale.exists():
+                stale.unlink()
+
+        # Write plugin + index from template.
+        plugin_ts = _PLUGIN_TS_PATH.read_text()
+        (plugins_dir / _PLUGIN_FILENAME).write_text(plugin_ts)
         (plugins_dir / _INDEX_FILENAME).write_text(
             json.dumps(_GUARD_HOOK_INDEX, indent=2)
+        )
+
+        managed_marker.write_text(
+            "\n".join(sorted({_PLUGIN_FILENAME, _INDEX_FILENAME})) + "\n"
         )
 
     def materialize_runtime_skills(
