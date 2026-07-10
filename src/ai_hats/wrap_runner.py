@@ -185,11 +185,14 @@ class WrapRunner:
             res = self.hooks.sync_hooks(result)
             if session is not None:
                 session.log_sys(f"managed-hook resync: {res.status}")
+            notices: list[StartupNotice] = []
             if res.status == "synced" and res.changes:
-                return [StartupNotice("note", _format_hook_heal(res.changes))]
+                notices.append(StartupNotice("note", _format_hook_heal(res.changes)))
             if res.status == "version-skew":
-                return [StartupNotice("warn", _format_version_skew(res.changes))]
-            return []
+                notices.append(StartupNotice("warn", _format_version_skew(res.changes)))
+            # Genuine hooks warnings raised while healing (HATS-969) — through the hold.
+            notices.extend(StartupNotice("warn", w) for w in res.warnings)
+            return notices
         except Exception as exc:
             logger.warning("managed-hook resync at session start failed", exc_info=True)
             summary = f"managed-hook resync failed: {type(exc).__name__}: {exc}"

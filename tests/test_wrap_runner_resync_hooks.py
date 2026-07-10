@@ -133,6 +133,22 @@ def test_resync_silent_when_in_sync(project_with_hook_role):
     assert notices == []
 
 
+def test_resync_surfaces_git_hooks_warning_as_warn_notice(project_with_hook_role):
+    """HATS-969: a genuine hooks warning raised during the session-start heal is
+    surfaced as a WARN notice (→ read-hold), not printed directly and lost."""
+    project = project_with_hook_role
+    subprocess.run(
+        ["git", "config", "core.hooksPath", "custom-hooks"],
+        cwd=str(project), check=True,
+    )
+    _installed_hook(project).write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")
+
+    notices = _runner(project)._resync_managed_hooks()
+
+    warns = [n for n in notices if n.level == "warn"]
+    assert any("core.hooksPath is already set" in n.text for n in warns)
+
+
 def test_resync_is_failopen_on_roleless_project(tmp_path):
     """No active role → sync_hooks skips; the net must never raise, no notice."""
     project = tmp_path / "plain"
