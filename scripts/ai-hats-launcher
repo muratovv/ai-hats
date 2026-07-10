@@ -141,15 +141,44 @@ is_default_venv() { [[ "$VENV" == "$DEFAULT_VENV" ]]; }
 # would fix it. Probe the real entry path plus, for channel:local, every
 # source-side packages/* member (editable dist metadata is frozen at install
 # time, so the dev repo's tree — not Requires-Dist — is the truth).
+# HATS-966: the SAME probe interpreter also flags any provider entry point whose
+# module no longer resolves (a stale surface-plugin editable — e.g. a torn-down
+# worktree). Printed space-separated to stdout as a SIDE channel and captured into
+# PROBE_BROKEN_PLUGINS; the detection is try/except-wrapped so the exit code still
+# means ONLY "is the core importable" — a stale plugin never trips the core
+# venv-nuke / refuse paths (surfaces aren't in $mods; review B2). Zero extra
+# interpreter startups on a healthy launch.
+PROBE_BROKEN_PLUGINS=""
 probe_imports() {
-    local mods="ai_hats.cli" init
+    local mods="ai_hats.cli" init out rc
     if [[ -n "$LOCAL_SRC" ]]; then
         for init in "$LOCAL_SRC"/packages/*/src/*/__init__.py; do
             [[ -e "$init" ]] || continue
             mods+=", $(basename "$(dirname "$init")")"
         done
     fi
-    "$VENV/bin/python" -c "import $mods" 2>/dev/null
+    out="$("$VENV/bin/python" -c "
+import $mods
+try:
+    import importlib.util
+    from importlib.metadata import entry_points
+    _b = []
+    for _ep in entry_points(group='ai_hats.providers'):
+        _m = _ep.value.split(':', 1)[0].split('.', 1)[0].strip()
+        try:
+            _ok = importlib.util.find_spec(_m) is not None
+        except Exception:
+            _ok = False
+        if not _ok:
+            _b.append(_m)
+    if _b:
+        print(' '.join(sorted(set(_b))))
+except Exception:
+    pass
+" 2>/dev/null)"
+    rc=$?
+    PROBE_BROKEN_PLUGINS="$out"
+    return $rc
 }
 
 # --- HATS-938: editable host source for `self init`. Printed to stdout (empty
@@ -265,5 +294,13 @@ if ! probe_imports; then
     echo "  (a workspace package may be missing — HATS-895)" >&2
     missing_venv_hint
     exit 1
+fi
+# HATS-966: core is importable but the probe flagged a stale surface-plugin
+# editable (dangling .pth). Best-effort re-point before exec — never block the CLI
+# on it (|| true). No-op unless it's an editable dev checkout with a real break;
+# the fresh exec below picks up the fixed .pth. Skipped for `self …` — `self
+# update` heals surfaces itself and `self heal-editables` IS the heal.
+if [[ -n "$PROBE_BROKEN_PLUGINS" && "${1:-}" != "self" ]]; then
+    "$VENV/bin/python" -m ai_hats self heal-editables || true
 fi
 exec "$VENV/bin/python" -m ai_hats "$@"

@@ -610,8 +610,37 @@ def legacy_paths_by_class(
     return out
 
 
+def editable_install_root(dist_name: str = "ai-hats") -> Path | None:
+    """Filesystem root of an editable (PEP 660) install of ``dist_name``, else None.
+
+    Reads the dist's PEP 610 ``direct_url.json`` and returns the ``file://`` path
+    when ``dir_info.editable`` is set — a reusable way for any consumer to locate
+    its own editable checkout (e.g. surface-plugin self-heal, HATS-966). Read-only;
+    tolerant of missing / malformed metadata (returns None).
+    """
+    import json
+    from importlib.metadata import PackageNotFoundError, distribution
+
+    try:
+        raw = distribution(dist_name).read_text("direct_url.json")
+    except (PackageNotFoundError, FileNotFoundError, OSError):
+        return None
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not (data.get("dir_info") or {}).get("editable"):
+        return None
+    prefix = "file://"
+    url = data.get("url") or ""
+    return Path(url[len(prefix):]) if url.startswith(prefix) else None
+
+
 __all__ = [
     "LegacyClass",
+    "editable_install_root",
     "AI_HATS_PROJECT_DIR_ENV",
     "_read_ai_hats_dir_from_yaml",
     "_read_venv_path_from_yaml",
