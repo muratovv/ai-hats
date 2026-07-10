@@ -5,18 +5,24 @@ from?". This is the SHIPPED source (``core``/``usage``/``hooks``/``core/pipeline
 distinct from :func:`ai_hats.paths.library_dir` (the materialized
 ``<.agent>/library/`` mirror).
 
-``importlib.resources.files("ai_hats.library")`` hard-pins the editable install
+``importlib.resources.files(LIBRARY_PKG)`` hard-pins the editable install
 to the MAIN repo regardless of cwd, so library edits made inside a linked
 worktree are otherwise invisible to composition (HATS-826). Routing EVERY
 consumer (layers, hooks, core pipelines) through these helpers makes
 worktree-awareness uniform — and a guard test
 (``test_builtin_library_resolver_single_home``) bans the ``files(LIBRARY_PKG)``
 call anywhere else, so the resolution cannot silently diverge again (HATS-831).
+HATS-876/T18: builtin library = the standalone ``ai_hats_library`` package; the
+installed tier routes through ``as_file`` to survive a data-only wheel (P1 #14).
 """
 
 from __future__ import annotations
 
+import atexit
+import functools
 import os
+from contextlib import ExitStack
+from importlib.resources import as_file, files
 from pathlib import Path
 
 from .constants import (
@@ -29,48 +35,56 @@ from .constants import (
 from .validation import _validated_library_root
 
 
-def _detect_source_library_root(start: Path) -> Path | None:
-    """Walk up from ``start`` for an ai-hats *source* checkout; return its ``library/``.
+# Layer-root subpaths (from a checkout root) holding the ai_hats_library layers:
+# the monorepo/worktree home, then a standalone (git-split) ai-hats-library checkout.
+_SOURCE_LIBRARY_SUBPATHS = (
+    ("packages", "ai-hats-library", "src", "ai_hats_library"),
+    ("src", "ai_hats_library"),
+)
 
-    A source checkout is a dir holding BOTH ``library/core`` AND ``src/ai_hats``.
-    The ``src/ai_hats`` co-requirement is what distinguishes the engine source
-    repo (and its linked worktrees) from any downstream project that merely has
-    a ``library/core`` of its own — so downstream stays on the installed package
-    (HATS-826 R2). Returns ``<dir>/library`` or ``None``.
+
+def _detect_source_library_root(start: Path) -> Path | None:
+    """Walk up from ``start`` for an ai-hats-library *source* checkout; return its root.
+
+    A source checkout holds the ``ai_hats_library`` package with ``core/``+``usage/``
+    layers — inside the monorepo/worktree (``packages/ai-hats-library/src/…``) or a
+    standalone git-split checkout (``src/ai_hats_library``). HATS-876 dropped the
+    former ``src/ai_hats`` co-requirement so a **library-only checkout** resolves too
+    (ADR-0014 §6); a downstream project has neither layout and stays on the installed
+    package. Returns the layer-root dir or ``None``.
     """
     for d in (start, *start.parents):
-        if (d / "library" / "core").is_dir() and (d / "src" / "ai_hats").is_dir():
-            return d / "library"
+        for parts in _SOURCE_LIBRARY_SUBPATHS:
+            root = d.joinpath(*parts)
+            if (root / "core").is_dir() and (root / "usage").is_dir():
+                return root
     return None
 
 
+_LIB_EXITSTACK = ExitStack()
+atexit.register(_LIB_EXITSTACK.close)
+
+
+@functools.lru_cache(maxsize=1)
 def _importlib_library_root() -> Path | None:
-    """The installed ``ai_hats.library`` package dir, or ``None`` (broken install).
+    """The installed ``ai_hats_library`` package dir as a real path, or ``None``.
 
-    Wheel installs resolve ``files("ai_hats.library")`` to a real filesystem path
-    (force-include / package-dir graft, no ``__init__.py`` needed) — a plain
-    ``Path``, no ``as_file`` wrapper. HATS-861: hatchling editable installs point
-    ``ai_hats`` at ``<repo>/src/ai_hats`` but do NOT register the force-included
-    ``ai_hats.library`` submodule, so ``files()`` misses — fall back to the sibling
-    ``<repo>/library`` located from the package ``__file__`` (the parity setuptools'
-    PEP 660 finder gave for free).
+    Routes through ``importlib.resources.as_file`` (review P1 #14) so it survives a
+    data-only / zipimported wheel: for the real-dir installs we ship, ``files``
+    returns a ``pathlib.Path`` and ``as_file`` yields it unchanged (a no-op
+    passthrough — valid on 3.11); a zipimported package extracts once to a temp dir
+    held open for the process via a module-level ``ExitStack``. Cached (``lru_cache``)
+    so the materialisation happens at most once.
     """
-    from importlib.resources import files
-
     try:
-        root = Path(str(files(LIBRARY_PKG)))
+        res = files(LIBRARY_PKG)
     except (ModuleNotFoundError, FileNotFoundError):
-        root = None
-    if root is not None and root.is_dir():
-        return root
-    import ai_hats
-
-    pkg_init = getattr(ai_hats, "__file__", None)
-    if pkg_init:
-        sibling = Path(pkg_init).resolve().parents[2] / "library"
-        if (sibling / "core").is_dir():
-            return sibling
-    return None
+        return None
+    try:
+        root = _LIB_EXITSTACK.enter_context(as_file(res))
+    except (FileNotFoundError, OSError):
+        return None
+    return root if root.is_dir() else None
 
 
 def builtin_library_root() -> Path | None:
@@ -97,7 +111,7 @@ def builtin_library_root() -> Path | None:
 
 
 def _importlib_library_layers() -> list[Path]:
-    """Resolve ``[core, usage]`` from the installed ``ai_hats.library`` package.
+    """Resolve ``[core, usage]`` from the installed ``ai_hats_library`` package.
 
     Falls back to an empty list when the package data is missing (sdist
     inspection in CI / broken install) — callers degrade gracefully.
@@ -140,8 +154,8 @@ def builtin_library_hooks() -> Path | None:
 def core_pipeline_path(name: str) -> Path | None:
     """Filesystem path to a builtin core pipeline YAML, or ``None`` if unresolved.
 
-    Returns a plain ``Path`` (file-based packaging, see
-    :func:`_importlib_library_root`) — no ``as_file`` wrapper needed.
+    Returns a plain ``Path`` — the root is already materialised to a real dir by
+    the :func:`_importlib_library_root` ``as_file`` seam, so no per-call wrapper.
     """
     root = builtin_library_root()
     if root is None:

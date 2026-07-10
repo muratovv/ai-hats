@@ -1,6 +1,6 @@
 name: release-packages
 
-# Publish the workspace packages (ai-hats-core, ai-hats-wt, ai-hats-tracker, ai-hats-observe) to PyPI via OIDC
+# Publish the workspace packages (ai-hats-core, ai-hats-wt, ai-hats-tracker, ai-hats-observe, ai-hats-library) to PyPI via OIDC
 # trusted publishing — no stored API token. Manual trigger: these packages carry
 # their own static versions in packages/*/pyproject.toml, decoupled from the
 # ai-hats `v*` release tag (release.yml). To cut a package release: bump the
@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   build:
-    name: build (core + wt + tracker + observe + cline)
+    name: build (core + wt + tracker + observe + library + cline)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -37,6 +37,7 @@ jobs:
           uv build packages/ai-hats-wt -o dist-wt
           uv build packages/ai-hats-tracker -o dist-tracker
           uv build packages/ai-hats-observe -o dist-observe
+          uv build packages/ai-hats-library -o dist-library
           uv build packages/surfaces/cline -o dist-cline
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
@@ -47,6 +48,7 @@ jobs:
             dist-wt/
             dist-tracker/
             dist-observe/
+            dist-library/
             dist-cline/
           if-no-files-found: error
 
@@ -129,6 +131,25 @@ jobs:
           packages-dir: dist-observe/
           skip-existing: true
 
+  publish-library:
+    name: publish ai-hats-library (PyPI trusted publishing)
+    # Data-only, zero deps — no ordering constraint; publishes straight off build.
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi-library
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: packages-dist
+      - name: Publish ai-hats-library to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-library/
+          skip-existing: true
+
   publish-cline:
     name: publish ai-hats-cline (PyPI trusted publishing)
     # Observe first — the cline surface plugin depends on ai-hats-observe
@@ -155,7 +176,7 @@ jobs:
     # HATS-937 crashed on. Fails a skewed release loudly instead of DOA installs.
     # Retries tolerate PyPI CDN propagation lag right after upload.
     name: verify remote-channel install (post-publish)
-    needs: [publish-wt, publish-tracker, publish-observe]
+    needs: [publish-wt, publish-tracker, publish-observe, publish-library]
     runs-on: ubuntu-latest
     steps:
       - name: Install uv
@@ -176,4 +197,4 @@ jobs:
           done
           test -n "$ok" || { echo "remote install never succeeded" >&2; exit 1; }
           /tmp/verify-venv/bin/python -c \
-            "import ai_hats_core.migrations; import ai_hats_tracker; import ai_hats_observe; import ai_hats; print('remote-channel OK')"
+            "import ai_hats_core.migrations; import ai_hats_tracker; import ai_hats_observe; import ai_hats_library; import ai_hats; print('remote-channel OK')"

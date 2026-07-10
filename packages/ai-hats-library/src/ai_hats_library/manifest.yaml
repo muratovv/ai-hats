@@ -1,0 +1,7 @@
+# ai-hats-library format-schema manifest (HATS-876 / T18).
+# The versioned contract between this content (skill frontmatter + composition
+# schema + resolver expectations) and the ai-hats binary that composes it.
+# ai-hats reads schema_version from the RESOLVED library root (works for an
+# installed package, an AI_HATS_LIBRARY_ROOT dir, or a source checkout) and
+# fails loud when it exceeds the range it supports. MAJOR bump = breaking schema.
+schema_version: 1

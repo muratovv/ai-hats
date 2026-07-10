@@ -8,8 +8,9 @@ consumers (assembler, pipeline loader/harness), and the single-home guard test
 
 from __future__ import annotations
 
-# Installed package whose data dir IS the shipped builtin ``library/`` tree.
-LIBRARY_PKG = "ai_hats.library"
+# Installed package whose data dir IS the shipped builtin library tree —
+# the standalone ai-hats-library data package (HATS-876/T18; was ai_hats.library).
+LIBRARY_PKG = "ai_hats_library"
 
 # Composition layers under the library root, lowest priority first.
 LIBRARY_LAYERS = ("core", "usage")

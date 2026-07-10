@@ -13,7 +13,7 @@ from pathlib import Path
 
 HOOK_PATH = (
     Path(__file__).parent.parent
-    / "library" / "core" / "skills" / "git-mastery"
+    / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core" / "skills" / "git-mastery"
     / "git_hooks" / "pre-commit-no-raw-destructive.sh"
 )
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-GIT_HOOKS = sorted(REPO_ROOT.glob("library/**/git_hooks/*.sh"))
+GIT_HOOKS = sorted(REPO_ROOT.glob("packages/ai-hats-library/src/ai_hats_library/**/git_hooks/*.sh"))
 
 # bash-4-only constructs, anchored to command position (`^\s*`) so a prose
 # comment that merely names one does not trip the guard.

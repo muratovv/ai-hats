@@ -18,7 +18,7 @@ from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-LIBRARY_DIR = REPO_ROOT / "library"
+LIBRARY_DIR = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
 
 
 @pytest.fixture

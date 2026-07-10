@@ -147,14 +147,18 @@ class Assembler:
     def _build_library_paths(self, extra: list[Path]) -> list[Path]:
         """Build ordered library paths (earlier = lower priority).
 
-        Built-in shipping: `library/core` (engine fundament) and
-        `library/usage` (curated content), both packaged under
-        `ai_hats.library`. Override points (user-global, project-config,
-        project-local) layer on top via last-wins.
+        Built-in shipping: `core` (engine fundament) and `usage` (curated
+        content), resolved from the `ai_hats_library` package. Override points
+        (user-global, project-config, project-local) layer on top via last-wins.
         """
+        from ai_hats.library_schema import check_library_schema
+        from ai_hats.paths import builtin_library_root
+
         paths: list[Path] = []
 
-        # Built-in: core + usage (shipped with ai-hats package)
+        # Built-in: core + usage. Fail loud FIRST if the pinned library declares a
+        # format-schema newer than this ai-hats understands (T18; built-in only).
+        check_library_schema(builtin_library_root())
         for layer in _builtin_library_layers():
             paths.append(layer)
 

@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-hats-library"
+version = "0.1.0"
+description = "The ai-hats agent library — portable skills, roles, traits, and rules as a data-only package. Drop-in for any Claude Code user; the versioned content dependency of the ai-hats integrator."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "muratovv", email = "f@muratovv.me" }, # ai-hats: allow-secret
+]
+keywords = ["skills", "agent", "claude-code", "prompt", "composition", "ai-hats"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+# Data-only: no runtime dependencies. The thin ``ai_hats_library`` package
+# exists so ``importlib.resources.files("ai_hats_library")`` resolves the
+# shipped content (core/ · usage/ · hooks/) uniformly across editable + wheel.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/muratovv/ai-hats"
+Repository = "https://github.com/muratovv/ai-hats"
+Changelog = "https://github.com/muratovv/ai-hats/blob/master/packages/ai-hats-library/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+# Ship the whole package tree — the layer dirs (core/ · usage/ · hooks/) are
+# DATA (SKILL.md · config.yaml · rule.md · hook scripts), included by hatchling
+# by default for every VCS-tracked file under the package dir. This is what
+# ``files("ai_hats_library")`` resolves to; T18/HATS-876 repointed the resolver
+# here from the integrator's old ``ai_hats.library`` force-include graft.
+packages = ["src/ai_hats_library"]

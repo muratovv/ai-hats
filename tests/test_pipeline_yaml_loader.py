@@ -17,7 +17,7 @@ from ai_hats.pipeline.loader import (
 
 
 _BUILTIN_DIR = (
-    Path(__file__).parent.parent / "library/core/pipelines"
+    Path(__file__).parent.parent / "packages/ai-hats-library/src/ai_hats_library/core/pipelines"
 )
 
 

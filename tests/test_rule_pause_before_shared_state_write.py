@@ -19,7 +19,7 @@ from ai_hats.models import ComponentConfig
 from ai_hats.providers import ALWAYS_ON_RULES, ClaudeProvider
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-LIBRARY = REPO_ROOT / "library"
+LIBRARY = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
 RULE_DIR = LIBRARY / "core/rules/rule_pause_before_shared_state_write"
 
 

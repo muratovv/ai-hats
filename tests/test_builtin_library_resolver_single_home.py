@@ -122,13 +122,13 @@ def test_detector_flags_a_synthetic_hit():
     """Green must mean 'no stray site', not 'detector broken' — fire on both the
     literal and the constant spelling, and stay silent on prose + unrelated calls.
     """
-    literal = 'from importlib.resources import files\nx = files("ai_hats.library") / "hooks"\n'
+    literal = 'from importlib.resources import files\nx = files("ai_hats_library") / "hooks"\n'
     assert len(_find_library_files_calls(literal)) == 1
 
     constant = "from .constants import LIBRARY_PKG\nx = files(LIBRARY_PKG)\n"
     assert len(_find_library_files_calls(constant)) == 1
 
-    qualified = 'import importlib.resources as ir\nir.files("ai_hats.library")\n'
+    qualified = 'import importlib.resources as ir\nir.files("ai_hats_library")\n'
     assert len(_find_library_files_calls(qualified)) == 1
 
     negative = '"""prose mentioning the literal here"""\nfiles("some.other.pkg")\n'
