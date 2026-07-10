@@ -106,7 +106,7 @@ def test_same_script_reused_across_kinds_ok() -> None:
     assert carry.wt_out[0].script == "hooks/run.sh"
 
 
-@pytest.mark.parametrize("raw", [None, {}, ""])  # ai-hats: allow-secret
+@pytest.mark.parametrize("raw", [None, {}, ""])
 def test_falsy_raw_empty_carry(raw: object) -> None:
     carry = parse_worktree_carry(raw, "demo")
     assert carry.is_empty()
