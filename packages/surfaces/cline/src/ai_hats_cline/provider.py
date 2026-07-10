@@ -110,11 +110,30 @@ class ClineProvider(Provider):
         from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
         from ai_hats.paths import ai_hats_dir
 
-        _session_dir = session_dir  # unused: cline has no session-scoped env
         return {
             ENV_AI_HATS_DIR: str(ai_hats_dir(project_dir)),
             AI_HATS_PROJECT_DIR_ENV: str(project_dir),
+            # HATS-973: per-session hub port so parallel cline sessions don't
+            # collide on the default 25463 (EADDRINUSE). Ephemeral allocation
+            # guarantees the port is free at bind time; cline reads it via
+            # process.env.CLINE_HUB_PORT (explicit-endpoint mode).
+            "CLINE_HUB_PORT": str(self._allocate_hub_port()),
         }
+
+    @staticmethod
+    def _allocate_hub_port() -> int:
+        """Bind to an ephemeral port (:0), read the assigned port, close.
+
+        Guarantees the port was free at allocation time. The same process that
+        closes this socket spawns cline milliseconds later — the TOCTOU window
+        before cline's hub daemon rebinds is negligible. Standard pattern used
+        by Jupyter / Dask / pytest-fixture port helpers.
+        """
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
 
     def ensure_runtime_hooks(
         self, project_dir: Path, result: CompositionResult | None = None

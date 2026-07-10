@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `get_env` now sets `CLINE_HUB_PORT` to a per-session ephemeral port, moving
+  each ai-hats cline session off the default hub port (25463) so parallel
+  sessions and `cline --help` no longer crash with `EADDRINUSE` (HATS-973).
+
 ## [0.3.0]
 
 `ClineParser` (Adapter B, HATS-960) + TS plugin hooks (HATS-964).

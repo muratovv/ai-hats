@@ -84,6 +84,21 @@ def test_get_env_does_not_isolate_data_dir(tmp_path) -> None:
     assert env["AI_HATS_PROJECT_DIR"] == str(tmp_path)
 
 
+def test_get_env_sets_cline_hub_port(tmp_path) -> None:
+    # HATS-973: per-session CLINE_HUB_PORT moves each ai-hats cline session off
+    # the default hub port (25463) so parallel sessions don't collide.
+    env = ClineProvider().get_env(tmp_path / "session", tmp_path)
+    port = int(env["CLINE_HUB_PORT"])
+    assert 1024 < port < 65536
+
+
+def test_get_env_distinct_sessions_distinct_ports(tmp_path) -> None:
+    # Two sessions must own different hub ports (ephemeral allocation).
+    env_a = ClineProvider().get_env(tmp_path / "sess-a", tmp_path)
+    env_b = ClineProvider().get_env(tmp_path / "sess-b", tmp_path)
+    assert env_a["CLINE_HUB_PORT"] != env_b["CLINE_HUB_PORT"]
+
+
 def test_update_system_prompt_is_noop(tmp_path) -> None:
     # Inline-only surface: set_role must not litter a CLINE.md cline ignores.
     ClineProvider().update_system_prompt(tmp_path, "role body")
