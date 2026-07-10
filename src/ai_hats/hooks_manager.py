@@ -128,6 +128,7 @@ class HookSyncResult:
     status: HookSyncStatus
     detail: str = ""
     changes: tuple[HookChange, ...] = ()
+    warnings: tuple[str, ...] = ()  # genuine hooks warnings raised while healing (HATS-969)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "status", HookSyncStatus(self.status))
@@ -290,10 +291,12 @@ class HooksManager:
                 pending.append((_managed_wt_hook_filename(skill_name, hook.script), src))
         return pending
 
-    def install_git_hooks(self, result: CompositionResult) -> None:
+    def install_git_hooks(
+        self, result: CompositionResult, *, warnings_sink: list[str] | None = None
+    ) -> None:
         """Install skill-declared git hooks (mechanics are the module functions
         below — HATS-837 merged the former ``githooks`` module in)."""
-        install_git_hooks(self.project_dir, result)
+        install_git_hooks(self.project_dir, result, warnings_sink=warnings_sink)
 
     def _sweep_stale(self, target_dir: Path, stale_names: set[str], *, reason: str) -> None:
         """Discard managed files no longer in the composition."""
@@ -351,8 +354,10 @@ class HooksManager:
                 changes=tuple(changes),
             )
 
-        self._heal_surfaces({c.surface for c in changes}, result, provider)
-        return HookSyncResult(status=HookSyncStatus.SYNCED, changes=tuple(changes))
+        warnings = self._heal_surfaces({c.surface for c in changes}, result, provider)
+        return HookSyncResult(
+            status=HookSyncStatus.SYNCED, changes=tuple(changes), warnings=tuple(warnings)
+        )
 
     def _detect_changes(self, result: CompositionResult, provider) -> list[HookChange]:
         """All drifted managed-hook changes across the three surfaces."""
@@ -365,8 +370,12 @@ class HooksManager:
 
     def _heal_surfaces(
         self, surfaces: set[HookSurface], result: CompositionResult, provider
-    ) -> None:
-        """Re-materialize only the drifted surfaces (each materializer is idempotent)."""
+    ) -> list[str]:
+        """Re-materialize only the drifted surfaces (each materializer is idempotent).
+
+        Returns warnings raised while healing (git surface) so the caller can route
+        them through the session-start read-hold instead of losing them (HATS-969)."""
+        warnings: list[str] = []
 
         def _heal_runtime() -> None:
             provider.ensure_runtime_hooks(self.project_dir, result)
@@ -375,7 +384,7 @@ class HooksManager:
         healers = {
             HookSurface.RUNTIME: _heal_runtime,
             HookSurface.WT: lambda: self.materialize_worktree_hooks(result),
-            HookSurface.GIT: lambda: self.install_git_hooks(result),
+            HookSurface.GIT: lambda: self.install_git_hooks(result, warnings_sink=warnings),
         }
         for surface in surfaces:
             healer = healers.get(surface)
@@ -383,6 +392,7 @@ class HooksManager:
                 logger.warning("sync_hooks: no healer for surface %r — left undrifted", surface)
                 continue
             healer()
+        return warnings
 
     def _runtime_hooks_changes(
         self, result: "CompositionResult | None", provider
@@ -515,8 +525,12 @@ GITHOOKS_DISPATCHER_MARKER = "AI-HATS-DISPATCHER-MARKER"
 GITHOOKS_DISPATCHER_TEMPLATE = Path(__file__).parent / "templates" / "githooks" / "dispatcher.sh"
 
 
-def install_git_hooks(project_dir: Path, result: CompositionResult) -> None:
+def install_git_hooks(
+    project_dir: Path, result: CompositionResult, *, warnings_sink: list[str] | None = None
+) -> None:
     """Install git hooks declared by composed skills.
+
+    ``warnings_sink`` collects warnings instead of printing (HITL read-hold, HATS-969).
 
     Skills declare hooks in their `SKILL.md` frontmatter under the top-level
     `ai_hats.git_hooks:` key (HATS-814).
@@ -594,8 +608,11 @@ def install_git_hooks(project_dir: Path, result: CompositionResult) -> None:
     # Configure core.hooksPath (idempotent + safe).
     _configure_hooks_path(project_dir, warnings)
 
-    for w in warnings:
-        print(f"[ai-hats] WARNING: {w}")
+    if warnings_sink is not None:
+        warnings_sink.extend(warnings)
+    else:
+        for w in warnings:
+            print(f"[ai-hats] WARNING: {w}")
 
 
 def _collect_skill_git_hooks(
@@ -674,6 +691,19 @@ def _cleanup_managed_git_hooks(project_dir: Path) -> None:
             child.rmdir()  # safe-delete: ok empty-dir
 
 
+def _same_hooks_path(a: str, b: str, project_dir: Path) -> bool:
+    """True when two core.hooksPath values resolve to the same dir (HATS-969).
+
+    A relative value is taken against ``project_dir`` (git's working-tree root),
+    mirroring how git interprets a relative ``core.hooksPath``."""
+
+    def _norm(value: str) -> Path:
+        p = Path(value).expanduser()
+        return (p if p.is_absolute() else project_dir / p).resolve()
+
+    return _norm(a) == _norm(b)
+
+
 def _configure_hooks_path(project_dir: Path, warnings: list[str]) -> None:
     """Set git config core.hooksPath = .githooks if safe to do so."""
     try:
@@ -692,9 +722,12 @@ def _configure_hooks_path(project_dir: Path, warnings: list[str]) -> None:
     existing = current.stdout.strip() if current.returncode == 0 else ""
     target = GITHOOKS_DIR
 
-    if existing == target:
-        return  # Already correct.
     if existing:
+        # git returns the value verbatim (absolute or relative) — normalize both
+        # against project_dir so an absolute value equal to the relative target
+        # is recognized as already-correct instead of warned (HATS-969).
+        if _same_hooks_path(existing, target, project_dir):
+            return  # Already correct (stored relative or absolute).
         warnings.append(
             f"core.hooksPath is already set to '{existing}' — not "
             f"overwriting. To enable ai-hats hooks, run: "
