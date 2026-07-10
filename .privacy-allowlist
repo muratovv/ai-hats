@@ -29,13 +29,3 @@ packages/surfaces/cline/tests/fixtures/*.messages.json
 # detects, so its examples (home paths, credentialed DB URIs, token prefixes)
 # are pattern-shaped by design — documentation of the scanner, not a real leak.
 library/core/skills/git-mastery/SKILL.md
-
-# HATS-934: the tracker backlog-CLI modules are decorator-dense — `@click.group`
-# / `@click.command` match the email detector exactly as `@pytest.*` does above
-# (same false-positive class). Command glue, no credentials.
-packages/ai-hats-tracker/src/ai_hats_tracker/cli/*.py
-
-# HATS-952: the observe session-browse CLI is the same decorator-dense
-# false-positive class as the tracker CLI above (`@click.group` / `@click.option`
-# match the email detector). Command glue, no credentials.
-packages/ai-hats-observe/src/ai_hats_observe/cli/*.py
