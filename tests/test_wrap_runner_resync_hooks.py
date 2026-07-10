@@ -149,6 +149,23 @@ def test_resync_surfaces_git_hooks_warning_as_warn_notice(project_with_hook_role
     assert any("core.hooksPath is already set" in n.text for n in warns)
 
 
+def test_payload_startup_warnings_surface_as_warn_notices(project_with_hook_role):
+    """HATS-970: hooks warnings carried on the payload (first-run compose seam)
+    surface as WARN notices for the pre-launch read-hold."""
+    from dataclasses import replace
+
+    runner = _runner(project_with_hook_role)
+    runner.payload = replace(
+        runner.payload,
+        startup_warnings=("core.hooksPath is already set to 'x' — not overwriting",),
+    )
+
+    notices = runner._payload_startup_notices()
+
+    assert [n.level for n in notices] == ["warn"]
+    assert "core.hooksPath is already set" in notices[0].text
+
+
 def test_resync_is_failopen_on_roleless_project(tmp_path):
     """No active role → sync_hooks skips; the net must never raise, no notice."""
     project = tmp_path / "plain"

@@ -362,6 +362,27 @@ def test_existing_core_hookspath_absolute_ai_hats_dir_no_warning(project_with_ho
     assert _git_get(project, "core.hooksPath") == abs_hooks
 
 
+def test_set_role_routes_hooks_warning_to_sink(project_with_hook_skill, capsys):
+    """HATS-970: set_role(warnings_sink=...) collects first-run materialize hooks
+    warnings into the sink (for the HITL hold) instead of printing them."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    # Foreign core.hooksPath so the set_role materialize will warn "already set".
+    subprocess.run(
+        ["git", "config", "core.hooksPath", "custom-hooks"],
+        cwd=str(project), check=True,
+    )
+    capsys.readouterr()  # drop init() output
+
+    sink: list[str] = []
+    asm.set_role("test-role", warnings_sink=sink)
+
+    assert any("core.hooksPath is already set" in w for w in sink)
+    # Routed to the sink, NOT printed.
+    assert "core.hooksPath is already set" not in capsys.readouterr().out
+
+
 def test_unknown_event_silently_skipped(tmp_path):
     """A skill declaring an unknown git event is silently ignored.
 

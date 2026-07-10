@@ -33,3 +33,6 @@ class CompositionPayload:
     # HATS-867: observe factories for make_audit (static_cost_analyzer precedent).
     session_factory: "Callable[..., object] | None" = None
     audit_writer_factory: "Callable[[], object] | None" = None
+    # HATS-970: hooks warnings from the first-run set_role side effect, routed to
+    # the HITL read-hold instead of a bare pre-launch print.
+    startup_warnings: tuple[str, ...] = ()
