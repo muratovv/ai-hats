@@ -20,13 +20,17 @@ to [Semantic Versioning](https://semver.org/).
 
 - `ensure_runtime_hooks` override — materializes a TS plugin wrapper
   (`ai-hats-hooks.ts`) + hook index (`ai-hats-hooks.json`) into
-  `<project>/.cline/plugins/` (HATS-964). Cline auto-discovers the plugin;
-  its `beforeTool` hook bridges cline's AgentPlugin lifecycle to ai-hats's
+  `<project>/.cline/plugins/` (HATS-964). `CLINE_HOOKS_DIR` env +
+  `--hooks-dir` CLI flag point cline at the directory so the plugin loads
+  (cline v3.0.3 does NOT auto-discover `.cline/plugins/`). The plugin's
+  `beforeTool` hook bridges cline's AgentPlugin lifecycle to ai-hats's
   existing bash guard (`pre_bash_shared_state_guard.sh`), translating
   `context.input` → `{"tool_input":{"command":...}}` and blocking on
   non-zero exit (explicit fail_closed). `.cline/plugins/` auto-gitignored.
-- `get_env` now sets `AI_HATS_DIR` + `AI_HATS_PROJECT_DIR` so the plugin
-  can locate the materialized guard scripts at runtime.
+- `get_env` now sets `AI_HATS_DIR` + `AI_HATS_PROJECT_DIR` +
+  `CLINE_HOOKS_DIR` (path to the materialized plugins) so the plugin can
+  locate the guard scripts at runtime and cline scans the directory at
+  session start.
 - `ai_hats_cline.ClineParser` — a `TranscriptParser` that normalizes cline's
   single-object `<id>.messages.json` into observe's `ParsedTranscript` (turns +
   `model_stats` + `agg_usage`) and a full `usage/v1` report (always-on proxy,
@@ -38,6 +42,15 @@ to [Semantic Versioning](https://semver.org/).
 
 - Depends on `ai-hats-observe>=0.3.0` (the `TranscriptParser` base + `usage/v1`
   schema `ClineParser` reuses) — the MVP omitted it.
+||||||| parent of 0a9be1e (fix(cline): wire CLINE_HOOKS_DIR + --hooks-dir for plugin loading (HATS-964))
+- `get_env` now sets `AI_HATS_DIR` + `AI_HATS_PROJECT_DIR` so the plugin
+  can locate the materialized guard scripts at runtime.
+=======
+- `get_env` now sets `AI_HATS_DIR` + `AI_HATS_PROJECT_DIR` +
+  `CLINE_HOOKS_DIR` (path to the materialized plugins) so the plugin can
+  locate the guard scripts at runtime and cline scans the directory at
+  session start.
+>>>>>>> 0a9be1e (fix(cline): wire CLINE_HOOKS_DIR + --hooks-dir for plugin loading (HATS-964))
 
 ## [0.2.0]
 

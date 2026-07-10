@@ -82,6 +82,11 @@ def test_get_env_does_not_isolate_data_dir(tmp_path) -> None:
     assert "CLINE_DATA_DIR" not in env
     assert env["AI_HATS_DIR"]
     assert env["AI_HATS_PROJECT_DIR"] == str(tmp_path)
+    # HATS-973: per-session hub port to avoid EADDRINUSE on parallel sessions.
+    assert env["CLINE_HUB_PORT"]
+    # HATS-964: point cline at the materialized plugins directory so the
+    # shared-state guard loads (auto-discovery of .cline/plugins/ is unreliable).
+    assert env["CLINE_HOOKS_DIR"] == str(tmp_path / ".cline" / "plugins")
 
 
 def test_get_env_sets_cline_hub_port(tmp_path) -> None:
@@ -123,6 +128,10 @@ def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
     assert args[2] == meta_prompt
     assert "## PRIORITIES" in meta_prompt
     assert env == {}
+    # HATS-964: --hooks-dir points cline at the materialized TS plugin dir
+    assert "--hooks-dir" in args
+    idx = args.index("--hooks-dir")
+    assert args[idx + 1] == str(tmp_path / ".cline" / "plugins")
 
 
 # ---- HATS-963: .cline/skills/ materialization ----
