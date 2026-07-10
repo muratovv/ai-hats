@@ -26,8 +26,8 @@ from ai_hats.paths import PROJECT_CONFIG
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-LIB_CORE = REPO_ROOT / "library" / "core"
-LIB_USAGE = REPO_ROOT / "library" / "usage"
+LIB_CORE = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core"
+LIB_USAGE = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "usage"
 
 
 # smoke: also run by the merge-to-master CI gate (HATS-783)

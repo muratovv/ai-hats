@@ -123,7 +123,7 @@ def project_with_assistant_default(tmp_path):
     """
     project = tmp_path / "proj"
     project.mkdir()
-    lib = REPO_ROOT / "library"
+    lib = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
     ProjectConfig(
         provider="claude",
         library_paths=[str(lib)],
