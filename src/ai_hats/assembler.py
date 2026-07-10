@@ -774,7 +774,13 @@ class Assembler:
         self.save_config(default_role=role_name, provider=new_provider)
         return result
 
-    def set_role(self, role_name: str, provider_name: str | None = None) -> CompositionResult:
+    def set_role(
+        self,
+        role_name: str,
+        provider_name: str | None = None,
+        *,
+        warnings_sink: list[str] | None = None,
+    ) -> CompositionResult:
         """Runtime-bootstrap: sync ``active_role`` + materialize per-session deps.
 
         Called by :class:`Runtime` on the first session of a fresh project (or
@@ -826,7 +832,7 @@ class Assembler:
         # HooksManager materializers (runtime / worktree / git). Diagnostics
         # are NOT called from here — runtime auto-trigger stays silent
         # (HATS-469 R3).
-        self._refresh(install_time=False, result=result)
+        self._refresh(install_time=False, result=result, warnings_sink=warnings_sink)
 
         # Provider inline system prompt — Gemini-only path.
         # Claude declares a scaffold template (HATS-284); ./CLAUDE.md is
@@ -879,6 +885,7 @@ class Assembler:
         *,
         install_time: bool,
         result: CompositionResult | None,
+        warnings_sink: list[str] | None = None,
     ) -> None:
         """Single idempotent entry-point for on-disk state pull-up (HATS-469).
 
@@ -923,7 +930,7 @@ class Assembler:
         # delegated to the HooksManager facade (HATS-837). The .git guard lives
         # inside materialize(), so non-git project dirs skip git hooks silently.
         # All idempotent and REQUIRED on set_role first-session bootstrap.
-        self.hooks.materialize(result)
+        self.hooks.materialize(result, warnings_sink=warnings_sink)
 
     def _sweep_unclaimed_markers(self) -> None:
         """Thin seam onto :func:`sweeper.run_unclaimed_sweep` (HATS-905)."""

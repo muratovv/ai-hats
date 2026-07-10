@@ -157,19 +157,23 @@ class HooksManager:
 
     # ----- materialization (the init/materialization-phase facade) -----
 
-    def materialize(self, result: "CompositionResult | None") -> None:
+    def materialize(
+        self, result: "CompositionResult | None", *, warnings_sink: list[str] | None = None
+    ) -> None:
         """Bring every managed-hook surface on disk in sync with ``result``.
 
         Single facade for the materialization phase (HATS-837 review): provider
         settings.json wiring + the three surfaces. The git-repo guard lives here,
         not in the caller — a non-git project dir simply skips git hooks.
+        ``warnings_sink`` collects git-hooks warnings instead of printing so the
+        HITL first-run compose seam can route them through the hold (HATS-970).
         """
         provider = self.resolve_provider(self.project_config.provider)
         provider.ensure_runtime_hooks(self.project_dir, result)
         self.materialize_runtime_hooks(result)
         self.materialize_worktree_hooks(result)
         if result is not None and (self.project_dir / ".git").exists():
-            self.install_git_hooks(result)
+            self.install_git_hooks(result, warnings_sink=warnings_sink)
 
     def materialize_runtime_hooks(self, result: "CompositionResult | None" = None) -> None:
         """Materialize runtime-hook scripts to ``<ai_hats_dir>/library/hooks/``.
