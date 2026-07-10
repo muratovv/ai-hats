@@ -20,6 +20,7 @@ from ._helpers import _assembler, _project_dir, console, logger
 
 if TYPE_CHECKING:
     from ..channel import ChannelResolution
+    from ..self_heal import HealResult
 
 # HATS-496: accept tag / branch / full-or-short SHA as a --revision argument.
 # Bare SHA detection skips the ls-remote pre-flight (git ls-remote returns
@@ -142,6 +143,29 @@ def _is_editable_install() -> tuple[bool, str | None]:
         return (False, None)
     dir_info = data.get("dir_info") or {}
     return (bool(dir_info.get("editable")), data.get("url"))
+
+
+def _render_heal_result(result: "HealResult | None") -> None:
+    """Render a self-heal result to the console — UI only; the detect/lock/re-point
+    logic lives in ``self_heal.run_editable_heal`` (HATS-966)."""
+    if result is None:
+        return
+    for h in result.healed:
+        console.print(
+            f"[green]· self-heal[/] re-pointed [bold]{h.provider.module}[/] → {h.canonical}"
+        )
+    for w in result.warned:
+        console.print(
+            f"[yellow]· self-heal[/] {w.provider.module}: {w.reason}\n    fix: {w.fix}"
+        )
+
+
+@click.command("heal-editables", hidden=True)
+def heal_editables() -> None:
+    """Re-point stale surface-plugin editables (internal; called by the launcher)."""
+    from ..self_heal import run_editable_heal
+
+    _render_heal_result(run_editable_heal())
 
 
 def _resolve_ref(repo_url: str, ref: str) -> str | None:
@@ -1361,6 +1385,12 @@ def update(
         console.print(f"[dim]Target venv:[/] {sys.executable}")
 
     project_dir = _project_dir()
+
+    # HATS-966: repair a stale surface-plugin editable (e.g. a `cline` `.pth` left
+    # dangling by a torn-down worktree) as part of the canonical "fix my env" run.
+    from ..self_heal import run_editable_heal
+
+    _render_heal_result(run_editable_heal())
 
     # HATS-764: the harness channel (config) selects BOTH the install source and
     # the downgrade guard. Read it up front, degrading to the stable default if
