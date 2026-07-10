@@ -44,7 +44,7 @@ def _child_env(repo_root: Path) -> dict[str, str]:
 
     env = {**os.environ}
     env["PYTHONPATH"] = checkout_pythonpath(repo_root)
-    env["AI_HATS_LIBRARY_ROOT"] = str(repo_root / "library")
+    env["AI_HATS_LIBRARY_ROOT"] = str(repo_root / "packages" / "ai-hats-library" / "src" / "ai_hats_library")
     return env
 
 

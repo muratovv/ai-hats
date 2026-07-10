@@ -773,7 +773,7 @@ def _library_path() -> str:
     try:
         from importlib.resources import files
 
-        return str(files("ai_hats.library"))
+        return str(files("ai_hats_library"))
     except (ModuleNotFoundError, FileNotFoundError, OSError) as exc:
         logger.debug("library path lookup failed", exc_info=exc)
         return "(unknown)"

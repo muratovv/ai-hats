@@ -1,12 +1,12 @@
-"""E2E gate for the integrator hatchling migration (HATS-861; scope: plan.md).
+"""E2E gate for the integrator wheel (HATS-861 hatchling migration; HATS-876/T18).
 
-Real ``uv build`` + by-name install of the root ``ai-hats`` wheel, asserting the
-three properties the setuptools→hatchling swap must preserve: R2 ``__version__``
-keeps the scm string format + PEP-440 parses; R3 ``files("ai_hats.library")`` is
-a real on-disk dir with ``core/``+``usage/`` (the no-``as_file`` contract of
-``paths/library.py``, valid until T18); CLI ``--version`` exits 0. Fail-under-
-revert: dropping ``force-include`` strips ``ai_hats/library/`` (R3 red); dropping
-the ``vcs version-file`` hook strips ``_version.py`` (R2 red).
+Real ``uv build`` + by-name install of the root ``ai-hats`` wheel. R2:
+``__version__`` keeps the scm string format + PEP-440 parses. R3 (T18): the
+library is a SEPARATE dep — the wheel drops the ``ai_hats/library/`` force-include
+and declares ``Requires-Dist: ai-hats-library``; once both install,
+``files("ai_hats_library")`` is a real dir with ``core/``+``usage/``. Fail-under-
+revert: dropping the pin (or re-adding the force-include) breaks R3; dropping the
+``vcs version-file`` hook strips ``_version.py`` (R2).
 """
 
 from __future__ import annotations
@@ -54,8 +54,8 @@ def _wheel_version(wheel: Path) -> str:
     raise AssertionError(f"no Version in {wheel} METADATA")
 
 
-# In-venv probe: files("ai_hats.library") is a real on-disk dir (R3) + __version__
-# is scm-format and PEP-440 parseable (R2). Printed markers are asserted by the test.
+# In-venv probe: files("ai_hats_library") is a real on-disk dir (R3/T18) +
+# __version__ is scm-format and PEP-440 parseable (R2). Markers asserted by the test.
 _PROBE = r"""
 import importlib.resources as res
 from pathlib import Path
@@ -63,7 +63,7 @@ import re
 from packaging.version import Version
 import ai_hats
 
-p = res.files("ai_hats.library")
+p = res.files("ai_hats_library")
 real = isinstance(p, Path) and (p / "core").is_dir() and (p / "usage").is_dir()
 print("LIB", type(p).__name__, real)
 
@@ -91,16 +91,20 @@ def test_e2e_integrator_wheel_build(tmp_path):
     wheel = wheels[0]
     version = _wheel_version(wheel)
 
-    # 2. Wheel CONTENT gate — the force-include must embed the library tree + the
-    #    vcs hook must emit _version.py. RED if either hatchling line is reverted.
+    # 2. Wheel CONTENT gate (T18) — the library is a SEPARATE dep now: the wheel
+    #    must NOT ship ai_hats/library/ and MUST declare Requires-Dist on it. The
+    #    vcs hook still emits _version.py.
     with zipfile.ZipFile(wheel) as zf:
         names = zf.namelist()
-    assert any(n.startswith("ai_hats/library/core/") for n in names), (
-        "wheel missing ai_hats/library/core/ — force-include broken"
+        meta_name = next(n for n in names if n.endswith(".dist-info/METADATA"))
+        metadata = zf.read(meta_name).decode()
+    assert not any(n.startswith("ai_hats/library/") for n in names), (
+        "integrator wheel still ships ai_hats/library/ — force-include not dropped (T18)"
     )
-    assert any(n.startswith("ai_hats/library/usage/") for n in names), (
-        "wheel missing ai_hats/library/usage/ — force-include broken"
-    )
+    assert any(
+        line.startswith("Requires-Dist:") and "ai-hats-library" in line
+        for line in metadata.splitlines()
+    ), "integrator wheel does not depend on ai-hats-library (T18 pin missing)"
     assert "ai_hats/_version.py" in names, (
         "wheel missing ai_hats/_version.py — vcs version-file hook broken"
     )
@@ -118,7 +122,7 @@ def test_e2e_integrator_wheel_build(tmp_path):
     # 4. R3 + R2 probe inside the installed venv.
     probe = _run([str(py), "-c", _PROBE], cwd=tmp_path, env=env, timeout=60)
     assert "LIB PosixPath True" in probe.stdout, (
-        f"files('ai_hats.library') did not resolve to a real dir with core+usage:\n{probe.stdout}"
+        f"files('ai_hats_library') did not resolve to a real dir with core+usage:\n{probe.stdout}"
     )
     assert f"VER {version} True" in probe.stdout, (
         f"__version__ not scm-format / not the built version:\n{probe.stdout}"

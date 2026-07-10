@@ -13,9 +13,9 @@ from ai_hats.constants import HOOK_POST_TOOL_USE
 from ai_hats.models import RuntimeHook, SkillMetadata
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SKILL_DIR = REPO_ROOT / "library/usage/skills/comment-length-lint"
+SKILL_DIR = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/usage/skills/comment-length-lint"
 HOOK = SKILL_DIR / "hooks/comment_length_lint.py"
-TRAIT_CFG = REPO_ROOT / "library/usage/traits/dev/python/config.yaml"
+TRAIT_CFG = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/usage/traits/dev/python/config.yaml"
 
 
 def test_declares_posttooluse_hook():

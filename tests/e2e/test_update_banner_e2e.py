@@ -166,7 +166,7 @@ def test_update_banner_e2e(tmp_path):
     # exercises the real registry + real YAML in one shot.
     res = _run(
         [str(venv_python), "-m", "ai_hats.pipeline.loader",
-         str(REPO_ROOT / "library" / "core" / "pipelines" / "execute.yaml")],
+         str(REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core" / "pipelines" / "execute.yaml")],
         cwd=project, env=env, timeout=30,
     )
     assert "check_update_async" in res.stdout, res.stdout

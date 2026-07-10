@@ -16,10 +16,10 @@ from ai_hats.models import RuntimeHook, SkillMetadata
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SKILL_DIR = REPO_ROOT / "library/core/skills/worktree-isolation"
+SKILL_DIR = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/skills/worktree-isolation"
 HOOK = SKILL_DIR / "hooks/wt_gate.py"
 EXTS_JSON = SKILL_DIR / "hooks/code_extensions.json"
-TRAIT_CFG = REPO_ROOT / "library/core/traits/trait-agent/config.yaml"
+TRAIT_CFG = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/traits/trait-agent/config.yaml"
 
 
 def _load_hook_module():
