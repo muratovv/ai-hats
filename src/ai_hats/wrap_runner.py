@@ -28,15 +28,17 @@ from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
     _ESCAPE_NOTICE,
-    _countdown_hold,
     _scan_escape,
     _cleanup_session_cache,
     _print_session_start,
-    show_and_hold_startup_notices,
     _print_session_end,
     _finalize_session_basic,
     _run_finalize_hitl,
+)
+from .startup_notices import (
     StartupNotice,
+    _countdown_hold,
+    show_and_hold_startup_notices,
 )
 
 if TYPE_CHECKING:
@@ -199,6 +201,12 @@ class WrapRunner:
             if session is not None:
                 session.log_sys(f"managed-hook resync FAILED — {summary}")
             return [StartupNotice("warn", summary)]
+
+    def _payload_startup_notices(self) -> list[StartupNotice]:
+        """Hooks warnings from the first-run compose seam (set_role materialize),
+        carried on the payload → surfaced as WARN notices so they hit the read-hold
+        instead of a bare pre-launch print (HATS-970)."""
+        return [StartupNotice("warn", w) for w in self.payload.startup_warnings]
 
     def _check_skill_collisions(self, session: Session, result) -> list[StartupNotice]:
         """HATS-901: WARN when a composed skill will double-register this session;
@@ -408,6 +416,7 @@ class WrapRunner:
         startup_notices: list[StartupNotice] = []
         startup_notices.extend(self._resync_managed_hooks(session, result))
         startup_notices.extend(self._check_skill_collisions(session, result))
+        startup_notices.extend(self._payload_startup_notices())
 
         # Build CLI command with session ID for JSONL linkage
         claude_session_id = str(uuid.uuid4())
