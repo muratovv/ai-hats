@@ -112,6 +112,16 @@ class Provider(abc.ABC):
         """
         return TraceParser()
 
+    def leaked_user_global_project_hooks(self, home: Path) -> list[str]:
+        """ai-hats project-hook commands this surface leaked into user-global config.
+
+        ai-hats wires hooks only into *project* config; a copy in user-global
+        config double-fires and 404s off project-root (HATS-961). Base surfaces
+        manage no user-global hooks → none; ClaudeProvider overrides to scan
+        ``~/.claude/settings.json``.
+        """
+        return []
+
     def _compose_sections(
         self, result: CompositionResult, *, include_skills: bool
     ) -> str:
@@ -553,6 +563,12 @@ class ClaudeProvider(Provider):
     # a duplicate. User-authored entries (without the tag) are never touched.
     _MANAGED_HOOK_TAG = "ai-hats:hats-437"
 
+    # settings.json root key holding the hooks map (also the per-entry command list).
+    _SETTINGS_HOOKS_KEY = "hooks"
+    # Path fragment marking a command as an ai-hats project hook — short segment
+    # so it also matches a bare-relative or absolute-path leak (HATS-961).
+    _LEAKED_PROJECT_HOOK_MARKER = "ai-hats/library/hooks/"
+
     def ensure_runtime_hooks(
         self, project_dir: Path, result: CompositionResult | None = None
     ) -> None:
@@ -625,7 +641,7 @@ class ClaudeProvider(Provider):
                 # Malformed user-owned settings. Leave alone.
                 return settings_path, None, False, set(), desired_by_tag
 
-        hooks_root = data.setdefault("hooks", {})
+        hooks_root = data.setdefault(self._SETTINGS_HOOKS_KEY, {})
         if not isinstance(hooks_root, dict):
             return settings_path, None, False, set(), desired_by_tag  # user-shaped
 
@@ -666,7 +682,7 @@ class ClaudeProvider(Provider):
         still desired, else the skill segment of the ``ai-hats:<skill>:…`` tag."""
         entry = desired_by_tag.get(tag)
         if entry:
-            cmd = (entry.get("hooks") or [{}])[0].get("command", "")
+            cmd = (entry.get(ClaudeProvider._SETTINGS_HOOKS_KEY) or [{}])[0].get("command", "")
             base = str(cmd).rsplit("/", 1)[-1]
             if base:
                 return base
@@ -711,7 +727,7 @@ class ClaudeProvider(Provider):
         desired.setdefault(HOOK_PRE_TOOL_USE, []).append({
             "matcher": "Bash",
             "_ai_hats_managed": self._MANAGED_HOOK_TAG,
-            "hooks": [{"type": "command", "command": rel(guard)}],
+            self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": rel(guard)}],
         })
 
         if result is None:
@@ -725,7 +741,7 @@ class ClaudeProvider(Provider):
                 desired.setdefault(event, []).append({
                     "matcher": hook.matcher,
                     "_ai_hats_managed": f"ai-hats:{skill_name}:{event}:{hook.matcher}",
-                    "hooks": [{"type": "command", "command": command}],
+                    self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": command}],
                 })
         return desired
 
@@ -748,11 +764,11 @@ class ClaudeProvider(Provider):
                 event_list[i] = want
                 return True
 
-        want_basename = want["hooks"][0]["command"].rsplit("/", 1)[-1]
+        want_basename = want[ClaudeProvider._SETTINGS_HOOKS_KEY][0]["command"].rsplit("/", 1)[-1]
         for entry in event_list:
             if not isinstance(entry, dict) or entry.get("_ai_hats_managed"):
                 continue
-            for hook in entry.get("hooks", []) or []:
+            for hook in entry.get(ClaudeProvider._SETTINGS_HOOKS_KEY, []) or []:
                 if not isinstance(hook, dict):
                     continue
                 # Exact basename match — NOT endswith. A user file whose name
@@ -816,6 +832,40 @@ class ClaudeProvider(Provider):
             project_dir=project_dir,
         )
 
+    def leaked_user_global_project_hooks(self, home: Path) -> list[str]:
+        """ai-hats project-hook commands leaked into ``<home>/.claude/settings.json``.
+
+        Any ai-hats hook in user-global settings is a leak (double-fires + 404s
+        off project-root, HATS-961). Matched by command substring — not the
+        ``_ai_hats_managed`` tag — so a half-migrated mix of tagged/untagged
+        entries is caught. Pure: returns the commands (empty when absent /
+        unreadable / clean), never prints or mutates.
+        """
+        settings = claude_settings_json(home)
+        try:
+            raw = settings.read_text()
+            data = json.loads(raw) if raw.strip() else {}
+        except (OSError, ValueError):
+            return []  # missing / unreadable / non-UTF8 / malformed — never crash
+        if not isinstance(data, dict):
+            return []
+        hooks_root = data.get(self._SETTINGS_HOOKS_KEY)
+        if not isinstance(hooks_root, dict):
+            return []
+
+        leaked: list[str] = []
+        for event_list in hooks_root.values():
+            for entry in event_list if isinstance(event_list, list) else []:
+                if not isinstance(entry, dict):
+                    continue
+                for hook in entry.get(self._SETTINGS_HOOKS_KEY, []) or []:
+                    if not isinstance(hook, dict):
+                        continue
+                    command = str(hook.get("command", ""))
+                    if self._LEAKED_PROJECT_HOOK_MARKER in command:
+                        leaked.append(command)
+        return leaked
+
 
 # HATS-870 / T10: closed ``PROVIDERS`` dict → open registry (plug in against the
 # ``Provider`` ABC). Built-ins self-register gemini→claude — call sites need that order.
@@ -838,11 +888,23 @@ def provider_names() -> list[str]:
     return list(_PROVIDER_REGISTRY)
 
 
+class UnknownProviderError(ValueError):
+    """Unknown provider name at ``get_provider``. Subclasses ``ValueError`` so
+    existing ``except ValueError`` catchers keep working; carries ``name`` +
+    ``available`` for the friendly CLI launch handler (mirrors
+    ``RoleNotFoundError`` — HATS-965)."""
+
+    def __init__(self, name: str, available: list[str]) -> None:
+        self.name = name
+        self.available = available
+        super().__init__(f"Unknown provider: {name}. Available: {available}")
+
+
 def get_provider(name: str) -> Provider:
     """Get a provider instance by name."""
     cls = _PROVIDER_REGISTRY.get(name)
     if cls is None:
-        raise ValueError(f"Unknown provider: {name}. Available: {provider_names()}")
+        raise UnknownProviderError(name, provider_names())
     return cls()
 
 

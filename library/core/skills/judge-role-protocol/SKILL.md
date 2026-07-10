@@ -1,7 +1,9 @@
 ---
 name: judge-role-protocol
 description: HITL dialogue + CLI ops contract for judge-for-role — file-fix tasks instead of editing role/skill/rule sources
+license: MIT
 ---
+
 # Judge Role Protocol
 
 HITL contract for **judge-for-role**. Use **role-coherence-protocol**
@@ -84,7 +86,8 @@ tool to save the findings report to the path declared in
 `judge-for-hyp-prop`), not the auditing role. Filename example:
 `2026-05-12T14-30-00Z-developer.md`. Use the report template
 documented in **role-coherence-protocol** Step 3 (free-form `## Findings`
-+ `## Notes`; no YAML frontmatter required).
+
+- `## Notes`; no YAML frontmatter required).
 
 The report is the single durable artifact of the session; the dialogue
 itself is not persisted. Do NOT emit `BEGIN_REFLECT` / `END_REFLECT`

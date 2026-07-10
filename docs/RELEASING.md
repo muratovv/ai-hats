@@ -116,15 +116,18 @@ environment. Repeat only when the repo or workflow filename changes.
    publish behind a manual approval. Off by default: the tag push
    publishes unattended.
 
-### Workspace packages (`ai-hats-core`, `ai-hats-wt`, `ai-hats-tracker`, `ai-hats-observe`)
+### Workspace packages (`ai-hats-core`, `ai-hats-wt`, `ai-hats-tracker`, `ai-hats-observe`, `ai-hats-cline`)
 
-The workspace packages under `packages/*` carry their own **static** versions
-(`packages/<pkg>/pyproject.toml`), decoupled from the `ai-hats` `v*` tag. They
+The workspace packages under `packages/*` (and surface plugins under
+`packages/surfaces/*`, e.g. `ai-hats-cline`) carry their own **static** versions
+(`packages/**/pyproject.toml`), decoupled from the `ai-hats` `v*` tag. They
 publish through a separate workflow,
 [`release-packages.yml`](../.github/workflows/release-packages.yml) — build each
 with `uv build`, then a per-package OIDC publish **job** each (core first, then
-the `wt`, `tracker`, and `observe` packages that depend on it). It runs on **manual dispatch** and
+the `wt`, `tracker`, and `observe` packages that depend on it, then the `cline`
+surface that depends on `observe`). It runs on **manual dispatch** and
 **auto-triggers** on a push to master that touches `packages/*/pyproject.toml`
+or `packages/surfaces/*/pyproject.toml`
 (HATS-943 — bump⇒publish is one step; `skip-existing` no-ops an unchanged
 version). A final `verify-remote-install` job then does a fresh-venv
 `git+https` install and imports `ai_hats_core.migrations`, so a version-skewed
@@ -147,6 +150,7 @@ the disambiguator, so each package's publish job runs in its own environment
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-wt
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-tracker
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-observe
+   gh api -X PUT repos/muratovv/ai-hats/environments/pypi-cline
    ```
 
 2. Add a pending publisher for **each** package (*PyPI → Account settings →
@@ -160,6 +164,7 @@ the disambiguator, so each package's publish job runs in its own environment
    | `ai-hats-wt`      | `pypi-wt`        |
    | `ai-hats-tracker` | `pypi-tracker`   |
    | `ai-hats-observe` | `pypi-observe`   |
+   | `ai-hats-cline`   | `pypi-cline`     |
 
 **To cut a package release:** bump the version in the package's `pyproject.toml`
 and merge to master — the push auto-triggers the publish (or run it manually via

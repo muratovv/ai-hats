@@ -1,6 +1,7 @@
 ---
 name: skill-optimization
 description: Audit and refactor library components to eliminate redundancy and staleness. Use during periodic library maintenance, after adding multiple new skills or rules, when a role's token budget is too high, or after retrospectives identify component issues.
+license: MIT
 ---
 # Skill Optimization
 

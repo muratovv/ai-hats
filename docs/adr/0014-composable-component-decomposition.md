@@ -762,14 +762,19 @@ flowchart TD
   own-repo now): **T17** licensing small-fix — `license:` backfill + attribution +
   `THIRD_PARTY_NOTICES` (HATS-875), **T18** library packaging — sidecar +
   `importlib.resources.as_file` + repoint `builtin_library_root` (HATS-876), **T19**
-  skill-lint hard-gate + provenance scrub (HATS-877).
+  skill-lint license regression-guard (HATS-877 — shrunk 2026-07-10: the legal P0 #6
+  is closed by T17, so T19 keeps only the always-on license/provenance guard; the
+  whole-library agnix CI job defers to T18/publish and the provenance scrub moves to
+  the on-demand bucket below, same publish/split-time shape as P0 #8).
 - **Phase 4 — enterprise planes** (`ai-hats-security`, `ai-hats-integration`) =
   **separate epic under HATS-855** on the now-stable extension points
   (§8, Enterprise deployment planes).
 - **On demand (unscheduled):** per-package PyPI publish · `git filter-repo` any
   `packages/<x>/` to its own repo (the split task copies the root dev-config it needs) ·
-  full-history secret-scan before any extracted-repo publish — when a real external
-  consumer needs an independent cadence.
+  full-history secret-scan before any extracted-repo publish (P0 #8) · provenance
+  scrub of `HATS-###`/`HYP`/`PROP`/`ADR` internal refs at filter-repo/publish (P0 #7 —
+  moved here 2026-07-10; same publish/split-time transform as the secret-scan) — when a
+  real external consumer needs an independent cadence.
 
 **Positive:**
 
@@ -800,23 +805,23 @@ the first brick, Phase 1 precedent), HATS-801 (over-abstraction discipline).
 > resolved and carded under epic HATS-860; the findings below are retained as the
 > rationale trail.
 >
-> | Finding                                    | Resolution                                                                                                                                                                               | Task                           |
-> | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-> | P0 #1 god-`models` + kernel back-edges     | split per domain; sever `models→skill_sidecar`/`providers`; cross-module = open fields                                                                                                   | HATS-863 (T3)                  |
-> | P0 #2 `paths` hard-codes layout            | layout = integrator policy, injected (ADR-0013 D4 generalized)                                                                                                                           | HATS-864 (T4)                  |
-> | P0 #3 `tracker → wt` hard import           | FSM emits `needs_worktree`; integrator calls wt                                                                                                                                          | HATS-866 (T6)                  |
-> | P0 #4 `subagent` mislabeled a brick        | reclassified integrator; `subagent → observe` cut via injected handle                                                                                                                    | HATS-867 (T6b)                 |
-> | P0 #5 import rule vs ADR-0005 compose-once | `CompositionResult` = core value-type, injected **down**                                                                                                                                 | HATS-865 (T5)                  |
-> | P0 #6 licensing                            | `license:` backfill + attribution + `THIRD_PARTY_NOTICES`; hard-gate phased. *Panel's "relicensed under muratovv" claim is **stale** — 0 matches; golang-\* already attribute upstream.* | HATS-875 (T17), HATS-877 (T19) |
-> | P0 #7 provenance leak (`HATS-###`)         | scrub at filter-repo/publish                                                                                                                                                             | HATS-877 (T19)                 |
-> | P0 #8 secret-scan on history               | full-history gitleaks/trufflehog — on-demand, at the actual git-split                                                                                                                    | on-demand bucket               |
-> | P1 #9 phasing circular                     | Phase −1 sliced (T1–T8)                                                                                                                                                                  | HATS-861…869                   |
-> | P1 #10 mid-tier for wt/observe             | **rejected** — tier option A (cut edges; integrator mediates); no mid-tier                                                                                                               | HATS-866/867/869               |
-> | P1 #11 import-lint deferred-import policy  | full-AST workspace lint                                                                                                                                                                  | HATS-869 (T8)                  |
-> | #9 (open) migration runner                 | generic `Migration[Ctx]` into core                                                                                                                                                       | HATS-868 (T7)                  |
-> | provider open-registry                     | `register_provider()` + `[project.entry-points]`                                                                                                                                         | HATS-870 (T10)                 |
-> | devkit                                     | **removed** — dev config lives at the workspace root; a config-sync template only earns its keep across multiple repos                                                                   | —                              |
-> | library = own repo now                     | **superseded** — symmetric workspace package                                                                                                                                             | HATS-876 (T18)                 |
+> | Finding                                    | Resolution                                                                                                                                                                               | Task                                             |
+> | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+> | P0 #1 god-`models` + kernel back-edges     | split per domain; sever `models→skill_sidecar`/`providers`; cross-module = open fields                                                                                                   | HATS-863 (T3)                                    |
+> | P0 #2 `paths` hard-codes layout            | layout = integrator policy, injected (ADR-0013 D4 generalized)                                                                                                                           | HATS-864 (T4)                                    |
+> | P0 #3 `tracker → wt` hard import           | FSM emits `needs_worktree`; integrator calls wt                                                                                                                                          | HATS-866 (T6)                                    |
+> | P0 #4 `subagent` mislabeled a brick        | reclassified integrator; `subagent → observe` cut via injected handle                                                                                                                    | HATS-867 (T6b)                                   |
+> | P0 #5 import rule vs ADR-0005 compose-once | `CompositionResult` = core value-type, injected **down**                                                                                                                                 | HATS-865 (T5)                                    |
+> | P0 #6 licensing                            | `license:` backfill + attribution + `THIRD_PARTY_NOTICES`; hard-gate phased. *Panel's "relicensed under muratovv" claim is **stale** — 0 matches; golang-\* already attribute upstream.* | HATS-875 (T17), HATS-877 (T19)                   |
+> | P0 #7 provenance leak (`HATS-###`)         | scrub at filter-repo/publish                                                                                                                                                             | on-demand bucket (moved off HATS-877 2026-07-10) |
+> | P0 #8 secret-scan on history               | full-history gitleaks/trufflehog — on-demand, at the actual git-split                                                                                                                    | on-demand bucket                                 |
+> | P1 #9 phasing circular                     | Phase −1 sliced (T1–T8)                                                                                                                                                                  | HATS-861…869                                     |
+> | P1 #10 mid-tier for wt/observe             | **rejected** — tier option A (cut edges; integrator mediates); no mid-tier                                                                                                               | HATS-866/867/869                                 |
+> | P1 #11 import-lint deferred-import policy  | full-AST workspace lint                                                                                                                                                                  | HATS-869 (T8)                                    |
+> | #9 (open) migration runner                 | generic `Migration[Ctx]` into core                                                                                                                                                       | HATS-868 (T7)                                    |
+> | provider open-registry                     | `register_provider()` + `[project.entry-points]`                                                                                                                                         | HATS-870 (T10)                                   |
+> | devkit                                     | **removed** — dev config lives at the workspace root; a config-sync template only earns its keep across multiple repos                                                                   | —                                                |
+> | library = own repo now                     | **superseded** — symmetric workspace package                                                                                                                                             | HATS-876 (T18)                                   |
 
 Three adversarial reviewers (architecture-coupling, per-component matrix,
 ops/governance/legal) audited this ADR against the code. **Headline: the clean

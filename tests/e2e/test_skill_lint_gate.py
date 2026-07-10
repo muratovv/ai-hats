@@ -78,11 +78,36 @@ def repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _stage_skill(repo: Path, relpath: str, body: str = "# new\n") -> None:
+# Default body is license-valid: the always-on license guard (HATS-877) would
+# otherwise block every agnix-focused fixture. Scenarios that exercise the
+# license guard pass an explicit no-`license:` body.
+_LICENSED_BODY = "---\nname: gen\ndescription: x\nlicense: MIT\n---\n# new\n"
+_UNLICENSED_BODY = "---\nname: gen\ndescription: x\n---\n# no license\n"
+
+
+def _stage_skill(repo: Path, relpath: str, body: str = _LICENSED_BODY) -> None:
     p = repo / relpath
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(body)
     _git(repo, "add", relpath)
+
+
+def _stage_derived_skill(
+    repo: Path,
+    dirpath: str,
+    *,
+    with_license_file: bool = True,
+) -> None:
+    """Stage a declared-derived skill: SKILL.md + metadata.yaml(`upstream:`) [+ LICENSE]."""
+    d = repo / dirpath
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SKILL.md").write_text(_LICENSED_BODY)
+    (d / "metadata.yaml").write_text(
+        "name: derived\nupstream:\n  source: acme/pack\n  license: MIT\n"
+    )
+    if with_license_file:
+        (d / "LICENSE").write_text("MIT License\n")
+    _git(repo, "add", dirpath)
 
 
 # --- scenarios -------------------------------------------------------------
@@ -152,3 +177,70 @@ def test_ack_override_allows_block(repo: Path, tmp_path: Path):
     )
     assert res.returncode == 0, res.stderr
     assert "AI_HATS_SKILL_LINT_ACK=1" in res.stderr
+
+
+# --- HATS-877: license regression-guard ------------------------------------
+
+
+@pytest.mark.integration
+def test_blocks_when_skill_missing_license(repo: Path, tmp_path: Path):
+    """R1: a staged SKILL.md with no `license:` frontmatter blocks even if agnix passes."""
+    stub = _make_stub(tmp_path / "pass.sh", rc=0)
+    _stage_skill(
+        repo, "library/core/skills/nolicense/SKILL.md", body=_UNLICENSED_BODY
+    )
+    res = _run_hook(repo, env={"AI_HATS_SKILL_LINT_CMD": f"bash {stub}"})
+    assert res.returncode == 1, res.stderr
+    assert "license" in res.stderr.lower()
+
+
+@pytest.mark.integration
+def test_blocks_derived_skill_missing_license_file(repo: Path, tmp_path: Path):
+    """R2: a declared-derived skill (`upstream:` in metadata.yaml) without a co-located LICENSE blocks."""
+    stub = _make_stub(tmp_path / "pass.sh", rc=0)
+    _stage_derived_skill(
+        repo, "library/usage/skills/derived-nofile", with_license_file=False
+    )
+    res = _run_hook(repo, env={"AI_HATS_SKILL_LINT_CMD": f"bash {stub}"})
+    assert res.returncode == 1, res.stderr
+    assert "LICENSE" in res.stderr
+
+
+@pytest.mark.integration
+def test_license_guard_covers_golang_pack(repo: Path, tmp_path: Path):
+    """The license scope, unlike agnix, does NOT exclude golang-*: a golang skill missing license blocks."""
+    stub = _make_stub(tmp_path / "pass.sh", rc=0)
+    _stage_skill(
+        repo,
+        "library/usage/skills/golang-nolicense/SKILL.md",
+        body=_UNLICENSED_BODY,
+    )
+    res = _run_hook(repo, env={"AI_HATS_SKILL_LINT_CMD": f"bash {stub}"})
+    assert res.returncode == 1, res.stderr
+    assert "license" in res.stderr.lower()
+
+
+@pytest.mark.integration
+def test_allows_licensed_derived_skill(repo: Path, tmp_path: Path):
+    """A licensed derived skill with a co-located LICENSE passes the guard (no false positive)."""
+    stub = _make_stub(tmp_path / "pass.sh", rc=0)
+    _stage_derived_skill(repo, "library/usage/skills/derived-ok")
+    res = _run_hook(repo, env={"AI_HATS_SKILL_LINT_CMD": f"bash {stub}"})
+    assert res.returncode == 0, res.stderr
+
+
+@pytest.mark.integration
+def test_ack_override_bypasses_license_block(repo: Path, tmp_path: Path):
+    """AI_HATS_SKILL_LINT_ACK=1 bypasses a license-guard block too."""
+    stub = _make_stub(tmp_path / "pass.sh", rc=0)
+    _stage_skill(
+        repo, "library/core/skills/nolicense/SKILL.md", body=_UNLICENSED_BODY
+    )
+    res = _run_hook(
+        repo,
+        env={
+            "AI_HATS_SKILL_LINT_CMD": f"bash {stub}",
+            "AI_HATS_SKILL_LINT_ACK": "1",
+        },
+    )
+    assert res.returncode == 0, res.stderr

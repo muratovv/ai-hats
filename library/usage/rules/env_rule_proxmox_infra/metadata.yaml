@@ -1,4 +1,5 @@
 name: env_rule_proxmox_infra
+license: MIT
 description: Proxmox-specific IaC tool hierarchy and observation loop
 author: ai-hats
 tags: [proxmox, infrastructure, environment-specific]

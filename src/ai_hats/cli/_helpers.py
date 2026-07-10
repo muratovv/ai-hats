@@ -16,6 +16,7 @@ from ..paths import PROJECT_CONFIG
 
 if TYPE_CHECKING:
     from ..composition_seam import RoleNotFoundError
+    from ..providers import UnknownProviderError
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -49,6 +50,22 @@ def _handle_role_not_found(exc: "RoleNotFoundError") -> NoReturn:
     for name in exc.available:
         click.echo(f"  - {name}", err=True)
     click.echo("\nHint: 'ai-hats list roles' shows the full table.", err=True)
+    sys.exit(2)
+
+
+def _handle_unknown_provider(exc: "UnknownProviderError") -> NoReturn:
+    """Render an ``UnknownProviderError`` as friendly stderr + exit 2.
+
+    The provider analogue of ``_handle_role_not_found`` for the bare-launch
+    surface (HATS-965): names the bad provider, lists registered ones, hints at
+    ``ai-hats list providers``. No ``Traceback`` reaches the user. Output
+    contract asserted by ``tests/e2e/test_unknown_provider_friendly_error.py``.
+    """
+    click.echo(f"Error: Provider {exc.name!r} not found.\n", err=True)
+    click.echo("Available providers:", err=True)
+    for name in exc.available:
+        click.echo(f"  - {name}", err=True)
+    click.echo("\nHint: 'ai-hats list providers' shows the full table.", err=True)
     sys.exit(2)
 
 

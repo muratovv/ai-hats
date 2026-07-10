@@ -1,35 +1,43 @@
 ---
 name: skill-lint-gate
-description: Pre-commit agnix validation of staged library SKILL.md files for skill-authoring roles. Use when composing the maintainer or role-curator role, when a commit touches a library/**/SKILL.md, or when diagnosing why a commit was blocked by the skill-lint hook.
+description: Pre-commit gate for staged library SKILL.md — a license/provenance regression-guard plus agnix spec validation, for skill-authoring roles. Use when composing the maintainer or role-curator role, when a commit touches a library/**/SKILL.md, or when diagnosing why a commit was blocked by the skill-lint hook.
 ai_hats:
-  # HATS-617 — hook-carrier skill. The assembler installs the script below
-  # into `.githooks/pre-commit.d/` at composition time. It lints STAGED
-  # `library/**/SKILL.md` (excluding the golang-* pack) with agnix against the
-  # repo-root `.agnix.toml` and blocks on agnix errors. Fail-open if
-  # agnix/node absent; per-commit override AI_HATS_SKILL_LINT_ACK=1.
+  # HATS-617/877 — hook-carrier skill. The assembler installs the script below
+  # into `.githooks/pre-commit.d/` at composition time. Over STAGED
+  # `library/**/SKILL.md` it runs two checks: (1) HATS-877 license/provenance
+  # regression-guard (always-on, pure bash, covers golang-*); (2) HATS-617 agnix
+  # spec-lint against the repo-root `.agnix.toml` (excludes golang-*, fail-open
+  # if agnix/node absent). Per-commit override AI_HATS_SKILL_LINT_ACK=1.
   git_hooks:
     pre-commit:
       - git_hooks/pre-commit-skill-lint.sh
+license: MIT
 ---
+
 # Skill Lint Gate
 
 Pure-infrastructure hook-carrier skill. It contributes one git pre-commit hook
-that runs [agnix](https://github.com/avifenesh/agnix) over the SKILL.md files a
-commit touches, and blocks the commit when agnix reports an error. There is no
-agent-side decision logic here — the value is delivered entirely through
-composition.
+that runs two checks over the SKILL.md files a commit touches and blocks on
+either. There is no agent-side decision logic here — the value is delivered
+entirely through composition.
 
 ## What it gates
 
-- **Scope:** only STAGED `library/**/SKILL.md` files, excluding the third-party
-  `golang-*` pack (handled separately — HATS-626/627).
-- **Policy:** the repo-root `.agnix.toml` (target `claude-code`; rules
-  `XML-001` / `XP-SK-001` / `VER-001` disabled as convention false positives).
-- **Effect:** agnix non-zero exit on a staged skill blocks the commit, printing
-  the diagnostics.
+Over STAGED `library/**/SKILL.md` (changed-files scope, so the gate never
+retro-blocks the pre-existing backlog), the hook runs, in order:
 
-Because the scope is the changed files, the gate only fires on commits that
-touch an authored skill — it never retro-blocks the pre-existing backlog.
+1. **License/provenance regression-guard** (HATS-877 — pure bash, always-on, NOT
+   fail-open). Blocks when a skill has no non-empty `license:` frontmatter, or is
+   declared-derived (sibling `metadata.yaml` has an `upstream:` block) but is
+   missing its co-located `LICENSE` file. Its scope deliberately **includes** the
+   `golang-*` pack — that pack is exactly the third-party derived content this
+   guard protects. It exists to keep the HATS-875 licensing backfill from
+   silently regressing.
+2. **agnix spec-lint** (HATS-617 — [agnix](https://github.com/avifenesh/agnix)
+   against the repo-root `.agnix.toml`; target `claude-code`; rules `XML-001` /
+   `XP-SK-001` / `VER-001` disabled as convention false positives). **Excludes**
+   the `golang-*` pack (drift handled separately — HATS-626/627). Fail-open if
+   agnix/node is absent. agnix non-zero exit blocks the commit.
 
 ## Who gets it
 
@@ -46,9 +54,10 @@ non-conforming — skip the gate for a single commit:
 AI_HATS_SKILL_LINT_ACK=1 git commit ...
 ```
 
-If `agnix` / `node` is not installed the hook is a loud no-op (fail-open): it
-prints a SKIPPED notice and allows the commit, so a missing optional dev tool
-never wedges work. Inside an ai-hats agent node is present, so the gate is live.
+If `agnix` / `node` is not installed, only the **agnix** check is a loud no-op
+(fail-open): it prints a SKIPPED notice and allows the commit, so a missing
+optional dev tool never wedges work. The license/provenance guard is pure bash
+and always runs. Inside an ai-hats agent node is present, so both checks are live.
 
 ## Overrides
 

@@ -48,3 +48,4 @@ CLAUDE.md
 .envrc
 .gemini/
 .agent/ai-hats/
+.cline/skills/

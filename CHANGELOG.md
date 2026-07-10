@@ -10,6 +10,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-07-10
+
 ### Added
 
 - **Provider open-registry + entry-points IoC seam** (HATS-870, T10). The closed
@@ -26,9 +28,14 @@ since the latest tag lives under **Unreleased** until the next release.
   `packages/surfaces/` category; ADR-0014 gains a **surface** tier that may
   depend up on the integrator, enforced by the workspace-boundary lint. Inline
   `-s` role delivery, interactive TUI for HITL, headless `--yolo --json` for the
-  automate path. The transcript parser (`ClineParser`) is a follow-up.
+  automate path. A transcript parser (`ClineParser`) and native `.cline/skills/`
+  materialization landed as follow-ups — see the `ai-hats-cline` changelog.
 
 ### Fixed
+
+- **Unknown `--provider` fails friendly, not with a traceback** (HATS-965).
+  `ai-hats -p <unknown>` now reports the bad name and lists the available
+  providers instead of surfacing an uncaught `ValueError`.
 
 - **Worktree-isolation gate no longer fires on unrelated repos** (HATS-959). The
   `wt_gate.py` PreToolUse guard classified the *edited file's own* repository, so
@@ -1863,7 +1870,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.13.2...HEAD
+[0.13.2]: https://github.com/muratovv/ai-hats/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/muratovv/ai-hats/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/muratovv/ai-hats/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/muratovv/ai-hats/compare/v0.11.0...v0.12.0
