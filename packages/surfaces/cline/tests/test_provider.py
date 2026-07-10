@@ -263,6 +263,19 @@ def test_ensure_runtime_hooks_is_idempotent(tmp_path) -> None:
     assert gitignore.count(".cline/plugins/") == 1
 
 
+def test_ensure_runtime_hooks_sweeps_stale(tmp_path) -> None:
+    plugins_dir = tmp_path / ".cline" / "plugins"
+    plugins_dir.mkdir(parents=True)
+    stale = plugins_dir / "old-plugin.ts"
+    stale.write_text("// orphan from previous role")
+    marker = plugins_dir / ".ai-hats-managed"
+    marker.write_text("old-plugin.ts\n")
+
+    ClineProvider().ensure_runtime_hooks(tmp_path)
+    assert not stale.exists()
+    assert (plugins_dir / "ai-hats-hooks.ts").exists()
+
+
 def test_build_session_prompt_materializes_hooks(tmp_path) -> None:
     ClineProvider().build_session_prompt(tmp_path, _fake_result(), "sid-1")
     assert (tmp_path / ".cline" / "plugins" / "ai-hats-hooks.ts").exists()
