@@ -49,3 +49,4 @@ CLAUDE.md
 .gemini/
 .agent/ai-hats/
 .cline/skills/
+.cline/plugins/
