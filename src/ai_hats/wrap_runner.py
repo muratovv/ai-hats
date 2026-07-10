@@ -202,6 +202,12 @@ class WrapRunner:
                 session.log_sys(f"managed-hook resync FAILED — {summary}")
             return [StartupNotice("warn", summary)]
 
+    def _payload_startup_notices(self) -> list[StartupNotice]:
+        """Hooks warnings from the first-run compose seam (set_role materialize),
+        carried on the payload → surfaced as WARN notices so they hit the read-hold
+        instead of a bare pre-launch print (HATS-970)."""
+        return [StartupNotice("warn", w) for w in self.payload.startup_warnings]
+
     def _check_skill_collisions(self, session: Session, result) -> list[StartupNotice]:
         """HATS-901: WARN when a composed skill will double-register this session;
         HATS-907: a marker-proven project-scope mirror is auto-healed instead.
@@ -410,6 +416,7 @@ class WrapRunner:
         startup_notices: list[StartupNotice] = []
         startup_notices.extend(self._resync_managed_hooks(session, result))
         startup_notices.extend(self._check_skill_collisions(session, result))
+        startup_notices.extend(self._payload_startup_notices())
 
         # Build CLI command with session ID for JSONL linkage
         claude_session_id = str(uuid.uuid4())

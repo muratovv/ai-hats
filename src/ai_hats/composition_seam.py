@@ -93,12 +93,17 @@ def _compose_validated(asm, effective_role, *, explicit_role: str | None, label:
     return result
 
 
-def _maybe_sync_active_role(asm, cfg, effective_role, eff_provider, *, interactive, role_override):
+def _maybe_sync_active_role(
+    asm, cfg, effective_role, eff_provider, *, interactive, role_override, warnings_sink=None
+):
     """HITL first-run / provider-switch: persist ``active_role`` before the
-    session starts (hoisted from ``WrapRunner.run``, semantics intact)."""
+    session starts (hoisted from ``WrapRunner.run``, semantics intact).
+
+    ``warnings_sink`` collects the set_role materialize warnings so the caller can
+    route them through the read-hold instead of a bare pre-launch print (HATS-970)."""
     first_run_hitl = interactive and effective_role and not role_override
     if first_run_hitl and (not cfg.active_role or cfg.provider != eff_provider):
-        asm.set_role(effective_role, eff_provider)
+        asm.set_role(effective_role, eff_provider, warnings_sink=warnings_sink)
         return asm.project_config
     return cfg
 
@@ -142,9 +147,11 @@ def build_composition_payload(
         eff_provider = cfg.provider
     provider = get_provider(eff_provider)
 
+    startup_warnings: list[str] = []
     cfg = _maybe_sync_active_role(
         asm, cfg, effective_role, eff_provider,
         interactive=interactive, role_override=role_override,
+        warnings_sink=startup_warnings,
     )
 
     return CompositionPayload(
@@ -155,6 +162,7 @@ def build_composition_payload(
         hooks=asm.hooks,
         static_cost_analyzer=_static_cost_analyzer(project_dir),
         channel=cfg.harness.channel.value,
+        startup_warnings=tuple(startup_warnings),
         # HATS-867: observe factories threaded runner→finalize pipelines.
         # HATS-948: the audit writer carries the provider's transcript parser.
         session_factory=Session,

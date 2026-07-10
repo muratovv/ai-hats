@@ -84,3 +84,27 @@ def test_seam_interactive_requires_provider(tmp_path: Path):
     with patch("ai_hats.assembler.Assembler", return_value=asm):
         with pytest.raises(RuntimeError, match="no provider configured"):
             build_composition_payload(tmp_path, interactive=True)
+
+
+def test_seam_carries_first_run_hooks_warning(tmp_path: Path):
+    """HATS-970: a hooks warning raised by the first-run set_role side effect is
+    carried on payload.startup_warnings so WrapRunner surfaces it in the hold."""
+    fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
+    asm = _fake_assembler(["judge"])
+    asm.project_config.active_role = ""  # first-run → set_role fires
+    asm.project_config.default_role = "judge"
+    asm.project_config.provider = "gemini"
+
+    def _set_role(role, provider, *, warnings_sink=None):
+        if warnings_sink is not None:
+            warnings_sink.append("core.hooksPath is already set to 'x' — not overwriting")
+
+    asm.set_role.side_effect = _set_role
+
+    with patch("ai_hats.assembler.Assembler", return_value=asm), \
+         patch("ai_hats.materialize.compose_for_role", return_value=fake_result), \
+         patch("ai_hats.providers.get_provider", return_value=MagicMock()):
+        payload = build_composition_payload(tmp_path, interactive=True)
+
+    assert any("core.hooksPath is already set" in w for w in payload.startup_warnings)
+    assert "warnings_sink" in asm.set_role.call_args.kwargs
