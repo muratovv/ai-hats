@@ -60,7 +60,8 @@ soft_hits=()
 PAT_HOME='/(Users|home)/[A-Za-z0-9_.-]+/'
 PAT_API_KEY='(sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{36}|AKIA[A-Z0-9]{16}|xox[bp]-[A-Za-z0-9-]+|AIza[A-Za-z0-9_-]{20,}|glpat-[A-Za-z0-9_-]{20,})'
 PAT_BEARER='[Aa]uthorization:[[:space:]]*[Bb]earer[[:space:]]+[A-Za-z0-9._-]{20,}'
-PAT_ENV='^[+][[:space:]]*[A-Z][A-Z0-9_]*_(KEY|TOKEN|SECRET|PASSWORD|PASSWD|API)='
+# Anchored to line start, not `^[+]`: the diff marker is stripped pre-match (HATS-940).
+PAT_ENV='^[[:space:]]*[A-Z][A-Z0-9_]*_(KEY|TOKEN|SECRET|PASSWORD|PASSWD|API)='
 PAT_EMAIL='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
 # Claude Code session markers — JSONL/trace fragments that almost always
 # carry sessionId, requestId, cwd, and unredacted user prompts.
@@ -111,10 +112,15 @@ while IFS= read -r file; do
     added="$(printf '%s\n' "$added" | grep -Fv "$PRIVACY_ALLOW_MARKER")"
     [[ -z "$added" ]] && continue
 
+    # HATS-940 — strip the leading diff `+` so patterns match added CONTENT, not
+    # the marker. Otherwise a decorator keeps its `+` and the email regex reads
+    # marker-as-local-part plus `pytest.fixture` as an address, blocking `@a.b`.
+    added="$(printf '%s\n' "$added" | sed 's/^+//')"
+
     while IFS= read -r pattern_label; do
         IFS='|' read -r label pattern <<< "$pattern_label"
         if printf '%s\n' "$added" | grep -Eq -- "$pattern"; then
-            sample="$(printf '%s\n' "$added" | grep -E -- "$pattern" | head -1 | sed 's/^+//' | cut -c1-100)"
+            sample="$(printf '%s\n' "$added" | grep -E -- "$pattern" | head -1 | cut -c1-100)"
             hard_hits+=("$file: $label — $sample")
         fi
     done <<EOF
