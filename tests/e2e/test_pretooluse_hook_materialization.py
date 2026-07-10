@@ -163,7 +163,7 @@ def _package_hook_source_bytes(name: str) -> bytes:
     materialize step copies from. Avoids depending on the test venv's
     Python-side import machinery to read those bytes back.
     """
-    src = REPO_ROOT / "library" / "hooks" / name
+    src = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "hooks" / name
     return src.read_bytes()
 
 
