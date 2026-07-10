@@ -160,7 +160,7 @@ def _render_heal_result(result: "HealResult | None") -> None:
         )
 
 
-@click.command("heal-editables", hidden=True)  # ai-hats: allow-secret (decorator, not an email)
+@click.command("heal-editables", hidden=True)
 def heal_editables() -> None:
     """Re-point stale surface-plugin editables (internal; called by the launcher)."""
     from ..self_heal import run_editable_heal
