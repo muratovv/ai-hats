@@ -3,10 +3,12 @@
 Inline-`-s` surface registered via the `ai_hats.providers` entry point (HATS-870).
 Verified cline-v3.0.3 flag facts + the CLINE_DATA_DIR/auth rationale: HATS-956.
 Skill materialization into `.cline/skills/` native registry: HATS-963.
+Hooks materialization via TS plugin wrapper into `.cline/plugins/`: HATS-964.
 """
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -27,6 +29,23 @@ _MANAGED_MARKER = ".ai-hats-managed"
 # HATS-963: filelock timeout for concurrent cline sessions (plugin_dir.py:60
 # pattern). The rebuild is sub-second; a timeout means a stuck holder.
 _LOCK_TIMEOUT = 30.0
+
+# HATS-964: filenames materialized into .cline/plugins/.
+_PLUGIN_FILENAME = "ai-hats-hooks.ts"
+_INDEX_FILENAME = "ai-hats-hooks.json"
+
+# HATS-964 R1: the guard reads .tool_input.command (guard L41). The TS plugin
+# must emit this exact stdin shape — the card's {tool,command} shape produces
+# an empty extraction → silent allow.
+_GUARD_HOOK_INDEX = [
+    {"event": "PreToolUse", "cline_tool": "bash",
+     "script": "pre_bash_shared_state_guard.sh"},
+]
+
+# HATS-964: the TS plugin lives as a separate template file (see
+# templates/ai-hats-hooks.ts). Cline plugin model + lifecycle hooks:
+# https://docs.cline.bot/sdk/plugins  (AgentPlugin/hooks/beforeTool).
+_PLUGIN_TS_PATH = Path(__file__).parent / "templates" / _PLUGIN_FILENAME
 
 
 class ClineProvider(Provider):
@@ -86,10 +105,73 @@ class ClineProvider(Provider):
         return [*kept, "--yolo", "--json", *extra, meta_prompt]
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
-        # MVP (HATS-956 R10): do not isolate CLINE_DATA_DIR — keep the machine's
-        # cline auth; ai-hats-wt already provides worktree isolation.
-        del session_dir, project_dir
-        return {}
+        # HATS-964 R7: the TS plugin reads AI_HATS_DIR to locate guard scripts
+        # (same shape as ClaudeProvider, providers.py:554-557).
+        from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
+        from ai_hats.paths import ai_hats_dir
+
+        _session_dir = session_dir  # unused: cline has no session-scoped env
+        return {
+            ENV_AI_HATS_DIR: str(ai_hats_dir(project_dir)),
+            AI_HATS_PROJECT_DIR_ENV: str(project_dir),
+        }
+
+    def ensure_runtime_hooks(
+        self, project_dir: Path, result: CompositionResult | None = None
+    ) -> None:
+        """Materialize the TS plugin + hook index into ``.cline/plugins/``.
+
+        HATS-964: cline auto-discovers ``.cline/plugins/*.ts`` (plugin model:
+        https://docs.cline.bot/sdk/plugins). The plugin template lives in
+        ``templates/ai-hats-hooks.ts``. Sweeps stale managed plugins on each
+        run (idempotent). Filelock serializes concurrent sessions sharing one
+        project dir (two sessions with different roles must not race the dir).
+        """
+        import filelock
+
+        del result  # MVP: guard is unconditional; skill-declared hooks → follow-up.
+        plugins_dir = project_dir / ".cline" / "plugins"
+        plugins_dir.mkdir(parents=True, exist_ok=True)
+        self._ensure_gitignored(project_dir, ".cline/plugins/")
+
+        lock_path = plugins_dir / ".lock"
+        lock = filelock.FileLock(str(lock_path), timeout=_LOCK_TIMEOUT)
+        try:
+            with lock:
+                self._rebuild_plugins(plugins_dir)
+        except filelock.Timeout as exc:
+            raise RuntimeError(
+                f"cline plugins materialization blocked >{_LOCK_TIMEOUT:.0f}s "
+                f"on lock {lock_path}."
+            ) from exc
+
+    @staticmethod
+    def _rebuild_plugins(plugins_dir: Path) -> None:
+        """Sweep stale + write plugin files. Caller holds the lock."""
+        # Sweep stale managed files (orphaned from a previous session/role).
+        managed_marker = plugins_dir / ".ai-hats-managed"
+        prev_managed: set[str] = set()
+        if managed_marker.is_file():
+            prev_managed = {
+                line.strip()
+                for line in managed_marker.read_text().splitlines()
+                if line.strip()
+            }
+        for name in prev_managed:
+            stale = plugins_dir / name
+            if stale.exists():
+                stale.unlink()
+
+        # Write plugin + index from template.
+        plugin_ts = _PLUGIN_TS_PATH.read_text()
+        (plugins_dir / _PLUGIN_FILENAME).write_text(plugin_ts)
+        (plugins_dir / _INDEX_FILENAME).write_text(
+            json.dumps(_GUARD_HOOK_INDEX, indent=2)
+        )
+
+        managed_marker.write_text(
+            "\n".join(sorted({_PLUGIN_FILENAME, _INDEX_FILENAME})) + "\n"
+        )
 
     def materialize_runtime_skills(
         self,
@@ -224,5 +306,10 @@ class ClineProvider(Provider):
         # the TUI launches, so /skills discovers them. Mirrors Claude's
         # build_session_prompt calling materialize_runtime_skills (providers.py:492).
         self.materialize_runtime_skills(project_dir, result, session_id)
+
+        # HATS-964: materialize the TS hook plugin into .cline/plugins/ so the
+        # shared-state guard is active in the cline session (safety net —
+        # ensure_runtime_hooks also runs during _refresh/set_role).
+        self.ensure_runtime_hooks(project_dir, result)
 
         return ["-i", "-s", prompt_content], {}, prompt_content
