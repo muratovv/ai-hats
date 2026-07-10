@@ -153,6 +153,14 @@ def _read_baked_commit_sha() -> str | None:
         if isinstance(value, str) and value and value != "unknown":
             # ``g<sha>`` → ``<sha>`` (setuptools-scm describe prefix).
             return value[1:] if value.startswith("g") else value
+    # HATS-861: hatch-vcs leaves __commit_id__ = None; recover the SHA from the
+    # __version__ PEP 440 local segment (…+g<sha>[.dYYYYMMDD]) so edge-channel
+    # detection still works for hatchling-built wheels.
+    node = (getattr(_version, "__version__", "") or "").partition("+")[2]
+    if node.startswith("g"):
+        sha = node[1:].split(".", 1)[0]
+        if sha:
+            return sha
     return None
 
 

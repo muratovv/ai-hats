@@ -149,3 +149,39 @@ def test_builtin_library_hooks_none_when_hooks_dir_absent(tmp_path, monkeypatch)
     monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
     monkeypatch.chdir(tmp_path)
     assert builtin_library_hooks() is None
+
+
+# ---- _importlib_library_root editable fallback (HATS-861) -------------------
+
+
+def _miss_files(_pkg):
+    # hatchling editable: ai_hats.library is unregistered -> files() raises.
+    raise ModuleNotFoundError("no ai_hats.library (editable)")
+
+
+def test_importlib_root_recovers_sibling_library_in_editable(tmp_path, monkeypatch):
+    # HATS-861: when files("ai_hats.library") misses, recover <repo>/library from
+    # the package __file__ so an editable install invoked outside a source
+    # checkout still finds the builtin library (setuptools PEP 660 parity).
+    import importlib.resources
+
+    import ai_hats
+    from ai_hats.paths.library import _importlib_library_root
+
+    _make_source_tree(tmp_path)  # <repo>/library/{core,usage} + <repo>/src/ai_hats
+    monkeypatch.setattr(importlib.resources, "files", _miss_files)
+    monkeypatch.setattr(ai_hats, "__file__", str(tmp_path / "src" / "ai_hats" / "__init__.py"))
+    assert _importlib_library_root() == tmp_path / "library"
+
+
+def test_importlib_root_none_when_files_miss_and_no_sibling(tmp_path, monkeypatch):
+    # No sibling library/ next to the package -> None (no false positive).
+    import importlib.resources
+
+    import ai_hats
+    from ai_hats.paths.library import _importlib_library_root
+
+    (tmp_path / "src" / "ai_hats").mkdir(parents=True)  # package, but no library/
+    monkeypatch.setattr(importlib.resources, "files", _miss_files)
+    monkeypatch.setattr(ai_hats, "__file__", str(tmp_path / "src" / "ai_hats" / "__init__.py"))
+    assert _importlib_library_root() is None
