@@ -1,7 +1,9 @@
 ---
 name: judge-protocol
 description: HITL protocol for the judge role (Phase 2 of the two-phase judge split) — discuss the Phase 1 draft with the supervisor, ack and execute proposed mutations via CLI, write the final report.
+license: MIT
 ---
+
 # Judge Protocol
 
 HITL protocol for the **judge** role: discuss the Phase 1 draft with
@@ -162,8 +164,9 @@ under the role's declared write path).
 Template (section order is load-bearing — Deliverables must precede
 Hypotheses; Counter-claims must precede Notes):
 
-````markdown
+```markdown
 BEGIN_JUDGE
+
 # Judge report — <UTC ts>
 
 ## Mode
@@ -198,7 +201,7 @@ Phase 2 (HITL) — from draft <UTC ts of Phase 1 draft>
 <dialogue highlights, mid-session changes of mind, items the supervisor
 deferred. Claims of regress/pain must cite concrete cost.>
 END_JUDGE
-````
+```
 
 Empty sections are fine (use a `(none)` line) — the next sweep needs
 this file to track history.

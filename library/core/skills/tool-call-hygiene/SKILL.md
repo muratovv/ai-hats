@@ -6,6 +6,7 @@ ai_hats:
     PreToolUse:
       - matcher: Bash
         script: hooks/tool_call_hygiene_guard.sh
+license: MIT
 ---
 
 # Tool-Call Hygiene

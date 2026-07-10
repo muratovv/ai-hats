@@ -1,12 +1,15 @@
 ---
 name: self-retrospective
 description: Post-work analysis to identify systemic improvements (5 Whys, classify, archive). Use when the supervisor asks to "write a retro" / "do a retrospective", at the end of a multi-task work session (wrap-up across several closed tasks), after task completion (especially with failures or backtracks), after a failed task (mandatory), or when backlog-manager transitions to the review or failed state. NOT the automated session-review loop — that is reflect-session.
+license: MIT
 ---
+
 # Self-Retrospective
 
 Analyze completed or failed work to identify systemic improvements.
 
 ## When to Use
+
 - When the supervisor explicitly asks to "write a retro" / "do a
   retrospective" — follow THIS protocol (4.5 filter, step-7 backlog gates);
   do not free-form a retro file by pattern-matching an existing one.
@@ -43,12 +46,12 @@ you run by hand (free-form markdown, archived under `sessions/retros/`). And
    - Rule or skill updates (with exact content)
    - Workflow changes (with steps)
    - New checks or verification steps
-   Focus on **systemic** fixes over one-off patches.
+     Focus on **systemic** fixes over one-off patches.
 
 4.5 **Hypothesis candidates:** Surface improvements that describe a
-    **behavioural pattern** (the agent systematically does X) — those go
-    into the hypothesis backlog, not the task tracker. The supervisor
-    chooses what to record.
+**behavioural pattern** (the agent systematically does X) — those go
+into the hypothesis backlog, not the task tracker. The supervisor
+chooses what to record.
 
     Run the 5 sub-steps in order. Do not skip ahead — each gate exists
     because skipping it produced a real class of HYP-backlog noise
@@ -181,11 +184,13 @@ you run by hand (free-form markdown, archived under `sessions/retros/`). And
    Every identified improvement must either be fixed now or tracked.
 
 ## Completion
+
 - Retrospective report saved to `<ai_hats_dir>/sessions/retros/`
 - Every improvement either applied or tracked as a task card
 - Quantified impact (wasted iterations, failed attempts)
 
 ## Anti-Patterns
+
 - Vague findings ("things could be better") — be specific with numbers and examples
 - Only listing problems without root cause analysis — use 5 Whys
 - Skipping the backlog step — improvements that aren't tracked will be forgotten

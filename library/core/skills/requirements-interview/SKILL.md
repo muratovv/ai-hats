@@ -1,7 +1,9 @@
 ---
 name: requirements-interview
 description: The Requirements stage of the plan-gate — fills plan.md's Requirements section via structured Q&A where the agent proposes a cited best-guess per question and the supervisor reviews. Reached through plan-gate (which owns the brainstorm→plan entry), not as an independent trigger.
+license: MIT
 ---
+
 # Requirements Interview
 
 The **Requirements stage of `plan-gate`**: structured Q&A that fills the
@@ -11,9 +13,11 @@ question, the agent proposes a best-guess answer grounded in the
 codebase/docs and the supervisor confirms or overrides.
 
 ## When to Use
+
 Reach this stage through `plan-gate`, not as a standalone brainstorm→plan
 trigger — `plan-gate` is the single entry point and routes here to fill the
 `Requirements` section.
+
 - Run it when that section is empty and the request leaves >2 independent assumptions about user intent.
 - Skip when requirements are already unambiguous from the request — fill the section directly.
 - Sibling stage: `design-minimalism` owns the adjacent `Scope & Out-of-scope` section — don't do scope-justification here.
@@ -73,12 +77,14 @@ either a source citation (`path:line`, task ID, ADR ID) or an explicit
 provenance of each line.
 
 ## Completion
+
 - Task description has answers (or explicit `N/A — <reason>`) for questions 1-3 minimum
 - Every non-N/A answer carries a source citation OR a "supervisor override" tag
 - All user-mentioned constraints captured (cross-check with **scope-guard**)
 - Plan can be drafted without material assumptions about user intent
 
 ## Anti-Patterns
+
 - **Asking a question whose answer is visible in the code/docs.** Read
   first; ask only when context is silent or ambiguous. Cheap exploration
   costs less than a supervisor turn.

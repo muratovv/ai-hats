@@ -1,7 +1,9 @@
 ---
 name: judge-auditor-protocol
 description: Read-only audit protocol for the judge-auditor role (Phase 1 of the two-phase judge split) — produces a draft report with proposed verdicts and mutations for the HITL judge to consume.
+license: MIT
 ---
+
 # Judge Auditor Protocol
 
 Read-only audit protocol for the **judge-auditor** role (Phase 1 of the
@@ -78,14 +80,14 @@ recommendation, then **record the proposed verdict in the draft's
 `ai-hats task hyp append-verdict` / `set-status` — Phase 2 will run
 these after supervisor ack.
 
-| Decision shorthand | review-hypothesis verdict | recommendation             | Phase-2 CLI (record, do not run)    |
-| ------------------ | ------------------------- | -------------------------- | ----------------------------------- |
-| `confirmed`        | `confirmed`               | `close_confirmed`          | `task hyp append-verdict ...` + `set-status confirmed` |
-| `refuted`          | `refuted`                 | `close_refuted`            | `task hyp append-verdict ...` + `set-status refuted`   |
-| `inconclusive`     | `inconclusive`            | `keep` or `extend_window`  | `task hyp append-verdict ...`       |
-| `keep`             | (verdict per evidence)    | `keep`                     | `task hyp append-verdict ...`       |
-| `extend`           | (verdict per evidence)    | `extend_window`            | `task hyp append-verdict ...`       |
-| `stalled`          | —                         | —                          | `task hyp set-status stalled`       |
+| Decision shorthand | review-hypothesis verdict | recommendation            | Phase-2 CLI (record, do not run)                       |
+| ------------------ | ------------------------- | ------------------------- | ------------------------------------------------------ |
+| `confirmed`        | `confirmed`               | `close_confirmed`         | `task hyp append-verdict ...` + `set-status confirmed` |
+| `refuted`          | `refuted`                 | `close_refuted`           | `task hyp append-verdict ...` + `set-status refuted`   |
+| `inconclusive`     | `inconclusive`            | `keep` or `extend_window` | `task hyp append-verdict ...`                          |
+| `keep`             | (verdict per evidence)    | `keep`                    | `task hyp append-verdict ...`                          |
+| `extend`           | (verdict per evidence)    | `extend_window`           | `task hyp append-verdict ...`                          |
+| `stalled`          | —                         | —                         | `task hyp set-status stalled`                          |
 
 ## Step 3 — Walk open proposals (propose, do NOT persist)
 
@@ -147,6 +149,7 @@ Phase 2 can scan-and-execute):
 
 ````markdown
 BEGIN_JUDGE_DRAFT
+
 # Judge draft — <UTC ts>
 
 ## Mode
