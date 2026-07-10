@@ -28,15 +28,17 @@ from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
     _ESCAPE_NOTICE,
-    _countdown_hold,
     _scan_escape,
     _cleanup_session_cache,
     _print_session_start,
-    show_and_hold_startup_notices,
     _print_session_end,
     _finalize_session_basic,
     _run_finalize_hitl,
+)
+from .startup_notices import (
     StartupNotice,
+    _countdown_hold,
+    show_and_hold_startup_notices,
 )
 
 if TYPE_CHECKING:
