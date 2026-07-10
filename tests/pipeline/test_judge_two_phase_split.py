@@ -26,7 +26,7 @@ from ai_hats.pipeline.loader import load_pipeline
 from ai_hats.resolver import LibraryResolver
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-LIBRARY = REPO_ROOT / "library"
+LIBRARY = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
 
 
 def _load(rel: str) -> ComponentConfig:
@@ -45,12 +45,12 @@ def _composer() -> Composer:
 
 
 def test_judge_auditor_role_exists() -> None:
-    role = _load("library/core/roles/judge-auditor/config.yaml")
+    role = _load("packages/ai-hats-library/src/ai_hats_library/core/roles/judge-auditor/config.yaml")
     assert role.name == "judge-auditor"
 
 
 def test_judge_auditor_composes_base_auditor() -> None:
-    role = _load("library/core/roles/judge-auditor/config.yaml")
+    role = _load("packages/ai-hats-library/src/ai_hats_library/core/roles/judge-auditor/config.yaml")
     trait_names = list(role.composition.traits)
     assert "base-auditor" in trait_names, (
         "judge-auditor must compose base-auditor (L0 baseline) per ADR-0007 §П1"
@@ -62,13 +62,13 @@ def test_judge_auditor_composes_base_auditor() -> None:
 
 
 def test_judge_auditor_skill_declared() -> None:
-    role = _load("library/core/roles/judge-auditor/config.yaml")
+    role = _load("packages/ai-hats-library/src/ai_hats_library/core/roles/judge-auditor/config.yaml")
     skill_names = list(role.composition.skills)
     assert "judge-auditor-protocol" in skill_names
 
 
 def test_judge_auditor_protocol_skill_exists() -> None:
-    body = _read("library/core/skills/judge-auditor-protocol/SKILL.md")
+    body = _read("packages/ai-hats-library/src/ai_hats_library/core/skills/judge-auditor-protocol/SKILL.md")
     assert "BEGIN_JUDGE_DRAFT" in body
     assert "END_JUDGE_DRAFT" in body
     # L0 baseline must not invite state-mutating CLI invocations
@@ -84,7 +84,7 @@ def test_judge_auditor_protocol_skill_exists() -> None:
 def test_judge_role_composes_base_judge() -> None:
     """HATS-513 issue #1: judge inherits base-judge L1 contract,
     symmetric with judge-for-role (ADR-0007 §П1)."""
-    role = _load("library/core/roles/judge/config.yaml")
+    role = _load("packages/ai-hats-library/src/ai_hats_library/core/roles/judge/config.yaml")
     assert "base-judge" in list(role.composition.traits), (
         "judge must now compose base-judge (fixes asymmetry with "
         "judge-for-role; HATS-513 issue #1)"
@@ -95,7 +95,7 @@ def test_judge_protocol_has_no_mode_switch() -> None:
     """HATS-513 — Mode-A (autopilot) / Mode-B (interactive) runtime
     switch replaced by structural pipeline composition. The protocol
     skill no longer mentions Step 0 / autopilot / Mode A."""
-    body = _read("library/core/skills/judge-protocol/SKILL.md")
+    body = _read("packages/ai-hats-library/src/ai_hats_library/core/skills/judge-protocol/SKILL.md")
     # The legacy headings/identifiers are gone.
     assert "Mode A — Autopilot" not in body
     assert "## Step 0 — Mode selection" not in body

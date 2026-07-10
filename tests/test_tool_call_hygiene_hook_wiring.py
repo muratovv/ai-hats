@@ -11,7 +11,7 @@ from ai_hats.models import RuntimeHook, SkillMetadata
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SKILL_DIR = REPO_ROOT / "library/core/skills/tool-call-hygiene"
+SKILL_DIR = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/skills/tool-call-hygiene"
 
 
 def test_declares_pretooluse_bash_guard():

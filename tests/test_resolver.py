@@ -113,7 +113,7 @@ def test_resolve_injection_with_builtin_core(tmp_path) -> None:
     """
     from importlib.resources import files
 
-    core = Path(str(files("ai_hats.library") / "core"))
+    core = Path(str(files("ai_hats_library") / "core"))
     resolver = LibraryResolver([core])
 
     for name in ("reflect-all", "reflect-role", "initial-wizard"):

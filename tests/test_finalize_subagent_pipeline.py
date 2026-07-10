@@ -36,7 +36,7 @@ from ai_hats.paths import PROJECT_CONFIG
 # Locate the worktree's library/ — the test file lives in <wt>/tests/.
 WORKTREE_ROOT = Path(__file__).resolve().parent.parent
 FINALIZE_SUBAGENT_YAML = (
-    WORKTREE_ROOT / "library" / "core" / "pipelines" / "finalize-subagent.yaml"
+    WORKTREE_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core" / "pipelines" / "finalize-subagent.yaml"
 )
 
 

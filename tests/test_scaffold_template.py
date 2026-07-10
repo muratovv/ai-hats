@@ -22,7 +22,7 @@ def _builtin_template_path() -> Path:
     from importlib.resources import files
 
     return Path(
-        str(files("ai_hats.library") / "core" / "templates" / "claude" / "CLAUDE.md.template")
+        str(files("ai_hats_library") / "core" / "templates" / "claude" / "CLAUDE.md.template")
     )
 
 

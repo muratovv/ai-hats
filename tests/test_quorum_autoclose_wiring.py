@@ -21,7 +21,10 @@ from ai_hats.pipeline import registry
 from ai_hats.pipeline.loader import load_pipeline
 from ai_hats.pipeline.steps.quorum_autoclose import QuorumAutoclose
 
-PIPELINES = Path(__file__).resolve().parent.parent / "library" / "core" / "pipelines"
+PIPELINES = (
+    Path(__file__).resolve().parent.parent
+    / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core" / "pipelines"
+)
 
 
 def test_step_registered():
