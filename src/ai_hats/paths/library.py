@@ -47,18 +47,30 @@ def _detect_source_library_root(start: Path) -> Path | None:
 def _importlib_library_root() -> Path | None:
     """The installed ``ai_hats.library`` package dir, or ``None`` (broken install).
 
-    File-based setuptools packaging (``package-dir`` maps ``ai_hats.library`` to
-    the ``library/`` tree, no ``__init__.py``), so the resource resolves to a
-    real filesystem path — no ``as_file`` context manager needed; callers get a
-    plain ``Path``.
+    Wheel installs resolve ``files("ai_hats.library")`` to a real filesystem path
+    (force-include / package-dir graft, no ``__init__.py`` needed) — a plain
+    ``Path``, no ``as_file`` wrapper. HATS-861: hatchling editable installs point
+    ``ai_hats`` at ``<repo>/src/ai_hats`` but do NOT register the force-included
+    ``ai_hats.library`` submodule, so ``files()`` misses — fall back to the sibling
+    ``<repo>/library`` located from the package ``__file__`` (the parity setuptools'
+    PEP 660 finder gave for free).
     """
     from importlib.resources import files
 
     try:
         root = Path(str(files(LIBRARY_PKG)))
     except (ModuleNotFoundError, FileNotFoundError):
-        return None
-    return root if root.is_dir() else None
+        root = None
+    if root is not None and root.is_dir():
+        return root
+    import ai_hats
+
+    pkg_init = getattr(ai_hats, "__file__", None)
+    if pkg_init:
+        sibling = Path(pkg_init).resolve().parents[2] / "library"
+        if (sibling / "core").is_dir():
+            return sibling
+    return None
 
 
 def builtin_library_root() -> Path | None:

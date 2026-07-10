@@ -167,3 +167,39 @@ def test_block_message_advertises_marker_and_remove_first(privacy_repo: Path):
     assert "ai-hats: allow-secret" in res.stderr
     # Marker must not be the reflex — "remove a real secret" leads.
     assert "remove it" in res.stderr
+
+
+# --- HATS-940: Python decorators must not false-positive as email ------------
+# `+@name.attr` kept its diff `+` marker and matched PAT_EMAIL (`+` local-part
+# + `name` domain + `.attr` TLD). The marker is now stripped before matching.
+
+PY_DECORATORS = [
+    pytest.param('@pytest.fixture(scope="module")', id="pytest-fixture"),
+    pytest.param('@pytest.mark.parametrize("x", [1, 2])', id="pytest-parametrize"),
+    pytest.param('@app.post("/x")', id="fastapi-route"),
+    pytest.param('@click.option("--flag", is_flag=True)', id="click-option"),
+]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("decorator", PY_DECORATORS)
+def test_python_decorator_not_flagged_as_email(privacy_repo: Path, decorator: str):
+    res = _stage_and_run(privacy_repo, decorator, filename="deco.py")
+    assert res.returncode == 0, f"decorator falsely blocked:\n{res.stderr}"
+
+
+@pytest.mark.integration
+def test_real_email_still_blocks(privacy_repo: Path):
+    """Positive control: stripping the diff marker must not blind PAT_EMAIL."""
+    res = _stage_and_run(privacy_repo, "owner = 'jane.doe@example.com'")
+    assert res.returncode == 1, res.stderr
+    assert "email address" in res.stderr
+
+
+@pytest.mark.integration
+def test_env_secret_still_blocks_after_anchor_change(privacy_repo: Path):
+    """PAT_ENV lost its `^[+]` anchor when the marker-strip landed; guard that an
+    env-style secret on an added line still hard-blocks."""
+    res = _stage_and_run(privacy_repo, "API_KEY=supersecretvalue123")
+    assert res.returncode == 1, res.stderr
+    assert "env-style secret" in res.stderr

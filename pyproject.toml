@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=77.0", "setuptools-scm>=8.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats"
@@ -73,29 +73,25 @@ aggregation = [
 claude = "ai_hats.providers:ClaudeProvider"
 gemini = "ai_hats.providers:GeminiProvider"
 
-[tool.setuptools_scm]
-version_file = "src/ai_hats/_version.py"
+# HATS-861: integrator built with hatchling + hatch-vcs (workspace-uniform with
+# the packages/* members). hatch-vcs wraps setuptools-scm → identical version
+# string (X.Y.Z.devN+g<sha>), so the HATS-764 downgrade guard + _version.py
+# consumers are unaffected.
+[tool.hatch.version]
+source = "vcs"
 
-[tool.setuptools]
-package-dir = {"" = "src", "ai_hats.library" = "library"}
-packages = [
-    "ai_hats",
-    "ai_hats.cli",
-    "ai_hats.config",
-    "ai_hats.harness",
-    "ai_hats.libraries",
-    "ai_hats.paths",
-    "ai_hats.pipeline",
-    "ai_hats.pipeline.steps",
-    "ai_hats.retro",
-    "ai_hats.templates",
-    "ai_hats.update_check",
-    "ai_hats.library",
-]
+[tool.hatch.build.hooks.vcs]
+version-file = "src/ai_hats/_version.py"
 
-[tool.setuptools.package-data]
-"ai_hats" = ["templates/**/*"]
-"ai_hats.library" = ["**/*"]
+[tool.hatch.build.targets.wheel]
+# templates/** ships automatically (inside the package dir); the top-level
+# library/ tree lives outside src/ and is grafted into ai_hats.library via
+# force-include (setuptools did this with package-dir — HATS-861 preserves the
+# real-on-disk resolution paths/library.py relies on until T18/HATS-876).
+packages = ["src/ai_hats"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"library" = "ai_hats/library"
 
 [tool.uv.workspace]
 # HATS-956: surface plugins (out-of-tree providers) live under packages/surfaces/.
