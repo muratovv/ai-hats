@@ -310,7 +310,7 @@ def test_smoke_hook_strips_git_env_before_pytest() -> None:
     RED-under-revert: drop the ``env -u`` and this fails."""
     hook = (
         _TESTS_DIR.parent
-        / "library/core/skills/git-mastery/git_hooks/pre-commit-smoke.sh"
+        / "packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-commit-smoke.sh"
     )
     text = hook.read_text()
     assert "pytest -m smoke" in text, "smoke hook no longer runs `pytest -m smoke`"

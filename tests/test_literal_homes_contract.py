@@ -185,7 +185,7 @@ def test_judge_markers_taught_where_extracted():
     """
     from pathlib import Path
 
-    pipelines_dir = Path("library/core/pipelines")
+    pipelines_dir = Path("packages/ai-hats-library/src/ai_hats_library/core/pipelines")
     markers_to_yaml = {}  # marker -> yaml_file for error reporting
 
     # Extract markers from all pipelines
@@ -209,8 +209,8 @@ def test_judge_markers_taught_where_extracted():
             raise AssertionError(f"Failed to parse {yaml_file.name}: {e}") from e
 
     # Verify each marker is taught in library
-    skills_dir = Path("library/core/skills")
-    roles_dir = Path("library/core/roles")
+    skills_dir = Path("packages/ai-hats-library/src/ai_hats_library/core/skills")
+    roles_dir = Path("packages/ai-hats-library/src/ai_hats_library/core/roles")
 
     for marker, yaml_file in sorted(markers_to_yaml.items()):
         marker_found = False

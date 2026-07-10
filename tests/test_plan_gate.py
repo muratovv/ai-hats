@@ -162,7 +162,10 @@ def test_all_required_filled_with_empty_optional_passes(mgr: TaskManager) -> Non
 # the gate's documented contract drifts from what it enforces. Fail loudly.
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PLAN_GATE_SKILL = REPO_ROOT / "library" / "core" / "skills" / "plan-gate" / "SKILL.md"
+PLAN_GATE_SKILL = (
+    REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+    / "core" / "skills" / "plan-gate" / "SKILL.md"
+)
 
 
 def _plan_gate_section_names() -> list[str]:

@@ -22,7 +22,7 @@ from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG
 
 _BUILTIN = (
     Path(__file__).parent.parent
-    / "library/core/pipelines/human.yaml"
+    / "packages/ai-hats-library/src/ai_hats_library/core/pipelines/human.yaml"
 )
 
 

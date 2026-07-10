@@ -12,7 +12,7 @@ from ai_hats.pipeline.presets import execute_pipeline
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-PIPELINES_DIR = REPO_ROOT / "library" / "core" / "pipelines"
+PIPELINES_DIR = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core" / "pipelines"
 
 
 def test_check_update_async_registered():

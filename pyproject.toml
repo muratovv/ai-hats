@@ -32,6 +32,7 @@ dependencies = [
     "ai-hats-wt>=0.3.0",    # get_default_base/merge_branch new public API drifted past 0.2.1 wheel (HATS-942)
     "ai-hats-tracker>=0.5.0",  # + task-ownership registry / OwnershipRefused (0.5.0, HATS-955)
     "ai-hats-observe>=0.3.0",  # + usage/v1 behind the parser adapter (usage) — T15/0.3.0 (HATS-953)
+    "ai-hats-library>=0.1.0",  # data-only agent library; resolver reads it via importlib (T18/HATS-876)
     "click>=8.1",
     "pyyaml>=6.0",
     "pydantic>=2.0",
@@ -84,14 +85,10 @@ source = "vcs"
 version-file = "src/ai_hats/_version.py"
 
 [tool.hatch.build.targets.wheel]
-# templates/** ships automatically (inside the package dir); the top-level
-# library/ tree lives outside src/ and is grafted into ai_hats.library via
-# force-include (setuptools did this with package-dir — HATS-861 preserves the
-# real-on-disk resolution paths/library.py relies on until T18/HATS-876).
+# templates/** ships automatically (inside the package dir). The agent library is
+# no longer grafted here — T18/HATS-876 extracted it to the standalone
+# ai-hats-library data package (pinned above; resolved via importlib.resources).
 packages = ["src/ai_hats"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"library" = "ai_hats/library"
 
 [tool.uv.workspace]
 # HATS-956: surface plugins (out-of-tree providers) live under packages/surfaces/.
@@ -104,6 +101,7 @@ ai-hats-core = { workspace = true }
 ai-hats-wt = { workspace = true }
 ai-hats-tracker = { workspace = true }
 ai-hats-observe = { workspace = true }
+ai-hats-library = { workspace = true }
 
 [tool.ruff]
 target-version = "py311"
@@ -116,6 +114,7 @@ testpaths = [
     "packages/ai-hats-wt/tests",
     "packages/ai-hats-tracker/tests",
     "packages/ai-hats-observe/tests",
+    "packages/ai-hats-library/tests",
     "packages/surfaces/cline/tests",
 ]
 # HATS-508: prepend ./src to sys.path so ``python -m pytest`` from a
@@ -131,6 +130,7 @@ pythonpath = [
     "packages/ai-hats-wt/src",
     "packages/ai-hats-tracker/src",
     "packages/ai-hats-observe/src",
+    "packages/ai-hats-library/src",
     "packages/surfaces/cline/src",
 ]
 filterwarnings = [
