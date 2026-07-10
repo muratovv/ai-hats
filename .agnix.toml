@@ -1,6 +1,7 @@
 # agnix config — SKILL.md validation for the ai-hats library (HATS-617).
 #
-# agnix (https://github.com/avifenesh/agnix) lints our library/**/SKILL.md
+# agnix (https://github.com/avifenesh/agnix) lints our
+# packages/ai-hats-library/**/SKILL.md
 # against the Claude Code skill spec. It is invoked:
 #   * locally  — by the `skill-lint-gate` pre-commit hook (maintainer /
 #                role-curator roles), over STAGED skills only;
