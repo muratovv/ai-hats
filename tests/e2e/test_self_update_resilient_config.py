@@ -74,11 +74,11 @@ def _bootstrap(tmp_path: Path) -> tuple[Path, Path, dict]:
     # Isolate from the developer's global config so role resolution is
     # deterministic: scrub ``AI_HATS_*`` / ``VIRTUAL_ENV`` and isolate via
     # ``AI_HATS_USER_HOME`` (HATS-532) NOT ``HOME`` — repointing ``HOME`` empties
-    # the warm ``~/.cache/pip`` and can yield a degraded wheel (``ai_hats.library``
-    # package-data dropped → "no roles found"). ``PYTHONPATH`` MUST be dropped: a
-    # parent ``PYTHONPATH=<repo>/src`` would shadow the inner venv's INSTALLED
-    # ``ai_hats`` with the source tree, which has no ``ai_hats.library`` subpackage
-    # — so role resolution finds nothing.
+    # the warm ``~/.cache/pip`` and can yield a degraded install ("no roles
+    # found"). ``PYTHONPATH`` MUST be dropped: a parent ``PYTHONPATH`` over the
+    # workspace source would shadow the inner venv's INSTALLED ``ai_hats`` /
+    # ``ai_hats_library`` with the source tree, so role resolution stops
+    # exercising the installed artefact.
     env = {
         k: v for k, v in os.environ.items()
         if not k.startswith("AI_HATS_")

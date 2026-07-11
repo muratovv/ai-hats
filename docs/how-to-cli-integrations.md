@@ -14,7 +14,7 @@ The agent invokes the CLI through `Bash`, the same as any other command. No MCP 
 
 `<library>/skills/<tool-name>-cli/SKILL.md`:
 
-```markdown
+````markdown
 ---
 name: <tool-name>-cli
 description: <one line about the service this skill covers>
@@ -32,6 +32,7 @@ tags: [cli, integration]
 ```bash
 brew install <tool>     # or npm/curl/pip
 ```
+````
 
 ## Auth (one-time)
 
@@ -50,8 +51,8 @@ Auth state lives in `~/.config/<tool>/` (or equivalent). ai-hats does not manage
 
 - Permission allowlist: to auto-approve invocations, add `Bash(<tool>:*)` to `.claude/settings.json`.
 - If the CLI is not installed — Bash returns `command not found`; ask the user to install it.
-```
 
+````
 ## What must NOT be in the skill
 
 - **Secrets** of any kind. No tokens / keys / passwords in `SKILL.md`, `metadata.yaml`, or examples.
@@ -67,11 +68,11 @@ composition:
   skills:
     - gworkspace-cli
     - github-cli
-```
+````
 
 After `ai-hats self init` the skill becomes visible to the agent through the standard skill-injection mechanism.
 
 ## Examples
 
-- [`gworkspace-cli`](../library/usage/skills/gworkspace-cli/SKILL.md) — Google Workspace via the `gws` CLI. **Landed.** Setup walk-through: [`docs/integrations/gworkspace-cli-setup.md`](integrations/gworkspace-cli-setup.md). Bundled into trait `integration::google` (`library/usage/traits/integration/google/config.yaml`). Use that setup guide as the reference layout for future CLI integration skills.
+- [`gworkspace-cli`](../packages/ai-hats-library/src/ai_hats_library/usage/skills/gworkspace-cli/SKILL.md) — Google Workspace via the `gws` CLI. **Landed.** Setup walk-through: [`docs/integrations/gworkspace-cli-setup.md`](integrations/gworkspace-cli-setup.md). Bundled into trait `integration::google` (`packages/ai-hats-library/src/ai_hats_library/usage/traits/integration/google/config.yaml`). Use that setup guide as the reference layout for future CLI integration skills.
 - Additional CLI integrations are added as child tasks under HATS-341.

@@ -351,6 +351,6 @@ Rerun `self init` after: yaml edits, `ai-hats self update`, or any change under 
 
 **[6]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture and schema dispatch.
 
-**[7]** — [`library/core/roles/initial-wizard/config.yaml`](../library/core/roles/initial-wizard/config.yaml) — wizard source. If §2 drifts from this file, this file is the ground truth.
+**[7]** — [`ai_hats_library/core/roles/initial-wizard/config.yaml`](../packages/ai-hats-library/src/ai_hats_library/core/roles/initial-wizard/config.yaml) — wizard source. If §2 drifts from this file, this file is the ground truth.
 
 **[8]** — [`docs/how-to.md#10-recovery-scenarios`](how-to.md#10-recovery-scenarios) — symptom→command recovery table, including the `bootstrap.sh --repair` out-of-band hatch and the stray-shadow case.

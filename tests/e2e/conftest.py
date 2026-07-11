@@ -47,11 +47,12 @@ def _scrub_redirect_env(monkeypatch):
     """HATS-685: strip python/ai_hats *redirect* vars from ``os.environ`` for
     every e2e test, so a subprocess env built via ``os.environ.copy()``
     exercises the REAL installed ``ai_hats`` — not the source tree that an
-    inherited ``PYTHONPATH=<repo>/src`` (the worktree test workaround, and what
+    inherited ``PYTHONPATH`` (the worktree test workaround, and what
     ``ai-hats wt exec`` sets) would redirect it to. Without this, the launcher's
-    ``self init`` subprocess imports ``ai_hats`` from ``src`` (which has no
-    ``library/`` subdir) → ``files("ai_hats.library")`` raises ModuleNotFoundError
-    → built-in roles vanish → "Role 'assistant' not found".
+    ``self init`` subprocess imports ``ai_hats`` (and, post-HATS-876,
+    ``ai_hats_library``) from ``src`` instead of the install, so the run no longer
+    tests the packaged artefact (pre-HATS-876 this failed loud — built-in roles
+    vanished with "Role 'assistant' not found").
 
     Deliberate ``PYTHONPATH=src`` tests are unaffected: they re-set ``PYTHONPATH``
     explicitly after copying env, so a scrubbed ``os.environ`` yields exactly the
