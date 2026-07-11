@@ -5,10 +5,13 @@ Bug: the session-scoped ``shared_launcher`` fixture captured ``os.environ`` at
 SESSION setup — before the function-scoped autouse scrubs apply — so a suite
 launched with ``PYTHONPATH=<repo>/src`` exported (the worktree-dev workaround /
 what ``ai-hats wt exec`` sets) leaked that absolute path into every raw
-consumer's subprocess. A non-editable ai-hats install nests ``ai_hats.library``
-under ``site-packages/ai_hats/``; the leaked ``src`` shadows ``ai_hats`` →
-``import ai_hats.library`` fails → ``_builtin_library_layers()`` is empty →
-``ai-hats self init -r assistant`` exits 1 with "Role 'assistant' not found".
+consumer's subprocess. Pre-HATS-876 a non-editable install nested the library as
+``ai_hats.library`` under ``site-packages/ai_hats/``; the leaked ``src`` shadowed
+``ai_hats`` → ``import ai_hats.library`` failed → ``_builtin_library_layers()``
+was empty → ``ai-hats self init -r assistant`` exited 1 with "Role 'assistant'
+not found". (Post-HATS-876 ``ai_hats_library`` is a separate top-level package,
+so a leak shifts the subprocess to the source workspace rather than emptying the
+library — the scrub still keeps the install under test.)
 CI never exports PYTHONPATH, so it stayed green and the bug was invisible there.
 
 This test reconstructs the leak deterministically (independent of how the suite

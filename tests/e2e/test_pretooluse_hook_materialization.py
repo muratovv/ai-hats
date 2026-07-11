@@ -156,12 +156,12 @@ def _materialized_hooks_dir(project: Path) -> Path:
 
 
 def _package_hook_source_bytes(name: str) -> bytes:
-    """Read the source hook body straight from ``REPO_ROOT/library/hooks/``.
+    """Read the source hook body straight from the ``ai_hats_library`` package.
 
-    pyproject.toml maps ``ai_hats.library`` package-dir to ``<repo>/library/``,
-    so the on-disk source under ``library/hooks/`` IS the package data the
-    materialize step copies from. Avoids depending on the test venv's
-    Python-side import machinery to read those bytes back.
+    The hooks ship as data under
+    ``packages/ai-hats-library/src/ai_hats_library/hooks/`` (HATS-876), which IS
+    the package data the materialize step copies from. Avoids depending on the
+    test venv's Python-side import machinery to read those bytes back.
     """
     src = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "hooks" / name
     return src.read_bytes()
