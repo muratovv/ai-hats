@@ -188,3 +188,49 @@ class WtWorktreeEffects:
                 active.branch_name,
                 exc_info=True,
             )
+
+    def discard_if_empty(self, task_id: str) -> bool:
+        """Reclaim ``task_id``'s worktree iff it has no unmerged work (HATS-979).
+
+        Called at epicification: a task that gained a child is a tracker now, so
+        its execute-time worktree is dead weight. Kept when it carries a dirty
+        tree, own unmerged commits, or pending hunk review. True if reclaimed.
+        """
+        from ai_hats_wt import WorktreeManager
+
+        from .paths import worktrees_dir
+        from .wt_lifecycle import HOOK_LIFECYCLE
+
+        active = WorktreeManager.load_for_task(
+            self.project_dir,
+            task_id,
+            lifecycle=HOOK_LIFECYCLE,
+            state_dir=worktrees_dir(self.project_dir),
+        )
+        if active is None:
+            return False
+        try:
+            # HATS-818: `git status` (reclaim's own check) can't see the
+            # gitignored `.hunk/notes.json`, so inject the pending-review probe as
+            # an extra hold — a worktree under un-addressed review is kept.
+            return bool(active.reclaim_if_clean(has_extra_hold=_has_pending_hunk_review))
+        except Exception:
+            # Best-effort: a worktree-reclaim hiccup must never fail the
+            # child-creation / re-parent that triggered it. Keep + log.
+            logger.warning(
+                "Worktree reclaim failed for epic %s, worktree preserved",
+                task_id,
+                exc_info=True,
+            )
+            return False
+
+
+def _has_pending_hunk_review(worktree_path: Path | None) -> bool:
+    """True if un-drained hunk review notes live in the worktree (HATS-818)."""
+    if worktree_path is None:
+        return False
+    notes = worktree_path / ".hunk" / "notes.json"
+    try:
+        return notes.is_file() and notes.read_text().strip() not in ("", "[]", "{}", "null")
+    except OSError:
+        return False
