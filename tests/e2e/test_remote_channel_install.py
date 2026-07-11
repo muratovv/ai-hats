@@ -28,6 +28,15 @@ def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def test_remote_style_install_resolves_core_with_migrations(tmp_path: Path) -> None:
+    # Skip until ai-hats-library (a T18 Requires-Dist) is on PyPI — a from-index
+    # install can't resolve it before then. Resolver liveness = the gate. HATS-988.
+    from ai_hats.channel import ChannelResolveError, fetch_latest_stable_version
+
+    try:
+        fetch_latest_stable_version("https://pypi.org/pypi/ai-hats-library/json")
+    except ChannelResolveError as exc:
+        pytest.skip(f"ai-hats-library not yet published on PyPI ({exc})")
+
     dist = tmp_path / "dist"
     _run(["uv", "build", "--wheel", str(REPO_ROOT), "-o", str(dist)], cwd=tmp_path)
     wheel = next(dist.glob("ai_hats-*.whl"))
