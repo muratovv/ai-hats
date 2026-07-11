@@ -1,6 +1,6 @@
 # gworkspace-cli — setup guide
 
-This guide walks the user through installing and authorizing the **Google Workspace CLI** (`gws`) so that the [`gworkspace-cli`](../../library/usage/skills/gworkspace-cli/SKILL.md) skill can use it from `Bash`.
+This guide walks the user through installing and authorizing the **Google Workspace CLI** (`gws`) so that the [`gworkspace-cli`](../../packages/ai-hats-library/src/ai_hats_library/usage/skills/gworkspace-cli/SKILL.md) skill can use it from `Bash`.
 
 ai-hats stays secret-agnostic — auth tokens and OAuth state live entirely under `~/.config/gws/` (encrypted at rest with AES-256-GCM) and never enter the repo.
 
@@ -40,6 +40,7 @@ gws auth status   # confirm "Authenticated as <email>"
 ```
 
 State is written to `~/.config/gws/`:
+
 - credentials — encrypted via OS keyring or local key file
 - `client_secret.json` — OAuth client metadata
 
@@ -80,16 +81,16 @@ gws drive files list --params '{"pageSize":1}'
 
 Expected: a JSON object with a `files` array (possibly empty if the account has no files). Errors and what they mean:
 
-| Error                              | Meaning                                  | Fix                                |
-|------------------------------------|------------------------------------------|------------------------------------|
-| `command not found: gws`           | binary missing from `$PATH`              | re-run install step                |
-| `not authenticated`                | no credentials in `~/.config/gws/`       | re-run `gws auth login`            |
-| `403 insufficient permissions`     | scope not granted to the OAuth client    | re-run `gws auth setup`            |
-| `quota exceeded`                   | GCP project hit a Workspace API quota    | enable billing or raise the quota  |
+| Error                          | Meaning                               | Fix                               |
+| ------------------------------ | ------------------------------------- | --------------------------------- |
+| `command not found: gws`       | binary missing from `$PATH`           | re-run install step               |
+| `not authenticated`            | no credentials in `~/.config/gws/`    | re-run `gws auth login`           |
+| `403 insufficient permissions` | scope not granted to the OAuth client | re-run `gws auth setup`           |
+| `quota exceeded`               | GCP project hit a Workspace API quota | enable billing or raise the quota |
 
 ## 5. After setup
 
-- The [`gworkspace-cli`](../../library/usage/skills/gworkspace-cli/SKILL.md) skill is now usable in any role that composes it (directly or via the `integration::google` trait).
+- The [`gworkspace-cli`](../../packages/ai-hats-library/src/ai_hats_library/usage/skills/gworkspace-cli/SKILL.md) skill is now usable in any role that composes it (directly or via the `integration::google` trait).
 - Project-specific conventions (sheet schemas, naming, idempotency rules) belong in a **project-local** skill, not in the framework skill — see [`docs/how-to-cli-integrations.md`](../how-to-cli-integrations.md).
 
 ## References

@@ -279,4 +279,4 @@ Sample shape — [4].
 
 **[5]** — [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — `reflect session` + `reflect all` workflows.
 
-**[6]** — [`library/core/skills/backlog-manager/SKILL.md`](../library/core/skills/backlog-manager/SKILL.md) — in-session skill that drives this CLI on behalf of any role.
+**[6]** — [`ai_hats_library/core/skills/backlog-manager/SKILL.md`](../packages/ai-hats-library/src/ai_hats_library/core/skills/backlog-manager/SKILL.md) — in-session skill that drives this CLI on behalf of any role.

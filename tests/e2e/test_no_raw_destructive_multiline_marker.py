@@ -23,7 +23,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = (
     REPO_ROOT
-    / "library/core/skills/git-mastery/git_hooks/pre-commit-no-raw-destructive.sh"
+    / "packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-commit-no-raw-destructive.sh"
 )
 
 
