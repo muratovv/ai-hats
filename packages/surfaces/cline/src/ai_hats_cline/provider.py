@@ -104,6 +104,11 @@ class ClineProvider(Provider):
         extra = ["--model", model] if model else []
         return [*kept, "--yolo", "--json", *extra, meta_prompt]
 
+    @staticmethod
+    def _plugins_dir(project_dir: Path) -> Path:
+        """Materialization target for the TS hook plugin."""
+        return project_dir / ".cline" / "plugins"
+
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         # HATS-964 R7: the TS plugin reads AI_HATS_DIR to locate guard scripts
         # (same shape as ClaudeProvider, providers.py:554-557).
@@ -118,6 +123,11 @@ class ClineProvider(Provider):
             # guarantees the port is free at bind time; cline reads it via
             # process.env.CLINE_HUB_PORT (explicit-endpoint mode).
             "CLINE_HUB_PORT": str(self._allocate_hub_port()),
+            # HATS-964: point cline at our materialized TS plugin directory so
+            # the shared-state guard loads. Auto-discovery of .cline/plugins/ is
+            # unreliable (configExtensionCount:0 in hub-daemon logs); the env
+            # var adds it as an additional hooks scan path.
+            "CLINE_HOOKS_DIR": str(self._plugins_dir(project_dir)),
         }
 
     @staticmethod
@@ -140,16 +150,16 @@ class ClineProvider(Provider):
     ) -> None:
         """Materialize the TS plugin + hook index into ``.cline/plugins/``.
 
-        HATS-964: cline auto-discovers ``.cline/plugins/*.ts`` (plugin model:
-        https://docs.cline.bot/sdk/plugins). The plugin template lives in
-        ``templates/ai-hats-hooks.ts``. Sweeps stale managed plugins on each
-        run (idempotent). Filelock serializes concurrent sessions sharing one
-        project dir (two sessions with different roles must not race the dir).
+        HATS-964: the TS plugin template lives in ``templates/ai-hats-hooks.ts``.
+        ``CLINE_HOOKS_DIR`` env (set by ``get_env``) points cline at this
+        directory so it scans for the plugin at session start — cline v3.0.3
+        does NOT auto-discover ``.cline/plugins/`` (hub-daemon logs show
+        ``configExtensionCount:0`` for every session).
         """
         import filelock
 
         del result  # MVP: guard is unconditional; skill-declared hooks → follow-up.
-        plugins_dir = project_dir / ".cline" / "plugins"
+        plugins_dir = self._plugins_dir(project_dir)
         plugins_dir.mkdir(parents=True, exist_ok=True)
         self._ensure_gitignored(project_dir, ".cline/plugins/")
 
@@ -331,4 +341,9 @@ class ClineProvider(Provider):
         # ensure_runtime_hooks also runs during _refresh/set_role).
         self.ensure_runtime_hooks(project_dir, result)
 
-        return ["-i", "-s", prompt_content], {}, prompt_content
+        plugins_dir = self._plugins_dir(project_dir)
+        return (
+            ["-i", "-s", prompt_content, "--hooks-dir", str(plugins_dir)],
+            {},
+            prompt_content,
+        )
