@@ -204,16 +204,14 @@ class ClineProvider(Provider):
         skills/` (docs.cline.bot/features/skills). No `--skills-dir` flag —
         returns ``[]`` (discovery is purely directory-based).
 
-        Idempotent: re-materialization sweeps stale ai-hats-managed skills
-        (role changed: skill A → B → A removed) while preserving user-authored
-        skill dirs (tracked via the ``.ai-hats-managed`` marker, mirroring
-        plugin_dir.py's HATS-901 convention). The wipe-and-rebuild runs under a
-        ``filelock`` (plugin_dir.py:60-75 pattern) so two concurrent cline
-        sessions serialise instead of racing rmtree+copytree.
+        HATS-981: parallel-safe. Each session registers its skills under its
+        ``session_id`` in the ``.ai-hats-managed`` marker (JSON dict). The
+        union of ALL sessions' skills stays on disk — two concurrent cline
+        sessions with different roles each see their OWN skills (no wipe).
+        User-authored skill dirs (not in the marker) are always preserved.
         """
         import filelock
 
-        del session_id  # project-scoped, not session-scoped
         skills_dir = project_dir / ".cline" / "skills"
         marker = skills_dir / _MANAGED_MARKER
 
@@ -228,7 +226,7 @@ class ClineProvider(Provider):
         lock = filelock.FileLock(str(lock_path), timeout=_LOCK_TIMEOUT)
         try:
             with lock:
-                self._rebuild_skills(skills_dir, marker, result, project_dir)
+                self._rebuild_skills(skills_dir, marker, result, project_dir, session_id)
         except filelock.Timeout as exc:
             raise RuntimeError(
                 f"cline skills materialization blocked >{_LOCK_TIMEOUT:.0f}s on "
@@ -258,29 +256,39 @@ class ClineProvider(Provider):
         marker: Path,
         result: CompositionResult,
         project_dir: Path,
+        session_id: str,
     ) -> None:
-        """Wipe-and-rebuild ai-hats-managed skills. Caller holds the lock."""
+        """Additive ref-counted materialization. Caller holds the lock.
+
+        HATS-981: each session registers its desired skills under its
+        ``session_id`` in the marker (JSON dict).  The union of ALL sessions'
+        skills stays on disk; only skills no session references are swept.
+        """
         from ai_hats.placeholders import expand_path_placeholders
 
-        # Read previously managed skill names (to sweep stale ones).
-        prev_managed: set[str] = set()
+        # Read marker (JSON: session_id → [skill_names]).
+        refs: dict[str, list[str]] = {}
         if marker.is_file():
-            prev_managed = {
-                line.strip()
-                for line in marker.read_text().splitlines()
-                if line.strip()
-            }
+            try:
+                refs = json.loads(marker.read_text())
+            except (json.JSONDecodeError, ValueError):
+                refs = {}  # HATS-981: corrupt or old flat-format marker
 
-        # Compose the desired set from the role's skills.
+        prev_all = {name for names in refs.values() for name in names}
+
+        # Register this session's desired skills.
         desired = {s.name for s in result.skills if s.source_path.is_dir()}
+        refs[session_id] = sorted(desired)
 
-        # Sweep stale managed skills (were managed, no longer desired).
-        for name in prev_managed - desired:
+        new_all = {name for names in refs.values() for name in names}
+
+        # Sweep skills that were managed but no session wants them anymore.
+        for name in prev_all - new_all:
             stale = skills_dir / name
             if stale.is_dir():
                 shutil.rmtree(stale)
 
-        # Materialize each desired skill (copytree + placeholder expansion).
+        # Materialize THIS session's skills (content is deterministic on copy).
         for skill in result.skills:
             if not skill.source_path.is_dir():
                 continue
@@ -297,8 +305,7 @@ class ClineProvider(Provider):
                 if expanded != original:
                     skill_md.write_text(expanded)
 
-        # Write the marker so the next run knows which dirs ai-hats owns.
-        marker.write_text("\n".join(sorted(desired)) + "\n" if desired else "")
+        marker.write_text(json.dumps(refs, indent=2, sort_keys=True) + "\n")
 
     def build_session_prompt(
         self,
