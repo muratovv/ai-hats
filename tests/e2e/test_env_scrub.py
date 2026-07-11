@@ -5,12 +5,13 @@ Guards the denylist that keeps redirect vars (chiefly ``PYTHONPATH``) from
 leaking into real-install e2e subprocesses. Fail-under-revert: with
 ``clean_env`` / ``ENV_DENYLIST`` removed, the import + assertions fail.
 
-Why it matters: ``src/ai_hats/`` has no ``library/`` subdir — it maps to the
-``ai_hats.library`` package only at build time. An inherited
-``PYTHONPATH=<repo>/src`` (the worktree workaround, and what ``ai-hats wt exec``
-sets) redirects a launcher subprocess's ``ai_hats`` import to the source tree,
-where ``files("ai_hats.library")`` raises ``ModuleNotFoundError`` → built-in
-roles vanish. The scrub removes that class of leak.
+Why it matters: an inherited ``PYTHONPATH`` (the worktree workaround, and what
+``ai-hats wt exec`` sets) redirects a launcher subprocess's imports to the source
+tree instead of the real install. Post-HATS-876 the library is the separate
+``ai_hats_library`` package (also on that ``PYTHONPATH``), so a leak runs
+source-against-source; pre-HATS-876 it failed loud (``files("ai_hats.library")``
+→ ``ModuleNotFoundError`` → built-in roles vanish). The scrub removes that class
+of leak.
 """
 
 from __future__ import annotations

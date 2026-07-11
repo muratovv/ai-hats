@@ -1,15 +1,16 @@
 """Subprocess env hygiene for e2e tests (HATS-685).
 
 e2e install/launcher tests build a subprocess env and must exercise the REAL
-installed ``ai_hats`` package, not the developer's source tree. The trap:
-``src/ai_hats/`` has no ``library/`` subdir — ``library/`` maps to the
-``ai_hats.library`` package only at BUILD time (``pyproject`` ``package-dir =
-{"ai_hats.library": "library"}``). So an inherited ``PYTHONPATH=<repo>/src`` —
-the standard worktree test workaround, and exactly what ``ai-hats wt exec``
-sets — redirects a launcher subprocess's ``ai_hats`` import to the source tree,
-where ``files("ai_hats.library")`` raises ``ModuleNotFoundError`` →
-``_builtin_library_layers()`` returns ``[]`` → built-in roles vanish → "Role
-'assistant' not found".
+installed ``ai_hats`` (and its ``ai_hats_library`` dependency), not the
+developer's source tree. The trap: ``ai-hats wt exec`` sets a ``PYTHONPATH``
+spanning the workspace source (``<repo>/src`` + each ``<repo>/packages/*/src``) —
+the standard worktree test workaround. Inherited into a launcher subprocess, that
+absolute ``PYTHONPATH`` shadows the installed packages with the source tree, so
+the subprocess stops exercising the artefact under install. (Pre-HATS-876 the
+library was force-included as ``ai_hats.library`` and absent from ``src``, so a
+leak failed LOUD — ``files("ai_hats.library")`` → ``ModuleNotFoundError`` →
+built-in roles vanished; post-HATS-876 ``ai_hats_library`` is a separate package
+also on that ``PYTHONPATH``, so a leak quietly runs source-against-source.)
 
 ``ENV_DENYLIST`` is the set of python/ai_hats *redirect* vars that must never
 leak into such a subprocess. The autouse fixture in ``conftest.py`` applies it
