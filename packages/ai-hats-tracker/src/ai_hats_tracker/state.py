@@ -274,6 +274,10 @@ class TaskManager:
                 f"{self._alloc_lock_path()} — a stuck ai-hats process likely "
                 "holds it. If safe, remove the lock file and retry."
             ) from exc
+        # HATS-977: a new child epicifies the parent; epics never hold ownership,
+        # so drop the parent's hold now (idempotent no-op if it never claimed).
+        if task.parent_task:
+            self._release_ownership(task.parent_task)
         # Epic auto-reopen takes the epic's own lock — run it AFTER the alloc
         # lock releases (mirrors transition's post-lock rule; no nested locks).
         return task, self._propagate_to_parent(task)
@@ -459,9 +463,10 @@ class TaskManager:
 
             leaving_execute = old_state == TaskState.EXECUTE and new_state != TaskState.EXECUTE
             terminal = new_state in (TaskState.DONE, TaskState.FAILED, TaskState.CANCELLED)
-            if not is_epic and (leaving_execute or terminal):
-                # HATS-955: free ownership on leaving execute or reaching a
-                # terminal state (idempotent; epics never hold ownership).
+            if leaving_execute or terminal:
+                # HATS-955/977: free ownership on leaving execute or terminal.
+                # Unconditional (idempotent) so an epic that claimed while
+                # childless can't orphan its hold past the create-time release.
                 self._release_ownership(task.id)
 
             self._save_task(task)
@@ -604,6 +609,10 @@ class TaskManager:
             self._save_task(task)
             self._update_indexes()
 
+        # HATS-977: re-parenting under a new parent epicifies it, same as create;
+        # release that parent's hold (no-op if unowned). Empty ("" clear) is falsy.
+        if parent_task:
+            self._release_ownership(parent_task)
         # Re-parenting a live task into a `done` epic reopens it (HATS-690 Q3).
         return task, self._propagate_to_parent(task)
 
