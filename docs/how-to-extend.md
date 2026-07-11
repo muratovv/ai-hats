@@ -215,12 +215,40 @@ ai_hats:
 ---
 ```
 
-The `ai_hats:` key is framework hook wiring only — never prose — and sits at the
+The `ai_hats:` key is framework wiring only — never prose — and sits at the
 frontmatter top level, not under the Agent-Skills `metadata:` field (a flat
 string map that rejects nested values). A leftover `metadata.yaml` carrying
 `git_hooks` / `runtime_hooks` is a hard error at compose time
 (`LeftoverSidecarHooksError`): move the keys into frontmatter and delete the
 sidecar.
+
+## Declaring tool dependencies from a skill (`requires`)
+
+If your skill *drives an external tool* (a CLI, or an MCP server), declare that
+need in the same `ai_hats:` block rather than assuming the tool is present. The
+skill stays portable; the tool is *provided* separately (ADR-0016):
+
+```yaml
+# libraries/skills/my-skill/SKILL.md frontmatter
+---
+name: my-skill
+description: When to invoke and what it does.
+ai_hats:
+  requires:
+    cli:
+      - name: ai-hats-tracker
+        check: "ai-hats-tracker --version"   # presence probe
+        hint: "pip install ai-hats-tracker"  # shown if the probe fails
+    mcp: []
+---
+```
+
+ai-hats verifies `requires` at compose/session time and **warns** with the
+`hint` if a tool is missing — it never auto-installs (every provider surface
+gates tool installation behind explicit consent). The shipped `backlog-manager`
+skill is the live example: it declares `requires.cli: ai-hats-tracker` and drives
+the `ai-hats task` CLI, but lives in the library content layer — it is *not*
+bundled inside the `ai-hats-tracker` engine package.
 
 On `self init` the assembler copies each script to
 `<ai_hats_dir>/library/hooks/` under a collision-free `<skill>-<basename>` name

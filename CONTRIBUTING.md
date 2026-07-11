@@ -181,6 +181,15 @@ root in `library/`, split into two layers shipped together inside the
    pipeline? → **core**.
 3. Otherwise — **usage**.
 
+A skill that *drives an engine tool* still goes in the **library** (core or
+usage) — never inside the engine package. It declares the tool as a dependency
+in its `SKILL.md` frontmatter (`ai_hats.requires.cli`), and the engine ships a
+console entry so the probe resolves on `PATH`. `backlog-manager` is the example:
+it lives in `core/skills/` and declares `requires.cli: ai-hats-tracker`; the
+`ai-hats-tracker` package ships **no** skill and no `ai_hats.skills` entry-point
+(ADR-0016). The dependency arrow is skill → tool, so the skill iterates without
+forcing an engine release.
+
 **Touching `src/ai_hats/pipeline/`, `src/ai_hats/runtime.py`, or `src/ai_hats/composer.py`?** Read [ADR-0005](docs/adr/0005-composition-and-pipeline-value-contract.md) first — composition / pipeline-funnel / HITL-vs-Automate invariants must be preserved. Rule `rule_composition_value_contract` (auto-injected via `trait-agent`) is the agent-facing short form.
 
 For end-user docs on extending the library (worked examples for roles /
