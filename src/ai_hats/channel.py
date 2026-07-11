@@ -25,6 +25,10 @@ from .constants import ENV_REPO_URL
 # PyPI JSON API for the latest published ai-hats version (stable channel).
 PYPI_JSON_URL = "https://pypi.org/pypi/ai-hats/json"
 
+# Last-resort edge target (env > yaml > this). Homed here, not in update_check,
+# so edge resolution never depends on that optional module (HATS-987).
+FALLBACK_REMOTE_URL = "https://github.com/muratovv/ai-hats.git"
+
 
 class ChannelResolveError(RuntimeError):
     """An effectful channel fetch failed loud (PyPI unreachable, offline edge).
@@ -119,30 +123,59 @@ def resolve_channel(
 # ---------- effectful fetchers (run by the caller, injected into the resolver) ----------
 
 
+def _coerce_to_https(url: str) -> str:
+    """Map a git+ssh URL form to *bare* https so ``git ls-remote`` needs no keys.
+
+    Default is git+https (HATS-766); an ``AI_HATS_REPO_URL`` override may still
+    carry ``git+ssh://`` (HATS-337) — the probe only needs the bare https.
+    HATS-987: relocated here from ``update_check.checker`` (a channel/install
+    primitive) so edge resolution never depends on that optional module.
+    """
+    prefixes = ("git+ssh://git@", "git+https://", "git+")
+    for p in prefixes:
+        if url.startswith(p):
+            url = url[len(p) :]
+            break
+    if url.startswith("git@github.com:"):  # ai-hats: allow-secret (ssh git url, not email)
+        url = "https://github.com/" + url[len("git@github.com:") :]  # ai-hats: allow-secret
+    if url.startswith("github.com/"):
+        url = "https://" + url
+    return url
+
+
 def _git_https_repo(raw: str) -> str:
     """Coerce a repo URL to the ``git+https://`` form pip needs for a VCS spec.
 
-    Reuses ``checker._coerce_to_https`` (which strips ``git+`` to a *bare* https
-    URL for anonymous ``git ls-remote``) and re-adds the ``git+`` prefix so the
-    edge install spec (``ai-hats @ git+https://…@<sha>``) is a valid pip VCS
-    URL. A local-path repo (no scheme — the e2e harness) is left bare.
+    Reuses :func:`_coerce_to_https` (bare https for ``git ls-remote``) and
+    re-adds the ``git+`` prefix so the edge install spec
+    (``ai-hats @ git+https://…@<sha>``) is a valid pip VCS URL. A local-path repo
+    (no scheme — the e2e harness) is left bare.
     """
-    from .update_check.checker import _coerce_to_https
-
     https = _coerce_to_https(raw)
     if "://" not in https:
         return https  # local path (e2e harness) — pip builds the working tree
     return https if https.startswith("git+") else "git+" + https
 
 
-def resolve_edge_repo(yaml_repo: str | None = None) -> str:
+def _raw_edge_repo(yaml_repo: str | None = None) -> str:
     """Edge repo precedence: ``AI_HATS_REPO_URL`` env > yaml ``harness.repo`` >
-    upstream default (``checker.FALLBACK_REMOTE_URL``), coerced to ``git+https``.
-    """
-    from .update_check.checker import FALLBACK_REMOTE_URL
+    :data:`FALLBACK_REMOTE_URL`. Uncoerced — the caller shapes the URL."""
+    return os.environ.get(ENV_REPO_URL) or yaml_repo or FALLBACK_REMOTE_URL
 
-    raw = os.environ.get(ENV_REPO_URL) or yaml_repo or FALLBACK_REMOTE_URL
-    return _git_https_repo(raw)
+
+def resolve_edge_repo(yaml_repo: str | None = None) -> str:
+    """Edge install-spec repo, coerced to ``git+https`` (pip VCS URL)."""
+    return _git_https_repo(_raw_edge_repo(yaml_repo))
+
+
+def resolve_edge_probe_url(yaml_repo: str | None = None) -> str:
+    """Bare-https edge URL for the ``git ls-remote`` ahead/behind guard probe.
+
+    Same precedence as :func:`resolve_edge_repo` but coerced to *bare* https (the
+    probe needs no ``git+``). Centralises the URL build that ``cli/maintenance``'s
+    edge guard used to duplicate (HATS-987).
+    """
+    return _coerce_to_https(_raw_edge_repo(yaml_repo))
 
 
 def fetch_edge_head_sha(repo: str) -> str | None:
