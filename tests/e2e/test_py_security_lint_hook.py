@@ -21,7 +21,7 @@ from ai_hats.constants import HOOK_POST_TOOL_USE
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = (
     REPO_ROOT
-    / "library/usage/skills/py-security-lint/hooks/py_security_lint.py"
+    / "packages/ai-hats-library/src/ai_hats_library/usage/skills/py-security-lint/hooks/py_security_lint.py"
 )
 # ruff lives in the same venv bin as the interpreter running the tests.
 VENV_BIN = Path(sys.executable).parent

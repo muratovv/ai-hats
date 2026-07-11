@@ -29,7 +29,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = (
     REPO_ROOT
-    / "library/usage/skills/skill-lint-gate/git_hooks/pre-commit-skill-lint.sh"
+    / "packages/ai-hats-library/src/ai_hats_library/usage/skills/skill-lint-gate/git_hooks/pre-commit-skill-lint.sh"
 )
 
 

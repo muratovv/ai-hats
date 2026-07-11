@@ -27,9 +27,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = (
     REPO_ROOT
-    / "library/core/skills/git-mastery/git_hooks/pre-commit-docs-index.sh"
+    / "packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-commit-docs-index.sh"
 )
-WIZARD_CONFIG = REPO_ROOT / "library/core/roles/initial-wizard/config.yaml"
+WIZARD_CONFIG = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/roles/initial-wizard/config.yaml"
 
 
 def _git(cwd: Path, *args: str) -> str:
