@@ -390,7 +390,7 @@ The env var wins over `harness.repo` for that run only; the persisted config is 
 
 **[7]** — [`tests/test_user_steps.py`](../tests/test_user_steps.py) — `test_step_runs_in_pipeline_e2e` is the e2e fixture this guide tracks.
 
-**[8]** — [`library/core/skills/worktree-isolation/SKILL.md`](../library/core/skills/worktree-isolation/SKILL.md) — in-session skill for isolated work.
+**[8]** — [`ai_hats_library/core/skills/worktree-isolation/SKILL.md`](../packages/ai-hats-library/src/ai_hats_library/core/skills/worktree-isolation/SKILL.md) — in-session skill for isolated work.
 
 **[9]** — [`src/ai_hats/runtime.py`](../src/ai_hats/runtime.py) — `_scan_escape` (escape-gesture counter) + `WrapRunner._pty_spawn` (the PTY passthrough loop and force-exit wire), HATS-679.
 

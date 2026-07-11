@@ -26,7 +26,7 @@ Lifecycle diagram — see [2].
 
 ## Role
 
-A root composition that the agent wears during a session — bundles traits, rules, skills, and an injection block into one config. The shipped library splits into two layers: `library/core/roles/` (engine-internal: `initial-wizard`, `session-reviewer`, `judge-auditor`, `judge`, `judge-for-role`, `auditor-for-role`, `hypothesis-intake`, `test-agent`) and `library/usage/roles/` (curated user-facing: `assistant`, `dev-python`, `dev-web`, `maintainer`, `architect`, `sre`, `go-dev`, `go-dev-full`). Catalog — `ai-hats list roles`; layered structure and override precedence — see [9]. Example: [`library/usage/roles/assistant/config.yaml`](../library/usage/roles/assistant/config.yaml). Customization (add / remove / override) — see [6].
+A root composition that the agent wears during a session — bundles traits, rules, skills, and an injection block into one config. The shipped library splits into two layers: `library/core/roles/` (engine-internal: `initial-wizard`, `session-reviewer`, `judge-auditor`, `judge`, `judge-for-role`, `auditor-for-role`, `hypothesis-intake`, `test-agent`) and `library/usage/roles/` (curated user-facing: `assistant`, `dev-python`, `dev-web`, `maintainer`, `architect`, `sre`, `go-dev`, `go-dev-full`). Catalog — `ai-hats list roles`; layered structure and override precedence — see [9]. Example: [`ai_hats_library/usage/roles/assistant/config.yaml`](../packages/ai-hats-library/src/ai_hats_library/usage/roles/assistant/config.yaml). Customization (add / remove / override) — see [6].
 
 Key system roles you will meet in cross-doc prose:
 
@@ -105,7 +105,7 @@ The feedback loop that turns session evidence plus active HYP / open PROP into a
 - Backlog triage: `judge-auditor` (L0, read-only audit) → `judge` (L1, HITL + ack'd mutations). Entry: `ai-hats reflect hypothesis`.
 - Role coherence: `auditor-for-role` (L0, non-interactive coherence pass) → `judge-for-role` (L1, interactive review). Entry: `ai-hats reflect role`.
 
-L0 baselines (`base-auditor`) forbid CLI mutations and source-file edits; L1 baselines (`base-judge`) permit ack'd CLI from a whitelist. See [`library/core/traits/base-auditor/`](../library/core/traits/base-auditor/) and [`base-judge/`](../library/core/traits/base-judge/). `hypothesis-intake` exists for Haiku-class observation classification but is **not** wired into `reflect *` directly.
+L0 baselines (`base-auditor`) forbid CLI mutations and source-file edits; L1 baselines (`base-judge`) permit ack'd CLI from a whitelist. See [`ai_hats_library/core/traits/base-auditor/`](../packages/ai-hats-library/src/ai_hats_library/core/traits/base-auditor/) and [`base-judge/`](../packages/ai-hats-library/src/ai_hats_library/core/traits/base-judge/). `hypothesis-intake` exists for Haiku-class observation classification but is **not** wired into `reflect *` directly.
 
 Practical recipes — see [5]. Pipeline architecture — see [8].
 
