@@ -17,8 +17,8 @@ When resolving a component by name, ai-hats walks these paths in order; **later 
 
 | # | Path                                        | Owner              |
 | - | ------------------------------------------- | ------------------ |
-| 1 | `<pkg>/ai_hats/library/core/`               | built-in (shipped) |
-| 2 | `<pkg>/ai_hats/library/usage/`              | built-in (shipped) |
+| 1 | `<pkg>/ai_hats_library/core/`               | built-in (shipped) |
+| 2 | `<pkg>/ai_hats_library/usage/`              | built-in (shipped) |
 | 3 | `~/.ai-hats/`                               | user-global        |
 | 4 | each path in `ai-hats.yaml: library_paths:` | project-config     |
 | 5 | `<project>/libraries/`                      | project-local      |
@@ -505,11 +505,11 @@ The built-in `session-reviewer` and `auditor-for-role` are reachable by name fro
 
 ```bash
 # 1. Inspect the default (read-only — don't edit the installed file)
-python -c "from importlib.resources import files; print(files('ai_hats.library') / 'core' / 'roles' / 'session-reviewer')"
+python -c "from importlib.resources import files; print(files('ai_hats_library') / 'core' / 'roles' / 'session-reviewer')"
 
 # 2. Copy as a starting point
 mkdir -p libraries/roles/session-reviewer
-cp "$(python -c 'from importlib.resources import files; print(files("ai_hats.library") / "core" / "roles" / "session-reviewer" / "config.yaml")')" \
+cp "$(python -c 'from importlib.resources import files; print(files("ai_hats_library") / "core" / "roles" / "session-reviewer" / "config.yaml")')" \
    libraries/roles/session-reviewer/config.yaml
 
 # 3. Edit injection / traits / skills as needed
