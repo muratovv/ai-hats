@@ -186,3 +186,53 @@ def test_git_env_isolation_regression(tmp_path: Path, monkeypatch) -> None:
         f"repo (HATS-886): count {before_count} -> {after_count}, "
         f"HEAD {before_head[:12]} -> {after_head[:12]}"
     )
+
+
+def test_reclaim_if_clean_reclaims_empty_branch(bare_repo: Path) -> None:
+    """HATS-979: an epicified task's worktree with no own commits (branch tip is
+    the base) is reclaimed — dir + branch removed, nothing merged."""
+    mgr = WorktreeManager(bare_repo, branch_name="task/epic-empty", lifecycle=NOOP_LIFECYCLE)
+    wt_path = mgr.create()
+    mgr.save_state()
+    assert wt_path.is_dir()
+
+    assert mgr.reclaim_if_clean() is True
+    assert not wt_path.exists()
+    assert _git(bare_repo, "branch", "--list", "task/epic-empty").stdout.strip() == ""
+
+
+def test_reclaim_if_clean_keeps_unmerged_commits(bare_repo: Path) -> None:
+    """Work-preservation: a branch carrying own commits not in the base is KEPT."""
+    mgr = WorktreeManager(bare_repo, branch_name="task/epic-work", lifecycle=NOOP_LIFECYCLE)
+    wt_path = mgr.create()
+    mgr.save_state()
+    _commit_in_worktree(wt_path, "wip.txt", "unmerged work")
+
+    assert mgr.reclaim_if_clean() is False
+    assert wt_path.exists()
+    assert _git(bare_repo, "branch", "--list", "task/epic-work").stdout.strip() != ""
+
+
+def test_reclaim_if_clean_keeps_dirty_tree(bare_repo: Path) -> None:
+    """Work-preservation: uncommitted changes in the worktree KEEP it."""
+    mgr = WorktreeManager(bare_repo, branch_name="task/epic-dirty", lifecycle=NOOP_LIFECYCLE)
+    wt_path = mgr.create()
+    mgr.save_state()
+    (wt_path / "scratch.txt").write_text("uncommitted")  # dirty: untracked, not committed
+
+    assert mgr.reclaim_if_clean() is False
+    assert wt_path.exists()
+    assert _git(bare_repo, "branch", "--list", "task/epic-dirty").stdout.strip() != ""
+
+
+def test_reclaim_if_clean_respects_injected_extra_hold(bare_repo: Path) -> None:
+    """An otherwise-reclaimable (empty, git-clean) worktree is KEPT when the
+    caller's ``has_extra_hold`` fires — the seam for gitignored state the git
+    checks can't see (e.g. pending hunk review)."""
+    mgr = WorktreeManager(bare_repo, branch_name="task/epic-held", lifecycle=NOOP_LIFECYCLE)
+    wt_path = mgr.create()
+    mgr.save_state()
+
+    assert mgr.reclaim_if_clean(has_extra_hold=lambda _p: True) is False
+    assert wt_path.exists()
+    assert _git(bare_repo, "branch", "--list", "task/epic-held").stdout.strip() != ""
