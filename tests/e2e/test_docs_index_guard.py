@@ -182,6 +182,20 @@ def test_hook_allows_non_docs_change(repo_with_docs: Path):
     assert res.returncode == 0, res.stderr
 
 
+@pytest.mark.integration
+def test_hook_allows_adr_subdir_add(repo_with_docs: Path):
+    """Adding a docs/adr/*.md (a SUBDIR doc) must NOT block — ADRs are
+    referenced collectively in INDEX.md, not catalogued per-file. The
+    :(glob) pathspec keeps the guard to top-level docs/*.md only."""
+    (repo_with_docs / "docs/adr").mkdir()
+    (repo_with_docs / "docs/adr/0001-x.md").write_text("# ADR 1\n")
+    subprocess.run(
+        ["git", "add", "docs/adr/0001-x.md"], cwd=str(repo_with_docs), check=True
+    )
+    res = _run_hook(repo_with_docs)
+    assert res.returncode == 0, res.stderr
+
+
 # --- wizard regression -----------------------------------------------------
 
 
