@@ -150,56 +150,26 @@ class ClineProvider(Provider):
     ) -> None:
         """Materialize the TS plugin + hook index into ``.cline/plugins/``.
 
-        HATS-964: the TS plugin template lives in ``templates/ai-hats-hooks.ts``.
-        ``CLINE_HOOKS_DIR`` env (set by ``get_env``) points cline at this
-        directory so it scans for the plugin at session start — cline v3.0.3
-        does NOT auto-discover ``.cline/plugins/`` (hub-daemon logs show
-        ``configExtensionCount:0`` for every session).
-        """
-        import filelock
+        HATS-964 + HATS-981: project-scoped pre-warm for ``_refresh`` /
+        ``set_role`` and the automate-path fallback (``CLINE_HOOKS_DIR`` in
+        ``get_env``).  Content is static/deterministic (unconditional guard),
+        so no lock or stale-sweep is needed — overwrite is safe.
 
+        HITL sessions get a private session-scoped copy via
+        ``build_session_prompt`` (``--hooks-dir``), giving full isolation.
+        """
         del result  # MVP: guard is unconditional; skill-declared hooks → follow-up.
-        plugins_dir = self._plugins_dir(project_dir)
-        plugins_dir.mkdir(parents=True, exist_ok=True)
+        self._write_plugin_files(self._plugins_dir(project_dir))
         self._ensure_gitignored(project_dir, ".cline/plugins/")
 
-        lock_path = plugins_dir / ".lock"
-        lock = filelock.FileLock(str(lock_path), timeout=_LOCK_TIMEOUT)
-        try:
-            with lock:
-                self._rebuild_plugins(plugins_dir)
-        except filelock.Timeout as exc:
-            raise RuntimeError(
-                f"cline plugins materialization blocked >{_LOCK_TIMEOUT:.0f}s "
-                f"on lock {lock_path}."
-            ) from exc
-
     @staticmethod
-    def _rebuild_plugins(plugins_dir: Path) -> None:
-        """Sweep stale + write plugin files. Caller holds the lock."""
-        # Sweep stale managed files (orphaned from a previous session/role).
-        managed_marker = plugins_dir / ".ai-hats-managed"
-        prev_managed: set[str] = set()
-        if managed_marker.is_file():
-            prev_managed = {
-                line.strip()
-                for line in managed_marker.read_text().splitlines()
-                if line.strip()
-            }
-        for name in prev_managed:
-            stale = plugins_dir / name
-            if stale.exists():
-                stale.unlink()
-
-        # Write plugin + index from template.
+    def _write_plugin_files(plugins_dir: Path) -> None:
+        """Write the TS plugin + hook index (static content). No lock needed."""
+        plugins_dir.mkdir(parents=True, exist_ok=True)
         plugin_ts = _PLUGIN_TS_PATH.read_text()
         (plugins_dir / _PLUGIN_FILENAME).write_text(plugin_ts)
         (plugins_dir / _INDEX_FILENAME).write_text(
             json.dumps(_GUARD_HOOK_INDEX, indent=2)
-        )
-
-        managed_marker.write_text(
-            "\n".join(sorted({_PLUGIN_FILENAME, _INDEX_FILENAME})) + "\n"
         )
 
     def materialize_runtime_skills(
@@ -343,14 +313,19 @@ class ClineProvider(Provider):
         # build_session_prompt calling materialize_runtime_skills (providers.py:492).
         self.materialize_runtime_skills(project_dir, result, session_id)
 
-        # HATS-964: materialize the TS hook plugin into .cline/plugins/ so the
-        # shared-state guard is active in the cline session (safety net —
-        # ensure_runtime_hooks also runs during _refresh/set_role).
-        self.ensure_runtime_hooks(project_dir, result)
+        # HATS-964: materialize the TS hook plugin so the shared-state guard is
+        # active. HATS-981: write to a session-scoped dir (private per session,
+        # cleaned at session_end) and point --hooks-dir there — full isolation.
+        # ensure_runtime_hooks also pre-warms project-scoped .cline/plugins/
+        # (for _refresh/set_role + automate fallback via CLINE_HOOKS_DIR).
+        from ai_hats.paths import session_cache_dir
 
-        plugins_dir = self._plugins_dir(project_dir)
+        self.ensure_runtime_hooks(project_dir, result)
+        session_plugins = session_cache_dir(project_dir, session_id) / "plugins"
+        self._write_plugin_files(session_plugins)
+
         return (
-            ["-i", "-s", prompt_content, "--hooks-dir", str(plugins_dir)],
+            ["-i", "-s", prompt_content, "--hooks-dir", str(session_plugins)],
             {},
             prompt_content,
         )

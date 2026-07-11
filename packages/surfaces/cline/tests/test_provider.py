@@ -128,10 +128,11 @@ def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
     assert args[2] == meta_prompt
     assert "## PRIORITIES" in meta_prompt
     assert env == {}
-    # HATS-964: --hooks-dir points cline at the materialized TS plugin dir
+    # HATS-964 + HATS-981: --hooks-dir points at session-scoped plugins dir
     assert "--hooks-dir" in args
     idx = args.index("--hooks-dir")
-    assert args[idx + 1] == str(ClineProvider._plugins_dir(tmp_path))
+    hooks_path = args[idx + 1]
+    assert "sid-1" in hooks_path
 
 
 # ---- HATS-963: .cline/skills/ materialization ----
@@ -342,23 +343,34 @@ def test_ensure_runtime_hooks_is_idempotent(tmp_path) -> None:
     assert gitignore.count(".cline/plugins/") == 1
 
 
-def test_ensure_runtime_hooks_sweeps_stale(tmp_path) -> None:
-    plugins_dir = tmp_path / ".cline" / "plugins"
-    plugins_dir.mkdir(parents=True)
-    stale = plugins_dir / "old-plugin.ts"
-    stale.write_text("// orphan from previous role")
-    marker = plugins_dir / ".ai-hats-managed"
-    marker.write_text("old-plugin.ts\n")
-
-    ClineProvider().ensure_runtime_hooks(tmp_path)
-    assert not stale.exists()
-    assert (plugins_dir / "ai-hats-hooks.ts").exists()
-
-
 def test_build_session_prompt_materializes_hooks(tmp_path) -> None:
-    ClineProvider().build_session_prompt(tmp_path, _fake_result(), "sid-1")
+    args, _, _ = ClineProvider().build_session_prompt(
+        tmp_path, _fake_result(), "sid-1"
+    )
+    # project-scoped pre-warm (ensure_runtime_hooks)
     assert (tmp_path / ".cline" / "plugins" / "ai-hats-hooks.ts").exists()
-    assert (tmp_path / ".cline" / "plugins" / "ai-hats-hooks.json").exists()
+    # session-scoped copy (--hooks-dir target)
+    assert "--hooks-dir" in args
+    hooks_idx = args.index("--hooks-dir")
+    session_plugins = Path(args[hooks_idx + 1])
+    assert (session_plugins / "ai-hats-hooks.ts").exists()
+    assert (session_plugins / "ai-hats-hooks.json").exists()
+    assert "sid-1" in str(session_plugins)
+
+
+def test_build_session_prompt_hooks_dir_is_session_scoped(tmp_path) -> None:
+    # HATS-981 R1: different session_ids → different --hooks-dir paths.
+    args_a, _, _ = ClineProvider().build_session_prompt(
+        tmp_path, _fake_result(), "sid-a"
+    )
+    args_b, _, _ = ClineProvider().build_session_prompt(
+        tmp_path, _fake_result(), "sid-b"
+    )
+    hooks_a = args_a[args_a.index("--hooks-dir") + 1]
+    hooks_b = args_b[args_b.index("--hooks-dir") + 1]
+    assert hooks_a != hooks_b
+    assert "sid-a" in hooks_a
+    assert "sid-b" in hooks_b
 
 
 def test_guard_bridge_blocks_irreversible(tmp_path) -> None:
