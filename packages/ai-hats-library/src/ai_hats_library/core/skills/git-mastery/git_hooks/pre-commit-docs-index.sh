@@ -26,7 +26,10 @@ fi
 # Status codes from --name-status: A=added, D=deleted, R{nnn}=renamed,
 # C{nnn}=copied. We treat all of A/D/R/C as structural changes that may
 # require an INDEX update. M (modified content) is intentionally skipped.
-drift=$(git diff --cached --name-status -- 'docs/*.md' \
+# ``:(glob)`` so ``*`` does NOT cross ``/`` — guard only TOP-LEVEL companion docs
+# (docs/*.md). Subdir docs (docs/adr/**, docs/assets/**) are referenced
+# collectively in INDEX.md, not catalogued per-file, so they must not trip this.
+drift=$(git diff --cached --name-status -- ':(glob)docs/*.md' \
         | awk '$1 ~ /^(A|D|R|C)/ {print}')
 
 # No structural docs/ changes — nothing to enforce.
