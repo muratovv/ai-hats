@@ -104,6 +104,11 @@ class ClineProvider(Provider):
         extra = ["--model", model] if model else []
         return [*kept, "--yolo", "--json", *extra, meta_prompt]
 
+    @staticmethod
+    def _plugins_dir(project_dir: Path) -> Path:
+        """Materialization target for the TS hook plugin."""
+        return project_dir / ".cline" / "plugins"
+
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         # HATS-964 R7: the TS plugin reads AI_HATS_DIR to locate guard scripts
         # (same shape as ClaudeProvider, providers.py:554-557).
@@ -122,7 +127,7 @@ class ClineProvider(Provider):
             # the shared-state guard loads. Auto-discovery of .cline/plugins/ is
             # unreliable (configExtensionCount:0 in hub-daemon logs); the env
             # var adds it as an additional hooks scan path.
-            "CLINE_HOOKS_DIR": str(project_dir / ".cline" / "plugins"),
+            "CLINE_HOOKS_DIR": str(self._plugins_dir(project_dir)),
         }
 
     @staticmethod
@@ -154,7 +159,7 @@ class ClineProvider(Provider):
         import filelock
 
         del result  # MVP: guard is unconditional; skill-declared hooks → follow-up.
-        plugins_dir = project_dir / ".cline" / "plugins"
+        plugins_dir = self._plugins_dir(project_dir)
         plugins_dir.mkdir(parents=True, exist_ok=True)
         self._ensure_gitignored(project_dir, ".cline/plugins/")
 
@@ -336,7 +341,7 @@ class ClineProvider(Provider):
         # ensure_runtime_hooks also runs during _refresh/set_role).
         self.ensure_runtime_hooks(project_dir, result)
 
-        plugins_dir = project_dir / ".cline" / "plugins"
+        plugins_dir = self._plugins_dir(project_dir)
         return (
             ["-i", "-s", prompt_content, "--hooks-dir", str(plugins_dir)],
             {},

@@ -42,15 +42,6 @@ to [Semantic Versioning](https://semver.org/).
 
 - Depends on `ai-hats-observe>=0.3.0` (the `TranscriptParser` base + `usage/v1`
   schema `ClineParser` reuses) — the MVP omitted it.
-||||||| parent of 0a9be1e (fix(cline): wire CLINE_HOOKS_DIR + --hooks-dir for plugin loading (HATS-964))
-- `get_env` now sets `AI_HATS_DIR` + `AI_HATS_PROJECT_DIR` so the plugin
-  can locate the materialized guard scripts at runtime.
-=======
-- `get_env` now sets `AI_HATS_DIR` + `AI_HATS_PROJECT_DIR` +
-  `CLINE_HOOKS_DIR` (path to the materialized plugins) so the plugin can
-  locate the guard scripts at runtime and cline scans the directory at
-  session start.
->>>>>>> 0a9be1e (fix(cline): wire CLINE_HOOKS_DIR + --hooks-dir for plugin loading (HATS-964))
 
 ## [0.2.0]
 
