@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `materialize_runtime_skills` is now parallel-safe: the `.ai-hats-managed`
+  marker is a session-ref-counted JSON dict (`session_id → [skill_names]`).
+  Two concurrent cline sessions with different roles each see their OWN skills
+  — no wipe (HATS-981).
 - `get_env` now sets `CLINE_HUB_PORT` to a per-session ephemeral port, moving
   each ai-hats cline session off the default hub port (25463) so parallel
   sessions and `cline --help` no longer crash with `EADDRINUSE` (HATS-973).

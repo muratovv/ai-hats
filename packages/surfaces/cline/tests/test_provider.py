@@ -170,7 +170,71 @@ def test_materialize_preserves_user_skills(tmp_path) -> None:
     assert (tmp_path / ".cline" / "skills" / "ai-skill" / "SKILL.md").exists()
 
 
-def test_materialize_sweeps_stale_skills(tmp_path) -> None:
+def test_materialize_same_session_sweeps_stale(tmp_path) -> None:
+    # HATS-981: a single session changing its skills sweeps stale ones.
+    skill_a = _make_skill(tmp_path, "skill-a")
+    skill_b = _make_skill(tmp_path, "skill-b")
+    provider = ClineProvider()
+    provider.materialize_runtime_skills(
+        tmp_path, _fake_result(skills=[skill_a, skill_b]), "sid-1"
+    )
+    # SAME session_id — role dropped skill-b.
+    provider.materialize_runtime_skills(
+        tmp_path, _fake_result(skills=[skill_a]), "sid-1"
+    )
+    assert (tmp_path / ".cline" / "skills" / "skill-a").exists()
+    assert not (tmp_path / ".cline" / "skills" / "skill-b").exists()
+
+
+def test_materialize_different_sessions_preserve_each_other(tmp_path) -> None:
+    # HATS-981 R2: different sessions must NOT wipe each other's skills.
+    skill_a = _make_skill(tmp_path, "skill-a")
+    skill_b = _make_skill(tmp_path, "skill-b")
+    provider = ClineProvider()
+    provider.materialize_runtime_skills(
+        tmp_path, _fake_result(skills=[skill_a, skill_b]), "sid-1"
+    )
+    # DIFFERENT session_id — sid-2 doesn't want skill-b, but sid-1 still does.
+    provider.materialize_runtime_skills(
+        tmp_path, _fake_result(skills=[skill_a]), "sid-2"
+    )
+    assert (tmp_path / ".cline" / "skills" / "skill-a").exists()
+    assert (tmp_path / ".cline" / "skills" / "skill-b").exists()
+
+
+def test_materialize_parallel_threads_both_skills_present(tmp_path) -> None:
+    # HATS-981 R2 key test: two threads, different roles, both skills survive.
+    import threading
+
+    skill_a = _make_skill(tmp_path, "skill-a")
+    skill_b = _make_skill(tmp_path, "skill-b")
+    provider = ClineProvider()
+    errors: list[Exception] = []
+
+    def _materialize(skills, sid):
+        try:
+            provider.materialize_runtime_skills(
+                tmp_path, _fake_result(skills=skills), sid
+            )
+        except Exception as exc:
+            errors.append(exc)
+
+    t1 = threading.Thread(target=_materialize, args=([skill_a], "sid-1"))
+    t2 = threading.Thread(target=_materialize, args=([skill_b], "sid-2"))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert not errors, errors
+    skills_dir = tmp_path / ".cline" / "skills"
+    assert (skills_dir / "skill-a" / "SKILL.md").exists()
+    assert (skills_dir / "skill-b" / "SKILL.md").exists()
+
+
+def test_materialize_marker_is_session_refcounted(tmp_path) -> None:
+    import json
+
     skill_a = _make_skill(tmp_path, "skill-a")
     skill_b = _make_skill(tmp_path, "skill-b")
     provider = ClineProvider()
@@ -180,20 +244,11 @@ def test_materialize_sweeps_stale_skills(tmp_path) -> None:
     provider.materialize_runtime_skills(
         tmp_path, _fake_result(skills=[skill_a]), "sid-2"
     )
-    assert (tmp_path / ".cline" / "skills" / "skill-a").exists()
-    assert not (tmp_path / ".cline" / "skills" / "skill-b").exists()
-
-
-def test_materialize_marker_lists_managed_skills(tmp_path) -> None:
-    skill_a = _make_skill(tmp_path, "skill-a")
-    skill_b = _make_skill(tmp_path, "skill-b")
-    ClineProvider().materialize_runtime_skills(
-        tmp_path, _fake_result(skills=[skill_a, skill_b]), "sid-1"
+    marker = json.loads(
+        (tmp_path / ".cline" / "skills" / ".ai-hats-managed").read_text()
     )
-    marker = (tmp_path / ".cline" / "skills" / ".ai-hats-managed").read_text()
-    assert "skill-a" in marker
-    assert "skill-b" in marker
-    assert "user-skill" not in marker
+    assert marker["sid-1"] == ["skill-a", "skill-b"]
+    assert marker["sid-2"] == ["skill-a"]
 
 
 def test_materialize_returns_no_cli_args(tmp_path) -> None:
