@@ -86,7 +86,7 @@ def test_get_env_does_not_isolate_data_dir(tmp_path) -> None:
     assert env["CLINE_HUB_PORT"]
     # HATS-964: point cline at the materialized plugins directory so the
     # shared-state guard loads (auto-discovery of .cline/plugins/ is unreliable).
-    assert env["CLINE_HOOKS_DIR"] == str(tmp_path / ".cline" / "plugins")
+    assert env["CLINE_HOOKS_DIR"] == str(ClineProvider._plugins_dir(tmp_path))
 
 
 def test_get_env_sets_cline_hub_port(tmp_path) -> None:
@@ -131,7 +131,7 @@ def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
     # HATS-964: --hooks-dir points cline at the materialized TS plugin dir
     assert "--hooks-dir" in args
     idx = args.index("--hooks-dir")
-    assert args[idx + 1] == str(tmp_path / ".cline" / "plugins")
+    assert args[idx + 1] == str(ClineProvider._plugins_dir(tmp_path))
 
 
 # ---- HATS-963: .cline/skills/ materialization ----
