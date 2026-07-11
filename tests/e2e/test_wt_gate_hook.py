@@ -20,7 +20,7 @@ import pytest
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-HOOK = REPO_ROOT / "library/core/skills/worktree-isolation/hooks/wt_gate.py"
+HOOK = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/skills/worktree-isolation/hooks/wt_gate.py"
 
 
 def _git(cwd: Path, *args: str) -> None:
