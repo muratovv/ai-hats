@@ -154,3 +154,85 @@ def test_force_cannot_steal_a_live_owner(tmp_path: Path, monkeypatch) -> None:
     with pytest.raises(ValueError):
         mgr.transition(t1, TaskState.EXECUTE, force=True, reason="try to steal")
     assert ownership.owner_of(reg, t1)["session_id"] == "sess-a"
+
+
+def test_filing_child_releases_parent_ownership(tmp_path: Path, as_agent_a) -> None:
+    """HATS-977 (b): a childless task claims ownership on execute; filing a child
+    epicifies the parent, which releases that hold immediately — the session is
+    then free to execute the child without OwnershipRefused."""
+    mgr, reg = _mgr(tmp_path)
+    parent = _to_execute(mgr, "Parent")  # claims ownership while childless
+    assert ownership.held_by(reg, "sess-a") == [parent]
+
+    child = mgr.next_id()
+    mgr.create_task(child, "Child", parent_task=parent)  # parent is now an epic
+    assert ownership.held_by(reg, "sess-a") == []  # released at epicification
+
+    # Session is free to work the child (single-slot no longer blocked).
+    mgr.transition(child, TaskState.PLAN)
+    mgr.transition(child, TaskState.EXECUTE)
+    assert ownership.held_by(reg, "sess-a") == [child]
+
+
+def test_epic_releases_stray_ownership_on_exit(tmp_path: Path, as_agent_a) -> None:
+    """HATS-977 (a) safety-net: even if an epic still holds a stray ownership
+    record (an epicification route that bypassed the create-time release),
+    leaving execute drops it — the release branch no longer skips epics."""
+    mgr, reg = _mgr(tmp_path)
+    parent = _to_execute(mgr, "Parent")
+    child = mgr.next_id()
+    mgr.create_task(child, "Child", parent_task=parent)  # (b) releases here
+    ownership.take(reg, parent, "sess-a", os.getpid())  # simulate a stray hold
+    assert ownership.held_by(reg, "sess-a") == [parent]
+
+    mgr.transition(parent, TaskState.DOCUMENT)  # epic leaves execute
+    assert ownership.held_by(reg, "sess-a") == []  # safety-net dropped it
+
+
+def test_child_transition_not_refused_after_epic_done(tmp_path: Path, as_agent_a) -> None:
+    """HATS-977 repro: execute a parent while childless, file children, walk the
+    (now-epic) parent to done, then transition a child — must not be
+    OwnershipRefused by an orphaned parent hold."""
+    mgr, reg = _mgr(tmp_path)
+    parent = _to_execute(mgr, "Parent")
+    c1 = mgr.next_id()
+    mgr.create_task(c1, "C1", parent_task=parent)
+    for state in (TaskState.DOCUMENT, TaskState.REVIEW, TaskState.DONE):
+        mgr.transition(parent, state)
+    assert ownership.held_by(reg, "sess-a") == []
+
+    mgr.transition(c1, TaskState.PLAN)  # must not raise OwnershipRefused
+    assert mgr.get_task(c1).state == TaskState.PLAN
+
+
+def test_reparent_via_update_releases_new_parent_ownership(tmp_path: Path, as_agent_a) -> None:
+    """HATS-977: re-parenting an *existing* task under X via `update`
+    (`task update Y --parent-task X`) epicifies X — the same event-time release
+    as the create route must fire, not only the leaving-execute safety-net."""
+    mgr, reg = _mgr(tmp_path)
+    x = _to_execute(mgr, "X")  # X claims ownership while childless
+    assert ownership.held_by(reg, "sess-a") == [x]
+
+    y = mgr.next_id()
+    mgr.create_task(y, "Y")  # standalone backlog task, no parent
+    mgr.update_task(y, parent_task=x)  # Y -> X: X is now an epic
+    assert ownership.held_by(reg, "sess-a") == []  # released at the re-parent event
+    assert mgr.get_task(y).parent_task == x  # Y really is X's child now
+
+
+def test_unparent_via_update_does_not_resurrect_ownership(tmp_path: Path, as_agent_a) -> None:
+    """HATS-977: clearing a task's parent (`task update Y --clear-parent`) leaves
+    ownership untouched — the now-childless former epic is not re-claimed, and
+    nothing is orphaned; it can still be finished cleanly."""
+    mgr, reg = _mgr(tmp_path)
+    x = _to_execute(mgr, "X")
+    y = mgr.next_id()
+    mgr.create_task(y, "Y", parent_task=x)  # X epic; X's hold released here
+    assert ownership.held_by(reg, "sess-a") == []
+
+    mgr.update_task(y, parent_task="")  # un-parent Y → X childless again
+    assert ownership.held_by(reg, "sess-a") == []  # not resurrected, not orphaned
+
+    for state in (TaskState.DOCUMENT, TaskState.REVIEW, TaskState.DONE):
+        mgr.transition(x, state)  # childless leaf again — finishes cleanly
+    assert ownership.held_by(reg, "sess-a") == []
