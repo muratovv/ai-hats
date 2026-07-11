@@ -15,7 +15,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from .providers import PROVIDER_ENTRY_POINT_GROUP, _provider_entry_points
+from .provider_entry_points import PROVIDER_ENTRY_POINT_GROUP, _provider_entry_points
 
 # Repo layout: surface-plugin members live at ``<repo>/packages/surfaces/<name>``.
 SURFACES_SUBPATH = ("packages", "surfaces")
