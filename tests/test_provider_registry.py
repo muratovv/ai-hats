@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats import providers as prov
+from ai_hats.provider_entry_points import PROVIDER_ENTRY_POINT_GROUP
 from ai_hats.providers import (
     Provider,
     get_provider,
@@ -141,7 +142,7 @@ def test_pyproject_declares_provider_entry_point_group():
 
     root = Path(__file__).resolve().parents[1]
     data = tomllib.loads((root / "pyproject.toml").read_text())
-    group = data["project"]["entry-points"][prov.PROVIDER_ENTRY_POINT_GROUP]
+    group = data["project"]["entry-points"][PROVIDER_ENTRY_POINT_GROUP]
     assert group == {
         "claude": "ai_hats.providers:ClaudeProvider",
         "gemini": "ai_hats.providers:GeminiProvider",

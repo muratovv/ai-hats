@@ -20,7 +20,7 @@ from ai_hats.constants import HOOK_PRE_TOOL_USE
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 GUARD = (
     REPO_ROOT
-    / "library/core/skills/tool-call-hygiene/hooks/tool_call_hygiene_guard.sh"
+    / "packages/ai-hats-library/src/ai_hats_library/core/skills/tool-call-hygiene/hooks/tool_call_hygiene_guard.sh"
 )
 
 

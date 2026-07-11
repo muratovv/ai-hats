@@ -1,14 +1,14 @@
 # Documentation index
 
 Single source of truth for the project's documentation surface. The
-[initial-wizard](../library/core/roles/initial-wizard/config.yaml) role
+[initial-wizard](../packages/ai-hats-library/src/ai_hats_library/core/roles/initial-wizard/config.yaml) role
 reads this file at session start; maintainers keep it in sync when
 adding, removing, or renaming files under `docs/` (enforced by the
 `pre-commit-docs-index.sh` hook from the `git-mastery` skill).
 
 ## Wizard companion docs (per step)
 
-Primary references the [initial-wizard](../library/core/roles/initial-wizard/config.yaml)
+Primary references the [initial-wizard](../packages/ai-hats-library/src/ai_hats_library/core/roles/initial-wizard/config.yaml)
 role opens during each step of first-time configuration:
 
 - **Step 1 — language**: (no docs).
@@ -28,23 +28,23 @@ role opens during each step of first-time configuration:
 Full list of documentation files maintained in this repo. Open via Read
 tool when a question goes beyond built-in instructions.
 
-| File | Topic | When to read |
-|---|---|---|
-| [how-to-configure.md](how-to-configure.md) | Full configuration walkthrough — fields, paths, customization, feedback, verification | Steps 2, 4, 5, 6, 7 |
-| [how-to-extend.md](how-to-extend.md) | Bring-your-own roles / traits / skills / rules; layered library precedence; skill-declared git/runtime hooks; custom verbs via shell aliases | Step 3, 4; custom-component work |
-| [how-to.md](how-to.md) | Overlay cookbook — 7 recipes for adjusting a role on the fly | Step 4 |
-| [how-to-feedback-loop.md](how-to-feedback-loop.md) | Feedback policies (off / hint / smart / always) + reflection internals | Step 6 |
-| [glossary.md](glossary.md) | Core terminology — role, provider, session, trait, skill, rule | Any step where a term is unclear |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Composition model, session lifecycle, reflection loop, backlog FSMs | Curious; debugging composition |
-| [how-to-orchestration.md](how-to-orchestration.md) | Multi-role orchestration via sub-agents | Advanced |
-| [how-to-cli-integrations.md](how-to-cli-integrations.md) | Integrating external CLIs (gcloud, gh, gWorkspace) into a role | Advanced |
-| [how-to-advanced.md](how-to-advanced.md) | Edge cases, power-user knobs, escape hatches | Advanced |
-| [how-to-backlog.md](how-to-backlog.md) | Task / hypothesis / proposal lifecycle and CLI surface | Advanced |
-| [reflect.md](reflect.md) | Reflection-mode internals — hypothesis/proposal triage flow | Advanced |
-| [RELEASING.md](RELEASING.md) | Release process — SemVer bump, CHANGELOG roll-up, tag | Maintainers |
-| [migration-v0.8.0.md](migration-v0.8.0.md) | Upgrade guide v0.7→v0.8 — `plan-sync` / `self bump` removal | Upgrading across a MAJOR bump |
-| [migration-v0.9.0.md](migration-v0.9.0.md) | Upgrade guide v0.8→v0.9 — uv prerequisite, channel model, PyPI `stable` | Upgrading across a MAJOR bump |
-| [migration-v0.10.0.md](migration-v0.10.0.md) | Upgrade guide v0.9→v0.10 — console-script removal, self-location guard, forward-safe config | Upgrading across a MAJOR bump |
+| File                                                     | Topic                                                                                                                                        | When to read                     |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| [how-to-configure.md](how-to-configure.md)               | Full configuration walkthrough — fields, paths, customization, feedback, verification                                                        | Steps 2, 4, 5, 6, 7              |
+| [how-to-extend.md](how-to-extend.md)                     | Bring-your-own roles / traits / skills / rules; layered library precedence; skill-declared git/runtime hooks; custom verbs via shell aliases | Step 3, 4; custom-component work |
+| [how-to.md](how-to.md)                                   | Overlay cookbook — 7 recipes for adjusting a role on the fly                                                                                 | Step 4                           |
+| [how-to-feedback-loop.md](how-to-feedback-loop.md)       | Feedback policies (off / hint / smart / always) + reflection internals                                                                       | Step 6                           |
+| [glossary.md](glossary.md)                               | Core terminology — role, provider, session, trait, skill, rule                                                                               | Any step where a term is unclear |
+| [ARCHITECTURE.md](ARCHITECTURE.md)                       | Composition model, session lifecycle, reflection loop, backlog FSMs                                                                          | Curious; debugging composition   |
+| [how-to-orchestration.md](how-to-orchestration.md)       | Multi-role orchestration via sub-agents                                                                                                      | Advanced                         |
+| [how-to-cli-integrations.md](how-to-cli-integrations.md) | Integrating external CLIs (gcloud, gh, gWorkspace) into a role                                                                               | Advanced                         |
+| [how-to-advanced.md](how-to-advanced.md)                 | Edge cases, power-user knobs, escape hatches                                                                                                 | Advanced                         |
+| [how-to-backlog.md](how-to-backlog.md)                   | Task / hypothesis / proposal lifecycle and CLI surface                                                                                       | Advanced                         |
+| [reflect.md](reflect.md)                                 | Reflection-mode internals — hypothesis/proposal triage flow                                                                                  | Advanced                         |
+| [RELEASING.md](RELEASING.md)                             | Release process — SemVer bump, CHANGELOG roll-up, tag                                                                                        | Maintainers                      |
+| [migration-v0.8.0.md](migration-v0.8.0.md)               | Upgrade guide v0.7→v0.8 — `plan-sync` / `self bump` removal                                                                                  | Upgrading across a MAJOR bump    |
+| [migration-v0.9.0.md](migration-v0.9.0.md)               | Upgrade guide v0.8→v0.9 — uv prerequisite, channel model, PyPI `stable`                                                                      | Upgrading across a MAJOR bump    |
+| [migration-v0.10.0.md](migration-v0.10.0.md)             | Upgrade guide v0.9→v0.10 — console-script removal, self-location guard, forward-safe config                                                  | Upgrading across a MAJOR bump    |
 
 ## Other docs
 
@@ -59,8 +59,8 @@ When adding, removing, or renaming a file under `docs/`:
 1. Update the **Companion docs catalog** table — add row with topic / when-to-read, or remove the obsolete row.
 2. If the file is relevant to a specific wizard step, update the **Wizard companion docs** section too.
 3. Stage `docs/INDEX.md` alongside the doc change — the
-   [`pre-commit-docs-index.sh`](../library/core/skills/git-mastery/git_hooks/pre-commit-docs-index.sh)
+   [`pre-commit-docs-index.sh`](../packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-commit-docs-index.sh)
    hook blocks the commit otherwise.
 
-See also: [doc-protocol](../library/usage/skills/doc-protocol/SKILL.md) skill
+See also: [doc-protocol](../packages/ai-hats-library/src/ai_hats_library/usage/skills/doc-protocol/SKILL.md) skill
 for the full pre-commit verification checklist for doc tasks.

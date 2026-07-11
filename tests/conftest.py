@@ -180,3 +180,19 @@ def _isolate_ai_hats_user_home(monkeypatch, tmp_path):
     home.mkdir(exist_ok=True)
     monkeypatch.setenv("AI_HATS_USER_HOME", str(home))
     yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_session_env(monkeypatch):
+    """Clear ambient ``AI_HATS_SESSION_ID`` / ``AI_HATS_ROOT_PID`` per test (HATS-982).
+
+    The HATS-955 single-slot ownership check reads ``AI_HATS_SESSION_ID`` from
+    ``os.environ``; run inside a live ai-hats session (which exports both), state
+    tests that drive cross-task transitions hit ``OwnershipRefused`` — failures
+    absent in CI. Clearing them makes every test resolve with no ambient session,
+    as CI does. Tests that need an identity re-``setenv`` after this (runs first,
+    undone at teardown), so they are unaffected.
+    """
+    monkeypatch.delenv("AI_HATS_SESSION_ID", raising=False)
+    monkeypatch.delenv("AI_HATS_ROOT_PID", raising=False)
+    yield

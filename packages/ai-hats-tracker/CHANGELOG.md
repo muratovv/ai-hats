@@ -6,6 +6,26 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.1]
+
+### Fixed
+
+- Release task ownership when a task becomes an epic (HATS-977). A task that
+  claimed ownership while childless kept the hold after gaining children,
+  orphaning it and refusing every later ownership-gated transition for the
+  session. Ownership is now released at the epicification event (create and
+  update-reparent) and unconditionally on leaving execute / a terminal state.
+
+## [0.5.0]
+
+### Added
+
+- Task-ownership registry (HATS-955): one locked JSON file lets a second agent
+  safely reclaim a task left mid-flight. `OwnershipRefused` enforces the
+  single-slot invariant and the live-owner reclaim guard; ownership is claimed
+  and released across `execute` transitions, with certain-death reclaim.
+- `task stop` verb and `task list --reclaimable` (HATS-955).
+
 ## [0.4.0]
 
 ### Changed

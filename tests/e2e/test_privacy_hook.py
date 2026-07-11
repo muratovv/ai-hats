@@ -25,7 +25,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 PRIVACY_HOOK = (
     REPO_ROOT
-    / "library/core/skills/git-mastery/git_hooks/pre-commit-privacy.sh"
+    / "packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-commit-privacy.sh"
 )
 
 # Synthetic secrets — fake values shaped to match the catalogue regexes. The
