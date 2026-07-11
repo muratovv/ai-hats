@@ -183,10 +183,10 @@ GEMINI.md / CLAUDE.md                  # System prompt
 
 ## Library layout
 
-The shipped library is split into two layers, both shipped inside the installed package (`ai_hats.library` sub-package, sourced from the repo-root `library/` directory):
+The shipped library is split into two layers, both shipped as the installed `ai_hats_library` package (sourced from `packages/ai-hats-library/src/ai_hats_library/`):
 
 ```
-library/
+ai_hats_library/
   core/                              # engine fundament — required at runtime
     roles/          initial-wizard, session-reviewer, auditor-for-role, judge, judge-for-role, hypothesis-intake, test-agent
     traits/         trait-base, trait-agent, trait-analyst-base, base-judge, base-auditor, trait-reflect-mode

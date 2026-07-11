@@ -30,7 +30,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK = (
     REPO_ROOT
-    / "library/usage/skills/maintainer-quality-gate"
+    / "packages/ai-hats-library/src/ai_hats_library/usage/skills/maintainer-quality-gate"
     / "git_hooks/pre-push-e2e-master.sh"
 )
 WRAPPER = REPO_ROOT / "scripts" / "run-e2e-gate.sh"

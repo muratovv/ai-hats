@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import abc
-import importlib.metadata
 import json
 import logging
 import shutil
@@ -32,6 +31,7 @@ from .paths import hooks_dir as _lib_hooks_dir
 from .paths import managed_runtime_hook_filename
 from .paths import session_cache_dir
 from .placeholders import expand_path_placeholders
+from .provider_entry_points import _provider_entry_points
 from .resolver import read_rule_body
 from .role_catalog import expand_role_catalog
 from . import owners
@@ -919,16 +919,6 @@ def _register_builtins() -> None:
 def _reset_for_tests() -> None:
     """Clear the registry. Tests snapshot/restore around this."""
     _PROVIDER_REGISTRY.clear()
-
-
-# HATS-870 / T10: the IoC seam. An out-of-tree package advertises a Provider
-# under this group; ai-hats discovers + registers it without importing the package.
-PROVIDER_ENTRY_POINT_GROUP = "ai_hats.providers"
-
-
-def _provider_entry_points():
-    """Entry points advertised under the provider group (isolated for tests)."""
-    return importlib.metadata.entry_points(group=PROVIDER_ENTRY_POINT_GROUP)
 
 
 def _load_provider_entry_points() -> None:
