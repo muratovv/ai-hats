@@ -22,7 +22,7 @@ from ai_hats.harness.errors import (
     HarnessTimeoutError,
 )
 from ai_hats.pipeline.harness_policy import HarnessPolicy, TimeoutPolicy
-from ai_hats.runtime import SUBAGENT_SUBPROCESS_TIMEOUT_S, SubAgentRunner
+from ai_hats.runtime import SubAgentRunner
 from ai_hats_observe.artifacts import METRICS_JSON
 
 
@@ -117,8 +117,8 @@ def test_retries_once_on_first_timeout_then_succeeds(
     result = runner.run(harness_policy=policy)
 
     assert len(calls) == 2
-    assert calls[0]["timeout_s"] == SUBAGENT_SUBPROCESS_TIMEOUT_S
-    assert calls[1]["timeout_s"] == int(SUBAGENT_SUBPROCESS_TIMEOUT_S * 2.0)
+    assert calls[0]["timeout_s"] == 600
+    assert calls[1]["timeout_s"] == 1200
     # First attempt has no retry tag; second is tagged.
     assert "harness_retry_attempt" not in calls[0]["tags"]
     assert calls[1]["tags"]["harness_retry_attempt"] == "2"
@@ -191,10 +191,9 @@ def test_budget_multiplier_applied_only_to_retries(
 
     runner.run(harness_policy=policy)
 
-    assert calls[0]["timeout_s"] == SUBAGENT_SUBPROCESS_TIMEOUT_S
-    expected = int(SUBAGENT_SUBPROCESS_TIMEOUT_S * 2.5)
-    assert calls[1]["timeout_s"] == expected
-    assert calls[2]["timeout_s"] == expected
+    assert calls[0]["timeout_s"] == 600
+    assert calls[1]["timeout_s"] == 1500
+    assert calls[2]["timeout_s"] == 1500
 
 
 def test_tags_threaded_through_retries(
