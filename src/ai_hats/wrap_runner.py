@@ -15,6 +15,7 @@ from pathlib import Path
 
 from typing import TYPE_CHECKING
 
+from .claude_settings_lint import lint_settings_files
 from .composition_payload import CompositionPayload
 from .constants import ENV_ROLE, ENV_ROOT_PID, PROVIDER_CLAUDE
 
@@ -280,6 +281,42 @@ class WrapRunner:
             session.log_sys(f"skills-mirror heal FAILED — {summary}")
             return StartupNotice("warn", summary)
 
+    def _lint_claude_settings(self, session: "Session") -> list[StartupNotice]:
+        """HATS-1006: WARN per deprecated permission rule in the Claude settings
+        chain (user-global + project + local) — the CLI's own warnings print
+        post-spawn where the alt-screen clobbers them. Fail-open; warn-only
+        (never mutates settings). See glossary "Claude settings lint".
+        """
+        from .paths.claude import (
+            claude_settings_json,
+            claude_settings_local_json,
+            claude_user_settings_json,
+        )
+
+        try:
+            findings = lint_settings_files(
+                [
+                    claude_user_settings_json(),
+                    claude_settings_json(self.project_dir),
+                    claude_settings_local_json(self.project_dir),
+                ]
+            )
+        except Exception as exc:
+            logger.warning("claude settings lint at session start failed", exc_info=True)
+            session.log_sys(f"claude settings lint FAILED — {type(exc).__name__}: {exc}")
+            return []
+        notices = [
+            StartupNotice(
+                "warn",
+                f"{f.source}: {f.array} rule {f.rule} is ignored by Claude Code "
+                f"≥2.1.210 — replace with {f.replacement}",
+            )
+            for f in findings
+        ]
+        if notices:
+            session.log_sys(f"claude settings lint: {len(notices)} deprecated rule(s)")
+        return notices
+
     def _hold_before_launch(self, startup_notices: list[StartupNotice]) -> None:
         """Show any startup notices and hold before the wrapped TUI spawns
         (HATS-825, HATS-833). Delegates the "notices ⇒ show and wait" policy to
@@ -417,6 +454,8 @@ class WrapRunner:
         startup_notices.extend(self._resync_managed_hooks(session, result))
         startup_notices.extend(self._check_skill_collisions(session, result))
         startup_notices.extend(self._payload_startup_notices())
+        if provider_name == PROVIDER_CLAUDE:
+            startup_notices.extend(self._lint_claude_settings(session))
 
         # Build CLI command with session ID for JSONL linkage
         claude_session_id = str(uuid.uuid4())

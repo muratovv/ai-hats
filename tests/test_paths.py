@@ -393,8 +393,7 @@ def test_venv_path_yaml_relative(tmp_path, monkeypatch):
     monkeypatch.delenv(ENV_AI_HATS_VENV, raising=False)
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     (tmp_path / PROJECT_CONFIG).write_text(
-        "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
-        "venv_path: .venv\nprovider: claude\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nvenv_path: .venv\nprovider: claude\n"
     )
     assert venv_path(tmp_path) == tmp_path / ".venv"
 
@@ -414,8 +413,7 @@ def test_venv_path_yaml_absolute(tmp_path, monkeypatch):
 def test_venv_path_env_overrides_yaml(tmp_path, monkeypatch):
     """AI_HATS_VENV env beats yaml.venv_path."""
     (tmp_path / PROJECT_CONFIG).write_text(
-        "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
-        "venv_path: .venv\nprovider: claude\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nvenv_path: .venv\nprovider: claude\n"
     )
     override = tmp_path / "env-override"
     monkeypatch.setenv(ENV_AI_HATS_VENV, str(override))
@@ -631,9 +629,9 @@ def test_is_complete_gates_on_sentinel(tmp_path, monkeypatch):
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     _seed_version(tmp_path, "deadbeef", complete=True, sentinel=False, pointer=False)
     assert is_complete(tmp_path, "deadbeef") is False
-    assert complete_sentinel(tmp_path, "deadbeef") == version_dir(
-        tmp_path, "deadbeef"
-    ) / ".complete"
+    assert (
+        complete_sentinel(tmp_path, "deadbeef") == version_dir(tmp_path, "deadbeef") / ".complete"
+    )
     complete_sentinel(tmp_path, "deadbeef").write_text("", encoding="utf-8")
     assert is_complete(tmp_path, "deadbeef") is True
 
@@ -671,3 +669,21 @@ def test_venv_path_env_override_beats_versions(tmp_path, monkeypatch):
     override = tmp_path / "user-owned-venv"
     monkeypatch.setenv(ENV_AI_HATS_VENV, str(override))
     assert venv_path(tmp_path) == override
+
+
+# HATS-1006: user-global Claude settings resolution
+
+
+def test_claude_user_settings_json_defaults_to_home(monkeypatch, tmp_path):
+    from ai_hats.paths.claude import claude_user_settings_json
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("ai_hats.paths.claude.Path.home", lambda: tmp_path)
+    assert claude_user_settings_json() == tmp_path / ".claude" / "settings.json"
+
+
+def test_claude_user_settings_json_honors_claude_config_dir(monkeypatch, tmp_path):
+    from ai_hats.paths.claude import claude_user_settings_json
+
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+    assert claude_user_settings_json() == tmp_path / "cfg" / "settings.json"

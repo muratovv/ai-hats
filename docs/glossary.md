@@ -164,6 +164,13 @@ in YAML and give a stable surface for tests and docs to reference.
 - **`finalize-hitl` sub-pipeline** — `library/core/pipelines/finalize-hitl.yaml`. Steps: `make_audit → compute_usage → maybe_spawn_session_reviewer → run_session_end`. Invoked by `WrapRunner.run` from its `finally` block via `PipelineHarness`-equivalent `pipeline.run(...)`. `claude_session_id` passes via `initial=` kwargs (NOT through the main `human` pipeline funnel) so the runner-private state stays out of the public funnel surface.
 - **`finalize-subagent` sub-pipeline** — `library/core/pipelines/finalize-subagent.yaml`. Steps: `make_audit → compute_usage → maybe_spawn_session_reviewer`. Invoked by `_finalize_sub_agent` when `work_dir` + `claude_session_id` are both available (the single-turn `_run_attempt` path). HATS-530 added `maybe_spawn_session_reviewer` here so SubAgent sessions trigger auto-retro under the same threshold/policy as HITL. `run_session_end` is still intentionally absent (no banner for SubAgent — no TTY).
 
+## Session-start notices
+
+Pre-launch lines `WrapRunner` renders BEFORE the wrapped TUI spawns, kept readable by the read-hold (10s countdown, Enter-skippable) so they survive the alt-screen switch (HATS-825/833/847).
+
+- **Startup notice** — one `StartupNotice(level, text)` line (`src/ai_hats/startup_notices.py`); `note` = green "we fixed drift", `warn` = yellow "degraded setup". Producers: managed-hook resync, skill collisions, payload warnings, finalize-hitl preload failure, Claude settings lint. Any notice triggers the read-hold; a clean start renders nothing and holds for nothing.
+- **Claude settings lint** — fail-open pre-spawn producer (`WrapRunner._lint_claude_settings`) checking the Claude settings chain (user-global settings + project `.claude/settings.json` + `.claude/settings.local.json`) against a data-driven table of known upstream permission-rule pitfalls (`src/ai_hats/claude_settings_lint.py`); emits one warn Startup notice per offending rule with the exact replacement. First rows: the Claude Code v2.1.210 deprecations `Write(path)` / `NotebookEdit(path)` → `Edit(path)`, `Glob(path)` → `Read(path)` — the CLI prints its own warnings post-spawn where the alt-screen clobbers them (HATS-1006). Warn-only: ai-hats never mutates user settings.
+
 ## Session-end output blocks
 
 Two visually similar blocks fire at the end of a [Session](#session). Use these names in code, docs, and conversation — calling both "плашка" or "banner" hides the distinction.
