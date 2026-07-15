@@ -1,17 +1,17 @@
-"""HATS-1006: seam tests for ``WrapRunner._lint_claude_settings``.
+"""HATS-1006: seam tests for ``WrapRunner._lint_provider_settings``.
 
-Drives the producer directly (a real run needs a PTY spawn); the pure lint
-logic is covered in ``tests/test_claude_settings_lint.py``.
+Drives the producer directly (a real run needs a PTY spawn); the Claude lint
+itself is covered in ``tests/test_claude_settings_lint.py`` — here the provider
+is a stub, proving the runner stays surface-agnostic.
 """
 
-import json
 from types import SimpleNamespace
 
 from ai_hats.paths import runs_dir
 from ai_hats.wrap_runner import WrapRunner
 
 
-def _runner(project):
+def _runner(project, provider):
     from ai_hats.composition_payload import CompositionPayload
     from ai_hats.hooks_manager import HooksManager
     from ai_hats.models import ProjectConfig
@@ -26,7 +26,7 @@ def _runner(project):
     )
     payload = CompositionPayload(
         result=CompositionResult(name="t", priorities=[], rules=[], skills=[], injections=[]),
-        provider=None,
+        provider=provider,
         effective_role="t",
         hooks=hooks,
     )
@@ -42,48 +42,30 @@ def _session(traces):
     return SimpleNamespace(session_id="sess-1", log_sys=lambda msg: traces.append(msg))
 
 
-def _seed(path, rules):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"permissions": rules}))
-
-
-def test_deprecated_rules_across_chain_become_warn_notices(tmp_path, monkeypatch):
-    project = tmp_path / "proj"
-    project.mkdir()
-    fake_home = tmp_path / "home"
-    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
-    monkeypatch.setattr("ai_hats.paths.claude.Path.home", lambda: fake_home)
-    _seed(fake_home / ".claude" / "settings.json", {"allow": ["Write(~/dev/**)"]})
-    _seed(project / ".claude" / "settings.json", {"deny": ["Glob(src/**)"]})
-    _seed(project / ".claude" / "settings.local.json", {"allow": ["Edit(//tmp/**)"]})
-
+def test_provider_findings_become_warn_notices(tmp_path):
+    provider = SimpleNamespace(settings_lint_warnings=lambda project_dir: ["w1", "w2"])
     traces: list[str] = []
-    notices = _runner(project)._lint_claude_settings(_session(traces))
 
-    assert [n.level for n in notices] == ["warn", "warn"]
-    assert "Write(~/dev/**)" in notices[0].text
-    assert "Edit(~/dev/**)" in notices[0].text
-    assert "Glob(src/**)" in notices[1].text
-    assert "Read(src/**)" in notices[1].text
+    notices = _runner(tmp_path, provider)._lint_provider_settings(_session(traces))
+
+    assert [(n.level, n.text) for n in notices] == [("warn", "w1"), ("warn", "w2")]
     assert traces  # findings logged to the session
 
 
-def test_clean_chain_yields_no_notices(tmp_path, monkeypatch):
-    project = tmp_path / "proj"
-    project.mkdir()
-    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
-    monkeypatch.setattr("ai_hats.paths.claude.Path.home", lambda: tmp_path / "home")
+def test_clean_provider_yields_no_notices(tmp_path):
+    provider = SimpleNamespace(settings_lint_warnings=lambda project_dir: [])
 
-    assert _runner(project)._lint_claude_settings(_session([])) == []
+    assert _runner(tmp_path, provider)._lint_provider_settings(_session([])) == []
 
 
-def test_lint_failure_is_fail_open(tmp_path, monkeypatch):
-    project = tmp_path / "proj"
-    project.mkdir()
+def test_none_provider_is_skipped(tmp_path):
+    assert _runner(tmp_path, None)._lint_provider_settings(_session([])) == []
 
-    def _boom(paths):
+
+def test_provider_lint_failure_is_fail_open(tmp_path):
+    def _boom(project_dir):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("ai_hats.wrap_runner.lint_settings_files", _boom)
+    provider = SimpleNamespace(settings_lint_warnings=_boom)
 
-    assert _runner(project)._lint_claude_settings(_session([])) == []
+    assert _runner(tmp_path, provider)._lint_provider_settings(_session([])) == []

@@ -168,8 +168,10 @@ in YAML and give a stable surface for tests and docs to reference.
 
 Pre-launch lines `WrapRunner` renders BEFORE the wrapped TUI spawns, kept readable by the read-hold (10s countdown, Enter-skippable) so they survive the alt-screen switch (HATS-825/833/847).
 
-- **Startup notice** — one `StartupNotice(level, text)` line (`src/ai_hats/startup_notices.py`); `note` = green "we fixed drift", `warn` = yellow "degraded setup". Producers: managed-hook resync, skill collisions, payload warnings, finalize-hitl preload failure, Claude settings lint. Any notice triggers the read-hold; a clean start renders nothing and holds for nothing.
-- **Claude settings lint** — fail-open pre-spawn producer (`WrapRunner._lint_claude_settings`) checking the Claude settings chain (user-global settings + project `.claude/settings.json` + `.claude/settings.local.json`) against a data-driven table of known upstream permission-rule pitfalls (`src/ai_hats/claude_settings_lint.py`); emits one warn Startup notice per offending rule with the exact replacement. First rows: the Claude Code v2.1.210 deprecations `Write(path)` / `NotebookEdit(path)` → `Edit(path)`, `Glob(path)` → `Read(path)` — the CLI prints its own warnings post-spawn where the alt-screen clobbers them (HATS-1006). Warn-only: ai-hats never mutates user settings.
+- **Startup notice** — one `StartupNotice(level, text)` line (`src/ai_hats/startup_notices.py`); `note` = green "we fixed drift", `warn` = yellow "degraded setup". Any notice triggers the read-hold; a clean start renders nothing and holds for nothing.
+- **Provider settings lint** — a warn producer fed by the surface (`Provider.settings_lint_warnings`): known pitfalls in the provider CLI's own settings files, e.g. permission rules Claude Code has deprecated (HATS-1006). Warn-only: ai-hats never mutates user settings.
+
+Producers and the settings-lint detail — see [9].
 
 ## Session-end output blocks
 
@@ -248,5 +250,7 @@ Single point of truth for destructive filesystem ops in ai-hats core (HATS-470).
 **[7]** — [`docs/how-to-backlog.md`](how-to-backlog.md) — `ai-hats task` / `task hyp` / `task proposal` day-to-day workflow.
 
 **[8]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture and schema dispatch.
+
+**[9]** — [`docs/session-start-notices.md`](session-start-notices.md) — startup-notice model, read-hold policy, producer list, provider settings lint.
 
 **[9]** — [`docs/how-to-extend.md`](how-to-extend.md) — shipped library layout (`library/core/` vs `library/usage/`), override precedence, recipes for adding your own roles / traits / rules / skills.
