@@ -1,10 +1,13 @@
-"""HATS-1006: pure lint of Claude settings permission rules for known upstream pitfalls."""
+"""HATS-1006: Claude settings lint — pure rule lint + ClaudeProvider chain.
+
+Lives with the surface (``ai_hats.providers``), not the runner: the lint is
+Claude-specific; ``WrapRunner`` only consumes ``Provider.settings_lint_warnings``.
+"""
 
 import json
 from pathlib import Path
 
-from ai_hats.claude_settings_lint import lint_permission_rules, lint_settings_files
-
+from ai_hats.providers import ClaudeProvider, lint_permission_rules, lint_settings_files
 
 SRC = Path("/x/.claude/settings.json")
 
@@ -67,3 +70,32 @@ def test_files_chain_reads_existing_and_fails_open(tmp_path):
     findings = lint_settings_files([good, broken, missing])
 
     assert [(f.source, f.rule) for f in findings] == [(good, "Write(~/dev/**)")]
+
+
+def _seed(path: Path, rules: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"permissions": rules}))
+
+
+def test_claude_provider_lints_the_three_file_chain(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+    _seed(tmp_path / "cfg" / "settings.json", {"allow": ["Write(~/dev/**)"]})
+    project = tmp_path / "proj"
+    _seed(project / ".claude" / "settings.json", {"deny": ["Glob(src/**)"]})
+    _seed(project / ".claude" / "settings.local.json", {"allow": ["Edit(//tmp/**)"]})
+
+    warnings_ = ClaudeProvider().settings_lint_warnings(project)
+
+    assert len(warnings_) == 2
+    assert "Write(~/dev/**)" in warnings_[0]
+    assert "Edit(~/dev/**)" in warnings_[0]
+    assert "Glob(src/**)" in warnings_[1]
+    assert "Read(src/**)" in warnings_[1]
+
+
+def test_claude_provider_clean_chain_is_silent(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    assert ClaudeProvider().settings_lint_warnings(project) == []
