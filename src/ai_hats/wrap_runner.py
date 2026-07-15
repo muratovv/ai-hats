@@ -280,6 +280,25 @@ class WrapRunner:
             session.log_sys(f"skills-mirror heal FAILED — {summary}")
             return StartupNotice("warn", summary)
 
+    def _lint_provider_settings(self, session: "Session") -> list[StartupNotice]:
+        """HATS-1006: WARN per provider-reported settings pitfall — the surface's
+        own warnings print post-spawn where the alt-screen clobbers them.
+        Fail-open; the lint itself lives with the surface
+        (``Provider.settings_lint_warnings``, docs/session-start-notices.md).
+        """
+        provider = self.payload.provider
+        if provider is None:
+            return []
+        try:
+            findings = provider.settings_lint_warnings(self.project_dir)
+        except Exception as exc:
+            logger.warning("provider settings lint at session start failed", exc_info=True)
+            session.log_sys(f"provider settings lint FAILED — {type(exc).__name__}: {exc}")
+            return []
+        if findings:
+            session.log_sys(f"provider settings lint: {len(findings)} finding(s)")
+        return [StartupNotice("warn", text) for text in findings]
+
     def _hold_before_launch(self, startup_notices: list[StartupNotice]) -> None:
         """Show any startup notices and hold before the wrapped TUI spawns
         (HATS-825, HATS-833). Delegates the "notices ⇒ show and wait" policy to
@@ -417,6 +436,7 @@ class WrapRunner:
         startup_notices.extend(self._resync_managed_hooks(session, result))
         startup_notices.extend(self._check_skill_collisions(session, result))
         startup_notices.extend(self._payload_startup_notices())
+        startup_notices.extend(self._lint_provider_settings(session))
 
         # Build CLI command with session ID for JSONL linkage
         claude_session_id = str(uuid.uuid4())

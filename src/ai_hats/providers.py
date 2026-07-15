@@ -7,8 +7,12 @@ import json
 import logging
 import shutil
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 from ai_hats_core import CompositionResult, ResolvedComponent
 from ai_hats_observe.parsers.claude import ClaudeParser
@@ -26,7 +30,8 @@ from .paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
 from .paths import CLAUDE_PROJECT_DIR_VAR
 from .paths import GEMINI_CLI_PROJECT_RULES_PATH_ENV
 from .paths import ai_hats_dir
-from .paths import claude_md, claude_settings_json, gemini_md
+from .paths import claude_md, claude_settings_json, claude_settings_local_json, gemini_md
+from .paths import claude_user_settings_json
 from .paths import hooks_dir as _lib_hooks_dir
 from .paths import managed_runtime_hook_filename
 from .paths import session_cache_dir
@@ -74,8 +79,7 @@ def _extract_frontmatter_description(skill: ResolvedComponent) -> str:
         data = read_frontmatter(skill.source_path / "SKILL.md")
     except FrontmatterError as exc:
         logger.warning(
-            "skill %r: malformed SKILL.md frontmatter; using name in the skill "
-            "index: %s",
+            "skill %r: malformed SKILL.md frontmatter; using name in the skill index: %s",
             skill.name,
             exc,
         )
@@ -122,9 +126,15 @@ class Provider(abc.ABC):
         """
         return []
 
-    def _compose_sections(
-        self, result: CompositionResult, *, include_skills: bool
-    ) -> str:
+    def settings_lint_warnings(self, project_dir: Path) -> list[str]:
+        """Known surface-settings pitfalls to surface at session start (HATS-1006).
+
+        Base surfaces lint nothing; ClaudeProvider overrides to check the Claude
+        settings chain for permission rules the CLI has deprecated.
+        """
+        return []
+
+    def _compose_sections(self, result: CompositionResult, *, include_skills: bool) -> str:
         """Assemble the shared system-prompt sections.
 
         Order: PRIORITIES → merged role/trait injection → always-on RULES →
@@ -306,8 +316,10 @@ class Provider(abc.ABC):
                 after = existing[existing.index(INJECTION_END) + len(INJECTION_END) :]
                 new_content = f"{before}{INJECTION_START}\n{content}\n{INJECTION_END}{after}"
                 _safe_replace(
-                    prompt_path, new_content.encode("utf-8"),
-                    reason="system-prompt", project_dir=project_dir,
+                    prompt_path,
+                    new_content.encode("utf-8"),
+                    reason="system-prompt",
+                    project_dir=project_dir,
                 )
                 return
             if existing.strip():
@@ -315,7 +327,8 @@ class Provider(abc.ABC):
                 _safe_replace(
                     prompt_path,
                     f"{INJECTION_START}\n{content}\n{INJECTION_END}\n\n{existing}".encode("utf-8"),
-                    reason="system-prompt", project_dir=project_dir,
+                    reason="system-prompt",
+                    project_dir=project_dir,
                 )
                 return
 
@@ -323,7 +336,8 @@ class Provider(abc.ABC):
         _safe_replace(
             prompt_path,
             f"{INJECTION_START}\n{content}\n{INJECTION_END}\n".encode("utf-8"),
-            reason="system-prompt", project_dir=project_dir,
+            reason="system-prompt",
+            project_dir=project_dir,
         )
 
 
@@ -406,6 +420,72 @@ class GeminiProvider(Provider):
         return {
             GEMINI_CLI_PROJECT_RULES_PATH_ENV: str(self.rules_dir(session_dir)),
         }
+
+
+# ----- HATS-1006 Claude settings lint (docs/session-start-notices.md) -----
+
+# Claude Code >=2.1.210: file-permission checks match only Edit()/Read() rules.
+DEPRECATED_RULE_TOOLS: tuple[tuple[str, str], ...] = (
+    ("Write", "Edit"),
+    ("NotebookEdit", "Edit"),
+    ("Glob", "Read"),
+)
+
+_PERMISSION_ARRAYS = ("allow", "deny", "ask")
+
+
+@dataclass(frozen=True)
+class SettingsFinding:
+    """One deprecated permission rule: where it is and what replaces it."""
+
+    source: Path
+    array: str
+    rule: str
+    replacement: str
+
+
+def lint_permission_rules(settings: object, *, source: Path) -> list[SettingsFinding]:
+    """Findings for every deprecated permission rule in one parsed settings doc.
+
+    Tolerates any malformed shape (non-dict nodes, non-string rules) by
+    skipping it — the caller's fail-open contract, applied at field level.
+    """
+    if not isinstance(settings, dict):
+        return []
+    permissions = settings.get("permissions")
+    if not isinstance(permissions, dict):
+        return []
+    findings: list[SettingsFinding] = []
+    for array in _PERMISSION_ARRAYS:
+        rules = permissions.get(array)
+        if not isinstance(rules, list):
+            continue
+        for rule in rules:
+            if not isinstance(rule, str):
+                continue
+            for tool, replacement_tool in DEPRECATED_RULE_TOOLS:
+                prefix = f"{tool}("
+                if rule.startswith(prefix):
+                    replacement = f"{replacement_tool}({rule[len(prefix) :]}"
+                    findings.append(SettingsFinding(source, array, rule, replacement))
+                    break
+    return findings
+
+
+def lint_settings_files(paths: "Iterable[Path]") -> list[SettingsFinding]:
+    """Findings across a settings-file chain; per-file fail-open.
+
+    A missing, unreadable, or non-JSON file contributes nothing — a broken
+    settings file is Claude Code's own loud failure, not this lint's.
+    """
+    findings: list[SettingsFinding] = []
+    for path in paths:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        findings.extend(lint_permission_rules(data, source=path))
+    return findings
 
 
 class ClaudeProvider(Provider):
@@ -501,10 +581,15 @@ class ClaudeProvider(Provider):
         # the same cache dir so Claude Code's Skill tool can resolve them.
         skill_args = self.materialize_runtime_skills(project_dir, result, session_id)
 
-        return [
-            "--system-prompt-file", str(override_file),
-            *skill_args,
-        ], {}, full_content
+        return (
+            [
+                "--system-prompt-file",
+                str(override_file),
+                *skill_args,
+            ],
+            {},
+            full_content,
+        )
 
     def materialize_runtime_skills(
         self,
@@ -621,9 +706,7 @@ class ClaudeProvider(Provider):
         settings_path = claude_settings_json(project_dir)
         desired = self._desired_runtime_entries(project_dir, result)
         desired_by_tag = {
-            entry["_ai_hats_managed"]: entry
-            for entries in desired.values()
-            for entry in entries
+            entry["_ai_hats_managed"]: entry for entries in desired.values() for entry in entries
         }
         desired_tags = set(desired_by_tag)
 
@@ -699,6 +782,7 @@ class ClaudeProvider(Provider):
         cannot be found is skipped — the materialize step skips it too, so
         settings.json never points at a file that will not exist).
         """
+
         def rel(path: Path) -> str:
             # Claude Code resolves a relative PreToolUse ``command`` against the
             # agent's cwd, NOT the project root — a bare relative path fails
@@ -724,11 +808,13 @@ class ClaudeProvider(Provider):
         desired: dict[str, list[dict]] = {}
 
         guard = lib / "pre_bash_shared_state_guard.sh"
-        desired.setdefault(HOOK_PRE_TOOL_USE, []).append({
-            "matcher": "Bash",
-            "_ai_hats_managed": self._MANAGED_HOOK_TAG,
-            self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": rel(guard)}],
-        })
+        desired.setdefault(HOOK_PRE_TOOL_USE, []).append(
+            {
+                "matcher": "Bash",
+                "_ai_hats_managed": self._MANAGED_HOOK_TAG,
+                self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": rel(guard)}],
+            }
+        )
 
         if result is None:
             return desired
@@ -738,11 +824,13 @@ class ClaudeProvider(Provider):
                 if resolve_skill_script(result, skill_name, hook.script) is None:
                     continue
                 command = rel(lib / managed_runtime_hook_filename(skill_name, hook.script))
-                desired.setdefault(event, []).append({
-                    "matcher": hook.matcher,
-                    "_ai_hats_managed": f"ai-hats:{skill_name}:{event}:{hook.matcher}",
-                    self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": command}],
-                })
+                desired.setdefault(event, []).append(
+                    {
+                        "matcher": hook.matcher,
+                        "_ai_hats_managed": f"ai-hats:{skill_name}:{event}:{hook.matcher}",
+                        self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": command}],
+                    }
+                )
         return desired
 
     @staticmethod
@@ -865,6 +953,23 @@ class ClaudeProvider(Provider):
                     if self._LEAKED_PROJECT_HOOK_MARKER in command:
                         leaked.append(command)
         return leaked
+
+    def settings_lint_warnings(self, project_dir: Path) -> list[str]:
+        """One warning per deprecated permission rule in the Claude settings
+        chain (user-global + project + local). Warn-only — the settings files
+        are user-owned and never mutated (HATS-1006)."""
+        findings = lint_settings_files(
+            [
+                claude_user_settings_json(),
+                claude_settings_json(project_dir),
+                claude_settings_local_json(project_dir),
+            ]
+        )
+        return [
+            f"{f.source}: {f.array} rule {f.rule} is ignored by Claude Code "
+            f"≥2.1.210 — replace with {f.replacement}"
+            for f in findings
+        ]
 
 
 # HATS-870 / T10: closed ``PROVIDERS`` dict → open registry (plug in against the
