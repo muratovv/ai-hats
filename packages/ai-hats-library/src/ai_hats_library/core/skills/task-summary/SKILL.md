@@ -30,7 +30,9 @@ why. Two siblings to keep distinct:
    - **Pitfalls discovered** — non-obvious traps that cost time or could bite again
    - **Deviations from plan** — where did execution diverge from the original plan and why
 
-3. **Write the summary** to `<ai_hats_dir>/tracker/backlog/tasks/<ID>/summary.md`:
+3. **Draft the summary** at a scratch path outside the backlog — e.g.
+   `/tmp/<ID>-summary.md`. Do not write it under `tasks/<ID>/` yourself;
+   step 4 puts it there:
 
 ```markdown
 # Summary: <task title>
@@ -57,7 +59,17 @@ Result: <done | failed>
 - <What changed> — <why>
 ```
 
-4. **Update task card:** Add `summary_file: summary.md` to task.yaml metadata.
+4. **Attach it to the card:**
+
+   ```bash
+   ai-hats task attach add <ID> /tmp/<ID>-summary.md --name summary.md
+   ```
+
+   The file lands at `tasks/<ID>/attachments/summary.md` and the manifest entry
+   (name + digest) goes into the card. `attach add` is the only sanctioned way in:
+   `rule_backlog_discipline §1` guards the whole `tasks/<ID>/**` subtree, carving
+   out `plan.md` alone. Re-running with identical content is a no-op; different
+   content under the same name is a hard error — `attach remove` first.
 
 ## What NOT to Include
 
@@ -68,12 +80,15 @@ Result: <done | failed>
 
 ## Completion
 
-- Summary file written to task directory
+- Summary drafted outside the backlog tree, then attached via `task attach add`
 - Contains at least: What Was Done, Key Decisions
-- Task card updated with summary reference
+- `ai-hats task attach list <ID>` shows `summary.md`
 
 ## Anti-Patterns
 
 - Summarizing everything — the point is filtering, not transcription
 - Missing the WHY — a list of facts without reasoning helps nobody
 - Writing the summary without reading the task's work_log first — you'll miss context
+- Writing the summary under `tasks/<ID>/` by hand — `summary.md` there, or a
+  `summary_file:` key in task.yaml. Both break `rule_backlog_discipline §1`, and no
+  CLI writes either. `attach add` is the door (HATS-1007)
