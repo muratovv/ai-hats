@@ -405,7 +405,7 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
 
 
 def test_gemini_override_creates_session_rules_dir(cli_project):
-    """Gemini override uses GEMINI_CLI_PROJECT_RULES_PATH with isolated rules dir."""
+    """HATS-993: parallel gemini sessions get isolated --include-directories dirs."""
     import shutil
     from pathlib import Path
 
@@ -420,24 +420,22 @@ def test_gemini_override_creates_session_rules_dir(cli_project):
 
     # Build two parallel overrides
     result_a = asm.composer.compose("judge")
-    _, env_a, _ = provider.build_session_prompt(project, result_a, "test-sid-a")
+    args_a, _, _ = provider.build_session_prompt(project, result_a, "test-sid-a")
     result_b = asm.composer.compose("go-dev")
-    _, env_b, _ = provider.build_session_prompt(project, result_b, "test-sid-b")
+    args_b, _, _ = provider.build_session_prompt(project, result_b, "test-sid-b")
 
-    dir_a = Path(env_a["GEMINI_CLI_PROJECT_RULES_PATH"])
-    dir_b = Path(env_b["GEMINI_CLI_PROJECT_RULES_PATH"])
+    dir_a = Path(args_a[1])
+    dir_b = Path(args_b[1])
 
     # Independent dirs
     assert dir_a != dir_b
     assert dir_a.exists()
     assert dir_b.exists()
 
-    # Each has its own mandatory role file
-    assert (dir_a / "00_MANDATORY_ROLE.md").exists()
-    assert (dir_b / "00_MANDATORY_ROLE.md").exists()
-    assert (dir_a / "00_MANDATORY_ROLE.md").read_text() != (
-        dir_b / "00_MANDATORY_ROLE.md"
-    ).read_text()
+    # Each has its own session GEMINI.md role file
+    assert (dir_a / "GEMINI.md").exists()
+    assert (dir_b / "GEMINI.md").exists()
+    assert (dir_a / "GEMINI.md").read_text() != (dir_b / "GEMINI.md").read_text()
 
     # HATS-407: `ai-hats config set` is yaml-only — ./GEMINI.md is not
     # materialized until the runtime set_role path runs (lazy bootstrap

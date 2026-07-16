@@ -75,7 +75,7 @@ The overlay from `ai-hats.yaml.customizations` affects the pipeline at two point
 
 ### Providers
 
-- **Gemini** — `GEMINI.md` + `GEMINI_CLI_PROJECT_RULES_PATH`
+- **Gemini** — `GEMINI.md` + session-scoped `--include-directories` memory dir + `.gemini/skills/` mirror (HATS-993)
 - **Claude** — `CLAUDE.md`
 
 Switching providers: `ai-hats config set -p claude`. The prompt is rebuilt automatically at session start if the provider changed.
