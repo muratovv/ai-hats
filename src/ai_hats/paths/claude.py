@@ -7,6 +7,7 @@ move when the live layout does.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 
@@ -44,6 +45,16 @@ def claude_settings_json(base: Path) -> Path:
 def claude_settings_local_json(base: Path) -> Path:
     """Claude Code's local (untracked) settings file: ``.claude/settings.local.json``."""
     return base / CLAUDE_SETTINGS_LOCAL_JSON_REL
+
+
+def claude_user_settings_json() -> Path:
+    """Claude Code's user-global settings file (HATS-1006).
+
+    ``$CLAUDE_CONFIG_DIR`` relocates the whole config dir when set.
+    """
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    base = Path(config_dir) if config_dir else claude_dir(Path.home())
+    return base / "settings.json"
 
 
 def claude_md(project_dir: Path) -> Path:
@@ -112,6 +123,7 @@ __all__ = [
     "claude_settings_json",
     "claude_settings_local_json",
     "claude_skills_dir",
+    "claude_user_settings_json",
     "claude_transcript_path",
     "claude_transcripts_dir",
     "strip_claude_project_dir",

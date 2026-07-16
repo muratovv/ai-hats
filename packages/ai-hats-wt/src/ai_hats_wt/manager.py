@@ -17,7 +17,7 @@ import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 
 from ai_hats_core import scrubbed_git_env
@@ -986,6 +986,44 @@ class WorktreeManager:
             self._delete_branch()
             self.worktree_path = None
             self._clear_state()
+
+    def reclaim_if_clean(self, *, has_extra_hold: Callable[[Path], bool] | None = None) -> bool:
+        """Discard this worktree IFF it carries no unmerged work (HATS-979).
+
+        An epicified task's execute-time worktree is dead weight ("epics never
+        get a worktree"). Reclaim it only when safe — KEPT (logged) on: a dirty
+        tree, own commits not yet in the canonical base, or a caller-supplied
+        ``has_extra_hold`` predicate — the injected seam for gitignored state the
+        git checks can't see (e.g. pending hunk review; the standalone engine
+        stays unaware of it). True when discarded, else False.
+        """
+        if not self._is_git or self.worktree_path is None:
+            return False
+        if self._has_uncommitted_changes():
+            logger.info("Worktree '%s' kept — uncommitted changes (HATS-979)", self.branch_name)
+            return False
+        if has_extra_hold is not None and has_extra_hold(self.worktree_path):
+            logger.info("Worktree '%s' kept — caller-flagged hold (HATS-979)", self.branch_name)
+            return False
+        if self.branch_merged_into_canonical_base(self.project_dir, self.branch_name) is None:
+            logger.info("Worktree '%s' kept — unmerged commits (HATS-979)", self.branch_name)
+            return False
+        self.discard(force=False)
+        return True
+
+    def _has_uncommitted_changes(self) -> bool:
+        """Non-raising twin of ``_check_clean``: True on any uncommitted change.
+
+        On a probe failure returns True (conservative — keep, never risk
+        discarding work that could not be inspected).
+        """
+        if self.worktree_path is None:
+            return False
+        try:
+            result = self._git("status", "--porcelain", cwd=self.worktree_path)
+        except subprocess.CalledProcessError:
+            return True
+        return bool(result.stdout.strip())
 
     def cleanup(self, *, force_discard: bool = False, skip_hooks: bool = False) -> None:
         """Clean up worktree. Merges changes based on isolation_mode.

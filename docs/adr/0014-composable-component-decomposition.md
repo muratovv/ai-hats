@@ -358,6 +358,14 @@ The README is **standalone-readable** — the module ships via `pip install
 ai-hats-<x>` and gets its own GitHub front on extraction, so it cannot assume the
 umbrella repo's context.
 
+> **Amended by [ADR-0016](0016-skill-tool-dependency-model.md) (2026-07-11).** The
+> *placement + ownership* below — a skill lives *inside* the engine's `skills/` —
+> is superseded: engine-owned skills are portable `SKILL.md` in the content layer
+> that **declare** their engine via `ai_hats.requires`, not co-located inside the
+> engine package (which inverts the dependency arrow). The **open-registry
+> `ai_hats.skills` discovery** described here is **retained** (it serves out-of-tree
+> skill sources). Grounded in cross-surface convergence (Claude/Gemini/Cline).
+
 **Engine-owned skills.** A skill that drives a specific engine lives in that module's
 `skills/` (versions + ships with the engine); cross-cutting skills stay in
 `ai-hats-library`. ai-hats discovers skills from **all** sources (library + each
