@@ -102,4 +102,32 @@ for script in "$EVENT_D"/*; do
     fi
 done
 
+# --- Previous-hooks chaining (HATS-999) --------------------------------------
+# ai-hats owns core.hooksPath, but the repo's own hook manager
+# (simple-git-hooks / husky / ...) still materializes hooks at the PREVIOUS
+# location — recorded at takeover in ai-hats.previousHooksPath, git's default
+# .git/hooks otherwise. Chain to it LIVE (no snapshot: managers regenerate
+# their hooks) so neither stack silently shadows the other. Guards above run
+# first; a non-zero chained hook blocks the event like any native hook.
+PREV_DIR="$(git config --get ai-hats.previousHooksPath 2>/dev/null || true)"
+PREV_DIR="${PREV_DIR:-.git/hooks}"
+CHAIN="${PREV_DIR}/${EVENT}"
+if [[ -f "$CHAIN" && -x "$CHAIN" ]]; then
+    # Recursion guard: never chain back into our own hooks dir.
+    chain_dir="$(cd "$(dirname "$CHAIN")" 2>/dev/null && pwd -P || true)"
+    self_dir="$(cd "$GITHOOKS_DIR" 2>/dev/null && pwd -P || true)"
+    if [[ -n "$chain_dir" && "$chain_dir" != "$self_dir" ]]; then
+        if [[ -n "$STDIN_FILE" ]]; then
+            "$CHAIN" "$@" < "$STDIN_FILE"
+        else
+            "$CHAIN" "$@"
+        fi
+        rc=$?
+        if [[ $rc -ne 0 ]]; then
+            echo "ai-hats: chained project hook '${CHAIN}' failed (exit $rc)" >&2
+            exit "$rc"
+        fi
+    fi
+fi
+
 exit 0
