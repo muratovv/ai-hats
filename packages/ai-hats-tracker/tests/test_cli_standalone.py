@@ -64,6 +64,15 @@ def test_cli_task_import_pulls_no_ai_hats_wt():
     assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
 
 
+def test_console_grammar_mirrors_integrator() -> None:
+    """The `ai-hats-tracker` console speaks the SAME grammar as `ai-hats`:
+    hyp/proposal/attach nest UNDER `task`, never top-level (HATS-991 F3)."""
+    from ai_hats_tracker.cli.main import main as console
+
+    assert set(console.commands) == {"task"}, sorted(console.commands)
+    assert {"hyp", "proposal", "attach"} <= set(console.commands["task"].commands)
+
+
 def test_standalone_backlog_cli_drives_fsm(tmp_path: Path, monkeypatch) -> None:
     """create → log → list → show → transition on a bare dir with the default
     wt-free factory — no ``ai-hats.yaml``, no wt, no integrator override."""
