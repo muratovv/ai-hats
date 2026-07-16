@@ -516,6 +516,45 @@ def test_execute_creates_worktree(git_mgr):
     assert active.worktree_path.exists()
 
 
+def test_epicify_keeps_worktree_with_pending_hunk_review(git_mgr):
+    """HATS-979/818 e2e (full stack, real git): filing a child reclaims the
+    now-epic parent's execute-time worktree — UNLESS it holds pending hunk review
+    in the gitignored ``.hunk/notes.json`` (which ``git status`` can't see). Then
+    the worktree is KEPT; once the review is drained, the next epicify reclaims it.
+    """
+    project = git_mgr.project_dir
+    # .hunk/ is gitignored in real ai-hats projects, so git status is blind to the
+    # review sidecar — the exact condition the reclaim guard must cover.
+    (project / ".gitignore").write_text(".hunk/\n")
+    subprocess.run(["git", "add", ".gitignore"], cwd=str(project), capture_output=True, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "ignore .hunk"], cwd=str(project), capture_output=True, check=True
+    )
+
+    git_mgr.create_task("T-1", "Parent")
+    git_mgr.transition("T-1", TaskState.PLAN)
+    git_mgr.transition("T-1", TaskState.EXECUTE)
+    active = WorktreeManager.load_for_task(
+        project, "T-1", state_dir=worktrees_dir(project)
+    )
+    wt = active.worktree_path
+    assert wt.exists()
+
+    # Leave fake pending-review data in the gitignored sidecar.
+    (wt / ".hunk").mkdir(parents=True, exist_ok=True)
+    (wt / ".hunk" / "notes.json").write_text('[{"id": "u:1", "text": "review me"}]')
+
+    # Epicify (file a child) → discard_if_empty(T-1) fires. Pending review blocks it.
+    git_mgr.create_task("T-2", "Child", parent_task="T-1")
+    assert wt.exists(), "worktree with pending hunk review must NOT be reclaimed"
+
+    # Drain the review, epicify again → now reclaimed (dir + branch gone).
+    (wt / ".hunk" / "notes.json").write_text("[]")
+    git_mgr.create_task("T-3", "Child2", parent_task="T-1")
+    assert not wt.exists(), "drained, git-clean worktree must be reclaimed at epicify"
+    assert WorktreeManager.load_for_task(project, "T-1", state_dir=worktrees_dir(project)) is None
+
+
 def test_done_merges_worktree(git_mgr):
     git_mgr.create_task("T-1", "Merge on done")
     git_mgr.transition("T-1", TaskState.PLAN)

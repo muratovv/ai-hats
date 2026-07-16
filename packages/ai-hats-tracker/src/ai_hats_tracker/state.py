@@ -50,6 +50,15 @@ class WorktreeEffects(Protocol):
         """Raise unless HEAD is the canonical merge base (forced-execute guard)."""
         ...
 
+    def discard_if_empty(self, task_id: str) -> bool:
+        """Reclaim the task's worktree iff it has no unmerged work (HATS-979).
+
+        Called at epicification: an epic is a tracker, so its execute-time
+        worktree is reclaimed — but only when empty/merged; a dirty tree, own
+        unmerged commits, or pending hunk review are kept. True if reclaimed.
+        """
+        ...
+
 
 @dataclass(frozen=True)
 class Section:
@@ -274,10 +283,12 @@ class TaskManager:
                 f"{self._alloc_lock_path()} — a stuck ai-hats process likely "
                 "holds it. If safe, remove the lock file and retry."
             ) from exc
-        # HATS-977: a new child epicifies the parent; epics never hold ownership,
-        # so drop the parent's hold now (idempotent no-op if it never claimed).
+        # HATS-977/979: a new child epicifies the parent — drop its ownership hold
+        # and reclaim its now-dead worktree (both no-op / kept when nothing to do).
         if task.parent_task:
             self._release_ownership(task.parent_task)
+            if self._worktree_effects is not None:
+                self._worktree_effects.discard_if_empty(task.parent_task)
         # Epic auto-reopen takes the epic's own lock — run it AFTER the alloc
         # lock releases (mirrors transition's post-lock rule; no nested locks).
         return task, self._propagate_to_parent(task)
@@ -609,10 +620,12 @@ class TaskManager:
             self._save_task(task)
             self._update_indexes()
 
-        # HATS-977: re-parenting under a new parent epicifies it, same as create;
-        # release that parent's hold (no-op if unowned). Empty ("" clear) is falsy.
+        # HATS-977/979: re-parenting under a new parent epicifies it — release its
+        # ownership and reclaim its now-dead worktree. Empty ("" clear) is falsy.
         if parent_task:
             self._release_ownership(parent_task)
+            if self._worktree_effects is not None:
+                self._worktree_effects.discard_if_empty(parent_task)
         # Re-parenting a live task into a `done` epic reopens it (HATS-690 Q3).
         return task, self._propagate_to_parent(task)
 

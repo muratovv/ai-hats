@@ -54,6 +54,8 @@ The two component kinds that ai-hats injects into the **provider** prompt (`CLAU
 
 Catalog — `ai-hats list {rules,skills}`. Formats — see [3]; library layout and override precedence — see [9].
 
+**Skill↔tool dependency.** A skill is portable `SKILL.md` content that **declares** the engine/CLI it drives via an optional `ai_hats.requires.{cli,mcp}` frontmatter block; ai-hats **verifies presence and warns** at compose/session time (with an install `hint`) and **never auto-installs**. Engine-owned skills bind to their engine by `requires`, **not** by living inside the engine package (which would invert the dependency arrow). `requires.mcp` is written once in a neutral form and compiled to each surface's native MCP channel (`.mcp.json` / `cline_mcp_settings.json` / `gemini-extension.json`). The `ai_hats.skills` entry-point remains the discovery seam for out-of-tree skill sources. Full rationale — see [ADR-0016](adr/0016-skill-tool-dependency-model.md) (amends [ADR-0014](adr/0014-composable-component-decomposition.md) §"Engine-owned skills").
+
 **Rule-delivery contract (HATS-700).** Not every composed rule's body reaches the prompt. Only the **always-on** set (`providers.ALWAYS_ON_RULES` — safety-critical + framework invariants) is injected in full under the prompt's `## RULES` section; every other composed rule is **provenance only** — its body is not delivered, and its canonical guidance is the compact summary in the trait/role injection that references it. A `see rule X` pointer must therefore name a rule that is always-on or registered in `SUMMARIZED_IN_INJECTION` (`ai_hats/rule_delivery.py`); the **rule-delivery-gate** pre-commit hook and the G2 unit test (`find_dangling_rule_pointers`) enforce this so an author never ships a pointer to a rule the agent cannot read.
 
 ## Backlog
@@ -162,6 +164,15 @@ in YAML and give a stable surface for tests and docs to reference.
 - **`finalize-hitl` sub-pipeline** — `library/core/pipelines/finalize-hitl.yaml`. Steps: `make_audit → compute_usage → maybe_spawn_session_reviewer → run_session_end`. Invoked by `WrapRunner.run` from its `finally` block via `PipelineHarness`-equivalent `pipeline.run(...)`. `claude_session_id` passes via `initial=` kwargs (NOT through the main `human` pipeline funnel) so the runner-private state stays out of the public funnel surface.
 - **`finalize-subagent` sub-pipeline** — `library/core/pipelines/finalize-subagent.yaml`. Steps: `make_audit → compute_usage → maybe_spawn_session_reviewer`. Invoked by `_finalize_sub_agent` when `work_dir` + `claude_session_id` are both available (the single-turn `_run_attempt` path). HATS-530 added `maybe_spawn_session_reviewer` here so SubAgent sessions trigger auto-retro under the same threshold/policy as HITL. `run_session_end` is still intentionally absent (no banner for SubAgent — no TTY).
 
+## Session-start notices
+
+Pre-launch lines `WrapRunner` renders BEFORE the wrapped TUI spawns, kept readable by the read-hold (10s countdown, Enter-skippable) so they survive the alt-screen switch (HATS-825/833/847).
+
+- **Startup notice** — one `StartupNotice(level, text)` line (`src/ai_hats/startup_notices.py`); `note` = green "we fixed drift", `warn` = yellow "degraded setup". Any notice triggers the read-hold; a clean start renders nothing and holds for nothing.
+- **Provider settings lint** — a warn producer fed by the surface (`Provider.settings_lint_warnings`): known pitfalls in the provider CLI's own settings files, e.g. permission rules Claude Code has deprecated (HATS-1006). Warn-only: ai-hats never mutates user settings.
+
+Producers and the settings-lint detail — see [9].
+
 ## Session-end output blocks
 
 Two visually similar blocks fire at the end of a [Session](#session). Use these names in code, docs, and conversation — calling both "плашка" or "banner" hides the distinction.
@@ -239,5 +250,7 @@ Single point of truth for destructive filesystem ops in ai-hats core (HATS-470).
 **[7]** — [`docs/how-to-backlog.md`](how-to-backlog.md) — `ai-hats task` / `task hyp` / `task proposal` day-to-day workflow.
 
 **[8]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture and schema dispatch.
+
+**[9]** — [`docs/session-start-notices.md`](session-start-notices.md) — startup-notice model, read-hold policy, producer list, provider settings lint.
 
 **[9]** — [`docs/how-to-extend.md`](how-to-extend.md) — shipped library layout (`library/core/` vs `library/usage/`), override precedence, recipes for adding your own roles / traits / rules / skills.

@@ -126,8 +126,7 @@ def test_skill_description_counted_in_always_on(composer):
     """The resident slice equals count of '<name>: <description>'."""
     b = analyze_composition(composer, "test-role", exact=False)
     skill = next(c for c in b.components if c.category == "skill")
-    expected = count_tokens_approx("test_skill: Does important work when invoked.")
-    assert skill.always_on_tokens == expected
+    assert skill.always_on_tokens == 11  # worked example: 45 chars // 4
 
 
 def test_rules_and_injection_are_fully_always_on(composer):

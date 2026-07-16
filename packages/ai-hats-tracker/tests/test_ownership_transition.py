@@ -21,7 +21,7 @@ from ai_hats_tracker import ownership
 from ai_hats_tracker.ownership import OwnershipRefused
 
 
-def _mgr(tmp_path: Path) -> tuple[TaskManager, Path]:
+def _mgr(tmp_path: Path, effects: object | None = None) -> tuple[TaskManager, Path]:
     agent = tmp_path / ".agent"
     layout = TrackerPaths(
         tasks_dir=agent / "tasks",
@@ -29,8 +29,28 @@ def _mgr(tmp_path: Path) -> tuple[TaskManager, Path]:
         legacy_backlog_md=agent / "BACKLOG.md",
         ensure_base=None,
     )
-    mgr = TaskManager(tmp_path, layout=layout, strict_plan_check=False, worktree_effects=None)
+    mgr = TaskManager(tmp_path, layout=layout, strict_plan_check=False, worktree_effects=effects)
     return mgr, agent / "ownership.json"
+
+
+class _RecordingEffects:
+    """A worktree-effects double that records ``discard_if_empty`` calls (HATS-979)."""
+
+    def __init__(self) -> None:
+        self.reclaimed: list[str] = []
+
+    def setup(self, task_id: str, role: str = "", caller_cwd=None):
+        return None  # None ⇒ non-git; no worktree path logged
+
+    def teardown(self, task_id: str, *, merge: bool = True, force: bool = False):
+        return None
+
+    def assert_canonical_base(self) -> None:
+        pass
+
+    def discard_if_empty(self, task_id: str) -> bool:
+        self.reclaimed.append(task_id)
+        return True
 
 
 @pytest.fixture
@@ -236,3 +256,30 @@ def test_unparent_via_update_does_not_resurrect_ownership(tmp_path: Path, as_age
     for state in (TaskState.DOCUMENT, TaskState.REVIEW, TaskState.DONE):
         mgr.transition(x, state)  # childless leaf again — finishes cleanly
     assert ownership.held_by(reg, "sess-a") == []
+
+
+def test_epicify_via_create_reclaims_parent_worktree(tmp_path: Path, as_agent_a) -> None:
+    """HATS-979: filing a child (via create) reclaims the now-epic parent's
+    execute-time worktree — the effects handler's discard_if_empty is invoked."""
+    effects = _RecordingEffects()
+    mgr, _ = _mgr(tmp_path, effects=effects)
+    parent = _to_execute(mgr, "Parent")  # childless execute → worktree setup
+    assert effects.reclaimed == []
+
+    child = mgr.next_id()
+    mgr.create_task(child, "Child", parent_task=parent)  # epicify
+    assert effects.reclaimed == [parent]  # worktree reclaim invoked at epicification
+
+
+def test_epicify_via_update_reclaims_parent_worktree(tmp_path: Path, as_agent_a) -> None:
+    """HATS-979: re-parenting an existing task under X (via update) reclaims X's
+    worktree — same epicification hook as the create route."""
+    effects = _RecordingEffects()
+    mgr, _ = _mgr(tmp_path, effects=effects)
+    x = _to_execute(mgr, "X")
+    y = mgr.next_id()
+    mgr.create_task(y, "Y")  # standalone, no parent → no reclaim yet
+    assert effects.reclaimed == []
+
+    mgr.update_task(y, parent_task=x)  # Y -> X epicifies X
+    assert effects.reclaimed == [x]
