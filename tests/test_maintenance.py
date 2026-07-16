@@ -27,6 +27,7 @@ from ai_hats.cli.maintenance import (
     _format_install_source,
     _get_changelog,
     _invalidate_update_cache,
+    _probe_remote_state,
     update,
 )
 from ai_hats.constants import ENV_REPO_URL
@@ -87,6 +88,26 @@ def test_invalidate_update_cache_idempotent_when_missing(tmp_path, monkeypatch):
     # No cache written — must not raise.
     _invalidate_update_cache(tmp_path)
     _invalidate_update_cache(tmp_path)
+
+
+# ---------- degrade on missing update_check (HATS-987) ----------
+# Stubbing the submodule to None makes the lazy `from ..update_check.* import`
+# raise ImportError — the defensive wrap must swallow it, never brick self update.
+
+
+def test_invalidate_update_cache_survives_missing_update_check(tmp_path, monkeypatch):
+    # Runs post-install in the old interpreter; a missing cache module must
+    # degrade to no-op, not raise (fail-under-revert: without the ImportError
+    # wrap this raises ModuleNotFoundError on an already-successful update).
+    monkeypatch.setitem(sys.modules, "ai_hats.update_check.cache", None)
+    _invalidate_update_cache(tmp_path)
+
+
+def test_probe_remote_state_none_on_missing_update_check(tmp_path, monkeypatch):
+    # The edge ahead/behind probe degrades to None (→ guard inactive → proceed)
+    # rather than crashing when update_check is gone.
+    monkeypatch.setitem(sys.modules, "ai_hats.update_check.checker", None)
+    assert _probe_remote_state(tmp_path, remote_url="https://x/y.git", ref="HEAD") is None
 
 
 # ---------- _format_install_source (HATS-779) ----------

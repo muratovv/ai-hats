@@ -34,11 +34,11 @@ from pathlib import Path
 import ai_hats
 
 from ai_hats_core import scrubbed_git_env
+from ..channel import FALLBACK_REMOTE_URL, _coerce_to_https  # HATS-987: primitives homed in channel
 from ..constants import ENV_REPO_URL
 from .cache import CacheEntry, write_cache
 
 
-FALLBACK_REMOTE_URL = "https://github.com/muratovv/ai-hats.git"
 LS_REMOTE_TIMEOUT = 10
 REV_PARSE_TIMEOUT = 5
 FETCH_TIMEOUT = 10
@@ -162,24 +162,6 @@ def _read_baked_commit_sha() -> str | None:
         if sha:
             return sha
     return None
-
-
-def _coerce_to_https(url: str) -> str:
-    """Map a git+ssh URL form to https so ``git ls-remote`` works without keys.
-
-    The default is git+https (HATS-766); an ``AI_HATS_REPO_URL`` override may
-    still carry ``git+ssh://`` (HATS-337) — the probe only needs the bare https.
-    """
-    prefixes = ("git+ssh://git@", "git+https://", "git+")
-    for p in prefixes:
-        if url.startswith(p):
-            url = url[len(p):]
-            break
-    if url.startswith("git@github.com:"):
-        url = "https://github.com/" + url[len("git@github.com:"):]
-    if url.startswith("github.com/"):
-        url = "https://" + url
-    return url
 
 
 def detect_remote_url() -> str:

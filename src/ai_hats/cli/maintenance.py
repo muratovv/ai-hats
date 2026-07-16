@@ -1078,11 +1078,13 @@ def _probe_remote_state(
     HATS-766: ``remote_url`` / ``ref`` (bare URL + ``HEAD``) make the guard probe
     the same repo the edge install targets, not hardwired upstream ``master``.
     """
-    from ..update_check.checker import run_check
-
     try:
+        from ..update_check.checker import run_check
+
         return run_check(project_dir, remote_url=remote_url, ref=ref)
-    except (OSError, ValueError):
+    except (ImportError, OSError, ValueError):
+        # ImportError: update_check missing (packaging regression) → guard
+        # inactive, never brick the recovery path (HATS-987).
         logger.debug("update-check probe failed", exc_info=True)
         return None
 
@@ -1304,12 +1306,12 @@ def _invalidate_update_cache(project_dir: Path) -> None:
     user finished updating. Idempotent and best-effort: a missing file or an
     unlink error must never fail the update itself.
     """
-    from ..update_check.cache import cache_path
-
     try:
+        from ..update_check.cache import cache_path
+
         cache_path(project_dir).unlink(missing_ok=True)  # safe-delete: ok update-check cache (ephemeral, re-probed next session)
-    except OSError:
-        pass
+    except (ImportError, OSError):
+        pass  # ImportError: update_check missing → nothing to invalidate (HATS-987)
 
 
 @click.command()
@@ -1477,12 +1479,9 @@ def update(
         # HATS-766: probe the edge repo's HEAD (bare url; env > harness.repo >
         # upstream), not hardwired master — else a custom edge repo silently
         # disables the guard.
-        from ..update_check.checker import FALLBACK_REMOTE_URL, _coerce_to_https
+        from ..channel import resolve_edge_probe_url
 
-        raw_edge = (
-            os.environ.get(ENV_REPO_URL) or harness_repo or FALLBACK_REMOTE_URL
-        )
-        probe_url = _coerce_to_https(raw_edge)
+        probe_url = resolve_edge_probe_url(harness_repo)
         probe = (
             None
             if force_downgrade
