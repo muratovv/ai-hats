@@ -277,6 +277,30 @@ skill is the `PostToolUse` counterpart — on each `.py` edit it runs `ruff
 > or `/tmp`. `__file__` stays fine for *reading* script-adjacent data — the rule
 > is about writes.
 
+### Git hooks: coexistence with the repo's own hook manager
+
+Git honours exactly one `core.hooksPath`, so installing the `.githooks/`
+dispatchers could shadow a hook manager the repo already uses
+(simple-git-hooks, husky, lefthook, pre-commit). ai-hats therefore chains
+instead of shadowing (HATS-999):
+
+- **`core.hooksPath` unset** — it is pointed at `.githooks`; after the
+  `.d/` chain each dispatcher also invokes `.git/hooks/<event>` (git's
+  default location, where e.g. simple-git-hooks materializes its hooks)
+  when present and executable.
+- **`core.hooksPath` pre-set elsewhere** (husky's `.husky`, etc.) — ai-hats
+  takes it over LOUDLY: the displaced dir is recorded in the local git
+  config key `ai-hats.previousHooksPath`, the dispatcher chains to
+  `<previous>/<event>`, and the notice carries the revert command
+  (`git config core.hooksPath <previous>`).
+
+Chaining is live — no snapshot — so a manager regenerating its hooks (e.g.
+simple-git-hooks on `npm install`) keeps working without re-running ai-hats.
+ai-hats hooks run first; a non-zero chained hook blocks the event like any
+native hook, and stdin-protocol events (`pre-push`, …) replay the protocol
+to the chained hook. User-added scripts in `.githooks/<event>.d/` are never
+swept — only manifest-tracked ai-hats entries are managed.
+
 ### Worktree lifecycle hooks
 
 `ai-hats wt` gives a task or sub-agent its own branch + filesystem checkout. By
