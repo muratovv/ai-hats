@@ -354,9 +354,9 @@ class GeminiProvider(Provider):
         return session_dir / "rules"
 
     def build_system_prompt(self, result: CompositionResult) -> str:
-        # Gemini has no native skill registry — keep the AVAILABLE SKILLS
-        # index as its only discovery channel (HATS-701).
-        return self._compose_sections(result, include_skills=True)
+        # HATS-993: skills reach gemini via the native .gemini/skills/
+        # registry — the HATS-701 text-index is retired.
+        return self._compose_sections(result, include_skills=False)
 
     def materialize_runtime_skills(
         self,
