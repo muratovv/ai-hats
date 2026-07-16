@@ -83,3 +83,43 @@ def test_gemini_skills_dir_gitignored(gemini_project) -> None:
 
     lines = (project / ".gitignore").read_text().splitlines()
     assert ".gemini/skills/" in lines
+
+
+def test_wrap_prompt_channel_is_include_directories(gemini_project) -> None:
+    project, result = gemini_project
+
+    args, env, prompt = GeminiProvider().build_session_prompt(project, result, "sid-4")
+
+    # HATS-993: GEMINI_CLI_PROJECT_RULES_PATH is dead in gemini-cli >=0.45;
+    # the session role rides a GEMINI.md inside an --include-directories dir.
+    assert args[0] == "--include-directories"
+    session_md = Path(args[1]) / "GEMINI.md"
+    assert session_md.read_text() == prompt
+    assert env == {}
+
+
+def test_wrap_session_dirs_isolated_per_session(gemini_project) -> None:
+    project, result = gemini_project
+    provider = GeminiProvider()
+
+    args_a, _, _ = provider.build_session_prompt(project, result, "sid-a")
+    args_b, _, _ = provider.build_session_prompt(project, result, "sid-b")
+
+    assert args_a[1] != args_b[1]
+
+
+def test_get_env_carries_no_dead_rules_path(gemini_project, tmp_path) -> None:
+    project, _ = gemini_project
+
+    env = GeminiProvider().get_env(tmp_path / "sess", project)
+
+    assert "GEMINI_CLI_PROJECT_RULES_PATH" not in env
+
+
+def test_get_run_command_headless_skips_trust() -> None:
+    # Headless gemini hard-fails in a non-trusted dir (worktrees under
+    # /var/folders are never trusted) — the automate path opts out.
+    cmd = GeminiProvider().get_run_command(["gemini"], "do it")
+
+    assert "--skip-trust" in cmd
+    assert cmd[-1] == "do it"

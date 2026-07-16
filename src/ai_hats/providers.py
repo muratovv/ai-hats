@@ -5,7 +5,6 @@ from __future__ import annotations
 import abc
 import json
 import logging
-import shutil
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,7 +27,7 @@ from .hook_collection import (
 from .frontmatter import FrontmatterError, read_frontmatter
 from .paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
 from .paths import CLAUDE_PROJECT_DIR_VAR
-from .paths import GEMINI_CLI_PROJECT_RULES_PATH_ENV
+from .paths import GEMINI_MD_FILENAME
 from .paths import ai_hats_dir
 from .paths import claude_md, claude_settings_json, claude_settings_local_json, gemini_md
 from .paths import gemini_skills_dir
@@ -386,16 +385,16 @@ class GeminiProvider(Provider):
         result: CompositionResult,
         session_id: str,
     ) -> tuple[list[str], dict[str, str], str]:
-        """Create session-scoped rules dir with composed prompt.
+        """Session-scoped role via ``--include-directories`` memory (HATS-993).
 
-        Uses GEMINI_CLI_PROJECT_RULES_PATH to inject without touching GEMINI.md.
-        Rules dir lives under ``<ai_hats_dir>/.cache/sessions/<session_id>/rules/``
-        and is cleaned with the whole cache dir at session_end.
+        Gemini loads ``GEMINI.md`` files from workspace include-directories at
+        session start; a per-session dir under ``.cache/sessions/<sid>/rules/``
+        carries the composed prompt without touching ``./GEMINI.md``. (The old
+        GEMINI_CLI_PROJECT_RULES_PATH env is ignored by gemini-cli >=0.45.)
 
         Third return element (HATS-523): ``prompt_content`` — the exact bytes
-        written to ``00_MANDATORY_ROLE.md`` (after HATS-380 placeholder
-        expansion). Persisted by ``WrapRunner`` to
-        ``<session_dir>/meta_prompt.txt`` for post-hoc audit.
+        written to the session ``GEMINI.md``, persisted by ``WrapRunner`` for
+        post-hoc audit.
         """
         prompt_content = self.build_system_prompt(result)
         # HATS-380: expand placeholder before the prompt reaches the agent.
@@ -408,24 +407,13 @@ class GeminiProvider(Provider):
         cache_dir = session_cache_dir(project_dir, session_id)
         rules_dir = cache_dir / "rules"
         rules_dir.mkdir(parents=True, exist_ok=True)
-
-        # Copy existing project rules
-        from .paths import rules_dir as _project_rules_dir
-
-        project_rules = _project_rules_dir(project_dir)
-        if project_rules.exists():
-            for item in project_rules.iterdir():
-                if item.is_dir():
-                    shutil.copytree(item, rules_dir / item.name)
-
-        # Write mandatory role override (00_ prefix = highest priority)
-        (rules_dir / "00_MANDATORY_ROLE.md").write_text(prompt_content)
+        (rules_dir / GEMINI_MD_FILENAME).write_text(prompt_content)
 
         # HATS-993: mirror skills into .gemini/skills/ before launch so
         # gemini's session-start discovery sees them.
         self.materialize_runtime_skills(project_dir, result, session_id)
 
-        return [], {GEMINI_CLI_PROJECT_RULES_PATH_ENV: str(rules_dir)}, prompt_content
+        return ["--include-directories", str(rules_dir)], {}, prompt_content
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         cmd = ["gemini"]
@@ -441,12 +429,13 @@ class GeminiProvider(Provider):
         model: str | None = None,
     ) -> list[str]:
         extra = ["--model", model] if model else []
-        return cmd + extra + ["-p", meta_prompt]
+        # --skip-trust: headless gemini hard-fails in a non-trusted dir, and
+        # automate worktrees under $TMPDIR are never trusted (HATS-993).
+        return cmd + extra + ["--skip-trust", "-p", meta_prompt]
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
-        return {
-            GEMINI_CLI_PROJECT_RULES_PATH_ENV: str(self.rules_dir(session_dir)),
-        }
+        del session_dir, project_dir
+        return {}
 
 
 # ----- HATS-1006 Claude settings lint (docs/session-start-notices.md) -----

@@ -690,7 +690,7 @@ def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_w
 
 
 def test_gemini_build_session_prompt_creates_rules_dir(project_with_library):
-    """GeminiProvider.build_session_prompt() creates session rules dir with override."""
+    """HATS-993: session role rides a GEMINI.md in an --include-directories dir."""
     import shutil
     from ai_hats.providers import GeminiProvider
 
@@ -703,23 +703,22 @@ def test_gemini_build_session_prompt_creates_rules_dir(project_with_library):
     result = asm.composer.compose("other-role")
     args, env, _ = provider.build_session_prompt(project, result, "test-sid")
 
-    assert args == []
-    assert "GEMINI_CLI_PROJECT_RULES_PATH" in env
-    rules_dir = Path(env["GEMINI_CLI_PROJECT_RULES_PATH"])
+    assert args[0] == "--include-directories"
+    assert env == {}
+    rules_dir = Path(args[1])
     assert rules_dir.exists()
 
-    # Mandatory role file exists
-    mandatory = rules_dir / "00_MANDATORY_ROLE.md"
-    assert mandatory.exists()
-    assert "Other role injection" in mandatory.read_text()
+    session_md = rules_dir / "GEMINI.md"
+    assert session_md.exists()
+    assert "Other role injection" in session_md.read_text()
 
     # HATS-407: library-sourced rules are no longer materialized under
     # `<ai_hats_dir>/library/rules/`, so the per-session rules-dir copy
     # of test_rule is gone. Always-on rules + role injection still reach
-    # the agent via 00_MANDATORY_ROLE.md (the inline composed prompt).
+    # the agent via the session GEMINI.md (the inline composed prompt).
     assert not (rules_dir / "test_rule").exists()
 
-    # GEMINI.md not touched
+    # Project GEMINI.md not touched
     assert "Role injection" in (project / "GEMINI.md").read_text()
 
     # Cleanup
@@ -1280,7 +1279,7 @@ def test_gemini_inline_prompt_has_no_literal_placeholder(
 def test_gemini_build_session_prompt_has_no_literal_placeholder(
     project_with_placeholder_library,
 ):
-    """Gemini override prompt (`00_MANDATORY_ROLE.md`) must be expanded."""
+    """Gemini session GEMINI.md must be expanded."""
     from ai_hats.composer import Composer
     from ai_hats.providers import GeminiProvider
     from ai_hats.resolver import LibraryResolver
@@ -1290,8 +1289,8 @@ def test_gemini_build_session_prompt_has_no_literal_placeholder(
     asm.init()
     result = Composer(LibraryResolver([lib])).compose("ph-role")
 
-    _, env, _ = GeminiProvider().build_session_prompt(project, result, "test-sid")
-    override = Path(env["GEMINI_CLI_PROJECT_RULES_PATH"]) / "00_MANDATORY_ROLE.md"
+    args, _, _ = GeminiProvider().build_session_prompt(project, result, "test-sid")
+    override = Path(args[1]) / "GEMINI.md"
     content = override.read_text()
     assert "<ai_hats_dir>" not in content
     assert ".agent/ai-hats/sessions/audits/" in content

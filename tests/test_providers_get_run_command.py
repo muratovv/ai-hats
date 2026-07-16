@@ -27,13 +27,14 @@ def test_claude_get_run_command_empty_model_treated_as_unset() -> None:
 
 def test_gemini_get_run_command_without_model() -> None:
     p = GeminiProvider()
-    assert p.get_run_command(["gemini"], "hi") == ["gemini", "-p", "hi"]
+    # --skip-trust: headless gemini hard-fails in non-trusted dirs (HATS-993).
+    assert p.get_run_command(["gemini"], "hi") == ["gemini", "--skip-trust", "-p", "hi"]
 
 
 def test_gemini_get_run_command_with_model() -> None:
     p = GeminiProvider()
     assert p.get_run_command(["gemini"], "hi", model="gemini-2.0-flash") == [
-        "gemini", "--model", "gemini-2.0-flash", "-p", "hi",
+        "gemini", "--model", "gemini-2.0-flash", "--skip-trust", "-p", "hi",
     ]
 
 
