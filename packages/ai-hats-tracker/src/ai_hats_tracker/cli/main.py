@@ -4,8 +4,9 @@ ADR-0016 makes ``ai-hats-tracker`` a pure engine that a portable skill DECLARES
 as a ``requires.cli`` dependency. This root group is the ``[project.scripts]``
 console entry so ``ai-hats-tracker --version`` — the ``backlog-manager`` skill's
 presence probe — resolves on ``PATH`` after ``pip install ai-hats-tracker``. It
-mounts the same wt-free ``task``/``attach``/``hyp``/``proposal`` groups the
-integrator overlays with its wt-wired ``_seam`` at mount time.
+mounts the same wt-free ``task`` group the integrator overlays with its
+wt-wired ``_seam`` at mount time, with ``hyp``/``proposal``/``attach`` nested
+under ``task`` — the grammar is IDENTICAL to ``ai-hats task …``.
 """
 
 from __future__ import annotations
@@ -24,10 +25,11 @@ def main() -> None:
     """Standalone task-card FSM + backlog CLI for the ai-hats framework."""
 
 
+# Same nesting the integrator mounts (ai_hats.cli) — one grammar, two binaries.
+task.add_command(hyp)
+task.add_command(proposal)
+task.add_command(attach)
 main.add_command(task)
-main.add_command(attach)
-main.add_command(hyp)
-main.add_command(proposal)
 
 
 if __name__ == "__main__":
