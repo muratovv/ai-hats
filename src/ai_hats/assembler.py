@@ -162,6 +162,13 @@ class Assembler:
         for layer in _builtin_library_layers():
             paths.append(layer)
 
+        # HATS-871 / ADR-0016: out-of-tree packages contribute their skills/ via
+        # the ``ai_hats.skills`` entry-point (open registry). Shipped tier — ranks
+        # above the builtins, below the user/config/project overrides that follow.
+        from ai_hats.skill_sources import skill_source_roots
+
+        paths.extend(skill_source_roots())
+
         # Global user libraries — ``user_home()`` honours
         # ``AI_HATS_USER_HOME`` (HATS-532) for e2e isolation.
         global_lib = user_home() / ".ai-hats"
