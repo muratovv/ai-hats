@@ -23,8 +23,14 @@ def gemini_md(project_dir: Path) -> Path:
     return project_dir / GEMINI_MD_FILENAME
 
 
+def gemini_skills_dir(project_dir: Path) -> Path:
+    """Gemini CLI's workspace skill registry: ``./.gemini/skills/`` (HATS-993)."""
+    return project_dir / ".gemini" / "skills"
+
+
 __all__ = [
     "GEMINI_CLI_PROJECT_RULES_PATH_ENV",
     "GEMINI_MD_FILENAME",
     "gemini_md",
+    "gemini_skills_dir",
 ]
