@@ -65,6 +65,16 @@ def test_automate_hook_materializes_and_returns_no_args(gemini_project) -> None:
     assert (project / ".gemini" / "skills" / "s" / "SKILL.md").is_file()
 
 
+def test_system_prompt_omits_skills_index(gemini_project) -> None:
+    _, result = gemini_project
+
+    prompt = GeminiProvider().build_system_prompt(result)
+
+    # HATS-993: skills reach gemini via the native .gemini/skills/ registry;
+    # the HATS-701 text-index is retired.
+    assert "## AVAILABLE SKILLS" not in prompt
+
+
 def test_gemini_skills_dir_gitignored(gemini_project) -> None:
     project, result = gemini_project
     provider = GeminiProvider()
