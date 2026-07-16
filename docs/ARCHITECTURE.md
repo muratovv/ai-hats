@@ -245,6 +245,33 @@ generates a dispatcher at `.githooks/<event>`, and sets
 configured a `core.hooksPath` or has their own dispatcher without our
 marker — those are not touched; a warning with instructions is printed.
 
+### Skill ↔ tool dependencies (`requires`, ADR-0016)
+
+A skill is portable content that *uses* a tool, so the dependency arrow points
+from the skill to the tool — never the reverse. A skill declares the tools it
+needs in the same `ai_hats:` frontmatter block, provider-neutral:
+
+```yaml
+# <skill>/SKILL.md frontmatter
+ai_hats:
+  requires:
+    cli:
+      - name: ai-hats-tracker
+        check: "ai-hats-tracker --version"   # presence probe
+        hint: "pip install ai-hats-tracker"  # actionable install guidance
+    mcp: []                                   # neutral command/args/env/transport
+```
+
+ai-hats verifies `requires` at compose/session time and **warns** with the
+`hint` — it never auto-installs. The engine that satisfies a `requires.cli` is a
+*provided tool*, installed on `PATH` as an ordinary console entry (e.g.
+`ai-hats-tracker` exposes a `[project.scripts]` entry). Engine-owned skills bind
+to their engine via `requires`, **not** by physical co-location inside the engine
+package: `backlog-manager` stays in the library content layer and declares
+`requires.cli: ai-hats-tracker`; `ai-hats-tracker` ships no skill. The
+`ai_hats.skills` entry-point registry remains the discovery seam for out-of-tree
+skill sources (third-party skill packages).
+
 ### Shared-state guard (HATS-437)
 
 Some operations write shared state with no undo path — `gh pr merge` and

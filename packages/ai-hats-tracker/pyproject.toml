@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats-tracker"
-version = "0.5.1"
+version = "0.6.0"
 description = "Standalone task-card schema, worktree-free task FSM, and backlog CLI for the ai-hats framework (TaskCard + TaskManager + `task`/`attach`)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,6 +38,12 @@ dependencies = [
 # CLI runs wt-free without it (HATS-934).
 [project.optional-dependencies]
 wt = ["ai-hats-wt>=0.2.1"]
+
+# ADR-0016: expose ``ai-hats-tracker`` on PATH so a skill's neutral
+# ``requires.cli: ai-hats-tracker`` (e.g. backlog-manager) is satisfiable — the
+# engine is a provided tool, not a passenger of the skill.
+[project.scripts]
+ai-hats-tracker = "ai_hats_tracker.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/muratovv/ai-hats"

@@ -7,6 +7,15 @@ ai_hats:
   git_hooks:
     pre-commit:
       - git_hooks/pre-commit-attachments.sh
+  # ADR-0016: this skill drives the ai-hats-tracker `task`/`attach` CLI, so it
+  # DECLARES that tool need. Provider-neutral; verified-and-warned (never
+  # auto-installed) at compose/session time by the requires verifier (HATS-992).
+  requires:
+    cli:
+      - name: ai-hats-tracker
+        check: "ai-hats-tracker --version"
+        hint: "pip install ai-hats-tracker"
+    mcp: []
 license: MIT
 ---
 
