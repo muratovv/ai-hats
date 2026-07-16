@@ -31,6 +31,7 @@ from .paths import CLAUDE_PROJECT_DIR_VAR
 from .paths import GEMINI_CLI_PROJECT_RULES_PATH_ENV
 from .paths import ai_hats_dir
 from .paths import claude_md, claude_settings_json, claude_settings_local_json, gemini_md
+from .paths import gemini_skills_dir
 from .paths import claude_user_settings_json
 from .paths import hooks_dir as _lib_hooks_dir
 from .paths import managed_runtime_hook_filename
@@ -357,6 +358,28 @@ class GeminiProvider(Provider):
         # index as its only discovery channel (HATS-701).
         return self._compose_sections(result, include_skills=True)
 
+    def materialize_runtime_skills(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+    ) -> list[str]:
+        """Mirror the role's skills into ``.gemini/skills/`` (HATS-993).
+
+        Gemini CLI discovers workspace skills by convention — no CLI arg, so
+        returns ``[]``. Ref-counted marker keeps parallel sessions additive.
+        """
+        from .skills_dir import materialize_skills_dir
+
+        materialize_skills_dir(
+            gemini_skills_dir(project_dir),
+            result.skills,
+            project_dir,
+            session_id,
+            gitignore_entry=".gemini/skills/",
+        )
+        return []
+
     def build_session_prompt(
         self,
         project_dir: Path,
@@ -397,6 +420,10 @@ class GeminiProvider(Provider):
 
         # Write mandatory role override (00_ prefix = highest priority)
         (rules_dir / "00_MANDATORY_ROLE.md").write_text(prompt_content)
+
+        # HATS-993: mirror skills into .gemini/skills/ before launch so
+        # gemini's session-start discovery sees them.
+        self.materialize_runtime_skills(project_dir, result, session_id)
 
         return [], {GEMINI_CLI_PROJECT_RULES_PATH_ENV: str(rules_dir)}, prompt_content
 
