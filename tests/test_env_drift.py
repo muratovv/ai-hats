@@ -28,11 +28,10 @@ The environment is outdated; run `uv sync` to update the environment
 
 
 def _repo(tmp_path: Path) -> tuple[Path, Path]:
-    """A fake editable checkout: repo root + an interpreter inside its .venv."""
-    exe = tmp_path / ".venv" / "bin" / "python"
-    exe.parent.mkdir(parents=True)
-    exe.touch()
-    return tmp_path, exe
+    """A fake editable checkout: repo root + its .venv prefix."""
+    venv = tmp_path / ".venv"
+    venv.mkdir()
+    return tmp_path, venv
 
 
 def _runner_returning(code: int, output: str = ""):
@@ -47,11 +46,11 @@ def _runner_returning(code: int, output: str = ""):
 
 
 def test_drifted_env_yields_one_warning_naming_members(tmp_path):
-    repo, exe = _repo(tmp_path)
+    repo, venv = _repo(tmp_path)
     runner = _runner_returning(1, PROBE_OUTPUT)
 
     warnings = stale_dev_env_warnings(
-        repo_root=repo, executable=exe, runner=runner, which=lambda _: "/usr/bin/uv"
+        repo_root=repo, venv_prefix=venv, runner=runner, which=lambda _: "/usr/bin/uv"
     )
 
     assert len(warnings) == 1
@@ -69,12 +68,12 @@ def test_drifted_env_yields_one_warning_naming_members(tmp_path):
 
 
 def test_in_sync_env_yields_nothing(tmp_path):
-    repo, exe = _repo(tmp_path)
+    repo, venv = _repo(tmp_path)
 
     assert (
         stale_dev_env_warnings(
             repo_root=repo,
-            executable=exe,
+            venv_prefix=venv,
             runner=_runner_returning(0),
             which=lambda _: "/usr/bin/uv",
         )
@@ -83,12 +82,12 @@ def test_in_sync_env_yields_nothing(tmp_path):
 
 
 def test_uv_error_exit_fails_open(tmp_path):
-    repo, exe = _repo(tmp_path)
+    repo, venv = _repo(tmp_path)
 
     assert (
         stale_dev_env_warnings(
             repo_root=repo,
-            executable=exe,
+            venv_prefix=venv,
             runner=_runner_returning(2, "error: unexpected argument"),
             which=lambda _: "/usr/bin/uv",
         )
@@ -97,44 +96,62 @@ def test_uv_error_exit_fails_open(tmp_path):
 
 
 def test_runner_exception_fails_open(tmp_path):
-    repo, exe = _repo(tmp_path)
+    repo, venv = _repo(tmp_path)
 
     def boom(cmd, **kwargs):
         raise subprocess.TimeoutExpired(cmd, 15)
 
     assert (
         stale_dev_env_warnings(
-            repo_root=repo, executable=exe, runner=boom, which=lambda _: "/usr/bin/uv"
+            repo_root=repo, venv_prefix=venv, runner=boom, which=lambda _: "/usr/bin/uv"
         )
         == []
     )
 
 
 def test_uv_missing_skips_without_running(tmp_path):
-    repo, exe = _repo(tmp_path)
-    runner = _runner_returning(1, PROBE_OUTPUT)
-
-    assert (
-        stale_dev_env_warnings(repo_root=repo, executable=exe, runner=runner, which=lambda _: None)
-        == []
-    )
-    assert runner.calls == []
-
-
-def test_interpreter_outside_repo_venv_skips_without_running(tmp_path):
-    repo, _ = _repo(tmp_path)
-    foreign = tmp_path / "elsewhere" / "bin" / "python"
-    foreign.parent.mkdir(parents=True)
-    foreign.touch()
+    repo, venv = _repo(tmp_path)
     runner = _runner_returning(1, PROBE_OUTPUT)
 
     assert (
         stale_dev_env_warnings(
-            repo_root=repo, executable=foreign, runner=runner, which=lambda _: "/usr/bin/uv"
+            repo_root=repo, venv_prefix=venv, runner=runner, which=lambda _: None
         )
         == []
     )
     assert runner.calls == []
+
+
+def test_foreign_venv_prefix_skips_without_running(tmp_path):
+    repo, _ = _repo(tmp_path)
+    foreign = tmp_path / "elsewhere" / ".venv"
+    foreign.mkdir(parents=True)
+    runner = _runner_returning(1, PROBE_OUTPUT)
+
+    assert (
+        stale_dev_env_warnings(
+            repo_root=repo, venv_prefix=foreign, runner=runner, which=lambda _: "/usr/bin/uv"
+        )
+        == []
+    )
+    assert runner.calls == []
+
+
+def test_symlinked_venv_prefix_still_matches(tmp_path):
+    # HATS-1013 live-check regression: uv/venv interpreters are symlinks out of
+    # .venv, so identity must compare resolved venv prefixes, not executables.
+    repo, venv = _repo(tmp_path)
+    link = tmp_path / "link-to-venv"
+    link.symlink_to(venv)
+
+    warnings = stale_dev_env_warnings(
+        repo_root=repo,
+        venv_prefix=link,
+        runner=_runner_returning(1, PROBE_OUTPUT),
+        which=lambda _: "/usr/bin/uv",
+    )
+
+    assert len(warnings) == 1
 
 
 def test_no_editable_root_skips(monkeypatch, tmp_path):
@@ -146,11 +163,11 @@ def test_no_editable_root_skips(monkeypatch, tmp_path):
 
 
 def test_unparseable_output_still_warns_with_hint(tmp_path):
-    repo, exe = _repo(tmp_path)
+    repo, venv = _repo(tmp_path)
 
     warnings = stale_dev_env_warnings(
         repo_root=repo,
-        executable=exe,
+        venv_prefix=venv,
         runner=_runner_returning(1, "The environment is outdated"),
         which=lambda _: "/usr/bin/uv",
     )
