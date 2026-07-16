@@ -215,12 +215,40 @@ ai_hats:
 ---
 ```
 
-The `ai_hats:` key is framework hook wiring only — never prose — and sits at the
+The `ai_hats:` key is framework wiring only — never prose — and sits at the
 frontmatter top level, not under the Agent-Skills `metadata:` field (a flat
 string map that rejects nested values). A leftover `metadata.yaml` carrying
 `git_hooks` / `runtime_hooks` is a hard error at compose time
 (`LeftoverSidecarHooksError`): move the keys into frontmatter and delete the
 sidecar.
+
+## Declaring tool dependencies from a skill (`requires`)
+
+If your skill *drives an external tool* (a CLI, or an MCP server), declare that
+need in the same `ai_hats:` block rather than assuming the tool is present. The
+skill stays portable; the tool is *provided* separately (ADR-0016):
+
+```yaml
+# libraries/skills/my-skill/SKILL.md frontmatter
+---
+name: my-skill
+description: When to invoke and what it does.
+ai_hats:
+  requires:
+    cli:
+      - name: ai-hats-tracker
+        check: "ai-hats-tracker --version"   # presence probe
+        hint: "pip install ai-hats-tracker"  # shown if the probe fails
+    mcp: []
+---
+```
+
+ai-hats verifies `requires` at compose/session time and **warns** with the
+`hint` if a tool is missing — it never auto-installs (every provider surface
+gates tool installation behind explicit consent). The shipped `backlog-manager`
+skill is the live example: it declares `requires.cli: ai-hats-tracker` and drives
+the `ai-hats task` CLI, but lives in the library content layer — it is *not*
+bundled inside the `ai-hats-tracker` engine package.
 
 On `self init` the assembler copies each script to
 `<ai_hats_dir>/library/hooks/` under a collision-free `<skill>-<basename>` name
@@ -276,6 +304,30 @@ skill is the `PostToolUse` counterpart — on each `.py` edit it runs `ruff
 > (`*/skills/*`, `*/library/*`) and fall back to an XDG state dir (`$XDG_STATE_HOME`)
 > or `/tmp`. `__file__` stays fine for *reading* script-adjacent data — the rule
 > is about writes.
+
+### Git hooks: coexistence with the repo's own hook manager
+
+Git honours exactly one `core.hooksPath`, so installing the `.githooks/`
+dispatchers could shadow a hook manager the repo already uses
+(simple-git-hooks, husky, lefthook, pre-commit). ai-hats therefore chains
+instead of shadowing (HATS-999):
+
+- **`core.hooksPath` unset** — it is pointed at `.githooks`; after the
+  `.d/` chain each dispatcher also invokes `.git/hooks/<event>` (git's
+  default location, where e.g. simple-git-hooks materializes its hooks)
+  when present and executable.
+- **`core.hooksPath` pre-set elsewhere** (husky's `.husky`, etc.) — ai-hats
+  takes it over LOUDLY: the displaced dir is recorded in the local git
+  config key `ai-hats.previousHooksPath`, the dispatcher chains to
+  `<previous>/<event>`, and the notice carries the revert command
+  (`git config core.hooksPath <previous>`).
+
+Chaining is live — no snapshot — so a manager regenerating its hooks (e.g.
+simple-git-hooks on `npm install`) keeps working without re-running ai-hats.
+ai-hats hooks run first; a non-zero chained hook blocks the event like any
+native hook, and stdin-protocol events (`pre-push`, …) replay the protocol
+to the chained hook. User-added scripts in `.githooks/<event>.d/` are never
+swept — only manifest-tracked ai-hats entries are managed.
 
 ### Worktree lifecycle hooks
 

@@ -6,6 +6,19 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0]
+
+### Added
+
+- `ai-hats-tracker` console entry (`[project.scripts]`, ADR-0016 / HATS-991).
+  `pip install ai-hats-tracker` now puts an `ai-hats-tracker` command on `PATH`
+  (a root Click group over the wt-free `task`/`attach`/`hyp`/`proposal` groups,
+  plus `--version`). This makes the engine a *provided tool*: a portable skill
+  declares `requires.cli: ai-hats-tracker` and probes it with
+  `ai-hats-tracker --version`, rather than being co-located inside this package.
+  The engine still ships **no** skill and declares **no** `ai_hats.skills`
+  entry-point.
+
 ## [0.5.1]
 
 ### Fixed

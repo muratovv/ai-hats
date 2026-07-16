@@ -38,6 +38,13 @@ The agent translates each into the right CLI invocation, logs progress, and sync
 
 Skill source: [6]. Discipline rule (CLI-only, log cadence, completion gate): `rule_backlog_discipline`.
 
+The skill is portable content that *declares* the tool it drives: its `SKILL.md`
+frontmatter carries `ai_hats.requires.cli: ai-hats-tracker` (probe
+`ai-hats-tracker --version`). The `ai-hats-tracker` engine is a *provided* tool —
+it ships the `task` / `attach` CLI and a console entry, and any ai-hats install
+already has it. The skill declares the dependency; ai-hats warns if the tool is
+missing but never auto-installs (ADR-0016).
+
 ---
 
 ## Quick start
