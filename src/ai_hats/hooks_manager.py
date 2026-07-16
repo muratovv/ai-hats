@@ -525,6 +525,9 @@ class HooksManager:
 
 GITHOOKS_DIR = ".githooks"
 GITHOOKS_MANIFEST = ".ai-hats-manifest"
+# HATS-999: takeover records the displaced hooks dir here; the dispatcher
+# chains to it live so the repo's own hook manager keeps running.
+PREVIOUS_HOOKS_PATH_KEY = "ai-hats.previousHooksPath"
 GITHOOKS_DISPATCHER_MARKER = "AI-HATS-DISPATCHER-MARKER"
 GITHOOKS_DISPATCHER_TEMPLATE = Path(__file__).parent / "templates" / "githooks" / "dispatcher.sh"
 
@@ -532,22 +535,20 @@ GITHOOKS_DISPATCHER_TEMPLATE = Path(__file__).parent / "templates" / "githooks" 
 def install_git_hooks(
     project_dir: Path, result: CompositionResult, *, warnings_sink: list[str] | None = None
 ) -> None:
-    """Install git hooks declared by composed skills.
+    """Install git hooks declared by composed skills (``ai_hats.git_hooks:``
+    SKILL.md frontmatter, HATS-814).
 
-    ``warnings_sink`` collects warnings instead of printing (HITL read-hold, HATS-969).
-
-    Skills declare hooks in their `SKILL.md` frontmatter under the top-level
-    `ai_hats.git_hooks:` key (HATS-814).
-    Each declared script is copied into `.githooks/<event>.d/<skill>-<basename>`,
-    a dispatcher script is generated at `.githooks/<event>`, and
-    `core.hooksPath` is set to `.githooks` (idempotently).
+    Scripts land in `.githooks/<event>.d/<skill>-<basename>` under a generated
+    dispatcher at `.githooks/<event>`; `core.hooksPath` is set to `.githooks`
+    (idempotently). ``warnings_sink`` collects warnings instead of printing
+    (HITL read-hold, HATS-969).
 
     Conflict policy:
-    - If `.githooks/<event>` exists WITHOUT our marker → leave alone, warn.
-    - If `core.hooksPath` is set to a non-`.githooks` value → leave alone, warn.
-    - Files inside `<event>.d/` from previous installs are tracked via a
-      manifest at `.githooks/.ai-hats-manifest` and removed before re-install,
-      so stale hooks from removed skills don't linger.
+    - `.githooks/<event>` exists WITHOUT our marker → leave alone, warn.
+    - `core.hooksPath` pre-set elsewhere → take over, recording the displaced
+      dir for dispatcher chaining, and announce loudly (HATS-999).
+    - Previously installed files are manifest-tracked and swept before
+      re-install; foreign `<event>.d/` entries are never touched.
     """
     declared = _collect_skill_git_hooks(result)
     if not declared:
@@ -726,20 +727,23 @@ def _configure_hooks_path(project_dir: Path, warnings: list[str]) -> None:
     existing = current.stdout.strip() if current.returncode == 0 else ""
     target = GITHOOKS_DIR
 
-    if existing:
-        # git returns the value verbatim (absolute or relative) — normalize both
-        # against project_dir so an absolute value equal to the relative target
-        # is recognized as already-correct instead of warned (HATS-969).
-        if _same_hooks_path(existing, target, project_dir):
-            return  # Already correct (stored relative or absolute).
-        warnings.append(
-            f"core.hooksPath is already set to '{existing}' — not "
-            f"overwriting. To enable ai-hats hooks, run: "
-            f"git config core.hooksPath {target}  (or merge dispatchers manually)"
-        )
-        return
+    # git returns the value verbatim (absolute or relative) — normalize both
+    # against project_dir so an absolute value equal to the relative target
+    # is recognized as already-correct instead of taken over (HATS-969).
+    if existing and _same_hooks_path(existing, target, project_dir):
+        return  # Already correct (stored relative or absolute).
 
     try:
+        if existing:
+            # HATS-999: record the displaced dir so the dispatcher chains to it.
+            subprocess.run(
+                ["git", "config", PREVIOUS_HOOKS_PATH_KEY, existing],
+                cwd=str(project_dir),
+                capture_output=True,
+                text=True,
+                check=True,
+                env=scrubbed_git_env(),
+            )
         subprocess.run(
             ["git", "config", "core.hooksPath", target],
             cwd=str(project_dir),
@@ -750,6 +754,15 @@ def _configure_hooks_path(project_dir: Path, warnings: list[str]) -> None:
         )
     except subprocess.CalledProcessError as e:
         warnings.append(f"failed to set core.hooksPath: {e.stderr.strip() or e}")
+        return
+
+    if existing:
+        warnings.append(
+            f"core.hooksPath: '{existing}' → '{target}' (taken over, HATS-999). "
+            f"Previous hooks keep running: the dispatcher chains to "
+            f"'{existing}/<event>' after ai-hats hooks. "
+            f"Revert: git config core.hooksPath {existing}"
+        )
 
 
 def expected_git_hook_files(project_dir: Path, result: CompositionResult) -> dict[str, bytes]:

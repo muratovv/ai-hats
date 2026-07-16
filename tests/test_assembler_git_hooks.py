@@ -74,11 +74,7 @@ def project_with_hook_skill(tmp_path):
     trait_dir = lib / "traits" / "trait-base"
     trait_dir.mkdir(parents=True)
     (trait_dir / "config.yaml").write_text(
-        "name: trait-base\n"
-        "composition:\n"
-        "  skills:\n"
-        "    - hook_skill\n"
-        "injection: Base.\n"
+        "name: trait-base\ncomposition:\n  skills:\n    - hook_skill\ninjection: Base.\n"
     )
 
     # Role using the trait.
@@ -110,18 +106,12 @@ def project_no_hook_skill(tmp_path):
     skill_dir = lib / "skills" / "plain_skill"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text("# Plain")
-    (skill_dir / "metadata.yaml").write_text(
-        "name: plain_skill\ndescription: no hooks\n"
-    )
+    (skill_dir / "metadata.yaml").write_text("name: plain_skill\ndescription: no hooks\n")
 
     trait_dir = lib / "traits" / "trait-base"
     trait_dir.mkdir(parents=True)
     (trait_dir / "config.yaml").write_text(
-        "name: trait-base\n"
-        "composition:\n"
-        "  skills:\n"
-        "    - plain_skill\n"
-        "injection: Base.\n"
+        "name: trait-base\ncomposition:\n  skills:\n    - plain_skill\ninjection: Base.\n"
     )
 
     role_dir = lib / "roles" / "test-role"
@@ -195,9 +185,7 @@ def test_manifest_hashed_owner_format(project_with_hook_skill):
     marker = project / GITHOOKS_DIR / GITHOOKS_MANIFEST
     assert marker.read_text().splitlines()[0] == "# ai-hats-owner: git-hooks"
 
-    surface = next(
-        s for s in sweeper.default_surfaces() if s.owner_key == "git-hooks"
-    )
+    surface = next(s for s in sweeper.default_surfaces() if s.owner_key == "git-hooks")
     owner_key, entries = sweeper._parse_marker(marker, surface)
     assert owner_key == "git-hooks"
     by_name = {e.name: e for e in entries}
@@ -268,9 +256,7 @@ def test_stale_hooks_removed_when_skill_drops_declaration(project_with_hook_skil
 
     # Now mutate the skill to drop git_hooks (frontmatter) and re-apply.
     skill_md = lib / "skills" / "hook_skill" / "SKILL.md"
-    skill_md.write_text(
-        "---\nname: hook_skill\ndescription: now no hooks\n---\n# Hook Skill\n"
-    )
+    skill_md.write_text("---\nname: hook_skill\ndescription: now no hooks\n---\n# Hook Skill\n")
     asm.set_role("test-role")
 
     # Stale managed file gone.
@@ -326,20 +312,27 @@ def test_sync_hooks_ignores_foreign_dispatcher_no_perpetual_heal(project_with_ho
     assert asm.hooks.sync_hooks(None).status == "in-sync"
 
 
-def test_existing_core_hookspath_other_value_left_alone(project_with_hook_skill, capsys):
+def test_existing_core_hookspath_other_value_taken_over_with_chaining(
+    project_with_hook_skill, capsys
+):
+    """HATS-999: a pre-set core.hooksPath is taken over LOUDLY, recording the
+    displaced dir for dispatcher chaining — never a silent guards-absent state."""
     project, lib = project_with_hook_skill
     subprocess.run(
         ["git", "config", "core.hooksPath", "custom-hooks"],
-        cwd=str(project), check=True,
+        cwd=str(project),
+        check=True,
     )
 
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role")
 
-    assert _git_get(project, "core.hooksPath") == "custom-hooks"
+    assert _git_get(project, "core.hooksPath") == GITHOOKS_DIR
+    assert _git_get(project, "ai-hats.previousHooksPath") == "custom-hooks"
     out = capsys.readouterr().out
-    assert "core.hooksPath is already set" in out
+    assert "'custom-hooks' → '.githooks'" in out
+    assert "git config core.hooksPath custom-hooks" in out  # revert command
 
 
 def test_existing_core_hookspath_absolute_ai_hats_dir_no_warning(project_with_hook_skill, capsys):
@@ -349,7 +342,8 @@ def test_existing_core_hookspath_absolute_ai_hats_dir_no_warning(project_with_ho
     abs_hooks = str((project / GITHOOKS_DIR).resolve())
     subprocess.run(
         ["git", "config", "core.hooksPath", abs_hooks],
-        cwd=str(project), check=True,
+        cwd=str(project),
+        check=True,
     )
 
     asm = Assembler(project, library_paths=[lib])
@@ -357,7 +351,7 @@ def test_existing_core_hookspath_absolute_ai_hats_dir_no_warning(project_with_ho
     asm.set_role("test-role")
 
     out = capsys.readouterr().out
-    assert "core.hooksPath is already set" not in out
+    assert "taken over" not in out
     # Left as the (equivalent) absolute path — accepted as already-correct.
     assert _git_get(project, "core.hooksPath") == abs_hooks
 
@@ -368,19 +362,20 @@ def test_set_role_routes_hooks_warning_to_sink(project_with_hook_skill, capsys):
     project, lib = project_with_hook_skill
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    # Foreign core.hooksPath so the set_role materialize will warn "already set".
+    # Foreign core.hooksPath so the set_role materialize emits a takeover notice.
     subprocess.run(
         ["git", "config", "core.hooksPath", "custom-hooks"],
-        cwd=str(project), check=True,
+        cwd=str(project),
+        check=True,
     )
     capsys.readouterr()  # drop init() output
 
     sink: list[str] = []
     asm.set_role("test-role", warnings_sink=sink)
 
-    assert any("core.hooksPath is already set" in w for w in sink)
+    assert any("taken over" in w for w in sink)
     # Routed to the sink, NOT printed.
-    assert "core.hooksPath is already set" not in capsys.readouterr().out
+    assert "taken over" not in capsys.readouterr().out
 
 
 def test_unknown_event_silently_skipped(tmp_path):
@@ -411,18 +406,12 @@ def test_unknown_event_silently_skipped(tmp_path):
     trait_dir = lib / "traits" / "trait-base"
     trait_dir.mkdir(parents=True)
     (trait_dir / "config.yaml").write_text(
-        "name: trait-base\n"
-        "composition:\n"
-        "  skills:\n"
-        "    - weird_skill\n"
+        "name: trait-base\ncomposition:\n  skills:\n    - weird_skill\n"
     )
     role_dir = lib / "roles" / "test-role"
     role_dir.mkdir(parents=True)
     (role_dir / "config.yaml").write_text(
-        "name: test-role\n"
-        "composition:\n"
-        "  traits:\n"
-        "    - trait-base\n"
+        "name: test-role\ncomposition:\n  traits:\n    - trait-base\n"
     )
     ProjectConfig(provider="gemini", library_paths=[str(lib)]).save(
         project / PROJECT_CONFIG,
@@ -513,10 +502,11 @@ def test_sync_hooks_surfaces_git_warning_for_hold(project_with_hook_skill):
     asm.init()
     asm.set_role("test-role")
 
-    # Foreign core.hooksPath → the git-surface heal will warn "already set".
+    # Foreign core.hooksPath → the git-surface heal emits a takeover notice.
     subprocess.run(
         ["git", "config", "core.hooksPath", "custom-hooks"],
-        cwd=str(project), check=True,
+        cwd=str(project),
+        check=True,
     )
     # Induce git-surface drift so sync_hooks actually re-runs install_git_hooks.
     installed = project / GITHOOKS_DIR / "pre-commit.d" / "hook_skill-check.sh"
@@ -524,7 +514,7 @@ def test_sync_hooks_surfaces_git_warning_for_hold(project_with_hook_skill):
 
     res = asm.hooks.sync_hooks(None)
     assert res.status == "synced"
-    assert any("core.hooksPath is already set" in w for w in res.warnings)
+    assert any("taken over" in w for w in res.warnings)
 
 
 def test_sync_hooks_heals_deleted_hook(project_with_hook_skill):
@@ -714,9 +704,9 @@ def test_sync_hooks_non_git_still_heals_runtime(tmp_path):
         "name: test-role\npriorities: [Quality]\n"
         "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
     )
-    ProjectConfig(
-        provider="gemini", library_paths=[str(lib)], active_role="test-role"
-    ).save(project / PROJECT_CONFIG)
+    ProjectConfig(provider="gemini", library_paths=[str(lib)], active_role="test-role").save(
+        project / PROJECT_CONFIG
+    )
 
     asm = Assembler(project, library_paths=[lib])
     res = asm.hooks.sync_hooks(None)  # must not raise on a non-git project
@@ -768,12 +758,12 @@ def project_with_self_heal_skill(tmp_path):
     script = skill_dir / "git_hooks" / "self-heal.sh"
     script.write_text(
         "#!/usr/bin/env bash\n"
-        'set -uo pipefail\n'
+        "set -uo pipefail\n"
         'EVENT="${AI_HATS_HOOK_EVENT:-$(basename "$0")}"\n'
         'if [[ "$EVENT" == "post-checkout" ]]; then\n'
         '    flag="${3:-0}"\n'
         '    [[ "$flag" != "1" ]] && exit 0\n'
-        'fi\n'
+        "fi\n"
         'echo "HEALED:$EVENT"\n'
         "exit 0\n"
     )

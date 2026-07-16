@@ -34,19 +34,22 @@ def _runner(project: Path) -> WrapRunner:
 
     payload = CompositionPayload(
         result=CompositionResult(
-            name="t", priorities=[], rules=[], skills=[], injections=[],
+            name="t",
+            priorities=[],
+            rules=[],
+            skills=[],
+            injections=[],
         ),
         provider=None,
         effective_role="t",
         hooks=Assembler(project).hooks,
     )
     return WrapRunner(
-        project, payload,
+        project,
+        payload,
         session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
         tracer_factory=SidecarTracer,
     )
-
-
 
 
 def _git_init(path: Path) -> None:
@@ -139,14 +142,15 @@ def test_resync_surfaces_git_hooks_warning_as_warn_notice(project_with_hook_role
     project = project_with_hook_role
     subprocess.run(
         ["git", "config", "core.hooksPath", "custom-hooks"],
-        cwd=str(project), check=True,
+        cwd=str(project),
+        check=True,
     )
     _installed_hook(project).write_text("#!/usr/bin/env bash\n# DRIFTED\nexit 0\n")
 
     notices = _runner(project)._resync_managed_hooks()
 
     warns = [n for n in notices if n.level == "warn"]
-    assert any("core.hooksPath is already set" in n.text for n in warns)
+    assert any("taken over" in n.text for n in warns)
 
 
 def test_payload_startup_warnings_surface_as_warn_notices(project_with_hook_role):
@@ -185,9 +189,7 @@ def test_resync_failure_returns_warn_notice_and_traces(tmp_path):
     ProjectConfig(provider="gemini").save(project / PROJECT_CONFIG)
 
     runner = _runner(project)
-    runner.hooks.sync_hooks = lambda *a, **k: (_ for _ in ()).throw(
-        RuntimeError("boom")
-    )
+    runner.hooks.sync_hooks = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
     session = runner.session_mgr.create_session()
 
     notices = runner._resync_managed_hooks(session)
