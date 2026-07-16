@@ -6,6 +6,7 @@ mutable, editable) tuple asserted per channel.
 """
 
 import json
+import sys
 import urllib.error
 
 import pytest
@@ -16,6 +17,7 @@ from ai_hats.channel import (
     fetch_edge_head_sha,
     fetch_latest_stable_version,
     resolve_channel,
+    resolve_edge_probe_url,
     resolve_edge_repo,
 )
 from ai_hats.constants import ENV_REPO_URL
@@ -131,6 +133,52 @@ def test_resolve_edge_repo_env_beats_yaml(monkeypatch):
 def test_resolve_edge_repo_local_path_stays_bare(monkeypatch):
     monkeypatch.setenv(ENV_REPO_URL, "/tmp/checkout")
     assert resolve_edge_repo() == "/tmp/checkout"
+
+
+# ---------- resolve_edge_probe_url + relocated primitives (HATS-987) ----------
+
+
+def test_resolve_edge_probe_url_bare_https_default(monkeypatch):
+    # Probe URL is the bare-https sibling of resolve_edge_repo (no git+ prefix —
+    # `git ls-remote` needs none).
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
+    assert resolve_edge_probe_url() == "https://github.com/muratovv/ai-hats.git"
+
+
+def test_resolve_edge_probe_url_env_beats_yaml_and_coerces(monkeypatch):
+    monkeypatch.setenv(ENV_REPO_URL, "git+ssh://git@github.com/env/ai-hats.git")
+    assert (
+        resolve_edge_probe_url("https://github.com/yaml/ai-hats.git")
+        == "https://github.com/env/ai-hats.git"
+    )
+
+
+def test_probe_and_repo_share_precedence(monkeypatch):
+    # Probe (bare) and install-spec (git+) differ only by the git+ prefix — both
+    # resolve from the same env>yaml>fallback source.
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
+    yaml_repo = "git@github.com:acme/ai-hats.git"
+    assert resolve_edge_probe_url(yaml_repo) == "https://github.com/acme/ai-hats.git"
+    assert resolve_edge_repo(yaml_repo) == "git+https://github.com/acme/ai-hats.git"
+
+
+def test_url_primitives_reexported_by_checker():
+    # checker re-exports the channel-homed primitives (back-compat + banner path).
+    from ai_hats import channel
+    from ai_hats.update_check import checker
+
+    assert channel.FALLBACK_REMOTE_URL is checker.FALLBACK_REMOTE_URL
+    assert channel._coerce_to_https is checker._coerce_to_https
+
+
+def test_edge_resolution_independent_of_update_check(monkeypatch):
+    # Relocate fail-under-revert: edge URL resolution must work with update_check
+    # absent (the packaging-regression scenario). Reverted code re-introduces a
+    # lazy `from .update_check.checker import …` here → ImportError under the stub.
+    monkeypatch.setitem(sys.modules, "ai_hats.update_check.checker", None)
+    monkeypatch.delenv(ENV_REPO_URL, raising=False)
+    assert resolve_edge_probe_url("git@github.com:a/b.git") == "https://github.com/a/b.git"
+    assert resolve_edge_repo("git@github.com:a/b.git") == "git+https://github.com/a/b.git"
 
 
 def test_fetch_edge_head_sha_delegates_to_resolve_ref(monkeypatch):
