@@ -19,6 +19,13 @@ to [Semantic Versioning](https://semver.org/).
   The engine still ships **no** skill and declares **no** `ai_hats.skills`
   entry-point.
 
+### Fixed
+
+- Reclaim an epicified task's worktree alongside its ownership hold (HATS-979):
+  the epicification events (create-child and update-reparent) now call the
+  injected worktree-effects seam's `discard_if_empty`, so a childless task that
+  entered execute no longer orphans its worktree after gaining children.
+
 ## [0.5.1]
 
 ### Fixed
