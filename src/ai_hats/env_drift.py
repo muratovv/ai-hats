@@ -37,15 +37,17 @@ def _member_changes(output: str) -> list[str]:
 def stale_dev_env_warnings(
     *,
     repo_root: Path | None = None,
-    executable: Path | None = None,
+    venv_prefix: Path | None = None,
     runner=subprocess.run,
     which=shutil.which,
 ) -> list[str]:
     """One aggregated warning when the editable dev env is out of sync, else [].
 
-    Gated to the dev checkout: ai-hats installed editable AND this interpreter
-    living in ``<repo_root>/.venv`` (uv sync targets the project env, nothing
-    else). Fail-open on every operational error — a lint must never block launch.
+    Gated to the dev checkout: ai-hats installed editable AND this venv being
+    ``<repo_root>/.venv`` (uv sync targets the project env, nothing else).
+    Identity = resolved ``sys.prefix`` — venv interpreters are symlinks OUT of
+    the venv, so comparing executables false-negatives. Fail-open on every
+    operational error — a lint must never block launch.
     """
     if repo_root is None:
         from .paths import editable_install_root
@@ -53,10 +55,8 @@ def stale_dev_env_warnings(
         repo_root = editable_install_root("ai-hats")
     if repo_root is None:
         return []
-    exe = Path(executable or sys.executable)
-    try:
-        exe.resolve().relative_to((repo_root / ".venv").resolve())
-    except ValueError:
+    prefix = Path(venv_prefix or sys.prefix)
+    if prefix.resolve() != (repo_root / ".venv").resolve():
         return []
     if which("uv") is None:
         return []
