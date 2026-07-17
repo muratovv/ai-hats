@@ -110,6 +110,46 @@ def _stored_kind(registry: LinksRegistry, name: str) -> LinkKind:
     return kind
 
 
+def link_on_card(
+    registry: LinksRegistry, card: TaskCard, target: str, kind: str = "related", *, actor: str = ""
+) -> LinkResult:
+    """Add ``target`` under ``kind`` to an already-loaded card (lock-free core).
+
+    The caller owns the task lock, the target-existence check, and the single
+    persist (composite transition or :func:`link`). Idempotent: an existing link
+    returns ``changed=False`` and mutates nothing.
+    """
+    link_kind = _stored_kind(registry, kind)
+    if target == card.id:
+        raise SelfLinkError(card.id)
+    if not _add_link(link_kind, card, target):
+        return LinkResult(card.id, target, (), changed=False)
+    card.log_work(f"Linked {target} ({link_kind.name})", actor=actor)
+    return LinkResult(card.id, target, (link_kind.name,), changed=True)
+
+
+def unlink_on_card(
+    registry: LinksRegistry,
+    card: TaskCard,
+    target: str,
+    kind: str | None = None,
+    *,
+    actor: str = "",
+) -> LinkResult:
+    """Remove ``target`` from an already-loaded card (lock-free core). With
+    ``kind`` → that kind only; else every stored non-hierarchy kind."""
+    if kind is not None:
+        kinds: tuple[LinkKind, ...] = (_stored_kind(registry, kind),)
+    else:
+        hierarchy = registry.hierarchy_kind
+        kinds = tuple(k for k in registry.stored_kinds() if k is not hierarchy)
+    removed = tuple(k.name for k in kinds if _remove_link(k, card, target))
+    if not removed:
+        return LinkResult(card.id, target, (), changed=False)
+    card.log_work(f"Unlinked {target} ({', '.join(removed)})", actor=actor)
+    return LinkResult(card.id, target, removed, changed=True)
+
+
 def link(
     tasks_dir: Path,
     task_id: str,
@@ -121,19 +161,17 @@ def link(
     lock_timeout: float = LOCK_TIMEOUT,
 ) -> LinkResult:
     """Add ``target`` to ``task_id`` under any configured, non-derived ``kind``.
-    Idempotent: an existing link is a no-op that persists nothing."""
+    Thin lock wrapper over :func:`link_on_card`; idempotent."""
     reg = registry if registry is not None else load_registry()
-    link_kind = _stored_kind(reg, kind)
+    _stored_kind(reg, kind)  # kind refusal before the lock (order parity)
     if target == task_id:
         raise SelfLinkError(task_id)
     if not (tasks_dir / target / "task.yaml").exists():
         raise UnknownTaskError(target)
 
     def op(card: TaskCard) -> tuple[LinkResult, bool]:
-        if not _add_link(link_kind, card, target):
-            return LinkResult(task_id, target, (), changed=False), False
-        card.log_work(f"Linked {target} ({link_kind.name})", actor=actor)
-        return LinkResult(task_id, target, (link_kind.name,), changed=True), True
+        result = link_on_card(reg, card, target, kind, actor=actor)
+        return result, result.changed
 
     return _locked_card_op(tasks_dir, task_id, op, lock_timeout)
 
@@ -148,22 +186,13 @@ def unlink(
     actor: str = "",
     lock_timeout: float = LOCK_TIMEOUT,
 ) -> LinkResult:
-    """Remove ``target`` from ``task_id``. With ``kind`` → that kind only; else
-    every stored non-hierarchy kind (the parent edge is never silently dropped).
-    Idempotent; a dangling target is removable by design."""
+    """Remove ``target`` from ``task_id``. Thin lock wrapper over
+    :func:`unlink_on_card`; idempotent, a dangling target is removable."""
     reg = registry if registry is not None else load_registry()
-    if kind is not None:
-        kinds: tuple[LinkKind, ...] = (_stored_kind(reg, kind),)
-    else:
-        hierarchy = reg.hierarchy_kind
-        kinds = tuple(k for k in reg.stored_kinds() if k is not hierarchy)
 
     def op(card: TaskCard) -> tuple[LinkResult, bool]:
-        removed = tuple(k.name for k in kinds if _remove_link(k, card, target))
-        if not removed:
-            return LinkResult(task_id, target, (), changed=False), False
-        card.log_work(f"Unlinked {target} ({', '.join(removed)})", actor=actor)
-        return LinkResult(task_id, target, removed, changed=True), True
+        result = unlink_on_card(reg, card, target, kind, actor=actor)
+        return result, result.changed
 
     return _locked_card_op(tasks_dir, task_id, op, lock_timeout)
 
