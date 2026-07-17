@@ -2,11 +2,11 @@
 open set of edge kinds a backlog understands (HATS-1028, epic HATS-1014).
 
 The kernel and models stay kind-blind: this registry is *injected config*
-(mirroring :mod:`ai_hats_rack.fsm`'s ``Topology``/``fsm.yaml``). It declares
-structure only — kind names, the legacy-field mapping, inverse pairs, which
-kind is derived — while *semantics* are bound from above by extensions
-(epic-automation reads the hierarchy kind). Legacy fields keep their storage,
-so the registry is a read/write projection with zero data migration.
+(mirroring :mod:`ai_hats_rack.fsm`'s ``Topology``/``fsm.yaml``), declaring
+structure only — names, inverse pairs, derived flag — while *semantics* bind
+from above (epic-automation reads the hierarchy kind). A kind's NAME is its
+storage field (HATS-1032): a dedicated task.yaml link field, else the generic
+``links:`` map — a read/write projection with zero data migration.
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 import yaml
+
+from .models import LINK_STORAGE_FIELDS
 
 if TYPE_CHECKING:
     from .models import TaskCard
@@ -52,11 +54,11 @@ class DerivedLinkKindError(Exception):
 
 @dataclass(frozen=True)
 class LinkKind:
-    """One declared edge kind. ``legacy_field`` empty → stored under the generic
+    """One declared edge kind. The ``name`` IS the storage field (HATS-1032): a
+    dedicated task.yaml link field when the name is one, else the generic
     ``links:`` key; ``inverse == name`` marks a symmetric kind (metadata)."""
 
     name: str
-    legacy_field: str = ""
     arity: str = "many"  # "one" (scalar id) | "many" (list of ids)
     inverse: str = ""
     derived: bool = False
@@ -98,7 +100,7 @@ class LinksRegistry:
     def hierarchy_kind(self) -> LinkKind | None:
         """The stored kind whose inverse is a *derived* kind — the parent edge
         `is_epic` and epic-automation bind to. Structural, not name-based, so a
-        renamed ``parent`` kind is still found."""
+        renamed hierarchy kind is still found."""
         for kind in self.kinds:
             if kind.derived:
                 continue
@@ -145,7 +147,6 @@ def _parse_kind(raw: Any, source: str) -> LinkKind:
         raise LinksRegistryError(f"{source}: kind {raw['name']!r} aliases must be a string list")
     return LinkKind(
         name=raw["name"],
-        legacy_field=str(raw.get("legacy_field") or ""),
         arity=arity,
         inverse=str(raw.get("inverse") or ""),
         derived=bool(raw.get("derived", False)),
@@ -193,9 +194,9 @@ def load_registry_for(project_dir: Path) -> LinksRegistry:
 
 
 def _read_kind(kind: LinkKind, card: TaskCard) -> list[str]:
-    """The stored ids for one non-derived kind (legacy field or ``links:`` key)."""
-    if kind.legacy_field:
-        raw = getattr(card, kind.legacy_field, None)
+    """The stored ids for one non-derived kind (dedicated field or ``links:`` key)."""
+    if kind.name in LINK_STORAGE_FIELDS:
+        raw = getattr(card, kind.name, None)
         if kind.arity == "one":
             return [raw] if isinstance(raw, str) and raw else []
         return [i for i in (raw or []) if i]
@@ -210,9 +211,9 @@ def resolve_links(
 ) -> dict[str, list[str]]:
     """Project a card onto ``{kind: [ids]}`` in registry order.
 
-    Legacy fields are read as the kinds their mapping names; new kinds come from
-    the generic ``links:`` dict; derived kinds (children) are filled from
-    ``derived`` (the caller computes them, e.g. via ``kernel.children_of``).
+    A kind named after a dedicated task.yaml field reads that field; other kinds
+    come from the generic ``links:`` dict; derived kinds (children) are filled
+    from ``derived`` (the caller computes them, e.g. via ``kernel.children_of``).
     Empty kinds are omitted so the projection stays byte-clean.
     """
     derived = derived or {}

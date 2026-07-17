@@ -25,7 +25,7 @@ from .dispatch import (
 )
 from .events import EdgeEvent, EpicifyEvent, Event, PreDestroyEvent, event_detail
 from .fsm import Topology, load_topology
-from .models import TaskCard, utc_now
+from .models import LINK_STORAGE_FIELDS, TaskCard, utc_now
 from .registry import LinksRegistry, load_registry
 
 # Single loud-fail timeout pattern (HATS-936 / epic §2.2 rule 5): a wait this
@@ -109,7 +109,7 @@ class Kernel:
         self.prefix = prefix
         self.topology = topology if topology is not None else load_topology()
         # Injected config, not hardcoded kinds (HATS-1028): children_of/is_epic
-        # read the hierarchy kind the registry names, default `parent`.
+        # read the hierarchy kind the registry names, default `parent_task`.
         self.registry = registry if registry is not None else load_registry()
         self._dispatcher = Dispatcher(subscribers)
         self._sink = journal_sink
@@ -145,17 +145,17 @@ class Kernel:
         """Ids of cards whose hierarchy-parent is ``task_id``.
 
         The parent edge is whatever the registry names as the hierarchy kind
-        (default ``parent``, legacy field ``parent_task``) — kind-blind by
-        config, not a hardcoded field (HATS-1028). The legacy-field case keeps
-        the regex prefilter (full parse avoided — the tracker's reverse scan).
+        (default ``parent_task``) — kind-blind by config, not a hardcoded field
+        (HATS-1028). A dedicated-field kind keeps the regex prefilter (full parse
+        avoided — the tracker's reverse scan).
         """
         if not self.tasks_dir.exists():
             return []
         hierarchy = self.registry.hierarchy_kind
         if hierarchy is None:
             return []
-        if hierarchy.legacy_field:
-            field = re.escape(hierarchy.legacy_field)
+        if hierarchy.name in LINK_STORAGE_FIELDS:
+            field = re.escape(hierarchy.name)
             pattern = re.compile(rf"^{field}:\s*['\"]?{re.escape(task_id)}['\"]?\s*$", re.MULTILINE)
             out: list[str] = []
             for card in sorted(self.tasks_dir.glob("*/task.yaml")):

@@ -21,6 +21,14 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+#: task.yaml fields holding link ids in dedicated storage: a registry kind whose
+#: NAME is one of these reads/writes that field (HATS-1032: kind name == storage
+#: field); any other kind lands in the generic `links:` map.
+LINK_STORAGE_FIELDS: frozenset[str] = frozenset(
+    {"parent_task", "subtasks", "depends_on", "related", "see_also", "folded_into"}
+)
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
