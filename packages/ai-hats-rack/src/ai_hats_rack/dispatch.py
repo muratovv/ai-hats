@@ -12,6 +12,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Protocol, Sequence, runtime_checkable
 
+from .errors import RackError
 from .events import Event
 from .models import TaskCard, utc_now
 
@@ -82,7 +83,7 @@ class AbortOperation(Exception):
         super().__init__(reason)
 
 
-class OperationAborted(Exception):
+class OperationAborted(RackError):
     """Typed abort raised by the dispatcher: names the subscriber and carries
     its actionable reason. Nothing was persisted."""
 

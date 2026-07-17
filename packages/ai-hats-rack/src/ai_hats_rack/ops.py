@@ -17,17 +17,18 @@ from pathlib import Path
 from typing import Callable, Sequence, Union
 
 from .docstore import _require_valid_name, freeze_on_card, remove_on_card
+from .errors import RackError
 from .kernel import UnknownTaskError
 from .linked import link_on_card, unlink_on_card
 from .models import TaskCard
 from .registry import LinksRegistry
 
 
-class OpParseError(Exception):
+class OpParseError(RackError):
     """A composite-transition argv token stream could not be parsed."""
 
 
-class AttachSourceError(Exception):
+class AttachSourceError(RackError):
     """``--attach`` names a source path that is not a readable file."""
 
     def __init__(self, src: str) -> None:
@@ -77,6 +78,13 @@ class UnlinkOp:
 
 
 Op = Union[StateOp, AttachOp, FreezeOp, RmOp, LogOp, LinkOp, UnlinkOp]
+
+#: the complete op-kind vocabulary emitted into KernelResult.ops — "state" is
+#: the kernel's (behind the FSM guard), the rest are the _EXECUTORS below. The
+#: CLI op-echo renderer map (cli._OP_RENDERERS) is pinned exhaustive over this.
+OP_KINDS: frozenset[str] = frozenset(
+    {"state", "attach", "freeze", "rm", "log", "link", "unlink"}
+)
 
 
 # ----- argv-order parser ------------------------------------------------------
