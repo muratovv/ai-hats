@@ -26,4 +26,4 @@ hook block the irreversible subset as a **backstop** — not permission to
 skip the pause, and their absence in a given session is not a signal to skip
 it. `AI_HATS_SHARED_STATE_ACK=1` is the user's override; the agent MUST NOT
 set it for its own commands — the same holds for `AI_HATS_MERGE_ACK=1`
-(worktree merge consent, HATS-1019). Trace: HYP-026, HYP-027, PROP-052.
+(worktree merge consent, HATS-1019). Trace: PROP-052.
