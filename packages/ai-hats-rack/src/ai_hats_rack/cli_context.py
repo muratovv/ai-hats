@@ -18,22 +18,19 @@ import click
 
 from . import linked
 from .audit_view import journal_view, record_lines
-from .cli_common import JSON_OPT, TASKS_DIR_OPT, emit_json, fail, resolved_root
+from .cli_common import JSON_OPT, TASKS_DIR_OPT, emit_json, fail, handle_rack_error, resolved_root
 from .docstore import DocInfo
-from .kernel import LockTimeoutError, UnknownTaskError
 from .linked import (
     DEFAULT_MAX_BYTES,
     ContextPackage,
     LinkView,
     Neighbor,
-    SelfLinkError,
     build_context,
     card_filter,
     scan_cards,
     walk_neighborhood,
 )
-from .registry import DerivedLinkKindError, UnknownLinkKindError, load_registry_for
-from .resolver import NoProjectRootError
+from .registry import load_registry_for
 
 #: the attribute feeds ``context --attr`` understands (the set the card left open).
 KNOWN_ATTRS = ("audit", "work_log")
@@ -74,23 +71,6 @@ def echo_documents(card_dir: Path, docs: list[DocInfo], indent: str = "  ") -> N
     rows = [[d.name, str(d.path), _mtime_human(d.mtime), _frozen_mark(d)] for d in docs]
     for line in _columns(rows, indent + "  "):
         click.echo(line)
-
-
-def handle_linked_error(exc: Exception, as_json: bool) -> None:
-    """Typed, actionable failures (mirror of cli._handle_kernel_error)."""
-    if isinstance(exc, UnknownTaskError):
-        fail(as_json, "unknown_task", str(exc), task_id=exc.task_id)
-    if isinstance(exc, SelfLinkError):
-        fail(as_json, "self_link", str(exc), task_id=exc.task_id)
-    if isinstance(exc, UnknownLinkKindError):
-        fail(as_json, "unknown_link_kind", str(exc), kind=exc.kind, configured=list(exc.configured))
-    if isinstance(exc, DerivedLinkKindError):
-        fail(as_json, "derived_link_kind", str(exc), kind=exc.kind, inverse=exc.inverse)
-    if isinstance(exc, NoProjectRootError):
-        fail(as_json, "no_project_root", str(exc))
-    if isinstance(exc, LockTimeoutError):
-        fail(as_json, "lock_timeout", str(exc))
-    raise exc
 
 
 # link / unlink were absorbed into `rack transition --link/--unlink` (HATS-1030);
@@ -270,7 +250,7 @@ def context_cmd(
             root.tasks_dir, pkg, selected, event=event_key, since=since, actor_filter=actor_filter
         )
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
-        handle_linked_error(exc, as_json)
+        handle_rack_error(exc, as_json)
         return
     if as_json:
         out = pkg.to_dict()
@@ -376,6 +356,6 @@ def ls_cmd(
             row_filter=card_filter(grep=grep, tag=tag, state=state, parent=parent),
         )
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
-        handle_linked_error(exc, as_json)
+        handle_rack_error(exc, as_json)
         return
     _emit_walk(task_id, deep if deep is not None else 1, neighbors, as_json)

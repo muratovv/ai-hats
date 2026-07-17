@@ -15,16 +15,18 @@ from typing import Mapping
 
 import yaml
 
+from .errors import RackConfigError, RackError
+
 #: PROP-012: the companion-HYP timing rule is anchored to the ``document``
 #: state — the accepted obligation becomes unsatisfiable if it disappears.
 REQUIRED_STATES: tuple[str, ...] = ("document",)
 
 
-class TopologyError(Exception):
+class TopologyError(RackConfigError):
     """fsm.yaml is malformed or violates a structural invariant."""
 
 
-class UnknownStateError(Exception):
+class UnknownStateError(RackError):
     """A state name not present in the loaded topology."""
 
     def __init__(self, state: str, known: tuple[str, ...]) -> None:
@@ -33,7 +35,7 @@ class UnknownStateError(Exception):
         super().__init__(f"Unknown state '{state}'. Known states: {', '.join(known)}")
 
 
-class InvalidTransitionError(Exception):
+class InvalidTransitionError(RackError):
     """The FSM guard refused an edge; carries the legal targets (PROP-061)."""
 
     def __init__(
