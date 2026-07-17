@@ -14,20 +14,11 @@ from typing import Any
 
 import click
 
+from .cli_common import JSON_OPT, TASKS_DIR_OPT, fail, resolved_root
 from .fsm import load_topology
 from .journal import CorruptLine, read_journal
 from .models import TaskCard
-
-# Same option contract as cli.py (kept local: cli.py imports this module).
-_TASKS_DIR_OPT = click.option(
-    "--tasks-dir",
-    envvar="RACK_TASKS_DIR",
-    default="tasks",
-    show_default=True,
-    type=click.Path(path_type=Path),
-    help="Directory holding <ID>/task.yaml card dirs.",
-)
-_JSON_OPT = click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+from .resolver import NoProjectRootError
 
 
 @click.command()
@@ -37,33 +28,28 @@ _JSON_OPT = click.option("--json", "as_json", is_flag=True, help="Machine-readab
 )
 @click.option("--since", default=None, help="ISO-8601 UTC lower bound on ts (inclusive).")
 @click.option("--actor", default=None, help="Exact actor (e.g. session:<id>).")
-@_TASKS_DIR_OPT
-@_JSON_OPT
+@TASKS_DIR_OPT
+@JSON_OPT
 def audit(
     task_id: str,
     event_key: str | None,
     since: str | None,
     actor: str | None,
-    tasks_dir: Path,
+    tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
     """Show the dispatch audit journal of a task."""
-    card_path = tasks_dir / task_id / "task.yaml"
+    try:
+        root = resolved_root(tasks_dir, Path.cwd())
+    except NoProjectRootError as exc:
+        fail(as_json, "no_project_root", str(exc))
+        return
+    card_path = root.tasks_dir / task_id / "task.yaml"
     if not card_path.exists():
-        message = f"Task '{task_id}' not found"
-        if as_json:
-            click.echo(
-                json.dumps(
-                    {"error": {"code": "unknown_task", "message": message, "task_id": task_id}},
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-        else:
-            click.echo(f"error: {message}", err=True)
-        raise SystemExit(1)
+        fail(as_json, "unknown_task", f"Task '{task_id}' not found", task_id=task_id)
+        return
 
-    records, corrupt = read_journal(tasks_dir, task_id)
+    records, corrupt = read_journal(root.tasks_dir, task_id)
     warnings = _warnings(card_path, records, corrupt)
     filtered = [r for r in records if _matches(r, event_key, since, actor)]
 
