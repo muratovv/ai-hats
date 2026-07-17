@@ -17,7 +17,7 @@ from .dispatch import (
     SubscriberOutcome,
     Subscription,
 )
-from .events import EdgeEvent, EpicifyEvent, Event, PreDestroyEvent
+from .events import EdgeEvent, EpicifyEvent, Event, PreDestroyEvent, event_detail
 from .fsm import (
     InvalidTransitionError,
     Topology,
@@ -25,6 +25,7 @@ from .fsm import (
     UnknownStateError,
     load_topology,
 )
+from .journal import JsonlJournalSink, read_journal
 from .kernel import (
     ForceRequiresReasonError,
     Kernel,
@@ -47,6 +48,7 @@ __all__ = [
     "ForceRequiresReasonError",
     "InvalidTransitionError",
     "JournalSink",
+    "JsonlJournalSink",
     "Kernel",
     "KernelResult",
     "LockTimeoutError",
@@ -64,5 +66,7 @@ __all__ = [
     "UnknownStateError",
     "UnknownTaskError",
     "WorkLogEntry",
+    "event_detail",
     "load_topology",
+    "read_journal",
 ]
