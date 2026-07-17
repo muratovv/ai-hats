@@ -1,9 +1,10 @@
 """``rack`` — minimal JSON-first CLI over the bare kernel (HATS-1020).
 
-Verbs: create/show/transition/log (K1), the ``doc`` group (K2), ``audit`` (K7),
-tree/link/unlink/context/ls (K5). Root
-resolution defaults to the validated walk-up resolver (HATS-197/839, K2);
-``--tasks-dir`` / ``RACK_TASKS_DIR`` stay as the explicit override.
+Verbs: create/show/log (K1); ``transition`` — the single mutating verb, an
+ordered composite of ops under one lock (HATS-1030); the ``doc ls`` read verb
+(K2); ``audit`` (K7); tree/context/ls (K5). Root resolution defaults to the
+validated walk-up resolver (HATS-197/839, K2); ``--tasks-dir`` /
+``RACK_TASKS_DIR`` stay as the explicit override.
 """
 
 from __future__ import annotations
