@@ -1,4 +1,5 @@
-"""``rack tree/link/unlink/context/ls`` CLI verbs (HATS-1024, K5).
+"""``rack link/unlink/context/ls`` CLI verbs (HATS-1024, K5; read surface v2
+HATS-1029: ls --deep/--link graph walk, context --with/--attr, dead verbs).
 
 Includes the F4-replica metric pin: the discovery context of a task inside an
 epic with five design attachments must stay orders of magnitude below the
@@ -54,41 +55,7 @@ def _family(tmp_path):
     make_card(tmp_path, "HATS-5", title="kid", state="plan", parent_task="HATS-2")
 
 
-# ----- tree ---------------------------------------------------------------------
-
-
-def test_tree_human_two_levels(runner, tmp_path):
-    _family(tmp_path)
-    result = runner.invoke(main, ["tree", "HATS-1", *_args(tmp_path)])
-    assert result.exit_code == 0, result.output
-    lines = result.output.splitlines()
-    assert lines[0] == "HATS-1 [execute/high] the epic"
-    assert lines[1] == "└─ HATS-2 [plan/medium] the task"
-    assert lines[2] == "   └─ HATS-5 [plan/medium] kid"
-
-
-def test_tree_json_is_nested(runner, tmp_path):
-    _family(tmp_path)
-    result = runner.invoke(main, ["tree", "HATS-1", *_args(tmp_path), "--json"])
-    assert result.exit_code == 0, result.output
-    tree = json.loads(result.output)["tree"]
-    assert tree["id"] == "HATS-1" and tree["state"] == "execute"
-    assert tree["children"][0]["id"] == "HATS-2"
-    assert tree["children"][0]["children"][0]["id"] == "HATS-5"
-
-
-def test_tree_leaf_notes_no_children(runner, tmp_path):
-    _family(tmp_path)
-    result = runner.invoke(main, ["tree", "HATS-4", *_args(tmp_path)])
-    assert result.exit_code == 0
-    assert "(no children)" in result.output
-
-
-def test_tree_unknown_task_is_typed(runner, tmp_path):
-    _family(tmp_path)
-    result = runner.invoke(main, ["tree", "HATS-404", *_args(tmp_path), "--json"])
-    assert result.exit_code == 1
-    assert json.loads(result.output)["error"]["code"] == "unknown_task"
+# tree folded into `ls --deep` (HATS-1029); its cases live in the ls section.
 
 
 # ----- link / unlink (absorbed into `transition --link/--unlink`, HATS-1030) ------
@@ -207,13 +174,16 @@ def test_show_json_carries_top_level_links(runner, tmp_path):
     }
 
 
-def test_context_with_embeds_and_marks_truncation(runner, tmp_path):
+# ----- context --with (pattern over own + linked docs) ----------------------------
+
+
+def test_context_with_pattern_embeds_and_marks_truncation(runner, tmp_path):
     _family(tmp_path)
     plan = tmp_path / "tasks" / "HATS-2" / "plan.md"
     plan.write_text("plan " * 200)  # 1000 bytes
     result = runner.invoke(
         main,
-        ["context", "HATS-2", "--with", "plan,summary", "--max-bytes", "100", *_args(tmp_path)],
+        ["context", "HATS-2", "--with", "plan*|summary*", "--max-bytes", "100", *_args(tmp_path)],
     )
     assert result.exit_code == 0, result.output
     assert "--- HATS-2/plan.md" in result.output
@@ -229,37 +199,20 @@ def test_context_with_json_truncation_fields(runner, tmp_path):
     (tmp_path / "tasks" / "HATS-2" / "plan.md").write_text("x" * 500)
     result = runner.invoke(
         main,
-        ["context", "HATS-2", "--with", "plan", "--max-bytes", "64", *_args(tmp_path), "--json"],
+        ["context", "HATS-2", "--with", "plan*", "--max-bytes", "64", *_args(tmp_path), "--json"],
     )
-    (inc,) = json.loads(result.output)["included"]
-    assert inc["truncated"] is True and inc["size"] == 500 and len(inc["content"]) == 64
+    included = json.loads(result.output)["included"]
+    own = next(i for i in included if i["task_id"] == "HATS-2")
+    assert own["truncated"] is True and own["size"] == 500 and len(own["content"]) == 64
 
 
-def test_context_with_missing_summary_is_graceful(runner, tmp_path):
-    make_card(tmp_path, "HATS-1", title="lone")
+def test_context_with_no_match_is_graceful(runner, tmp_path):
+    _family(tmp_path)
     result = runner.invoke(
-        main, ["context", "HATS-1", "--with", "plan,summary", *_args(tmp_path), "--json"]
+        main, ["context", "HATS-2", "--with", "ghost*", *_args(tmp_path), "--json"]
     )
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["included"] == []
-
-
-def test_context_with_unknown_selector_is_typed(runner, tmp_path):
-    _family(tmp_path)
-    result = runner.invoke(
-        main, ["context", "HATS-2", "--with", "everything", *_args(tmp_path), "--json"]
-    )
-    assert result.exit_code == 1
-    assert json.loads(result.output)["error"]["code"] == "unknown_selector"
-
-
-def test_context_with_unknown_doc_is_typed(runner, tmp_path):
-    _family(tmp_path)
-    result = runner.invoke(
-        main, ["context", "HATS-2", "--with", "doc:ghost.md", *_args(tmp_path), "--json"]
-    )
-    assert result.exit_code == 1
-    assert json.loads(result.output)["error"]["code"] == "unknown_document"
 
 
 def test_context_unknown_task_is_typed(runner, tmp_path):
@@ -269,7 +222,38 @@ def test_context_unknown_task_is_typed(runner, tmp_path):
     assert json.loads(result.output)["error"]["code"] == "unknown_task"
 
 
-# ----- ls -------------------------------------------------------------------------
+# ----- context --attr work_log (audit is exercised in test_cli_audit.py) ----------
+
+
+def test_context_attr_work_log_is_full(runner, tmp_path):
+    card = TaskCard(id="HATS-1", title="t")
+    card.log_work("first")
+    card.log_work("second")
+    path = tmp_path / "tasks" / "HATS-1" / "task.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    card.save(path)
+    result = runner.invoke(
+        main, ["context", "HATS-1", "--attr", "work_log", *_args(tmp_path), "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    entries = json.loads(result.output)["attrs"]["work_log"]
+    assert [e["message"] for e in entries] == ["first", "second"]
+    # human surface renders the full log, not just the latest entry
+    human = runner.invoke(main, ["context", "HATS-1", "--attr", "work_log", *_args(tmp_path)])
+    assert "work_log:" in human.output and "first" in human.output and "second" in human.output
+
+
+def test_context_attr_unknown_is_typed(runner, tmp_path):
+    _family(tmp_path)
+    result = runner.invoke(
+        main, ["context", "HATS-2", "--attr", "bogus", *_args(tmp_path), "--json"]
+    )
+    assert result.exit_code == 1
+    err = json.loads(result.output)["error"]
+    assert err["code"] == "unknown_attr" and "work_log" in err["known"]
+
+
+# ----- ls: backlog scan (no id) ---------------------------------------------------
 
 
 def test_ls_filters_and_json(runner, tmp_path):
@@ -293,6 +277,77 @@ def test_ls_human_table_and_empty(runner, tmp_path):
     empty = runner.invoke(main, ["ls", "--tag", "nope", *_args(tmp_path)])
     assert empty.exit_code == 0
     assert "No tasks match." in empty.output
+
+
+# ----- ls <ID>: neighbourhood graph walk (tree folded in here) --------------------
+
+
+def test_ls_walk_depth_one_json(runner, tmp_path):
+    _family(tmp_path)
+    result = runner.invoke(main, ["ls", "HATS-2", *_args(tmp_path), "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["root"] == "HATS-2" and payload["depth"] == 1
+    got = {(n["id"], n["kind"], n["direction"]) for n in payload["neighbors"]}
+    assert got == {
+        ("HATS-1", "parent", "out"),
+        ("HATS-3", "depends_on", "out"),
+        ("HATS-4", "related", "both"),
+        ("HATS-5", "children", "in"),
+    }
+
+
+def test_ls_walk_deep_link_filter_is_the_tree(runner, tmp_path):
+    _family(tmp_path)
+    result = runner.invoke(
+        main, ["ls", "HATS-1", "--deep", "2", "--link", "parent|children", *_args(tmp_path), "--json"]
+    )
+    payload = json.loads(result.output)
+    assert [(n["id"], n["depth"]) for n in payload["neighbors"]] == [("HATS-2", 1), ("HATS-5", 2)]
+    assert payload["neighbors"][-1]["path"] == ["HATS-1", "HATS-2", "HATS-5"]
+
+
+def test_ls_walk_human_shows_direction_and_chain(runner, tmp_path):
+    _family(tmp_path)
+    result = runner.invoke(main, ["ls", "HATS-1", "--deep", "2", *_args(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "neighbourhood (depth 2)" in result.output
+    assert "← children" in result.output  # HATS-2 is a child of HATS-1
+    assert "HATS-1 › HATS-2 › HATS-5" in result.output  # depth>1 prints the chain
+
+
+def test_ls_walk_state_filter_prunes_output_not_traversal(runner, tmp_path):
+    _family(tmp_path)
+    result = runner.invoke(
+        main, ["ls", "HATS-1", "--deep", "2", "--state", "plan", *_args(tmp_path), "--json"]
+    )
+    ids = {n["id"] for n in json.loads(result.output)["neighbors"]}
+    assert ids == {"HATS-2", "HATS-5"}  # T-5 reached THROUGH T-2 despite the filter
+
+
+def test_ls_walk_unknown_root_is_typed(runner, tmp_path):
+    _family(tmp_path)
+    result = runner.invoke(main, ["ls", "HATS-404", *_args(tmp_path), "--json"])
+    assert result.exit_code == 1
+    assert json.loads(result.output)["error"]["code"] == "unknown_task"
+
+
+def test_ls_deep_without_id_is_typed(runner, tmp_path):
+    _family(tmp_path)
+    result = runner.invoke(main, ["ls", "--deep", "2", *_args(tmp_path), "--json"])
+    assert result.exit_code == 1
+    assert json.loads(result.output)["error"]["code"] == "invalid_request"
+
+
+# ----- dead verbs: tree / audit / doc ls are unknown to the CLI (HATS-1029) -------
+
+
+@pytest.mark.parametrize("argv", [["tree", "HATS-1"], ["audit", "HATS-1"], ["doc", "ls", "HATS-1"]])
+def test_removed_verbs_are_unknown(runner, tmp_path, argv):
+    _family(tmp_path)
+    result = runner.invoke(main, [*argv, *_args(tmp_path)])
+    assert result.exit_code != 0
+    assert "No such command" in result.output
 
 
 # ----- F4 replica metric ------------------------------------------------------------

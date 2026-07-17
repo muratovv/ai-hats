@@ -32,64 +32,27 @@ def _setup_task(runner, tmp_path, *files: tuple[str, bytes]) -> Path:
     return card_dir
 
 
-# ----- doc ls -----------------------------------------------------------------
+# ----- frozen drift on the read surface (doc ls folded into show, HATS-1029) --
 
 
-def test_ls_json_lists_direct_writes_with_absolute_paths(runner, tmp_path):
-    card_dir = _setup_task(runner, tmp_path, ("gate.log", b"tail"), ("plan.md", b"# p"))
-    result = runner.invoke(main, ["doc", "ls", "HATS-001", *_tasks_args(tmp_path), "--json"])
-    assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert [d["name"] for d in payload["documents"]] == ["gate.log", "plan.md"]
-    for entry in payload["documents"]:
-        assert Path(entry["path"]).is_absolute()
-        assert entry["path"] == str((card_dir / entry["name"]).absolute())
-        assert entry["digest"].startswith("sha256:")
-        assert entry["mtime"].endswith("Z")
-        assert entry["frozen"] is False and entry["drift"] is None
-    assert payload["drifted"] == []
-
-
-def test_ls_human_prints_name_path_mtime_digest(runner, tmp_path):
-    card_dir = _setup_task(runner, tmp_path, ("gate.log", b"tail"))
-    result = runner.invoke(main, ["doc", "ls", "HATS-001", *_tasks_args(tmp_path)])
-    assert result.exit_code == 0, result.output
-    assert "gate.log" in result.output
-    assert str((card_dir / "gate.log").absolute()) in result.output
-    assert "sha256:" in result.output
-
-
-def test_ls_empty_names_the_directory_to_write_into(runner, tmp_path):
-    card_dir = _setup_task(runner, tmp_path)
-    result = runner.invoke(main, ["doc", "ls", "HATS-001", *_tasks_args(tmp_path)])
-    assert result.exit_code == 0
-    assert str(card_dir.absolute()) in result.output
-
-
-def test_ls_unknown_task_is_typed(runner, tmp_path):
-    _setup_task(runner, tmp_path)
-    result = runner.invoke(main, ["doc", "ls", "HATS-404", *_tasks_args(tmp_path), "--json"])
-    assert result.exit_code == 1
-    assert json.loads(result.output)["error"]["code"] == "unknown_task"
-
-
-def test_ls_fails_loudly_on_frozen_drift(runner, tmp_path):
+def test_show_surfaces_frozen_drift(runner, tmp_path):
+    # `doc ls` is gone (HATS-1029); `show` runs the same live pin verification and
+    # marks a drifted frozen doc. The loud rc-1 gate left with the verb — the read
+    # surface flags drift, it does not fail on it.
     card_dir = _setup_task(runner, tmp_path, ("evidence.log", b"v1"))
     freeze = runner.invoke(
         main, ["transition", "HATS-001", "--freeze", "evidence.log", *_tasks_args(tmp_path)]
     )
     assert freeze.exit_code == 0, freeze.output
     (card_dir / "evidence.log").write_bytes(b"v2")
-    result = runner.invoke(main, ["doc", "ls", "HATS-001", *_tasks_args(tmp_path)])
-    assert result.exit_code == 1
-    assert "frozen ✗ modified" in result.output
-    assert "--refreeze" in result.output or "re-pin" in result.output
 
-    as_json = runner.invoke(main, ["doc", "ls", "HATS-001", *_tasks_args(tmp_path), "--json"])
-    assert as_json.exit_code == 1
-    payload = json.loads(as_json.output)
-    assert payload["drifted"] == ["evidence.log"]
-    assert payload["documents"][0]["drift"] == "modified"
+    human = runner.invoke(main, ["show", "HATS-001", *_tasks_args(tmp_path)])
+    assert human.exit_code == 0, human.output
+    assert "frozen ✗ modified" in human.output
+
+    as_json = runner.invoke(main, ["show", "HATS-001", *_tasks_args(tmp_path), "--json"])
+    doc = next(d for d in json.loads(as_json.output)["documents"] if d["name"] == "evidence.log")
+    assert doc["drift"] == "modified"
 
 
 # ----- freeze / rm (absorbed into `transition --freeze/--rm`, HATS-1030) -------
