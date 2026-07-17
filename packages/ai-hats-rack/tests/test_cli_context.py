@@ -161,17 +161,38 @@ def test_context_json_schema(runner, tmp_path):
     assert payload["included"] == []
 
 
-def test_show_json_carries_top_level_links(runner, tmp_path):
+def test_context_covers_former_show_surface(runner, tmp_path):
+    # Р11 parity pin (HATS-1031): everything the killed `show` verb emitted —
+    # the FULL card, the top-level links object, the documents block — rides
+    # `context` with no flags.
     _family(tmp_path)
-    result = runner.invoke(main, ["show", "HATS-2", *_args(tmp_path), "--json"])
+    card_path = tmp_path / "tasks" / "HATS-2" / "task.yaml"
+    card = TaskCard.from_yaml(card_path)
+    card.reviewer = "user"
+    card.log_work("first step")
+    card.log_work("second step")
+    card.save(card_path)
+
+    result = runner.invoke(main, ["context", "HATS-2", *_args(tmp_path), "--json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert payload["links"] == {
-        "parent": ["HATS-1"],
-        "depends_on": ["HATS-3"],
-        "related": ["HATS-4"],
-        "children": ["HATS-5"],
-    }
+    task = payload["task"]
+    assert task == card.to_dict()  # the full card, not a trimmed head
+    assert {
+        "id", "title", "state", "description", "priority", "assignee", "reviewer",
+        "role", "parent_task", "subtasks", "tags", "work_log", "created", "updated",
+    } <= set(task)
+    assert [e["message"] for e in task["work_log"]] == ["first step", "second step"]
+    assert set(payload["links"]) == {"parent", "depends_on", "related", "children"}
+    (doc,) = payload["documents"]
+    assert {"name", "path", "mtime", "frozen", "drift"} <= set(doc)
+    assert Path(doc["path"]).is_absolute()
+
+    human = runner.invoke(main, ["context", "HATS-2", *_args(tmp_path)])
+    assert human.exit_code == 0, human.output
+    assert "reviewer: user" in human.output
+    assert "work_log:" in human.output
+    assert "first step" in human.output and "second step" in human.output
 
 
 # ----- context --with (pattern over own + linked docs) ----------------------------

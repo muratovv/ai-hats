@@ -59,7 +59,6 @@ from .linked import (
     card_filter,
     link,
     scan_cards,
-    trimmed_card,
     unlink,
     walk_neighborhood,
 )
@@ -151,7 +150,6 @@ __all__ = [
     "resolve_links",
     "resolve_root",
     "scan_cards",
-    "trimmed_card",
     "unlink",
     "walk_neighborhood",
 ]
