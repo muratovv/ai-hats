@@ -1,7 +1,7 @@
 """Shared CLI plumbing for ``rack`` command modules (HATS-1021).
 
-Lives outside cli.py so subcommand modules (cli_doc, later K-children) can
-reuse actor/output/root helpers without importing the command registry.
+Lives outside cli.py so subcommand modules (cli_context) can reuse
+actor/output/root helpers without importing the command registry.
 """
 
 from __future__ import annotations

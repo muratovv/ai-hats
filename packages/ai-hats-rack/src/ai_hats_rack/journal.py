@@ -151,7 +151,7 @@ class JsonlJournalSink:
                 f"({record.event_key}): {exc!r} — the operation itself went "
                 f"through, but the audit trail now has a hole. Fix "
                 f"{self._active_path(record.task_id)} before trusting "
-                f"`rack audit {record.task_id}`.\n"
+                f"`rack context {record.task_id} --attr audit`.\n"
             )
 
     # ----- internals --------------------------------------------------------

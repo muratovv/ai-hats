@@ -232,7 +232,14 @@ def test_runner_sits_between_gate_and_claim(project):
     names = [
         s.name for s in kernel._dispatcher.subscribers_for("edge:plan--execute", Phase.IN_LOCK)
     ]
-    assert names == ["ownership-single-slot", "plan-gate", "hook-runner", "ownership", "worktree"]
+    assert names == [
+        "ownership-single-slot",
+        "frozen-integrity",
+        "plan-gate",
+        "hook-runner",
+        "ownership",
+        "worktree",
+    ]
 
 
 def test_consumer_abort_leaves_no_worktree(project, lib):
