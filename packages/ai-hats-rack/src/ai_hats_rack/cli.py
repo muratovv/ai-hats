@@ -16,8 +16,10 @@ from typing import Any
 
 import click
 
+from .cli_audit import audit
 from .dispatch import OperationAborted
 from .fsm import InvalidTransitionError, UnknownStateError
+from .journal import JsonlJournalSink
 from .kernel import (
     ForceRequiresReasonError,
     Kernel,
@@ -45,7 +47,8 @@ def _actor() -> str:
 
 
 def _kernel(tasks_dir: Path) -> Kernel:
-    return Kernel(tasks_dir)
+    # Every CLI-built kernel journals dispatches to tasks/<ID>/audit.jsonl (K7).
+    return Kernel(tasks_dir, journal_sink=JsonlJournalSink(tasks_dir))
 
 
 def _emit_json(payload: dict[str, Any]) -> None:
@@ -110,6 +113,9 @@ _JSON_OPT = click.option("--json", "as_json", is_flag=True, help="Machine-readab
 @click.group()
 def main() -> None:
     """rack — minimal backlog kernel CLI (ai-hats-rack)."""
+
+
+main.add_command(audit)  # `rack audit <ID>` — K7 journal query surface
 
 
 @main.command()
