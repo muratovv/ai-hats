@@ -23,6 +23,7 @@ from .dispatch import (
     Subscriber,
     SubscriberOutcome,
 )
+from .errors import RackError
 from .events import EdgeEvent, EpicifyEvent, Event, PreDestroyEvent, event_detail
 from .fsm import Topology, load_topology
 from .models import TaskCard, utc_now
@@ -33,24 +34,24 @@ from .registry import LinksRegistry, load_registry
 LOCK_TIMEOUT = 30.0
 
 
-class UnknownTaskError(Exception):
+class UnknownTaskError(RackError):
     def __init__(self, task_id: str) -> None:
         self.task_id = task_id
         super().__init__(f"Task '{task_id}' not found")
 
 
-class TaskExistsError(Exception):
+class TaskExistsError(RackError):
     def __init__(self, task_id: str) -> None:
         self.task_id = task_id
         super().__init__(f"Task '{task_id}' already exists")
 
 
-class ForceRequiresReasonError(Exception):
+class ForceRequiresReasonError(RackError):
     def __init__(self) -> None:
         super().__init__("force=True requires a non-empty reason")
 
 
-class LockTimeoutError(Exception):
+class LockTimeoutError(RackError):
     """A kernel lock could not be acquired: loud, actionable, never silent."""
 
     def __init__(self, lock_path: Path, what: str, timeout: float) -> None:

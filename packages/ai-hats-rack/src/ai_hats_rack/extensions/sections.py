@@ -13,6 +13,8 @@ from pathlib import Path
 
 import yaml
 
+from ..errors import RackConfigError
+
 
 @dataclass(frozen=True)
 class Section:
@@ -34,7 +36,7 @@ DEFAULT_PLAN_SECTIONS: tuple[Section, ...] = (
 )
 
 
-class SectionCatalogError(Exception):
+class SectionCatalogError(RackConfigError):
     """A section catalog file is malformed."""
 
 
