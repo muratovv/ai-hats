@@ -44,6 +44,16 @@ class WorkLogEntry(BaseModel):
     timestamp: str = ""
     message: str = ""
 
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def _stringify(cls, value: Any) -> Any:
+        # Unquoted YAML timestamps parse as datetime; the field stays str.
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
     def to_dict(self) -> dict[str, str]:
         return {"timestamp": self.timestamp, "message": self.message}
 
