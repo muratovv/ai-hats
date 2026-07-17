@@ -74,7 +74,21 @@ task lock → resource lock; every kernel lock uses the single loud-fail timeout
 Every dispatch produces a `DispatchRecord` (event, task, actor, force+reason, one
 outcome per subscriber: `ok` / `delta` / `abort` / `error`). Records ride the result of
 every mutating call, including aborted dispatches. `JournalSink` is the persistence seam
-— its consumer is **K7 audit log**; K1 persists nothing.
+— its consumer is **K7 audit log** (below); the bare kernel persists nothing.
+
+### Audit log (K7)
+
+The CLI attaches `JsonlJournalSink`: every dispatch appends one JSON line (schema `v: 1`:
+ts, event, detail — edge from/to / epicify child / pre-destroy operation —, actor,
+force+reason, per-subscriber outcomes, `result: persisted|aborted`, identity block) to
+`tasks/<ID>/audit.jsonl`, size-rotated into `audit-NNN.jsonl` segments. Lossless by
+contract (PROP-004): nothing is truncated or deleted. The identity block carries the
+writing process's `AI_HATS_SESSION_ID` + `AI_HATS_ROOT_PID`, a verdict against the
+claimed actor (`verified`/`mismatch`/`unverified` — blind zones are marked, PROP-080),
+and an ownership-holder cross-check when `ownership.json` exists (PROP-076). Journal
+write failures are loud on stderr but never break the already-persisted operation.
+`rack audit <ID>` (`--json`, `--event/--since/--actor`) is the query surface; it warns
+when a task moved states with an empty journal (zero-events, PROP-005/076).
 
 ## CLI
 

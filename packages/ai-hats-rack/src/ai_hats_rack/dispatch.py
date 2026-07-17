@@ -125,9 +125,15 @@ class DispatchRecord:
     reason: str
     started_at: str = field(default_factory=utc_now)
     outcomes: tuple[SubscriberOutcome, ...] = ()
+    #: fate of the operation — "persisted" | "aborted"; only the kernel knows
+    #: it (deriving from outcomes would lie on a failed persist). K7 audit.
+    result: str = ""
+    #: structured event payload (edge from/to, epicify child, pre-destroy
+    #: operation) — lossless beyond the bare key. K7 audit.
+    detail: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "event": self.event_key,
             "task_id": self.task_id,
             "actor": self.actor,
@@ -135,7 +141,11 @@ class DispatchRecord:
             "reason": self.reason,
             "started_at": self.started_at,
             "outcomes": [o.to_dict() for o in self.outcomes],
+            "result": self.result,
         }
+        if self.detail:
+            d["detail"] = dict(self.detail)
+        return d
 
 
 class JournalSink(Protocol):
