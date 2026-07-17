@@ -26,7 +26,6 @@ from ai_hats_rack.dispatch import (
 )
 from ai_hats_rack.events import EdgeEvent, EpicifyEvent, PreDestroyEvent
 from ai_hats_rack.extensions import (
-    DEFAULT_PLAN_SECTIONS,
     DerivedViewsExtension,
     EpicAutomationExtension,
     PlanGateExtension,
@@ -34,6 +33,7 @@ from ai_hats_rack.extensions import (
     Section,
 )
 from ai_hats_rack.fsm import Topology
+from ai_hats_core import scrubbed_git_env
 from ai_hats_tracker import ownership
 from ai_hats_tracker.constants import ENV_ROOT_PID, ENV_SESSION_ID
 
@@ -347,6 +347,7 @@ class WorktreeExtension:
                 cwd=str(wt_path),
                 capture_output=True,
                 text=True,
+                env=scrubbed_git_env(),  # HATS-890: never inherit ambient GIT_DIR
                 timeout=30,
             )
         except (OSError, subprocess.SubprocessError):
@@ -360,20 +361,28 @@ def build_rack_kernel(
     tasks_dir: Path | None = None,
     state_md_path: Path | None = None,
     prefix: str = "HATS",
-    sections: tuple[Section, ...] = DEFAULT_PLAN_SECTIONS,
+    sections: tuple[Section, ...] | None = None,
     worktree_effects: WtWorktreeEffects | None = None,
     journal_sink: JournalSink | None = None,
     lock_timeout: float | None = None,
     extra_subscribers: Sequence = (),
 ) -> Kernel:
     """Assemble the integrator kernel: K1 core + every K3 stock extension
-    (mirror of ``cli/_helpers._task_manager`` for the rack stack)."""
+    (mirror of ``cli/_helpers._task_manager`` for the rack stack).
+
+    ``sections=None`` (the default) resolves to the stock catalog extended by
+    the materialized consumer config (HATS-1023) — scaffold and gate read one
+    catalog, so contract and enforcement cannot drift (HATS-635)."""
     if tasks_dir is None or state_md_path is None:
         from .tracker_wiring import tracker_paths
 
         paths = tracker_paths(project_dir)
         tasks_dir = tasks_dir if tasks_dir is not None else paths.tasks_dir
         state_md_path = state_md_path if state_md_path is not None else paths.state_md_path
+    if sections is None:
+        from .rack_consumers import consumer_plan_sections
+
+        sections = consumer_plan_sections(project_dir)
 
     topology = load_topology()
     registry = tasks_dir.parent / "ownership.json"
