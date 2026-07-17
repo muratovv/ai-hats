@@ -144,6 +144,19 @@ def _isolate_ai_hats_dir(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _grant_merge_consent(monkeypatch):
+    """Set ``AI_HATS_MERGE_ACK=1`` for EVERY test (HATS-1019).
+
+    ``WorktreeManager.merge`` is default-deny without supervisor consent;
+    the existing merge inventory tests merge *semantics*, not consent.
+    Gate tests re-``delenv`` inside the test body (runs after this set).
+    Also propagates into subprocess-spawning e2e tests via env inheritance.
+    """
+    monkeypatch.setenv("AI_HATS_MERGE_ACK", "1")
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_git_env(monkeypatch):
     """Strip inherited ``GIT_*`` plumbing vars for EVERY test (HATS-886).
 

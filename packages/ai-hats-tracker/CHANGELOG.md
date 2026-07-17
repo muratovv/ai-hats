@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.1]
+
+### Added
+
+- `task transition done` surfaces the merge consent refusal
+  (`WorktreeMergeConsentError`, HATS-1019) as a review-handoff directive:
+  card stays in its prior state; the printed recipe names the supervisor
+  merge (`AI_HATS_MERGE_ACK=1 ai-hats wt merge <branch>`) and the ack-free
+  retry.
+
 ## [0.6.0]
 
 ### Added
