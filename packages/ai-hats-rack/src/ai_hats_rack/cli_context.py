@@ -157,8 +157,8 @@ def _tip() -> None:
     click.echo("")
     click.echo(
         "tip: paths only by design — Read them directly; embed doc content with "
-        "--with '<glob>' (e.g. plan*|summary*), inspect attributes with "
-        "--attr audit|work_log"
+        "repeatable --with '<glob>' (e.g. --with 'plan*' --with 'summary*'), "
+        "inspect attributes with --attr audit|work_log"
     )
 
 
@@ -209,9 +209,10 @@ def _echo_attrs(attrs: tuple[str, ...], payload: dict[str, object]) -> None:
 @click.argument("task_id")
 @click.option(
     "--with",
-    "with_pattern",
-    default=None,
-    help="Embed docs whose name matches this glob (fnmatch + | alternation), e.g. plan*|summary*.",
+    "with_patterns",
+    multiple=True,
+    help="Embed docs whose name matches this glob; repeatable, OR-combined "
+    "(e.g. --with 'plan*' --with 'summary*').",
 )
 @click.option(
     "--max-bytes",
@@ -232,7 +233,7 @@ def _echo_attrs(attrs: tuple[str, ...], payload: dict[str, object]) -> None:
 @JSON_OPT
 def context_cmd(
     task_id: str,
-    with_pattern: str | None,
+    with_patterns: tuple[str, ...],
     max_bytes: int,
     attrs: tuple[str, ...],
     event_key: str | None,
@@ -262,7 +263,7 @@ def context_cmd(
             root.tasks_dir,
             task_id,
             registry=registry,
-            with_pattern=with_pattern,
+            with_patterns=with_patterns,
             max_bytes=max_bytes,
         )
         attr_payload = _collect_attrs(
@@ -333,9 +334,10 @@ def _emit_walk(root_id: str, depth: int, neighbors: list[Neighbor], as_json: boo
 )
 @click.option(
     "--link",
-    "link_pattern",
-    default=None,
-    help="With an ID: only follow edge kinds matching this glob (fnmatch + | alternation).",
+    "link_patterns",
+    multiple=True,
+    help="With an ID: only follow edge kinds matching this glob; repeatable, "
+    "OR-combined (e.g. --link 'parent_task' --link 'children').",
 )
 @click.option("--grep", default=None, help="Case-insensitive substring over title+description.")
 @click.option("--tag", default=None, help="Exact tag match.")
@@ -346,7 +348,7 @@ def _emit_walk(root_id: str, depth: int, neighbors: list[Neighbor], as_json: boo
 def ls_cmd(
     task_id: str | None,
     deep: int | None,
-    link_pattern: str | None,
+    link_patterns: tuple[str, ...],
     grep: str | None,
     tag: str | None,
     state: str | None,
@@ -355,7 +357,7 @@ def ls_cmd(
     as_json: bool,
 ) -> None:
     """Backlog search (no ID) or a ticket-neighbourhood graph walk (rack ls <ID> --deep N)."""
-    if task_id is None and (deep is not None or link_pattern is not None):
+    if task_id is None and (deep is not None or link_patterns):
         fail(as_json, "invalid_request", "--deep/--link require a task id: rack ls <ID> --deep N")
         return
     try:
@@ -370,7 +372,7 @@ def ls_cmd(
             task_id,
             registry=registry,
             depth=deep if deep is not None else 1,
-            link_pattern=link_pattern,
+            link_patterns=link_patterns,
             row_filter=card_filter(grep=grep, tag=tag, state=state, parent=parent),
         )
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
