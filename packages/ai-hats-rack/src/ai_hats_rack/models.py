@@ -81,6 +81,7 @@ class TaskCard(BaseModel):
             "related",
             "see_also",
             "folded_into",
+            "links",
             "tags",
             "work_log",
             "final_state",
@@ -105,6 +106,9 @@ class TaskCard(BaseModel):
     related: list[str] = Field(default_factory=list)
     see_also: list[str] = Field(default_factory=list)
     folded_into: str = ""
+    #: generic, kind-blind edge storage (HATS-1028): new kinds land here; legacy
+    #: scalar/list fields above stay their own storage (no migration).
+    links: dict[str, list[str]] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
     work_log: list[WorkLogEntry] = Field(default_factory=list)
     final_state: str = ""
@@ -190,6 +194,11 @@ class TaskCard(BaseModel):
             d["see_also"] = self.see_also
         if self.folded_into:
             d["folded_into"] = self.folded_into
+        # Emit only non-empty kinds — an empty `links:` mapping is diff-noise,
+        # and the old tracker round-trips this key verbatim through its extras.
+        links = {kind: ids for kind, ids in self.links.items() if ids}
+        if links:
+            d["links"] = links
         for k, v in self.extras.items():
             if k not in self._KNOWN_FIELDS:
                 d[k] = v

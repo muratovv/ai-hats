@@ -1,12 +1,12 @@
-"""Linked tasks + discovery context assembly (HATS-1024, K5 of epic HATS-1014).
+"""Linked tasks + discovery context assembly (HATS-1024, K5; HATS-1028 registry).
 
 Link mutations ride the same transaction window the kernel uses for a card
-(task lock → load → mutate → work_log → SINGLE atomic persist; lock model
-§2.2) — the docstore precedent for card writes outside kernel.py. The read
-side assembles the discovery package (flows §2.3): trimmed card + names +
-absolute paths + mtime, never content — unless explicitly selected via
-``--with``, and then only under a hard per-document byte ceiling (the
-209 851-char baseline F4 lesson; HYP-028/029/040: paths force a live re-read).
+(task lock → load → mutate → work_log → SINGLE atomic persist; lock model §2.2).
+The read side assembles the discovery package (flows §2.3): trimmed card + names
++ absolute paths + mtime, never content — unless explicitly selected via
+``--with`` under a hard per-document byte ceiling (the F4 209 851-char lesson).
+Every edge kind flows through the injected registry: ``link``/``unlink`` take
+any configured kind, and reads project onto one ``links`` map (HATS-1028).
 """
 
 from __future__ import annotations
@@ -15,16 +15,21 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from filelock import FileLock, Timeout
 
 from .docstore import DocInfo, DocStore, UnknownDocumentError
 from .kernel import LOCK_TIMEOUT, Kernel, LockTimeoutError, UnknownTaskError
 from .models import TaskCard, utc_now
+from .registry import (
+    DerivedLinkKindError,
+    LinkKind,
+    LinksRegistry,
+    load_registry,
+    resolve_links,
+)
 
-#: CLI kind → card field; ``depends_on`` accepted as a forgiving alias (PROP-042).
-LINK_KINDS = {"related": "related", "depends": "depends_on", "depends_on": "depends_on"}
 #: outcome documents surfaced (as paths) for each depends_on/related target.
 LINKED_DOC_NAMES = ("summary.md", "retro.md")
 #: the parent epic's design home — the one doc the old CLI force-injected.
@@ -39,24 +44,10 @@ class SelfLinkError(Exception):
         super().__init__(f"Task '{task_id}' cannot link to itself")
 
 
-class UnknownLinkKindError(Exception):
-    def __init__(self, kind: str) -> None:
-        self.kind = kind
-        super().__init__(f"Unknown link kind {kind!r}: pass one of related, depends")
-
-
 class UnknownSelectorError(Exception):
     def __init__(self, selector: str) -> None:
         self.selector = selector
         super().__init__(f"Unknown --with selector {selector!r}: pass plan, summary, or doc:<name>")
-
-
-def canonical_kind(kind: str) -> str:
-    """Map a CLI/API kind spelling onto the card field it mutates."""
-    try:
-        return LINK_KINDS[kind]
-    except KeyError:
-        raise UnknownLinkKindError(kind) from None
 
 
 # ----- link mutations (task-locked, single persist) ---------------------------
@@ -64,7 +55,7 @@ def canonical_kind(kind: str) -> str:
 
 @dataclass(frozen=True)
 class LinkResult:
-    """Outcome of a link/unlink call; ``kinds`` names the card fields touched."""
+    """Outcome of a link/unlink call; ``kinds`` names the link kinds touched."""
 
     task_id: str
     target: str
@@ -80,30 +71,73 @@ class LinkResult:
         }
 
 
+def _kind_ids(kind: LinkKind, card: TaskCard) -> list[str]:
+    """Live list handle for a many-arity kind (legacy field or links dict)."""
+    if kind.legacy_field:
+        return getattr(card, kind.legacy_field)
+    return card.links.setdefault(kind.name, [])
+
+
+def _add_link(kind: LinkKind, card: TaskCard, target: str) -> bool:
+    """Add ``target`` under ``kind``; return whether anything changed."""
+    if kind.legacy_field and kind.arity == "one":
+        if getattr(card, kind.legacy_field) == target:
+            return False
+        setattr(card, kind.legacy_field, target)
+        return True
+    ids = _kind_ids(kind, card)
+    if target in ids:
+        return False
+    ids.append(target)
+    return True
+
+
+def _remove_link(kind: LinkKind, card: TaskCard, target: str) -> bool:
+    """Remove ``target`` from ``kind``; return whether anything changed."""
+    if kind.legacy_field and kind.arity == "one":
+        if getattr(card, kind.legacy_field) != target:
+            return False
+        setattr(card, kind.legacy_field, "")
+        return True
+    ids = _kind_ids(kind, card)
+    if target not in ids:
+        return False
+    ids.remove(target)
+    return True
+
+
+def _stored_kind(registry: LinksRegistry, name: str) -> LinkKind:
+    """Resolve a linkable kind — a derived kind is a typed, actionable refusal."""
+    kind = registry.require(name)  # UnknownLinkKindError names the configured set
+    if kind.derived:
+        raise DerivedLinkKindError(kind.name, kind.inverse)
+    return kind
+
+
 def link(
     tasks_dir: Path,
     task_id: str,
     target: str,
     kind: str = "related",
     *,
+    registry: LinksRegistry | None = None,
     actor: str = "",
     lock_timeout: float = LOCK_TIMEOUT,
 ) -> LinkResult:
-    """Add ``target`` to ``task_id``'s related/depends_on. Idempotent: an
-    existing link is a no-op that persists nothing."""
-    field = canonical_kind(kind)
+    """Add ``target`` to ``task_id`` under any configured, non-derived ``kind``.
+    Idempotent: an existing link is a no-op that persists nothing."""
+    reg = registry if registry is not None else load_registry()
+    link_kind = _stored_kind(reg, kind)
     if target == task_id:
         raise SelfLinkError(task_id)
     if not (tasks_dir / target / "task.yaml").exists():
         raise UnknownTaskError(target)
 
     def op(card: TaskCard) -> tuple[LinkResult, bool]:
-        ids: list[str] = getattr(card, field)
-        if target in ids:
+        if not _add_link(link_kind, card, target):
             return LinkResult(task_id, target, (), changed=False), False
-        ids.append(target)
-        card.log_work(f"Linked {target} ({field})", actor=actor)
-        return LinkResult(task_id, target, (field,), changed=True), True
+        card.log_work(f"Linked {target} ({link_kind.name})", actor=actor)
+        return LinkResult(task_id, target, (link_kind.name,), changed=True), True
 
     return _locked_card_op(tasks_dir, task_id, op, lock_timeout)
 
@@ -114,19 +148,24 @@ def unlink(
     target: str,
     kind: str | None = None,
     *,
+    registry: LinksRegistry | None = None,
     actor: str = "",
     lock_timeout: float = LOCK_TIMEOUT,
 ) -> LinkResult:
-    """Remove ``target`` from ``task_id``'s link fields (both, unless ``kind``
-    narrows it). Idempotent; a dangling target is removable by design."""
-    fields = (canonical_kind(kind),) if kind else ("depends_on", "related")
+    """Remove ``target`` from ``task_id``. With ``kind`` → that kind only; else
+    every stored non-hierarchy kind (the parent edge is never silently dropped).
+    Idempotent; a dangling target is removable by design."""
+    reg = registry if registry is not None else load_registry()
+    if kind is not None:
+        kinds: tuple[LinkKind, ...] = (_stored_kind(reg, kind),)
+    else:
+        hierarchy = reg.hierarchy_kind
+        kinds = tuple(k for k in reg.stored_kinds() if k is not hierarchy)
 
     def op(card: TaskCard) -> tuple[LinkResult, bool]:
-        removed = tuple(f for f in fields if target in getattr(card, f))
+        removed = tuple(k.name for k in kinds if _remove_link(k, card, target))
         if not removed:
             return LinkResult(task_id, target, (), changed=False), False
-        for f in removed:
-            getattr(card, f).remove(target)
         card.log_work(f"Unlinked {target} ({', '.join(removed)})", actor=actor)
         return LinkResult(task_id, target, removed, changed=True), True
 
@@ -292,13 +331,14 @@ class DocRef:
 
 
 @dataclass(frozen=True)
-class LinkedBlock:
-    """Trimmed view of one linked card + outcome-doc paths (never content)."""
+class LinkView:
+    """One target under one link kind: trimmed card head + outcome-doc paths."""
 
     kind: str
     id: str
     title: str
     state: str
+    priority: str
     resolution: str
     docs: tuple[DocRef, ...]
 
@@ -308,6 +348,7 @@ class LinkedBlock:
             "id": self.id,
             "title": self.title,
             "state": self.state,
+            "priority": self.priority,
             "resolution": self.resolution or None,
             "docs": [d.to_dict() for d in self.docs],
         }
@@ -339,36 +380,30 @@ class Inclusion:
 class ContextPackage:
     task: TaskCard
     documents: tuple[DocInfo, ...]
-    parent: LinkedBlock | None
-    depends_on: tuple[LinkedBlock, ...]
-    related: tuple[LinkedBlock, ...]
-    children: tuple[CardRow, ...]
+    #: single, kind-keyed edge map (HATS-1028) — replaces the old scattered
+    #: parent/depends_on/related/children fields. Registry order; deduped ids.
+    links: Mapping[str, tuple[LinkView, ...]]
     included: tuple[Inclusion, ...]
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "task": trimmed_card(self.task),
             "documents": [d.to_dict() for d in self.documents],
-            "parent": self.parent.to_dict() if self.parent else None,
-            "depends_on": [b.to_dict() for b in self.depends_on],
-            "related": [b.to_dict() for b in self.related],
-            "children": [c.to_dict() for c in self.children],
+            "links": {kind: [v.to_dict() for v in views] for kind, views in self.links.items()},
             "included": [i.to_dict() for i in self.included],
         }
 
 
 def trimmed_card(card: TaskCard) -> dict[str, Any]:
     """Card head + only the LATEST work_log entry — the token discipline
-    inherited from the tracker's linked_context (HATS-681 argument)."""
+    inherited from the tracker's linked_context (HATS-681 argument). Link edges
+    are NOT repeated here: they live in the top-level ``links`` object (HATS-1028)."""
     latest = card.work_log[-1] if card.work_log else None
     return {
         "id": card.id,
         "title": card.title,
         "state": card.state,
         "priority": card.priority,
-        "parent_task": card.parent_task,
-        "depends_on": card.depends_on,
-        "related": card.related,
         "tags": card.tags,
         "resolution": card.resolution or None,
         "description": card.description,
@@ -378,54 +413,71 @@ def trimmed_card(card: TaskCard) -> dict[str, Any]:
     }
 
 
+def _doc_names_for(kind: LinkKind, registry: LinksRegistry) -> tuple[str, ...]:
+    """Which outcome docs to surface per kind: the parent epic's plan vs the
+    summary/retro of a dependency/relation; derived kinds carry no docs."""
+    if kind.derived:
+        return ()
+    if kind is registry.hierarchy_kind:
+        return PARENT_DOC_NAMES
+    return LINKED_DOC_NAMES
+
+
 def build_context(
     tasks_dir: Path,
     task_id: str,
     *,
+    registry: LinksRegistry | None = None,
     selectors: Sequence[str] = (),
     max_bytes: int = DEFAULT_MAX_BYTES,
 ) -> ContextPackage:
     """Assemble the one-call discovery package for a task.
 
-    Card + K2 document view + parent/depends_on/related blocks (id, title,
-    state, resolution, doc paths with mtime) + children rows. Dangling links
-    are skipped (linked_context precedent); ids already shown under a more
-    salient kind are not repeated.
+    Card + K2 document view + one ``links`` map (each configured kind → its
+    target views: id, title, state, resolution, doc paths with mtime). Derived
+    children come from the kernel's reverse scan. Dangling links are skipped
+    (linked_context precedent); an id already shown under an earlier (more
+    salient) kind is not repeated.
     """
+    reg = registry if registry is not None else load_registry()
     card = _load_card(tasks_dir, task_id)
     if card is None:
         raise UnknownTaskError(task_id)
     documents = tuple(DocStore(tasks_dir).scan(task_id))
 
-    seen = {task_id}
-    parent = None
-    if card.parent_task and card.parent_task not in seen:
-        seen.add(card.parent_task)
-        parent = _linked_block(tasks_dir, "parent_task", card.parent_task, PARENT_DOC_NAMES)
+    kernel = Kernel(tasks_dir, registry=reg)
+    derived: dict[str, list[str]] = {}
+    children_kind = reg.children_kind
+    if children_kind is not None:
+        derived[children_kind.name] = kernel.children_of(task_id)
+    resolved = resolve_links(reg, card, derived=derived)
 
-    def blocks(kind: str, ids: Sequence[str]) -> tuple[LinkedBlock, ...]:
-        out: list[LinkedBlock] = []
+    seen = {task_id}
+    links: dict[str, tuple[LinkView, ...]] = {}
+    for kind_name, ids in resolved.items():
+        kind = reg.get(kind_name)
+        if kind is None:
+            continue
+        doc_names = _doc_names_for(kind, reg)
+        views: list[LinkView] = []
         for lid in ids:
             if not lid or lid in seen:
                 continue
             seen.add(lid)
-            block = _linked_block(tasks_dir, kind, lid, LINKED_DOC_NAMES)
-            if block is not None:
-                out.append(block)
-        return tuple(out)
+            view = _link_view(tasks_dir, kind_name, lid, doc_names)
+            if view is not None:
+                views.append(view)
+        if views:
+            links[kind_name] = tuple(views)
 
-    depends = blocks("depends_on", card.depends_on)
-    related = blocks("related", card.related)
-    children = tuple(scan_cards(tasks_dir, parent=task_id))
-    included = _build_inclusions(
-        tasks_dir, card, documents, depends + related, selectors, max_bytes
-    )
-    return ContextPackage(card, documents, parent, depends, related, children, included)
+    flat_views = tuple(v for views in links.values() for v in views)
+    included = _build_inclusions(tasks_dir, card, documents, flat_views, selectors, max_bytes)
+    return ContextPackage(card, documents, links, included)
 
 
-def _linked_block(
+def _link_view(
     tasks_dir: Path, kind: str, task_id: str, doc_names: Sequence[str]
-) -> LinkedBlock | None:
+) -> LinkView | None:
     card = _load_card(tasks_dir, task_id)
     if card is None:
         return None
@@ -434,14 +486,16 @@ def _linked_block(
         path = tasks_dir / task_id / name
         if path.is_file():
             docs.append(DocRef(name, path.absolute(), _mtime_iso(path)))
-    return LinkedBlock(kind, card.id, card.title, card.state, card.resolution, tuple(docs))
+    return LinkView(
+        kind, card.id, card.title, card.state, card.priority, card.resolution, tuple(docs)
+    )
 
 
 def _build_inclusions(
     tasks_dir: Path,
     card: TaskCard,
     documents: Sequence[DocInfo],
-    linked_blocks: Sequence[LinkedBlock],
+    link_views: Sequence[LinkView],
     selectors: Sequence[str],
     max_bytes: int,
 ) -> tuple[Inclusion, ...]:
@@ -473,10 +527,10 @@ def _build_inclusions(
             add(card.id, "plan.md", tasks_dir / card.id / "plan.md")
         elif sel == "summary":
             add(card.id, "summary.md", tasks_dir / card.id / "summary.md")
-            for block in linked_blocks:
-                for ref in block.docs:
+            for view in link_views:
+                for ref in view.docs:
                     if ref.name == "summary.md":
-                        add(block.id, ref.name, ref.path)
+                        add(view.id, ref.name, ref.path)
         elif sel.startswith("doc:"):
             name = sel[len("doc:") :]
             match = next((d for d in documents if d.name == name), None)
