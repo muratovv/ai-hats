@@ -65,3 +65,13 @@ class PreDestroyEvent:
 
 
 Event = Union[EdgeEvent, EpicifyEvent, PreDestroyEvent]
+
+
+def event_detail(event: Event) -> dict[str, str]:
+    """Structured payload for the audit journal (K7) — what the bare key
+    loses: edge endpoints, the epicified child, the pre-destroy operation."""
+    if isinstance(event, EdgeEvent):
+        return {"from": event.from_state, "to": event.to_state}
+    if isinstance(event, EpicifyEvent):
+        return {"epic": event.epic_id, "child": event.child_id}
+    return {"operation": event.operation}
