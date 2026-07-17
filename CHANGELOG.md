@@ -10,6 +10,26 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+
+- **Gemini native skill discovery** (HATS-993, ADR-0016). `GeminiProvider`
+  mirrors the composed role's skills into `.gemini/skills/` — Gemini CLI's
+  workspace Agent-Skills tier (>=0.45) — via a new generic ref-counted
+  materializer (`ai_hats.skills_dir`, the HATS-981 additive-marker pattern),
+  so parallel sessions never sweep each other's skills. The `AVAILABLE
+  SKILLS` prompt text-index (HATS-701) is retired for gemini; skills now get
+  consent-gated progressive disclosure instead of an always-on prompt tax.
+
+### Fixed
+
+- **Gemini wrap sessions get their session role again** (HATS-993). gemini-cli
+  > =0.45 silently ignores `GEMINI_CLI_PROJECT_RULES_PATH`, so the per-session
+  > composed role never reached the agent (it fell back to the last-applied
+  > `GEMINI.md` role). The session role now rides a `GEMINI.md` inside a
+  > session-scoped `--include-directories` dir, verified against live memory
+  > discovery. The headless automate path adds `--skip-trust` — gemini hard-fails
+  > in non-trusted dirs and isolation worktrees under `$TMPDIR` are never trusted.
+
 ## [0.13.2] - 2026-07-10
 
 ### Added

@@ -13,7 +13,6 @@ from ai_hats.paths import (
     CLAUDE_PROJECT_DIR_VAR,
     CLAUDE_SETTINGS_JSON_REL,
     CLAUDE_SETTINGS_LOCAL_JSON_REL,
-    GEMINI_CLI_PROJECT_RULES_PATH_ENV,
     GEMINI_MD_FILENAME,
     claude_dir,
     claude_md,
@@ -26,6 +25,7 @@ from ai_hats.paths import (
     claude_transcript_path,
     claude_transcripts_dir,
     gemini_md,
+    gemini_skills_dir,
     strip_claude_project_dir,
 )
 
@@ -74,4 +74,4 @@ def test_managed_marker_name():
 def test_gemini_layout(tmp_path):
     assert GEMINI_MD_FILENAME == "GEMINI.md"
     assert gemini_md(tmp_path) == tmp_path / "GEMINI.md"
-    assert GEMINI_CLI_PROJECT_RULES_PATH_ENV == "GEMINI_CLI_PROJECT_RULES_PATH"
+    assert gemini_skills_dir(tmp_path) == tmp_path / ".gemini" / "skills"
