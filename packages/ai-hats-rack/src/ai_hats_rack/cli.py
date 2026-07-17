@@ -1,6 +1,6 @@
 """``rack`` — minimal JSON-first CLI over the bare kernel (HATS-1020).
 
-Verbs: create/show/transition/log (K1) + the ``doc`` group (K2). Root
+Verbs: create/show/transition/log (K1), the ``doc`` group (K2), ``audit`` (K7). Root
 resolution defaults to the validated walk-up resolver (HATS-197/839, K2);
 ``--tasks-dir`` / ``RACK_TASKS_DIR`` stay as the explicit override.
 """
@@ -12,6 +12,7 @@ from typing import Any
 
 import click
 
+from .cli_audit import audit
 from .cli_common import JSON_OPT as _JSON_OPT
 from .cli_common import TASKS_DIR_OPT as _TASKS_DIR_OPT
 from .cli_common import actor as _actor
@@ -22,6 +23,7 @@ from .cli_doc import doc, echo_documents
 from .dispatch import OperationAborted
 from .docstore import DocStore
 from .fsm import InvalidTransitionError, UnknownStateError
+from .journal import JsonlJournalSink
 from .kernel import (
     ForceRequiresReasonError,
     Kernel,
@@ -36,7 +38,8 @@ from .resolver import NoProjectRootError
 
 def _kernel(tasks_dir: Path | None, caller_cwd: Path) -> Kernel:
     root = _resolved_root(tasks_dir, caller_cwd)
-    return Kernel(root.tasks_dir, prefix=root.prefix)
+    # Every CLI-built kernel journals dispatches to tasks/<ID>/audit.jsonl (K7).
+    return Kernel(root.tasks_dir, prefix=root.prefix, journal_sink=JsonlJournalSink(root.tasks_dir))
 
 
 def _result_payload(result: KernelResult) -> dict[str, Any]:
@@ -80,6 +83,9 @@ def _handle_kernel_error(exc: Exception, as_json: bool) -> None:
 @click.group()
 def main() -> None:
     """rack — minimal backlog kernel CLI (ai-hats-rack)."""
+
+
+main.add_command(audit)  # `rack audit <ID>` — K7 journal query surface
 
 
 @main.command()
