@@ -50,11 +50,11 @@ def test_legacy_tracker_card_projects_onto_links_view(tmp_path):
 
     card = RackCard.from_yaml(path)
     assert resolve_links(load_registry(), card) == {
-        "parent": ["HATS-0"],
+        "parent_task": ["HATS-0"],
         "depends_on": ["HATS-2"],
         "related": ["HATS-3"],
     }
-    # a rack save keeps the legacy fields; it never invents a `links:` key
+    # a rack save keeps the dedicated fields; it never invents a `links:` key
     resaved = tmp_path / "resaved.yaml"
     card.save(resaved)
     raw = yaml.safe_load(resaved.read_text())

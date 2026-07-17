@@ -24,7 +24,7 @@ from .docstore import DocInfo, DocStore
 from .errors import RackError
 from .kernel import LOCK_TIMEOUT, Kernel, LockTimeoutError, UnknownTaskError
 from .matching import Matcher, compile_matcher
-from .models import TaskCard, utc_now
+from .models import LINK_STORAGE_FIELDS, TaskCard, utc_now
 from .registry import (
     DerivedLinkKindError,
     LinkKind,
@@ -69,18 +69,18 @@ class LinkResult:
 
 
 def _kind_ids(kind: LinkKind, card: TaskCard) -> list[str]:
-    """Live list handle for a many-arity kind (legacy field or links dict)."""
-    if kind.legacy_field:
-        return getattr(card, kind.legacy_field)
+    """Live list handle for a many-arity kind (dedicated field or links dict)."""
+    if kind.name in LINK_STORAGE_FIELDS:
+        return getattr(card, kind.name)
     return card.links.setdefault(kind.name, [])
 
 
 def _add_link(kind: LinkKind, card: TaskCard, target: str) -> bool:
     """Add ``target`` under ``kind``; return whether anything changed."""
-    if kind.legacy_field and kind.arity == "one":
-        if getattr(card, kind.legacy_field) == target:
+    if kind.name in LINK_STORAGE_FIELDS and kind.arity == "one":
+        if getattr(card, kind.name) == target:
             return False
-        setattr(card, kind.legacy_field, target)
+        setattr(card, kind.name, target)
         return True
     ids = _kind_ids(kind, card)
     if target in ids:
@@ -91,10 +91,10 @@ def _add_link(kind: LinkKind, card: TaskCard, target: str) -> bool:
 
 def _remove_link(kind: LinkKind, card: TaskCard, target: str) -> bool:
     """Remove ``target`` from ``kind``; return whether anything changed."""
-    if kind.legacy_field and kind.arity == "one":
-        if getattr(card, kind.legacy_field) != target:
+    if kind.name in LINK_STORAGE_FIELDS and kind.arity == "one":
+        if getattr(card, kind.name) != target:
             return False
-        setattr(card, kind.legacy_field, "")
+        setattr(card, kind.name, "")
         return True
     ids = _kind_ids(kind, card)
     if target not in ids:
@@ -318,23 +318,24 @@ def walk_neighborhood(
     *,
     registry: LinksRegistry | None = None,
     depth: int = 1,
-    link_pattern: str | None = None,
+    link_patterns: Sequence[str] = (),
     row_filter: Callable[[TaskCard], bool] | None = None,
 ) -> list[Neighbor]:
     """BFS the links graph out to ``depth`` edges from ``root_id`` (HATS-1029).
 
     The visited-set is keyed by EDGE, not node: each relationship is crossed
-    once, so symmetric ``related`` cycles and inverse ``parent``/``children``
-    pairs terminate. ``link_pattern`` (shared matcher) filters which edge KINDS
-    are followed; ``row_filter`` filters which discovered cards are RETURNED — a
-    non-matching node is still traversed THROUGH to reach matches deeper. Rows
-    come out in BFS order, each carrying edge kind, direction, depth, and chain.
+    once, so symmetric ``related`` cycles and inverse ``parent_task``/``children``
+    pairs terminate. ``link_patterns`` (repeatable globs, OR-combined) filter
+    which edge KINDS are followed; ``row_filter`` filters which discovered cards
+    are RETURNED — a non-matching node is still traversed THROUGH to reach
+    matches deeper. Rows come out in BFS order, each carrying edge kind,
+    direction, depth, and chain.
     """
     reg = registry if registry is not None else load_registry()
     if _load_card(tasks_dir, root_id) is None:
         raise UnknownTaskError(root_id)
     kernel = Kernel(tasks_dir, registry=reg)
-    follow: Matcher | None = compile_matcher(link_pattern) if link_pattern else None
+    follow: Matcher | None = compile_matcher(link_patterns) if link_patterns else None
 
     visited_edges: set[tuple[frozenset[str], frozenset[str]]] = set()
     enqueued = {root_id}
@@ -549,7 +550,7 @@ def build_context(
     task_id: str,
     *,
     registry: LinksRegistry | None = None,
-    with_pattern: str | None = None,
+    with_patterns: Sequence[str] = (),
     max_bytes: int = DEFAULT_MAX_BYTES,
 ) -> ContextPackage:
     """Assemble the one-call discovery package for a task.
@@ -592,7 +593,7 @@ def build_context(
             links[kind_name] = tuple(views)
 
     flat_views = tuple(v for views in links.values() for v in views)
-    included = _build_inclusions(card, documents, flat_views, with_pattern, max_bytes)
+    included = _build_inclusions(card, documents, flat_views, with_patterns, max_bytes)
     return ContextPackage(card, documents, links, included)
 
 
@@ -616,17 +617,17 @@ def _build_inclusions(
     card: TaskCard,
     documents: Sequence[DocInfo],
     link_views: Sequence[LinkView],
-    with_pattern: str | None,
+    with_patterns: Sequence[str],
     max_bytes: int,
 ) -> tuple[Inclusion, ...]:
-    """Embed every document whose NAME matches ``with_pattern`` (shared matcher),
-    across the task's own docs AND the linked-task docs context already lists as
-    paths (HATS-1029 §3). No pattern → nothing embedded; a match that no longer
-    exists on disk is skipped, not an error (the selector grammar is gone). Each
-    embed is capped at ``max_bytes`` with a marked, path-carrying truncation."""
-    if not with_pattern:
+    """Embed every document whose NAME matches any of ``with_patterns`` (repeatable
+    globs, OR-combined), across the task's own docs AND the linked-task docs
+    context already lists as paths (HATS-1029 §3). No patterns → nothing embedded;
+    a match that no longer exists on disk is skipped, not an error. Each embed is
+    capped at ``max_bytes`` with a marked, path-carrying truncation."""
+    if not with_patterns:
         return ()
-    matcher = compile_matcher(with_pattern)
+    matcher = compile_matcher(with_patterns)
     candidates: list[tuple[str, str, Path]] = [(card.id, d.name, d.path) for d in documents]
     for view in link_views:
         candidates.extend((view.id, ref.name, ref.path) for ref in view.docs)

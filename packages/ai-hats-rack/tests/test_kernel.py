@@ -235,6 +235,34 @@ def test_context_carries_caller_cwd_actor_force(tasks_dir, tmp_path):
     assert ctx.task.id == "T-1"
 
 
+def test_force_reaches_subscribers_on_forced_transition(tasks_dir, cwd):
+    # HATS-1032 pin (review anchor kernel.py:290): a forced transition threads
+    # force=True to BOTH dispatch phases, so subscribers build their own invariant.
+    sub = StubSubscriber("probe", [in_lock("edge:plan--review"), post_lock("edge:plan--review")])
+    kernel = make_kernel(tasks_dir, subscribers=[sub])
+    _create(kernel, cwd)
+    walk(kernel, "T-1", "plan", cwd=cwd)  # plan → review is not an edge; force takes it
+    kernel.transition("T-1", "review", actor="test", caller_cwd=cwd, force=True, reason="skip")
+    assert {(c.event.key, c.force) for c in sub.contexts} == {("edge:plan--review", True)}
+    assert len(sub.contexts) == 2  # in-lock + post-lock both saw force
+
+
+def test_force_reaches_subscribers_via_transition_ops(tasks_dir, cwd):
+    # The composite verb (the CLI mutation path) threads force through each
+    # state-op's edge to both phases too (HATS-1032).
+    from ai_hats_rack.ops import StateOp
+
+    sub = StubSubscriber("probe", [in_lock("edge:plan--review"), post_lock("edge:plan--review")])
+    kernel = make_kernel(tasks_dir, subscribers=[sub])
+    _create(kernel, cwd)
+    walk(kernel, "T-1", "plan", cwd=cwd)
+    kernel.transition_ops(
+        "T-1", [StateOp("review")], actor="test", caller_cwd=cwd, force=True, reason="skip"
+    )
+    assert {c.force for c in sub.contexts} == {True}
+    assert len(sub.contexts) == 2
+
+
 def test_is_epic_recomputed_on_every_dispatch(tasks_dir, cwd):
     # HATS-794/977/979 heir: category is a per-dispatch predicate from the
     # CURRENT child-set, never frozen at claim time.

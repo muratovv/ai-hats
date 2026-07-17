@@ -131,7 +131,7 @@ def test_context_human_is_discovery_only(runner, tmp_path):
     assert "the task" in out and "do the thing" in out
     notes = tmp_path / "tasks" / "HATS-2" / "notes.md"
     assert str(notes.absolute()) in out  # documents: absolute path printed
-    assert "Parent:" in out and "HATS-1 [execute] the epic" in out
+    assert "Parent task:" in out and "HATS-1 [execute] the epic" in out
     assert str((tmp_path / "tasks" / "HATS-1" / "plan.md").absolute()) in out
     assert "Depends on:" in out and "resolution: merged" in out
     assert str((tmp_path / "tasks" / "HATS-3" / "summary.md").absolute()) in out
@@ -151,8 +151,8 @@ def test_context_json_schema(runner, tmp_path):
     assert set(payload) == {"task", "documents", "links", "included"}
     assert payload["task"]["id"] == "HATS-2"
     links = payload["links"]
-    assert list(links) == ["parent", "depends_on", "related", "children"]
-    parent = links["parent"][0]
+    assert list(links) == ["parent_task", "depends_on", "related", "children"]
+    parent = links["parent_task"][0]
     assert parent["docs"][0]["name"] == "plan.md"
     assert Path(parent["docs"][0]["path"]).is_absolute()
     assert parent["docs"][0]["mtime"].endswith("Z")
@@ -183,7 +183,7 @@ def test_context_covers_former_show_surface(runner, tmp_path):
         "role", "parent_task", "subtasks", "tags", "work_log", "created", "updated",
     } <= set(task)
     assert [e["message"] for e in task["work_log"]] == ["first step", "second step"]
-    assert set(payload["links"]) == {"parent", "depends_on", "related", "children"}
+    assert set(payload["links"]) == {"parent_task", "depends_on", "related", "children"}
     (doc,) = payload["documents"]
     assert {"name", "path", "mtime", "frozen", "drift"} <= set(doc)
     assert Path(doc["path"]).is_absolute()
@@ -204,7 +204,8 @@ def test_context_with_pattern_embeds_and_marks_truncation(runner, tmp_path):
     plan.write_text("plan " * 200)  # 1000 bytes
     result = runner.invoke(
         main,
-        ["context", "HATS-2", "--with", "plan*|summary*", "--max-bytes", "100", *_args(tmp_path)],
+        ["context", "HATS-2", "--with", "plan*", "--with", "summary*",
+         "--max-bytes", "100", *_args(tmp_path)],
     )
     assert result.exit_code == 0, result.output
     assert "--- HATS-2/plan.md" in result.output
@@ -311,7 +312,7 @@ def test_ls_walk_depth_one_json(runner, tmp_path):
     assert payload["root"] == "HATS-2" and payload["depth"] == 1
     got = {(n["id"], n["kind"], n["direction"]) for n in payload["neighbors"]}
     assert got == {
-        ("HATS-1", "parent", "out"),
+        ("HATS-1", "parent_task", "out"),
         ("HATS-3", "depends_on", "out"),
         ("HATS-4", "related", "both"),
         ("HATS-5", "children", "in"),
@@ -321,7 +322,9 @@ def test_ls_walk_depth_one_json(runner, tmp_path):
 def test_ls_walk_deep_link_filter_is_the_tree(runner, tmp_path):
     _family(tmp_path)
     result = runner.invoke(
-        main, ["ls", "HATS-1", "--deep", "2", "--link", "parent|children", *_args(tmp_path), "--json"]
+        main,
+        ["ls", "HATS-1", "--deep", "2", "--link", "parent_task", "--link", "children",
+         *_args(tmp_path), "--json"],
     )
     payload = json.loads(result.output)
     assert [(n["id"], n["depth"]) for n in payload["neighbors"]] == [("HATS-2", 1), ("HATS-5", 2)]

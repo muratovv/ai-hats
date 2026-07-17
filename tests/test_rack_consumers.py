@@ -161,6 +161,26 @@ def test_env_contract_forced_transition(project, lib):
     assert got["AI_HATS_HOOK_REASON"] == "ops override"
 
 
+def test_env_contract_forced_composite_transition(project, lib):
+    """Force also rides `transition_ops` — the CLI composite path — so a hook on
+    a forced state-op edge sees AI_HATS_HOOK_FORCE=1 (HATS-1032 pin)."""
+    from ai_hats_rack.ops import StateOp
+
+    dump = project / "env.dump"
+    body = f'#!/usr/bin/env bash\nenv | grep "^AI_HATS_HOOK_" | sort > "{dump}"\nexit 0\n'
+    _skill(lib, "probe", hooks={"brainstorm--plan": ["h.sh"]}, script_body=body)
+    _materialize(project, lib)
+    kernel = _kernel(project)
+    kernel.create(actor="test", caller_cwd=project, task_id="T-1", title="t")
+    kernel.transition_ops(
+        "T-1", [StateOp("plan")], actor="test", caller_cwd=project,
+        force=True, reason="ops override",
+    )
+    got = dict(line.split("=", 1) for line in dump.read_text().splitlines())
+    assert got["AI_HATS_HOOK_FORCE"] == "1"
+    assert got["AI_HATS_HOOK_REASON"] == "ops override"
+
+
 def test_event_without_hooks_passes(project, lib):
     _skill(lib, "elsewhere", hooks={"document--review": ["h.sh"]})
     _materialize(project, lib)

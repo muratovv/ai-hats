@@ -20,10 +20,10 @@ from ai_hats_rack.registry import DerivedLinkKindError, UnknownLinkKindError, lo
 
 _REVIEWED_WITH_YAML = (
     "kinds:\n"
-    "  - {name: parent, legacy_field: parent_task, arity: one, inverse: children}\n"
-    "  - {name: depends_on, legacy_field: depends_on}\n"
-    "  - {name: related, legacy_field: related, inverse: related}\n"
-    "  - {name: children, derived: true, inverse: parent}\n"
+    "  - {name: parent_task, arity: one, inverse: children}\n"
+    "  - {name: depends_on}\n"
+    "  - {name: related, inverse: related}\n"
+    "  - {name: children, derived: true, inverse: parent_task}\n"
     "  - {name: reviewed_with}\n"
 )
 
@@ -110,21 +110,21 @@ def test_link_unknown_kind_is_typed(tasks_dir):
     with pytest.raises(UnknownLinkKindError) as err:
         link(tasks_dir, "T-1", "T-2", "blocks")
     # the refusal names the configured set so the caller can self-correct
-    assert set(err.value.configured) == {"parent", "children", "depends_on", "related"}
+    assert set(err.value.configured) == {"parent_task", "children", "depends_on", "related"}
 
 
 def test_link_arbitrary_new_kind_lands_in_links_dict(tasks_dir, tmp_path):
-    # A configured kind with no legacy field is stored under the generic
-    # `links:` key — the extras-compatible channel new kinds ride (HATS-1028).
+    # A configured kind whose name is not a dedicated field is stored under the
+    # generic `links:` key — the extras-compatible channel new kinds ride (HATS-1028).
     make_card(tasks_dir, "T-1")
     make_card(tasks_dir, "T-2")
     override = tmp_path / "links.yaml"
     override.write_text(
         "kinds:\n"
-        "  - {name: parent, legacy_field: parent_task, arity: one, inverse: children}\n"
-        "  - {name: children, derived: true, inverse: parent}\n"
-        "  - {name: depends_on, legacy_field: depends_on}\n"
-        "  - {name: related, legacy_field: related, inverse: related}\n"
+        "  - {name: parent_task, arity: one, inverse: children}\n"
+        "  - {name: children, derived: true, inverse: parent_task}\n"
+        "  - {name: depends_on}\n"
+        "  - {name: related, inverse: related}\n"
         "  - {name: reviewed_with}\n"
     )
     reg = load_registry(override)
@@ -132,14 +132,14 @@ def test_link_arbitrary_new_kind_lands_in_links_dict(tasks_dir, tmp_path):
     assert result.changed and result.kinds == ("reviewed_with",)
     card = load(tasks_dir, "T-1")
     assert card.links == {"reviewed_with": ["T-2"]}
-    assert card.depends_on == [] and card.related == []  # legacy fields untouched
+    assert card.depends_on == [] and card.related == []  # dedicated fields untouched
 
 
 def test_link_parent_kind_sets_scalar(tasks_dir):
     make_card(tasks_dir, "T-1")
     make_card(tasks_dir, "T-2")
-    result = link(tasks_dir, "T-1", "T-2", "parent")
-    assert result.changed and result.kinds == ("parent",)
+    result = link(tasks_dir, "T-1", "T-2", "parent_task")
+    assert result.changed and result.kinds == ("parent_task",)
     assert load(tasks_dir, "T-1").parent_task == "T-2"
 
 
@@ -148,7 +148,7 @@ def test_link_derived_kind_is_refused(tasks_dir):
     make_card(tasks_dir, "T-2")
     with pytest.raises(DerivedLinkKindError) as err:
         link(tasks_dir, "T-1", "T-2", "children")
-    assert err.value.inverse == "parent"
+    assert err.value.inverse == "parent_task"
 
 
 # ----- unlink -----------------------------------------------------------------
@@ -211,7 +211,7 @@ def test_walk_depth_one_lists_edges_with_direction(tasks_dir):
     rows = walk_neighborhood(tasks_dir, "T-2", depth=1)
     seen = {(n.id, n.kind, n.direction, n.depth) for n in rows}
     assert seen == {
-        ("T-1", "parent", "out", 1),
+        ("T-1", "parent_task", "out", 1),
         ("T-3", "depends_on", "out", 1),
         ("T-4", "related", "both", 1),
         ("T-5", "children", "in", 1),
@@ -221,7 +221,7 @@ def test_walk_depth_one_lists_edges_with_direction(tasks_dir):
 
 def test_walk_depth_two_reaches_grandchildren(tasks_dir):
     _graph(tasks_dir)
-    rows = walk_neighborhood(tasks_dir, "T-1", depth=2, link_pattern="parent|children")
+    rows = walk_neighborhood(tasks_dir, "T-1", depth=2, link_patterns=("parent_task", "children"))
     # T-1 → T-2 (child, d1) → T-5 (grandchild, d2); the back-edge to T-1 is NOT re-crossed
     assert [(n.id, n.depth) for n in rows] == [("T-2", 1), ("T-5", 2)]
     t5 = rows[-1]
@@ -232,7 +232,7 @@ def test_walk_never_crosses_one_edge_twice(tasks_dir):
     # parent↔children is ONE undirected edge: from the epic we reach the child,
     # and the child's parent edge back to the epic is deduped (never re-listed).
     _graph(tasks_dir)
-    rows = walk_neighborhood(tasks_dir, "T-1", depth=3, link_pattern="parent|children")
+    rows = walk_neighborhood(tasks_dir, "T-1", depth=3, link_patterns=("parent_task", "children"))
     assert "T-1" not in {n.id for n in rows}  # the root is never re-emitted
 
 
@@ -246,7 +246,7 @@ def test_walk_related_cycle_terminates(tasks_dir):
 
 def test_walk_link_pattern_filters_traversed_kinds(tasks_dir):
     _graph(tasks_dir)
-    rows = walk_neighborhood(tasks_dir, "T-2", depth=1, link_pattern="depends_on|related")
+    rows = walk_neighborhood(tasks_dir, "T-2", depth=1, link_patterns=("depends_on", "related"))
     assert {n.id for n in rows} == {"T-3", "T-4"}
 
 
@@ -338,9 +338,9 @@ def test_context_full_package(tasks_dir):
     pkg = build_context(tasks_dir, "T-2")
     assert pkg.task.id == "T-2"
     assert [d.name for d in pkg.documents] == ["notes.md"]
-    # one top-level links map, registry order: parent, depends_on, related, children
-    assert list(pkg.links) == ["parent", "depends_on", "related", "children"]
-    (parent,) = pkg.links["parent"]
+    # one top-level links map, registry order: parent_task, depends_on, related, children
+    assert list(pkg.links) == ["parent_task", "depends_on", "related", "children"]
+    (parent,) = pkg.links["parent_task"]
     assert parent.id == "T-1"
     assert [d.name for d in parent.docs] == ["plan.md"]
     assert parent.docs[0].path.is_absolute()
@@ -379,8 +379,8 @@ def test_context_dedups_ids_across_kinds(tasks_dir):
 
 
 def test_context_new_kind_surfaces_in_links(tasks_dir, tmp_path):
-    # A configured kind with no legacy field rides the generic `links:` dict and
-    # still appears (after the configured legacy kinds) in the context map.
+    # A configured kind not named after a dedicated field rides the generic
+    # `links:` dict and still appears (after the dedicated-field kinds) in context.
     make_card(tasks_dir, "T-1", links={"reviewed_with": ["T-2"]})
     make_card(tasks_dir, "T-2", title="reviewer note")
     override = tmp_path / "links.yaml"
@@ -401,7 +401,7 @@ def test_context_unknown_task_is_typed(tasks_dir):
 def test_with_pattern_embeds_own_doc(tasks_dir):
     _family(tasks_dir)
     (tasks_dir / "T-2" / "plan.md").write_text("my plan body")
-    pkg = build_context(tasks_dir, "T-2", with_pattern="plan*")
+    pkg = build_context(tasks_dir, "T-2", with_patterns=("plan*",))
     own = next(i for i in pkg.included if i.task_id == "T-2")
     assert own.name == "plan.md" and own.content == "my plan body" and not own.truncated
 
@@ -413,23 +413,23 @@ def test_with_no_pattern_embeds_nothing(tasks_dir):
 
 
 def test_with_pattern_matches_own_and_linked_docs(tasks_dir):
-    # `plan*|summary*` spans the task's own docs AND the linked-task docs context
-    # already lists: own plan.md + parent T-1 plan.md + dep T-3 summary.md.
+    # repeatable `--with plan* --with summary*` spans the task's own docs AND the
+    # linked-task docs context lists: own plan.md + parent T-1 plan.md + dep T-3 summary.md.
     _family(tasks_dir)
     (tasks_dir / "T-2" / "plan.md").write_text("own plan")
-    pkg = build_context(tasks_dir, "T-2", with_pattern="plan*|summary*")
+    pkg = build_context(tasks_dir, "T-2", with_patterns=("plan*", "summary*"))
     got = {(i.task_id, i.name) for i in pkg.included}
     assert got == {("T-2", "plan.md"), ("T-1", "plan.md"), ("T-3", "summary.md")}
 
 
 def test_with_pattern_no_match_is_graceful(tasks_dir):
     _family(tasks_dir)
-    assert build_context(tasks_dir, "T-2", with_pattern="ghost*").included == ()
+    assert build_context(tasks_dir, "T-2", with_patterns=("ghost*",)).included == ()
 
 
 def test_with_pattern_matches_arbitrary_named_doc(tasks_dir):
     _family(tasks_dir)
-    pkg = build_context(tasks_dir, "T-2", with_pattern="notes.md")
+    pkg = build_context(tasks_dir, "T-2", with_patterns=("notes.md",))
     (inc,) = pkg.included
     assert inc.name == "notes.md" and inc.content == "notes"
 
@@ -437,7 +437,7 @@ def test_with_pattern_matches_arbitrary_named_doc(tasks_dir):
 def test_with_truncates_at_max_bytes_and_flags(tasks_dir):
     _family(tasks_dir)
     (tasks_dir / "T-2" / "plan.md").write_text("x" * 500)
-    pkg = build_context(tasks_dir, "T-2", with_pattern="plan*", max_bytes=100)
+    pkg = build_context(tasks_dir, "T-2", with_patterns=("plan*",), max_bytes=100)
     own = next(i for i in pkg.included if i.task_id == "T-2")
     assert own.truncated and own.size == 500 and len(own.content) == 100
 
@@ -447,7 +447,7 @@ def test_with_star_embeds_each_doc_once(tasks_dir):
     # summary.md, retro.md); every (owner, name) is embedded exactly once.
     _family(tasks_dir)
     (tasks_dir / "T-2" / "plan.md").write_text("p")
-    pkg = build_context(tasks_dir, "T-2", with_pattern="*")
+    pkg = build_context(tasks_dir, "T-2", with_patterns=("*",))
     keys = [(i.task_id, i.name) for i in pkg.included]
     assert len(keys) == len(set(keys))
     assert set(keys) == {
