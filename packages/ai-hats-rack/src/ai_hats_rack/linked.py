@@ -522,31 +522,15 @@ class ContextPackage:
     included: tuple[Inclusion, ...]
 
     def to_dict(self) -> dict[str, Any]:
+        # The ROOT card rides in full — context is the one read surface since
+        # `show` died (HATS-1031 Р11 parity); the HATS-681 token discipline
+        # keeps applying to LINKED cards only (trimmed LinkView heads).
         return {
-            "task": trimmed_card(self.task),
+            "task": self.task.to_dict(),
             "documents": [d.to_dict() for d in self.documents],
             "links": {kind: [v.to_dict() for v in views] for kind, views in self.links.items()},
             "included": [i.to_dict() for i in self.included],
         }
-
-
-def trimmed_card(card: TaskCard) -> dict[str, Any]:
-    """Card head + only the LATEST work_log entry — the token discipline
-    inherited from the tracker's linked_context (HATS-681 argument). Link edges
-    are NOT repeated here: they live in the top-level ``links`` object (HATS-1028)."""
-    latest = card.work_log[-1] if card.work_log else None
-    return {
-        "id": card.id,
-        "title": card.title,
-        "state": card.state,
-        "priority": card.priority,
-        "tags": card.tags,
-        "resolution": card.resolution or None,
-        "description": card.description,
-        "created": card.created,
-        "updated": card.updated,
-        "latest_work_log": latest.to_dict() if latest else None,
-    }
 
 
 def _doc_names_for(kind: LinkKind, registry: LinksRegistry) -> tuple[str, ...]:

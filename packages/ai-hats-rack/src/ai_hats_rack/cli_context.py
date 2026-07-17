@@ -1,15 +1,17 @@
-"""``rack`` read surface v2: link / unlink / context / ls (HATS-1024, HATS-1029).
+"""``rack`` read surface: context / ls (HATS-1024, HATS-1029, HATS-1031).
 
-``context`` is THE one-call discovery package — card + document paths + one
+``context`` is THE one-call read surface — full card + document paths + one
 top-level ``links`` object (HATS-1028) — replacing the 10-call, 209 851-char
-baseline F4 walk. ``--with <pattern>`` embeds matching document content (capped
-by ``--max-bytes``); ``--attr`` surfaces attribute feeds (audit, work_log).
+baseline F4 walk and, since HATS-1031 (Р11), the killed ``show`` verb.
+``--with <pattern>`` embeds matching document content (capped by
+``--max-bytes``); ``--attr`` surfaces attribute feeds (audit, work_log).
 ``ls`` is either the backlog scan (no id) or a ticket-neighbourhood graph walk
 (``ls <ID> --deep N [--link <pattern>]``) — the ``tree`` verb folded into it.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import click
@@ -17,9 +19,7 @@ import click
 from . import linked
 from .audit_view import journal_view, record_lines
 from .cli_common import JSON_OPT, TASKS_DIR_OPT, emit_json, fail, resolved_root
-
-# shared table/mtime style — doc rows look the same on every rack surface
-from .cli_doc import _columns, _mtime_human, echo_documents
+from .docstore import DocInfo
 from .kernel import LockTimeoutError, UnknownTaskError
 from .linked import (
     DEFAULT_MAX_BYTES,
@@ -39,6 +39,41 @@ from .resolver import NoProjectRootError
 KNOWN_ATTRS = ("audit", "work_log")
 #: direction glyphs for a walk row: out → target, in ← target, both symmetric.
 _ARROW = {"out": "→", "in": "←", "both": "↔"}
+
+
+# ----- shared table/mtime/documents rendering (ex-cli_doc, HATS-1021/1031) --------
+
+
+def _mtime_human(mtime_iso: str) -> str:
+    if not mtime_iso:
+        return "—"
+    ts = datetime.fromisoformat(mtime_iso.replace("Z", "+00:00"))
+    return ts.astimezone().strftime("%Y-%m-%d %H:%M")
+
+
+def _frozen_mark(doc: DocInfo) -> str:
+    if not doc.frozen:
+        return ""
+    return f"frozen ✗ {doc.drift}" if doc.drift else "frozen ✓"
+
+
+def _columns(rows: list[list[str]], indent: str = "  ") -> list[str]:
+    widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
+    return [
+        indent + "  ".join(cell.ljust(w) for cell, w in zip(row, widths)).rstrip() for row in rows
+    ]
+
+
+def echo_documents(card_dir: Path, docs: list[DocInfo], indent: str = "  ") -> None:
+    """The documents block: name + ABSOLUTE path + mtime + frozen mark. Content
+    is never inlined — the agent Reads by the printed path (discovery model)."""
+    click.echo(f"{indent}Documents ({card_dir.absolute()}):")
+    if not docs:
+        click.echo(f"{indent}  (none — write files into this directory to add)")
+        return
+    rows = [[d.name, str(d.path), _mtime_human(d.mtime), _frozen_mark(d)] for d in docs]
+    for line in _columns(rows, indent + "  "):
+        click.echo(line)
 
 
 def handle_linked_error(exc: Exception, as_json: bool) -> None:
@@ -88,7 +123,8 @@ def _echo_links(links: dict[str, tuple[LinkView, ...]]) -> None:
 
 def _echo_context(pkg: ContextPackage, tasks_dir: Path) -> None:
     card = pkg.task
-    for key in ("id", "title", "state", "priority"):
+    # `reviewer` rides the head since HATS-1031: show-parity, one read surface.
+    for key in ("id", "title", "state", "priority", "reviewer"):
         value = getattr(card, key)
         if value:
             click.echo(f"  {key}: {value}")
@@ -103,8 +139,9 @@ def _echo_context(pkg: ContextPackage, tasks_dir: Path) -> None:
         for line in card.description.rstrip().splitlines():
             click.echo(f"    {line}")
     if card.work_log:
-        latest = card.work_log[-1]
-        click.echo(f"  latest work_log ({latest.timestamp or '?'}): {latest.message}")
+        click.echo("  work_log:")  # the ex-show tail; full feed: --attr work_log
+        for entry in card.work_log[-5:]:
+            click.echo(f"    {entry.timestamp} {entry.message}")
     click.echo("")
     echo_documents(tasks_dir / card.id, list(pkg.documents))
     _echo_links(dict(pkg.links))

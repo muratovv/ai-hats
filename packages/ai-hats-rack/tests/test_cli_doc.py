@@ -1,4 +1,5 @@
-"""``rack doc`` + show Documents block + default root resolution (HATS-1021)."""
+"""Doc-store CLI surface: transition --freeze/--rm ops + the context
+Documents block + default root resolution (HATS-1021/1030/1031)."""
 
 from __future__ import annotations
 
@@ -32,13 +33,13 @@ def _setup_task(runner, tmp_path, *files: tuple[str, bytes]) -> Path:
     return card_dir
 
 
-# ----- frozen drift on the read surface (doc ls folded into show, HATS-1029) --
+# ----- frozen drift on the read surface (doc ls folded into context) ----------
 
 
-def test_show_surfaces_frozen_drift(runner, tmp_path):
-    # `doc ls` is gone (HATS-1029); `show` runs the same live pin verification and
-    # marks a drifted frozen doc. The loud rc-1 gate left with the verb — the read
-    # surface flags drift, it does not fail on it.
+def test_context_surfaces_frozen_drift(runner, tmp_path):
+    # `doc ls` is gone (HATS-1029), `show` too (HATS-1031); `context` runs the
+    # same live pin verification and marks a drifted frozen doc. The read
+    # surface flags drift, it does not fail on it — transitions do (Р13 guard).
     card_dir = _setup_task(runner, tmp_path, ("evidence.log", b"v1"))
     freeze = runner.invoke(
         main, ["transition", "HATS-001", "--freeze", "evidence.log", *_tasks_args(tmp_path)]
@@ -46,11 +47,11 @@ def test_show_surfaces_frozen_drift(runner, tmp_path):
     assert freeze.exit_code == 0, freeze.output
     (card_dir / "evidence.log").write_bytes(b"v2")
 
-    human = runner.invoke(main, ["show", "HATS-001", *_tasks_args(tmp_path)])
+    human = runner.invoke(main, ["context", "HATS-001", *_tasks_args(tmp_path)])
     assert human.exit_code == 0, human.output
     assert "frozen ✗ modified" in human.output
 
-    as_json = runner.invoke(main, ["show", "HATS-001", *_tasks_args(tmp_path), "--json"])
+    as_json = runner.invoke(main, ["context", "HATS-001", *_tasks_args(tmp_path), "--json"])
     doc = next(d for d in json.loads(as_json.output)["documents"] if d["name"] == "evidence.log")
     assert doc["drift"] == "modified"
 
@@ -67,8 +68,8 @@ def test_freeze_via_transition_and_drift_refusal(runner, tmp_path):
     (op,) = json.loads(result.output)["ops"]
     assert op["op"] == "freeze" and op["digest"].startswith("sha256:") and op["changed"] is True
 
-    # Re-freezing drifted content in the composite is refused (no --refreeze op);
-    # deliberate re-pinning stays available via the DocStore API (test_docstore).
+    # Re-freezing drifted content without acknowledgement stays refused; the
+    # --ack-frozen hatch accepts the new content (HATS-1031 Р13 recipe).
     (card_dir / "evidence.log").write_bytes(b"v2")
     refused = runner.invoke(
         main, ["transition", "HATS-001", "--freeze", "evidence.log", *_tasks_args(tmp_path), "--json"]
@@ -76,6 +77,17 @@ def test_freeze_via_transition_and_drift_refusal(runner, tmp_path):
     assert refused.exit_code == 1
     error = json.loads(refused.output)["error"]
     assert error["code"] == "frozen_pin_drift"
+
+    accepted = runner.invoke(
+        main,
+        [
+            "transition", "HATS-001", "--freeze", "evidence.log",
+            "--ack-frozen", *_tasks_args(tmp_path), "--json",
+        ],
+    )
+    assert accepted.exit_code == 0, accepted.output
+    (op2,) = json.loads(accepted.output)["ops"]
+    assert op2["changed"] is True and op2["digest"] != op["digest"]
 
 
 def test_rm_frozen_refusal_names_the_flag_then_succeeds_with_ack(runner, tmp_path):
@@ -123,24 +135,24 @@ def test_invalid_name_is_typed(runner, tmp_path):
     assert json.loads(result.output)["error"]["code"] == "invalid_document_name"
 
 
-# ----- show: discovery block ----------------------------------------------------
+# ----- context: discovery block ---------------------------------------------------
 
 
-def test_show_prints_documents_block_with_absolute_paths_no_content(runner, tmp_path):
+def test_context_prints_documents_block_with_absolute_paths_no_content(runner, tmp_path):
     card_dir = _setup_task(runner, tmp_path, ("gate.log", b"SECRET-BODY-MARKER"))
     runner.invoke(main, ["transition", "HATS-001", "--freeze", "gate.log", *_tasks_args(tmp_path)])
-    result = runner.invoke(main, ["show", "HATS-001", *_tasks_args(tmp_path)])
+    result = runner.invoke(main, ["context", "HATS-001", *_tasks_args(tmp_path)])
     assert result.exit_code == 0, result.output
     assert "Documents" in result.output
     assert str((card_dir / "gate.log").absolute()) in result.output
     assert "frozen ✓" in result.output
-    # discovery, not injection: file content never rides show output
+    # discovery, not injection: file content never rides context without --with
     assert "SECRET-BODY-MARKER" not in result.output
 
 
-def test_show_json_carries_documents(runner, tmp_path):
+def test_context_json_carries_documents(runner, tmp_path):
     _setup_task(runner, tmp_path, ("gate.log", b"tail"))
-    result = runner.invoke(main, ["show", "HATS-001", *_tasks_args(tmp_path), "--json"])
+    result = runner.invoke(main, ["context", "HATS-001", *_tasks_args(tmp_path), "--json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["task"]["id"] == "HATS-001"
@@ -148,9 +160,9 @@ def test_show_json_carries_documents(runner, tmp_path):
     assert Path(payload["documents"][0]["path"]).is_absolute()
 
 
-def test_show_without_documents_still_prints_block_header(runner, tmp_path):
+def test_context_without_documents_still_prints_block_header(runner, tmp_path):
     _setup_task(runner, tmp_path)
-    result = runner.invoke(main, ["show", "HATS-001", *_tasks_args(tmp_path)])
+    result = runner.invoke(main, ["context", "HATS-001", *_tasks_args(tmp_path)])
     assert result.exit_code == 0
     assert "Documents" in result.output and "(none" in result.output
 
@@ -172,7 +184,7 @@ def test_default_resolution_walks_up_and_honors_config(runner, tmp_path):
         card = root / ".hats" / "tracker" / "backlog" / "tasks" / "SBX-001" / "task.yaml"
         assert card.is_file()
 
-        shown = runner.invoke(main, ["show", "SBX-001"])
+        shown = runner.invoke(main, ["context", "SBX-001"])
         assert shown.exit_code == 0, shown.output
 
 

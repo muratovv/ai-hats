@@ -354,12 +354,15 @@ def test_context_full_package(tasks_dir):
     assert pkg.included == ()
 
 
-def test_context_trimmed_card_carries_latest_work_log_only(tasks_dir):
+def test_context_root_card_rides_in_full(tasks_dir):
+    # HATS-1031 Р11: the ROOT card is the whole card (`show` parity); trimming
+    # stays a linked-card (LinkView) discipline only.
     _family(tasks_dir)
     pkg = build_context(tasks_dir, "T-2")
     head = pkg.to_dict()["task"]
-    assert head["latest_work_log"]["message"] == "started"
-    assert "work_log" not in head
+    assert head == pkg.task.to_dict()
+    assert [e["message"] for e in head["work_log"]] == ["started"]
+    assert {"reviewer", "assignee", "role", "created", "updated"} <= set(head)
 
 
 def test_context_dangling_link_is_skipped(tasks_dir):
