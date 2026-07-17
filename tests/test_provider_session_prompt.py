@@ -326,18 +326,10 @@ def _skill_composition(tmp_path: Path) -> CompositionResult:
     )
 
 
-def test_claude_omits_skills_index_gemini_keeps_it(tmp_path):
-    """HATS-701: the AVAILABLE SKILLS index diverges by provider.
-
-    Claude materializes skills as a native --plugin-dir registry (HITL) /
-    SDK plugin (sub-agent) that already lists every skill with its full
-    description, so re-emitting an index in the system prompt is a 2-3x
-    duplicate (~1.5k tok/session). Gemini has no such registry — its index
-    is the only discovery channel and must stay.
-
-    Fail-under-revert: reverting providers.py re-adds the index to Claude
-    and re-reds the first assertion.
-    """
+def test_native_registry_providers_omit_skills_index(tmp_path):
+    """Skills reach the agent via each provider's native registry, so the
+    AVAILABLE SKILLS text-index is a duplicate: Claude --plugin-dir (HATS-701),
+    gemini .gemini/skills/ (HATS-993)."""
     result = _skill_composition(tmp_path)
 
     claude_prompt = ClaudeProvider().build_system_prompt(result)
@@ -348,12 +340,14 @@ def test_claude_omits_skills_index_gemini_keeps_it(tmp_path):
         "Claude must NOT emit the AVAILABLE SKILLS index — skills reach the "
         "agent via the --plugin-dir native registry. Prompt:\n" + claude_prompt
     )
-    assert "## AVAILABLE SKILLS" in gemini_prompt, (
-        "Gemini must keep the AVAILABLE SKILLS index (no native registry)."
+    # HATS-993: gemini joined the native-registry providers (.gemini/skills/).
+    assert "## AVAILABLE SKILLS" not in gemini_prompt, (
+        "Gemini must NOT emit the AVAILABLE SKILLS index — skills reach the "
+        "agent via the native .gemini/skills/ registry (HATS-993)."
     )
-    # The skill name follows its section: absent from Claude, present in Gemini.
+    # The skill name follows its section: absent from both prompts.
     assert "doc-protocol" not in claude_prompt
-    assert "doc-protocol" in gemini_prompt
+    assert "doc-protocol" not in gemini_prompt
 
     # Non-skill sections are unaffected for BOTH providers (shared helper
     # must not drop priorities / always-on rules / their relocation).
