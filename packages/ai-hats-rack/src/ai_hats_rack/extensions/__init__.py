@@ -17,6 +17,7 @@ from .sections import (
     Section,
     SectionCatalogError,
     load_sections,
+    merge_sections,
     render_scaffold,
     unfilled_sections,
 )
@@ -45,6 +46,7 @@ __all__ = [
     "SectionCatalogError",
     "decide",
     "load_sections",
+    "merge_sections",
     "render_scaffold",
     "standalone_extensions",
     "unfilled_sections",

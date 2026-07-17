@@ -300,3 +300,32 @@ def test_forced_execute_is_still_gated(kit, tasks_dir, cwd):
             "T-1", "execute", actor="test", caller_cwd=cwd, force=True, reason="skip plan"
         )
     assert kit.get("T-1").state == "brainstorm"
+
+
+# ---------------------------------------------------------------------------
+# merge_sections — the consumer extension channel (HATS-1023)
+# ---------------------------------------------------------------------------
+
+
+def test_merge_sections_appends_and_dedupes_base_wins():
+    from ai_hats_rack.extensions import merge_sections
+
+    base = (Section(name="Requirements"), Section(name="Steps"))
+    extras = (
+        Section(name="Rollback plan"),
+        Section(name="Requirements", required=False),  # cannot weaken a stock section
+        Section(name="Rollback plan", required=False),  # first extra occurrence wins
+    )
+    merged = merge_sections(base, extras)
+    assert [s.name for s in merged] == ["Requirements", "Steps", "Rollback plan"]
+    assert merged[0].required is True
+    assert merged[2].required is True
+
+
+def test_merge_sections_feeds_gate_and_scaffold_consistently():
+    """The merged catalog drives BOTH surfaces (HATS-635 never-drift)."""
+    from ai_hats_rack.extensions import merge_sections
+
+    merged = merge_sections(DEFAULT_PLAN_SECTIONS, (Section(name="Rollback plan"),))
+    assert "## Rollback plan" in render_scaffold(merged)
+    assert "Rollback plan" in unfilled_sections(_FILLED_PLAN, merged)
