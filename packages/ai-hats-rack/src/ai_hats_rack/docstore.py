@@ -20,6 +20,7 @@ from typing import Any
 
 from filelock import FileLock, Timeout
 
+from .errors import RackError
 from .kernel import LOCK_TIMEOUT, LockTimeoutError, UnknownTaskError
 from .models import TaskCard, utc_now
 
@@ -34,7 +35,7 @@ DRIFT_MODIFIED = "modified"
 DRIFT_MISSING = "missing"
 
 
-class DocumentNameError(Exception):
+class DocumentNameError(RackError):
     """The name cannot address a document inside the task directory."""
 
     def __init__(self, name: str, why: str) -> None:
@@ -42,14 +43,14 @@ class DocumentNameError(Exception):
         super().__init__(f"Invalid document name {name!r}: {why}")
 
 
-class UnknownDocumentError(Exception):
+class UnknownDocumentError(RackError):
     def __init__(self, task_id: str, name: str) -> None:
         self.task_id = task_id
         self.name = name
         super().__init__(f"No document '{name}' in tasks/{task_id}/")
 
 
-class FrozenDocumentError(Exception):
+class FrozenDocumentError(RackError):
     """Tiered escape hatch (PROP-035/063/064): the refusal names the flag."""
 
     def __init__(self, task_id: str, name: str) -> None:
@@ -62,7 +63,7 @@ class FrozenDocumentError(Exception):
         )
 
 
-class FrozenPinDriftError(Exception):
+class FrozenPinDriftError(RackError):
     """Freezing over a pin whose file changed requires explicit --refreeze."""
 
     def __init__(self, task_id: str, name: str, pinned: str, current: str) -> None:
