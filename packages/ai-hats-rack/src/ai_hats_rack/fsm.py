@@ -36,7 +36,9 @@ class UnknownStateError(Exception):
 class InvalidTransitionError(Exception):
     """The FSM guard refused an edge; carries the legal targets (PROP-061)."""
 
-    def __init__(self, task_id: str, from_state: str, to_state: str, allowed: tuple[str, ...]) -> None:
+    def __init__(
+        self, task_id: str, from_state: str, to_state: str, allowed: tuple[str, ...]
+    ) -> None:
         self.task_id = task_id
         self.from_state = from_state
         self.to_state = to_state

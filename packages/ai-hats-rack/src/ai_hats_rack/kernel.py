@@ -139,9 +139,7 @@ class Kernel:
         full parse avoided — mirrors the tracker's reverse scan)."""
         if not self.tasks_dir.exists():
             return []
-        pattern = re.compile(
-            rf"^parent_task:\s*['\"]?{re.escape(task_id)}['\"]?\s*$", re.MULTILINE
-        )
+        pattern = re.compile(rf"^parent_task:\s*['\"]?{re.escape(task_id)}['\"]?\s*$", re.MULTILINE)
         out: list[str] = []
         for card in sorted(self.tasks_dir.glob("*/task.yaml")):
             try:
@@ -279,9 +277,7 @@ class Kernel:
                 is_epic = self.is_epic(task_id)
                 if force:
                     if from_state == to_state:
-                        raise ValueError(
-                            f"Task '{task_id}' is already in state '{to_state}'"
-                        )
+                        raise ValueError(f"Task '{task_id}' is already in state '{to_state}'")
                     task.state = to_state
                     task.log_work(
                         f"Forced transition {from_state} → {to_state}: {reason}", actor=actor
@@ -314,7 +310,9 @@ class Kernel:
                 self._finish_record(event, task_id, actor, force, reason, outcomes)
             raise
 
-        ctx = self._ctx_factory(event, task, caller_cwd, self.is_epic(task_id), actor, force, reason)
+        ctx = self._ctx_factory(
+            event, task, caller_cwd, self.is_epic(task_id), actor, force, reason
+        )
         self._dispatcher.run_reactions(event, ctx, outcomes)
         record = self._finish_record(event, task_id, actor, force, reason, outcomes)
         return KernelResult(
@@ -346,7 +344,9 @@ class Kernel:
             ) from exc
         return task
 
-    def set_parent(self, task_id: str, parent_task: str, *, actor: str, caller_cwd: Path) -> KernelResult:
+    def set_parent(
+        self, task_id: str, parent_task: str, *, actor: str, caller_cwd: Path
+    ) -> KernelResult:
         """Reparent a task. Gaining a child epicifies the new parent — a
         first-class dispatcher event, not an FSM edge (HATS-977/979)."""
         if parent_task == task_id:

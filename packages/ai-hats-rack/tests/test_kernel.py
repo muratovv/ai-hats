@@ -86,8 +86,7 @@ def test_force_relaxes_arrow_and_logs_reason(tasks_dir, cwd):
     reloaded = kernel.get("T-1")
     assert reloaded.state == "review"
     assert any(
-        "Forced transition plan → review: skip for test" in e.message
-        for e in reloaded.work_log
+        "Forced transition plan → review: skip for test" in e.message for e in reloaded.work_log
     )
     assert result.journal[0].force is True
     assert result.journal[0].reason == "skip for test"
@@ -379,9 +378,7 @@ def test_resolution_and_final_state_ride_the_lock_window(tasks_dir, cwd):
     kernel = make_kernel(tasks_dir)
     _create(kernel, cwd)
     walk(kernel, "T-1", "plan", "execute", "document", cwd=cwd)
-    kernel.transition(
-        "T-1", "review", actor="test", caller_cwd=cwd, final_state="did the thing"
-    )
+    kernel.transition("T-1", "review", actor="test", caller_cwd=cwd, final_state="did the thing")
     assert kernel.get("T-1").final_state == "did the thing"
 
 
