@@ -82,11 +82,13 @@ class TaskTransition:
 @dataclass(frozen=True)
 class KernelResult:
     """Every mutating call returns the card, the typed list of transitions
-    that happened, and the dispatch journal."""
+    that happened, and the dispatch journal. ``ops`` carries the per-op result
+    dicts of a composite transition (revert-info included); empty otherwise."""
 
     task: TaskCard
     transitions: tuple[TaskTransition, ...] = ()
     journal: tuple[DispatchRecord, ...] = ()
+    ops: tuple[dict[str, Any], ...] = ()
 
 
 class Kernel:
