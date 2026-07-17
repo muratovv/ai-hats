@@ -1,23 +1,27 @@
 """``rack`` — minimal JSON-first CLI over the bare kernel (HATS-1020).
 
-Four verbs only (create/show/transition/log); doc and context verbs arrive
-with K2/K5. Root resolution is deliberately explicit (``--tasks-dir`` /
-``RACK_TASKS_DIR``) — the walk-up project resolver is K2's (HATS-197/839).
+Verbs: create/show/transition/log (K1), the ``doc`` group (K2), ``audit`` (K7). Root
+resolution defaults to the validated walk-up resolver (HATS-197/839, K2);
+``--tasks-dir`` / ``RACK_TASKS_DIR`` stay as the explicit override.
 """
 
 from __future__ import annotations
 
-import getpass
-import json
-import os
-import sys
 from pathlib import Path
 from typing import Any
 
 import click
 
 from .cli_audit import audit
+from .cli_common import JSON_OPT as _JSON_OPT
+from .cli_common import TASKS_DIR_OPT as _TASKS_DIR_OPT
+from .cli_common import actor as _actor
+from .cli_common import emit_json as _emit_json
+from .cli_common import fail as _fail
+from .cli_common import resolved_root as _resolved_root
+from .cli_doc import doc, echo_documents
 from .dispatch import OperationAborted
+from .docstore import DocStore
 from .fsm import InvalidTransitionError, UnknownStateError
 from .journal import JsonlJournalSink
 from .kernel import (
@@ -29,38 +33,13 @@ from .kernel import (
     UnknownTaskError,
 )
 from .models import TaskCard
-
-# Same env contract as the tracker (string value is the shared contract).
-ENV_SESSION_ID = "AI_HATS_SESSION_ID"
-ENV_TASKS_DIR = "RACK_TASKS_DIR"
+from .resolver import NoProjectRootError
 
 
-def _actor() -> str:
-    """Actor identity for the dispatch context: session > human fallback."""
-    session = os.environ.get(ENV_SESSION_ID, "")
-    if session:
-        return f"session:{session}"
-    try:
-        return f"human:{getpass.getuser()}"
-    except OSError:
-        return "human:unknown"
-
-
-def _kernel(tasks_dir: Path) -> Kernel:
+def _kernel(tasks_dir: Path | None, caller_cwd: Path) -> Kernel:
+    root = _resolved_root(tasks_dir, caller_cwd)
     # Every CLI-built kernel journals dispatches to tasks/<ID>/audit.jsonl (K7).
-    return Kernel(tasks_dir, journal_sink=JsonlJournalSink(tasks_dir))
-
-
-def _emit_json(payload: dict[str, Any]) -> None:
-    click.echo(json.dumps(payload, ensure_ascii=False, indent=2))
-
-
-def _fail(as_json: bool, code: str, message: str, **details: Any) -> None:
-    if as_json:
-        _emit_json({"error": {"code": code, "message": message, **details}})
-    else:
-        click.echo(f"error: {message}", err=True)
-    sys.exit(1)
+    return Kernel(root.tasks_dir, prefix=root.prefix, journal_sink=JsonlJournalSink(root.tasks_dir))
 
 
 def _result_payload(result: KernelResult) -> dict[str, Any]:
@@ -92,22 +71,13 @@ def _handle_kernel_error(exc: Exception, as_json: bool) -> None:
         _fail(as_json, "unknown_task", str(exc), task_id=exc.task_id)
     if isinstance(exc, TaskExistsError):
         _fail(as_json, "task_exists", str(exc), task_id=exc.task_id)
+    if isinstance(exc, NoProjectRootError):
+        _fail(as_json, "no_project_root", str(exc))
     if isinstance(exc, (ForceRequiresReasonError, ValueError)):
         _fail(as_json, "invalid_request", str(exc))
     if isinstance(exc, LockTimeoutError):
         _fail(as_json, "lock_timeout", str(exc))
     raise exc
-
-
-_TASKS_DIR_OPT = click.option(
-    "--tasks-dir",
-    envvar=ENV_TASKS_DIR,
-    default="tasks",
-    show_default=True,
-    type=click.Path(path_type=Path),
-    help="Directory holding <ID>/task.yaml card dirs.",
-)
-_JSON_OPT = click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
 
 
 @click.group()
@@ -140,14 +110,15 @@ def create(
     parent_task: str,
     depends_on: tuple[str, ...],
     tags: tuple[str, ...],
-    tasks_dir: Path,
+    tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
     """Create a task card (initial state comes from fsm.yaml)."""
+    caller_cwd = Path.cwd()
     try:
-        result = _kernel(tasks_dir).create(
+        result = _kernel(tasks_dir, caller_cwd).create(
             actor=_actor(),
-            caller_cwd=Path.cwd(),
+            caller_cwd=caller_cwd,
             task_id=task_id,
             title=title,
             description=description,
@@ -171,16 +142,24 @@ def create(
 @click.argument("task_id")
 @_TASKS_DIR_OPT
 @_JSON_OPT
-def show(task_id: str, tasks_dir: Path, as_json: bool) -> None:
-    """Show a task card."""
-    task = _kernel(tasks_dir).get(task_id)
-    if task is None:
-        _fail(as_json, "unknown_task", f"Task '{task_id}' not found", task_id=task_id)
+def show(task_id: str, tasks_dir: Path | None, as_json: bool) -> None:
+    """Show a task card + its documents (names and absolute paths, no content)."""
+    try:
+        root = _resolved_root(tasks_dir, Path.cwd())
+        task = Kernel(root.tasks_dir).get(task_id)
+        if task is None:
+            _fail(as_json, "unknown_task", f"Task '{task_id}' not found", task_id=task_id)
+            return
+        store = DocStore(root.tasks_dir)
+        docs = store.scan(task_id)
+    except Exception as exc:  # noqa: BLE001 — routed to typed handling
+        _handle_kernel_error(exc, as_json)
         return
     if as_json:
-        _emit_json({"task": task.to_dict()})
+        _emit_json({"task": task.to_dict(), "documents": [d.to_dict() for d in docs]})
     else:
         _echo_card(task)
+        echo_documents(store.card_dir(task_id), docs)
 
 
 def _echo_card(task: TaskCard) -> None:
@@ -210,16 +189,17 @@ def transition(
     reason: str,
     resolution: str | None,
     final_state: str | None,
-    tasks_dir: Path,
+    tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
     """Move a task along an FSM edge (refusals print the legal edges)."""
+    caller_cwd = Path.cwd()
     try:
-        result = _kernel(tasks_dir).transition(
+        result = _kernel(tasks_dir, caller_cwd).transition(
             task_id,
             to_state,
             actor=_actor(),
-            caller_cwd=Path.cwd(),
+            caller_cwd=caller_cwd,
             force=force,
             reason=reason,
             resolution=resolution,
@@ -240,10 +220,10 @@ def transition(
 @click.argument("message")
 @_TASKS_DIR_OPT
 @_JSON_OPT
-def log(task_id: str, message: str, tasks_dir: Path, as_json: bool) -> None:
+def log(task_id: str, message: str, tasks_dir: Path | None, as_json: bool) -> None:
     """Append a work_log entry to a task card."""
     try:
-        task = _kernel(tasks_dir).log_work(task_id, message, actor=_actor())
+        task = _kernel(tasks_dir, Path.cwd()).log_work(task_id, message, actor=_actor())
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
         _handle_kernel_error(exc, as_json)
         return
@@ -251,6 +231,9 @@ def log(task_id: str, message: str, tasks_dir: Path, as_json: bool) -> None:
         _emit_json({"task": task.to_dict()})
     else:
         click.echo(f"Logged: {task.id} — {message}")
+
+
+main.add_command(doc)
 
 
 if __name__ == "__main__":
