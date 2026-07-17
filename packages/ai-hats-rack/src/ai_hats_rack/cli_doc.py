@@ -1,7 +1,8 @@
-"""``rack doc`` — the three-verb doc-store surface: ls / freeze / rm (HATS-1021).
+"""``rack doc`` — the doc-store read surface: ls (HATS-1021).
 
 No ``put``/``cat``: files are written directly into ``tasks/<ID>/`` and read
-by path (rev4). ``verify`` is not a verb — every ls/show verifies pins.
+by path (rev4). ``verify`` is not a verb — every ls/show verifies pins. freeze
+and rm moved into ``rack transition --freeze/--rm`` (HATS-1030).
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from pathlib import Path
 
 import click
 
-from .cli_common import JSON_OPT, TASKS_DIR_OPT, actor, emit_json, fail, resolved_root
+from .cli_common import JSON_OPT, TASKS_DIR_OPT, emit_json, fail, resolved_root
 from .docstore import (
     DocInfo,
     DocStore,
@@ -130,63 +131,5 @@ def ls(task_id: str, tasks_dir: Path | None, as_json: bool) -> None:
         raise SystemExit(1)
 
 
-@doc.command()
-@click.argument("task_id")
-@click.argument("name")
-@click.option(
-    "--refreeze",
-    is_flag=True,
-    help="Accept changed content under an existing pin (re-pin the new digest).",
-)
-@TASKS_DIR_OPT
-@JSON_OPT
-def freeze(task_id: str, name: str, refreeze: bool, tasks_dir: Path | None, as_json: bool) -> None:
-    """Pin {name, digest, frozen} into task.yaml; later drift = error on ls/show."""
-    try:
-        root = resolved_root(tasks_dir, Path.cwd())
-        info = DocStore(root.tasks_dir).freeze(task_id, name, actor=actor(), refreeze=refreeze)
-    except Exception as exc:  # noqa: BLE001 — routed to typed handling
-        handle_doc_error(exc, as_json)
-        return
-    if as_json:
-        emit_json({"task_id": task_id, "document": info.to_dict()})
-    else:
-        click.echo(f"Frozen: {task_id}/{info.name} ({info.digest})")
-
-
-@doc.command()
-@click.argument("task_id")
-@click.argument("name")
-@click.option(
-    "--ack-frozen",
-    is_flag=True,
-    help="Confirm removing a FROZEN document together with its pin.",
-)
-@TASKS_DIR_OPT
-@JSON_OPT
-def rm(task_id: str, name: str, ack_frozen: bool, tasks_dir: Path | None, as_json: bool) -> None:
-    """Remove a document — moved to a tmp trash session, never hard-deleted."""
-    try:
-        root = resolved_root(tasks_dir, Path.cwd())
-        result = DocStore(root.tasks_dir).remove(
-            task_id, name, actor=actor(), ack_frozen=ack_frozen
-        )
-    except Exception as exc:  # noqa: BLE001 — routed to typed handling
-        handle_doc_error(exc, as_json)
-        return
-    if as_json:
-        emit_json(
-            {
-                "task_id": task_id,
-                "removed": {
-                    "name": result.name,
-                    "trashed_to": str(result.trashed_to) if result.trashed_to else None,
-                    "pin_removed": result.pin_removed,
-                },
-            }
-        )
-    else:
-        where = (
-            f" (recoverable: {result.trashed_to})" if result.trashed_to else " (no file on disk)"
-        )
-        click.echo(f"Removed: {task_id}/{result.name}{where}")
+# `doc freeze` / `doc rm` were absorbed into `rack transition --freeze/--rm`
+# (HATS-1030). The doc group keeps only the read verb `ls`.
