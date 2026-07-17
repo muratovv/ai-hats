@@ -33,6 +33,7 @@ from ai_hats_rack.extensions import (
     Section,
 )
 from ai_hats_rack.fsm import Topology
+from ai_hats_core import scrubbed_git_env
 from ai_hats_tracker import ownership
 from ai_hats_tracker.constants import ENV_ROOT_PID, ENV_SESSION_ID
 
@@ -346,6 +347,7 @@ class WorktreeExtension:
                 cwd=str(wt_path),
                 capture_output=True,
                 text=True,
+                env=scrubbed_git_env(),  # HATS-890: never inherit ambient GIT_DIR
                 timeout=30,
             )
         except (OSError, subprocess.SubprocessError):
