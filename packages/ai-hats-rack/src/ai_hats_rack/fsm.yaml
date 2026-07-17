@@ -1,0 +1,29 @@
+# SSOT of the rack FSM topology (HATS-1020, epic HATS-1014 §2).
+#
+# This file is the kernel CONTRACT, not user config: subscribers and consumer
+# hooks are written against these edges, so editing it changes the event
+# vocabulary for every consumer. Exact copy of the ai-hats-tracker topology
+# (models.py valid_transitions).
+initial: brainstorm
+states:
+  - brainstorm
+  - plan
+  - execute
+  - document # PROP-012: companion-HYP timing anchors here; must exist (fsm.py enforces)
+  - review
+  - done
+  - blocked # pause hub: reachable from every working state, returns into them
+  - failed
+  - cancelled # the only true dead end (administrative close)
+edges:
+  brainstorm: [plan, blocked, cancelled]
+  plan: [execute, blocked, cancelled]
+  # execute -> execute: reclaim self-loop (HATS-955); gated by ownership (K3), not the FSM.
+  execute: [execute, document, blocked, failed, cancelled]
+  document: [review, blocked, cancelled]
+  review: [done, failed, cancelled]
+  blocked: [brainstorm, plan, execute, document, cancelled]
+  failed: [brainstorm, cancelled]
+  # done -> execute: reopen for epic close-out / forgotten scope (HATS-328).
+  done: [execute]
+  cancelled: []
