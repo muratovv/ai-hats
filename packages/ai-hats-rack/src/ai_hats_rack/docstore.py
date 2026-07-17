@@ -125,6 +125,85 @@ def _mtime_iso(path: Path) -> str:
     return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _card_pins(card: TaskCard) -> list[dict[str, Any]]:
+    raw = card.extras.get(PINS_FIELD)
+    if not isinstance(raw, list):
+        return []
+    return [p for p in raw if isinstance(p, dict) and p.get("name")]
+
+
+def _frozen_info(name: str, path: Path, digest: str) -> DocInfo:
+    return DocInfo(
+        name=name,
+        path=path.absolute(),
+        mtime=_mtime_iso(path),
+        size=path.stat().st_size,
+        digest=digest,
+        frozen=True,
+        pinned_digest=digest,
+    )
+
+
+def freeze_on_card(
+    card: TaskCard, card_dir: Path, name: str, *, actor: str = "", refreeze: bool = False
+) -> tuple[DocInfo, bool]:
+    """Pin ``{name, digest, frozen}`` into an already-loaded card (lock-free core).
+
+    The caller owns the task lock and the single persist (composite transition or
+    ``DocStore.freeze``). Returns ``(info, changed)``; drift under a pin without
+    ``refreeze`` is the same typed refusal the verb raised.
+    """
+    _require_valid_name(name)
+    path = card_dir / name
+    if not path.is_file():
+        raise UnknownDocumentError(card.id, name)
+    digest = compute_digest(path)
+    pins = _card_pins(card)
+    entry = next((p for p in pins if p["name"] == name), None)
+    if entry is not None:
+        pinned = str(entry.get("digest", ""))
+        if pinned == digest:
+            return _frozen_info(name, path, digest), False
+        if not refreeze:
+            raise FrozenPinDriftError(card.id, name, pinned, digest)
+        entry["digest"] = digest
+        card.log_work(f"Re-froze document {name} ({pinned} → {digest})", actor=actor)
+    else:
+        pins.append({"name": name, "digest": digest, "frozen": True})
+        card.log_work(f"Froze document {name} ({digest})", actor=actor)
+    card.extras[PINS_FIELD] = pins
+    return _frozen_info(name, path, digest), True
+
+
+def remove_on_card(
+    card: TaskCard, card_dir: Path, name: str, *, actor: str = "", ack_frozen: bool = False
+) -> tuple[RemoveResult, bool]:
+    """Trash a document + drop its pin on an already-loaded card (lock-free core).
+
+    Delete-policy (HATS-470): the file moves to a trash session, never vanishes;
+    a frozen pin additionally demands ``ack_frozen`` (PROP-035 tiered hatch).
+    """
+    _require_valid_name(name)
+    path = card_dir / name
+    pins = _card_pins(card)
+    entry = next((p for p in pins if p["name"] == name), None)
+    if entry is not None and not ack_frozen:
+        raise FrozenDocumentError(card.id, name)
+    if entry is None and not path.is_file():
+        raise UnknownDocumentError(card.id, name)
+    trashed_to = _trash(path, card.id, name) if path.is_file() else None
+    if entry is not None:
+        pins.remove(entry)
+        if pins:
+            card.extras[PINS_FIELD] = pins
+        else:  # keep pinless cards byte-clean: no empty documents: []
+            card.extras.pop(PINS_FIELD, None)
+    where = f" (recoverable: {trashed_to})" if trashed_to else " (no file on disk)"
+    frozen_note = "frozen " if entry is not None else ""
+    card.log_work(f"Removed {frozen_note}document {name}{where}", actor=actor)
+    return RemoveResult(name, trashed_to, pin_removed=entry is not None), True
+
+
 def _is_document(rel_parts: tuple[str, ...]) -> bool:
     if any(part.startswith(".") for part in rel_parts):
         return False
@@ -210,10 +289,7 @@ class DocStore:
 
     @staticmethod
     def _pins(card: TaskCard) -> list[dict[str, Any]]:
-        raw = card.extras.get(PINS_FIELD)
-        if not isinstance(raw, list):
-            return []
-        return [p for p in raw if isinstance(p, dict) and p.get("name")]
+        return _card_pins(card)
 
     # ----- pin mutations (the only task.yaml writes K2 owns) -----------------
 
@@ -222,72 +298,29 @@ class DocStore:
     ) -> DocInfo:
         """Pin ``{name, digest, frozen}`` into task.yaml (atomic, task-locked).
 
-        Idempotent on an unchanged file; re-freezing changed content demands
-        ``refreeze`` — evidence must not drift silently under its pin.
+        Thin lock wrapper over :func:`freeze_on_card` (the composite transition
+        reuses the same lock-free core under its own single lock).
         """
-        _require_valid_name(name)
-
-        def op(card: TaskCard) -> tuple[DocInfo, bool]:
-            path = self.card_dir(task_id) / name
-            if not path.is_file():
-                raise UnknownDocumentError(task_id, name)
-            digest = compute_digest(path)
-            pins = self._pins(card)
-            entry = next((p for p in pins if p["name"] == name), None)
-            if entry is not None:
-                pinned = str(entry.get("digest", ""))
-                if pinned == digest:
-                    return self._info(task_id, name, path, digest), False
-                if not refreeze:
-                    raise FrozenPinDriftError(task_id, name, pinned, digest)
-                entry["digest"] = digest
-                card.log_work(f"Re-froze document {name} ({pinned} → {digest})", actor=actor)
-            else:
-                pins.append({"name": name, "digest": digest, "frozen": True})
-                card.log_work(f"Froze document {name} ({digest})", actor=actor)
-            card.extras[PINS_FIELD] = pins
-            return self._info(task_id, name, path, digest), True
-
-        return self._locked_card_op(task_id, op)
+        return self._locked_card_op(
+            task_id,
+            lambda card: freeze_on_card(
+                card, self.card_dir(task_id), name, actor=actor, refreeze=refreeze
+            ),
+        )
 
     def remove(
         self, task_id: str, name: str, *, actor: str = "", ack_frozen: bool = False
     ) -> RemoveResult:
         """Delete-policy: the file moves to a trash session (HATS-470 pattern),
-        never vanishes; a frozen pin additionally demands ``ack_frozen``."""
-        _require_valid_name(name)
+        never vanishes; a frozen pin additionally demands ``ack_frozen``.
 
-        def op(card: TaskCard) -> tuple[RemoveResult, bool]:
-            path = self.card_dir(task_id) / name
-            pins = self._pins(card)
-            entry = next((p for p in pins if p["name"] == name), None)
-            if entry is not None and not ack_frozen:
-                raise FrozenDocumentError(task_id, name)
-            if entry is None and not path.is_file():
-                raise UnknownDocumentError(task_id, name)
-            trashed_to = _trash(path, task_id, name) if path.is_file() else None
-            if entry is not None:
-                pins.remove(entry)
-                if pins:
-                    card.extras[PINS_FIELD] = pins
-                else:  # keep pinless cards byte-clean: no empty documents: []
-                    card.extras.pop(PINS_FIELD, None)
-            where = f" (recoverable: {trashed_to})" if trashed_to else " (no file on disk)"
-            frozen_note = "frozen " if entry is not None else ""
-            card.log_work(f"Removed {frozen_note}document {name}{where}", actor=actor)
-            return RemoveResult(name, trashed_to, pin_removed=entry is not None), True
-
-        return self._locked_card_op(task_id, op)
-
-    def _info(self, task_id: str, name: str, path: Path, digest: str) -> DocInfo:
-        return DocInfo(
-            name=name,
-            path=path.absolute(),
-            mtime=_mtime_iso(path),
-            size=path.stat().st_size,
-            digest=digest,
-            frozen=True,
-            pinned_digest=digest,
+        Thin lock wrapper over :func:`remove_on_card` (shared with the composite).
+        """
+        return self._locked_card_op(
+            task_id,
+            lambda card: remove_on_card(
+                card, self.card_dir(task_id), name, actor=actor, ack_frozen=ack_frozen
+            ),
         )
 
     def _locked_card_op(self, task_id: str, op):
