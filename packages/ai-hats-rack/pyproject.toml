@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-hats-rack"
+version = "0.1.0"
+description = "Minimal backlog kernel for ai-hats (epic HATS-1014): fsm.yaml topology, two-phase subscriber dispatcher, single-persist transitions, dispatch journal."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "muratovv", email = "f@muratovv.me" }, # ai-hats: allow-secret
+]
+keywords = ["backlog", "task", "state-machine", "kernel", "ai-hats"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+# Kernel stays first-party-free (import-hygiene pin, tests/test_import_hygiene.py):
+# no ai-hats-core, no tracker, no wt — the rack is built and compared standalone.
+dependencies = [
+    "click>=8.1",
+    "filelock>=3.12",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+rack = "ai_hats_rack.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/muratovv/ai-hats"
+Repository = "https://github.com/muratovv/ai-hats"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_hats_rack"]
