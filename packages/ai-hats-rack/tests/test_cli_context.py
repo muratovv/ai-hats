@@ -176,23 +176,31 @@ def test_context_json_schema(runner, tmp_path):
     result = runner.invoke(main, ["context", "HATS-2", *_args(tmp_path), "--json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert set(payload) == {
-        "task",
-        "documents",
-        "parent",
-        "depends_on",
-        "related",
-        "children",
-        "included",
-    }
+    # HATS-1028: one top-level `links` object, not scattered parent/depends/...
+    assert set(payload) == {"task", "documents", "links", "included"}
     assert payload["task"]["id"] == "HATS-2"
-    assert payload["parent"]["docs"][0]["name"] == "plan.md"
-    assert Path(payload["parent"]["docs"][0]["path"]).is_absolute()
-    assert payload["parent"]["docs"][0]["mtime"].endswith("Z")
-    (dep,) = payload["depends_on"]
-    assert dep["resolution"] == "merged"
-    assert payload["children"][0]["id"] == "HATS-5"
+    links = payload["links"]
+    assert list(links) == ["parent", "depends_on", "related", "children"]
+    parent = links["parent"][0]
+    assert parent["docs"][0]["name"] == "plan.md"
+    assert Path(parent["docs"][0]["path"]).is_absolute()
+    assert parent["docs"][0]["mtime"].endswith("Z")
+    assert links["depends_on"][0]["resolution"] == "merged"
+    assert links["children"][0]["id"] == "HATS-5"
     assert payload["included"] == []
+
+
+def test_show_json_carries_top_level_links(runner, tmp_path):
+    _family(tmp_path)
+    result = runner.invoke(main, ["show", "HATS-2", *_args(tmp_path), "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["links"] == {
+        "parent": ["HATS-1"],
+        "depends_on": ["HATS-3"],
+        "related": ["HATS-4"],
+        "children": ["HATS-5"],
+    }
 
 
 def test_context_with_embeds_and_marks_truncation(runner, tmp_path):

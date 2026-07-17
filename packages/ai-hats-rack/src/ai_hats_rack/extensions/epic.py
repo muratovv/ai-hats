@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Sequence
 from ..dispatch import Delta, DispatchContext, Phase, Subscription
 from ..events import EdgeEvent, EpicifyEvent
 from ..fsm import Topology, load_topology
+from ..registry import LinksRegistry, load_registry
 
 if TYPE_CHECKING:
     from ..kernel import Kernel
@@ -67,8 +68,17 @@ class EpicAutomationExtension:
 
     name = "epic-automation"
 
-    def __init__(self, *, topology: Topology | None = None, priority: int = 30) -> None:
+    def __init__(
+        self,
+        *,
+        topology: Topology | None = None,
+        registry: LinksRegistry | None = None,
+        priority: int = 30,
+    ) -> None:
         self._topology = topology if topology is not None else load_topology()
+        # The parent edge is read via the configured hierarchy kind, not a
+        # hardcoded `parent_task` — the binding point of epic semantics (HATS-1028).
+        self._registry = registry if registry is not None else load_registry()
         self._priority = priority
         self._kernel: Kernel | None = None
 
@@ -98,7 +108,7 @@ class EpicAutomationExtension:
             epic_id = ctx.event.epic_id
             child = kernel.get(ctx.event.child_id)
         elif isinstance(ctx.event, EdgeEvent):
-            epic_id = ctx.task.parent_task
+            epic_id = self._registry.parent_of(ctx.task)
             child = ctx.task
         else:
             return None

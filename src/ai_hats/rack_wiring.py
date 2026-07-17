@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Sequence
 
 from ai_hats_rack import Kernel, load_topology
+from ai_hats_rack.registry import LinksRegistry, load_registry_for
 from ai_hats_rack.dispatch import (
     AbortOperation,
     Delta,
@@ -365,6 +366,7 @@ def build_rack_kernel(
     worktree_effects: WtWorktreeEffects | None = None,
     journal_sink: JournalSink | None = None,
     lock_timeout: float | None = None,
+    links_registry: LinksRegistry | None = None,
     extra_subscribers: Sequence = (),
 ) -> Kernel:
     """Assemble the integrator kernel: K1 core + every K3 stock extension
@@ -385,9 +387,13 @@ def build_rack_kernel(
         sections = consumer_plan_sections(project_dir)
 
     topology = load_topology()
+    # The links registry names the hierarchy (parent) kind is_epic/epic-automation
+    # bind to — packaged default unless the backlog ships a project-root override.
+    if links_registry is None:
+        links_registry = load_registry_for(project_dir)
     registry = tasks_dir.parent / "ownership.json"
     worktree = WorktreeExtension(project_dir, effects=worktree_effects, topology=topology)
-    automation = EpicAutomationExtension(topology=topology)
+    automation = EpicAutomationExtension(topology=topology, registry=links_registry)
     subscribers = [
         OwnershipSingleSlot(registry, topology=topology),
         PlanGateExtension(tasks_dir, sections, topology=topology),
@@ -406,6 +412,7 @@ def build_rack_kernel(
         tasks_dir,
         prefix=prefix,
         topology=topology,
+        registry=links_registry,
         subscribers=subscribers,
         journal_sink=journal_sink,
         **kwargs,
