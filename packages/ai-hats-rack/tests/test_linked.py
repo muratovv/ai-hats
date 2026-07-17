@@ -1,19 +1,19 @@
-"""linked.py: link/unlink transactions, tree, ls scan, context package (HATS-1024)."""
+"""linked.py: link/unlink transactions, neighbourhood walk, ls scan, context
+package (HATS-1024; read surface v2 HATS-1029)."""
 
 from __future__ import annotations
 
 import pytest
 
-from ai_hats_rack.docstore import UnknownDocumentError
 from ai_hats_rack.kernel import UnknownTaskError
 from ai_hats_rack.linked import (
     SelfLinkError,
-    UnknownSelectorError,
     build_context,
-    build_tree,
+    card_filter,
     link,
     scan_cards,
     unlink,
+    walk_neighborhood,
 )
 from ai_hats_rack.models import TaskCard
 from ai_hats_rack.registry import DerivedLinkKindError, UnknownLinkKindError, load_registry
@@ -193,40 +193,81 @@ def test_unlink_dangling_target_is_removable(tasks_dir):
     assert load(tasks_dir, "T-1").depends_on == []
 
 
-# ----- tree -------------------------------------------------------------------
+# ----- neighbourhood walk -----------------------------------------------------
 
 
-def test_tree_two_levels(tasks_dir):
+def _graph(tasks_dir):
+    """Epic T-1 ⇄ task T-2 (parent) ; T-2 depends_on T-3, related T-4 ; kid T-5."""
     make_card(tasks_dir, "T-1", title="epic", state="execute", priority="high")
-    make_card(tasks_dir, "T-2", title="child a", parent_task="T-1", state="done")
-    make_card(tasks_dir, "T-3", title="child b", parent_task="T-1")
-    make_card(tasks_dir, "T-4", title="grandchild", parent_task="T-2", state="plan")
-    tree = build_tree(tasks_dir, "T-1")
-    assert (tree.id, tree.state, tree.priority, tree.title) == ("T-1", "execute", "high", "epic")
-    assert [c.id for c in tree.children] == ["T-2", "T-3"]
-    assert [g.id for g in tree.children[0].children] == ["T-4"]
-    assert tree.children[0].children[0].state == "plan"
+    make_card(tasks_dir, "T-2", title="task", state="plan", parent_task="T-1",
+              depends_on=["T-3"], related=["T-4"])
+    make_card(tasks_dir, "T-3", title="dep", state="done")
+    make_card(tasks_dir, "T-4", title="rel", state="execute")
+    make_card(tasks_dir, "T-5", title="kid", state="plan", parent_task="T-2")
 
 
-def test_tree_orders_children_numerically(tasks_dir):
-    make_card(tasks_dir, "T-1")
-    make_card(tasks_dir, "T-999", parent_task="T-1")
-    make_card(tasks_dir, "T-1020", parent_task="T-1")
-    tree = build_tree(tasks_dir, "T-1")
-    assert [c.id for c in tree.children] == ["T-999", "T-1020"]
+def test_walk_depth_one_lists_edges_with_direction(tasks_dir):
+    _graph(tasks_dir)
+    rows = walk_neighborhood(tasks_dir, "T-2", depth=1)
+    seen = {(n.id, n.kind, n.direction, n.depth) for n in rows}
+    assert seen == {
+        ("T-1", "parent", "out", 1),
+        ("T-3", "depends_on", "out", 1),
+        ("T-4", "related", "both", 1),
+        ("T-5", "children", "in", 1),
+    }
+    assert all(n.path == ("T-2", n.id) for n in rows)
 
 
-def test_tree_cycle_is_shown_once(tasks_dir):
-    make_card(tasks_dir, "T-1", parent_task="T-2")
-    make_card(tasks_dir, "T-2", parent_task="T-1")
-    tree = build_tree(tasks_dir, "T-1")
-    assert [c.id for c in tree.children] == ["T-2"]
-    assert tree.children[0].children == ()
+def test_walk_depth_two_reaches_grandchildren(tasks_dir):
+    _graph(tasks_dir)
+    rows = walk_neighborhood(tasks_dir, "T-1", depth=2, link_pattern="parent|children")
+    # T-1 → T-2 (child, d1) → T-5 (grandchild, d2); the back-edge to T-1 is NOT re-crossed
+    assert [(n.id, n.depth) for n in rows] == [("T-2", 1), ("T-5", 2)]
+    t5 = rows[-1]
+    assert t5.path == ("T-1", "T-2", "T-5") and t5.kind == "children"
 
 
-def test_tree_unknown_root_is_typed(tasks_dir):
+def test_walk_never_crosses_one_edge_twice(tasks_dir):
+    # parent↔children is ONE undirected edge: from the epic we reach the child,
+    # and the child's parent edge back to the epic is deduped (never re-listed).
+    _graph(tasks_dir)
+    rows = walk_neighborhood(tasks_dir, "T-1", depth=3, link_pattern="parent|children")
+    assert "T-1" not in {n.id for n in rows}  # the root is never re-emitted
+
+
+def test_walk_related_cycle_terminates(tasks_dir):
+    make_card(tasks_dir, "T-1", title="a", related=["T-2"])
+    make_card(tasks_dir, "T-2", title="b", related=["T-1"])
+    rows = walk_neighborhood(tasks_dir, "T-1", depth=5)
+    # symmetric related A↔B is one edge — T-2 shows once, and it does not loop back
+    assert [n.id for n in rows] == ["T-2"]
+
+
+def test_walk_link_pattern_filters_traversed_kinds(tasks_dir):
+    _graph(tasks_dir)
+    rows = walk_neighborhood(tasks_dir, "T-2", depth=1, link_pattern="depends_on|related")
+    assert {n.id for n in rows} == {"T-3", "T-4"}
+
+
+def test_walk_row_filter_prunes_output_but_not_traversal(tasks_dir):
+    # T-5 (plan) is reachable only THROUGH T-2 (plan). Filtering to state=plan
+    # still traverses T-2 to surface T-5; T-1/T-3/T-4 (other states) drop out.
+    _graph(tasks_dir)
+    rows = walk_neighborhood(
+        tasks_dir, "T-1", depth=2, row_filter=card_filter(state="plan")
+    )
+    assert {n.id for n in rows} == {"T-2", "T-5"}
+
+
+def test_walk_dangling_edge_is_skipped(tasks_dir):
+    make_card(tasks_dir, "T-1", depends_on=["T-GONE"])
+    assert walk_neighborhood(tasks_dir, "T-1", depth=1) == []
+
+
+def test_walk_unknown_root_is_typed(tasks_dir):
     with pytest.raises(UnknownTaskError):
-        build_tree(tasks_dir, "T-404")
+        walk_neighborhood(tasks_dir, "T-404")
 
 
 # ----- ls scan ------------------------------------------------------------------
@@ -354,61 +395,62 @@ def test_context_unknown_task_is_typed(tasks_dir):
 # ----- --with inclusions ----------------------------------------------------------
 
 
-def test_with_plan_embeds_own_plan(tasks_dir):
+def test_with_pattern_embeds_own_doc(tasks_dir):
     _family(tasks_dir)
     (tasks_dir / "T-2" / "plan.md").write_text("my plan body")
-    pkg = build_context(tasks_dir, "T-2", selectors=["plan"])
-    (inc,) = pkg.included
-    assert (inc.task_id, inc.name) == ("T-2", "plan.md")
-    assert inc.content == "my plan body" and not inc.truncated
+    pkg = build_context(tasks_dir, "T-2", with_pattern="plan*")
+    own = next(i for i in pkg.included if i.task_id == "T-2")
+    assert own.name == "plan.md" and own.content == "my plan body" and not own.truncated
 
 
-def test_with_plan_missing_is_graceful(tasks_dir):
+def test_with_no_pattern_embeds_nothing(tasks_dir):
     _family(tasks_dir)
-    pkg = build_context(tasks_dir, "T-2", selectors=["plan"])
-    assert pkg.included == ()
+    (tasks_dir / "T-2" / "plan.md").write_text("body")
+    assert build_context(tasks_dir, "T-2").included == ()
 
 
-def test_with_summary_embeds_own_and_linked(tasks_dir):
+def test_with_pattern_matches_own_and_linked_docs(tasks_dir):
+    # `plan*|summary*` spans the task's own docs AND the linked-task docs context
+    # already lists: own plan.md + parent T-1 plan.md + dep T-3 summary.md.
     _family(tasks_dir)
-    (tasks_dir / "T-2" / "summary.md").write_text("own summary")
-    pkg = build_context(tasks_dir, "T-2", selectors=["summary"])
-    assert [(i.task_id, i.name) for i in pkg.included] == [
-        ("T-2", "summary.md"),
-        ("T-3", "summary.md"),
-    ]
-    assert pkg.included[1].content == "dep summary body"
+    (tasks_dir / "T-2" / "plan.md").write_text("own plan")
+    pkg = build_context(tasks_dir, "T-2", with_pattern="plan*|summary*")
+    got = {(i.task_id, i.name) for i in pkg.included}
+    assert got == {("T-2", "plan.md"), ("T-1", "plan.md"), ("T-3", "summary.md")}
 
 
-def test_with_doc_selector_embeds_named_doc(tasks_dir):
+def test_with_pattern_no_match_is_graceful(tasks_dir):
     _family(tasks_dir)
-    pkg = build_context(tasks_dir, "T-2", selectors=["doc:notes.md"])
+    assert build_context(tasks_dir, "T-2", with_pattern="ghost*").included == ()
+
+
+def test_with_pattern_matches_arbitrary_named_doc(tasks_dir):
+    _family(tasks_dir)
+    pkg = build_context(tasks_dir, "T-2", with_pattern="notes.md")
     (inc,) = pkg.included
     assert inc.name == "notes.md" and inc.content == "notes"
-
-
-def test_with_doc_unknown_name_is_typed(tasks_dir):
-    _family(tasks_dir)
-    with pytest.raises(UnknownDocumentError):
-        build_context(tasks_dir, "T-2", selectors=["doc:ghost.md"])
-
-
-def test_with_unknown_selector_is_typed(tasks_dir):
-    _family(tasks_dir)
-    with pytest.raises(UnknownSelectorError):
-        build_context(tasks_dir, "T-2", selectors=["everything"])
 
 
 def test_with_truncates_at_max_bytes_and_flags(tasks_dir):
     _family(tasks_dir)
     (tasks_dir / "T-2" / "plan.md").write_text("x" * 500)
-    pkg = build_context(tasks_dir, "T-2", selectors=["plan"], max_bytes=100)
-    (inc,) = pkg.included
-    assert inc.truncated and inc.size == 500 and len(inc.content) == 100
+    pkg = build_context(tasks_dir, "T-2", with_pattern="plan*", max_bytes=100)
+    own = next(i for i in pkg.included if i.task_id == "T-2")
+    assert own.truncated and own.size == 500 and len(own.content) == 100
 
 
-def test_with_duplicate_selectors_embed_once(tasks_dir):
+def test_with_star_embeds_each_doc_once(tasks_dir):
+    # `*` spans own (notes.md, plan.md) + parent (T-1 plan.md) + dep (T-3
+    # summary.md, retro.md); every (owner, name) is embedded exactly once.
     _family(tasks_dir)
     (tasks_dir / "T-2" / "plan.md").write_text("p")
-    pkg = build_context(tasks_dir, "T-2", selectors=["plan", "plan", "doc:plan.md"])
-    assert len(pkg.included) == 1
+    pkg = build_context(tasks_dir, "T-2", with_pattern="*")
+    keys = [(i.task_id, i.name) for i in pkg.included]
+    assert len(keys) == len(set(keys))
+    assert set(keys) == {
+        ("T-2", "notes.md"),
+        ("T-2", "plan.md"),
+        ("T-1", "plan.md"),
+        ("T-3", "summary.md"),
+        ("T-3", "retro.md"),
+    }
