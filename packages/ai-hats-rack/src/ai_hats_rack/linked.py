@@ -12,6 +12,7 @@ any configured kind, and reads project onto one ``links`` map (HATS-1028).
 from __future__ import annotations
 
 import re
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,8 +20,9 @@ from typing import Any, Callable, Mapping, Sequence
 
 from filelock import FileLock, Timeout
 
-from .docstore import DocInfo, DocStore, UnknownDocumentError
+from .docstore import DocInfo, DocStore
 from .kernel import LOCK_TIMEOUT, Kernel, LockTimeoutError, UnknownTaskError
+from .matching import Matcher, compile_matcher
 from .models import TaskCard, utc_now
 from .registry import (
     DerivedLinkKindError,
@@ -42,12 +44,6 @@ class SelfLinkError(Exception):
     def __init__(self, task_id: str) -> None:
         self.task_id = task_id
         super().__init__(f"Task '{task_id}' cannot link to itself")
-
-
-class UnknownSelectorError(Exception):
-    def __init__(self, selector: str) -> None:
-        self.selector = selector
-        super().__init__(f"Unknown --with selector {selector!r}: pass plan, summary, or doc:<name>")
 
 
 # ----- link mutations (task-locked, single persist) ---------------------------
@@ -197,7 +193,7 @@ def _locked_card_op(
     return result
 
 
-# ----- read side: tree / ls rows / context package ----------------------------
+# ----- read side: neighbourhood walk / ls rows / context package --------------
 
 
 def _id_key(task_id: str) -> tuple[str, int]:
@@ -222,44 +218,136 @@ def _load_card(tasks_dir: Path, task_id: str) -> TaskCard | None:
         return None
 
 
+def _direction(kind: LinkKind) -> str:
+    """How the edge points from the node it was resolved on: ``both`` symmetric,
+    ``in`` for a derived reverse (the target links back), else ``out``."""
+    if kind.symmetric:
+        return "both"
+    if kind.derived:
+        return "in"
+    return "out"
+
+
+def _edge_key(src: str, dst: str, kind: LinkKind) -> tuple[frozenset[str], frozenset[str]]:
+    """Undirected edge identity unifying an inverse pair (parent↔children) and a
+    symmetric kind (related↔related) — so the walk never re-crosses one edge."""
+    return (frozenset({src, dst}), frozenset({kind.name, kind.inverse or kind.name}))
+
+
 @dataclass(frozen=True)
-class TreeNode:
+class Neighbor:
+    """One discovered edge: the target card head, the edge kind + direction, the
+    BFS depth, and the id chain from the root (root-exclusive first element)."""
+
     id: str
+    kind: str
+    direction: str
+    depth: int
+    path: tuple[str, ...]
     state: str
     priority: str
     title: str
-    children: tuple[TreeNode, ...]
+    parent_task: str
+    tags: tuple[str, ...]
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
+            "kind": self.kind,
+            "direction": self.direction,
+            "depth": self.depth,
+            "path": list(self.path),
             "state": self.state,
             "priority": self.priority,
             "title": self.title,
-            "children": [c.to_dict() for c in self.children],
+            "parent_task": self.parent_task,
+            "tags": list(self.tags),
         }
 
 
-def build_tree(tasks_dir: Path, task_id: str) -> TreeNode:
-    """Recursive children tree; a parent_task cycle is shown once, never looped."""
-    kernel = Kernel(tasks_dir)
-    root = kernel.get(task_id)
-    if root is None:
-        raise UnknownTaskError(task_id)
-    seen = {task_id}
+def _edges_of(kernel: Kernel, registry: LinksRegistry, card: TaskCard) -> list[tuple[LinkKind, str]]:
+    """Every outgoing edge of a card as ``(kind, target_id)`` in registry order,
+    derived children filled from the kernel reverse scan."""
+    derived: dict[str, list[str]] = {}
+    children_kind = registry.children_kind
+    if children_kind is not None:
+        derived[children_kind.name] = kernel.children_of(card.id)
+    resolved = resolve_links(registry, card, derived=derived)
+    edges: list[tuple[LinkKind, str]] = []
+    for kind_name, ids in resolved.items():
+        kind = registry.get(kind_name)
+        if kind is None:
+            continue
+        edges.extend((kind, tid) for tid in ids)
+    return edges
 
-    def node(card: TaskCard) -> TreeNode:
-        kids: list[TreeNode] = []
-        for cid in sorted(kernel.children_of(card.id), key=_id_key):
-            if cid in seen:
+
+def walk_neighborhood(
+    tasks_dir: Path,
+    root_id: str,
+    *,
+    registry: LinksRegistry | None = None,
+    depth: int = 1,
+    link_pattern: str | None = None,
+    row_filter: Callable[[TaskCard], bool] | None = None,
+) -> list[Neighbor]:
+    """BFS the links graph out to ``depth`` edges from ``root_id`` (HATS-1029).
+
+    The visited-set is keyed by EDGE, not node: each relationship is crossed
+    once, so symmetric ``related`` cycles and inverse ``parent``/``children``
+    pairs terminate. ``link_pattern`` (shared matcher) filters which edge KINDS
+    are followed; ``row_filter`` filters which discovered cards are RETURNED — a
+    non-matching node is still traversed THROUGH to reach matches deeper. Rows
+    come out in BFS order, each carrying edge kind, direction, depth, and chain.
+    """
+    reg = registry if registry is not None else load_registry()
+    if _load_card(tasks_dir, root_id) is None:
+        raise UnknownTaskError(root_id)
+    kernel = Kernel(tasks_dir, registry=reg)
+    follow: Matcher | None = compile_matcher(link_pattern) if link_pattern else None
+
+    visited_edges: set[tuple[frozenset[str], frozenset[str]]] = set()
+    enqueued = {root_id}
+    queue: deque[tuple[str, int, tuple[str, ...]]] = deque([(root_id, 0, (root_id,))])
+    out: list[Neighbor] = []
+    while queue:
+        node_id, node_depth, node_path = queue.popleft()
+        if node_depth >= depth:
+            continue
+        card = _load_card(tasks_dir, node_id)
+        if card is None:
+            continue
+        for kind, target in _edges_of(kernel, reg, card):
+            if follow is not None and not follow(kind.name):
                 continue
-            seen.add(cid)
-            child = _load_card(tasks_dir, cid)
-            if child is not None:
-                kids.append(node(child))
-        return TreeNode(card.id, card.state, card.priority, card.title, tuple(kids))
-
-    return node(root)
+            key = _edge_key(node_id, target, kind)
+            if key in visited_edges:
+                continue
+            visited_edges.add(key)
+            tcard = _load_card(tasks_dir, target)
+            if tcard is None:  # dangling link: edge consumed, nothing to show
+                continue
+            child_depth = node_depth + 1
+            child_path = (*node_path, target)
+            if row_filter is None or row_filter(tcard):
+                out.append(
+                    Neighbor(
+                        id=target,
+                        kind=kind.name,
+                        direction=_direction(kind),
+                        depth=child_depth,
+                        path=child_path,
+                        state=tcard.state,
+                        priority=tcard.priority,
+                        title=tcard.title,
+                        parent_task=tcard.parent_task,
+                        tags=tuple(tcard.tags),
+                    )
+                )
+            if child_depth < depth and target not in enqueued:
+                enqueued.add(target)
+                queue.append((target, child_depth, child_path))
+    return out
 
 
 @dataclass(frozen=True)
@@ -284,6 +372,31 @@ class CardRow:
         }
 
 
+def card_filter(
+    *,
+    grep: str | None = None,
+    tag: str | None = None,
+    state: str | None = None,
+    parent: str | None = None,
+) -> Callable[[TaskCard], bool]:
+    """The shared AND-combined card predicate — one home for the ls filters, used
+    by both the backlog scan and the neighbourhood walk (HATS-1029)."""
+    needle = grep.lower() if grep else None
+
+    def matches(card: TaskCard) -> bool:
+        if state and card.state != state:
+            return False
+        if parent and card.parent_task != parent:
+            return False
+        if tag and tag not in card.tags:
+            return False
+        if needle and needle not in f"{card.title}\n{card.description}".lower():
+            return False
+        return True
+
+    return matches
+
+
 def scan_cards(
     tasks_dir: Path,
     *,
@@ -296,19 +409,13 @@ def scan_cards(
     rows: list[CardRow] = []
     if not tasks_dir.is_dir():
         return rows
-    needle = grep.lower() if grep else None
+    predicate = card_filter(grep=grep, tag=tag, state=state, parent=parent)
     for card_path in sorted(tasks_dir.glob("*/task.yaml"), key=lambda p: _id_key(p.parent.name)):
         try:
             card = TaskCard.from_yaml(card_path)
         except Exception:  # noqa: BLE001, S112 — one corrupt card must not kill the listing
             continue
-        if state and card.state != state:
-            continue
-        if parent and card.parent_task != parent:
-            continue
-        if tag and tag not in card.tags:
-            continue
-        if needle and needle not in f"{card.title}\n{card.description}".lower():
+        if not predicate(card):
             continue
         rows.append(
             CardRow(
@@ -428,7 +535,7 @@ def build_context(
     task_id: str,
     *,
     registry: LinksRegistry | None = None,
-    selectors: Sequence[str] = (),
+    with_pattern: str | None = None,
     max_bytes: int = DEFAULT_MAX_BYTES,
 ) -> ContextPackage:
     """Assemble the one-call discovery package for a task.
@@ -471,7 +578,7 @@ def build_context(
             links[kind_name] = tuple(views)
 
     flat_views = tuple(v for views in links.values() for v in views)
-    included = _build_inclusions(tasks_dir, card, documents, flat_views, selectors, max_bytes)
+    included = _build_inclusions(card, documents, flat_views, with_pattern, max_bytes)
     return ContextPackage(card, documents, links, included)
 
 
@@ -492,22 +599,29 @@ def _link_view(
 
 
 def _build_inclusions(
-    tasks_dir: Path,
     card: TaskCard,
     documents: Sequence[DocInfo],
     link_views: Sequence[LinkView],
-    selectors: Sequence[str],
+    with_pattern: str | None,
     max_bytes: int,
 ) -> tuple[Inclusion, ...]:
-    """Resolve ``--with`` selectors. ``plan``/``summary`` skip missing files
-    (conventional names may legitimately not exist yet); an explicit
-    ``doc:<name>`` that resolves to nothing is a loud typed error."""
+    """Embed every document whose NAME matches ``with_pattern`` (shared matcher),
+    across the task's own docs AND the linked-task docs context already lists as
+    paths (HATS-1029 §3). No pattern → nothing embedded; a match that no longer
+    exists on disk is skipped, not an error (the selector grammar is gone). Each
+    embed is capped at ``max_bytes`` with a marked, path-carrying truncation."""
+    if not with_pattern:
+        return ()
+    matcher = compile_matcher(with_pattern)
+    candidates: list[tuple[str, str, Path]] = [(card.id, d.name, d.path) for d in documents]
+    for view in link_views:
+        candidates.extend((view.id, ref.name, ref.path) for ref in view.docs)
+
     out: list[Inclusion] = []
     seen: set[tuple[str, str]] = set()
-
-    def add(owner: str, name: str, path: Path) -> None:
-        if (owner, name) in seen or not path.is_file():
-            return
+    for owner, name, path in candidates:
+        if (owner, name) in seen or not matcher(name) or not path.is_file():
+            continue
         seen.add((owner, name))
         data = path.read_bytes()
         out.append(
@@ -520,23 +634,4 @@ def _build_inclusions(
                 content=data[:max_bytes].decode("utf-8", errors="replace"),
             )
         )
-
-    for raw in selectors:
-        sel = raw.strip()
-        if sel == "plan":
-            add(card.id, "plan.md", tasks_dir / card.id / "plan.md")
-        elif sel == "summary":
-            add(card.id, "summary.md", tasks_dir / card.id / "summary.md")
-            for view in link_views:
-                for ref in view.docs:
-                    if ref.name == "summary.md":
-                        add(view.id, ref.name, ref.path)
-        elif sel.startswith("doc:"):
-            name = sel[len("doc:") :]
-            match = next((d for d in documents if d.name == name), None)
-            if match is None or not match.path.is_file():
-                raise UnknownDocumentError(card.id, name)
-            add(card.id, name, match.path)
-        elif sel:
-            raise UnknownSelectorError(sel)
     return tuple(out)
