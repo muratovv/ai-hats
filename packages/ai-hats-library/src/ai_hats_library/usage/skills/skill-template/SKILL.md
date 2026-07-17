@@ -122,6 +122,14 @@ writing-skills, MIT.)
       the skill or split) · `>150` must split — move content into
       `references/` or sibling skills. If a skill cleanly divides into two
       domains, split it.
+- [ ] **Target behavior stated positively** — a prohibition survives only as
+      a hard guardrail on behavior that can't be phrased positively, and then
+      paired with its replacement ("Redirect instead: …"). Naming the
+      forbidden move drags it into context and makes it *more* available.
+- [ ] **Every omission is a decision** — read the draft for silences: each
+      thing the component doesn't say is delegated to model priors; fill it,
+      or leave it open deliberately. (Both lenses adapted from
+      mattpocock/skills `writing-great-skills`, MIT.)
 
 ## References
 
@@ -145,3 +153,7 @@ see `references/external-skill-frameworks.md`.
 - Omitting completion criteria — the agent won't know when to stop
 - **Shipping a skill with no validation scenario** — if no RED baseline shows
   an agent failing without it, the skill's value is unproven
+- Prohibition-led wording with no positive replacement — "never X" alone
+  half-reads as an instruction to X; state what to do instead
+- Silent defaults — the component omits a decision (location, format, edge
+  case) and every agent fills the gap differently from priors
