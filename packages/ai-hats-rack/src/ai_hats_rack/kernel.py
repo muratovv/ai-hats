@@ -300,50 +300,36 @@ class Kernel:
             raise UnknownTaskError(task_id)
 
         outcomes: list[SubscriberOutcome] = []
-        event: EdgeEvent | None = None
+        events: list[EdgeEvent] = []
         lock = self._task_lock(task_id)
         try:
             with lock:
                 task = self._load(task_id)
-                from_state = task.state
-                is_epic = self.is_epic(task_id)
-                if force:
-                    if from_state == to_state:
-                        raise ValueError(f"Task '{task_id}' is already in state '{to_state}'")
-                    task.state = to_state
-                    task.log_work(
-                        f"Forced transition {from_state} → {to_state}: {reason}", actor=actor
-                    )
-                else:
-                    self.topology.guard(task_id, from_state, to_state)
-                    task.state = to_state
-                task.updated = utc_now()
-                if resolution is not None:
-                    task.resolution = resolution
-                if final_state is not None:
-                    task.final_state = final_state
-                self._stamp_lifecycle(task, from_state, to_state)
-
-                event = EdgeEvent(from_state, to_state)
-                ctx = self._ctx_factory(event, task, caller_cwd, is_epic, actor, force, reason)
-
-                def apply_delta(delta: Delta) -> None:
-                    for line in delta.work_log:
-                        task.log_work(line, actor=actor)
-
-                self._dispatcher.run_blocking(event, ctx, apply_delta, outcomes)
+                from_state = self._apply_edge(
+                    task,
+                    to_state,
+                    actor=actor,
+                    caller_cwd=caller_cwd,
+                    force=force,
+                    reason=reason,
+                    resolution=resolution,
+                    final_state=final_state,
+                    outcomes=outcomes,
+                    events=events,
+                )
                 self._persist(task)  # the SINGLE persist, always last
         except Timeout as exc:
             raise LockTimeoutError(
                 self.tasks_dir / task_id / ".lock", f"transition of {task_id}", self._lock_timeout
             ) from exc
         except Exception:
-            if event is not None:  # dispatch began → the refusal stays auditable
+            if events:  # dispatch began → the refusal stays auditable
                 self._finish_record(
-                    event, task_id, actor, force, reason, outcomes, result="aborted"
+                    events[-1], task_id, actor, force, reason, outcomes, result="aborted"
                 )
             raise
 
+        event = events[-1]
         ctx = self._ctx_factory(
             event, task, caller_cwd, self.is_epic(task_id), actor, force, reason
         )
@@ -355,6 +341,164 @@ class Kernel:
             task=task,
             transitions=(TaskTransition(task_id, from_state, to_state, reason),),
             journal=(record,),
+        )
+
+    def _apply_edge(
+        self,
+        task: TaskCard,
+        to_state: str,
+        *,
+        actor: str,
+        caller_cwd: Path,
+        force: bool,
+        reason: str,
+        resolution: str | None,
+        final_state: str | None,
+        outcomes: list[SubscriberOutcome],
+        events: list[EdgeEvent],
+    ) -> str:
+        """In-lock edge application: guard/force → mutate → blocking dispatch.
+
+        No lock and no persist of its own — the caller (``transition`` or
+        ``transition_ops``) owns both, so a raise anywhere before the single
+        persist leaves zero bytes changed on disk (HATS-723/481). Blocking
+        subscribers see the card AND any files earlier ops already materialized.
+        The edge event is appended to ``events`` BEFORE dispatch, so an abort mid
+        dispatch stays auditable (the caller journals ``events[-1]``). Returns
+        ``from_state``.
+        """
+        from_state = task.state
+        is_epic = self.is_epic(task.id)
+        if force:
+            if from_state == to_state:
+                raise ValueError(f"Task '{task.id}' is already in state '{to_state}'")
+            task.state = to_state
+            task.log_work(f"Forced transition {from_state} → {to_state}: {reason}", actor=actor)
+        else:
+            self.topology.guard(task.id, from_state, to_state)
+            task.state = to_state
+        task.updated = utc_now()
+        if resolution is not None:
+            task.resolution = resolution
+        if final_state is not None:
+            task.final_state = final_state
+        self._stamp_lifecycle(task, from_state, to_state)
+
+        event = EdgeEvent(from_state, to_state)
+        events.append(event)
+        ctx = self._ctx_factory(event, task, caller_cwd, is_epic, actor, force, reason)
+
+        def apply_delta(delta: Delta) -> None:
+            for line in delta.work_log:
+                task.log_work(line, actor=actor)
+
+        self._dispatcher.run_blocking(event, ctx, apply_delta, outcomes)
+        return from_state
+
+    def transition_ops(
+        self,
+        task_id: str,
+        ops: Sequence[Any],
+        *,
+        actor: str,
+        caller_cwd: Path,
+        force: bool = False,
+        reason: str = "",
+        resolution: str | None = None,
+        final_state: str | None = None,
+        ack_frozen: bool = False,
+    ) -> KernelResult:
+        """Ordered composite transition (HATS-1030): a sequence of ops under ONE
+        task lock with a SINGLE card persist (K1).
+
+        Op order is execution order; effects of earlier ops are visible to later
+        ops' handlers (a state-op's plan-gate sees a file an earlier ``--attach``
+        materialized). Any op raising rolls back the WHOLE sequence — the card is
+        never persisted and staged files unwind in reverse. Post-lock reactions
+        fire per state-op edge after unlock, never nested inside the lock.
+        """
+        # Local import avoids a load-time cycle (ops imports kernel errors).
+        from .ops import OpTxn, StateOp, apply_non_state_op
+
+        if not ops:
+            raise ValueError("transition needs at least one operation")
+        for op in ops:
+            if isinstance(op, StateOp):
+                self.topology.require_state(op.to_state)
+        if force and not reason.strip():
+            raise ForceRequiresReasonError()
+        if not self._task_path(task_id).exists():
+            raise UnknownTaskError(task_id)
+
+        outcomes: list[SubscriberOutcome] = []
+        edges: list[EdgeEvent] = []
+        transitions: list[TaskTransition] = []
+        txn: OpTxn | None = None
+        lock = self._task_lock(task_id)
+        try:
+            with lock:
+                task = self._load(task_id)
+                txn = OpTxn(
+                    task_id=task_id,
+                    card=task,
+                    card_dir=self.tasks_dir / task_id,
+                    caller_cwd=caller_cwd,
+                    registry=self.registry,
+                    actor=actor,
+                    ack_frozen=ack_frozen,
+                )
+                for op in ops:
+                    if isinstance(op, StateOp):
+                        from_state = self._apply_edge(
+                            task,
+                            op.to_state,
+                            actor=actor,
+                            caller_cwd=caller_cwd,
+                            force=force,
+                            reason=reason,
+                            resolution=resolution,
+                            final_state=final_state,
+                            outcomes=outcomes,
+                            events=edges,
+                        )
+                        transitions.append(
+                            TaskTransition(task_id, from_state, op.to_state, reason)
+                        )
+                        txn.results.append(
+                            {"op": "state", "from": from_state, "to": op.to_state}
+                        )
+                    else:
+                        apply_non_state_op(txn, op)
+                self._persist(task)  # the SINGLE persist, always last
+        except Timeout as exc:
+            raise LockTimeoutError(
+                self.tasks_dir / task_id / ".lock", f"transition of {task_id}", self._lock_timeout
+            ) from exc
+        except Exception:
+            if txn is not None:  # unwind staged files; the card was never persisted
+                txn.rollback()
+            if edges:  # a state-op's dispatch began → stay auditable
+                self._finish_record(
+                    edges[-1], task_id, actor, force, reason, outcomes, result="aborted"
+                )
+            raise
+
+        records: list[DispatchRecord] = []
+        for event in edges:
+            ctx = self._ctx_factory(
+                event, task, caller_cwd, self.is_epic(task_id), actor, force, reason
+            )
+            self._dispatcher.run_reactions(event, ctx, outcomes)
+            records.append(
+                self._finish_record(
+                    event, task_id, actor, force, reason, outcomes, result="persisted"
+                )
+            )
+        return KernelResult(
+            task=task,
+            transitions=tuple(transitions),
+            journal=tuple(records),
+            ops=tuple(txn.results),
         )
 
     def _stamp_lifecycle(self, task: TaskCard, from_state: str, to_state: str) -> None:
