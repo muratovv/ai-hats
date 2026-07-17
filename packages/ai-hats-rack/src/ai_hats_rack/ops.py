@@ -202,7 +202,11 @@ def _apply_attach(txn: OpTxn, op: AttachOp) -> None:
 
 
 def _apply_freeze(txn: OpTxn, op: FreezeOp) -> None:
-    info, changed = freeze_on_card(txn.card, txn.card_dir, op.name, actor=txn.actor)
+    # --ack-frozen doubles as the re-freeze hatch: the tiered "I know it is
+    # frozen" flag covers accepting drifted content too (HATS-1031 Р13 recipe).
+    info, changed = freeze_on_card(
+        txn.card, txn.card_dir, op.name, actor=txn.actor, refreeze=txn.ack_frozen
+    )
     txn.results.append(
         {"op": "freeze", "name": op.name, "digest": info.digest, "changed": changed}
     )

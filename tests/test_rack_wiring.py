@@ -97,28 +97,35 @@ def test_gate_abort_leaves_no_ownership_and_no_worktree(project, monkeypatch):
 
 
 def test_in_lock_order_reproduces_the_tracker_sequence(project):
-    """Priority wiring pin: single-slot → gate → claim → worktree on entering
-    execute; teardown → release on leaving (HATS-955 claim-before-effects,
-    old release-after-teardown order)."""
+    """Priority wiring pin: single-slot → frozen-integrity → gate → claim →
+    worktree on entering execute; teardown → release on leaving (HATS-955
+    claim-before-effects, HATS-1031 integrity-before-gate)."""
     kernel = _kernel(project)
     into_execute = [
         s.name for s in kernel._dispatcher.subscribers_for("edge:plan--execute", Phase.IN_LOCK)
     ]
-    assert into_execute == ["ownership-single-slot", "plan-gate", "ownership", "worktree"]
+    assert into_execute == [
+        "ownership-single-slot",
+        "frozen-integrity",
+        "plan-gate",
+        "ownership",
+        "worktree",
+    ]
 
     to_done = [
         s.name for s in kernel._dispatcher.subscribers_for("edge:review--done", Phase.IN_LOCK)
     ]
-    assert to_done == ["ownership-single-slot", "worktree", "ownership-release"]
+    assert to_done == ["ownership-single-slot", "frozen-integrity", "worktree", "ownership-release"]
 
     epicify = [s.name for s in kernel._dispatcher.subscribers_for("epicify", Phase.POST_LOCK)]
     assert epicify == ["ownership-release", "worktree", "epic-automation", "derived-views"]
 
 
 def test_standalone_kit_has_no_wt_or_ownership(tmp_path):
-    """Standalone = scaffold + plan-gate only (epic HATS-1014 §2.3)."""
+    """Standalone = frozen-integrity + scaffold + plan-gate (epic HATS-1014
+    §2.3, HATS-1031) — still no worktree/ownership adapters."""
     names = {ext.name for ext in standalone_extensions(tmp_path / "tasks")}
-    assert names == {"plan-scaffold", "plan-gate"}
+    assert names == {"frozen-integrity", "plan-scaffold", "plan-gate"}
 
 
 def test_full_stack_lifecycle_with_views(project, monkeypatch):
