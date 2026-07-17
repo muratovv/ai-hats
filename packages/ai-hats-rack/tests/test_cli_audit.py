@@ -1,5 +1,5 @@
-"""``rack audit``: JSON-first query surface, filters, zero-events warning
-(HATS-1025; PROP-005/076 detection, stable v1 schema pin)."""
+"""``rack context --attr audit``: the journal feed read through context now that
+the ``audit`` verb is gone (HATS-1029; K7 filters, zero-events, v1 schema pin)."""
 
 from __future__ import annotations
 
@@ -39,10 +39,18 @@ def _drive(runner, tmp_path, session="s1"):
         assert result.exit_code == 0, result.output
 
 
-def test_audit_human_feed(runner, tmp_path):
+def _audit(runner, tmp_path, *extra, as_json=False):
+    argv = ["context", "HATS-001", "--attr", "audit", *extra, *_tasks_args(tmp_path)]
+    if as_json:
+        argv.append("--json")
+    return runner.invoke(main, argv)
+
+
+def test_attr_audit_human_feed(runner, tmp_path):
     _drive(runner, tmp_path)
-    result = runner.invoke(main, ["audit", "HATS-001", *_tasks_args(tmp_path)])
+    result = _audit(runner, tmp_path)
     assert result.exit_code == 0, result.output
+    assert "audit:" in result.output
     assert "edge:brainstorm--plan" in result.output
     assert "[plan → execute]" in result.output
     assert "actor=session:s1" in result.output
@@ -50,16 +58,15 @@ def test_audit_human_feed(runner, tmp_path):
     assert "warning:" not in result.output
 
 
-def test_audit_json_schema_is_stable(runner, tmp_path):
+def test_attr_audit_json_schema_is_stable(runner, tmp_path):
     _drive(runner, tmp_path)
-    result = runner.invoke(main, ["audit", "HATS-001", *_tasks_args(tmp_path), "--json"])
+    result = _audit(runner, tmp_path, as_json=True)
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert sorted(payload) == ["records", "task_id", "warnings"]
-    assert payload["task_id"] == "HATS-001"
-    assert payload["warnings"] == []
-    assert len(payload["records"]) == 2
-    record = payload["records"][0]
+    audit = json.loads(result.output)["attrs"]["audit"]
+    assert sorted(audit) == ["records", "warnings"]
+    assert audit["warnings"] == []
+    assert len(audit["records"]) == 2
+    record = audit["records"][0]
     # v1 record schema pin: key set AND order are the contract.
     assert list(record) == [
         "v",
@@ -79,14 +86,12 @@ def test_audit_json_schema_is_stable(runner, tmp_path):
     assert record["identity"]["verdict"] == "verified"
 
 
-def test_audit_filters_narrow_the_feed(runner, tmp_path):
+def test_attr_audit_filters_narrow_the_feed(runner, tmp_path):
     _drive(runner, tmp_path)
 
     def records(*extra):
-        result = runner.invoke(
-            main, ["audit", "HATS-001", *extra, *_tasks_args(tmp_path), "--json"]
-        )
-        return json.loads(result.output)["records"]
+        result = _audit(runner, tmp_path, *extra, as_json=True)
+        return json.loads(result.output)["attrs"]["audit"]["records"]
 
     assert len(records()) == 2
     assert [r["event"] for r in records("--event", "edge:plan--execute")] == ["edge:plan--execute"]
@@ -103,25 +108,27 @@ def test_zero_events_warning_when_journal_is_dark(runner, tmp_path):
         "HATS-001", "plan", actor="session:s1", caller_cwd=tmp_path
     )
 
-    human = runner.invoke(main, ["audit", "HATS-001", *_tasks_args(tmp_path)])
+    human = _audit(runner, tmp_path)
     assert human.exit_code == 0
     assert "zero-events" in human.output
 
-    machine = runner.invoke(main, ["audit", "HATS-001", *_tasks_args(tmp_path), "--json"])
-    payload = json.loads(machine.output)
-    assert payload["records"] == []
-    assert any("zero-events" in w for w in payload["warnings"])
+    machine = _audit(runner, tmp_path, as_json=True)
+    audit = json.loads(machine.output)["attrs"]["audit"]
+    assert audit["records"] == []
+    assert any("zero-events" in w for w in audit["warnings"])
 
 
 def test_no_warning_for_untouched_task(runner, tmp_path):
     runner.invoke(main, ["create", "demo", *_tasks_args(tmp_path)])
-    result = runner.invoke(main, ["audit", "HATS-001", *_tasks_args(tmp_path)])
+    result = _audit(runner, tmp_path)
     assert result.exit_code == 0
     assert "(no journal records)" in result.output
     assert "zero-events" not in result.output
 
 
-def test_audit_unknown_task_is_a_typed_error(runner, tmp_path):
-    result = runner.invoke(main, ["audit", "HATS-404", *_tasks_args(tmp_path), "--json"])
+def test_attr_audit_unknown_task_is_a_typed_error(runner, tmp_path):
+    result = runner.invoke(
+        main, ["context", "HATS-404", "--attr", "audit", *_tasks_args(tmp_path), "--json"]
+    )
     assert result.exit_code == 1
     assert json.loads(result.output)["error"]["code"] == "unknown_task"
