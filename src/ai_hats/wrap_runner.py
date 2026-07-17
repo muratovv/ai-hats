@@ -299,6 +299,24 @@ class WrapRunner:
             session.log_sys(f"provider settings lint: {len(findings)} finding(s)")
         return [StartupNotice("warn", text) for text in findings]
 
+    def _lint_env_drift(self, session: "Session") -> list[StartupNotice]:
+        """HATS-1013: WARN when the editable dev env is stale — uv freezes
+        dist-info at sync time, so ``importlib.metadata`` / ``--version`` lie
+        after a version bump until ``uv sync``. Fail-open; detection lives in
+        :mod:`.env_drift` (gated to the dev checkout there).
+        """
+        try:
+            from . import env_drift
+
+            findings = env_drift.stale_dev_env_warnings()
+        except Exception as exc:
+            logger.warning("env-drift lint at session start failed", exc_info=True)
+            session.log_sys(f"env-drift lint FAILED — {type(exc).__name__}: {exc}")
+            return []
+        if findings:
+            session.log_sys(f"env-drift lint: {len(findings)} finding(s)")
+        return [StartupNotice("warn", text) for text in findings]
+
     def _hold_before_launch(self, startup_notices: list[StartupNotice]) -> None:
         """Show any startup notices and hold before the wrapped TUI spawns
         (HATS-825, HATS-833). Delegates the "notices ⇒ show and wait" policy to
@@ -437,6 +455,7 @@ class WrapRunner:
         startup_notices.extend(self._check_skill_collisions(session, result))
         startup_notices.extend(self._payload_startup_notices())
         startup_notices.extend(self._lint_provider_settings(session))
+        startup_notices.extend(self._lint_env_drift(session))
 
         # Build CLI command with session ID for JSONL linkage
         claude_session_id = str(uuid.uuid4())
