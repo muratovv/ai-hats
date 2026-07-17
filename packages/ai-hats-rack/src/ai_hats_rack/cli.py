@@ -1,8 +1,10 @@
 """``rack`` — minimal JSON-first CLI over the bare kernel (HATS-1020).
 
-Verbs: create/show/transition/log (K1), the ``doc`` group (freeze/rm, K2),
-link/unlink/context/ls (K5/HATS-1029 read surface v2). Root resolution defaults
-to the validated walk-up resolver (HATS-197/839, K2); ``--tasks-dir`` /
+Verbs: create/show/log (K1); ``transition`` — the single mutating verb, an
+ordered composite of ops under one lock (HATS-1030); context/ls (K5/HATS-1029
+read surface v2 — ``tree`` folded into ``ls --deep``, ``audit`` into
+``context --attr``). Root resolution defaults to the validated walk-up resolver
+(HATS-197/839, K2); ``--tasks-dir`` /
 ``RACK_TASKS_DIR`` stay as the explicit override.
 """
 
@@ -19,10 +21,17 @@ from .cli_common import actor as _actor
 from .cli_common import emit_json as _emit_json
 from .cli_common import fail as _fail
 from .cli_common import resolved_root as _resolved_root
-from .cli_context import context_cmd, link_cmd, ls_cmd, unlink_cmd
-from .cli_doc import doc, echo_documents
+from .cli_context import context_cmd, ls_cmd
+from .cli_doc import echo_documents
 from .dispatch import OperationAborted
-from .docstore import DocStore
+from .docstore import (
+    DocStore,
+    DocumentNameError,
+    FrozenDocumentError,
+    FrozenPinDriftError,
+    UnknownDocumentError,
+)
+from .extensions import standalone_extensions
 from .fsm import InvalidTransitionError, UnknownStateError
 from .journal import JsonlJournalSink
 from .kernel import (
@@ -33,15 +42,29 @@ from .kernel import (
     TaskExistsError,
     UnknownTaskError,
 )
+from .linked import SelfLinkError
 from .models import TaskCard
-from .registry import load_registry_for, resolve_links
+from .ops import AttachSourceError, OpParseError, parse_ops
+from .registry import (
+    DerivedLinkKindError,
+    UnknownLinkKindError,
+    load_registry_for,
+    resolve_links,
+)
 from .resolver import NoProjectRootError
 
 
 def _kernel(tasks_dir: Path | None, caller_cwd: Path) -> Kernel:
     root = _resolved_root(tasks_dir, caller_cwd)
-    # Every CLI-built kernel journals dispatches to tasks/<ID>/audit.jsonl (K7).
-    return Kernel(root.tasks_dir, prefix=root.prefix, journal_sink=JsonlJournalSink(root.tasks_dir))
+    # The mutation surface is standalone = kernel + scaffold + plan-gate (epic
+    # §2.3), so the composite transition actually enforces the gate; every
+    # CLI-built kernel journals dispatches to tasks/<ID>/audit.jsonl (K7).
+    return Kernel(
+        root.tasks_dir,
+        prefix=root.prefix,
+        subscribers=standalone_extensions(root.tasks_dir),
+        journal_sink=JsonlJournalSink(root.tasks_dir),
+    )
 
 
 def _result_payload(result: KernelResult) -> dict[str, Any]:
@@ -49,6 +72,7 @@ def _result_payload(result: KernelResult) -> dict[str, Any]:
         "task": result.task.to_dict(),
         "transitions": [t.to_dict() for t in result.transitions],
         "journal": [r.to_dict() for r in result.journal],
+        "ops": [dict(op) for op in result.ops],
     }
 
 
@@ -73,6 +97,33 @@ def _handle_kernel_error(exc: Exception, as_json: bool) -> None:
         _fail(as_json, "unknown_task", str(exc), task_id=exc.task_id)
     if isinstance(exc, TaskExistsError):
         _fail(as_json, "task_exists", str(exc), task_id=exc.task_id)
+    # ----- composite-op refusals (--attach/--freeze/--rm/--link/--unlink) -----
+    if isinstance(exc, OpParseError):
+        _fail(as_json, "invalid_ops", str(exc))
+    if isinstance(exc, AttachSourceError):
+        _fail(as_json, "attach_source", str(exc), src=exc.src)
+    if isinstance(exc, DocumentNameError):
+        _fail(as_json, "invalid_document_name", str(exc), name=exc.name)
+    if isinstance(exc, UnknownDocumentError):
+        _fail(as_json, "unknown_document", str(exc), task_id=exc.task_id, name=exc.name)
+    if isinstance(exc, FrozenDocumentError):
+        _fail(as_json, "frozen_document", str(exc), task_id=exc.task_id, name=exc.name)
+    if isinstance(exc, FrozenPinDriftError):
+        _fail(
+            as_json,
+            "frozen_pin_drift",
+            str(exc),
+            task_id=exc.task_id,
+            name=exc.name,
+            pinned_digest=exc.pinned,
+            current_digest=exc.current,
+        )
+    if isinstance(exc, SelfLinkError):
+        _fail(as_json, "self_link", str(exc), task_id=exc.task_id)
+    if isinstance(exc, UnknownLinkKindError):
+        _fail(as_json, "unknown_link_kind", str(exc), kind=exc.kind, configured=list(exc.configured))
+    if isinstance(exc, DerivedLinkKindError):
+        _fail(as_json, "derived_link_kind", str(exc), kind=exc.kind, inverse=exc.inverse)
     if isinstance(exc, NoProjectRootError):
         _fail(as_json, "no_project_root", str(exc))
     if isinstance(exc, (ForceRequiresReasonError, ValueError)):
@@ -191,37 +242,79 @@ def _echo_card(task: TaskCard, links: dict[str, list[str]]) -> None:
             click.echo(f"    {entry.timestamp} {entry.message}")
 
 
-@main.command()
+def _echo_ops(result: KernelResult) -> None:
+    """Human line per op, in execution order; revert-info on destructive ops."""
+    for op in result.ops:
+        kind = op["op"]
+        if kind == "state":
+            click.echo(f"Transitioned: {result.task.id} {op['from']} → {op['to']}")
+        elif kind == "attach":
+            note = " (overwrote)" if op.get("overwrote") else ""
+            click.echo(f"Attached: {op['name']} → {op['path']}{note}")
+        elif kind == "freeze":
+            click.echo(f"Frozen: {op['name']} ({op['digest']})")
+        elif kind == "rm":
+            where = f" (recoverable: {op['trashed_to']})" if op["trashed_to"] else " (no file on disk)"
+            click.echo(f"Removed: {op['name']}{where}")
+            if op.get("revert"):
+                click.echo(f"  revert: {op['revert']}")
+        elif kind == "log":
+            click.echo(f"Logged: {op['message']}")
+        elif kind == "link":
+            verb = "Linked" if op["changed"] else "Already linked"
+            click.echo(f"{verb}: {result.task.id} {op['kind']} {op['target']}")
+        elif kind == "unlink":
+            if op["changed"]:
+                click.echo(f"Unlinked: {result.task.id} {', '.join(op['kinds'])} {op['target']}")
+                if op.get("revert"):
+                    click.echo(f"  revert: {op['revert']}")
+            else:
+                click.echo(f"Not linked: {result.task.id} — {op['target']} (no-op)")
+
+
+@main.command(context_settings={"ignore_unknown_options": True})
 @click.argument("task_id")
-@click.argument("to_state")
-@click.option("--force", is_flag=True, help="Relax the FSM arrow only; requires --reason.")
+@click.argument("op_tokens", nargs=-1, type=click.UNPROCESSED)
+@click.option("--force", is_flag=True, help="Relax the FSM arrow only (state ops); requires --reason.")
 @click.option("--reason", default="", help="Why (required with --force; journaled).")
 @click.option("--resolution", default=None)
 @click.option("--final-state", "final_state", default=None)
+@click.option("--ack-frozen", is_flag=True, help="Confirm --rm of a FROZEN document (still trashed).")
 @_TASKS_DIR_OPT
 @_JSON_OPT
 def transition(
     task_id: str,
-    to_state: str,
+    op_tokens: tuple[str, ...],
     force: bool,
     reason: str,
     resolution: str | None,
     final_state: str | None,
+    ack_frozen: bool,
     tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
-    """Move a task along an FSM edge (refusals print the legal edges)."""
+    """Ordered composite transition — the single mutating verb.
+
+    Ops run in argv order under ONE task lock with a single persist:
+    --state <s>, --attach <src>[:name], --freeze <name>, --rm <name>,
+    --log <msg>, --link <kind>:<id>, --unlink [<kind>:]<id>. Effects of earlier
+    ops are visible to later ops (a state op's plan-gate sees a just-attached
+    plan); any op aborting rolls the whole sequence back. Old form
+    `transition <ID> <state>` is sugar for `--state <state>`.
+    """
     caller_cwd = Path.cwd()
     try:
-        result = _kernel(tasks_dir, caller_cwd).transition(
+        ops = parse_ops(op_tokens)
+        result = _kernel(tasks_dir, caller_cwd).transition_ops(
             task_id,
-            to_state,
+            ops,
             actor=_actor(),
             caller_cwd=caller_cwd,
             force=force,
             reason=reason,
             resolution=resolution,
             final_state=final_state,
+            ack_frozen=ack_frozen,
         )
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
         _handle_kernel_error(exc, as_json)
@@ -229,8 +322,7 @@ def transition(
     if as_json:
         _emit_json(_result_payload(result))
     else:
-        for t in result.transitions:
-            click.echo(f"Transitioned: {t.task_id} {t.from_state} → {t.to_state}")
+        _echo_ops(result)
 
 
 @main.command()
@@ -251,10 +343,9 @@ def log(task_id: str, message: str, tasks_dir: Path | None, as_json: bool) -> No
         click.echo(f"Logged: {task.id} — {message}")
 
 
-main.add_command(doc)
-# K5 (HATS-1024) + read surface v2 (HATS-1029): links, discovery context, graph ls.
-main.add_command(link_cmd)
-main.add_command(unlink_cmd)
+# K5 (HATS-1024) + read surface v2 (HATS-1029): discovery context + graph ls
+# (tree folded into `ls --deep`, audit into `context --attr`). link/unlink and
+# the doc group were absorbed into the composite `transition` (HATS-1030).
 main.add_command(context_cmd)
 main.add_command(ls_cmd)
 
