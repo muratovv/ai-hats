@@ -21,6 +21,7 @@ from typing import Any, Callable, Mapping, Sequence
 from filelock import FileLock, Timeout
 
 from .docstore import DocInfo, DocStore
+from .errors import RackError
 from .kernel import LOCK_TIMEOUT, Kernel, LockTimeoutError, UnknownTaskError
 from .matching import Matcher, compile_matcher
 from .models import TaskCard, utc_now
@@ -40,7 +41,7 @@ PARENT_DOC_NAMES = ("plan.md",)
 DEFAULT_MAX_BYTES = 16384
 
 
-class SelfLinkError(Exception):
+class SelfLinkError(RackError):
     def __init__(self, task_id: str) -> None:
         self.task_id = task_id
         super().__init__(f"Task '{task_id}' cannot link to itself")
