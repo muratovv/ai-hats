@@ -29,10 +29,10 @@ dependencies = [
     # composition value-types, YamlModel, git_env, safe_delete, atomic_io) lives
     # in ai-hats-core; the worktree engine (ai_hats_wt) lives in ai-hats-wt.
     "ai-hats-core>=0.5.0",  # imports ai_hats_core.migrations + .recovery (0.5.0, HATS-948)
-    "ai-hats-wt>=0.3.1",    # reclaim_if_clean for epicified tasks' worktrees (0.3.1, HATS-979)
-    "ai-hats-tracker>=0.6.0",  # + `ai-hats-tracker` console entry for requires.cli (0.6.0, HATS-991)
+    "ai-hats-wt>=0.4.0",    # WorktreeMergeConsentError + supervisor-gated merge (0.4.0, HATS-1019)
+    "ai-hats-tracker>=0.6.1",  # consent refusal handler in `task transition done` (0.6.1, HATS-1019)
     "ai-hats-observe>=0.3.0",  # + usage/v1 behind the parser adapter (usage) — T15/0.3.0 (HATS-953)
-    "ai-hats-library>=0.2.0",  # backlog-manager declares requires.cli: ai-hats-tracker (0.2.0, HATS-991)
+    "ai-hats-library>=0.2.1",  # supervised-close worktree-isolation + shared-state rule row (0.2.1, HATS-1019)
     "click>=8.1",
     "pyyaml>=6.0",
     "pydantic>=2.0",

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -212,6 +213,25 @@ class WorktreeDriftError(Exception):
     — historically the literal trailer leaked into ``task transition
     done``, where the flag does NOT exist.
     """
+
+
+class WorktreeMergeConsentError(Exception):
+    """Merge to the base branch attempted without supervisor consent.
+
+    HATS-1019: publishing a task branch to the base is a supervisor-gated
+    act — review must actually happen first. Facts only in the message
+    (HATS-509 body contract); the review-handoff recipe is owned by the
+    CLI handlers. Cleanup of already-merged work (HATS-596 short-circuit)
+    publishes nothing and stays consent-free.
+    """
+
+    def __init__(self, branch_name: str, base_branch: str) -> None:
+        self.branch_name = branch_name
+        self.base_branch = base_branch
+        super().__init__(
+            f"Merging '{branch_name}' into '{base_branch}' requires supervisor "
+            f"consent: AI_HATS_MERGE_ACK=1 is not set."
+        )
 
 
 class WorktreeBaseBranchError(Exception):
@@ -858,6 +878,12 @@ class WorktreeManager:
                     self._original_branch,
                 )
                 return
+
+            # HATS-1019: consent gate AFTER the HATS-596 short-circuit —
+            # already-merged cleanup publishes nothing and must stay ack-free
+            # (supervisor merges, then the agent's `transition done` tears down).
+            if os.environ.get("AI_HATS_MERGE_ACK") != "1":
+                raise WorktreeMergeConsentError(self.branch_name, self._original_branch)
 
             # HATS-533: refuse if main-repo HEAD has wandered off the merge
             # target captured at create time (manual checkout, peer agent in
