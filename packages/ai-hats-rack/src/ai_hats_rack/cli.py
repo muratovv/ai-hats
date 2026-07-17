@@ -1,9 +1,10 @@
 """``rack`` — minimal JSON-first CLI over the bare kernel (HATS-1020).
 
 Verbs: create/show/log (K1); ``transition`` — the single mutating verb, an
-ordered composite of ops under one lock (HATS-1030); the ``doc ls`` read verb
-(K2); ``audit`` (K7); tree/context/ls (K5). Root resolution defaults to the
-validated walk-up resolver (HATS-197/839, K2); ``--tasks-dir`` /
+ordered composite of ops under one lock (HATS-1030); context/ls (K5/HATS-1029
+read surface v2 — ``tree`` folded into ``ls --deep``, ``audit`` into
+``context --attr``). Root resolution defaults to the validated walk-up resolver
+(HATS-197/839, K2); ``--tasks-dir`` /
 ``RACK_TASKS_DIR`` stay as the explicit override.
 """
 
@@ -14,15 +15,14 @@ from typing import Any
 
 import click
 
-from .cli_audit import audit
 from .cli_common import JSON_OPT as _JSON_OPT
 from .cli_common import TASKS_DIR_OPT as _TASKS_DIR_OPT
 from .cli_common import actor as _actor
 from .cli_common import emit_json as _emit_json
 from .cli_common import fail as _fail
 from .cli_common import resolved_root as _resolved_root
-from .cli_context import context_cmd, ls_cmd, tree_cmd
-from .cli_doc import doc, echo_documents
+from .cli_context import context_cmd, ls_cmd
+from .cli_doc import echo_documents
 from .dispatch import OperationAborted
 from .docstore import (
     DocStore,
@@ -136,9 +136,6 @@ def _handle_kernel_error(exc: Exception, as_json: bool) -> None:
 @click.group()
 def main() -> None:
     """rack — minimal backlog kernel CLI (ai-hats-rack)."""
-
-
-main.add_command(audit)  # `rack audit <ID>` — K7 journal query surface
 
 
 @main.command()
@@ -346,10 +343,9 @@ def log(task_id: str, message: str, tasks_dir: Path | None, as_json: bool) -> No
         click.echo(f"Logged: {task.id} — {message}")
 
 
-main.add_command(doc)
-# K5 (HATS-1024): linked tasks + one-call discovery context. link/unlink were
-# absorbed into `transition --link/--unlink` (HATS-1030); read verbs stay.
-main.add_command(tree_cmd)
+# K5 (HATS-1024) + read surface v2 (HATS-1029): discovery context + graph ls
+# (tree folded into `ls --deep`, audit into `context --attr`). link/unlink and
+# the doc group were absorbed into the composite `transition` (HATS-1030).
 main.add_command(context_cmd)
 main.add_command(ls_cmd)
 
