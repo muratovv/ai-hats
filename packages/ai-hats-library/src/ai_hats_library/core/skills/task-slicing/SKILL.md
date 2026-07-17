@@ -1,37 +1,31 @@
 ---
 name: task-slicing
-description: Tracer-bullet slicing heuristics for breaking work into tasks. Use when filling plan.md's Steps section (routed from plan-gate), decomposing an epic into child tasks before plan-extract, or carving a mid-execute remainder into successor tasks.
+description: Wire a work breakdown into the tracker — depends_on edges, frontier, expand–contract for wide refactors. Use when filling plan.md's Steps section (routed from plan-gate), decomposing an epic into child tasks, or carving a mid-execute remainder into successor tasks.
 license: MIT
 ---
 
 # Task Slicing
 
-Break work into tracer-bullet slices: each slice cuts a narrow but complete
-path to a verifiable result, sized to one session.
+Slices are tracer bullets — each a narrow but complete path to a verifiable
+result, sized to one session. This skill carries what that looks like in
+*this* tracker, and the one sequence that must not be sliced naively.
 
 ## When to Use
 
 - Owns the `Steps` section of plan.md — plan-gate routes here.
 - NOT the test-writing rule: "vertical slicing" in `trait-se-mindset` governs
   one-test-at-a-time TDD; this skill slices *work into tasks*.
-- Mid-execute remainder ("tail doesn't fit the context"): shape the tail with
-  these rules; `context-reset` step 3 carries it out via `plan-extract`.
+- Mid-execute remainder ("tail doesn't fit the context"): `context-reset`
+  step 3 carries it out via `## Steps` items + `plan-extract`.
 
-## Slice rules
+## Wiring the breakdown
 
-- **Narrow but complete.** A slice lands a thin end-to-end path through every
-  layer it touches — verifiable or demoable on its own, never one layer of a
-  future assembly. (Positive templates: HATS-526, HATS-873, HATS-604→605.)
-- **One session per slice.** A fresh agent lands it green in a single session;
-  each slice boundary is a premise re-contact point (HATS-795: 920 LoC over
-  3 sessions on a collapsed premise).
-- **Prefactoring first.** "Make the change easy, then make the easy change" —
-  a preparatory slice is its own step or child task, named as such.
 - **Declare blocking edges.** Each child task names its blockers via
   `depends_on` (`ai-hats task link`); a task whose blockers are all done is on
   the **frontier** — takeable in parallel without coordination.
-- **Don't pre-slice the unknown.** A question you can't state sharply yet is
-  not a task — leave it in the plan until an earlier slice clears it.
+- **Gate before publishing.** Show the supervisor the breakdown — title,
+  blockers, what it delivers; granularity, edges, merge/split answered — then
+  publish via `backlog-manager` `plan-extract`.
 
 ## Wide refactors: expand–contract
 
@@ -52,6 +46,5 @@ failure mode.)
 
 ## Completion
 
-Breakdown shown to the supervisor — title, blockers, what it delivers;
-granularity, edges, and merge/split questions answered — then published via
-`backlog-manager` `plan-extract`. Validation scenario: HATS-1002 task card.
+Steps section holds one-session slices with edges declared; any wide refactor
+is sequenced expand–contract. Validation scenario: HATS-1002 task card.
