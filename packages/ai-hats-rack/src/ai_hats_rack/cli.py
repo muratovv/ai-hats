@@ -1,6 +1,7 @@
 """``rack`` — minimal JSON-first CLI over the bare kernel (HATS-1020).
 
-Verbs: create/show/transition/log (K1), the ``doc`` group (K2), ``audit`` (K7). Root
+Verbs: create/show/transition/log (K1), the ``doc`` group (K2), ``audit`` (K7),
+tree/link/unlink/context/ls (K5). Root
 resolution defaults to the validated walk-up resolver (HATS-197/839, K2);
 ``--tasks-dir`` / ``RACK_TASKS_DIR`` stay as the explicit override.
 """
@@ -19,6 +20,7 @@ from .cli_common import actor as _actor
 from .cli_common import emit_json as _emit_json
 from .cli_common import fail as _fail
 from .cli_common import resolved_root as _resolved_root
+from .cli_context import context_cmd, link_cmd, ls_cmd, tree_cmd, unlink_cmd
 from .cli_doc import doc, echo_documents
 from .dispatch import OperationAborted
 from .docstore import DocStore
@@ -234,6 +236,12 @@ def log(task_id: str, message: str, tasks_dir: Path | None, as_json: bool) -> No
 
 
 main.add_command(doc)
+# K5 (HATS-1024): linked tasks + one-call discovery context.
+main.add_command(tree_cmd)
+main.add_command(link_cmd)
+main.add_command(unlink_cmd)
+main.add_command(context_cmd)
+main.add_command(ls_cmd)
 
 
 if __name__ == "__main__":
