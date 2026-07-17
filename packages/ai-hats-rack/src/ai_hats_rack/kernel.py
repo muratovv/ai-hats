@@ -1,0 +1,452 @@
+"""The rack kernel: transactional transition engine over task.yaml (HATS-1020).
+
+transition = FileLock → FSM-guard → in-memory mutation → two-phase dispatch →
+SINGLE persist of task.yaml, last. A bare kernel (no subscribers) is a pure
+FSM — the explicit contract inherited from HATS-866/AC4.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Sequence
+
+from filelock import FileLock, Timeout
+
+from .dispatch import (
+    Delta,
+    DispatchContext,
+    Dispatcher,
+    DispatchRecord,
+    JournalSink,
+    Subscriber,
+    SubscriberOutcome,
+)
+from .events import EdgeEvent, EpicifyEvent, Event, PreDestroyEvent, event_detail
+from .fsm import Topology, load_topology
+from .models import TaskCard, utc_now
+
+# Single loud-fail timeout pattern (HATS-936 / epic §2.2 rule 5): a wait this
+# long on a sub-second fs op means a stuck holder, not real contention.
+LOCK_TIMEOUT = 30.0
+
+
+class UnknownTaskError(Exception):
+    def __init__(self, task_id: str) -> None:
+        self.task_id = task_id
+        super().__init__(f"Task '{task_id}' not found")
+
+
+class TaskExistsError(Exception):
+    def __init__(self, task_id: str) -> None:
+        self.task_id = task_id
+        super().__init__(f"Task '{task_id}' already exists")
+
+
+class ForceRequiresReasonError(Exception):
+    def __init__(self) -> None:
+        super().__init__("force=True requires a non-empty reason")
+
+
+class LockTimeoutError(Exception):
+    """A kernel lock could not be acquired: loud, actionable, never silent."""
+
+    def __init__(self, lock_path: Path, what: str, timeout: float) -> None:
+        self.lock_path = lock_path
+        super().__init__(
+            f"{what} blocked >{timeout:.0f}s on {lock_path} — a stuck rack "
+            "process likely holds it. If safe, remove the lock file and retry."
+        )
+
+
+@dataclass(frozen=True)
+class TaskTransition:
+    """One applied state change (the TaskTransition delta pattern)."""
+
+    task_id: str
+    from_state: str
+    to_state: str
+    reason: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "task_id": self.task_id,
+            "from": self.from_state,
+            "to": self.to_state,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class KernelResult:
+    """Every mutating call returns the card, the typed list of transitions
+    that happened, and the dispatch journal."""
+
+    task: TaskCard
+    transitions: tuple[TaskTransition, ...] = ()
+    journal: tuple[DispatchRecord, ...] = ()
+
+
+class Kernel:
+    """Task store + transition engine. ``subscribers=()`` → pure FSM."""
+
+    def __init__(
+        self,
+        tasks_dir: Path,
+        *,
+        prefix: str = "HATS",
+        topology: Topology | None = None,
+        subscribers: Sequence[Subscriber] = (),
+        journal_sink: JournalSink | None = None,
+        lock_timeout: float = LOCK_TIMEOUT,
+    ) -> None:
+        self.tasks_dir = tasks_dir
+        self.prefix = prefix
+        self.topology = topology if topology is not None else load_topology()
+        self._dispatcher = Dispatcher(subscribers)
+        self._sink = journal_sink
+        self._lock_timeout = lock_timeout
+
+    # ----- store primitives -------------------------------------------------
+
+    def _task_path(self, task_id: str) -> Path:
+        return self.tasks_dir / task_id / "task.yaml"
+
+    def get(self, task_id: str) -> TaskCard | None:
+        path = self._task_path(task_id)
+        if not path.exists():
+            return None
+        return TaskCard.from_yaml(path)
+
+    def _load(self, task_id: str) -> TaskCard:
+        task = self.get(task_id)
+        if task is None:
+            raise UnknownTaskError(task_id)
+        return task
+
+    def _persist(self, task: TaskCard) -> None:
+        self._task_path(task.id).parent.mkdir(parents=True, exist_ok=True)
+        task.save(self._task_path(task.id))
+
+    def _task_lock(self, task_id: str) -> FileLock:
+        lock_path = self.tasks_dir / task_id / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        return FileLock(str(lock_path), timeout=self._lock_timeout)
+
+    def children_of(self, task_id: str) -> list[str]:
+        """Ids of cards whose ``parent_task`` is ``task_id`` (regex prefilter,
+        full parse avoided — mirrors the tracker's reverse scan)."""
+        if not self.tasks_dir.exists():
+            return []
+        pattern = re.compile(rf"^parent_task:\s*['\"]?{re.escape(task_id)}['\"]?\s*$", re.MULTILINE)
+        out: list[str] = []
+        for card in sorted(self.tasks_dir.glob("*/task.yaml")):
+            try:
+                if pattern.search(card.read_text(encoding="utf-8")):
+                    out.append(card.parent.name)
+            except OSError:
+                continue
+        return out
+
+    def is_epic(self, task_id: str) -> bool:
+        """Category predicate, computed fresh from the CURRENT child-set on
+        every dispatch — never frozen at acquire time (HATS-794/977/979)."""
+        return bool(self.children_of(task_id))
+
+    # ----- journal ----------------------------------------------------------
+
+    def _finish_record(
+        self,
+        event: Event,
+        task_id: str,
+        actor: str,
+        force: bool,
+        reason: str,
+        outcomes: list[SubscriberOutcome],
+        *,
+        result: str,
+    ) -> DispatchRecord:
+        record = DispatchRecord(
+            event_key=event.key,
+            task_id=task_id,
+            actor=actor,
+            force=force,
+            reason=reason,
+            outcomes=tuple(outcomes),
+            result=result,
+            detail=event_detail(event),
+        )
+        if self._sink is not None:
+            # Sink failures are loud by design: silently dropping audit
+            # records is the truncation class PROP-004 forbids.
+            self._sink.record(record)
+        return record
+
+    # ----- mutating API -----------------------------------------------------
+
+    def create(
+        self,
+        *,
+        actor: str,
+        caller_cwd: Path,
+        task_id: str | None = None,
+        title: str = "",
+        description: str = "",
+        priority: str = "medium",
+        role: str = "",
+        reviewer: str = "user",
+        parent_task: str = "",
+        depends_on: Sequence[str] = (),
+        tags: Sequence[str] = (),
+    ) -> KernelResult:
+        """Create a card. Id allocation + reserve is atomic under the
+        directory-scoped alloc lock (HATS-936); timeout is a loud failure."""
+        if parent_task and parent_task == task_id:
+            raise ValueError(f"Task '{task_id}' cannot be its own parent")
+        self.tasks_dir.mkdir(parents=True, exist_ok=True)
+        # Not a `<prefix>-N` card dir, so scans ignore it.
+        alloc_lock_path = self.tasks_dir / ".alloc.lock"
+        lock = FileLock(str(alloc_lock_path), timeout=self._lock_timeout)
+        try:
+            with lock:
+                if task_id is None:
+                    task_id = self._next_id()
+                if self._task_path(task_id).exists():
+                    raise TaskExistsError(task_id)
+                now = utc_now()
+                task = TaskCard(
+                    id=task_id,
+                    title=title,
+                    state=self.topology.initial,
+                    description=description,
+                    priority=priority,
+                    role=role,
+                    reviewer=reviewer,
+                    parent_task=parent_task,
+                    depends_on=list(depends_on),
+                    tags=list(tags),
+                    created=now,
+                    updated=now,
+                )
+                self._persist(task)
+        except Timeout as exc:
+            raise LockTimeoutError(
+                alloc_lock_path, "task-id allocation", self._lock_timeout
+            ) from exc
+        journal = self._dispatch_epicify(parent_task, task.id, actor=actor, caller_cwd=caller_cwd)
+        return KernelResult(task=task, journal=journal)
+
+    def _next_id(self) -> str:
+        max_num = 0
+        for d in self.tasks_dir.iterdir():
+            if d.is_dir():
+                match = re.search(rf"{self.prefix}-(\d+)", d.name)
+                if match:
+                    max_num = max(max_num, int(match.group(1)))
+        return f"{self.prefix}-{max_num + 1:03d}"
+
+    def transition(
+        self,
+        task_id: str,
+        to_state: str,
+        *,
+        actor: str,
+        caller_cwd: Path,
+        force: bool = False,
+        reason: str = "",
+        resolution: str | None = None,
+        final_state: str | None = None,
+    ) -> KernelResult:
+        """Move a task along an FSM edge.
+
+        ``force`` relaxes ONLY the FSM arrow (never subscriber safety) and
+        requires a reason. ``resolution`` / ``final_state`` ride the same lock
+        window as the state change — a raise anywhere before the single
+        persist leaves zero bytes changed on disk (HATS-723/481).
+        """
+        self.topology.require_state(to_state)
+        if force and not reason.strip():
+            raise ForceRequiresReasonError()
+        if not self._task_path(task_id).exists():
+            raise UnknownTaskError(task_id)
+
+        outcomes: list[SubscriberOutcome] = []
+        event: EdgeEvent | None = None
+        lock = self._task_lock(task_id)
+        try:
+            with lock:
+                task = self._load(task_id)
+                from_state = task.state
+                is_epic = self.is_epic(task_id)
+                if force:
+                    if from_state == to_state:
+                        raise ValueError(f"Task '{task_id}' is already in state '{to_state}'")
+                    task.state = to_state
+                    task.log_work(
+                        f"Forced transition {from_state} → {to_state}: {reason}", actor=actor
+                    )
+                else:
+                    self.topology.guard(task_id, from_state, to_state)
+                    task.state = to_state
+                task.updated = utc_now()
+                if resolution is not None:
+                    task.resolution = resolution
+                if final_state is not None:
+                    task.final_state = final_state
+                self._stamp_lifecycle(task, from_state, to_state)
+
+                event = EdgeEvent(from_state, to_state)
+                ctx = self._ctx_factory(event, task, caller_cwd, is_epic, actor, force, reason)
+
+                def apply_delta(delta: Delta) -> None:
+                    for line in delta.work_log:
+                        task.log_work(line, actor=actor)
+
+                self._dispatcher.run_blocking(event, ctx, apply_delta, outcomes)
+                self._persist(task)  # the SINGLE persist, always last
+        except Timeout as exc:
+            raise LockTimeoutError(
+                self.tasks_dir / task_id / ".lock", f"transition of {task_id}", self._lock_timeout
+            ) from exc
+        except Exception:
+            if event is not None:  # dispatch began → the refusal stays auditable
+                self._finish_record(
+                    event, task_id, actor, force, reason, outcomes, result="aborted"
+                )
+            raise
+
+        ctx = self._ctx_factory(
+            event, task, caller_cwd, self.is_epic(task_id), actor, force, reason
+        )
+        self._dispatcher.run_reactions(event, ctx, outcomes)
+        record = self._finish_record(
+            event, task_id, actor, force, reason, outcomes, result="persisted"
+        )
+        return KernelResult(
+            task=task,
+            transitions=(TaskTransition(task_id, from_state, to_state, reason),),
+            journal=(record,),
+        )
+
+    def _stamp_lifecycle(self, task: TaskCard, from_state: str, to_state: str) -> None:
+        """Anchor-field bookkeeping the old card format expects (HATS-328)."""
+        if to_state in ("done", "cancelled"):
+            task.completed_at = utc_now()
+        if from_state == "done" and to_state == "execute":
+            task.completed_at = ""
+            task.log_work("Reopened from done")
+
+    def log_work(self, task_id: str, message: str, *, actor: str = "") -> TaskCard:
+        """Append a work_log entry (anchor field — CLI-only, transactional)."""
+        lock = self._task_lock(task_id)
+        try:
+            with lock:
+                task = self._load(task_id)
+                task.log_work(message, actor=actor)
+                task.updated = utc_now()
+                self._persist(task)
+        except Timeout as exc:
+            raise LockTimeoutError(
+                self.tasks_dir / task_id / ".lock", f"log_work on {task_id}", self._lock_timeout
+            ) from exc
+        return task
+
+    def set_parent(
+        self, task_id: str, parent_task: str, *, actor: str, caller_cwd: Path
+    ) -> KernelResult:
+        """Reparent a task. Gaining a child epicifies the new parent — a
+        first-class dispatcher event, not an FSM edge (HATS-977/979)."""
+        if parent_task == task_id:
+            raise ValueError(f"Task '{task_id}' cannot be its own parent")
+        lock = self._task_lock(task_id)
+        try:
+            with lock:
+                task = self._load(task_id)
+                task.parent_task = parent_task
+                task.updated = utc_now()
+                self._persist(task)
+        except Timeout as exc:
+            raise LockTimeoutError(
+                self.tasks_dir / task_id / ".lock", f"set_parent on {task_id}", self._lock_timeout
+            ) from exc
+        journal = self._dispatch_epicify(parent_task, task_id, actor=actor, caller_cwd=caller_cwd)
+        return KernelResult(task=task, journal=journal)
+
+    def publish(
+        self,
+        event: PreDestroyEvent,
+        *,
+        actor: str,
+        caller_cwd: Path,
+        force: bool = False,
+        reason: str = "",
+    ) -> tuple[DispatchRecord, ...]:
+        """Extension-facing blocking dispatch for pre-destroy events.
+
+        Runs IN_LOCK subscriptions inside the publisher's own operation
+        window (no task lock is taken here); an abort propagates so the
+        extension cancels the destructive operation. Deltas are journal-only.
+        """
+        task = self._load(event.task_id)
+        is_epic = self.is_epic(event.task_id)
+        outcomes: list[SubscriberOutcome] = []
+        ctx = self._ctx_factory(event, task, caller_cwd, is_epic, actor, force, reason)
+        try:
+            self._dispatcher.run_blocking(event, ctx, lambda delta: None, outcomes)
+        except Exception:
+            self._finish_record(
+                event, event.task_id, actor, force, reason, outcomes, result="aborted"
+            )
+            raise
+        # "persisted" here means the publisher's operation may proceed.
+        return (
+            self._finish_record(
+                event, event.task_id, actor, force, reason, outcomes, result="persisted"
+            ),
+        )
+
+    # ----- internals ----------------------------------------------------------
+
+    def _ctx_factory(
+        self,
+        event: Event,
+        task: TaskCard,
+        caller_cwd: Path,
+        is_epic: bool,
+        actor: str,
+        force: bool,
+        reason: str,
+    ):
+        def make_ctx() -> DispatchContext:
+            return DispatchContext(
+                event=event,
+                task=task.model_copy(deep=True),  # immutable-by-copy: no store handle
+                caller_cwd=caller_cwd,
+                is_epic=is_epic,
+                actor=actor,
+                force=force,
+                reason=reason,
+            )
+
+        return make_ctx
+
+    def _dispatch_epicify(
+        self, parent_task: str, child_id: str, *, actor: str, caller_cwd: Path
+    ) -> tuple[DispatchRecord, ...]:
+        """Reaction-phase dispatch of the epicify event (nothing to abort —
+        the child already exists; handlers reconcile, idempotently)."""
+        if not parent_task:
+            return ()
+        parent = self.get(parent_task)
+        if parent is None:
+            return ()  # dangling parent ref: nothing to reconcile against
+        event = EpicifyEvent(epic_id=parent_task, child_id=child_id)
+        outcomes: list[SubscriberOutcome] = []
+        ctx = self._ctx_factory(
+            event, parent, caller_cwd, self.is_epic(parent_task), actor, False, ""
+        )
+        self._dispatcher.run_reactions(event, ctx, outcomes)
+        return (
+            self._finish_record(event, parent_task, actor, False, "", outcomes, result="persisted"),
+        )

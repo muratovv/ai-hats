@@ -116,4 +116,7 @@ def launcher_subprocess_env(
     env[ENV_AI_HATS_VENV] = str(venv)
     env["AI_HATS_USER_HOME"] = str(Path(user_home))
     env.pop(ENV_LAUNCHER_DEST, None)
+    # HATS-1019: merge is default-deny; the e2e inventory tests merge
+    # semantics, not consent. Gate tests pop this from a copied env.
+    env.setdefault("AI_HATS_MERGE_ACK", "1")
     return env

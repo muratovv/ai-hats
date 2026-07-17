@@ -14,6 +14,7 @@ from ai_hats_wt import (
     WorktreeCreateError,
     WorktreeDirtyError,
     WorktreeManager,
+    WorktreeMergeConsentError,
     WorktreeStateIncompleteError,
 )
 
@@ -424,6 +425,89 @@ class TestOriginalBranchMissing:
             text=True,
         )
         assert result.stdout.strip() != "", "worktree branch should be preserved"
+
+
+# ---------------------------------------------------------------------------
+# Merge consent gate (HATS-1019)
+# ---------------------------------------------------------------------------
+
+
+class TestMergeConsentGate:
+    def test_merge_denied_without_ack(
+        self, git_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Without AI_HATS_MERGE_ACK=1, merge() must refuse before any
+        mutation: worktree dir + branch preserved, base branch untouched."""
+        monkeypatch.delenv("AI_HATS_MERGE_ACK", raising=False)
+        mgr = WorktreeManager(git_project, "tester", "sess-1019a", IsolationMode.SQUASH)
+        wt = mgr.create()
+        (wt / "feature.txt").write_text("wip")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "wip")
+
+        with pytest.raises(WorktreeMergeConsentError):
+            mgr.merge()
+
+        assert wt.exists(), "worktree dir must survive a consent refusal"
+        assert not (git_project / "feature.txt").exists(), "base must be untouched"
+        result = subprocess.run(
+            ["git", "branch", "--list", mgr.branch_name],
+            cwd=str(git_project),
+            capture_output=True,
+            text=True,
+        )
+        assert result.stdout.strip() != "", "worktree branch should be preserved"
+
+    def test_ack_allows_merge(
+        self, git_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("AI_HATS_MERGE_ACK", "1")
+        mgr = WorktreeManager(git_project, "tester", "sess-1019b", IsolationMode.SQUASH)
+        wt = mgr.create()
+        (wt / "feature.txt").write_text("done")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "feature")
+
+        mgr.merge()
+
+        assert (git_project / "feature.txt").exists(), "change must land on base"
+        assert not wt.exists()
+
+    def test_force_does_not_bypass_consent(
+        self, git_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """force handles dirty state, not consent (same split as drift)."""
+        monkeypatch.delenv("AI_HATS_MERGE_ACK", raising=False)
+        mgr = WorktreeManager(git_project, "tester", "sess-1019c", IsolationMode.SQUASH)
+        wt = mgr.create()
+        (wt / "feature.txt").write_text("wip")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "wip")
+
+        with pytest.raises(WorktreeMergeConsentError):
+            mgr.merge(force=True)
+
+        assert wt.exists()
+
+    def test_already_merged_teardown_needs_no_ack(
+        self, git_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """HATS-596 short-circuit publishes nothing: after the supervisor
+        merged the branch himself, ack-free `transition done` must still
+        tear the worktree down."""
+        monkeypatch.delenv("AI_HATS_MERGE_ACK", raising=False)
+        mgr = WorktreeManager(git_project, "tester", "sess-1019d", IsolationMode.SQUASH)
+        wt = mgr.create()
+        (wt / "feature.txt").write_text("done")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "feature")
+        # Supervisor-side merge of the task branch into base
+        _git(git_project, "merge", "--no-ff", mgr.branch_name, "-m", "supervisor merge")
+
+        mgr.merge()  # no raise: cleanup only
+
+        assert not wt.exists()
+        assert (git_project / "feature.txt").exists()
 
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ composition:
     - request-supervisor
     - plan-discipline
     - plan-gate
+    - task-slicing
     - requirements-interview
     - devils-advocate
     - scope-guard

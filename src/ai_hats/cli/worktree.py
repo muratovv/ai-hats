@@ -247,6 +247,7 @@ def wt_merge(
         WorktreeDirtyError,
         WorktreeDriftError,
         WorktreeMainRepoMidMergeError,  # HATS-587 / F4
+        WorktreeMergeConsentError,  # HATS-1019
         WorktreePartialCleanupError,
         WorktreeRemoveError,
         WorktreeStateIncompleteError,  # HATS-714
@@ -279,6 +280,19 @@ def wt_merge(
         from rich.markup import escape as _escape
 
         console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e.__cause__ or e))}")
+        sys.exit(1)
+    except WorktreeMergeConsentError as e:
+        # HATS-1019: recipe lives here (HATS-509 split) — the deny doubles
+        # as the review-handoff directive.
+        console.print(f"[red]Refused (supervisor consent required)[/]: {e}")
+        console.print(
+            "This task is ready for review — STOP and hand it off to the "
+            "supervisor. After reviewing, the supervisor merges:"
+        )
+        console.print(
+            f"  [cyan]AI_HATS_MERGE_ACK=1 ai-hats wt merge {name}[/]",
+            soft_wrap=True,
+        )
         sys.exit(1)
     except WorktreeDirtyError as e:
         console.print(f"[red]Refused[/]: {e}")

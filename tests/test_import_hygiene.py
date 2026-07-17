@@ -61,6 +61,9 @@ ALLOWED_COMPOSITION_CONSUMERS = (
     "costs",  # HATS-865: composition-tree introspection tooling, not a brick
     "composition_seam",  # HATS-865: THE integrator compose seam (payload builder)
     "sweeper",  # HATS-910 maintenance tooling (provider-managed surface sweep)
+    # HATS-1023: consumer lifecycle union — enumerates ALL library skills by
+    # design; a per-role CompositionPayload cannot express the union scope.
+    "lifecycle_hooks",
 )
 
 # HATS-865 T5 complete: the migration ratchet (EXPECTED_COMPOSITION_OFFENDERS)

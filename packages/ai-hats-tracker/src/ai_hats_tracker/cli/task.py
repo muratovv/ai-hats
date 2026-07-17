@@ -173,6 +173,7 @@ def task_transition(
             WorktreeCreateError,
             WorktreeDriftError,
             WorktreeMainRepoMidMergeError,
+            WorktreeMergeConsentError,
             WorktreeStateIncompleteError,
             WorktreeStateLostError,
         )
@@ -189,6 +190,8 @@ def task_transition(
         class WorktreeDriftError(Exception): ...
 
         class WorktreeMainRepoMidMergeError(Exception): ...
+
+        class WorktreeMergeConsentError(Exception): ...
 
         class WorktreeStateIncompleteError(Exception): ...
 
@@ -302,6 +305,30 @@ def task_transition(
         _seam._CONSOLE.print(f"  Plan path: {e.plan_path}")
         _seam._CONSOLE.print("  Fill the named section(s) in plan.md, then retry.")
         sys.exit(2)
+    except WorktreeMergeConsentError as e:
+        # HATS-1019: the deny doubles as the review-handoff directive.
+        # Card stays in its prior state; after the supervisor merges, the
+        # retried transition hits the already-merged short-circuit ack-free.
+        from rich.markup import escape as _escape
+
+        _seam._CONSOLE.print(
+            f"[red]Refused (supervisor consent required)[/] — cannot merge for {task_id}."
+        )
+        _seam._CONSOLE.print(_escape(str(e)))
+        _seam._CONSOLE.print(
+            "The task is ready for review — STOP and hand it off to the "
+            "supervisor. After reviewing, the supervisor merges; then retry:"
+        )
+        _seam._CONSOLE.print(
+            # e.branch_name, not task_id: `wt merge` resolves branches (PROP-042)
+            f"  [cyan]AI_HATS_MERGE_ACK=1 ai-hats wt merge {e.branch_name}[/]",
+            soft_wrap=True,
+        )
+        _seam._CONSOLE.print(
+            f"  [cyan]ai-hats task transition {task_id} done[/]",
+            soft_wrap=True,
+        )
+        sys.exit(1)
     except WorktreeBaseBranchError as e:
         # HATS-518: main-repo HEAD wasn't on a canonical base when we tried
         # to create the execute worktree. Card stays in its prior state —

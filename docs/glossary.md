@@ -80,6 +80,10 @@ per-section enforcement — the engine gate (HATS-635).
 
 - **Task ownership registry** — a single local, gitignored file recording which live session is *executing* each task, so a second agent can safely reclaim a task left mid-flight by a dead owner (`transition <id> execute` again — the `execute → execute` reclaim self-loop) and a live owner is never stolen (HATS-955). Reclaim-on-certain-death (owner pid + OS start-time, no TTL), single-slot per agent, ownership orthogonal to task state and anchored on `AI_HATS_ROOT_PID`. Full design — see [ADR-0015](adr/0015-task-ownership.md).
 
+## Rack (`ai-hats-rack`)
+
+The minimal backlog **kernel** built parallel to the production tracker (epic HATS-1014; the name = hatrack). Same `task.yaml` format and layout, new engine: FSM topology from an in-package `fsm.yaml` (SSOT), a transactional `transition` (FileLock → guard → in-memory mutation → two-phase subscriber dispatch → single persist last), a structural lock model, and a dispatch journal with actor identity. Everything beyond that — worktree, ownership, scaffold, plan-gate, epic-automation, doc store, consumer hooks — is an extension subscribing to kernel events, not kernel code. CLI namespace during the comparison period: `rack`. The old tracker is feature-frozen until the K6 cutover decision. Source: `packages/ai-hats-rack/`.
+
 ## Attachment
 
 A file attached to a Task via `ai-hats task attach add`. Blob lives in
