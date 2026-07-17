@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.1]
+
+### Added
+
+- `task transition done` surfaces the merge consent refusal
+  (`WorktreeMergeConsentError`, HATS-1019) as a review-handoff directive:
+  card stays in its prior state; the printed recipe names the supervisor
+  merge (`AI_HATS_MERGE_ACK=1 ai-hats wt merge <branch>`) and the ack-free
+  retry.
+
 ## [0.6.0]
 
 ### Added
@@ -18,6 +28,13 @@ to [Semantic Versioning](https://semver.org/).
   `ai-hats-tracker --version`, rather than being co-located inside this package.
   The engine still ships **no** skill and declares **no** `ai_hats.skills`
   entry-point.
+
+### Fixed
+
+- Reclaim an epicified task's worktree alongside its ownership hold (HATS-979):
+  the epicification events (create-child and update-reparent) now call the
+  injected worktree-effects seam's `discard_if_empty`, so a childless task that
+  entered execute no longer orphans its worktree after gaining children.
 
 ## [0.5.1]
 

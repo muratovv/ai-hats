@@ -78,6 +78,9 @@ Draft an implementation plan. Attach to task directory as `plan.md`.
   `ai-hats task plan-extract <ID>` to surface candidates and create child
   tasks in one pass (interactive y/n/edit, or `--auto` / `--dry-run` /
   `--json`). Marker `<!-- <prefix>-NNN -->` makes re-runs idempotent.
+  Slice shape (one-session tracer bullets, `depends_on` edges, expand–contract
+  for wide refactors) → skill **task-slicing**. Same recipe carries a
+  mid-execute tail: append it as `## Steps` items, re-run `plan-extract`.
 - Transition: `ai-hats task transition <ID> execute` when plan is ready AND all approaches are addressed
 
 ### plan → execute
@@ -85,12 +88,14 @@ Draft an implementation plan. Attach to task directory as `plan.md`.
 Two equivalent flows — pick one, do not mix:
 
 **A. Auto worktree (single command, branch named `task/<id>`):**
+
 1. `ai-hats task transition <ID> execute` — creates a `task/<id>` worktree automatically
 2. `cd <printed-worktree-path>`
 
 > **Do not** pre-create the `task/<id>` branch (e.g. `git branch task/hats-NNN`) before this transition. The CLI invokes `git worktree add -b task/<id> ...`; if the branch already exists, the command fails and you have to delete the branch and retry. (HATS-375)
 
 **B. Custom branch name (manual worktree first):**
+
 1. `ai-hats wt create type/TICKET-ID` (e.g. `feat/PROJ-004`) → **worktree-isolation**
 2. `cd <printed-worktree-path>`
 3. `ai-hats task transition <ID> execute` — adopts the worktree you just `cd`'d into (no nesting)

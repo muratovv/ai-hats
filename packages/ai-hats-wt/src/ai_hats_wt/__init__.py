@@ -32,6 +32,7 @@ from .manager import (
     WorktreeLifecycle,
     WorktreeMainRepoMidMergeError,
     WorktreeManager,
+    WorktreeMergeConsentError,
     WorktreePartialCleanupError,
     WorktreeRemoveError,
     WorktreeStateIncompleteError,
@@ -72,6 +73,7 @@ __all__ = [
     "WorktreeBaseBranchError",
     "WorktreeBaseBranchMismatchError",
     "WorktreeMainRepoMidMergeError",
+    "WorktreeMergeConsentError",
     "WorktreeTeardownAborted",
     "WorktreeLockError",
 ]

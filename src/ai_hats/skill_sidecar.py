@@ -25,7 +25,9 @@ import yaml
 # ``worktree`` is the HATS-823 carry block (wt_in / wt_out) — frontmatter-only
 # from day one, so a leftover ``worktree:`` in metadata.yaml is the same
 # silent-drop hazard the guard exists to catch.
-_HOOK_KEYS = ("git_hooks", "runtime_hooks", "worktree")
+# ``lifecycle_hooks`` / ``plan_sections`` (HATS-1023) are frontmatter-only from
+# day one — a sidecar carrying them is the same silent-drop hazard.
+_HOOK_KEYS = ("git_hooks", "runtime_hooks", "worktree", "lifecycle_hooks", "plan_sections")
 
 
 @dataclass(frozen=True)
