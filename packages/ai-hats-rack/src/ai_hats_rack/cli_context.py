@@ -1,7 +1,7 @@
 """``rack`` linked-task verbs: tree / link / unlink / context / ls (HATS-1024).
 
-``context`` is THE one-call discovery package — card + document paths +
-parent/depends_on/related/children — replacing the 10-call, 209 851-char
+``context`` is THE one-call discovery package — card + document paths + one
+top-level ``links`` object (HATS-1028) — replacing the 10-call, 209 851-char
 baseline F4 walk. Content rides only behind an explicit ``--with`` selector,
 capped per document by ``--max-bytes`` with a marked, path-carrying cut.
 """
@@ -22,16 +22,15 @@ from .kernel import LockTimeoutError, UnknownTaskError
 from .linked import (
     DEFAULT_MAX_BYTES,
     ContextPackage,
-    LinkedBlock,
+    LinkView,
     SelfLinkError,
     TreeNode,
-    UnknownLinkKindError,
     UnknownSelectorError,
     build_context,
     build_tree,
-    canonical_kind,
     scan_cards,
 )
+from .registry import DerivedLinkKindError, UnknownLinkKindError, load_registry_for
 from .resolver import NoProjectRootError
 
 
@@ -42,7 +41,9 @@ def handle_linked_error(exc: Exception, as_json: bool) -> None:
     if isinstance(exc, SelfLinkError):
         fail(as_json, "self_link", str(exc), task_id=exc.task_id)
     if isinstance(exc, UnknownLinkKindError):
-        fail(as_json, "unknown_link_kind", str(exc), kind=exc.kind)
+        fail(as_json, "unknown_link_kind", str(exc), kind=exc.kind, configured=list(exc.configured))
+    if isinstance(exc, DerivedLinkKindError):
+        fail(as_json, "derived_link_kind", str(exc), kind=exc.kind, inverse=exc.inverse)
     if isinstance(exc, UnknownSelectorError):
         fail(as_json, "unknown_selector", str(exc), selector=exc.selector)
     if isinstance(exc, UnknownDocumentError):
@@ -103,10 +104,9 @@ def tree_cmd(task_id: str, tasks_dir: Path | None, as_json: bool) -> None:
 @click.argument("target")
 @click.option(
     "--kind",
-    type=click.Choice(["related", "depends"]),
     default="related",
     show_default=True,
-    help="Card field to add TARGET to (depends → depends_on).",
+    help="Any configured link kind (unknown → typed error listing the set).",
 )
 @TASKS_DIR_OPT
 @JSON_OPT
@@ -114,17 +114,20 @@ def link_cmd(task_id: str, target: str, kind: str, tasks_dir: Path | None, as_js
     """Link TARGET into TASK_ID's card (task-locked single persist; idempotent)."""
     try:
         root = resolved_root(tasks_dir, Path.cwd())
-        result = linked.link(root.tasks_dir, task_id, target, kind, actor=actor())
+        registry = load_registry_for(root.project_dir)
+        result = linked.link(
+            root.tasks_dir, task_id, target, kind, registry=registry, actor=actor()
+        )
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
         handle_linked_error(exc, as_json)
         return
-    field = canonical_kind(kind)
+    resolved_kind = result.kinds[0] if result.kinds else registry.require(kind).name
     if as_json:
-        emit_json({**result.to_dict(), "kind": field})
+        emit_json({**result.to_dict(), "kind": resolved_kind})
     elif result.changed:
-        click.echo(f"Linked: {task_id} {field} {target}")
+        click.echo(f"Linked: {task_id} {resolved_kind} {target}")
     else:
-        click.echo(f"Already linked: {task_id} {field} {target} (no-op)")
+        click.echo(f"Already linked: {task_id} {resolved_kind} {target} (no-op)")
 
 
 @click.command("unlink")
@@ -132,20 +135,20 @@ def link_cmd(task_id: str, target: str, kind: str, tasks_dir: Path | None, as_js
 @click.argument("target")
 @click.option(
     "--kind",
-    type=click.Choice(["related", "depends"]),
     default=None,
-    help="Only this field; default removes TARGET from both.",
+    help="Only this configured kind; default removes TARGET from every non-parent kind.",
 )
 @TASKS_DIR_OPT
 @JSON_OPT
 def unlink_cmd(
     task_id: str, target: str, kind: str | None, tasks_dir: Path | None, as_json: bool
 ) -> None:
-    """Remove TARGET from TASK_ID's link fields (idempotent; dangling ok)."""
+    """Remove TARGET from TASK_ID's link kinds (idempotent; dangling ok)."""
     try:
         root = resolved_root(tasks_dir, Path.cwd())
+        registry = load_registry_for(root.project_dir)
         result = linked.unlink(  # safe-delete: ok card-field op, no fs delete
-            root.tasks_dir, task_id, target, kind, actor=actor()
+            root.tasks_dir, task_id, target, kind, registry=registry, actor=actor()
         )
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
         handle_linked_error(exc, as_json)
@@ -161,15 +164,25 @@ def unlink_cmd(
 # ----- context -------------------------------------------------------------------
 
 
-def _echo_block(header: str, blocks: tuple[LinkedBlock, ...]) -> None:
-    click.echo(f"  {header}:")
-    for block in blocks:
-        res = f" — resolution: {block.resolution}" if block.resolution else ""
-        click.echo(f"    {block.id} [{block.state}] {block.title}{res}")
-        if block.docs:
-            rows = [[ref.name, str(ref.path), _mtime_human(ref.mtime)] for ref in block.docs]
-            for line in _columns(rows, "      "):
-                click.echo(line)
+def _kind_label(kind: str) -> str:
+    """Human header for a kind: ``depends_on`` → ``Depends on``."""
+    return kind.replace("_", " ").capitalize()
+
+
+def _echo_links(links: dict[str, tuple[LinkView, ...]]) -> None:
+    if not links:
+        return
+    click.echo("")
+    click.echo("  links:")
+    for kind, views in links.items():
+        click.echo(f"    {_kind_label(kind)}:")
+        for view in views:
+            res = f" — resolution: {view.resolution}" if view.resolution else ""
+            click.echo(f"      {view.id} [{view.state}] {view.title}{res}")
+            if view.docs:
+                rows = [[ref.name, str(ref.path), _mtime_human(ref.mtime)] for ref in view.docs]
+                for line in _columns(rows, "        "):
+                    click.echo(line)
 
 
 def _echo_context(pkg: ContextPackage, tasks_dir: Path) -> None:
@@ -193,21 +206,7 @@ def _echo_context(pkg: ContextPackage, tasks_dir: Path) -> None:
         click.echo(f"  latest work_log ({latest.timestamp or '?'}): {latest.message}")
     click.echo("")
     echo_documents(tasks_dir / card.id, list(pkg.documents))
-    if pkg.parent:
-        click.echo("")
-        _echo_block("Parent", (pkg.parent,))
-    if pkg.depends_on:
-        click.echo("")
-        _echo_block("Depends on", pkg.depends_on)
-    if pkg.related:
-        click.echo("")
-        _echo_block("Related", pkg.related)
-    if pkg.children:
-        click.echo("")
-        click.echo("  Children:")
-        rows = [[c.id, f"[{c.state}]", c.priority, c.title] for c in pkg.children]
-        for line in _columns(rows, "    "):
-            click.echo(line)
+    _echo_links(dict(pkg.links))
     for inc in pkg.included:
         click.echo("")
         click.echo(f"  --- {inc.task_id}/{inc.name} ({inc.path}) ---")
@@ -244,11 +243,14 @@ def context_cmd(
     tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
-    """One-call discovery package: card, document paths, parent, links, children."""
+    """One-call discovery package: card, document paths, and a top-level links object."""
     selectors = [s.strip() for part in with_ for s in part.split(",") if s.strip()]
     try:
         root = resolved_root(tasks_dir, Path.cwd())
-        pkg = build_context(root.tasks_dir, task_id, selectors=selectors, max_bytes=max_bytes)
+        registry = load_registry_for(root.project_dir)
+        pkg = build_context(
+            root.tasks_dir, task_id, registry=registry, selectors=selectors, max_bytes=max_bytes
+        )
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
         handle_linked_error(exc, as_json)
         return

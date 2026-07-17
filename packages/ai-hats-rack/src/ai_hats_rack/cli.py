@@ -35,6 +35,7 @@ from .kernel import (
     UnknownTaskError,
 )
 from .models import TaskCard
+from .registry import load_registry_for, resolve_links
 from .resolver import NoProjectRootError
 
 
@@ -148,27 +149,46 @@ def show(task_id: str, tasks_dir: Path | None, as_json: bool) -> None:
     """Show a task card + its documents (names and absolute paths, no content)."""
     try:
         root = _resolved_root(tasks_dir, Path.cwd())
-        task = Kernel(root.tasks_dir).get(task_id)
+        registry = load_registry_for(root.project_dir)
+        kernel = Kernel(root.tasks_dir, registry=registry)
+        task = kernel.get(task_id)
         if task is None:
             _fail(as_json, "unknown_task", f"Task '{task_id}' not found", task_id=task_id)
             return
         store = DocStore(root.tasks_dir)
         docs = store.scan(task_id)
+        links = _resolve_card_links(kernel, registry, task)
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
         _handle_kernel_error(exc, as_json)
         return
     if as_json:
-        _emit_json({"task": task.to_dict(), "documents": [d.to_dict() for d in docs]})
+        _emit_json(
+            {"task": task.to_dict(), "links": links, "documents": [d.to_dict() for d in docs]}
+        )
     else:
-        _echo_card(task)
+        _echo_card(task, links)
         echo_documents(store.card_dir(task_id), docs)
 
 
-def _echo_card(task: TaskCard) -> None:
-    for key in ("id", "title", "state", "priority", "reviewer", "parent_task"):
+def _resolve_card_links(kernel: Kernel, registry, task: TaskCard) -> dict[str, list[str]]:
+    """The single top-level ``links`` object (HATS-1028): every configured kind
+    → its ids, derived children included via the kernel's reverse scan."""
+    derived: dict[str, list[str]] = {}
+    children_kind = registry.children_kind
+    if children_kind is not None:
+        derived[children_kind.name] = kernel.children_of(task.id)
+    return resolve_links(registry, task, derived=derived)
+
+
+def _echo_card(task: TaskCard, links: dict[str, list[str]]) -> None:
+    for key in ("id", "title", "state", "priority", "reviewer"):
         value = getattr(task, key)
         if value:
             click.echo(f"  {key}: {value}")
+    if links:
+        click.echo("  links:")
+        for kind, ids in links.items():
+            click.echo(f"    {kind}: {', '.join(ids)}")
     if task.work_log:
         click.echo("  work_log:")
         for entry in task.work_log[-5:]:
