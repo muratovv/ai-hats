@@ -56,6 +56,25 @@ class MyExtension:
 
 A new event lands in this table together with its subscriber, or it does not land.
 
+## Stock extensions (K3, HATS-1022)
+
+Pure extensions live in `ai_hats_rack.extensions` (no integrator/wt/git imports):
+
+- **plan-scaffold / plan-gate** — one config-driven section catalog feeds both,
+  so template and enforcement can never drift (HATS-635); the gate names every
+  empty required section, waives epics (HATS-794) and reopen (HATS-328).
+  `standalone_extensions()` is the standalone kit (scaffold + gate only).
+- **epic-automation** — post-lock; the pure `decide()` table maps every epic
+  source state × child trigger to reopen/advance/activate/no-op
+  (HATS-690/692/789) and drives the epic through journaled FSM-valid kernel
+  hops under the `rack:epic-automation` actor (also the anti-cascade guard).
+- **derived-views** — post-lock STATE.md regeneration, own lock, atomic replace.
+
+Ownership and worktree adapters depend on the integrator's wt engine and live
+on the integrator side (`ai_hats.rack_wiring`, with `build_rack_kernel()` as
+the assembly mirror of `cli/_helpers._task_manager`); the boundary stays
+one-directional — the rack never imports them.
+
 ## Lock model (deadlock excluded structurally)
 
 | Lock                      | Scope                                         | Holder    |
