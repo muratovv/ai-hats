@@ -1,8 +1,9 @@
 """ai-hats-rack — minimal backlog kernel (epic HATS-1014, K1 HATS-1020).
 
 Public surface: the kernel, the FSM topology loader, the subscriber/dispatch
-contract, and the event kinds. Everything else (worktree, ownership, gates,
-doc store, hooks) is an extension living outside this package.
+contract, the event kinds, plus the K2 doc store (fs-as-truth view + frozen
+pins) and project-root resolver. Everything else (worktree, ownership, gates,
+hooks) is an extension living outside this package.
 """
 
 from .dispatch import (
@@ -16,6 +17,15 @@ from .dispatch import (
     Subscriber,
     SubscriberOutcome,
     Subscription,
+)
+from .docstore import (
+    DocInfo,
+    DocStore,
+    DocumentNameError,
+    FrozenDocumentError,
+    FrozenPinDriftError,
+    RemoveResult,
+    UnknownDocumentError,
 )
 from .events import EdgeEvent, EpicifyEvent, Event, PreDestroyEvent
 from .fsm import (
@@ -35,24 +45,39 @@ from .kernel import (
     UnknownTaskError,
 )
 from .models import TaskCard, WorkLogEntry
+from .resolver import (
+    NoProjectRootError,
+    RackRoot,
+    find_project_root,
+    load_root,
+    resolve_root,
+)
 
 __all__ = [
     "AbortOperation",
     "Delta",
     "DispatchContext",
     "DispatchRecord",
+    "DocInfo",
+    "DocStore",
+    "DocumentNameError",
     "EdgeEvent",
     "EpicifyEvent",
     "Event",
     "ForceRequiresReasonError",
+    "FrozenDocumentError",
+    "FrozenPinDriftError",
     "InvalidTransitionError",
     "JournalSink",
     "Kernel",
     "KernelResult",
     "LockTimeoutError",
+    "NoProjectRootError",
     "OperationAborted",
     "Phase",
     "PreDestroyEvent",
+    "RackRoot",
+    "RemoveResult",
     "Subscriber",
     "SubscriberOutcome",
     "Subscription",
@@ -61,8 +86,12 @@ __all__ = [
     "TaskTransition",
     "Topology",
     "TopologyError",
+    "UnknownDocumentError",
     "UnknownStateError",
     "UnknownTaskError",
     "WorkLogEntry",
+    "find_project_root",
+    "load_root",
     "load_topology",
+    "resolve_root",
 ]
