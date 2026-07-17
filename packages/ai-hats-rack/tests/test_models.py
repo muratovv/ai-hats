@@ -75,8 +75,30 @@ def test_empty_link_fields_not_emitted(tmp_path):
     out = tmp_path / "task.yaml"
     card.save(out)
     data = yaml.safe_load(out.read_text())
-    for noise in ("depends_on", "related", "see_also", "folded_into", "resolution"):
+    for noise in ("depends_on", "related", "see_also", "folded_into", "links", "resolution"):
         assert noise not in data
+
+
+def test_generic_links_round_trip(tmp_path):
+    # HATS-1028: new kinds live in the top-level `links:` key; empty kinds are
+    # dropped (byte-clean), non-empty ones survive a save/load cycle verbatim.
+    card = TaskCard(id="T-1", title="linked", links={"reviewed_with": ["T-9"], "blocks": []})
+    out = tmp_path / "task.yaml"
+    card.save(out)
+    data = yaml.safe_load(out.read_text())
+    assert data["links"] == {"reviewed_with": ["T-9"]}  # empty `blocks` not emitted
+    again = TaskCard.from_yaml(out)
+    assert again.links == {"reviewed_with": ["T-9"]}
+
+
+def test_old_rack_card_reloads_links_from_extras(tmp_path):
+    # A card that once carried `links` inside extras (e.g. saved by a kind-blind
+    # reader) parses back into the typed field, not a duplicated extras key.
+    path = tmp_path / "task.yaml"
+    path.write_text("id: T-1\ntitle: t\nlinks:\n  reviewed_with: [T-9]\n")
+    card = TaskCard.from_yaml(path)
+    assert card.links == {"reviewed_with": ["T-9"]}
+    assert "links" not in card.extras
 
 
 def test_log_work_actor_prefix():

@@ -8,7 +8,6 @@ from ai_hats_rack.docstore import UnknownDocumentError
 from ai_hats_rack.kernel import UnknownTaskError
 from ai_hats_rack.linked import (
     SelfLinkError,
-    UnknownLinkKindError,
     UnknownSelectorError,
     build_context,
     build_tree,
@@ -17,6 +16,16 @@ from ai_hats_rack.linked import (
     unlink,
 )
 from ai_hats_rack.models import TaskCard
+from ai_hats_rack.registry import DerivedLinkKindError, UnknownLinkKindError, load_registry
+
+_REVIEWED_WITH_YAML = (
+    "kinds:\n"
+    "  - {name: parent, legacy_field: parent_task, arity: one, inverse: children}\n"
+    "  - {name: depends_on, legacy_field: depends_on}\n"
+    "  - {name: related, legacy_field: related, inverse: related}\n"
+    "  - {name: children, derived: true, inverse: parent}\n"
+    "  - {name: reviewed_with}\n"
+)
 
 
 def make_card(tasks_dir, task_id, **fields):
@@ -98,8 +107,48 @@ def test_link_unknown_source_is_refused(tasks_dir):
 def test_link_unknown_kind_is_typed(tasks_dir):
     make_card(tasks_dir, "T-1")
     make_card(tasks_dir, "T-2")
-    with pytest.raises(UnknownLinkKindError):
+    with pytest.raises(UnknownLinkKindError) as err:
         link(tasks_dir, "T-1", "T-2", "blocks")
+    # the refusal names the configured set so the caller can self-correct
+    assert set(err.value.configured) == {"parent", "children", "depends_on", "related"}
+
+
+def test_link_arbitrary_new_kind_lands_in_links_dict(tasks_dir, tmp_path):
+    # A configured kind with no legacy field is stored under the generic
+    # `links:` key — the extras-compatible channel new kinds ride (HATS-1028).
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2")
+    override = tmp_path / "links.yaml"
+    override.write_text(
+        "kinds:\n"
+        "  - {name: parent, legacy_field: parent_task, arity: one, inverse: children}\n"
+        "  - {name: children, derived: true, inverse: parent}\n"
+        "  - {name: depends_on, legacy_field: depends_on}\n"
+        "  - {name: related, legacy_field: related, inverse: related}\n"
+        "  - {name: reviewed_with}\n"
+    )
+    reg = load_registry(override)
+    result = link(tasks_dir, "T-1", "T-2", "reviewed_with", registry=reg)
+    assert result.changed and result.kinds == ("reviewed_with",)
+    card = load(tasks_dir, "T-1")
+    assert card.links == {"reviewed_with": ["T-2"]}
+    assert card.depends_on == [] and card.related == []  # legacy fields untouched
+
+
+def test_link_parent_kind_sets_scalar(tasks_dir):
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2")
+    result = link(tasks_dir, "T-1", "T-2", "parent")
+    assert result.changed and result.kinds == ("parent",)
+    assert load(tasks_dir, "T-1").parent_task == "T-2"
+
+
+def test_link_derived_kind_is_refused(tasks_dir):
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2")
+    with pytest.raises(DerivedLinkKindError) as err:
+        link(tasks_dir, "T-1", "T-2", "children")
+    assert err.value.inverse == "parent"
 
 
 # ----- unlink -----------------------------------------------------------------
@@ -248,16 +297,19 @@ def test_context_full_package(tasks_dir):
     pkg = build_context(tasks_dir, "T-2")
     assert pkg.task.id == "T-2"
     assert [d.name for d in pkg.documents] == ["notes.md"]
-    assert pkg.parent is not None and pkg.parent.id == "T-1"
-    assert [d.name for d in pkg.parent.docs] == ["plan.md"]
-    assert pkg.parent.docs[0].path.is_absolute()
-    assert pkg.parent.docs[0].mtime.endswith("Z")
-    (dep,) = pkg.depends_on
+    # one top-level links map, registry order: parent, depends_on, related, children
+    assert list(pkg.links) == ["parent", "depends_on", "related", "children"]
+    (parent,) = pkg.links["parent"]
+    assert parent.id == "T-1"
+    assert [d.name for d in parent.docs] == ["plan.md"]
+    assert parent.docs[0].path.is_absolute()
+    assert parent.docs[0].mtime.endswith("Z")
+    (dep,) = pkg.links["depends_on"]
     assert (dep.id, dep.state, dep.resolution) == ("T-3", "done", "merged")
     assert [d.name for d in dep.docs] == ["summary.md", "retro.md"]
-    (rel,) = pkg.related
+    (rel,) = pkg.links["related"]
     assert rel.id == "T-4" and rel.docs == ()
-    assert [c.id for c in pkg.children] == ["T-5"]
+    assert [c.id for c in pkg.links["children"]] == ["T-5"]
     assert pkg.included == ()
 
 
@@ -272,14 +324,26 @@ def test_context_trimmed_card_carries_latest_work_log_only(tasks_dir):
 def test_context_dangling_link_is_skipped(tasks_dir):
     make_card(tasks_dir, "T-1", depends_on=["T-404"])
     pkg = build_context(tasks_dir, "T-1")
-    assert pkg.depends_on == ()
+    assert "depends_on" not in pkg.links
 
 
 def test_context_dedups_ids_across_kinds(tasks_dir):
     make_card(tasks_dir, "T-1", depends_on=["T-2"], related=["T-2"])
     make_card(tasks_dir, "T-2")
     pkg = build_context(tasks_dir, "T-1")
-    assert len(pkg.depends_on) == 1 and pkg.related == ()
+    assert len(pkg.links["depends_on"]) == 1 and "related" not in pkg.links
+
+
+def test_context_new_kind_surfaces_in_links(tasks_dir, tmp_path):
+    # A configured kind with no legacy field rides the generic `links:` dict and
+    # still appears (after the configured legacy kinds) in the context map.
+    make_card(tasks_dir, "T-1", links={"reviewed_with": ["T-2"]})
+    make_card(tasks_dir, "T-2", title="reviewer note")
+    override = tmp_path / "links.yaml"
+    override.write_text(_REVIEWED_WITH_YAML)
+    pkg = build_context(tasks_dir, "T-1", registry=load_registry(override))
+    (view,) = pkg.links["reviewed_with"]
+    assert view.id == "T-2" and view.title == "reviewer note"
 
 
 def test_context_unknown_task_is_typed(tasks_dir):

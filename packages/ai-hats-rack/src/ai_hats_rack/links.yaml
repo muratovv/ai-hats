@@ -1,0 +1,36 @@
+# Link-kind registry (HATS-1028) — the open, per-backlog set of edge kinds.
+#
+# The kernel and models stay kind-blind: THIS file (or a project-root
+# links.yaml override) is the SSOT for what edges a backlog understands.
+# Semantics are bound from ABOVE by extensions (epic-automation reads the
+# hierarchy kind); this file declares only structure + the legacy-field
+# mapping, so data compatibility holds with zero migration.
+#
+# Per kind:
+#   name          the kind identifier (used by `link --kind`, outputs).
+#   legacy_field  the historical task.yaml field it reads/writes (no migration);
+#                 omit → the kind is stored under the generic `links:` key.
+#   arity         one (scalar id) | many (list of ids). Default: many.
+#   inverse       the reverse kind's name; inverse == name marks a symmetric
+#                 kind (metadata only — bidirectional writes are not enforced).
+#   derived       true → computed as the reverse of `inverse`, never stored.
+#   aliases       forgiving spellings accepted by `link --kind` (PROP-042).
+#
+# Declaration order is the output order (show/context): most salient first,
+# derived kinds last, so a dedup across kinds keeps the more salient edge.
+kinds:
+  - name: parent
+    legacy_field: parent_task
+    arity: one
+    inverse: children
+  - name: depends_on
+    legacy_field: depends_on
+    arity: many
+    aliases: [depends]
+  - name: related
+    legacy_field: related
+    arity: many
+    inverse: related
+  - name: children
+    derived: true
+    inverse: parent
