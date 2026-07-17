@@ -91,13 +91,13 @@ def test_tree_unknown_task_is_typed(runner, tmp_path):
     assert json.loads(result.output)["error"]["code"] == "unknown_task"
 
 
-# ----- link / unlink --------------------------------------------------------------
+# ----- link / unlink (absorbed into `transition --link/--unlink`, HATS-1030) ------
 
 
 def test_link_human_and_worklog(runner, tmp_path):
     _family(tmp_path)
     result = runner.invoke(
-        main, ["link", "HATS-4", "HATS-3", "--kind", "depends", *_args(tmp_path)]
+        main, ["transition", "HATS-4", "--link", "depends:HATS-3", *_args(tmp_path)]
     )
     assert result.exit_code == 0, result.output
     assert "Linked: HATS-4 depends_on HATS-3" in result.output
@@ -108,15 +108,12 @@ def test_link_human_and_worklog(runner, tmp_path):
 
 def test_link_json_and_idempotent_rerun(runner, tmp_path):
     _family(tmp_path)
-    first = runner.invoke(main, ["link", "HATS-4", "HATS-3", *_args(tmp_path), "--json"])
-    assert json.loads(first.output) == {
-        "task_id": "HATS-4",
-        "target": "HATS-3",
-        "kinds": ["related"],
-        "changed": True,
-        "kind": "related",
-    }
-    second = runner.invoke(main, ["link", "HATS-4", "HATS-3", *_args(tmp_path)])
+    first = runner.invoke(
+        main, ["transition", "HATS-4", "--link", "HATS-3", *_args(tmp_path), "--json"]
+    )
+    (op,) = json.loads(first.output)["ops"]
+    assert op == {"op": "link", "kind": "related", "target": "HATS-3", "changed": True}
+    second = runner.invoke(main, ["transition", "HATS-4", "--link", "HATS-3", *_args(tmp_path)])
     assert second.exit_code == 0
     assert "Already linked" in second.output
     card = TaskCard.from_yaml(tmp_path / "tasks" / "HATS-4" / "task.yaml")
@@ -125,14 +122,18 @@ def test_link_json_and_idempotent_rerun(runner, tmp_path):
 
 def test_link_self_is_typed(runner, tmp_path):
     _family(tmp_path)
-    result = runner.invoke(main, ["link", "HATS-4", "HATS-4", *_args(tmp_path), "--json"])
+    result = runner.invoke(
+        main, ["transition", "HATS-4", "--link", "related:HATS-4", *_args(tmp_path), "--json"]
+    )
     assert result.exit_code == 1
     assert json.loads(result.output)["error"]["code"] == "self_link"
 
 
 def test_link_unknown_target_is_typed(runner, tmp_path):
     _family(tmp_path)
-    result = runner.invoke(main, ["link", "HATS-4", "HATS-404", *_args(tmp_path), "--json"])
+    result = runner.invoke(
+        main, ["transition", "HATS-4", "--link", "related:HATS-404", *_args(tmp_path), "--json"]
+    )
     assert result.exit_code == 1
     payload = json.loads(result.output)["error"]
     assert payload["code"] == "unknown_task" and payload["task_id"] == "HATS-404"
@@ -140,11 +141,14 @@ def test_link_unknown_target_is_typed(runner, tmp_path):
 
 def test_unlink_defaults_to_both_kinds(runner, tmp_path):
     _family(tmp_path)
-    result = runner.invoke(main, ["unlink", "HATS-2", "HATS-3", *_args(tmp_path), "--json"])
+    result = runner.invoke(
+        main, ["transition", "HATS-2", "--unlink", "HATS-3", *_args(tmp_path), "--json"]
+    )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert payload["kinds"] == ["depends_on"] and payload["changed"] is True
-    noop = runner.invoke(main, ["unlink", "HATS-2", "HATS-3", *_args(tmp_path)])
+    (op,) = json.loads(result.output)["ops"]
+    assert op["kinds"] == ["depends_on"] and op["changed"] is True
+    assert op["revert"] == "rack transition HATS-2 --link depends_on:HATS-3"
+    noop = runner.invoke(main, ["transition", "HATS-2", "--unlink", "HATS-3", *_args(tmp_path)])
     assert noop.exit_code == 0
     assert "Not linked" in noop.output
 

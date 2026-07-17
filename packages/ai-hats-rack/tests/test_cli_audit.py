@@ -28,15 +28,24 @@ def _tasks_args(tmp_path):
     return ["--tasks-dir", str(tmp_path / "tasks")]
 
 
+_FILLED_PLAN = (
+    "# Plan\n\n## Requirements\nr\n\n## Scope & Out-of-scope\ns\n\n"
+    "## Steps\nx\n\n## Verification Protocol\nv\n"
+)
+
+
 def _drive(runner, tmp_path, session="s1"):
     """create HATS-001 and walk brainstorm→plan→execute through the CLI."""
     env = {ENV_SESSION_ID: session}
     runner.invoke(main, ["create", "demo", *_tasks_args(tmp_path)], env=env)
-    for state in ("plan", "execute"):
-        result = runner.invoke(
-            main, ["transition", "HATS-001", state, *_tasks_args(tmp_path)], env=env
-        )
-        assert result.exit_code == 0, result.output
+    plan = runner.invoke(main, ["transition", "HATS-001", "plan", *_tasks_args(tmp_path)], env=env)
+    assert plan.exit_code == 0, plan.output
+    # Fill the scaffolded plan so the (now-wired) plan-gate lets execute through.
+    (tmp_path / "tasks" / "HATS-001" / "plan.md").write_text(_FILLED_PLAN)
+    execute = runner.invoke(
+        main, ["transition", "HATS-001", "execute", *_tasks_args(tmp_path)], env=env
+    )
+    assert execute.exit_code == 0, execute.output
 
 
 def test_audit_human_feed(runner, tmp_path):

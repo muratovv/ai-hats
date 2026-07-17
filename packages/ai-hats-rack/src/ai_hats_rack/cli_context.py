@@ -12,8 +12,7 @@ from pathlib import Path
 
 import click
 
-from . import linked
-from .cli_common import JSON_OPT, TASKS_DIR_OPT, actor, emit_json, fail, resolved_root
+from .cli_common import JSON_OPT, TASKS_DIR_OPT, emit_json, fail, resolved_root
 
 # shared table/mtime style — doc rows look the same on every rack surface
 from .cli_doc import _columns, _mtime_human, echo_documents
@@ -96,69 +95,8 @@ def tree_cmd(task_id: str, tasks_dir: Path | None, as_json: bool) -> None:
             click.echo("  (no children)")
 
 
-# ----- link / unlink -------------------------------------------------------------
-
-
-@click.command("link")
-@click.argument("task_id")
-@click.argument("target")
-@click.option(
-    "--kind",
-    default="related",
-    show_default=True,
-    help="Any configured link kind (unknown → typed error listing the set).",
-)
-@TASKS_DIR_OPT
-@JSON_OPT
-def link_cmd(task_id: str, target: str, kind: str, tasks_dir: Path | None, as_json: bool) -> None:
-    """Link TARGET into TASK_ID's card (task-locked single persist; idempotent)."""
-    try:
-        root = resolved_root(tasks_dir, Path.cwd())
-        registry = load_registry_for(root.project_dir)
-        result = linked.link(
-            root.tasks_dir, task_id, target, kind, registry=registry, actor=actor()
-        )
-    except Exception as exc:  # noqa: BLE001 — routed to typed handling
-        handle_linked_error(exc, as_json)
-        return
-    resolved_kind = result.kinds[0] if result.kinds else registry.require(kind).name
-    if as_json:
-        emit_json({**result.to_dict(), "kind": resolved_kind})
-    elif result.changed:
-        click.echo(f"Linked: {task_id} {resolved_kind} {target}")
-    else:
-        click.echo(f"Already linked: {task_id} {resolved_kind} {target} (no-op)")
-
-
-@click.command("unlink")
-@click.argument("task_id")
-@click.argument("target")
-@click.option(
-    "--kind",
-    default=None,
-    help="Only this configured kind; default removes TARGET from every non-parent kind.",
-)
-@TASKS_DIR_OPT
-@JSON_OPT
-def unlink_cmd(
-    task_id: str, target: str, kind: str | None, tasks_dir: Path | None, as_json: bool
-) -> None:
-    """Remove TARGET from TASK_ID's link kinds (idempotent; dangling ok)."""
-    try:
-        root = resolved_root(tasks_dir, Path.cwd())
-        registry = load_registry_for(root.project_dir)
-        result = linked.unlink(  # safe-delete: ok card-field op, no fs delete
-            root.tasks_dir, task_id, target, kind, registry=registry, actor=actor()
-        )
-    except Exception as exc:  # noqa: BLE001 — routed to typed handling
-        handle_linked_error(exc, as_json)
-        return
-    if as_json:
-        emit_json(result.to_dict())
-    elif result.changed:
-        click.echo(f"Unlinked: {task_id} {', '.join(result.kinds)} {target}")
-    else:
-        click.echo(f"Not linked: {task_id} — {target} (no-op)")
+# link / unlink were absorbed into `rack transition --link/--unlink` (HATS-1030);
+# this module keeps only the read verbs (tree / context / ls).
 
 
 # ----- context -------------------------------------------------------------------

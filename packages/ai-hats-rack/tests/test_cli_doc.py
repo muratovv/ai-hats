@@ -76,7 +76,7 @@ def test_ls_unknown_task_is_typed(runner, tmp_path):
 def test_ls_fails_loudly_on_frozen_drift(runner, tmp_path):
     card_dir = _setup_task(runner, tmp_path, ("evidence.log", b"v1"))
     freeze = runner.invoke(
-        main, ["doc", "freeze", "HATS-001", "evidence.log", *_tasks_args(tmp_path)]
+        main, ["transition", "HATS-001", "--freeze", "evidence.log", *_tasks_args(tmp_path)]
     )
     assert freeze.exit_code == 0, freeze.output
     (card_dir / "evidence.log").write_bytes(b"v2")
@@ -92,47 +92,34 @@ def test_ls_fails_loudly_on_frozen_drift(runner, tmp_path):
     assert payload["documents"][0]["drift"] == "modified"
 
 
-# ----- doc freeze / rm ---------------------------------------------------------
+# ----- freeze / rm (absorbed into `transition --freeze/--rm`, HATS-1030) -------
 
 
-def test_freeze_json_and_refreeze_flow(runner, tmp_path):
+def test_freeze_via_transition_and_drift_refusal(runner, tmp_path):
     card_dir = _setup_task(runner, tmp_path, ("evidence.log", b"v1"))
     result = runner.invoke(
-        main, ["doc", "freeze", "HATS-001", "evidence.log", *_tasks_args(tmp_path), "--json"]
+        main, ["transition", "HATS-001", "--freeze", "evidence.log", *_tasks_args(tmp_path), "--json"]
     )
     assert result.exit_code == 0, result.output
-    doc = json.loads(result.output)["document"]
-    assert doc["frozen"] is True and doc["digest"].startswith("sha256:")
+    (op,) = json.loads(result.output)["ops"]
+    assert op["op"] == "freeze" and op["digest"].startswith("sha256:") and op["changed"] is True
 
+    # Re-freezing drifted content in the composite is refused (no --refreeze op);
+    # deliberate re-pinning stays available via the DocStore API (test_docstore).
     (card_dir / "evidence.log").write_bytes(b"v2")
     refused = runner.invoke(
-        main, ["doc", "freeze", "HATS-001", "evidence.log", *_tasks_args(tmp_path), "--json"]
+        main, ["transition", "HATS-001", "--freeze", "evidence.log", *_tasks_args(tmp_path), "--json"]
     )
     assert refused.exit_code == 1
     error = json.loads(refused.output)["error"]
     assert error["code"] == "frozen_pin_drift"
-    assert "--refreeze" in error["message"]
-
-    accepted = runner.invoke(
-        main,
-        [
-            "doc",
-            "freeze",
-            "HATS-001",
-            "evidence.log",
-            "--refreeze",
-            *_tasks_args(tmp_path),
-            "--json",
-        ],
-    )
-    assert accepted.exit_code == 0, accepted.output
 
 
 def test_rm_frozen_refusal_names_the_flag_then_succeeds_with_ack(runner, tmp_path):
     _setup_task(runner, tmp_path, ("evidence.log", b"v1"))
-    runner.invoke(main, ["doc", "freeze", "HATS-001", "evidence.log", *_tasks_args(tmp_path)])
+    runner.invoke(main, ["transition", "HATS-001", "--freeze", "evidence.log", *_tasks_args(tmp_path)])
     refused = runner.invoke(
-        main, ["doc", "rm", "HATS-001", "evidence.log", *_tasks_args(tmp_path), "--json"]
+        main, ["transition", "HATS-001", "--rm", "evidence.log", *_tasks_args(tmp_path), "--json"]
     )
     assert refused.exit_code == 1
     error = json.loads(refused.output)["error"]
@@ -141,26 +128,33 @@ def test_rm_frozen_refusal_names_the_flag_then_succeeds_with_ack(runner, tmp_pat
 
     removed = runner.invoke(
         main,
-        ["doc", "rm", "HATS-001", "evidence.log", "--ack-frozen", *_tasks_args(tmp_path), "--json"],
+        [
+            "transition", "HATS-001", "--rm", "evidence.log",
+            "--ack-frozen", *_tasks_args(tmp_path), "--json",
+        ],
     )
     assert removed.exit_code == 0, removed.output
-    payload = json.loads(removed.output)["removed"]
-    assert payload["pin_removed"] is True
-    assert payload["trashed_to"] is not None
-    assert Path(payload["trashed_to"]).is_file()  # recoverable, not deleted
+    (op,) = json.loads(removed.output)["ops"]
+    assert op["op"] == "rm" and op["pin_removed"] is True
+    assert op["trashed_to"] is not None
+    assert Path(op["trashed_to"]).is_file()  # recoverable, not deleted
+    assert op["revert"] == f"rack transition HATS-001 --attach {op['trashed_to']}:evidence.log"
 
 
 def test_rm_plain_prints_recovery_path(runner, tmp_path):
     _setup_task(runner, tmp_path, ("scratch.log", b"x"))
-    result = runner.invoke(main, ["doc", "rm", "HATS-001", "scratch.log", *_tasks_args(tmp_path)])
+    result = runner.invoke(
+        main, ["transition", "HATS-001", "--rm", "scratch.log", *_tasks_args(tmp_path)]
+    )
     assert result.exit_code == 0, result.output
     assert "recoverable:" in result.output
+    assert "revert: rack transition HATS-001 --attach" in result.output
 
 
 def test_invalid_name_is_typed(runner, tmp_path):
     _setup_task(runner, tmp_path)
     result = runner.invoke(
-        main, ["doc", "rm", "HATS-001", "../escape.md", *_tasks_args(tmp_path), "--json"]
+        main, ["transition", "HATS-001", "--rm", "../escape.md", *_tasks_args(tmp_path), "--json"]
     )
     assert result.exit_code == 1
     assert json.loads(result.output)["error"]["code"] == "invalid_document_name"
@@ -171,7 +165,7 @@ def test_invalid_name_is_typed(runner, tmp_path):
 
 def test_show_prints_documents_block_with_absolute_paths_no_content(runner, tmp_path):
     card_dir = _setup_task(runner, tmp_path, ("gate.log", b"SECRET-BODY-MARKER"))
-    runner.invoke(main, ["doc", "freeze", "HATS-001", "gate.log", *_tasks_args(tmp_path)])
+    runner.invoke(main, ["transition", "HATS-001", "--freeze", "gate.log", *_tasks_args(tmp_path)])
     result = runner.invoke(main, ["show", "HATS-001", *_tasks_args(tmp_path)])
     assert result.exit_code == 0, result.output
     assert "Documents" in result.output
