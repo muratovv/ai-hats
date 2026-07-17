@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -26,6 +26,11 @@ from .hook_collection import (
     collect_runtime_hooks as _collect_runtime_hooks,
     collect_worktree_hooks as _collect_worktree_hooks,
     resolve_skill_script as _resolve_runtime_script,
+)
+from .lifecycle_hooks import (
+    expected_lifecycle_files as _expected_lifecycle_files,
+    lifecycle_hooks_dir as _lifecycle_hooks_dir,
+    materialize_lifecycle_hooks as _materialize_lifecycle_hooks,
 )
 from ai_hats_core import CompositionResult, scrubbed_git_env
 from .models import SkillMetadata
@@ -62,11 +67,12 @@ class HookError(Exception):
 
 
 class HookSurface(StrEnum):
-    """The three managed-hook surfaces a :class:`HookChange` can belong to."""
+    """The managed-hook surfaces a :class:`HookChange` can belong to."""
 
     RUNTIME = "runtime"
     WT = "wt"
     GIT = "git"
+    LIFECYCLE = "lifecycle"  # consumer rack-FSM gates (HATS-1023)
 
 
 class HookChangeKind(StrEnum):
@@ -147,6 +153,7 @@ class HooksManager:
         *,
         compose: Callable[[str], CompositionResult],
         resolve_provider: "Callable[[str], Provider]",
+        library_paths: "Sequence[Path] | None" = None,
     ) -> None:
         # HATS-865: provider lookup is DI'd (like ``compose``) so this brick
         # never imports the composition layer.
@@ -154,6 +161,9 @@ class HooksManager:
         self.project_config = project_config
         self.compose = compose
         self.resolve_provider = resolve_provider
+        # HATS-1023: union scope of the consumer lifecycle surface — the
+        # assembler's full layer list; None (not wired) skips that surface.
+        self.library_paths = list(library_paths) if library_paths is not None else None
 
     # ----- materialization (the init/materialization-phase facade) -----
 
@@ -172,6 +182,10 @@ class HooksManager:
         provider.ensure_runtime_hooks(self.project_dir, result)
         self.materialize_runtime_hooks(result)
         self.materialize_worktree_hooks(result)
+        # HATS-1023: consumer lifecycle union — role-independent, so it does
+        # not need ``result``; riding materialize() makes `self init` /
+        # re-init / set_role-bootstrap the install-time triggers.
+        self.materialize_lifecycle_hooks()
         if result is not None and (self.project_dir / ".git").exists():
             self.install_git_hooks(result, warnings_sink=warnings_sink)
 
@@ -295,6 +309,14 @@ class HooksManager:
                 pending.append((_managed_wt_hook_filename(skill_name, hook.script), src))
         return pending
 
+    def materialize_lifecycle_hooks(self) -> None:
+        """Materialize the consumer lifecycle union (HATS-1023) — thin seam
+        onto :func:`ai_hats.lifecycle_hooks.materialize_lifecycle_hooks`.
+        No-op when ``library_paths`` was not wired (bare test construction)."""
+        if self.library_paths is None:
+            return
+        _materialize_lifecycle_hooks(self.project_dir, self.library_paths)
+
     def install_git_hooks(
         self, result: CompositionResult, *, warnings_sink: list[str] | None = None
     ) -> None:
@@ -364,10 +386,11 @@ class HooksManager:
         )
 
     def _detect_changes(self, result: CompositionResult, provider) -> list[HookChange]:
-        """All drifted managed-hook changes across the three surfaces."""
+        """All drifted managed-hook changes across the managed surfaces."""
         changes: list[HookChange] = []
         changes.extend(self._runtime_hooks_changes(result, provider))
         changes.extend(self._wt_hooks_changes(result))
+        changes.extend(self._lifecycle_hooks_changes())
         if (self.project_dir / ".git").exists():
             changes.extend(self._git_hooks_changes(result))
         return changes
@@ -389,6 +412,7 @@ class HooksManager:
             HookSurface.RUNTIME: _heal_runtime,
             HookSurface.WT: lambda: self.materialize_worktree_hooks(result),
             HookSurface.GIT: lambda: self.install_git_hooks(result, warnings_sink=warnings),
+            HookSurface.LIFECYCLE: self.materialize_lifecycle_hooks,
         }
         for surface in surfaces:
             healer = healers.get(surface)
@@ -453,6 +477,20 @@ class HooksManager:
         return [
             HookChange(surface=HookSurface.WT, name=name, kind=kind)
             for name, kind in self._bytes_surface_changes(_wt_hooks_dir(self.project_dir), expected)
+        ]
+
+    def _lifecycle_hooks_changes(self) -> list[HookChange]:
+        """Drift of the consumer lifecycle surface vs the library union
+        (HATS-1023): session-start resync is the self-heal-staleness trigger.
+        A broken declaration raises here — surfaced as the resync WARN."""
+        if self.library_paths is None:
+            return []
+        expected = _expected_lifecycle_files(self.library_paths)
+        return [
+            HookChange(surface=HookSurface.LIFECYCLE, name=name, kind=kind)
+            for name, kind in self._bytes_surface_changes(
+                _lifecycle_hooks_dir(self.project_dir), expected
+            )
         ]
 
     @staticmethod

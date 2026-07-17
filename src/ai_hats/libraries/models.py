@@ -161,6 +161,8 @@ class SkillMetadata(_YamlModel):
     git_hooks: dict[str, list[str]] = Field(default_factory=dict)
     runtime_hooks: dict[str, list[RuntimeHook]] = Field(default_factory=dict)
     worktree: dict[str, Any] = Field(default_factory=dict)
+    lifecycle_hooks: dict[str, list[str]] = Field(default_factory=dict)
+    plan_sections: list[dict[str, Any]] = Field(default_factory=list)
     triggers: list[str] = Field(default_factory=list)
     skip: list[str] = Field(default_factory=list)
 
@@ -263,6 +265,76 @@ class SkillMetadata(_YamlModel):
         data["runtime_hooks"] = normalized
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_lifecycle_hooks(cls, data: Any) -> Any:
+        """Shape-check the ``lifecycle_hooks:`` block (HATS-1023).
+
+        Fail-loud like ``runtime_hooks`` — a silently dropped lifecycle hook is
+        a gate that never fires (HYP-078 class). Event NAMES are validated
+        against the rack topology at materialization time, not here.
+        """
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("lifecycle_hooks")
+        if not raw:
+            data["lifecycle_hooks"] = {}
+            return data
+        skill_name = data.get("name", "<unknown>")
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"skill {skill_name!r}: lifecycle_hooks must be a mapping of "
+                f"event -> [script, ...], got {type(raw).__name__}"
+            )
+        normalized: dict[str, list[str]] = {}
+        for ev, scripts in raw.items():
+            if not isinstance(scripts, list) or not scripts:
+                raise ValueError(
+                    f"skill {skill_name!r}: lifecycle_hooks[{ev!r}] must be a "
+                    f"non-empty list of script paths, got {scripts!r}"
+                )
+            normalized[str(ev)] = [str(s) for s in scripts]
+        data["lifecycle_hooks"] = normalized
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_plan_sections(cls, data: Any) -> Any:
+        """Shape-check ``plan_sections:`` (HATS-1023): entries are a section
+        name string or ``{name, required?}`` — normalized to the dict form.
+        Fail-loud: a dropped section silently weakens the plan-gate."""
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("plan_sections")
+        if not raw:
+            data["plan_sections"] = []
+            return data
+        skill_name = data.get("name", "<unknown>")
+        if not isinstance(raw, list):
+            raise ValueError(
+                f"skill {skill_name!r}: plan_sections must be a list of section "
+                f"names or {{name, required?}} entries, got {type(raw).__name__}"
+            )
+        normalized: list[dict[str, Any]] = []
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                normalized.append({"name": item.strip(), "required": True})
+            elif (
+                isinstance(item, dict)
+                and isinstance(item.get("name"), str)
+                and item["name"].strip()
+            ):
+                normalized.append(
+                    {"name": item["name"].strip(), "required": bool(item.get("required", True))}
+                )
+            else:
+                raise ValueError(
+                    f"skill {skill_name!r}: bad plan_sections entry {item!r} — "
+                    f"expected a section name or {{name, required?}}"
+                )
+        data["plan_sections"] = normalized
+        return data
+
     @classmethod
     def from_yaml(cls, path: Path) -> SkillMetadata:
         if not path.exists():
@@ -311,6 +383,8 @@ class SkillMetadata(_YamlModel):
                 "git_hooks": ai_hats.get("git_hooks") or {},
                 "runtime_hooks": ai_hats.get("runtime_hooks") or {},
                 "worktree": ai_hats.get("worktree") or {},
+                "lifecycle_hooks": ai_hats.get("lifecycle_hooks") or {},
+                "plan_sections": ai_hats.get("plan_sections") or [],
             }
         )
 

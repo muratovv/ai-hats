@@ -54,6 +54,26 @@ def load_sections(path: Path) -> tuple[Section, ...]:
     return tuple(out)
 
 
+def merge_sections(
+    base: tuple[Section, ...], extras: tuple[Section, ...]
+) -> tuple[Section, ...]:
+    """Extend a section catalog with consumer-declared sections (HATS-1023).
+
+    Deduped by name, base-wins: a consumer cannot weaken (or retype) a stock
+    section by re-declaring its name — the channel is append-only. Among the
+    extras themselves the first occurrence wins, so a deterministic input
+    order (sorted collection) yields a deterministic catalog.
+    """
+    seen = {s.name for s in base}
+    merged = list(base)
+    for section in extras:
+        if section.name in seen:
+            continue
+        seen.add(section.name)
+        merged.append(section)
+    return tuple(merged)
+
+
 def render_scaffold(sections: tuple[Section, ...] = DEFAULT_PLAN_SECTIONS) -> str:
     """Render the plan.md scaffold template from the catalog.
 
