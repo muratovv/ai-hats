@@ -61,6 +61,22 @@ def test_clean_env_denylist_covers_git_plumbing():
     assert {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"} <= ENV_DENYLIST
 
 
+def test_merge_ack_inherits_and_defaults(tmp_path):
+    """HATS-1019: yolo-mode rides plain env inheritance — the consent flag
+    must never join the scrub list, must survive the launcher transform,
+    and the hermetic e2e env grants it by default (the merge inventory
+    tests merge semantics, not consent)."""
+    assert "AI_HATS_MERGE_ACK" not in ENV_DENYLIST
+    out = launcher_subprocess_env(
+        {"AI_HATS_MERGE_ACK": "1"}, repo_url="/c", venv="/v", user_home=tmp_path
+    )
+    assert out["AI_HATS_MERGE_ACK"] == "1"
+    granted = launcher_subprocess_env(
+        {}, repo_url="/c", venv="/v", user_home=tmp_path
+    )
+    assert granted["AI_HATS_MERGE_ACK"] == "1"
+
+
 def test_launcher_subprocess_env_isolates_and_pins(tmp_path):
     """HATS-828: the ``shared_launcher`` env transform drops the leak + pins home.
 
