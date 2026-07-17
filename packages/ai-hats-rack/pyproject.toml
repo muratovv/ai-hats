@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [
     { name = "muratovv", email = "f@muratovv.me" }, # ai-hats: allow-secret
 ]
-keywords = ["backlog", "task", "state-machine", "kernel", "ai-hats"]
+keywords = ["backlog", "task", "state-machine", "ai-hats"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
