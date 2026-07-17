@@ -29,6 +29,7 @@ from ai_hats_rack.events import EdgeEvent, EpicifyEvent, PreDestroyEvent
 from ai_hats_rack.extensions import (
     DerivedViewsExtension,
     EpicAutomationExtension,
+    FrozenIntegrityExtension,
     PlanGateExtension,
     PlanScaffoldExtension,
     Section,
@@ -396,6 +397,8 @@ def build_rack_kernel(
     automation = EpicAutomationExtension(topology=topology, registry=links_registry)
     subscribers = [
         OwnershipSingleSlot(registry, topology=topology),
+        # priority 8: evidence integrity refuses before the plan-gate (HATS-1031)
+        FrozenIntegrityExtension(tasks_dir, topology=topology),
         PlanGateExtension(tasks_dir, sections, topology=topology),
         OwnershipClaim(registry, topology=topology),
         PlanScaffoldExtension(tasks_dir, sections, topology=topology),

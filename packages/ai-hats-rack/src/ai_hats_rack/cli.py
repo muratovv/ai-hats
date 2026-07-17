@@ -1,11 +1,12 @@
 """``rack`` — minimal JSON-first CLI over the bare kernel (HATS-1020).
 
-Verbs: create/show/log (K1); ``transition`` — the single mutating verb, an
-ordered composite of ops under one lock (HATS-1030); context/ls (K5/HATS-1029
-read surface v2 — ``tree`` folded into ``ls --deep``, ``audit`` into
-``context --attr``). Root resolution defaults to the validated walk-up resolver
-(HATS-197/839, K2); ``--tasks-dir`` /
-``RACK_TASKS_DIR`` stay as the explicit override.
+Four verbs (HATS-1031 API-D surface): ``create``; ``transition`` — the single
+mutating verb, an ordered composite of ops under one lock (HATS-1030, with
+``--log`` as the work-log op since ``log`` died); ``context`` — the single
+read package (``show`` folded in, ``audit`` as ``--attr``); ``ls`` — backlog
+scan / graph walk (``tree`` folded into ``ls --deep``). Root resolution
+defaults to the validated walk-up resolver (HATS-197/839, K2); ``--tasks-dir``
+/ ``RACK_TASKS_DIR`` stay as the explicit override.
 """
 
 from __future__ import annotations
@@ -22,10 +23,8 @@ from .cli_common import emit_json as _emit_json
 from .cli_common import fail as _fail
 from .cli_common import resolved_root as _resolved_root
 from .cli_context import context_cmd, ls_cmd
-from .cli_doc import echo_documents
 from .dispatch import OperationAborted
 from .docstore import (
-    DocStore,
     DocumentNameError,
     FrozenDocumentError,
     FrozenPinDriftError,
@@ -43,14 +42,8 @@ from .kernel import (
     UnknownTaskError,
 )
 from .linked import SelfLinkError
-from .models import TaskCard
 from .ops import AttachSourceError, OpParseError, parse_ops
-from .registry import (
-    DerivedLinkKindError,
-    UnknownLinkKindError,
-    load_registry_for,
-    resolve_links,
-)
+from .registry import DerivedLinkKindError, UnknownLinkKindError
 from .resolver import NoProjectRootError
 
 
@@ -188,60 +181,6 @@ def create(
         click.echo(f"Created: {result.task.id} [{result.task.state}] {result.task.title}")
 
 
-@main.command()
-@click.argument("task_id")
-@_TASKS_DIR_OPT
-@_JSON_OPT
-def show(task_id: str, tasks_dir: Path | None, as_json: bool) -> None:
-    """Show a task card + its documents (names and absolute paths, no content)."""
-    try:
-        root = _resolved_root(tasks_dir, Path.cwd())
-        registry = load_registry_for(root.project_dir)
-        kernel = Kernel(root.tasks_dir, registry=registry)
-        task = kernel.get(task_id)
-        if task is None:
-            _fail(as_json, "unknown_task", f"Task '{task_id}' not found", task_id=task_id)
-            return
-        store = DocStore(root.tasks_dir)
-        docs = store.scan(task_id)
-        links = _resolve_card_links(kernel, registry, task)
-    except Exception as exc:  # noqa: BLE001 — routed to typed handling
-        _handle_kernel_error(exc, as_json)
-        return
-    if as_json:
-        _emit_json(
-            {"task": task.to_dict(), "links": links, "documents": [d.to_dict() for d in docs]}
-        )
-    else:
-        _echo_card(task, links)
-        echo_documents(store.card_dir(task_id), docs)
-
-
-def _resolve_card_links(kernel: Kernel, registry, task: TaskCard) -> dict[str, list[str]]:
-    """The single top-level ``links`` object (HATS-1028): every configured kind
-    → its ids, derived children included via the kernel's reverse scan."""
-    derived: dict[str, list[str]] = {}
-    children_kind = registry.children_kind
-    if children_kind is not None:
-        derived[children_kind.name] = kernel.children_of(task.id)
-    return resolve_links(registry, task, derived=derived)
-
-
-def _echo_card(task: TaskCard, links: dict[str, list[str]]) -> None:
-    for key in ("id", "title", "state", "priority", "reviewer"):
-        value = getattr(task, key)
-        if value:
-            click.echo(f"  {key}: {value}")
-    if links:
-        click.echo("  links:")
-        for kind, ids in links.items():
-            click.echo(f"    {kind}: {', '.join(ids)}")
-    if task.work_log:
-        click.echo("  work_log:")
-        for entry in task.work_log[-5:]:
-            click.echo(f"    {entry.timestamp} {entry.message}")
-
-
 def _echo_ops(result: KernelResult) -> None:
     """Human line per op, in execution order; revert-info on destructive ops."""
     for op in result.ops:
@@ -279,7 +218,11 @@ def _echo_ops(result: KernelResult) -> None:
 @click.option("--reason", default="", help="Why (required with --force; journaled).")
 @click.option("--resolution", default=None)
 @click.option("--final-state", "final_state", default=None)
-@click.option("--ack-frozen", is_flag=True, help="Confirm --rm of a FROZEN document (still trashed).")
+@click.option(
+    "--ack-frozen",
+    is_flag=True,
+    help="Confirm touching a FROZEN document: --rm (still trashed) or --freeze of drifted content.",
+)
 @_TASKS_DIR_OPT
 @_JSON_OPT
 def transition(
@@ -325,27 +268,8 @@ def transition(
         _echo_ops(result)
 
 
-@main.command()
-@click.argument("task_id")
-@click.argument("message")
-@_TASKS_DIR_OPT
-@_JSON_OPT
-def log(task_id: str, message: str, tasks_dir: Path | None, as_json: bool) -> None:
-    """Append a work_log entry to a task card."""
-    try:
-        task = _kernel(tasks_dir, Path.cwd()).log_work(task_id, message, actor=_actor())
-    except Exception as exc:  # noqa: BLE001 — routed to typed handling
-        _handle_kernel_error(exc, as_json)
-        return
-    if as_json:
-        _emit_json({"task": task.to_dict()})
-    else:
-        click.echo(f"Logged: {task.id} — {message}")
-
-
-# K5 (HATS-1024) + read surface v2 (HATS-1029): discovery context + graph ls
-# (tree folded into `ls --deep`, audit into `context --attr`). link/unlink and
-# the doc group were absorbed into the composite `transition` (HATS-1030).
+# The whole read surface (show/tree/audit/doc-ls ancestry) lives in these two
+# verbs; every mutation is a `transition` op (HATS-1029/1030/1031).
 main.add_command(context_cmd)
 main.add_command(ls_cmd)
 

@@ -238,8 +238,8 @@ class DocStore:
         """Live view: directory scan + on-the-fly digests + pin verification.
 
         Verification is internal by design (no public ``verify`` verb): every
-        ls/show runs it, so a file changed or lost under a frozen pin shows up
-        as ``drift`` on the next look, not on a ritual command nobody runs.
+        context/ls runs it, so a file changed or lost under a frozen pin shows
+        up as ``drift`` on the next look, not on a ritual command nobody runs.
         """
         return self._view(task_id, self._load_card(task_id))
 

@@ -33,16 +33,26 @@ def test_create_json(runner, tmp_path):
     assert payload["journal"] == []
 
 
-def test_show_json_and_plain(runner, tmp_path):
+def test_context_json_and_plain(runner, tmp_path):
     _create(runner, tmp_path)
-    result = runner.invoke(main, ["show", "HATS-001", *_tasks_args(tmp_path), "--json"])
+    result = runner.invoke(main, ["context", "HATS-001", *_tasks_args(tmp_path), "--json"])
     assert result.exit_code == 0
     assert json.loads(result.output)["task"]["title"] == "demo task"
 
-    plain = runner.invoke(main, ["show", "HATS-001", *_tasks_args(tmp_path)])
+    plain = runner.invoke(main, ["context", "HATS-001", *_tasks_args(tmp_path)])
     assert plain.exit_code == 0
     assert "HATS-001" in plain.output
     assert "brainstorm" in plain.output
+
+
+def test_cli_surface_is_exactly_create_ls_context_transition(runner, tmp_path):
+    # HATS-1031 Р11/Р12: one path per action — show folded into context, log
+    # into `transition --log`; the group must not know the dead verbs at all.
+    assert set(main.commands) == {"create", "ls", "context", "transition"}
+    for verb in ("show", "log"):
+        result = runner.invoke(main, [verb, "HATS-001", *_tasks_args(tmp_path)])
+        assert result.exit_code == 2
+        assert "No such command" in result.output
 
 
 def test_transition_json_carries_deltas_and_journal(runner, tmp_path):
@@ -116,10 +126,12 @@ def test_force_with_reason_relaxes_arrow(runner, tmp_path):
     assert json.loads(result.output)["task"]["state"] == "review"
 
 
-def test_log_appends_work_log(runner, tmp_path):
+def test_log_op_appends_work_log(runner, tmp_path):
+    # `rack log` died (HATS-1031 Р12) — the work-log op rides the composite.
     _create(runner, tmp_path)
     result = runner.invoke(
-        main, ["log", "HATS-001", "made progress", *_tasks_args(tmp_path), "--json"]
+        main,
+        ["transition", "HATS-001", "--log", "made progress", *_tasks_args(tmp_path), "--json"],
     )
     assert result.exit_code == 0
     entries = json.loads(result.output)["task"]["work_log"]
@@ -127,7 +139,7 @@ def test_log_appends_work_log(runner, tmp_path):
 
 
 def test_unknown_task_exits_nonzero(runner, tmp_path):
-    result = runner.invoke(main, ["show", "HATS-404", *_tasks_args(tmp_path), "--json"])
+    result = runner.invoke(main, ["context", "HATS-404", *_tasks_args(tmp_path), "--json"])
     assert result.exit_code == 1
     assert json.loads(result.output)["error"]["code"] == "unknown_task"
 
