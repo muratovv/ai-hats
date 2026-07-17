@@ -64,7 +64,15 @@ Pure extensions live in `ai_hats_rack.extensions` (no integrator/wt/git imports)
 - **plan-scaffold / plan-gate** — one config-driven section catalog feeds both,
   so template and enforcement can never drift (HATS-635); the gate names every
   empty required section, waives epics (HATS-794) and reopen (HATS-328).
-  `standalone_extensions()` is the standalone kit (scaffold + gate only).
+- **frozen-integrity** (HATS-1031) — in-lock on EVERY edge (the full state
+  product, forced edges included): scans the task's frozen pins and aborts any
+  transition whose pinned document changed or vanished; the reason carries the
+  document name, both digests and the recovery recipe
+  (`transition <ID> --freeze <name> --ack-frozen` / `--rm <name> --ack-frozen`).
+  No waivers — force, epics and automation actors do not bypass evidence
+  integrity. Priority 8: after the ownership single-slot guard, before the
+  plan-gate. `standalone_extensions()` is the standalone kit
+  (frozen-integrity + scaffold + gate).
 - **epic-automation** — post-lock; the pure `decide()` table maps every epic
   source state × child trigger to reopen/advance/activate/no-op
   (HATS-690/692/789) and drives the epic through journaled FSM-valid kernel
@@ -106,13 +114,39 @@ writing process's `AI_HATS_SESSION_ID` + `AI_HATS_ROOT_PID`, a verdict against t
 claimed actor (`verified`/`mismatch`/`unverified` — blind zones are marked, PROP-080),
 and an ownership-holder cross-check when `ownership.json` exists (PROP-076). Journal
 write failures are loud on stderr but never break the already-persisted operation.
-`rack audit <ID>` (`--json`, `--event/--since/--actor`) is the query surface; it warns
-when a task moved states with an empty journal (zero-events, PROP-005/076).
+`rack context <ID> --attr audit` (`--event/--since/--actor`) is the query surface; it
+warns when a task moved states with an empty journal (zero-events, PROP-005/076).
 
 ## CLI
 
-`rack create/show/transition/log` + the `rack doc` group, each with `--json`
-(JSON-first). The backlog root is resolved by a pure walk-up from CWD to the nearest
+Four verbs, each with `--json` (JSON-first, HATS-1031 API-D surface):
+
+| Verb                   | Role                                                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `rack create <title>`  | new card; `--id/--parent/--depends/--tag/...`; initial state from fsm.yaml                                         |
+| `rack ls [<ID>]`       | backlog scan (`--grep/--tag/--state/--parent`) or graph walk (`ls <ID> --deep N [--link <glob>]`)                  |
+| `rack context <ID>`    | THE read package: full card + top-level `links` + document paths; `--with <glob>` embeds, `--attr audit\|work_log` |
+| `rack transition <ID>` | THE mutating verb: an ordered composite of ops under one lock                                                      |
+
+`transition` ops run in **argv order** under ONE task lock with a single persist;
+effects of earlier ops are visible to later ones, any abort rolls the whole
+sequence back (HATS-1030):
+
+| Op                       | Effect                                                                           |
+| ------------------------ | -------------------------------------------------------------------------------- |
+| `--state <s>`            | FSM edge (guard + two-phase dispatch); `transition <ID> <s>` is sugar for it     |
+| `--attach <src>[:n]`     | copy a file into `tasks/<ID>/` as document `n` (default: basename)               |
+| `--freeze <name>`        | pin `{name, digest, frozen}`; re-pinning drifted content requires `--ack-frozen` |
+| `--rm <name>`            | trash the document (recoverable, HATS-470); a frozen one requires `--ack-frozen` |
+| `--log <msg>`            | append a work_log entry                                                          |
+| `--link <kind>:<id>`     | add an edge of any configured, non-derived kind (default kind: `related`)        |
+| `--unlink [<kind>:]<id>` | remove the edge(s) to `<id>`                                                     |
+
+Command-level flags: `--force` (+ mandatory `--reason`) relaxes the FSM arrow only;
+`--resolution` / `--final-state` stamp terminal metadata; `--ack-frozen` is the tiered
+frozen hatch shared by `--rm` and `--freeze`.
+
+The backlog root is resolved by a pure walk-up from CWD to the nearest
 ancestor holding `.agent/` or `ai-hats.yaml` (K2, HATS-197 heir); `ai-hats.yaml`
 supplies `ai_hats_dir` and `task_prefix`. Resolution never mkdirs, and outside any
 project it answers with a typed `no_project_root` error instead of bootstrapping a
@@ -128,23 +162,19 @@ error: Invalid transition for HATS-001: brainstorm → done. Legal edges from 'b
 
 **fs-as-truth**: the only way to write a document is to write a file into
 `tasks/<ID>/` — `doc put`/`doc cat` do not exist. The ledger is a **view**:
-`rack doc ls` / `rack show` live-scan the directory (dotfiles and `task.yaml`
-excluded; legacy `attachments/` blobs simply appear) and digest on the fly, so a
-directly-written file is visible immediately — no registration, no write→register
-race.
+`rack context` live-scans the directory (dotfiles and `task.yaml` excluded; legacy
+`attachments/` blobs simply appear) and digests on the fly, so a directly-written
+file is visible immediately — no registration, no write→register race.
 
-- `rack doc ls <ID>` — name, absolute path, mtime, `sha256:<12hex>` digest, frozen
-  mark, drift status. A frozen pin whose file changed (or vanished) exits 1.
-- `rack doc freeze <ID> <name>` — pins `{name, digest, frozen}` into task.yaml
-  (atomic tmp+rename under the task lock). Idempotent on unchanged content;
-  re-pinning changed content requires `--refreeze`.
-- `rack doc rm <ID> <name>` — moves the file to a trash session under `$TMPDIR`
-  (HATS-470 delete policy: recoverable, never hard-deleted); a frozen document
-  additionally requires `--ack-frozen` and drops its pin.
-- `rack show <ID>` prints a `Documents` block: name + **absolute path** + mtime +
-  frozen mark. Discovery, not injection — content is never inlined; the agent reads
-  by path (the 210K-character baseline F4 lesson). Verification is internal: every
-  ls/show checks pins; there is no `verify` verb.
+- `rack context <ID>` prints a `Documents` block: name + **absolute path** + mtime +
+  frozen mark (`frozen ✓` / `frozen ✗ modified|missing`); `--json` adds size,
+  `sha256:<12hex>` digest and `drift`. Discovery, not injection — content is never
+  inlined without `--with`; the agent reads by path (the 210K-character baseline F4
+  lesson). Verification is internal: every context/ls checks pins; there is no
+  `verify` verb. The read surface only FLAGS drift — the frozen-integrity extension
+  (above) is what blocks transitions on it.
+- freeze/rm are `transition` ops (table above): pins persist in task.yaml under the
+  task lock; removal trashes to `$TMPDIR` (recoverable), never hard-deletes.
 
 ## Data format
 
