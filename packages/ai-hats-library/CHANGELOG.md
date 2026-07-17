@@ -3,6 +3,15 @@
 All notable changes to this package are documented here. Versioning is semantic,
 on the library **format schema** (see README § Versioning).
 
+## 0.2.1
+
+- **`worktree-isolation`**: the Finish step is now the supervised close
+  (HATS-1019) — `wt merge` / `transition done` are refused without
+  `AI_HATS_MERGE_ACK=1`; agents stop at `review`, the supervisor merges.
+  **`rule_pause_before_shared_state_write`**: `ai-hats wt merge` /
+  `task transition done` join the shared-state table; `AI_HATS_MERGE_ACK`
+  joins the never-self-set overrides.
+
 ## 0.2.0
 
 - The shipped **`backlog-manager`** skill now declares its tool dependency in

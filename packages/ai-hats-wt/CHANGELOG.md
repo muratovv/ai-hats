@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0]
+
+### Changed
+
+- **Merge is supervisor-gated** (HATS-1019): `WorktreeManager.merge` refuses
+  without `AI_HATS_MERGE_ACK=1` in env, raising the new typed
+  `WorktreeMergeConsentError`. The HATS-596 already-merged short-circuit stays
+  consent-free (cleanup publishes nothing). Neither `force` nor `accept_drift`
+  bypasses the gate.
+
 ## [0.3.1]
 
 ### Fixed
