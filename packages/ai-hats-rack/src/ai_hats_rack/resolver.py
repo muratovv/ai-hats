@@ -13,6 +13,8 @@ from pathlib import Path
 
 import yaml
 
+from .errors import RackError
+
 CONFIG_NAME = "ai-hats.yaml"
 #: schema defaults mirrored from the live project config (ai-hats.yaml).
 DEFAULT_AI_HATS_DIR = ".agent/ai-hats"
@@ -22,7 +24,7 @@ DEFAULT_PREFIX = "HATS"
 TASKS_SUBPATH = Path("tracker") / "backlog" / "tasks"
 
 
-class NoProjectRootError(Exception):
+class NoProjectRootError(RackError):
     """No ancestor of the starting directory is an ai-hats project root."""
 
     def __init__(self, start: Path) -> None:

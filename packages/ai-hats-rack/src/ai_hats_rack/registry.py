@@ -19,17 +19,18 @@ from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 import yaml
 
+from .errors import RackConfigError, RackError
 from .models import LINK_STORAGE_FIELDS
 
 if TYPE_CHECKING:
     from .models import TaskCard
 
 
-class LinksRegistryError(Exception):
+class LinksRegistryError(RackConfigError):
     """links.yaml is malformed or violates a structural invariant."""
 
 
-class UnknownLinkKindError(Exception):
+class UnknownLinkKindError(RackError):
     """A kind name not present in the loaded registry; names the configured set."""
 
     def __init__(self, kind: str, configured: Sequence[str]) -> None:
@@ -40,7 +41,7 @@ class UnknownLinkKindError(Exception):
         )
 
 
-class DerivedLinkKindError(Exception):
+class DerivedLinkKindError(RackError):
     """A derived kind (e.g. ``children``) cannot be linked/unlinked directly."""
 
     def __init__(self, kind: str, inverse: str) -> None:
