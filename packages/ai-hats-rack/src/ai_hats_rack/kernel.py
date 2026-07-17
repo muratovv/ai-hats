@@ -23,7 +23,7 @@ from .dispatch import (
     Subscriber,
     SubscriberOutcome,
 )
-from .events import EdgeEvent, EpicifyEvent, Event, PreDestroyEvent
+from .events import EdgeEvent, EpicifyEvent, Event, PreDestroyEvent, event_detail
 from .fsm import Topology, load_topology
 from .models import TaskCard, utc_now
 
@@ -164,6 +164,8 @@ class Kernel:
         force: bool,
         reason: str,
         outcomes: list[SubscriberOutcome],
+        *,
+        result: str,
     ) -> DispatchRecord:
         record = DispatchRecord(
             event_key=event.key,
@@ -172,6 +174,8 @@ class Kernel:
             force=force,
             reason=reason,
             outcomes=tuple(outcomes),
+            result=result,
+            detail=event_detail(event),
         )
         if self._sink is not None:
             # Sink failures are loud by design: silently dropping audit
@@ -307,14 +311,18 @@ class Kernel:
             ) from exc
         except Exception:
             if event is not None:  # dispatch began → the refusal stays auditable
-                self._finish_record(event, task_id, actor, force, reason, outcomes)
+                self._finish_record(
+                    event, task_id, actor, force, reason, outcomes, result="aborted"
+                )
             raise
 
         ctx = self._ctx_factory(
             event, task, caller_cwd, self.is_epic(task_id), actor, force, reason
         )
         self._dispatcher.run_reactions(event, ctx, outcomes)
-        record = self._finish_record(event, task_id, actor, force, reason, outcomes)
+        record = self._finish_record(
+            event, task_id, actor, force, reason, outcomes, result="persisted"
+        )
         return KernelResult(
             task=task,
             transitions=(TaskTransition(task_id, from_state, to_state, reason),),
@@ -387,9 +395,16 @@ class Kernel:
         try:
             self._dispatcher.run_blocking(event, ctx, lambda delta: None, outcomes)
         except Exception:
-            self._finish_record(event, event.task_id, actor, force, reason, outcomes)
+            self._finish_record(
+                event, event.task_id, actor, force, reason, outcomes, result="aborted"
+            )
             raise
-        return (self._finish_record(event, event.task_id, actor, force, reason, outcomes),)
+        # "persisted" here means the publisher's operation may proceed.
+        return (
+            self._finish_record(
+                event, event.task_id, actor, force, reason, outcomes, result="persisted"
+            ),
+        )
 
     # ----- internals ----------------------------------------------------------
 
@@ -432,4 +447,6 @@ class Kernel:
             event, parent, caller_cwd, self.is_epic(parent_task), actor, False, ""
         )
         self._dispatcher.run_reactions(event, ctx, outcomes)
-        return (self._finish_record(event, parent_task, actor, False, "", outcomes),)
+        return (
+            self._finish_record(event, parent_task, actor, False, "", outcomes, result="persisted"),
+        )
