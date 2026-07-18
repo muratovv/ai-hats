@@ -41,20 +41,23 @@ Isolated development using git worktrees. Each task gets its own working copy �
 
 2. **Work** — commit freely in the worktree. Main tree is untouched.
 
-3. **Finish** → hand off for review; the merge is supervisor-gated (HATS-1019).
+3. **Finish** → hand off for review; the merge is review-gated (HATS-1019).
    `wt merge` — and the merge inside `transition done` — is refused without
-   `AI_HATS_MERGE_ACK=1`. The flag is the supervisor's to set: NEVER set it for
-   your own commands (self-grant is an auditable violation, same discipline as
-   `AI_HATS_SHARED_STATE_ACK`). The canonical close:
+   `AI_HATS_MERGE_ACK=1`. The flag attests that review PASSED: set it on your
+   own merge only when the conversation shows the supervisor saw this diff
+   AND review passed (notes drained, no blocking findings, explicit go).
+   Setting it without that evidence is self-grant — an auditable violation,
+   same discipline as `AI_HATS_SHARED_STATE_ACK`. The canonical close:
    ```
    cd <project-dir>
    ai-hats task transition <id> review    # then STOP — supervisor reviews the diff
-   # supervisor, after review:
-   #   AI_HATS_MERGE_ACK=1 ai-hats wt merge <task-branch>
+   # after review passed (diff seen + notes drained + explicit go):
+   AI_HATS_MERGE_ACK=1 ai-hats wt merge <task-branch>
    ai-hats task transition <id> done      # ack-free: already-merged cleanup (HATS-596)
    ```
-   Yolo-mode is inherited, not requested: a supervisor-exported
-   `AI_HATS_MERGE_ACK=1` flows into subagents via plain env inheritance.
+   The supervisor may equally run the merge himself. Yolo-mode is inherited,
+   not requested: a supervisor-exported `AI_HATS_MERGE_ACK=1` flows into
+   subagents via plain env inheritance.
    If `wt merge` refuses with `Refused (drift)`, the base branch
    advanced since `wt create` (another agent's worktree already
    merged, or `origin/<base>` received commits). Re-verify your
@@ -94,10 +97,10 @@ git rebase <base-branch>         # usually master
 # is refused (HATS-788): the merge runs `git worktree remove` on the cwd
 # you are standing in, which would orphan your shell and desync the tracker.
 cd <project-dir>
-ai-hats task transition <id> done   # ack-free after supervisor merge; do NOT `git merge` by hand
+ai-hats task transition <id> done   # ack-free once the branch is merged; do NOT `git merge` by hand
 ```
 
-The merge itself is supervisor-gated (step 3 above) — never `git merge <task-branch>`
+The merge itself is review-gated (step 3 above) — never `git merge <task-branch>`
 yourself (a manual pre-merge collides with the FSM merge, HYP-023). If
 the base moved and the close reports drift, accept it explicitly from the main
 repo with `ai-hats wt merge --accept-drift`, then re-run the transition.
