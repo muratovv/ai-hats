@@ -307,17 +307,18 @@ def task_transition(
         sys.exit(2)
     except WorktreeMergeConsentError as e:
         # HATS-1019: the deny doubles as the review-handoff directive.
-        # Card stays in its prior state; after the supervisor merges, the
+        # Card stays in its prior state; after the review-passed merge, the
         # retried transition hits the already-merged short-circuit ack-free.
         from rich.markup import escape as _escape
 
         _seam._CONSOLE.print(
-            f"[red]Refused (supervisor consent required)[/] — cannot merge for {task_id}."
+            f"[red]Refused (review consent required)[/] — cannot merge for {task_id}."
         )
         _seam._CONSOLE.print(_escape(str(e)))
         _seam._CONSOLE.print(
             "The task is ready for review — STOP and hand it off to the "
-            "supervisor. After reviewing, the supervisor merges; then retry:"
+            "supervisor. Once review passes (supervisor saw the diff, notes "
+            "resolved, explicit go), merge and retry:"
         )
         _seam._CONSOLE.print(
             # e.branch_name, not task_id: `wt merge` resolves branches (PROP-042)
