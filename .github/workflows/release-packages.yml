@@ -1,6 +1,6 @@
 name: release-packages
 
-# Publish the workspace packages (ai-hats-core, ai-hats-wt, ai-hats-tracker, ai-hats-observe, ai-hats-library) to PyPI via OIDC
+# Publish the workspace packages (ai-hats-core, ai-hats-wt, ai-hats-tracker, ai-hats-observe, ai-hats-library, ai-hats-rack) to PyPI via OIDC
 # trusted publishing — no stored API token. Manual trigger: these packages carry
 # their own static versions in packages/*/pyproject.toml, decoupled from the
 # ai-hats `v*` release tag (release.yml). To cut a package release: bump the
@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   build:
-    name: build (core + wt + tracker + observe + library + cline)
+    name: build (core + wt + tracker + observe + library + cline + rack)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -39,6 +39,7 @@ jobs:
           uv build packages/ai-hats-observe -o dist-observe
           uv build packages/ai-hats-library -o dist-library
           uv build packages/surfaces/cline -o dist-cline
+          uv build packages/ai-hats-rack -o dist-rack
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
         with:
@@ -50,6 +51,7 @@ jobs:
             dist-observe/
             dist-library/
             dist-cline/
+            dist-rack/
           if-no-files-found: error
 
   # Split per package with a DISTINCT environment each: PyPI forbids two PENDING
@@ -148,6 +150,26 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist-library/
+          skip-existing: true
+
+  publish-rack:
+    name: publish ai-hats-rack (PyPI trusted publishing)
+    # Kernel is first-party-free (no core/tracker/wt — import-hygiene pin) — no
+    # ordering constraint; publishes straight off build like ai-hats-library.
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi-rack
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: packages-dist
+      - name: Publish ai-hats-rack to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-rack/
           skip-existing: true
 
   publish-cline:
