@@ -78,6 +78,12 @@ aggregation = [
 claude = "ai_hats.providers:ClaudeProvider"
 gemini = "ai_hats.providers:GeminiProvider"
 
+# HATS-1038 C1: the rack CLI discovers this factory by metadata (never imports
+# the integrator — import-hygiene pin) and builds the fully-wired production
+# kernel. Absent (standalone rack) → the bare kernel.
+[project.entry-points."ai_hats_rack.kernel_factory"]
+wired = "ai_hats.rack_cli_provider:cli_factory"
+
 # HATS-861: integrator built with hatchling + hatch-vcs (workspace-uniform with
 # the packages/* members). hatch-vcs wraps setuptools-scm → identical version
 # string (X.Y.Z.devN+g<sha>), so the HATS-764 downgrade guard + _version.py
