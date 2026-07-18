@@ -247,7 +247,7 @@ def overlay_library(tmp_path):
         (d / "metadata.yaml").write_text(f"name: {name}\n")
 
     # Skills
-    for name in ("skill_a", "skill_b"):
+    for name in ("skill_a", "skill_b", "skill_c"):
         d = lib / "skills" / name
         d.mkdir(parents=True)
         (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {name}\n---\n# {name}")
@@ -260,6 +260,14 @@ def overlay_library(tmp_path):
     trait_y = lib / "traits" / "trait-y"
     trait_y.mkdir(parents=True)
     (trait_y / "config.yaml").write_text("name: trait-y\ninjection: Trait Y injection.\n")
+
+    # trait-z carries skill_c — a skill that reaches a role ONLY through a trait,
+    # never the role's own composition (the trait-brought-removal case).
+    trait_z = lib / "traits" / "trait-z"
+    trait_z.mkdir(parents=True)
+    (trait_z / "config.yaml").write_text(
+        "name: trait-z\ncomposition:\n  skills:\n    - skill_c\ninjection: Trait Z injection.\n"
+    )
 
     # Role with trait-x, rule_a, skill_a
     role_dir = lib / "roles" / "base-role"
@@ -277,6 +285,20 @@ composition:
     - skill_a
 injection: |
   Base role injection.
+""")
+
+    # Role whose only skill (skill_c) arrives via a trait, not its own list.
+    tsr = lib / "roles" / "trait-skill-role"
+    tsr.mkdir(parents=True)
+    (tsr / "config.yaml").write_text("""
+name: trait-skill-role
+priorities:
+  - Reliability
+composition:
+  traits:
+    - trait-z
+injection: |
+  Trait-skill role injection.
 """)
 
     return lib
@@ -474,3 +496,29 @@ def test_compose_missing_role_has_empty_structured_fields(composer):
     assert result.trait_injections == {}
     assert result.role_injection == ""
     assert result.overlay_injection == ""
+
+
+def test_overlay_removes_trait_brought_skill(overlay_composer):
+    # HATS-1046: an overlay must remove a skill that a composed TRAIT brings,
+    # not only one in the role's own list (backlog-manager swap enabler).
+    overlay = OverlayConfig(remove_skills=["skill_c"])
+    result = overlay_composer.compose("trait-skill-role", overlay=overlay)
+    assert "skill_c" not in [s.name for s in result.skills]
+    assert result.errors == []
+
+
+def test_overlay_remove_nonexistent_skill_still_errors(overlay_composer):
+    # The typo-guard survives: removing a name in neither the role nor any
+    # composed trait is still an error.
+    overlay = OverlayConfig(remove_skills=["skill_zzz"])
+    result = overlay_composer.compose("trait-skill-role", overlay=overlay)
+    assert any("skill_zzz" in e for e in result.errors)
+
+
+def test_overlay_remove_then_add_trait_brought_skill_is_reorder(overlay_composer):
+    # remove + re-add of a trait-brought skill in one layer is the HATS-421
+    # move-to-end reorder, NOT a removal — skill_c must survive.
+    overlay = OverlayConfig(remove_skills=["skill_c"], add_skills=["skill_c"])
+    result = overlay_composer.compose("trait-skill-role", overlay=overlay)
+    assert "skill_c" in [s.name for s in result.skills]
+    assert result.errors == []
