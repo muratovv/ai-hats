@@ -73,7 +73,7 @@ def stale_dev_env_warnings(
         return []
     changes = _member_changes(f"{proc.stdout}\n{proc.stderr}")
     detail = f": stale {', '.join(changes)}" if changes else ""
-    return [f"dev env outdated{detail} — run '{ENV_DRIFT_FIX}'"]
+    return [f"dev env outdated{detail} — run:\n    {ENV_DRIFT_FIX}"]
 
 
 __all__ = ["ENV_DRIFT_FIX", "stale_dev_env_warnings"]
