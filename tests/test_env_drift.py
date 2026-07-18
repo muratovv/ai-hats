@@ -59,6 +59,9 @@ def test_drifted_env_yields_one_warning_naming_members(tmp_path):
     assert "ai-hats-tracker 0.5.0 -> 0.6.0" in text
     assert "ai-hats" in text  # root: no target version, name only
     assert ENV_DRIFT_FIX in text
+    # fix command on its own line, unquoted, so it copy-pastes clean
+    assert f"\n    {ENV_DRIFT_FIX}" in text
+    assert f"'{ENV_DRIFT_FIX}'" not in text
     # verdict comes from `uv sync --check --inexact --all-packages`, pinned to the repo
     (cmd,) = runner.calls
     assert cmd[:2] == ["uv", "sync"]
@@ -172,4 +175,4 @@ def test_unparseable_output_still_warns_with_hint(tmp_path):
         which=lambda _: "/usr/bin/uv",
     )
 
-    assert warnings == [f"dev env outdated — run '{ENV_DRIFT_FIX}'"]
+    assert warnings == [f"dev env outdated — run:\n    {ENV_DRIFT_FIX}"]

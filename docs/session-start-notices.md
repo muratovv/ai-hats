@@ -88,8 +88,12 @@ enrichment:
 
 ```
 ⚠ 1 startup warning(s):
-  • dev env outdated: stale ai-hats, ai-hats-tracker 0.5.0 -> 0.6.0 — run 'uv sync --inexact --all-packages'
+  • dev env outdated: stale ai-hats, ai-hats-tracker 0.5.0 -> 0.6.0 — run:
+    uv sync --inexact --all-packages
 ```
+
+The fix command is rendered on its own line, unquoted, so it copy-pastes
+straight into a shell.
 
 Gated to the dev checkout only: ai-hats installed editable AND the running
 interpreter inside `<repo_root>/.venv` — consumer installs never run the
