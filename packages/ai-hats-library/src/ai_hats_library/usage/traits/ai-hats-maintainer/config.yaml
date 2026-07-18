@@ -36,12 +36,12 @@ injection: |
     if composition changed. For projects with isolated venv, call the venv
     interpreter explicitly (HATS-790: no `bin/ai-hats` console script):
     `~/<project>/.venv/bin/python -m ai_hats self update`.
-  - **Backlog ops:** every change to `tasks/<ID>/**` via `ai-hats task ...`
-    CLI — never direct file edits (see `rule_backlog_discipline §1`).
+  - **Backlog ops:** every change to `tasks/<ID>/**` through your composed
+    backlog manager (CLI) — never direct file edits (see `rule_backlog_discipline §1`).
   - **Plan files:** edit `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md`
-    directly via Write/Edit (scaffold created by `task transition <ID> plan`).
+    directly via Write/Edit (scaffold created when the task transitions to `plan`).
     This is the one canonical plan home — no `.claude/plans` round-trip, no
-    `plan-sync` step. See `backlog-manager` skill for the full flow.
+    `plan-sync` step. See your composed backlog manager skill for the full flow.
 
   ### What NOT to commit
   - Real Claude / Gemini session recordings (JSONL dumps carry sessionId,
