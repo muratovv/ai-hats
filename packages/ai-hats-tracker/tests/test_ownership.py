@@ -6,6 +6,7 @@ real ``record_is_live`` gets one focused test against live/dead pids at the end.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -153,6 +154,50 @@ def test_owner_of_marks_dead_owner(reg: Path, live: _Liveness) -> None:
     live.kill(100)
     rec = ownership.owner_of(reg, "T-1", is_live=live)
     assert rec is not None and rec["is_live"] is False
+
+
+def test_release_session_pid_drops_matching(reg: Path, live: _Liveness) -> None:
+    live.add(100)
+    ownership.take(reg, "T-1", "sess-a", 100, is_live=live)
+    dropped = ownership.release_session_pid(reg, "sess-a", 100)
+    assert dropped == 1
+    assert ownership.owner_of(reg, "T-1", is_live=live) is None
+
+
+def test_release_session_pid_spares_colliding_peer_pid(reg: Path, live: _Liveness) -> None:
+    """Two processes minting the SAME session_id in one second (session ids are
+    UTC-second + per-process counter, not cross-process unique) each hold a
+    different task under a different root_pid. Releasing on session_id ALONE
+    would steal the live peer's task — the root_pid predicate spares it."""
+    reg.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "owners": {
+                    "T-1": {"session_id": "sess-x", "root_pid": 100, "start_time": None},
+                    "T-2": {"session_id": "sess-x", "root_pid": 200, "start_time": None},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    dropped = ownership.release_session_pid(reg, "sess-x", 100)
+    assert dropped == 1
+    assert ownership.owner_of(reg, "T-1", is_live=live) is None  # mine → released
+    assert ownership.owner_of(reg, "T-2", is_live=live) is not None  # peer's → spared
+
+
+def test_release_session_pid_ignores_other_session(reg: Path, live: _Liveness) -> None:
+    live.add(100)
+    ownership.take(reg, "T-1", "sess-a", 100, is_live=live)
+    dropped = ownership.release_session_pid(reg, "sess-b", 100)  # id mismatch
+    assert dropped == 0
+    assert ownership.owner_of(reg, "T-1", is_live=live) is not None
+
+
+def test_release_session_pid_noop_without_file(reg: Path) -> None:
+    assert ownership.release_session_pid(reg, "sess-a", 100) == 0
+    assert not reg.exists()
 
 
 def test_record_is_live_real_pids() -> None:
