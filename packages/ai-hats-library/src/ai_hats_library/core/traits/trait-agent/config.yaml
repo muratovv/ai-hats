@@ -30,7 +30,7 @@ injection: |
 
   ### Agent Protocol
   - Task cards follow the state machine `brainstorm → plan → execute → document → review → done`; never skip states.
-  - All backlog ops (tasks, HYP, PROP) via `ai-hats task` CLI — see rule `rule_backlog_discipline` + skill `backlog-manager`.
+  - All backlog ops (tasks, HYP, PROP) go through your composed backlog manager (skill + CLI) — see rule `rule_backlog_discipline`; never edit tracker YAML by hand.
   - Write retrospectives for completed work.
 
   ### Delegation
