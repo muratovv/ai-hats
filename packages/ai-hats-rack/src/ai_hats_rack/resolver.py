@@ -45,12 +45,55 @@ class RackRoot:
     prefix: str = DEFAULT_PREFIX
 
 
+def _main_worktree_root(start: Path) -> Path | None:
+    """Pure-fs gitlink hop (HATS-1038 C2): if an ancestor is a linked worktree
+    (``.git`` is a *file* ``gitdir: <path>``), return the main checkout root; a
+    ``.git`` *directory* means we're already in the main repo → None.
+
+    No ``git`` subprocess — the rack forbids shelling out (import-hygiene pin);
+    the git-worktree metadata (``gitdir`` + ``commondir``) is read directly.
+    """
+    for candidate in (start, *start.parents):
+        git = candidate / ".git"
+        if git.is_dir():
+            return None
+        if git.is_file():
+            return _resolve_gitlink(git)
+    return None
+
+
+def _resolve_gitlink(git_file: Path) -> Path | None:
+    """``<wt>/.git`` (``gitdir: <maindotgit>/worktrees/<name>``) → main root."""
+    try:
+        text = git_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not text.startswith("gitdir:"):
+        return None
+    gitdir = Path(text[len("gitdir:") :].strip())
+    if not gitdir.is_absolute():
+        gitdir = (git_file.parent / gitdir).resolve()
+    try:
+        common_rel = (gitdir / "commondir").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    common = (gitdir / common_rel).resolve()
+    # main worktree root = parent of the shared ``.git`` directory.
+    return common.parent if common.name == ".git" else None
+
+
 def find_project_root(start: Path) -> Path | None:
-    """Nearest ancestor (including ``start``) holding ``.agent/`` or ai-hats.yaml.
+    """The project root for ``start``: nearest ``.agent/``/ai-hats.yaml ancestor,
+    but a linked-worktree checkout resolves to its MAIN checkout first — a task
+    worktree carries neither marker (or a stray copy of one), so it is never the
+    real root (HATS-1038 C2).
 
     Pure walk-up: reads the filesystem, mutates nothing (HATS-197: an eager
     mkdir on a mis-resolved root is how stray trackers were born).
     """
+    hop = _main_worktree_root(start)
+    if hop is not None and ((hop / ".agent").is_dir() or (hop / CONFIG_NAME).is_file()):
+        return hop
     for candidate in (start, *start.parents):
         if (candidate / ".agent").is_dir() or (candidate / CONFIG_NAME).is_file():
             return candidate
@@ -85,14 +128,21 @@ def load_root(project_dir: Path) -> RackRoot:
 def resolve_root(caller_cwd: Path, tasks_dir_override: Path | None = None) -> RackRoot:
     """The single validating resolver every rack command goes through.
 
-    An explicit override (``--tasks-dir`` / ``RACK_TASKS_DIR``) is honored
-    as-is — explicit intent, K1 contract. Without it the root is walked up
-    from ``caller_cwd``; a start with no project marker raises the typed
-    :class:`NoProjectRootError` with zero side effects — directories are only
-    ever created later, by kernel write ops under a validated root (HATS-839).
+    An explicit override (``--tasks-dir`` / ``RACK_TASKS_DIR``) fixes the
+    tasks_dir, but ``project_dir`` still anchors at the real project root (the
+    worktree engine + hook cwd read it), not ``caller_cwd`` (gap #3, HATS-1038
+    C2). Without an override the root is walked up from ``caller_cwd``; a
+    marker-less start raises the typed :class:`NoProjectRootError` with zero
+    side effects (dirs are only created later, by write ops — HATS-839).
     """
     if tasks_dir_override is not None:
-        return RackRoot(project_dir=caller_cwd, tasks_dir=tasks_dir_override)
+        project_dir = find_project_root(caller_cwd)
+        if project_dir is None:
+            return RackRoot(project_dir=caller_cwd, tasks_dir=tasks_dir_override)
+        base = load_root(project_dir)
+        return RackRoot(
+            project_dir=base.project_dir, tasks_dir=tasks_dir_override, prefix=base.prefix
+        )
     project_dir = find_project_root(caller_cwd)
     if project_dir is None:
         raise NoProjectRootError(caller_cwd)
