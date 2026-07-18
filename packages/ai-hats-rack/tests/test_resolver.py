@@ -73,6 +73,59 @@ def test_explicit_override_passes_through(tmp_path):
     assert root.prefix == DEFAULT_PREFIX
 
 
+# ----- HATS-1038 C2: gitlink hop + override project_dir anchor ----------------
+
+
+def _make_linked_worktree(tmp_path):
+    """Build the git-worktree metadata layout by hand (no real git): a main
+    checkout with ``.agent/`` and a linked worktree whose ``.git`` is a gitlink
+    file pointing at ``main/.git/worktrees/<name>`` (with a ``commondir``)."""
+    main = tmp_path / "main"
+    (main / ".agent").mkdir(parents=True)
+    wt_meta = main / ".git" / "worktrees" / "wt1"
+    wt_meta.mkdir(parents=True)
+    (wt_meta / "commondir").write_text("../..\n")  # → main/.git
+    wt = tmp_path / "wt1"
+    wt.mkdir()
+    (wt / ".git").write_text(f"gitdir: {wt_meta}\n")
+    return main, wt
+
+
+def test_gitlink_hop_resolves_main_root_from_worktree(tmp_path):
+    main, wt = _make_linked_worktree(tmp_path)
+    assert find_project_root(wt) == main
+    nested = wt / "src" / "pkg"
+    nested.mkdir(parents=True)
+    assert find_project_root(nested) == main
+
+
+def test_gitlink_hop_beats_stray_marker_in_worktree(tmp_path):
+    # The worktree carries its own ai-hats.yaml (the K6 sandbox shape) — the hop
+    # must still win, or transitions from the worktree mis-anchor to it.
+    main, wt = _make_linked_worktree(tmp_path)
+    (wt / "ai-hats.yaml").write_text("task_prefix: STRAY\n")
+    assert find_project_root(wt) == main
+
+
+def test_main_checkout_is_not_hopped(tmp_path):
+    # A ``.git`` directory (not a gitlink file) means the main repo — no hop.
+    main = tmp_path / "main"
+    (main / ".agent").mkdir(parents=True)
+    (main / ".git").mkdir()
+    assert find_project_root(main) == main
+
+
+def test_override_anchors_project_dir_at_real_root(tmp_path):
+    (tmp_path / "ai-hats.yaml").write_text("task_prefix: SBX\n")
+    sub = tmp_path / "packages" / "x"
+    sub.mkdir(parents=True)
+    override = tmp_path / "custom" / "tasks"
+    root = resolve_root(sub, override)
+    assert root.tasks_dir == override
+    assert root.project_dir == tmp_path  # gap #3: not `sub`
+    assert root.prefix == "SBX"  # read from the found root's config
+
+
 def test_foreign_root_is_typed_error_and_never_mkdirs(tmp_path):
     # HATS-839: a start with no project marker must NOT bootstrap a phantom
     # tracker — typed refusal, filesystem byte-identical before and after.
