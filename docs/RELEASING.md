@@ -140,8 +140,8 @@ environment)` tuple ("*a pending trusted publisher matching this configuration
 has already been registered for a different project name*"). The environment is
 the disambiguator, so each package's publish job runs in its own environment
 (`pypi-core` / `pypi-wt` / `pypi-tracker` / `pypi-observe` / `pypi-library` /
-`pypi-cline`) — separate from the `pypi` environment the main `ai-hats` release
-uses.
+`pypi-cline` / `pypi-rack`) — separate from the `pypi` environment the main
+`ai-hats` release uses.
 
 **One-time setup:**
 
@@ -154,6 +154,7 @@ uses.
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-observe
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-library
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-cline
+   gh api -X PUT repos/muratovv/ai-hats/environments/pypi-rack
    ```
 
 2. Add a pending publisher for **each** package (*PyPI → Account settings →
@@ -169,6 +170,7 @@ uses.
    | `ai-hats-observe` | `pypi-observe`   |
    | `ai-hats-library` | `pypi-library`   |
    | `ai-hats-cline`   | `pypi-cline`     |
+   | `ai-hats-rack`    | `pypi-rack`      |
 
 **To cut a package release:** bump the version in the package's `pyproject.toml`
 and merge to master — the push auto-triggers the publish (or run it manually via
