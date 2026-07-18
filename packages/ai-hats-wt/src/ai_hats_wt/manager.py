@@ -216,9 +216,9 @@ class WorktreeDriftError(Exception):
 
 
 class WorktreeMergeConsentError(Exception):
-    """Merge to the base branch attempted without supervisor consent.
+    """Merge to the base branch attempted without review consent.
 
-    HATS-1019: publishing a task branch to the base is a supervisor-gated
+    HATS-1019: publishing a task branch to the base is a review-gated
     act — review must actually happen first. Facts only in the message
     (HATS-509 body contract); the review-handoff recipe is owned by the
     CLI handlers. Cleanup of already-merged work (HATS-596 short-circuit)
