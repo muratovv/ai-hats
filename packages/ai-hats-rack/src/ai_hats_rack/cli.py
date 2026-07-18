@@ -11,8 +11,11 @@ defaults to the validated walk-up resolver (HATS-197/839, K2); ``--tasks-dir``
 
 from __future__ import annotations
 
+import importlib.metadata
+import sys
+from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol, runtime_checkable
 
 import click
 
@@ -27,19 +30,64 @@ from .extensions import standalone_extensions
 from .journal import JsonlJournalSink
 from .kernel import Kernel, KernelResult
 from .ops import parse_ops
+from .resolver import RackRoot
+
+#: Entry-point group the integrator advertises its wired-kernel factory under.
+#: Discovery (not a static import) keeps the import-hygiene pin intact.
+KERNEL_FACTORY_GROUP = "ai_hats_rack.kernel_factory"
 
 
-def _kernel(tasks_dir: Path | None, caller_cwd: Path) -> Kernel:
-    root = _resolved_root(tasks_dir, caller_cwd)
-    # The mutation surface is standalone = kernel + scaffold + plan-gate (epic
-    # §2.3), so the composite transition actually enforces the gate; every
-    # CLI-built kernel journals dispatches to tasks/<ID>/audit.jsonl (K7).
+@runtime_checkable
+class KernelProvider(Protocol):
+    """Integrator-contributed wiring, discovered by entry point (HATS-1038 C1)."""
+
+    def build_kernel(self, root: RackRoot, caller_cwd: Path) -> Kernel: ...
+    def after_create(self, root: RackRoot, result: KernelResult) -> None: ...
+    def handle_error(self, exc: Exception, as_json: bool, task_id: str = ...) -> bool: ...
+
+
+@lru_cache(maxsize=1)
+def _provider() -> KernelProvider | None:
+    """First registered wiring factory, or None → bare standalone kernel."""
+    for ep in importlib.metadata.entry_points(group=KERNEL_FACTORY_GROUP):
+        return ep.load()()
+    return None
+
+
+def _bare_kernel(root: RackRoot) -> Kernel:
+    # Standalone mutation surface = kernel + scaffold + plan-gate (epic §2.3):
+    # the composite transition still enforces the gate; no ownership/worktree.
     return Kernel(
         root.tasks_dir,
         prefix=root.prefix,
         subscribers=standalone_extensions(root.tasks_dir),
         journal_sink=JsonlJournalSink(root.tasks_dir),
     )
+
+
+def _build_kernel(
+    tasks_dir: Path | None, caller_cwd: Path, provider: KernelProvider | None
+) -> tuple[Kernel, RackRoot]:
+    """Resolve the root, then build the wired kernel (integrator present) or the
+    bare standalone kernel. Every CLI-built kernel journals to audit.jsonl (K7)."""
+    root = _resolved_root(tasks_dir, caller_cwd)
+    kernel = provider.build_kernel(root, caller_cwd) if provider is not None else _bare_kernel(root)
+    return kernel, root
+
+
+def _echo_deltas(result: KernelResult) -> None:
+    """Print work_log deltas subscribers produced this op — the worktree path
+    (in-lock) and epic auto-transitions (post-lock, journal-only) — inline, not
+    only via a follow-up read (HATS-1038 C1)."""
+    seen: set[str] = set()
+    for record in result.journal:
+        for outcome in record.outcomes:
+            if outcome.delta is None:
+                continue
+            for line in outcome.delta.work_log:
+                if line not in seen:
+                    seen.add(line)
+                    click.echo(f"  {line}")
 
 
 def _result_payload(result: KernelResult) -> dict[str, Any]:
@@ -83,8 +131,10 @@ def create(
 ) -> None:
     """Create a task card (initial state comes from fsm.yaml)."""
     caller_cwd = Path.cwd()
+    provider = _provider()
     try:
-        result = _kernel(tasks_dir, caller_cwd).create(
+        kernel, root = _build_kernel(tasks_dir, caller_cwd, provider)
+        result = kernel.create(
             actor=_actor(),
             caller_cwd=caller_cwd,
             task_id=task_id,
@@ -98,12 +148,17 @@ def create(
             tags=list(tags),
         )
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
+        if provider is not None and provider.handle_error(exc, as_json):
+            sys.exit(1)
         _handle_rack_error(exc, as_json)
         return
+    if provider is not None:
+        provider.after_create(root, result)
     if as_json:
         _emit_json(_result_payload(result))
     else:
         click.echo(f"Created: {result.task.id} [{result.task.state}] {result.task.title}")
+        _echo_deltas(result)
 
 
 # ----- op-echo on typed rails (HATS-1033) ------------------------------------
@@ -207,9 +262,11 @@ def transition(
     `transition <ID> <state>` is sugar for `--state <state>`.
     """
     caller_cwd = Path.cwd()
+    provider = _provider()
     try:
         ops = parse_ops(op_tokens)
-        result = _kernel(tasks_dir, caller_cwd).transition_ops(
+        kernel, _root = _build_kernel(tasks_dir, caller_cwd, provider)
+        result = kernel.transition_ops(
             task_id,
             ops,
             actor=_actor(),
@@ -221,12 +278,15 @@ def transition(
             ack_frozen=ack_frozen,
         )
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
+        if provider is not None and provider.handle_error(exc, as_json, task_id):
+            sys.exit(1)
         _handle_rack_error(exc, as_json)
         return
     if as_json:
         _emit_json(_result_payload(result))
     else:
         _echo_ops(result)
+        _echo_deltas(result)
 
 
 # The whole read surface (show/tree/audit/doc-ls ancestry) lives in these two

@@ -146,17 +146,36 @@ Command-level flags: `--force` (+ mandatory `--reason`) relaxes the FSM arrow on
 `--resolution` / `--final-state` stamp terminal metadata; `--ack-frozen` is the tiered
 frozen hatch shared by `--rm` and `--freeze`.
 
-The backlog root is resolved by a pure walk-up from CWD to the nearest
-ancestor holding `.agent/` or `ai-hats.yaml` (K2, HATS-197 heir); `ai-hats.yaml`
-supplies `ai_hats_dir` and `task_prefix`. Resolution never mkdirs, and outside any
-project it answers with a typed `no_project_root` error instead of bootstrapping a
-phantom tracker (HATS-839 heir). `--tasks-dir` / `RACK_TASKS_DIR` stay as the
-explicit override.
+The backlog root is resolved by a walk-up from CWD to the nearest ancestor
+holding `.agent/` or `ai-hats.yaml` (K2, HATS-197 heir); from inside a linked
+task worktree (neither marker present) a pure-filesystem gitlink hop resolves
+the main checkout instead (HATS-1038 C2). `ai-hats.yaml` supplies `ai_hats_dir`
+and `task_prefix`. Resolution never mkdirs, and outside any project it answers
+with a typed `no_project_root` error instead of bootstrapping a phantom tracker
+(HATS-839 heir). `--tasks-dir` / `RACK_TASKS_DIR` stay as the explicit override
+(still anchoring `project_dir` at the real root, C2 gap #3).
 
 ```
 $ rack transition HATS-001 done --tasks-dir tasks
 error: Invalid transition for HATS-001: brainstorm → done. Legal edges from 'brainstorm': plan, blocked, cancelled
 ```
+
+### Field edits — coexistence with `ai-hats task` (cutover, HATS-1038 C3)
+
+`rack` has **no `update` verb**. During the cutover it owns lifecycle, reads,
+documents, and links; scalar card fields are edited with the tracker's
+`ai-hats task update <ID>` — a deliberate coexistence until field mutation is
+generalized onto the rack (HATS-1044), not a gap. What lives where:
+
+| Edit                                                             | Home                               |
+| ---------------------------------------------------------------- | ---------------------------------- |
+| state, work_log, documents (attach/freeze/rm), links, resolution | `rack transition <ID> --…`         |
+| new card + initial parent                                        | `rack create …`                    |
+| title, description, priority, reviewer, role, tags, re-parent    | `ai-hats task update <ID> --…`     |
+| `hyp` · `proposal` · `close` · `plan-extract` · `sync`           | `ai-hats task …` (until HATS-1044) |
+
+Both CLIs read and write the same `task.yaml` under the same task lock, so the
+split is safe to interleave within one task.
 
 ## Doc store (K2, rev4 semantics)
 
