@@ -374,9 +374,33 @@ class SubAgentRunner:
                     work_dir=work_dir,
                 )
             finally:
+                # HATS-1045: release-on-finish BEFORE the cache sweep, so a
+                # sibling sub-agent sharing this runner's pid can reclaim the
+                # task. Fail-open, so the sweep below always runs.
+                self._release_ownership_on_finish(session)
                 _cleanup_session_cache(self.project_dir, session.session_id)
 
         return session
+
+    def _release_ownership_on_finish(self, session: "Session") -> None:
+        """Drop this finished session's ownership holds (HATS-1045).
+
+        Sequential sub-agents share this runner's ``os.getpid()`` via
+        ``ENV_ROOT_PID``, so a finished session's hold reads live to
+        ``record_is_live`` and refuses a sibling's reclaim. Match on
+        ``(session_id, os.getpid())`` so an id-colliding peer process is never
+        touched. Fail-open: an ownership error must never mask the sub-agent
+        result nor skip the session-cache sweep.
+        """
+        try:
+            from ai_hats_tracker import ownership
+
+            from .tracker_wiring import tracker_paths
+
+            registry = tracker_paths(self.project_dir).tasks_dir.parent / "ownership.json"
+            ownership.release_session_pid(registry, session.session_id, os.getpid())
+        except Exception as exc:  # noqa: BLE001 — fail-open teardown
+            session.log_sys(f"release-on-finish failed: {exc}")
 
     # ----- HATS-474 helpers -----
 
