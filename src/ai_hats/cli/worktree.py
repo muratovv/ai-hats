@@ -284,10 +284,11 @@ def wt_merge(
     except WorktreeMergeConsentError as e:
         # HATS-1019: recipe lives here (HATS-509 split) — the deny doubles
         # as the review-handoff directive.
-        console.print(f"[red]Refused (supervisor consent required)[/]: {e}")
+        console.print(f"[red]Refused (review consent required)[/]: {e}")
         console.print(
             "This task is ready for review — STOP and hand it off to the "
-            "supervisor. After reviewing, the supervisor merges:"
+            "supervisor. Once review passes (supervisor saw the diff, notes "
+            "resolved, explicit go), merge with:"
         )
         console.print(
             f"  [cyan]AI_HATS_MERGE_ACK=1 ai-hats wt merge {name}[/]",
