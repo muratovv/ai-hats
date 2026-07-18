@@ -198,6 +198,32 @@ def release(path: Path, task_id: str, session_id: str) -> None:
             _save(path, reg)
 
 
+def release_session_pid(path: Path, session_id: str, root_pid: int) -> int:
+    """Drop records matching BOTH ``session_id`` and ``root_pid``; return the
+    count removed. No-op (0) if the registry file does not exist.
+
+    Release-on-finish for sequential sub-agents that share one runner
+    ``root_pid`` (HATS-1045). The ``root_pid`` predicate is load-bearing:
+    ``session_id`` alone is not cross-process unique (UTC-second + per-process
+    counter), so id-colliding peers must not release each other's holds.
+    """
+    if not path.exists():
+        return 0
+    with _lock(path):
+        reg = _load(path)
+        owners = reg["owners"]
+        doomed = [
+            t
+            for t, r in owners.items()
+            if r.get("session_id") == session_id and r.get("root_pid") == root_pid
+        ]
+        for t in doomed:
+            del owners[t]
+        if doomed:
+            _save(path, reg)
+        return len(doomed)
+
+
 def finish(path: Path, task_id: str) -> None:
     """Unconditionally drop ``task_id``'s record (close side-effect). No-op if
     the registry file does not exist or the task is unowned."""
