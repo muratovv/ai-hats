@@ -1,14 +1,6 @@
-# ai_hats_rack/backlog.yaml — packaged default: the tasks backlog (kernel CONTRACT).
-#
-# Lossless fold (HATS-1042, ADR-0017 §1/§6) of fsm.yaml (states + adjacency) and
-# links.yaml (kinds) into the single backlog definition every module is built
-# from. This file is the kernel CONTRACT, not user config: editing it changes the
-# event vocabulary for every consumer. Handler/field/extension sections are
-# deliberately absent — they land in the successor tasks (fields HATS-1035,
-# handler slots HATS-1043, multi-backlog HATS-1044); a fold that declared them
-# would be an inert gate, which the loader rejects fail-closed.
+# Packaged default: the tasks backlog. Kernel CONTRACT, not user config (ADR-0017).
 name: tasks
-prefix: HATS # instance override: ai-hats.yaml task_prefix (unchanged)
+prefix: HATS
 
 fsm:
   initial: brainstorm
@@ -16,12 +8,12 @@ fsm:
     - { name: brainstorm }
     - { name: plan }
     - { name: execute }
-    - { name: document } # PROP-012: companion-HYP timing anchors here (fsm._validate enforces)
+    - { name: document }
     - { name: review }
     - { name: done }
-    - { name: blocked } # pause hub: reachable from every working state, returns into them
+    - { name: blocked }
     - { name: failed }
-    - { name: cancelled } # the only true dead end (administrative close)
+    - { name: cancelled }
   edges:
     - { from: brainstorm, to: plan }
     - { from: brainstorm, to: blocked }
@@ -29,7 +21,7 @@ fsm:
     - { from: plan, to: execute }
     - { from: plan, to: blocked }
     - { from: plan, to: cancelled }
-    - { from: execute, to: execute, name: reclaim } # HATS-955: gated by ownership (K3), not the FSM
+    - { from: execute, to: execute, name: reclaim }
     - { from: execute, to: document }
     - { from: execute, to: blocked }
     - { from: execute, to: failed }
@@ -47,7 +39,7 @@ fsm:
     - { from: blocked, to: cancelled }
     - { from: failed, to: brainstorm }
     - { from: failed, to: cancelled }
-    - { from: done, to: execute, name: reopen } # HATS-328: reopen for epic close-out / forgotten scope
+    - { from: done, to: execute, name: reopen }
 
 links:
   kinds:

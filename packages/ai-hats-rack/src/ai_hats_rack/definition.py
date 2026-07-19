@@ -5,12 +5,11 @@ formerly ``fsm.yaml``) and the link-kind registry (formerly ``links.yaml``) into
 the single artifact every module is constructed from. The packaged default is a
 LOSSLESS fold of both (§6).
 
-The loader is fail-closed: a section or key not yet materialized in HATS-1042 is
-a typed error naming the key and its successor task, never a silent no-op — a
-declared-but-inert gate is exactly the failure mode this prevents
-(hats-1014-fsm §4). Structural validation reuses ``fsm._validate`` /
-``registry._validate`` so REQUIRED_STATES and the inverse-pair invariants stay
-in one place.
+The loader is fail-closed: a key this loader does not materialize is a typed
+error naming the key, never a silent no-op — a declared-but-inert gate is
+exactly the failure mode this prevents (hats-1014-fsm §4). Structural
+validation reuses ``fsm._validate`` / ``registry._validate`` so REQUIRED_STATES
+and the inverse-pair invariants stay in one place.
 """
 
 from __future__ import annotations
@@ -27,18 +26,6 @@ from .errors import RackConfigError
 from .fsm import Topology, _validate as _validate_topology
 from .registry import LinksRegistry, LinksRegistryError, _validate as _validate_registry
 
-#: A key declared but not materialized in HATS-1042 → the task that owns it.
-_KEY_SUCCESSORS: Mapping[str, str] = {
-    "fields": "HATS-1035",
-    "extras": "HATS-1035",
-    "on_enter": "HATS-1043",
-    "on_exit": "HATS-1043",
-    "handlers": "HATS-1043",
-    "skip": "HATS-1043",
-    "extensions": "HATS-1043",
-    "targets": "HATS-1044",
-}
-
 _TOP_KEYS = frozenset({"name", "prefix", "fsm", "links"})
 _FSM_KEYS = frozenset({"initial", "states", "edges"})
 _STATE_KEYS = frozenset({"name"})
@@ -52,16 +39,14 @@ class BacklogDefinitionError(RackConfigError):
 
 
 class UnsupportedBacklogKeyError(BacklogDefinitionError):
-    """A key not materialized in HATS-1042; names the key and its successor task."""
+    """A key this loader does not materialize; fail-closed, never a silent no-op."""
 
     def __init__(self, key: str, location: str) -> None:
         self.key = key
-        self.successor = _KEY_SUCCESSORS.get(key)
-        if self.successor is not None:
-            detail = f"materialized by {self.successor}, not this loader"
-        else:
-            detail = "not a supported backlog key (HATS-1042)"
-        super().__init__(f"backlog.yaml {location}: key {key!r} — {detail}")
+        super().__init__(
+            f"backlog.yaml {location}: key {key!r} is not supported by this "
+            f"loader (the backlog.yaml surface lands in phases — see ADR-0017)"
+        )
 
 
 class LegacyLinksOverrideError(LinksRegistryError):
@@ -132,7 +117,9 @@ def _collect_fsm(
     edge_names: dict[tuple[str, str], str] = {}
     for item in edges_raw:
         if not isinstance(item, dict):
-            raise BacklogDefinitionError(f"{source}: each fsm.edge must be a mapping (got {item!r})")
+            raise BacklogDefinitionError(
+                f"{source}: each fsm.edge must be a mapping (got {item!r})"
+            )
         frm, to = item.get("from"), item.get("to")
         _reject_unknown(item, _EDGE_KEYS, f"edge {frm}--{to}")
         if not isinstance(frm, str) or not isinstance(to, str):
@@ -165,8 +152,8 @@ def _collect_links(raw: Any, source: str) -> list[Any]:
 def _build(raw: Any, source: str) -> BacklogDefinition:
     if not isinstance(raw, dict):
         raise BacklogDefinitionError(f"{source}: expected a mapping at top level")
-    # Reject every unsupported key BEFORE structural validation — the fold must
-    # never let a successor-task section slip through inert.
+    # Reject unsupported keys BEFORE structural validation — an unsupported
+    # section must fail as itself, not as an unrelated topology error.
     _reject_unknown(raw, _TOP_KEYS, "top level")
     name = raw.get("name")
     prefix = raw.get("prefix")
