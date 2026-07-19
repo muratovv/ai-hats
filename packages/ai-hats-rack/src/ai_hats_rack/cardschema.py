@@ -133,6 +133,19 @@ class CardSchema:
             except ValueError as exc:
                 raise FieldValidationError(name, str(exc)) from exc
 
+    def emit_filter(self, mapping: Mapping[str, Any]) -> dict[str, Any]:
+        """Persist-time emit gate (ADR-0017 §1): drop a declared field with
+        ``emit: when-set`` whose value is empty from the persisted mapping —
+        generically, whether the field is a TaskCard column or extras-resident
+        on a custom backlog. Anchor/undeclared keys are untouched; the packaged
+        tasks schema declares when-set exactly where ``to_dict`` already omits
+        (resolution/completed_at/final_state), so this is byte-identical there."""
+        out = dict(mapping)
+        for f in self._fields:
+            if f.emit == "when-set" and f.name in out and not out[f.name]:
+                del out[f.name]
+        return out
+
     def resolve_create(self, provided: Mapping[str, Any]) -> dict[str, Any]:
         """Resolve create inputs to concrete values: fill schema defaults for
         None/absent exposed inputs, validate each set value, enforce required.

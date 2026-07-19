@@ -15,7 +15,7 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, ClassVar, get_origin
+from typing import Any, Callable, ClassVar, Mapping, get_origin
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -263,10 +263,19 @@ class TaskCard(BaseModel):
     def from_yaml(cls, path: Path) -> TaskCard:
         return cls.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
 
-    def save(self, path: Path) -> None:
+    def save(
+        self,
+        path: Path,
+        *,
+        transform: Callable[[dict[str, Any]], Mapping[str, Any]] | None = None,
+    ) -> None:
+        # `transform` is the write-layer emit gate (CardSchema.emit_filter): the
+        # serialization format stays owned here, the policy is injected — to_dict
+        # is untouched (ADR-0017 §1/R2в).
+        mapping: Mapping[str, Any] = self.to_dict()
+        if transform is not None:
+            mapping = transform(dict(mapping))
         atomic_write_text(
             path,
-            yaml.dump(
-                self.to_dict(), default_flow_style=False, allow_unicode=True, sort_keys=False
-            ),
+            yaml.dump(mapping, default_flow_style=False, allow_unicode=True, sort_keys=False),
         )

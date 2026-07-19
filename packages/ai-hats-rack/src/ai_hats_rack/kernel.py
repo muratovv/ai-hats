@@ -145,7 +145,9 @@ class Kernel:
 
     def _persist(self, task: TaskCard) -> None:
         self._task_path(task.id).parent.mkdir(parents=True, exist_ok=True)
-        task.save(self._task_path(task.id))
+        # The emit gate (schema when-set fields dropped when empty) runs at the
+        # single persist, hung off the schema — TaskCard.to_dict stays untouched.
+        task.save(self._task_path(task.id), transform=self._schema.emit_filter)
 
     def _task_lock(self, task_id: str) -> FileLock:
         lock_path = self.tasks_dir / task_id / ".lock"
