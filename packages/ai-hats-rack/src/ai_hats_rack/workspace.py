@@ -23,6 +23,7 @@ from .dispatch import Subscriber, bind_subscribers, validate_requires_states
 from .errors import RackConfigError
 from .journal import JsonlJournalSink
 from .kernel import Kernel
+from .linked import card_exists
 from .resolver import RackRoot
 
 #: A root's short identity — the qualifier the CLI accepts as ``<root>:<id>``.
@@ -177,7 +178,7 @@ class Workspace:
         prefix = _prefix_of(bare)
         for i in self.instances:
             if i.prefix == prefix and (qual_root is None or i.root_id == qual_root):
-                if _card_exists(i.catalog, bare):
+                if card_exists(i.catalog, bare):
                     return True
         return False
 
@@ -199,10 +200,10 @@ class Workspace:
 
         def check(target_id: str, targets: str | None) -> bool:
             if not targets:
-                return _card_exists(instance.catalog, target_id)
+                return card_exists(instance.catalog, target_id)
             for i in self.instances:
                 if i.root_id == instance.root_id and i.name == targets:
-                    return _card_exists(i.catalog, target_id)
+                    return card_exists(i.catalog, target_id)
             return False
 
         return check
@@ -282,10 +283,6 @@ def _check_prefix_uniqueness(instances: Sequence[BacklogInstance], root_id: Root
     for prefix, names in by_prefix.items():
         if len(names) > 1:
             raise DuplicatePrefixError(prefix, names, root_id)
-
-
-def _card_exists(catalog: Path, item_id: str) -> bool:
-    return (catalog / item_id / "task.yaml").exists()
 
 
 def _split_qualifier(item_id: str) -> tuple[RootId | None, str]:

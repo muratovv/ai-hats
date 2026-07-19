@@ -181,6 +181,9 @@ class OpTxn:
     #: removed)`` fires ``link:<kind>``/``unlink:<kind>`` (HATS-1043 §3). None on
     #: the lock-free/test path — link ops then mutate without dispatching.
     dispatch_link: Callable[[str, str, bool], None] | None = None
+    #: cross-backlog target-existence seam (kernel-supplied, ADR-0017 §2): ``(target,
+    #: targets_backlog|None) -> bool``. None -> catalog-local (today's behavior).
+    exists: Callable[[str, "str | None"], bool] | None = None
 
     def rollback(self) -> None:
         """Unwind file mutations in REVERSE registration order (abort path)."""
@@ -259,8 +262,13 @@ def _apply_log(txn: OpTxn, op: LogOp) -> None:
 
 
 def _apply_link(txn: OpTxn, op: LinkOp) -> None:
-    tasks_dir = txn.card_dir.parent
-    if not (tasks_dir / op.target / "task.yaml").exists():
+    # Route target existence through the workspace seam by the kind's `targets`
+    # (ADR-0017 §2); a None-tolerant kind lookup keeps the pre-existing order —
+    # existence before link_on_card's own kind/derived/self-link validation.
+    kind = txn.registry.get(op.kind)
+    targets = kind.targets if (kind is not None and kind.targets) else None
+    exists = txn.exists or (lambda tid, _t: (txn.card_dir.parent / tid / "task.yaml").exists())
+    if not exists(op.target, targets):
         raise UnknownTaskError(op.target)
     result = link_on_card(txn.registry, txn.card, op.target, op.kind, actor=txn.actor)
     if result.changed and txn.dispatch_link is not None:

@@ -118,10 +118,10 @@ def _skeleton(
 
 
 _FAIL_CASES = {
-    # HATS-1044 — cross-backlog kind targets stay fail-closed.
-    "kind_targets": (
-        _skeleton(kinds="    - {name: parent_task, targets: tasks}\n"),
-        "targets",
+    # an unknown kind key fails closed naming it (kind `targets` LANDED in 1044).
+    "kind_generic": (
+        _skeleton(kinds="    - {name: parent_task, bogus: 1}\n"),
+        "bogus",
     ),
     # an unknown field-entry key fails closed naming it (HATS-1035 grammar).
     "field_key": (

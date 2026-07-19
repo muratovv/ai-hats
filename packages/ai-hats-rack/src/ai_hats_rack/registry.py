@@ -62,6 +62,8 @@ class LinkKind:
     inverse: str = ""
     derived: bool = False
     aliases: tuple[str, ...] = ()
+    #: the backlog this kind's targets live in (HATS-1044); "" == own backlog.
+    targets: str = ""
 
     @property
     def stored(self) -> bool:
@@ -150,6 +152,7 @@ def _parse_kind(raw: Any, source: str) -> LinkKind:
         inverse=str(raw.get("inverse") or ""),
         derived=bool(raw.get("derived", False)),
         aliases=tuple(aliases),
+        targets=str(raw.get("targets") or ""),
     )
 
 
