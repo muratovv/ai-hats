@@ -59,7 +59,7 @@ def _bare_kernel(root: RackRoot) -> Kernel:
     # Standalone mutation surface = kernel + scaffold + plan-gate (epic §2.3):
     # the composite transition still enforces the gate; no ownership/worktree.
     # One backlog definition builds the kernel AND its subscribers (HATS-1042).
-    defn = resolve_definition(root.tasks_dir, prefix_alias=root.prefix)
+    defn = resolve_definition(root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir)
     return Kernel(
         root.tasks_dir,
         prefix=defn.prefix,

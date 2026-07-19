@@ -11,11 +11,9 @@ from ai_hats_rack.definition import load_backlog
 from ai_hats_rack.kernel import Kernel
 from ai_hats_rack.models import TaskCard
 from ai_hats_rack.registry import (
-    LegacyLinksOverrideError,
     LinksRegistryError,
     UnknownLinkKindError,
     load_registry,
-    load_registry_for,
     resolve_links,
 )
 
@@ -201,19 +199,3 @@ def test_extension_binding_follows_a_renamed_kind(tmp_path):
     reg = _backlog_registry(tmp_path, RENAMED_KINDS)
     card = TaskCard(id="T-1", depends_on=["T-9"])
     assert _DependsProbe(reg, "depends_on").blockers(card) == ["T-9"]
-
-
-# ----- per-backlog override discovery (retired, R6) --------------------------
-
-
-def test_load_registry_for_rejects_project_override(tmp_path):
-    # R6 (ADR-0017 §1): a project-root links.yaml is retired — fold it into
-    # backlog.yaml. Discovery fails closed instead of loading the override.
-    (tmp_path / "links.yaml").write_text("kinds:\n  - {name: x}\n")
-    with pytest.raises(LegacyLinksOverrideError):
-        load_registry_for(tmp_path)
-
-
-def test_load_registry_for_falls_back_to_packaged_default(tmp_path):
-    reg = load_registry_for(tmp_path)  # no project links.yaml
-    assert reg.hierarchy_kind.name == "parent_task"

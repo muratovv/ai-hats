@@ -25,7 +25,7 @@ import yaml
 
 from .errors import RackConfigError
 from .fsm import Topology, _validate as _validate_topology
-from .registry import LinksRegistry, _validate as _validate_registry
+from .registry import LinksRegistry, LinksRegistryError, _validate as _validate_registry
 
 #: A key declared but not materialized in HATS-1042 → the task that owns it.
 _KEY_SUCCESSORS: Mapping[str, str] = {
@@ -62,6 +62,19 @@ class UnsupportedBacklogKeyError(BacklogDefinitionError):
         else:
             detail = "not a supported backlog key (HATS-1042)"
         super().__init__(f"backlog.yaml {location}: key {key!r} — {detail}")
+
+
+class LegacyLinksOverrideError(LinksRegistryError):
+    """A project-root ``links.yaml`` override is retired (ADR-0017 §1, HATS-1042
+    R6): its kinds must be folded into the catalog's ``backlog.yaml``."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        super().__init__(
+            f"{path} is retired — the link-kind registry now lives in backlog.yaml "
+            f"(ADR-0017 §1). Fold its 'kinds:' into a 'links:' section of the "
+            f"catalog's backlog.yaml and delete {path.name}."
+        )
 
 
 @dataclass(frozen=True)
@@ -194,14 +207,25 @@ def load_backlog(path: Path | None = None) -> BacklogDefinition:
     return _build(yaml.safe_load(text), source)
 
 
-def resolve_definition(catalog: Path, *, prefix_alias: str | None = None) -> BacklogDefinition:
+def resolve_definition(
+    catalog: Path,
+    *,
+    prefix_alias: str | None = None,
+    project_dir: Path | None = None,
+) -> BacklogDefinition:
     """Instance resolution (ADR-0017 §1, single-backlog): the definition a catalog runs on.
 
     A catalog holding ``backlog.yaml`` uses that file whole — its ``prefix:`` is
     authoritative. A catalog WITHOUT one is the tasks backlog on the packaged
     default (today's zero-config), and only THEN does ``prefix_alias`` (the
     deprecated ai-hats.yaml ``task_prefix``) override the packaged prefix.
+
+    ``project_dir`` (when given) makes a legacy project-root ``links.yaml``
+    override fail closed (R6) — reads and transitions resolve identically, so a
+    retired override never silently applies on one path and errors on the other.
     """
+    if project_dir is not None and (project_dir / "links.yaml").is_file():
+        raise LegacyLinksOverrideError(project_dir / "links.yaml")
     catalog_file = catalog / "backlog.yaml"
     if catalog_file.is_file():
         return load_backlog(catalog_file)

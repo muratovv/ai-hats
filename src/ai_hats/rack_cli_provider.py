@@ -32,7 +32,9 @@ class CliKernelProvider:
     def build_kernel(self, root: Any, caller_cwd: Path):
         """The full integrator assembly (mirror of the K6 driver) — kernel +
         every stock extension + the consumer hook-runner."""
-        defn = resolve_definition(root.tasks_dir, prefix_alias=root.prefix)
+        defn = resolve_definition(
+            root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
+        )
         return build_rack_kernel(
             root.project_dir,
             tasks_dir=root.tasks_dir,
@@ -50,7 +52,9 @@ class CliKernelProvider:
         DerivedViewsExtension(
             root.tasks_dir,
             tracker_paths(root.project_dir).state_md_path,
-            topology=resolve_definition(root.tasks_dir, prefix_alias=root.prefix).topology,
+            topology=resolve_definition(
+                root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
+            ).topology,
         ).refresh()
 
     def handle_error(self, exc: Exception, as_json: bool, task_id: str = "") -> bool:
