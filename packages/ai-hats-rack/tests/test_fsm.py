@@ -1,9 +1,15 @@
-"""fsm.yaml topology pins: exact tracker parity + structural validation."""
+"""backlog.yaml topology pins: exact tracker parity + structural validation.
+
+Structural-invariant fixtures author a full ``backlog.yaml`` through
+``load_backlog`` (fsm.yaml retired, HATS-1042); the invariants live in
+``fsm._validate``, reached on that path, so the pins survive the fold.
+"""
 
 from __future__ import annotations
 
 import pytest
 
+from ai_hats_rack.definition import load_backlog
 from ai_hats_rack.fsm import (
     InvalidTransitionError,
     TopologyError,
@@ -63,68 +69,62 @@ def test_unknown_state_names_known_states(topology):
     assert "brainstorm" in str(exc_info.value)
 
 
-def _write_topology(tmp_path, text):
-    path = tmp_path / "fsm.yaml"
-    path.write_text(text)
+def _write_backlog(tmp_path, fsm_block):
+    """A full backlog.yaml with the given ``fsm:`` block and a trivially valid
+    links section — so a structural failure is attributable to the topology."""
+    path = tmp_path / "backlog.yaml"
+    path.write_text(
+        "name: t\nprefix: T\n"
+        f"fsm:\n{fsm_block}"
+        "links:\n  kinds:\n    - {name: parent_task}\n"
+    )
     return path
 
 
 def test_document_state_is_required(tmp_path):
     # PROP-012: accepted obligations anchor to `document`; a topology without
     # it must not load.
-    path = _write_topology(
+    path = _write_backlog(
         tmp_path,
-        """
-initial: brainstorm
-states: [brainstorm, done]
-edges:
-  brainstorm: [done]
-  done: []
-""",
+        "  initial: brainstorm\n"
+        "  states: [{name: brainstorm}, {name: done}]\n"
+        "  edges: []\n",
     )
     with pytest.raises(TopologyError, match="document"):
-        load_topology(path)
+        load_backlog(path)
 
 
-def test_edges_must_cover_every_state(tmp_path):
-    path = _write_topology(
+def test_edge_from_undeclared_state_is_rejected(tmp_path):
+    # edges-cover-states: in the edge-object form the adjacency covers every
+    # declared state by construction, so the surviving failure is an edge whose
+    # `from` names a state the topology never declared.
+    path = _write_backlog(
         tmp_path,
-        """
-initial: brainstorm
-states: [brainstorm, document]
-edges:
-  brainstorm: [document]
-""",
+        "  initial: brainstorm\n"
+        "  states: [{name: brainstorm}, {name: document}]\n"
+        "  edges:\n    - {from: ghost, to: document}\n",
     )
     with pytest.raises(TopologyError, match="cover every state"):
-        load_topology(path)
+        load_backlog(path)
 
 
 def test_edge_targets_must_be_declared(tmp_path):
-    path = _write_topology(
+    path = _write_backlog(
         tmp_path,
-        """
-initial: brainstorm
-states: [brainstorm, document]
-edges:
-  brainstorm: [shipped]
-  document: []
-""",
+        "  initial: brainstorm\n"
+        "  states: [{name: brainstorm}, {name: document}]\n"
+        "  edges:\n    - {from: brainstorm, to: shipped}\n",
     )
-    with pytest.raises(TopologyError, match="undeclared"):
-        load_topology(path)
+    with pytest.raises(TopologyError, match="undeclared states"):
+        load_backlog(path)
 
 
 def test_initial_must_be_declared(tmp_path):
-    path = _write_topology(
+    path = _write_backlog(
         tmp_path,
-        """
-initial: intake
-states: [brainstorm, document]
-edges:
-  brainstorm: [document]
-  document: []
-""",
+        "  initial: intake\n"
+        "  states: [{name: brainstorm}, {name: document}]\n"
+        "  edges:\n    - {from: brainstorm, to: document}\n",
     )
     with pytest.raises(TopologyError, match="initial"):
-        load_topology(path)
+        load_backlog(path)

@@ -1,9 +1,9 @@
 """HATS-1042: unified ``backlog.yaml`` loader.
 
-Pins the packaged default as a LOSSLESS fold of ``fsm.yaml`` (states + edges)
-and ``links.yaml`` (kinds), plus the fail-closed contract: a key not yet
-materialized in HATS-1042 is a typed error naming the key AND its successor
-task, never a silent no-op.
+Pins the packaged tasks default as the golden states/edges/kinds fold
+(``fsm.yaml`` + ``links.yaml`` retired), plus the fail-closed contract: a key
+not yet materialized in HATS-1042 is a typed error naming the key AND its
+successor task, never a silent no-op.
 """
 
 from __future__ import annotations
@@ -17,11 +17,23 @@ from ai_hats_rack.definition import (
     load_backlog,
     resolve_definition,
 )
-from ai_hats_rack.fsm import load_topology
-from ai_hats_rack.registry import load_registry
+
+# Golden pin: the tasks topology, exact ai-hats-tracker parity (the former
+# fsm.yaml content, now the fsm section of the packaged backlog.yaml).
+_GOLDEN_EDGES = {
+    "brainstorm": ("plan", "blocked", "cancelled"),
+    "plan": ("execute", "blocked", "cancelled"),
+    "execute": ("execute", "document", "blocked", "failed", "cancelled"),
+    "document": ("review", "blocked", "cancelled"),
+    "review": ("done", "failed", "cancelled"),
+    "blocked": ("brainstorm", "plan", "execute", "document", "cancelled"),
+    "failed": ("brainstorm", "cancelled"),
+    "done": ("execute",),
+    "cancelled": (),
+}
 
 
-# ----- packaged default: lossless fold of fsm.yaml + links.yaml --------------
+# ----- packaged default: the golden tasks fold -------------------------------
 
 
 def test_packaged_backlog_is_a_definition():
@@ -31,19 +43,16 @@ def test_packaged_backlog_is_a_definition():
     assert defn.prefix == "HATS"
 
 
-def test_topology_is_lossless_against_fsm_yaml():
+def test_topology_matches_the_golden_fold():
     defn = load_backlog()
-    fsm = load_topology()
-    assert defn.topology.initial == fsm.initial
-    assert defn.topology.states == fsm.states
-    assert dict(defn.topology.edges) == dict(fsm.edges)
+    assert defn.topology.initial == "brainstorm"
+    assert dict(defn.topology.edges) == _GOLDEN_EDGES
+    assert set(defn.topology.states) == set(_GOLDEN_EDGES)
     assert len(defn.topology.states) == 9
 
 
-def test_links_are_lossless_against_links_yaml():
+def test_links_match_the_golden_kinds():
     defn = load_backlog()
-    reg = load_registry()
-    assert defn.links_registry.names() == reg.names()
     assert defn.links_registry.names() == ("parent_task", "depends_on", "related", "children")
     assert defn.links_registry.hierarchy_kind.name == "parent_task"
     assert defn.links_registry.children_kind.name == "children"

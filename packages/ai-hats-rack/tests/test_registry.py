@@ -7,9 +7,11 @@ from __future__ import annotations
 import pytest
 import yaml
 
+from ai_hats_rack.definition import load_backlog
 from ai_hats_rack.kernel import Kernel
 from ai_hats_rack.models import TaskCard
 from ai_hats_rack.registry import (
+    LegacyLinksOverrideError,
     LinksRegistryError,
     UnknownLinkKindError,
     load_registry,
@@ -20,13 +22,28 @@ from ai_hats_rack.registry import (
 # A renamed hierarchy kind: `epic_of` is not a dedicated task.yaml field, so it
 # stores under the generic `links:` map (kind name == storage, HATS-1032); the
 # `depends_on`/`related` kinds keep their names and dedicated fields.
-RENAMED = """\
-kinds:
-  - {name: epic_of, arity: one, inverse: subtasks_view}
-  - {name: subtasks_view, derived: true, inverse: epic_of}
-  - {name: depends_on, aliases: [depends]}
-  - {name: related, inverse: related}
-"""
+RENAMED_KINDS = (
+    "    - {name: epic_of, arity: one, inverse: subtasks_view}\n"
+    "    - {name: subtasks_view, derived: true, inverse: epic_of}\n"
+    "    - {name: depends_on, aliases: [depends]}\n"
+    "    - {name: related, inverse: related}\n"
+)
+
+# A trivially valid fsm block so a links failure is attributable to the kinds.
+_MINIMAL_FSM = (
+    "fsm:\n"
+    "  initial: brainstorm\n"
+    "  states: [{name: brainstorm}, {name: document}]\n"
+    "  edges:\n    - {from: brainstorm, to: document}\n"
+)
+
+
+def _backlog_registry(tmp_path, kinds_block):
+    """Load the links registry from a full backlog.yaml wrapping ``kinds_block``
+    (links.yaml retired, HATS-1042)."""
+    path = tmp_path / "backlog.yaml"
+    path.write_text("name: t\nprefix: T\n" + _MINIMAL_FSM + "links:\n  kinds:\n" + kinds_block)
+    return load_backlog(path).links_registry
 
 
 def _write(path, **fields):
@@ -56,17 +73,13 @@ def test_unknown_kind_names_the_configured_set():
 
 
 def test_dangling_inverse_is_rejected(tmp_path):
-    bad = tmp_path / "links.yaml"
-    bad.write_text("kinds:\n  - {name: parent, inverse: ghost}\n")
     with pytest.raises(LinksRegistryError):
-        load_registry(bad)
+        _backlog_registry(tmp_path, "    - {name: parent, inverse: ghost}\n")
 
 
 def test_empty_kinds_is_rejected(tmp_path):
-    bad = tmp_path / "links.yaml"
-    bad.write_text("kinds: []\n")
     with pytest.raises(LinksRegistryError):
-        load_registry(bad)
+        _backlog_registry(tmp_path, "    []\n")
 
 
 # ----- resolve_links projection ----------------------------------------------
@@ -123,7 +136,7 @@ def test_is_epic_via_renamed_parent_kind(tmp_path, cwd):
     # Renamed hierarchy kind `epic_of` (not a dedicated field) stores under the
     # generic `links:` map (kind name == storage, HATS-1032); is_epic still binds
     # STRUCTURALLY, exercising children_of's generic-storage slow path.
-    reg = load_registry(_registry_file(tmp_path))
+    reg = _backlog_registry(tmp_path, RENAMED_KINDS)
     tasks = tmp_path / "tasks"
     kernel = Kernel(tasks, registry=reg)
     kernel.create(actor="t", caller_cwd=cwd, task_id="T-1", title="epic")
@@ -185,26 +198,22 @@ def test_extension_binds_to_configured_kind():
 def test_extension_binding_follows_a_renamed_kind(tmp_path):
     # Point the probe at a backlog whose depends kind keeps its name but whose
     # parent kind is renamed — the probe still consumes depends_on unchanged.
-    reg = load_registry(_registry_file(tmp_path))
+    reg = _backlog_registry(tmp_path, RENAMED_KINDS)
     card = TaskCard(id="T-1", depends_on=["T-9"])
     assert _DependsProbe(reg, "depends_on").blockers(card) == ["T-9"]
 
 
-# ----- per-backlog override discovery ----------------------------------------
+# ----- per-backlog override discovery (retired, R6) --------------------------
 
 
-def test_load_registry_for_prefers_project_override(tmp_path):
-    (tmp_path / "links.yaml").write_text(RENAMED)
-    reg = load_registry_for(tmp_path)
-    assert reg.hierarchy_kind.name == "epic_of"
+def test_load_registry_for_rejects_project_override(tmp_path):
+    # R6 (ADR-0017 §1): a project-root links.yaml is retired — fold it into
+    # backlog.yaml. Discovery fails closed instead of loading the override.
+    (tmp_path / "links.yaml").write_text("kinds:\n  - {name: x}\n")
+    with pytest.raises(LegacyLinksOverrideError):
+        load_registry_for(tmp_path)
 
 
 def test_load_registry_for_falls_back_to_packaged_default(tmp_path):
     reg = load_registry_for(tmp_path)  # no project links.yaml
     assert reg.hierarchy_kind.name == "parent_task"
-
-
-def _registry_file(tmp_path):
-    path = tmp_path / "links.yaml"
-    path.write_text(RENAMED)
-    return path

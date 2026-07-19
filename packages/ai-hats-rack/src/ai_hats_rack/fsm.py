@@ -1,19 +1,17 @@
-"""FSM topology loaded from ``fsm.yaml`` — the in-package SSOT (HATS-1020).
+"""FSM topology — the ``fsm`` section of a backlog definition (HATS-1020).
 
-The engine owns no hardcoded state table: :func:`load_topology` reads the
-packaged ``fsm.yaml`` and every guard decision, CLI error message, and event
-key derives from it. Changing the file changes the kernel contract.
+The engine owns no hardcoded state table: :func:`load_topology` reads it from
+the packaged ``backlog.yaml`` (fsm.yaml folded in, HATS-1042) and every guard
+decision, CLI error message, and event key derives from it. Changing the file
+changes the kernel contract.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib import resources
 from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping
-
-import yaml
 
 from .errors import RackConfigError, RackError
 
@@ -116,10 +114,10 @@ def _validate(raw: object, source: str) -> Topology:
 
 
 def load_topology(path: Path | None = None) -> Topology:
-    """Load and validate the topology; default source is the packaged fsm.yaml."""
-    if path is not None:
-        text, source = path.read_text(encoding="utf-8"), str(path)
-    else:
-        resource = resources.files("ai_hats_rack").joinpath("fsm.yaml")
-        text, source = resource.read_text(encoding="utf-8"), "ai_hats_rack/fsm.yaml"
-    return _validate(yaml.safe_load(text), source)
+    """The FSM topology of a backlog: packaged ``backlog.yaml`` by default, or
+    the backlog at ``path``. A thin accessor over :func:`load_backlog` (deferred
+    import — it validates via this module's ``_validate``) so the many no-arg
+    callers stay unchanged with ``backlog.yaml`` as the one source (HATS-1042)."""
+    from .definition import load_backlog
+
+    return load_backlog(path).topology

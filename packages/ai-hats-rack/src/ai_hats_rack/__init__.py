@@ -73,6 +73,7 @@ from .matching import Matcher, compile_matcher, matches
 from .models import TaskCard, WorkLogEntry
 from .registry import (
     DerivedLinkKindError,
+    LegacyLinksOverrideError,
     LinkKind,
     LinksRegistry,
     LinksRegistryError,
@@ -116,6 +117,7 @@ __all__ = [
     "JsonlJournalSink",
     "Kernel",
     "KernelResult",
+    "LegacyLinksOverrideError",
     "LinkKind",
     "LinkResult",
     "LinkView",
