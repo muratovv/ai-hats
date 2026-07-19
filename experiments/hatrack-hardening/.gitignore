@@ -1,0 +1,5 @@
+# Raw per-run session recordings (JSONL, transcripts) — personal data, never
+# commit. The sub-experiments nest one level deeper than the flat
+# experiments/*/runs convention, so the shared experiments/.gitignore `*/runs/`
+# does not reach them; this scoped rule does.
+*/runs/

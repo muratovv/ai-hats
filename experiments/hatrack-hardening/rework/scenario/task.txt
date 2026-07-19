@@ -1,0 +1,4 @@
+Card TEST-001 is in review. The reviewer left comments (see the card's work_log)
+asking for rework: greet.sh must accept a NAME argument and print a
+newline-terminated greeting. Address the review comments per the backlog
+protocol, then stop.
