@@ -35,9 +35,13 @@ from .docstore import (
     UnknownDocumentError,
 )
 from .composition import (
+    BoundSubscriber,
     ExtensionFactory,
     UnknownHandlerError,
+    build_bound_subscribers,
     build_extensions,
+    compose_subscribers,
+    stock_factories,
 )
 from .definition import (
     BacklogDefinition,
@@ -111,6 +115,7 @@ __all__ = [
     "BacklogDefinitionError",
     "BindableSubscriber",
     "Bindings",
+    "BoundSubscriber",
     "CardRow",
     "ContextPackage",
     "Delta",
@@ -171,9 +176,11 @@ __all__ = [
     "UnsupportedBacklogKeyError",
     "WorkLogEntry",
     "bind_subscribers",
+    "build_bound_subscribers",
     "build_context",
     "build_extensions",
     "card_filter",
+    "compose_subscribers",
     "compile_matcher",
     "event_detail",
     "find_project_root",
@@ -188,6 +195,7 @@ __all__ = [
     "resolve_links",
     "resolve_root",
     "scan_cards",
+    "stock_factories",
     "unlink",
     "validate_requires_states",
     "walk_neighborhood",
