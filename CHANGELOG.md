@@ -12,6 +12,31 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Added
 
+- **Declaration-bound handlers** (HATS-1043, ADR-0017 §3–§4). `backlog.yaml` now
+  says not only which edges exist but *what fires on them*: `states[].on_enter`/
+  `on_exit`, `edges[].handlers`/`skip`, and `links.kinds[].handlers` bind
+  handlers to events, and the loader expands each to its subscription keys — the
+  full forced-inclusive `edge:` product for state slots (HATS-518),
+  `link:<kind>`/`unlink:<kind>` for link slots. Every referenced name resolves
+  through one open factory registry (unknown name → typed fail-closed
+  `UnknownHandlerError`); a reference may pin `priority:` or take a positional
+  band into the one total in-lock order. `Delta` grows a declared-`fields`
+  surface (set/append, applied in the single persist); `bind(kernel)` and
+  `requires_states()` become contract lifecycle hooks (composition validates the
+  state vocabulary fail-closed). The stock `stamp-lifecycle`/`clear-lifecycle`
+  handlers replace the `kernel._stamp_lifecycle` hardcode, and the packaged
+  tasks kit (plan-scaffold, plan-gate, frozen-integrity, stamp/clear, the reopen
+  `skip: [plan-gate]`) migrates onto these declarations with the in-lock
+  priority chain pinned to today's order — zero behaviour change. Link/unlink of
+  a declared kind now dispatches an in-lock `link:<kind>`/`unlink:<kind>` event
+  on the owning side (a handler may abort the mutation); kinds without handlers
+  dispatch nothing. Handler `timeout:` closes the HATS-1015 liveness hole: the
+  hook-runner budget (default 30) is configurable, and worktree git shell-outs
+  gain a generous budget (default 60) — a hung subprocess is killed → in-lock
+  error → abort + journal. A packaged `backlog-schema.yaml` ships the language-
+  independent key grammar (allowed keys per level, reserved keys, the priority
+  scale as data) as the single authority — the loader's allow-sets load from it
+  so they cannot drift, and the packaged `backlog.yaml` self-lints against it.
 - **Gemini native skill discovery** (HATS-993, ADR-0016). `GeminiProvider`
   mirrors the composed role's skills into `.gemini/skills/` — Gemini CLI's
   workspace Agent-Skills tier (>=0.45) — via a new generic ref-counted

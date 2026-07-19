@@ -8,15 +8,22 @@ hooks) is an extension living outside this package.
 
 from .dispatch import (
     AbortOperation,
+    Append,
+    BindableSubscriber,
     Delta,
     DispatchContext,
     DispatchRecord,
+    FieldOp,
     JournalSink,
     OperationAborted,
     Phase,
+    RequiresStatesError,
+    Set,
     Subscriber,
     SubscriberOutcome,
     Subscription,
+    bind_subscribers,
+    validate_requires_states,
 )
 from .docstore import (
     DocInfo,
@@ -27,9 +34,20 @@ from .docstore import (
     RemoveResult,
     UnknownDocumentError,
 )
+from .composition import (
+    BoundSubscriber,
+    ExtensionFactory,
+    UnknownHandlerError,
+    build_bound_subscribers,
+    build_extensions,
+    compose_subscribers,
+    stock_factories,
+)
 from .definition import (
     BacklogDefinition,
     BacklogDefinitionError,
+    Bindings,
+    HandlerRef,
     LegacyLinksOverrideError,
     UnsupportedBacklogKeyError,
     load_backlog,
@@ -71,7 +89,7 @@ from .linked import (
     walk_neighborhood,
 )
 from .matching import Matcher, compile_matcher, matches
-from .models import TaskCard, WorkLogEntry
+from .models import DeltaFieldError, TaskCard, WorkLogEntry
 from .registry import (
     DerivedLinkKindError,
     LinkKind,
@@ -92,11 +110,16 @@ from .resolver import (
 __all__ = [
     "DEFAULT_MAX_BYTES",
     "AbortOperation",
+    "Append",
     "BacklogDefinition",
     "BacklogDefinitionError",
+    "BindableSubscriber",
+    "Bindings",
+    "BoundSubscriber",
     "CardRow",
     "ContextPackage",
     "Delta",
+    "DeltaFieldError",
     "DerivedLinkKindError",
     "DispatchContext",
     "DispatchRecord",
@@ -107,6 +130,9 @@ __all__ = [
     "EdgeEvent",
     "EpicifyEvent",
     "Event",
+    "ExtensionFactory",
+    "FieldOp",
+    "HandlerRef",
     "ForceRequiresReasonError",
     "FrozenDocumentError",
     "FrozenPinDriftError",
@@ -131,7 +157,9 @@ __all__ = [
     "PreDestroyEvent",
     "RackRoot",
     "RemoveResult",
+    "RequiresStatesError",
     "SelfLinkError",
+    "Set",
     "Subscriber",
     "SubscriberOutcome",
     "Subscription",
@@ -141,13 +169,18 @@ __all__ = [
     "Topology",
     "TopologyError",
     "UnknownDocumentError",
+    "UnknownHandlerError",
     "UnknownLinkKindError",
     "UnknownStateError",
     "UnknownTaskError",
     "UnsupportedBacklogKeyError",
     "WorkLogEntry",
+    "bind_subscribers",
+    "build_bound_subscribers",
     "build_context",
+    "build_extensions",
     "card_filter",
+    "compose_subscribers",
     "compile_matcher",
     "event_detail",
     "find_project_root",
@@ -162,6 +195,8 @@ __all__ = [
     "resolve_links",
     "resolve_root",
     "scan_cards",
+    "stock_factories",
     "unlink",
+    "validate_requires_states",
     "walk_neighborhood",
 ]

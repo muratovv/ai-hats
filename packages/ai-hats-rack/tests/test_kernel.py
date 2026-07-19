@@ -34,7 +34,9 @@ def test_bare_kernel_full_lifecycle(tasks_dir, cwd):
     walk(kernel, "T-1", "plan", "execute", "document", "review", "done", cwd=cwd)
     done = kernel.get("T-1")
     assert done.state == "done"
-    assert done.completed_at
+    # bare kernel = pure FSM: completed_at stamping is a declared handler now
+    # (HATS-1043), not a kernel hardcode — a bare kernel stamps nothing.
+    assert done.completed_at == ""
     # no subscriber ran, no subscriber traces in the log
     assert all("Worktree" not in e.message for e in done.work_log)
 
@@ -381,8 +383,22 @@ def test_transitions_delta_list_in_result(tasks_dir, cwd):
 # ---------------------------------------------------------------------------
 
 
+def _lifecycle_kernel(tasks_dir):
+    # completed_at stamping moved out of the kernel into declared stamp/clear
+    # handlers (HATS-1043); compose just those from the packaged definition.
+    from ai_hats_rack.composition import build_bound_subscribers, stock_factories
+    from ai_hats_rack.definition import load_backlog
+
+    subs = [
+        s
+        for s in build_bound_subscribers(load_backlog(), tasks_dir, stock_factories())
+        if s.name in ("stamp-lifecycle", "clear-lifecycle")
+    ]
+    return make_kernel(tasks_dir, subscribers=subs)
+
+
 def test_done_stamps_completed_at_and_reopen_clears_it(tasks_dir, cwd):
-    kernel = make_kernel(tasks_dir)
+    kernel = _lifecycle_kernel(tasks_dir)
     _create(kernel, cwd)
     walk(kernel, "T-1", "plan", "execute", "document", "review", "done", cwd=cwd)
     assert kernel.get("T-1").completed_at
@@ -394,7 +410,7 @@ def test_done_stamps_completed_at_and_reopen_clears_it(tasks_dir, cwd):
 
 
 def test_cancelled_stamps_completed_at(tasks_dir, cwd):
-    kernel = make_kernel(tasks_dir)
+    kernel = _lifecycle_kernel(tasks_dir)
     _create(kernel, cwd)
     kernel.transition("T-1", "cancelled", actor="test", caller_cwd=cwd, resolution="wontfix")
     reloaded = kernel.get("T-1")
@@ -408,6 +424,108 @@ def test_resolution_and_final_state_ride_the_lock_window(tasks_dir, cwd):
     walk(kernel, "T-1", "plan", "execute", "document", cwd=cwd)
     kernel.transition("T-1", "review", actor="test", caller_cwd=cwd, final_state="did the thing")
     assert kernel.get("T-1").final_state == "did the thing"
+
+
+# ---------------------------------------------------------------------------
+# Delta.fields — declared-field ops ride the single transition (HATS-1043 R4)
+# ---------------------------------------------------------------------------
+
+
+def _count_persists(kernel, monkeypatch) -> list:
+    calls: list = []
+    orig = kernel._persist
+    monkeypatch.setattr(kernel, "_persist", lambda task: (calls.append(task.id), orig(task))[1])
+    return calls
+
+
+def test_delta_fields_applied_in_the_single_persist(tasks_dir, cwd, monkeypatch):
+    from ai_hats_rack.dispatch import Append, Set
+
+    sub = StubSubscriber(
+        "verdicts",
+        [in_lock("edge:plan--execute")],
+        action=lambda ctx: Delta(
+            work_log=("verdict recorded",),
+            fields={"priority": Set("high"), "validation_log": Append({"v": "ok"})},
+        ),
+    )
+    kernel = make_kernel(tasks_dir, subscribers=[sub])
+    _create(kernel, cwd)
+    walk(kernel, "T-1", "plan", cwd=cwd)
+
+    persists = _count_persists(kernel, monkeypatch)
+    result = kernel.transition("T-1", "execute", actor="test", caller_cwd=cwd)
+    assert persists == ["T-1"]  # ONE persist for work_log + both field ops
+
+    reloaded = kernel.get("T-1")
+    assert reloaded.priority == "high"  # typed scalar field, Set applied
+    assert reloaded.extras["validation_log"] == [{"v": "ok"}]  # unknown key → extras Append
+    assert any("verdict recorded" in e.message for e in reloaded.work_log)
+    outcome = result.journal[0].outcomes[0]
+    assert outcome.outcome == "delta"
+    assert outcome.delta.to_dict()["fields"]["priority"] == {"op": "set", "value": "high"}
+
+
+def test_delta_append_to_known_list_field_round_trips(tasks_dir, cwd):
+    from ai_hats_rack.dispatch import Append
+
+    sub = StubSubscriber(
+        "tagger",
+        [in_lock("edge:brainstorm--plan")],
+        action=lambda ctx: Delta(fields={"tags": Append("auto")}),
+    )
+    kernel = make_kernel(tasks_dir, subscribers=[sub])
+    _create(kernel, cwd, tags=["init"])
+    walk(kernel, "T-1", "plan", cwd=cwd)
+    assert kernel.get("T-1").tags == ["init", "auto"]  # emitted + reloaded
+
+
+def test_delta_post_lock_fields_are_journal_only(tasks_dir, cwd):
+    from ai_hats_rack.dispatch import Set
+
+    sub = StubSubscriber(
+        "reactor",
+        [post_lock("edge:brainstorm--plan")],
+        action=lambda ctx: Delta(fields={"priority": Set("critical")}),
+    )
+    kernel = make_kernel(tasks_dir, subscribers=[sub])
+    _create(kernel, cwd, priority="medium")
+    result = kernel.transition("T-1", "plan", actor="test", caller_cwd=cwd)
+    assert [o.outcome for o in result.journal[0].outcomes] == ["delta"]  # journaled
+    assert kernel.get("T-1").priority == "medium"  # never applied post-lock
+
+
+def test_delta_append_onto_scalar_field_aborts_zero_bytes(tasks_dir, cwd):
+    from ai_hats_rack.dispatch import Append
+    from ai_hats_rack.models import DeltaFieldError
+
+    sub = StubSubscriber(
+        "bad",
+        [in_lock("edge:brainstorm--plan")],
+        action=lambda ctx: Delta(fields={"priority": Append("x")}),
+    )
+    kernel = make_kernel(tasks_dir, subscribers=[sub])
+    _create(kernel, cwd)
+    before = (tasks_dir / "T-1" / "task.yaml").read_bytes()
+    with pytest.raises(DeltaFieldError, match="Append requires a list field"):
+        kernel.transition("T-1", "plan", actor="test", caller_cwd=cwd)
+    assert (tasks_dir / "T-1" / "task.yaml").read_bytes() == before
+    assert kernel.get("T-1").state == "brainstorm"
+
+
+def test_delta_set_type_mismatch_aborts(tasks_dir, cwd):
+    from ai_hats_rack.dispatch import Set
+    from ai_hats_rack.models import DeltaFieldError
+
+    sub = StubSubscriber(
+        "bad",
+        [in_lock("edge:brainstorm--plan")],
+        action=lambda ctx: Delta(fields={"priority": Set(5)}),
+    )
+    kernel = make_kernel(tasks_dir, subscribers=[sub])
+    _create(kernel, cwd)
+    with pytest.raises(DeltaFieldError, match="Set expects str"):
+        kernel.transition("T-1", "plan", actor="test", caller_cwd=cwd)
 
 
 # ---------------------------------------------------------------------------

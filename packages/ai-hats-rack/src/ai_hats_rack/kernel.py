@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from filelock import FileLock, Timeout
 
@@ -20,11 +20,12 @@ from .dispatch import (
     Dispatcher,
     DispatchRecord,
     JournalSink,
+    Phase,
     Subscriber,
     SubscriberOutcome,
 )
 from .errors import RackError
-from .events import EdgeEvent, EpicifyEvent, Event, PreDestroyEvent, event_detail
+from .events import EdgeEvent, EpicifyEvent, Event, LinkEvent, PreDestroyEvent, event_detail
 from .fsm import Topology, load_topology
 from .models import LINK_STORAGE_FIELDS, TaskCard, utc_now
 from .registry import LinksRegistry, load_registry
@@ -387,18 +388,26 @@ class Kernel:
             task.resolution = resolution
         if final_state is not None:
             task.final_state = final_state
-        self._stamp_lifecycle(task, from_state, to_state)
 
         event = EdgeEvent(from_state, to_state, self._edge_names.get((from_state, to_state), ""))
         events.append(event)
         ctx = self._ctx_factory(event, task, caller_cwd, is_epic, actor, force, reason)
+        self._dispatcher.run_blocking(event, ctx, self._delta_applier(task, actor), outcomes)
+        return from_state
+
+    @staticmethod
+    def _delta_applier(task: TaskCard, actor: str) -> Callable[[Delta], None]:
+        """In-memory application of an in-lock delta (work_log + declared-field
+        ops) against ``task`` before the single persist — shared by the edge and
+        link dispatch paths."""
 
         def apply_delta(delta: Delta) -> None:
             for line in delta.work_log:
                 task.log_work(line, actor=actor)
+            for name, op in delta.fields.items():
+                op.apply(task, name)
 
-        self._dispatcher.run_blocking(event, ctx, apply_delta, outcomes)
-        return from_state
+        return apply_delta
 
     def transition_ops(
         self,
@@ -436,7 +445,8 @@ class Kernel:
             raise UnknownTaskError(task_id)
 
         outcomes: list[SubscriberOutcome] = []
-        edges: list[EdgeEvent] = []
+        # Every in-lock-dispatched event in execution order (edges + link events).
+        dispatched: list[Event] = []
         transitions: list[TaskTransition] = []
         txn: OpTxn | None = None
         lock = self._task_lock(task_id)
@@ -451,6 +461,9 @@ class Kernel:
                     registry=self.registry,
                     actor=actor,
                     ack_frozen=ack_frozen,
+                    dispatch_link=self._link_dispatcher(
+                        task, task_id, caller_cwd, actor, force, reason, dispatched, outcomes
+                    ),
                 )
                 for op in ops:
                     if isinstance(op, StateOp):
@@ -464,7 +477,7 @@ class Kernel:
                             resolution=resolution,
                             final_state=final_state,
                             outcomes=outcomes,
-                            events=edges,
+                            events=dispatched,
                         )
                         transitions.append(
                             TaskTransition(task_id, from_state, op.to_state, reason)
@@ -482,18 +495,19 @@ class Kernel:
         except Exception:
             if txn is not None:  # unwind staged files; the card was never persisted
                 txn.rollback()
-            if edges:  # a state-op's dispatch began → stay auditable
+            if dispatched:  # a dispatch began (edge or link) → stay auditable
                 self._finish_record(
-                    edges[-1], task_id, actor, force, reason, outcomes, result="aborted"
+                    dispatched[-1], task_id, actor, force, reason, outcomes, result="aborted"
                 )
             raise
 
         records: list[DispatchRecord] = []
-        for event in edges:
-            ctx = self._ctx_factory(
-                event, task, caller_cwd, self.is_epic(task_id), actor, force, reason
-            )
-            self._dispatcher.run_reactions(event, ctx, outcomes)
+        for event in dispatched:
+            if isinstance(event, EdgeEvent):  # link events have no post-lock phase here
+                ctx = self._ctx_factory(
+                    event, task, caller_cwd, self.is_epic(task_id), actor, force, reason
+                )
+                self._dispatcher.run_reactions(event, ctx, outcomes)
             records.append(
                 self._finish_record(
                     event, task_id, actor, force, reason, outcomes, result="persisted"
@@ -506,13 +520,36 @@ class Kernel:
             ops=tuple(txn.results),
         )
 
-    def _stamp_lifecycle(self, task: TaskCard, from_state: str, to_state: str) -> None:
-        """Anchor-field bookkeeping the old card format expects (HATS-328)."""
-        if to_state in ("done", "cancelled"):
-            task.completed_at = utc_now()
-        if from_state == "done" and to_state == "execute":
-            task.completed_at = ""
-            task.log_work("Reopened from done")
+    def _link_dispatcher(
+        self,
+        task: TaskCard,
+        task_id: str,
+        caller_cwd: Path,
+        actor: str,
+        force: bool,
+        reason: str,
+        dispatched: list[Event],
+        outcomes: list[SubscriberOutcome],
+    ) -> Callable[[str, str, bool], None]:
+        """Build the in-lock link/unlink dispatch hook for a composite txn.
+
+        Fires ``link:<kind>``/``unlink:<kind>`` ONLY when a declared handler
+        subscribes it — a kind without handlers dispatches nothing (zero
+        behavior change on the packaged default). An in-lock abort propagates
+        out of the op, rolling the whole txn back before persist."""
+        apply_delta = self._delta_applier(task, actor)
+
+        def dispatch_link(kind: str, target: str, removed: bool) -> None:
+            event = LinkEvent(kind=kind, target=target, removed=removed)
+            if not self._dispatcher.subscribers_for(event.key, Phase.IN_LOCK):
+                return
+            dispatched.append(event)
+            ctx = self._ctx_factory(
+                event, task, caller_cwd, self.is_epic(task_id), actor, force, reason
+            )
+            self._dispatcher.run_blocking(event, ctx, apply_delta, outcomes)
+
+        return dispatch_link
 
     def log_work(self, task_id: str, message: str, *, actor: str = "") -> TaskCard:
         """Append a work_log entry (anchor field — CLI-only, transactional)."""

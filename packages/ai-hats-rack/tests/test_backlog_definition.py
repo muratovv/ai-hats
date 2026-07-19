@@ -13,6 +13,7 @@ import pytest
 from ai_hats_rack.definition import (
     BacklogDefinition,
     BacklogDefinitionError,
+    HandlerRef,
     LegacyLinksOverrideError,
     UnsupportedBacklogKeyError,
     load_backlog,
@@ -115,36 +116,13 @@ def _skeleton(
 
 
 _FAIL_CASES = {
-    # top-level sections not materialized by this loader
+    # HATS-1035 — fields/extras schema stays fail-closed until T3.
     "top_fields": ("name: t\nprefix: T\nfields: []\n", "fields"),
     "top_extras": ("name: t\nprefix: T\nextras: forbid\n", "extras"),
-    "top_extensions": ("name: t\nprefix: T\nextensions: []\n", "extensions"),
-    # per-state handler slots
-    "state_on_enter": (
-        _skeleton(states="    - {name: brainstorm, on_enter: [plan-gate]}\n"),
-        "on_enter",
-    ),
-    "state_on_exit": (
-        _skeleton(states="    - {name: brainstorm, on_exit: [release]}\n"),
-        "on_exit",
-    ),
-    # per-edge handler slots
-    "edge_handlers": (
-        _skeleton(edges="    - {from: brainstorm, to: brainstorm, handlers: [gate]}\n"),
-        "handlers",
-    ),
-    "edge_skip": (
-        _skeleton(edges="    - {from: brainstorm, to: brainstorm, skip: [plan-gate]}\n"),
-        "skip",
-    ),
-    # per-kind slots
+    # HATS-1044 — cross-backlog kind targets stay fail-closed.
     "kind_targets": (
-        _skeleton(kinds="    - {name: source_task, targets: tasks}\n"),
+        _skeleton(kinds="    - {name: parent_task, targets: tasks}\n"),
         "targets",
-    ),
-    "kind_handlers": (
-        _skeleton(kinds="    - {name: parent_task, handlers: [cycle-check]}\n"),
-        "handlers",
     ),
     # arbitrary unknown key
     "top_generic": ("name: t\nprefix: T\nquux: 1\n", "quux"),
@@ -166,6 +144,90 @@ def test_unsupported_key_error_is_a_config_error(tmp_path):
     # Routed to the RackConfigError subtree → the CLI "internal" marker.
     doc = tmp_path / "backlog.yaml"
     doc.write_text("name: t\nprefix: T\nfields: []\n")
+    with pytest.raises(BacklogDefinitionError):
+        load_backlog(doc)
+
+
+# ----- binding slots parse into the immutable Bindings surface (HATS-1043) -----
+
+_BINDINGS_DOC = (
+    "name: b\nprefix: B\n"
+    "extensions: [frozen-integrity, {name: derived-views, priority: 40}]\n"
+    "fsm:\n"
+    "  initial: plan\n"
+    "  states:\n"
+    "    - {name: plan, on_enter: [plan-scaffold]}\n"
+    "    - {name: execute, on_enter: [{name: plan-gate, priority: 10}], on_exit: [release]}\n"
+    "    - {name: document, on_enter: [{name: stamp-lifecycle, field: closed, priority: 12}]}\n"
+    "  edges:\n"
+    "    - {from: plan, to: execute}\n"
+    "    - {from: execute, to: document}\n"
+    "    - {from: document, to: execute, name: reopen, skip: [plan-gate], "
+    "handlers: [clear-lifecycle]}\n"
+    "links:\n"
+    "  kinds:\n"
+    "    - {name: depends_on, arity: many, handlers: [cycle-check]}\n"
+)
+
+
+def _bindings_defn(tmp_path):
+    doc = tmp_path / "backlog.yaml"
+    doc.write_text(_BINDINGS_DOC)
+    return load_backlog(doc).bindings
+
+
+def test_state_on_enter_and_on_exit_parse_as_refs(tmp_path):
+    b = _bindings_defn(tmp_path)
+    assert b.state_on_enter["plan"] == (HandlerRef("plan-scaffold"),)
+    assert b.state_on_enter["execute"] == (HandlerRef("plan-gate", priority=10),)
+    assert b.state_on_exit["execute"] == (HandlerRef("release"),)
+
+
+def test_handler_ref_config_and_priority_split(tmp_path):
+    b = _bindings_defn(tmp_path)
+    ref = b.state_on_enter["document"][0]
+    assert ref.name == "stamp-lifecycle"
+    assert ref.priority == 12
+    assert dict(ref.config) == {"field": "closed"}  # priority pulled out, config kept
+
+
+def test_edge_handlers_and_skip_parse(tmp_path):
+    b = _bindings_defn(tmp_path)
+    assert b.edge_handlers[("document", "execute")] == (HandlerRef("clear-lifecycle"),)
+    assert b.edge_skips[("document", "execute")] == frozenset({"plan-gate"})
+
+
+def test_kind_handlers_parse_but_no_link_dispatch_yet(tmp_path):
+    # HATS-1043 step 3 PARSES kinds[].handlers; subscriptions are step 6.
+    b = _bindings_defn(tmp_path)
+    assert b.kind_handlers["depends_on"] == (HandlerRef("cycle-check"),)
+
+
+def test_top_level_extensions_parse_as_refs(tmp_path):
+    b = _bindings_defn(tmp_path)
+    assert b.extensions == (
+        HandlerRef("frozen-integrity"),
+        HandlerRef("derived-views", priority=40),
+    )
+
+
+def test_packaged_default_declares_the_migrated_kit(tmp_path):
+    # HATS-1043 step 5: the packaged tasks default declares its kit — scaffold/
+    # gate/stamp on entry, clear+skip on reopen, frozen-integrity ambient.
+    b = load_backlog().bindings
+    assert b.state_on_enter["plan"] == (HandlerRef("plan-scaffold", priority=30),)
+    assert b.state_on_enter["execute"] == (HandlerRef("plan-gate", priority=10),)
+    assert b.state_on_enter["done"] == (HandlerRef("stamp-lifecycle", priority=12),)
+    assert b.state_on_enter["cancelled"] == (HandlerRef("stamp-lifecycle", priority=12),)
+    assert b.edge_handlers[("done", "execute")] == (HandlerRef("clear-lifecycle", priority=12),)
+    assert b.edge_skips[("done", "execute")] == frozenset({"plan-gate"})
+    assert b.extensions == (HandlerRef("frozen-integrity"),)
+
+
+def test_bad_handler_ref_shape_fails_closed(tmp_path):
+    # A non-name, non-mapping handler ref is a typed load error, not a silent no-op.
+    doc = tmp_path / "backlog.yaml"
+    doc.write_text(_skeleton(states="    - {name: brainstorm, on_enter: [42]}\n"))
     with pytest.raises(BacklogDefinitionError):
         load_backlog(doc)
 

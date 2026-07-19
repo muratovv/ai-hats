@@ -16,6 +16,14 @@ from pathlib import Path
 from typing import Sequence
 
 from ai_hats_rack import Kernel
+from ai_hats_rack.composition import (
+    bind_subscribers,
+    build_bound_subscribers,
+    build_extensions,
+    build_link_subscribers,
+    stock_factories,
+    validate_requires_states,
+)
 from ai_hats_rack.definition import resolve_definition
 from ai_hats_rack.registry import LinksRegistry
 from ai_hats_rack.dispatch import (
@@ -30,9 +38,6 @@ from ai_hats_rack.events import EdgeEvent, EpicifyEvent, PreDestroyEvent
 from ai_hats_rack.extensions import (
     DerivedViewsExtension,
     EpicAutomationExtension,
-    FrozenIntegrityExtension,
-    PlanGateExtension,
-    PlanScaffoldExtension,
     Section,
 )
 from ai_hats_rack.fsm import Topology
@@ -44,6 +49,11 @@ from .paths import worktrees_dir
 from .wt_effects import WtWorktreeEffects
 
 TERMINAL_STATES = ("done", "failed", "cancelled")
+
+# HATS-1015 worktree liveness budget (ADR-0017 §4): a generous per-git ceiling so
+# a hung worktree shell-out can't hold the task lock forever — kill → in-lock error
+# → abort + journal (existing path). Config-overridable via WorktreeExtension(budget=).
+WORKTREE_BUDGET = 60.0
 
 
 def _all_edge_keys(topology: Topology) -> list[str]:
@@ -208,9 +218,13 @@ class WorktreeExtension:
         setup_priority: int = 30,
         teardown_priority: int = 30,
         epicify_priority: int = 20,
+        budget: float = WORKTREE_BUDGET,
     ) -> None:
         self.project_dir = project_dir
-        self._effects = effects if effects is not None else WtWorktreeEffects(project_dir)
+        self._budget = budget
+        self._effects = (
+            effects if effects is not None else WtWorktreeEffects(project_dir, git_timeout=budget)
+        )
         self._topology = topology
         self._setup_priority = setup_priority
         self._teardown_priority = teardown_priority
@@ -281,7 +295,7 @@ class WorktreeExtension:
             if (
                 not merge
                 and ctx.event.to_state == "cancelled"
-                and self._dirty(active.worktree_path)
+                and self._dirty(active.worktree_path, self._budget)
             ):
                 # PROP-084: a destructive terminal must not silently eat
                 # uncommitted work — keep the tree and say so.
@@ -302,18 +316,23 @@ class WorktreeExtension:
         from ai_hats_wt import WorktreeManager, WorktreeStateLostError
 
         branch = f"task/{task_id.lower()}"
-        if not WorktreeManager.branch_exists(repo, branch):
+        if not WorktreeManager.branch_exists(repo, branch, timeout=self._budget):
             return None  # nothing outstanding in the task repo
-        if WorktreeManager.branch_merged_into_canonical_base(repo, branch) is None:
+        if WorktreeManager.branch_merged_into_canonical_base(
+            repo, branch, timeout=self._budget
+        ) is None:
             raise WorktreeStateLostError(task_id, branch)  # genuinely un-merged there
-        WorktreeManager.delete_merged_branch(repo, branch)
+        WorktreeManager.delete_merged_branch(repo, branch, timeout=self._budget)
         return Delta(work_log=(f"Worktree merged (task repo {repo})",))
 
     def _load_active(self, task_id: str):
         from ai_hats_wt import WorktreeManager
 
         return WorktreeManager.load_for_task(
-            self.project_dir, task_id, state_dir=worktrees_dir(self.project_dir)
+            self.project_dir,
+            task_id,
+            state_dir=worktrees_dir(self.project_dir),
+            git_timeout=self._budget,
         )
 
     def _guard_not_inside(self, ctx: DispatchContext, wt_path: Path) -> None:
@@ -343,7 +362,7 @@ class WorktreeExtension:
         )
 
     @staticmethod
-    def _dirty(wt_path: Path) -> bool:
+    def _dirty(wt_path: Path, budget: float = WORKTREE_BUDGET) -> bool:
         try:
             out = subprocess.run(  # noqa: S603 — fixed argv, no shell
                 ["git", "status", "--porcelain"],  # noqa: S607 — git from PATH, as everywhere
@@ -351,10 +370,10 @@ class WorktreeExtension:
                 capture_output=True,
                 text=True,
                 env=scrubbed_git_env(),  # HATS-890: never inherit ambient GIT_DIR
-                timeout=30,
+                timeout=budget,
             )
         except (OSError, subprocess.SubprocessError):
-            return False  # can't tell → keep the old discard behaviour
+            return False  # can't tell (incl. timeout) → keep the old discard behaviour
         return out.returncode == 0 and bool(out.stdout.strip())
 
 
@@ -399,19 +418,31 @@ def build_rack_kernel(
     registry = tasks_dir.parent / "ownership.json"
     worktree = WorktreeExtension(project_dir, effects=worktree_effects, topology=topology)
     automation = EpicAutomationExtension(topology=topology, registry=links_registry)
+    # Declaration channel (HATS-1043): frozen-integrity (ambient) + scaffold/
+    # plan-gate/stamp/clear (declaration-bound) come from the definition slots.
+    # derived-views stays code-channel — it needs the STATE.md path (ADR-0017 §4).
+    factories = stock_factories(sections)
+    declared = (
+        build_extensions(defn, tasks_dir, factories)
+        + build_bound_subscribers(defn, tasks_dir, factories)
+        + build_link_subscribers(defn, tasks_dir, factories)
+    )
+    # Code channel (integrator scope). Priorities give the single in-lock order —
+    # single-slot(5) < frozen(8) < plan-gate(10) < hook(15) < claim(20) <
+    # scaffold/worktree(30) < release(40); the list order only breaks ties.
     subscribers = [
+        *declared,
         OwnershipSingleSlot(registry, topology=topology),
-        # priority 8: evidence integrity refuses before the plan-gate (HATS-1031)
-        FrozenIntegrityExtension(tasks_dir, topology=topology),
-        PlanGateExtension(tasks_dir, sections, topology=topology),
         OwnershipClaim(registry, topology=topology),
-        PlanScaffoldExtension(tasks_dir, sections, topology=topology),
         worktree,
         OwnershipRelease(registry, topology=topology),
         automation,
         DerivedViewsExtension(tasks_dir, state_md_path, topology=topology),
         *extra_subscribers,  # consumer add-ons (pre-destroy guards, K4 hook-runner)
     ]
+    # Fail-closed at composition: a subscriber's declared state vocabulary must
+    # fit the topology (the HATS-692 stranding class, HATS-1043 R8).
+    validate_requires_states(subscribers, topology, source=str(tasks_dir))
     kwargs: dict = {}
     if lock_timeout is not None:
         kwargs["lock_timeout"] = lock_timeout
@@ -425,8 +456,7 @@ def build_rack_kernel(
         journal_sink=journal_sink,
         **kwargs,
     )
-    worktree.bind(kernel)
-    automation.bind(kernel)
+    bind_subscribers(subscribers, kernel)  # uniform bind loop (worktree, automation, add-ons)
     return kernel
 
 

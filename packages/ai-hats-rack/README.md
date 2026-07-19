@@ -49,11 +49,12 @@ class MyExtension:
 
 ## Event registry (name-your-consumer, PROP-030)
 
-| Event key           | Fired by                                             | Named consumer                                                                                                |
-| ------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `edge:<from>--<to>` | `Kernel.transition`                                  | K3 core extensions (plan-gate, ownership, worktree in-lock; epic-automation, views post-lock); K4 hook-runner |
-| `epicify`           | `Kernel.create` / `Kernel.set_parent` (child gained) | K3 ownership + worktree reconciliation handlers (idempotent release / `discard_if_empty`, HATS-977/979)       |
-| `pre-destroy`       | extensions via `Kernel.publish`                      | K3 guards on irreversible ops (abort / extract before worktree merge-discard, PROP-047/058)                   |
+| Event key                       | Fired by                                                           | Named consumer                                                                                                                                                        |
+| ------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `edge:<from>--<to>`             | `Kernel.transition`                                                | K3 core extensions (plan-gate, ownership, worktree in-lock; epic-automation, views post-lock); K4 hook-runner                                                         |
+| `epicify`                       | `Kernel.create` / `Kernel.set_parent` (child gained)               | K3 ownership + worktree reconciliation handlers (idempotent release / `discard_if_empty`, HATS-977/979)                                                               |
+| `pre-destroy`                   | extensions via `Kernel.publish`                                    | K3 guards on irreversible ops (abort / extract before worktree merge-discard, PROP-047/058)                                                                           |
+| `link:<kind>` / `unlink:<kind>` | `Kernel.transition_ops` `--link`/`--unlink` (owning side, in-lock) | declared `links.kinds[].handlers` (e.g. a dep-cycle-check); fires only for a kind that declares handlers — the cross-backlog mirror `link-target:<kind>` is HATS-1044 |
 
 A new event lands in this table together with its subscriber, or it does not land.
 
@@ -71,18 +72,49 @@ Pure extensions live in `ai_hats_rack.extensions` (no integrator/wt/git imports)
   (`transition <ID> --freeze <name> --ack-frozen` / `--rm <name> --ack-frozen`).
   No waivers — force, epics and automation actors do not bypass evidence
   integrity. Priority 8: after the ownership single-slot guard, before the
-  plan-gate. `standalone_extensions()` is the standalone kit
-  (frozen-integrity + scaffold + gate).
+  plan-gate.
+- **stamp-lifecycle / clear-lifecycle** (HATS-1043) — declaration-bound in-lock
+  field stamps (replacing the old `kernel._stamp_lifecycle` hardcode): `done` /
+  `cancelled` `on_enter: [stamp-lifecycle]` writes `completed_at` (config
+  `field:`) via `Delta.fields`; the reopen edge's `clear-lifecycle` clears it and
+  logs "Reopened from done".
 - **epic-automation** — post-lock; the pure `decide()` table maps every epic
   source state × child trigger to reopen/advance/activate/no-op
   (HATS-690/692/789) and drives the epic through journaled FSM-valid kernel
   hops under the `rack:epic-automation` actor (also the anti-cascade guard).
 - **derived-views** — post-lock STATE.md regeneration, own lock, atomic replace.
 
+`standalone_extensions()` composes the standalone kit from the packaged
+`backlog.yaml` declarations (frozen-integrity + plan-scaffold + plan-gate +
+stamp/clear-lifecycle); ownership/worktree ship on the integrator side.
+
 Ownership and worktree adapters depend on the integrator's wt engine and live
 on the integrator side (`ai_hats.rack_wiring`, with `build_rack_kernel()` as
 the assembly mirror of `cli/_helpers._task_manager`); the boundary stays
 one-directional — the rack never imports them.
+
+## Declaration-bound handlers (HATS-1043, ADR-0017 §3–§4)
+
+`backlog.yaml` binds handlers where the edge is declared — the file says what
+fires where. Four slots, expanded to subscriptions by the loader:
+
+- `states[].on_enter` / `on_exit` — the FULL `edge:<src>--<state>` /
+  `edge:<state>--<dst>` product (forced non-topology edges included, HATS-518); a
+  declared self-loop (`reclaim`) is in the product, an undeclared one is not.
+- `edges[].handlers` — one exact edge; `edges[].skip: [name]` opts that edge out
+  of an on_enter/on_exit handler (the declarative reopen `skip: [plan-gate]`).
+- `links.kinds[].handlers` — in-lock on link/unlink of that kind
+  (`link:<kind>`/`unlink:<kind>`); may abort the mutation.
+
+Every referenced name resolves through one open factory registry
+(`stock_factories()` + integrator closures); an unknown name is a typed,
+fail-closed `UnknownHandlerError`. A reference is a bare name or
+`{name, priority?, ...config}`: unpinned refs get a positional band (100, 110,
+…); an explicit `priority:` pins the number into the one total in-lock order.
+The packaged kit pins today's chain — frozen 8, plan-gate 10, stamp/clear 12,
+scaffold 30 — so migration is zero behaviour change. Optional contract hooks a
+handler may expose: `bind(kernel)` (post-lock kernel handle) and
+`requires_states()` (its state vocabulary, validated fail-closed at composition).
 
 ## Lock model (deadlock excluded structurally)
 

@@ -10,11 +10,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Protocol, Sequence, runtime_checkable
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Protocol, Sequence, runtime_checkable
 
-from .errors import RackError
+from .errors import RackConfigError, RackError
 from .events import Event
 from .models import TaskCard, utc_now
+
+if TYPE_CHECKING:
+    from .fsm import Topology
+    from .kernel import Kernel
 
 
 class Phase(str, Enum):
@@ -36,14 +40,53 @@ class Subscription:
 
 
 @dataclass(frozen=True)
-class Delta:
-    """Card mutation requested by an in-lock subscriber, applied by the kernel
-    in-memory before the single persist. Post-lock deltas are journal-only."""
+class Set:
+    """Replace a declared field's value wholesale (a :class:`Delta` field op)."""
 
-    work_log: tuple[str, ...] = ()
+    value: Any
+
+    def apply(self, card: TaskCard, name: str) -> None:
+        card.set_field(name, self.value)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"work_log": list(self.work_log)}
+        return {"op": "set", "value": self.value}
+
+
+@dataclass(frozen=True)
+class Append:
+    """Append an entry to a declared list field (a :class:`Delta` field op)."""
+
+    entry: Any
+
+    def apply(self, card: TaskCard, name: str) -> None:
+        card.append_field(name, self.entry)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"op": "append", "entry": self.entry}
+
+
+#: A declared-field mutation op carried in ``Delta.fields``.
+FieldOp = Set | Append
+
+
+@dataclass(frozen=True)
+class Delta:
+    """Card mutation requested by an in-lock subscriber, applied by the kernel
+    in-memory before the single persist. Post-lock deltas are journal-only.
+
+    ``fields`` carries declared-field ops keyed by field name (:class:`Set` /
+    :class:`Append`): a typed TaskCard field is validated against its type, an
+    unknown key rides the extras passthrough — applied in the same single
+    persist as ``work_log`` (HATS-1043, ADR-0017 §4)."""
+
+    work_log: tuple[str, ...] = ()
+    fields: Mapping[str, FieldOp] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"work_log": list(self.work_log)}
+        if self.fields:
+            d["fields"] = {name: op.to_dict() for name, op in self.fields.items()}
+        return d
 
 
 @dataclass(frozen=True)
@@ -65,13 +108,56 @@ class DispatchContext:
 
 @runtime_checkable
 class Subscriber(Protocol):
-    """Extension contract: declare subscriptions, react to events."""
+    """Extension contract: declare subscriptions, react to events.
+
+    Two OPTIONAL lifecycle hooks a subscriber MAY expose (duck-typed — the
+    composition root probes with ``hasattr``, so implementing neither keeps a
+    subscriber valid): ``bind(kernel)`` — a post-lock kernel handle wired after
+    construction (see :class:`BindableSubscriber`); ``requires_states() ->
+    frozenset[str]`` — the subscriber's full semantic state vocabulary, checked
+    against the composed topology fail-closed (HATS-1043 R8, ADR-0017 §3)."""
 
     name: str
 
     def subscriptions(self) -> Sequence[Subscription]: ...
 
     def on_event(self, ctx: DispatchContext) -> Delta | None: ...
+
+
+@runtime_checkable
+class BindableSubscriber(Subscriber, Protocol):
+    """A :class:`Subscriber` that also needs a post-lock kernel handle: the
+    composition root calls ``bind`` after the kernel is constructed (ADR-0017
+    §4). ``DispatchContext`` stays kernel-free — IN_LOCK handlers never get a
+    handle (one lock, never nested)."""
+
+    def bind(self, kernel: Kernel) -> None: ...
+
+
+def bind_subscribers(subscribers: Sequence[Subscriber], kernel: Kernel) -> None:
+    """Composition-root bind loop: run the optional ``bind(kernel)`` hook on
+    every subscriber exposing it (ADR-0017 §4), uniformly over all subscribers."""
+    for sub in subscribers:
+        bind = getattr(sub, "bind", None)
+        if bind is not None:
+            bind(kernel)
+
+
+def validate_requires_states(
+    subscribers: Sequence[Subscriber], topology: Topology, *, source: str
+) -> None:
+    """Fail-closed composition check: every subscriber's optional
+    ``requires_states()`` vocabulary must be a subset of the composed topology,
+    else refuse — naming the subscriber, the missing states, and the topology
+    source (HATS-1043 R8; the HATS-692 stranding class, caught at composition)."""
+    known = set(topology.states)
+    for sub in subscribers:
+        declared = getattr(sub, "requires_states", None)
+        if declared is None:
+            continue
+        missing = sorted(set(declared()) - known)
+        if missing:
+            raise RequiresStatesError(sub.name, missing, sorted(known), source)
 
 
 class AbortOperation(Exception):
@@ -92,6 +178,24 @@ class OperationAborted(RackError):
         self.subscriber = subscriber
         self.reason = reason
         super().__init__(f"{event_key} aborted by '{subscriber}': {reason}")
+
+
+class RequiresStatesError(RackConfigError):
+    """A subscriber declares required states absent from the composed topology
+    (HATS-1043 R8). Structural composition invariant — routed to the internal
+    marker like the rest of the RackConfigError subtree."""
+
+    def __init__(
+        self, subscriber: str, missing: Sequence[str], known: Sequence[str], source: str
+    ) -> None:
+        self.subscriber = subscriber
+        self.missing = tuple(missing)
+        self.known = tuple(known)
+        self.source = source
+        super().__init__(
+            f"subscriber '{subscriber}' requires state(s) {list(self.missing)} absent from "
+            f"the topology ({source}); known states: {list(self.known)}"
+        )
 
 
 @dataclass(frozen=True)
@@ -214,7 +318,7 @@ class Dispatcher:
                     SubscriberOutcome(sub.name, Phase.IN_LOCK, "error", reason=repr(exc))
                 )
                 raise
-            if delta is not None and delta.work_log:
+            if delta is not None and (delta.work_log or delta.fields):
                 apply_delta(delta)
                 outcomes.append(SubscriberOutcome(sub.name, Phase.IN_LOCK, "delta", delta=delta))
             else:
@@ -236,7 +340,9 @@ class Dispatcher:
                     SubscriberOutcome(sub.name, Phase.POST_LOCK, "error", reason=repr(exc))
                 )
                 continue
-            if delta is not None and delta.work_log:
+            if delta is not None and (delta.work_log or delta.fields):
+                # POST_LOCK deltas are journal-only — the persist already
+                # happened, so fields are recorded, never applied (ADR-0017 §4).
                 outcomes.append(SubscriberOutcome(sub.name, Phase.POST_LOCK, "delta", delta=delta))
             else:
                 outcomes.append(SubscriberOutcome(sub.name, Phase.POST_LOCK, "ok"))

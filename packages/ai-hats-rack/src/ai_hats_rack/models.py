@@ -15,10 +15,12 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, get_origin
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from .errors import RackConfigError
 
 
 #: task.yaml fields holding link ids in dedicated storage: a registry kind whose
@@ -46,6 +48,17 @@ def atomic_write_text(path: Path, text: str) -> None:
         except OSError:
             pass
         raise
+
+
+class DeltaFieldError(RackConfigError):
+    """A ``Delta.fields`` op violates its target field's type (HATS-1043 thin
+    validation): Append onto a non-list field, or Set of a mismatched type. A
+    subscriber returned a malformed op — a structural invariant, routed to the
+    internal marker like the rest of the RackConfigError subtree."""
+
+    def __init__(self, name: str, message: str) -> None:
+        self.field_name = name
+        super().__init__(f"field {name!r}: {message}")
 
 
 class WorkLogEntry(BaseModel):
@@ -168,6 +181,40 @@ class TaskCard(BaseModel):
         if actor:
             message = f"[{actor}] {message}"
         self.work_log.append(WorkLogEntry(timestamp=utc_now(), message=message))
+
+    @classmethod
+    def _field_type(cls, name: str) -> Any:
+        """The declared field's python type: a container origin (list/dict) or
+        the scalar annotation itself (str/int)."""
+        annotation = cls.model_fields[name].annotation
+        origin = get_origin(annotation)
+        return origin if origin is not None else annotation
+
+    def set_field(self, name: str, value: Any) -> None:
+        """Apply a Delta ``Set`` op: replace a typed field (validated against its
+        type) or an unknown key (extras passthrough — today's policy, HATS-1043)."""
+        if name not in self._KNOWN_FIELDS:
+            self.extras[name] = value
+            return
+        expected = self._field_type(name)
+        if isinstance(expected, type) and not isinstance(value, expected):
+            raise DeltaFieldError(
+                name, f"Set expects {expected.__name__}, got {type(value).__name__}"
+            )
+        setattr(self, name, value)
+
+    def append_field(self, name: str, entry: Any) -> None:
+        """Apply a Delta ``Append`` op: append to a typed list field (Append
+        requires a list field) or an unknown key's extras list (HATS-1043)."""
+        if name not in self._KNOWN_FIELDS:
+            bucket = self.extras.setdefault(name, [])
+            if not isinstance(bucket, list):
+                raise DeltaFieldError(name, "Append onto a non-list extras value")
+            bucket.append(entry)
+            return
+        if self._field_type(name) is not list:
+            raise DeltaFieldError(name, "Append requires a list field")
+        getattr(self, name).append(entry)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
