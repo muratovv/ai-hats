@@ -13,6 +13,7 @@ from ..dispatch import Subscriber
 from ..fsm import Topology
 from .epic import AUTOMATION_ACTOR, EpicAutomationExtension, decide
 from .frozen import FrozenIntegrityExtension
+from .lifecycle import ClearLifecycleHandler, StampLifecycleHandler
 from .plan import PlanGateExtension, PlanScaffoldExtension
 from .sections import (
     DEFAULT_PLAN_SECTIONS,
@@ -48,11 +49,13 @@ def standalone_extensions(
 __all__ = [
     "AUTOMATION_ACTOR",
     "DEFAULT_PLAN_SECTIONS",
+    "ClearLifecycleHandler",
     "DerivedViewsExtension",
     "EpicAutomationExtension",
     "FrozenIntegrityExtension",
     "PlanGateExtension",
     "PlanScaffoldExtension",
+    "StampLifecycleHandler",
     "Section",
     "SectionCatalogError",
     "decide",

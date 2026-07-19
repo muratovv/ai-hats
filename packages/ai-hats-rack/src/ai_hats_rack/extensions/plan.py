@@ -34,6 +34,7 @@ class PlanScaffoldExtension:
     """
 
     name = "plan-scaffold"
+    PHASE = Phase.IN_LOCK  # declaration-bound phase (HATS-1043): rides the persist
 
     def __init__(
         self,
@@ -80,6 +81,7 @@ class PlanGateExtension:
     """
 
     name = "plan-gate"
+    PHASE = Phase.IN_LOCK  # declaration-bound phase (HATS-1043): rides the persist
 
     def __init__(
         self,
