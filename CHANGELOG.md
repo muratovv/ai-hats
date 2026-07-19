@@ -33,7 +33,10 @@ since the latest tag lives under **Unreleased** until the next release.
   dispatch nothing. Handler `timeout:` closes the HATS-1015 liveness hole: the
   hook-runner budget (default 30) is configurable, and worktree git shell-outs
   gain a generous budget (default 60) — a hung subprocess is killed → in-lock
-  error → abort + journal.
+  error → abort + journal. A packaged `backlog-schema.yaml` ships the language-
+  independent key grammar (allowed keys per level, reserved keys, the priority
+  scale as data) as the single authority — the loader's allow-sets load from it
+  so they cannot drift, and the packaged `backlog.yaml` self-lints against it.
 - **Gemini native skill discovery** (HATS-993, ADR-0016). `GeminiProvider`
   mirrors the composed role's skills into `.gemini/skills/` — Gemini CLI's
   workspace Agent-Skills tier (>=0.45) — via a new generic ref-counted

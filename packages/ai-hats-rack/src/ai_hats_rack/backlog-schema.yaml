@@ -1,0 +1,46 @@
+# backlog-schema.yaml — language-independent grammar for backlog.yaml (HATS-1043,
+# ADR-0017). SINGLE authority for the key grammar: definition.py loads its allow-
+# sets from `keys`, and an external linter (any language) checks backlog.yaml ↔
+# code bindings against this file. `priorities` is documentation-as-data — nothing
+# reads it for dispatch; the `priority:` pins in backlog.yaml stay the authority.
+
+# Allowed keys per structural level — the loader's fail-closed allow-sets.
+keys:
+  top: [name, prefix, fsm, links, extensions]
+  fsm: [initial, states, edges]
+  state: [name, on_enter, on_exit]
+  edge: [from, to, name, handlers, skip]
+  links: [kinds]
+  kind: [name, arity, inverse, derived, aliases, handlers]
+
+# A handler reference is a bare name or a {name, ...} mapping. The universal keys
+# are interpreted by the composition root; ANY other key is handler-specific config
+# passed verbatim to the factory (e.g. stamp-lifecycle reads `field`).
+handler_ref:
+  universal: [name, priority, timeout]
+  extra_keys: config-passthrough
+
+# Keys reserved for successor tasks — rejected today (fail-closed), each naming
+# the task that lands it.
+reserved:
+  top:
+    fields: HATS-1035
+    extras: HATS-1035
+  kind:
+    targets: HATS-1044
+
+# In-lock priority chain (documentation-as-data). Lower fires first; an unpinned
+# reference takes a positional band from band_start, stepping band_step.
+priorities:
+  slots:
+    single-slot: 5
+    frozen-integrity: 8
+    plan-gate: 10
+    stamp-lifecycle: 12
+    hook-runner: 15
+    ownership-claim: 20
+    plan-scaffold: 30
+    worktree: 30
+    ownership-release: 40
+  band_start: 100
+  band_step: 10

@@ -26,15 +26,20 @@ from .errors import RackConfigError
 from .fsm import Topology, _validate as _validate_topology
 from .registry import LinksRegistry, LinksRegistryError, _validate as _validate_registry
 
-# HATS-1043: the declaration-bound + ambient handler slots become legal (ADR-0017
-# §3-§4). `fields:`/`extras:` (HATS-1035) and kind `targets:` (HATS-1044) STAY
-# fail-closed — a declared-but-inert slot is exactly the failure this prevents.
-_TOP_KEYS = frozenset({"name", "prefix", "fsm", "links", "extensions"})
-_FSM_KEYS = frozenset({"initial", "states", "edges"})
-_STATE_KEYS = frozenset({"name", "on_enter", "on_exit"})
-_EDGE_KEYS = frozenset({"from", "to", "name", "handlers", "skip"})
-_LINKS_KEYS = frozenset({"kinds"})
-_KIND_KEYS = frozenset({"name", "arity", "inverse", "derived", "aliases", "handlers"})
+# Allow-sets load FROM the packaged `backlog-schema.yaml` grammar so no hardcoded
+# frozenset can drift; reserved keys (fields/extras/targets) stay out of `keys`.
+def _load_schema() -> Mapping[str, Any]:
+    text = resources.files("ai_hats_rack").joinpath("backlog-schema.yaml").read_text(encoding="utf-8")
+    return yaml.safe_load(text)
+
+
+_SCHEMA_KEYS = _load_schema()["keys"]
+_TOP_KEYS = frozenset(_SCHEMA_KEYS["top"])
+_FSM_KEYS = frozenset(_SCHEMA_KEYS["fsm"])
+_STATE_KEYS = frozenset(_SCHEMA_KEYS["state"])
+_EDGE_KEYS = frozenset(_SCHEMA_KEYS["edge"])
+_LINKS_KEYS = frozenset(_SCHEMA_KEYS["links"])
+_KIND_KEYS = frozenset(_SCHEMA_KEYS["kind"])
 
 
 class BacklogDefinitionError(RackConfigError):
