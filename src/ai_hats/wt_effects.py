@@ -41,8 +41,11 @@ class WtWorktreeEffects:
     propagate to the caller (the CLI translates them to red exits).
     """
 
-    def __init__(self, project_dir: Path) -> None:
+    def __init__(self, project_dir: Path, *, git_timeout: float | None = None) -> None:
         self.project_dir = project_dir
+        # HATS-1015 liveness budget: the per-git wall-clock ceiling threaded into
+        # every worktree shell-out (default None = unbounded — behaviour unchanged).
+        self._git_timeout = git_timeout
 
     def assert_canonical_base(self) -> None:
         """HATS-518 guard for the forced-execute path (no worktree is created)."""
@@ -78,7 +81,9 @@ class WtWorktreeEffects:
         if WorktreeManager.is_inside_linked_worktree(adopt_probe):
             return WorktreeManager.worktree_toplevel(adopt_probe) or adopt_probe
 
-        existing = WorktreeManager.load_for_task(self.project_dir, task_id, state_dir=wt_state_dir)
+        existing = WorktreeManager.load_for_task(
+            self.project_dir, task_id, state_dir=wt_state_dir, git_timeout=self._git_timeout
+        )
         if existing is not None:
             return existing.worktree_path
 
@@ -95,13 +100,14 @@ class WtWorktreeEffects:
             merge_target=merge_target,
             lifecycle=HOOK_LIFECYCLE,
             state_dir=wt_state_dir,
+            git_timeout=self._git_timeout,
         )
         wt_hooks = collect_carry_for_project(self.project_dir, role)
         try:
             path = mgr.create(wt_hooks=wt_hooks)
         except WorktreeCreateError:
             existing = WorktreeManager.load_for_task(
-                self.project_dir, task_id, state_dir=wt_state_dir
+                self.project_dir, task_id, state_dir=wt_state_dir, git_timeout=self._git_timeout
             )
             if existing is not None:
                 logger.info(
@@ -142,17 +148,22 @@ class WtWorktreeEffects:
             task_id,
             lifecycle=HOOK_LIFECYCLE,
             state_dir=worktrees_dir(self.project_dir),
+            git_timeout=self._git_timeout,
         )
         if active is None:
             if merge:
                 branch_name = f"task/{task_id.lower()}"
-                if WorktreeManager.branch_exists(self.project_dir, branch_name):
+                if WorktreeManager.branch_exists(
+                    self.project_dir, branch_name, timeout=self._git_timeout
+                ):
                     base = WorktreeManager.branch_merged_into_canonical_base(
-                        self.project_dir, branch_name
+                        self.project_dir, branch_name, timeout=self._git_timeout
                     )
                     if base is None:
                         raise WorktreeStateLostError(task_id, branch_name)
-                    WorktreeManager.delete_merged_branch(self.project_dir, branch_name)
+                    WorktreeManager.delete_merged_branch(
+                        self.project_dir, branch_name, timeout=self._git_timeout
+                    )
                     logger.info(
                         "Task %s branch '%s' already merged into '%s' — "
                         "finalizing without re-merge (HATS-697)",
@@ -206,6 +217,7 @@ class WtWorktreeEffects:
             task_id,
             lifecycle=HOOK_LIFECYCLE,
             state_dir=worktrees_dir(self.project_dir),
+            git_timeout=self._git_timeout,
         )
         if active is None:
             return False
