@@ -86,6 +86,22 @@ def test_transition_journals_every_subscriber_outcome(tasks_dir, cwd):
     assert record["outcomes"][1]["delta"] == {"work_log": ["note"]}
 
 
+def test_review_to_execute_journals_the_rework_edge(tasks_dir, cwd):
+    # HATS-1052: the rework loop-back journals a canonical edge:review--execute
+    # record — proof the edge is legal through the kernel guard and that its
+    # audit detail names the endpoints like any other transition.
+    kernel = journaled_kernel(tasks_dir)
+    task_id = create(kernel, cwd)
+    for state in ("plan", "execute", "document", "review", "execute"):
+        kernel.transition(task_id, state, actor="session:s1", caller_cwd=cwd)
+
+    records, corrupt = read_journal(tasks_dir, task_id)
+    assert corrupt == []
+    assert records[-1]["event"] == "edge:review--execute"
+    assert records[-1]["detail"] == {"from": "review", "to": "execute"}
+    assert records[-1]["result"] == "persisted"
+
+
 def test_abort_is_journaled_and_card_untouched(tasks_dir, cwd):
     gate = StubSubscriber(
         "gate",
