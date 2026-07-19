@@ -23,6 +23,11 @@ Drive the task lifecycle through the **rack** CLI (`ai-hats-rack`), the minimal
 backlog kernel — while field edits, hypotheses, and proposals stay on
 `ai-hats task`. Same FSM, same `task.yaml` on disk, same per-task lock.
 
+This skill has two sections: **Backlog operations** (the `rack` CLI surface —
+how to read and write the backlog) and **Task lifecycle** (when to move a card
+and what to do at each edge). Lifecycle is where transition reliability lives —
+read it before advancing any card.
+
 ## When to Use
 
 This is the **rack** backlog manager — composed via `hatrack-trait` in place of
@@ -38,38 +43,7 @@ If a session composes the classic `backlog-manager` instead, use that skill —
 `rack` and `ai-hats task` share the lock and the same `task.yaml`, so a mixed
 backlog is safe, but one session should drive lifecycle through one manager.
 
-## State Machine
-
-Unchanged from the tracker: `brainstorm → plan → execute → document → review →
-done` (+ `blocked`, `failed`, `cancelled`). `rack transition <ID> <state>` walks
-one FSM edge under guard; illegal edges are refused with the legal set.
-
-## Lifecycle cadence — advance as you go
-
-Move the card **as each phase completes** — never batch the transitions at the
-end. The state is a live signal to the supervisor: finished work left in
-`execute` reads as "still working".
-
-| Transition           | When                                                               | Gate skill         |
-| -------------------- | ------------------------------------------------------------------ | ------------------ |
-| `brainstorm → plan`  | requirements clear enough to plan                                  | plan-gate          |
-| `plan → execute`     | plan approved (rack auto-creates the worktree)                     | worktree-isolation |
-| `execute → document` | code + tests done and committed                                    | —                  |
-| `document → review`  | **work finished — signals "awaiting review"**; attach `summary.md` | task-summary       |
-| `review → done`      | supervisor (card `reviewer`) approved                              | task-summary       |
-
-Rack specifics:
-
-- When execute work is done, advance through `document` to **`review`** to
-  request review, then **wait** — do not self-advance to `done`; the reviewer
-  approves first.
-- **`review → done` auto-merges the worktree** via the subscriber (typed consent,
-  HATS-1019 parity) — no separate `ai-hats wt merge`.
-- **Before `plan → execute`, re-validate the premise:** scan the card for a
-  retracted/superseded driver since the plan was authored; if stale, bounce to
-  `brainstorm` instead of building on a dead premise.
-
-## Rack CLI — lifecycle, reads, documents, links
+## Backlog operations — the `rack` CLI
 
 Four verbs, each with `--json` (JSON-first):
 
@@ -99,7 +73,7 @@ tiered hatch for `--rm` / `--freeze` on a pinned document.
 `tasks/<ID>/`; `rack context` live-scans and digests on the fly (no `doc put`).
 Read documents by the path `context` prints — never inline the body blind.
 
-## Coexistence — what stays on `ai-hats task`
+### Coexistence — what stays on `ai-hats task`
 
 `rack` has no `update` verb and no hyp/proposal surface. Until generalization
 (HATS-1044) these stay on the tracker CLI (same lock, safe to interleave):
@@ -113,25 +87,71 @@ Read documents by the path `context` prints — never inline the body blind.
 `ai-hats task hyp --help` / `ai-hats task proposal --help` carry the field
 contracts — they are identical to a classic session; only lifecycle moved.
 
-## Completion
+## Task lifecycle — edges, policy, cadence
 
-- Lifecycle transitions, reads, documents, and links for the task went through
-  `rack`; fields / hyp / proposal went through `ai-hats task`; STATE.md and the
-  journal reflect the work.
-- **Validation scenario (RED → GREEN).** RED: on a rack-composed session an
-  agent asked to advance `PROJ-042` from plan to execute reaches for
-  `ai-hats task transition` (classic muscle memory), bypassing the rack
-  dispatcher, journal, and worktree effects the pilot exists to exercise. GREEN:
-  with hatrack the agent runs `rack transition PROJ-042 execute`, and knows to
-  keep `--priority` / `hyp` / `proposal` on `ai-hats task`.
+### Legal transitions (this backlog's FSM)
+
+`rack transition <ID> <state>` walks ONE edge under guard; an illegal edge is
+refused with the legal set. The complete edge set for this backlog — rendered
+live from the FSM, so it is always authoritative:
+
+{{backlog_fsm_edges}}
+
+`done` and `cancelled` are terminal (`done` = completed; `cancelled` =
+administratively closed). The self-loop `execute → execute` is a reclaim
+(HATS-955, ownership-gated), and `done → execute` reopens for forgotten scope
+(HATS-328) — both are legal but rare; do not walk them by reflex.
+
+### Per-edge policy — trigger → action
+
+For each edge you drive: the trigger that fires it and what to do. The
+transition is a live signal to the supervisor, so move the card **as each phase
+completes** — never batch every transition at the end. Finished work left in
+`execute` reads as "still working".
+
+| Edge                        | Trigger                                            | Action (and gate skill)                                                                                                                                                                            |
+| --------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `brainstorm → plan`         | requirements clear enough to plan                  | **plan-gate** fills every required `plan.md` section, then transition                                                                                                                              |
+| `plan → execute`            | plan approved                                      | re-validate the premise first (below); rack auto-creates the `task/<id>` worktree — `cd` into it (**worktree-isolation**)                                                                          |
+| `execute → document`        | code + tests done **and committed**                | `git status` clean; log a one-line summary; then advance — do not stall in `execute`                                                                                                               |
+| `document → review`         | work finished — this **signals "awaiting review"** | attach `summary.md` (**task-summary**), then advance to `review` and **WAIT** — do **not** self-advance to `done`                                                                                  |
+| `review → done`             | the card `reviewer` approved with no rework asked  | the reviewer drives this edge, not you; it **auto-merges the worktree** (subscriber, HATS-1019) — no `wt merge`                                                                                    |
+| `review → execute` (rework) | review returned **WITH comments** to address       | **Edge lands with HATS-1052 — not yet legal.** Until then there is no clean rework path (do not `--force`); once it lands, loop review-comments → `execute` → rework → `document` → `review` again |
+| `* → blocked`               | an external dependency stalls progress             | log the blocker (**request-supervisor**), transition `blocked`; return to the prior state when unblocked                                                                                           |
+| `execute/review → failed`   | the task cannot be completed                       | **self-retrospective** (mandatory — why it failed), then `failed → brainstorm` to re-plan                                                                                                          |
+| `* → cancelled`             | won't-fix / duplicate / obsolete                   | requires `--resolution "<why>"` (the audit trail); the worktree is discarded — work is not preserved                                                                                               |
+
+(The self-loop `execute → execute` and the `done → execute` reopen are covered
+by the note above — legal but rare; not agent-driven by reflex.)
+
+**Before `plan → execute`, re-validate the premise:** scan the card for a
+retracted/superseded driver since the plan was authored; if the justification is
+stale, bounce to `brainstorm` instead of building on a dead premise
+(`rule_backlog_discipline §6`).
+
+### Completion
+
+- Lifecycle transitions, reads, documents, and links went through `rack`;
+  fields / hyp / proposal went through `ai-hats task`; the card's `work_log`
+  reflects the work (log as you go, not only at the end).
+- On finishing execute work, advance through `document` to **`review`** and
+  stop — the reviewer approves `review → done` first (see the policy table).
+- **Validation scenario (RED → GREEN).** RED: asked to advance `PROJ-042` from
+  plan to execute, the agent reaches for `ai-hats task transition` (classic
+  muscle memory), bypassing the rack dispatcher, journal, and worktree effects.
+  GREEN: it runs `rack transition PROJ-042 execute`, and keeps `--priority` /
+  `hyp` / `proposal` on `ai-hats task`.
 
 ## Anti-Patterns
 
+- Leaving finished work in `execute`, or advancing to `review` then self-jumping
+  to `done` — advance per phase, enter `review` to signal readiness, and **wait**
+  (HATS-1047).
 - Driving lifecycle through `ai-hats task transition` in a rack session — the
   rack dispatcher/journal/worktree path is what's being dogfooded; use `rack`.
 - Composing both `backlog-manager` and `hatrack-trait` — two lifecycle owners.
 - Reaching for a `rack update` / `rack hyp` verb — they don't exist by design;
-  those edits stay on `ai-hats task` (table above).
+  those edits stay on `ai-hats task` (Coexistence table).
 - Inlining a document's body from `context` output — read it by the printed path.
-- Leaving finished work in `execute` and batching every transition at close —
-  advance per phase; enter `review` to signal readiness and wait (HATS-1047).
+- `--force`-ing an edge the FSM refuses (e.g. review→execute before HATS-1052)
+  instead of taking the legal path or escalating.
