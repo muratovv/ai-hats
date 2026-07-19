@@ -1,0 +1,11 @@
+# ai_hats_rack/plan-sections.yaml — packaged plan-section catalog (HATS-1042,
+# ADR-0017 §1). Config of the plan extension, NOT a backlog.yaml section: the
+# scaffold and the gate read this one catalog so contract and enforcement can
+# never drift (HATS-635 never-drift). Order is scaffold + gate order.
+- name: Requirements
+# HATS-621: conditional value-counter stage — scaffolded, never blocks the gate.
+- name: Approach & counter
+  required: false
+- name: Scope & Out-of-scope
+- name: Steps
+- name: Verification Protocol
