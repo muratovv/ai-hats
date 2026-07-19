@@ -19,9 +19,11 @@ from ai_hats_rack import Kernel
 from ai_hats_rack.composition import (
     bind_subscribers,
     build_bound_subscribers,
+    build_card_schema,
     build_extensions,
     build_link_subscribers,
     stock_factories,
+    stock_validators,
     validate_requires_states,
 )
 from ai_hats_rack.definition import resolve_definition
@@ -452,6 +454,7 @@ def build_rack_kernel(
         topology=topology,
         registry=links_registry,
         edge_names=defn.edge_names,
+        schema=build_card_schema(defn, stock_validators()),
         subscribers=subscribers,
         journal_sink=journal_sink,
         **kwargs,

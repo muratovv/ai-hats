@@ -20,6 +20,7 @@ from rack_testkit import CollectingSink, StubSubscriber, in_lock, make_kernel, p
 
 
 def _create(kernel, cwd, task_id="T-1", **kwargs):
+    kwargs.setdefault("title", "t")  # title is required (HATS-1035); default for probes
     return kernel.create(actor="test", caller_cwd=cwd, task_id=task_id, **kwargs).task
 
 
@@ -228,7 +229,7 @@ def test_context_carries_caller_cwd_actor_force(tasks_dir, tmp_path):
     kernel = make_kernel(tasks_dir, subscribers=[sub])
     op_cwd = tmp_path / "somewhere"
     op_cwd.mkdir()
-    kernel.create(actor="session:abc", caller_cwd=op_cwd, task_id="T-1")
+    kernel.create(actor="session:abc", caller_cwd=op_cwd, task_id="T-1", title="t")
     kernel.transition("T-1", "plan", actor="session:abc", caller_cwd=op_cwd)
     ctx = sub.contexts[0]
     assert ctx.caller_cwd == op_cwd  # raw cwd threaded, never re-read (HATS-840)
@@ -274,7 +275,7 @@ def test_is_epic_recomputed_on_every_dispatch(tasks_dir, cwd):
     walk(kernel, "T-1", "plan", cwd=cwd)
     assert sub.contexts[-1].is_epic is False
 
-    kernel.create(actor="test", caller_cwd=cwd, task_id="T-2", parent_task="T-1")
+    kernel.create(actor="test", caller_cwd=cwd, task_id="T-2", parent_task="T-1", title="t")
     walk(kernel, "T-1", "execute", cwd=cwd)
     assert sub.contexts[-1].is_epic is True
 
@@ -537,7 +538,7 @@ def test_create_child_dispatches_epicify(tasks_dir, cwd):
     reconciler = StubSubscriber("ownership-reconcile", [post_lock("epicify")])
     kernel = make_kernel(tasks_dir, subscribers=[reconciler])
     _create(kernel, cwd, title="future epic")
-    result = kernel.create(actor="test", caller_cwd=cwd, task_id="T-2", parent_task="T-1")
+    result = kernel.create(actor="test", caller_cwd=cwd, task_id="T-2", parent_task="T-1", title="t")
 
     assert len(reconciler.contexts) == 1
     ctx = reconciler.contexts[0]
@@ -561,7 +562,7 @@ def test_set_parent_dispatches_epicify(tasks_dir, cwd):
 def test_create_with_dangling_parent_skips_epicify(tasks_dir, cwd):
     reconciler = StubSubscriber("reconcile", [post_lock("epicify")])
     kernel = make_kernel(tasks_dir, subscribers=[reconciler])
-    result = kernel.create(actor="test", caller_cwd=cwd, task_id="T-2", parent_task="T-404")
+    result = kernel.create(actor="test", caller_cwd=cwd, task_id="T-2", parent_task="T-404", title="t")
     assert result.journal == ()
     assert reconciler.contexts == []
 

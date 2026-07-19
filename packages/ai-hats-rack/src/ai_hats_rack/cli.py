@@ -26,6 +26,7 @@ from .cli_common import emit_json as _emit_json
 from .cli_common import handle_rack_error as _handle_rack_error
 from .cli_common import resolved_root as _resolved_root
 from .cli_context import context_cmd, ls_cmd
+from .composition import build_card_schema, stock_validators
 from .definition import resolve_definition
 from .dispatch import bind_subscribers, validate_requires_states
 from .extensions import standalone_extensions
@@ -69,6 +70,7 @@ def _bare_kernel(root: RackRoot) -> Kernel:
         topology=defn.topology,
         registry=defn.links_registry,
         edge_names=defn.edge_names,
+        schema=build_card_schema(defn, stock_validators()),
         subscribers=subscribers,
         journal_sink=JsonlJournalSink(root.tasks_dir),
     )
@@ -118,10 +120,10 @@ def main() -> None:
 @main.command()
 @click.argument("title")
 @click.option("--id", "task_id", default=None, help="Explicit id (default: allocate next).")
-@click.option("--description", default="")
-@click.option("--priority", default="medium", show_default=True)
-@click.option("--role", default="")
-@click.option("--reviewer", default="user", show_default=True)
+@click.option("--description", default=None)
+@click.option("--priority", default=None)
+@click.option("--role", default=None)
+@click.option("--reviewer", default=None)
 @click.option("--parent", "parent_task", default="", help="Parent task id (epicifies the parent).")
 @click.option("--depends", "depends_on", multiple=True)
 @click.option("--tag", "tags", multiple=True)
@@ -130,17 +132,17 @@ def main() -> None:
 def create(
     title: str,
     task_id: str | None,
-    description: str,
-    priority: str,
-    role: str,
-    reviewer: str,
+    description: str | None,
+    priority: str | None,
+    role: str | None,
+    reviewer: str | None,
     parent_task: str,
     depends_on: tuple[str, ...],
     tags: tuple[str, ...],
     tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
-    """Create a task card (initial state comes from backlog.yaml)."""
+    """Create a task card (initial state + field defaults come from backlog.yaml)."""
     caller_cwd = Path.cwd()
     provider = _provider()
     try:

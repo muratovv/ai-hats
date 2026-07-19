@@ -14,6 +14,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from filelock import FileLock, Timeout
 
+from .cardschema import CardSchema, RequiredFieldError, default_card_schema
 from .dispatch import (
     Delta,
     DispatchContext,
@@ -104,6 +105,7 @@ class Kernel:
         topology: Topology | None = None,
         registry: LinksRegistry | None = None,
         edge_names: Mapping[tuple[str, str], str] | None = None,
+        schema: CardSchema | None = None,
         subscribers: Sequence[Subscriber] = (),
         journal_sink: JournalSink | None = None,
         lock_timeout: float = LOCK_TIMEOUT,
@@ -114,6 +116,9 @@ class Kernel:
         # Injected config, not hardcoded kinds (HATS-1028): children_of/is_epic
         # read the hierarchy kind the registry names, default `parent_task`.
         self.registry = registry if registry is not None else load_registry()
+        # The card-field write gate (HATS-1035): create/transition validate
+        # against it; the packaged tasks schema is the zero-config fallback.
+        self._schema = schema if schema is not None else default_card_schema()
         # Declared edge names (HATS-1042 §3): (from, to) → name; empty by default
         # so an unnamed edge fires only its canonical key (zero behavior change).
         self._edge_names = dict(edge_names or {})
@@ -226,18 +231,28 @@ class Kernel:
         caller_cwd: Path,
         task_id: str | None = None,
         title: str = "",
-        description: str = "",
-        priority: str = "medium",
-        role: str = "",
-        reviewer: str = "user",
+        description: str | None = None,
+        priority: str | None = None,
+        role: str | None = None,
+        reviewer: str | None = None,
         parent_task: str = "",
         depends_on: Sequence[str] = (),
-        tags: Sequence[str] = (),
+        tags: Sequence[str] | None = None,
     ) -> KernelResult:
         """Create a card. Id allocation + reserve is atomic under the
-        directory-scoped alloc lock (HATS-936); timeout is a loud failure."""
+        directory-scoped alloc lock (HATS-936); timeout is a loud failure.
+
+        ``title`` is the only required input (ADR-0017 §1); the schema fields
+        (``None`` sentinels) resolve to their declared defaults and are validated
+        write-strict — a bad choice/type/required field is a typed refusal."""
+        if not title.strip():
+            raise RequiredFieldError("title", "a task requires a non-empty title")
         if parent_task and parent_task == task_id:
             raise ValueError(f"Task '{task_id}' cannot be its own parent")
+        resolved = self._schema.resolve_create(
+            {"description": description, "priority": priority, "role": role,
+             "reviewer": reviewer, "tags": tags}
+        )
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         # Not a `<prefix>-N` card dir, so scans ignore it.
         alloc_lock_path = self.tasks_dir / ".alloc.lock"
@@ -253,15 +268,11 @@ class Kernel:
                     id=task_id,
                     title=title,
                     state=self.topology.initial,
-                    description=description,
-                    priority=priority,
-                    role=role,
-                    reviewer=reviewer,
                     parent_task=parent_task,
                     depends_on=list(depends_on),
-                    tags=list(tags),
                     created=now,
                     updated=now,
+                    **resolved,
                 )
                 self._persist(task)
         except Timeout as exc:
@@ -384,9 +395,12 @@ class Kernel:
             self.topology.guard(task.id, from_state, to_state)
             task.state = to_state
         task.updated = utc_now()
+        # Write-strict on ONLY the fields this transition touches (ADR-0017 §2).
         if resolution is not None:
+            self._schema.validate("resolution", resolution)
             task.resolution = resolution
         if final_state is not None:
+            self._schema.validate("final_state", final_state)
             task.final_state = final_state
 
         event = EdgeEvent(from_state, to_state, self._edge_names.get((from_state, to_state), ""))
