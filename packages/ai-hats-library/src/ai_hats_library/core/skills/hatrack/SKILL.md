@@ -44,6 +44,31 @@ Unchanged from the tracker: `brainstorm → plan → execute → document → re
 done` (+ `blocked`, `failed`, `cancelled`). `rack transition <ID> <state>` walks
 one FSM edge under guard; illegal edges are refused with the legal set.
 
+## Lifecycle cadence — advance as you go
+
+Move the card **as each phase completes** — never batch the transitions at the
+end. The state is a live signal to the supervisor: finished work left in
+`execute` reads as "still working".
+
+| Transition           | When                                                               | Gate skill         |
+| -------------------- | ------------------------------------------------------------------ | ------------------ |
+| `brainstorm → plan`  | requirements clear enough to plan                                  | plan-gate          |
+| `plan → execute`     | plan approved (rack auto-creates the worktree)                     | worktree-isolation |
+| `execute → document` | code + tests done and committed                                    | —                  |
+| `document → review`  | **work finished — signals "awaiting review"**; attach `summary.md` | task-summary       |
+| `review → done`      | supervisor (card `reviewer`) approved                              | task-summary       |
+
+Rack specifics:
+
+- When execute work is done, advance through `document` to **`review`** to
+  request review, then **wait** — do not self-advance to `done`; the reviewer
+  approves first.
+- **`review → done` auto-merges the worktree** via the subscriber (typed consent,
+  HATS-1019 parity) — no separate `ai-hats wt merge`.
+- **Before `plan → execute`, re-validate the premise:** scan the card for a
+  retracted/superseded driver since the plan was authored; if stale, bounce to
+  `brainstorm` instead of building on a dead premise.
+
 ## Rack CLI — lifecycle, reads, documents, links
 
 Four verbs, each with `--json` (JSON-first):
@@ -108,3 +133,5 @@ contracts — they are identical to a classic session; only lifecycle moved.
 - Reaching for a `rack update` / `rack hyp` verb — they don't exist by design;
   those edits stay on `ai-hats task` (table above).
 - Inlining a document's body from `context` output — read it by the printed path.
+- Leaving finished work in `execute` and batching every transition at close —
+  advance per phase; enter `review` to signal readiness and wait (HATS-1047).
