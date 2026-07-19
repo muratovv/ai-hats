@@ -30,7 +30,7 @@ from .paths import (
     claude_plugin_skills_dir,
     claude_skills_dir,
 )
-from .placeholders import expand_path_placeholders
+from .placeholders import expand_fsm_edges_token, expand_path_placeholders
 from ai_hats_core.safe_delete import discard
 
 # HATS-604: two callers can resolve the SAME per-session plugin dir (a
@@ -106,13 +106,18 @@ def _rebuild_plugin_dir(
         dest = skills_root / skill.name
         shutil.copytree(skill.source_path, dest)
         # HATS-380 parity: expand <ai_hats_dir> in SKILL.md before the agent
-        # reads it. Other assets (hooks, fixtures) are copied verbatim.
+        # reads it. HATS-1051: inject the backlog FSM edge table for the
+        # {{backlog_fsm_edges}} token. Both are last-gate substitutions on the
+        # already-resolved (last-wins) skill body. Other assets (hooks,
+        # fixtures) are copied verbatim.
         skill_md = dest / "SKILL.md"
         if skill_md.exists():
             original = skill_md.read_text()
-            expanded = expand_path_placeholders(original, project_dir)
-            if expanded != original:
-                skill_md.write_text(expanded)
+            rendered = expand_fsm_edges_token(
+                expand_path_placeholders(original, project_dir)
+            )
+            if rendered != original:
+                skill_md.write_text(rendered)
 
 
 @dataclass(frozen=True)
