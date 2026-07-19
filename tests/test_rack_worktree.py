@@ -181,6 +181,34 @@ def test_execute_reuses_worktree_after_blocked(project):
     assert _active(project, "T-1").worktree_path == wt  # same tree adopted
 
 
+def test_review_to_execute_reworks_without_merge(project):
+    """HATS-1052: the rework loop-back must NOT merge (unlike review → done) and
+    the task worktree survives for the rework. Subscriber-level proof: no
+    pre-destroy(worktree-merge) fires, the tree is reused, and the first-pass
+    work never leaks into the base."""
+    probe = _PreDestroyProbe()
+    kernel = _kernel(project, extra_subscribers=[probe])
+    _to_execute(kernel, project)
+    wt = _active(project, "T-1").worktree_path
+    (wt / "first_pass.txt").write_text("draft under review")
+    _commit_all(wt, "first pass")
+    _tr(kernel, "T-1", "document", "review", cwd=project)
+
+    _tr(kernel, "T-1", "execute", cwd=project)  # review returned WITH comments
+
+    assert kernel.get("T-1").state == "execute"
+    assert probe.seen == []  # no teardown/merge machinery ran
+    active = _active(project, "T-1")
+    assert active is not None and active.worktree_path == wt  # same tree survives
+    assert wt.exists()
+    logs = [e.message for e in kernel.get("T-1").work_log]
+    assert not any("merged" in m.lower() for m in logs)  # nothing was merged
+    assert not (project / "first_pass.txt").exists()  # base untouched
+    # the surviving tree still accepts the rework commits
+    (wt / "addressed.txt").write_text("comments addressed")
+    _commit_all(wt, "address review comments")
+
+
 def test_no_worktree_in_non_git_project(tmp_path):
     plain = tmp_path / "plain"
     (plain / ".agent").mkdir(parents=True)

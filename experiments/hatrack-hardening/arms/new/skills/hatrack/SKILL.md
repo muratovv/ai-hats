@@ -109,17 +109,17 @@ transition is a live signal to the supervisor, so move the card **as each phase
 completes** — never batch every transition at the end. Finished work left in
 `execute` reads as "still working".
 
-| Edge                        | Trigger                                            | Action (and gate skill)                                                                                                                                                                            |
-| --------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `brainstorm → plan`         | requirements clear enough to plan                  | **plan-gate** fills every required `plan.md` section, then transition                                                                                                                              |
-| `plan → execute`            | plan approved                                      | re-validate the premise first (below); rack auto-creates the `task/<id>` worktree — `cd` into it (**worktree-isolation**)                                                                          |
-| `execute → document`        | code + tests done **and committed**                | `git status` clean; log a one-line summary; then advance — do not stall in `execute`                                                                                                               |
-| `document → review`         | work finished — this **signals "awaiting review"** | attach `summary.md` (**task-summary**), then advance to `review` and **WAIT** — do **not** self-advance to `done`                                                                                  |
-| `review → done`             | the card `reviewer` approved with no rework asked  | the reviewer drives this edge, not you; it **auto-merges the worktree** (subscriber, HATS-1019) — no `wt merge`                                                                                    |
-| `review → execute` (rework) | review returned **WITH comments** to address       | **Edge lands with HATS-1052 — not yet legal.** Until then there is no clean rework path (do not `--force`); once it lands, loop review-comments → `execute` → rework → `document` → `review` again |
-| `brainstorm/plan/execute/document → blocked` | an external dependency stalls progress | log the blocker (**request-supervisor**), transition `blocked`; return to the prior state when unblocked — NB: `review` has no `blocked` edge (see the table above)                    |
-| `execute/review → failed`   | the task cannot be completed                       | **self-retrospective** (mandatory — why it failed), then `failed → brainstorm` to re-plan                                                                                                          |
-| any non-terminal `→ cancelled` | won't-fix / duplicate / obsolete                | requires `--resolution "<why>"` (the audit trail); the worktree is discarded — work is not preserved                                                                                               |
+| Edge                                         | Trigger                                            | Action (and gate skill)                                                                                                                                                                |
+| -------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `brainstorm → plan`                          | requirements clear enough to plan                  | **plan-gate** fills every required `plan.md` section, then transition                                                                                                                  |
+| `plan → execute`                             | plan approved                                      | re-validate the premise first (below); rack auto-creates the `task/<id>` worktree — `cd` into it (**worktree-isolation**)                                                              |
+| `execute → document`                         | code + tests done **and committed**                | `git status` clean; log a one-line summary; then advance — do not stall in `execute`                                                                                                   |
+| `document → review`                          | work finished — this **signals "awaiting review"** | attach `summary.md` (**task-summary**), then advance to `review` and **WAIT** — do **not** self-advance to `done`                                                                      |
+| `review → done`                              | the card `reviewer` approved with no rework asked  | the reviewer drives this edge, not you; it **auto-merges the worktree** (subscriber, HATS-1019) — no `wt merge`                                                                        |
+| `review → execute` (rework)                  | review returned **WITH comments** to address       | transition `execute` (fires **no** merge — the worktree survives for the rework, HATS-1052), address the comments, then `document` → `review` again; this is the loop, not a `--force` |
+| `brainstorm/plan/execute/document → blocked` | an external dependency stalls progress             | log the blocker (**request-supervisor**), transition `blocked`; return to the prior state when unblocked — NB: `review` has no `blocked` edge (see the table above)                    |
+| `execute/review → failed`                    | the task cannot be completed                       | **self-retrospective** (mandatory — why it failed), then `failed → brainstorm` to re-plan                                                                                              |
+| any non-terminal `→ cancelled`               | won't-fix / duplicate / obsolete                   | requires `--resolution "<why>"` (the audit trail); the worktree is discarded — work is not preserved                                                                                   |
 
 (The self-loop `execute → execute` and the `done → execute` reopen are covered
 by the note above — legal but rare; not agent-driven by reflex.)
@@ -153,5 +153,5 @@ stale, bounce to `brainstorm` instead of building on a dead premise
 - Reaching for a `rack update` / `rack hyp` verb — they don't exist by design;
   those edits stay on `ai-hats task` (Coexistence table).
 - Inlining a document's body from `context` output — read it by the printed path.
-- `--force`-ing an edge the FSM refuses (e.g. review→execute before HATS-1052)
-  instead of taking the legal path or escalating.
+- `--force`-ing an edge the FSM refuses (e.g. `document → done` skipping `review`,
+  or `review → plan`) instead of taking the legal path or escalating.
