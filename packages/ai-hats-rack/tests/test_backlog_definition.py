@@ -13,12 +13,14 @@ import pytest
 from ai_hats_rack.definition import (
     BacklogDefinition,
     BacklogDefinitionError,
+    FieldSpec,
     HandlerRef,
     LegacyLinksOverrideError,
     UnsupportedBacklogKeyError,
     load_backlog,
     resolve_definition,
 )
+from ai_hats_rack.models import TaskCard
 
 # Golden pin: the tasks topology, exact ai-hats-tracker parity (the former
 # fsm.yaml content, now the fsm section of the packaged backlog.yaml).
@@ -116,13 +118,15 @@ def _skeleton(
 
 
 _FAIL_CASES = {
-    # HATS-1035 — fields/extras schema stays fail-closed until T3.
-    "top_fields": ("name: t\nprefix: T\nfields: []\n", "fields"),
-    "top_extras": ("name: t\nprefix: T\nextras: forbid\n", "extras"),
     # HATS-1044 — cross-backlog kind targets stay fail-closed.
     "kind_targets": (
         _skeleton(kinds="    - {name: parent_task, targets: tasks}\n"),
         "targets",
+    ),
+    # an unknown field-entry key fails closed naming it (HATS-1035 grammar).
+    "field_key": (
+        _skeleton() + "fields:\n    - {name: note, type: str, coerce: true}\n",
+        "coerce",
     ),
     # arbitrary unknown key
     "top_generic": ("name: t\nprefix: T\nquux: 1\n", "quux"),
@@ -143,7 +147,7 @@ def test_unsupported_key_fails_closed_naming_the_key(tmp_path, text, key):
 def test_unsupported_key_error_is_a_config_error(tmp_path):
     # Routed to the RackConfigError subtree → the CLI "internal" marker.
     doc = tmp_path / "backlog.yaml"
-    doc.write_text("name: t\nprefix: T\nfields: []\n")
+    doc.write_text("name: t\nprefix: T\nquux: 1\n")
     with pytest.raises(BacklogDefinitionError):
         load_backlog(doc)
 
@@ -228,6 +232,97 @@ def test_bad_handler_ref_shape_fails_closed(tmp_path):
     # A non-name, non-mapping handler ref is a typed load error, not a silent no-op.
     doc = tmp_path / "backlog.yaml"
     doc.write_text(_skeleton(states="    - {name: brainstorm, on_enter: [42]}\n"))
+    with pytest.raises(BacklogDefinitionError):
+        load_backlog(doc)
+
+
+# ----- card-field schema (HATS-1035 step 1) ----------------------------------
+
+
+def test_packaged_fields_are_todays_nine():
+    defn = load_backlog()
+    assert [f.name for f in defn.fields] == [
+        "description", "priority", "assignee", "reviewer", "role",
+        "tags", "resolution", "completed_at", "final_state",
+    ]
+
+
+def test_packaged_field_grammar_details():
+    by_name = {f.name: f for f in load_backlog().fields}
+    assert by_name["priority"].choices == ("low", "medium", "high", "critical")
+    assert by_name["tags"].type == "list" and by_name["tags"].default == []
+    # emit is three-layer: always by default, when-set on the lifecycle fields.
+    assert by_name["description"].emit == "always"
+    for name in ("resolution", "completed_at", "final_state"):
+        assert by_name[name].emit == "when-set"
+    # no packaged validators (first arrive with HYP in HATS-1044).
+    assert all(f.validator is None for f in load_backlog().fields)
+
+
+def test_schema_defaults_equal_taskcard_defaults():
+    # The lossless / parity pin (R5): schema defaults ≡ TaskCard field defaults,
+    # so the triple-default chain (Click → kernel → model) cannot drift.
+    defn = load_backlog()
+    assert len(defn.fields) == 9
+    for f in defn.fields:
+        model_default = TaskCard.model_fields[f.name].get_default(call_default_factory=True)
+        assert f.has_default, f.name
+        assert f.default == model_default, f.name
+
+
+def test_packaged_extras_policy_is_allow():
+    # Default = allow = today's passthrough; the packaged file omits the key.
+    assert load_backlog().extras_policy == "allow"
+
+
+def _fields_doc(fields_block="", extras_line=""):
+    return (
+        "name: t\nprefix: T\n" + extras_line +
+        "fsm:\n  initial: brainstorm\n  states: [{name: brainstorm}, {name: document}]\n"
+        "  edges: [{from: brainstorm, to: document}, {from: document, to: brainstorm}]\n"
+        "links:\n  kinds: [{name: parent_task}]\n" + fields_block
+    )
+
+
+def test_custom_fields_parse_all_grammar_keys(tmp_path):
+    doc = tmp_path / "backlog.yaml"
+    doc.write_text(_fields_doc(
+        "fields:\n"
+        "  - {name: hypothesis, type: str, required: true}\n"
+        "  - {name: votes, type: any, validator: prop-vote-entries, default: []}\n"
+        "  - {name: count, type: int, default: 4}\n"
+    ))
+    fields = load_backlog(doc).fields
+    assert fields[0] == FieldSpec(name="hypothesis", type="str", required=True)
+    assert fields[1] == FieldSpec(
+        name="votes", type="any", has_default=True, default=[], validator="prop-vote-entries"
+    )
+    assert fields[2] == FieldSpec(name="count", type="int", has_default=True, default=4)
+
+
+def test_extras_forbid_parses(tmp_path):
+    doc = tmp_path / "backlog.yaml"
+    doc.write_text(_fields_doc(extras_line="extras: forbid\n"))
+    assert load_backlog(doc).extras_policy == "forbid"
+
+
+def test_bad_extras_value_fails_closed(tmp_path):
+    doc = tmp_path / "backlog.yaml"
+    doc.write_text(_fields_doc(extras_line="extras: sometimes\n"))
+    with pytest.raises(BacklogDefinitionError):
+        load_backlog(doc)
+
+
+def test_bad_field_type_fails_closed(tmp_path):
+    doc = tmp_path / "backlog.yaml"
+    doc.write_text(_fields_doc("fields:\n  - {name: n, type: float}\n"))
+    with pytest.raises(BacklogDefinitionError):
+        load_backlog(doc)
+
+
+def test_duplicate_field_name_fails_closed(tmp_path):
+    doc = tmp_path / "backlog.yaml"
+    doc.write_text(_fields_doc("fields:\n  - {name: n, type: str}\n  - {name: n, type: int}\n"))
     with pytest.raises(BacklogDefinitionError):
         load_backlog(doc)
 

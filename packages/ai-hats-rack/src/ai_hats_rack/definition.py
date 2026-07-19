@@ -40,6 +40,14 @@ _STATE_KEYS = frozenset(_SCHEMA_KEYS["state"])
 _EDGE_KEYS = frozenset(_SCHEMA_KEYS["edge"])
 _LINKS_KEYS = frozenset(_SCHEMA_KEYS["links"])
 _KIND_KEYS = frozenset(_SCHEMA_KEYS["kind"])
+_FIELD_KEYS = frozenset(_SCHEMA_KEYS["field"])
+
+#: The `type` vocabulary (ADR-0017 §1 field grammar limits): scalars + `any`.
+_FIELD_TYPES = frozenset({"str", "int", "list", "any"})
+#: `emit` policy — declared per field, enforced by the write layer (HATS-1035 step 4).
+_EMIT_MODES = frozenset({"always", "when-set"})
+#: Top-level unknown-key policy (ADR-0017 §1): today's passthrough is `allow`.
+_EXTRAS_POLICIES = frozenset({"allow", "forbid"})
 
 
 class BacklogDefinitionError(RackConfigError):
@@ -98,13 +106,31 @@ class Bindings:
 
 
 @dataclass(frozen=True)
+class FieldSpec:
+    """One declared card-field (ADR-0017 §1): the schema of everything beyond
+    the kernel anchor. ``has_default`` records whether ``default`` was declared
+    (vs a required/no-default field); ``validator`` is a bare name resolved
+    against the open registry at composition, never a check hidden in code."""
+
+    name: str
+    type: str = "str"
+    has_default: bool = False
+    default: Any = None
+    required: bool = False
+    choices: tuple[Any, ...] | None = None
+    validator: str | None = None
+    emit: str = "always"
+
+
+@dataclass(frozen=True)
 class BacklogDefinition:
     """Immutable definition of one backlog: identity + folded topology/registry.
 
     ``edge_names`` maps a declared edge ``(from, to)`` to its optional name and
     lives SEPARATE from :class:`Topology` (whose adjacency shape is consumed
     positionally in four edge-key derivation sites) so a name never perturbs
-    edge-key derivation. ``bindings`` carries the declared handler surface.
+    edge-key derivation. ``bindings`` carries the declared handler surface;
+    ``fields`` the card schema; ``extras_policy`` the unknown-key write policy.
     """
 
     name: str
@@ -113,6 +139,8 @@ class BacklogDefinition:
     links_registry: LinksRegistry
     edge_names: Mapping[tuple[str, str], str]
     bindings: Bindings = field(default_factory=Bindings)
+    fields: tuple[FieldSpec, ...] = ()
+    extras_policy: str = "allow"
 
 
 def _reject_unknown(mapping: Mapping[str, Any], allowed: frozenset[str], location: str) -> None:
@@ -262,6 +290,64 @@ def _collect_links(raw: Any, source: str) -> tuple[list[Any], dict[str, tuple[Ha
     return kinds_raw, kind_handlers
 
 
+def _collect_field(raw: Any, source: str) -> FieldSpec:
+    """Parse one ``fields[]`` entry, fail-closed on unknown keys and bad enums."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("name"), str) or not raw["name"]:
+        raise BacklogDefinitionError(f"{source}: each field needs a non-empty string 'name' (got {raw!r})")
+    name = raw["name"]
+    _reject_unknown(raw, _FIELD_KEYS, f"field {name!r}")
+    ftype = raw.get("type", "str")
+    if ftype not in _FIELD_TYPES:
+        raise BacklogDefinitionError(
+            f"{source}: field {name!r} type {ftype!r} must be one of {sorted(_FIELD_TYPES)}"
+        )
+    emit = raw.get("emit", "always")
+    if emit not in _EMIT_MODES:
+        raise BacklogDefinitionError(
+            f"{source}: field {name!r} emit {emit!r} must be one of {sorted(_EMIT_MODES)}"
+        )
+    choices_raw = raw.get("choices")
+    if choices_raw is not None and not isinstance(choices_raw, list):
+        raise BacklogDefinitionError(f"{source}: field {name!r} choices must be a list (got {choices_raw!r})")
+    validator = raw.get("validator")
+    if validator is not None and not isinstance(validator, str):
+        raise BacklogDefinitionError(f"{source}: field {name!r} validator must be a name (got {validator!r})")
+    return FieldSpec(
+        name=name,
+        type=ftype,
+        has_default="default" in raw,
+        default=raw.get("default"),
+        required=bool(raw.get("required", False)),
+        choices=tuple(choices_raw) if choices_raw is not None else None,
+        validator=validator,
+        emit=emit,
+    )
+
+
+def _collect_fields(raw: Any, source: str) -> tuple[FieldSpec, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise BacklogDefinitionError(f"{source}: 'fields' must be a list")
+    specs = tuple(_collect_field(item, source) for item in raw)
+    seen: set[str] = set()
+    for spec in specs:
+        if spec.name in seen:
+            raise BacklogDefinitionError(f"{source}: field {spec.name!r} declared more than once")
+        seen.add(spec.name)
+    return specs
+
+
+def _parse_extras(raw: Any, source: str) -> str:
+    if raw is None:
+        return "allow"
+    if raw not in _EXTRAS_POLICIES:
+        raise BacklogDefinitionError(
+            f"{source}: 'extras' {raw!r} must be one of {sorted(_EXTRAS_POLICIES)}"
+        )
+    return raw
+
+
 def _build(raw: Any, source: str) -> BacklogDefinition:
     if not isinstance(raw, dict):
         raise BacklogDefinitionError(f"{source}: expected a mapping at top level")
@@ -281,6 +367,8 @@ def _build(raw: Any, source: str) -> BacklogDefinition:
     fsm = _collect_fsm(raw["fsm"], source)
     kinds_raw, kind_handlers = _collect_links(raw["links"], source)
     extensions = _parse_refs(raw.get("extensions"), "extensions")
+    fields = _collect_fields(raw.get("fields"), source)
+    extras_policy = _parse_extras(raw.get("extras"), source)
     topology = _validate_topology(
         {"initial": fsm.initial, "states": fsm.states, "edges": fsm.adjacency}, source
     )
@@ -300,6 +388,8 @@ def _build(raw: Any, source: str) -> BacklogDefinition:
         links_registry=registry,
         edge_names=MappingProxyType(fsm.edge_names),
         bindings=bindings,
+        fields=fields,
+        extras_policy=extras_policy,
     )
 
 
