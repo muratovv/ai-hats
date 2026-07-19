@@ -11,3 +11,23 @@ SCRUB=(env
   -u AI_HATS_VENV
   -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE
 )
+
+# Total USD spent by an experiment so far, summed over collected run envelopes.
+exp_spent_usd() {
+  local files
+  files=$(find "$1/runs" -name envelope.json 2>/dev/null)
+  if [[ -z "$files" ]]; then
+    echo 0
+    return
+  fi
+  echo "$files" | xargs cat | jq -s 'map(.total_cost_usd // 0) | add'
+}
+
+# Experiment budget in USD: env override, else the budget.usd file, else empty.
+exp_budget_usd() {
+  if [[ -n "${AI_HATS_EXP_BUDGET_USD:-}" ]]; then
+    echo "$AI_HATS_EXP_BUDGET_USD"
+  elif [[ -f "$1/budget.usd" ]]; then
+    tr -d '[:space:]' <"$1/budget.usd"
+  fi
+}
