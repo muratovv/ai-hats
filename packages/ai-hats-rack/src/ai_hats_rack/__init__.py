@@ -32,6 +32,7 @@ from .definition import (
     BacklogDefinitionError,
     UnsupportedBacklogKeyError,
     load_backlog,
+    resolve_definition,
 )
 from .events import EdgeEvent, EpicifyEvent, Event, PreDestroyEvent, event_detail
 from .fsm import (
@@ -157,6 +158,7 @@ __all__ = [
     "load_topology",
     "matches",
     "read_journal",
+    "resolve_definition",
     "resolve_links",
     "resolve_root",
     "scan_cards",
