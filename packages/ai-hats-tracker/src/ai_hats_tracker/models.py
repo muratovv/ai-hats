@@ -47,7 +47,15 @@ class TaskState(str, Enum):
                 TaskState.CANCELLED,
             ],
             TaskState.DOCUMENT: [TaskState.REVIEW, TaskState.BLOCKED, TaskState.CANCELLED],
-            TaskState.REVIEW: [TaskState.DONE, TaskState.FAILED, TaskState.CANCELLED],
+            TaskState.REVIEW: [
+                TaskState.DONE,
+                # HATS-1052: rework loop — review WITH comments goes back to execute
+                # (address → document → review again). Fires NO worktree merge (unlike
+                # review → done); the tree survives — edges-into-execute route to setup.
+                TaskState.EXECUTE,
+                TaskState.FAILED,
+                TaskState.CANCELLED,
+            ],
             TaskState.BLOCKED: [
                 TaskState.BRAINSTORM,
                 TaskState.PLAN,

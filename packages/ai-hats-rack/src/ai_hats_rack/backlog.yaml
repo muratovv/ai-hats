@@ -30,6 +30,7 @@ fsm:
     - { from: document, to: blocked }
     - { from: document, to: cancelled }
     - { from: review, to: done }
+    - { from: review, to: execute }
     - { from: review, to: failed }
     - { from: review, to: cancelled }
     - { from: blocked, to: brainstorm }

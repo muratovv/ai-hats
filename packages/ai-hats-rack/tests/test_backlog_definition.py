@@ -26,7 +26,7 @@ _GOLDEN_EDGES = {
     "plan": ("execute", "blocked", "cancelled"),
     "execute": ("execute", "document", "blocked", "failed", "cancelled"),
     "document": ("review", "blocked", "cancelled"),
-    "review": ("done", "failed", "cancelled"),
+    "review": ("done", "execute", "failed", "cancelled"),
     "blocked": ("brainstorm", "plan", "execute", "document", "cancelled"),
     "failed": ("brainstorm", "cancelled"),
     "done": ("execute",),
