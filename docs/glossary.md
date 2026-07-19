@@ -84,6 +84,10 @@ per-section enforcement — the engine gate (HATS-635).
 
 The minimal backlog **kernel** built parallel to the production tracker (epic HATS-1014; the name = hatrack). Same `task.yaml` format and layout, new engine: FSM topology from an in-package `fsm.yaml` (SSOT), a transactional `transition` (FileLock → guard → in-memory mutation → two-phase subscriber dispatch → single persist last), a structural lock model, and a dispatch journal with actor identity. Everything beyond that — worktree, ownership, scaffold, plan-gate, epic-automation, doc store, consumer hooks — is an extension subscribing to kernel events, not kernel code. CLI namespace during the comparison period: `rack`. The old tracker is feature-frozen until the K6 cutover decision. Source: `packages/ai-hats-rack/`.
 
+## Behavior experiment (A/B)
+
+A scripted comparison proving that a library-component edit (skill / rule / trait wording) actually changes subagent behavior, instead of eyeballing it: `1 scenario × N arms × N identical runs`, scored mechanically (HATS-1053). Lives under `experiments/`. Term definitions (arm, scenario, score scripts, runs capture) and the authoring guide — see [10].
+
 ## Attachment
 
 A file attached to a Task via `ai-hats task attach add`. Blob lives in
@@ -258,3 +262,5 @@ Single point of truth for destructive filesystem ops in ai-hats core (HATS-470).
 **[9]** — [`docs/session-start-notices.md`](session-start-notices.md) — startup-notice model, read-hold policy, producer list, provider settings lint.
 
 **[9]** — [`docs/how-to-extend.md`](how-to-extend.md) — shipped library layout (`library/core/` vs `library/usage/`), override precedence, recipes for adding your own roles / traits / rules / skills.
+
+**[10]** — [`docs/how-to-experiments.md`](how-to-experiments.md) — authoring and running behavior A/B experiments (HATS-1053).

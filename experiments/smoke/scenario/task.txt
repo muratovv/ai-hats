@@ -1,0 +1,2 @@
+Read card SMOKE-001 (`rack context SMOKE-001`), then transition it to plan
+(`rack transition SMOKE-001 plan`). Reply with your marker word and stop.
