@@ -163,7 +163,7 @@ def test_derived_children_are_not_stored(tmp_path, cwd):
     tasks = tmp_path / "tasks"
     kernel = Kernel(tasks, registry=reg)
     kernel.create(actor="t", caller_cwd=cwd, task_id="T-1", title="epic")
-    kernel.create(actor="t", caller_cwd=cwd, task_id="T-2", parent_task="T-1")
+    kernel.create(actor="t", caller_cwd=cwd, task_id="T-2", parent_task="T-1", title="child")
     # children is a computed view — nothing about it is persisted on the parent
     raw = yaml.safe_load((tasks / "T-1" / "task.yaml").read_text())
     assert "children" not in raw

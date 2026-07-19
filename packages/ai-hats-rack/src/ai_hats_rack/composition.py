@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
 
+from .cardschema import Validator, build_card_schema
 from .definition import BacklogDefinition, Bindings, HandlerRef
 from .dispatch import (
     Phase,
@@ -299,6 +300,12 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
     }
 
 
+def stock_validators() -> dict[str, Validator]:
+    """The rack's stock field validators (ADR-0017 §4). Empty by default — the
+    packaged tasks backlog declares none; HYP/PROP land theirs in HATS-1044."""
+    return {}
+
+
 __all__ = [
     "BoundSubscriber",
     "ExtensionFactory",
@@ -307,9 +314,11 @@ __all__ = [
     "UnknownHandlerError",
     "bind_subscribers",
     "build_bound_subscribers",
+    "build_card_schema",
     "build_extensions",
     "build_link_subscribers",
     "compose_subscribers",
     "stock_factories",
+    "stock_validators",
     "validate_requires_states",
 ]
