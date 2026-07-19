@@ -38,8 +38,9 @@ fields:
 links:
   kinds:
     - { name: source_task, arity: one }
-    - { name: supersedes, arity: one, inverse: superseded_by }
-    - { name: superseded_by, arity: one, inverse: supersedes }
+    # stored inverse pair -> the mirror-link reaction is required (HATS-1044).
+    - { name: supersedes, arity: one, inverse: superseded_by, handlers: [mirror-link] }
+    - { name: superseded_by, arity: one, inverse: supersedes, handlers: [mirror-link] }
 
 extensions:
   - hyp-verdicts

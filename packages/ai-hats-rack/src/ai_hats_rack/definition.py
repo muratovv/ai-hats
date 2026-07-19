@@ -43,6 +43,8 @@ _FIELD_KEYS = frozenset(_SCHEMA_KEYS["field"])
 
 #: The `type` vocabulary (ADR-0017 §1 field grammar limits): scalars + `any`.
 _FIELD_TYPES = frozenset({"str", "int", "list", "any"})
+#: The stock reaction a declared stored inverse pair REQUIRES (ADR-0017 §2/R4).
+MIRROR_HANDLER = "mirror-link"
 #: `emit` policy — declared per field, enforced by the write layer (HATS-1035 step 4).
 _EMIT_MODES = frozenset({"always", "when-set"})
 #: Top-level unknown-key policy (ADR-0017 §1): today's passthrough is `allow`.
@@ -61,6 +63,22 @@ class UnsupportedBacklogKeyError(BacklogDefinitionError):
         super().__init__(
             f"backlog.yaml {location}: key {key!r} is not supported by this "
             f"loader (the backlog.yaml surface lands in phases — see ADR-0017)"
+        )
+
+
+class MissingMirrorReactionError(BacklogDefinitionError):
+    """A declared STORED inverse pair (``inverse: X`` where X is a stored, non-
+    symmetric kind) without the ``mirror-link`` reaction — the reverse edge would
+    drift undetected, so the loader refuses it fail-closed (ADR-0017 §2/R4).
+    Derived inverses (``children``) and symmetric kinds (``related``) are exempt."""
+
+    def __init__(self, kind: str, inverse: str, source: str) -> None:
+        self.kind = kind
+        self.inverse = inverse
+        super().__init__(
+            f"{source}: kind {kind!r} declares a stored inverse {inverse!r} but no "
+            f"{MIRROR_HANDLER!r} reaction — add 'handlers: [{MIRROR_HANDLER}]' to "
+            f"{kind!r} so the reverse edge stays convergent (ADR-0017 §2)"
         )
 
 
@@ -337,6 +355,26 @@ def _collect_fields(raw: Any, source: str) -> tuple[FieldSpec, ...]:
     return specs
 
 
+def _validate_stored_inverses(
+    registry: LinksRegistry,
+    kind_handlers: Mapping[str, tuple[HandlerRef, ...]],
+    source: str,
+) -> None:
+    """Fail-closed (ADR-0017 §2/R4): a stored kind whose inverse is ANOTHER stored
+    kind must declare the ``mirror-link`` reaction, else the reverse edge drifts
+    undetected. Derived inverses (``children``) and symmetric kinds (``related``,
+    stored one-sided today) are exempt — the packaged tasks default keeps loading."""
+    for kind in registry.kinds:
+        if kind.derived or not kind.inverse or kind.symmetric:
+            continue
+        inverse = registry.get(kind.inverse)
+        if inverse is None or inverse.derived:
+            continue
+        refs = kind_handlers.get(kind.name, ())
+        if not any(ref.name == MIRROR_HANDLER for ref in refs):
+            raise MissingMirrorReactionError(kind.name, kind.inverse, source)
+
+
 def _parse_extras(raw: Any, source: str) -> str:
     if raw is None:
         return "allow"
@@ -372,6 +410,7 @@ def _build(raw: Any, source: str) -> BacklogDefinition:
         {"initial": fsm.initial, "states": fsm.states, "edges": fsm.adjacency}, source
     )
     registry = _validate_registry({"kinds": kinds_raw}, source)
+    _validate_stored_inverses(registry, kind_handlers, source)
     bindings = Bindings(
         state_on_enter=MappingProxyType(fsm.state_on_enter),
         state_on_exit=MappingProxyType(fsm.state_on_exit),

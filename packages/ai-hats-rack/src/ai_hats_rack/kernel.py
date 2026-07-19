@@ -662,6 +662,60 @@ class Kernel:
             ),
         )
 
+    def apply_mirror(
+        self, event: Any, *, actor: str, caller_cwd: Path
+    ) -> DispatchRecord | None:
+        """Run a link mirror reaction on the TARGET card in a FRESH lock window
+        (ADR-0017 §2/R4): sequential, never nested, and fail-soft — a reaction
+        failure is journaled and swallowed (the origin already persisted, so the
+        mirror can never abort it). No subscribers / a dangling target -> a no-op
+        (zero behavior change for a backlog with no mirror kinds).
+
+        The handler mutates the REAL target card here (its own repair window — it
+        is the target's executor, not an observer), so the copy-guard the owning
+        transition uses does not apply; the reverse edge is convergent/idempotent.
+        """
+        subs = self._dispatcher.subscribers_for(event.key, Phase.POST_LOCK)
+        if not subs or not self._task_path(event.target).exists():
+            return None
+        outcomes: list[SubscriberOutcome] = []
+        lock = self._task_lock(event.target)
+        try:
+            with lock:
+                task = self._load(event.target)
+                changed = False
+                for sub in subs:
+                    ctx = DispatchContext(
+                        event=event,
+                        task=task,  # real card: the mirror repair window
+                        caller_cwd=caller_cwd,
+                        is_epic=self.is_epic(event.target),
+                        actor=actor,
+                    )
+                    delta = sub.on_event(ctx)
+                    if delta is not None:
+                        changed = True
+                        outcomes.append(
+                            SubscriberOutcome(sub.name, Phase.POST_LOCK, "delta", delta=delta)
+                        )
+                    else:
+                        outcomes.append(SubscriberOutcome(sub.name, Phase.POST_LOCK, "ok"))
+                if changed:
+                    task.updated = utc_now()
+                    self._persist(task)
+        except Timeout:
+            return self._finish_record(
+                event, event.target, actor, False, "", outcomes, result="aborted"
+            )
+        except Exception as exc:  # noqa: BLE001 — fail-soft: never reaches the origin
+            outcomes.append(SubscriberOutcome("mirror", Phase.POST_LOCK, "error", reason=repr(exc)))
+            return self._finish_record(
+                event, event.target, actor, False, "", outcomes, result="aborted"
+            )
+        return self._finish_record(
+            event, event.target, actor, False, "", outcomes, result="persisted"
+        )
+
     # ----- internals ----------------------------------------------------------
 
     def _ctx_factory(

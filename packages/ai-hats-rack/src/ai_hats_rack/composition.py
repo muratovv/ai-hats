@@ -222,12 +222,13 @@ def build_link_subscribers(
     catalog: Path,
     factories: Mapping[str, ExtensionFactory],
 ) -> list[Subscriber]:
-    """Declaration-bound link handlers (``links.kinds[].handlers``): each ref
-    fires IN-LOCK on link AND unlink of its kind — subscription keys
-    ``link:<kind>`` / ``unlink:<kind>`` (ADR-0017 §3). Same positional band /
-    explicit-pin scheme as the state/edge builder; refs sharing (name, config)
-    collapse to one handler with deduped keys (fires once per link event). The
-    cross-backlog mirror (``link-target:<kind>``) is HATS-1044, not built here."""
+    """Declaration-bound link handlers (``links.kinds[].handlers``): an OWNING
+    handler fires IN-LOCK on link/unlink of its kind (``link:<kind>`` /
+    ``unlink:<kind>``, ADR-0017 §3); a MIRROR handler (``mirror-link``) is a
+    target-side reaction the workspace routes post-lock, so it subscribes the
+    ``link-target:<kind>`` / ``unlink-target:<kind>`` keys instead (HATS-1044
+    §2). Same positional band / explicit-pin scheme as the state/edge builder;
+    refs sharing (name, config) collapse to one handler with deduped keys."""
     b: Bindings = defn.bindings
     band = [100]
 
@@ -243,15 +244,24 @@ def build_link_subscribers(
         for ref in refs:
             prio = _priority(ref)
             gk = (ref.name, _freeze(ref.config))
-            group = groups.setdefault(gk, {"ref": ref, "keys": {}})
-            for key in (f"link:{kind}", f"unlink:{kind}"):
-                group["keys"].setdefault(key, prio)  # dedup: first band/pin wins
+            group = groups.setdefault(gk, {"ref": ref, "members": []})
+            group["members"].append((kind, prio))
 
     out: list[Subscriber] = []
     for group in groups.values():
         handler = _bound_handler(group["ref"], defn, catalog, factories)
         phase = getattr(handler, "PHASE", Phase.IN_LOCK)
-        subs = [Subscription(key, phase, prio) for key, prio in group["keys"].items()]
+        mirror = bool(getattr(handler, "MIRROR", False))
+        keys: dict[str, int] = {}
+        for kind, prio in group["members"]:
+            pair = (
+                (f"link-target:{kind}", f"unlink-target:{kind}")
+                if mirror
+                else (f"link:{kind}", f"unlink:{kind}")
+            )
+            for key in pair:
+                keys.setdefault(key, prio)  # dedup: first band/pin wins
+        subs = [Subscription(key, phase, prio) for key, prio in keys.items()]
         out.append(BoundSubscriber(handler, subs))
     return out
 
@@ -278,6 +288,7 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
     from .extensions import (
         ClearLifecycleHandler,
         FrozenIntegrityExtension,
+        MirrorLinkHandler,
         PlanGateExtension,
         PlanScaffoldExtension,
         StampLifecycleHandler,
@@ -297,6 +308,7 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
         "plan-scaffold": lambda defn, catalog, cfg: PlanScaffoldExtension(catalog, catalog_sections),
         "stamp-lifecycle": lambda defn, catalog, cfg: StampLifecycleHandler(_field(cfg)),
         "clear-lifecycle": lambda defn, catalog, cfg: ClearLifecycleHandler(_field(cfg)),
+        "mirror-link": lambda defn, catalog, cfg: MirrorLinkHandler(defn.links_registry),
     }
 
 
