@@ -15,6 +15,7 @@ from ai_hats_rack.definition import (
     BacklogDefinitionError,
     UnsupportedBacklogKeyError,
     load_backlog,
+    resolve_definition,
 )
 from ai_hats_rack.fsm import load_topology
 from ai_hats_rack.registry import load_registry
@@ -174,3 +175,48 @@ def test_unsupported_key_error_is_a_config_error(tmp_path):
     doc.write_text("name: t\nprefix: T\nfields: []\n")
     with pytest.raises(BacklogDefinitionError):
         load_backlog(doc)
+
+
+# ----- instance resolution + prefix precedence (ADR-0017 §1) ------------------
+
+
+def _write_catalog_backlog(catalog, prefix="CUS"):
+    catalog.mkdir(parents=True, exist_ok=True)
+    (catalog / "backlog.yaml").write_text(
+        f"name: custom\nprefix: {prefix}\n"
+        "fsm:\n"
+        "  initial: brainstorm\n"
+        "  states: [{name: brainstorm}, {name: document}]\n"
+        "  edges:\n"
+        "    - {from: brainstorm, to: document, name: advance}\n"
+        "    - {from: document, to: brainstorm}\n"
+        "links:\n"
+        "  kinds: [{name: parent_task, inverse: children}, "
+        "{name: children, derived: true, inverse: parent_task}]\n"
+    )
+    return catalog
+
+
+def test_resolve_catalog_file_is_used_whole_prefix_authoritative(tmp_path):
+    # A catalog holding backlog.yaml uses that file; its prefix wins over the
+    # ai-hats.yaml task_prefix alias.
+    catalog = _write_catalog_backlog(tmp_path / "tasks", prefix="CUS")
+    defn = resolve_definition(catalog, prefix_alias="ALIAS")
+    assert defn.name == "custom"
+    assert defn.prefix == "CUS"
+    assert defn.topology.states == ("brainstorm", "document")
+    assert dict(defn.edge_names) == {("brainstorm", "document"): "advance"}
+
+
+def test_resolve_no_file_applies_prefix_alias(tmp_path):
+    # No catalog file → packaged default; the deprecated task_prefix alias
+    # overrides the packaged prefix (today's zero-config behavior).
+    defn = resolve_definition(tmp_path / "tasks", prefix_alias="SBX")
+    assert defn.name == "tasks"
+    assert defn.prefix == "SBX"
+    assert defn.topology.states == load_backlog().topology.states
+
+
+def test_resolve_no_file_no_alias_falls_back_to_packaged_prefix(tmp_path):
+    defn = resolve_definition(tmp_path / "tasks")
+    assert defn.prefix == "HATS"  # packaged default == DEFAULT_PREFIX

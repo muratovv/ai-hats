@@ -15,7 +15,7 @@ in one place.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import resources
 from pathlib import Path
 from types import MappingProxyType
@@ -192,3 +192,20 @@ def load_backlog(path: Path | None = None) -> BacklogDefinition:
         resource = resources.files("ai_hats_rack").joinpath("backlog.yaml")
         text, source = resource.read_text(encoding="utf-8"), "ai_hats_rack/backlog.yaml"
     return _build(yaml.safe_load(text), source)
+
+
+def resolve_definition(catalog: Path, *, prefix_alias: str | None = None) -> BacklogDefinition:
+    """Instance resolution (ADR-0017 §1, single-backlog): the definition a catalog runs on.
+
+    A catalog holding ``backlog.yaml`` uses that file whole — its ``prefix:`` is
+    authoritative. A catalog WITHOUT one is the tasks backlog on the packaged
+    default (today's zero-config), and only THEN does ``prefix_alias`` (the
+    deprecated ai-hats.yaml ``task_prefix``) override the packaged prefix.
+    """
+    catalog_file = catalog / "backlog.yaml"
+    if catalog_file.is_file():
+        return load_backlog(catalog_file)
+    defn = load_backlog()
+    if prefix_alias and prefix_alias != defn.prefix:
+        return replace(defn, prefix=prefix_alias)
+    return defn
