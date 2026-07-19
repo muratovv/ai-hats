@@ -27,6 +27,14 @@ from .docstore import (
     RemoveResult,
     UnknownDocumentError,
 )
+from .definition import (
+    BacklogDefinition,
+    BacklogDefinitionError,
+    LegacyLinksOverrideError,
+    UnsupportedBacklogKeyError,
+    load_backlog,
+    resolve_definition,
+)
 from .events import EdgeEvent, EpicifyEvent, Event, PreDestroyEvent, event_detail
 from .fsm import (
     InvalidTransitionError,
@@ -71,7 +79,6 @@ from .registry import (
     LinksRegistryError,
     UnknownLinkKindError,
     load_registry,
-    load_registry_for,
     resolve_links,
 )
 from .resolver import (
@@ -85,6 +92,8 @@ from .resolver import (
 __all__ = [
     "DEFAULT_MAX_BYTES",
     "AbortOperation",
+    "BacklogDefinition",
+    "BacklogDefinitionError",
     "CardRow",
     "ContextPackage",
     "Delta",
@@ -107,6 +116,7 @@ __all__ = [
     "JsonlJournalSink",
     "Kernel",
     "KernelResult",
+    "LegacyLinksOverrideError",
     "LinkKind",
     "LinkResult",
     "LinkView",
@@ -134,6 +144,7 @@ __all__ = [
     "UnknownLinkKindError",
     "UnknownStateError",
     "UnknownTaskError",
+    "UnsupportedBacklogKeyError",
     "WorkLogEntry",
     "build_context",
     "card_filter",
@@ -141,12 +152,13 @@ __all__ = [
     "event_detail",
     "find_project_root",
     "link",
+    "load_backlog",
     "load_registry",
-    "load_registry_for",
     "load_root",
     "load_topology",
     "matches",
     "read_journal",
+    "resolve_definition",
     "resolve_links",
     "resolve_root",
     "scan_cards",

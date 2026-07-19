@@ -1,14 +1,16 @@
 """Config-driven plan-section catalog — the single source both the scaffold
 and the gate read, so contract and enforcement can never drift (HATS-635).
 
-The catalog is data: the built-in default mirrors the tracker's
-``PLAN_SECTIONS``; a consumer may load its own from YAML (``load_sections``).
+The catalog is data: the built-in default is file-backed by the packaged
+``plan-sections.yaml`` (HATS-1042); a consumer may load its own from YAML
+(``load_sections``).
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from importlib import resources
 from pathlib import Path
 
 import yaml
@@ -25,26 +27,14 @@ class Section:
     required: bool = True
 
 
-DEFAULT_PLAN_SECTIONS: tuple[Section, ...] = (
-    Section(name="Requirements"),
-    # HATS-621: conditional value-counter stage; fill-or-N/A is a behavioural
-    # norm, so it never blocks the engine gate.
-    Section(name="Approach & counter", required=False),
-    Section(name="Scope & Out-of-scope"),
-    Section(name="Steps"),
-    Section(name="Verification Protocol"),
-)
-
-
 class SectionCatalogError(RackConfigError):
     """A section catalog file is malformed."""
 
 
-def load_sections(path: Path) -> tuple[Section, ...]:
-    """Load a section catalog from YAML: a list of ``{name, required?}``."""
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+def _parse_sections(raw: object, source: str) -> tuple[Section, ...]:
+    """A section catalog is a non-empty list of ``str`` or ``{name, required?}``."""
     if not isinstance(raw, list) or not raw:
-        raise SectionCatalogError(f"{path}: expected a non-empty list of sections")
+        raise SectionCatalogError(f"{source}: expected a non-empty list of sections")
     out: list[Section] = []
     for item in raw:
         if isinstance(item, str):
@@ -52,8 +42,21 @@ def load_sections(path: Path) -> tuple[Section, ...]:
         elif isinstance(item, dict) and isinstance(item.get("name"), str):
             out.append(Section(name=item["name"], required=bool(item.get("required", True))))
         else:
-            raise SectionCatalogError(f"{path}: bad section entry {item!r}")
+            raise SectionCatalogError(f"{source}: bad section entry {item!r}")
     return tuple(out)
+
+
+def load_sections(path: Path) -> tuple[Section, ...]:
+    """Load a section catalog from YAML: a list of ``{name, required?}``."""
+    return _parse_sections(yaml.safe_load(path.read_text(encoding="utf-8")), str(path))
+
+
+def _load_default_sections() -> tuple[Section, ...]:
+    text = resources.files("ai_hats_rack").joinpath("plan-sections.yaml").read_text(encoding="utf-8")
+    return _parse_sections(yaml.safe_load(text), "ai_hats_rack/plan-sections.yaml")
+
+
+DEFAULT_PLAN_SECTIONS: tuple[Section, ...] = _load_default_sections()
 
 
 def merge_sections(

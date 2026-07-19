@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ai-hats-rack"
 version = "0.1.0"
-description = "Minimal backlog kernel for ai-hats (epic HATS-1014): fsm.yaml topology, two-phase subscriber dispatcher, single-persist transitions, dispatch journal."
+description = "Minimal backlog kernel for ai-hats (epic HATS-1014): backlog.yaml topology, two-phase subscriber dispatcher, single-persist transitions, dispatch journal."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

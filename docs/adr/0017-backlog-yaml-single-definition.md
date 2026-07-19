@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (HATS-1034, rack T6; awaiting supervisor ratification).
+Accepted (ratified via HATS-1034 review 2026-07-18).
 
 Design gate for T3 (HATS-1035, schema-driven card fields) and T4 (HATS-1036,
 verb-builder CLI). Extends the epic HATS-1014 design record; resolves the

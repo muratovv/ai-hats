@@ -21,7 +21,7 @@ FileLock(task) → FSM-guard → in-memory mutation → in-lock subscribers → 
   lifecycle with no side effects (heir of HATS-866/AC4). Unit tests never need git.
 - **`force` relaxes only the FSM arrow** and requires a reason (journaled). It is passed
   to subscribers as information, never as a safety-off switch (HATS-518/596/697).
-- **fsm.yaml is the SSOT** of the topology (9 states; reclaim `execute→execute`, reopen
+- **backlog.yaml is the SSOT** of the topology (9 states; reclaim `execute→execute`, reopen
   `done→execute`, `blocked` hub, `cancelled` exits). Editing it edits the kernel contract.
   `document` must exist (PROP-012). Invalid transitions answer with the legal edges.
 
@@ -123,7 +123,7 @@ Four verbs, each with `--json` (JSON-first, HATS-1031 API-D surface):
 
 | Verb                   | Role                                                                                                                          |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `rack create <title>`  | new card; `--id/--parent/--depends/--tag/...`; initial state from fsm.yaml                                                    |
+| `rack create <title>`  | new card; `--id/--parent/--depends/--tag/...`; initial state from backlog.yaml                                                |
 | `rack ls [<ID>]`       | backlog scan (`--grep/--tag/--state/--parent`) or graph walk (`ls <ID> --deep N [--link <glob>…]`, repeatable OR)             |
 | `rack context <ID>`    | THE read package: full card + top-level `links` + document paths; repeatable `--with <glob>` embeds, `--attr audit\|work_log` |
 | `rack transition <ID>` | THE mutating verb: an ordered composite of ops under one lock                                                                 |

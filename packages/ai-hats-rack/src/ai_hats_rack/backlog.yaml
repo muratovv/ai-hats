@@ -1,0 +1,49 @@
+# Packaged default: the tasks backlog. Kernel CONTRACT, not user config (ADR-0017).
+name: tasks
+prefix: HATS
+
+fsm:
+  initial: brainstorm
+  states:
+    - { name: brainstorm }
+    - { name: plan }
+    - { name: execute }
+    - { name: document }
+    - { name: review }
+    - { name: done }
+    - { name: blocked }
+    - { name: failed }
+    - { name: cancelled }
+  edges:
+    - { from: brainstorm, to: plan }
+    - { from: brainstorm, to: blocked }
+    - { from: brainstorm, to: cancelled }
+    - { from: plan, to: execute }
+    - { from: plan, to: blocked }
+    - { from: plan, to: cancelled }
+    - { from: execute, to: execute, name: reclaim }
+    - { from: execute, to: document }
+    - { from: execute, to: blocked }
+    - { from: execute, to: failed }
+    - { from: execute, to: cancelled }
+    - { from: document, to: review }
+    - { from: document, to: blocked }
+    - { from: document, to: cancelled }
+    - { from: review, to: done }
+    - { from: review, to: failed }
+    - { from: review, to: cancelled }
+    - { from: blocked, to: brainstorm }
+    - { from: blocked, to: plan }
+    - { from: blocked, to: execute }
+    - { from: blocked, to: document }
+    - { from: blocked, to: cancelled }
+    - { from: failed, to: brainstorm }
+    - { from: failed, to: cancelled }
+    - { from: done, to: execute, name: reopen }
+
+links:
+  kinds:
+    - { name: parent_task, arity: one, inverse: children }
+    - { name: depends_on, arity: many, aliases: [depends] }
+    - { name: related, arity: many, inverse: related }
+    - { name: children, derived: true, inverse: parent_task }

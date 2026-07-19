@@ -17,8 +17,8 @@ from typing import Any
 import click
 
 from ai_hats_rack.cli_common import emit_json
+from ai_hats_rack.definition import resolve_definition
 from ai_hats_rack.extensions import DerivedViewsExtension
-from ai_hats_rack.fsm import load_topology
 from ai_hats_rack.journal import JsonlJournalSink
 
 from .rack_consumers import consumer_subscribers
@@ -32,12 +32,17 @@ class CliKernelProvider:
     def build_kernel(self, root: Any, caller_cwd: Path):
         """The full integrator assembly (mirror of the K6 driver) — kernel +
         every stock extension + the consumer hook-runner."""
+        defn = resolve_definition(
+            root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
+        )
         return build_rack_kernel(
             root.project_dir,
             tasks_dir=root.tasks_dir,
             prefix=root.prefix,
             journal_sink=JsonlJournalSink(root.tasks_dir),
-            extra_subscribers=consumer_subscribers(root.project_dir, tasks_dir=root.tasks_dir),
+            extra_subscribers=consumer_subscribers(
+                root.project_dir, tasks_dir=root.tasks_dir, topology=defn.topology
+            ),
         )
 
     def after_create(self, root: Any, result: Any) -> None:
@@ -47,7 +52,9 @@ class CliKernelProvider:
         DerivedViewsExtension(
             root.tasks_dir,
             tracker_paths(root.project_dir).state_md_path,
-            topology=load_topology(),
+            topology=resolve_definition(
+                root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
+            ).topology,
         ).refresh()
 
     def handle_error(self, exc: Exception, as_json: bool, task_id: str = "") -> bool:
