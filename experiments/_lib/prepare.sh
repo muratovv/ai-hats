@@ -3,6 +3,7 @@
 # Usage: prepare.sh <experiment-dir> <arm> <run-idx>   → prints sandbox path on stdout
 set -euo pipefail
 
+# shellcheck source-path=SCRIPTDIR
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 [[ $# -eq 3 ]] || { echo "usage: prepare.sh <experiment-dir> <arm> <run-idx>" >&2; exit 2; }

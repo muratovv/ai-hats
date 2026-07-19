@@ -1,4 +1,6 @@
+# shellcheck shell=bash
 # Shared helpers for experiment scripts (HATS-1053). Source, don't execute.
+# shellcheck disable=SC2034  # SCRUB is consumed by the sourcing scripts
 
 # Ambient session env leaks the parent project into the sandbox: sessions land in
 # the wrong project dir, ownership checks read the wrong actor, git plumbing hits
