@@ -34,6 +34,7 @@ from .journal import JsonlJournalSink
 from .kernel import Kernel, KernelResult
 from .ops import parse_ops
 from .resolver import RackRoot
+from .workspace import Workspace
 
 #: Entry-point group the integrator advertises its wired-kernel factory under.
 #: Discovery (not a static import) keeps the import-hygiene pin intact.
@@ -86,6 +87,22 @@ def _build_kernel(
     root = _resolved_root(tasks_dir, caller_cwd)
     kernel = provider.build_kernel(root, caller_cwd) if provider is not None else _bare_kernel(root)
     return kernel, root
+
+
+def _workspace(
+    tasks_dir: Path | None, caller_cwd: Path, provider: KernelProvider | None
+) -> tuple[Workspace, RackRoot]:
+    """Discover the workspace and wire the tasks-instance builder (HATS-1044): the
+    integrator (or bare) kernel is the tasks catalog's code channel; sibling
+    backlogs fall through to the portable kit (``None`` return)."""
+    root = _resolved_root(tasks_dir, caller_cwd)
+
+    def _builder(instance: Any) -> Kernel | None:
+        if not instance.is_tasks:
+            return None  # portable default (workspace-injected cross-backlog checker)
+        return provider.build_kernel(root, caller_cwd) if provider is not None else _bare_kernel(root)
+
+    return Workspace.discover([root], kernel_builder=_builder), root
 
 
 def _echo_deltas(result: KernelResult) -> None:
@@ -278,7 +295,10 @@ def transition(
     provider = _provider()
     try:
         ops = parse_ops(op_tokens)
-        kernel, _root = _build_kernel(tasks_dir, caller_cwd, provider)
+        # Route the kernel by the id's prefix through the workspace (HATS-1044):
+        # tasks-only repos resolve to the same tasks kernel — zero behavior change.
+        workspace, _root = _workspace(tasks_dir, caller_cwd, provider)
+        kernel = workspace.kernel_for(task_id)
         result = kernel.transition_ops(
             task_id,
             ops,

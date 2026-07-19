@@ -115,9 +115,14 @@ class Kernel:
         subscribers: Sequence[Subscriber] = (),
         journal_sink: JournalSink | None = None,
         lock_timeout: float = LOCK_TIMEOUT,
+        exists_checker: Callable[[str, str | None], bool] | None = None,
     ) -> None:
         self.tasks_dir = tasks_dir
         self.prefix = prefix
+        # Cross-backlog target-existence seam (ADR-0017 §2): a workspace injects
+        # a checker so a `targets:` kind resolves the sibling catalog; None keeps
+        # the catalog-local default and in-lock handlers stay workspace-blind.
+        self._exists_checker = exists_checker
         self.topology = topology if topology is not None else load_topology()
         # Injected config, not hardcoded kinds (HATS-1028): children_of/is_epic
         # read the hierarchy kind the registry names, default `parent_task`.

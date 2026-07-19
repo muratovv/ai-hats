@@ -19,7 +19,6 @@ import click
 from . import linked
 from .audit_view import journal_view, record_lines
 from .cli_common import JSON_OPT, TASKS_DIR_OPT, emit_json, fail, handle_rack_error, resolved_root
-from .definition import resolve_definition
 from .docstore import DocInfo
 from .linked import (
     DEFAULT_MAX_BYTES,
@@ -31,6 +30,7 @@ from .linked import (
     scan_cards,
     walk_neighborhood,
 )
+from .workspace import Workspace
 
 #: the attribute feeds ``context --attr`` understands (the set the card left open).
 KNOWN_ATTRS = ("audit", "work_log")
@@ -242,16 +242,20 @@ def context_cmd(
         return
     try:
         root = resolved_root(tasks_dir, Path.cwd())
-        registry = resolve_definition(root.tasks_dir, project_dir=root.project_dir).links_registry
+        # Route by the id's prefix (HATS-1044): a tasks-only repo resolves to the
+        # tasks catalog — same registry, same output as before.
+        instance = Workspace.discover([root]).instance_for(task_id)
+        catalog = instance.catalog
+        registry = instance.definition.links_registry
         pkg = build_context(
-            root.tasks_dir,
+            catalog,
             task_id,
             registry=registry,
             with_patterns=with_patterns,
             max_bytes=max_bytes,
         )
         attr_payload = _collect_attrs(
-            root.tasks_dir, pkg, selected, event=event_key, since=since, actor_filter=actor_filter
+            catalog, pkg, selected, event=event_key, since=since, actor_filter=actor_filter
         )
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
         handle_rack_error(exc, as_json)
@@ -262,7 +266,7 @@ def context_cmd(
             out["attrs"] = attr_payload
         emit_json(out)
     else:
-        _echo_context(pkg, root.tasks_dir)
+        _echo_context(pkg, catalog)
         _echo_attrs(selected, attr_payload)
         _tip()
 
@@ -387,14 +391,15 @@ def ls_cmd(
     try:
         root = resolved_root(tasks_dir, Path.cwd())
         if task_id is None:
+            # No id: the backlog scan stays tasks-catalog scoped (today's behavior).
             rows = scan_cards(root.tasks_dir, grep=grep, tag=tag, state=state, parent=parent)
             _emit_scan(rows, as_json, show_all)
             return
-        registry = resolve_definition(root.tasks_dir, project_dir=root.project_dir).links_registry
+        instance = Workspace.discover([root]).instance_for(task_id)
         neighbors = walk_neighborhood(
-            root.tasks_dir,
+            instance.catalog,
             task_id,
-            registry=registry,
+            registry=instance.definition.links_registry,
             depth=deep if deep is not None else 1,
             link_patterns=link_patterns,
             row_filter=card_filter(grep=grep, tag=tag, state=state, parent=parent),
