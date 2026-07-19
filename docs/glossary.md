@@ -86,15 +86,7 @@ The minimal backlog **kernel** built parallel to the production tracker (epic HA
 
 ## Behavior experiment (A/B)
 
-A scripted comparison proving that a library-component edit (skill / rule / trait wording) actually changes subagent behavior, instead of eyeballing it (HATS-1053). Lives under `experiments/<name>/`; the shared runner scripts are `experiments/_lib/`. Terms:
-
-- **Experiment** — one question about one **scenario**: e.g. "does the hatrack cadence table change advance-to-review behavior?". `experiment = 1 scenario × 2 arms × N identical runs`.
-- **Arm** — one group inside an experiment: a component variant materialized as a filesystem directory, composed into the sandbox via `library_paths`, plus all N runs executed with it. Arms differ in exactly one thing — the component under test; the composition snapshot in `metrics.json["composition"]` proves the difference. N identical runs per arm measure the *frequency* of the target behavior (agent behavior is stochastic), not scenario variety.
-- **Scenario** — the frozen setup shared by all arms: seeded sandbox backlog + the task prompt given to the agent (`experiments/<name>/scenario/`).
-- **Score scripts** — mechanical per-experiment checks on observable outcomes (resulting card state, captured actions), never LLM-judged; live in `experiments/<name>/score/`, run by the shared `report` step. What to score is the experiment author's decision.
-- **Runs capture** — `experiments/<name>/runs/`, gitignored: raw session material (`metrics.json`, provider JSONL, final sandbox backlog state) is personal data and never committed.
-
-Runner how-to — see [10].
+A scripted comparison proving that a library-component edit (skill / rule / trait wording) actually changes subagent behavior, instead of eyeballing it: `1 scenario × N arms × N identical runs`, scored mechanically (HATS-1053). Lives under `experiments/`. Term definitions (arm, scenario, score scripts, runs capture) and the authoring guide — see [10].
 
 ## Attachment
 

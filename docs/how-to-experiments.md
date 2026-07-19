@@ -3,7 +3,18 @@
 Editing a skill, rule, or trait and eyeballing the next session is not evidence.
 A behavior experiment runs N scripted subagent sessions per **arm** (component
 variant), scores each run mechanically, and reports per-arm success rates — so a
-wording change is either measurably better or it isn't. Terms — see [1].
+wording change is either measurably better or it isn't. Named in the glossary [1];
+the terms:
+
+- **Experiment** — one question about one scenario, e.g. "does the hatrack
+  cadence table change advance-to-review behavior?".
+- **Arm** — one group inside an experiment: a component variant materialized as a
+  filesystem directory, plus all N runs executed with it. Arms differ in exactly
+  one thing — the component under test.
+- **Scenario** — the frozen setup shared by all arms: seeded sandbox backlog +
+  the task prompt.
+- **Score scripts** — mechanical per-experiment checks on observable outcomes
+  (resulting card state, captured actions), never LLM-judged.
 
 ```
 experiment = 1 scenario × 2 arms × N identical runs
@@ -20,6 +31,7 @@ Different trials belong to different experiments.
 experiments/
   _lib/                  # shared runner scripts (this guide)
   <name>/
+    budget.usd           # USD ceiling for the whole experiment
     arms/<arm>/          # component variant as a library dir (skills/, roles/, ...)
     scenario/
       lib/roles/exp-agent/config.yaml   # the role under test (name is a contract)
@@ -48,7 +60,7 @@ experiments/
 experiments/_lib/run.sh experiments/smoke a 5 claude-haiku-4-5
 experiments/_lib/run.sh experiments/smoke b 5 claude-haiku-4-5
 
-# per-arm success/fail/timeout/crash counters + rate, markdown on stdout
+# per-arm success/fail/timeout/crash counters + rate + cost, markdown on stdout
 experiments/_lib/report.sh experiments/smoke
 
 # tear down the tmp sandboxes (idempotent)
@@ -63,25 +75,36 @@ copy it as a starting point. The first real consumer is
 
 `runs/<arm>/run-<i>/` after a run:
 
-| Artifact | What it is |
-| --- | --- |
-| `envelope.json` | The `ai-hats agent --json` envelope: exit code, cost, tags, composition snapshot |
-| `status.json` | Runner verdict: exit code, duration, `timed_out` |
-| `sessions/` | Session dirs (`metrics.json`, `transcript.txt`, `audit.md`) from the sandbox |
-| `backlog/` | Final sandbox backlog state — the primary scoring signal (fs-as-truth) |
-| `provider-jsonl/` | Raw provider JSONL (tool-call source of truth), located by `claude_session_id` |
-| `ai-hats.yaml` + `arm-manifest.txt` | Arm identity proof: the config that wired the arm in + sha256 of the arm dir |
+| Artifact                            | What it is                                                                       |
+| ----------------------------------- | -------------------------------------------------------------------------------- |
+| `envelope.json`                     | The `ai-hats agent --json` envelope: exit code, cost, tags, composition snapshot |
+| `status.json`                       | Runner verdict: exit code, duration, `timed_out`                                 |
+| `sessions/`                         | Session dirs (`metrics.json`, `transcript.txt`, `audit.md`) from the sandbox     |
+| `backlog/`                          | Final sandbox backlog state — the primary scoring signal (fs-as-truth)           |
+| `provider-jsonl/`                   | Raw provider JSONL (tool-call source of truth), located by `claude_session_id`   |
+| `ai-hats.yaml` + `arm-manifest.txt` | Arm identity proof: the config that wired the arm in + sha256 of the arm dir     |
 
 Timeouts and crashes stay in the report as their own statuses — a failed run is
 never silently dropped from the sample.
 
+## Budget
+
+Every experiment carries a USD ceiling in `budget.usd` (override per invocation
+with `AI_HATS_EXP_BUDGET_USD`). Before each run, `run.sh` sums
+`total_cost_usd` over the already-collected envelopes and refuses to start a new
+run once spent ≥ budget (exit 3). The overshoot is bounded by one run — cap a
+run's worst case with `AI_HATS_EXP_RUN_TIMEOUT`. The report prints per-run and
+per-arm cost plus a `Spent: $X of $Y budget` footer — attach it to the task card
+so every experiment ships its cost stats.
+
 ## Environment knobs
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `AI_HATS_EXP_TMP` | `$TMPDIR/ai-hats-exp` | Base dir for sandboxes |
-| `AI_HATS_EXP_VENV` | ambient `AI_HATS_VENV` | Venv reused by sandboxes (skips per-sandbox pip install) |
-| `AI_HATS_EXP_RUN_TIMEOUT` | `600` | Per-run cap in seconds; exceeding it records a `timeout` status |
+| Variable                  | Default                | Purpose                                                         |
+| ------------------------- | ---------------------- | --------------------------------------------------------------- |
+| `AI_HATS_EXP_TMP`         | `$TMPDIR/ai-hats-exp`  | Base dir for sandboxes                                          |
+| `AI_HATS_EXP_VENV`        | ambient `AI_HATS_VENV` | Venv reused by sandboxes (skips per-sandbox pip install)        |
+| `AI_HATS_EXP_RUN_TIMEOUT` | `600`                  | Per-run cap in seconds; exceeding it records a `timeout` status |
+| `AI_HATS_EXP_BUDGET_USD`  | `budget.usd` file      | Experiment cost ceiling; overrides the file                     |
 
 ## Caveats
 
@@ -101,7 +124,7 @@ never silently dropped from the sample.
 
 ## References
 
-**[1]** — [`docs/glossary.md#behavior-experiment-ab`](glossary.md#behavior-experiment-ab) — term definitions (experiment, arm, scenario, score, runs).
+**[1]** — [`docs/glossary.md#behavior-experiment-ab`](glossary.md#behavior-experiment-ab) — the term's glossary entry (naming source-of-truth; definitions live here).
 
 **[2]** — [`docs/how-to-extend.md`](how-to-extend.md) — library layout and last-wins override precedence.
 

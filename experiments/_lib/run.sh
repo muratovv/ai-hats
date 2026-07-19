@@ -16,7 +16,16 @@ exp_name=$(basename "$exp_dir")
 task=$(<"$exp_dir/scenario/task.txt")
 run_timeout="${AI_HATS_EXP_RUN_TIMEOUT:-600}"
 
+budget=$(exp_budget_usd "$exp_dir")
+
 for ((i = 1; i <= n; i++)); do
+  if [[ -n "$budget" ]]; then
+    spent=$(exp_spent_usd "$exp_dir")
+    if awk -v s="$spent" -v b="$budget" 'BEGIN { exit !(s >= b) }'; then
+      echo "run $arm/$i: budget exhausted (\$$spent >= \$$budget) — aborting remaining runs" >&2
+      exit 3
+    fi
+  fi
   echo "run $arm/$i: prepare" >&2
   sandbox=$("$lib_dir/prepare.sh" "$exp_dir" "$arm" "$i")
   dest="$exp_dir/runs/$arm/run-$i"
