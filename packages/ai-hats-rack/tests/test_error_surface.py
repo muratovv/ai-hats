@@ -18,6 +18,12 @@ from click.testing import CliRunner
 
 import ai_hats_rack
 from ai_hats_rack import cli, ops
+from ai_hats_rack.cardschema import (
+    ExtrasForbiddenError,
+    FieldValidationError,
+    RequiredFieldError,
+    UnknownValidatorError,
+)
 from ai_hats_rack.cli import main
 from ai_hats_rack.cli_common import _ERROR_HANDLERS, lookup_error_handler
 from ai_hats_rack.definition import UnsupportedBacklogKeyError
@@ -129,6 +135,15 @@ _CASES = [
     (UnsupportedBacklogKeyError("fields", "top level"), "internal", {}),
     (DeltaFieldError("priority", "Append requires a list field"), "internal", {}),
     (RequiresStatesError("epic-automation", ["qa"], ["plan"], "pkg"), "internal", {}),
+    (UnknownValidatorError("v", "votes", []), "internal", {}),
+    # Write-strict field refusals (HATS-1035) — one user-facing marker.
+    (
+        FieldValidationError("priority", "bad", {"choices": ["low", "high"], "value": "x"}),
+        "invalid_field",
+        {"field": "priority", "choices": ["low", "high"], "value": "x"},
+    ),
+    (RequiredFieldError("title"), "invalid_field", {"field": "title"}),
+    (ExtrasForbiddenError("mystery"), "extras_forbidden", {"field": "mystery"}),
 ]
 
 

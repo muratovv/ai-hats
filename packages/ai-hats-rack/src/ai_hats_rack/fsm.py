@@ -15,9 +15,9 @@ from typing import Mapping
 
 from .errors import RackConfigError, RackError
 
-#: PROP-012: the companion-HYP timing rule is anchored to the ``document``
-#: state — the accepted obligation becomes unsatisfiable if it disappears.
-REQUIRED_STATES: tuple[str, ...] = ("document",)
+# The load-time `document` anchor (PROP-012) moved to extension-declared
+# `requires_states()`, checked at composition (ADR-0017 §3/§6) — a tasks-
+# discipline fact, so an HYP/PROP topology with no `document` now loads.
 
 
 class TopologyError(RackConfigError):
@@ -87,10 +87,6 @@ def _validate(raw: object, source: str) -> Topology:
     states = tuple(states_raw)
     if len(set(states)) != len(states):
         raise TopologyError(f"{source}: duplicate state names")
-    for required in REQUIRED_STATES:
-        if required not in states:
-            # PROP-012: accepted obligations reference this state by name.
-            raise TopologyError(f"{source}: required state '{required}' is missing")
     if not isinstance(initial, str) or initial not in states:
         raise TopologyError(f"{source}: 'initial' must name a declared state")
     if not isinstance(edges_raw, dict):
