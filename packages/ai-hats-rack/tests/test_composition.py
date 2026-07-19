@@ -5,7 +5,11 @@ from __future__ import annotations
 
 import pytest
 
-from ai_hats_rack.composition import UnknownHandlerError, build_extensions
+from ai_hats_rack.composition import (
+    HandlerProtocolError,
+    UnknownHandlerError,
+    build_extensions,
+)
 from ai_hats_rack.definition import load_backlog
 from ai_hats_rack.dispatch import RequiresStatesError, bind_subscribers, validate_requires_states
 from ai_hats_rack.extensions import PlanGateExtension, PlanScaffoldExtension
@@ -135,3 +139,29 @@ def test_unknown_handler_error_is_a_config_error(tmp_path):
     from ai_hats_rack.errors import RackConfigError
 
     assert issubclass(UnknownHandlerError, RackConfigError)
+
+
+# ----- protocol validation at composition (supervisor #3.1) ------------------
+
+
+def test_build_extensions_rejects_a_non_subscriber_factory(tmp_path):
+    # A factory that returns a plain object → fail-closed, naming the handler.
+    defn = _defn_with_extensions(tmp_path, "[views]")
+    with pytest.raises(HandlerProtocolError) as exc_info:
+        build_extensions(defn, tmp_path, {"views": lambda d, c, cfg: object()})
+    err = exc_info.value
+    assert err.handler == "views"
+    assert "views" in str(err) and "Subscriber" in str(err)
+
+
+def test_build_extensions_accepts_a_duck_typed_subscriber(tmp_path):
+    # A conforming class (name + subscriptions + on_event, NO inheritance) passes.
+    defn = _defn_with_extensions(tmp_path, "[views]")
+    subs = build_extensions(defn, tmp_path, {"views": lambda d, c, cfg: _Plain()})
+    assert [s.name for s in subs] == ["plain"]
+
+
+def test_handler_protocol_error_is_a_config_error():
+    from ai_hats_rack.errors import RackConfigError
+
+    assert issubclass(HandlerProtocolError, RackConfigError)

@@ -47,16 +47,46 @@ class UnknownHandlerError(RackConfigError):
         )
 
 
+class HandlerProtocolError(RackConfigError):
+    """A factory produced an object that is not a valid subscriber — fail-closed,
+    naming the handler/extension and the factory (ADR-0017 §4). Structural
+    composition invariant, routed to the RackConfigError subtree."""
+
+    def __init__(self, name: str, factory: Any, obj: Any, needs: str) -> None:
+        self.handler = name
+        self.factory = getattr(factory, "__qualname__", None) or getattr(
+            factory, "__name__", None
+        ) or repr(factory)
+        super().__init__(
+            f"factory {self.factory} for '{name}' produced a {type(obj).__name__}, not {needs}"
+        )
+
+
 def _instantiate(
     ref: HandlerRef,
     defn: BacklogDefinition,
     catalog: Path,
     factories: Mapping[str, ExtensionFactory],
-) -> Subscriber:
+) -> Any:
     factory = factories.get(ref.name)
     if factory is None:
         raise UnknownHandlerError(ref.name, factories.keys())
     return factory(defn, catalog, ref.config)
+
+
+def _bound_handler(
+    ref: HandlerRef,
+    defn: BacklogDefinition,
+    catalog: Path,
+    factories: Mapping[str, ExtensionFactory],
+) -> Any:
+    """Instantiate a declaration-bound handler and check the surface the loader
+    wraps into a :class:`Subscriber` (``name`` + ``on_event``; ``subscriptions``
+    are computed by the loader, so the raw handler is NOT itself a Subscriber)."""
+    obj = _instantiate(ref, defn, catalog, factories)
+    if not (isinstance(getattr(obj, "name", None), str) and callable(getattr(obj, "on_event", None))):
+        raise HandlerProtocolError(ref.name, factories.get(ref.name), obj, "a handler (name + on_event)")
+    return obj
 
 
 def build_extensions(
@@ -65,8 +95,15 @@ def build_extensions(
     factories: Mapping[str, ExtensionFactory],
 ) -> list[Subscriber]:
     """Ambient extensions (top-level ``extensions:``): self-subscribing
-    subscribers of non-edge / all-edge events, one per reference (ADR-0017 §4)."""
-    return [_instantiate(ref, defn, catalog, factories) for ref in defn.bindings.extensions]
+    subscribers of non-edge / all-edge events, one per reference (ADR-0017 §4).
+    A factory returning a non-:class:`Subscriber` fails closed naming it."""
+    out: list[Subscriber] = []
+    for ref in defn.bindings.extensions:
+        obj = _instantiate(ref, defn, catalog, factories)
+        if not isinstance(obj, Subscriber):
+            raise HandlerProtocolError(ref.name, factories.get(ref.name), obj, "a Subscriber")
+        out.append(obj)
+    return out
 
 
 class BoundSubscriber:
@@ -172,7 +209,7 @@ def build_bound_subscribers(
 
     out: list[Subscriber] = []
     for group in groups.values():
-        handler = _instantiate(group["ref"], defn, catalog, factories)
+        handler = _bound_handler(group["ref"], defn, catalog, factories)
         phase = getattr(handler, "PHASE", Phase.IN_LOCK)
         subs = [Subscription(key, phase, prio) for key, prio in group["keys"].items()]
         out.append(BoundSubscriber(handler, subs))
@@ -211,7 +248,7 @@ def build_link_subscribers(
 
     out: list[Subscriber] = []
     for group in groups.values():
-        handler = _instantiate(group["ref"], defn, catalog, factories)
+        handler = _bound_handler(group["ref"], defn, catalog, factories)
         phase = getattr(handler, "PHASE", Phase.IN_LOCK)
         subs = [Subscription(key, phase, prio) for key, prio in group["keys"].items()]
         out.append(BoundSubscriber(handler, subs))
@@ -265,6 +302,7 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
 __all__ = [
     "BoundSubscriber",
     "ExtensionFactory",
+    "HandlerProtocolError",
     "RequiresStatesError",
     "UnknownHandlerError",
     "bind_subscribers",
