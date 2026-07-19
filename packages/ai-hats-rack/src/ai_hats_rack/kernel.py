@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from filelock import FileLock, Timeout
 
@@ -102,6 +102,7 @@ class Kernel:
         prefix: str = "HATS",
         topology: Topology | None = None,
         registry: LinksRegistry | None = None,
+        edge_names: Mapping[tuple[str, str], str] | None = None,
         subscribers: Sequence[Subscriber] = (),
         journal_sink: JournalSink | None = None,
         lock_timeout: float = LOCK_TIMEOUT,
@@ -112,6 +113,9 @@ class Kernel:
         # Injected config, not hardcoded kinds (HATS-1028): children_of/is_epic
         # read the hierarchy kind the registry names, default `parent_task`.
         self.registry = registry if registry is not None else load_registry()
+        # Declared edge names (HATS-1042 §3): (from, to) → name; empty by default
+        # so an unnamed edge fires only its canonical key (zero behavior change).
+        self._edge_names = dict(edge_names or {})
         self._dispatcher = Dispatcher(subscribers)
         self._sink = journal_sink
         self._lock_timeout = lock_timeout
@@ -385,7 +389,7 @@ class Kernel:
             task.final_state = final_state
         self._stamp_lifecycle(task, from_state, to_state)
 
-        event = EdgeEvent(from_state, to_state)
+        event = EdgeEvent(from_state, to_state, self._edge_names.get((from_state, to_state), ""))
         events.append(event)
         ctx = self._ctx_factory(event, task, caller_cwd, is_epic, actor, force, reason)
 
