@@ -5,11 +5,10 @@ formerly ``fsm.yaml``) and the link-kind registry (formerly ``links.yaml``) into
 the single artifact every module is constructed from. The packaged default is a
 LOSSLESS fold of both (§6).
 
-The loader is fail-closed: a key this loader does not materialize is a typed
-error naming the key, never a silent no-op — a declared-but-inert gate is
-exactly the failure mode this prevents (hats-1014-fsm §4). Structural
-validation reuses ``fsm._validate`` / ``registry._validate`` so REQUIRED_STATES
-and the inverse-pair invariants stay in one place.
+The loader is fail-closed: a key it does not materialize is a typed error naming
+the key, never a silent no-op (hats-1014-fsm §4). Structural validation reuses
+``fsm._validate`` / ``registry._validate``; the ``document`` anchor moved from
+there to composition-time ``requires_states`` (ADR-0017 §3).
 """
 
 from __future__ import annotations

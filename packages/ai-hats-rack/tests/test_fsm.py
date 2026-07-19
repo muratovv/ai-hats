@@ -91,17 +91,24 @@ def _write_backlog(tmp_path, fsm_block):
     return path
 
 
-def test_document_state_is_required(tmp_path):
-    # PROP-012: accepted obligations anchor to `document`; a topology without
-    # it must not load.
+def test_document_state_is_required_at_composition(tmp_path):
+    # PROP-012: the `document` anchor moved from load-time fsm._validate to the
+    # tasks-discipline extension's requires_states (ADR-0017 §3/§6) — a
+    # document-less topology LOADS, but composing epic-automation refuses it.
+    from ai_hats_rack.dispatch import RequiresStatesError, validate_requires_states
+    from ai_hats_rack.extensions import EpicAutomationExtension
+
     path = _write_backlog(
         tmp_path,
         "  initial: brainstorm\n"
         "  states: [{name: brainstorm}, {name: done}]\n"
         "  edges: []\n",
     )
-    with pytest.raises(TopologyError, match="document"):
-        load_backlog(path)
+    defn = load_backlog(path)  # loads now — no load-time document anchor
+    ext = EpicAutomationExtension(topology=load_topology())
+    with pytest.raises(RequiresStatesError, match="document") as exc_info:
+        validate_requires_states([ext], defn.topology, source=str(path))
+    assert "document" in exc_info.value.missing
 
 
 def test_edge_from_undeclared_state_is_rejected(tmp_path):

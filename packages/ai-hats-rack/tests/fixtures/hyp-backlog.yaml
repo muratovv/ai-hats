@@ -1,0 +1,45 @@
+# HATS-1035 step 6 FIXTURE (NOT shipped — real instances are HATS-1044): the
+# ADR-0017 §5 hypotheses sketch, proving the HYP topology + card schema compose
+# through loader + composition + write layer WITHOUT engine edits. Adjusted where
+# the sketch names unbuilt machinery: `targets:` (cross-backlog, HATS-1044) is
+# dropped; `hyp-quorum-gate`/`hyp-verdicts` resolve to test stubs; the `any`-typed
+# validators resolve to test validators via the registry.
+name: hypotheses
+prefix: HYP
+
+fsm:
+  initial: active
+  states:
+    - { name: active }
+    - { name: confirmed, on_enter: [{ name: stamp-lifecycle, field: closed }] }
+    - { name: refuted, on_enter: [{ name: stamp-lifecycle, field: closed }] }
+    - { name: stalled }
+  edges:
+    - { from: active, to: confirmed, name: confirm }
+    - from: active
+      to: refuted
+      name: refute
+      handlers: [{ name: hyp-quorum-gate, min_independent_sessions: 3 }]
+    - { from: active, to: stalled, name: stall }
+    - { from: stalled, to: active, name: revive }
+
+fields:
+  - { name: hypothesis, type: str, required: true }
+  - { name: expected_outcome, type: list, default: [] }
+  - { name: observation_window, type: str, default: "" }
+  - { name: success_criterion, type: str, default: "" }
+  - { name: rollback_condition, type: str, default: "" }
+  - { name: validation_log, type: any, validator: hyp-validation-log, default: [] }
+  - { name: exit_criteria, type: any, validator: hyp-exit-criteria }
+  - { name: baseline, type: any }
+  - { name: min_sessions_per_bundle, type: int, default: 4 }
+  - { name: closed, type: str, default: "", emit: when-set }
+
+links:
+  kinds:
+    - { name: source_task, arity: one }
+    - { name: supersedes, arity: one, inverse: superseded_by }
+    - { name: superseded_by, arity: one, inverse: supersedes }
+
+extensions:
+  - hyp-verdicts
