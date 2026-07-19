@@ -38,6 +38,7 @@ from ai_hats_rack.kernel import (
     UnknownTaskError,
 )
 from ai_hats_rack.linked import SelfLinkError
+from ai_hats_rack.models import DeltaFieldError
 from ai_hats_rack.ops import AttachSourceError, OpParseError
 from ai_hats_rack.registry import (
     DerivedLinkKindError,
@@ -126,6 +127,7 @@ _CASES = [
     (LinksRegistryError("bad links"), "internal", {}),
     (SectionCatalogError("bad catalog"), "internal", {}),
     (UnsupportedBacklogKeyError("fields", "top level"), "internal", {}),
+    (DeltaFieldError("priority", "Append requires a list field"), "internal", {}),
 ]
 
 

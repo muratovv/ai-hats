@@ -396,6 +396,8 @@ class Kernel:
         def apply_delta(delta: Delta) -> None:
             for line in delta.work_log:
                 task.log_work(line, actor=actor)
+            for name, op in delta.fields.items():
+                op.apply(task, name)
 
         self._dispatcher.run_blocking(event, ctx, apply_delta, outcomes)
         return from_state

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
 import yaml
 
-from ai_hats_rack.models import TaskCard
+from ai_hats_rack.models import DeltaFieldError, TaskCard
 
 OLD_CARD = """\
 id: HATS-402
@@ -108,3 +109,43 @@ def test_log_work_actor_prefix():
     assert card.work_log[0].message == "plain"
     assert card.work_log[1].message == "[session:abc] attributed"
     assert card.work_log[1].timestamp  # stamped
+
+
+# ----- Delta.fields ops (set_field / append_field, HATS-1043) -----------------
+
+
+def test_set_field_typed_scalar_and_unknown_extras():
+    card = TaskCard(id="T-1")
+    card.set_field("priority", "high")  # typed str field
+    card.set_field("validation_log", [{"v": "ok"}])  # unknown key → extras
+    assert card.priority == "high"
+    assert card.extras["validation_log"] == [{"v": "ok"}]
+
+
+def test_set_field_type_mismatch_raises():
+    card = TaskCard(id="T-1")
+    with pytest.raises(DeltaFieldError, match="Set expects str"):
+        card.set_field("priority", 5)
+
+
+def test_append_field_typed_list_and_unknown_extras():
+    card = TaskCard(id="T-1", tags=["a"])
+    card.append_field("tags", "b")  # typed list field
+    card.append_field("votes", {"by": "x"})  # unknown key → extras list (created)
+    assert card.tags == ["a", "b"]
+    assert card.extras["votes"] == [{"by": "x"}]
+
+
+def test_append_field_onto_scalar_raises():
+    card = TaskCard(id="T-1")
+    with pytest.raises(DeltaFieldError, match="Append requires a list field"):
+        card.append_field("priority", "x")
+
+
+def test_appended_extras_field_round_trips(tmp_path):
+    card = TaskCard(id="T-1", title="t")
+    card.append_field("validation_log", {"verdict": "pass"})
+    out = tmp_path / "task.yaml"
+    card.save(out)
+    again = TaskCard.from_yaml(out)
+    assert again.extras["validation_log"] == [{"verdict": "pass"}]
