@@ -21,6 +21,7 @@ from .composition import compose_subscribers, stock_factories, stock_validators
 from .definition import BacklogDefinition, load_backlog, resolve_definition
 from .dispatch import Subscriber, bind_subscribers, validate_requires_states
 from .errors import RackConfigError
+from .events import LinkMirrorEvent
 from .journal import JsonlJournalSink
 from .kernel import Kernel
 from .linked import card_exists
@@ -182,13 +183,44 @@ class Workspace:
                     return True
         return False
 
-    # ----- mirror (surface; full dispatch lands in step 3) ------------------
+    # ----- mirror (post-lock, cross-backlog) --------------------------------
 
-    def dispatch_mirror(self, event: object, **_kw: object) -> None:
-        """Post-lock routing of a link mirror event to the TARGET backlog's
-        kernel — the only workspace-level write path (ADR-0017 §2). The full
-        mirror reaction lands with the link-mirror machinery (HATS-1044 step 3)."""
-        return None
+    def dispatch_mirror(
+        self, event: LinkMirrorEvent, *, actor: str, caller_cwd: Path, root: RootId | None = None
+    ) -> object:
+        """Route a link mirror event to the TARGET backlog's kernel and apply it
+        in a fresh lock window (ADR-0017 §2/R4) — the only workspace write path."""
+        return self.kernel_for(event.target, root=root).apply_mirror(
+            event, actor=actor, caller_cwd=caller_cwd
+        )
+
+    def mirror_after(
+        self, origin_id: str, result: object, *, actor: str, caller_cwd: Path, root: RootId | None = None
+    ) -> None:
+        """After the origin's link/unlink persists, dispatch the mirror for each
+        CHANGED stored-inverse link op (ADR-0017 §2/R4). Symmetric and derived-
+        inverse kinds carry no mirror, so a tasks-only backlog is a no-op."""
+        registry = self.instance_for(origin_id, root).definition.links_registry
+        for op in getattr(result, "ops", ()):
+            if op.get("op") not in ("link", "unlink") or not op.get("changed"):
+                continue
+            removed = op["op"] == "unlink"
+            kind_names = op.get("kinds", []) if removed else [op.get("kind")]
+            for kind_name in kind_names:
+                kind = registry.get(kind_name) if kind_name else None
+                if kind is None or not kind.inverse or kind.symmetric:
+                    continue
+                inverse = registry.get(kind.inverse)
+                if inverse is None or inverse.derived:
+                    continue
+                self.dispatch_mirror(
+                    LinkMirrorEvent(
+                        kind=kind.inverse, origin=origin_id, target=op["target"], removed=removed
+                    ),
+                    actor=actor,
+                    caller_cwd=caller_cwd,
+                    root=root,
+                )
 
     # ----- internals --------------------------------------------------------
 

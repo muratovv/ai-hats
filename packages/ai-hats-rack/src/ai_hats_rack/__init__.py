@@ -62,11 +62,19 @@ from .definition import (
     FieldSpec,
     HandlerRef,
     LegacyLinksOverrideError,
+    MissingMirrorReactionError,
     UnsupportedBacklogKeyError,
     load_backlog,
     resolve_definition,
 )
-from .events import EdgeEvent, EpicifyEvent, Event, PreDestroyEvent, event_detail
+from .events import (
+    EdgeEvent,
+    EpicifyEvent,
+    Event,
+    LinkMirrorEvent,
+    PreDestroyEvent,
+    event_detail,
+)
 from .fsm import (
     InvalidTransitionError,
     Topology,
@@ -173,12 +181,14 @@ __all__ = [
     "KernelResult",
     "LegacyLinksOverrideError",
     "LinkKind",
+    "LinkMirrorEvent",
     "LinkResult",
     "LinkView",
     "LinksRegistry",
     "LinksRegistryError",
     "LockTimeoutError",
     "Matcher",
+    "MissingMirrorReactionError",
     "Neighbor",
     "NoProjectRootError",
     "OperationAborted",

@@ -310,6 +310,9 @@ def transition(
             final_state=final_state,
             ack_frozen=ack_frozen,
         )
+        # Post-lock: mirror any changed stored-inverse link onto the target
+        # backlog (HATS-1044). A tasks-only backlog declares none — a no-op.
+        workspace.mirror_after(task_id, result, actor=_actor(), caller_cwd=caller_cwd)
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
         if provider is not None and provider.handle_error(exc, as_json, task_id):
             sys.exit(1)
