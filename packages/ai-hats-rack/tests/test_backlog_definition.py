@@ -211,11 +211,17 @@ def test_top_level_extensions_parse_as_refs(tmp_path):
     )
 
 
-def test_packaged_default_has_no_bindings_yet(tmp_path):
-    # The packaged backlog.yaml grows slots in HATS-1043 step 5; until then its
-    # bindings surface is empty (loader is a pure fold — zero behavior change).
+def test_packaged_default_declares_the_migrated_kit(tmp_path):
+    # HATS-1043 step 5: the packaged tasks default declares its kit — scaffold/
+    # gate/stamp on entry, clear+skip on reopen, frozen-integrity ambient.
     b = load_backlog().bindings
-    assert not b.state_on_enter and not b.edge_handlers and not b.extensions
+    assert b.state_on_enter["plan"] == (HandlerRef("plan-scaffold", priority=30),)
+    assert b.state_on_enter["execute"] == (HandlerRef("plan-gate", priority=10),)
+    assert b.state_on_enter["done"] == (HandlerRef("stamp-lifecycle", priority=12),)
+    assert b.state_on_enter["cancelled"] == (HandlerRef("stamp-lifecycle", priority=12),)
+    assert b.edge_handlers[("done", "execute")] == (HandlerRef("clear-lifecycle", priority=12),)
+    assert b.edge_skips[("done", "execute")] == frozenset({"plan-gate"})
+    assert b.extensions == (HandlerRef("frozen-integrity"),)
 
 
 def test_bad_handler_ref_shape_fails_closed(tmp_path):

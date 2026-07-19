@@ -34,7 +34,9 @@ def test_bare_kernel_full_lifecycle(tasks_dir, cwd):
     walk(kernel, "T-1", "plan", "execute", "document", "review", "done", cwd=cwd)
     done = kernel.get("T-1")
     assert done.state == "done"
-    assert done.completed_at
+    # bare kernel = pure FSM: completed_at stamping is a declared handler now
+    # (HATS-1043), not a kernel hardcode — a bare kernel stamps nothing.
+    assert done.completed_at == ""
     # no subscriber ran, no subscriber traces in the log
     assert all("Worktree" not in e.message for e in done.work_log)
 
@@ -381,8 +383,22 @@ def test_transitions_delta_list_in_result(tasks_dir, cwd):
 # ---------------------------------------------------------------------------
 
 
+def _lifecycle_kernel(tasks_dir):
+    # completed_at stamping moved out of the kernel into declared stamp/clear
+    # handlers (HATS-1043); compose just those from the packaged definition.
+    from ai_hats_rack.composition import build_bound_subscribers, stock_factories
+    from ai_hats_rack.definition import load_backlog
+
+    subs = [
+        s
+        for s in build_bound_subscribers(load_backlog(), tasks_dir, stock_factories())
+        if s.name in ("stamp-lifecycle", "clear-lifecycle")
+    ]
+    return make_kernel(tasks_dir, subscribers=subs)
+
+
 def test_done_stamps_completed_at_and_reopen_clears_it(tasks_dir, cwd):
-    kernel = make_kernel(tasks_dir)
+    kernel = _lifecycle_kernel(tasks_dir)
     _create(kernel, cwd)
     walk(kernel, "T-1", "plan", "execute", "document", "review", "done", cwd=cwd)
     assert kernel.get("T-1").completed_at
@@ -394,7 +410,7 @@ def test_done_stamps_completed_at_and_reopen_clears_it(tasks_dir, cwd):
 
 
 def test_cancelled_stamps_completed_at(tasks_dir, cwd):
-    kernel = make_kernel(tasks_dir)
+    kernel = _lifecycle_kernel(tasks_dir)
     _create(kernel, cwd)
     kernel.transition("T-1", "cancelled", actor="test", caller_cwd=cwd, resolution="wontfix")
     reloaded = kernel.get("T-1")

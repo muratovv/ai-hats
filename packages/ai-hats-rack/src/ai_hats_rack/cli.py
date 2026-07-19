@@ -61,7 +61,7 @@ def _bare_kernel(root: RackRoot) -> Kernel:
     # the composite transition still enforces the gate; no ownership/worktree.
     # One backlog definition builds the kernel AND its subscribers (HATS-1042).
     defn = resolve_definition(root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir)
-    subscribers = standalone_extensions(root.tasks_dir, topology=defn.topology)
+    subscribers = standalone_extensions(root.tasks_dir, definition=defn)
     validate_requires_states(subscribers, defn.topology, source=str(root.tasks_dir))
     kernel = Kernel(
         root.tasks_dir,
