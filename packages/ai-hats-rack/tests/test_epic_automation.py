@@ -402,3 +402,34 @@ def test_coverage_table_spans_the_full_topology():
 def test_decision_table(epic_state, trigger):
     child_state, child_states = TRIGGERS[trigger]
     assert decide(epic_state, child_state, child_states) == EXPECTED[epic_state][trigger]
+
+
+# ---------------------------------------------------------------------------
+# requires_states — the full decision vocabulary, validated fail-closed (R8)
+# ---------------------------------------------------------------------------
+
+
+def test_requires_states_is_the_full_decision_vocabulary():
+    ext = EpicAutomationExtension(topology=TOPOLOGY)
+    assert ext.requires_states() == frozenset(
+        {"brainstorm", "plan", "execute", "document", "review", "done", "cancelled"}
+    )
+    assert ext.requires_states() <= set(TOPOLOGY.states)  # packaged topology covers it
+
+
+def test_composition_refuses_a_topology_missing_the_vocabulary():
+    # A topology without `review` would strand an advancing epic — the HATS-692
+    # class, caught at composition, not only by the decision-table test.
+    from types import MappingProxyType
+
+    from ai_hats_rack.dispatch import RequiresStatesError, validate_requires_states
+    from ai_hats_rack.fsm import Topology
+
+    states = tuple(s for s in TOPOLOGY.states if s != "review")
+    truncated = Topology(
+        initial="brainstorm", states=states, edges=MappingProxyType({s: () for s in states})
+    )
+    ext = EpicAutomationExtension(topology=TOPOLOGY)
+    with pytest.raises(RequiresStatesError, match="epic-automation") as exc_info:
+        validate_requires_states([ext], truncated, source="truncated")
+    assert "review" in exc_info.value.missing
