@@ -28,19 +28,6 @@ class LinksRegistryError(RackConfigError):
     """The links section is malformed or violates a structural invariant."""
 
 
-class LegacyLinksOverrideError(LinksRegistryError):
-    """A project-root ``links.yaml`` override is retired (ADR-0017 §1, HATS-1042
-    R6): its kinds must be folded into the catalog's ``backlog.yaml``."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        super().__init__(
-            f"{path} is retired — the link-kind registry now lives in backlog.yaml "
-            f"(ADR-0017 §1). Fold its 'kinds:' into a 'links:' section of the "
-            f"catalog's backlog.yaml and delete {path.name}."
-        )
-
-
 class UnknownLinkKindError(RackError):
     """A kind name not present in the loaded registry; names the configured set."""
 
@@ -192,16 +179,6 @@ def load_registry(path: Path | None = None) -> LinksRegistry:
     from .definition import load_backlog
 
     return load_backlog(path).links_registry
-
-
-def load_registry_for(project_dir: Path) -> LinksRegistry:
-    """Retired override channel (ADR-0017 §1, HATS-1042 R6): a project-root
-    ``links.yaml`` now fails closed — its kinds belong in the catalog's
-    ``backlog.yaml``. Absent → the packaged default."""
-    override = project_dir / "links.yaml"
-    if override.is_file():
-        raise LegacyLinksOverrideError(override)
-    return load_registry()
 
 
 def _read_kind(kind: LinkKind, card: TaskCard) -> list[str]:

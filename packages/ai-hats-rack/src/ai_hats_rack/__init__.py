@@ -30,6 +30,7 @@ from .docstore import (
 from .definition import (
     BacklogDefinition,
     BacklogDefinitionError,
+    LegacyLinksOverrideError,
     UnsupportedBacklogKeyError,
     load_backlog,
     resolve_definition,
@@ -73,13 +74,11 @@ from .matching import Matcher, compile_matcher, matches
 from .models import TaskCard, WorkLogEntry
 from .registry import (
     DerivedLinkKindError,
-    LegacyLinksOverrideError,
     LinkKind,
     LinksRegistry,
     LinksRegistryError,
     UnknownLinkKindError,
     load_registry,
-    load_registry_for,
     resolve_links,
 )
 from .resolver import (
@@ -155,7 +154,6 @@ __all__ = [
     "link",
     "load_backlog",
     "load_registry",
-    "load_registry_for",
     "load_root",
     "load_topology",
     "matches",

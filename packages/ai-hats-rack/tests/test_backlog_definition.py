@@ -13,6 +13,7 @@ import pytest
 from ai_hats_rack.definition import (
     BacklogDefinition,
     BacklogDefinitionError,
+    LegacyLinksOverrideError,
     UnsupportedBacklogKeyError,
     load_backlog,
     resolve_definition,
@@ -229,3 +230,17 @@ def test_resolve_no_file_applies_prefix_alias(tmp_path):
 def test_resolve_no_file_no_alias_falls_back_to_packaged_prefix(tmp_path):
     defn = resolve_definition(tmp_path / "tasks")
     assert defn.prefix == "HATS"  # packaged default == DEFAULT_PREFIX
+
+
+def test_resolve_rejects_legacy_project_root_links_yaml(tmp_path):
+    # R6 (ADR-0017 §1): a project-root links.yaml is retired — fold it into
+    # backlog.yaml. resolve_definition fails closed for reads AND transitions.
+    (tmp_path / "links.yaml").write_text("kinds:\n  - {name: x}\n")
+    with pytest.raises(LegacyLinksOverrideError):
+        resolve_definition(tmp_path / "tasks", project_dir=tmp_path)
+
+
+def test_resolve_without_project_links_yaml_is_packaged(tmp_path):
+    # No project-root links.yaml → the packaged default, no R6 trip.
+    defn = resolve_definition(tmp_path / "tasks", project_dir=tmp_path)
+    assert defn.links_registry.hierarchy_kind.name == "parent_task"

@@ -513,3 +513,67 @@ def test_ls_walk_json_caps_and_all_bypasses(runner, tmp_path):
         ).output
     )
     assert len(full["neighbors"]) == 40 and full["capped"] is False
+
+
+# ----- read path resolves the catalog's own backlog.yaml (HATS-1042) ----------
+
+_CATALOG_BACKLOG = (
+    "name: t\nprefix: HATS\n"
+    "fsm:\n  initial: brainstorm\n"
+    "  states: [{name: brainstorm}, {name: document}]\n"
+    "  edges:\n    - {from: brainstorm, to: document}\n"
+    "links:\n  kinds:\n"
+    "    - {name: parent_task, arity: one, inverse: children}\n"
+    "    - {name: children, derived: true, inverse: parent_task}\n"
+    "    - {name: reviewed_with}\n"
+)
+
+
+def test_context_resolves_link_kinds_from_catalog_backlog_yaml(runner, tmp_path):
+    # A catalog carrying its own backlog.yaml drives the read path's link kinds
+    # (not the packaged default), matching the transition path (HATS-1042).
+    catalog = tmp_path / "tasks"
+    catalog.mkdir(parents=True)
+    (catalog / "backlog.yaml").write_text(_CATALOG_BACKLOG)
+    make_card(tmp_path, "HATS-1", links={"reviewed_with": ["HATS-2"]})
+    make_card(tmp_path, "HATS-2", title="reviewer")
+    result = runner.invoke(main, ["context", "HATS-1", *_args(tmp_path), "--json"])
+    assert result.exit_code == 0, result.output
+    assert "reviewed_with" in json.loads(result.output)["links"]
+
+
+def test_context_packaged_default_omits_unconfigured_kind(runner, tmp_path):
+    # Control: WITHOUT a catalog backlog.yaml, reviewed_with is not a configured
+    # kind, so it never surfaces — the catalog file is what enables it above.
+    make_card(tmp_path, "HATS-1", links={"reviewed_with": ["HATS-2"]})
+    make_card(tmp_path, "HATS-2", title="reviewer")
+    result = runner.invoke(main, ["context", "HATS-1", *_args(tmp_path), "--json"])
+    assert result.exit_code == 0, result.output
+    assert "reviewed_with" not in json.loads(result.output).get("links", {})
+
+
+def test_ls_deep_resolves_link_kinds_from_catalog_backlog_yaml(runner, tmp_path):
+    # The graph walk (ls --deep) reads the same catalog-resolved kinds.
+    catalog = tmp_path / "tasks"
+    catalog.mkdir(parents=True)
+    (catalog / "backlog.yaml").write_text(_CATALOG_BACKLOG)
+    make_card(tmp_path, "HATS-1", links={"reviewed_with": ["HATS-2"]})
+    make_card(tmp_path, "HATS-2", title="reviewer")
+    result = runner.invoke(
+        main, ["ls", "HATS-1", "--deep", "1", *_args(tmp_path), "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "HATS-2" in {n["id"] for n in json.loads(result.output)["neighbors"]}
+
+
+def test_context_read_fails_closed_on_project_root_links_yaml(runner):
+    # R6 (ADR-0017 §1): the read path fails closed on a retired project-root
+    # links.yaml too — isolate cwd so it resolves as the project root.
+    with runner.isolated_filesystem() as cwd:
+        cwd = Path(cwd)
+        (cwd / "links.yaml").write_text("kinds:\n  - {name: x}\n")
+        result = runner.invoke(
+            main, ["context", "HATS-1", "--tasks-dir", str(cwd / "tasks"), "--json"]
+        )
+        assert result.exit_code == 1, result.output
+        assert json.loads(result.output)["error"]["code"] == "internal"
