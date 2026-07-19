@@ -1,23 +1,21 @@
-"""Link-kind registry loaded from ``links.yaml`` — the in-package SSOT for the
-open set of edge kinds a backlog understands (HATS-1028, epic HATS-1014).
+"""Link-kind registry — the ``links`` section of a backlog definition, the open
+set of edge kinds a backlog understands (HATS-1028, epic HATS-1014).
 
 The kernel and models stay kind-blind: this registry is *injected config*
-(mirroring :mod:`ai_hats_rack.fsm`'s ``Topology``/``fsm.yaml``), declaring
-structure only — names, inverse pairs, derived flag — while *semantics* bind
-from above (epic-automation reads the hierarchy kind). A kind's NAME is its
-storage field (HATS-1032): a dedicated task.yaml link field, else the generic
-``links:`` map — a read/write projection with zero data migration.
+(mirroring :mod:`ai_hats_rack.fsm`'s ``Topology``), declaring structure only —
+names, inverse pairs, derived flag — while *semantics* bind from above
+(epic-automation reads the hierarchy kind). A kind's NAME is its storage field
+(HATS-1032): a dedicated task.yaml link field, else the generic ``links:`` map —
+a read/write projection with zero data migration. Loaded from the packaged
+``backlog.yaml`` (links.yaml folded in, HATS-1042).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from importlib import resources
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
-
-import yaml
 
 from .errors import RackConfigError, RackError
 from .models import LINK_STORAGE_FIELDS
@@ -27,7 +25,7 @@ if TYPE_CHECKING:
 
 
 class LinksRegistryError(RackConfigError):
-    """links.yaml is malformed or violates a structural invariant."""
+    """The links section is malformed or violates a structural invariant."""
 
 
 class UnknownLinkKindError(RackError):
@@ -174,24 +172,13 @@ def _validate(raw: object, source: str) -> LinksRegistry:
 
 
 def load_registry(path: Path | None = None) -> LinksRegistry:
-    """Load and validate the registry; default source is the packaged links.yaml.
+    """The link-kind registry of a backlog: packaged ``backlog.yaml`` by default,
+    or the backlog at ``path``. A thin accessor over :func:`load_backlog` (which
+    validates via this module's ``_validate``) — backlog.yaml is the one source
+    (links.yaml folded in, HATS-1042)."""
+    from .definition import load_backlog
 
-    Mirrors :func:`ai_hats_rack.fsm.load_topology`: an explicit ``path`` is a
-    per-backlog override, otherwise the in-package default is the SSOT.
-    """
-    if path is not None:
-        text, source = path.read_text(encoding="utf-8"), str(path)
-    else:
-        resource = resources.files("ai_hats_rack").joinpath("links.yaml")
-        text, source = resource.read_text(encoding="utf-8"), "ai_hats_rack/links.yaml"
-    return _validate(yaml.safe_load(text), source)
-
-
-def load_registry_for(project_dir: Path) -> LinksRegistry:
-    """Per-backlog registry: a project-root ``links.yaml`` override, else the
-    packaged default. This is what makes the registry per-backlog and open."""
-    override = project_dir / "links.yaml"
-    return load_registry(override) if override.is_file() else load_registry()
+    return load_backlog(path).links_registry
 
 
 def _read_kind(kind: LinkKind, card: TaskCard) -> list[str]:

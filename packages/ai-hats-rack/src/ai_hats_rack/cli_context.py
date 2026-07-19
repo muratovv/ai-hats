@@ -19,6 +19,7 @@ import click
 from . import linked
 from .audit_view import journal_view, record_lines
 from .cli_common import JSON_OPT, TASKS_DIR_OPT, emit_json, fail, handle_rack_error, resolved_root
+from .definition import resolve_definition
 from .docstore import DocInfo
 from .linked import (
     DEFAULT_MAX_BYTES,
@@ -30,7 +31,6 @@ from .linked import (
     scan_cards,
     walk_neighborhood,
 )
-from .registry import load_registry_for
 
 #: the attribute feeds ``context --attr`` understands (the set the card left open).
 KNOWN_ATTRS = ("audit", "work_log")
@@ -242,7 +242,7 @@ def context_cmd(
         return
     try:
         root = resolved_root(tasks_dir, Path.cwd())
-        registry = load_registry_for(root.project_dir)
+        registry = resolve_definition(root.tasks_dir, project_dir=root.project_dir).links_registry
         pkg = build_context(
             root.tasks_dir,
             task_id,
@@ -390,7 +390,7 @@ def ls_cmd(
             rows = scan_cards(root.tasks_dir, grep=grep, tag=tag, state=state, parent=parent)
             _emit_scan(rows, as_json, show_all)
             return
-        registry = load_registry_for(root.project_dir)
+        registry = resolve_definition(root.tasks_dir, project_dir=root.project_dir).links_registry
         neighbors = walk_neighborhood(
             root.tasks_dir,
             task_id,

@@ -20,6 +20,7 @@ import ai_hats_rack
 from ai_hats_rack import cli, ops
 from ai_hats_rack.cli import main
 from ai_hats_rack.cli_common import _ERROR_HANDLERS, lookup_error_handler
+from ai_hats_rack.definition import UnsupportedBacklogKeyError
 from ai_hats_rack.dispatch import OperationAborted
 from ai_hats_rack.docstore import (
     DocumentNameError,
@@ -124,6 +125,7 @@ _CASES = [
     (TopologyError("bad fsm"), "internal", {}),
     (LinksRegistryError("bad links"), "internal", {}),
     (SectionCatalogError("bad catalog"), "internal", {}),
+    (UnsupportedBacklogKeyError("fields", "top level"), "internal", {}),
 ]
 
 

@@ -21,10 +21,17 @@ class EdgeEvent:
 
     from_state: str
     to_state: str
+    #: optional declared edge name (HATS-1042 §3): adds the alias match key
+    #: ``edge:<name>`` additively; the canonical key below is never affected.
+    name: str = ""
 
     @property
     def key(self) -> str:
         return f"edge:{self.from_state}--{self.to_state}"
+
+    @property
+    def alias_key(self) -> str | None:
+        return f"edge:{self.name}" if self.name else None
 
     @property
     def task_id(self) -> str | None:

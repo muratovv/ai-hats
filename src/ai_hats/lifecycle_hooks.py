@@ -57,9 +57,9 @@ def _valid_event_names() -> set[str]:
     subscriptions in ``rack_wiring``)."""
     # Deferred so importing this module (and hooks_manager) never imports the
     # rack; the one-directional boundary stays rack -/-> integrator.
-    from ai_hats_rack import load_topology
+    from ai_hats_rack import load_backlog
 
-    states = load_topology().states
+    states = load_backlog().topology.states
     return {f"{a}--{b}" for a in states for b in states if a != b or a == "execute"}
 
 

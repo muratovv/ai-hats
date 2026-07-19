@@ -20,6 +20,18 @@ since the latest tag lives under **Unreleased** until the next release.
   SKILLS` prompt text-index (HATS-701) is retired for gemini; skills now get
   consent-gated progressive disclosure instead of an always-on prompt tax.
 
+### Changed
+
+- **One `backlog.yaml` defines a backlog** (HATS-1042, ADR-0017). The rack's
+  packaged `fsm.yaml` (topology) and `links.yaml` (link kinds) fold losslessly
+  into a single `backlog.yaml` and are removed; `load_backlog()` returns one
+  immutable `BacklogDefinition` the kernel, CLI, and every subscriber are built
+  from. Declared edge `name:`s (`reclaim`, `reopen`) add alias event keys
+  additively — canonical `edge:<from>--<to>` keys and all existing subscriptions
+  are unchanged. The project-root `links.yaml` override is retired (fold it into
+  `backlog.yaml`, fail-closed); unimplemented sections raise a typed load error
+  naming the successor task. Zero behaviour change to the CLI, events, or wiring.
+
 ### Fixed
 
 - **Gemini wrap sessions get their session role again** (HATS-993). gemini-cli

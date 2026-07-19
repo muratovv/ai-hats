@@ -26,6 +26,7 @@ from .cli_common import emit_json as _emit_json
 from .cli_common import handle_rack_error as _handle_rack_error
 from .cli_common import resolved_root as _resolved_root
 from .cli_context import context_cmd, ls_cmd
+from .definition import resolve_definition
 from .extensions import standalone_extensions
 from .journal import JsonlJournalSink
 from .kernel import Kernel, KernelResult
@@ -57,10 +58,15 @@ def _provider() -> KernelProvider | None:
 def _bare_kernel(root: RackRoot) -> Kernel:
     # Standalone mutation surface = kernel + scaffold + plan-gate (epic §2.3):
     # the composite transition still enforces the gate; no ownership/worktree.
+    # One backlog definition builds the kernel AND its subscribers (HATS-1042).
+    defn = resolve_definition(root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir)
     return Kernel(
         root.tasks_dir,
-        prefix=root.prefix,
-        subscribers=standalone_extensions(root.tasks_dir),
+        prefix=defn.prefix,
+        topology=defn.topology,
+        registry=defn.links_registry,
+        edge_names=defn.edge_names,
+        subscribers=standalone_extensions(root.tasks_dir, topology=defn.topology),
         journal_sink=JsonlJournalSink(root.tasks_dir),
     )
 
@@ -129,7 +135,7 @@ def create(
     tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
-    """Create a task card (initial state comes from fsm.yaml)."""
+    """Create a task card (initial state comes from backlog.yaml)."""
     caller_cwd = Path.cwd()
     provider = _provider()
     try:

@@ -175,6 +175,20 @@ class Dispatcher:
     def subscribers_for(self, event_key: str, phase: Phase) -> list[Subscriber]:
         return [sub for _, _, sub in self._index.get((event_key, phase), [])]
 
+    def _subscribers_for_event(self, event: Event, phase: Phase) -> list[Subscriber]:
+        """Subscribers for an event's match keys, merged into one priority order.
+
+        A named edge (HATS-1042 §3) matches the canonical ``edge:<from>--<to>``
+        key AND the alias ``edge:<name>``; both buckets interleave by the single
+        (priority, registration) order, so alias and canonical subscribers share
+        one total order rather than firing in separate passes.
+        """
+        alias = getattr(event, "alias_key", None)
+        if not alias:
+            return self.subscribers_for(event.key, phase)
+        merged = self._index.get((event.key, phase), []) + self._index.get((alias, phase), [])
+        return [sub for _, _, sub in sorted(merged, key=lambda item: (item[0], item[1]))]
+
     def run_blocking(
         self,
         event: Event,
@@ -185,7 +199,7 @@ class Dispatcher:
         """IN_LOCK phase: abort-by-exception is the default and only mode
         (HATS-481 — no catch-and-warn for the blocking phase). ``outcomes`` is
         appended in place so the caller can journal a partial dispatch."""
-        for sub in self.subscribers_for(event.key, Phase.IN_LOCK):
+        for sub in self._subscribers_for_event(event, Phase.IN_LOCK):
             try:
                 delta = sub.on_event(make_ctx())
             except AbortOperation as exc:
@@ -214,7 +228,7 @@ class Dispatcher:
     ) -> None:
         """POST_LOCK phase: fail-soft but reported — an exception is journaled
         as an error outcome and never re-raised (the persist already happened)."""
-        for sub in self.subscribers_for(event.key, Phase.POST_LOCK):
+        for sub in self._subscribers_for_event(event, Phase.POST_LOCK):
             try:
                 delta = sub.on_event(make_ctx())
             except Exception as exc:  # noqa: BLE001 — reported via the journal
