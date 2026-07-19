@@ -108,6 +108,10 @@ so every experiment ships its cost stats.
 
 ## Caveats
 
+- **Claude-only (v1).** `prepare` pins `provider: claude`, the permission
+  allowlist is `.claude/settings.json`, and transcript collection follows
+  Claude's session layout. Provider parameterization (gemini, cline) is
+  HATS-1056.
 - **Privacy.** `runs/` carries raw session recordings (JSONL, transcripts) —
   personal data. It is gitignored; never commit it. Commit only the report.
 - **Ambient env is scrubbed.** `prepare`/`run` strip `AI_HATS_*` session pins and
