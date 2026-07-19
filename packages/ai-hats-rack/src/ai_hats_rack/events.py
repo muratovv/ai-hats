@@ -3,6 +3,9 @@
 Name-your-consumer (PROP-030): an event kind exists only together with its
 named consumer — see the registry table in this package's README; each class
 below names its own.
+
+Link event keys are ``link:<kind>`` / ``unlink:<kind>`` (HATS-1043 §3): the
+owning-side, in-lock event of adding/removing a link of that kind.
 """
 
 from __future__ import annotations
@@ -71,14 +74,41 @@ class PreDestroyEvent:
         return "pre-destroy"
 
 
-Event = Union[EdgeEvent, EpicifyEvent, PreDestroyEvent]
+@dataclass(frozen=True)
+class LinkEvent:
+    """A link of ``kind`` being added to / removed from the OWNING card.
+
+    Fired IN-LOCK inside the link mutation window on the owning side, before the
+    single persist — a declared ``links.kinds[].handlers`` handler may abort it
+    (HATS-1043 §3). Key: ``link:<kind>`` on add, ``unlink:<kind>`` on remove.
+    The cross-backlog mirror (``link-target:<kind>``) is HATS-1044, not built.
+    Consumers: declared kind handlers (the dep-cycle-check class).
+    """
+
+    kind: str
+    target: str
+    removed: bool = False  # False = link (add), True = unlink (remove)
+
+    @property
+    def key(self) -> str:
+        return f"{'unlink' if self.removed else 'link'}:{self.kind}"
+
+    @property
+    def task_id(self) -> str | None:
+        return None  # the owning card rides DispatchContext.task
+
+
+Event = Union[EdgeEvent, EpicifyEvent, PreDestroyEvent, LinkEvent]
 
 
 def event_detail(event: Event) -> dict[str, str]:
     """Structured payload for the audit journal (K7) — what the bare key
-    loses: edge endpoints, the epicified child, the pre-destroy operation."""
+    loses: edge endpoints, the epicified child, the pre-destroy operation,
+    the link kind + target."""
     if isinstance(event, EdgeEvent):
         return {"from": event.from_state, "to": event.to_state}
     if isinstance(event, EpicifyEvent):
         return {"epic": event.epic_id, "child": event.child_id}
+    if isinstance(event, LinkEvent):
+        return {"kind": event.kind, "target": event.target}
     return {"operation": event.operation}

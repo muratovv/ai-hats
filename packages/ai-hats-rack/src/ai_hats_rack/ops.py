@@ -177,6 +177,10 @@ class OpTxn:
     ack_frozen: bool = False
     undo: list[Callable[[], None]] = field(default_factory=list)
     results: list[dict] = field(default_factory=list)
+    #: in-lock link/unlink dispatch hook (kernel-supplied): ``(kind, target,
+    #: removed)`` fires ``link:<kind>``/``unlink:<kind>`` (HATS-1043 §3). None on
+    #: the lock-free/test path — link ops then mutate without dispatching.
+    dispatch_link: Callable[[str, str, bool], None] | None = None
 
     def rollback(self) -> None:
         """Unwind file mutations in REVERSE registration order (abort path)."""
@@ -259,6 +263,10 @@ def _apply_link(txn: OpTxn, op: LinkOp) -> None:
     if not (tasks_dir / op.target / "task.yaml").exists():
         raise UnknownTaskError(op.target)
     result = link_on_card(txn.registry, txn.card, op.target, op.kind, actor=txn.actor)
+    if result.changed and txn.dispatch_link is not None:
+        # In-lock, card already mutated: a declared handler sees the new link
+        # and may abort before persist (rolls back the whole txn).
+        txn.dispatch_link(result.kinds[0], op.target, False)
     txn.results.append(
         {
             "op": "link",
@@ -271,6 +279,9 @@ def _apply_link(txn: OpTxn, op: LinkOp) -> None:
 
 def _apply_unlink(txn: OpTxn, op: UnlinkOp) -> None:
     result = unlink_on_card(txn.registry, txn.card, op.target, op.kind, actor=txn.actor)
+    if result.changed and txn.dispatch_link is not None:
+        for kind in result.kinds:  # bare unlink removes every stored kind
+            txn.dispatch_link(kind, op.target, True)
     revert = (
         f"rack transition {txn.task_id} --link {result.kinds[0]}:{op.target}"
         if result.changed
