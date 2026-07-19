@@ -15,7 +15,7 @@ import yaml
 from ai_hats_rack import definition
 from ai_hats_rack.definition import UnsupportedBacklogKeyError, load_backlog
 
-_LEVELS = ("top", "fsm", "state", "edge", "links", "kind")
+_LEVELS = ("top", "fsm", "state", "edge", "links", "kind", "field")
 
 
 def _schema() -> dict:
@@ -60,6 +60,7 @@ def test_loader_allow_sets_equal_the_schema_contents():
     assert definition._EDGE_KEYS == frozenset(keys["edge"])
     assert definition._LINKS_KEYS == frozenset(keys["links"])
     assert definition._KIND_KEYS == frozenset(keys["kind"])
+    assert definition._FIELD_KEYS == frozenset(keys["field"])
 
 
 # ----- self-lint: the packaged backlog.yaml validates against the schema ------
@@ -87,6 +88,8 @@ def _lint_against_schema(data: dict, schema: dict) -> list[tuple[str, str]]:
     check(links, "links")
     for kind in links.get("kinds", []) or []:
         check(kind, "kind")
+    for entry in data.get("fields", []) or []:
+        check(entry, "field")
     return bad
 
 
@@ -95,11 +98,12 @@ def test_packaged_backlog_self_lints_clean():
 
 
 def test_self_lint_catches_an_injected_reserved_key():
-    # The linter is real: a reserved key surfaces as a violation naming it.
+    # The linter is real: the remaining reserved key (kind targets, HATS-1044)
+    # surfaces as a violation naming it.
     schema = _schema()
     data = _packaged_backlog()
-    data["fields"] = []  # HATS-1035, reserved
-    assert ("top", "fields") in _lint_against_schema(data, schema)
+    data["links"]["kinds"][0]["targets"] = "tasks"  # HATS-1044, reserved
+    assert ("kind", "targets") in _lint_against_schema(data, schema)
 
 
 # ----- reserved keys are data AND still fail closed in the loader -------------
@@ -108,20 +112,22 @@ def test_self_lint_catches_an_injected_reserved_key():
 def test_reserved_keys_are_declared_as_data_not_in_the_allow_sets():
     schema = _schema()
     reserved = schema["reserved"]
-    assert reserved["top"] == {"fields": "HATS-1035", "extras": "HATS-1035"}
+    # fields/extras LANDED in HATS-1035 — no longer reserved, now allowed keys.
+    assert "top" not in reserved
     assert reserved["kind"] == {"targets": "HATS-1044"}
+    assert "fields" in schema["keys"]["top"] and "extras" in schema["keys"]["top"]
     # a reserved key is never also an allowed key (that would defeat fail-closed).
-    assert not (set(reserved["top"]) & set(schema["keys"]["top"]))
     assert not (set(reserved["kind"]) & set(schema["keys"]["kind"]))
 
 
-@pytest.mark.parametrize("text, key", [
-    ("name: t\nprefix: T\nfields: []\n", "fields"),
-    ("name: t\nprefix: T\nextras: forbid\n", "extras"),
-])
-def test_reserved_top_keys_still_fail_closed(tmp_path, text, key):
+def test_reserved_kind_key_still_fails_closed(tmp_path):
     doc = tmp_path / "backlog.yaml"
-    doc.write_text(text)
+    doc.write_text(
+        "name: t\nprefix: T\n"
+        "fsm:\n  initial: a\n  states: [{name: a}, {name: b}]\n"
+        "  edges: [{from: a, to: b}, {from: b, to: a}]\n"
+        "links:\n  kinds: [{name: parent_task, targets: tasks}]\n"
+    )
     with pytest.raises(UnsupportedBacklogKeyError) as exc_info:
         load_backlog(doc)
-    assert exc_info.value.key == key
+    assert exc_info.value.key == "targets"

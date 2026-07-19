@@ -33,6 +33,24 @@ def test_create_json(runner, tmp_path):
     assert payload["journal"] == []
 
 
+def test_create_bad_priority_is_a_typed_field_error(runner, tmp_path):
+    # HATS-1035: choices are enforced write-strict (net-new), naming the set.
+    result = _create(runner, tmp_path, "--priority", "urgent")
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "invalid_field"
+    assert error["field"] == "priority"
+    assert "medium" in error["choices"]
+
+
+def test_create_empty_title_is_a_typed_field_error(runner, tmp_path):
+    result = runner.invoke(main, ["create", "", *_tasks_args(tmp_path), "--json"])
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "invalid_field"
+    assert error["field"] == "title"
+
+
 def test_context_json_and_plain(runner, tmp_path):
     _create(runner, tmp_path)
     result = runner.invoke(main, ["context", "HATS-001", *_tasks_args(tmp_path), "--json"])

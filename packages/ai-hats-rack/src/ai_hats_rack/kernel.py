@@ -14,6 +14,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from filelock import FileLock, Timeout
 
+from .cardschema import CardSchema, ExtrasForbiddenError, RequiredFieldError, default_card_schema
 from .dispatch import (
     Delta,
     DispatchContext,
@@ -33,6 +34,12 @@ from .registry import LinksRegistry, load_registry
 # Single loud-fail timeout pattern (HATS-936 / epic §2.2 rule 5): a wait this
 # long on a sub-second fs op means a stuck holder, not real contention.
 LOCK_TIMEOUT = 30.0
+
+
+def _field_value(task: TaskCard, name: str) -> Any:
+    """Current value of a card field: a TaskCard column or an extras-resident key
+    (a custom backlog's declared field that is not a kernel-anchor column)."""
+    return getattr(task, name) if name in TaskCard._KNOWN_FIELDS else task.extras.get(name)
 
 
 class UnknownTaskError(RackError):
@@ -104,6 +111,7 @@ class Kernel:
         topology: Topology | None = None,
         registry: LinksRegistry | None = None,
         edge_names: Mapping[tuple[str, str], str] | None = None,
+        schema: CardSchema | None = None,
         subscribers: Sequence[Subscriber] = (),
         journal_sink: JournalSink | None = None,
         lock_timeout: float = LOCK_TIMEOUT,
@@ -114,6 +122,9 @@ class Kernel:
         # Injected config, not hardcoded kinds (HATS-1028): children_of/is_epic
         # read the hierarchy kind the registry names, default `parent_task`.
         self.registry = registry if registry is not None else load_registry()
+        # The card-field write gate (HATS-1035): create/transition validate
+        # against it; the packaged tasks schema is the zero-config fallback.
+        self._schema = schema if schema is not None else default_card_schema()
         # Declared edge names (HATS-1042 §3): (from, to) → name; empty by default
         # so an unnamed edge fires only its canonical key (zero behavior change).
         self._edge_names = dict(edge_names or {})
@@ -140,7 +151,9 @@ class Kernel:
 
     def _persist(self, task: TaskCard) -> None:
         self._task_path(task.id).parent.mkdir(parents=True, exist_ok=True)
-        task.save(self._task_path(task.id))
+        # The emit gate (schema when-set fields dropped when empty) runs at the
+        # single persist, hung off the schema — TaskCard.to_dict stays untouched.
+        task.save(self._task_path(task.id), transform=self._schema.emit_filter)
 
     def _task_lock(self, task_id: str) -> FileLock:
         lock_path = self.tasks_dir / task_id / ".lock"
@@ -226,18 +239,28 @@ class Kernel:
         caller_cwd: Path,
         task_id: str | None = None,
         title: str = "",
-        description: str = "",
-        priority: str = "medium",
-        role: str = "",
-        reviewer: str = "user",
+        description: str | None = None,
+        priority: str | None = None,
+        role: str | None = None,
+        reviewer: str | None = None,
         parent_task: str = "",
         depends_on: Sequence[str] = (),
-        tags: Sequence[str] = (),
+        tags: Sequence[str] | None = None,
     ) -> KernelResult:
         """Create a card. Id allocation + reserve is atomic under the
-        directory-scoped alloc lock (HATS-936); timeout is a loud failure."""
+        directory-scoped alloc lock (HATS-936); timeout is a loud failure.
+
+        ``title`` is the only required input (ADR-0017 §1); the schema fields
+        (``None`` sentinels) resolve to their declared defaults and are validated
+        write-strict — a bad choice/type/required field is a typed refusal."""
+        if not title.strip():
+            raise RequiredFieldError("title", "a task requires a non-empty title")
         if parent_task and parent_task == task_id:
             raise ValueError(f"Task '{task_id}' cannot be its own parent")
+        resolved = self._schema.resolve_create(
+            {"description": description, "priority": priority, "role": role,
+             "reviewer": reviewer, "tags": tags}
+        )
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         # Not a `<prefix>-N` card dir, so scans ignore it.
         alloc_lock_path = self.tasks_dir / ".alloc.lock"
@@ -253,15 +276,11 @@ class Kernel:
                     id=task_id,
                     title=title,
                     state=self.topology.initial,
-                    description=description,
-                    priority=priority,
-                    role=role,
-                    reviewer=reviewer,
                     parent_task=parent_task,
                     depends_on=list(depends_on),
-                    tags=list(tags),
                     created=now,
                     updated=now,
+                    **resolved,
                 )
                 self._persist(task)
         except Timeout as exc:
@@ -384,9 +403,12 @@ class Kernel:
             self.topology.guard(task.id, from_state, to_state)
             task.state = to_state
         task.updated = utc_now()
+        # Write-strict on ONLY the fields this transition touches (ADR-0017 §2).
         if resolution is not None:
+            self._schema.validate("resolution", resolution)
             task.resolution = resolution
         if final_state is not None:
+            self._schema.validate("final_state", final_state)
             task.final_state = final_state
 
         event = EdgeEvent(from_state, to_state, self._edge_names.get((from_state, to_state), ""))
@@ -395,17 +417,23 @@ class Kernel:
         self._dispatcher.run_blocking(event, ctx, self._delta_applier(task, actor), outcomes)
         return from_state
 
-    @staticmethod
-    def _delta_applier(task: TaskCard, actor: str) -> Callable[[Delta], None]:
+    def _delta_applier(self, task: TaskCard, actor: str) -> Callable[[Delta], None]:
         """In-memory application of an in-lock delta (work_log + declared-field
-        ops) against ``task`` before the single persist — shared by the edge and
-        link dispatch paths."""
+        ops) before the single persist — shared by the edge and link paths.
+        ``extras: forbid`` refuses an undeclared Set/Append (HATS-1035); a
+        declared field's RESULTING value is schema-checked (type/choices/
+        validator) AFTER the op — so the model container gate (DeltaFieldError)
+        fires first and an Append is judged by the list it yields, not its entry.
+        Undeclared names are a no-op (read tolerance); a raise aborts pre-persist."""
 
         def apply_delta(delta: Delta) -> None:
             for line in delta.work_log:
                 task.log_work(line, actor=actor)
             for name, op in delta.fields.items():
+                if not self._schema.writable(name):
+                    raise ExtrasForbiddenError(name)
                 op.apply(task, name)
+                self._schema.validate(name, _field_value(task, name))
 
         return apply_delta
 

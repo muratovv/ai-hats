@@ -12,6 +12,23 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Added
 
+- **Schema-driven card fields** (HATS-1035, ADR-0017 §1–§2). A card's field set
+  is declared in `backlog.yaml` `fields[]` — `create` now requires only a
+  non-empty `title`; everything else (priority, reviewer, role, tags, …) comes
+  from the schema. A field entry carries `type` (`str | int | list | any`),
+  `default`, `required`, `choices`, `validator: <name>` (resolved through the
+  open registry, fail-closed on an unknown name), and `emit: always | when-set`.
+  Writes are strict — `create`, a transition's touched fields, and subscriber
+  `Delta.fields` ops all validate against the schema (required / choices / type /
+  validator), a typed refusal that persists nothing; reads stay tolerant (an old
+  card violating `choices` still loads, surfaced as a `context` warning, never a
+  load failure). A per-backlog `extras: allow | forbid` gates unknown keys on
+  writes only. `emit: when-set` drops an empty value at persist time (the write
+  layer hangs it off the schema; `TaskCard.to_dict` is untouched and a parity pin
+  holds the packaged declarations equal to its behaviour for the nine fields).
+  The `document` anchor (PROP-012) moved out of the generic topology validator to
+  composition-time `requires_states` (ADR-0017 §3), so an HYP/PROP topology with
+  no `document` state now loads — proven by ADR §5 fixtures driven end to end.
 - **Declaration-bound handlers** (HATS-1043, ADR-0017 §3–§4). `backlog.yaml` now
   says not only which edges exist but *what fires on them*: `states[].on_enter`/
   `on_exit`, `edges[].handlers`/`skip`, and `links.kinds[].handlers` bind

@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 import click
 
+from .cardschema import ExtrasForbiddenError, FieldValidationError
 from .dispatch import OperationAborted
 from .docstore import (
     DocumentNameError,
@@ -116,6 +117,10 @@ _ERROR_HANDLERS: dict[type, _ErrorHandler] = {
     NoProjectRootError: lambda e: ("no_project_root", {}),
     ForceRequiresReasonError: lambda e: ("invalid_request", {}),
     LockTimeoutError: lambda e: ("lock_timeout", {}),
+    # Write-strict card-field refusal (required/choices/type/validator); the
+    # RequiredFieldError subclass resolves here via the MRO.
+    FieldValidationError: lambda e: ("invalid_field", {"field": e.field_name, **e.details}),
+    ExtrasForbiddenError: lambda e: ("extras_forbidden", {"field": e.field_name}),
     # Structural "a loaded config file is malformed" invariants — one internal
     # marker for the whole RackConfigError subtree (matched via MRO).
     RackConfigError: lambda e: ("internal", {}),
