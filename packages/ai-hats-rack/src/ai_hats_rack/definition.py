@@ -14,7 +14,7 @@ and the inverse-pair invariants stay in one place.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from importlib import resources
 from pathlib import Path
 from types import MappingProxyType
@@ -26,12 +26,15 @@ from .errors import RackConfigError
 from .fsm import Topology, _validate as _validate_topology
 from .registry import LinksRegistry, LinksRegistryError, _validate as _validate_registry
 
-_TOP_KEYS = frozenset({"name", "prefix", "fsm", "links"})
+# HATS-1043: the declaration-bound + ambient handler slots become legal (ADR-0017
+# §3-§4). `fields:`/`extras:` (HATS-1035) and kind `targets:` (HATS-1044) STAY
+# fail-closed — a declared-but-inert slot is exactly the failure this prevents.
+_TOP_KEYS = frozenset({"name", "prefix", "fsm", "links", "extensions"})
 _FSM_KEYS = frozenset({"initial", "states", "edges"})
-_STATE_KEYS = frozenset({"name"})
-_EDGE_KEYS = frozenset({"from", "to", "name"})
+_STATE_KEYS = frozenset({"name", "on_enter", "on_exit"})
+_EDGE_KEYS = frozenset({"from", "to", "name", "handlers", "skip"})
 _LINKS_KEYS = frozenset({"kinds"})
-_KIND_KEYS = frozenset({"name", "arity", "inverse", "derived", "aliases"})
+_KIND_KEYS = frozenset({"name", "arity", "inverse", "derived", "aliases", "handlers"})
 
 
 class BacklogDefinitionError(RackConfigError):
@@ -63,13 +66,40 @@ class LegacyLinksOverrideError(LinksRegistryError):
 
 
 @dataclass(frozen=True)
+class HandlerRef:
+    """One declaration-bound / ambient handler reference (ADR-0017 §4): a bare
+    name or a ``{name, ...}`` mapping. ``priority`` is the explicit pin (``None``
+    → the composition root assigns a positional band); ``config`` is the
+    remaining keys handed verbatim to the factory."""
+
+    name: str
+    config: Mapping[str, Any] = field(default_factory=dict)
+    priority: int | None = None
+
+
+@dataclass(frozen=True)
+class Bindings:
+    """The handler surface of a definition (ADR-0017 §3-§4): declaration-bound
+    slots (state ``on_enter``/``on_exit``, ``edges[].handlers``/``skip``,
+    ``kinds[].handlers``) plus ambient top-level ``extensions``. Parsed here;
+    turned into subscriptions at the composition root (``composition.py``)."""
+
+    state_on_enter: Mapping[str, tuple[HandlerRef, ...]] = field(default_factory=dict)
+    state_on_exit: Mapping[str, tuple[HandlerRef, ...]] = field(default_factory=dict)
+    edge_handlers: Mapping[tuple[str, str], tuple[HandlerRef, ...]] = field(default_factory=dict)
+    edge_skips: Mapping[tuple[str, str], frozenset[str]] = field(default_factory=dict)
+    kind_handlers: Mapping[str, tuple[HandlerRef, ...]] = field(default_factory=dict)
+    extensions: tuple[HandlerRef, ...] = ()
+
+
+@dataclass(frozen=True)
 class BacklogDefinition:
     """Immutable definition of one backlog: identity + folded topology/registry.
 
     ``edge_names`` maps a declared edge ``(from, to)`` to its optional name and
     lives SEPARATE from :class:`Topology` (whose adjacency shape is consumed
     positionally in four edge-key derivation sites) so a name never perturbs
-    edge-key derivation.
+    edge-key derivation. ``bindings`` carries the declared handler surface.
     """
 
     name: str
@@ -77,6 +107,7 @@ class BacklogDefinition:
     topology: Topology
     links_registry: LinksRegistry
     edge_names: Mapping[tuple[str, str], str]
+    bindings: Bindings = field(default_factory=Bindings)
 
 
 def _reject_unknown(mapping: Mapping[str, Any], allowed: frozenset[str], location: str) -> None:
@@ -85,23 +116,74 @@ def _reject_unknown(mapping: Mapping[str, Any], allowed: frozenset[str], locatio
             raise UnsupportedBacklogKeyError(str(key), location)
 
 
-def _state_name(raw: Any, source: str) -> str:
+def _parse_ref(raw: Any, location: str) -> HandlerRef:
+    """A handler reference is a bare name OR a ``{name, priority?, ...config}``
+    mapping; ``priority`` pins the numeric order, the rest is factory config."""
     if isinstance(raw, str):
-        return raw
+        return HandlerRef(name=raw)
     if isinstance(raw, dict) and isinstance(raw.get("name"), str):
-        _reject_unknown(raw, _STATE_KEYS, f"state {raw['name']!r}")
-        return raw["name"]
+        priority = raw.get("priority")
+        if priority is not None and not isinstance(priority, int):
+            raise BacklogDefinitionError(
+                f"{location}: handler '{raw['name']}' priority must be an int (got {priority!r})"
+            )
+        config = {k: v for k, v in raw.items() if k not in ("name", "priority")}
+        return HandlerRef(name=raw["name"], config=MappingProxyType(config), priority=priority)
+    raise BacklogDefinitionError(
+        f"{location}: a handler reference is a name or a mapping with 'name' (got {raw!r})"
+    )
+
+
+def _parse_refs(raw: Any, location: str) -> tuple[HandlerRef, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise BacklogDefinitionError(f"{location}: expected a list of handler references (got {raw!r})")
+    return tuple(_parse_ref(item, location) for item in raw)
+
+
+def _parse_skip(raw: Any, location: str) -> frozenset[str]:
+    if raw is None:
+        return frozenset()
+    if not isinstance(raw, list) or not all(isinstance(s, str) for s in raw):
+        raise BacklogDefinitionError(f"{location}: 'skip' must be a list of handler names (got {raw!r})")
+    return frozenset(raw)
+
+
+def _collect_state(
+    raw: Any, source: str
+) -> tuple[str, tuple[HandlerRef, ...], tuple[HandlerRef, ...]]:
+    """Return ``(name, on_enter refs, on_exit refs)`` for one fsm.state entry."""
+    if isinstance(raw, str):
+        return raw, (), ()
+    if isinstance(raw, dict) and isinstance(raw.get("name"), str):
+        name = raw["name"]
+        _reject_unknown(raw, _STATE_KEYS, f"state {name!r}")
+        return (
+            name,
+            _parse_refs(raw.get("on_enter"), f"state {name!r} on_enter"),
+            _parse_refs(raw.get("on_exit"), f"state {name!r} on_exit"),
+        )
     raise BacklogDefinitionError(f"{source}: each fsm.state needs a string 'name' (got {raw!r})")
 
 
-def _collect_fsm(
-    raw: Any, source: str
-) -> tuple[Any, list[str], dict[str, list[str]], dict[tuple[str, str], str]]:
-    """Key-check + shape-collect the ``fsm`` block; NO structural validation yet.
+@dataclass(frozen=True)
+class _FsmShape:
+    initial: Any
+    states: list[str]
+    adjacency: dict[str, list[str]]
+    edge_names: dict[tuple[str, str], str]
+    state_on_enter: dict[str, tuple[HandlerRef, ...]]
+    state_on_exit: dict[str, tuple[HandlerRef, ...]]
+    edge_handlers: dict[tuple[str, str], tuple[HandlerRef, ...]]
+    edge_skips: dict[tuple[str, str], frozenset[str]]
 
-    Returns ``(initial, states, adjacency, edge_names)``. Unsupported keys are
-    rejected here — before ``_validate_topology`` — so a fail-closed key surfaces
-    even when the surrounding topology is otherwise incomplete.
+
+def _collect_fsm(raw: Any, source: str) -> _FsmShape:
+    """Key-check + shape-collect the ``fsm`` block (topology + binding slots); NO
+    structural validation yet. Unsupported keys are rejected here — before
+    ``_validate_topology`` — so a fail-closed key surfaces even when the
+    surrounding topology is otherwise incomplete.
     """
     if not isinstance(raw, dict):
         raise BacklogDefinitionError(f"{source}: 'fsm' must be a mapping")
@@ -112,9 +194,20 @@ def _collect_fsm(
         raise BacklogDefinitionError(f"{source}: fsm.states must be a list")
     if not isinstance(edges_raw, list):
         raise BacklogDefinitionError(f"{source}: fsm.edges must be a list")
-    states = [_state_name(s, source) for s in states_raw]
+    states: list[str] = []
+    state_on_enter: dict[str, tuple[HandlerRef, ...]] = {}
+    state_on_exit: dict[str, tuple[HandlerRef, ...]] = {}
+    for s in states_raw:
+        name, on_enter, on_exit = _collect_state(s, source)
+        states.append(name)
+        if on_enter:
+            state_on_enter[name] = on_enter
+        if on_exit:
+            state_on_exit[name] = on_exit
     adjacency: dict[str, list[str]] = {name: [] for name in states}
     edge_names: dict[tuple[str, str], str] = {}
+    edge_handlers: dict[tuple[str, str], tuple[HandlerRef, ...]] = {}
+    edge_skips: dict[tuple[str, str], frozenset[str]] = {}
     for item in edges_raw:
         if not isinstance(item, dict):
             raise BacklogDefinitionError(
@@ -130,23 +223,38 @@ def _collect_fsm(
             if not isinstance(name, str):
                 raise BacklogDefinitionError(f"{source}: edge {frm}--{to} name must be a string")
             edge_names[(frm, to)] = name
-    return raw.get("initial"), states, adjacency, edge_names
+        handlers = _parse_refs(item.get("handlers"), f"edge {frm}--{to} handlers")
+        if handlers:
+            edge_handlers[(frm, to)] = handlers
+        skip = _parse_skip(item.get("skip"), f"edge {frm}--{to} skip")
+        if skip:
+            edge_skips[(frm, to)] = skip
+    return _FsmShape(
+        raw.get("initial"), states, adjacency, edge_names,
+        state_on_enter, state_on_exit, edge_handlers, edge_skips,
+    )
 
 
-def _collect_links(raw: Any, source: str) -> list[Any]:
-    """Key-check the ``links`` block; return raw kinds for ``_validate_registry``."""
+def _collect_links(raw: Any, source: str) -> tuple[list[Any], dict[str, tuple[HandlerRef, ...]]]:
+    """Key-check the ``links`` block; return ``(raw kinds, kind→handlers)``. The
+    ``kinds[].handlers`` slot is PARSED here (HATS-1043); link/unlink dispatch is
+    HATS-1043 step 6, so no link subscriptions are built from it yet."""
     if not isinstance(raw, dict):
         raise BacklogDefinitionError(f"{source}: 'links' must be a mapping")
     _reject_unknown(raw, _LINKS_KEYS, "links")
     kinds_raw = raw.get("kinds")
     if not isinstance(kinds_raw, list):
         raise BacklogDefinitionError(f"{source}: links.kinds must be a list")
+    kind_handlers: dict[str, tuple[HandlerRef, ...]] = {}
     for item in kinds_raw:
         if isinstance(item, dict):
             name = item.get("name")
             loc = f"kind {name!r}" if isinstance(name, str) else "kind"
             _reject_unknown(item, _KIND_KEYS, loc)
-    return kinds_raw
+            handlers = _parse_refs(item.get("handlers"), f"{loc} handlers")
+            if handlers and isinstance(name, str):
+                kind_handlers[name] = handlers
+    return kinds_raw, kind_handlers
 
 
 def _build(raw: Any, source: str) -> BacklogDefinition:
@@ -165,18 +273,28 @@ def _build(raw: Any, source: str) -> BacklogDefinition:
         raise BacklogDefinitionError(f"{source}: missing 'fsm' section")
     if "links" not in raw:
         raise BacklogDefinitionError(f"{source}: missing 'links' section")
-    initial, states, adjacency, edge_names = _collect_fsm(raw["fsm"], source)
-    kinds_raw = _collect_links(raw["links"], source)
+    fsm = _collect_fsm(raw["fsm"], source)
+    kinds_raw, kind_handlers = _collect_links(raw["links"], source)
+    extensions = _parse_refs(raw.get("extensions"), "extensions")
     topology = _validate_topology(
-        {"initial": initial, "states": states, "edges": adjacency}, source
+        {"initial": fsm.initial, "states": fsm.states, "edges": fsm.adjacency}, source
     )
     registry = _validate_registry({"kinds": kinds_raw}, source)
+    bindings = Bindings(
+        state_on_enter=MappingProxyType(fsm.state_on_enter),
+        state_on_exit=MappingProxyType(fsm.state_on_exit),
+        edge_handlers=MappingProxyType(fsm.edge_handlers),
+        edge_skips=MappingProxyType(fsm.edge_skips),
+        kind_handlers=MappingProxyType(kind_handlers),
+        extensions=extensions,
+    )
     return BacklogDefinition(
         name=name,
         prefix=prefix,
         topology=topology,
         links_registry=registry,
-        edge_names=MappingProxyType(edge_names),
+        edge_names=MappingProxyType(fsm.edge_names),
+        bindings=bindings,
     )
 
 

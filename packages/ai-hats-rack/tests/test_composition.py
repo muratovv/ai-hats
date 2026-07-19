@@ -5,9 +5,25 @@ from __future__ import annotations
 
 import pytest
 
+from ai_hats_rack.composition import UnknownHandlerError, build_extensions
+from ai_hats_rack.definition import load_backlog
 from ai_hats_rack.dispatch import RequiresStatesError, bind_subscribers, validate_requires_states
 from ai_hats_rack.extensions import PlanGateExtension, PlanScaffoldExtension
 from ai_hats_rack.fsm import load_topology
+
+
+def _defn_with_extensions(tmp_path, ext_line):
+    doc = tmp_path / "backlog.yaml"
+    doc.write_text(
+        "name: b\nprefix: B\n"
+        f"extensions: {ext_line}\n"
+        "fsm:\n"
+        "  initial: brainstorm\n"
+        "  states: [{name: brainstorm}, {name: document}]\n"
+        "  edges: [{from: brainstorm, to: document}, {from: document, to: brainstorm}]\n"
+        "links:\n  kinds: [{name: parent_task}]\n"
+    )
+    return load_backlog(doc)
 
 
 class _Stateful:
@@ -87,3 +103,35 @@ def test_bind_subscribers_binds_only_those_exposing_bind():
     sentinel = object()
     bind_subscribers([bindable, plain, _Stateful([])], sentinel)
     assert bindable.bound is sentinel  # plain/stateful skipped — no bind, no error
+
+
+# ----- open factory registry: build_extensions + fail-closed (R6) ------------
+
+
+def test_build_extensions_instantiates_ambient_via_factory(tmp_path):
+    defn = _defn_with_extensions(tmp_path, "[frozen-integrity, {name: views, priority: 40}]")
+    seen = []
+
+    def factory(d, catalog, cfg):
+        seen.append((catalog, dict(cfg)))
+        return _Plain()
+
+    subs = build_extensions(defn, tmp_path, {"frozen-integrity": factory, "views": factory})
+    assert len(subs) == 2  # one subscriber per ambient reference
+    assert seen[0] == (tmp_path, {})  # frozen-integrity: bare name → empty config
+    assert seen[1] == (tmp_path, {})  # priority is pulled out, not passed as config
+
+
+def test_build_extensions_unknown_name_fails_closed_naming_it(tmp_path):
+    defn = _defn_with_extensions(tmp_path, "[frozen-integrity, no-such-handler]")
+    with pytest.raises(UnknownHandlerError) as exc_info:
+        build_extensions(defn, tmp_path, {"frozen-integrity": lambda d, c, cfg: _Plain()})
+    err = exc_info.value
+    assert err.handler == "no-such-handler"
+    assert "no-such-handler" in str(err)
+
+
+def test_unknown_handler_error_is_a_config_error(tmp_path):
+    from ai_hats_rack.errors import RackConfigError
+
+    assert issubclass(UnknownHandlerError, RackConfigError)
