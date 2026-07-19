@@ -36,6 +36,10 @@ from .registry import load_registry_for
 KNOWN_ATTRS = ("audit", "work_log")
 #: direction glyphs for a walk row: out → target, in ← target, both symmetric.
 _ARROW = {"out": "→", "in": "←", "both": "↔"}
+#: blunt backstop against an accidental large ``ls`` scan / walk flooding agent
+#: context; ``--all`` removes it. Applies to human AND json (map-not-filter), not
+#: the semantic open-only frontier filter (that is HATS-1048). See HATS-1047.
+DEFAULT_LS_LIMIT = 30
 
 
 # ----- shared table/mtime/documents rendering (ex-cli_doc, HATS-1021/1031) --------
@@ -266,27 +270,53 @@ def context_cmd(
 # ----- ls: backlog scan (no id) or neighbourhood walk (with id) -------------------
 
 
-def _emit_scan(rows: list[linked.CardRow], as_json: bool) -> None:
+def _cap(items: list, show_all: bool) -> tuple[list, int, bool]:
+    """(shown, total, capped) — blunt DEFAULT_LS_LIMIT backstop unless ``--all``."""
+    total = len(items)
+    capped = not show_all and total > DEFAULT_LS_LIMIT
+    return (items[:DEFAULT_LS_LIMIT] if capped else items), total, capped
+
+
+def _emit_scan(rows: list[linked.CardRow], as_json: bool, show_all: bool) -> None:
+    shown, total, capped = _cap(rows, show_all)
     if as_json:
-        emit_json({"tasks": [r.to_dict() for r in rows], "count": len(rows)})
+        emit_json(
+            {
+                "tasks": [r.to_dict() for r in shown],
+                "count": len(shown),
+                "total": total,
+                "capped": capped,
+            }
+        )
         return
     if not rows:
         click.echo("No tasks match.")
         return
-    table = [[r.id, f"[{r.state}]", r.priority, r.title] for r in rows]
+    table = [[r.id, f"[{r.state}]", r.priority, r.title] for r in shown]
     for line in _columns(table):
         click.echo(line)
-    click.echo(f"  {len(rows)} task(s)  tip: rack context <ID> for the full package")
+    if capped:
+        click.echo(
+            f"  showing {DEFAULT_LS_LIMIT} of {total} — --all for all, "
+            "or narrow with --tag/--state/--parent"
+        )
+    else:
+        click.echo(f"  {total} task(s)  tip: rack context <ID> for the full package")
 
 
-def _emit_walk(root_id: str, depth: int, neighbors: list[Neighbor], as_json: bool) -> None:
+def _emit_walk(
+    root_id: str, depth: int, neighbors: list[Neighbor], as_json: bool, show_all: bool
+) -> None:
+    shown, total, capped = _cap(neighbors, show_all)
     if as_json:
         emit_json(
             {
                 "root": root_id,
                 "depth": depth,
-                "neighbors": [n.to_dict() for n in neighbors],
-                "count": len(neighbors),
+                "neighbors": [n.to_dict() for n in shown],
+                "count": len(shown),
+                "total": total,
+                "capped": capped,
             }
         )
         return
@@ -295,13 +325,20 @@ def _emit_walk(root_id: str, depth: int, neighbors: list[Neighbor], as_json: boo
         return
     click.echo(f"{root_id} — neighbourhood (depth {depth}):")
     rows = []
-    for n in neighbors:
+    for n in shown:
         arrow = _ARROW.get(n.direction, n.direction)
         chain = " › ".join(n.path) if depth > 1 else ""
-        rows.append([n.id, f"[{n.state}/{n.priority}]", f"{arrow} {n.kind}", f"d{n.depth}", n.title, chain])
+        rows.append(
+            [n.id, f"[{n.state}/{n.priority}]", f"{arrow} {n.kind}", f"d{n.depth}", n.title, chain]
+        )
     for line in _columns(rows, "  "):
         click.echo(line)
-    click.echo(f"  {len(neighbors)} linked task(s)")
+    if capped:
+        click.echo(
+            f"  showing {DEFAULT_LS_LIMIT} of {total} — --all for all, or narrow with --link/--state"
+        )
+    else:
+        click.echo(f"  {total} linked task(s)")
 
 
 @click.command("ls")
@@ -323,6 +360,12 @@ def _emit_walk(root_id: str, depth: int, neighbors: list[Neighbor], as_json: boo
 @click.option("--tag", default=None, help="Exact tag match.")
 @click.option("--state", default=None, help="Exact state match.")
 @click.option("--parent", default=None, help="Filter to cards whose parent_task is this id.")
+@click.option(
+    "--all",
+    "show_all",
+    is_flag=True,
+    help=f"Remove the {DEFAULT_LS_LIMIT}-row output cap (default caps human & json alike).",
+)
 @TASKS_DIR_OPT
 @JSON_OPT
 def ls_cmd(
@@ -333,6 +376,7 @@ def ls_cmd(
     tag: str | None,
     state: str | None,
     parent: str | None,
+    show_all: bool,
     tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
@@ -344,7 +388,7 @@ def ls_cmd(
         root = resolved_root(tasks_dir, Path.cwd())
         if task_id is None:
             rows = scan_cards(root.tasks_dir, grep=grep, tag=tag, state=state, parent=parent)
-            _emit_scan(rows, as_json)
+            _emit_scan(rows, as_json, show_all)
             return
         registry = load_registry_for(root.project_dir)
         neighbors = walk_neighborhood(
@@ -358,4 +402,4 @@ def ls_cmd(
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
         handle_rack_error(exc, as_json)
         return
-    _emit_walk(task_id, deep if deep is not None else 1, neighbors, as_json)
+    _emit_walk(task_id, deep if deep is not None else 1, neighbors, as_json, show_all)

@@ -179,8 +179,20 @@ def test_context_covers_former_show_surface(runner, tmp_path):
     task = payload["task"]
     assert task == card.to_dict()  # the full card, not a trimmed head
     assert {
-        "id", "title", "state", "description", "priority", "assignee", "reviewer",
-        "role", "parent_task", "subtasks", "tags", "work_log", "created", "updated",
+        "id",
+        "title",
+        "state",
+        "description",
+        "priority",
+        "assignee",
+        "reviewer",
+        "role",
+        "parent_task",
+        "subtasks",
+        "tags",
+        "work_log",
+        "created",
+        "updated",
     } <= set(task)
     assert [e["message"] for e in task["work_log"]] == ["first step", "second step"]
     assert set(payload["links"]) == {"parent_task", "depends_on", "related", "children"}
@@ -204,8 +216,17 @@ def test_context_with_pattern_embeds_and_marks_truncation(runner, tmp_path):
     plan.write_text("plan " * 200)  # 1000 bytes
     result = runner.invoke(
         main,
-        ["context", "HATS-2", "--with", "plan*", "--with", "summary*",
-         "--max-bytes", "100", *_args(tmp_path)],
+        [
+            "context",
+            "HATS-2",
+            "--with",
+            "plan*",
+            "--with",
+            "summary*",
+            "--max-bytes",
+            "100",
+            *_args(tmp_path),
+        ],
     )
     assert result.exit_code == 0, result.output
     assert "--- HATS-2/plan.md" in result.output
@@ -323,8 +344,18 @@ def test_ls_walk_deep_link_filter_is_the_tree(runner, tmp_path):
     _family(tmp_path)
     result = runner.invoke(
         main,
-        ["ls", "HATS-1", "--deep", "2", "--link", "parent_task", "--link", "children",
-         *_args(tmp_path), "--json"],
+        [
+            "ls",
+            "HATS-1",
+            "--deep",
+            "2",
+            "--link",
+            "parent_task",
+            "--link",
+            "children",
+            *_args(tmp_path),
+            "--json",
+        ],
     )
     payload = json.loads(result.output)
     assert [(n["id"], n["depth"]) for n in payload["neighbors"]] == [("HATS-2", 1), ("HATS-5", 2)]
@@ -404,3 +435,81 @@ def test_f4_replica_context_stays_small(runner, tmp_path):
     assert result.exit_code == 0, result.output
     assert "lorem ipsum" not in result.output  # attachment bodies never leak
     assert len(result.output) < 8000, f"discovery package grew to {len(result.output)} chars"
+
+
+# ----- ls output cap (HATS-1047): cap 30 + --all, non-silent ----------------------
+
+
+def _many(tmp_path, n):
+    for i in range(n):
+        make_card(tmp_path, f"HATS-{100 + i}", title=f"card {i}", state="brainstorm")
+
+
+def _row_count(output):
+    return sum(1 for ln in output.splitlines() if ln.strip().startswith("HATS-"))
+
+
+def test_ls_scan_human_caps_at_30_with_footer(runner, tmp_path):
+    _many(tmp_path, 42)
+    result = runner.invoke(main, ["ls", *_args(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert _row_count(result.output) == 30
+    assert "showing 30 of 42" in result.output
+    assert "--all" in result.output
+    assert "42 task(s)" not in result.output  # uncapped footer suppressed when capped
+
+
+def test_ls_scan_all_flag_bypasses_cap(runner, tmp_path):
+    _many(tmp_path, 42)
+    result = runner.invoke(main, ["ls", "--all", *_args(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert _row_count(result.output) == 42
+    assert "42 task(s)" in result.output
+    assert "showing" not in result.output
+
+
+def test_ls_scan_json_caps_with_total_and_capped(runner, tmp_path):
+    _many(tmp_path, 42)
+    payload = json.loads(runner.invoke(main, ["ls", *_args(tmp_path), "--json"]).output)
+    assert len(payload["tasks"]) == 30
+    assert payload["count"] == 30 and payload["total"] == 42 and payload["capped"] is True
+    # --all -> full set, capped:false (map-not-filter: same shape, no truncation)
+    full = json.loads(runner.invoke(main, ["ls", "--all", *_args(tmp_path), "--json"]).output)
+    assert len(full["tasks"]) == 42 and full["count"] == 42
+    assert full["total"] == 42 and full["capped"] is False
+
+
+def test_ls_scan_json_small_is_not_capped(runner, tmp_path):
+    _many(tmp_path, 3)
+    payload = json.loads(runner.invoke(main, ["ls", *_args(tmp_path), "--json"]).output)
+    assert payload["count"] == 3 and payload["total"] == 3 and payload["capped"] is False
+
+
+def _wide_epic(tmp_path, n):
+    make_card(tmp_path, "HATS-1", title="epic", state="execute")
+    for i in range(n):
+        make_card(tmp_path, f"HATS-{200 + i}", title=f"kid {i}", parent_task="HATS-1")
+
+
+def test_ls_walk_human_caps_at_30(runner, tmp_path):
+    _wide_epic(tmp_path, 40)
+    result = runner.invoke(main, ["ls", "HATS-1", "--deep", "1", *_args(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert result.output.count("← children") == 30  # header line excluded
+    assert "showing 30 of 40" in result.output
+    assert "40 linked task(s)" not in result.output
+
+
+def test_ls_walk_json_caps_and_all_bypasses(runner, tmp_path):
+    _wide_epic(tmp_path, 40)
+    capped = json.loads(
+        runner.invoke(main, ["ls", "HATS-1", "--deep", "1", *_args(tmp_path), "--json"]).output
+    )
+    assert len(capped["neighbors"]) == 30
+    assert capped["count"] == 30 and capped["total"] == 40 and capped["capped"] is True
+    full = json.loads(
+        runner.invoke(
+            main, ["ls", "HATS-1", "--deep", "1", "--all", *_args(tmp_path), "--json"]
+        ).output
+    )
+    assert len(full["neighbors"]) == 40 and full["capped"] is False
