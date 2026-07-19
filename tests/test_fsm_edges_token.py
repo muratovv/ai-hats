@@ -55,11 +55,11 @@ def test_render_includes_pragmatic_edges() -> None:
     assert "`execute`" in _row(table, "done")  # reopen
 
 
-def test_render_omits_review_to_execute_until_1052() -> None:
-    # Guard-rail: review->execute is HATS-1052 and is NOT in the FSM yet. If
-    # this assertion ever fails, the edge landed — flip the hatrack rework-loop
-    # policy row from "(pending HATS-1052)" to a live edge.
-    assert "`execute`" not in _row(render_backlog_fsm_edges(), "review")
+def test_render_includes_review_to_execute() -> None:
+    # HATS-1052: review->execute (the rework loop-back) is now legal, so the
+    # rendered FSM token carries `execute` in the review row — the hatrack skill
+    # inherits the live rework edge without a hand-maintained table.
+    assert "`execute`" in _row(render_backlog_fsm_edges(), "review")
 
 
 # ---------- expand_fsm_edges_token: substitution contract ----------

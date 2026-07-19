@@ -22,11 +22,11 @@ AI_HATS_EXP_VENV="$PWD/.venv"   # a venv with this worktree editable-installed
 Each sub-experiment is a self-contained experiment for the `_lib` runner (one
 scenario = one decision point):
 
-| Sub-experiment | Decision isolated                                     | Runnable                                       | Score                                                                             |
-| -------------- | ----------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------- |
-| `advance/`     | execute work done → advance to review and **wait**    | yes                                            | `advanced-to-review.sh` (state == review) + `drove-review-via-rack.sh` (tool_use) |
-| `control/`     | work **not** done → must **not** transition           | yes                                            | `not-advanced.sh` (state == execute)                                              |
-| `rework/`      | review WITH comments → rework loop (review→execute→…) | **no** — gated on HATS-1052 (`NONRUNNABLE.md`) | `back-in-review.sh` (state == review)                                             |
+| Sub-experiment | Decision isolated                                     | Runnable                      | Score                                                                             |
+| -------------- | ----------------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------- |
+| `advance/`     | execute work done → advance to review and **wait**    | yes                           | `advanced-to-review.sh` (state == review) + `drove-review-via-rack.sh` (tool_use) |
+| `control/`     | work **not** done → must **not** transition           | yes                           | `not-advanced.sh` (state == execute)                                              |
+| `rework/`      | review WITH comments → rework loop (review→execute→…) | yes — edge landed (HATS-1052) | `back-in-review.sh` (state == review)                                             |
 
 ## Run (per the HATS-1053 infra)
 
@@ -43,8 +43,9 @@ recordings — never commit).
 
 ## S5b (gated, NOT this execute)
 
-The paid opus/haiku batches with adaptive N are HATS-1051 S5b — run after review
-and after HATS-1052 lands, on the supervisor's go. Tier policy per the HATS-1053
+The paid opus/haiku batches with adaptive N are HATS-1051 S5b — run after review,
+on the supervisor's go (HATS-1052 has landed, so `rework` is now runnable too).
+Tier policy per the HATS-1053
 finding: `advance`/`control` primary on haiku (the differential shows there;
 opus saturates), `rework` on opus AND haiku. Attach the `report.sh` output
 (per-arm rates + dispersion + cost) to the HATS-1051 card.
