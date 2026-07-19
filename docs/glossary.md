@@ -84,6 +84,18 @@ per-section enforcement — the engine gate (HATS-635).
 
 The minimal backlog **kernel** built parallel to the production tracker (epic HATS-1014; the name = hatrack). Same `task.yaml` format and layout, new engine: FSM topology from an in-package `fsm.yaml` (SSOT), a transactional `transition` (FileLock → guard → in-memory mutation → two-phase subscriber dispatch → single persist last), a structural lock model, and a dispatch journal with actor identity. Everything beyond that — worktree, ownership, scaffold, plan-gate, epic-automation, doc store, consumer hooks — is an extension subscribing to kernel events, not kernel code. CLI namespace during the comparison period: `rack`. The old tracker is feature-frozen until the K6 cutover decision. Source: `packages/ai-hats-rack/`.
 
+## Behavior experiment (A/B)
+
+A scripted comparison proving that a library-component edit (skill / rule / trait wording) actually changes subagent behavior, instead of eyeballing it (HATS-1053). Lives under `experiments/<name>/`; the shared runner scripts are `experiments/_lib/`. Terms:
+
+- **Experiment** — one question about one **scenario**: e.g. "does the hatrack cadence table change advance-to-review behavior?". `experiment = 1 scenario × 2 arms × N identical runs`.
+- **Arm** — one group inside an experiment: a component variant materialized as a filesystem directory, composed into the sandbox via `library_paths`, plus all N runs executed with it. Arms differ in exactly one thing — the component under test; the composition snapshot in `metrics.json["composition"]` proves the difference. N identical runs per arm measure the *frequency* of the target behavior (agent behavior is stochastic), not scenario variety.
+- **Scenario** — the frozen setup shared by all arms: seeded sandbox backlog + the task prompt given to the agent (`experiments/<name>/scenario/`).
+- **Score scripts** — mechanical per-experiment checks on observable outcomes (resulting card state, captured actions), never LLM-judged; live in `experiments/<name>/score/`, run by the shared `report` step. What to score is the experiment author's decision.
+- **Runs capture** — `experiments/<name>/runs/`, gitignored: raw session material (`metrics.json`, provider JSONL, final sandbox backlog state) is personal data and never committed.
+
+Runner how-to — see [10].
+
 ## Attachment
 
 A file attached to a Task via `ai-hats task attach add`. Blob lives in
@@ -258,3 +270,5 @@ Single point of truth for destructive filesystem ops in ai-hats core (HATS-470).
 **[9]** — [`docs/session-start-notices.md`](session-start-notices.md) — startup-notice model, read-hold policy, producer list, provider settings lint.
 
 **[9]** — [`docs/how-to-extend.md`](how-to-extend.md) — shipped library layout (`library/core/` vs `library/usage/`), override precedence, recipes for adding your own roles / traits / rules / skills.
+
+**[10]** — [`docs/how-to-experiments.md`](how-to-experiments.md) — authoring and running behavior A/B experiments (HATS-1053).
