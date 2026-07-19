@@ -2,18 +2,21 @@
 name: tasks
 prefix: HATS
 
+extensions:
+  - frozen-integrity
+
 fsm:
   initial: brainstorm
   states:
     - { name: brainstorm }
-    - { name: plan }
-    - { name: execute }
+    - { name: plan, on_enter: [{ name: plan-scaffold, priority: 30 }] }
+    - { name: execute, on_enter: [{ name: plan-gate, priority: 10 }] }
     - { name: document }
     - { name: review }
-    - { name: done }
+    - { name: done, on_enter: [{ name: stamp-lifecycle, priority: 12 }] }
     - { name: blocked }
     - { name: failed }
-    - { name: cancelled }
+    - { name: cancelled, on_enter: [{ name: stamp-lifecycle, priority: 12 }] }
   edges:
     - { from: brainstorm, to: plan }
     - { from: brainstorm, to: blocked }
@@ -40,7 +43,7 @@ fsm:
     - { from: blocked, to: cancelled }
     - { from: failed, to: brainstorm }
     - { from: failed, to: cancelled }
-    - { from: done, to: execute, name: reopen }
+    - { from: done, to: execute, name: reopen, skip: [plan-gate], handlers: [{ name: clear-lifecycle, priority: 12 }] }
 
 links:
   kinds:

@@ -213,12 +213,8 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
         "frozen-integrity": lambda defn, catalog, cfg: FrozenIntegrityExtension(
             catalog, topology=defn.topology
         ),
-        "plan-gate": lambda defn, catalog, cfg: PlanGateExtension(
-            catalog, catalog_sections, topology=defn.topology
-        ),
-        "plan-scaffold": lambda defn, catalog, cfg: PlanScaffoldExtension(
-            catalog, catalog_sections, topology=defn.topology
-        ),
+        "plan-gate": lambda defn, catalog, cfg: PlanGateExtension(catalog, catalog_sections),
+        "plan-scaffold": lambda defn, catalog, cfg: PlanScaffoldExtension(catalog, catalog_sections),
         "stamp-lifecycle": lambda defn, catalog, cfg: StampLifecycleHandler(_field(cfg)),
         "clear-lifecycle": lambda defn, catalog, cfg: ClearLifecycleHandler(_field(cfg)),
     }

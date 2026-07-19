@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import pytest
 
+from ai_hats_rack.composition import build_bound_subscribers, stock_factories
+from ai_hats_rack.definition import load_backlog
 from ai_hats_rack.extensions import AUTOMATION_ACTOR, EpicAutomationExtension, decide
 from ai_hats_rack.fsm import load_topology
 
@@ -14,11 +16,22 @@ from rack_testkit import CollectingSink, make_kernel, walk
 TOPOLOGY = load_topology()
 
 
+def _lifecycle(tasks_dir):
+    # The declared stamp/clear handlers (HATS-1043) — completed_at stamping moved
+    # out of the kernel, so the epic kernel composes them like any real backlog.
+    return [
+        s
+        for s in build_bound_subscribers(load_backlog(), tasks_dir, stock_factories())
+        if s.name in ("stamp-lifecycle", "clear-lifecycle")
+    ]
+
+
 @pytest.fixture
 def kernel(tasks_dir):
     sink = CollectingSink()
     automation = EpicAutomationExtension(topology=TOPOLOGY)
-    k = make_kernel(tasks_dir, topology=TOPOLOGY, subscribers=[automation], journal_sink=sink)
+    subs = [automation, *_lifecycle(tasks_dir)]
+    k = make_kernel(tasks_dir, topology=TOPOLOGY, subscribers=subs, journal_sink=sink)
     automation.bind(k)
     k.sink = sink  # test-only handle
     return k

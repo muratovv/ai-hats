@@ -387,7 +387,6 @@ class Kernel:
             task.resolution = resolution
         if final_state is not None:
             task.final_state = final_state
-        self._stamp_lifecycle(task, from_state, to_state)
 
         event = EdgeEvent(from_state, to_state, self._edge_names.get((from_state, to_state), ""))
         events.append(event)
@@ -507,14 +506,6 @@ class Kernel:
             journal=tuple(records),
             ops=tuple(txn.results),
         )
-
-    def _stamp_lifecycle(self, task: TaskCard, from_state: str, to_state: str) -> None:
-        """Anchor-field bookkeeping the old card format expects (HATS-328)."""
-        if to_state in ("done", "cancelled"):
-            task.completed_at = utc_now()
-        if from_state == "done" and to_state == "execute":
-            task.completed_at = ""
-            task.log_work("Reopened from done")
 
     def log_work(self, task_id: str, message: str, *, actor: str = "") -> TaskCard:
         """Append a work_log entry (anchor field — CLI-only, transactional)."""

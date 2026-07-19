@@ -112,20 +112,59 @@ def test_in_lock_order_reproduces_the_tracker_sequence(project):
         "worktree",
     ]
 
+    # stamp-lifecycle (declared, priority 12) now rides in-lock into `done`.
     to_done = [
         s.name for s in kernel._dispatcher.subscribers_for("edge:review--done", Phase.IN_LOCK)
     ]
-    assert to_done == ["ownership-single-slot", "frozen-integrity", "worktree", "ownership-release"]
+    assert to_done == [
+        "ownership-single-slot",
+        "frozen-integrity",
+        "stamp-lifecycle",
+        "worktree",
+        "ownership-release",
+    ]
 
     epicify = [s.name for s in kernel._dispatcher.subscribers_for("epicify", Phase.POST_LOCK)]
     assert epicify == ["ownership-release", "worktree", "epic-automation", "derived-views"]
 
 
+def test_reopen_edge_skips_gate_but_clear_lifecycle_fires(project):
+    """The reopen edge (done→execute) opts OUT of plan-gate via the declarative
+    skip, while clear-lifecycle binds to that exact edge (ADR-0017 §3)."""
+    kernel = _kernel(project)
+    reopen = [
+        s.name for s in kernel._dispatcher.subscribers_for("edge:done--execute", Phase.IN_LOCK)
+    ]
+    assert "plan-gate" not in reopen  # reopen is not gated (HATS-328, declarative skip)
+    assert "clear-lifecycle" in reopen  # completed_at cleared on the declared edge
+
+
+def test_migrated_handler_subscribes_once_per_edge(project):
+    """Double-subscription guard (HATS-1043): a migrated handler comes ONLY via
+    the declaration channel, never also self-subscribing — exactly once/edge."""
+    kernel = _kernel(project)
+    into_execute = [
+        s.name for s in kernel._dispatcher.subscribers_for("edge:plan--execute", Phase.IN_LOCK)
+    ]
+    assert into_execute.count("plan-gate") == 1
+    into_plan = [
+        s.name for s in kernel._dispatcher.subscribers_for("edge:brainstorm--plan", Phase.IN_LOCK)
+    ]
+    assert into_plan.count("plan-scaffold") == 1
+
+
 def test_standalone_kit_has_no_wt_or_ownership(tmp_path):
-    """Standalone = frozen-integrity + scaffold + plan-gate (epic HATS-1014
-    §2.3, HATS-1031) — still no worktree/ownership adapters."""
+    """Standalone kit is composed from the packaged definition (HATS-1043):
+    frozen-integrity + scaffold/gate/stamp/clear — still no worktree/ownership."""
     names = {ext.name for ext in standalone_extensions(tmp_path / "tasks")}
-    assert names == {"frozen-integrity", "plan-scaffold", "plan-gate"}
+    assert names == {
+        "frozen-integrity",
+        "plan-scaffold",
+        "plan-gate",
+        "stamp-lifecycle",
+        "clear-lifecycle",
+    }
+    assert "worktree" not in names and "ownership" not in names
 
 
 def test_full_stack_lifecycle_with_views(project, monkeypatch):
