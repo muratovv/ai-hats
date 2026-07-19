@@ -36,6 +36,7 @@ from .docstore import (
 )
 from .cardschema import (
     CardSchema,
+    ExtrasForbiddenError,
     FieldValidationError,
     RequiredFieldError,
     ResolvedField,
@@ -144,6 +145,7 @@ __all__ = [
     "EpicifyEvent",
     "Event",
     "ExtensionFactory",
+    "ExtrasForbiddenError",
     "FieldOp",
     "FieldSpec",
     "FieldValidationError",

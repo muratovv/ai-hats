@@ -16,6 +16,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .definition import BacklogDefinition, load_backlog
 from .errors import RackConfigError, RackError
+from .models import TaskCard
 
 #: A field validator: called with the value, raises ``ValueError`` on a violation.
 Validator = Callable[[Any], None]
@@ -40,6 +41,17 @@ class RequiredFieldError(FieldValidationError):
 
     def __init__(self, field: str, message: str | None = None) -> None:
         super().__init__(field, message or "is required")
+
+
+class ExtrasForbiddenError(RackError):
+    """A write targets an undeclared key on a backlog with ``extras: forbid`` — a
+    user-facing refusal. Reads stay tolerant; only writes are gated (ADR-0017 §1)."""
+
+    def __init__(self, field: str) -> None:
+        self.field_name = field
+        super().__init__(
+            f"field {field!r} is undeclared and this backlog forbids unknown keys (extras: forbid)"
+        )
 
 
 class UnknownValidatorError(RackConfigError):
@@ -90,6 +102,14 @@ class CardSchema:
 
     def declares(self, name: str) -> bool:
         return name in self._by_name
+
+    def writable(self, name: str) -> bool:
+        """A write to ``name`` is allowed unless the backlog forbids unknown keys
+        AND ``name`` is neither a declared field nor a kernel-owned anchor field
+        (a name that would otherwise ride the extras passthrough)."""
+        if self.extras_policy != "forbid":
+            return True
+        return name in self._by_name or name in TaskCard._KNOWN_FIELDS
 
     def validate(self, name: str, value: Any) -> None:
         """Type/choices/validator check for one declared field; a no-op for an

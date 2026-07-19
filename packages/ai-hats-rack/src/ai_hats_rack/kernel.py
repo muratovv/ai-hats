@@ -14,7 +14,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from filelock import FileLock, Timeout
 
-from .cardschema import CardSchema, RequiredFieldError, default_card_schema
+from .cardschema import CardSchema, ExtrasForbiddenError, RequiredFieldError, default_card_schema
 from .dispatch import (
     Delta,
     DispatchContext,
@@ -409,16 +409,18 @@ class Kernel:
         self._dispatcher.run_blocking(event, ctx, self._delta_applier(task, actor), outcomes)
         return from_state
 
-    @staticmethod
-    def _delta_applier(task: TaskCard, actor: str) -> Callable[[Delta], None]:
+    def _delta_applier(self, task: TaskCard, actor: str) -> Callable[[Delta], None]:
         """In-memory application of an in-lock delta (work_log + declared-field
         ops) against ``task`` before the single persist — shared by the edge and
-        link dispatch paths."""
+        link dispatch paths. Under ``extras: forbid`` a Set/Append targeting an
+        undeclared key is a typed refusal (HATS-1035); ``allow`` is a no-op."""
 
         def apply_delta(delta: Delta) -> None:
             for line in delta.work_log:
                 task.log_work(line, actor=actor)
             for name, op in delta.fields.items():
+                if not self._schema.writable(name):
+                    raise ExtrasForbiddenError(name)
                 op.apply(task, name)
 
         return apply_delta

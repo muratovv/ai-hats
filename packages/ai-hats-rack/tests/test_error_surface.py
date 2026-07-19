@@ -19,6 +19,7 @@ from click.testing import CliRunner
 import ai_hats_rack
 from ai_hats_rack import cli, ops
 from ai_hats_rack.cardschema import (
+    ExtrasForbiddenError,
     FieldValidationError,
     RequiredFieldError,
     UnknownValidatorError,
@@ -142,6 +143,7 @@ _CASES = [
         {"field": "priority", "choices": ["low", "high"], "value": "x"},
     ),
     (RequiredFieldError("title"), "invalid_field", {"field": "title"}),
+    (ExtrasForbiddenError("mystery"), "extras_forbidden", {"field": "mystery"}),
 ]
 
 
