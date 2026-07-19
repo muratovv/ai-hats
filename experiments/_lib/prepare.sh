@@ -3,6 +3,8 @@
 # Usage: prepare.sh <experiment-dir> <arm> <run-idx>   → prints sandbox path on stdout
 set -euo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+
 [[ $# -eq 3 ]] || { echo "usage: prepare.sh <experiment-dir> <arm> <run-idx>" >&2; exit 2; }
 exp_dir=$(cd "$1" && pwd)
 arm=$2
@@ -20,9 +22,20 @@ sandbox="$base/$(basename "$exp_dir")/$arm/run-$run_idx"
 rm -rf "$sandbox"
 mkdir -p "$sandbox"
 
-# Sandbox agents may drive git-touching transitions — a repo with one commit is the floor.
 git -C "$sandbox" init -q
-git -C "$sandbox" -c user.email=exp@sandbox -c user.name=exp commit -q --allow-empty -m "sandbox seed"
+
+# Headless subagents can't answer permission prompts — pre-approve the CLIs under test.
+mkdir -p "$sandbox/.claude"
+cat >"$sandbox/.claude/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": [
+      "Bash(rack:*)",
+      "Bash(ai-hats:*)"
+    ]
+  }
+}
+EOF
 
 cat >"$sandbox/ai-hats.yaml" <<EOF
 schema_version: 4
@@ -39,8 +52,12 @@ if [[ -n "$venv" ]]; then
   printf 'venv_path: %s\n' "$venv" >>"$sandbox/ai-hats.yaml"
 fi
 
-(cd "$sandbox" && ai-hats self init --no-wizard --no-update -p claude -r exp-agent >&2)
+(cd "$sandbox" && "${SCRUB[@]}" ai-hats self init --no-wizard --no-update -p claude -r exp-agent >&2)
 
-"$scenario_dir/seed.sh" "$sandbox" >&2
+"${SCRUB[@]}" "$scenario_dir/seed.sh" "$sandbox" >&2
+
+# The agent session runs in a worktree of this repo — tracked files are what it sees.
+git -C "$sandbox" add -A
+git -C "$sandbox" -c user.email=exp@sandbox -c user.name=exp commit -q -m "sandbox seed"
 
 echo "$sandbox"
