@@ -10,6 +10,7 @@ n=$3
 model=$4
 
 lib_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source-path=SCRIPTDIR
 source "$lib_dir/common.sh"
 exp_name=$(basename "$exp_dir")
 task=$(<"$exp_dir/scenario/task.txt")
