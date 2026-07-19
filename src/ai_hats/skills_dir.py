@@ -59,7 +59,7 @@ def _rebuild(
     session_id: str,
 ) -> None:
     """Additive ref-counted rebuild; caller holds the lock (HATS-981 pattern)."""
-    from .placeholders import expand_path_placeholders
+    from .placeholders import expand_fsm_edges_token, expand_path_placeholders
 
     marker = skills_dir / MANAGED_MARKER
     refs: dict[str, list[str]] = {}
@@ -89,13 +89,16 @@ def _rebuild(
         if dest.exists():
             shutil.rmtree(dest)  # safe-delete: ok managed-skills-mirror refresh
         shutil.copytree(skill.source_path, dest)
-        # Expand <ai_hats_dir> in SKILL.md (HATS-380); other assets verbatim.
+        # Expand <ai_hats_dir> (HATS-380) + inject the FSM edge table for the
+        # {{backlog_fsm_edges}} token (HATS-1051); other assets verbatim.
         skill_md = dest / "SKILL.md"
         if skill_md.exists():
             original = skill_md.read_text()
-            expanded = expand_path_placeholders(original, project_dir)
-            if expanded != original:
-                skill_md.write_text(expanded)
+            rendered = expand_fsm_edges_token(
+                expand_path_placeholders(original, project_dir)
+            )
+            if rendered != original:
+                skill_md.write_text(rendered)
 
     marker.write_text(json.dumps(refs, indent=2, sort_keys=True) + "\n")
 
