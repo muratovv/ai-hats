@@ -15,17 +15,33 @@ from ai_hats_rack.linked import (
     unlink,
     walk_neighborhood,
 )
+from ai_hats_rack.definition import load_backlog
 from ai_hats_rack.models import TaskCard
-from ai_hats_rack.registry import DerivedLinkKindError, UnknownLinkKindError, load_registry
+from ai_hats_rack.registry import DerivedLinkKindError, UnknownLinkKindError
 
-_REVIEWED_WITH_YAML = (
-    "kinds:\n"
-    "  - {name: parent_task, arity: one, inverse: children}\n"
-    "  - {name: depends_on}\n"
-    "  - {name: related, inverse: related}\n"
-    "  - {name: children, derived: true, inverse: parent_task}\n"
-    "  - {name: reviewed_with}\n"
+# A trivially valid fsm block so the custom kinds are the only variable.
+_MINIMAL_FSM = (
+    "fsm:\n"
+    "  initial: brainstorm\n"
+    "  states: [{name: brainstorm}, {name: document}]\n"
+    "  edges:\n    - {from: brainstorm, to: document}\n"
 )
+
+_REVIEWED_WITH_KINDS = (
+    "    - {name: parent_task, arity: one, inverse: children}\n"
+    "    - {name: depends_on}\n"
+    "    - {name: related, inverse: related}\n"
+    "    - {name: children, derived: true, inverse: parent_task}\n"
+    "    - {name: reviewed_with}\n"
+)
+
+
+def _backlog_registry(tmp_path, kinds_block):
+    """The links registry from a full backlog.yaml wrapping ``kinds_block``
+    (links.yaml override retired, HATS-1042)."""
+    path = tmp_path / "backlog.yaml"
+    path.write_text("name: t\nprefix: T\n" + _MINIMAL_FSM + "links:\n  kinds:\n" + kinds_block)
+    return load_backlog(path).links_registry
 
 
 def make_card(tasks_dir, task_id, **fields):
@@ -118,16 +134,14 @@ def test_link_arbitrary_new_kind_lands_in_links_dict(tasks_dir, tmp_path):
     # generic `links:` key — the extras-compatible channel new kinds ride (HATS-1028).
     make_card(tasks_dir, "T-1")
     make_card(tasks_dir, "T-2")
-    override = tmp_path / "links.yaml"
-    override.write_text(
-        "kinds:\n"
-        "  - {name: parent_task, arity: one, inverse: children}\n"
-        "  - {name: children, derived: true, inverse: parent_task}\n"
-        "  - {name: depends_on}\n"
-        "  - {name: related, inverse: related}\n"
-        "  - {name: reviewed_with}\n"
+    reg = _backlog_registry(
+        tmp_path,
+        "    - {name: parent_task, arity: one, inverse: children}\n"
+        "    - {name: children, derived: true, inverse: parent_task}\n"
+        "    - {name: depends_on}\n"
+        "    - {name: related, inverse: related}\n"
+        "    - {name: reviewed_with}\n",
     )
-    reg = load_registry(override)
     result = link(tasks_dir, "T-1", "T-2", "reviewed_with", registry=reg)
     assert result.changed and result.kinds == ("reviewed_with",)
     card = load(tasks_dir, "T-1")
@@ -383,9 +397,9 @@ def test_context_new_kind_surfaces_in_links(tasks_dir, tmp_path):
     # `links:` dict and still appears (after the dedicated-field kinds) in context.
     make_card(tasks_dir, "T-1", links={"reviewed_with": ["T-2"]})
     make_card(tasks_dir, "T-2", title="reviewer note")
-    override = tmp_path / "links.yaml"
-    override.write_text(_REVIEWED_WITH_YAML)
-    pkg = build_context(tasks_dir, "T-1", registry=load_registry(override))
+    pkg = build_context(
+        tasks_dir, "T-1", registry=_backlog_registry(tmp_path, _REVIEWED_WITH_KINDS)
+    )
     (view,) = pkg.links["reviewed_with"]
     assert view.id == "T-2" and view.title == "reviewer note"
 
