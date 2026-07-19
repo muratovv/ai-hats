@@ -113,7 +113,7 @@ ai-hats task proposal create \
 
 ### Lifecycle
 
-Happy path: `brainstorm → plan → execute → document → review → done`. Side routes: `blocked` (returnable to `plan` or `execute`), `failed` (recoverable via `brainstorm`), `cancelled` (administrative close from any non-terminal state); from `done` a reopen path to `execute` is available for finishing epic scope. Full diagram — [2].
+Happy path: `brainstorm → plan → execute → document → review → done`. Side routes: `blocked` (returnable to `plan` or `execute`), `failed` (recoverable via `brainstorm`), `cancelled` (administrative close from any non-terminal state); from `review` a rework path back to `execute` for addressing review comments (no worktree merge); from `done` a reopen path to `execute` is available for finishing epic scope. Full diagram — [2].
 
 | Command                                             | When                                                                                       |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------ |

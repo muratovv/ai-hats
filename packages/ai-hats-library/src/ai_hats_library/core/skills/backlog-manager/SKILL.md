@@ -123,6 +123,7 @@ brainstorm → plan → execute → document → review → done
                ↕       ↕         ↕          ↕
             blocked  blocked   blocked    failed → brainstorm
 
+           review → execute  (rework loop-back)
            any non-terminal state ──────────────→ cancelled  (terminal)
 ```
 
