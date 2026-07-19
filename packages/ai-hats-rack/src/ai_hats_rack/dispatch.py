@@ -10,11 +10,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Protocol, Sequence, runtime_checkable
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Protocol, Sequence, runtime_checkable
 
 from .errors import RackError
 from .events import Event
 from .models import TaskCard, utc_now
+
+if TYPE_CHECKING:
+    from .fsm import Topology
+    from .kernel import Kernel
 
 
 class Phase(str, Enum):
@@ -36,14 +40,53 @@ class Subscription:
 
 
 @dataclass(frozen=True)
-class Delta:
-    """Card mutation requested by an in-lock subscriber, applied by the kernel
-    in-memory before the single persist. Post-lock deltas are journal-only."""
+class Set:
+    """Replace a declared field's value wholesale (a :class:`Delta` field op)."""
 
-    work_log: tuple[str, ...] = ()
+    value: Any
+
+    def apply(self, card: TaskCard, name: str) -> None:
+        card.set_field(name, self.value)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"work_log": list(self.work_log)}
+        return {"op": "set", "value": self.value}
+
+
+@dataclass(frozen=True)
+class Append:
+    """Append an entry to a declared list field (a :class:`Delta` field op)."""
+
+    entry: Any
+
+    def apply(self, card: TaskCard, name: str) -> None:
+        card.append_field(name, self.entry)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"op": "append", "entry": self.entry}
+
+
+#: A declared-field mutation op carried in ``Delta.fields``.
+FieldOp = Set | Append
+
+
+@dataclass(frozen=True)
+class Delta:
+    """Card mutation requested by an in-lock subscriber, applied by the kernel
+    in-memory before the single persist. Post-lock deltas are journal-only.
+
+    ``fields`` carries declared-field ops keyed by field name (:class:`Set` /
+    :class:`Append`): a typed TaskCard field is validated against its type, an
+    unknown key rides the extras passthrough — applied in the same single
+    persist as ``work_log`` (HATS-1043, ADR-0017 §4)."""
+
+    work_log: tuple[str, ...] = ()
+    fields: Mapping[str, FieldOp] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"work_log": list(self.work_log)}
+        if self.fields:
+            d["fields"] = {name: op.to_dict() for name, op in self.fields.items()}
+        return d
 
 
 @dataclass(frozen=True)
@@ -214,7 +257,7 @@ class Dispatcher:
                     SubscriberOutcome(sub.name, Phase.IN_LOCK, "error", reason=repr(exc))
                 )
                 raise
-            if delta is not None and delta.work_log:
+            if delta is not None and (delta.work_log or delta.fields):
                 apply_delta(delta)
                 outcomes.append(SubscriberOutcome(sub.name, Phase.IN_LOCK, "delta", delta=delta))
             else:
@@ -236,7 +279,9 @@ class Dispatcher:
                     SubscriberOutcome(sub.name, Phase.POST_LOCK, "error", reason=repr(exc))
                 )
                 continue
-            if delta is not None and delta.work_log:
+            if delta is not None and (delta.work_log or delta.fields):
+                # POST_LOCK deltas are journal-only — the persist already
+                # happened, so fields are recorded, never applied (ADR-0017 §4).
                 outcomes.append(SubscriberOutcome(sub.name, Phase.POST_LOCK, "delta", delta=delta))
             else:
                 outcomes.append(SubscriberOutcome(sub.name, Phase.POST_LOCK, "ok"))

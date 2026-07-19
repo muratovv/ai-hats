@@ -8,12 +8,15 @@ hooks) is an extension living outside this package.
 
 from .dispatch import (
     AbortOperation,
+    Append,
     Delta,
     DispatchContext,
     DispatchRecord,
+    FieldOp,
     JournalSink,
     OperationAborted,
     Phase,
+    Set,
     Subscriber,
     SubscriberOutcome,
     Subscription,
@@ -71,7 +74,7 @@ from .linked import (
     walk_neighborhood,
 )
 from .matching import Matcher, compile_matcher, matches
-from .models import TaskCard, WorkLogEntry
+from .models import DeltaFieldError, TaskCard, WorkLogEntry
 from .registry import (
     DerivedLinkKindError,
     LinkKind,
@@ -92,11 +95,13 @@ from .resolver import (
 __all__ = [
     "DEFAULT_MAX_BYTES",
     "AbortOperation",
+    "Append",
     "BacklogDefinition",
     "BacklogDefinitionError",
     "CardRow",
     "ContextPackage",
     "Delta",
+    "DeltaFieldError",
     "DerivedLinkKindError",
     "DispatchContext",
     "DispatchRecord",
@@ -107,6 +112,7 @@ __all__ = [
     "EdgeEvent",
     "EpicifyEvent",
     "Event",
+    "FieldOp",
     "ForceRequiresReasonError",
     "FrozenDocumentError",
     "FrozenPinDriftError",
@@ -132,6 +138,7 @@ __all__ = [
     "RackRoot",
     "RemoveResult",
     "SelfLinkError",
+    "Set",
     "Subscriber",
     "SubscriberOutcome",
     "Subscription",
