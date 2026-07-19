@@ -25,6 +25,8 @@ from ai_hats_rack.dispatch import (
     JournalSink,
     Phase,
     Subscription,
+    bind_subscribers,
+    validate_requires_states,
 )
 from ai_hats_rack.events import EdgeEvent, EpicifyEvent, PreDestroyEvent
 from ai_hats_rack.extensions import (
@@ -412,6 +414,9 @@ def build_rack_kernel(
         DerivedViewsExtension(tasks_dir, state_md_path, topology=topology),
         *extra_subscribers,  # consumer add-ons (pre-destroy guards, K4 hook-runner)
     ]
+    # Fail-closed at composition: a subscriber's declared state vocabulary must
+    # fit the topology (the HATS-692 stranding class, HATS-1043 R8).
+    validate_requires_states(subscribers, topology, source=str(tasks_dir))
     kwargs: dict = {}
     if lock_timeout is not None:
         kwargs["lock_timeout"] = lock_timeout
@@ -425,8 +430,7 @@ def build_rack_kernel(
         journal_sink=journal_sink,
         **kwargs,
     )
-    worktree.bind(kernel)
-    automation.bind(kernel)
+    bind_subscribers(subscribers, kernel)  # uniform bind loop (worktree, automation, add-ons)
     return kernel
 
 

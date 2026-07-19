@@ -48,6 +48,9 @@ class PlanScaffoldExtension:
         self._topology = topology if topology is not None else load_topology()
         self._priority = priority
 
+    def requires_states(self) -> frozenset[str]:
+        return frozenset({"plan"})  # scaffolds on entering plan
+
     def subscriptions(self) -> Sequence[Subscription]:
         return [
             Subscription(key, Phase.IN_LOCK, self._priority)
@@ -90,6 +93,9 @@ class PlanGateExtension:
         self.sections = sections
         self._topology = topology if topology is not None else load_topology()
         self._priority = priority
+
+    def requires_states(self) -> frozenset[str]:
+        return frozenset({"execute"})  # gates on entering execute
 
     def subscriptions(self) -> Sequence[Subscription]:
         return [

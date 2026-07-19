@@ -12,7 +12,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Mapping, Protocol, Sequence, runtime_checkable
 
-from .errors import RackError
+from .errors import RackConfigError, RackError
 from .events import Event
 from .models import TaskCard, utc_now
 
@@ -108,13 +108,56 @@ class DispatchContext:
 
 @runtime_checkable
 class Subscriber(Protocol):
-    """Extension contract: declare subscriptions, react to events."""
+    """Extension contract: declare subscriptions, react to events.
+
+    Two OPTIONAL lifecycle hooks a subscriber MAY expose (duck-typed — the
+    composition root probes with ``hasattr``, so implementing neither keeps a
+    subscriber valid): ``bind(kernel)`` — a post-lock kernel handle wired after
+    construction (see :class:`BindableSubscriber`); ``requires_states() ->
+    frozenset[str]`` — the subscriber's full semantic state vocabulary, checked
+    against the composed topology fail-closed (HATS-1043 R8, ADR-0017 §3)."""
 
     name: str
 
     def subscriptions(self) -> Sequence[Subscription]: ...
 
     def on_event(self, ctx: DispatchContext) -> Delta | None: ...
+
+
+@runtime_checkable
+class BindableSubscriber(Subscriber, Protocol):
+    """A :class:`Subscriber` that also needs a post-lock kernel handle: the
+    composition root calls ``bind`` after the kernel is constructed (ADR-0017
+    §4). ``DispatchContext`` stays kernel-free — IN_LOCK handlers never get a
+    handle (one lock, never nested)."""
+
+    def bind(self, kernel: Kernel) -> None: ...
+
+
+def bind_subscribers(subscribers: Sequence[Subscriber], kernel: Kernel) -> None:
+    """Composition-root bind loop: run the optional ``bind(kernel)`` hook on
+    every subscriber exposing it (ADR-0017 §4), uniformly over all subscribers."""
+    for sub in subscribers:
+        bind = getattr(sub, "bind", None)
+        if bind is not None:
+            bind(kernel)
+
+
+def validate_requires_states(
+    subscribers: Sequence[Subscriber], topology: Topology, *, source: str
+) -> None:
+    """Fail-closed composition check: every subscriber's optional
+    ``requires_states()`` vocabulary must be a subset of the composed topology,
+    else refuse — naming the subscriber, the missing states, and the topology
+    source (HATS-1043 R8; the HATS-692 stranding class, caught at composition)."""
+    known = set(topology.states)
+    for sub in subscribers:
+        declared = getattr(sub, "requires_states", None)
+        if declared is None:
+            continue
+        missing = sorted(set(declared()) - known)
+        if missing:
+            raise RequiresStatesError(sub.name, missing, sorted(known), source)
 
 
 class AbortOperation(Exception):
@@ -135,6 +178,24 @@ class OperationAborted(RackError):
         self.subscriber = subscriber
         self.reason = reason
         super().__init__(f"{event_key} aborted by '{subscriber}': {reason}")
+
+
+class RequiresStatesError(RackConfigError):
+    """A subscriber declares required states absent from the composed topology
+    (HATS-1043 R8). Structural composition invariant — routed to the internal
+    marker like the rest of the RackConfigError subtree."""
+
+    def __init__(
+        self, subscriber: str, missing: Sequence[str], known: Sequence[str], source: str
+    ) -> None:
+        self.subscriber = subscriber
+        self.missing = tuple(missing)
+        self.known = tuple(known)
+        self.source = source
+        super().__init__(
+            f"subscriber '{subscriber}' requires state(s) {list(self.missing)} absent from "
+            f"the topology ({source}); known states: {list(self.known)}"
+        )
 
 
 @dataclass(frozen=True)

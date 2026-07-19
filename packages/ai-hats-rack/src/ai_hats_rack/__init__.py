@@ -9,6 +9,7 @@ hooks) is an extension living outside this package.
 from .dispatch import (
     AbortOperation,
     Append,
+    BindableSubscriber,
     Delta,
     DispatchContext,
     DispatchRecord,
@@ -16,10 +17,13 @@ from .dispatch import (
     JournalSink,
     OperationAborted,
     Phase,
+    RequiresStatesError,
     Set,
     Subscriber,
     SubscriberOutcome,
     Subscription,
+    bind_subscribers,
+    validate_requires_states,
 )
 from .docstore import (
     DocInfo,
@@ -98,6 +102,7 @@ __all__ = [
     "Append",
     "BacklogDefinition",
     "BacklogDefinitionError",
+    "BindableSubscriber",
     "CardRow",
     "ContextPackage",
     "Delta",
@@ -137,6 +142,7 @@ __all__ = [
     "PreDestroyEvent",
     "RackRoot",
     "RemoveResult",
+    "RequiresStatesError",
     "SelfLinkError",
     "Set",
     "Subscriber",
@@ -153,6 +159,7 @@ __all__ = [
     "UnknownTaskError",
     "UnsupportedBacklogKeyError",
     "WorkLogEntry",
+    "bind_subscribers",
     "build_context",
     "card_filter",
     "compile_matcher",
@@ -170,5 +177,6 @@ __all__ = [
     "resolve_root",
     "scan_cards",
     "unlink",
+    "validate_requires_states",
     "walk_neighborhood",
 ]
