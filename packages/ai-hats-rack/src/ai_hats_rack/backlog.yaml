@@ -51,3 +51,14 @@ links:
     - { name: depends_on, arity: many, aliases: [depends] }
     - { name: related, arity: many, inverse: related }
     - { name: children, derived: true, inverse: parent_task }
+
+fields:
+  - { name: description, type: str, default: "" }
+  - { name: priority, type: str, default: medium, choices: [low, medium, high, critical] }
+  - { name: assignee, type: str, default: "" }
+  - { name: reviewer, type: str, default: user }
+  - { name: role, type: str, default: "" }
+  - { name: tags, type: list, default: [] }
+  - { name: resolution, type: str, default: "", emit: when-set }
+  - { name: completed_at, type: str, default: "", emit: when-set }
+  - { name: final_state, type: str, default: "", emit: when-set }
