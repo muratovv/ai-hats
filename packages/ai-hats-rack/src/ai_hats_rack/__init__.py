@@ -27,6 +27,12 @@ from .docstore import (
     RemoveResult,
     UnknownDocumentError,
 )
+from .definition import (
+    BacklogDefinition,
+    BacklogDefinitionError,
+    UnsupportedBacklogKeyError,
+    load_backlog,
+)
 from .events import EdgeEvent, EpicifyEvent, Event, PreDestroyEvent, event_detail
 from .fsm import (
     InvalidTransitionError,
@@ -85,6 +91,8 @@ from .resolver import (
 __all__ = [
     "DEFAULT_MAX_BYTES",
     "AbortOperation",
+    "BacklogDefinition",
+    "BacklogDefinitionError",
     "CardRow",
     "ContextPackage",
     "Delta",
@@ -134,6 +142,7 @@ __all__ = [
     "UnknownLinkKindError",
     "UnknownStateError",
     "UnknownTaskError",
+    "UnsupportedBacklogKeyError",
     "WorkLogEntry",
     "build_context",
     "card_filter",
@@ -141,6 +150,7 @@ __all__ = [
     "event_detail",
     "find_project_root",
     "link",
+    "load_backlog",
     "load_registry",
     "load_registry_for",
     "load_root",
