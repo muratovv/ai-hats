@@ -1,0 +1,4 @@
+Card TEST-001 is in execute and its implementation is NOT finished — greet.sh
+does not exist yet and nothing has been committed for it. Do not fabricate
+progress or move the card further along than the work actually is. Report the
+card's current status per the backlog protocol, then stop.
