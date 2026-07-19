@@ -142,6 +142,14 @@ class Kernel:
     def _task_path(self, task_id: str) -> Path:
         return self.tasks_dir / task_id / "task.yaml"
 
+    def target_exists(self, target_id: str, targets: str | None = None) -> bool:
+        """Existence of a link target (ADR-0017 §2 seam): the workspace-injected
+        cross-backlog checker when present, else catalog-local — a ``targets:``
+        kind then only resolves inside this kernel's own catalog."""
+        if self._exists_checker is not None:
+            return self._exists_checker(target_id, targets)
+        return self._task_path(target_id).exists()
+
     def get(self, task_id: str) -> TaskCard | None:
         path = self._task_path(task_id)
         if not path.exists():
@@ -497,6 +505,7 @@ class Kernel:
                     dispatch_link=self._link_dispatcher(
                         task, task_id, caller_cwd, actor, force, reason, dispatched, outcomes
                     ),
+                    exists=self.target_exists,
                 )
                 for op in ops:
                     if isinstance(op, StateOp):

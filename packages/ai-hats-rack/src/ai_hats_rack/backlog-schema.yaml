@@ -11,7 +11,9 @@ keys:
   state: [name, on_enter, on_exit]
   edge: [from, to, name, handlers, skip]
   links: [kinds]
-  kind: [name, arity, inverse, derived, aliases, handlers]
+  # `targets:` names the backlog a cross-backlog kind points at (HATS-1044);
+  # unset means the kind's own backlog (today's behavior).
+  kind: [name, arity, inverse, derived, aliases, handlers, targets]
   # A card-field entry (HATS-1035): `type` is str|int|list|any; a complex shape
   # is `type: any` + a mandatory `validator`. `emit` is always|when-set.
   field: [name, type, default, required, choices, validator, emit]
@@ -24,10 +26,9 @@ handler_ref:
   extra_keys: config-passthrough
 
 # Keys reserved for successor tasks — rejected today (fail-closed), each naming
-# the task that lands it.
-reserved:
-  kind:
-    targets: HATS-1044
+# the task that lands it. All prior reservations have landed (fields/extras
+# HATS-1035, kind targets HATS-1044); the machinery stays for the next one.
+reserved: {}
 
 # In-lock priority chain (documentation-as-data). Lower fires first; an unpinned
 # reference takes a positional band from band_start, stepping band_step.
