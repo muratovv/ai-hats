@@ -20,6 +20,7 @@ from ai_hats_rack.composition import (
     bind_subscribers,
     build_bound_subscribers,
     build_extensions,
+    build_link_subscribers,
     stock_factories,
     validate_requires_states,
 )
@@ -407,8 +408,10 @@ def build_rack_kernel(
     # plan-gate/stamp/clear (declaration-bound) come from the definition slots.
     # derived-views stays code-channel — it needs the STATE.md path (ADR-0017 §4).
     factories = stock_factories(sections)
-    declared = build_extensions(defn, tasks_dir, factories) + build_bound_subscribers(
-        defn, tasks_dir, factories
+    declared = (
+        build_extensions(defn, tasks_dir, factories)
+        + build_bound_subscribers(defn, tasks_dir, factories)
+        + build_link_subscribers(defn, tasks_dir, factories)
     )
     # Code channel (integrator scope). Priorities give the single in-lock order —
     # single-slot(5) < frozen(8) < plan-gate(10) < hook(15) < claim(20) <
