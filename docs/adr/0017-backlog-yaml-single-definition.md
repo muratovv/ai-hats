@@ -159,7 +159,11 @@ only — a complex shape (typed `validation_log` entries, nested
 `exit_criteria`) is `type: any` plus a **mandatory** `validator: <name>`;
 there is deliberately no inline item-schema DSL ("Bash-composable primitives
 over DSLs"). A top-level `extras: allow | forbid` (default `allow` — today's
-`TaskCard` passthrough [15]) declares the unknown-key policy per backlog.
+`TaskCard` passthrough [15]) declares the unknown-key policy per backlog. A
+per-field `emit: always | when-set` (default `always`; added HATS-1035,
+supervisor-approved for HYP/PROP) governs persistence of an empty value —
+`when-set` drops it at write time, mirroring today's `resolution` /
+`completed_at` / `final_state` serialization.
 
 The plan-section catalog is **not** a `backlog.yaml` section (supervisor
 review, 2026-07-17): it is config of one extension, not of the backlog. It

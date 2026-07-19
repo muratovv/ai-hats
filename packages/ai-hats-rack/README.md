@@ -23,7 +23,9 @@ FileLock(task) → FSM-guard → in-memory mutation → in-lock subscribers → 
   to subscribers as information, never as a safety-off switch (HATS-518/596/697).
 - **backlog.yaml is the SSOT** of the topology (9 states; reclaim `execute→execute`, reopen
   `done→execute`, `blocked` hub, `cancelled` exits). Editing it edits the kernel contract.
-  `document` must exist (PROP-012). Invalid transitions answer with the legal edges.
+  The tasks discipline requires `document` (PROP-012), enforced at composition via
+  `requires_states` (ADR-0017 §3) — an HYP/PROP topology without it loads. Invalid
+  transitions answer with the legal edges.
 
 ## Subscriber contract
 
@@ -226,6 +228,29 @@ file is visible immediately — no registration, no write→register race.
   (above) is what blocks transitions on it.
 - freeze/rm are `transition` ops (table above): pins persist in task.yaml under the
   task lock; removal trashes to `$TMPDIR` (recoverable), never hard-deletes.
+
+## Card fields (schema, HATS-1035, ADR-0017 §1–§2)
+
+Everything beyond the engine anchor (`id`, `state`, `title`, `work_log`,
+timestamps, links) is declared in `backlog.yaml` `fields[]`; `create` requires
+only a non-empty `title`. A field entry:
+
+```yaml
+fields:
+  - { name: priority, type: str, default: medium, choices: [low, medium, high, critical] }
+  - { name: votes, type: any, validator: prop-vote-entries, default: [] } # any + a validator
+  - { name: resolution, type: str, default: "", emit: when-set }          # dropped when empty
+extras: forbid # top-level: reject unknown keys on WRITES (default: allow)
+```
+
+`type` is `str | int | list | any`; a complex shape is `any` + a mandatory
+`validator: <name>` resolved through the open registry (unknown → fail-closed at
+composition). **Writes are strict** — `create`, a transition's touched fields,
+and subscriber `Delta.fields` ops validate against the schema (required / choices
+/ type / validator); a violation is a typed refusal that persists nothing.
+**Reads stay tolerant** — an old card breaking `choices` still loads (a `context`
+warning, never a load failure). `emit: when-set` drops an empty value at persist
+(the packaged nine keep `to_dict`'s behaviour, held by a parity pin).
 
 ## Data format
 
