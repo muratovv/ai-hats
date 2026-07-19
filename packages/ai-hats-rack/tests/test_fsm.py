@@ -23,7 +23,7 @@ EXPECTED_EDGES = {
     "plan": ("execute", "blocked", "cancelled"),
     "execute": ("execute", "document", "blocked", "failed", "cancelled"),
     "document": ("review", "blocked", "cancelled"),
-    "review": ("done", "execute", "failed", "cancelled"),
+    "review": ("execute", "done", "failed", "cancelled"),
     "blocked": ("brainstorm", "plan", "execute", "document", "cancelled"),
     "failed": ("brainstorm", "cancelled"),
     "done": ("execute",),
@@ -61,7 +61,7 @@ def test_review_to_execute_rework_edge(topology):
     assert topology.allows("review", "execute")
     with pytest.raises(InvalidTransitionError) as exc_info:
         topology.guard("T-1", "review", "plan")
-    assert exc_info.value.allowed == ("done", "execute", "failed", "cancelled")
+    assert exc_info.value.allowed == ("execute", "done", "failed", "cancelled")
 
 
 def test_guard_raises_with_legal_edges(topology):
