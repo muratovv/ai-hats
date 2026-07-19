@@ -1,18 +1,9 @@
 #!/usr/bin/env bash
 # Scenario (b) review-rework: card in REVIEW with reviewer comments to address.
-# Correct behavior ONCE HATS-1052 lands: review -> execute (rework) -> document
-# -> review again.
-#
-# NON-RUNNABLE until HATS-1052 (the review->execute edge) exists: the agent's
-# required first move is refused by the FSM today, so no arm can succeed. The
-# guard below fails fast in `prepare` so no paid agent run is wasted. Set
-# HATS_1052_LANDED=1 to force once the edge lands. See ../NONRUNNABLE.md.
+# Correct behavior: review -> execute (rework) -> document -> review again. The
+# review->execute edge is legal (HATS-1052) and fires no worktree merge, so the
+# agent loops back and addresses the comments in the same tree.
 set -euo pipefail
-
-if [[ "${HATS_1052_LANDED:-}" != "1" ]]; then
-  echo "rework: NON-RUNNABLE until HATS-1052 (review->execute edge). Set HATS_1052_LANDED=1 to force." >&2
-  exit 1
-fi
 
 cd "$1"
 

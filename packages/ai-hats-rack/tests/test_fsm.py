@@ -23,7 +23,7 @@ EXPECTED_EDGES = {
     "plan": ("execute", "blocked", "cancelled"),
     "execute": ("execute", "document", "blocked", "failed", "cancelled"),
     "document": ("review", "blocked", "cancelled"),
-    "review": ("done", "failed", "cancelled"),
+    "review": ("execute", "done", "failed", "cancelled"),
     "blocked": ("brainstorm", "plan", "execute", "document", "cancelled"),
     "failed": ("brainstorm", "cancelled"),
     "done": ("execute",),
@@ -52,6 +52,16 @@ def test_reclaim_reopen_and_hubs_present(topology):
     for state in ("brainstorm", "plan", "execute", "document", "review", "blocked", "failed"):
         assert topology.allows(state, "cancelled")  # administrative close
     assert topology.targets("cancelled") == ()  # the only true dead end
+
+
+def test_review_to_execute_rework_edge(topology):
+    # HATS-1052: review → execute is the rework loop-back (review returned WITH
+    # comments). It is legal now; the other illegal edges out of review still
+    # refuse, and the reported legal set carries execute.
+    assert topology.allows("review", "execute")
+    with pytest.raises(InvalidTransitionError) as exc_info:
+        topology.guard("T-1", "review", "plan")
+    assert exc_info.value.allowed == ("execute", "done", "failed", "cancelled")
 
 
 def test_guard_raises_with_legal_edges(topology):
