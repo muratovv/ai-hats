@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import pytest
 
+from ai_hats_rack.composition import build_bound_subscribers, stock_factories
+from ai_hats_rack.definition import load_backlog
 from ai_hats_rack.extensions import AUTOMATION_ACTOR, EpicAutomationExtension, decide
 from ai_hats_rack.fsm import load_topology
 
@@ -14,11 +16,22 @@ from rack_testkit import CollectingSink, make_kernel, walk
 TOPOLOGY = load_topology()
 
 
+def _lifecycle(tasks_dir):
+    # The declared stamp/clear handlers (HATS-1043) — completed_at stamping moved
+    # out of the kernel, so the epic kernel composes them like any real backlog.
+    return [
+        s
+        for s in build_bound_subscribers(load_backlog(), tasks_dir, stock_factories())
+        if s.name in ("stamp-lifecycle", "clear-lifecycle")
+    ]
+
+
 @pytest.fixture
 def kernel(tasks_dir):
     sink = CollectingSink()
     automation = EpicAutomationExtension(topology=TOPOLOGY)
-    k = make_kernel(tasks_dir, topology=TOPOLOGY, subscribers=[automation], journal_sink=sink)
+    subs = [automation, *_lifecycle(tasks_dir)]
+    k = make_kernel(tasks_dir, topology=TOPOLOGY, subscribers=subs, journal_sink=sink)
     automation.bind(k)
     k.sink = sink  # test-only handle
     return k
@@ -402,3 +415,34 @@ def test_coverage_table_spans_the_full_topology():
 def test_decision_table(epic_state, trigger):
     child_state, child_states = TRIGGERS[trigger]
     assert decide(epic_state, child_state, child_states) == EXPECTED[epic_state][trigger]
+
+
+# ---------------------------------------------------------------------------
+# requires_states — the full decision vocabulary, validated fail-closed (R8)
+# ---------------------------------------------------------------------------
+
+
+def test_requires_states_is_the_full_decision_vocabulary():
+    ext = EpicAutomationExtension(topology=TOPOLOGY)
+    assert ext.requires_states() == frozenset(
+        {"brainstorm", "plan", "execute", "document", "review", "done", "cancelled"}
+    )
+    assert ext.requires_states() <= set(TOPOLOGY.states)  # packaged topology covers it
+
+
+def test_composition_refuses_a_topology_missing_the_vocabulary():
+    # A topology without `review` would strand an advancing epic — the HATS-692
+    # class, caught at composition, not only by the decision-table test.
+    from types import MappingProxyType
+
+    from ai_hats_rack.dispatch import RequiresStatesError, validate_requires_states
+    from ai_hats_rack.fsm import Topology
+
+    states = tuple(s for s in TOPOLOGY.states if s != "review")
+    truncated = Topology(
+        initial="brainstorm", states=states, edges=MappingProxyType({s: () for s in states})
+    )
+    ext = EpicAutomationExtension(topology=TOPOLOGY)
+    with pytest.raises(RequiresStatesError, match="epic-automation") as exc_info:
+        validate_requires_states([ext], truncated, source="truncated")
+    assert "review" in exc_info.value.missing

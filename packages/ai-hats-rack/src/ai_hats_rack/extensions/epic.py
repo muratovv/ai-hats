@@ -37,6 +37,9 @@ ADVANCE_SOURCES: tuple[str, ...] = ("brainstorm", "plan", "execute", "document")
 #: epic is decomposed — the old "leave brainstorm alone" guard is removed).
 ACTIVATE_SOURCES: tuple[str, ...] = ("brainstorm", "plan")
 
+#: FSM-valid multi-hop cascade the advance branch drives an epic through.
+ADVANCE_CHAIN: tuple[str, ...] = ("plan", "execute", "document", "review")
+
 
 def decide(
     epic_state: str, child_state: str, child_states: Sequence[str]
@@ -85,6 +88,18 @@ class EpicAutomationExtension:
     def bind(self, kernel: Kernel) -> None:
         """Late-bound kernel handle (the kernel is built with its subscribers)."""
         self._kernel = kernel
+
+    def requires_states(self) -> frozenset[str]:
+        """The FULL decision-table vocabulary, not just the subscriptions: a
+        topology missing any of these would strand a child in an unhandled state
+        (the HATS-692 class), so composition validates it fail-closed (R8)."""
+        return frozenset(
+            RESOLVED_STATES
+            | ACTIVE_STATES
+            | frozenset(ADVANCE_SOURCES)
+            | frozenset(ACTIVATE_SOURCES)
+            | frozenset(ADVANCE_CHAIN)
+        )
 
     def subscriptions(self) -> Sequence[Subscription]:
         states = self._topology.states
@@ -138,7 +153,7 @@ class EpicAutomationExtension:
             # FSM-valid multi-hop cascade to review; each hop is a journaled
             # kernel transition.
             current = from_state
-            for hop in ("plan", "execute", "document", "review"):
+            for hop in ADVANCE_CHAIN:
                 if current != hop and self._topology.allows(current, hop):
                     self._hop(epic_id, hop, ctx, reason)
                     current = hop

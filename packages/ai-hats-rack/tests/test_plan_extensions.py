@@ -8,8 +8,6 @@ import pytest
 from ai_hats_rack.dispatch import OperationAborted
 from ai_hats_rack.extensions import (
     DEFAULT_PLAN_SECTIONS,
-    PlanGateExtension,
-    PlanScaffoldExtension,
     Section,
     load_sections,
     render_scaffold,
@@ -143,16 +141,10 @@ def test_load_sections_from_yaml(tmp_path):
 
 
 def test_custom_catalog_drives_both_scaffold_and_gate(tasks_dir, cwd):
-    """Never-drift: a catalog change reaches the scaffold and the gate
-    together, or not at all."""
+    """Never-drift on the declarative path (HATS-1043): one custom catalog feeds
+    BOTH the scaffold and the gate, wired from the definition's on_enter slots."""
     sections = (Section("Goal"), Section("Rollback plan"))
-    kernel = make_kernel(
-        tasks_dir,
-        subscribers=[
-            PlanGateExtension(tasks_dir, sections),
-            PlanScaffoldExtension(tasks_dir, sections),
-        ],
-    )
+    kernel = make_kernel(tasks_dir, subscribers=standalone_extensions(tasks_dir, sections))
     kernel.create(actor="test", caller_cwd=cwd, task_id="T-1", title="Custom")
     walk(kernel, "T-1", "plan", cwd=cwd)
     scaffolded = (tasks_dir / "T-1" / "plan.md").read_text()

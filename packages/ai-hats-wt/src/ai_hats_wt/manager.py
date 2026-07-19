@@ -585,11 +585,16 @@ class WorktreeManager:
         merge_target: str | None = None,
         lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
         state_dir: Path | None = None,
+        git_timeout: float | None = None,
     ) -> None:
         self.project_dir = project_dir
         self.role_name = role_name
         self.session_id = session_id
         self.isolation_mode = isolation_mode
+        # HATS-1015 liveness budget (opt-in, None = unbounded — unchanged
+        # default): the per-git wall-clock ceiling every ``_git`` call falls
+        # back to, so a hung local plumbing op cannot hold a caller's lock.
+        self._git_timeout = git_timeout
         # HATS-942: base_branch = start-point (None => HEAD); merge_target =
         # where `wt merge` lands (None => HEAD-following canonical). Trusted to be
         # existing branches — the caller validates via resolve_worktree_branches;
@@ -1193,6 +1198,7 @@ class WorktreeManager:
         *,
         lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
         state_dir: Path | None = None,
+        git_timeout: float | None = None,
     ) -> WorktreeManager | None:
         """Load the worktree state for a specific task ID.
 
@@ -1206,7 +1212,9 @@ class WorktreeManager:
         → key ``task-HATS-086``, while ``save_state`` wrote ``task-hats-086``).
         """
         key = _state_key(f"task/{task_id.lower()}")
-        return cls._load_by_key(project_dir, key, lifecycle=lifecycle, state_dir=state_dir)
+        return cls._load_by_key(
+            project_dir, key, lifecycle=lifecycle, state_dir=state_dir, git_timeout=git_timeout
+        )
 
     @classmethod
     def load_for_branch(
@@ -1222,7 +1230,9 @@ class WorktreeManager:
         return cls._load_by_key(project_dir, key, lifecycle=lifecycle, state_dir=state_dir)
 
     @classmethod
-    def branch_exists(cls, project_dir: Path, branch: str) -> bool:
+    def branch_exists(
+        cls, project_dir: Path, branch: str, *, timeout: float | None = None
+    ) -> bool:
         """Check whether ``branch`` exists as a local ref in ``project_dir``.
 
         Probe-only — does NOT touch worktree state. Used by
@@ -1246,9 +1256,10 @@ class WorktreeManager:
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=timeout,
                 env=scrubbed_git_env(),
             )
-        except OSError:
+        except (OSError, subprocess.TimeoutExpired):
             return False
         if result.returncode != 0:
             return False
@@ -1257,8 +1268,11 @@ class WorktreeManager:
         return bool(result.stdout.strip())
 
     @staticmethod
-    def _git_probe(project_dir: Path, *args: str) -> subprocess.CompletedProcess[str] | None:
-        """Run ``git <args>`` in ``project_dir`` (captured); None if git is absent."""
+    def _git_probe(
+        project_dir: Path, *args: str, timeout: float | None = None
+    ) -> subprocess.CompletedProcess[str] | None:
+        """Run ``git <args>`` in ``project_dir`` (captured); None if git is
+        absent or the probe exceeds ``timeout`` (HATS-1015 liveness budget)."""
         try:
             return subprocess.run(
                 ["git", *args],
@@ -1266,9 +1280,10 @@ class WorktreeManager:
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=timeout,
                 env=scrubbed_git_env(),
             )
-        except (FileNotFoundError, OSError):
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
             return None
 
     @classmethod
@@ -1278,6 +1293,7 @@ class WorktreeManager:
         branch: str,
         *,
         bases: tuple[str, ...] = CANONICAL_BASE_BRANCHES,
+        timeout: float | None = None,
     ) -> str | None:
         """Return the canonical base ``branch`` is already merged into, else None.
 
@@ -1287,22 +1303,28 @@ class WorktreeManager:
         on a genuine divergence, no canonical base, or an unreadable repo.
         """
         for base in bases:
-            exists = cls._git_probe(project_dir, "rev-parse", "--verify", "--quiet", base)
+            exists = cls._git_probe(
+                project_dir, "rev-parse", "--verify", "--quiet", base, timeout=timeout
+            )
             if exists is None or exists.returncode != 0:
                 continue
-            anc = cls._git_probe(project_dir, "merge-base", "--is-ancestor", branch, base)
+            anc = cls._git_probe(
+                project_dir, "merge-base", "--is-ancestor", branch, base, timeout=timeout
+            )
             return base if anc is not None and anc.returncode == 0 else None
         return None
 
     @classmethod
-    def delete_merged_branch(cls, project_dir: Path, branch: str) -> bool:
+    def delete_merged_branch(
+        cls, project_dir: Path, branch: str, *, timeout: float | None = None
+    ) -> bool:
         """Best-effort safe-delete (``git branch -d``) of an already-merged branch.
 
         HATS-697: clears the stale ``task/<id>`` ref after a state-lost
         finalize; ``-d`` refuses an un-merged branch, so failure is logged,
         never raised — finalize must not hinge on cleanup. True iff deleted.
         """
-        res = cls._git_probe(project_dir, "branch", "-d", branch)
+        res = cls._git_probe(project_dir, "branch", "-d", branch, timeout=timeout)
         if res is None or res.returncode != 0:
             detail = (res.stderr.strip() if res else "git unavailable") or "<no stderr>"
             logger.warning("Merged-branch cleanup skipped for '%s': %s", branch, detail)
@@ -1370,6 +1392,7 @@ class WorktreeManager:
         *,
         lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
         state_dir: Path | None = None,
+        git_timeout: float | None = None,
     ) -> WorktreeManager | None:
         resolved_state_dir = _resolve_state_dir(project_dir, state_dir, lifecycle)
         state_path = resolved_state_dir / f"{key}.json"
@@ -1406,6 +1429,7 @@ class WorktreeManager:
             branch_name=data["branch"],
             lifecycle=lifecycle,
             state_dir=resolved_state_dir,
+            git_timeout=git_timeout,
         )
         mgr.worktree_path = wt_path
         mgr._original_branch = data.get("original_branch")
@@ -1627,18 +1651,18 @@ class WorktreeManager:
         cwd: Path | None = None,
         timeout: float | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        # ``timeout`` is opt-in (default ``None`` = unbounded, preserving
-        # behaviour for every local plumbing call). Only the network
-        # ``fetch`` in :meth:`_check_drift` sets it — see ``FETCH_TIMEOUT``
-        # (HATS-711). A bounded ``fetch`` cannot wedge the per-branch
-        # lifecycle lock and then mis-blame phantom concurrency on peers.
+        # ``timeout`` is opt-in per call; when unset it falls back to the
+        # manager's ``git_timeout`` liveness budget (HATS-1015, default None =
+        # unbounded — behaviour unchanged for every existing caller). The
+        # network ``fetch`` in :meth:`_check_drift` still pins its own
+        # ``FETCH_TIMEOUT`` (HATS-711) explicitly.
         return subprocess.run(
             ["git", *args],
             cwd=str(cwd or self.project_dir),
             capture_output=True,
             text=True,
             check=True,
-            timeout=timeout,
+            timeout=timeout if timeout is not None else self._git_timeout,
             env=scrubbed_git_env(),
         )
 

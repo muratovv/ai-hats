@@ -1,28 +1,19 @@
-"""Stock plan extensions: scaffold on ``*→plan``, per-section gate on
-``*→execute`` (HATS-1022; heirs of HATS-635/621/794/328).
+"""Stock plan handlers: scaffold on ENTERING ``plan``, per-section gate on
+ENTERING ``execute`` (HATS-1022; heirs of HATS-635/621/794/328).
 
-Both read one section catalog (``sections.py``) so the template the agent
-fills and the checklist the gate enforces cannot drift. First "users" of the
-extension API (epic HATS-1014 §2.3): attached by default, removable, never
-in the kernel.
+Declaration-bound (HATS-1043, ADR-0017 §3): the loader binds them from the
+``on_enter`` slots — they hardcode no event keys. Reopen is exempted by the
+declarative ``skip: [plan-gate]`` on the reopen edge, not a code filter. Both
+read one section catalog (``sections.py``) so template and checklist cannot drift.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
 
-from ..dispatch import AbortOperation, Delta, DispatchContext, Phase, Subscription
-from ..fsm import Topology, load_topology
+from ..dispatch import AbortOperation, Delta, DispatchContext, Phase
 from .epic import AUTOMATION_ACTOR
 from .sections import DEFAULT_PLAN_SECTIONS, Section, render_scaffold, unfilled_sections
-
-
-def _edges_into(state: str, topology: Topology) -> list[str]:
-    """Every ``edge:<from>--<state>`` key, from ANY state — forced transitions
-    fire real (possibly non-topology) edge keys, so safety-relevant
-    subscriptions enumerate the full product, not just legal edges."""
-    return [f"edge:{src}--{state}" for src in topology.states if src != state or state == "execute"]
 
 
 class PlanScaffoldExtension:
@@ -34,25 +25,18 @@ class PlanScaffoldExtension:
     """
 
     name = "plan-scaffold"
+    PHASE = Phase.IN_LOCK
 
     def __init__(
         self,
         tasks_dir: Path,
         sections: tuple[Section, ...] = DEFAULT_PLAN_SECTIONS,
-        *,
-        topology: Topology | None = None,
-        priority: int = 30,
     ) -> None:
         self.tasks_dir = tasks_dir
         self.sections = sections
-        self._topology = topology if topology is not None else load_topology()
-        self._priority = priority
 
-    def subscriptions(self) -> Sequence[Subscription]:
-        return [
-            Subscription(key, Phase.IN_LOCK, self._priority)
-            for key in _edges_into("plan", self._topology)
-        ]
+    def requires_states(self) -> frozenset[str]:
+        return frozenset({"plan"})  # scaffolds on entering plan
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         if ctx.actor == AUTOMATION_ACTOR:
@@ -73,30 +57,22 @@ class PlanGateExtension:
 
     The abort reason NAMES every empty required section (HATS-635); epics are
     never gated — a tracker, not a unit of executable work (HATS-794); reopen
-    ``done → execute`` is not gated — the plan already passed once (HATS-328).
+    ``done → execute`` is not gated (HATS-328) via the declarative ``skip``.
     """
 
     name = "plan-gate"
+    PHASE = Phase.IN_LOCK
 
     def __init__(
         self,
         tasks_dir: Path,
         sections: tuple[Section, ...] = DEFAULT_PLAN_SECTIONS,
-        *,
-        topology: Topology | None = None,
-        priority: int = 10,
     ) -> None:
         self.tasks_dir = tasks_dir
         self.sections = sections
-        self._topology = topology if topology is not None else load_topology()
-        self._priority = priority
 
-    def subscriptions(self) -> Sequence[Subscription]:
-        return [
-            Subscription(key, Phase.IN_LOCK, self._priority)
-            for key in _edges_into("execute", self._topology)
-            if key != "edge:done--execute"  # reopen is not gated (HATS-328)
-        ]
+    def requires_states(self) -> frozenset[str]:
+        return frozenset({"execute"})  # gates on entering execute
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         if ctx.actor == AUTOMATION_ACTOR:
