@@ -36,6 +36,12 @@ from .registry import LinksRegistry, load_registry
 LOCK_TIMEOUT = 30.0
 
 
+def _field_value(task: TaskCard, name: str) -> Any:
+    """Current value of a card field: a TaskCard column or an extras-resident key
+    (a custom backlog's declared field that is not a kernel-anchor column)."""
+    return getattr(task, name) if name in TaskCard._KNOWN_FIELDS else task.extras.get(name)
+
+
 class UnknownTaskError(RackError):
     def __init__(self, task_id: str) -> None:
         self.task_id = task_id
@@ -413,9 +419,12 @@ class Kernel:
 
     def _delta_applier(self, task: TaskCard, actor: str) -> Callable[[Delta], None]:
         """In-memory application of an in-lock delta (work_log + declared-field
-        ops) against ``task`` before the single persist — shared by the edge and
-        link dispatch paths. Under ``extras: forbid`` a Set/Append targeting an
-        undeclared key is a typed refusal (HATS-1035); ``allow`` is a no-op."""
+        ops) before the single persist — shared by the edge and link paths.
+        ``extras: forbid`` refuses an undeclared Set/Append (HATS-1035); a
+        declared field's RESULTING value is schema-checked (type/choices/
+        validator) AFTER the op — so the model container gate (DeltaFieldError)
+        fires first and an Append is judged by the list it yields, not its entry.
+        Undeclared names are a no-op (read tolerance); a raise aborts pre-persist."""
 
         def apply_delta(delta: Delta) -> None:
             for line in delta.work_log:
@@ -424,6 +433,7 @@ class Kernel:
                 if not self._schema.writable(name):
                     raise ExtrasForbiddenError(name)
                 op.apply(task, name)
+                self._schema.validate(name, _field_value(task, name))
 
         return apply_delta
 
