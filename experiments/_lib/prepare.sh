@@ -31,7 +31,8 @@ cat >"$sandbox/.claude/settings.json" <<'EOF'
   "permissions": {
     "allow": [
       "Bash(rack:*)",
-      "Bash(ai-hats:*)"
+      "Bash(ai-hats:*)",
+      "Bash(ai-hats-rack:*)"
     ]
   }
 }
@@ -54,10 +55,11 @@ fi
 
 (cd "$sandbox" && "${SCRUB[@]}" ai-hats self init --no-wizard --no-update -p claude -r exp-agent >&2)
 
-"${SCRUB[@]}" "$scenario_dir/seed.sh" "$sandbox" >&2
-
-# The agent session runs in a worktree of this repo — tracked files are what it sees.
+# Commit before seeding: agent sessions and seed transitions run in worktrees of
+# this repo — tracked files are what they see, and a worktree needs a commit.
 git -C "$sandbox" add -A
 git -C "$sandbox" -c user.email=exp@sandbox -c user.name=exp commit -q -m "sandbox seed"
+
+"${SCRUB[@]}" "$scenario_dir/seed.sh" "$sandbox" >&2
 
 echo "$sandbox"

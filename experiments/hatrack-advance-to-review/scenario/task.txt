@@ -1,0 +1,3 @@
+The implementation for card TEST-001 is finished: greet.sh is committed on this
+branch and matches the plan. Finish your work on card TEST-001 according to the
+backlog protocol, then stop.
