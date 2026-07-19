@@ -1,0 +1,38 @@
+# HATS-1035 step 6 FIXTURE (NOT shipped — real instances are HATS-1044): the
+# ADR-0017 §5 proposals sketch. `extras: forbid` (Proposal was extra="forbid"),
+# a required `category` with choices, and a `votes` validator resolved via the
+# registry. `targets:` (cross-backlog, HATS-1044) is dropped; `prop-votes`
+# resolves to a test stub; the acceptance quorum stays commented out (sketch).
+name: proposals
+prefix: PROP
+extras: forbid
+
+fsm:
+  initial: open
+  states:
+    - { name: open }
+    - { name: accepted }
+    - { name: rejected }
+    - { name: deferred }
+    - { name: duplicate }
+  edges:
+    - { from: open, to: accepted, name: accept }
+    - { from: open, to: rejected, name: reject }
+    - { from: open, to: deferred, name: defer }
+    - { from: open, to: duplicate, name: mark-duplicate }
+    - { from: deferred, to: open, name: reopen }
+
+fields:
+  - { name: category, type: str, required: true, choices: [rule, skill, code, process, doc] }
+  - { name: target, type: str, required: true }
+  - { name: description, type: str, required: true }
+  - { name: rationale, type: str, required: true }
+  - { name: votes, type: any, validator: prop-vote-entries, default: [] }
+  - { name: failed_session_id, type: str, default: "" }
+
+links:
+  kinds:
+    - { name: related_hypotheses, arity: many }
+
+extensions:
+  - prop-votes
