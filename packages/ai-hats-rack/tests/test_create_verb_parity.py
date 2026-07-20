@@ -63,3 +63,25 @@ def test_lifecycle_owned_and_assignee_fields_are_not_exposed():
     # but none is a create input (byte-parity + kernel.create has no such kwargs).
     dests = {p.name for p in build_create_command(load_backlog()).params}
     assert dests.isdisjoint({"resolution", "completed_at", "final_state", "assignee"})
+
+
+def test_kernel_create_fields_mapping_equals_fixed_kwargs(tmp_path):
+    # HATS-1036: the verb now feeds the generic `fields=` mapping; a tasks card
+    # built that way is byte-identical to one built from the named kwargs (the
+    # migrated path stays parity with the pre-refactor fixed-kwarg signature).
+    from ai_hats_rack.kernel import Kernel
+
+    named = Kernel(tmp_path / "a").create(
+        actor="t", caller_cwd=tmp_path, task_id="HATS-1", title="x",
+        description="d", priority="high", role="r", reviewer="rev", tags=["t1", "t2"],
+    ).task
+    mapped = Kernel(tmp_path / "b").create(
+        actor="t", caller_cwd=tmp_path, task_id="HATS-1", title="x",
+        fields={"description": "d", "priority": "high", "role": "r",
+                "reviewer": "rev", "tags": ["t1", "t2"]},
+    ).task
+    a, b = named.to_dict(), mapped.to_dict()
+    for volatile in ("created", "updated"):
+        a.pop(volatile, None)
+        b.pop(volatile, None)
+    assert a == b

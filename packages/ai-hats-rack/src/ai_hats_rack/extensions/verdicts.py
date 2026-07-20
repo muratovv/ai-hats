@@ -10,9 +10,22 @@ field ownership, reached via ``Workspace.extension``.
 
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
+import click
+
+from ..cli_common import (
+    ENV_SESSION_ID,
+    JSON_OPT,
+    TASKS_DIR_OPT,
+    actor,
+    emit_json,
+    handle_rack_error,
+    resolved_root,
+)
 from ..dispatch import Append
 from ..fsm import InvalidTransitionError
 from ..models import TaskCard, utc_now
@@ -128,6 +141,12 @@ class HypVerdictsExtension:
                 closed.append(closure)
         return closed
 
+    # ----- CLI verbs (HATS-1036 R5) ------------------------------------------
+
+    def verbs(self) -> list[click.Command]:
+        """The group verbs this extension contributes (ADR-0017 §4)."""
+        return [_append_verdict_command(), _autoclose_command()]
+
 
 def _synthetic_entry(closure: QuorumClosure, *, now: str | None) -> dict[str, Any]:
     stamp = now or utc_now()
@@ -169,3 +188,164 @@ class PropVotesExtension:
             actor=actor,
             caller_cwd=caller_cwd,
         )
+
+    def verbs(self) -> list[click.Command]:
+        """The group verbs this extension contributes (ADR-0017 §4)."""
+        return [_vote_command()]
+
+
+# ----- CLI verb plumbing (HATS-1036 R5) --------------------------------------
+# verbs() commands re-resolve the workspace at RUN time and fetch the bound
+# extension by name (the composition-time instance carries no kernel).
+
+
+def _ambient_session() -> str:
+    return os.environ.get(ENV_SESSION_ID, "")
+
+
+def _run_extension_verb(
+    ext_name: str, tasks_dir: Path | None, as_json: bool, call: Callable[[Any, Path], Any]
+) -> tuple[Any, bool]:
+    """Resolve the bound extension declaring ``ext_name`` and run ``call(ext,
+    caller_cwd)``; a raise is routed to the typed CLI surface. Returns
+    ``(result, ok)``."""
+    from ..workspace import Workspace  # deferred: workspace pulls the composition root
+
+    caller_cwd = Path.cwd()
+    try:
+        root = resolved_root(tasks_dir, caller_cwd)
+        ext = Workspace.discover([root]).extension(ext_name)
+        return call(ext, caller_cwd), True
+    except Exception as exc:  # noqa: BLE001 — routed to typed handling
+        handle_rack_error(exc, as_json)
+        return None, False
+
+
+def _emit_kernel_result(result: Any, as_json: bool, headline: str) -> None:
+    from ..cli_kernel import _result_payload  # deferred: cli_kernel pulls extensions
+
+    if as_json:
+        emit_json(_result_payload(result))
+    else:
+        click.echo(headline)
+
+
+def _append_verdict_command() -> click.Command:
+    @click.command("append-verdict", help="Append a validation_log verdict (atomic, no edge).")
+    @click.argument("hyp_id")
+    @click.option("--verdict", default=None, help="confirmed | refuted | inconclusive | n/a.")
+    @click.option("--evidence", default=None, help="Non-empty evidence string (required).")
+    @click.option("--recommendation", default=None, help="close_confirmed|close_refuted|keep|extend_window.")
+    @click.option("--date", default=None, help="Entry date (default: today, UTC).")
+    @click.option("--session-id", "session_id", default=None, help="Session id (default: ambient).")
+    @click.option("--entry", "entry_json", default=None, help="Full entry as JSON (named options win).")
+    @TASKS_DIR_OPT
+    @JSON_OPT
+    def _append_verdict(hyp_id, verdict, evidence, recommendation, date, session_id, entry_json, tasks_dir, as_json):
+        try:
+            entry = _verdict_entry(verdict, evidence, recommendation, date, session_id, entry_json)
+        except ValueError as exc:
+            handle_rack_error(exc, as_json)
+            return
+        result, ok = _run_extension_verb(
+            "hyp-verdicts", tasks_dir, as_json,
+            lambda ext, cwd: ext.append_verdict(hyp_id, entry, actor=actor(), caller_cwd=cwd),
+        )
+        if ok:
+            _emit_kernel_result(result, as_json, f"Verdict on {hyp_id}: {entry.get('verdict')}")
+
+    return _append_verdict
+
+
+def _verdict_entry(verdict, evidence, recommendation, date, session_id, entry_json) -> dict[str, Any]:
+    entry: dict[str, Any] = {}
+    if entry_json:
+        loaded = json.loads(entry_json)
+        if not isinstance(loaded, dict):
+            raise ValueError("--entry must be a JSON object")
+        entry.update(loaded)
+    if verdict is not None:
+        entry["verdict"] = verdict
+    if evidence is not None:
+        entry["evidence"] = evidence
+    if recommendation is not None:
+        entry["recommendation"] = recommendation
+    entry["date"] = date or entry.get("date") or utc_now()[:10]
+    sid = session_id or entry.get("session_id") or _ambient_session()
+    if sid:
+        entry["session_id"] = sid
+    entry.setdefault("timestamp", utc_now())
+    return entry
+
+
+def _autoclose_command() -> click.Command:
+    @click.command("autoclose", help="Close active HYPs that reached the refuted-verdict quorum.")
+    @click.option("--k", "k", default=DEFAULT_QUORUM_K, show_default=True, type=int,
+                  help="Independent refuted sessions required.")
+    @click.option("--dry-run", "dry_run", is_flag=True, help="Report closures without writing.")
+    @TASKS_DIR_OPT
+    @JSON_OPT
+    def _autoclose(k, dry_run, tasks_dir, as_json):
+        closures, ok = _run_extension_verb(
+            "hyp-verdicts", tasks_dir, as_json,
+            lambda ext, cwd: ext.autoclose(caller_cwd=cwd, k=k, dry_run=dry_run),
+        )
+        if not ok:
+            return
+        if as_json:
+            emit_json({
+                "dry_run": dry_run,
+                "closures": [
+                    {"hyp_id": c.hyp_id, "refute_sessions": list(c.refute_sessions), "k": c.k}
+                    for c in closures
+                ],
+            })
+        else:
+            verb = "Would close" if dry_run else "Closed"
+            if not closures:
+                click.echo("No hypotheses reached quorum.")
+            for c in closures:
+                click.echo(f"{verb}: {c.hyp_id} (K={c.k}; sessions: {', '.join(c.refute_sessions)})")
+
+    return _autoclose
+
+
+def _vote_command() -> click.Command:
+    @click.command("vote", help="Append a vote to a proposal (atomic, no edge).")
+    @click.argument("prop_id")
+    @click.option("--reasoning", default=None, help="Non-empty reasoning string (required).")
+    @click.option("--session-id", "session_id", default=None, help="Session id (default: ambient).")
+    @click.option("--timestamp", default=None, help="Vote timestamp (default: now, UTC).")
+    @click.option("--entry", "entry_json", default=None, help="Full vote as JSON (named options win).")
+    @TASKS_DIR_OPT
+    @JSON_OPT
+    def _vote(prop_id, reasoning, session_id, timestamp, entry_json, tasks_dir, as_json):
+        try:
+            vote = _vote_entry(reasoning, session_id, timestamp, entry_json)
+        except ValueError as exc:
+            handle_rack_error(exc, as_json)
+            return
+        result, ok = _run_extension_verb(
+            "prop-votes", tasks_dir, as_json,
+            lambda ext, cwd: ext.add_vote(prop_id, vote, actor=actor(), caller_cwd=cwd),
+        )
+        if ok:
+            _emit_kernel_result(result, as_json, f"Vote on {prop_id}: {vote.get('session_id')}")
+
+    return _vote
+
+
+def _vote_entry(reasoning, session_id, timestamp, entry_json) -> dict[str, Any]:
+    vote: dict[str, Any] = {}
+    if entry_json:
+        loaded = json.loads(entry_json)
+        if not isinstance(loaded, dict):
+            raise ValueError("--entry must be a JSON object")
+        vote.update(loaded)
+    if reasoning is not None:
+        vote["reasoning"] = reasoning
+    sid = session_id or vote.get("session_id") or _ambient_session()
+    if sid:
+        vote["session_id"] = sid
+    vote["timestamp"] = timestamp or vote.get("timestamp") or utc_now()
+    return vote

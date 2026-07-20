@@ -259,21 +259,29 @@ class Kernel:
         parent_task: str = "",
         depends_on: Sequence[str] = (),
         tags: Sequence[str] | None = None,
+        fields: Mapping[str, Any] | None = None,
     ) -> KernelResult:
         """Create a card. Id allocation + reserve is atomic under the
         directory-scoped alloc lock (HATS-936); timeout is a loud failure.
 
         ``title`` is the only required input (ADR-0017 §1); the schema fields
         (``None`` sentinels) resolve to their declared defaults and are validated
-        write-strict — a bad choice/type/required field is a typed refusal."""
+        write-strict — a bad choice/type/required field is a typed refusal.
+        ``fields`` is the generic field mapping (HATS-1036): any declared field by
+        name (a custom backlog's required ``hypothesis`` etc.), merged over the
+        named tasks kwargs so both the tasks verb and per-backlog groups share one
+        create path; a name absent from the routed schema is ignored."""
         if not title.strip():
             raise RequiredFieldError("title", "a task requires a non-empty title")
         if parent_task and parent_task == task_id:
             raise ValueError(f"Task '{task_id}' cannot be its own parent")
-        resolved = self._schema.resolve_create(
-            {"description": description, "priority": priority, "role": role,
-             "reviewer": reviewer, "tags": tags}
-        )
+        provided: dict[str, Any] = {
+            "description": description, "priority": priority, "role": role,
+            "reviewer": reviewer, "tags": tags,
+        }
+        if fields:
+            provided.update(fields)
+        resolved = self._schema.resolve_create(provided)
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         # Not a `<prefix>-N` card dir, so scans ignore it.
         alloc_lock_path = self.tasks_dir / ".alloc.lock"
