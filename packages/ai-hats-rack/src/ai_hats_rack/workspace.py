@@ -78,6 +78,31 @@ class AmbiguousPrefixError(WorkspaceError):
         )
 
 
+class UnknownExtensionError(WorkspaceError):
+    """``Workspace.extension`` was asked for an extension no mounted backlog
+    declares — names what is configured (the reach for step-6 consumers)."""
+
+    def __init__(self, name: str, configured: Sequence[str]) -> None:
+        self.extension_name = name
+        self.configured = tuple(configured)
+        super().__init__(
+            f"no mounted backlog declares extension {name!r}; declared: {list(self.configured)}"
+        )
+
+
+class AmbiguousExtensionError(WorkspaceError):
+    """An extension declared by mounts in several roots, addressed unqualified —
+    demands the ``root`` qualifier; never a silent first-match."""
+
+    def __init__(self, name: str, roots: Sequence[str]) -> None:
+        self.extension_name = name
+        self.roots = tuple(roots)
+        super().__init__(
+            f"extension {name!r} is declared in several roots {list(self.roots)}; "
+            "pass root= to disambiguate"
+        )
+
+
 @dataclass(frozen=True)
 class BacklogInstance:
     """One mounted backlog: identity ``(root_id, name)`` + its catalog and the
@@ -171,6 +196,33 @@ class Workspace:
                 return kernel
         return portable_kernel(instance, exists_checker=self._existence_checker_for(instance))
 
+    def extension(self, name: str, *, root: RootId | None = None) -> Subscriber:
+        """The bound ambient extension named ``name`` on the instance that declares
+        it — the reach for its python API (``hyp-verdicts.append_verdict`` /
+        ``.autoclose``, ``prop-votes.add_vote``). Unknown -> :class:`UnknownExtensionError`;
+        declared in several roots and left unqualified -> :class:`AmbiguousExtensionError`."""
+        matches = [
+            i
+            for i in self.instances
+            if (root is None or i.root_id == root)
+            and any(ref.name == name for ref in i.definition.bindings.extensions)
+        ]
+        if not matches:
+            declared = sorted(
+                {ref.name for i in self.instances for ref in i.definition.bindings.extensions}
+            )
+            raise UnknownExtensionError(name, declared)
+        if len(matches) > 1:
+            raise AmbiguousExtensionError(name, sorted({i.root_id for i in matches}))
+        instance = matches[0]
+        _kernel, subscribers = _compose_portable(
+            instance, self._existence_checker_for(instance), None, None
+        )
+        for sub in subscribers:
+            if sub.name == name:
+                return sub
+        raise UnknownExtensionError(name, [name])  # declared but not composed (unreachable)
+
     def exists(self, item_id: str) -> bool:
         """Cross-backlog existence: does a card with this id exist in the backlog
         its prefix routes to (ADR-0017 §2)? Unknown/foreign prefix -> ``False``
@@ -245,18 +297,15 @@ class Workspace:
 ExistenceChecker = Callable[[str, "str | None"], bool]
 
 
-def portable_kernel(
+def _compose_portable(
     instance: BacklogInstance,
-    *,
-    exists_checker: "ExistenceChecker | None" = None,
-    factories: object = None,
-    validators: object = None,
-) -> Kernel:
-    """Build a kernel for one instance via the portable composition path
-    (definition -> subscribers -> Kernel -> bind), reusing one factory/validator
-    registry (ADR-0017 §4/§5). The integrator attaches its tasks-discipline code
-    channel elsewhere; a HYP/PROP instance gets exactly this portable kit plus
-    the extensions its own definition declares."""
+    exists_checker: "ExistenceChecker | None",
+    factories: object,
+    validators: object,
+) -> tuple[Kernel, list[Subscriber]]:
+    """The portable composition path (definition -> subscribers -> Kernel -> bind),
+    reusing one factory/validator registry (ADR-0017 §4/§5). Returns the kernel AND
+    its bound subscribers so a caller can reach an extension's python API."""
     defn = instance.definition
     catalog = instance.catalog
     facs = stock_factories() if factories is None else factories  # type: ignore[assignment]
@@ -275,6 +324,20 @@ def portable_kernel(
         exists_checker=exists_checker,
     )
     bind_subscribers(subscribers, kernel)
+    return kernel, subscribers
+
+
+def portable_kernel(
+    instance: BacklogInstance,
+    *,
+    exists_checker: "ExistenceChecker | None" = None,
+    factories: object = None,
+    validators: object = None,
+) -> Kernel:
+    """Build a kernel for one instance via the portable composition path (ADR-0017
+    §4/§5). The integrator attaches its tasks-discipline code channel elsewhere; a
+    HYP/PROP instance gets exactly this portable kit plus its declared extensions."""
+    kernel, _subscribers = _compose_portable(instance, exists_checker, factories, validators)
     return kernel
 
 
@@ -332,12 +395,14 @@ def _prefix_of(item_id: str) -> str:
 
 
 __all__ = [
+    "AmbiguousExtensionError",
     "AmbiguousPrefixError",
     "BacklogInstance",
     "DuplicatePrefixError",
     "ExistenceChecker",
     "KernelBuilder",
     "RootId",
+    "UnknownExtensionError",
     "UnknownPrefixError",
     "Workspace",
     "WorkspaceError",

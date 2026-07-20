@@ -1,9 +1,3 @@
-# HATS-1035 step 6 FIXTURE (NOT shipped — real instances are HATS-1044): the
-# ADR-0017 §5 hypotheses sketch, proving the HYP topology + card schema compose
-# through loader + composition + write layer WITHOUT engine edits. Adjusted where
-# the sketch names unbuilt machinery: `targets:` (cross-backlog, HATS-1044) is
-# dropped; `hyp-quorum-gate`/`hyp-verdicts` resolve to test stubs; the `any`-typed
-# validators resolve to test validators via the registry.
 name: hypotheses
 prefix: HYP
 
@@ -37,8 +31,7 @@ fields:
 
 links:
   kinds:
-    - { name: source_task, arity: one }
-    # stored inverse pair -> the mirror-link reaction is required (HATS-1044).
+    - { name: source_task, arity: one, targets: tasks }
     - { name: supersedes, arity: one, inverse: superseded_by, handlers: [mirror-link] }
     - { name: superseded_by, arity: one, inverse: supersedes, handlers: [mirror-link] }
 

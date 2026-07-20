@@ -14,8 +14,9 @@ from __future__ import annotations
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Sequence, Union
+from typing import Callable, Mapping, Sequence, Union
 
+from .dispatch import FieldOp
 from .docstore import _require_valid_name, freeze_on_card, remove_on_card
 from .errors import RackError
 from .kernel import UnknownTaskError
@@ -77,13 +78,22 @@ class UnlinkOp:
     target: str
 
 
-Op = Union[StateOp, AttachOp, FreezeOp, RmOp, LogOp, LinkOp, UnlinkOp]
+@dataclass(frozen=True)
+class FieldsOp:
+    """Declared-field ops (Set/Append) applied via :meth:`Kernel._delta_applier`
+    (HATS-1044): the write path an extension owning a field rides, atomically with
+    an optional StateOp in one composite transition — no CLI flag (verbs are T4)."""
 
-#: the complete op-kind vocabulary emitted into KernelResult.ops — "state" is
-#: the kernel's (behind the FSM guard), the rest are the _EXECUTORS below. The
-#: CLI op-echo renderer map (cli._OP_RENDERERS) is pinned exhaustive over this.
+    fields: Mapping[str, FieldOp]
+
+
+Op = Union[StateOp, AttachOp, FreezeOp, RmOp, LogOp, LinkOp, UnlinkOp, FieldsOp]
+
+#: the complete op-kind vocabulary emitted into KernelResult.ops — "state" and
+#: "fields" are the kernel's (FSM guard / schema gate), the rest are the
+#: _EXECUTORS below. cli._OP_RENDERERS is pinned exhaustive over this.
 OP_KINDS: frozenset[str] = frozenset(
-    {"state", "attach", "freeze", "rm", "log", "link", "unlink"}
+    {"state", "fields", "attach", "freeze", "rm", "log", "link", "unlink"}
 )
 
 

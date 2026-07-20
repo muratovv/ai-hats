@@ -445,6 +445,39 @@ def load_backlog(path: Path | None = None) -> BacklogDefinition:
     return _build(yaml.safe_load(text), source)
 
 
+#: Non-default backlogs shipped in-package (ADR-0017 §5): the SSOT the migration/
+#: init step copies into a catalog. NOT auto-mounted — Workspace.discover mounts a
+#: catalog's OWN backlog.yaml, which wins; these are the source it is seeded from.
+_PACKAGED_DEFINITIONS = ("hypotheses", "proposals")
+
+
+def packaged_definition_source(name: str) -> str:
+    """Raw YAML text of a shipped non-default definition (``hypotheses`` /
+    ``proposals``) — what the migration/init step writes into a catalog's
+    ``backlog.yaml`` (ADR-0017 §5). Unknown name -> a typed, fail-closed error."""
+    if name not in _PACKAGED_DEFINITIONS:
+        raise BacklogDefinitionError(
+            f"no packaged backlog definition {name!r}; shipped: {list(_PACKAGED_DEFINITIONS)}"
+        )
+    return (
+        resources.files("ai_hats_rack")
+        .joinpath("definitions")
+        .joinpath(name)
+        .joinpath("backlog.yaml")
+        .read_text(encoding="utf-8")
+    )
+
+
+def load_packaged_definition(name: str) -> BacklogDefinition:
+    """Load a shipped non-default definition by name — the packaged HYP/PROP
+    contract (ADR-0017 §5). A catalog's own ``backlog.yaml`` still wins at mount
+    time (:func:`resolve_definition`); this is the source that seeds one."""
+    return _build(
+        yaml.safe_load(packaged_definition_source(name)),
+        f"ai_hats_rack/definitions/{name}/backlog.yaml",
+    )
+
+
 def resolve_definition(
     catalog: Path,
     *,
