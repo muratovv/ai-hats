@@ -468,7 +468,8 @@ def _emit_walk(
     multiple=True,
     help="No-id scan: scan a mounted backlog by name (cli_alias or name), e.g. "
     "--backlog hyp. Repeatable to name a subset (--backlog hyp --backlog proposal); "
-    "default is the tasks catalog, --all-backlogs is every one.",
+    "default is the tasks catalog, --all-backlogs is every one. Mounted backlogs "
+    "also list as groups in `rack --help`.",
 )
 @click.option(
     "--all-backlogs",
