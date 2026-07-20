@@ -1151,7 +1151,9 @@ def test_teardown_worktree_reraises_on_merge_failure(mgr, monkeypatch):
     # `.merge()` raises. The real `load_for_task` would return None for
     # this non-git fixture project, so without the patch the teardown
     # is a no-op and the bug is not reproducible.
-    def fake_load_for_task(project_dir, task_id, *, lifecycle=None, state_dir=None):
+    def fake_load_for_task(
+        project_dir, task_id, *, lifecycle=None, state_dir=None, git_timeout=None
+    ):
         return _FailingMergeManager(branch_name=f"task/{task_id.lower()}")
 
     monkeypatch.setattr(
