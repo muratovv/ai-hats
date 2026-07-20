@@ -78,6 +78,18 @@ class AmbiguousPrefixError(WorkspaceError):
         )
 
 
+class UnknownBacklogError(WorkspaceError):
+    """``--backlog X`` names no mounted backlog (by ``cli_alias`` or ``name``) —
+    names what is mounted, never a silent empty scan."""
+
+    def __init__(self, name: str, mounted: Sequence[str]) -> None:
+        self.name = name
+        self.mounted = tuple(mounted)
+        super().__init__(
+            f"unknown backlog {name!r} — mounted: {', '.join(self.mounted) or '(none)'}"
+        )
+
+
 class UnknownExtensionError(WorkspaceError):
     """``Workspace.extension`` was asked for an extension no mounted backlog
     declares — names what is configured (the reach for step-6 consumers)."""
@@ -185,6 +197,21 @@ class Workspace:
         if len(matches) > 1:
             raise AmbiguousPrefixError(prefix, sorted({i.root_id for i in matches}))
         return matches[0]
+
+    def backlog_cli_names(self) -> tuple[str, ...]:
+        """The CLI selector each mounted instance answers to — its ``cli_alias`` or,
+        absent that, its ``name`` (the same token its per-backlog create group is
+        named by, HATS-1036)."""
+        return tuple((i.definition.cli_alias or i.name) for i in self.instances)
+
+    def instance_by_name(self, name: str) -> BacklogInstance:
+        """Route a backlog SELECTOR (``--backlog``) to its instance by CLI name —
+        ``cli_alias`` or ``name``, matched dynamically over the mounted instances
+        (open registry, HATS-1080). Unknown -> :class:`UnknownBacklogError`."""
+        for i in self.instances:
+            if name in (i.definition.cli_alias, i.name):
+                return i
+        raise UnknownBacklogError(name, self.backlog_cli_names())
 
     def kernel_for(self, item_id: str, root: RootId | None = None) -> Kernel:
         """The kernel of the backlog an id routes to — the integrator override

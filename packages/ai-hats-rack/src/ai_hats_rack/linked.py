@@ -411,9 +411,13 @@ class CardRow:
     title: str
     parent_task: str
     tags: tuple[str, ...]
+    #: CLI name of the backlog this row came from — set only on a workspace-wide
+    #: scan (`--backlog`/`--all-backlogs`, HATS-1080); empty on the default
+    #: tasks scan, which keeps its output annotation-free (R2).
+    backlog: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        row = {
             "id": self.id,
             "state": self.state,
             "priority": self.priority,
@@ -421,6 +425,9 @@ class CardRow:
             "parent_task": self.parent_task,
             "tags": list(self.tags),
         }
+        if self.backlog:
+            row["backlog"] = self.backlog
+        return row
 
 
 def card_filter(
@@ -455,8 +462,10 @@ def scan_cards(
     tag: str | None = None,
     state: str | None = None,
     parent: str | None = None,
+    backlog: str = "",
 ) -> list[CardRow]:
-    """Linear backlog scan, filters AND-combined; no index by design."""
+    """Linear backlog scan, filters AND-combined; no index by design. ``backlog``
+    stamps each row's origin on a workspace-wide scan (empty on the default scan)."""
     rows: list[CardRow] = []
     if not tasks_dir.is_dir():
         return rows
@@ -470,7 +479,13 @@ def scan_cards(
             continue
         rows.append(
             CardRow(
-                card.id, card.state, card.priority, card.title, card.parent_task, tuple(card.tags)
+                card.id,
+                card.state,
+                card.priority,
+                card.title,
+                card.parent_task,
+                tuple(card.tags),
+                backlog=backlog,
             )
         )
     return rows

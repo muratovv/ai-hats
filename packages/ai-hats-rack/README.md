@@ -158,7 +158,7 @@ Four verbs, each with `--json` (JSON-first, HATS-1031 API-D surface):
 | Verb                   | Role                                                                                                                                                                                                                                                                                            |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `rack create <title>`  | new card; `--id/--parent/--depends/--tag/...`; initial state from backlog.yaml                                                                                                                                                                                                                  |
-| `rack ls [<ID>]`       | backlog scan (`--grep/--tag/--state/--parent`) or graph walk (`ls <ID> --deep N [--link <glob>…]`, repeatable OR)                                                                                                                                                                               |
+| `rack ls [<ID>]`       | backlog scan (`--grep/--tag/--state/--parent`; `--backlog <name>` / `--all-backlogs` pick which mounted backlog(s), HATS-1080) or graph walk (`ls <ID> --deep N [--link <glob>…]`, repeatable OR)                                                                                               |
 | `rack context <ID…>`   | THE read package: full card + top-level `links` + document paths; repeatable `--with <glob>` embeds, `--attr audit\|work_log`. Batch (`context ID1 ID2 …`, ≥2 ids) assembles all in one process → `{"contexts": {id: …}}`, skip-and-continue; one id stays unwrapped byte-identical (HATS-1074) |
 | `rack transition <ID>` | THE mutating verb: an ordered composite of ops under one lock                                                                                                                                                                                                                                   |
 
@@ -195,6 +195,20 @@ with a typed `no_project_root` error instead of bootstrapping a phantom tracker
 $ rack transition HATS-001 done --tasks-dir tasks
 error: Invalid transition for HATS-001: brainstorm → done. Legal edges from 'brainstorm': plan, blocked, cancelled
 ```
+
+### Backlog-as-filter on the scan (HATS-1080)
+
+The no-id scan defaults to the **tasks** catalog (byte-for-byte its legacy output).
+`--backlog <name>` scans a single mounted backlog instead, resolved dynamically
+against the workspace (`cli_alias` or `name` — the same token that names the write
+group below), so any sibling `backlog.yaml` resolves with no CLI change; an unknown
+name is a typed `unknown_backlog` error listing what is mounted. `--all-backlogs`
+scans every mounted backlog, each row carrying a `backlog` marker (a leading column
+in human output, a `backlog` key in `--json`; both absent on the default tasks scan,
+which stays annotation-free). This is the read-side mirror of the write-side groups
+— one "backlog = dimension" model. Filters stay read-tolerant: `--tag`/`--parent`/
+`--state` on cards that lack the value simply exclude them (never an error), and
+`--state` self-narrows to the backlogs whose vocabulary uses the value.
 
 ### Per-backlog groups (HATS-1036 R2/R5, ADR-0017 §4/§7)
 

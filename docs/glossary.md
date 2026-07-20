@@ -84,6 +84,10 @@ per-section enforcement — the engine gate (HATS-635).
 
 The minimal backlog **kernel** built parallel to the production tracker (epic HATS-1014; the name = hatrack). Same `task.yaml` format and layout, new engine: FSM topology from an in-package `fsm.yaml` (SSOT), a transactional `transition` (FileLock → guard → in-memory mutation → two-phase subscriber dispatch → single persist last), a structural lock model, and a dispatch journal with actor identity. Everything beyond that — worktree, ownership, scaffold, plan-gate, epic-automation, doc store, consumer hooks — is an extension subscribing to kernel events, not kernel code. CLI namespace during the comparison period: `rack`. The old tracker is feature-frozen until the K6 cutover decision. Source: `packages/ai-hats-rack/`.
 
+## Backlog filter (`rack ls --backlog` / `--all-backlogs`)
+
+The read-side selector that lets one `rack ls` scan span the workspace's mounted backlogs (HATS-1080). The no-id scan defaults to the **tasks** catalog (legacy output unchanged); `--backlog <name>` narrows to one mounted backlog, resolved dynamically by its `cli_alias` or `name` (the same token that names its write group — any sibling `backlog.yaml` resolves, no CLI change; unknown → typed `unknown_backlog`); `--all-backlogs` scans them all, each row carrying a `backlog` marker (leading column in human output, `backlog` key in `--json`, both absent on the default scan). Filters are **read-tolerant**: a filter on a field a card lacks excludes it rather than erroring, and `--state` self-narrows to the backlogs whose vocabulary uses the value. The read-side mirror of the per-backlog write groups — one "backlog = dimension" model.
+
 ## Behavior experiment (A/B)
 
 A scripted comparison proving that a library-component edit (skill / rule / trait wording) actually changes subagent behavior, instead of eyeballing it: `1 scenario × N arms × N identical runs`, scored mechanically (HATS-1053). Lives under `experiments/`. Term definitions (arm, scenario, score scripts, runs capture) and the authoring guide — see [10].
