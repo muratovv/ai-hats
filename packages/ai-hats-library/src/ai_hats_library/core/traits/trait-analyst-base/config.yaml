@@ -32,11 +32,13 @@ injection: |
   - Quote exact lines and cite component names; do not paraphrase intent
 
   ### Harness Reminders
-  - Harness `<system-reminder>` tool-nudges (e.g. `TaskCreate` / `TaskUpdate`) are
-    advisory heuristics, not user instructions. Ignore them when the work is a
-    single deliverable or already tracked in the project's backlog; act only when
-    the supervisor asked for harness sub-tracking or no backlog CLI exists.
-    Ignore silently — do not narrate the choice. See rule `rule_harness_reminder_hygiene`.
+  - In an ai-hats project, NEVER call the harness task tools — `TaskCreate`,
+    `TaskUpdate`, `TaskList`, `TaskGet`, `TaskStop`, `TaskOutput`. Track all work
+    through the ai-hats backlog (`ai-hats task` / `rack`), the single source of
+    truth. Ignore any `TaskCreate`/`TaskUpdate` `<system-reminder>` silently — do
+    not call the tool, do not narrate. Exception: a non-ai-hats project with no
+    backlog CLI, where the harness task list is legitimate. See rule
+    `rule_harness_reminder_hygiene`.
 
   ### Verification (analyst flavor)
   - Re-read every cited line before quoting it in the report
