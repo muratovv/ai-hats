@@ -12,6 +12,26 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Added
 
+- **Verb-builder `rack` CLI + per-backlog groups** (HATS-1036, ADR-0017 §4/§7).
+  The CLI is now built from the backlog definition: `create`'s options are
+  generated from `fields[]` (required/choices/default enforced write-strict, so a
+  bad value is a typed `invalid_field` refusal, not a click usage error), the
+  declared edge names give `transition` a vocabulary — `rack transition HYP-1
+  refute` accepts a named edge alongside a state name (a name colliding with a
+  state is a typed load error) — and `--set <field>=<value>` / `--append
+  <field>=<json>` write declared fields as ops on the one mutating verb. Every
+  NON-tasks backlog the workspace mounts becomes a group named after it (the
+  packaged `hypotheses`/`proposals` read as `hyp`/`proposal`): schema-driven
+  `create`, an `update <ID> --<field>` sugar mapped onto the `--set` field ops,
+  and the verbs its extensions contribute via the optional `verbs()` hook —
+  `hyp append-verdict` / `hyp autoclose [--k --dry-run]`, `proposal vote`. The
+  base four-verb surface is unchanged until a sibling catalog is mounted (groups
+  are resolved lazily from the ambient workspace). `kernel.create` gained a
+  generic `fields=` mapping so a custom backlog's required fields (e.g.
+  `hypothesis`) flow through one create path; the tasks path stays byte-identical
+  (parity-pinned). Old `ai-hats task hyp/proposal <verb>` map word-for-word onto
+  `rack hyp/proposal <verb>`.
+
 - **Multi-backlog workspace** (HATS-1044, ADR-0017 §2, §5). N kernels — one per
   backlog — under one `Workspace`: `discover(roots)` scans `tracker/**` for
   `backlog.yaml` catalogs (the tasks catalog is always mounted), routes ids by
