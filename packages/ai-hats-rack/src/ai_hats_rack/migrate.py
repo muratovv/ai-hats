@@ -21,6 +21,7 @@ from pathlib import Path
 
 import yaml
 
+from . import fastyaml
 from .definition import load_packaged_definition, packaged_definition_source
 from .models import TaskCard, atomic_write_text
 
@@ -202,7 +203,7 @@ def migrate_catalog(
         backlog_written=_seed_backlog(catalog, definition_name, dry_run=dry_run),
     )
     for card_id, source in _flat_sources(catalog, pattern):
-        raw = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
+        raw = fastyaml.load(source.read_text(encoding="utf-8")) or {}
         dest = catalog / card_id / "task.yaml"
         mapped = _map_card(raw, link_names)
         ok, detail = _roundtrip_ok(raw, mapped, link_names)

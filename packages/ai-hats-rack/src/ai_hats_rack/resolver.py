@@ -13,6 +13,7 @@ from pathlib import Path
 
 import yaml
 
+from . import fastyaml
 from .errors import RackError
 
 CONFIG_NAME = "ai-hats.yaml"
@@ -112,7 +113,7 @@ def load_root(project_dir: Path) -> RackRoot:
     config_path = project_dir / CONFIG_NAME
     if config_path.is_file():
         try:
-            raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            raw = fastyaml.load(config_path.read_text(encoding="utf-8"))
         except (OSError, yaml.YAMLError):
             raw = None
         if isinstance(raw, dict):

@@ -13,8 +13,7 @@ from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
-import yaml
-
+from .. import fastyaml
 from ..errors import RackConfigError
 
 
@@ -48,12 +47,12 @@ def _parse_sections(raw: object, source: str) -> tuple[Section, ...]:
 
 def load_sections(path: Path) -> tuple[Section, ...]:
     """Load a section catalog from YAML: a list of ``{name, required?}``."""
-    return _parse_sections(yaml.safe_load(path.read_text(encoding="utf-8")), str(path))
+    return _parse_sections(fastyaml.load(path.read_text(encoding="utf-8")), str(path))
 
 
 def _load_default_sections() -> tuple[Section, ...]:
     text = resources.files("ai_hats_rack").joinpath("plan-sections.yaml").read_text(encoding="utf-8")
-    return _parse_sections(yaml.safe_load(text), "ai_hats_rack/plan-sections.yaml")
+    return _parse_sections(fastyaml.load(text), "ai_hats_rack/plan-sections.yaml")
 
 
 DEFAULT_PLAN_SECTIONS: tuple[Section, ...] = _load_default_sections()

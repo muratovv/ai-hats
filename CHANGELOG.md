@@ -88,6 +88,15 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Changed
 
+- **`rack ls` scans ~13× faster on large backlogs** (HATS-1065). The card scan
+  was dominated by PyYAML's pure-Python `SafeLoader` (~830 ms parsing 600
+  `task.yaml` files per call); rack now reads YAML through libyaml's
+  `CSafeLoader` (one `fastyaml.load` home, falling back to the pure loader when
+  libyaml is unavailable — correct, just slower). End-to-end `rack ls --all
+  --json` on a 600-card backlog drops from ~960 ms to ~210 ms; output is
+  byte-for-byte unchanged and no cache is introduced, so create/transition/edit
+  stay immediately visible.
+
 - **One `backlog.yaml` defines a backlog** (HATS-1042, ADR-0017). The rack's
   packaged `fsm.yaml` (topology) and `links.yaml` (link kinds) fold losslessly
   into a single `backlog.yaml` and are removed; `load_backlog()` returns one
