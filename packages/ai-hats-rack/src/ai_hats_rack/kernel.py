@@ -10,9 +10,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
 
-from filelock import FileLock, Timeout
+if TYPE_CHECKING:
+    from filelock import FileLock
 
 from .cardschema import CardSchema, ExtrasForbiddenError, RequiredFieldError, default_card_schema
 from .dispatch import (
@@ -169,6 +170,8 @@ class Kernel:
         task.save(self._task_path(task.id), transform=self._schema.emit_filter)
 
     def _task_lock(self, task_id: str) -> FileLock:
+        from filelock import FileLock
+
         lock_path = self.tasks_dir / task_id / ".lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         return FileLock(str(lock_path), timeout=self._lock_timeout)
@@ -285,6 +288,8 @@ class Kernel:
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         # Not a `<prefix>-N` card dir, so scans ignore it.
         alloc_lock_path = self.tasks_dir / ".alloc.lock"
+        from filelock import FileLock, Timeout
+
         lock = FileLock(str(alloc_lock_path), timeout=self._lock_timeout)
         try:
             with lock:
@@ -339,6 +344,8 @@ class Kernel:
         window as the state change — a raise anywhere before the single
         persist leaves zero bytes changed on disk (HATS-723/481).
         """
+        from filelock import Timeout
+
         self.topology.require_state(to_state)
         if force and not reason.strip():
             raise ForceRequiresReasonError()
@@ -497,6 +504,8 @@ class Kernel:
         never persisted and staged files unwind in reverse. Post-lock reactions
         fire per state-op edge after unlock, never nested inside the lock.
         """
+        from filelock import Timeout
+
         # Local import avoids a load-time cycle (ops imports kernel errors).
         from .ops import FieldsOp, OpTxn, StateOp, apply_non_state_op
 
@@ -630,6 +639,8 @@ class Kernel:
 
     def log_work(self, task_id: str, message: str, *, actor: str = "") -> TaskCard:
         """Append a work_log entry (anchor field — CLI-only, transactional)."""
+        from filelock import Timeout
+
         lock = self._task_lock(task_id)
         try:
             with lock:
@@ -650,6 +661,8 @@ class Kernel:
         first-class dispatcher event, not an FSM edge (HATS-977/979)."""
         if parent_task == task_id:
             raise ValueError(f"Task '{task_id}' cannot be its own parent")
+        from filelock import Timeout
+
         lock = self._task_lock(task_id)
         try:
             with lock:
@@ -710,6 +723,8 @@ class Kernel:
         is the target's executor, not an observer), so the copy-guard the owning
         transition uses does not apply; the reverse edge is convergent/idempotent.
         """
+        from filelock import Timeout
+
         subs = self._dispatcher.subscribers_for(event.key, Phase.POST_LOCK)
         if not subs or not self._task_path(event.target).exists():
             return None
