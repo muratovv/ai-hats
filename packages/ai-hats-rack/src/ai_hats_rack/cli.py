@@ -1,7 +1,7 @@
 """``rack`` — minimal JSON-first CLI over the bare kernel (HATS-1020).
 
-The four verbs (create / transition / context / ls) live in the ``verbs/``
-package (HATS-1036); this module is the aggregator — it builds ``main`` from the
+The top-level verbs (create / transition / context / ls / plan-extract) live in
+the ``verbs/`` package (HATS-1036); this module is the aggregator — builds ``main`` from the
 packaged tasks definition via ``init_verbs`` and re-exports the shared wiring /
 renderers under their historical ``cli._*`` names so the dotted-path pins
 (test_cli_wiring / test_error_surface) resolve unchanged. Entry point

@@ -1,7 +1,7 @@
 """HATS-1036 steps 4–5: per-backlog groups on the `rack` CLI.
 
-The base surface is exactly the four verbs until sibling catalogs are mounted
-(R2 surface re-pin); a mounted NON-tasks backlog becomes a group carrying a
+The base surface is exactly the top-level verbs until sibling catalogs are
+mounted (R2 surface re-pin); a mounted NON-tasks backlog becomes a group carrying a
 schema-driven `create`, an `update` sugar, and the verbs its extensions
 contribute via `verbs()` (`hyp append-verdict`/`autoclose`, `proposal vote`).
 Ids route by prefix, so `transition` edge-name sugar (`refute`/`accept`) rides
@@ -56,24 +56,26 @@ def _json(result):
 # ----- surface re-pin (R2) ---------------------------------------------------
 
 
-def test_base_surface_is_the_four_verbs():
-    # The base registration never grows — groups are a lazy overlay (list_commands).
-    assert set(main.commands) == {"create", "ls", "context", "transition"}
+_BASE_VERBS = {"create", "ls", "context", "transition", "plan-extract"}
+
+
+def test_base_surface_is_the_base_verbs():
+    # The base registration is the fixed top-level verbs — groups are a lazy
+    # overlay (list_commands), never part of .commands.
+    assert set(main.commands) == _BASE_VERBS
 
 
 def test_no_groups_without_siblings(monkeypatch, tmp_path):
     tasks = _tasks_catalog(tmp_path, with_siblings=False)
     monkeypatch.setenv("RACK_TASKS_DIR", str(tasks))
-    assert set(main.list_commands(click.Context(main))) == {
-        "create", "ls", "context", "transition"
-    }
+    assert set(main.list_commands(click.Context(main))) == _BASE_VERBS
 
 
 def test_groups_appear_when_mounted(monkeypatch, tmp_path):
     tasks = _tasks_catalog(tmp_path, with_siblings=True)
     monkeypatch.setenv("RACK_TASKS_DIR", str(tasks))
     listed = set(main.list_commands(click.Context(main)))
-    assert {"create", "ls", "context", "transition", "hyp", "proposal"} == listed
+    assert _BASE_VERBS | {"hyp", "proposal"} == listed
 
 
 def test_group_resolves_and_exposes_its_verbs(runner, tmp_path):

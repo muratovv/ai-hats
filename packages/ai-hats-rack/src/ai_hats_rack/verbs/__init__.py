@@ -35,13 +35,20 @@ def on_user_schema(verb: Verb, defn: BacklogDefinition) -> click.Command:
 
 
 def all_verbs() -> list[Verb]:
-    """The base four verbs (create / transition / context / ls). Submodules are
-    imported lazily so the package ``__init__`` carries no submodule cycle."""
+    """The top-level verbs (create / transition / context / ls / plan-extract).
+    Submodules are imported lazily so ``__init__`` carries no submodule cycle."""
     from .create import verb as create_verb
+    from .plan_extract import verb as plan_extract_verb
     from .read import context_verb, ls_verb
     from .transition import verb as transition_verb
 
-    return [create_verb(), transition_verb(), context_verb(), ls_verb()]
+    return [
+        create_verb(),
+        transition_verb(),
+        context_verb(),
+        ls_verb(),
+        plan_extract_verb(),
+    ]
 
 
 __all__ = ["Verb", "all_verbs", "on_user_schema"]
