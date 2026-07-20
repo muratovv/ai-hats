@@ -110,6 +110,12 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Changed
 
+- **`rack` read verbs skip the write-lock import** (HATS-1072). `filelock` (and
+  the `asyncio` it pulls in, ~30 ms combined at import) is now imported inside
+  the write methods that take a lock, not at module top — `ls`/`context` never
+  lock, so they no longer pay for it. ~17 ms off warm `rack ls`/`context`;
+  output byte-for-byte unchanged.
+
 - **`rack ls` scans ~13× faster on large backlogs** (HATS-1065). The card scan
   was dominated by PyYAML's pure-Python `SafeLoader` (~830 ms parsing 600
   `task.yaml` files per call); rack now reads YAML through libyaml's

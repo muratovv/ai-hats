@@ -10,8 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
-from filelock import FileLock
-
 from ..dispatch import Delta, DispatchContext, Phase, Subscription
 from ..fsm import Topology, load_topology
 from ..models import TaskCard, atomic_write_text
@@ -71,6 +69,8 @@ class DerivedViewsExtension:
             lines.append("")
 
         self.state_md_path.parent.mkdir(parents=True, exist_ok=True)
+        from filelock import FileLock
+
         lock = FileLock(str(self.state_md_path) + ".lock")
         with lock:
             atomic_write_text(self.state_md_path, "\n".join(lines) + "\n")
