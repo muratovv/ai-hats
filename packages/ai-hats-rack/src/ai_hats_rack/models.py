@@ -20,6 +20,7 @@ from typing import Any, Callable, ClassVar, Mapping, get_origin
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from . import fastyaml
 from .errors import RackConfigError
 
 
@@ -261,7 +262,7 @@ class TaskCard(BaseModel):
 
     @classmethod
     def from_yaml(cls, path: Path) -> TaskCard:
-        return cls.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+        return cls.model_validate(fastyaml.load(path.read_text(encoding="utf-8")) or {})
 
     def save(
         self,
