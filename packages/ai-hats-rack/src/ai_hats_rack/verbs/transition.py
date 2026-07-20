@@ -117,18 +117,21 @@ def transition(
 
     Ops run in argv order under ONE task lock with a single persist:
     --state <s>, --attach <src>[:name], --freeze <name>, --rm <name>,
-    --log <msg>, --link <kind>:<id>, --unlink [<kind>:]<id>. Effects of earlier
-    ops are visible to later ops (a state op's plan-gate sees a just-attached
-    plan); any op aborting rolls the whole sequence back. Old form
-    `transition <ID> <state>` is sugar for `--state <state>`.
+    --log <msg>, --link <kind>:<id>, --unlink [<kind>:]<id>,
+    --set <field>=<value>, --append <field>=<json>. Effects of earlier ops are
+    visible to later ops; any op aborting rolls the whole sequence back. Old form
+    `transition <ID> <state>` is sugar for `--state <state>`, where <state> may
+    be a named edge (e.g. `reopen`) resolved against the card's current state.
     """
     caller_cwd = Path.cwd()
     provider = _provider()
     try:
-        ops = parse_ops(op_tokens)
-        # Route the kernel by the id's prefix through the workspace (HATS-1044):
-        # tasks-only repos resolve to the same tasks kernel — zero behavior change.
+        # Route by the id's prefix first so --set int coercion reads the routed
+        # backlog's field types (HATS-1036); tasks-only repos resolve to the same
+        # tasks kernel — zero behavior change.
         workspace, _root = _workspace(tasks_dir, caller_cwd, provider)
+        field_types = {f.name: f.type for f in workspace.instance_for(task_id).definition.fields}
+        ops = parse_ops(op_tokens, field_types=field_types)
         kernel = workspace.kernel_for(task_id)
         result = kernel.transition_ops(
             task_id,
