@@ -18,7 +18,15 @@ import click
 
 from . import linked
 from .audit_view import journal_view, record_lines
-from .cli_common import JSON_OPT, TASKS_DIR_OPT, emit_json, fail, handle_rack_error, resolved_root
+from .cli_common import (
+    JSON_OPT,
+    TASKS_DIR_OPT,
+    emit_json,
+    fail,
+    handle_rack_error,
+    resolve_error,
+    resolved_root,
+)
 from .composition import build_read_subscribers, stock_factories
 from .docstore import DocInfo
 from .linked import (
@@ -196,7 +204,7 @@ def _echo_attrs(attrs: tuple[str, ...], payload: dict[str, object]) -> None:
 
 
 @click.command("context")
-@click.argument("task_id")
+@click.argument("task_ids", nargs=-1)
 @click.option(
     "--with",
     "with_patterns",
@@ -222,7 +230,7 @@ def _echo_attrs(attrs: tuple[str, ...], payload: dict[str, object]) -> None:
 @TASKS_DIR_OPT
 @JSON_OPT
 def context_cmd(
-    task_id: str,
+    task_ids: tuple[str, ...],
     with_patterns: tuple[str, ...],
     max_bytes: int,
     attrs: tuple[str, ...],
@@ -232,7 +240,16 @@ def context_cmd(
     tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
-    """One-call discovery package: card, document paths, and a top-level links object."""
+    """One-call discovery package for one or more task ids: card, document paths,
+    and a top-level ``links`` object.
+
+    Batch (``context ID1 ID2 …``) assembles every id in ONE process, amortizing
+    the interpreter/import start-up tax and the ``Workspace`` walk across the
+    viewport (HATS-1074) so a consumer can prefetch instead of spawning per id.
+    One id → the legacy unwrapped payload, byte-identical. ``≥2`` ids → a
+    ``{"contexts": {id: …}}`` map, skip-and-continue: a bad id yields a per-id
+    ``error`` entry while the rest still resolve (single-id keeps fail-fast).
+    """
     selected = tuple(
         dict.fromkeys(a.strip() for part in attrs for a in part.split(",") if a.strip())
     )
@@ -246,14 +263,32 @@ def context_cmd(
             known=list(KNOWN_ATTRS),
         )
         return
+    ids = tuple(dict.fromkeys(task_ids))  # dedup, order-preserving
+    if not ids:
+        fail(as_json, "invalid_request", "provide at least one task id")
+        return
+
+    # Resolve the workspace ONCE: the discover walk + stock factories are the
+    # per-invocation setup a batch exists to amortize (HATS-1074). Read
+    # subscribers are memoized per catalog (a viewport is usually one prefix).
     try:
-        root = resolved_root(tasks_dir, Path.cwd())
+        workspace = Workspace.discover([resolved_root(tasks_dir, Path.cwd())])
+        factories = stock_factories()
+    except Exception as exc:  # noqa: BLE001 — routed to typed handling
+        handle_rack_error(exc, as_json)
+        return
+    subs_cache: dict[Path, list] = {}
+
+    def _assemble(task_id: str) -> tuple[ContextPackage, dict[str, object], Path]:
         # Route by the id's prefix (HATS-1044): a tasks-only repo resolves to the
         # tasks catalog — same registry, same output as before.
-        instance = Workspace.discover([root]).instance_for(task_id)
+        instance = workspace.instance_for(task_id)
         catalog = instance.catalog
         defn = instance.definition
-        read_subscribers = build_read_subscribers(defn, catalog, stock_factories())
+        read_subscribers = subs_cache.get(catalog)
+        if read_subscribers is None:
+            read_subscribers = build_read_subscribers(defn, catalog, factories)
+            subs_cache[catalog] = read_subscribers
         pkg = build_context(
             catalog,
             task_id,
@@ -265,18 +300,60 @@ def context_cmd(
         attr_payload = _collect_attrs(
             catalog, pkg, selected, event=event_key, since=since, actor_filter=actor_filter
         )
-    except Exception as exc:  # noqa: BLE001 — routed to typed handling
-        handle_rack_error(exc, as_json)
-        return
-    if as_json:
-        out = pkg.to_dict()
+        return pkg, attr_payload, catalog
+
+    def _json_entry(pkg: ContextPackage, attr_payload: dict[str, object]) -> dict[str, object]:
+        entry = pkg.to_dict()
         if attr_payload:
-            out["attrs"] = attr_payload
-        emit_json(out)
-    else:
+            entry["attrs"] = attr_payload
+        return entry
+
+    if len(ids) == 1:
+        try:
+            pkg, attr_payload, catalog = _assemble(ids[0])
+        except Exception as exc:  # noqa: BLE001 — routed to typed handling
+            handle_rack_error(exc, as_json)
+            return
+        if as_json:
+            emit_json(_json_entry(pkg, attr_payload))
+        else:
+            _echo_context(pkg, catalog)
+            _echo_attrs(selected, attr_payload)
+            _tip()
+        return
+
+    # Batch (≥2 ids): one process, skip-and-continue on a per-id failure. A truly
+    # unknown exception (no typed handler) still re-raises, as single-id does.
+    if as_json:
+        contexts: dict[str, object] = {}
+        for task_id in ids:
+            try:
+                pkg, attr_payload, _ = _assemble(task_id)
+            except Exception as exc:  # noqa: BLE001 — per-id typed error; rest continue
+                resolved = resolve_error(exc)
+                if resolved is None:
+                    raise
+                code, message, details = resolved
+                contexts[task_id] = {"error": {"code": code, "message": message, **details}}
+                continue
+            contexts[task_id] = _json_entry(pkg, attr_payload)
+        emit_json({"contexts": contexts})
+        return
+
+    for index, task_id in enumerate(ids):
+        if index:
+            click.echo("")  # blank line separates cards; each card opens with `id:`
+        try:
+            pkg, attr_payload, catalog = _assemble(task_id)
+        except Exception as exc:  # noqa: BLE001 — per-id typed error; rest continue
+            resolved = resolve_error(exc)
+            if resolved is None:
+                raise
+            click.echo(f"  {task_id}: error: {resolved[1]}")
+            continue
         _echo_context(pkg, catalog)
         _echo_attrs(selected, attr_payload)
-        _tip()
+    _tip()
 
 
 # ----- ls: backlog scan (no id) or neighbourhood walk (with id) -------------------

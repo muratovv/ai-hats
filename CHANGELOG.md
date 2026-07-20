@@ -29,6 +29,16 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Added
 
+- **Batch `rack context ID1 ID2 …`** (HATS-1074). Two or more ids are assembled in
+  ONE process, amortizing the fixed interpreter/import start-up tax and the
+  `Workspace` discovery walk across the whole set — a consumer (e.g. the hatrack
+  fzf-TUI) can prefetch a viewport in one spawn instead of paying the ~136 ms tax
+  per id. Measured on the 615-card backlog: a 20-id batch runs ~3.5× faster than 20
+  single spawns (fixed tax O(N) → O(1)). One id keeps the legacy **unwrapped**
+  payload byte-identical; `≥2` ids return a `{"contexts": {id: …}}` map and
+  **skip-and-continue** — a bad id yields a per-id `error` entry while the rest
+  resolve (single-id stays fail-fast).
+
 - **Verb-builder `rack` CLI + per-backlog groups** (HATS-1036, ADR-0017 §4/§7).
   The CLI is now built from the backlog definition: `create`'s options are
   generated from `fields[]` (required/choices/default enforced write-strict, so a
