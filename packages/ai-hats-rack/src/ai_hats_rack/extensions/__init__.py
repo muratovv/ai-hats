@@ -14,6 +14,7 @@ from ..dispatch import Subscriber
 from .epic import AUTOMATION_ACTOR, EpicAutomationExtension, decide
 from .frozen import FrozenIntegrityExtension
 from .lifecycle import ClearLifecycleHandler, StampLifecycleHandler
+from .parent_context import ParentContextExtension
 from .plan import PlanGateExtension, PlanScaffoldExtension
 from .sections import (
     DEFAULT_PLAN_SECTIONS,
@@ -54,6 +55,7 @@ __all__ = [
     "DerivedViewsExtension",
     "EpicAutomationExtension",
     "FrozenIntegrityExtension",
+    "ParentContextExtension",
     "PlanGateExtension",
     "PlanScaffoldExtension",
     "StampLifecycleHandler",

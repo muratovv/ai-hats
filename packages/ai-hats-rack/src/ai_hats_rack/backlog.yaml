@@ -47,7 +47,7 @@ fsm:
 
 links:
   kinds:
-    - { name: parent_task, arity: one, inverse: children }
+    - { name: parent_task, arity: one, inverse: children, read: [parent-context] }
     - { name: depends_on, arity: many, aliases: [depends] }
     - { name: related, arity: many, inverse: related }
     - { name: children, derived: true, inverse: parent_task }

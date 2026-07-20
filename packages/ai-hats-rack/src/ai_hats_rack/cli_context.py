@@ -19,6 +19,7 @@ import click
 from . import linked
 from .audit_view import journal_view, record_lines
 from .cli_common import JSON_OPT, TASKS_DIR_OPT, emit_json, fail, handle_rack_error, resolved_root
+from .composition import build_read_subscribers, stock_factories
 from .definition import resolve_definition
 from .docstore import DocInfo
 from .linked import (
@@ -129,6 +130,11 @@ def _echo_context(pkg: ContextPackage, tasks_dir: Path) -> None:
     click.echo("")
     echo_documents(tasks_dir / card.id, list(pkg.documents))
     _echo_links(dict(pkg.links))
+    for contrib in pkg.enrichments:
+        click.echo("")
+        click.echo(f"  === {contrib.name} ===")
+        for line in contrib.body.rstrip().splitlines():
+            click.echo(f"  {line}")
     for inc in pkg.included:
         click.echo("")
         click.echo(f"  --- {inc.task_id}/{inc.name} ({inc.path}) ---")
@@ -242,13 +248,15 @@ def context_cmd(
         return
     try:
         root = resolved_root(tasks_dir, Path.cwd())
-        registry = resolve_definition(root.tasks_dir, project_dir=root.project_dir).links_registry
+        defn = resolve_definition(root.tasks_dir, project_dir=root.project_dir)
+        read_subscribers = build_read_subscribers(defn, root.tasks_dir, stock_factories())
         pkg = build_context(
             root.tasks_dir,
             task_id,
-            registry=registry,
+            registry=defn.links_registry,
             with_patterns=with_patterns,
             max_bytes=max_bytes,
+            read_subscribers=read_subscribers,
         )
         attr_payload = _collect_attrs(
             root.tasks_dir, pkg, selected, event=event_key, since=since, actor_filter=actor_filter
