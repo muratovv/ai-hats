@@ -7,9 +7,12 @@ composition:
 injection: |
   ### Backlog manager: rack (hatrack)
 
-  This session drives the task lifecycle through the **rack** CLI — see skill
-  `hatrack`. Lifecycle / reads / documents / links → `rack <verb>`; field edits
+  Rack (hatrack) is the **default** backlog manager for agent sessions (composed
+  via `trait-agent`); this trait is retained as the explicit-selection / rollback
+  anchor until the classic `backlog-manager` is retired. This session drives the
+  task lifecycle through the **rack** CLI — see skill `hatrack`. Lifecycle / reads
+  / documents / links → `rack <verb>`; field edits
   (title/description/priority/reviewer/role/tags/re-parent) + `hyp` / `proposal`
-  / `close` / `plan-extract` / `sync` stay on `ai-hats task` (coexistence until
-  HATS-1044). Same FSM, same `task.yaml`, same per-task lock as the classic
-  manager.
+  / `close` / `plan-extract` / `sync` stay on `ai-hats task` (coexistence until the
+  classic manager is retired). Same FSM, same `task.yaml`, same per-task lock as
+  the classic manager.

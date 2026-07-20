@@ -522,3 +522,48 @@ def test_overlay_remove_then_add_trait_brought_skill_is_reorder(overlay_composer
     result = overlay_composer.compose("trait-skill-role", overlay=overlay)
     assert "skill_c" in [s.name for s in result.skills]
     assert result.errors == []
+
+
+# -- HATS-1054: the default flip — hatrack is the composed backlog manager --
+# Library under test = this source tree (worktree-safe, resolved via REPO_ROOT).
+
+from pathlib import Path  # noqa: E402
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_LIB_BASE = _REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+_LIB_LAYERS = [_LIB_BASE / "core", _LIB_BASE / "usage"]
+
+
+def _real_composer() -> Composer:
+    return Composer(LibraryResolver(_LIB_LAYERS))
+
+
+def _all_library_roles() -> list[str]:
+    return sorted(p.parent.name for p in _LIB_BASE.glob("*/roles/*/config.yaml"))
+
+
+# The 11 roles that compose trait-agent — each inherits the flipped default.
+_AGENT_ROLES = [
+    "assistant", "maintainer", "role-curator", "dev-python", "dev-web",
+    "architect", "sre", "go-dev", "go-dev-full", "judge", "test-agent",
+]
+
+
+@pytest.mark.parametrize("role", _AGENT_ROLES)
+def test_agent_role_composes_hatrack_not_backlog_manager(role):
+    """After the flip, every trait-agent role carries the `hatrack` skill and no
+    longer carries the classic `backlog-manager` (HATS-1054 R1)."""
+    skills = {s.name for s in _real_composer().compose(role).skills}
+    assert "hatrack" in skills, f"{role} must compose hatrack after the flip"
+    assert "backlog-manager" not in skills, f"{role} still composes backlog-manager"
+
+
+def test_no_library_role_composes_backlog_manager():
+    """Acceptance criterion (HATS-1054 R1): `backlog-manager` is composed by ZERO
+    roles — the single trait-agent swap is the only attachment site."""
+    comp = _real_composer()
+    offenders = [
+        r for r in _all_library_roles()
+        if "backlog-manager" in {s.name for s in comp.compose(r).skills}
+    ]
+    assert offenders == [], f"roles still composing backlog-manager: {offenders}"
