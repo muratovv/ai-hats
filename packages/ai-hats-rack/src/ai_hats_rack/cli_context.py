@@ -465,9 +465,10 @@ def _emit_walk(
 )
 @click.option(
     "--backlog",
-    default=None,
-    help="No-id scan: scan a single mounted backlog by name (cli_alias or name), "
-    "e.g. --backlog hyp. Default is the tasks catalog.",
+    multiple=True,
+    help="No-id scan: scan a mounted backlog by name (cli_alias or name), e.g. "
+    "--backlog hyp. Repeatable to name a subset (--backlog hyp --backlog proposal); "
+    "default is the tasks catalog, --all-backlogs is every one.",
 )
 @click.option(
     "--all-backlogs",
@@ -486,7 +487,7 @@ def ls_cmd(
     state: str | None,
     parent: str | None,
     show_all: bool,
-    backlog: str | None,
+    backlog: tuple[str, ...],
     all_backlogs: bool,
     tasks_dir: Path | None,
     as_json: bool,
@@ -508,7 +509,13 @@ def ls_cmd(
             if all_backlogs:
                 selected = list(workspace.instances)
             elif backlog:
-                selected = [workspace.instance_by_name(backlog)]
+                seen: set[str] = set()
+                selected = []
+                for name in backlog:  # repeatable; dedup so a repeat is not double-scanned
+                    inst = workspace.instance_by_name(name)
+                    if inst.name not in seen:
+                        seen.add(inst.name)
+                        selected.append(inst)
             else:
                 selected = [i for i in workspace.instances if i.is_tasks]
             # Stamp the backlog origin only when the filter is engaged, so the

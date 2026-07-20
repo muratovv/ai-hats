@@ -199,11 +199,12 @@ error: Invalid transition for HATS-001: brainstorm → done. Legal edges from 'b
 ### Backlog-as-filter on the scan (HATS-1080)
 
 The no-id scan defaults to the **tasks** catalog (byte-for-byte its legacy output).
-`--backlog <name>` scans a single mounted backlog instead, resolved dynamically
-against the workspace (`cli_alias` or `name` — the same token that names the write
-group below), so any sibling `backlog.yaml` resolves with no CLI change; an unknown
-name is a typed `unknown_backlog` error listing what is mounted. `--all-backlogs`
-scans every mounted backlog, each row carrying a `backlog` marker (a leading column
+`--backlog <name>` scans a named mounted backlog instead — **repeatable** for a
+subset (`--backlog hyp --backlog proposal`) — resolved dynamically against the
+workspace (`cli_alias` or `name`, the same token that names the write group below),
+so any sibling `backlog.yaml` resolves with no CLI change; an unknown name is a typed
+`unknown_backlog` error listing what is mounted. `--all-backlogs` scans every
+mounted backlog, each row carrying a `backlog` marker (a leading column
 in human output, a `backlog` key in `--json`; both absent on the default tasks scan,
 which stays annotation-free). This is the read-side mirror of the write-side groups
 — one "backlog = dimension" model. Filters stay read-tolerant: `--tag`/`--parent`/
