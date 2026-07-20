@@ -23,7 +23,7 @@ from ai_hats.retro.session_review_schema import SessionReviewV1
 from ai_hats.retro.common import SessionArtifacts, SessionLinks, SessionMetrics
 from ai_hats.retro.loader import load
 from ai_hats.paths import hypotheses_dir
-from ai_hats_rack.migrate import migrate_catalog
+from ai_hats_rack.migration import migrate_catalog
 from ai_hats_observe.artifacts import METRICS_JSON, REASONING_LOG, TRANSCRIPT_TXT
 
 

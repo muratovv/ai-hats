@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # HATS-081 — smoke test pre-commit gate (managed by ai-hats / git-mastery skill)
 #
-# When the active ai-hats task carries the `integration` tag, this hook
+# When the active backlog task carries the `integration` tag, this hook
 # runs `pytest -m smoke` before allowing the commit. If any smoke test
 # fails the commit is blocked. If no task is active, or the task lacks the
 # tag, the hook is a silent no-op.

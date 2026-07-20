@@ -210,11 +210,11 @@ this file to track history.
 
 Allowed:
 
-- `ai-hats task hyp append-verdict ...`
-- `ai-hats task hyp set-status ...`
+- `rack hyp append-verdict ...`
+- `rack transition <HYP-ID> confirm|refute|stall|revive ...` (HYP status is an FSM edge)
 - `ai-hats reflect commit ...`
-- `ai-hats task create ...`
-- `ai-hats task list ...` / `ai-hats list ...` / `ai-hats show ...` (inspection)
+- `rack create ...`
+- `rack ls ...` / `rack context ...` / `ai-hats list ...` (inspection)
 
 Forbidden without L2 activation:
 
@@ -248,5 +248,5 @@ Forbidden without L2 activation:
 The only allowed direct write under `.agent/` is the judge report at
 `<ai_hats_dir>/sessions/retros/judge/<UTC-ISO-ts>-report.md` (Step 4).
 All other side effects — task creation, HYP verdicts/status, PROP
-votes/status — go through `ai-hats task ...` CLI. See
-**rule_backlog_discipline**.
+votes/status — go through the `rack` CLI (`rack create` / `rack hyp` /
+`rack proposal`). See **rule_backlog_discipline**.

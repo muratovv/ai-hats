@@ -51,7 +51,7 @@ Triggered by `ai-hats reflect role <role-name>` or invoked manually.
 
 The report is the artifact. Filed proposals (via **review-proposal**) feed
 into the proposal inbox; concrete fix tasks are filed via
-`ai-hats task create` per **backlog-manager**.
+`rack create` per **hatrack**.
 
 > **Status: skeleton.** Full body — checklist of axes, finding format,
 > rubric for sharpness — to be elaborated in a follow-up task.
