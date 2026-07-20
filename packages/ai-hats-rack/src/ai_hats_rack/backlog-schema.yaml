@@ -11,7 +11,7 @@ keys:
   state: [name, on_enter, on_exit]
   edge: [from, to, name, handlers, skip]
   links: [kinds]
-  kind: [name, arity, inverse, derived, aliases, handlers]
+  kind: [name, arity, inverse, derived, aliases, handlers, read]
   # A card-field entry (HATS-1035): `type` is str|int|list|any; a complex shape
   # is `type: any` + a mandatory `validator`. `emit` is always|when-set.
   field: [name, type, default, required, choices, validator, emit]
