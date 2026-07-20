@@ -16,7 +16,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.paths import hypotheses_dir
-from ai_hats_rack.migrate import migrate_catalog
+from ai_hats_rack.migration import migrate_catalog
 from ai_hats_tracker.hypothesis import HypothesisStore
 from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG, TRANSCRIPT_TXT, session_dirname
 

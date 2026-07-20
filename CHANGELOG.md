@@ -69,7 +69,7 @@ since the latest tag lives under **Unreleased** until the next release.
   — quorum semantics ported byte-for-byte from the tracker (distinct real
   sessions, `auto-quorum` sentinel excluded, automation-actor-only gating per
   ADR-0009; a manual refute is never gated). A one-shot migration
-  (`python -m ai_hats_rack.migrate <ai_hats_dir> [--dry-run]`) moves flat
+  (`python -m ai_hats_rack.migration <ai_hats_dir> [--dry-run]`) moves flat
   `HYP-NNN.yaml`/`PROP-NNN.yaml` files to dir-per-card catalogs with an
   inventory diff and idempotent re-runs; the tracker's stores gained a
   dual-layout shim (rack-aligned `.lock` path) so `ai-hats task hyp/proposal`

@@ -1,5 +1,5 @@
 """One-shot flat → dir-per-card migration for the HYP/PROP backlogs (HATS-1044,
-ADR-0017 §5/R5) — rack-side API + a ``python -m ai_hats_rack.migrate`` entry.
+ADR-0017 §5/R5) — rack-side API + a ``python -m ai_hats_rack.migration`` entry.
 
 Moves each ``<catalog>/<ID>[-slug].yaml`` to ``<catalog>/<ID>/task.yaml`` and seeds
 ``backlog.yaml`` from the packaged definition. Mapping is a pure rename
@@ -15,15 +15,14 @@ from __future__ import annotations
 
 import argparse
 import re
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 
-from . import fastyaml
-from .definition import load_packaged_definition, packaged_definition_source
-from .models import TaskCard, atomic_write_text
+from .. import fastyaml
+from ..definition import load_packaged_definition, packaged_definition_source
+from ..models import TaskCard, atomic_write_text
 
 #: ``(name, flat-source subpath, target-catalog subpath, id pattern)`` under a
 #: ``tracker`` root. HATS-1054: hypotheses normalize (flat ``tracker/hypotheses`` →
@@ -280,7 +279,7 @@ def migrate_tracker(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m ai_hats_rack.migrate",
+        prog="python -m ai_hats_rack.migration",
         description="One-shot flat → dir-per-card migration for the HYP/PROP backlogs.",
     )
     parser.add_argument("ai_hats_dir", type=Path, help="Dir holding tracker/ (e.g. .agent/ai-hats)")
@@ -305,7 +304,3 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(report.render())
     return 0 if report.ok else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

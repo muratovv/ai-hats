@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 from ai_hats_rack import Workspace
-from ai_hats_rack.migrate import migrate_catalog, migrate_tracker
+from ai_hats_rack.migration import migrate_catalog, migrate_tracker
 from ai_hats_rack.models import TaskCard
 from ai_hats_rack.resolver import RackRoot
 
