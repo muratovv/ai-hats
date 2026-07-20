@@ -150,10 +150,23 @@ def _max_id(dir_: Path, file_re: re.Pattern, dir_re: re.Pattern) -> int:
 
 
 class HypothesisStore:
-    """Read/write HYP cards under ``hypotheses_dir`` (flat or dir-per-card)."""
+    """Read/write HYP cards (flat or dir-per-card) with a dual-PATH catalog split.
 
-    def __init__(self, hypotheses_dir: Path) -> None:
+    HATS-1054: dir-cards + ``backlog.yaml`` + all writes live under ``hypotheses_dir``
+    (the new ``tracker/backlog/hypotheses`` catalog); legacy flat ``HYP-*.yaml`` files
+    are read as a fallback from ``flat_dir`` (the old ``tracker/hypotheses``). Read
+    resolution order: (1) dir-card in ``hypotheses_dir``, (2) flat file in
+    ``hypotheses_dir``, (3) flat file in ``flat_dir``. When ``flat_dir`` is omitted it
+    defaults to ``hypotheses_dir`` (single-dir standalone — byte-identical behavior)."""  # comment-length: allow
+
+    def __init__(self, hypotheses_dir: Path, *, flat_dir: Path | None = None) -> None:
         self.dir = hypotheses_dir
+        self.flat_dir = flat_dir if flat_dir is not None else hypotheses_dir
+
+    def _flat_dirs(self) -> list[Path]:
+        """Dirs scanned for legacy flat ``HYP-*.yaml`` files, primary first — the
+        legacy ``flat_dir`` is appended only when it differs from the catalog."""
+        return [self.dir] if self.flat_dir == self.dir else [self.dir, self.flat_dir]
 
     def _dir_mode(self) -> bool:
         """A migrated catalog carries a ``backlog.yaml``; new writes then go
@@ -164,8 +177,10 @@ class HypothesisStore:
         dir_card = self.dir / hyp_id / "task.yaml"
         if dir_card.exists():
             return dir_card
-        if self.dir.exists():
-            for p in sorted(self.dir.iterdir()):
+        for d in self._flat_dirs():
+            if not d.exists():
+                continue
+            for p in sorted(d.iterdir()):
                 if not p.is_file():
                     continue
                 m = _HYP_FILE_RE.match(p.name)
@@ -196,22 +211,31 @@ class HypothesisStore:
                 continue
             seen.add(h.id)
             result.append(h)
-        for p in sorted(self.dir.iterdir()):
-            if not (p.is_file() and _HYP_FILE_RE.match(p.name)):
+        for d in self._flat_dirs():
+            if not d.exists():
                 continue
-            try:
-                h = Hypothesis.model_validate(yaml.safe_load(p.read_text()) or {})
-            except Exception:  # noqa: BLE001, S112
-                continue
-            if h.id in seen:  # a dir-per-card card shadows its flat source
-                continue
-            seen.add(h.id)
-            result.append(h)
+            for p in sorted(d.iterdir()):
+                if not (p.is_file() and _HYP_FILE_RE.match(p.name)):
+                    continue
+                try:
+                    h = Hypothesis.model_validate(yaml.safe_load(p.read_text()) or {})
+                except Exception:  # noqa: BLE001, S112
+                    continue
+                if h.id in seen:  # a dir-per-card card (or nearer flat dir) shadows this
+                    continue
+                seen.add(h.id)
+                result.append(h)
         result.sort(key=lambda h: _id_key(h.id))
         return result
 
     def list_active(self) -> list[Hypothesis]:
         return [h for h in self.list_all() if h.status == "active"]
+
+    def next_id(self) -> str:
+        """Next ``HYP-NNN`` across the catalog AND the legacy flat dir (they coexist
+        post-migration) — the alloc must not reuse an id present in either."""
+        max_n = max((_max_id(d, _HYP_FILE_RE, _HYP_DIR_RE) for d in self._flat_dirs()), default=0)
+        return f"HYP-{max_n + 1:03d}"
 
     def append_verdict(self, hyp_id: str, entry: ValidationLogEntry) -> Hypothesis:
         """Append one ValidationLogEntry under filelock; preserves all extras."""

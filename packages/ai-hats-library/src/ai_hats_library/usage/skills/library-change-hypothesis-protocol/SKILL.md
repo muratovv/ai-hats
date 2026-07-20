@@ -12,6 +12,7 @@ license: MIT
 > task may lift enforcement into the engine.
 
 > **Harness shell prelude.** Before any `ai-hats` invocation:
+>
 > ```bash
 > ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }  # HATS-790: no bin/ai-hats console script
 > ```
@@ -20,10 +21,10 @@ license: MIT
 
 Two checkpoints, NOT one:
 
-| Stage          | What you do here                                                                 |
-|----------------|----------------------------------------------------------------------------------|
-| **plan**       | Behavior-delta check only. Decide *whether* a HYP will be needed. Record decision in `plan.md`. **Do NOT create the HYP yet.** |
-| **document**   | Diff is final on `task/<id>` branch. **Now** create the HYP (`ai-hats task hyp create`), cross-link, commit. |
+| Stage        | What you do here                                                                                                               |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| **plan**     | Behavior-delta check only. Decide *whether* a HYP will be needed. Record decision in `plan.md`. **Do NOT create the HYP yet.** |
+| **document** | Diff is final on `task/<id>` branch. **Now** create the HYP (`rack hyp create`), cross-link, commit.                           |
 
 Filing the HYP at plan-stage is a **precommitment anti-pattern**
 (HATS-567 repro). The HYP must describe what shipped — not what was
@@ -38,7 +39,7 @@ Filing the HYP at plan-stage is a **precommitment anti-pattern**
 2. **Observation window opens at merge.** Until the change is on
    `master` (or at minimum frozen on the task branch), `validation_log`
    has nothing to accumulate. A plan-stage HYP sits `active` with no
-   evidence — noise in `ai-hats task hyp list`.
+   evidence — noise in the active-HYP inbox.
 3. **Precommitment bias.** A plan-stage HYP starts pulling the
    implementation toward its own framing: «we already said
    Vertical-slicing-directive will reduce bulk-tests» makes it harder
@@ -96,7 +97,7 @@ In your task's `plan.md`, answer two questions explicitly:
 2. **Post-change behavior?** What should they observably do after?
 
 Both "no observable change" → **pure refactor**. Record the decision
-explicitly in `plan.md` or via `ai-hats task log` (one line:
+explicitly in `plan.md` or via `rack transition --log` (one line:
 "no behavior change — pure refactor: <reason>"). Skip the rest of this
 skill — no HYP needed, now or later.
 
@@ -110,9 +111,10 @@ If you find yourself reaching for `hyp create` while the task is still
 `plan` or `execute`, **stop** — you're committing the HATS-567
 precommitment anti-pattern.
 
-**First — is it already covered by an active HYP?** Run
-`ai-hats task hyp list --status active --json` and check whether an
-active HYP already describes this change's mechanism. If one does,
+**First — is it already covered by an active HYP?** Check the active
+hypotheses (the reviewer's evidence block lists them, or `rack context
+HYP-NNN` per candidate) for one that already describes this change's
+mechanism. If one does,
 **do not file a new HYP** — that duplicates the backlog (the same
 umbrella-first discipline as self-retrospective 4.5.a). Instead **fold
 into it**: append an intervention marker to that HYP's `validation_log`
@@ -120,7 +122,7 @@ and cross-link both ways (task resolution names the HYP; the marker
 names the task + sha):
 
 ```bash
-ai-hats task hyp append-verdict --hyp HYP-NNN --session <id> \
+rack hyp append-verdict HYP-NNN --session-id <id> \
   --verdict n/a --recommendation keep \
   --evidence "INTERVENTION (not an audit): <task> (<sha>) <what shipped>."
 ```
@@ -133,7 +135,7 @@ prefix stop the marker being read as an observation. Then **stop** — no
 new HYP.
 
 Otherwise (no active HYP covers the change) → author a new companion
-HYP. Use `ai-hats task hyp create` (or hand-write the YAML; both routes
+HYP. Use `rack hyp create` (or hand-write the YAML; both routes
 work). Required fields per the existing `Hypothesis` schema:
 `id`, `title`, `status: active`, `created`, `source_task`,
 `hypothesis`, `baseline`, `observation_window`, `success_criterion`.
@@ -237,10 +239,10 @@ Task: rewrite `review-session` skill to add a new output field.
   Recorded in `plan.md`. **No HYP yet.**
 - **Execute:** edit skill, run composition smoke, commit on
   `task/<id>`.
-- **Document-stage:** diff final. `ai-hats task hyp create
-  --source-task HATS-XXX …` with `verification_protocol: "Evidence
-  MUST quote the field name from session retro YAML and confirm it
-  appears under hypothesis_verdicts[*]"`.
+- **Document-stage:** diff final. `rack hyp create "…" --hypothesis "…"`
+  (link `source_task` → HATS-XXX), with `verification_protocol` in the
+  HYP's `extra`: "Evidence MUST quote the field name from session retro
+  YAML and confirm it appears under hypothesis_verdicts[*]".
 
 ### ✓ Good (refactor exemption)
 

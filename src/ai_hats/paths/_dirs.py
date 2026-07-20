@@ -283,7 +283,20 @@ def proposals_dir(project_dir: Path) -> Path:
 
 
 def hypotheses_dir(project_dir: Path) -> Path:
-    """Hypotheses: ``<ai_hats_dir>/tracker/hypotheses/``."""
+    """Hypotheses catalog: ``<ai_hats_dir>/tracker/backlog/hypotheses/`` (HATS-1054).
+
+    The normalized dir-per-card catalog — where migrated ``<ID>/task.yaml`` cards,
+    the seeded ``backlog.yaml``, and new writes live. Legacy flat ``HYP-*.yaml`` files
+    stay under :func:`hypotheses_flat_dir` and are read as a fallback."""
+    return backlog_dir(project_dir) / "hypotheses"
+
+
+def hypotheses_flat_dir(project_dir: Path) -> Path:
+    """Legacy flat hypotheses dir: ``<ai_hats_dir>/tracker/hypotheses/`` (HATS-1054).
+
+    The pre-normalization location of flat ``HYP-*.yaml`` files. The migration leaves
+    them here (source not purged); the dual-layout store reads them as a fallback
+    behind the new :func:`hypotheses_dir` catalog."""
     return tracker_dir(project_dir) / "hypotheses"
 
 
@@ -664,6 +677,7 @@ __all__ = [
     "tasks_dir",
     "proposals_dir",
     "hypotheses_dir",
+    "hypotheses_flat_dir",
     "decisions_dir",
     "state_md_path",
     "session_cache_root",

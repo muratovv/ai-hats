@@ -15,7 +15,7 @@ from pathlib import Path
 import yaml
 
 from ai_hats_rack import Workspace
-from ai_hats_rack.migrate import migrate_catalog
+from ai_hats_rack.migration import migrate_catalog
 from ai_hats_rack.resolver import RackRoot
 from ai_hats_tracker.hypothesis import HypothesisStore, ValidationLogEntry
 
