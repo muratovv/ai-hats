@@ -27,10 +27,12 @@ Take the reminder seriously only when:
 
 ## 3. Communication
 
-When you ignore a reminder mid-conversation, acknowledge it briefly in your
-reply ("ignoring the harness TaskCreate reminder — current work is a single
-audit pass, no sub-tracking value") so the user knows you saw it and made an
-intentional choice. Do not silently drop it.
+Ignore the reminder **silently** — do not narrate the choice. In an ai-hats
+project the ignore is the correct default (the `ai-hats task` backlog is the
+single tracker), so a per-reminder acknowledgement carries no signal and is
+just chat noise. Speak up only when you are *acting* on the reminder under §2
+(supervisor asked for harness sub-tracking, or no backlog CLI exists) — there
+the departure from the default is what's worth one line.
 
 ## 4. Why
 
