@@ -126,7 +126,7 @@ def test_default_composition_flip(shared_launcher, tmp_path: Path):
     # Seed flat HYP/PROP, then migrate them into the normalized catalogs via the
     # real migrator (dogfood): HYP → tracker/backlog/hypotheses, PROP in-place.
     _seed_flat_catalogs(ai_hats_dir)
-    _run([py, "-m", "ai_hats_rack.migrate", str(ai_hats_dir)],
+    _run([py, "-m", "ai_hats_rack.migration", str(ai_hats_dir)],
          cwd=sbx, env=env, timeout=60, expect_exit=0)
     assert (ai_hats_dir / "tracker" / "backlog" / "hypotheses" / "HYP-001" / "task.yaml").is_file()
     assert (ai_hats_dir / "tracker" / "backlog" / "proposals" / "PROP-001" / "task.yaml").is_file()
