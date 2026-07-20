@@ -155,12 +155,12 @@ warns when a task moved states with an empty journal (zero-events, PROP-005/076)
 
 Four verbs, each with `--json` (JSON-first, HATS-1031 API-D surface):
 
-| Verb                   | Role                                                                                                                          |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `rack create <title>`  | new card; `--id/--parent/--depends/--tag/...`; initial state from backlog.yaml                                                |
-| `rack ls [<ID>]`       | backlog scan (`--grep/--tag/--state/--parent`) or graph walk (`ls <ID> --deep N [--link <glob>…]`, repeatable OR)             |
-| `rack context <ID>`    | THE read package: full card + top-level `links` + document paths; repeatable `--with <glob>` embeds, `--attr audit\|work_log` |
-| `rack transition <ID>` | THE mutating verb: an ordered composite of ops under one lock                                                                 |
+| Verb                   | Role                                                                                                                                                                                                                                                                                            |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rack create <title>`  | new card; `--id/--parent/--depends/--tag/...`; initial state from backlog.yaml                                                                                                                                                                                                                  |
+| `rack ls [<ID>]`       | backlog scan (`--grep/--tag/--state/--parent`) or graph walk (`ls <ID> --deep N [--link <glob>…]`, repeatable OR)                                                                                                                                                                               |
+| `rack context <ID…>`   | THE read package: full card + top-level `links` + document paths; repeatable `--with <glob>` embeds, `--attr audit\|work_log`. Batch (`context ID1 ID2 …`, ≥2 ids) assembles all in one process → `{"contexts": {id: …}}`, skip-and-continue; one id stays unwrapped byte-identical (HATS-1074) |
+| `rack transition <ID>` | THE mutating verb: an ordered composite of ops under one lock                                                                                                                                                                                                                                   |
 
 `transition` ops run in **argv order** under ONE task lock with a single persist;
 effects of earlier ops are visible to later ones, any abort rolls the whole
