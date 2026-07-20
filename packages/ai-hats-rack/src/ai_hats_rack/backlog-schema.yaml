@@ -6,7 +6,9 @@
 
 # Allowed keys per structural level — the loader's fail-closed allow-sets.
 keys:
-  top: [name, prefix, fsm, links, extensions, fields, extras]
+  # `cli_alias` — a backlog's short `rack` group name (its `name` when unset), so
+  # the verbs layer never hardcodes per-backlog knowledge (HATS-1036).
+  top: [name, prefix, cli_alias, fsm, links, extensions, fields, extras]
   fsm: [initial, states, edges]
   state: [name, on_enter, on_exit]
   edge: [from, to, name, handlers, skip]

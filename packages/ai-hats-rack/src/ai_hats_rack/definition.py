@@ -165,6 +165,8 @@ class BacklogDefinition:
     positionally in four edge-key derivation sites) so a name never perturbs
     edge-key derivation. ``bindings`` carries the declared handler surface;
     ``fields`` the card schema; ``extras_policy`` the unknown-key write policy.
+    ``cli_alias`` is the backlog's short ``rack`` group name (its ``name`` when
+    unset) — the verbs layer reads it rather than hardcoding per-backlog names.
     """
 
     name: str
@@ -175,6 +177,7 @@ class BacklogDefinition:
     bindings: Bindings = field(default_factory=Bindings)
     fields: tuple[FieldSpec, ...] = ()
     extras_policy: str = "allow"
+    cli_alias: str | None = None
 
 
 def _reject_unknown(mapping: Mapping[str, Any], allowed: frozenset[str], location: str) -> None:
@@ -434,6 +437,16 @@ def _parse_extras(raw: Any, source: str) -> str:
     return raw
 
 
+def _parse_cli_alias(raw: Any, source: str) -> str | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw:
+        raise BacklogDefinitionError(
+            f"{source}: 'cli_alias' must be a non-empty string (got {raw!r})"
+        )
+    return raw
+
+
 def _build(raw: Any, source: str) -> BacklogDefinition:
     if not isinstance(raw, dict):
         raise BacklogDefinitionError(f"{source}: expected a mapping at top level")
@@ -455,6 +468,7 @@ def _build(raw: Any, source: str) -> BacklogDefinition:
     extensions = _parse_refs(raw.get("extensions"), "extensions")
     fields = _collect_fields(raw.get("fields"), source)
     extras_policy = _parse_extras(raw.get("extras"), source)
+    cli_alias = _parse_cli_alias(raw.get("cli_alias"), source)
     topology = _validate_topology(
         {"initial": fsm.initial, "states": fsm.states, "edges": fsm.adjacency}, source
     )
@@ -479,6 +493,7 @@ def _build(raw: Any, source: str) -> BacklogDefinition:
         bindings=bindings,
         fields=fields,
         extras_policy=extras_policy,
+        cli_alias=cli_alias,
     )
 
 

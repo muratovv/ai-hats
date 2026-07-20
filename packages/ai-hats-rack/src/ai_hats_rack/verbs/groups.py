@@ -1,11 +1,12 @@
 """Per-backlog command groups (HATS-1036 R2/R5, ADR-0017 §4/§7).
 
-Every NON-tasks backlog the workspace mounts becomes a group — ``rack hyp …`` /
-``rack proposal …`` — carrying a schema-driven ``create``, an ``update`` sugar
-(schema options → ``--set`` field ops), and the verbs its extensions contribute
-through the optional ``verbs()`` hook (``append-verdict``/``autoclose``,
-``vote``). Groups are discovered LAZILY from the ambient root, so the base
-four-verb surface is unchanged until sibling catalogs are mounted (R2).
+Every NON-tasks backlog the workspace mounts becomes a group named by its
+declared ``cli_alias`` (its ``name`` when unset), carrying a schema-driven
+``create``, an ``update`` sugar (schema options → ``--set`` field ops), and the
+verbs its extensions contribute through the optional ``verbs()`` hook. Groups
+are discovered LAZILY from the ambient root, so the base four-verb surface is
+unchanged until sibling catalogs are mounted (R2). This layer stays 100%
+backlog-agnostic: a backlog's short CLI name is part of ITS definition.
 """
 
 from __future__ import annotations
@@ -30,18 +31,28 @@ from ..composition import compose_subscribers, stock_factories
 from ..definition import BacklogDefinition
 from ..ops import parse_ops
 from ..resolver import NoProjectRootError, resolve_root
-from ..workspace import BacklogInstance, Workspace
+from ..workspace import BacklogInstance, Workspace, WorkspaceError
 from .create import CreateRoute, _LIFECYCLE_OWNED, build_create_command
 
-#: The packaged HYP/PROP backlogs keep their identity name (``hypotheses`` /
-#: ``proposals`` — the workspace/targets key) but read as their conventional
-#: short CLI name in the group surface, matching the old ``ai-hats task hyp``.
-_GROUP_ALIASES = {"hypotheses": "hyp", "proposals": "proposal"}
+
+class DuplicateGroupNameError(WorkspaceError):
+    """Two mounted non-tasks backlogs resolve to the SAME CLI group name (a
+    ``cli_alias`` or a ``name``): the top-level surface cannot mount both, so it
+    fails closed rather than shadow one (HATS-1036)."""
+
+    def __init__(self, group: str, names: tuple[str, str]) -> None:
+        self.group = group
+        self.names = names
+        super().__init__(
+            f"CLI group name {group!r} is claimed by more than one backlog "
+            f"{list(names)} — set a distinct 'cli_alias' on one"
+        )
 
 
 def group_name(instance: BacklogInstance) -> str:
-    """The CLI group name for a mounted backlog — its short alias or its name."""
-    return _GROUP_ALIASES.get(instance.name, instance.name)
+    """The CLI group name for a mounted backlog: its declared ``cli_alias`` or,
+    absent one, its ``name``."""
+    return instance.definition.cli_alias or instance.name
 
 
 # ----- update sugar ----------------------------------------------------------
@@ -166,6 +177,20 @@ def _ambient_workspace() -> Workspace | None:
         return None
 
 
+def _mounted_groups(workspace: Workspace) -> dict[str, BacklogInstance]:
+    """Each non-tasks instance keyed by its CLI group name; two backlogs resolving
+    to the same name is a fail-closed :class:`DuplicateGroupNameError` (HATS-1036)."""
+    groups: dict[str, BacklogInstance] = {}
+    for inst in workspace.instances:
+        if inst.is_tasks:
+            continue
+        name = group_name(inst)
+        if name in groups:
+            raise DuplicateGroupNameError(name, (groups[name].name, inst.name))
+        groups[name] = inst
+    return groups
+
+
 class RackGroup(click.Group):
     """``main`` as a lazy group: the four base verbs live in ``.commands``; the
     per-backlog groups are resolved on demand from the ambient workspace, so the
@@ -178,17 +203,21 @@ class RackGroup(click.Group):
         workspace = _ambient_workspace()
         if workspace is None:
             return None
-        for inst in workspace.instances:
-            if not inst.is_tasks and group_name(inst) == name:
-                return build_backlog_group(inst)
-        return None
+        inst = _mounted_groups(workspace).get(name)
+        return build_backlog_group(inst) if inst is not None else None
 
     def list_commands(self, ctx: click.Context) -> list[str]:
         names = set(super().list_commands(ctx))
         workspace = _ambient_workspace()
         if workspace is not None:
-            names |= {group_name(i) for i in workspace.instances if not i.is_tasks}
+            names |= set(_mounted_groups(workspace))
         return sorted(names)
 
 
-__all__ = ["RackGroup", "build_backlog_group", "build_update_command", "group_name"]
+__all__ = [
+    "DuplicateGroupNameError",
+    "RackGroup",
+    "build_backlog_group",
+    "build_update_command",
+    "group_name",
+]

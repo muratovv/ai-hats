@@ -1,5 +1,6 @@
 name: proposals
 prefix: PROP
+cli_alias: proposal
 extras: forbid
 
 fsm:
