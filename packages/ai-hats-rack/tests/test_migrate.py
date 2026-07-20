@@ -138,6 +138,67 @@ def test_migrated_cards_are_rack_readable_and_discovered(tmp_path: Path):
     assert isinstance(card, TaskCard) and card.state == "active"
 
 
+def test_migrate_catalog_target_split_leaves_flat_source(tmp_path: Path):
+    # HATS-1054: dir-cards + backlog.yaml land in a SEPARATE target; the flat source
+    # dir keeps its files and gets NO backlog.yaml (so discover does not mount it).
+    source = tmp_path / "tracker" / "hypotheses"
+    target = tmp_path / "tracker" / "backlog" / "hypotheses"
+    _write_hyp(source, "HYP-001")
+    report = migrate_catalog(source, "hypotheses", target_catalog=target)
+
+    assert report.migrated_ids == {"HYP-001"}
+    assert (target / "HYP-001" / "task.yaml").is_file()
+    assert (target / "backlog.yaml").is_file()
+    assert (source / "HYP-001.yaml").is_file()  # flat source untouched
+    assert not (source / "backlog.yaml").exists()  # seed only in the target catalog
+    assert not (source / "HYP-001").exists()  # no dir-card written into the source
+
+
+def test_migrate_tracker_default_normalizes_hypotheses(tmp_path: Path):
+    ai = tmp_path / ".agent" / "ai-hats"
+    _write_hyp(ai / "tracker" / "hypotheses", "HYP-001")
+    _write_prop(ai / "tracker" / "backlog" / "proposals", "PROP-001")
+    report = migrate_tracker(ai)
+    assert report.ok
+    # Hypotheses normalized to the NEW catalog; proposals migrated in-place.
+    assert (ai / "tracker" / "backlog" / "hypotheses" / "HYP-001" / "task.yaml").is_file()
+    assert (ai / "tracker" / "backlog" / "hypotheses" / "backlog.yaml").is_file()
+    assert (ai / "tracker" / "hypotheses" / "HYP-001.yaml").is_file()  # flat source stays
+    assert not (ai / "tracker" / "hypotheses" / "backlog.yaml").exists()
+    assert (ai / "tracker" / "backlog" / "proposals" / "PROP-001" / "task.yaml").is_file()
+
+
+def test_migrate_tracker_discovers_normalized_catalogs(tmp_path: Path):
+    ai = tmp_path / ".agent" / "ai-hats"
+    _write_hyp(ai / "tracker" / "hypotheses", "HYP-001")
+    _write_prop(ai / "tracker" / "backlog" / "proposals", "PROP-001")
+    migrate_tracker(ai)
+    root = RackRoot(project_dir=tmp_path, tasks_dir=ai / "tracker" / "backlog" / "tasks")
+    ws = Workspace.discover([root])
+    # Both normalized catalogs mount exactly once (no duplicate HYP prefix from the
+    # old flat dir, which carries no backlog.yaml).
+    assert {i.name for i in ws.instances} == {"tasks", "hypotheses", "proposals"}
+    assert ws.exists("HYP-001") and ws.exists("PROP-001")
+
+
+def test_dry_run_report_names_the_new_target(tmp_path: Path):
+    ai = tmp_path / ".agent" / "ai-hats"
+    _write_hyp(ai / "tracker" / "hypotheses", "HYP-001")
+    report = migrate_tracker(ai, dry_run=True)
+    rendered = report.render()
+    assert str(ai / "tracker" / "backlog" / "hypotheses") in rendered
+    assert str(ai / "tracker" / "hypotheses") in rendered  # names the flat source too
+    assert not (ai / "tracker" / "backlog" / "hypotheses").exists()  # dry-run writes nothing
+
+
+def test_hypotheses_target_override(tmp_path: Path):
+    ai = tmp_path / ".agent" / "ai-hats"
+    _write_hyp(ai / "tracker" / "hypotheses", "HYP-001")
+    migrate_tracker(ai, hypotheses_target=Path("custom") / "hyps")
+    assert (ai / "custom" / "hyps" / "HYP-001" / "task.yaml").is_file()
+    assert (ai / "custom" / "hyps" / "backlog.yaml").is_file()
+
+
 def test_flat_and_dir_card_coexist_glob_reads_dir_only(tmp_path: Path):
     # Coexistence: the flat file stays; rack's `*/task.yaml` scan ignores it.
     cat = tmp_path / "hypotheses"
