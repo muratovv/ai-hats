@@ -95,6 +95,19 @@ def test_backlog_selector_json_carries_backlog(runner, tmp_path):
     assert all(row["backlog"] == "hyp" for row in payload["tasks"])
 
 
+def test_multiple_backlog_selects_subset(runner, tmp_path):
+    # --backlog is repeatable: name a subset between one backlog and --all-backlogs.
+    tasks = _tracker_with_backlogs(tmp_path)
+    _seed_all(runner, tasks)
+
+    payload = json.loads(
+        _run(runner, tasks, "ls", "--backlog", "hyp", "--backlog", "proposal", "--json").output
+    )
+
+    assert sorted({r["id"].split("-")[0] for r in payload["tasks"]}) == ["HYP", "PROP"]
+    assert {r["backlog"] for r in payload["tasks"]} == {"hyp", "proposal"}
+
+
 def test_default_ls_json_has_no_backlog_key(runner, tmp_path):
     # R2: bare `rack ls` output is unchanged — no backlog annotation, tasks only.
     tasks = _tracker_with_backlogs(tmp_path)
