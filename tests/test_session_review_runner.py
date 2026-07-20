@@ -23,6 +23,7 @@ from ai_hats.retro.session_review_schema import SessionReviewV1
 from ai_hats.retro.common import SessionArtifacts, SessionLinks, SessionMetrics
 from ai_hats.retro.loader import load
 from ai_hats.paths import hypotheses_dir
+from ai_hats_rack.migrate import migrate_catalog
 from ai_hats_observe.artifacts import METRICS_JSON, REASONING_LOG, TRANSCRIPT_TXT
 
 
@@ -57,6 +58,7 @@ def _add_active_hyp(project_dir: Path, hyp_id: str = "HYP-001") -> None:
         "title: t\nstatus: active\ncreated: '2026-05-01'\n"
         "source_task: TASK-001\nhypothesis: a\nvalidation_log: []\n"
     )
+    migrate_catalog(hyps_dir, "hypotheses")  # flat → dir-per-card for the workspace
 
 
 # ---- _check_allowed_keys ----
@@ -620,6 +622,7 @@ def _write_hyp_with_extras(project_dir: Path, hyp_id: str, **extras) -> None:
     }
     body.update(extras)
     (hyps_dir / f"{hyp_id}.yaml").write_text(yaml.safe_dump(body))
+    migrate_catalog(hyps_dir, "hypotheses")  # flat → dir-per-card for the workspace
 
 
 def test_render_active_hypotheses_surfaces_verification_protocol(tmp_path: Path):

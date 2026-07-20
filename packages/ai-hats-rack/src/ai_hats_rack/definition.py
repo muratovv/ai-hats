@@ -25,10 +25,13 @@ from .errors import RackConfigError
 from .fsm import Topology, _validate as _validate_topology
 from .registry import LinksRegistry, LinksRegistryError, _validate as _validate_registry
 
+
 # Allow-sets load FROM the packaged `backlog-schema.yaml` grammar so no hardcoded
 # frozenset can drift; reserved keys (fields/extras/targets) stay out of `keys`.
 def _load_schema() -> Mapping[str, Any]:
-    text = resources.files("ai_hats_rack").joinpath("backlog-schema.yaml").read_text(encoding="utf-8")
+    text = (
+        resources.files("ai_hats_rack").joinpath("backlog-schema.yaml").read_text(encoding="utf-8")
+    )
     return yaml.safe_load(text)
 
 
@@ -43,6 +46,8 @@ _FIELD_KEYS = frozenset(_SCHEMA_KEYS["field"])
 
 #: The `type` vocabulary (ADR-0017 §1 field grammar limits): scalars + `any`.
 _FIELD_TYPES = frozenset({"str", "int", "list", "any"})
+#: The stock reaction a declared stored inverse pair REQUIRES (ADR-0017 §2/R4).
+MIRROR_HANDLER = "mirror-link"
 #: `emit` policy — declared per field, enforced by the write layer (HATS-1035 step 4).
 _EMIT_MODES = frozenset({"always", "when-set"})
 #: Top-level unknown-key policy (ADR-0017 §1): today's passthrough is `allow`.
@@ -61,6 +66,22 @@ class UnsupportedBacklogKeyError(BacklogDefinitionError):
         super().__init__(
             f"backlog.yaml {location}: key {key!r} is not supported by this "
             f"loader (the backlog.yaml surface lands in phases — see ADR-0017)"
+        )
+
+
+class MissingMirrorReactionError(BacklogDefinitionError):
+    """A declared STORED inverse pair (``inverse: X`` where X is a stored, non-
+    symmetric kind) without the ``mirror-link`` reaction — the reverse edge would
+    drift undetected, so the loader refuses it fail-closed (ADR-0017 §2/R4).
+    Derived inverses (``children``) and symmetric kinds (``related``) are exempt."""
+
+    def __init__(self, kind: str, inverse: str, source: str) -> None:
+        self.kind = kind
+        self.inverse = inverse
+        super().__init__(
+            f"{source}: kind {kind!r} declares a stored inverse {inverse!r} but no "
+            f"{MIRROR_HANDLER!r} reaction — add 'handlers: [{MIRROR_HANDLER}]' to "
+            f"{kind!r} so the reverse edge stays convergent (ADR-0017 §2)"
         )
 
 
@@ -172,7 +193,9 @@ def _parse_refs(raw: Any, location: str) -> tuple[HandlerRef, ...]:
     if raw is None:
         return ()
     if not isinstance(raw, list):
-        raise BacklogDefinitionError(f"{location}: expected a list of handler references (got {raw!r})")
+        raise BacklogDefinitionError(
+            f"{location}: expected a list of handler references (got {raw!r})"
+        )
     return tuple(_parse_ref(item, location) for item in raw)
 
 
@@ -180,7 +203,9 @@ def _parse_skip(raw: Any, location: str) -> frozenset[str]:
     if raw is None:
         return frozenset()
     if not isinstance(raw, list) or not all(isinstance(s, str) for s in raw):
-        raise BacklogDefinitionError(f"{location}: 'skip' must be a list of handler names (got {raw!r})")
+        raise BacklogDefinitionError(
+            f"{location}: 'skip' must be a list of handler names (got {raw!r})"
+        )
     return frozenset(raw)
 
 
@@ -264,8 +289,14 @@ def _collect_fsm(raw: Any, source: str) -> _FsmShape:
         if skip:
             edge_skips[(frm, to)] = skip
     return _FsmShape(
-        raw.get("initial"), states, adjacency, edge_names,
-        state_on_enter, state_on_exit, edge_handlers, edge_skips,
+        raw.get("initial"),
+        states,
+        adjacency,
+        edge_names,
+        state_on_enter,
+        state_on_exit,
+        edge_handlers,
+        edge_skips,
     )
 
 
@@ -300,7 +331,9 @@ def _collect_links(
 def _collect_field(raw: Any, source: str) -> FieldSpec:
     """Parse one ``fields[]`` entry, fail-closed on unknown keys and bad enums."""
     if not isinstance(raw, dict) or not isinstance(raw.get("name"), str) or not raw["name"]:
-        raise BacklogDefinitionError(f"{source}: each field needs a non-empty string 'name' (got {raw!r})")
+        raise BacklogDefinitionError(
+            f"{source}: each field needs a non-empty string 'name' (got {raw!r})"
+        )
     name = raw["name"]
     _reject_unknown(raw, _FIELD_KEYS, f"field {name!r}")
     ftype = raw.get("type", "str")
@@ -315,10 +348,14 @@ def _collect_field(raw: Any, source: str) -> FieldSpec:
         )
     choices_raw = raw.get("choices")
     if choices_raw is not None and not isinstance(choices_raw, list):
-        raise BacklogDefinitionError(f"{source}: field {name!r} choices must be a list (got {choices_raw!r})")
+        raise BacklogDefinitionError(
+            f"{source}: field {name!r} choices must be a list (got {choices_raw!r})"
+        )
     validator = raw.get("validator")
     if validator is not None and not isinstance(validator, str):
-        raise BacklogDefinitionError(f"{source}: field {name!r} validator must be a name (got {validator!r})")
+        raise BacklogDefinitionError(
+            f"{source}: field {name!r} validator must be a name (got {validator!r})"
+        )
     return FieldSpec(
         name=name,
         type=ftype,
@@ -343,6 +380,26 @@ def _collect_fields(raw: Any, source: str) -> tuple[FieldSpec, ...]:
             raise BacklogDefinitionError(f"{source}: field {spec.name!r} declared more than once")
         seen.add(spec.name)
     return specs
+
+
+def _validate_stored_inverses(
+    registry: LinksRegistry,
+    kind_handlers: Mapping[str, tuple[HandlerRef, ...]],
+    source: str,
+) -> None:
+    """Fail-closed (ADR-0017 §2/R4): a stored kind whose inverse is ANOTHER stored
+    kind must declare the ``mirror-link`` reaction, else the reverse edge drifts
+    undetected. Derived inverses (``children``) and symmetric kinds (``related``,
+    stored one-sided today) are exempt — the packaged tasks default keeps loading."""
+    for kind in registry.kinds:
+        if kind.derived or not kind.inverse or kind.symmetric:
+            continue
+        inverse = registry.get(kind.inverse)
+        if inverse is None or inverse.derived:
+            continue
+        refs = kind_handlers.get(kind.name, ())
+        if not any(ref.name == MIRROR_HANDLER for ref in refs):
+            raise MissingMirrorReactionError(kind.name, kind.inverse, source)
 
 
 def _parse_extras(raw: Any, source: str) -> str:
@@ -380,6 +437,7 @@ def _build(raw: Any, source: str) -> BacklogDefinition:
         {"initial": fsm.initial, "states": fsm.states, "edges": fsm.adjacency}, source
     )
     registry = _validate_registry({"kinds": kinds_raw}, source)
+    _validate_stored_inverses(registry, kind_handlers, source)
     bindings = Bindings(
         state_on_enter=MappingProxyType(fsm.state_on_enter),
         state_on_exit=MappingProxyType(fsm.state_on_exit),
@@ -413,6 +471,50 @@ def load_backlog(path: Path | None = None) -> BacklogDefinition:
         resource = resources.files("ai_hats_rack").joinpath("backlog.yaml")
         text, source = resource.read_text(encoding="utf-8"), "ai_hats_rack/backlog.yaml"
     return _build(yaml.safe_load(text), source)
+
+
+def packaged_definitions() -> tuple[str, ...]:
+    """Names of non-default definitions shipped in-package: every
+    ``definitions/<name>/backlog.yaml`` resource. The package dir IS the
+    registry — no enumeration to keep in sync. NOT auto-mounted:
+    Workspace.discover mounts a catalog's OWN backlog.yaml, which wins;
+    these seed one (ADR-0017 §5)."""
+    root = resources.files("ai_hats_rack").joinpath("definitions")
+    return tuple(
+        sorted(
+            entry.name
+            for entry in root.iterdir()
+            if entry.is_dir() and entry.joinpath("backlog.yaml").is_file()
+        )
+    )
+
+
+def packaged_definition_source(name: str) -> str:
+    """Raw YAML text of a shipped non-default definition — what the migration/
+    init step writes into a catalog's ``backlog.yaml`` (ADR-0017 §5). Unknown
+    name -> a typed, fail-closed error."""
+    shipped = packaged_definitions()
+    if name not in shipped:
+        raise BacklogDefinitionError(
+            f"no packaged backlog definition {name!r}; shipped: {list(shipped)}"
+        )
+    return (
+        resources.files("ai_hats_rack")
+        .joinpath("definitions")
+        .joinpath(name)
+        .joinpath("backlog.yaml")
+        .read_text(encoding="utf-8")
+    )
+
+
+def load_packaged_definition(name: str) -> BacklogDefinition:
+    """Load a shipped non-default definition by name — the packaged HYP/PROP
+    contract (ADR-0017 §5). A catalog's own ``backlog.yaml`` still wins at mount
+    time (:func:`resolve_definition`); this is the source that seeds one."""
+    return _build(
+        yaml.safe_load(packaged_definition_source(name)),
+        f"ai_hats_rack/definitions/{name}/backlog.yaml",
+    )
 
 
 def resolve_definition(

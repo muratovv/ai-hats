@@ -52,6 +52,17 @@ class SelfLinkError(RackError):
         super().__init__(f"Task '{task_id}' cannot link to itself")
 
 
+#: Cross-backlog target-existence seam: ``(target_id, targets_backlog|None) -> bool``.
+TargetChecker = Callable[[str, "str | None"], bool]
+
+
+def card_exists(tasks_dir: Path, task_id: str) -> bool:
+    """The one existence primitive (ADR-0017 §2): the three link-existence sites
+    funnel through it; a workspace layers cross-backlog routing over the target
+    checks via an injected :data:`TargetChecker`."""
+    return (tasks_dir / task_id / "task.yaml").exists()
+
+
 # ----- link mutations (task-locked, single persist) ---------------------------
 
 
@@ -164,15 +175,19 @@ def link(
     *,
     registry: LinksRegistry | None = None,
     actor: str = "",
+    exists_checker: TargetChecker | None = None,
     lock_timeout: float = LOCK_TIMEOUT,
 ) -> LinkResult:
     """Add ``target`` to ``task_id`` under any configured, non-derived ``kind``.
-    Thin lock wrapper over :func:`link_on_card`; idempotent."""
+    Thin lock wrapper over :func:`link_on_card`; idempotent. ``exists_checker``
+    routes the target-existence check cross-backlog by the kind's ``targets``
+    (default: this catalog — today's behavior, ADR-0017 §2)."""
     reg = registry if registry is not None else load_registry()
-    _stored_kind(reg, kind)  # kind refusal before the lock (order parity)
+    link_kind = _stored_kind(reg, kind)  # kind refusal before the lock (order parity)
     if target == task_id:
         raise SelfLinkError(task_id)
-    if not (tasks_dir / target / "task.yaml").exists():
+    exists = exists_checker or (lambda tid, _targets: card_exists(tasks_dir, tid))
+    if not exists(target, link_kind.targets or None):
         raise UnknownTaskError(target)
 
     def op(card: TaskCard) -> tuple[LinkResult, bool]:
@@ -212,7 +227,7 @@ def _locked_card_op(
     """Load → mutate → single atomic persist inside the task lock — the same
     transaction window the kernel uses (lock model §2.2)."""
     card_path = tasks_dir / task_id / "task.yaml"
-    if not card_path.exists():
+    if not card_exists(tasks_dir, task_id):
         raise UnknownTaskError(task_id)
     lock_path = tasks_dir / task_id / ".lock"
     lock = FileLock(str(lock_path), timeout=lock_timeout)

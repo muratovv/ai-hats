@@ -20,6 +20,8 @@ from ai_hats.paths import hypotheses_dir
 from ai_hats.pipeline import registry
 from ai_hats.pipeline.loader import load_pipeline
 from ai_hats.pipeline.steps.quorum_autoclose import QuorumAutoclose
+from ai_hats_rack.migrate import migrate_catalog
+from ai_hats_tracker.hypothesis import HypothesisStore
 
 PIPELINES = (
     Path(__file__).resolve().parent.parent
@@ -79,6 +81,9 @@ def _write_quorum_hyp(pd: Path) -> None:
         ],
     }
     (d / "HYP-001.yaml").write_text(yaml.safe_dump(body))
+    # Step-6 consumers require the migrated dir-per-card layout (the live
+    # migration precedes the cutover); the test dogfoods the migration tool.
+    migrate_catalog(d, "hypotheses")
 
 
 def test_step_closes_quorum_hyp(tmp_path: Path):
@@ -88,11 +93,19 @@ def test_step_closes_quorum_hyp(tmp_path: Path):
     delta = QuorumAutoclose({"k": 3}).run(project_dir=pd)
 
     assert delta == {"quorum_closed_hyps": ["HYP-001"]}
-    data = yaml.safe_load((hypotheses_dir(pd) / "HYP-001.yaml").read_text())
-    assert data["status"] == "refuted"
+    # Read the migrated card back through the compat shim (state → status).
+    assert HypothesisStore(hypotheses_dir(pd)).load("HYP-001").status == "refuted"
 
 
 def test_step_emits_empty_delta_when_nothing_closes(tmp_path: Path):
     pd = tmp_path / "proj"
-    hypotheses_dir(pd).mkdir(parents=True)  # empty store
+    hypotheses_dir(pd).mkdir(parents=True)
+    migrate_catalog(hypotheses_dir(pd), "hypotheses")  # mounted but empty
+    assert QuorumAutoclose({"k": 3}).run(project_dir=pd) == {}
+
+
+def test_step_noop_when_backlog_unmigrated(tmp_path: Path):
+    # Pre-migration (no backlog.yaml): the HYP backlog is unmounted → {}.
+    pd = tmp_path / "proj"
+    hypotheses_dir(pd).mkdir(parents=True)
     assert QuorumAutoclose({"k": 3}).run(project_dir=pd) == {}

@@ -65,6 +65,8 @@ class LinkKind:
     #: doc names surfaced (as paths) for a target of this kind on a context read
     #: (HATS-1064) — replaces the hardcoded PARENT/LINKED_DOC_NAMES.
     read_docs: tuple[str, ...] = ()
+    #: the backlog this kind's targets live in (HATS-1044); "" == own backlog.
+    targets: str = ""
 
     @property
     def stored(self) -> bool:
@@ -157,6 +159,7 @@ def _parse_kind(raw: Any, source: str) -> LinkKind:
         derived=bool(raw.get("derived", False)),
         aliases=tuple(aliases),
         read_docs=tuple(read_docs),
+        targets=str(raw.get("targets") or ""),
     )
 
 

@@ -97,37 +97,46 @@ def test_packaged_backlog_self_lints_clean():
     assert _lint_against_schema(_packaged_backlog(), _schema()) == []
 
 
-def test_self_lint_catches_an_injected_reserved_key():
-    # The linter is real: the remaining reserved key (kind targets, HATS-1044)
-    # surfaces as a violation naming it.
+def test_self_lint_catches_an_unknown_key():
+    # The linter is real: a key absent from a level's allow-set surfaces as a
+    # violation naming it (kind `targets` LANDED in HATS-1044 — now allowed).
     schema = _schema()
     data = _packaged_backlog()
-    data["links"]["kinds"][0]["targets"] = "tasks"  # HATS-1044, reserved
-    assert ("kind", "targets") in _lint_against_schema(data, schema)
+    data["links"]["kinds"][0]["bogus"] = "x"
+    assert ("kind", "bogus") in _lint_against_schema(data, schema)
 
 
-# ----- reserved keys are data AND still fail closed in the loader -------------
+# ----- landed reservations are now allowed AND unknown keys still fail closed --
 
 
-def test_reserved_keys_are_declared_as_data_not_in_the_allow_sets():
+def test_landed_reservations_are_now_allowed_keys():
     schema = _schema()
-    reserved = schema["reserved"]
-    # fields/extras LANDED in HATS-1035 — no longer reserved, now allowed keys.
-    assert "top" not in reserved
-    assert reserved["kind"] == {"targets": "HATS-1044"}
+    # fields/extras LANDED in HATS-1035, kind targets in HATS-1044 — each moved
+    # from `reserved` into its level's allow-set; the reserved table is now empty.
+    assert schema["reserved"] == {}
     assert "fields" in schema["keys"]["top"] and "extras" in schema["keys"]["top"]
-    # a reserved key is never also an allowed key (that would defeat fail-closed).
-    assert not (set(reserved["kind"]) & set(schema["keys"]["kind"]))
+    assert "targets" in schema["keys"]["kind"]
 
 
-def test_reserved_kind_key_still_fails_closed(tmp_path):
+def test_targets_now_loads_into_the_kind(tmp_path):
     doc = tmp_path / "backlog.yaml"
     doc.write_text(
         "name: t\nprefix: T\n"
         "fsm:\n  initial: a\n  states: [{name: a}, {name: b}]\n"
         "  edges: [{from: a, to: b}, {from: b, to: a}]\n"
-        "links:\n  kinds: [{name: parent_task, targets: tasks}]\n"
+        "links:\n  kinds: [{name: source_task, arity: one, targets: tasks}]\n"
+    )
+    assert load_backlog(doc).links_registry.get("source_task").targets == "tasks"
+
+
+def test_unknown_kind_key_still_fails_closed(tmp_path):
+    doc = tmp_path / "backlog.yaml"
+    doc.write_text(
+        "name: t\nprefix: T\n"
+        "fsm:\n  initial: a\n  states: [{name: a}, {name: b}]\n"
+        "  edges: [{from: a, to: b}, {from: b, to: a}]\n"
+        "links:\n  kinds: [{name: parent_task, bogus: 1}]\n"
     )
     with pytest.raises(UnsupportedBacklogKeyError) as exc_info:
         load_backlog(doc)
-    assert exc_info.value.key == "targets"
+    assert exc_info.value.key == "bogus"
