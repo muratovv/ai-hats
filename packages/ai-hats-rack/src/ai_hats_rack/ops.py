@@ -22,7 +22,7 @@ from .docstore import _require_valid_name, freeze_on_card, remove_on_card
 from .errors import RackError
 from .kernel import UnknownTaskError
 from .linked import link_on_card, unlink_on_card
-from .models import TaskCard
+from .models import LINK_STORAGE_FIELDS, TaskCard
 from .registry import LinksRegistry
 
 
@@ -134,6 +134,28 @@ def _split_assignment(spec: str, flag: str) -> tuple[str, str]:
     return field_name, value
 
 
+#: Structural / kernel-owned fields ``--set``/``--append`` refuse — they carry
+#: FSM/graph/audit invariants and have guarded verbs, so a raw write would bypass
+#: them (HATS-1067); value = the verb to reach the field properly.
+_SET_FORBIDDEN: dict[str, str] = {
+    "state": "use --state <state>",
+    "links": "use --link/--unlink <kind>:<id>",
+    "work_log": "use --log <message>",
+    "id": "kernel-owned, not settable",
+    "created": "kernel-owned, not settable",
+    "updated": "kernel-owned, not settable",
+    **{name: "use --link/--unlink <kind>:<id>" for name in LINK_STORAGE_FIELDS},
+}
+
+
+def _check_settable(field_name: str, flag: str) -> None:
+    """Refuse a ``--set``/``--append`` target that is a structural anchor field
+    (one that would bypass its guarded verb)."""
+    hint = _SET_FORBIDDEN.get(field_name)
+    if hint is not None:
+        raise OpParseError(f"{flag} cannot target the structural field {field_name!r}; {hint}")
+
+
 def _coerce_set_value(field_name: str, value: str, field_types: Mapping[str, str] | None) -> Any:
     """``--set`` values are plain strings; an ``int``-typed field coerces, every
     other type stays a string (create options coerce the same — the schema
@@ -181,9 +203,11 @@ def parse_ops(tokens: Sequence[str], *, field_types: Mapping[str, str] | None = 
                 ops.append(LinkOp(kind or "related", target))
             elif tok == "--set":
                 field_name, raw = _split_assignment(value, "--set")
+                _check_settable(field_name, "--set")
                 ops.append(FieldsOp({field_name: Set(_coerce_set_value(field_name, raw, field_types))}))
             elif tok == "--append":
                 field_name, raw = _split_assignment(value, "--append")
+                _check_settable(field_name, "--append")
                 try:
                     payload = json.loads(raw)
                 except json.JSONDecodeError as exc:
