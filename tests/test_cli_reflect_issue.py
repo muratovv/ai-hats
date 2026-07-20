@@ -1,4 +1,11 @@
-"""CLI tests for `ai-hats reflect issue` — mocks pipeline at module boundary."""
+"""CLI tests for `ai-hats reflect issue` — mocks pipeline at module boundary.
+
+HATS-1044 R6: the command now writes/reads the HYP backlog through the rack
+workspace (dir-per-card). Fixtures seed the catalog with its ``backlog.yaml`` and
+migrate any flat HYP via the migration tool (good dogfood); assertions read back
+through the tracker compat shim (``HypothesisStore``), which translates the
+migrated rack card to the tracker model.
+"""
 
 from __future__ import annotations
 
@@ -10,17 +17,25 @@ from click.testing import CliRunner
 
 from ai_hats.cli.reflect import reflect
 from ai_hats.paths import hypotheses_dir, runs_dir
+from ai_hats_rack.migrate import migrate_catalog
+from ai_hats_tracker.hypothesis import HypothesisStore
+
+
+def _migrate(pd: Path) -> None:
+    """Seed the HYP catalog's backlog.yaml + migrate any flat file to dir-per-card."""
+    migrate_catalog(hypotheses_dir(pd), "hypotheses")
 
 
 @pytest.fixture
 def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
     (hypotheses_dir(pd)).mkdir(parents=True)
+    _migrate(pd)  # seed backlog.yaml so the workspace mounts the HYP backlog
     monkeypatch.chdir(pd)
     return pd
 
 
-def _write_active_hyp(pd: Path, hyp_id: str, **extras) -> Path:
+def _write_active_hyp(pd: Path, hyp_id: str, **extras) -> None:
     body = {
         "id": hyp_id,
         "title": extras.pop("title", f"title-{hyp_id}"),
@@ -31,9 +46,17 @@ def _write_active_hyp(pd: Path, hyp_id: str, **extras) -> Path:
         "validation_log": [],
     }
     body.update(extras)
-    p = hypotheses_dir(pd) / f"{hyp_id}.yaml"
-    p.write_text(yaml.safe_dump(body))
-    return p
+    (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(yaml.safe_dump(body))
+    _migrate(pd)  # flat → dir-per-card so the workspace reads it
+
+
+def _load(pd: Path, hyp_id: str):
+    """Read the migrated card back through the compat shim (tracker model view)."""
+    return HypothesisStore(hypotheses_dir(pd)).load(hyp_id)
+
+
+def _flat_files(pd: Path) -> list[Path]:
+    return list(hypotheses_dir(pd).glob("HYP-*.yaml"))
 
 
 def _mock_pipeline(monkeypatch, *, result_text: str, exit_code: int = 0):
@@ -79,13 +102,11 @@ def test_default_mode_writes_without_prompt(project_dir, monkeypatch):
     assert "created HYP-001" in res.output
     # No interactive prompt in default mode
     assert "Write this intake?" not in res.output
-    saved = yaml.safe_load(
-        (hypotheses_dir(project_dir) / "HYP-001.yaml").read_text()
-    )
-    assert saved["status"] == "active"
-    assert saved["source_task"] == "supervisor-observation"
-    assert saved["title"].startswith("agent ignores")
-    assert saved["exit_criteria"]["confirm"] == ["4 sessions clean"]
+    saved = _load(project_dir, "HYP-001")
+    assert saved.status == "active"
+    assert saved.source_task == "supervisor-observation"
+    assert saved.title.startswith("agent ignores")
+    assert saved.exit_criteria.confirm == ["4 sessions clean"]
 
 
 def test_merge_appends_validation_log_no_new_file(project_dir, monkeypatch):
@@ -109,14 +130,12 @@ def test_merge_appends_validation_log_no_new_file(project_dir, monkeypatch):
     )
     assert res.exit_code == 0, res.output
     assert "merged into HYP-001" in res.output
-    files = list((hypotheses_dir(project_dir)).glob("HYP-*.yaml"))
-    assert len(files) == 1
-    saved = yaml.safe_load(files[0].read_text())
-    assert len(saved["validation_log"]) == 1
-    entry = saved["validation_log"][0]
-    assert entry["verdict"] == "inconclusive"
-    assert entry["evidence"].startswith("same pattern")
-    assert entry["session_id"] == "20260512-120000-1"
+    saved = _load(project_dir, "HYP-001")
+    assert len(saved.validation_log) == 1
+    entry = saved.validation_log[0]
+    assert entry.verdict == "inconclusive"
+    assert entry.evidence.startswith("same pattern")
+    assert entry.session_id == "20260512-120000-1"
 
 
 def test_pipeline_failure_with_active_hyps_fails_loud(project_dir, monkeypatch):
@@ -126,8 +145,8 @@ def test_pipeline_failure_with_active_hyps_fails_loud(project_dir, monkeypatch):
     res = CliRunner().invoke(reflect, ["issue", "some observation"])
     assert res.exit_code != 0
     assert "active hypotheses exist" in res.output
-    files = list((hypotheses_dir(project_dir)).glob("HYP-*.yaml"))
-    assert len(files) == 1
+    # No NEW hypothesis was created.
+    assert {h.id for h in HypothesisStore(hypotheses_dir(project_dir)).list_all()} == {"HYP-001"}
 
 
 def test_pipeline_failure_no_active_hyps_graceful_degrade(project_dir, monkeypatch):
@@ -135,13 +154,11 @@ def test_pipeline_failure_no_active_hyps_graceful_degrade(project_dir, monkeypat
     _mock_pipeline_raises(monkeypatch, RuntimeError("api down"))
     res = CliRunner().invoke(reflect, ["issue", "an observation worth keeping"])
     assert res.exit_code == 0, res.output
-    saved = yaml.safe_load(
-        (hypotheses_dir(project_dir) / "HYP-001.yaml").read_text()
-    )
-    assert saved["hypothesis"] == "an observation worth keeping"
-    assert len(saved["title"]) <= 60
-    assert saved.get("baseline") is None
-    assert saved["expected_outcome"] == []
+    saved = _load(project_dir, "HYP-001")
+    assert saved.hypothesis == "an observation worth keeping"
+    assert len(saved.title) <= 60
+    assert saved.baseline is None
+    assert saved.expected_outcome == []
 
 
 def test_empty_marker_block_triggers_fail_loud(project_dir, monkeypatch):
@@ -167,8 +184,7 @@ def test_preview_mode_shows_draft_and_can_abort(project_dir, monkeypatch):
     assert res.exit_code == 0
     assert "Intake draft:" in res.output
     assert "aborted" in res.output
-    files = list((hypotheses_dir(project_dir)).glob("HYP-*.yaml"))
-    assert files == []
+    assert HypothesisStore(hypotheses_dir(project_dir)).list_all() == []
 
 
 def test_preview_mode_writes_on_yes(project_dir, monkeypatch):
@@ -214,10 +230,7 @@ def test_task_id_overrides_source_task(project_dir, monkeypatch):
     )
     res = CliRunner().invoke(reflect, ["issue", "obs", "--task", "HATS-304"])
     assert res.exit_code == 0, res.output
-    saved = yaml.safe_load(
-        (hypotheses_dir(project_dir) / "HYP-001.yaml").read_text()
-    )
-    assert saved["source_task"] == "HATS-304"
+    assert _load(project_dir, "HYP-001").source_task == "HATS-304"
 
 
 def test_background_spawns_detached_subprocess_and_returns(
@@ -280,30 +293,24 @@ def test_build_intake_prompt_includes_recent_evidence(project_dir):
     """The prompt fed to Haiku must expose validation_log evidences so dedup
     can see a HYP's effective scope, not just its one-line statement."""
     import json
-    from datetime import date
 
     from ai_hats.cli.reflect import _build_intake_prompt
-    from ai_hats_tracker.hypothesis import Hypothesis, ValidationLogEntry
+    from ai_hats.rack_workspace import HypView
 
-    h = Hypothesis(
+    h = HypView(
         id="HYP-001",
         title="t",
         status="active",
-        created=date(2026, 5, 1),
-        source_task="HATS-001",
         hypothesis="agents miss user feedback on plans",
-        validation_log=[
-            ValidationLogEntry(
-                date=date(2026, 5, 2),
-                verdict="inconclusive",
-                evidence="agent forgot to remove comments after addressing",
-            ),
-            ValidationLogEntry(
-                date=date(2026, 5, 3),
-                verdict="inconclusive",
-                evidence="agent skipped user feedback in plan.md iteration",
-            ),
-        ],
+        success_criterion=None,
+        observation_window=None,
+        verification_protocol=None,
+        validation_log=(
+            {"date": "2026-05-02", "verdict": "inconclusive",
+             "evidence": "agent forgot to remove comments after addressing"},
+            {"date": "2026-05-03", "verdict": "inconclusive",
+             "evidence": "agent skipped user feedback in plan.md iteration"},
+        ),
     )
     text = _build_intake_prompt("new observation", [h])
     # Pull the JSON section out and validate structure
@@ -319,19 +326,19 @@ def test_build_intake_prompt_includes_recent_evidence(project_dir):
 def test_build_intake_prompt_omits_evidence_when_empty(project_dir):
     """No validation_log entries → no `recent_evidence` key in payload."""
     import json
-    from datetime import date
 
     from ai_hats.cli.reflect import _build_intake_prompt
-    from ai_hats_tracker.hypothesis import Hypothesis
+    from ai_hats.rack_workspace import HypView
 
-    h = Hypothesis(
+    h = HypView(
         id="HYP-001",
         title="t",
         status="active",
-        created=date(2026, 5, 1),
-        source_task="HATS-001",
         hypothesis="h",
-        validation_log=[],
+        success_criterion=None,
+        observation_window=None,
+        verification_protocol=None,
+        validation_log=(),
     )
     text = _build_intake_prompt("obs", [h])
     _, _, json_block = text.partition("ACTIVE_HYPOTHESES:\n")

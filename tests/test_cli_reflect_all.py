@@ -11,6 +11,14 @@ from click.testing import CliRunner
 
 from ai_hats.cli.reflect import reflect
 from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
+from ai_hats_rack.migrate import migrate_catalog
+from ai_hats_tracker.hypothesis import ProposalStore
+
+
+def _seed(pd: Path) -> None:
+    """Seed both catalogs' backlog.yaml so the workspace mounts them (R6)."""
+    migrate_catalog(hypotheses_dir(pd), "hypotheses")
+    migrate_catalog(proposals_dir(pd), "proposals")
 
 
 @pytest.fixture
@@ -18,6 +26,7 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
     (hypotheses_dir(pd)).mkdir(parents=True)
     (proposals_dir(pd)).mkdir(parents=True)
+    _seed(pd)
     monkeypatch.chdir(pd)
     return pd
 
@@ -34,6 +43,7 @@ def _make_hyp(pd: Path, hyp_id: str, status="active"):
     (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(
         yaml.safe_dump(body)
     )
+    migrate_catalog(hypotheses_dir(pd), "hypotheses")  # flat → dir-per-card
 
 
 def _make_prop(pd: Path, pid: str, status="open"):
@@ -47,6 +57,7 @@ def _make_prop(pd: Path, pid: str, status="open"):
     (proposals_dir(pd) / f"{pid}.yaml").write_text(
         yaml.safe_dump(body)
     )
+    migrate_catalog(proposals_dir(pd), "proposals")  # flat → dir-per-card
 
 
 def test_dry_run_builds_handoff(project_dir: Path):
@@ -74,6 +85,7 @@ def _make_hyp_with_protocol(pd: Path, hyp_id: str, protocol: str):
         "verification_protocol": protocol,
     }
     (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(yaml.safe_dump(body))
+    migrate_catalog(hypotheses_dir(pd), "hypotheses")  # flat → dir-per-card
 
 
 def test_dry_run_handoff_surfaces_verification_protocol(project_dir: Path):
@@ -137,18 +149,10 @@ def test_commit_changes_status(project_dir: Path):
     )
     assert res.exit_code == 0, res.output
 
-    p1 = yaml.safe_load(
-        (proposals_dir(project_dir) / "PROP-001.yaml").read_text()
-    )
-    p2 = yaml.safe_load(
-        (proposals_dir(project_dir) / "PROP-002.yaml").read_text()
-    )
-    p3 = yaml.safe_load(
-        (proposals_dir(project_dir) / "PROP-003.yaml").read_text()
-    )
-    assert p1["status"] == "accepted"
-    assert p2["status"] == "rejected"
-    assert p3["status"] == "deferred"
+    store = ProposalStore(proposals_dir(project_dir))  # reads dir-per-card via shim
+    assert store.load("PROP-001").status == "accepted"
+    assert store.load("PROP-002").status == "rejected"
+    assert store.load("PROP-003").status == "deferred"
 
 
 def test_commit_with_no_changes(project_dir: Path):

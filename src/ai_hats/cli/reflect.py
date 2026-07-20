@@ -32,11 +32,14 @@ from ai_hats_observe.artifacts import RETRO_LOG, session_dirname
 
 import click
 
-from ai_hats_tracker.hypothesis import (
-    HypothesisStore,
-    ProposalStore,
+from ..rack_workspace import (
+    active_hypotheses,
+    append_verdict,
+    create_hypothesis,
+    open_proposals,
+    rack_workspace,
+    set_proposal_status,
 )
-from ..paths import hypotheses_dir, proposals_dir
 from ..pipeline.keys import (
     KEY_COMPOSITION,
     KEY_EXIT_CODE,
@@ -527,7 +530,7 @@ def _build_intake_prompt(text: str, active_hyps: list) -> str:
             "hypothesis": h.hypothesis,
         }
         recent = [
-            e.evidence for e in h.validation_log[-3:] if e.evidence
+            e.get("evidence") for e in h.validation_log[-3:] if e.get("evidence")
         ]
         if recent:
             item["recent_evidence"] = recent
@@ -580,7 +583,7 @@ def _minimal_create_action(text: str):
     cannot deduplicate). The supervisor still gets a HYP file to edit; all
     schema-optional fields are left empty for a later pass.
     """
-    from ai_hats_tracker.hypothesis import CreateAction, IntakeDraft
+    from ..retro.intake import CreateAction, IntakeDraft
 
     title = text.strip().splitlines()[0][:60] or "supervisor observation"
     return CreateAction(
@@ -593,7 +596,7 @@ def _format_preview(action) -> str:
     """Pretty-print an IntakeResult for the interactive confirmation prompt."""
     import yaml as _yaml
 
-    from ai_hats_tracker.hypothesis import CreateAction, MergeAction
+    from ..retro.intake import CreateAction, MergeAction
 
     if isinstance(action, MergeAction):
         body = {
@@ -613,69 +616,48 @@ def _format_preview(action) -> str:
 
 def _write_intake(
     project_dir: Path,
+    ws,
     action,
     *,
     text: str,
     session_id: str | None,
     task_id: str | None,
 ) -> str:
-    """Materialize the intake decision via HypothesisStore. Returns HYP id."""
-    from datetime import date, datetime, timezone
+    """Materialize the intake decision via the rack workspace. Returns HYP id."""
+    from datetime import datetime, timezone
 
-    from ai_hats_tracker.hypothesis import (
-        CreateAction,
-        ExitCriteria,
-        Hypothesis,
-        MergeAction,
-        ValidationLogEntry,
-        next_hypothesis_id,
-    )
-
-    store = HypothesisStore(hypotheses_dir(project_dir))
-    store.dir.mkdir(parents=True, exist_ok=True)
+    from ..retro.intake import CreateAction, MergeAction
 
     if isinstance(action, MergeAction):
-        target_path = store.path(action.target_id)
-        if not target_path.exists():
+        if not ws.exists(action.target_id):
             raise click.ClickException(
                 f"intake returned merge target {action.target_id} "
-                "but the file does not exist; refusing to fabricate"
+                "but the card does not exist; refusing to fabricate"
             )
-        entry = ValidationLogEntry(
-            date=datetime.now(tz=timezone.utc).date(),
-            verdict="inconclusive",
-            evidence=action.evidence,
-            recommendation="keep",
-            session_id=session_id,
-            timestamp=datetime.now(tz=timezone.utc),
-        )
-        store.append_verdict(action.target_id, entry)
+        entry = {
+            "date": datetime.now(tz=timezone.utc).date().isoformat(),
+            "verdict": "inconclusive",
+            "evidence": action.evidence,
+            "recommendation": "keep",
+            "timestamp": datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        if session_id:
+            entry["session_id"] = session_id
+        append_verdict(ws, action.target_id, entry, caller_cwd=project_dir)
         return action.target_id
 
     if isinstance(action, CreateAction):
-        new_id = next_hypothesis_id(store.dir)
         d = action.draft
-        ec = None
-        if d.exit_criteria:
-            ec = ExitCriteria(
-                confirm=list(d.exit_criteria.get("confirm") or []),
-                refute=list(d.exit_criteria.get("refute") or []),
-                stalled=list(d.exit_criteria.get("stalled") or []),
-            )
-        h = Hypothesis(
-            id=new_id,
+        return create_hypothesis(
+            ws,
             title=d.title,
-            status="active",
-            created=date.today(),
-            source_task=task_id or SUPERVISOR_SOURCE_TASK,
             hypothesis=d.hypothesis,
+            source_task=task_id or SUPERVISOR_SOURCE_TASK,
             baseline=d.baseline,
             expected_outcome=list(d.expected_outcome),
             success_criterion=d.success_criterion,
-            exit_criteria=ec,
+            exit_criteria=(d.exit_criteria or None),
         )
-        store.create(h)
-        return new_id
 
     raise click.ClickException(  # pragma: no cover — defensive
         f"unexpected intake action type: {type(action).__name__}"
@@ -763,7 +745,7 @@ def reflect_issue_cmd(
     By default writes immediately on success. Use ``--preview`` to inspect
     the draft and confirm interactively, or ``--bg`` to detach.
     """
-    from ai_hats_tracker.hypothesis import IntakeParseError, parse_intake_yaml
+    from ..retro.intake import IntakeParseError, parse_intake_yaml
 
     if background and preview_mode:
         raise click.ClickException(
@@ -778,8 +760,8 @@ def reflect_issue_cmd(
         return
 
     project_dir = _project_dir()
-    store = HypothesisStore(hypotheses_dir(project_dir))
-    active = store.list_active()
+    ws = rack_workspace(project_dir)
+    active = active_hypotheses(ws)
     prompt_text = _build_intake_prompt(text, active)
 
     action = None
@@ -823,10 +805,10 @@ def reflect_issue_cmd(
             return
 
     hyp_id = _write_intake(
-        project_dir, action,
+        project_dir, ws, action,
         text=text, session_id=session_id, task_id=task_id,
     )
-    from ai_hats_tracker.hypothesis import MergeAction
+    from ..retro.intake import MergeAction
 
     if isinstance(action, MergeAction):
         console.print(
@@ -855,23 +837,16 @@ def reflect_issue_cmd(
 def reflect_commit_cmd(accept, reject, defer, duplicate):
     """Bulk-update proposal statuses (called at end of interactive chat)."""
     project_dir = _project_dir()
-    store = ProposalStore(proposals_dir(project_dir))
+    ws = rack_workspace(project_dir)
     changes = 0
-    for pid in accept:
-        store.set_status(pid, "accepted")
-        console.print(f"  {pid} → accepted")
-        changes += 1
-    for pid in reject:
-        store.set_status(pid, "rejected")
-        console.print(f"  {pid} → rejected")
-        changes += 1
-    for pid in defer:
-        store.set_status(pid, "deferred")
-        console.print(f"  {pid} → deferred")
-        changes += 1
-    for pid in duplicate:
-        store.set_status(pid, "duplicate")
-        console.print(f"  {pid} → duplicate")
+    for pid, to_state in (
+        *(( p, "accepted") for p in accept),
+        *((p, "rejected") for p in reject),
+        *((p, "deferred") for p in defer),
+        *((p, "duplicate") for p in duplicate),
+    ):
+        set_proposal_status(ws, pid, to_state, caller_cwd=project_dir)
+        console.print(f"  {pid} → {to_state}")
         changes += 1
     console.print(f"[green]✓[/green] reflect commit: {changes} change(s)")
 
@@ -887,10 +862,9 @@ def _handoff_dir(project_dir: Path) -> Path:
 
 def _build_handoff(project_dir: Path) -> Path:
     """Collect active HYP + open PROP into a single markdown handoff file."""
-    hstore = HypothesisStore(hypotheses_dir(project_dir))
-    pstore = ProposalStore(proposals_dir(project_dir))
-    active = hstore.list_active()
-    open_props = pstore.filter(status="open")
+    ws = rack_workspace(project_dir)
+    active = active_hypotheses(ws)
+    open_props = open_proposals(ws)
 
     out_dir = _handoff_dir(project_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -911,14 +885,11 @@ def _build_handoff(project_dir: Path) -> Path:
                 f"### {h.id} — {h.title}\n"
                 f"- success_criterion: {h.success_criterion!r}\n"
                 f"- observation_window: {h.observation_window!r}\n"
-                f"- last_rule_revision_date: {h.last_rule_revision_date}\n"
                 f"- validation_log entries: {len(h.validation_log)}\n"
             )
-            # HATS-534 — surface verification_protocol when present (stored
-            # via Hypothesis.extra="allow"). Literal block scalar so
-            # multi-line protocols stay verbatim for judge / review-hypothesis
-            # Step 1.5 consumption.
-            vp = getattr(h, "verification_protocol", None)
+            # HATS-534 — surface verification_protocol as a literal block scalar
+            # so multi-line protocols stay verbatim for judge consumption.
+            vp = h.verification_protocol
             if vp:
                 indented = "\n".join(
                     f"    {line}" for line in str(vp).splitlines()
@@ -928,7 +899,9 @@ def _build_handoff(project_dir: Path) -> Path:
             if recent:
                 parts.append("  Recent verdicts:")
                 for e in recent:
-                    parts.append(f"  - {e.date} · {e.verdict} · {e.evidence}")
+                    parts.append(
+                        f"  - {e.get('date')} · {e.get('verdict')} · {e.get('evidence')}"
+                    )
             parts.append("")
     else:
         parts.append("(no active hypotheses)\n")
@@ -941,7 +914,7 @@ def _build_handoff(project_dir: Path) -> Path:
                 f"- description: {p.description}\n"
                 f"- rationale: {p.rationale}\n"
                 f"- votes: {len(p.votes)}\n"
-                f"- related_hypotheses: {p.related_hypotheses}\n"
+                f"- related_hypotheses: {list(p.related_hypotheses)}\n"
             )
             if p.failed_session_id:
                 parts.append(
