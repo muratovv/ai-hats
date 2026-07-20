@@ -14,6 +14,7 @@ import click
 
 from .definition import load_backlog
 from .verbs import Verb, all_verbs, on_user_schema
+from .verbs.groups import RackGroup
 
 # Re-exported for the dotted-path pins (test_cli_wiring / test_error_surface) and
 # for consumers that read the wiring seam through ``cli.*``.
@@ -30,7 +31,7 @@ from .cli_kernel import (  # noqa: F401  (re-export)
 from .verbs.transition import _OP_RENDERERS  # noqa: F401 — pinned exhaustive over ops.OP_KINDS
 
 
-@click.group()
+@click.group(cls=RackGroup)
 def main() -> None:
     """rack — minimal backlog kernel CLI (ai-hats-rack)."""
 
@@ -43,7 +44,8 @@ def init_verbs(verbs: list[Verb], defn) -> None:
 
 
 # The top-level surface is the tasks backlog, built from the packaged definition;
-# per-backlog groups (hyp/proposal) are HATS-1036 steps 4–5.
+# per-backlog groups (hyp/proposal) are added lazily by RackGroup when the ambient
+# workspace mounts sibling catalogs (HATS-1036 R2) — nothing here until then.
 init_verbs(all_verbs(), load_backlog())
 
 
