@@ -52,6 +52,7 @@ rack create "Title" --id PROJ-042 --parent PROJ-014 --depends PROJ-041 --tag dx
 rack ls                       # backlog scan (--grep/--tag/--state/--parent)
 rack ls PROJ-042 --deep 1     # graph walk from a card
 rack context PROJ-042         # THE read package: card + links + document paths
+rack context PROJ-042 PROJ-043  # batch: ≥2 ids in one process → {"contexts":{id:…}}, skip-and-continue
 rack transition PROJ-042 execute      # sugar for --state execute
 ```
 
