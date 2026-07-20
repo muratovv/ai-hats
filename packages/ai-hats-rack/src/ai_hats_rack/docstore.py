@@ -18,8 +18,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from filelock import FileLock, Timeout
-
 from .errors import RackError
 from .kernel import LOCK_TIMEOUT, LockTimeoutError, UnknownTaskError
 from .models import TaskCard, utc_now
@@ -330,6 +328,8 @@ class DocStore:
         lock_path = self.card_dir(task_id) / ".lock"
         if not (self.card_dir(task_id) / "task.yaml").exists():
             raise UnknownTaskError(task_id)
+        from filelock import FileLock, Timeout
+
         lock = FileLock(str(lock_path), timeout=self._lock_timeout)
         try:
             with lock:

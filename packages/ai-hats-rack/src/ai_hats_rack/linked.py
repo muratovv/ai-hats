@@ -18,8 +18,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from filelock import FileLock, Timeout
-
 from .dispatch import (
     DispatchContext,
     Dispatcher,
@@ -230,6 +228,8 @@ def _locked_card_op(
     if not card_exists(tasks_dir, task_id):
         raise UnknownTaskError(task_id)
     lock_path = tasks_dir / task_id / ".lock"
+    from filelock import FileLock, Timeout
+
     lock = FileLock(str(lock_path), timeout=lock_timeout)
     try:
         with lock:
