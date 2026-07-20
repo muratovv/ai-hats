@@ -28,6 +28,9 @@ class Phase(str, Enum):
     #: reaction after persist + lock release; may use the kernel API
     #: (one task lock at a time, never nested — HATS-690 rule).
     POST_LOCK = "post-lock"
+    #: read-time enrichment of a context read package (HATS-1064): never
+    #: mutates or persists — handlers return a ReadContribution, not a Delta.
+    READ = "read"
 
 
 @dataclass(frozen=True)
@@ -90,6 +93,18 @@ class Delta:
 
 
 @dataclass(frozen=True)
+class ReadContribution:
+    """A READ-phase subscriber's contribution to a context read package: a
+    named text block merged into ``ContextPackage.enrichments`` (HATS-1064).
+    NOT a :class:`Delta` — a read never mutates or persists, so there are no
+    field ops. ``name`` identifies the enricher; ``body`` is the rendered block.
+    """
+
+    name: str
+    body: str
+
+
+@dataclass(frozen=True)
 class DispatchContext:
     """What a subscriber sees. ``task`` is a deep copy — mutations never reach
     the store; ``caller_cwd`` is mandatory (no subscriber reads Path.cwd(),
@@ -132,6 +147,21 @@ class BindableSubscriber(Subscriber, Protocol):
     handle (one lock, never nested)."""
 
     def bind(self, kernel: Kernel) -> None: ...
+
+
+@runtime_checkable
+class ReadSubscriber(Protocol):
+    """A READ-phase enricher: same subscription surface as :class:`Subscriber`,
+    but reacts via ``on_read`` returning a :class:`ReadContribution` (never a
+    Delta). Kept a SEPARATE method from ``on_event`` so the transition contract's
+    return type (``Delta | None``) is unaffected (HATS-1064). A read subscriber
+    MAY also expose ``bind(kernel)`` to walk related cards during enrichment."""
+
+    name: str
+
+    def subscriptions(self) -> Sequence[Subscription]: ...
+
+    def on_read(self, ctx: DispatchContext) -> ReadContribution | None: ...
 
 
 def bind_subscribers(subscribers: Sequence[Subscriber], kernel: Kernel) -> None:
@@ -346,3 +376,26 @@ class Dispatcher:
                 outcomes.append(SubscriberOutcome(sub.name, Phase.POST_LOCK, "delta", delta=delta))
             else:
                 outcomes.append(SubscriberOutcome(sub.name, Phase.POST_LOCK, "ok"))
+
+    def run_read(
+        self, event: Event, make_ctx: Callable[[], DispatchContext]
+    ) -> list[ReadContribution]:
+        """READ phase: fail-soft, never journaled — a read neither mutates nor
+        persists. Returns each subscriber's :class:`ReadContribution` in priority
+        order. A subscriber that raises is surfaced as a visible error block (not
+        silently dropped) so a broken enricher can neither hide nor break the read
+        (HATS-1064); one exposing no ``on_read`` is skipped."""
+        contributions: list[ReadContribution] = []
+        for sub in self._subscribers_for_event(event, Phase.READ):
+            on_read = getattr(sub, "on_read", None)
+            if on_read is None:
+                continue
+            try:
+                contribution: ReadContribution | None = on_read(make_ctx())
+            except Exception as exc:  # noqa: BLE001 — fail-soft: surface, never crash
+                contribution = ReadContribution(
+                    sub.name, f"(read enricher {sub.name!r} failed: {exc!r})"
+                )
+            if contribution is not None:
+                contributions.append(contribution)
+        return contributions
