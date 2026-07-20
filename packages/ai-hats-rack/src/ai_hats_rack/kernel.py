@@ -115,9 +115,14 @@ class Kernel:
         subscribers: Sequence[Subscriber] = (),
         journal_sink: JournalSink | None = None,
         lock_timeout: float = LOCK_TIMEOUT,
+        exists_checker: Callable[[str, str | None], bool] | None = None,
     ) -> None:
         self.tasks_dir = tasks_dir
         self.prefix = prefix
+        # Cross-backlog target-existence seam (ADR-0017 §2): a workspace injects
+        # a checker so a `targets:` kind resolves the sibling catalog; None keeps
+        # the catalog-local default and in-lock handlers stay workspace-blind.
+        self._exists_checker = exists_checker
         self.topology = topology if topology is not None else load_topology()
         # Injected config, not hardcoded kinds (HATS-1028): children_of/is_epic
         # read the hierarchy kind the registry names, default `parent_task`.
@@ -136,6 +141,14 @@ class Kernel:
 
     def _task_path(self, task_id: str) -> Path:
         return self.tasks_dir / task_id / "task.yaml"
+
+    def target_exists(self, target_id: str, targets: str | None = None) -> bool:
+        """Existence of a link target (ADR-0017 §2 seam): the workspace-injected
+        cross-backlog checker when present, else catalog-local — a ``targets:``
+        kind then only resolves inside this kernel's own catalog."""
+        if self._exists_checker is not None:
+            return self._exists_checker(target_id, targets)
+        return self._task_path(target_id).exists()
 
     def get(self, task_id: str) -> TaskCard | None:
         path = self._task_path(task_id)
@@ -460,7 +473,7 @@ class Kernel:
         fire per state-op edge after unlock, never nested inside the lock.
         """
         # Local import avoids a load-time cycle (ops imports kernel errors).
-        from .ops import OpTxn, StateOp, apply_non_state_op
+        from .ops import FieldsOp, OpTxn, StateOp, apply_non_state_op
 
         if not ops:
             raise ValueError("transition needs at least one operation")
@@ -492,6 +505,7 @@ class Kernel:
                     dispatch_link=self._link_dispatcher(
                         task, task_id, caller_cwd, actor, force, reason, dispatched, outcomes
                     ),
+                    exists=self.target_exists,
                 )
                 for op in ops:
                     if isinstance(op, StateOp):
@@ -513,6 +527,12 @@ class Kernel:
                         txn.results.append(
                             {"op": "state", "from": from_state, "to": op.to_state}
                         )
+                    elif isinstance(op, FieldsOp):
+                        # Declared-field ops ride the same lock/persist, schema-
+                        # gated via _delta_applier — an extension-owned field write
+                        # (validation_log/votes) atomic with any StateOp above.
+                        self._delta_applier(task, actor)(Delta(fields=op.fields))
+                        txn.results.append({"op": "fields", "names": sorted(op.fields)})
                     else:
                         apply_non_state_op(txn, op)
                 self._persist(task)  # the SINGLE persist, always last
@@ -646,6 +666,60 @@ class Kernel:
             self._finish_record(
                 event, event.task_id, actor, force, reason, outcomes, result="persisted"
             ),
+        )
+
+    def apply_mirror(
+        self, event: Any, *, actor: str, caller_cwd: Path
+    ) -> DispatchRecord | None:
+        """Run a link mirror reaction on the TARGET card in a FRESH lock window
+        (ADR-0017 §2/R4): sequential, never nested, and fail-soft — a reaction
+        failure is journaled and swallowed (the origin already persisted, so the
+        mirror can never abort it). No subscribers / a dangling target -> a no-op
+        (zero behavior change for a backlog with no mirror kinds).
+
+        The handler mutates the REAL target card here (its own repair window — it
+        is the target's executor, not an observer), so the copy-guard the owning
+        transition uses does not apply; the reverse edge is convergent/idempotent.
+        """
+        subs = self._dispatcher.subscribers_for(event.key, Phase.POST_LOCK)
+        if not subs or not self._task_path(event.target).exists():
+            return None
+        outcomes: list[SubscriberOutcome] = []
+        lock = self._task_lock(event.target)
+        try:
+            with lock:
+                task = self._load(event.target)
+                changed = False
+                for sub in subs:
+                    ctx = DispatchContext(
+                        event=event,
+                        task=task,  # real card: the mirror repair window
+                        caller_cwd=caller_cwd,
+                        is_epic=self.is_epic(event.target),
+                        actor=actor,
+                    )
+                    delta = sub.on_event(ctx)
+                    if delta is not None:
+                        changed = True
+                        outcomes.append(
+                            SubscriberOutcome(sub.name, Phase.POST_LOCK, "delta", delta=delta)
+                        )
+                    else:
+                        outcomes.append(SubscriberOutcome(sub.name, Phase.POST_LOCK, "ok"))
+                if changed:
+                    task.updated = utc_now()
+                    self._persist(task)
+        except Timeout:
+            return self._finish_record(
+                event, event.target, actor, False, "", outcomes, result="aborted"
+            )
+        except Exception as exc:  # noqa: BLE001 — fail-soft: never reaches the origin
+            outcomes.append(SubscriberOutcome("mirror", Phase.POST_LOCK, "error", reason=repr(exc)))
+            return self._finish_record(
+                event, event.target, actor, False, "", outcomes, result="aborted"
+            )
+        return self._finish_record(
+            event, event.target, actor, False, "", outcomes, result="persisted"
         )
 
     # ----- internals ----------------------------------------------------------

@@ -1,12 +1,9 @@
-"""HATS-1035 step 6: the ADR-0017 §5 HYP/PROP sketches, materialized as fixtures
-and driven through loader + composition + write layer — proving both backlogs
-are expressible WITHOUT engine edits.
+"""The ADR-0017 §5 HYP/PROP definitions, driven through loader + composition +
+write layer — proving both backlogs are expressible WITHOUT engine edits.
 
-Adjusted where the sketches name unbuilt machinery: ``hyp-quorum-gate`` /
-``hyp-verdicts`` / ``prop-votes`` resolve to test stubs, the ``any``-typed
-validators to test validators via the registry, ``targets:`` (cross-backlog,
-HATS-1044) is dropped. The document anchor moved to composition-time
-requires_states (ADR-0017 §3), so these document-less topologies compose.
+Re-pinned onto the SHIPPED packaged definitions (HATS-1044): the fixtures are
+gone, the stubs replaced by the real stock factories/validators. This is the
+executable contract for the packaged ``hypotheses``/``proposals`` backlog.yaml.
 """
 
 from __future__ import annotations
@@ -21,77 +18,18 @@ from ai_hats_rack.cardschema import (
     RequiredFieldError,
     build_card_schema,
 )
-from ai_hats_rack.composition import compose_subscribers, stock_factories
-from ai_hats_rack.definition import load_backlog
+from ai_hats_rack.composition import compose_subscribers, stock_factories, stock_validators
+from ai_hats_rack.definition import load_packaged_definition
 from ai_hats_rack.dispatch import Append, Delta, Set, bind_subscribers, validate_requires_states
 from ai_hats_rack.kernel import Kernel
 from rack_testkit import StubSubscriber, in_lock
 
-_FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
-
-# ----- stubs for the unbuilt handlers named in the sketches ------------------
-
-
-class _StubExtension:
-    """An ambient Subscriber that subscribes nothing (hyp-verdicts / prop-votes —
-    their verbs are HATS-1044/T4 scope; here they only need to compose)."""
-
-    def __init__(self, name: str) -> None:
-        self.name = name
-
-    def subscriptions(self):
-        return ()
-
-    def on_event(self, ctx):
-        return None
-
-
-class _StubHandler:
-    """A declaration-bound handler (name + on_event) for hyp-quorum-gate — the
-    quorum machinery is HATS-1044; the gate only needs to bind on its edge."""
-
-    def __init__(self, name: str) -> None:
-        self.name = name
-
-    def on_event(self, ctx):
-        return None
-
-
-def _factories():
-    f = stock_factories()
-    f["hyp-quorum-gate"] = lambda defn, catalog, cfg: _StubHandler("hyp-quorum-gate")
-    f["hyp-verdicts"] = lambda defn, catalog, cfg: _StubExtension("hyp-verdicts")
-    f["prop-votes"] = lambda defn, catalog, cfg: _StubExtension("prop-votes")
-    return f
-
-
-def _entry_list(value):
-    if not isinstance(value, list):
-        raise ValueError("expects a list of entries")
-    if not all(isinstance(e, dict) for e in value):
-        raise ValueError("each entry must be a mapping")
-
-
-def _vote_entries(value):
-    _entry_list(value)
-    if not all("session" in e for e in value):
-        raise ValueError("each vote needs a 'session'")
-
-
-def _validators():
-    return {
-        "hyp-validation-log": _entry_list,
-        "hyp-exit-criteria": lambda v: None,
-        "prop-vote-entries": _vote_entries,
-    }
-
-
-def _build(catalog: Path, fixture: str, extra=()):
-    defn = load_backlog(_FIXTURES / fixture)
-    subs = list(compose_subscribers(defn, catalog, _factories())) + list(extra)
-    validate_requires_states(subs, defn.topology, source=fixture)  # passes: no document anchor
-    schema = build_card_schema(defn, _validators())
+def _build(catalog: Path, name: str, extra=()):
+    defn = load_packaged_definition(name)
+    subs = list(compose_subscribers(defn, catalog, stock_factories())) + list(extra)
+    validate_requires_states(subs, defn.topology, source=name)  # passes: no document anchor
+    schema = build_card_schema(defn, stock_validators())
     kernel = Kernel(
         catalog,
         prefix=defn.prefix,
@@ -106,11 +44,11 @@ def _build(catalog: Path, fixture: str, extra=()):
 
 
 def _hyp_kernel(catalog, extra=()):
-    return _build(catalog, "hyp-backlog.yaml", extra)
+    return _build(catalog, "hypotheses", extra)
 
 
 def _prop_kernel(catalog, extra=()):
-    return _build(catalog, "prop-backlog.yaml", extra)
+    return _build(catalog, "proposals", extra)
 
 
 def _seed(catalog: Path, task_id: str, *, state: str, **fields) -> Path:
@@ -132,8 +70,8 @@ def _writer(op, edge):
 
 
 def test_both_topologies_compose_without_document(tasks_dir):
-    hyp = load_backlog(_FIXTURES / "hyp-backlog.yaml")
-    prop = load_backlog(_FIXTURES / "prop-backlog.yaml")
+    hyp = load_packaged_definition("hypotheses")
+    prop = load_packaged_definition("proposals")
     assert "document" not in hyp.topology.states  # tasks-only state
     assert "document" not in prop.topology.states
     _hyp_kernel(tasks_dir / "h")  # composes (requires_states passes) — no raise
@@ -142,6 +80,21 @@ def test_both_topologies_compose_without_document(tasks_dir):
     assert set(hyp.topology.states) == {"active", "confirmed", "refuted", "stalled"}
     assert prop.topology.initial == "open"
     assert {"accepted", "rejected", "deferred", "duplicate"} <= set(prop.topology.states)
+
+
+# ----- packaged contract: cross-backlog targets + stored-inverse mirror ------
+
+
+def test_hyp_targets_and_mirror_kinds_declared(tasks_dir):
+    reg = load_packaged_definition("hypotheses").links_registry
+    assert reg.get("source_task").targets == "tasks"
+    assert reg.get("supersedes").inverse == "superseded_by"
+    _hyp_kernel(tasks_dir)  # composes: mirror-link satisfies the stored-inverse rule
+
+
+def test_prop_related_hypotheses_targets_hypotheses():
+    reg = load_packaged_definition("proposals").links_registry
+    assert reg.get("related_hypotheses").targets == "hypotheses"
 
 
 # ----- HYP: required field, stamp-lifecycle {field: closed}, emit, validator -
@@ -221,12 +174,13 @@ def test_prop_forbid_rejects_an_unknown_key_on_write(tasks_dir, cwd):
 
 
 def test_prop_votes_validator_passes_a_valid_append(tasks_dir, cwd):
-    voter = _writer({"votes": Append({"session": "s1", "verdict": "yes"})}, "edge:open--accepted")
+    vote = {"session_id": "s1", "timestamp": "2026-01-01T00:00:00Z", "reasoning": "sound"}
+    voter = _writer({"votes": Append(vote)}, "edge:open--accepted")
     kernel = _prop_kernel(tasks_dir, extra=[voter])
     _seed_prop(tasks_dir)
     card = kernel.transition("PROP-1", "accepted", actor="t", caller_cwd=cwd).task
     assert card.state == "accepted"
-    assert card.extras["votes"] == [{"session": "s1", "verdict": "yes"}]
+    assert card.extras["votes"] == [vote]
 
 
 def test_prop_votes_validator_refuses_a_malformed_append(tasks_dir, cwd):

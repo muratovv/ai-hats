@@ -20,8 +20,10 @@ from ai_hats.paths import proposals_dir
 
 
 def _read_proposals(pd: Path) -> list[dict]:
+    # Meta-proposals are dir-per-card rack cards post-HATS-1044; category/target/
+    # description/failed_session_id ride top-level, so the raw dict still asserts.
     out: list[dict] = []
-    for f in (proposals_dir(pd)).glob("*.yaml"):
+    for f in (proposals_dir(pd)).glob("*/task.yaml"):
         out.append(yaml.safe_load(f.read_text()))
     return out
 

@@ -15,11 +15,19 @@ from ai_hats.cli.reflect_session_main import (
     _file_meta_proposal,
     _harness_check,
 )
+from ai_hats_rack.migrate import migrate_catalog
 from ai_hats_tracker.hypothesis import ProposalStore
 from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
 
 
 SID = "20260506-100000-1"
+
+
+def _seed(project_dir: Path) -> None:
+    """Seed both HYP/PROP catalogs with backlog.yaml so the workspace mounts them
+    (HATS-1044 R6: consumers require the migrated dir-per-card layout)."""
+    migrate_catalog(hypotheses_dir(project_dir), "hypotheses")
+    migrate_catalog(proposals_dir(project_dir), "proposals")
 
 
 def _make_review_file(
@@ -49,13 +57,14 @@ def _add_active_hyp(project_dir: Path, hyp_id: str = "HYP-001") -> None:
         "hypothesis: a\n"
         "validation_log: []\n"
     )
+    migrate_catalog(hyps_dir, "hypotheses")  # flat → dir-per-card for the workspace
 
 
 def _proposals_count(project_dir: Path) -> int:
     pdir = proposals_dir(project_dir)
     if not pdir.exists():
         return 0
-    return len([p for p in pdir.iterdir() if p.suffix == ".yaml"])
+    return len(list(pdir.glob("*/task.yaml")))  # dir-per-card cards
 
 
 # ---- harness_check return value ----
@@ -101,6 +110,7 @@ def test_harness_surfaces_runner_error_even_with_valid_file(tmp_path: Path) -> N
 
 
 def test_file_meta_proposal_creates_one(tmp_path: Path) -> None:
+    _seed(tmp_path)
     _file_meta_proposal(tmp_path, SID, ["output file missing or empty"])
     assert _proposals_count(tmp_path) == 1
     store = ProposalStore(proposals_dir(tmp_path))
@@ -112,12 +122,14 @@ def test_file_meta_proposal_creates_one(tmp_path: Path) -> None:
 
 def test_file_meta_proposal_deduplicates_by_failed_session(tmp_path: Path) -> None:
     """Second call for the same session must NOT create a second proposal."""
+    _seed(tmp_path)
     _file_meta_proposal(tmp_path, SID, ["issue 1"])
     _file_meta_proposal(tmp_path, SID, ["issue 2"])
     assert _proposals_count(tmp_path) == 1
 
 
 def test_file_meta_proposal_distinct_sessions_distinct_proposals(tmp_path: Path) -> None:
+    _seed(tmp_path)
     _file_meta_proposal(tmp_path, "SID-A", ["a"])
     _file_meta_proposal(tmp_path, "SID-B", ["b"])
     assert _proposals_count(tmp_path) == 2

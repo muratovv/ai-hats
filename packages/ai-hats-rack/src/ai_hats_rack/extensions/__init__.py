@@ -14,7 +14,15 @@ from ..dispatch import Subscriber
 from .epic import AUTOMATION_ACTOR, EpicAutomationExtension, decide
 from .frozen import FrozenIntegrityExtension
 from .lifecycle import ClearLifecycleHandler, StampLifecycleHandler
+from .mirror import MirrorLinkHandler
 from .plan import PlanGateExtension, PlanScaffoldExtension
+from .quorum import (
+    AUTO_SESSION_ID,
+    AUTOCLOSE_ACTOR,
+    DEFAULT_QUORUM_K,
+    HypQuorumGate,
+    QuorumClosure,
+)
 from .sections import (
     DEFAULT_PLAN_SECTIONS,
     Section,
@@ -24,6 +32,8 @@ from .sections import (
     render_scaffold,
     unfilled_sections,
 )
+from .validators import hyp_exit_criteria, hyp_validation_log, prop_vote_entries
+from .verdicts import HypVerdictsExtension, PropVotesExtension
 from .views import DerivedViewsExtension
 
 
@@ -49,19 +59,30 @@ def standalone_extensions(
 
 __all__ = [
     "AUTOMATION_ACTOR",
+    "AUTO_SESSION_ID",
+    "AUTOCLOSE_ACTOR",
     "DEFAULT_PLAN_SECTIONS",
+    "DEFAULT_QUORUM_K",
     "ClearLifecycleHandler",
     "DerivedViewsExtension",
     "EpicAutomationExtension",
     "FrozenIntegrityExtension",
+    "HypQuorumGate",
+    "HypVerdictsExtension",
+    "MirrorLinkHandler",
     "PlanGateExtension",
     "PlanScaffoldExtension",
+    "PropVotesExtension",
+    "QuorumClosure",
     "StampLifecycleHandler",
     "Section",
     "SectionCatalogError",
     "decide",
+    "hyp_exit_criteria",
+    "hyp_validation_log",
     "load_sections",
     "merge_sections",
+    "prop_vote_entries",
     "render_scaffold",
     "standalone_extensions",
     "unfilled_sections",
