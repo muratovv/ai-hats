@@ -25,9 +25,8 @@ handler_ref:
   universal: [name, priority, timeout]
   extra_keys: config-passthrough
 
-# Keys reserved for successor tasks — rejected today (fail-closed), each naming
-# the task that lands it. All prior reservations have landed (fields/extras
-# HATS-1035, kind targets HATS-1044); the machinery stays for the next one.
+# Keys the grammar reserves for a future owner: the loader rejects them
+# fail-closed, naming the owning task, instead of parsing them as unknown.
 reserved: {}
 
 # In-lock priority chain (documentation-as-data). Lower fires first; an unpinned
