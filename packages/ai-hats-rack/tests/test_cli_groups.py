@@ -18,6 +18,7 @@ from click.testing import CliRunner
 
 from ai_hats_rack.cli import main
 from ai_hats_rack.definition import packaged_definition_source
+from ai_hats_rack.verbs.groups import DuplicateGroupNameError
 
 
 @pytest.fixture
@@ -90,6 +91,62 @@ def test_unmounted_group_name_is_no_such_command(runner, tmp_path):
     out = _run(runner, tasks, "hyp", "create", "x")
     assert out.exit_code == 2
     assert "No such command" in out.output
+
+
+# ----- cli_alias drives the group name (verbs stay backlog-agnostic) ----------
+
+
+def _minimal_backlog(name: str, prefix: str, *, cli_alias: str | None = None) -> str:
+    """A load-valid catalog with a two-state fsm + one trivial kind — enough to
+    mount, so a group name resolves from its (optional) cli_alias."""
+    alias = f"cli_alias: {cli_alias}\n" if cli_alias else ""
+    return (
+        f"name: {name}\nprefix: {prefix}\n{alias}"
+        "fsm:\n  initial: a\n  states: [{name: a}, {name: b}]\n"
+        "  edges: [{from: a, to: b}, {from: b, to: a}]\n"
+        "links:\n  kinds: [{name: relates, arity: many}]\n"
+    )
+
+
+def _tracker_with_siblings(tmp_path, siblings: dict[str, str]):
+    """A tracker with the packaged tasks catalog plus arbitrary sibling catalogs
+    (``dir name -> backlog.yaml text``)."""
+    tracker = tmp_path / "proj" / ".agent" / "ai-hats" / "tracker"
+    (tracker / "backlog" / "tasks").mkdir(parents=True)
+    for dirname, text in siblings.items():
+        d = tracker / dirname
+        d.mkdir(parents=True)
+        (d / "backlog.yaml").write_text(text, encoding="utf-8")
+    return tracker / "backlog" / "tasks"
+
+
+def test_group_name_uses_declared_cli_alias(monkeypatch, tmp_path):
+    tasks = _tracker_with_siblings(
+        tmp_path, {"widgets": _minimal_backlog("widgets", "WID", cli_alias="wid")}
+    )
+    monkeypatch.setenv("RACK_TASKS_DIR", str(tasks))
+    listed = set(main.list_commands(click.Context(main)))
+    assert "wid" in listed and "widgets" not in listed
+
+
+def test_group_name_falls_back_to_name_without_cli_alias(monkeypatch, tmp_path):
+    tasks = _tracker_with_siblings(tmp_path, {"widgets": _minimal_backlog("widgets", "WID")})
+    monkeypatch.setenv("RACK_TASKS_DIR", str(tasks))
+    assert "widgets" in set(main.list_commands(click.Context(main)))
+
+
+def test_duplicate_effective_group_name_is_typed_error(monkeypatch, tmp_path):
+    tasks = _tracker_with_siblings(
+        tmp_path,
+        {
+            "alpha": _minimal_backlog("alpha", "ALPHA", cli_alias="dup"),
+            "beta": _minimal_backlog("beta", "BETA", cli_alias="dup"),
+        },
+    )
+    monkeypatch.setenv("RACK_TASKS_DIR", str(tasks))
+    with pytest.raises(DuplicateGroupNameError) as exc_info:
+        main.list_commands(click.Context(main))
+    assert exc_info.value.group == "dup"
 
 
 # ----- hyp flow (create → append-verdict → autoclose → refute → update) ------

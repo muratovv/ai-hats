@@ -20,8 +20,10 @@ since the latest tag lives under **Unreleased** until the next release.
   refute` accepts a named edge alongside a state name (a name colliding with a
   state is a typed load error) — and `--set <field>=<value>` / `--append
   <field>=<json>` write declared fields as ops on the one mutating verb. Every
-  NON-tasks backlog the workspace mounts becomes a group named after it (the
-  packaged `hypotheses`/`proposals` read as `hyp`/`proposal`): schema-driven
+  NON-tasks backlog the workspace mounts becomes a group named by its declared
+  `cli_alias` (its `name` when unset; the packaged `hypotheses`/`proposals`
+  declare `hyp`/`proposal`), so the verbs layer holds no per-backlog knowledge
+  and a duplicate effective group name fails closed: schema-driven
   `create`, an `update <ID> --<field>` sugar mapped onto the `--set` field ops,
   and the verbs its extensions contribute via the optional `verbs()` hook —
   `hyp append-verdict` / `hyp autoclose [--k --dry-run]`, `proposal vote`. The

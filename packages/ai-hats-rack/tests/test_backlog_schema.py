@@ -118,6 +118,22 @@ def test_landed_reservations_are_now_allowed_keys():
     assert "targets" in schema["keys"]["kind"]
 
 
+def test_cli_alias_is_an_allowed_top_key_that_self_lints(tmp_path):
+    # The verbs layer reads a backlog's group name from `cli_alias` (HATS-1036);
+    # it must be a first-class top-level key, self-linting clean and loading.
+    schema = _schema()
+    assert "cli_alias" in schema["keys"]["top"]
+    doc = tmp_path / "backlog.yaml"
+    doc.write_text(
+        "name: widgets\nprefix: WID\ncli_alias: wid\n"
+        "fsm:\n  initial: a\n  states: [{name: a}, {name: b}]\n"
+        "  edges: [{from: a, to: b}, {from: b, to: a}]\n"
+        "links:\n  kinds: [{name: relates, arity: many}]\n"
+    )
+    assert _lint_against_schema(yaml.safe_load(doc.read_text()), schema) == []
+    assert load_backlog(doc).cli_alias == "wid"
+
+
 def test_targets_now_loads_into_the_kind(tmp_path):
     doc = tmp_path / "backlog.yaml"
     doc.write_text(
