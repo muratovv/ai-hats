@@ -1,7 +1,7 @@
 """Parent-context read enricher (HATS-1064): on a context read of a child, walk
-the parent chain and contribute each ancestor's "Requirements for child tasks"
-section (PROP-086) — the governance the epic carries for its children. ONLY that
-section travels, never the whole parent card, so the read stays tight; an ancestor
+the parent chain and contribute each ancestor's "Work Policy" section (PROP-086)
+— the work policy a card carries for itself and its children. ONLY that section
+travels, never the whole parent card, so the read stays tight; an ancestor
 without the section contributes nothing.
 
 READ-phase, read-only: contributes a :class:`ReadContribution`, never a Delta.
@@ -25,9 +25,10 @@ if TYPE_CHECKING:
 #: constructible in the data (``set_parent`` only rejects self-parenting).
 MAX_DEPTH = 64
 
-#: The card-description section an epic carries for its children (PROP-086);
-#: overridable per handler via the ``section`` config key on ``kinds[].read``.
-DEFAULT_SECTION = "Requirements for child tasks"
+#: The work-policy section a card carries for itself and its children (PROP-086,
+#: renamed "Work Policy"); overridable per handler via the ``work_policy`` config
+#: key on ``kinds[].read``.
+DEFAULT_SECTION = "Work Policy"
 
 _HEADING = re.compile(r"^(#+)\s+(.*\S)\s*$")
 
@@ -111,7 +112,7 @@ def render_chain(chain: Sequence[TaskCard], section_title: str) -> str:
 class ParentContextExtension:
     """READ subscriber bound (via ``links.kinds[].read``) to the hierarchy kind:
     on a read of a card carrying that link, contribute the parent chain's
-    "Requirements for child tasks" sections. A :class:`BindableSubscriber` — the
+    "Work Policy" sections. A :class:`BindableSubscriber` — the
     read path binds it to the read kernel so it can resolve ancestors."""
 
     name = "parent-context"

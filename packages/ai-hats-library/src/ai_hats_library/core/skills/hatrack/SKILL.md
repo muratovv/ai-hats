@@ -73,6 +73,15 @@ tiered hatch for `--rm` / `--freeze` on a pinned document.
 `tasks/<ID>/`; `rack context` live-scans and digests on the fly (no `doc put`).
 Read documents by the path `context` prints — never inline the body blind.
 
+**Work Policy — governance that reaches children automatically.** A card's
+`## Work Policy` section (in its description) states how to work the task AND
+what its children must follow. Put the work policy of a task and its children
+there — on pickup, `rack context <child>` delivers every ancestor's `## Work
+Policy` section into the child's read (the parent-context enricher walks the
+whole parent chain, HATS-1064), so a child mechanically receives inherited
+policy instead of relying on the agent to read the parent. Only that section
+travels, never the whole parent card.
+
 ### Coexistence — what stays on `ai-hats task`
 
 `rack` has no `update` verb and no hyp/proposal surface. Until generalization

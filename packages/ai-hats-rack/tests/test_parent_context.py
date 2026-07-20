@@ -1,6 +1,6 @@
 """parent-context read enricher (HATS-1064): the pure parent-chain walk
 (cycle / depth / dangling guarded, with an inconsistency note for the agent),
-section extraction (only the 'Requirements for child tasks' section travels, not
+section extraction (only the 'Work Policy' section travels, not
 the whole parent card), grammar composition of ``kinds[].read``, fail-closed
 unknown handler, and end-to-end enrichment of ``build_context``."""
 
@@ -84,12 +84,12 @@ def test_walk_depth_cap_notes_possible_cycle():
 
 
 def test_extract_section_returns_only_that_section():
-    text = "# Title\nintro\n\n## Requirements for child tasks\n1. do X\n2. do Y\n\n## Other\nnope\n"
-    assert extract_section(text, "Requirements for child tasks") == "1. do X\n2. do Y"
+    text = "# Title\nintro\n\n## Work Policy\n1. do X\n2. do Y\n\n## Other\nnope\n"
+    assert extract_section(text, "Work Policy") == "1. do X\n2. do Y"
 
 
 def test_extract_section_absent_is_empty():
-    assert extract_section("just a plain description", "Requirements for child tasks") == ""
+    assert extract_section("just a plain description", "Work Policy") == ""
 
 
 def test_render_chain_skips_parents_without_the_section():

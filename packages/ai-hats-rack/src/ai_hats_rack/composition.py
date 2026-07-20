@@ -380,7 +380,7 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
         "stamp-lifecycle": lambda defn, catalog, cfg: StampLifecycleHandler(_field(cfg)),
         "clear-lifecycle": lambda defn, catalog, cfg: ClearLifecycleHandler(_field(cfg)),
         "parent-context": lambda defn, catalog, cfg: ParentContextExtension(
-            defn.links_registry, section=cfg.get("section")
+            defn.links_registry, section=cfg.get("work_policy")
         ),
     }
 
