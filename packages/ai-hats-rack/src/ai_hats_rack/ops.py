@@ -11,12 +11,13 @@ lock-free executors for the non-state ops.
 
 from __future__ import annotations
 
+import json
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Mapping, Sequence, Union
+from typing import Any, Callable, Mapping, Sequence, Union
 
-from .dispatch import FieldOp
+from .dispatch import Append, FieldOp, Set
 from .docstore import _require_valid_name, freeze_on_card, remove_on_card
 from .errors import RackError
 from .kernel import UnknownTaskError
@@ -121,17 +122,38 @@ def _split_edge(spec: str) -> tuple[str | None, str]:
 
 #: op flag → number of value tokens it consumes (all consume exactly one).
 _OP_FLAGS = frozenset(
-    {"--state", "--attach", "--freeze", "--rm", "--log", "--link", "--unlink"}
+    {"--state", "--attach", "--freeze", "--rm", "--log", "--link", "--unlink", "--set", "--append"}
 )
 
 
-def parse_ops(tokens: Sequence[str]) -> list[Op]:
+def _split_assignment(spec: str, flag: str) -> tuple[str, str]:
+    """``field=value`` → (field, value); a missing ``=``/field is a typed refusal."""
+    field_name, sep, value = spec.partition("=")
+    if not sep or not field_name:
+        raise OpParseError(f"{flag} expects <field>=<value> (got {spec!r})")
+    return field_name, value
+
+
+def _coerce_set_value(field_name: str, value: str, field_types: Mapping[str, str] | None) -> Any:
+    """``--set`` values are plain strings; an ``int``-typed field coerces, every
+    other type stays a string (create options coerce the same — the schema
+    validates the rest). A non-integer for an int field is a typed refusal."""
+    if field_types is not None and field_types.get(field_name) == "int":
+        try:
+            return int(value)
+        except ValueError as exc:
+            raise OpParseError(f"--set {field_name}={value!r}: expected an integer") from exc
+    return value
+
+
+def parse_ops(tokens: Sequence[str], *, field_types: Mapping[str, str] | None = None) -> list[Op]:
     """Parse the ordered op-token stream into typed ops, PRESERVING argv order.
 
     Click cannot preserve the interleaving of distinct repeated options, so the
     composite-transition command captures the op tokens verbatim (unprocessed)
     and hands them here. A single leading bare token is the old-form sugar
-    (``transition <ID> <state>`` == ``--state <state>``).
+    (``transition <ID> <state>`` == ``--state <state>``). ``field_types`` (the
+    routed backlog's ``name → type``) drives ``--set`` int coercion (HATS-1036).
     """
     ops: list[Op] = []
     i = 0
@@ -157,6 +179,16 @@ def parse_ops(tokens: Sequence[str]) -> list[Op]:
             elif tok == "--link":
                 kind, target = _split_edge(value)
                 ops.append(LinkOp(kind or "related", target))
+            elif tok == "--set":
+                field_name, raw = _split_assignment(value, "--set")
+                ops.append(FieldsOp({field_name: Set(_coerce_set_value(field_name, raw, field_types))}))
+            elif tok == "--append":
+                field_name, raw = _split_assignment(value, "--append")
+                try:
+                    payload = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise OpParseError(f"--append {field_name}=<json>: invalid JSON ({exc})") from exc
+                ops.append(FieldsOp({field_name: Append(payload)}))
             else:  # --unlink
                 kind, target = _split_edge(value)
                 ops.append(UnlinkOp(kind, target))
@@ -165,8 +197,8 @@ def parse_ops(tokens: Sequence[str]) -> list[Op]:
             i += 1
         else:
             raise OpParseError(
-                f"unexpected token {tok!r}; expected one of "
-                "--state/--attach/--freeze/--rm/--log/--link/--unlink"
+                f"unexpected token {tok!r}; expected one of --state/--attach/--freeze/"
+                "--rm/--log/--link/--unlink/--set/--append"
             )
     return ops
 

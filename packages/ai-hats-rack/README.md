@@ -166,15 +166,17 @@ Four verbs, each with `--json` (JSON-first, HATS-1031 API-D surface):
 effects of earlier ops are visible to later ones, any abort rolls the whole
 sequence back (HATS-1030):
 
-| Op                       | Effect                                                                           |
-| ------------------------ | -------------------------------------------------------------------------------- |
-| `--state <s>`            | FSM edge (guard + two-phase dispatch); `transition <ID> <s>` is sugar for it     |
-| `--attach <src>[:n]`     | copy a file into `tasks/<ID>/` as document `n` (default: basename)               |
-| `--freeze <name>`        | pin `{name, digest, frozen}`; re-pinning drifted content requires `--ack-frozen` |
-| `--rm <name>`            | trash the document (recoverable, HATS-470); a frozen one requires `--ack-frozen` |
-| `--log <msg>`            | append a work_log entry                                                          |
-| `--link <kind>:<id>`     | add an edge of any configured, non-derived kind (default kind: `related`)        |
-| `--unlink [<kind>:]<id>` | remove the edge(s) to `<id>`                                                     |
+| Op                        | Effect                                                                           |
+| ------------------------- | -------------------------------------------------------------------------------- |
+| `--state <s>`             | FSM edge (guard + two-phase dispatch); `transition <ID> <s>` is sugar for it     |
+| `--attach <src>[:n]`      | copy a file into `tasks/<ID>/` as document `n` (default: basename)               |
+| `--freeze <name>`         | pin `{name, digest, frozen}`; re-pinning drifted content requires `--ack-frozen` |
+| `--rm <name>`             | trash the document (recoverable, HATS-470); a frozen one requires `--ack-frozen` |
+| `--log <msg>`             | append a work_log entry                                                          |
+| `--link <kind>:<id>`      | add an edge of any configured, non-derived kind (default kind: `related`)        |
+| `--unlink [<kind>:]<id>`  | remove the edge(s) to `<id>`                                                     |
+| `--set <field>=<value>`   | write a declared card field (schema-validated; `int` fields coerce)              |
+| `--append <field>=<json>` | append a JSON entry to a declared list field (rides the same lock/persist)       |
 
 Command-level flags: `--force` (+ mandatory `--reason`) relaxes the FSM arrow only;
 `--resolution` / `--final-state` stamp terminal metadata; `--ack-frozen` is the tiered
@@ -194,19 +196,53 @@ $ rack transition HATS-001 done --tasks-dir tasks
 error: Invalid transition for HATS-001: brainstorm → done. Legal edges from 'brainstorm': plan, blocked, cancelled
 ```
 
+### Per-backlog groups (HATS-1036 R2/R5, ADR-0017 §4/§7)
+
+Every NON-tasks backlog the workspace mounts (`tracker/**/backlog.yaml`, HATS-1044)
+becomes a group named after the backlog — the packaged `hypotheses` / `proposals`
+read as their short CLI names `hyp` / `proposal`. Ids route by prefix, so
+`transition`/`context`/`ls` already reach them; the group adds their write verbs.
+The **base surface stays exactly the four verbs until a sibling catalog is
+mounted** — nothing appears in a tasks-only repo. A group carries:
+
+- `create` — schema-driven from the backlog's `fields[]` (required/choices/default
+  enforced write-strict), the generic field mapping supplies e.g. `--hypothesis`.
+- `update <ID> --<field>` — scalar edits mapped onto the `transition --set` field
+  ops (one mutating path; `int` fields coerce, choices are schema-validated).
+- the verbs its extensions contribute through the optional `verbs()` hook —
+  `hyp append-verdict` / `hyp autoclose [--k --dry-run]`, `proposal vote`.
+
+Old `ai-hats task` → `rack` mapping (the cutover collapses onto this surface):
+
+| Old (`ai-hats task …`)        | New (`rack …`)                                          |
+| ----------------------------- | ------------------------------------------------------- |
+| `hyp create --hypothesis …`   | `rack hyp create --hypothesis …`                        |
+| `hyp append-verdict <ID> …`   | `rack hyp append-verdict <ID> --verdict … --evidence …` |
+| `hyp autoclose [--k]`         | `rack hyp autoclose [--k --dry-run]`                    |
+| `hyp update <ID> --<field> …` | `rack hyp update <ID> --<field> …`                      |
+| refute / confirm / stall …    | `rack transition <ID> <edge-name>` (named edges)        |
+| `proposal create …`           | `rack proposal create --category … --target … …`        |
+| `proposal vote <ID> …`        | `rack proposal vote <ID> --reasoning … --session-id …`  |
+| accept / reject / defer …     | `rack transition <ID> <edge-name>`                      |
+
+`append-verdict`/`vote` take the entry fields as named options (the 80% path,
+schema-validated) with a `--entry <json>` escape hatch for extra keys;
+`--session-id` defaults to the ambient `AI_HATS_SESSION_ID` so quorum counting
+works out of the box.
+
 ### Field edits — coexistence with `ai-hats task` (cutover, HATS-1038 C3)
 
-`rack` has **no `update` verb**. During the cutover it owns lifecycle, reads,
-documents, and links; scalar card fields are edited with the tracker's
-`ai-hats task update <ID>` — a deliberate coexistence until field mutation is
-generalized onto the rack (HATS-1044), not a gap. What lives where:
+The tasks backlog stays **flat** (no `update` verb): a declared field is edited in
+place with `rack transition <ID> --set <field>=<value>` / `--append`, and the
+tracker's `ai-hats task update <ID>` still writes the same `task.yaml` during the
+cutover. What lives where:
 
-| Edit                                                             | Home                               |
-| ---------------------------------------------------------------- | ---------------------------------- |
-| state, work_log, documents (attach/freeze/rm), links, resolution | `rack transition <ID> --…`         |
-| new card + initial parent                                        | `rack create …`                    |
-| title, description, priority, reviewer, role, tags, re-parent    | `ai-hats task update <ID> --…`     |
-| `hyp` · `proposal` · `close` · `plan-extract` · `sync`           | `ai-hats task …` (until HATS-1044) |
+| Edit                                                             | Home                           |
+| ---------------------------------------------------------------- | ------------------------------ |
+| state, work_log, documents (attach/freeze/rm), links, resolution | `rack transition <ID> --…`     |
+| a declared card field (priority, reviewer, role, tags, …)        | `rack transition <ID> --set`   |
+| new card + initial parent                                        | `rack create …`                |
+| title / re-parent (no schema field / anchor move)                | `ai-hats task update <ID> --…` |
 
 Both CLIs read and write the same `task.yaml` under the same task lock, so the
 split is safe to interleave within one task.

@@ -1,5 +1,6 @@
 name: hypotheses
 prefix: HYP
+cli_alias: hyp
 
 fsm:
   initial: active
