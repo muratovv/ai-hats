@@ -222,12 +222,13 @@ def build_link_subscribers(
     catalog: Path,
     factories: Mapping[str, ExtensionFactory],
 ) -> list[Subscriber]:
-    """Declaration-bound link handlers (``links.kinds[].handlers``): each ref
-    fires IN-LOCK on link AND unlink of its kind — subscription keys
-    ``link:<kind>`` / ``unlink:<kind>`` (ADR-0017 §3). Same positional band /
-    explicit-pin scheme as the state/edge builder; refs sharing (name, config)
-    collapse to one handler with deduped keys (fires once per link event). The
-    cross-backlog mirror (``link-target:<kind>``) is HATS-1044, not built here."""
+    """Declaration-bound link handlers (``links.kinds[].handlers``): an OWNING
+    handler fires IN-LOCK on link/unlink of its kind (``link:<kind>`` /
+    ``unlink:<kind>``, ADR-0017 §3); a MIRROR handler (``mirror-link``) is a
+    target-side reaction the workspace routes post-lock, so it subscribes the
+    ``link-target:<kind>`` / ``unlink-target:<kind>`` keys instead (HATS-1044
+    §2). Same positional band / explicit-pin scheme as the state/edge builder;
+    refs sharing (name, config) collapse to one handler with deduped keys."""
     b: Bindings = defn.bindings
     band = [100]
 
@@ -243,15 +244,24 @@ def build_link_subscribers(
         for ref in refs:
             prio = _priority(ref)
             gk = (ref.name, _freeze(ref.config))
-            group = groups.setdefault(gk, {"ref": ref, "keys": {}})
-            for key in (f"link:{kind}", f"unlink:{kind}"):
-                group["keys"].setdefault(key, prio)  # dedup: first band/pin wins
+            group = groups.setdefault(gk, {"ref": ref, "members": []})
+            group["members"].append((kind, prio))
 
     out: list[Subscriber] = []
     for group in groups.values():
         handler = _bound_handler(group["ref"], defn, catalog, factories)
         phase = getattr(handler, "PHASE", Phase.IN_LOCK)
-        subs = [Subscription(key, phase, prio) for key, prio in group["keys"].items()]
+        mirror = bool(getattr(handler, "MIRROR", False))
+        keys: dict[str, int] = {}
+        for kind, prio in group["members"]:
+            pair = (
+                (f"link-target:{kind}", f"unlink-target:{kind}")
+                if mirror
+                else (f"link:{kind}", f"unlink:{kind}")
+            )
+            for key in pair:
+                keys.setdefault(key, prio)  # dedup: first band/pin wins
+        subs = [Subscription(key, phase, prio) for key, prio in keys.items()]
         out.append(BoundSubscriber(handler, subs))
     return out
 
@@ -278,16 +288,24 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
     from .extensions import (
         ClearLifecycleHandler,
         FrozenIntegrityExtension,
+        HypQuorumGate,
+        HypVerdictsExtension,
+        MirrorLinkHandler,
         PlanGateExtension,
         PlanScaffoldExtension,
+        PropVotesExtension,
         StampLifecycleHandler,
     )
+    from .extensions.quorum import DEFAULT_QUORUM_K
     from .extensions.sections import DEFAULT_PLAN_SECTIONS
 
     catalog_sections = tuple(sections) if sections is not None else DEFAULT_PLAN_SECTIONS
 
     def _field(cfg: Mapping[str, Any]) -> str:
         return str(cfg.get("field", "completed_at"))
+
+    def _k(cfg: Mapping[str, Any]) -> int:
+        return int(cfg.get("min_independent_sessions", DEFAULT_QUORUM_K))
 
     return {
         "frozen-integrity": lambda defn, catalog, cfg: FrozenIntegrityExtension(
@@ -297,13 +315,23 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
         "plan-scaffold": lambda defn, catalog, cfg: PlanScaffoldExtension(catalog, catalog_sections),
         "stamp-lifecycle": lambda defn, catalog, cfg: StampLifecycleHandler(_field(cfg)),
         "clear-lifecycle": lambda defn, catalog, cfg: ClearLifecycleHandler(_field(cfg)),
+        "mirror-link": lambda defn, catalog, cfg: MirrorLinkHandler(defn.links_registry),
+        "hyp-verdicts": lambda defn, catalog, cfg: HypVerdictsExtension(),
+        "prop-votes": lambda defn, catalog, cfg: PropVotesExtension(),
+        "hyp-quorum-gate": lambda defn, catalog, cfg: HypQuorumGate(_k(cfg)),
     }
 
 
 def stock_validators() -> dict[str, Validator]:
-    """The rack's stock field validators (ADR-0017 §4). Empty by default — the
-    packaged tasks backlog declares none; HYP/PROP land theirs in HATS-1044."""
-    return {}
+    """The rack's stock field validators (ADR-0017 §4). The packaged tasks backlog
+    declares none; HYP/PROP reference these (unreferenced ones are inert)."""
+    from .extensions.validators import hyp_exit_criteria, hyp_validation_log, prop_vote_entries
+
+    return {
+        "hyp-validation-log": hyp_validation_log,
+        "hyp-exit-criteria": hyp_exit_criteria,
+        "prop-vote-entries": prop_vote_entries,
+    }
 
 
 __all__ = [
