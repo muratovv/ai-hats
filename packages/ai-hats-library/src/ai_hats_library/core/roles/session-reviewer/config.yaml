@@ -56,7 +56,7 @@ injection: |
   (read evidence → sweep HYPs → triage PROPs → self-meta) and composes the
   per-item skills:
   - **review-hypothesis** — pick verdict + recommendation + persist via
-    `ai-hats task hyp append-verdict`.
+    `rack hyp append-verdict`.
   - **review-proposal** — read the open inbox first, vote on similar PROP,
     or create a novel one.
 
@@ -75,5 +75,5 @@ injection: |
   ## Scope (read-only direct mutations)
 
   You DO NOT mutate `<ai_hats_dir>/tracker/backlog/tasks/*` or other project state directly.
-  All side effects go through `ai-hats task hyp append-verdict` /
-  `ai-hats task proposal *` CLIs (per **rule_backlog_discipline**).
+  All side effects go through `rack hyp append-verdict` /
+  `rack proposal *` CLIs (per **rule_backlog_discipline**).

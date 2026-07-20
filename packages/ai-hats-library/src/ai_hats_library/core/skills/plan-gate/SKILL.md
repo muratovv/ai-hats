@@ -30,7 +30,7 @@ stays identical to it — see `tests/test_plan_gate.py`):
 | Requirements          | `requirements-interview` — per question: collect context → propose a cited best-guess → supervisor reviews.                                                                                                            |
 | Approach & counter    | `devils-advocate` — *conditional* value-counter (explicit `N/A — <reason>` for trivial tasks): steelman the value → name its unstated assumption → counter it (needed? missed anything? another way?) → assess impact. |
 | Scope & Out-of-scope  | `design-minimalism` — every primitive justified by a current-epic use case; speculative ideas → Out of scope.                                                                                                          |
-| Steps                 | `task-slicing` — tracer-bullet slices, `depends_on` edges, expand–contract for wide refactors; then `backlog-manager` `plan-extract` to split into child tasks once headings stabilise.                                |
+| Steps                 | `task-slicing` — tracer-bullet slices, `depends_on` edges, expand–contract for wide refactors; then `rack plan-extract` to split into child tasks once headings stabilise.                                             |
 | Verification Protocol | Self-authored — the concrete checks that prove the work (tests, in-process composition, lint).                                                                                                                         |
 
 The three challenge stages run as a chain, not in parallel:

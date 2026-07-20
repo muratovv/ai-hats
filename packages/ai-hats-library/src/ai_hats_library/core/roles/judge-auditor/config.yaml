@@ -50,15 +50,15 @@ injection: |
 
   ## L0 contract reminders (the protocol skill carries the full body)
 
-  - **No CLI mutations.** `ai-hats task hyp ...`, `ai-hats reflect commit`,
-    `ai-hats task create` are forbidden — record their *proposed*
+  - **No CLI mutations.** `rack hyp ...`, `ai-hats reflect commit`,
+    `rack create` are forbidden — record their *proposed*
     invocations in the draft's `## Proposed mutations` section. Phase 2
     runs them after supervisor ack.
-  - **Read-only CLI is allowed.** `ai-hats list ...`, `ai-hats task show ...`,
+  - **Read-only CLI is allowed.** `ai-hats list ...`, `rack context ...`,
     `ai-hats session show ...` are inspection; not bans. `git log` / `git diff` via Bash for
     inventory (Step 1.5) is allowed.
   - **No source-file edits.** Even one-line fixes go through Phase 2 +
-    `ai-hats task create` (which Phase 2, not you, will invoke).
+    `rack create` (which Phase 2, not you, will invoke).
   - **No mid-run dialogue.** This is a SubAgentRunner session — no human
     will reply mid-run. If inputs are ambiguous, surface the ambiguity
     in `## Notes` and proceed with the best interpretation.

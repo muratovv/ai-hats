@@ -1,6 +1,6 @@
 ---
 name: review-proposal
-description: Triage one improvement opportunity — vote on an existing PROP or create a novel one via ai-hats task proposal. Use when you spot an improvement (rule/skill/code/process/doc) during a session review, or are sweeping the open proposal inbox for triage.
+description: Triage one improvement opportunity — vote on an existing PROP or create a novel one via `rack proposal`. Use when you spot an improvement (rule/skill/code/process/doc) during a session review, or are sweeping the open proposal inbox for triage.
 license: MIT
 ---
 
