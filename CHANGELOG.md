@@ -12,6 +12,30 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Added
 
+- **Multi-backlog workspace** (HATS-1044, ADR-0017 §2, §5). N kernels — one per
+  backlog — under one `Workspace`: `discover(roots)` scans `tracker/**` for
+  `backlog.yaml` catalogs (the tasks catalog is always mounted), routes ids by
+  prefix (`kernel_for("HYP-042")`, typed `UnknownPrefixError` /
+  `AmbiguousPrefixError`), and answers cross-backlog existence for link kinds
+  declaring `targets:` — all three link existence checks funnel through one
+  seam. Both sides now observe a link: after the owning card persists, the
+  workspace dispatches a post-lock `link-target:<kind>` mirror event to the
+  target backlog; the stock `mirror-link` reaction keeps stored inverse pairs
+  (`supersedes`/`superseded_by`) convergent, and declaring a stored non-symmetric
+  inverse without it is a typed load error. The hypotheses and proposals
+  backlogs ship as packaged definitions (promoted from the ADR §5 proofs) with
+  stock validators (`hyp-validation-log`, `hyp-exit-criteria`,
+  `prop-vote-entries`) and extensions: `hyp-verdicts` (verdict append + atomic
+  append-then-transition), `prop-votes`, and the `hyp-quorum-gate` edge handler
+  — quorum semantics ported byte-for-byte from the tracker (distinct real
+  sessions, `auto-quorum` sentinel excluded, automation-actor-only gating per
+  ADR-0009; a manual refute is never gated). A one-shot migration
+  (`python -m ai_hats_rack.migrate <ai_hats_dir> [--dry-run]`) moves flat
+  `HYP-NNN.yaml`/`PROP-NNN.yaml` files to dir-per-card catalogs with an
+  inventory diff and idempotent re-runs; the tracker's stores gained a
+  dual-layout shim (rack-aligned `.lock` path) so `ai-hats task hyp/proposal`
+  keeps working over both layouts, and the reflect/judge pipeline consumers now
+  talk to the workspace instead of importing the tracker.
 - **Schema-driven card fields** (HATS-1035, ADR-0017 §1–§2). A card's field set
   is declared in `backlog.yaml` `fields[]` — `create` now requires only a
   non-empty `title`; everything else (priority, reviewer, role, tags, …) comes

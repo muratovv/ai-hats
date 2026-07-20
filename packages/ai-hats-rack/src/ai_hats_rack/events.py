@@ -1,11 +1,11 @@
 """Event kinds dispatched by the rack kernel (HATS-1020).
 
-Name-your-consumer (PROP-030): an event kind exists only together with its
-named consumer — see the registry table in this package's README; each class
-below names its own.
+Name-your-consumer (PROP-030): an event kind exists only with its named
+consumer (registry table in this package's README); each class names its own.
 
-Link event keys are ``link:<kind>`` / ``unlink:<kind>`` (HATS-1043 §3): the
-owning-side, in-lock event of adding/removing a link of that kind.
+Link keys are ``link:<kind>``/``unlink:<kind>`` (owning-side, in-lock, HATS-1043);
+mirror keys are ``link-target:<kind>``/``unlink-target:<kind>`` (target-side,
+post-lock, HATS-1044) where ``<kind>`` is the inverse the reaction repairs.
 """
 
 from __future__ import annotations
@@ -119,7 +119,31 @@ class ReadEvent:
         return None  # the card being read rides DispatchContext.task
 
 
-Event = Union[EdgeEvent, EpicifyEvent, PreDestroyEvent, LinkEvent, ReadEvent]
+@dataclass(frozen=True)
+class LinkMirrorEvent:
+    """The post-lock mirror of an origin link, routed by the workspace to the
+    TARGET backlog's kernel (ADR-0017 §2/R4). ``kind`` is the target-side
+    (inverse) kind the reaction repairs; ``origin`` wrote the forward edge;
+    ``target`` is the card being repaired in its OWN fresh lock window (never
+    nested — the one-lock rule). Key: ``link-target:<kind>`` / ``unlink-target:<kind>``.
+    Consumers: the stock ``mirror-link`` reaction (stored-inverse convergence).
+    """
+
+    kind: str
+    origin: str
+    target: str
+    removed: bool = False
+
+    @property
+    def key(self) -> str:
+        return f"{'unlink' if self.removed else 'link'}-target:{self.kind}"
+
+    @property
+    def task_id(self) -> str:
+        return self.target  # the reaction repairs the target card
+
+
+Event = Union[EdgeEvent, EpicifyEvent, PreDestroyEvent, LinkEvent, LinkMirrorEvent, ReadEvent]
 
 
 def event_detail(event: Event) -> dict[str, str]:
@@ -134,4 +158,6 @@ def event_detail(event: Event) -> dict[str, str]:
         return {"kind": event.kind, "target": event.target}
     if isinstance(event, ReadEvent):
         return {"kind": event.kind}
+    if isinstance(event, LinkMirrorEvent):
+        return {"kind": event.kind, "origin": event.origin, "target": event.target}
     return {"operation": event.operation}

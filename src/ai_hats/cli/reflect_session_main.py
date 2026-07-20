@@ -13,14 +13,11 @@ failure-proposal lives here (not in the runner) to avoid double-fire.
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
-from pydantic import ValidationError
 
 from ..harness.errors import HarnessReliabilityError
-from ai_hats_tracker.hypothesis import HypothesisStore, Proposal, ProposalStore, next_proposal_id
 from ..pipeline.harness import PipelineHarness
 from ..pipeline.keys import (
     KEY_MAX_RETRIES,
@@ -175,10 +172,9 @@ def _extract_frontmatter(text: str) -> str:
 
 
 def _load_active_hyp_ids(project_dir: Path) -> set[str]:
-    from ..paths import hypotheses_dir
+    from ..rack_workspace import active_hypothesis_ids, rack_workspace
 
-    store = HypothesisStore(hypotheses_dir(project_dir))
-    return {h.id for h in store.list_active()}
+    return active_hypothesis_ids(rack_workspace(project_dir))
 
 
 # ---- meta-proposal filing ----
@@ -191,17 +187,13 @@ def _file_meta_proposal(
     *,
     target: str = TARGET_SESSION_REVIEWER,
 ) -> None:
-    from ..paths import proposals_dir as _proposals_dir
+    from ..rack_workspace import create_proposal, proposals, rack_workspace
 
-    proposals_dir = _proposals_dir(project_dir)
-    store = ProposalStore(proposals_dir)
+    ws = rack_workspace(project_dir)
 
-    # De-dup: skip if a process proposal with the SAME target already
-    # exists for this failed_session_id. Distinct targets coexist —
-    # a harness-incident and a session-reviewer proposal for the same
-    # session capture different facets and should both be filed if both
-    # arise.
-    for existing in store.filter(category="process", target=target):
+    # De-dup: skip if a process proposal with the SAME target already exists for
+    # this failed_session_id (distinct targets coexist — both facets get filed).
+    for existing in proposals(ws, category="process", target=target):
         if existing.failed_session_id == session_id:
             print(
                 f"[harness] meta-proposal already filed for {session_id} "
@@ -210,25 +202,21 @@ def _file_meta_proposal(
             )
             return
 
-    proposals_dir.mkdir(parents=True, exist_ok=True)
-    prop_id = next_proposal_id(proposals_dir)
     title, description, rationale = _build_meta_proposal_body(
         session_id, issues, target,
     )
-    proposal = Proposal(
-        id=prop_id,
-        created=datetime.now(tz=timezone.utc),
-        title=title,
-        category="process",
-        target=target,
-        description=description,
-        rationale=rationale,
-        failed_session_id=session_id,
-    )
     try:
-        path = store.create(proposal)
-        print(f"[harness] filed meta-proposal: {path}", file=sys.stderr)
-    except (FileExistsError, OSError, ValidationError) as e:
+        prop_id = create_proposal(
+            ws,
+            title=title,
+            category="process",
+            target=target,
+            description=description,
+            rationale=rationale,
+            failed_session_id=session_id,
+        )
+        print(f"[harness] filed meta-proposal: {prop_id}", file=sys.stderr)
+    except (FileExistsError, OSError) as e:
         print(
             f"[harness] failed to file meta-proposal for {session_id}: {e}",
             file=sys.stderr,

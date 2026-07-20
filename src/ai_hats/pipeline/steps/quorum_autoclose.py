@@ -32,7 +32,7 @@ class QuorumAutoclose(Step):
     failure_policy = "continue"
 
     def __init__(self, params: Mapping[str, Any] | None = None) -> None:
-        from ai_hats_tracker.hypothesis.quorum import DEFAULT_QUORUM_K
+        from ai_hats_rack.extensions.quorum import DEFAULT_QUORUM_K
 
         params = params or {}
         self.k = int(params.get("k", DEFAULT_QUORUM_K))
@@ -48,12 +48,19 @@ class QuorumAutoclose(Step):
         )
 
     def run(self, *, project_dir: Path, **_: Any) -> dict[str, Any]:
-        from ai_hats_tracker.hypothesis import HypothesisStore
-        from ai_hats_tracker.hypothesis.quorum import autoclose_quorum
-        from ...paths import hypotheses_dir
+        from ai_hats_rack.extensions.quorum import AUTOCLOSE_ACTOR
 
-        store = HypothesisStore(hypotheses_dir(project_dir))
-        closed = [c.hyp_id for c in autoclose_quorum(store, self.k)]
+        from ...rack_workspace import autoclose_hypotheses, hyp_backlog_mounted, rack_workspace
+
+        ws = rack_workspace(project_dir)
+        if not hyp_backlog_mounted(ws):
+            return {}  # pre-migration: no HYP backlog mounted yet → nothing to sweep
+        closed = [
+            c.hyp_id
+            for c in autoclose_hypotheses(
+                ws, caller_cwd=project_dir, k=self.k, actor=AUTOCLOSE_ACTOR
+            )
+        ]
         if closed:
             logger.info("quorum_autoclose: closed %s", ", ".join(closed))
         # ADR-0005: omit the key (return {}) when nothing closed, never "" / [].
