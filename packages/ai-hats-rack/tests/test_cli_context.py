@@ -148,8 +148,8 @@ def test_context_json_schema(runner, tmp_path):
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     # HATS-1028: one top-level `links` object, not scattered parent/depends/...
-    # No `enrichments` key here: parent HATS-1 carries no "Work Policy" section,
-    # so parent-context delivers nothing (HATS-1064).
+    # No `enrichments` key here: parent HATS-1 carries no `work_policy` field,
+    # so parent-context delivers nothing (HATS-1064; field-based HATS-1067).
     assert set(payload) == {"task", "documents", "links", "included"}
     assert payload["task"]["id"] == "HATS-2"
     links = payload["links"]
