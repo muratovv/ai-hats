@@ -47,9 +47,9 @@ fsm:
 
 links:
   kinds:
-    - { name: parent_task, arity: one, inverse: children, read: [parent-context] }
-    - { name: depends_on, arity: many, aliases: [depends] }
-    - { name: related, arity: many, inverse: related }
+    - { name: parent_task, arity: one, inverse: children, read: [parent-context], read_docs: [plan.md] }
+    - { name: depends_on, arity: many, aliases: [depends], read_docs: [summary.md, retro.md] }
+    - { name: related, arity: many, inverse: related, read_docs: [summary.md, retro.md] }
     - { name: children, derived: true, inverse: parent_task }
 
 fields:
