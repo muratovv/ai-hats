@@ -97,6 +97,7 @@ class TaskCard(BaseModel):
             "assignee",
             "reviewer",
             "role",
+            "work_policy",
             "parent_task",
             "subtasks",
             "depends_on",
@@ -122,6 +123,9 @@ class TaskCard(BaseModel):
     assignee: str = ""
     reviewer: str = "user"
     role: str = ""
+    #: work policy this card carries for itself and its descendants; delivered up
+    #: the parent chain by the parent-context read enricher (HATS-1067).
+    work_policy: str = ""
     parent_task: str = ""
     subtasks: list[str] = Field(default_factory=list)
     depends_on: list[str] = Field(default_factory=list)
@@ -240,6 +244,8 @@ class TaskCard(BaseModel):
             d["resolution"] = self.resolution
         if self.completed_at:
             d["completed_at"] = self.completed_at
+        if self.work_policy:
+            d["work_policy"] = self.work_policy
         # Emit-only-when-set keeps existing cards byte-clean on first save
         # (mirrors the tracker's serialization rules for these link fields).
         if self.depends_on:
