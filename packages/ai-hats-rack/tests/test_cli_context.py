@@ -298,6 +298,77 @@ def test_context_attr_unknown_is_typed(runner, tmp_path):
     assert err["code"] == "unknown_attr" and "work_log" in err["known"]
 
 
+# ----- context batch: prefetch a viewport in one process (HATS-1074) --------------
+
+
+def test_context_batch_json_is_byte_identical_to_singles(runner, tmp_path):
+    # AC-1: each entry of a batch equals the standalone single-id payload — the
+    # batch amortizes start-up, it must not alter the per-card output.
+    _family(tmp_path)
+    single_2 = json.loads(
+        runner.invoke(main, ["context", "HATS-2", *_args(tmp_path), "--json"]).output
+    )
+    single_3 = json.loads(
+        runner.invoke(main, ["context", "HATS-3", *_args(tmp_path), "--json"]).output
+    )
+    batch = runner.invoke(main, ["context", "HATS-2", "HATS-3", *_args(tmp_path), "--json"])
+    assert batch.exit_code == 0, batch.output
+    payload = json.loads(batch.output)
+    assert set(payload) == {"contexts"}
+    assert list(payload["contexts"]) == ["HATS-2", "HATS-3"]  # input order preserved
+    assert payload["contexts"]["HATS-2"] == single_2
+    assert payload["contexts"]["HATS-3"] == single_3
+
+
+def test_context_single_json_stays_unwrapped(runner, tmp_path):
+    # AC-2: one id keeps the legacy unwrapped shape — no `contexts` envelope, so
+    # existing single-id consumers are untouched.
+    _family(tmp_path)
+    result = runner.invoke(main, ["context", "HATS-2", *_args(tmp_path), "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert "contexts" not in payload
+    assert payload["task"]["id"] == "HATS-2"
+
+
+def test_context_batch_skip_and_continue_on_bad_id(runner, tmp_path):
+    # A bad id yields a per-id error entry; the good cards still resolve, exit 0.
+    _family(tmp_path)
+    result = runner.invoke(
+        main, ["context", "HATS-2", "HATS-404", "HATS-3", *_args(tmp_path), "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    contexts = json.loads(result.output)["contexts"]
+    assert contexts["HATS-2"]["task"]["id"] == "HATS-2"
+    assert contexts["HATS-3"]["task"]["id"] == "HATS-3"
+    assert contexts["HATS-404"]["error"]["code"] == "unknown_task"
+
+
+def test_context_batch_dedups_preserving_order(runner, tmp_path):
+    _family(tmp_path)
+    result = runner.invoke(
+        main, ["context", "HATS-3", "HATS-2", "HATS-3", *_args(tmp_path), "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    assert list(json.loads(result.output)["contexts"]) == ["HATS-3", "HATS-2"]
+
+
+def test_context_no_ids_is_typed(runner, tmp_path):
+    _family(tmp_path)
+    result = runner.invoke(main, ["context", *_args(tmp_path), "--json"])
+    assert result.exit_code == 1
+    assert json.loads(result.output)["error"]["code"] == "invalid_request"
+
+
+def test_context_batch_human_separates_cards(runner, tmp_path):
+    _family(tmp_path)
+    result = runner.invoke(main, ["context", "HATS-2", "HATS-3", *_args(tmp_path)])
+    assert result.exit_code == 0, result.output
+    out = result.output
+    assert "id: HATS-2" in out and "id: HATS-3" in out
+    assert out.count("tip:") == 1  # one shared tip footer, not one per card
+
+
 # ----- ls: backlog scan (no id) ---------------------------------------------------
 
 
@@ -561,9 +632,7 @@ def test_ls_deep_resolves_link_kinds_from_catalog_backlog_yaml(runner, tmp_path)
     (catalog / "backlog.yaml").write_text(_CATALOG_BACKLOG)
     make_card(tmp_path, "HATS-1", links={"reviewed_with": ["HATS-2"]})
     make_card(tmp_path, "HATS-2", title="reviewer")
-    result = runner.invoke(
-        main, ["ls", "HATS-1", "--deep", "1", *_args(tmp_path), "--json"]
-    )
+    result = runner.invoke(main, ["ls", "HATS-1", "--deep", "1", *_args(tmp_path), "--json"])
     assert result.exit_code == 0, result.output
     assert "HATS-2" in {n["id"] for n in json.loads(result.output)["neighbors"]}
 

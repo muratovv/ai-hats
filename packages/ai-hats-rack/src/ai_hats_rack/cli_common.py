@@ -136,18 +136,31 @@ def lookup_error_handler(exc_type: type) -> _ErrorHandler | None:
     return None
 
 
-def handle_rack_error(exc: Exception, as_json: bool) -> None:
-    """Route a raised exception to its typed `fail`; re-raise the truly unknown."""
+def resolve_error(exc: Exception) -> tuple[str, str, dict[str, Any]] | None:
+    """Typed ``(code, message, details)`` for a rack error, or ``None`` if the
+    exception is truly unknown.
+
+    The non-exiting core of :func:`handle_rack_error`: a batch read reuses it to
+    fold a per-id failure into its output map instead of aborting the whole
+    invocation (skip-and-continue).
+    """
     handler = lookup_error_handler(type(exc))
     if handler is not None:
         code, details = handler(exc)
-        fail(as_json, code, str(exc), **details)
-        return
+        return code, str(exc), details
     # ValueError is a builtin (not a RackError) but has always mapped here.
     if isinstance(exc, ValueError):
-        fail(as_json, "invalid_request", str(exc))
-        return
-    raise exc
+        return "invalid_request", str(exc), {}
+    return None
+
+
+def handle_rack_error(exc: Exception, as_json: bool) -> None:
+    """Route a raised exception to its typed `fail`; re-raise the truly unknown."""
+    resolved = resolve_error(exc)
+    if resolved is None:
+        raise exc
+    code, message, details = resolved
+    fail(as_json, code, message, **details)
 
 
 def resolved_root(tasks_dir: Path | None, caller_cwd: Path) -> RackRoot:
