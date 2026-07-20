@@ -20,6 +20,7 @@ _HISTORICAL_OPTIONS = {
     (("--priority",), "priority", False),
     (("--role",), "role", False),
     (("--reviewer",), "reviewer", False),
+    (("--work-policy",), "work_policy", False),  # HATS-1067: generated from fields[]
     (("--parent",), "parent_task", False),
     (("--depends",), "depends_on", True),
     (("--tag",), "tags", True),

@@ -102,6 +102,28 @@ def test_old_rack_card_reloads_links_from_extras(tmp_path):
     assert "links" not in card.extras
 
 
+def test_work_policy_round_trips_as_typed_field(tmp_path):
+    # HATS-1067: work_policy is a typed column (not extras) and survives a
+    # save/load cycle verbatim — multi-line markdown body included.
+    body = "## Requirements for children\n- respect the public API\n- no new deps"
+    card = TaskCard(id="T-1", title="epic", work_policy=body)
+    out = tmp_path / "task.yaml"
+    card.save(out)
+    data = yaml.safe_load(out.read_text())
+    assert data["work_policy"] == body  # typed key, not parked under extras
+    again = TaskCard.from_yaml(out)
+    assert again.work_policy == body
+    assert "work_policy" not in again.extras
+
+
+def test_empty_work_policy_not_emitted(tmp_path):
+    # emit: when-set — an unset work_policy leaves no key (byte-clean first save).
+    card = TaskCard(id="T-1", title="clean")
+    out = tmp_path / "task.yaml"
+    card.save(out)
+    assert "work_policy" not in yaml.safe_load(out.read_text())
+
+
 def test_log_work_actor_prefix():
     card = TaskCard(id="T-1")
     card.log_work("plain")

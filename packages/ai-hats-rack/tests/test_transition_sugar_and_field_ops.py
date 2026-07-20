@@ -145,6 +145,26 @@ def test_malformed_set_append_are_typed_op_parse_errors():
         parse_ops(["--set", "budget=x"], field_types={"budget": "int"})
 
 
+def test_set_append_refuse_structural_fields():
+    # HATS-1067 guard: --set/--append must not bypass the FSM (state) / graph
+    # (links) / audit (work_log) verbs, nor touch kernel-owned identity/timestamps.
+    for bad in ("state=done", "parent_task=T-9", "depends_on=T-9", "related=T-9",
+                "links=x", "work_log=x", "id=T-2", "created=now", "updated=now"):
+        with pytest.raises(OpParseError):
+            parse_ops(["--set", bad])
+    with pytest.raises(OpParseError):  # --append is guarded the same way
+        parse_ops(["--append", 'depends_on=["T-9"]'])
+
+
+def test_set_still_allows_data_and_plain_anchor_fields():
+    # data fields + plain str anchors (title) stay settable — only structural
+    # anchors are refused.
+    assert parse_ops(["--set", "work_policy=respect API"]) == [
+        FieldsOp({"work_policy": Set("respect API")})
+    ]
+    assert parse_ops(["--set", "title=Renamed"]) == [FieldsOp({"title": Set("Renamed")})]
+
+
 # ----- exhaustiveness (additive): new flags ride the existing "fields" kind ----
 
 

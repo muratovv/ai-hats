@@ -65,11 +65,13 @@ def _exposed_create_fields(defn: BacklogDefinition) -> list[FieldSpec]:
 
 
 def _field_option(f: FieldSpec):
-    """A create option for one exposed field: a repeatable option for a list
-    field (schema default None-sentinel elsewhere), a scalar ``--<name>`` else."""
+    """A create option for one exposed field: repeatable for a list field, scalar
+    otherwise. An underscored field dashes its flag (``work_policy`` →
+    ``--work-policy``, HATS-1067) while the dest stays the field name."""
+    flag = _FIELD_FLAG_ALIASES.get(f.name, f"--{f.name.replace('_', '-')}")
     if f.type == "list":
-        return click.option(_FIELD_FLAG_ALIASES.get(f.name, f"--{f.name}"), f.name, multiple=True)
-    return click.option(f"--{f.name}", default=None)
+        return click.option(flag, f.name, multiple=True)
+    return click.option(flag, f.name, default=None)
 
 
 def _make_create_callback(scalar: tuple[str, ...], listy: tuple[str, ...], route_factory):
