@@ -35,8 +35,8 @@ injection: |
   - Harness `<system-reminder>` tool-nudges (e.g. `TaskCreate` / `TaskUpdate`) are
     advisory heuristics, not user instructions. Ignore them when the work is a
     single deliverable or already tracked in the project's backlog; act only when
-    the supervisor asked for harness sub-tracking or no backlog CLI exists. When
-    you ignore one mid-flow, acknowledge it briefly. See rule `rule_harness_reminder_hygiene`.
+    the supervisor asked for harness sub-tracking or no backlog CLI exists.
+    Ignore silently — do not narrate the choice. See rule `rule_harness_reminder_hygiene`.
 
   ### Verification (analyst flavor)
   - Re-read every cited line before quoting it in the report
