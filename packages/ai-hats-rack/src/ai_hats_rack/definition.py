@@ -68,6 +68,19 @@ class UnsupportedBacklogKeyError(BacklogDefinitionError):
         )
 
 
+class EdgeNameStateCollisionError(BacklogDefinitionError):
+    """A declared edge ``name`` equals a STATE name (HATS-1036, ADR-0017 §3): the
+    transition sugar ``rack transition <ID> <token>`` resolves a token to a state
+    OR a named edge, so a name shared with a state would be ambiguous — fail-closed."""
+
+    def __init__(self, name: str, source: str) -> None:
+        self.edge_name = name
+        super().__init__(
+            f"{source}: edge name {name!r} collides with a state of the same name — "
+            f"rename the edge (the transition sugar cannot resolve it unambiguously)"
+        )
+
+
 class MissingMirrorReactionError(BacklogDefinitionError):
     """A declared STORED inverse pair (``inverse: X`` where X is a stored, non-
     symmetric kind) without the ``mirror-link`` reaction — the reverse edge would
@@ -401,6 +414,16 @@ def _validate_stored_inverses(
             raise MissingMirrorReactionError(kind.name, kind.inverse, source)
 
 
+def _validate_edge_names(
+    edge_names: Mapping[tuple[str, str], str], states: set[str], source: str
+) -> None:
+    """Fail-closed (HATS-1036): a declared edge name must not equal a state name,
+    else the transition sugar cannot resolve a token unambiguously."""
+    for name in edge_names.values():
+        if name in states:
+            raise EdgeNameStateCollisionError(name, source)
+
+
 def _parse_extras(raw: Any, source: str) -> str:
     if raw is None:
         return "allow"
@@ -437,6 +460,7 @@ def _build(raw: Any, source: str) -> BacklogDefinition:
     )
     registry = _validate_registry({"kinds": kinds_raw}, source)
     _validate_stored_inverses(registry, kind_handlers, source)
+    _validate_edge_names(fsm.edge_names, set(topology.states), source)
     bindings = Bindings(
         state_on_enter=MappingProxyType(fsm.state_on_enter),
         state_on_exit=MappingProxyType(fsm.state_on_exit),
