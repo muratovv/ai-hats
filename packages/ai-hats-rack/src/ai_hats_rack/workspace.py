@@ -189,7 +189,12 @@ class Workspace:
     def kernel_for(self, item_id: str, root: RootId | None = None) -> Kernel:
         """The kernel of the backlog an id routes to — the integrator override
         first (tasks instance), else the portable kit (ADR-0017 §2/§4)."""
-        instance = self.instance_for(item_id, root)
+        return self.kernel_for_instance(self.instance_for(item_id, root))
+
+    def kernel_for_instance(self, instance: BacklogInstance) -> Kernel:
+        """The kernel of a mounted instance — the routing-free path a per-backlog
+        ``create`` group takes (no id yet, HATS-1036): integrator override first
+        (tasks instance), else the portable kit (ADR-0017 §2/§4)."""
         if self.kernel_builder is not None:
             kernel = self.kernel_builder(instance)
             if kernel is not None:

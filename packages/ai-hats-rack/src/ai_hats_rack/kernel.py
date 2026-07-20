@@ -259,21 +259,29 @@ class Kernel:
         parent_task: str = "",
         depends_on: Sequence[str] = (),
         tags: Sequence[str] | None = None,
+        fields: Mapping[str, Any] | None = None,
     ) -> KernelResult:
         """Create a card. Id allocation + reserve is atomic under the
         directory-scoped alloc lock (HATS-936); timeout is a loud failure.
 
         ``title`` is the only required input (ADR-0017 §1); the schema fields
         (``None`` sentinels) resolve to their declared defaults and are validated
-        write-strict — a bad choice/type/required field is a typed refusal."""
+        write-strict — a bad choice/type/required field is a typed refusal.
+        ``fields`` is the generic field mapping (HATS-1036): any declared field by
+        name (a custom backlog's required ``hypothesis`` etc.), merged over the
+        named tasks kwargs so both the tasks verb and per-backlog groups share one
+        create path; a name absent from the routed schema is ignored."""
         if not title.strip():
             raise RequiredFieldError("title", "a task requires a non-empty title")
         if parent_task and parent_task == task_id:
             raise ValueError(f"Task '{task_id}' cannot be its own parent")
-        resolved = self._schema.resolve_create(
-            {"description": description, "priority": priority, "role": role,
-             "reviewer": reviewer, "tags": tags}
-        )
+        provided: dict[str, Any] = {
+            "description": description, "priority": priority, "role": role,
+            "reviewer": reviewer, "tags": tags,
+        }
+        if fields:
+            provided.update(fields)
+        resolved = self._schema.resolve_create(provided)
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         # Not a `<prefix>-N` card dir, so scans ignore it.
         alloc_lock_path = self.tasks_dir / ".alloc.lock"
@@ -430,6 +438,23 @@ class Kernel:
         self._dispatcher.run_blocking(event, ctx, self._delta_applier(task, actor), outcomes)
         return from_state
 
+    def _resolve_state_target(self, token: str, current: str) -> str:
+        """Resolve a transition target (HATS-1036 sugar): a state name passes
+        through; a declared edge NAME resolves to its target, preferring the edge
+        leaving ``current``. A name whose edge does not start at ``current`` still
+        yields that name's target, so the FSM guard raises the usual
+        InvalidTransitionError with the legal edges; a token that is neither is
+        returned unchanged (require_state/guard then raises UnknownStateError)."""
+        if token in self.topology.states:
+            return token
+        candidates = [(frm, to) for (frm, to), name in self._edge_names.items() if name == token]
+        if not candidates:
+            return token
+        for frm, to in candidates:
+            if frm == current:
+                return to
+        return candidates[0][1]
+
     def _delta_applier(self, task: TaskCard, actor: str) -> Callable[[Delta], None]:
         """In-memory application of an in-lock delta (work_log + declared-field
         ops) before the single persist — shared by the edge and link paths.
@@ -477,8 +502,11 @@ class Kernel:
 
         if not ops:
             raise ValueError("transition needs at least one operation")
+        # An edge-NAME target (HATS-1036 sugar) resolves to a real state under the
+        # lock (current state known there); pre-validate only plain-state tokens.
+        edge_name_targets = frozenset(self._edge_names.values())
         for op in ops:
-            if isinstance(op, StateOp):
+            if isinstance(op, StateOp) and op.to_state not in edge_name_targets:
                 self.topology.require_state(op.to_state)
         if force and not reason.strip():
             raise ForceRequiresReasonError()
@@ -509,9 +537,10 @@ class Kernel:
                 )
                 for op in ops:
                     if isinstance(op, StateOp):
+                        to_state = self._resolve_state_target(op.to_state, task.state)
                         from_state = self._apply_edge(
                             task,
-                            op.to_state,
+                            to_state,
                             actor=actor,
                             caller_cwd=caller_cwd,
                             force=force,
@@ -522,10 +551,10 @@ class Kernel:
                             events=dispatched,
                         )
                         transitions.append(
-                            TaskTransition(task_id, from_state, op.to_state, reason)
+                            TaskTransition(task_id, from_state, to_state, reason)
                         )
                         txn.results.append(
-                            {"op": "state", "from": from_state, "to": op.to_state}
+                            {"op": "state", "from": from_state, "to": to_state}
                         )
                     elif isinstance(op, FieldsOp):
                         # Declared-field ops ride the same lock/persist, schema-

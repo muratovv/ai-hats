@@ -68,6 +68,19 @@ class UnsupportedBacklogKeyError(BacklogDefinitionError):
         )
 
 
+class EdgeNameStateCollisionError(BacklogDefinitionError):
+    """A declared edge ``name`` equals a STATE name (HATS-1036, ADR-0017 §3): the
+    transition sugar ``rack transition <ID> <token>`` resolves a token to a state
+    OR a named edge, so a name shared with a state would be ambiguous — fail-closed."""
+
+    def __init__(self, name: str, source: str) -> None:
+        self.edge_name = name
+        super().__init__(
+            f"{source}: edge name {name!r} collides with a state of the same name — "
+            f"rename the edge (the transition sugar cannot resolve it unambiguously)"
+        )
+
+
 class MissingMirrorReactionError(BacklogDefinitionError):
     """A declared STORED inverse pair (``inverse: X`` where X is a stored, non-
     symmetric kind) without the ``mirror-link`` reaction — the reverse edge would
@@ -152,6 +165,8 @@ class BacklogDefinition:
     positionally in four edge-key derivation sites) so a name never perturbs
     edge-key derivation. ``bindings`` carries the declared handler surface;
     ``fields`` the card schema; ``extras_policy`` the unknown-key write policy.
+    ``cli_alias`` is the backlog's short ``rack`` group name (its ``name`` when
+    unset) — the verbs layer reads it rather than hardcoding per-backlog names.
     """
 
     name: str
@@ -162,6 +177,7 @@ class BacklogDefinition:
     bindings: Bindings = field(default_factory=Bindings)
     fields: tuple[FieldSpec, ...] = ()
     extras_policy: str = "allow"
+    cli_alias: str | None = None
 
 
 def _reject_unknown(mapping: Mapping[str, Any], allowed: frozenset[str], location: str) -> None:
@@ -401,12 +417,32 @@ def _validate_stored_inverses(
             raise MissingMirrorReactionError(kind.name, kind.inverse, source)
 
 
+def _validate_edge_names(
+    edge_names: Mapping[tuple[str, str], str], states: set[str], source: str
+) -> None:
+    """Fail-closed (HATS-1036): a declared edge name must not equal a state name,
+    else the transition sugar cannot resolve a token unambiguously."""
+    for name in edge_names.values():
+        if name in states:
+            raise EdgeNameStateCollisionError(name, source)
+
+
 def _parse_extras(raw: Any, source: str) -> str:
     if raw is None:
         return "allow"
     if raw not in _EXTRAS_POLICIES:
         raise BacklogDefinitionError(
             f"{source}: 'extras' {raw!r} must be one of {sorted(_EXTRAS_POLICIES)}"
+        )
+    return raw
+
+
+def _parse_cli_alias(raw: Any, source: str) -> str | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw:
+        raise BacklogDefinitionError(
+            f"{source}: 'cli_alias' must be a non-empty string (got {raw!r})"
         )
     return raw
 
@@ -432,11 +468,13 @@ def _build(raw: Any, source: str) -> BacklogDefinition:
     extensions = _parse_refs(raw.get("extensions"), "extensions")
     fields = _collect_fields(raw.get("fields"), source)
     extras_policy = _parse_extras(raw.get("extras"), source)
+    cli_alias = _parse_cli_alias(raw.get("cli_alias"), source)
     topology = _validate_topology(
         {"initial": fsm.initial, "states": fsm.states, "edges": fsm.adjacency}, source
     )
     registry = _validate_registry({"kinds": kinds_raw}, source)
     _validate_stored_inverses(registry, kind_handlers, source)
+    _validate_edge_names(fsm.edge_names, set(topology.states), source)
     bindings = Bindings(
         state_on_enter=MappingProxyType(fsm.state_on_enter),
         state_on_exit=MappingProxyType(fsm.state_on_exit),
@@ -455,6 +493,7 @@ def _build(raw: Any, source: str) -> BacklogDefinition:
         bindings=bindings,
         fields=fields,
         extras_policy=extras_policy,
+        cli_alias=cli_alias,
     )
 
 
