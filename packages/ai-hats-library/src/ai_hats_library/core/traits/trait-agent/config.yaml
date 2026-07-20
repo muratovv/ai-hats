@@ -7,7 +7,7 @@ composition:
     - rule_composition_value_contract
     - dev_rule_tool_call_hygiene
   skills:
-    - backlog-manager
+    - hatrack
     - request-supervisor
     - plan-discipline
     - plan-gate
