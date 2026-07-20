@@ -25,10 +25,13 @@ from .errors import RackConfigError
 from .fsm import Topology, _validate as _validate_topology
 from .registry import LinksRegistry, LinksRegistryError, _validate as _validate_registry
 
+
 # Allow-sets load FROM the packaged `backlog-schema.yaml` grammar so no hardcoded
 # frozenset can drift; reserved keys (fields/extras/targets) stay out of `keys`.
 def _load_schema() -> Mapping[str, Any]:
-    text = resources.files("ai_hats_rack").joinpath("backlog-schema.yaml").read_text(encoding="utf-8")
+    text = (
+        resources.files("ai_hats_rack").joinpath("backlog-schema.yaml").read_text(encoding="utf-8")
+    )
     return yaml.safe_load(text)
 
 
@@ -188,7 +191,9 @@ def _parse_refs(raw: Any, location: str) -> tuple[HandlerRef, ...]:
     if raw is None:
         return ()
     if not isinstance(raw, list):
-        raise BacklogDefinitionError(f"{location}: expected a list of handler references (got {raw!r})")
+        raise BacklogDefinitionError(
+            f"{location}: expected a list of handler references (got {raw!r})"
+        )
     return tuple(_parse_ref(item, location) for item in raw)
 
 
@@ -196,7 +201,9 @@ def _parse_skip(raw: Any, location: str) -> frozenset[str]:
     if raw is None:
         return frozenset()
     if not isinstance(raw, list) or not all(isinstance(s, str) for s in raw):
-        raise BacklogDefinitionError(f"{location}: 'skip' must be a list of handler names (got {raw!r})")
+        raise BacklogDefinitionError(
+            f"{location}: 'skip' must be a list of handler names (got {raw!r})"
+        )
     return frozenset(raw)
 
 
@@ -280,8 +287,14 @@ def _collect_fsm(raw: Any, source: str) -> _FsmShape:
         if skip:
             edge_skips[(frm, to)] = skip
     return _FsmShape(
-        raw.get("initial"), states, adjacency, edge_names,
-        state_on_enter, state_on_exit, edge_handlers, edge_skips,
+        raw.get("initial"),
+        states,
+        adjacency,
+        edge_names,
+        state_on_enter,
+        state_on_exit,
+        edge_handlers,
+        edge_skips,
     )
 
 
@@ -310,7 +323,9 @@ def _collect_links(raw: Any, source: str) -> tuple[list[Any], dict[str, tuple[Ha
 def _collect_field(raw: Any, source: str) -> FieldSpec:
     """Parse one ``fields[]`` entry, fail-closed on unknown keys and bad enums."""
     if not isinstance(raw, dict) or not isinstance(raw.get("name"), str) or not raw["name"]:
-        raise BacklogDefinitionError(f"{source}: each field needs a non-empty string 'name' (got {raw!r})")
+        raise BacklogDefinitionError(
+            f"{source}: each field needs a non-empty string 'name' (got {raw!r})"
+        )
     name = raw["name"]
     _reject_unknown(raw, _FIELD_KEYS, f"field {name!r}")
     ftype = raw.get("type", "str")
@@ -325,10 +340,14 @@ def _collect_field(raw: Any, source: str) -> FieldSpec:
         )
     choices_raw = raw.get("choices")
     if choices_raw is not None and not isinstance(choices_raw, list):
-        raise BacklogDefinitionError(f"{source}: field {name!r} choices must be a list (got {choices_raw!r})")
+        raise BacklogDefinitionError(
+            f"{source}: field {name!r} choices must be a list (got {choices_raw!r})"
+        )
     validator = raw.get("validator")
     if validator is not None and not isinstance(validator, str):
-        raise BacklogDefinitionError(f"{source}: field {name!r} validator must be a name (got {validator!r})")
+        raise BacklogDefinitionError(
+            f"{source}: field {name!r} validator must be a name (got {validator!r})"
+        )
     return FieldSpec(
         name=name,
         type=ftype,
@@ -445,19 +464,30 @@ def load_backlog(path: Path | None = None) -> BacklogDefinition:
     return _build(yaml.safe_load(text), source)
 
 
-#: Non-default backlogs shipped in-package (ADR-0017 §5): the SSOT the migration/
-#: init step copies into a catalog. NOT auto-mounted — Workspace.discover mounts a
-#: catalog's OWN backlog.yaml, which wins; these are the source it is seeded from.
-_PACKAGED_DEFINITIONS = ("hypotheses", "proposals")
+def packaged_definitions() -> tuple[str, ...]:
+    """Names of non-default definitions shipped in-package: every
+    ``definitions/<name>/backlog.yaml`` resource. The package dir IS the
+    registry — no enumeration to keep in sync. NOT auto-mounted:
+    Workspace.discover mounts a catalog's OWN backlog.yaml, which wins;
+    these seed one (ADR-0017 §5)."""
+    root = resources.files("ai_hats_rack").joinpath("definitions")
+    return tuple(
+        sorted(
+            entry.name
+            for entry in root.iterdir()
+            if entry.is_dir() and entry.joinpath("backlog.yaml").is_file()
+        )
+    )
 
 
 def packaged_definition_source(name: str) -> str:
-    """Raw YAML text of a shipped non-default definition (``hypotheses`` /
-    ``proposals``) — what the migration/init step writes into a catalog's
-    ``backlog.yaml`` (ADR-0017 §5). Unknown name -> a typed, fail-closed error."""
-    if name not in _PACKAGED_DEFINITIONS:
+    """Raw YAML text of a shipped non-default definition — what the migration/
+    init step writes into a catalog's ``backlog.yaml`` (ADR-0017 §5). Unknown
+    name -> a typed, fail-closed error."""
+    shipped = packaged_definitions()
+    if name not in shipped:
         raise BacklogDefinitionError(
-            f"no packaged backlog definition {name!r}; shipped: {list(_PACKAGED_DEFINITIONS)}"
+            f"no packaged backlog definition {name!r}; shipped: {list(shipped)}"
         )
     return (
         resources.files("ai_hats_rack")
