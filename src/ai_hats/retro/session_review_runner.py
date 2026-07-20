@@ -24,7 +24,7 @@ from pydantic import ValidationError
 
 from ..harness.diagnostic import diagnose_silent_session
 from ..harness.errors import HarnessReliabilityError
-from ai_hats_tracker.hypothesis import HypothesisStore, ProposalStore
+from ..rack_workspace import active_hypotheses, open_proposals, rack_workspace
 from ai_hats_observe.artifacts import AUDIT_MD, METRICS_JSON, TRANSCRIPT_TXT, session_dirname
 from ..paths import PROJECT_CONFIG
 from .facts import compute_facts
@@ -65,13 +65,12 @@ class SessionReviewRunner:
         *,
         subagent_runner: "SubAgentRunner | None" = None,
     ) -> None:
-        from ..paths import hypotheses_dir, proposals_dir, retros_dir, runs_dir
+        from ..paths import retros_dir, runs_dir
 
         self.project_dir = project_dir
         self.out_dir = retros_dir(project_dir) / "sessions"
         self.gitlog_dir = runs_dir(project_dir)
-        self.hypotheses = HypothesisStore(hypotheses_dir(project_dir))
-        self.proposals = ProposalStore(proposals_dir(project_dir))
+        self._ws = rack_workspace(project_dir)
         self._subagent_runner = subagent_runner
 
     # ---- public API ----
@@ -170,7 +169,7 @@ class SessionReviewRunner:
         return "\n\n".join(sections)
 
     def _render_active_hypotheses(self) -> str:
-        active = self.hypotheses.list_active()
+        active = active_hypotheses(self._ws)
         if not active:
             return "## Active hypotheses\n\n(none — emit empty hypothesis_verdicts list)"
         lines = ["## Active hypotheses (vote per each below — do not skip)"]
@@ -180,11 +179,9 @@ class SessionReviewRunner:
                 f"  success_criterion: {h.success_criterion!r}\n"
                 f"  observation_window: {h.observation_window!r}"
             )
-            # HATS-534 — surface verification_protocol when the HYP carries one
-            # (stored via Hypothesis.extra="allow"). Renders as a YAML literal
-            # block scalar so multi-line protocols stay verbatim and the auditor
-            # can quote from them per review-hypothesis Step 1.5.
-            vp = getattr(h, "verification_protocol", None)
+            # HATS-534 — surface verification_protocol as a YAML literal block
+            # scalar so multi-line protocols stay verbatim for the auditor.
+            vp = h.verification_protocol
             if vp:
                 indented = "\n".join(f"    {line}" for line in str(vp).splitlines())
                 lines.append(f"  verification_protocol: |\n{indented}")
@@ -228,7 +225,7 @@ class SessionReviewRunner:
         return "\n".join(lines)
 
     def _render_open_proposals(self) -> str:
-        open_props = self.proposals.filter(status="open")
+        open_props = open_proposals(self._ws)
         if not open_props:
             return (
                 "## Open proposals\n\n(inbox empty — create new ones with "
@@ -486,7 +483,7 @@ class SessionReviewRunner:
             HypothesisVerdict.model_validate(entry)
         for entry in raw.get("proposal_actions", []) or []:
             ProposalAction.model_validate(entry)
-        active_ids = {h.id for h in self.hypotheses.list_active()}
+        active_ids = {h.id for h in active_hypotheses(self._ws)}
         verdict_ids = {v["hyp_id"] for v in verdicts if isinstance(v, dict)}
         missing = active_ids - verdict_ids
         if missing:
@@ -573,7 +570,7 @@ class SessionReviewRunner:
                 f"session_id mismatch: review has {review.session_id!r}, "
                 f"expected {expected_session_id!r}"
             )
-        active_ids = {h.id for h in self.hypotheses.list_active()}
+        active_ids = {h.id for h in active_hypotheses(self._ws)}
         verdict_ids = {v.hyp_id for v in review.hypothesis_verdicts}
         missing = active_ids - verdict_ids
         if missing:

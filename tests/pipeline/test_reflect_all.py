@@ -10,7 +10,7 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
-
+from ai_hats_rack.migrate import migrate_catalog
 
 
 def _make_hyp(pd: Path, hyp_id: str):
@@ -25,6 +25,7 @@ def _make_hyp(pd: Path, hyp_id: str):
     (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(
         yaml.safe_dump(body)
     )
+    migrate_catalog(hypotheses_dir(pd), "hypotheses")  # flat → dir-per-card
 
 
 def _make_prop(pd: Path, pid: str):
@@ -38,6 +39,7 @@ def _make_prop(pd: Path, pid: str):
     (proposals_dir(pd) / f"{pid}.yaml").write_text(
         yaml.safe_dump(body)
     )
+    migrate_catalog(proposals_dir(pd), "proposals")  # flat → dir-per-card
 
 
 def test_reflect_all_dry_run_writes_handoff_no_pipeline(

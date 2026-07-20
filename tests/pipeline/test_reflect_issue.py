@@ -16,6 +16,8 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.paths import hypotheses_dir
+from ai_hats_rack.migrate import migrate_catalog
+from ai_hats_tracker.hypothesis import HypothesisStore
 from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG, TRANSCRIPT_TXT, session_dirname
 
 
@@ -109,14 +111,12 @@ def test_reflect_issue_create_full_pipeline(
     assert call["role_name"] == "hypothesis-intake"
     assert call["model"] == "haiku"
 
-    # HYP file on disk with parsed draft fields
-    saved = yaml.safe_load(
-        (hypotheses_dir(project_dir) / "HYP-001.yaml").read_text()
-    )
-    assert saved["status"] == "active"
-    assert saved["source_task"] == "supervisor-observation"
-    assert saved["title"].startswith("agent skips")
-    assert saved["exit_criteria"]["confirm"] == ["4 sessions clean"]
+    # HYP materialized on disk (dir-per-card); read back through the shim.
+    saved = HypothesisStore(hypotheses_dir(project_dir)).load("HYP-001")
+    assert saved.status == "active"
+    assert saved.source_task == "supervisor-observation"
+    assert saved.title.startswith("agent skips")
+    assert saved.exit_criteria.confirm == ["4 sessions clean"]
 
 
 def test_reflect_issue_merge_full_pipeline(
@@ -137,6 +137,7 @@ def test_reflect_issue_merge_full_pipeline(
     (hypotheses_dir(project_dir) / "HYP-001.yaml").write_text(
         yaml.safe_dump(seed)
     )
+    migrate_catalog(hypotheses_dir(project_dir), "hypotheses")  # flat → dir-per-card
 
     trace = (
         "BEGIN_INTAKE_RESULT\n"
@@ -157,14 +158,12 @@ def test_reflect_issue_merge_full_pipeline(
     assert res.exit_code == 0, res.output
     assert "merged into HYP-001" in res.output
 
-    files = list((hypotheses_dir(project_dir)).glob("HYP-*.yaml"))
-    assert len(files) == 1
-    saved = yaml.safe_load(files[0].read_text())
-    assert len(saved["validation_log"]) == 1
-    entry = saved["validation_log"][0]
-    assert entry["verdict"] == "inconclusive"
-    assert entry["evidence"].startswith("same f-string")
-    assert entry["session_id"] == "20260512-120000-1"
+    saved = HypothesisStore(hypotheses_dir(project_dir)).load("HYP-001")
+    assert len(saved.validation_log) == 1
+    entry = saved.validation_log[0]
+    assert entry.verdict == "inconclusive"
+    assert entry.evidence.startswith("same f-string")
+    assert entry.session_id == "20260512-120000-1"
 
 
 def test_reflect_issue_missing_markers_with_active_hyp_fails(
@@ -179,6 +178,7 @@ def test_reflect_issue_missing_markers_with_active_hyp_fails(
             "hypothesis": "h", "validation_log": [],
         })
     )
+    migrate_catalog(hypotheses_dir(project_dir), "hypotheses")  # flat → dir-per-card
     _install_subagent_trace(monkeypatch, project_dir, "no markers here\n")
 
     res = CliRunner().invoke(

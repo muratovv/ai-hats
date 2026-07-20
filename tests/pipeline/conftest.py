@@ -42,11 +42,17 @@ class _StubSession:
 
 @pytest.fixture
 def project_dir(tmp_path: Path, monkeypatch) -> Path:
+    from ai_hats_rack.migrate import migrate_catalog
+
     pd = tmp_path / "proj"
     pd.mkdir()
     runs_dir(pd).mkdir(parents=True, exist_ok=True)
     (hypotheses_dir(pd)).mkdir(parents=True)
     (proposals_dir(pd)).mkdir(parents=True)
+    # HATS-1044 R6: seed the HYP/PROP catalogs' backlog.yaml so the rack
+    # workspace mounts them (the reflect consumers require the migrated layout).
+    migrate_catalog(hypotheses_dir(pd), "hypotheses")
+    migrate_catalog(proposals_dir(pd), "proposals")
     (pd / PROJECT_CONFIG).write_text(
         "schema_version: 2\nprovider: claude\nactive_role: test-agent\n"
     )
