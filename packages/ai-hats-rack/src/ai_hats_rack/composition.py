@@ -379,7 +379,9 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
         "plan-scaffold": lambda defn, catalog, cfg: PlanScaffoldExtension(catalog, catalog_sections),
         "stamp-lifecycle": lambda defn, catalog, cfg: StampLifecycleHandler(_field(cfg)),
         "clear-lifecycle": lambda defn, catalog, cfg: ClearLifecycleHandler(_field(cfg)),
-        "parent-context": lambda defn, catalog, cfg: ParentContextExtension(defn.links_registry),
+        "parent-context": lambda defn, catalog, cfg: ParentContextExtension(
+            defn.links_registry, section=cfg.get("section")
+        ),
     }
 
 
