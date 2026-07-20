@@ -19,8 +19,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
-import yaml
-
+from . import fastyaml
 from .errors import RackConfigError
 from .fsm import Topology, _validate as _validate_topology
 from .registry import LinksRegistry, LinksRegistryError, _validate as _validate_registry
@@ -32,7 +31,7 @@ def _load_schema() -> Mapping[str, Any]:
     text = (
         resources.files("ai_hats_rack").joinpath("backlog-schema.yaml").read_text(encoding="utf-8")
     )
-    return yaml.safe_load(text)
+    return fastyaml.load(text)
 
 
 _SCHEMA_KEYS = _load_schema()["keys"]
@@ -470,7 +469,7 @@ def load_backlog(path: Path | None = None) -> BacklogDefinition:
     else:
         resource = resources.files("ai_hats_rack").joinpath("backlog.yaml")
         text, source = resource.read_text(encoding="utf-8"), "ai_hats_rack/backlog.yaml"
-    return _build(yaml.safe_load(text), source)
+    return _build(fastyaml.load(text), source)
 
 
 def packaged_definitions() -> tuple[str, ...]:
@@ -512,7 +511,7 @@ def load_packaged_definition(name: str) -> BacklogDefinition:
     contract (ADR-0017 §5). A catalog's own ``backlog.yaml`` still wins at mount
     time (:func:`resolve_definition`); this is the source that seeds one."""
     return _build(
-        yaml.safe_load(packaged_definition_source(name)),
+        fastyaml.load(packaged_definition_source(name)),
         f"ai_hats_rack/definitions/{name}/backlog.yaml",
     )
 
