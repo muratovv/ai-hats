@@ -148,8 +148,9 @@ def test_context_json_schema(runner, tmp_path):
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     # HATS-1028: one top-level `links` object, not scattered parent/depends/...
-    # HATS-1064: `enrichments` rides when a parent chain is delivered.
-    assert set(payload) == {"task", "documents", "links", "included", "enrichments"}
+    # No `enrichments` key here: parent HATS-1 carries no "Requirements for child
+    # tasks" section, so parent-context delivers nothing (HATS-1064).
+    assert set(payload) == {"task", "documents", "links", "included"}
     assert payload["task"]["id"] == "HATS-2"
     links = payload["links"]
     assert list(links) == ["parent_task", "depends_on", "related", "children"]
@@ -160,10 +161,6 @@ def test_context_json_schema(runner, tmp_path):
     assert links["depends_on"][0]["resolution"] == "merged"
     assert links["children"][0]["id"] == "HATS-5"
     assert payload["included"] == []
-    # HATS-1064: the parent chain (HATS-1) delivered as a read enrichment.
-    assert [e["name"] for e in payload["enrichments"]] == ["parent-context"]
-    assert "HATS-1" in payload["enrichments"][0]["body"]
-    assert "the epic" in payload["enrichments"][0]["body"]
 
 
 def test_context_covers_former_show_surface(runner, tmp_path):
