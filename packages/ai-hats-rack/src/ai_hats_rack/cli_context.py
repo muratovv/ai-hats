@@ -366,7 +366,9 @@ def _cap(items: list, show_all: bool) -> tuple[list, int, bool]:
     return (items[:DEFAULT_LS_LIMIT] if capped else items), total, capped
 
 
-def _emit_scan(rows: list[linked.CardRow], as_json: bool, show_all: bool) -> None:
+def _emit_scan(
+    rows: list[linked.CardRow], as_json: bool, show_all: bool, *, show_backlog: bool = False
+) -> None:
     shown, total, capped = _cap(rows, show_all)
     if as_json:
         emit_json(
@@ -381,7 +383,10 @@ def _emit_scan(rows: list[linked.CardRow], as_json: bool, show_all: bool) -> Non
     if not rows:
         click.echo("No tasks match.")
         return
-    table = [[r.id, f"[{r.state}]", r.priority, r.title] for r in shown]
+    if show_backlog:
+        table = [[r.backlog, r.id, f"[{r.state}]", r.priority, r.title] for r in shown]
+    else:
+        table = [[r.id, f"[{r.state}]", r.priority, r.title] for r in shown]
     for line in _columns(table):
         click.echo(line)
     if capped:
@@ -389,6 +394,9 @@ def _emit_scan(rows: list[linked.CardRow], as_json: bool, show_all: bool) -> Non
             f"  showing {DEFAULT_LS_LIMIT} of {total} — --all for all, "
             "or narrow with --tag/--state/--parent"
         )
+    elif show_backlog:
+        backlogs = len({r.backlog for r in shown})
+        click.echo(f"  {total} card(s) across {backlogs} backlog(s)")
     else:
         click.echo(f"  {total} task(s)  tip: rack context <ID> for the full package")
 
@@ -455,6 +463,20 @@ def _emit_walk(
     is_flag=True,
     help=f"Remove the {DEFAULT_LS_LIMIT}-row output cap (default caps human & json alike).",
 )
+@click.option(
+    "--backlog",
+    multiple=True,
+    help="No-id scan: scan a mounted backlog by name (cli_alias or name), e.g. "
+    "--backlog hyp. Repeatable to name a subset (--backlog hyp --backlog proposal); "
+    "default is the tasks catalog, --all-backlogs is every one. Mounted backlogs "
+    "also list as groups in `rack --help`.",
+)
+@click.option(
+    "--all-backlogs",
+    "all_backlogs",
+    is_flag=True,
+    help="No-id scan: scan every mounted backlog (tasks + siblings) interleaved.",
+)
 @TASKS_DIR_OPT
 @JSON_OPT
 def ls_cmd(
@@ -466,6 +488,8 @@ def ls_cmd(
     state: str | None,
     parent: str | None,
     show_all: bool,
+    backlog: tuple[str, ...],
+    all_backlogs: bool,
     tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
@@ -473,12 +497,44 @@ def ls_cmd(
     if task_id is None and (deep is not None or link_patterns):
         fail(as_json, "invalid_request", "--deep/--link require a task id: rack ls <ID> --deep N")
         return
+    if task_id is not None and (backlog or all_backlogs):
+        fail(as_json, "invalid_request", "--backlog/--all-backlogs apply to the no-id scan only")
+        return
+    if backlog and all_backlogs:
+        fail(as_json, "invalid_request", "--backlog and --all-backlogs are mutually exclusive")
+        return
     try:
         root = resolved_root(tasks_dir, Path.cwd())
         if task_id is None:
-            # No id: the backlog scan stays tasks-catalog scoped (today's behavior).
-            rows = scan_cards(root.tasks_dir, grep=grep, tag=tag, state=state, parent=parent)
-            _emit_scan(rows, as_json, show_all)
+            workspace = Workspace.discover([root])
+            if all_backlogs:
+                selected = list(workspace.instances)
+            elif backlog:
+                seen: set[str] = set()
+                selected = []
+                for name in backlog:  # repeatable; dedup so a repeat is not double-scanned
+                    inst = workspace.instance_by_name(name)
+                    if inst.name not in seen:
+                        seen.add(inst.name)
+                        selected.append(inst)
+            else:
+                selected = [i for i in workspace.instances if i.is_tasks]
+            # Stamp the backlog origin only when the filter is engaged, so the
+            # default `rack ls` output stays annotation-free (R2).
+            feature = bool(backlog or all_backlogs)
+            rows = [
+                row
+                for inst in selected
+                for row in scan_cards(
+                    inst.catalog,
+                    grep=grep,
+                    tag=tag,
+                    state=state,
+                    parent=parent,
+                    backlog=(inst.definition.cli_alias or inst.name) if feature else "",
+                )
+            ]
+            _emit_scan(rows, as_json, show_all, show_backlog=len(selected) > 1)
             return
         instance = Workspace.discover([root]).instance_for(task_id)
         neighbors = walk_neighborhood(

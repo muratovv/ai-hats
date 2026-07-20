@@ -35,6 +35,7 @@ from .linked import SelfLinkError
 from .ops import AttachSourceError, OpParseError
 from .registry import DerivedLinkKindError, UnknownLinkKindError
 from .resolver import NoProjectRootError, RackRoot, resolve_root
+from .workspace import UnknownBacklogError
 
 # Same env contract as the tracker (string value is the shared contract).
 ENV_SESSION_ID = "AI_HATS_SESSION_ID"
@@ -121,6 +122,9 @@ _ERROR_HANDLERS: dict[type, _ErrorHandler] = {
     # RequiredFieldError subclass resolves here via the MRO.
     FieldValidationError: lambda e: ("invalid_field", {"field": e.field_name, **e.details}),
     ExtrasForbiddenError: lambda e: ("extras_forbidden", {"field": e.field_name}),
+    # --backlog names no mounted backlog — a specific match ahead of the
+    # RackConfigError catch-all below (nearest-MRO wins).
+    UnknownBacklogError: lambda e: ("unknown_backlog", {"backlog": e.name, "mounted": list(e.mounted)}),
     # Structural "a loaded config file is malformed" invariants — one internal
     # marker for the whole RackConfigError subtree (matched via MRO).
     RackConfigError: lambda e: ("internal", {}),
