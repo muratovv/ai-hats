@@ -42,10 +42,6 @@ from .registry import (
     resolve_links,
 )
 
-#: outcome documents surfaced (as paths) for each depends_on/related target.
-LINKED_DOC_NAMES = ("summary.md", "retro.md")
-#: the parent epic's design home — the one doc the old CLI force-injected.
-PARENT_DOC_NAMES = ("plan.md",)
 #: per-document ceiling for ``--with`` embeds (≈4K tokens); truncation is marked.
 DEFAULT_MAX_BYTES = 16384
 
@@ -553,14 +549,13 @@ class ContextPackage:
         return out
 
 
-def _doc_names_for(kind: LinkKind, registry: LinksRegistry) -> tuple[str, ...]:
-    """Which outcome docs to surface per kind: the parent epic's plan vs the
-    summary/retro of a dependency/relation; derived kinds carry no docs."""
+def _doc_names_for(kind: LinkKind) -> tuple[str, ...]:
+    """Which outcome docs to surface (as paths) for a target of this kind on a
+    read — now declared per kind via ``read_docs`` (HATS-1064). Derived kinds
+    never carry docs (they are not stored), whatever the declaration."""
     if kind.derived:
         return ()
-    if kind is registry.hierarchy_kind:
-        return PARENT_DOC_NAMES
-    return LINKED_DOC_NAMES
+    return kind.read_docs
 
 
 def build_context(
@@ -599,7 +594,7 @@ def build_context(
         kind = reg.get(kind_name)
         if kind is None:
             continue
-        doc_names = _doc_names_for(kind, reg)
+        doc_names = _doc_names_for(kind)
         views: list[LinkView] = []
         for lid in ids:
             if not lid or lid in seen:
