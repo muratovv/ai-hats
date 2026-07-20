@@ -473,7 +473,7 @@ class Kernel:
         fire per state-op edge after unlock, never nested inside the lock.
         """
         # Local import avoids a load-time cycle (ops imports kernel errors).
-        from .ops import OpTxn, StateOp, apply_non_state_op
+        from .ops import FieldsOp, OpTxn, StateOp, apply_non_state_op
 
         if not ops:
             raise ValueError("transition needs at least one operation")
@@ -527,6 +527,12 @@ class Kernel:
                         txn.results.append(
                             {"op": "state", "from": from_state, "to": op.to_state}
                         )
+                    elif isinstance(op, FieldsOp):
+                        # Declared-field ops ride the same lock/persist, schema-
+                        # gated via _delta_applier — an extension-owned field write
+                        # (validation_log/votes) atomic with any StateOp above.
+                        self._delta_applier(task, actor)(Delta(fields=op.fields))
+                        txn.results.append({"op": "fields", "names": sorted(op.fields)})
                     else:
                         apply_non_state_op(txn, op)
                 self._persist(task)  # the SINGLE persist, always last

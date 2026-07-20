@@ -223,6 +223,10 @@ def _op_log(result: KernelResult, op: dict[str, Any]) -> None:
     click.echo(f"Logged: {op['message']}")
 
 
+def _op_fields(result: KernelResult, op: dict[str, Any]) -> None:
+    click.echo(f"Fields: {result.task.id} {', '.join(op['names'])}")
+
+
 def _op_link(result: KernelResult, op: dict[str, Any]) -> None:
     verb = "Linked" if op["changed"] else "Already linked"
     click.echo(f"{verb}: {result.task.id} {op['kind']} {op['target']}")
@@ -239,6 +243,7 @@ def _op_unlink(result: KernelResult, op: dict[str, Any]) -> None:
 
 _OP_RENDERERS: dict[str, _OpRenderer] = {
     "state": _op_state,
+    "fields": _op_fields,
     "attach": _op_attach,
     "freeze": _op_freeze,
     "rm": _op_rm,

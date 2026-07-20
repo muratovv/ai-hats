@@ -65,6 +65,8 @@ from .definition import (
     MissingMirrorReactionError,
     UnsupportedBacklogKeyError,
     load_backlog,
+    load_packaged_definition,
+    packaged_definition_source,
     resolve_definition,
 )
 from .events import (
@@ -128,9 +130,11 @@ from .resolver import (
     resolve_root,
 )
 from .workspace import (
+    AmbiguousExtensionError,
     AmbiguousPrefixError,
     BacklogInstance,
     DuplicatePrefixError,
+    UnknownExtensionError,
     UnknownPrefixError,
     Workspace,
     WorkspaceError,
@@ -140,6 +144,7 @@ from .workspace import (
 __all__ = [
     "DEFAULT_MAX_BYTES",
     "AbortOperation",
+    "AmbiguousExtensionError",
     "AmbiguousPrefixError",
     "Append",
     "BacklogDefinition",
@@ -210,6 +215,7 @@ __all__ = [
     "Topology",
     "TopologyError",
     "UnknownDocumentError",
+    "UnknownExtensionError",
     "UnknownHandlerError",
     "UnknownLinkKindError",
     "UnknownPrefixError",
@@ -234,10 +240,12 @@ __all__ = [
     "find_project_root",
     "link",
     "load_backlog",
+    "load_packaged_definition",
     "load_registry",
     "load_root",
     "load_topology",
     "matches",
+    "packaged_definition_source",
     "portable_kernel",
     "read_journal",
     "resolve_definition",
