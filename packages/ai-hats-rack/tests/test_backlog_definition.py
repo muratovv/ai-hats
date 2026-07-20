@@ -239,11 +239,11 @@ def test_bad_handler_ref_shape_fails_closed(tmp_path):
 # ----- card-field schema (HATS-1035 step 1) ----------------------------------
 
 
-def test_packaged_fields_are_todays_nine():
+def test_packaged_fields_are_todays_ten():
     defn = load_backlog()
     assert [f.name for f in defn.fields] == [
         "description", "priority", "assignee", "reviewer", "role",
-        "tags", "resolution", "completed_at", "final_state",
+        "tags", "resolution", "completed_at", "final_state", "work_policy",
     ]
 
 
@@ -263,7 +263,7 @@ def test_schema_defaults_equal_taskcard_defaults():
     # The lossless / parity pin (R5): schema defaults ≡ TaskCard field defaults,
     # so the triple-default chain (Click → kernel → model) cannot drift.
     defn = load_backlog()
-    assert len(defn.fields) == 9
+    assert len(defn.fields) == 10
     for f in defn.fields:
         model_default = TaskCard.model_fields[f.name].get_default(call_default_factory=True)
         assert f.has_default, f.name

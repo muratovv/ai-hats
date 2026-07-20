@@ -57,16 +57,17 @@ def test_emit_filter_leaves_anchor_and_undeclared_keys_untouched():
 # ----- parity pin: packaged emit declarations ≡ to_dict, the nine only -------
 
 
-def test_packaged_emit_declarations_match_to_dict_for_the_nine():
+def test_packaged_emit_declarations_match_to_dict_for_the_ten():
     # Scoped to schema fields: to_dict's when-set for the LINK fields
     # (depends_on/related/see_also/folded_into/links) is NOT schema-driven.
     schema = default_card_schema()
     empty = {"description": "", "priority": "", "assignee": "", "reviewer": "",
-             "role": "", "tags": [], "resolution": "", "completed_at": "", "final_state": ""}
+             "role": "", "tags": [], "resolution": "", "completed_at": "", "final_state": "",
+             "work_policy": ""}
     setv = {"description": "d", "priority": "p", "assignee": "a", "reviewer": "r",
             "role": "x", "tags": ["t"], "resolution": "res", "completed_at": "c",
-            "final_state": "f"}
-    assert {f.name for f in schema.fields} == set(empty)  # exactly the nine
+            "final_state": "f", "work_policy": "wp"}
+    assert {f.name for f in schema.fields} == set(empty)  # exactly the ten
     for f in schema.fields:
         d_empty = TaskCard(id="HATS-1", **{f.name: empty[f.name]}).to_dict()
         d_set = TaskCard(id="HATS-1", **{f.name: setv[f.name]}).to_dict()

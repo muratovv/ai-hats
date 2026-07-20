@@ -1,7 +1,7 @@
-"""parent-context read enricher (HATS-1064): the pure parent-chain walk
-(cycle / depth / dangling guarded, with an inconsistency note for the agent),
-section extraction (only the 'Work Policy' section travels, not
-the whole parent card), grammar composition of ``kinds[].read``, fail-closed
+"""parent-context read enricher (HATS-1064; field-based HATS-1067): the pure
+parent-chain walk (cycle / depth / dangling guarded, with an inconsistency note
+for the agent), rendering of the ``work_policy`` field (only that field travels,
+not the whole parent card), grammar composition of ``kinds[].read``, fail-closed
 unknown handler, and end-to-end enrichment of ``build_context``."""
 
 from __future__ import annotations
@@ -17,17 +17,11 @@ from ai_hats_rack.composition import (
 from ai_hats_rack.definition import load_backlog
 from ai_hats_rack.dispatch import Phase
 from ai_hats_rack.extensions.parent_context import (
-    DEFAULT_SECTION,
-    extract_section,
     render_chain,
     walk_parent_chain,
 )
 from ai_hats_rack.linked import build_context
 from ai_hats_rack.models import TaskCard
-
-
-def _reqs(body: str) -> str:
-    return f"## {DEFAULT_SECTION}\n{body}\n"
 
 
 # ----- the pure walk (table-testable, no kernel) ------------------------------
@@ -80,24 +74,25 @@ def test_walk_depth_cap_notes_possible_cycle():
     assert "exceeds 3" in note
 
 
-# ----- section extraction (only governance travels) ---------------------------
+# ----- work_policy field rendering (only governance travels) ------------------
 
 
-def test_extract_section_returns_only_that_section():
-    text = "# Title\nintro\n\n## Work Policy\n1. do X\n2. do Y\n\n## Other\nnope\n"
-    assert extract_section(text, "Work Policy") == "1. do X\n2. do Y"
-
-
-def test_extract_section_absent_is_empty():
-    assert extract_section("just a plain description", "Work Policy") == ""
-
-
-def test_render_chain_skips_parents_without_the_section():
-    with_reqs = TaskCard(id="T-2", title="T-2", state="execute", description=_reqs("do X"))
-    without = TaskCard(id="T-3", title="T-3", description="whole epic body, no section")
-    out = render_chain([with_reqs, without], DEFAULT_SECTION)
+def test_render_chain_skips_parents_without_a_policy():
+    with_policy = TaskCard(id="T-2", title="T-2", state="execute", work_policy="do X")
+    without = TaskCard(id="T-3", title="T-3", description="whole epic body", work_policy="")
+    out = render_chain([with_policy, without])
     assert "T-2 [execute]" in out and "do X" in out
     assert "T-3" not in out and "whole epic body" not in out  # skipped: nothing travels
+
+
+def test_render_chain_ignores_a_work_policy_section_in_description():
+    # HATS-1067 clean cut: the `## Work Policy` *section* is no longer parsed;
+    # only the typed field travels. A card carrying the legacy section but an
+    # empty field contributes nothing.
+    legacy = TaskCard(
+        id="T-9", title="legacy", description="## Work Policy\n1. do X\n", work_policy=""
+    )
+    assert render_chain([legacy]) == ""
 
 
 # ----- grammar composition ----------------------------------------------------
@@ -144,23 +139,25 @@ def _save(tasks_dir, card):
 
 def test_build_context_delivers_requirements_across_the_whole_chain(tmp_path):
     tasks = tmp_path / "tasks"
-    _save(tasks, TaskCard(id="T-1", title="grandparent", description=_reqs("[plan] affordance")))
+    _save(tasks, TaskCard(id="T-1", title="grandparent", work_policy="[plan] affordance"))
     _save(tasks, TaskCard(id="T-2", title="parent", parent_task="T-1",
-                          description="intro\n" + _reqs("[after execute] A/B validate")))
-    _save(tasks, TaskCard(id="T-3", title="child", parent_task="T-2", description="leaf, no section"))
+                          work_policy="[after execute] A/B validate"))
+    _save(tasks, TaskCard(id="T-3", title="child", parent_task="T-2", description="leaf, no policy"))
     defn = load_backlog()
     subs = build_read_subscribers(defn, tasks, stock_factories())
     pkg = build_context(tasks, "T-3", registry=defn.links_registry, read_subscribers=subs)
     assert len(pkg.enrichments) == 1
     body = pkg.enrichments[0].body
-    assert "affordance" in body  # grandparent's requirements (whole chain)
-    assert "A/B validate" in body  # parent's requirements
-    assert "leaf, no section" not in body  # a card's own body never travels
+    assert "affordance" in body  # grandparent's policy (whole chain)
+    assert "A/B validate" in body  # parent's policy
+    assert "leaf, no policy" not in body  # a card's own body never travels
 
 
-def test_build_context_no_enrichment_without_a_requirements_section(tmp_path):
+def test_build_context_no_enrichment_without_a_policy_field(tmp_path):
     tasks = tmp_path / "tasks"
-    _save(tasks, TaskCard(id="T-1", title="parent", description="epic body, no section"))
+    # A legacy `## Work Policy` section in the description no longer counts —
+    # only the typed field is read (clean cut, HATS-1067).
+    _save(tasks, TaskCard(id="T-1", title="parent", description="## Work Policy\nepic body"))
     _save(tasks, TaskCard(id="T-2", title="child", parent_task="T-1", description="x"))
     defn = load_backlog()
     subs = build_read_subscribers(defn, tasks, stock_factories())
