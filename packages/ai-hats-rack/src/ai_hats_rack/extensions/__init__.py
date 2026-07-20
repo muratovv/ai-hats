@@ -15,6 +15,7 @@ from .epic import AUTOMATION_ACTOR, EpicAutomationExtension, decide
 from .frozen import FrozenIntegrityExtension
 from .lifecycle import ClearLifecycleHandler, StampLifecycleHandler
 from .mirror import MirrorLinkHandler
+from .parent_context import ParentContextExtension
 from .plan import PlanGateExtension, PlanScaffoldExtension
 from .quorum import (
     AUTO_SESSION_ID,
@@ -70,6 +71,7 @@ __all__ = [
     "HypQuorumGate",
     "HypVerdictsExtension",
     "MirrorLinkHandler",
+    "ParentContextExtension",
     "PlanGateExtension",
     "PlanScaffoldExtension",
     "PropVotesExtension",

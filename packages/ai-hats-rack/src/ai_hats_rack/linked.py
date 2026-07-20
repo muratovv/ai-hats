@@ -20,8 +20,17 @@ from typing import Any, Callable, Mapping, Sequence
 
 from filelock import FileLock, Timeout
 
+from .dispatch import (
+    DispatchContext,
+    Dispatcher,
+    Phase,
+    ReadContribution,
+    ReadSubscriber,
+    bind_subscribers,
+)
 from .docstore import DocInfo, DocStore
 from .errors import RackError
+from .events import ReadEvent
 from .kernel import LOCK_TIMEOUT, Kernel, LockTimeoutError, UnknownTaskError
 from .matching import Matcher, compile_matcher
 from .models import LINK_STORAGE_FIELDS, TaskCard, utc_now
@@ -33,10 +42,6 @@ from .registry import (
     resolve_links,
 )
 
-#: outcome documents surfaced (as paths) for each depends_on/related target.
-LINKED_DOC_NAMES = ("summary.md", "retro.md")
-#: the parent epic's design home — the one doc the old CLI force-injected.
-PARENT_DOC_NAMES = ("plan.md",)
 #: per-document ceiling for ``--with`` embeds (≈4K tokens); truncation is marked.
 DEFAULT_MAX_BYTES = 16384
 
@@ -537,27 +542,35 @@ class ContextPackage:
     #: parent/depends_on/related/children fields. Registry order; deduped ids.
     links: Mapping[str, tuple[LinkView, ...]]
     included: tuple[Inclusion, ...]
+    #: read-phase enrichments (HATS-1064): named text blocks contributed by
+    #: declared read handlers (e.g. the parent-requirements chain). Empty unless
+    #: read subscribers ran, so an un-enriched read is unchanged from before.
+    enrichments: tuple[ReadContribution, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         # The ROOT card rides in full — context is the one read surface since
         # `show` died (HATS-1031 Р11 parity); the HATS-681 token discipline
         # keeps applying to LINKED cards only (trimmed LinkView heads).
-        return {
+        out: dict[str, Any] = {
             "task": self.task.to_dict(),
             "documents": [d.to_dict() for d in self.documents],
             "links": {kind: [v.to_dict() for v in views] for kind, views in self.links.items()},
             "included": [i.to_dict() for i in self.included],
         }
+        # Emitted only when present — an un-enriched read stays byte-identical
+        # in --json (HATS-1064 regression guard).
+        if self.enrichments:
+            out["enrichments"] = [{"name": e.name, "body": e.body} for e in self.enrichments]
+        return out
 
 
-def _doc_names_for(kind: LinkKind, registry: LinksRegistry) -> tuple[str, ...]:
-    """Which outcome docs to surface per kind: the parent epic's plan vs the
-    summary/retro of a dependency/relation; derived kinds carry no docs."""
+def _doc_names_for(kind: LinkKind) -> tuple[str, ...]:
+    """Which outcome docs to surface (as paths) for a target of this kind on a
+    read — now declared per kind via ``read_docs`` (HATS-1064). Derived kinds
+    never carry docs (they are not stored), whatever the declaration."""
     if kind.derived:
         return ()
-    if kind is registry.hierarchy_kind:
-        return PARENT_DOC_NAMES
-    return LINKED_DOC_NAMES
+    return kind.read_docs
 
 
 def build_context(
@@ -567,6 +580,7 @@ def build_context(
     registry: LinksRegistry | None = None,
     with_patterns: Sequence[str] = (),
     max_bytes: int = DEFAULT_MAX_BYTES,
+    read_subscribers: Sequence[ReadSubscriber] = (),
 ) -> ContextPackage:
     """Assemble the one-call discovery package for a task.
 
@@ -595,7 +609,7 @@ def build_context(
         kind = reg.get(kind_name)
         if kind is None:
             continue
-        doc_names = _doc_names_for(kind, reg)
+        doc_names = _doc_names_for(kind)
         views: list[LinkView] = []
         for lid in ids:
             if not lid or lid in seen:
@@ -609,7 +623,46 @@ def build_context(
 
     flat_views = tuple(v for views in links.values() for v in views)
     included = _build_inclusions(card, documents, flat_views, with_patterns, max_bytes)
-    return ContextPackage(card, documents, links, included)
+    enrichments = _run_read_enrichers(read_subscribers, resolved, card, kernel, tasks_dir, task_id)
+    return ContextPackage(card, documents, links, included, enrichments)
+
+
+def _run_read_enrichers(
+    read_subscribers: Sequence[ReadSubscriber],
+    resolved: Mapping[str, Sequence[str]],
+    card: TaskCard,
+    kernel: Kernel,
+    tasks_dir: Path,
+    task_id: str,
+) -> tuple[ReadContribution, ...]:
+    """Fire ``read:<kind>`` for each present link kind that declares a read
+    handler, binding subscribers to the read kernel so an enricher can walk
+    related cards (HATS-1064). No subscribers → ``()``, so an un-enriched read
+    stays byte-identical to before."""
+    if not read_subscribers:
+        return ()
+    dispatcher = Dispatcher(read_subscribers)
+    bind_subscribers(read_subscribers, kernel)
+    is_epic = bool(kernel.children_of(task_id))
+
+    def _ctx_for(kind_name: str) -> Callable[[], DispatchContext]:
+        def factory() -> DispatchContext:
+            return DispatchContext(
+                event=ReadEvent(kind_name),
+                task=card.model_copy(deep=True),
+                caller_cwd=tasks_dir,  # placeholder: read enrichers never read cwd
+                is_epic=is_epic,
+                actor="read",
+            )
+
+        return factory
+
+    collected: list[ReadContribution] = []
+    for kind_name in resolved:
+        if not dispatcher.subscribers_for(f"read:{kind_name}", Phase.READ):
+            continue
+        collected.extend(dispatcher.run_read(ReadEvent(kind_name), _ctx_for(kind_name)))
+    return tuple(collected)
 
 
 def _link_view(

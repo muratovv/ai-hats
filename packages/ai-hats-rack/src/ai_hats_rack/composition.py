@@ -17,6 +17,7 @@ from .cardschema import Validator, build_card_schema
 from .definition import BacklogDefinition, Bindings, HandlerRef
 from .dispatch import (
     Phase,
+    ReadSubscriber,
     RequiresStatesError,
     Subscriber,
     Subscription,
@@ -90,6 +91,24 @@ def _bound_handler(
     return obj
 
 
+def _bound_read_handler(
+    ref: HandlerRef,
+    defn: BacklogDefinition,
+    catalog: Path,
+    factories: Mapping[str, ExtensionFactory],
+) -> Any:
+    """Instantiate a declaration-bound READ handler and check its surface
+    (``name`` + ``on_read``). A read handler reacts via ``on_read`` — not
+    ``on_event`` — so it is validated and wrapped apart from transition handlers
+    (HATS-1064)."""
+    obj = _instantiate(ref, defn, catalog, factories)
+    if not (isinstance(getattr(obj, "name", None), str) and callable(getattr(obj, "on_read", None))):
+        raise HandlerProtocolError(
+            ref.name, factories.get(ref.name), obj, "a read handler (name + on_read)"
+        )
+    return obj
+
+
 def build_extensions(
     defn: BacklogDefinition,
     catalog: Path,
@@ -123,6 +142,30 @@ class BoundSubscriber:
 
     def on_event(self, ctx: Any) -> Any:
         return self._handler.on_event(ctx)
+
+    def __getattr__(self, item: str) -> Any:
+        handler = self.__dict__.get("_handler")
+        if handler is None:
+            raise AttributeError(item)
+        return getattr(handler, item)
+
+
+class BoundReadSubscriber:
+    """A declaration-bound READ handler + loader-computed subscriptions
+    (HATS-1064): mirrors :class:`BoundSubscriber` but forwards ``on_read`` (never
+    ``on_event``), so it reacts only in the READ phase. Optional ``bind`` /
+    ``requires_states`` forward to the wrapped handler."""
+
+    def __init__(self, handler: Any, subscriptions: Sequence[Subscription]) -> None:
+        self._handler = handler
+        self.name = handler.name
+        self._subs = tuple(subscriptions)
+
+    def subscriptions(self) -> Sequence[Subscription]:
+        return self._subs
+
+    def on_read(self, ctx: Any) -> Any:
+        return self._handler.on_read(ctx)
 
     def __getattr__(self, item: str) -> Any:
         handler = self.__dict__.get("_handler")
@@ -266,6 +309,44 @@ def build_link_subscribers(
     return out
 
 
+def build_read_subscribers(
+    defn: BacklogDefinition,
+    catalog: Path,
+    factories: Mapping[str, ExtensionFactory],
+) -> list[ReadSubscriber]:
+    """Declaration-bound read handlers (``links.kinds[].read``): each ref fires
+    READ-phase on a context read of a card carrying its kind — subscription key
+    ``read:<kind>`` (HATS-1064). PHASE is FORCED to ``Phase.READ`` (a read builder
+    is read-phase by construction), never read off the handler, so a missing
+    attribute cannot silently misfile the subscription. NOT composed into the
+    kernel — the read path (``context`` CLI) builds these and hands them to
+    ``build_context``. Refs sharing (name, config) collapse to one handler."""
+    b: Bindings = defn.bindings
+    band = [100]
+
+    def _priority(ref: HandlerRef) -> int:
+        if ref.priority is not None:
+            return ref.priority
+        p = band[0]
+        band[0] += 10
+        return p
+
+    groups: dict[tuple[str, Any], dict[str, Any]] = {}
+    for kind, refs in b.kind_read_handlers.items():
+        for ref in refs:
+            prio = _priority(ref)
+            gk = (ref.name, _freeze(ref.config))
+            group = groups.setdefault(gk, {"ref": ref, "keys": {}})
+            group["keys"].setdefault(f"read:{kind}", prio)  # dedup: first band/pin wins
+
+    out: list[ReadSubscriber] = []
+    for group in groups.values():
+        handler = _bound_read_handler(group["ref"], defn, catalog, factories)
+        subs = [Subscription(key, Phase.READ, prio) for key, prio in group["keys"].items()]
+        out.append(BoundReadSubscriber(handler, subs))
+    return out
+
+
 def compose_subscribers(
     defn: BacklogDefinition,
     catalog: Path,
@@ -291,6 +372,7 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
         HypQuorumGate,
         HypVerdictsExtension,
         MirrorLinkHandler,
+        ParentContextExtension,
         PlanGateExtension,
         PlanScaffoldExtension,
         PropVotesExtension,
@@ -315,6 +397,9 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
         "plan-scaffold": lambda defn, catalog, cfg: PlanScaffoldExtension(catalog, catalog_sections),
         "stamp-lifecycle": lambda defn, catalog, cfg: StampLifecycleHandler(_field(cfg)),
         "clear-lifecycle": lambda defn, catalog, cfg: ClearLifecycleHandler(_field(cfg)),
+        "parent-context": lambda defn, catalog, cfg: ParentContextExtension(
+            defn.links_registry, section=cfg.get("work_policy")
+        ),
         "mirror-link": lambda defn, catalog, cfg: MirrorLinkHandler(defn.links_registry),
         "hyp-verdicts": lambda defn, catalog, cfg: HypVerdictsExtension(),
         "prop-votes": lambda defn, catalog, cfg: PropVotesExtension(),
@@ -335,6 +420,7 @@ def stock_validators() -> dict[str, Validator]:
 
 
 __all__ = [
+    "BoundReadSubscriber",
     "BoundSubscriber",
     "ExtensionFactory",
     "HandlerProtocolError",
@@ -345,6 +431,7 @@ __all__ = [
     "build_card_schema",
     "build_extensions",
     "build_link_subscribers",
+    "build_read_subscribers",
     "compose_subscribers",
     "stock_factories",
     "stock_validators",

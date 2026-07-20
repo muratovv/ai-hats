@@ -99,6 +99,27 @@ class LinkEvent:
 
 
 @dataclass(frozen=True)
+class ReadEvent:
+    """A context-read enrichment point for a link ``kind`` present on the card
+    being read (HATS-1064). Fired READ-phase by ``build_context`` once per
+    present kind that declares a ``links.kinds[].read`` handler; never journaled
+    (a read does not mutate). Key: ``read:<kind>``.
+
+    Consumers: declared read handlers (e.g. parent-context).
+    """
+
+    kind: str
+
+    @property
+    def key(self) -> str:
+        return f"read:{self.kind}"
+
+    @property
+    def task_id(self) -> str | None:
+        return None  # the card being read rides DispatchContext.task
+
+
+@dataclass(frozen=True)
 class LinkMirrorEvent:
     """The post-lock mirror of an origin link, routed by the workspace to the
     TARGET backlog's kernel (ADR-0017 §2/R4). ``kind`` is the target-side
@@ -122,7 +143,7 @@ class LinkMirrorEvent:
         return self.target  # the reaction repairs the target card
 
 
-Event = Union[EdgeEvent, EpicifyEvent, PreDestroyEvent, LinkEvent, LinkMirrorEvent]
+Event = Union[EdgeEvent, EpicifyEvent, PreDestroyEvent, LinkEvent, LinkMirrorEvent, ReadEvent]
 
 
 def event_detail(event: Event) -> dict[str, str]:
@@ -135,6 +156,8 @@ def event_detail(event: Event) -> dict[str, str]:
         return {"epic": event.epic_id, "child": event.child_id}
     if isinstance(event, LinkEvent):
         return {"kind": event.kind, "target": event.target}
+    if isinstance(event, ReadEvent):
+        return {"kind": event.kind}
     if isinstance(event, LinkMirrorEvent):
         return {"kind": event.kind, "origin": event.origin, "target": event.target}
     return {"operation": event.operation}

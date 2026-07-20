@@ -12,8 +12,9 @@ keys:
   edge: [from, to, name, handlers, skip]
   links: [kinds]
   # `targets:` names the backlog a cross-backlog kind points at (HATS-1044);
-  # unset means the kind's own backlog (today's behavior).
-  kind: [name, arity, inverse, derived, aliases, handlers, targets]
+  # unset means the kind's own backlog. `read`/`read_docs` — read-phase enricher
+  # handlers + surfaced doc names per kind (HATS-1064).
+  kind: [name, arity, inverse, derived, aliases, handlers, targets, read, read_docs]
   # A card-field entry (HATS-1035): `type` is str|int|list|any; a complex shape
   # is `type: any` + a mandatory `validator`. `emit` is always|when-set.
   field: [name, type, default, required, choices, validator, emit]
