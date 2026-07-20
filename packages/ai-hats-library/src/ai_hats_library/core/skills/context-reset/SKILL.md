@@ -31,9 +31,9 @@ directly if you want a handoff without clearing context.
 
 3. **Update task card** (if exists):
    - Remaining work is a coherent chunk → shape it per **task-slicing**, append
-     as `## Steps` checklist items in plan.md, run `ai-hats task plan-extract
-     <ID>` (idempotent), wire order via `task link` (`depends_on`) — the tail
-     becomes takeable successor tasks instead of a frozen card
+     as `## Steps` checklist items in plan.md, run `rack plan-extract <ID>`
+     (idempotent), wire order via `rack transition <ID> --link depends:<DEP>` —
+     the tail becomes takeable successor tasks instead of a frozen card
    - Otherwise set state to `blocked` with reason: `context-reset`
    - Add `handoff_file` path to `work_log`
 

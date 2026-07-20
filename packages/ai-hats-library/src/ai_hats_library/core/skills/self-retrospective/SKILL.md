@@ -1,6 +1,6 @@
 ---
 name: self-retrospective
-description: Post-work analysis to identify systemic improvements (5 Whys, classify, archive). Use when the supervisor asks to "write a retro" / "do a retrospective", at the end of a multi-task work session (wrap-up across several closed tasks), after task completion (especially with failures or backtracks), after a failed task (mandatory), or when backlog-manager transitions to the review or failed state. NOT the automated session-review loop — that is reflect-session.
+description: Post-work analysis to identify systemic improvements (5 Whys, classify, archive). Use when the supervisor asks to "write a retro" / "do a retrospective", at the end of a multi-task work session (wrap-up across several closed tasks), after task completion (especially with failures or backtracks), after a failed task (mandatory), or when the backlog manager transitions to the review or failed state. NOT the automated session-review loop — that is reflect-session.
 license: MIT
 ---
 
@@ -17,7 +17,7 @@ Analyze completed or failed work to identify systemic improvements.
   tasks) — not only single-task completion.
 - After task completion (especially with failures or backtracks)
 - After a failed task (mandatory)
-- When backlog-manager transitions to `review` or `failed` state
+- When the backlog manager transitions to `review` or `failed` state
 
 **Not** the automated session-review loop. `reflect-session`
 (`hats-reflect-session/v1`) is a pipeline the harness runs to triage
@@ -65,11 +65,11 @@ chooses what to record.
     - **Recurrence or cost:** observed ≥2 times in this session, OR
       cost ≥5 minutes wasted, OR has at least one named adjacent
       flavor (sibling failure mode with the same shape).
-    - **Not already covered:** run `ai-hats task hyp list --status
-      active --json` and verify no active HYP describes the same
-      mechanism. If one does, the finding becomes evidence for that
-      HYP via `ai-hats reflect issue` — but presented as a verdict
-      contribution, not a new candidate.
+    - **Not already covered:** check the active-HYP set (from the
+      session's evidence block, or `rack context HYP-NNN` per candidate)
+      and verify no active HYP describes the same mechanism. If one does,
+      the finding becomes evidence for that HYP via `ai-hats reflect
+      issue` — but presented as a verdict contribution, not a new candidate.
     - **Cause is hypothesised, not known:** if you can name the
       mechanism AND the fix with confidence, it belongs in the task
       tracker (step 7), not in HYP — HYP is for behavioural patterns
@@ -180,7 +180,7 @@ chooses what to record.
    They are NOT part of the automated feedback loop (reflect-session handles
    that via `hats-reflect-session/v1`).
 
-7. **Backlog:** For deferred improvements, create task cards via backlog-manager.
+7. **Backlog:** For deferred improvements, create task cards via `rack create` (skill **hatrack**).
    Every identified improvement must either be fixed now or tracked.
 
 ## Completion

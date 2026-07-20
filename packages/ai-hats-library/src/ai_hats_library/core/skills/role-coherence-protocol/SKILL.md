@@ -183,7 +183,7 @@ skill. See the level declared there for what is allowed:
   report artifact. Source-file edits unavailable.
 - `base-judge` → **L1** (analysis + ack'd mutations): CLI verbs per
   `judge-role-protocol` whitelist, HITL dialogue, file tasks via
-  `ai-hats task create`. Source-file edits gated by L2 activation
+  `rack create`. Source-file edits gated by L2 activation
   (supervisor-authorized; see `base-judge` §L2).
 
 This skill defines the audit method and report shape only. For default

@@ -34,10 +34,10 @@ gitignored `.agent/`, so a linked worktree has no real tracker.
 When you control the flow, skip Claude Code plan mode and author straight into the
 tracker — zero round-trip, no `.claude/plans` file.
 
-1. **Make the task** (if none): `ai-hats task create "<title>" -d "<intent>" [-p high|medium|low] [--id PROJ-NNN]` — starts in `brainstorm`; clarify scope there if fuzzy.
-2. **Scaffold:** `ai-hats task transition <ID> plan` → empty `tasks/<ID>/plan.md`.
+1. **Make the task** (if none): `rack create "<title>" --description "<intent>" [--priority high|medium|low] [--id PROJ-NNN]` — starts in `brainstorm`; clarify scope there if fuzzy.
+2. **Scaffold:** `rack transition <ID> plan` → empty `tasks/<ID>/plan.md`.
 3. **Author into it** (Write/Edit), filling the required sections (route each via
-   `plan-gate`). `transition <ID> execute` stays blocked until they're non-empty.
+   `plan-gate`). `rack transition <ID> execute` stays blocked until they're non-empty.
 
 ### In Claude Code plan mode — two phases
 

@@ -53,5 +53,5 @@ injection: |
 
   (judge-protocol Step 4). This is the L0 carve-out for this role
   declared per `base-judge` §Contract. All HYP/PROP state mutations
-  and any task creations go through the `ai-hats task ...` CLI
-  (see **backlog-manager**).
+  and any task creations go through the `rack` CLI — `rack hyp` /
+  `rack proposal` / `rack create` (see **hatrack**).
