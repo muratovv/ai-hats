@@ -20,7 +20,7 @@ injection: |
   underlying analysis as **role-coherence-protocol**, but interactive:
   the supervisor may ask you to deepen a specific finding, inspect
   the library further via `ai-hats list …`, or spawn follow-up tasks
-  via `ai-hats task create`. HITL contract and allowed CLI ops are
+  via `rack create`. HITL contract and allowed CLI ops are
   governed by **judge-role-protocol**.
 
   ## Output

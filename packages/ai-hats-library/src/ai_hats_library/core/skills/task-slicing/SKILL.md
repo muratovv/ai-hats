@@ -21,11 +21,12 @@ result, sized to one session. This skill carries what that looks like in
 ## Wiring the breakdown
 
 - **Declare blocking edges.** Each child task names its blockers via
-  `depends_on` (`ai-hats task link`); a task whose blockers are all done is on
-  the **frontier** — takeable in parallel without coordination.
+  `depends_on` (`rack transition <ID> --link depends:<DEP>`); a task whose
+  blockers are all done is on the **frontier** — takeable in parallel without
+  coordination.
 - **Gate before publishing.** Show the supervisor the breakdown — title,
   blockers, what it delivers; granularity, edges, merge/split answered — then
-  publish via `backlog-manager` `plan-extract`.
+  publish via `rack plan-extract` (skill **hatrack**).
 
 ## Wide refactors: expand–contract
 

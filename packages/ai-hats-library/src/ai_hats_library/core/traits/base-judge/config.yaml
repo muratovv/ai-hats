@@ -21,14 +21,14 @@ injection: |
   - Engage in dialogue mid-session (ad-hoc clarifications, deeper analysis
     of findings, proposed fix shapes).
   - Mutate project state via `ai-hats` CLI verbs **whitelisted by your
-    composing role's protocol skill** (typically at least `ai-hats task
-    create` + `ai-hats list …`).
+    composing role's protocol skill** (typically at least `rack create`
+    + `ai-hats list …`).
 
   ### Level: L1 (analysis + ack'd mutations)
   - **Allowed writes:** L0 baseline (the single report path declared by
     your role's injection) **plus** ack'd backlog mutations through the
     `ai-hats` CLI. Per-role protocol skill names the exact verb whitelist.
-  - **Allowed CLI:** `ai-hats task create`, `ai-hats list …`, plus any
+  - **Allowed CLI:** `rack create`, `ai-hats list …`, plus any
     role-specific verb prefixes declared in your role's protocol skill.
     Verbs **not** on that whitelist are out of scope — escalate via
     **request-supervisor** rather than improvising.
@@ -55,7 +55,7 @@ injection: |
     (see Contract above).
   - **L1 does not edit role / skill / rule / trait source files.** Even
     if a fix is one line and obviously correct, file a task via
-    `ai-hats task create` rather than editing in-session — unless L2 is
+    `rack create` rather than editing in-session — unless L2 is
     explicitly activated (next section).
 
   ### L2 activation (source-file edits within the same session)
@@ -67,7 +67,7 @@ injection: |
   1. **Cold-reread the source report from disk** (not from session
      memory). Explicitly state "ignoring prior reasoning, applying only
      what's in this report on disk".
-  2. **File the fix task via `ai-hats task create` BEFORE any source
+  2. **File the fix task via `rack create` BEFORE any source
      edit.** The task is the audit trail; without it the chain
      analysis→task→commit is broken.
   3. **Commit fix-by-fix** with the filed task ID in the message. Each

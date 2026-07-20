@@ -10,6 +10,23 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Changed
+
+- **hatrack is the default backlog manager** (HATS-1054). `trait-agent` composes
+  the `hatrack` skill instead of `backlog-manager` — every library role drives
+  the task lifecycle through the `rack` CLI; `backlog-manager` is composed by no
+  role (frozen until its retire task). The `hatrack-trait` overlay remains as the
+  rollback selector for the classic manager. The symbiosis table is collapsed
+  across the library: field edits ride `rack transition --set/--append`,
+  hypotheses and proposals ride the `rack hyp` / `rack proposal` groups,
+  fast-close is a forced `--state done`, STATE.md sync is the automatic derived
+  view, and `rack plan-extract` (new verb over the doc store) ports the last
+  tracker-only command — non-interactive, `--dry-run`/`--json`, idempotent via
+  child-id stamps. The data migrator now targets the normalized
+  `tracker/backlog/hypotheses/` catalog (proposals already normalized; the tasks
+  catalog is untouched), and the tracker stores read both the new catalog and
+  the legacy flat files.
+
 ### Added
 
 - **Verb-builder `rack` CLI + per-backlog groups** (HATS-1036, ADR-0017 §4/§7).
@@ -52,7 +69,7 @@ since the latest tag lives under **Unreleased** until the next release.
   — quorum semantics ported byte-for-byte from the tracker (distinct real
   sessions, `auto-quorum` sentinel excluded, automation-actor-only gating per
   ADR-0009; a manual refute is never gated). A one-shot migration
-  (`python -m ai_hats_rack.migrate <ai_hats_dir> [--dry-run]`) moves flat
+  (`python -m ai_hats_rack.migration <ai_hats_dir> [--dry-run]`) moves flat
   `HYP-NNN.yaml`/`PROP-NNN.yaml` files to dir-per-card catalogs with an
   inventory diff and idempotent re-runs; the tracker's stores gained a
   dual-layout shim (rack-aligned `.lock` path) so `ai-hats task hyp/proposal`
