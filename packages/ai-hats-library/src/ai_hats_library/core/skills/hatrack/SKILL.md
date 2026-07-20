@@ -1,27 +1,24 @@
 ---
 name: hatrack
-description: Backlog lifecycle on the rack CLI (hatrack) — create / ls / context / transition, with field edits and hyp/proposal staying on `ai-hats task`. Use when a session composes the `hatrack-trait` (rack is the selected backlog manager) for any task lifecycle transition, backlog read, document, or link; it replaces `backlog-manager` for that session.
+description: Backlog lifecycle on the rack CLI (hatrack) — create / ls / context / transition / plan-extract, with field edits via `--set` and hypotheses/proposals on the `rack hyp` / `rack proposal` groups. Use when a session composes the `hatrack-trait` (rack is the selected backlog manager) for any task lifecycle transition, backlog read, field edit, document, link, hypothesis, or proposal; it replaces `backlog-manager` for that session.
 ai_hats:
-  # ADR-0016: this skill drives the ai-hats-rack `rack` CLI for lifecycle and the
-  # ai-hats-tracker `ai-hats task` CLI for the coexistence surface (fields, hyp,
-  # proposal). Both are DECLARED needs; verified-and-warned at compose time.
+  # ADR-0016: this skill drives the ai-hats-rack `rack` CLI for the whole backlog
+  # surface — lifecycle, fields, documents, links, hypotheses, proposals. One
+  # DECLARED CLI need; verified-and-warned at compose time.
   requires:
     cli:
       - name: ai-hats-rack
         check: "rack --help"
         hint: "pip install ai-hats-rack"
-      - name: ai-hats-tracker
-        check: "ai-hats-tracker --version"
-        hint: "pip install ai-hats-tracker"
     mcp: []
 license: MIT
 ---
 
 # Hatrack
 
-Drive the task lifecycle through the **rack** CLI (`ai-hats-rack`), the minimal
-backlog kernel — while field edits, hypotheses, and proposals stay on
-`ai-hats task`. Same FSM, same `task.yaml` on disk, same per-task lock.
+Drive the **whole backlog** through the **rack** CLI (`ai-hats-rack`), the
+minimal backlog kernel — lifecycle, field edits, documents, links, hypotheses,
+and proposals. Same FSM, same `task.yaml` on disk, same per-task lock.
 
 This skill has two sections: **Backlog operations** (the `rack` CLI surface —
 how to read and write the backlog) and **Task lifecycle** (when to move a card
@@ -40,12 +37,12 @@ ai-hats config customize <role> --remove-skill backlog-manager --add-trait hatra
 ```
 
 If a session composes the classic `backlog-manager` instead, use that skill —
-`rack` and `ai-hats task` share the lock and the same `task.yaml`, so a mixed
-backlog is safe, but one session should drive lifecycle through one manager.
+`rack` and the classic tracker CLI share the lock and the same `task.yaml`, so a
+mixed backlog is safe, but one session should drive the backlog through one manager.
 
 ## Backlog operations — the `rack` CLI
 
-Four verbs, each with `--json` (JSON-first):
+Five top-level verbs, each with `--json` (JSON-first):
 
 ```bash
 rack create "Title" --id PROJ-042 --parent PROJ-014 --depends PROJ-041 --tag dx
@@ -53,6 +50,7 @@ rack ls                       # backlog scan (--grep/--tag/--state/--parent)
 rack ls PROJ-042 --deep 1     # graph walk from a card
 rack context PROJ-042         # THE read package: card + links + document paths
 rack transition PROJ-042 execute      # sugar for --state execute
+rack plan-extract PROJ-042    # child cards from plan.md Subtasks/Steps sections
 ```
 
 `transition` is the one mutating verb: an ordered composite of ops run in argv
@@ -80,19 +78,52 @@ field since HATS-1067). Set it with `rack create --work-policy <text>` or update
 an existing card with `rack transition <id> --set work_policy=<text>`. Only that
 field travels — put per-stage child policy there, not in the whole card.
 
-### Coexistence — what stays on `ai-hats task`
+### Field edits — `transition --set` / `--append`
 
-`rack` has no `update` verb and no hyp/proposal surface. Until generalization
-(HATS-1044) these stay on the tracker CLI (same lock, safe to interleave):
+There is no `update` verb: field edits ride the one mutating `transition` as
+`--set`/`--append` ops, schema-validated on the same lock as a state move (a bad
+choice/type is a typed refusal). Scalars use `--set`, list fields `--append`:
 
-| Edit                                                                | Command                           |
-| ------------------------------------------------------------------- | --------------------------------- |
-| state · work_log · documents · links · resolution · new card        | `rack transition` / `rack create` |
-| title · description · priority · reviewer · role · tags · re-parent | `ai-hats task update <ID> --…`    |
-| hypotheses · proposals · `close` · `plan-extract` · `sync`          | `ai-hats task …`                  |
+```bash
+rack transition PROJ-042 --set priority=high --set reviewer=@lead
+rack transition PROJ-042 --set title="Sharper title" --set role=implementer
+rack transition PROJ-042 --set description="$(cat body.md)"   # verbatim body
+rack transition PROJ-042 --append tags='"dx"'                 # add one tag
+rack transition PROJ-042 --set parent_task=PROJ-014           # re-parent
+```
 
-`ai-hats task hyp --help` / `ai-hats task proposal --help` carry the field
-contracts — they are identical to a classic session; only lifecycle moved.
+State and field ops compose in one call — `rack transition PROJ-042 --state
+execute --set role=implementer` is one lock, one persist.
+
+### Fast-close — forced terminal transition
+
+The classic `close` (fast-close from brainstorm/plan) is a forced edge to a
+terminal state; `--force` needs a `--reason` (journaled):
+
+```bash
+rack transition PROJ-042 --state done --force --reason "shipped on master"
+```
+
+### Hypotheses & proposals — the `rack hyp` / `rack proposal` groups
+
+Migrated HYP/PROP catalogs mount as sibling backlogs; `rack` grows a group per
+catalog (visible in `rack --help` once mounted). Ids route by prefix, so reads
+go through the same `rack context <ID>` / `rack ls <ID>`:
+
+```bash
+rack hyp create "Agents batch transitions" --hypothesis "…"
+rack hyp append-verdict HYP-009 --verdict refuted --evidence "…" --recommendation keep
+rack transition HYP-009 refute        # named edge (quorum-gated); or --state refuted
+rack hyp autoclose --dry-run          # close HYPs past the refuted-verdict quorum
+
+rack proposal create "…" --category rule --target rule_x --description "…" --rationale "…"
+rack proposal vote PROP-025 --reasoning "…"
+rack transition PROP-025 accept       # named edge; or --state accepted
+```
+
+`rack hyp --help` / `rack proposal --help` carry each group's verbs and field
+contracts. Cross-backlog links (`related_hypotheses`, `source_task`) mirror
+automatically; the derived read-views refresh on every write — no manual `sync`.
 
 ## Task lifecycle — edges, policy, cadence
 
@@ -138,16 +169,16 @@ stale, bounce to `brainstorm` instead of building on a dead premise
 
 ### Completion
 
-- Lifecycle transitions, reads, documents, and links went through `rack`;
-  fields / hyp / proposal went through `ai-hats task`; the card's `work_log`
-  reflects the work (log as you go, not only at the end).
+- The whole backlog — lifecycle, fields, documents, links, hyp, proposal —
+  went through `rack`; the card's `work_log` reflects the work (log as you go,
+  not only at the end).
 - On finishing execute work, advance through `document` to **`review`** and
   stop — the reviewer approves `review → done` first (see the policy table).
 - **Validation scenario (RED → GREEN).** RED: asked to advance `PROJ-042` from
   plan to execute, the agent reaches for `ai-hats task transition` (classic
   muscle memory), bypassing the rack dispatcher, journal, and worktree effects.
-  GREEN: it runs `rack transition PROJ-042 execute`, and keeps `--priority` /
-  `hyp` / `proposal` on `ai-hats task`.
+  GREEN: it runs `rack transition PROJ-042 execute`, and keeps field edits on
+  `--set` and `hyp` / `proposal` on the `rack hyp` / `rack proposal` groups.
 
 ## Anti-Patterns
 
@@ -157,8 +188,10 @@ stale, bounce to `brainstorm` instead of building on a dead premise
 - Driving lifecycle through `ai-hats task transition` in a rack session — the
   rack dispatcher/journal/worktree path is what's being dogfooded; use `rack`.
 - Composing both `backlog-manager` and `hatrack-trait` — two lifecycle owners.
-- Reaching for a `rack update` / `rack hyp` verb — they don't exist by design;
-  those edits stay on `ai-hats task` (Coexistence table).
+- Reaching for a `rack update` verb — there is none; field edits are
+  `rack transition <ID> --set <field>=<value>` (scalars) / `--append` (lists).
+- Reaching back to the classic tracker CLI for fields / hyp / proposal — the
+  whole surface is on `rack` now (`--set`, `rack hyp`, `rack proposal`).
 - Inlining a document's body from `context` output — read it by the printed path.
 - `--force`-ing an edge the FSM refuses (e.g. `document → done` skipping `review`,
   or `review → plan`) instead of taking the legal path or escalating.

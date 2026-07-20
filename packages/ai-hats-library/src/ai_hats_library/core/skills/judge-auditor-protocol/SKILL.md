@@ -77,17 +77,17 @@ The handoff lists active HYPs with their `success_criterion`,
 For each HYP, follow **review-hypothesis** to choose verdict +
 recommendation, then **record the proposed verdict in the draft's
 `## Proposed mutations` section**. Do NOT invoke
-`ai-hats task hyp append-verdict` / `set-status` — Phase 2 will run
+`rack hyp append-verdict` / the status edge — Phase 2 will run
 these after supervisor ack.
 
-| Decision shorthand | review-hypothesis verdict | recommendation            | Phase-2 CLI (record, do not run)                       |
-| ------------------ | ------------------------- | ------------------------- | ------------------------------------------------------ |
-| `confirmed`        | `confirmed`               | `close_confirmed`         | `task hyp append-verdict ...` + `set-status confirmed` |
-| `refuted`          | `refuted`                 | `close_refuted`           | `task hyp append-verdict ...` + `set-status refuted`   |
-| `inconclusive`     | `inconclusive`            | `keep` or `extend_window` | `task hyp append-verdict ...`                          |
-| `keep`             | (verdict per evidence)    | `keep`                    | `task hyp append-verdict ...`                          |
-| `extend`           | (verdict per evidence)    | `extend_window`           | `task hyp append-verdict ...`                          |
-| `stalled`          | —                         | —                         | `task hyp set-status stalled`                          |
+| Decision shorthand | review-hypothesis verdict | recommendation            | Phase-2 CLI (record, do not run)                            |
+| ------------------ | ------------------------- | ------------------------- | ----------------------------------------------------------- |
+| `confirmed`        | `confirmed`               | `close_confirmed`         | `rack hyp append-verdict ...` + `rack transition … confirm` |
+| `refuted`          | `refuted`                 | `close_refuted`           | `rack hyp append-verdict ...` + `rack transition … refute`  |
+| `inconclusive`     | `inconclusive`            | `keep` or `extend_window` | `rack hyp append-verdict ...`                               |
+| `keep`             | (verdict per evidence)    | `keep`                    | `rack hyp append-verdict ...`                               |
+| `extend`           | (verdict per evidence)    | `extend_window`           | `rack hyp append-verdict ...`                               |
+| `stalled`          | —                         | —                         | `rack transition … stall`                                   |
 
 ## Step 3 — Walk open proposals (propose, do NOT persist)
 
@@ -106,7 +106,7 @@ decisions in the draft; the **bulk commit** (`reflect commit`) is Phase
 
 For each PROP you recommend accepting, also record the proposed
 follow-up task title and one-line description in the draft — Phase 2
-runs `ai-hats task create` after supervisor confirms.
+runs `rack create` after supervisor confirms.
 
 ## Step 3.5 — Counter-claims pass (devil's advocate)
 
@@ -187,10 +187,10 @@ claims weaken any PROP they source.>
 not actions you have taken. Phase 2 runs them after supervisor ack.>
 
 ```bash
-ai-hats task hyp append-verdict HYP-NNN --verdict <verdict> --recommendation <rec> --note "<reason>"
-ai-hats task hyp set-status HYP-NNN --status <confirmed|refuted|stalled>
+rack hyp append-verdict HYP-NNN --verdict <verdict> --recommendation <rec> --evidence "<reason>"
+rack transition HYP-NNN <confirm|refute|stall>   # HYP status is an FSM edge
 ai-hats reflect commit --accept PROP-001 --reject PROP-003 --defer PROP-009
-ai-hats task create "<title from accepted PROP-NNN>" --description "<from PROP body>"
+rack create "<title from accepted PROP-NNN>" --description "<from PROP body>"
 ```
 
 (or `(none)` if no mutations are recommended)
@@ -213,7 +213,7 @@ this artifact to drive Phase 2.
 - **Conflicting PROPs** — recommend accepting one, mark the other
   `duplicate` in `## Proposed mutations` with a note pointing to the
   kept PROP.
-- **Tempted to run `ai-hats task hyp append-verdict` now** — STOP.
+- **Tempted to run `rack hyp append-verdict` now** — STOP.
   L0 baseline forbids state mutations. Record the verdict in the draft
   under `## Proposed mutations`; Phase 2 will run it.
 

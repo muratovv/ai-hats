@@ -144,6 +144,63 @@ class TestHypDualLayout:
         assert next_hypothesis_id(tmp_path) == "HYP-006"
 
 
+class TestHypDualPath:
+    """HATS-1054: dir-cards live in the NEW catalog, legacy flat files in a SEPARATE
+    old flat dir; the store reads both (resolution: dir-card > flat-in-catalog > flat-in-flat-dir)."""
+
+    def _split(self, tmp_path: Path):
+        catalog = tmp_path / "tracker" / "backlog" / "hypotheses"
+        flat = tmp_path / "tracker" / "hypotheses"
+        catalog.mkdir(parents=True)
+        flat.mkdir(parents=True)
+        return catalog, flat
+
+    def _flat_file(self, flat: Path, hyp_id: str, **task) -> Path:
+        body = {"id": hyp_id, "title": f"t-{hyp_id}", "status": "active",
+                "created": "2026-01-01", "source_task": "HATS-001", "hypothesis": "h",
+                "validation_log": [], **task}
+        p = flat / f"{hyp_id}.yaml"
+        p.write_text(yaml.safe_dump(body))
+        return p
+
+    def test_reads_dir_card_in_catalog_and_flat_in_old_dir(self, tmp_path: Path):
+        catalog, flat = self._split(tmp_path)
+        _dir_hyp(catalog, "HYP-001", state="confirmed")  # dir-card in the NEW catalog
+        self._flat_file(flat, "HYP-002")  # unmigrated flat in the OLD dir
+        store = HypothesisStore(catalog, flat_dir=flat)
+        by_id = {h.id: h.status for h in store.list_all()}
+        assert by_id == {"HYP-001": "confirmed", "HYP-002": "active"}
+        assert store.path("HYP-001") == catalog / "HYP-001" / "task.yaml"
+        assert store.path("HYP-002") == flat / "HYP-002.yaml"
+
+    def test_dir_card_shadows_flat_in_old_dir(self, tmp_path: Path):
+        catalog, flat = self._split(tmp_path)
+        _dir_hyp(catalog, "HYP-001", state="active")
+        self._flat_file(flat, "HYP-001", status="refuted")  # stale flat in old dir
+        store = HypothesisStore(catalog, flat_dir=flat)
+        by_id = {h.id: h.status for h in store.list_all()}
+        assert by_id == {"HYP-001": "active"}  # dir-card wins over the stale flat
+        assert store.path("HYP-001") == catalog / "HYP-001" / "task.yaml"
+
+    def test_next_id_spans_catalog_and_flat_dir(self, tmp_path: Path):
+        catalog, flat = self._split(tmp_path)
+        _dir_hyp(catalog, "HYP-003")  # migrated dir-card in the new catalog
+        self._flat_file(flat, "HYP-007")  # higher id still only in the old flat dir
+        assert HypothesisStore(catalog, flat_dir=flat).next_id() == "HYP-008"
+
+    def test_new_write_lands_dir_per_card_in_catalog(self, tmp_path: Path):
+        catalog, flat = self._split(tmp_path)
+        (catalog / "backlog.yaml").write_text("name: hypotheses\nprefix: HYP\n")  # dir-mode
+        self._flat_file(flat, "HYP-001")
+        from ai_hats_tracker.hypothesis import Hypothesis
+
+        store = HypothesisStore(catalog, flat_dir=flat)
+        store.create(Hypothesis(id="HYP-002", title="n", status="active",
+                                created=date(2026, 1, 2), source_task="HATS-1", hypothesis="h"))
+        assert (catalog / "HYP-002" / "task.yaml").is_file()  # new card in the catalog
+        assert not (flat / "HYP-002.yaml").exists()  # not the legacy flat dir
+
+
 class TestPropDualLayout:
     def test_load_filters_and_translates(self, tmp_path: Path):
         _dir_prop(tmp_path, "PROP-001", state="accepted", votes=[

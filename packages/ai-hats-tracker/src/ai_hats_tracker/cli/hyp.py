@@ -25,7 +25,6 @@ from ..hypothesis import (
     Hypothesis,
     HypothesisStore,
     ValidationLogEntry,
-    next_hypothesis_id,
 )
 from . import _seam
 
@@ -36,7 +35,7 @@ def _hyp_dir(project_dir: Path) -> Path:
 
 def _store(project_dir: Path | None = None) -> HypothesisStore:
     pd = project_dir or _seam._PROJECT_DIR()
-    return HypothesisStore(_hyp_dir(pd))
+    return HypothesisStore(_hyp_dir(pd), flat_dir=_seam._HYPOTHESES_FLAT_DIR(pd))
 
 
 @click.group()
@@ -128,7 +127,7 @@ def hyp_create(
 ):
     """Create a new HYP-NNN. Auto-id; status=active; created=today (UTC)."""
     store = _store()
-    new_id = next_hypothesis_id(store.dir)
+    new_id = store.next_id()
     h = Hypothesis(
         id=new_id,
         title=title,

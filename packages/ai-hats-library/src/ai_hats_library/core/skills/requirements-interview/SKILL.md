@@ -67,7 +67,7 @@ After the interview, update the task description so a fresh agent can pick it
 up without re-asking:
 
 ```bash
-ai-hats task update <ID> --description "<answers organized by section>"
+rack transition <ID> --set description="<answers organized by section>"
 ```
 
 Mirror the question headings (Goal, Acceptance, Edge cases, etc.) so future

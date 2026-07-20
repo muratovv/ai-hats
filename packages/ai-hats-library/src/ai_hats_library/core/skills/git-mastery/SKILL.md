@@ -106,7 +106,7 @@ Soft warning (printed, non-blocking): new file in `tests/fixtures/` larger than 
 ## Pre-Commit Smoke Gate
 
 The `pre-commit-smoke.sh` hook runs `pytest -m smoke` whenever the **active
-ai-hats task** carries the `integration` tag.
+backlog task** carries the `integration` tag.
 
 ### How it works
 
@@ -119,7 +119,7 @@ ai-hats task** carries the `integration` tag.
 
 ### Setting the `integration` tag
 
-The agent decides during **brainstorm** or **plan** (see backlog-manager).
+The agent decides during **brainstorm** or **plan** (see **hatrack**).
 Heuristic: tag `integration` when the task touches an external tool, process,
 network call, sub-agent invocation, or filesystem writes outside `.agent/`.
 

@@ -4,8 +4,8 @@ Every NON-tasks backlog the workspace mounts becomes a group named by its
 declared ``cli_alias`` (its ``name`` when unset), carrying a schema-driven
 ``create``, an ``update`` sugar (schema options → ``--set`` field ops), and the
 verbs its extensions contribute through the optional ``verbs()`` hook. Groups
-are discovered LAZILY from the ambient root, so the base four-verb surface is
-unchanged until sibling catalogs are mounted (R2). This layer stays 100%
+are discovered LAZILY from the ambient root, so the base top-level verb surface
+is unchanged until sibling catalogs are mounted (R2). This layer stays 100%
 backlog-agnostic: a backlog's short CLI name is part of ITS definition.
 """
 
@@ -192,9 +192,9 @@ def _mounted_groups(workspace: Workspace) -> dict[str, BacklogInstance]:
 
 
 class RackGroup(click.Group):
-    """``main`` as a lazy group: the four base verbs live in ``.commands``; the
-    per-backlog groups are resolved on demand from the ambient workspace, so the
-    surface stays exactly the base four until sibling catalogs are mounted (R2)."""
+    """``main`` as a lazy group: the base top-level verbs live in ``.commands``;
+    the per-backlog groups are resolved on demand from the ambient workspace, so
+    the surface stays exactly those base verbs until sibling catalogs mount (R2)."""
 
     def get_command(self, ctx: click.Context, name: str) -> click.Command | None:
         cmd = super().get_command(ctx, name)

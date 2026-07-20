@@ -1,6 +1,6 @@
 ---
 name: review-hypothesis
-description: Vote on one active hypothesis (HYP-NNN) against session evidence — pick confirmed/refuted/inconclusive/n-a + a recommendation and persist via ai-hats task hyp. Use when sweeping active hypotheses during a session review (reflect-session, session-reviewer, or judge).
+description: Vote on one active hypothesis (HYP-NNN) against session evidence — pick confirmed/refuted/inconclusive/n-a + a recommendation and persist via `rack hyp`. Use when sweeping active hypotheses during a session review (reflect-session, session-reviewer, or judge).
 license: MIT
 ---
 
@@ -52,7 +52,7 @@ The protocol is the HYP author's contract with future auditors:
 The field is free-form text written by the HYP author at document-stage,
 after the diff is final (see **library-change-hypothesis-protocol**;
 HYPs are filed post-ship, not at plan — HATS-567). It is stored under
-`Hypothesis.extra` (the schema is permissive) — `ai-hats task hyp show`
+`Hypothesis.extra` (the schema is permissive) — `rack context HYP-NNN`
 prints it verbatim; do not silently drop it.
 
 **If `verification_protocol` is absent** — proceed with free-form

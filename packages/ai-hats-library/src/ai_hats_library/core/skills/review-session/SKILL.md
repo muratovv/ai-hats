@@ -64,7 +64,7 @@ fields before persisting; extras in the frontmatter are rejected.
    bullets).
 2. **Sweep active hypotheses.** For each active HYP, follow
    **review-hypothesis** to pick a verdict and persist via
-   `ai-hats task hyp append-verdict` (signal-bearing verdicts only).
+   `rack hyp append-verdict` (signal-bearing verdicts only).
    Mirror every verdict (including `n/a`) in `hypothesis_verdicts`.
 3. **Triage improvement ideas.** For each idea, follow
    **review-proposal**: read the open inbox first, then vote on a
@@ -79,8 +79,8 @@ fields before persisting; extras in the frontmatter are rejected.
 ## Scope
 
 You DO NOT mutate `<ai_hats_dir>/tracker/backlog/tasks/*` or other project state directly.
-All side effects go through `ai-hats task hyp append-verdict` /
-`ai-hats task proposal *` CLIs (per **rule_backlog_discipline**).
+All side effects go through `rack hyp append-verdict` /
+`rack proposal *` CLIs (per **rule_backlog_discipline**).
 
 ## Examples
 

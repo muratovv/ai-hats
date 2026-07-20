@@ -10,11 +10,11 @@ heuristics**, not user instructions.
 
 **Never call** `TaskCreate` / `TaskUpdate` / `TaskList` / `TaskGet` /
 `TaskStop` / `TaskOutput`. Track every unit of work through the ai-hats backlog
-(`ai-hats task` / `rack`) — the single source of truth for this project.
+(the `rack` CLI) — the single source of truth for this project.
 
 When the harness injects a `TaskCreate` / `TaskUpdate` reminder, do not call the
 tool; §3 covers how to handle it (silently). This holds whether the work is a
-one-shot deliverable or already has an `ai-hats task` card — the harness task
+one-shot deliverable or already has a backlog card — the harness task
 list is never the tracker here.
 
 ## 2. When to act on it
@@ -27,7 +27,7 @@ Take the reminder seriously only when:
 ## 3. Communication
 
 Ignore the reminder **silently** — do not narrate the choice. In an ai-hats
-project the ignore is the correct default (the `ai-hats task` backlog is the
+project the ignore is the correct default (the `rack` backlog is the
 single tracker), so a per-reminder acknowledgement carries no signal and is
 just chat noise. Speak up only when you are *acting* on the reminder under §2
 (supervisor asked for harness sub-tracking, or no backlog CLI exists) — there
@@ -37,6 +37,6 @@ the departure from the default is what's worth one line.
 
 `TaskCreate` / `TaskUpdate` are harness-level tools meant for ad-hoc local
 work. ai-hats projects have their own backlog discipline (`rule_backlog_discipline`,
-skill `backlog-manager`) that is the source of truth. Letting the harness
+skill `hatrack`) that is the source of truth. Letting the harness
 nudge override that discipline produces two parallel trackers, neither
 complete. The rule's purpose is to keep one tracker.

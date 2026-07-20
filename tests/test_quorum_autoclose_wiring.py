@@ -20,7 +20,7 @@ from ai_hats.paths import hypotheses_dir
 from ai_hats.pipeline import registry
 from ai_hats.pipeline.loader import load_pipeline
 from ai_hats.pipeline.steps.quorum_autoclose import QuorumAutoclose
-from ai_hats_rack.migrate import migrate_catalog
+from ai_hats_rack.migration import migrate_catalog
 from ai_hats_tracker.hypothesis import HypothesisStore
 
 PIPELINES = (

@@ -1,6 +1,6 @@
 ---
 name: task-summary
-description: Focused post-task summary covering architectural decisions, decision forks, pitfalls, and plan deviations. Use after backlog-manager transitions a task to done or failed, when handing off a completed task for review, or when the supervisor asks what happened with a task.
+description: Focused post-task summary covering architectural decisions, decision forks, pitfalls, and plan deviations. Use after the backlog manager transitions a task to done or failed, when handing off a completed task for review, or when the supervisor asks what happened with a task.
 license: MIT
 ---
 
@@ -62,14 +62,14 @@ Result: <done | failed>
 4. **Attach it to the card:**
 
    ```bash
-   ai-hats task attach add <ID> /tmp/<ID>-summary.md --name summary.md
+   rack transition <ID> --attach /tmp/<ID>-summary.md:summary.md
    ```
 
-   The file lands at `tasks/<ID>/attachments/summary.md` and the manifest entry
-   (name + digest) goes into the card. `attach add` is the only sanctioned way in:
-   `rule_backlog_discipline §1` guards the whole `tasks/<ID>/**` subtree, carving
-   out `plan.md` alone. Re-running with identical content is a no-op; different
-   content under the same name is a hard error — `attach remove` first.
+   The file is copied to `tasks/<ID>/summary.md` — a document, discovered live by
+   `rack context` (name + digest computed on the fly, fs-as-truth). `--attach` is
+   the sanctioned way in: `rule_backlog_discipline §1` guards the whole
+   `tasks/<ID>/**` subtree, carving out `plan.md` alone. Re-attaching the same
+   name overwrites (the op notes it); `--freeze summary.md` pins its digest.
 
 ## What NOT to Include
 
@@ -80,9 +80,9 @@ Result: <done | failed>
 
 ## Completion
 
-- Summary drafted outside the backlog tree, then attached via `task attach add`
+- Summary drafted outside the backlog tree, then attached via `rack transition --attach`
 - Contains at least: What Was Done, Key Decisions
-- `ai-hats task attach list <ID>` shows `summary.md`
+- `rack context <ID>` lists `summary.md` under its documents
 
 ## Anti-Patterns
 

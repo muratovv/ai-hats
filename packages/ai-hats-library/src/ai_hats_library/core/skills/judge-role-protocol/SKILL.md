@@ -27,7 +27,7 @@ The supervisor may ask you to:
   commands (`list tokens <role>`, `list skills`, `list rules`,
   `list traits`) to verify what is actually in the library when a
   finding hinges on it.
-- **Spawn a follow-up task.** Use `ai-hats task create` per
+- **Spawn a follow-up task.** Use `rack create` per
   **backlog-create** to file a fix task for one or more findings.
   Reference the finding's source component(s) in the description.
 - **Compare against another role.** If a finding is structural, you
@@ -40,20 +40,20 @@ The supervisor may ask you to:
 Default level is **L1** (per `base-judge`). L1 verb whitelist for this
 role:
 
-- ✅ `ai-hats task create` — file fix tasks based on findings (see
+- ✅ `rack create` — file fix tasks based on findings (see
   **backlog-create** for invocation form).
-- ✅ `ai-hats task list` / `ai-hats task show <ID>` — read-only task
+- ✅ `rack ls` / `rack context <ID>` — read-only task
   inspection. Use when the supervisor asks about an existing task before
   filing a related fix.
 - ✅ `ai-hats list …` — read-only inspections of the library state.
 - ✅ **Write tool** to the report path declared in your role injection
   (the L0 carve-out: `<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ISO-ts>-<target>.md`).
-- ❌ `ai-hats task hyp …` / `ai-hats task proposal …` — out of subject.
+- ❌ `rack hyp …` / `rack proposal …` — out of subject.
   This judge is for **role coherence**, not HYP/PROP triage. Redirect
   to the `judge` role for HYP/PROP work.
-- ❌ `ai-hats task transition …` / `ai-hats task log …` — task lifecycle
+- ❌ `rack transition …` (incl. `--log …`) — task lifecycle
   is out of subject. The fix author owns that, governed by
-  **backlog-manager**.
+  **hatrack**.
 
 Source-file edits (role / skill / rule / trait `.yaml` and `.md`) are
 **not** part of the L1 whitelist — see §L2 activation below.
@@ -68,7 +68,7 @@ L2 is governed by `base-judge` §L2. This skill names the
   finding"). Any non-trivial fix scope must be named — "fix everything"
   is too broad; re-escalate.
 - **Mandatory steps** (per `base-judge` §L2): cold-reread the source
-  report from disk → file the fix task via `ai-hats task create`
+  report from disk → file the fix task via `rack create`
   BEFORE any source edit → commit fix-by-fix with the task ID → stay
   within the named scope.
 - **Out of L2 scope for this role.** Even with L2, mutations to

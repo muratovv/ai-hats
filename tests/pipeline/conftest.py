@@ -42,7 +42,7 @@ class _StubSession:
 
 @pytest.fixture
 def project_dir(tmp_path: Path, monkeypatch) -> Path:
-    from ai_hats_rack.migrate import migrate_catalog
+    from ai_hats_rack.migration import migrate_catalog
 
     pd = tmp_path / "proj"
     pd.mkdir()

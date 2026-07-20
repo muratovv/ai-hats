@@ -275,7 +275,12 @@ main.add_command(task.task)
 # integrator wires the wt-coupled `_helpers` versions here so `ai-hats task`
 # keeps its worktree UX (override the shared `_seam` — reaches every importer).
 from ai_hats_tracker.cli import _seam  # noqa: E402
-from ..paths import hypotheses_dir, proposals_dir, worktrees_dir  # noqa: E402
+from ..paths import (  # noqa: E402
+    hypotheses_dir,
+    hypotheses_flat_dir,
+    proposals_dir,
+    worktrees_dir,
+)
 from ._helpers import (  # noqa: E402
     _guard_not_inside_linked_worktree,
     _project_dir,
@@ -288,7 +293,9 @@ _seam._GUARD_LINKED_WT = _guard_not_inside_linked_worktree
 _seam._CONSOLE = console
 _seam._WORKTREES_DIR = worktrees_dir
 # hyp/prop path resolvers (HATS-935) — AI_HATS_DIR/yaml-aware integrator versions.
+# HATS-1054: _HYPOTHESES_DIR is the new catalog; _HYPOTHESES_FLAT_DIR the legacy flat fallback.
 _seam._HYPOTHESES_DIR = hypotheses_dir
+_seam._HYPOTHESES_FLAT_DIR = hypotheses_flat_dir
 _seam._PROPOSALS_DIR = proposals_dir
 
 # HATS-952: observe session-browse CLI (list/show/audit) defaults to wt-free
