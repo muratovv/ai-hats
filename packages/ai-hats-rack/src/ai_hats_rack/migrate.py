@@ -25,11 +25,22 @@ from . import fastyaml
 from .definition import load_packaged_definition, packaged_definition_source
 from .models import TaskCard, atomic_write_text
 
-#: The two shipped non-default backlogs and where their flat files live under a
-#: ``<ai_hats_dir>/tracker`` root (same dir the new ``<ID>/`` dirs land in).
+#: ``(name, flat-source subpath, target-catalog subpath, id pattern)`` under a
+#: ``tracker`` root. HATS-1054: hypotheses normalize (flat ``tracker/hypotheses`` →
+#: dir-cards ``tracker/backlog/hypotheses``); proposals are already normal (in-place).
 _CATALOGS = (
-    ("hypotheses", Path("hypotheses"), re.compile(r"^(HYP-\d+).*\.ya?ml$")),
-    ("proposals", Path("backlog") / "proposals", re.compile(r"^(PROP-\d+)\.ya?ml$")),
+    (
+        "hypotheses",
+        Path("hypotheses"),
+        Path("backlog") / "hypotheses",
+        re.compile(r"^(HYP-\d+).*\.ya?ml$"),
+    ),
+    (
+        "proposals",
+        Path("backlog") / "proposals",
+        Path("backlog") / "proposals",
+        re.compile(r"^(PROP-\d+)\.ya?ml$"),
+    ),
 )
 
 
@@ -49,8 +60,9 @@ class CardMigration:
 @dataclass
 class CatalogReport:
     name: str
-    catalog: Path
+    catalog: Path  # target catalog — where dir-cards + backlog.yaml land
     backlog_written: bool
+    source: Path | None = None  # flat-source dir (== catalog for an in-place run)
     cards: list[CardMigration] = field(default_factory=list)
 
     @property
@@ -79,8 +91,9 @@ class MigrationReport:
     def render(self) -> str:
         lines: list[str] = [f"migration {'(dry-run) ' if self.dry_run else ''}report"]
         for cat in self.catalogs:
+            src = "" if cat.source in (None, cat.catalog) else f" (from {cat.source})"
             lines.append(
-                f"  {cat.name} @ {cat.catalog}: {len(cat.source_ids)} flat card(s); "
+                f"  {cat.name} → {cat.catalog}{src}: {len(cat.source_ids)} flat card(s); "
                 f"{len(cat.migrated_ids)} migrated, "
                 f"{sum(1 for c in cat.cards if c.outcome == 'skipped')} skipped, "
                 f"{len(cat.mismatches)} mismatch; "
@@ -187,24 +200,33 @@ def _seed_backlog(catalog: Path, definition_name: str, *, dry_run: bool) -> bool
 
 
 def migrate_catalog(
-    catalog: Path, definition_name: str, *, dry_run: bool = False, purge_source: bool = False
+    catalog: Path,
+    definition_name: str,
+    *,
+    target_catalog: Path | None = None,
+    dry_run: bool = False,
+    purge_source: bool = False,
 ) -> CatalogReport:
     """Migrate one flat catalog dir to dir-per-card + seed its ``backlog.yaml``.
 
-    Idempotent: an existing ``<ID>/task.yaml`` is skipped (never overwritten). A
-    card that fails the round-trip is reported as a ``mismatch`` and NOT written —
-    the source flat file is always left in place (removed only with
-    ``purge_source``, after a clean round-trip)."""
-    _, subpath, pattern = next(c for c in _CATALOGS if c[0] == definition_name)
+    ``catalog`` is the flat SOURCE; ``target_catalog`` is where the ``<ID>/task.yaml``
+    dir-cards + seeded ``backlog.yaml`` land — defaults to ``catalog`` (in-place). The
+    flip points it at a sibling to normalize hypotheses (flat source stays put).
+    Idempotent: an existing target ``<ID>/task.yaml`` is skipped (never overwritten); a
+    card that fails the round-trip is a ``mismatch`` and NOT written; the flat source is
+    left in place (removed only with ``purge_source``, after a clean round-trip)."""
+    _, _src_subpath, _tgt_subpath, pattern = next(c for c in _CATALOGS if c[0] == definition_name)
+    target = target_catalog if target_catalog is not None else catalog
     link_names = _link_names(definition_name)
     report = CatalogReport(
         name=definition_name,
-        catalog=catalog,
-        backlog_written=_seed_backlog(catalog, definition_name, dry_run=dry_run),
+        catalog=target,
+        source=catalog,
+        backlog_written=_seed_backlog(target, definition_name, dry_run=dry_run),
     )
     for card_id, source in _flat_sources(catalog, pattern):
         raw = fastyaml.load(source.read_text(encoding="utf-8")) or {}
-        dest = catalog / card_id / "task.yaml"
+        dest = target / card_id / "task.yaml"
         mapped = _map_card(raw, link_names)
         ok, detail = _roundtrip_ok(raw, mapped, link_names)
         if not ok:
@@ -225,17 +247,32 @@ def migrate_catalog(
 
 
 def migrate_tracker(
-    ai_hats_dir: Path, *, dry_run: bool = False, purge_source: bool = False
+    ai_hats_dir: Path,
+    *,
+    dry_run: bool = False,
+    purge_source: bool = False,
+    hypotheses_target: Path | None = None,
 ) -> MigrationReport:
     """Migrate BOTH catalogs under ``<ai_hats_dir>/tracker`` (hypotheses +
-    proposals). ``ai_hats_dir`` is the dir that holds ``tracker/`` (e.g.
-    ``<project>/.agent/ai-hats``)."""
+    proposals). ``ai_hats_dir`` holds ``tracker/`` (e.g. ``<project>/.agent/ai-hats``).
+
+    Hypotheses land in the NEW normalized catalog ``tracker/backlog/hypotheses`` by
+    default (HATS-1054); ``hypotheses_target`` overrides that dir-card destination
+    (an absolute path or one under ``ai_hats_dir``). The flat HYP source at
+    ``tracker/hypotheses`` is never moved. Proposals migrate in-place (already normal)."""
     tracker = ai_hats_dir / "tracker"
     report = MigrationReport(dry_run=dry_run)
-    for name, subpath, _pattern in _CATALOGS:
+    for name, src_subpath, tgt_subpath, _pattern in _CATALOGS:
+        target = tracker / tgt_subpath
+        if name == "hypotheses" and hypotheses_target is not None:
+            target = hypotheses_target if hypotheses_target.is_absolute() else ai_hats_dir / hypotheses_target
         report.catalogs.append(
             migrate_catalog(
-                tracker / subpath, name, dry_run=dry_run, purge_source=purge_source
+                tracker / src_subpath,
+                name,
+                target_catalog=target,
+                dry_run=dry_run,
+                purge_source=purge_source,
             )
         )
     return report
@@ -253,9 +290,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Delete each flat file after a clean migration (supervisor-gated live option)",
     )
+    parser.add_argument(
+        "--hypotheses-target",
+        type=Path,
+        default=None,
+        help="Override the hypotheses dir-card target (default: tracker/backlog/hypotheses)",
+    )
     args = parser.parse_args(argv)
     report = migrate_tracker(
-        args.ai_hats_dir, dry_run=args.dry_run, purge_source=args.purge_source
+        args.ai_hats_dir,
+        dry_run=args.dry_run,
+        purge_source=args.purge_source,
+        hypotheses_target=args.hypotheses_target,
     )
     print(report.render())
     return 0 if report.ok else 1

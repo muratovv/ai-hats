@@ -10,7 +10,7 @@ import yaml
 from click.testing import CliRunner
 
 from ai_hats_tracker.cli.hyp import hyp
-from ai_hats.paths import hypotheses_dir, proposals_dir
+from ai_hats.paths import hypotheses_dir, hypotheses_flat_dir, proposals_dir
 
 
 @pytest.fixture(autouse=True)
@@ -25,6 +25,7 @@ def _integrator_seam(monkeypatch):
     from ai_hats_tracker.cli import _seam
 
     monkeypatch.setattr(_seam, "_HYPOTHESES_DIR", hypotheses_dir)
+    monkeypatch.setattr(_seam, "_HYPOTHESES_FLAT_DIR", hypotheses_flat_dir)
     monkeypatch.setattr(_seam, "_PROPOSALS_DIR", proposals_dir)
 
 
@@ -132,11 +133,13 @@ def test_create_increments_id(project_dir: Path):
 def test_create_duplicate_id_rejected(project_dir: Path, monkeypatch):
     """A duplicate HYP id must exit 1 with a clean error, not a traceback.
 
-    next_hypothesis_id auto-bumps past collisions, so to exercise the
+    HypothesisStore.next_id auto-bumps past collisions, so to exercise the
     FileExistsError path we stub it to return an id that already exists.
     """
     _write_hyp(project_dir, "HYP-001", title="original")
-    monkeypatch.setattr("ai_hats_tracker.cli.hyp.next_hypothesis_id", lambda _d: "HYP-001")
+    monkeypatch.setattr(
+        "ai_hats_tracker.hypothesis.io.HypothesisStore.next_id", lambda self: "HYP-001"
+    )
     res = _invoke(
         [
             "create",

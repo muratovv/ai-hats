@@ -57,6 +57,14 @@ def _default_hypotheses_dir(project_dir: Path) -> Path:
     return project_dir / ".agent" / "hypotheses"
 
 
+def _default_hypotheses_flat_dir(project_dir: Path) -> Path:
+    """Standalone legacy-flat hypotheses dir — same as the catalog when wt-free.
+
+    The integrator overrides this with ``ai_hats.paths.hypotheses_flat_dir`` (the old
+    ``tracker/hypotheses``); standalone has no migration split, so flat == catalog."""
+    return _default_hypotheses_dir(project_dir)
+
+
 def _default_proposals_dir(project_dir: Path) -> Path:
     """Standalone proposals dir: ``<project>/.agent/proposals`` (wt-free)."""
     return project_dir / ".agent" / "proposals"
@@ -71,6 +79,8 @@ _CONSOLE = Console()
 # standalone → the wt-present post-execute worktree display stays dark.
 _WORKTREES_DIR = None
 # hyp/prop path resolvers (HATS-935). Integrator overrides with
-# ``ai_hats.paths.{hypotheses_dir,proposals_dir}`` (AI_HATS_DIR/yaml-aware).
+# ``ai_hats.paths.{hypotheses_dir,hypotheses_flat_dir,proposals_dir}`` (AI_HATS_DIR/
+# yaml-aware). ``_HYPOTHESES_FLAT_DIR`` is the legacy flat fallback (HATS-1054).
 _HYPOTHESES_DIR = _default_hypotheses_dir
+_HYPOTHESES_FLAT_DIR = _default_hypotheses_flat_dir
 _PROPOSALS_DIR = _default_proposals_dir

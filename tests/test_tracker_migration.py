@@ -8,7 +8,7 @@ from ai_hats.assembler import Assembler
 from ai_hats.paths import (
     backlog_dir,
     decisions_dir,
-    hypotheses_dir,
+    hypotheses_flat_dir,
     last_backup_path,
     proposals_dir,
     state_md_path,
@@ -59,7 +59,9 @@ def test_tracker_migration_moves_all_paths(tmp_path: Path) -> None:
     # Task / proposal / hypothesis / decision under new layout
     assert (tasks_dir(tmp_path) / "HATS-001" / "task.yaml").exists()
     assert (proposals_dir(tmp_path) / "PROP-001.yaml").exists()
-    assert (hypotheses_dir(tmp_path) / "HYP-001.yaml").exists()
+    # v4 layout migration lands flat HYP files at the legacy flat dir; the rack
+    # dir-per-card normalization to tracker/backlog/hypotheses is a later step (HATS-1054).
+    assert (hypotheses_flat_dir(tmp_path) / "HYP-001.yaml").exists()
     assert (decisions_dir(tmp_path) / "2026-01-01-adr.md").exists()
     # STATE.md + .last_backup at dir root
     assert state_md_path(tmp_path).read_text() == "# state"
