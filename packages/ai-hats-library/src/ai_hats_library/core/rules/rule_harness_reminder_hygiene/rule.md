@@ -6,17 +6,16 @@ nudge the agent to use specific tools — most commonly `TaskCreate` /
 progress, consider using TaskCreate ..."). These reminders are **advisory
 heuristics**, not user instructions.
 
-## 1. When to ignore
+## 1. In an ai-hats project: never use the harness task tools
 
-Ignore the reminder — and do NOT call the suggested tool — when:
+**Never call** `TaskCreate` / `TaskUpdate` / `TaskList` / `TaskGet` /
+`TaskStop` / `TaskOutput`. Track every unit of work through the ai-hats backlog
+(`ai-hats task` / `rack`) — the single source of truth for this project.
 
-1. The current work has a single deliverable that does not split into trackable
-   sub-tasks (review, audit, one-shot question, single-file edit).
-2. The user-visible task is already tracked through the `ai-hats task` CLI
-   (the canonical backlog for this project) — duplicating into the harness's
-   own task tool fragments tracking.
-3. The reminder fires mid-flow during a task whose state is already covered
-   by the active `ai-hats task` card.
+When the harness injects a `TaskCreate` / `TaskUpdate` reminder, do not call the
+tool; §3 covers how to handle it (silently). This holds whether the work is a
+one-shot deliverable or already has an `ai-hats task` card — the harness task
+list is never the tracker here.
 
 ## 2. When to act on it
 
