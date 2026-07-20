@@ -114,14 +114,16 @@ class HandlerRef:
 class Bindings:
     """The handler surface of a definition (ADR-0017 §3-§4): declaration-bound
     slots (state ``on_enter``/``on_exit``, ``edges[].handlers``/``skip``,
-    ``kinds[].handlers``) plus ambient top-level ``extensions``. Parsed here;
-    turned into subscriptions at the composition root (``composition.py``)."""
+    ``kinds[].handlers``/``kinds[].read``) plus ambient top-level ``extensions``.
+    Parsed here; turned into subscriptions at the composition root
+    (``composition.py``). ``kind_read_handlers`` fire READ-phase (HATS-1064)."""
 
     state_on_enter: Mapping[str, tuple[HandlerRef, ...]] = field(default_factory=dict)
     state_on_exit: Mapping[str, tuple[HandlerRef, ...]] = field(default_factory=dict)
     edge_handlers: Mapping[tuple[str, str], tuple[HandlerRef, ...]] = field(default_factory=dict)
     edge_skips: Mapping[tuple[str, str], frozenset[str]] = field(default_factory=dict)
     kind_handlers: Mapping[str, tuple[HandlerRef, ...]] = field(default_factory=dict)
+    kind_read_handlers: Mapping[str, tuple[HandlerRef, ...]] = field(default_factory=dict)
     extensions: tuple[HandlerRef, ...] = ()
 
 
@@ -298,10 +300,12 @@ def _collect_fsm(raw: Any, source: str) -> _FsmShape:
     )
 
 
-def _collect_links(raw: Any, source: str) -> tuple[list[Any], dict[str, tuple[HandlerRef, ...]]]:
-    """Key-check the ``links`` block; return ``(raw kinds, kind→handlers)``. The
-    ``kinds[].handlers`` slot is PARSED here (HATS-1043); link/unlink dispatch is
-    HATS-1043 step 6, so no link subscriptions are built from it yet."""
+def _collect_links(
+    raw: Any, source: str
+) -> tuple[list[Any], dict[str, tuple[HandlerRef, ...]], dict[str, tuple[HandlerRef, ...]]]:
+    """Key-check the ``links`` block; return ``(raw kinds, kind→handlers,
+    kind→read-handlers)``. ``kinds[].handlers`` fire link/unlink IN-LOCK
+    (HATS-1043); ``kinds[].read`` fire READ-phase on a context read (HATS-1064)."""
     if not isinstance(raw, dict):
         raise BacklogDefinitionError(f"{source}: 'links' must be a mapping")
     _reject_unknown(raw, _LINKS_KEYS, "links")
@@ -309,6 +313,7 @@ def _collect_links(raw: Any, source: str) -> tuple[list[Any], dict[str, tuple[Ha
     if not isinstance(kinds_raw, list):
         raise BacklogDefinitionError(f"{source}: links.kinds must be a list")
     kind_handlers: dict[str, tuple[HandlerRef, ...]] = {}
+    kind_read_handlers: dict[str, tuple[HandlerRef, ...]] = {}
     for item in kinds_raw:
         if isinstance(item, dict):
             name = item.get("name")
@@ -317,7 +322,10 @@ def _collect_links(raw: Any, source: str) -> tuple[list[Any], dict[str, tuple[Ha
             handlers = _parse_refs(item.get("handlers"), f"{loc} handlers")
             if handlers and isinstance(name, str):
                 kind_handlers[name] = handlers
-    return kinds_raw, kind_handlers
+            read_handlers = _parse_refs(item.get("read"), f"{loc} read")
+            if read_handlers and isinstance(name, str):
+                kind_read_handlers[name] = read_handlers
+    return kinds_raw, kind_handlers, kind_read_handlers
 
 
 def _collect_field(raw: Any, source: str) -> FieldSpec:
@@ -421,7 +429,7 @@ def _build(raw: Any, source: str) -> BacklogDefinition:
     if "links" not in raw:
         raise BacklogDefinitionError(f"{source}: missing 'links' section")
     fsm = _collect_fsm(raw["fsm"], source)
-    kinds_raw, kind_handlers = _collect_links(raw["links"], source)
+    kinds_raw, kind_handlers, kind_read_handlers = _collect_links(raw["links"], source)
     extensions = _parse_refs(raw.get("extensions"), "extensions")
     fields = _collect_fields(raw.get("fields"), source)
     extras_policy = _parse_extras(raw.get("extras"), source)
@@ -436,6 +444,7 @@ def _build(raw: Any, source: str) -> BacklogDefinition:
         edge_handlers=MappingProxyType(fsm.edge_handlers),
         edge_skips=MappingProxyType(fsm.edge_skips),
         kind_handlers=MappingProxyType(kind_handlers),
+        kind_read_handlers=MappingProxyType(kind_read_handlers),
         extensions=extensions,
     )
     return BacklogDefinition(

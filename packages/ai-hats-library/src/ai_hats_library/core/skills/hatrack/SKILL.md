@@ -73,6 +73,12 @@ tiered hatch for `--rm` / `--freeze` on a pinned document.
 `tasks/<ID>/`; `rack context` live-scans and digests on the fly (no `doc put`).
 Read documents by the path `context` prints — never inline the body blind.
 
+**Work Policy.** A card's `## Work Policy` section (in its description) is the
+work policy for the task and its children; `rack context <child>` delivers every
+ancestor's `## Work Policy` up the parent chain into the child's read
+(parent-context, HATS-1064). Only that section travels — put per-stage child
+policy there, not in the whole card.
+
 ### Coexistence — what stays on `ai-hats task`
 
 `rack` has no `update` verb and no hyp/proposal surface. Until generalization

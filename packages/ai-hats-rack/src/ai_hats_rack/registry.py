@@ -62,6 +62,9 @@ class LinkKind:
     inverse: str = ""
     derived: bool = False
     aliases: tuple[str, ...] = ()
+    #: doc names surfaced (as paths) for a target of this kind on a context read
+    #: (HATS-1064) — replaces the hardcoded PARENT/LINKED_DOC_NAMES.
+    read_docs: tuple[str, ...] = ()
     #: the backlog this kind's targets live in (HATS-1044); "" == own backlog.
     targets: str = ""
 
@@ -146,12 +149,16 @@ def _parse_kind(raw: Any, source: str) -> LinkKind:
     aliases = raw.get("aliases", []) or []
     if not isinstance(aliases, list) or not all(isinstance(a, str) for a in aliases):
         raise LinksRegistryError(f"{source}: kind {raw['name']!r} aliases must be a string list")
+    read_docs = raw.get("read_docs", []) or []
+    if not isinstance(read_docs, list) or not all(isinstance(d, str) for d in read_docs):
+        raise LinksRegistryError(f"{source}: kind {raw['name']!r} read_docs must be a string list")
     return LinkKind(
         name=raw["name"],
         arity=arity,
         inverse=str(raw.get("inverse") or ""),
         derived=bool(raw.get("derived", False)),
         aliases=tuple(aliases),
+        read_docs=tuple(read_docs),
         targets=str(raw.get("targets") or ""),
     )
 
