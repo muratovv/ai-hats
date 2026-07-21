@@ -213,6 +213,15 @@ class Workspace:
                 return i
         raise UnknownBacklogError(name, self.backlog_cli_names())
 
+    def instances_by_name(self, name: str) -> list[BacklogInstance]:
+        """Every mounted instance answering to a backlog selector — the multi-root
+        form of :meth:`instance_by_name` (``--backlog hyp --projects all`` hits the
+        ``hyp`` backlog in every root, HATS-1081). Unknown -> :class:`UnknownBacklogError`."""
+        matches = [i for i in self.instances if name in (i.definition.cli_alias, i.name)]
+        if not matches:
+            raise UnknownBacklogError(name, self.backlog_cli_names())
+        return matches
+
     def kernel_for(self, item_id: str, root: RootId | None = None) -> Kernel:
         """The kernel of the backlog an id routes to — the integrator override
         first (tasks instance), else the portable kit (ADR-0017 §2/§4)."""
