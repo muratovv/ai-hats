@@ -48,6 +48,7 @@ Five top-level verbs, each with `--json` (JSON-first):
 rack create "Title" --id PROJ-042 --parent PROJ-014 --depends PROJ-041 --tag dx
 rack ls                       # backlog scan (--grep/--tag/--state/--parent)
 rack ls --backlog hyp         # scan another backlog (repeatable; --all-backlogs for all)
+rack ls --backlog hyp --projects all  # sweep across projects (rack root add/ls/rm; --root <path>)
 rack ls PROJ-042 --deep 1     # graph walk from a card
 rack context PROJ-042         # THE read package: card + links + document paths
 rack context PROJ-042 PROJ-043  # batch: ≥2 ids in one process → {"contexts":{id:…}}, skip-and-continue
