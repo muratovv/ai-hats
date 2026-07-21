@@ -1,13 +1,14 @@
 ---
 name: rack-advanced
-description: "Author a new custom rack backlog — its backlog.yaml definition and how it mounts under tracker/. Use when standing up a backlog beyond the built-in tasks/HYP/PROP (its own prefix, FSM, fields, or link kinds), editing a backlog.yaml, or debugging one that won't mount or route."
+description: "Advanced rack: author a new custom backlog (backlog.yaml + mounting), and sweep a backlog across several projects. Use when standing up a backlog beyond the built-in tasks/HYP/PROP (its own prefix, FSM, fields, or link kinds), editing a backlog.yaml, debugging one that won't mount or route, registering projects with `rack root`, or listing/reading one backlog across projects (`ls --projects/--root`, `<root>:<id>`)."
 license: MIT
 ---
 
 # Rack Advanced
 
-Advanced rack operations beyond day-to-day lifecycle. Current content: **authoring
-a new backlog** — defining a `backlog.yaml` and mounting it under `tracker/`.
+Advanced rack operations beyond day-to-day lifecycle: **authoring a new backlog**
+(defining a `backlog.yaml` and mounting it under `tracker/`) and **cross-project
+sweeps** (registering projects and listing/reading one backlog across them).
 
 ## When to Use
 
@@ -15,6 +16,11 @@ Reach here when the task is to **define a new backlog** (a distinct catalog with
 its own id prefix, state machine, fields, and link kinds) — e.g. a project
 `decisions`, `experiments`, or `incidents` backlog alongside the built-in
 tasks / hypotheses / proposals.
+
+Also reach here for a **cross-project sweep** — registering projects with `rack
+root` (add / list / remove), or listing / reading one backlog across several
+projects (`ls --projects` / `--root`, a `<root_id>:<id>` read). See
+[Cross-project sweep](#cross-project-sweep-registry--search).
 
 Not this skill when you are:
 
@@ -101,11 +107,65 @@ Once mounted, the definition alone yields (no per-backlog code):
 - Prefix-routed reads/moves: `rack context <ID>`, `rack ls <ID>`, `rack
   transition <ID> <state|edge-name>`, `rack ls --backlog <alias>`.
 
+## Cross-project sweep (registry + search)
+
+List or read **one backlog across several projects** — "hypotheses of all
+projects" in one command (HATS-1081). Two parts: a project registry, and the
+cross-project flags on `ls` / `context`.
+
+**Register the projects you sweep** — a persistent list at `~/.ai-hats/roots.yaml`
+(override the path with `RACK_ROOTS_FILE`):
+
+```bash
+rack root add <path>   # register a project root (must hold .agent/ or ai-hats.yaml)
+rack root ls           # list registered roots: root_id, path, reachable?
+rack root rm <path>    # unregister a root by path
+```
+
+`root_id` is the project's **folder name** (no alias). `add` validates the path is
+a project, stores it resolved, and de-dupes (a re-add is a no-op); `rm` takes the
+same path. Registering is optional — `--root` sweeps ad-hoc roots without touching
+the file.
+
+**Search across projects** on the no-id scan (rows gain a `project` marker column /
+`project` json key; the current project is **always** included, roots dedup by real
+path):
+
+```bash
+rack ls --projects all               # every registered project ∪ the current one
+rack ls --projects projA,projB       # a named subset (by root_id) ∪ the current one
+rack ls --root ../other              # ad-hoc: add a root by path (repeatable)
+rack ls --backlog hyp --projects all # the hyp backlog in EVERY swept project
+```
+
+**Read across projects** — a bare id is ambiguous when two projects share a prefix,
+so qualify it (or mount an unregistered project by path):
+
+```bash
+rack context projB:HATS-9              # <root_id>:<id> routes into a registered project
+rack context projB:HATS-9 --root ../projB   # or mount it by path
+```
+
+**Boundaries.**
+
+- **Read-only.** The sweep and qualified `context` are reads; cross-project
+  *writes* (qualified `transition`, cross-project `create`, cross-project links)
+  are out of scope — a sweep never mutates another project.
+- **Read-tolerant registry, fail-fast `--root`.** A registered root that has
+  vanished is *skipped* with a non-silent footer (the sweep survives); an explicit
+  `--root` to a non-project is a hard error.
+- **Folder-name collision** (two `ai-hats` clones): the `<root_id>:<id>` qualifier
+  is ambiguous — disambiguate with the full path via `--root`.
+
 ## Completion
 
-Done when: the `backlog.yaml` sits under `tracker/`, `rack --help` shows its
-group, and `rack <alias> create` + `rack context <PREFIX>-001` both work — with no
-loader error on any `rack` call.
+**Authoring a backlog** — done when: the `backlog.yaml` sits under `tracker/`,
+`rack --help` shows its group, and `rack <alias> create` + `rack context
+<PREFIX>-001` both work — with no loader error on any `rack` call.
+
+**Cross-project sweep** — done when: `rack root add <path>` then `rack root ls`
+shows it, and `rack ls --projects all` lists cards from the registered project(s)
+alongside the current one, each row carrying its `project` marker.
 
 **Validation scenario (RED → GREEN).** RED — asked to add a project `decisions`
 backlog, an agent *without* this skill hunts for a `rack init-backlog`/register
@@ -129,3 +189,9 @@ any stored inverse), drops it in, and `rack decision create "…"` works first t
   would drift, so the loader refuses it.
 - Inventing a handler / validator name in YAML with no code-side factory — the
   name must resolve in the stock registry or composition fails closed.
+- Expecting `--projects` / `--root` to route a *write* — the sweep is read-only;
+  cross-project mutation is out of scope.
+- Leaning on a `<root_id>:<id>` qualifier when two roots share a folder name — the
+  id is ambiguous; use the full path via `--root`.
+- Hand-editing `~/.ai-hats/roots.yaml` for a bad path — `rack root add` validates
+  and resolves; a non-project path is rejected there.
