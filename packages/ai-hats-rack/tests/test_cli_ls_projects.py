@@ -13,6 +13,7 @@ import pytest
 from click.testing import CliRunner
 
 from ai_hats_rack.cli import main
+from ai_hats_rack.definition import packaged_definition_source
 
 
 @pytest.fixture
@@ -82,3 +83,33 @@ def test_projects_by_name_selects_subset(runner, tmp_path, monkeypatch):
 
     # named subset ∪ CWD: projB (named) + projA (CWD), not projC
     assert {r["project"] for r in json.loads(out.output)["tasks"]} == {"projA", "projB"}
+
+
+def _make_project_with_hyp(base, name):
+    proj = base / name
+    tracker = proj / ".agent" / "ai-hats" / "tracker"
+    (tracker / "backlog" / "tasks").mkdir(parents=True)
+    hyp = tracker / "hypotheses"
+    hyp.mkdir(parents=True)
+    (hyp / "backlog.yaml").write_text(packaged_definition_source("hypotheses"), encoding="utf-8")
+    return proj, hyp
+
+
+def test_backlog_filter_spans_projects(runner, tmp_path, monkeypatch):
+    # the headline: --backlog hyp --projects all hits the hyp backlog in EVERY project
+    proj_a, hyp_a = _make_project_with_hyp(tmp_path, "projA")
+    proj_b, hyp_b = _make_project_with_hyp(tmp_path, "projB")
+    _seed_card(hyp_a, "HYP-1", "idea A")
+    _seed_card(hyp_b, "HYP-1", "idea B")
+    monkeypatch.setenv("RACK_ROOTS_FILE", str(tmp_path / "reg.yaml"))
+    runner.invoke(main, ["root", "add", str(proj_b)], catch_exceptions=False)
+
+    monkeypatch.chdir(proj_a)
+    out = runner.invoke(
+        main, ["ls", "--backlog", "hyp", "--projects", "all", "--json"], catch_exceptions=False
+    )
+
+    assert out.exit_code == 0, out.output
+    rows = json.loads(out.output)["tasks"]
+    assert {r["project"] for r in rows} == {"projA", "projB"}
+    assert all(r["backlog"] == "hyp" and r["id"].startswith("HYP-") for r in rows)

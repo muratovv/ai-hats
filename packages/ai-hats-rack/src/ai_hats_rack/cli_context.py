@@ -558,13 +558,17 @@ def ls_cmd(
             if all_backlogs:
                 selected = list(workspace.instances)
             elif backlog:
-                seen: set[str] = set()
+                seen: set[tuple[str, str]] = set()
                 selected = []
-                for name in backlog:  # repeatable; dedup so a repeat is not double-scanned
-                    inst = workspace.instance_by_name(name)
-                    if inst.name not in seen:
-                        seen.add(inst.name)
-                        selected.append(inst)
+                # repeatable × every root: dedup by (root_id, backlog name) so a
+                # repeat is not double-scanned, but the same backlog in different
+                # projects is kept (HATS-1081).
+                for name in backlog:
+                    for inst in workspace.instances_by_name(name):
+                        key = (inst.root_id, inst.name)
+                        if key not in seen:
+                            seen.add(key)
+                            selected.append(inst)
             else:
                 selected = [i for i in workspace.instances if i.is_tasks]
             # Stamp origin only when the matching filter is engaged, so the default
