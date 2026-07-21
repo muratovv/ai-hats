@@ -14,6 +14,7 @@ import click
 
 from .definition import load_backlog
 from .verbs import Verb, all_verbs, on_user_schema
+from .cli_root import root_group
 from .verbs.groups import RackGroup
 
 # Re-exported for the dotted-path pins (test_cli_wiring / test_error_surface) and
@@ -47,6 +48,9 @@ def init_verbs(verbs: list[Verb], defn) -> None:
 # per-backlog groups (hyp/proposal) are added lazily by RackGroup when the ambient
 # workspace mounts sibling catalogs (HATS-1036 R2) — nothing here until then.
 init_verbs(all_verbs(), load_backlog())
+
+# The cross-project roots registry group (HATS-1081) — static, not backlog-scoped.
+main.add_command(root_group)
 
 
 if __name__ == "__main__":
