@@ -62,7 +62,7 @@ from .constants import (
     CANONICAL_MANIFEST,
     GITIGNORE_FILE,
     USER_RULES_SUBDIR,
-    PROVIDER_AGY,
+    PROVIDER_CLAUDE,
 )
 
 from typing import TYPE_CHECKING, Any
@@ -492,11 +492,11 @@ class Assembler:
         # Persist path overrides NOW so subsequent path resolution
         # (runs_dir / tasks_dir) reads the new ai_hats_dir from yaml.
         if early_delta:
-            # Provider must be set before the very first save (yaml is
-            # rejected without it). Pick the requested value, fall back
-            # to whatever's already on the config, finally agy.
+            # Provider must be set before the first save (yaml rejects none).
+            # Requested value, else claude — the sole builtin (agy/cline are
+            # out-of-tree, maybe uninstalled; HATS-1093).
             if not self.config_path.exists() and not self.project_config.provider:
-                early_delta["provider"] = provider or PROVIDER_AGY
+                early_delta["provider"] = provider or PROVIDER_CLAUDE
             self.save_config(**early_delta)
 
         # HATS-312 / HATS-313 / HATS-314: all framework roots live under
@@ -519,7 +519,7 @@ class Assembler:
         # Create/update ai-hats.yaml (delta-write, HATS-526)
         delta: dict[str, Any] = {}
         if greenfield:
-            delta["provider"] = provider or PROVIDER_AGY
+            delta["provider"] = provider or PROVIDER_CLAUDE
             if role:
                 delta["default_role"] = role
             # HATS-471: greenfield projects start at the latest migration

@@ -166,6 +166,18 @@ def test_init_unknown_provider_fails_loud(cli_project):
     assert not (project / ".agent").exists()
 
 
+def test_init_without_provider_defaults_to_claude(cli_project):
+    """Greenfield ``self init`` with no ``-p`` defaults to claude — the sole
+    builtin. agy/cline are out-of-tree surfaces that may be uninstalled, so a
+    non-builtin default would break a bare init (HATS-1093)."""
+    project, runner = cli_project
+
+    result = runner.invoke(main, ["self", "init", "--no-wizard", "--no-update"])
+
+    assert result.exit_code == 0, result.output
+    assert "provider: claude" in (project / PROJECT_CONFIG).read_text()
+
+
 def test_set_unknown_role_fails_loud(cli_project):
     """ai-hats config set -r <unknown> exits non-zero even when project is already initialized."""
     project, runner = cli_project
