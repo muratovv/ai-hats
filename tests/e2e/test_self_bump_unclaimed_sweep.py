@@ -55,14 +55,14 @@ def _digest(data: bytes) -> str:
 def _seed_project(project: Path, env: dict[str, str]) -> dict[str, Path]:
     """Current-shape (v0.7) project with a dead-owner marker + a live surface.
 
-    ``provider: gemini`` (no runtime-hook channel) and no active role
+    ``provider: agy`` (no runtime-hook channel) and no active role
     (bare-bump, ``result=None``) on purpose: neither the living git-hooks
     mechanism (``install_git_hooks`` → cleanup) nor ``ensure_runtime_hooks``
     touches the seeded surfaces — only the generic sweeper acts on them.
     """
     (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
-        "provider: gemini\n"
+        "provider: agy\n"
         "ai_hats_dir: .agent/ai-hats\n"
     )
     (project / ".agent" / "ai-hats").mkdir(parents=True)
@@ -127,8 +127,16 @@ def swept_env(shared_launcher, tmp_path):
 
 
 @pytest.mark.integration
-def test_e2e_bump_sweeps_dead_owner_marker(swept_env, tmp_path):
+def test_e2e_bump_sweeps_dead_owner_marker(swept_env, repo_root, tmp_path):
     env, trash = swept_env
+    # ``provider: agy`` is an out-of-tree surface (packages/surfaces/agy), not a
+    # builtin — install it into the shared launcher venv so the seed resolves
+    # via the entry-point registry (HATS-1093).
+    subprocess.run(
+        ["uv", "pip", "install", "--python", f"{env[ENV_AI_HATS_VENV]}/bin/python",
+         "-e", str(repo_root / "packages" / "surfaces" / "agy")],
+        check=True, capture_output=True, text=True,
+    )
     project = tmp_path / "proj"
     project.mkdir()
     paths = _seed_project(project, env)

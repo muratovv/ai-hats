@@ -76,7 +76,6 @@ aggregation = [
 # it (built-ins are listed too — they self-register first, discovery no-ops them).
 [project.entry-points."ai_hats.providers"]
 claude = "ai_hats.providers:ClaudeProvider"
-gemini = "ai_hats.providers:GeminiProvider"
 
 # HATS-1038 C1: the rack CLI discovers this factory by metadata (never imports
 # the integrator — import-hygiene pin) and builds the fully-wired production
@@ -128,6 +127,7 @@ testpaths = [
     "packages/ai-hats-observe/tests",
     "packages/ai-hats-library/tests",
     "packages/surfaces/cline/tests",
+    "packages/surfaces/agy/tests",
 ]
 # HATS-508: prepend ./src to sys.path so ``python -m pytest`` from a
 # linked worktree imports the worktree's own ``ai_hats`` package
@@ -145,6 +145,7 @@ pythonpath = [
     "packages/ai-hats-observe/src",
     "packages/ai-hats-library/src",
     "packages/surfaces/cline/src",
+    "packages/surfaces/agy/src",
 ]
 filterwarnings = [
     # Python 3.14 deprecates forkpty() in multi-threaded processes.

@@ -40,7 +40,7 @@ def _make_downstream_project(root: Path) -> None:
     _init_repo(root)
     (root / "libraries" / "skills" / "demo").mkdir(parents=True)
     (root / "libraries" / "skills" / "demo" / "SKILL.md").write_text("main copy\n")
-    ProjectConfig(provider="gemini").save(root / PROJECT_CONFIG)
+    ProjectConfig(provider="agy").save(root / PROJECT_CONFIG)
     _git(root, "add", "libraries")  # ai-hats.yaml is gitignored by convention
     _git(root, "commit", "-m", "init", "--no-verify")
 

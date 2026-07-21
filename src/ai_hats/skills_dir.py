@@ -1,7 +1,7 @@
 """Ref-counted materializer for directory-convention skill registries.
 
 Extracted from ClineProvider (HATS-963/981) for providers whose harness
-discovers skills from a project-scoped dir (``.gemini/skills/``,
+discovers skills from a project-scoped dir (``.agy/skills/``,
 ``.cline/skills/``): the union of all live sessions' skills stays on disk;
 a JSON marker keyed by session_id prevents parallel sessions from sweeping
 each other's skills.  # HATS-993

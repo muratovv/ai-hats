@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ai_hats.providers import ClaudeProvider, GeminiProvider, Provider
+from ai_hats.providers import ClaudeProvider, Provider
+from ai_hats_agy.provider import AgyProvider
 
 
 def test_claude_get_run_command_without_model() -> None:
@@ -25,16 +26,15 @@ def test_claude_get_run_command_empty_model_treated_as_unset() -> None:
     ]
 
 
-def test_gemini_get_run_command_without_model() -> None:
-    p = GeminiProvider()
-    # --skip-trust: headless gemini hard-fails in non-trusted dirs (HATS-993).
-    assert p.get_run_command(["gemini"], "hi") == ["gemini", "--skip-trust", "-p", "hi"]
+def test_agy_get_run_command_without_model() -> None:
+    p = AgyProvider()
+    assert p.get_run_command(["agy"], "hi") == ["agy", "-p", "hi"]
 
 
-def test_gemini_get_run_command_with_model() -> None:
-    p = GeminiProvider()
-    assert p.get_run_command(["gemini"], "hi", model="gemini-2.0-flash") == [
-        "gemini", "--model", "gemini-2.0-flash", "--skip-trust", "-p", "hi",
+def test_agy_get_run_command_with_model() -> None:
+    p = AgyProvider()
+    assert p.get_run_command(["agy"], "hi", model="agy-2.0-flash") == [
+        "agy", "--model", "agy-2.0-flash", "-p", "hi",
     ]
 
 

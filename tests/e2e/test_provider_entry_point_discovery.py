@@ -85,4 +85,3 @@ def test_out_of_tree_provider_is_discovered_by_the_binary(
     assert "acme" in result.stdout, result.stdout
     # discovery augments, not replaces — the built-ins are still there
     assert "claude" in result.stdout, result.stdout
-    assert "gemini" in result.stdout, result.stdout

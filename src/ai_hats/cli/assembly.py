@@ -161,7 +161,7 @@ def _launch_wizard_session() -> None:
 
 
 @click.command()
-@click.option("--provider", "-p", default=None, help="Provider (gemini/claude)")
+@click.option("--provider", "-p", default=None, help="Provider (agy/claude)")
 @click.option("--role", "-r", default=None, help="Role to apply after init")
 @click.option(
     "--task-prefix", "task_prefix", default=None,
@@ -399,7 +399,7 @@ def init(
 
 
 @click.command("set")
-@click.option("--provider", "-p", default=None, help="Provider (gemini/claude)")
+@click.option("--provider", "-p", default=None, help="Provider (agy/claude)")
 @click.option("--role", "-r", default=None, help="Role to apply")
 @click.option(
     "--task-prefix",

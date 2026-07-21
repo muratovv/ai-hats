@@ -404,19 +404,19 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
         info["path"].unlink()
 
 
-def test_gemini_override_creates_session_rules_dir(cli_project):
-    """HATS-993: parallel gemini sessions get isolated --include-directories dirs."""
+def test_agy_override_creates_session_rules_dir(cli_project):
+    """HATS-993: parallel agy sessions get isolated --include-directories dirs."""
     import shutil
     from pathlib import Path
 
     from ai_hats.assembler import Assembler
-    from ai_hats.providers import GeminiProvider
+    from ai_hats_agy.provider import AgyProvider
 
     project, runner = cli_project
-    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "gemini"])
+    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "agy"])
 
     asm = Assembler(project)
-    provider = GeminiProvider()
+    provider = AgyProvider()
 
     # Build two parallel overrides
     result_a = asm.composer.compose("judge")

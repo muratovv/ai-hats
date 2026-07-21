@@ -18,7 +18,6 @@ from ai_hats.constants import (
     HOOK_SUBAGENT_STOP,
     HOOK_USER_PROMPT_SUBMIT,
     PROVIDER_CLAUDE,
-    PROVIDER_GEMINI,
 )
 from ai_hats_observe.artifacts import (
     AUDIT_MD,
@@ -97,7 +96,6 @@ def test_hook_event_names():
 def test_provider_names():
     """Provider registry names (runner vocabulary)."""
     assert PROVIDER_CLAUDE == "claude"
-    assert PROVIDER_GEMINI == "gemini"
 
 
 def test_funnel_keys():

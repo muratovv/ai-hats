@@ -7,7 +7,7 @@ if a later step (migration registry, healer, layout move) misbehaves::
     tar -xzf <snapshot>.tar.gz -C <project_dir>
 
 The captured paths are ``BACKUP_SCOPE_PATHS`` (the ``.agent/`` tree, the
-``.claude`` settings, ``ai-hats.yaml``, ``CLAUDE.md`` / ``GEMINI.md``,
+``.claude`` settings, ``ai-hats.yaml``, ``CLAUDE.md`` / ``AGY.md``,
 ``.githooks``, ``.gitignore``); everything else under ``project_dir`` is the
 user's project and is skipped. Env: ``AI_HATS_BUMP_BACKUP_DIR=<path>`` overrides
 the base dir; ``=-`` hard-disables (one stderr WARN/call) for CI / ephemeral
@@ -55,8 +55,8 @@ MAX_RETENTION = 10
 
 # Paths under ``project_dir`` that enter the tarball. Each entry is a
 # project-relative path; missing entries are silently skipped (e.g.
-# greenfield projects won't have ``.agent/`` yet, ``GEMINI.md`` only
-# exists on the gemini provider, etc.).
+# greenfield projects won't have ``.agent/`` yet, ``AGY.md`` only
+# exists on the agy provider, etc.).
 BACKUP_SCOPE_PATHS: tuple[str, ...] = (
     ".agent",
     CLAUDE_SETTINGS_JSON_REL,
@@ -161,7 +161,7 @@ def _iter_scope(project_dir: Path) -> list[Path]:
     """Return scope paths that actually exist on disk, in declaration order.
 
     Missing paths are silently skipped — greenfield projects, providers
-    that don't use ``GEMINI.md``, etc.
+    that don't use ``AGY.md``, etc.
     """
     out: list[Path] = []
     for rel in BACKUP_SCOPE_PATHS:

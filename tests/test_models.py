@@ -547,10 +547,10 @@ def test_project_config_passes_unknown_provider_through(tmp_path):
     schema→providers back-edge) — an unknown value loads; rejection happens at
     the assembler read chokepoint (see test_assembler.py)."""
     path = tmp_path / PROJECT_CONFIG
-    path.write_text("provider: gemini-2.5\nschema_version: 2\n")
+    path.write_text("provider: agy-2.5\nschema_version: 2\n")
 
     cfg = ProjectConfig.from_yaml(path)
-    assert cfg.provider == "gemini-2.5"
+    assert cfg.provider == "agy-2.5"
 
 
 def test_project_config_valid_load_still_works(tmp_path):
@@ -787,7 +787,7 @@ def test_migration_v1_to_v2_merges_profile(tmp_path):
     import json
 
     yaml_path = tmp_path / PROJECT_CONFIG
-    yaml_path.write_text("provider: gemini\ndefault_role: sre\nschema_version: 1\n")
+    yaml_path.write_text("provider: agy\ndefault_role: sre\nschema_version: 1\n")
 
     profile_path = tmp_path / "profile.json"
     profile_path.write_text(

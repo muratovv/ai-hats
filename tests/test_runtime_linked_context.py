@@ -5,7 +5,7 @@ a ticket's *direct* links (parent epic first, then depends_on / related /
 see_also), trimmed per-card with only the latest work_log entry; the parent epic
 additionally carries its ``plan.md``. The body is wired into both live sub-agent
 prompt channels (``build_first_user_message`` for Claude, ``_build_meta_prompt``
-for Gemini).
+for Agy).
 """
 
 from __future__ import annotations
@@ -200,7 +200,7 @@ def _stub_result():
 
 
 def test_build_meta_prompt_wires_linked_context_section(tmp_path: Path) -> None:
-    """Gemini live channel: _build_meta_prompt emits LINKED_CONTEXT after TICKET_CONTEXT."""
+    """Agy live channel: _build_meta_prompt emits LINKED_CONTEXT after TICKET_CONTEXT."""
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
     _write_card(
@@ -209,7 +209,7 @@ def test_build_meta_prompt_wires_linked_context_section(tmp_path: Path) -> None:
             id="HATS-900",
             title="Epic",
             state=TaskState.EXECUTE,
-            description="EPIC BODY FOR GEMINI",
+            description="EPIC BODY FOR AGY",
         ),
     )
     _write_card(
@@ -226,7 +226,7 @@ def test_build_meta_prompt_wires_linked_context_section(tmp_path: Path) -> None:
     )
     assert "# TICKET_CONTEXT" in out
     assert "# LINKED_CONTEXT" in out
-    assert "EPIC BODY FOR GEMINI" in out
+    assert "EPIC BODY FOR AGY" in out
     assert out.index("# TICKET_CONTEXT") < out.index("# LINKED_CONTEXT")
 
     # A ticket with no links → no LINKED_CONTEXT section.

@@ -6,7 +6,7 @@ Covers:
     - preservation of pre-existing user-authored PreToolUse entries
     - skip when user already wired the same hook manually
     - update-in-place when the managed entry changes (e.g. hook path moved)
-    - Gemini provider is a no-op (does not touch settings.json)
+    - Agy provider is a no-op (does not touch settings.json)
     - malformed / non-object JSON: leave alone (no clobber)
 """
 
@@ -17,7 +17,8 @@ import pytest
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.paths import claude_dir, hooks_dir, managed_runtime_hook_filename
-from ai_hats.providers import ClaudeProvider, GeminiProvider
+from ai_hats.providers import ClaudeProvider
+from ai_hats_agy.provider import AgyProvider
 from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
 from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 
@@ -257,8 +258,8 @@ def test_claude_updates_managed_entry_in_place(tmp_path: Path) -> None:
     assert entries[0]["hooks"][0]["command"] == EXPECTED_REL
 
 
-def test_gemini_provider_does_not_touch_settings(tmp_path: Path) -> None:
-    GeminiProvider().ensure_runtime_hooks(tmp_path)
+def test_agy_provider_does_not_touch_settings(tmp_path: Path) -> None:
+    AgyProvider().ensure_runtime_hooks(tmp_path)
     assert not (tmp_path / SETTINGS).exists()
 
 
@@ -502,8 +503,8 @@ def test_leak_detector_empty_on_non_object_root(tmp_path: Path) -> None:
 
 
 def test_base_surface_reports_no_leaks(tmp_path: Path) -> None:
-    """Gemini (base default) manages no user-global hooks → [] even with a seeded
+    """Agy (base default) manages no user-global hooks → [] even with a seeded
     Claude leak. Each surface owns its own detection (HATS-961)."""
     home = tmp_path / "home"
     _seed_global_leak(home)
-    assert GeminiProvider().leaked_user_global_project_hooks(home) == []
+    assert AgyProvider().leaked_user_global_project_hooks(home) == []

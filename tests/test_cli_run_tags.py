@@ -1,7 +1,7 @@
 """CLI integration tests for `ai-hats agent --tag` (HATS-163).
 
 Verifies the wiring CLI flag → parse_tags → SubAgentRunner.run(tags=...) without
-spinning up a real claude/gemini subprocess. A stub SubAgentRunner captures the
+spinning up a real claude/agy subprocess. A stub SubAgentRunner captures the
 kwargs it receives.
 """
 

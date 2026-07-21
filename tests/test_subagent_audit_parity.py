@@ -148,17 +148,17 @@ def test_subagent_audit_md_unchanged_without_work_dir(tmp_path):
 
 
 def test_subagent_audit_md_unchanged_without_claude_session_id(tmp_path):
-    """Gemini / legacy subprocess providers (no claude_session_id) keep
+    """Agy / legacy subprocess providers (no claude_session_id) keep
     producing meta-only audit.md."""
     session_dir = tmp_path / "session_test"
     session_dir.mkdir()
     session = Session(session_id="test", session_dir=session_dir)
-    session.init_audit(role="primary", provider="gemini")
+    session.init_audit(role="primary", provider="agy")
 
     _finalize_sub_agent(
         session,
         role="primary",
-        model="gemini-pro",
+        model="agy-pro",
         isolation_mode="discard",
         exit_code=0,
         stdout="ok",
