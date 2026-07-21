@@ -116,7 +116,7 @@ environment. Repeat only when the repo or workflow filename changes.
    publish behind a manual approval. Off by default: the tag push
    publishes unattended.
 
-### Workspace packages (`ai-hats-core`, `ai-hats-wt`, `ai-hats-tracker`, `ai-hats-observe`, `ai-hats-library`, `ai-hats-cline`)
+### Workspace packages (`ai-hats-core`, `ai-hats-wt`, `ai-hats-tracker`, `ai-hats-observe`, `ai-hats-library`, `ai-hats-cline`, `ai-hats-rack`)
 
 The workspace packages under `packages/*` (and surface plugins under
 `packages/surfaces/*`, e.g. `ai-hats-cline`) carry their own **static** versions
