@@ -39,6 +39,7 @@ rack = "ai_hats_rack.cli:main"
 [project.urls]
 Homepage = "https://github.com/muratovv/ai-hats"
 Repository = "https://github.com/muratovv/ai-hats"
+Changelog = "https://github.com/muratovv/ai-hats/blob/master/packages/ai-hats-rack/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ai_hats_rack"]
