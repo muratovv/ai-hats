@@ -413,14 +413,15 @@ class WrapRunner:
         # session.session_id (HATS-294).
         session = self.session_mgr.create_session()
 
-        # HATS-452 (П2): no override channel on WrapRunner — the payload's
+                # HATS-452 (П2): no override channel on WrapRunner — the payload's
         # composition flows straight into ``build_session_prompt``.
-        result = payload.result
-        session_args, session_env, meta_prompt = provider.build_session_prompt(
-            self.project_dir,
-            result,
-            session.session_id,
-        )
+        with provider.execution_context(self.project_dir):
+            result = payload.result
+            session_args, session_env, meta_prompt = provider.build_session_prompt(
+                self.project_dir,
+                result,
+                session.session_id,
+            )
         session.init_audit(
             role=active_role,
             provider=provider_name,
