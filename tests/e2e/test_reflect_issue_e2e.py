@@ -69,13 +69,13 @@ def test_reflect_issue_writes_a_draft_hypothesis(
     tmp_project: Project,
     requires_claude_auth,  # noqa: ARG001 — skip-marker fixture
 ) -> None:
-    """User runs ``reflect issue "..."`` → one new HYP file on disk."""
-    hyp_dir = tmp_project.agent_dir / "tracker" / "hypotheses"
-    # Baseline snapshot — tmp_project is role-less + fresh, so the
-    # dir may not even exist yet. ``reflect issue`` creates it via
-    # ``store.dir.mkdir(parents=True, exist_ok=True)``.
+    """User runs ``reflect issue "..."`` → one new HYP dir-card on disk."""
+    # Rack dir-per-card layout (HATS-1054): HYP cards land under
+    # ``tracker/backlog/hypotheses/<ID>/task.yaml``. ``ensure_backlog`` mounts the
+    # sibling backlog on a fresh project before the first create (cli/reflect.py).
+    hyp_dir = tmp_project.agent_dir / "tracker" / "backlog" / "hypotheses"
     before = (
-        {p.name for p in hyp_dir.glob("HYP-*.yaml")}
+        {p.name for p in hyp_dir.glob("HYP-*")}
         if hyp_dir.exists() else set()
     )
 
@@ -85,37 +85,36 @@ def test_reflect_issue_writes_a_draft_hypothesis(
     ).expect_ok()
 
     assert hyp_dir.is_dir(), (
-        f"hypotheses dir not created at {hyp_dir} — "
+        f"hypotheses backlog not created at {hyp_dir} — "
         "did reflect issue silently no-op?"
     )
 
-    after = {p.name for p in hyp_dir.glob("HYP-*.yaml")}
+    after = {p.name for p in hyp_dir.glob("HYP-*")}
     new = after - before
     assert len(new) == 1, (
-        f"expected exactly one new HYP file under {hyp_dir}, "
+        f"expected exactly one new HYP card under {hyp_dir}, "
         f"got {len(new)} new: {sorted(new)}"
     )
 
-    new_path = hyp_dir / next(iter(new))
-    data = yaml.safe_load(new_path.read_text())
+    card = hyp_dir / next(iter(new)) / "task.yaml"
+    data = yaml.safe_load(card.read_text())
     assert isinstance(data, dict), (
-        f"HYP {new_path} not a YAML mapping: {type(data).__name__}"
+        f"HYP {card} not a YAML mapping: {type(data).__name__}"
     )
 
     # User-contract fields populated by ``_write_intake`` (cli/reflect.py).
     # Empty-string is treated as missing — haiku must produce SOMETHING.
     assert data.get("title"), (
-        f"empty/missing title in {new_path}: {data}"
+        f"empty/missing title in {card}: {data}"
     )
     assert data.get("hypothesis"), (
-        f"empty/missing hypothesis in {new_path}: {data}"
+        f"empty/missing hypothesis in {card}: {data}"
     )
-    # ``source_task`` defaults to ``"supervisor-observation"`` when
-    # ``--task`` is absent (cli/reflect.py:615 + :462
-    # SUPERVISOR_SOURCE_TASK constant).
-    assert data.get("source_task"), (
-        f"missing source_task in {new_path}: {data}"
+    # ``source_task`` rides a rack link (defaults to ``supervisor-observation``
+    # when ``--task`` is absent); ``state`` — not ``status`` — carries lifecycle.
+    assert (data.get("links") or {}).get("source_task"), (
+        f"missing source_task link in {card}: {data}"
     )
-    assert data.get("status") == "active", (
-        f"unexpected status {data.get('status')!r} in {new_path}: {data}"
+    assert data.get("state") == "active", (
+        f"unexpected state {data.get('state')!r} in {card}: {data}"
     )
