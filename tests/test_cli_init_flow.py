@@ -166,6 +166,18 @@ def test_init_unknown_provider_fails_loud(cli_project):
     assert not (project / ".agent").exists()
 
 
+def test_init_without_provider_defaults_to_claude(cli_project):
+    """Greenfield ``self init`` with no ``-p`` defaults to claude — the sole
+    builtin. agy/cline are out-of-tree surfaces that may be uninstalled, so a
+    non-builtin default would break a bare init (HATS-1093)."""
+    project, runner = cli_project
+
+    result = runner.invoke(main, ["self", "init", "--no-wizard", "--no-update"])
+
+    assert result.exit_code == 0, result.output
+    assert "provider: claude" in (project / PROJECT_CONFIG).read_text()
+
+
 def test_set_unknown_role_fails_loud(cli_project):
     """ai-hats config set -r <unknown> exits non-zero even when project is already initialized."""
     project, runner = cli_project
@@ -404,19 +416,19 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
         info["path"].unlink()
 
 
-def test_gemini_override_creates_session_rules_dir(cli_project):
-    """HATS-993: parallel gemini sessions get isolated --include-directories dirs."""
+def test_agy_override_creates_session_rules_dir(cli_project):
+    """HATS-993: parallel agy sessions get isolated --include-directories dirs."""
     import shutil
     from pathlib import Path
 
     from ai_hats.assembler import Assembler
-    from ai_hats.providers import GeminiProvider
+    from ai_hats_agy.provider import AgyProvider
 
     project, runner = cli_project
-    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "gemini"])
+    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "agy"])
 
     asm = Assembler(project)
-    provider = GeminiProvider()
+    provider = AgyProvider()
 
     # Build two parallel overrides
     result_a = asm.composer.compose("judge")

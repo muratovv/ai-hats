@@ -69,14 +69,14 @@ def test_unknown_provider_raises_valueerror():
         get_provider("nope")
 
 
-def test_builtins_selfregister_in_gemini_claude_order():
-    from ai_hats.constants import PROVIDER_CLAUDE, PROVIDER_GEMINI
+def test_only_claude_selfregisters_as_builtin():
+    from ai_hats.constants import PROVIDER_CLAUDE
 
     prov._register_builtins()
-    # Order is a contract: cli/assembly.py detects providers in this order.
-    assert provider_names() == [PROVIDER_GEMINI, PROVIDER_CLAUDE]
+    # claude is the sole in-tree builtin; agy/cline are out-of-tree entry-point
+    # plugins discovered via ``ai_hats.providers`` (test_out_of_tree_… below).
+    assert provider_names() == [PROVIDER_CLAUDE]
     assert isinstance(get_provider(PROVIDER_CLAUDE), prov.ClaudeProvider)
-    assert isinstance(get_provider(PROVIDER_GEMINI), prov.GeminiProvider)
 
 
 class _FakeEntryPoint:
@@ -121,7 +121,7 @@ def test_broken_entry_point_is_skipped_not_fatal(monkeypatch, caplog):
 
     assert "broken" not in provider_names()  # bad one skipped
     assert "plugin" in provider_names()  # good one still registered
-    assert {"gemini", "claude"} <= set(provider_names())  # built-ins intact
+    assert {"claude"} <= set(provider_names())  # built-ins intact
     assert any("broken" in r.message for r in caplog.records)
 
 
@@ -134,7 +134,7 @@ def test_discovery_failure_is_non_fatal(monkeypatch):
     prov._register_builtins()
 
     prov._load_provider_entry_points()  # swallows the error
-    assert provider_names() == ["gemini", "claude"]
+    assert provider_names() == ["claude"]
 
 
 def test_pyproject_declares_provider_entry_point_group():
@@ -145,5 +145,4 @@ def test_pyproject_declares_provider_entry_point_group():
     group = data["project"]["entry-points"][PROVIDER_ENTRY_POINT_GROUP]
     assert group == {
         "claude": "ai_hats.providers:ClaudeProvider",
-        "gemini": "ai_hats.providers:GeminiProvider",
     }

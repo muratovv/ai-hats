@@ -89,7 +89,7 @@ def project_with_hook_skill(tmp_path):
         "injection: Role.\n"
     )
 
-    config = ProjectConfig(provider="gemini", library_paths=[str(lib)])
+    config = ProjectConfig(provider="agy", library_paths=[str(lib)])
     config.save(project / PROJECT_CONFIG)
 
     return project, lib
@@ -125,7 +125,7 @@ def project_no_hook_skill(tmp_path):
         "injection: Role.\n"
     )
 
-    config = ProjectConfig(provider="gemini", library_paths=[str(lib)])
+    config = ProjectConfig(provider="agy", library_paths=[str(lib)])
     config.save(project / PROJECT_CONFIG)
     return project, lib
 
@@ -413,7 +413,7 @@ def test_unknown_event_silently_skipped(tmp_path):
     (role_dir / "config.yaml").write_text(
         "name: test-role\ncomposition:\n  traits:\n    - trait-base\n"
     )
-    ProjectConfig(provider="gemini", library_paths=[str(lib)]).save(
+    ProjectConfig(provider="agy", library_paths=[str(lib)]).save(
         project / PROJECT_CONFIG,
     )
 
@@ -704,7 +704,7 @@ def test_sync_hooks_non_git_still_heals_runtime(tmp_path):
         "name: test-role\npriorities: [Quality]\n"
         "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
     )
-    ProjectConfig(provider="gemini", library_paths=[str(lib)], active_role="test-role").save(
+    ProjectConfig(provider="agy", library_paths=[str(lib)], active_role="test-role").save(
         project / PROJECT_CONFIG
     )
 
@@ -780,7 +780,7 @@ def project_with_self_heal_skill(tmp_path):
         "name: test-role\npriorities: [Quality]\n"
         "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
     )
-    ProjectConfig(provider="gemini", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
+    ProjectConfig(provider="agy", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
     return project, lib
 
 

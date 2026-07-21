@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-hats-agy"
+version = "0.1.0"
+description = "Antigravity CLI (agy) surface plugin for the ai-hats framework — registers the `agy` CLI as an ai-hats provider."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "muratovv", email = "f@muratovv.me" }, # ai-hats: allow-secret
+]
+keywords = ["agy", "antigravity", "provider", "surface", "ai-hats", "llm", "agent"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "ai-hats",
+    "ai-hats-core",
+    "filelock>=3.0",
+]
+
+[project.entry-points."ai_hats.providers"]
+agy = "ai_hats_agy:AgyProvider"
+
+[project.urls]
+Homepage = "https://github.com/muratovv/ai-hats"
+Repository = "https://github.com/muratovv/ai-hats"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_hats_agy"]
+
+[tool.uv.sources]
+ai-hats = { workspace = true }

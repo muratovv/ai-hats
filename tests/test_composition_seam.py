@@ -93,7 +93,7 @@ def test_seam_carries_first_run_hooks_warning(tmp_path: Path):
     asm = _fake_assembler(["judge"])
     asm.project_config.active_role = ""  # first-run → set_role fires
     asm.project_config.default_role = "judge"
-    asm.project_config.provider = "gemini"
+    asm.project_config.provider = "agy"
 
     def _set_role(role, provider, *, warnings_sink=None):
         if warnings_sink is not None:

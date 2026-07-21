@@ -10,7 +10,7 @@ import yaml
 from ai_hats.models import ProjectConfig, WorktreeConfig
 from ai_hats.paths import PROJECT_CONFIG
 
-BASE = "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: gemini\n"
+BASE = "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: agy\n"
 
 
 def _write(tmp_path, body: str):

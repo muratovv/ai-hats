@@ -16,7 +16,8 @@ import pytest
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.composer import Composer
-from ai_hats.providers import ALWAYS_ON_RULES, ClaudeProvider, GeminiProvider
+from ai_hats.providers import ALWAYS_ON_RULES, ClaudeProvider
+from ai_hats_agy.provider import AgyProvider
 from ai_hats.resolver import LibraryResolver
 from ai_hats.rule_delivery import (
     SUMMARIZED_IN_INJECTION,
@@ -25,7 +26,7 @@ from ai_hats.rule_delivery import (
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIB_LAYERS = [REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core", REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "usage"]
-PROVIDERS = [ClaudeProvider, GeminiProvider]
+PROVIDERS = [ClaudeProvider, AgyProvider]
 
 
 def _resolver() -> LibraryResolver:

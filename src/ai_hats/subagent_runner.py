@@ -155,7 +155,7 @@ class SubAgentRunner:
           ``asyncio.wait_for(timeout_s)``; the helper never raises and
           always returns an :class:`SdkRunResult` we finalize from.
 
-        * **Legacy subprocess** path (Gemini, future providers): unchanged
+        * **Legacy subprocess** path (Agy, future providers): unchanged
           ``subprocess.run`` flow. ``subprocess.TimeoutExpired`` keeps its
           long-standing finalize semantics here.
 
@@ -210,7 +210,7 @@ class SubAgentRunner:
         )
         session.log_sub(f"Sub-agent started: role={role_name}")
 
-        # HATS-474 review fix: keep the env we pass to a *subprocess* (Gemini
+        # HATS-474 review fix: keep the env we pass to a *subprocess* (Agy
         # path) as the full inherited environment — subprocess.run replaces
         # the child env wholesale when given. The SDK path uses an *overlay*
         # via ClaudeAgentOptions.env, which the SDK merges on top of
@@ -238,7 +238,7 @@ class SubAgentRunner:
         if provider_name != PROVIDER_CLAUDE:
             cmd = provider.get_cli_command()
             # HATS-307: materialize spawned role's skills for the sub-agent.
-            # For Gemini this is currently a no-op (HATS-367 follow-up).
+            # For Agy this is currently a no-op (HATS-367 follow-up).
             # Cleaned by _cleanup_session_cache in the finally block.
             skill_args = provider.materialize_runtime_skills(
                 self.project_dir,
@@ -310,7 +310,7 @@ class SubAgentRunner:
                         audit_writer_factory=self.payload.audit_writer_factory,
                     )
                 else:
-                    # Legacy subprocess path (Gemini and future non-SDK providers).
+                    # Legacy subprocess path (Agy and future non-SDK providers).
                     full_cmd = provider.get_run_command(
                         cmd,
                         meta_prompt,
@@ -516,7 +516,7 @@ class SubAgentRunner:
                 sections.append(f"# TICKET_CONTEXT\n{ticket_context}")
 
             # LINKED_CONTEXT (HATS-689) — directly-linked cards (parent epic +
-            # plan.md, plus depends_on/related/see_also). Live Gemini channel;
+            # plan.md, plus depends_on/related/see_also). Live Agy channel;
             # the Claude path mirrors this via build_first_user_message.
             linked_context = self._load_linked_context(ticket_id)
             if linked_context:

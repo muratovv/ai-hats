@@ -4,7 +4,7 @@ Every terminal path of SubAgentRunner (success, TimeoutExpired, generic error)
 must leave session_dir consistently closed: transcript.txt written when we have
 stdout, reasoning.log when we have stderr, metrics.json with exit_code and
 optional timed_out/error fields. Behavior is provider-agnostic by design — the
-same helper is called regardless of whether claude or gemini produced the
+same helper is called regardless of whether claude or agy produced the
 output.
 """
 
@@ -168,7 +168,7 @@ def test_generic_error_records_exit_code_and_message(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("provider", ["claude", "gemini"])
+@pytest.mark.parametrize("provider", ["claude", "agy"])
 def test_timeout_finalize_is_provider_agnostic(tmp_path, provider):
     """Finalize produces identical metrics.json structure regardless of which
     provider populated init_audit. This is what 'limits прокидываются одинаково'
@@ -203,7 +203,7 @@ def test_timeout_finalize_is_provider_agnostic(tmp_path, provider):
     assert (session.session_dir / TRANSCRIPT_TXT).read_text() == "partial\n"
 
 
-@pytest.mark.parametrize("provider", ["claude", "gemini"])
+@pytest.mark.parametrize("provider", ["claude", "agy"])
 def test_success_finalize_is_provider_agnostic(tmp_path, provider):
     """Happy-path metrics structure is also provider-agnostic — guards against
     accidental provider-specific branching sneaking into the helper."""

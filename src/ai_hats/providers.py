@@ -1,4 +1,4 @@
-"""Provider abstraction — adapters for Gemini and Claude CLI."""
+"""Provider abstraction — adapters for Agy and Claude CLI."""
 
 from __future__ import annotations
 
@@ -27,10 +27,8 @@ from .hook_collection import (
 from .frontmatter import FrontmatterError, read_frontmatter
 from .paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
 from .paths import CLAUDE_PROJECT_DIR_VAR
-from .paths import GEMINI_MD_FILENAME
 from .paths import ai_hats_dir
-from .paths import claude_md, claude_settings_json, claude_settings_local_json, gemini_md
-from .paths import gemini_skills_dir
+from .paths import claude_md, claude_settings_json, claude_settings_local_json
 from .paths import claude_user_settings_json
 from .paths import hooks_dir as _lib_hooks_dir
 from .paths import managed_runtime_hook_filename
@@ -64,7 +62,6 @@ from .constants import (  # noqa: E402
     ALWAYS_ON_RULES,
     HOOK_PRE_TOOL_USE,
     PROVIDER_CLAUDE,
-    PROVIDER_GEMINI,
 )
 
 
@@ -140,7 +137,7 @@ class Provider(abc.ABC):
         Order: PRIORITIES → merged role/trait injection → always-on RULES →
         optional AVAILABLE SKILLS index.
 
-        ``include_skills`` is the provider-specific toggle (HATS-701). Gemini
+        ``include_skills`` is the provider-specific toggle (HATS-701). Agy
         passes ``True`` — it has no native skill registry, so this index is
         its only discovery channel. Claude passes ``False`` — it materializes
         skills as a ``--plugin-dir`` (HITL) / SDK plugin (sub-agent) registry
@@ -193,7 +190,7 @@ class Provider(abc.ABC):
         """Build a non-interactive command that runs ``meta_prompt`` through this provider.
 
         Default: return ``cmd`` unchanged. Subclasses tailor the invocation
-        to their CLI (e.g. Claude needs ``--print -p``, Gemini needs ``-p``).
+        to their CLI (e.g. Claude needs ``--print -p``, Agy needs ``-p``).
         ``model`` is an optional explicit model name; when None, the provider
         CLI's default applies (back-compat).
         """
@@ -243,7 +240,7 @@ class Provider(abc.ABC):
         at session_end.
 
         Default: no-op — the provider has no per-spawn skill materialization
-        mechanism (Gemini case — see HATS-367 follow-up).
+        mechanism (Agy case — see HATS-367 follow-up).
         """
         del project_dir, result, session_id
         return []
@@ -251,7 +248,7 @@ class Provider(abc.ABC):
     def scaffold_template_relpath(self) -> str | None:
         """Library-relative path to the provider's prompt-file scaffold template.
 
-        Default: None — provider has no scaffold (e.g. Gemini per HATS-276).
+        Default: None — provider has no scaffold (e.g. Agy per HATS-276).
         Subclasses point at a markdown asset under
         `libraries/templates/<provider>/...`.
         """
@@ -269,7 +266,7 @@ class Provider(abc.ABC):
         bare-bump path with no active role); ``ClaudeProvider`` reads the
         skills' ``runtime_hooks:`` declarations from it (HATS-597).
 
-        Default: no-op. Providers without a runtime-hook channel (Gemini)
+        Default: no-op. Providers without a runtime-hook channel (Agy)
         rely on the rule layer plus skill-contributed git hooks.
 
         HATS-437: ClaudeProvider overrides to write a PreToolUse entry
@@ -290,7 +287,7 @@ class Provider(abc.ABC):
     def update_system_prompt(self, project_dir: Path, content: str) -> None:
         """Write or update the inline system prompt block.
 
-        Used by providers without a scaffold (e.g. Gemini) to maintain the
+        Used by providers without a scaffold (e.g. Agy) to maintain the
         AI-HATS-managed section of `./GEMINI.md` between `INJECTION_START` /
         `INJECTION_END` markers. For providers that declare a scaffold
         (Claude — HATS-284), this method is dormant: `Assembler.set_role`
@@ -341,101 +338,7 @@ class Provider(abc.ABC):
         )
 
 
-class GeminiProvider(Provider):
-    @property
-    def name(self) -> str:
-        return PROVIDER_GEMINI
 
-    def system_prompt_path(self, project_dir: Path) -> Path:
-        return gemini_md(project_dir)
-
-    def rules_dir(self, session_dir: Path) -> Path:
-        return session_dir / "rules"
-
-    def build_system_prompt(self, result: CompositionResult) -> str:
-        # HATS-993: skills reach gemini via the native .gemini/skills/
-        # registry — the HATS-701 text-index is retired.
-        return self._compose_sections(result, include_skills=False)
-
-    def materialize_runtime_skills(
-        self,
-        project_dir: Path,
-        result: CompositionResult,
-        session_id: str,
-    ) -> list[str]:
-        """Mirror the role's skills into ``.gemini/skills/`` (HATS-993).
-
-        Gemini CLI discovers workspace skills by convention — no CLI arg, so
-        returns ``[]``. Ref-counted marker keeps parallel sessions additive.
-        """
-        from .skills_dir import materialize_skills_dir
-
-        materialize_skills_dir(
-            gemini_skills_dir(project_dir),
-            result.skills,
-            project_dir,
-            session_id,
-            gitignore_entry=".gemini/skills/",
-        )
-        return []
-
-    def build_session_prompt(
-        self,
-        project_dir: Path,
-        result: CompositionResult,
-        session_id: str,
-    ) -> tuple[list[str], dict[str, str], str]:
-        """Session-scoped role via ``--include-directories`` memory (HATS-993).
-
-        Gemini loads ``GEMINI.md`` files from workspace include-directories at
-        session start; a per-session dir under ``.cache/sessions/<sid>/rules/``
-        carries the composed prompt without touching ``./GEMINI.md``. (The old
-        GEMINI_CLI_PROJECT_RULES_PATH env is ignored by gemini-cli >=0.45.)
-
-        Third return element (HATS-523): ``prompt_content`` — the exact bytes
-        written to the session ``GEMINI.md``, persisted by ``WrapRunner`` for
-        post-hoc audit.
-        """
-        prompt_content = self.build_system_prompt(result)
-        # HATS-380: expand placeholder before the prompt reaches the agent.
-        prompt_content = expand_path_placeholders(prompt_content, project_dir)
-        # HATS-625: expand <available_roles> with the live role catalog
-        # (no-op unless the placeholder is present, e.g. the initial-wizard).
-        prompt_content = expand_role_catalog(prompt_content, project_dir)
-
-        # Per-session cache dir (HATS-294): gitignored, swept by TTL.
-        cache_dir = session_cache_dir(project_dir, session_id)
-        rules_dir = cache_dir / "rules"
-        rules_dir.mkdir(parents=True, exist_ok=True)
-        (rules_dir / GEMINI_MD_FILENAME).write_text(prompt_content)
-
-        # HATS-993: mirror skills into .gemini/skills/ before launch so
-        # gemini's session-start discovery sees them.
-        self.materialize_runtime_skills(project_dir, result, session_id)
-
-        return ["--include-directories", str(rules_dir)], {}, prompt_content
-
-    def get_cli_command(self, args: list[str] | None = None) -> list[str]:
-        cmd = ["gemini"]
-        if args:
-            cmd.extend(args)
-        return cmd
-
-    def get_run_command(
-        self,
-        cmd: list[str],
-        meta_prompt: str,
-        *,
-        model: str | None = None,
-    ) -> list[str]:
-        extra = ["--model", model] if model else []
-        # --skip-trust: headless gemini hard-fails in a non-trusted dir, and
-        # automate worktrees under $TMPDIR are never trusted (HATS-993).
-        return cmd + extra + ["--skip-trust", "-p", meta_prompt]
-
-    def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
-        del session_dir, project_dir
-        return {}
 
 
 # ----- HATS-1006 Claude settings lint (docs/session-start-notices.md) -----
@@ -989,7 +892,7 @@ class ClaudeProvider(Provider):
 
 
 # HATS-870 / T10: closed ``PROVIDERS`` dict → open registry (plug in against the
-# ``Provider`` ABC). Built-ins self-register gemini→claude — call sites need that order.
+# ``Provider`` ABC). Built-ins self-register agy→claude — call sites need that order.
 _PROVIDER_REGISTRY: dict[str, type[Provider]] = {}
 
 
@@ -1030,8 +933,7 @@ def get_provider(name: str) -> Provider:
 
 
 def _register_builtins() -> None:
-    """Self-register the in-tree providers (order preserved for call sites)."""
-    for name, cls in ((PROVIDER_GEMINI, GeminiProvider), (PROVIDER_CLAUDE, ClaudeProvider)):
+    for name, cls in ((PROVIDER_CLAUDE, ClaudeProvider),):
         if name in _PROVIDER_REGISTRY:
             continue
         register_provider(name, cls)
