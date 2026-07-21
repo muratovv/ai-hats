@@ -415,6 +415,9 @@ class CardRow:
     #: scan (`--backlog`/`--all-backlogs`, HATS-1080); empty on the default
     #: tasks scan, which keeps its output annotation-free (R2).
     backlog: str = ""
+    #: root_id of the project this row came from — set only on a cross-project
+    #: scan (`--root`/`--projects`, HATS-1081); empty on a single-project scan.
+    project: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         row = {
@@ -427,6 +430,8 @@ class CardRow:
         }
         if self.backlog:
             row["backlog"] = self.backlog
+        if self.project:
+            row["project"] = self.project
         return row
 
 
@@ -463,9 +468,11 @@ def scan_cards(
     state: str | None = None,
     parent: str | None = None,
     backlog: str = "",
+    project: str = "",
 ) -> list[CardRow]:
-    """Linear backlog scan, filters AND-combined; no index by design. ``backlog``
-    stamps each row's origin on a workspace-wide scan (empty on the default scan)."""
+    """Linear backlog scan, filters AND-combined; no index by design. ``backlog`` /
+    ``project`` stamp each row's origin on a workspace-wide / cross-project scan
+    (both empty on the default single-project tasks scan)."""
     rows: list[CardRow] = []
     if not tasks_dir.is_dir():
         return rows
@@ -486,6 +493,7 @@ def scan_cards(
                 card.parent_task,
                 tuple(card.tags),
                 backlog=backlog,
+                project=project,
             )
         )
     return rows

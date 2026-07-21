@@ -174,3 +174,22 @@ def resolved_root(tasks_dir: Path | None, caller_cwd: Path) -> RackRoot:
     nothing below the CLI layer reads ``Path.cwd()`` (HATS-840 discipline).
     """
     return resolve_root(caller_cwd, tasks_dir)
+
+
+def resolve_roots(
+    tasks_dir: Path | None, caller_cwd: Path, extra_roots: tuple[str, ...]
+) -> list[RackRoot]:
+    """The cross-project root set (HATS-1081): the CWD project first, then each
+    explicit ``--root`` path (walk-up resolved), deduped by resolved ``project_dir``
+    with first-seen order preserved. A bad ``--root`` path raises here (caller routes
+    it to a typed error / skip)."""
+    roots = [resolved_root(tasks_dir, caller_cwd)]
+    roots.extend(resolve_root(Path(p).expanduser(), None) for p in extra_roots)
+    seen: set[Path] = set()
+    unique: list[RackRoot] = []
+    for r in roots:
+        key = r.project_dir.resolve()
+        if key not in seen:
+            seen.add(key)
+            unique.append(r)
+    return unique
