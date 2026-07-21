@@ -25,6 +25,7 @@ from .cli_common import (
     fail,
     handle_rack_error,
     resolve_error,
+    resolve_project_roots,
     resolve_roots,
     resolved_root,
 )
@@ -374,20 +375,24 @@ def _emit_scan(
     *,
     show_backlog: bool = False,
     show_project: bool = False,
+    skipped: list[str] | None = None,
 ) -> None:
+    skipped = skipped or []
     shown, total, capped = _cap(rows, show_all)
     if as_json:
-        emit_json(
-            {
-                "tasks": [r.to_dict() for r in shown],
-                "count": len(shown),
-                "total": total,
-                "capped": capped,
-            }
-        )
+        payload = {
+            "tasks": [r.to_dict() for r in shown],
+            "count": len(shown),
+            "total": total,
+            "capped": capped,
+        }
+        if skipped:
+            payload["skipped"] = skipped
+        emit_json(payload)
         return
     if not rows:
         click.echo("No tasks match.")
+        _echo_skipped(skipped)
         return
 
     def _cols(r: linked.CardRow) -> list[str]:
@@ -411,6 +416,13 @@ def _emit_scan(
         click.echo(f"  {total} card(s) across {', '.join(spans)}")
     else:
         click.echo(f"  {total} task(s)  tip: rack context <ID> for the full package")
+    _echo_skipped(skipped)
+
+
+def _echo_skipped(skipped: list[str]) -> None:
+    """Non-silent footer for registered roots that could not be read (R5, C3)."""
+    if skipped:
+        click.echo(f"  {len(skipped)} root(s) skipped (unreachable): {', '.join(skipped)}")
 
 
 def _emit_walk(
@@ -497,6 +509,12 @@ def _emit_walk(
     "(repeatable, HATS-1081); rows are marked by project. Default is the current "
     "project only.",
 )
+@click.option(
+    "--projects",
+    default=None,
+    help="No-id scan: sweep registered projects (`rack root`) — `all` or a comma "
+    "list of root_ids — unioned with the current project (HATS-1081).",
+)
 @TASKS_DIR_OPT
 @JSON_OPT
 def ls_cmd(
@@ -511,6 +529,7 @@ def ls_cmd(
     backlog: tuple[str, ...],
     all_backlogs: bool,
     root_flags: tuple[str, ...],
+    projects: str | None,
     tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
@@ -518,11 +537,11 @@ def ls_cmd(
     if task_id is None and (deep is not None or link_patterns):
         fail(as_json, "invalid_request", "--deep/--link require a task id: rack ls <ID> --deep N")
         return
-    if task_id is not None and (backlog or all_backlogs or root_flags):
+    if task_id is not None and (backlog or all_backlogs or root_flags or projects):
         fail(
             as_json,
             "invalid_request",
-            "--backlog/--all-backlogs/--root apply to the no-id scan only",
+            "--backlog/--all-backlogs/--root/--projects apply to the no-id scan only",
         )
         return
     if backlog and all_backlogs:
@@ -531,7 +550,11 @@ def ls_cmd(
     try:
         root = resolved_root(tasks_dir, Path.cwd())
         if task_id is None:
-            workspace = Workspace.discover(resolve_roots(tasks_dir, Path.cwd(), root_flags))
+            roots = resolve_roots(tasks_dir, Path.cwd(), root_flags)
+            skipped_roots: list[str] = []
+            if projects is not None:
+                roots, skipped_roots = resolve_project_roots(roots, projects)
+            workspace = Workspace.discover(roots)
             if all_backlogs:
                 selected = list(workspace.instances)
             elif backlog:
@@ -547,7 +570,7 @@ def ls_cmd(
             # Stamp origin only when the matching filter is engaged, so the default
             # `rack ls` output stays annotation-free (R2, HATS-1080/1081).
             backlog_feature = bool(backlog or all_backlogs)
-            project_feature = bool(root_flags)
+            project_feature = bool(root_flags) or projects is not None
             rows = [
                 row
                 for inst in selected
@@ -567,6 +590,7 @@ def ls_cmd(
                 show_all,
                 show_backlog=len({i.name for i in selected}) > 1,
                 show_project=len({i.root_id for i in selected}) > 1,
+                skipped=skipped_roots,
             )
             return
         instance = Workspace.discover([root]).instance_for(task_id)

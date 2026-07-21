@@ -49,3 +49,36 @@ def test_ls_root_spans_projects_with_marker(runner, tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     rows = json.loads(result.output)["tasks"]
     assert {r["project"] for r in rows} == {"projA", "projB"}
+
+
+def test_projects_all_spans_registry_union_cwd(runner, tmp_path, monkeypatch):
+    proj_a, a_tasks = _make_project(tmp_path, "projA")
+    proj_b, b_tasks = _make_project(tmp_path, "projB")
+    _seed_card(a_tasks, "HATS-1", "task in A")
+    _seed_card(b_tasks, "HATS-1", "task in B")
+    monkeypatch.setenv("RACK_ROOTS_FILE", str(tmp_path / "reg.yaml"))
+    runner.invoke(main, ["root", "add", str(proj_b)], catch_exceptions=False)
+
+    # standing in A, --projects all = registry (B) ∪ CWD (A)
+    monkeypatch.chdir(proj_a)
+    out = runner.invoke(main, ["ls", "--projects", "all", "--json"], catch_exceptions=False)
+
+    assert out.exit_code == 0, out.output
+    assert {r["project"] for r in json.loads(out.output)["tasks"]} == {"projA", "projB"}
+
+
+def test_projects_by_name_selects_subset(runner, tmp_path, monkeypatch):
+    proj_a, a_tasks = _make_project(tmp_path, "projA")
+    proj_b, b_tasks = _make_project(tmp_path, "projB")
+    proj_c, c_tasks = _make_project(tmp_path, "projC")
+    for t, tag in ((a_tasks, "A"), (b_tasks, "B"), (c_tasks, "C")):
+        _seed_card(t, "HATS-1", f"task {tag}")
+    monkeypatch.setenv("RACK_ROOTS_FILE", str(tmp_path / "reg.yaml"))
+    runner.invoke(main, ["root", "add", str(proj_b)], catch_exceptions=False)
+    runner.invoke(main, ["root", "add", str(proj_c)], catch_exceptions=False)
+
+    monkeypatch.chdir(proj_a)
+    out = runner.invoke(main, ["ls", "--projects", "projB", "--json"], catch_exceptions=False)
+
+    # named subset ∪ CWD: projB (named) + projA (CWD), not projC
+    assert {r["project"] for r in json.loads(out.output)["tasks"]} == {"projA", "projB"}

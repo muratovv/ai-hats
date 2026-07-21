@@ -35,6 +35,7 @@ from .linked import SelfLinkError
 from .ops import AttachSourceError, OpParseError
 from .registry import DerivedLinkKindError, UnknownLinkKindError
 from .resolver import NoProjectRootError, RackRoot, resolve_root
+from .roots_registry import load_registered_roots
 from .workspace import UnknownBacklogError
 
 # Same env contract as the tracker (string value is the shared contract).
@@ -193,3 +194,30 @@ def resolve_roots(
             seen.add(key)
             unique.append(r)
     return unique
+
+
+def resolve_project_roots(
+    base_roots: list[RackRoot], projects: str
+) -> tuple[list[RackRoot], list[str]]:
+    """Append registry roots selected by ``projects`` (``"all"`` or a comma list of
+    ``root_id``) to ``base_roots`` (HATS-1081, ``--projects`` = registry ∪ CWD).
+    Skip-tolerant: a missing / broken registered root is skipped, never fatal (R5).
+    Returns ``(roots, skipped_root_ids)``, deduped by resolved ``project_dir``."""
+    registered = load_registered_roots()
+    if projects != "all":
+        wanted = {n.strip() for n in projects.split(",") if n.strip()}
+        registered = [r for r in registered if r.name in wanted]
+    roots = list(base_roots)
+    seen = {r.project_dir.resolve() for r in roots}
+    skipped: list[str] = []
+    for path in registered:
+        try:
+            rr = resolve_root(path, None)
+        except Exception:  # noqa: BLE001 — a broken root is skipped, not fatal (R5)
+            skipped.append(path.name)
+            continue
+        key = rr.project_dir.resolve()
+        if key not in seen:
+            seen.add(key)
+            roots.append(rr)
+    return roots, skipped
