@@ -1,14 +1,18 @@
 ---
 name: rack-advanced
-description: "Advanced rack: author a new custom backlog (backlog.yaml + mounting), and sweep a backlog across several projects. Use when standing up a backlog beyond the built-in tasks/HYP/PROP (its own prefix, FSM, fields, or link kinds), editing a backlog.yaml, debugging one that won't mount or route, registering projects with `rack root`, or listing/reading one backlog across projects (`ls --projects/--root`, `<root>:<id>`)."
+description: "Advanced rack beyond day-to-day lifecycle: authoring a new custom backlog, and cross-project work. Use when defining a backlog beyond the built-in tasks/HYP/PROP, or registering and searching backlogs across several projects."
 license: MIT
 ---
 
 # Rack Advanced
 
-Advanced rack operations beyond day-to-day lifecycle: **authoring a new backlog**
-(defining a `backlog.yaml` and mounting it under `tracker/`) and **cross-project
-sweeps** (registering projects and listing/reading one backlog across them).
+Advanced rack operations beyond day-to-day lifecycle:
+
+- **Authoring a new backlog** — define a `backlog.yaml` and mount it under
+  `tracker/`. → [Authoring a new backlog](#authoring-a-new-backlog)
+- **Cross-project work** — sweep one backlog across projects: register them
+  ([Registry](#registry)), then list / read across them
+  ([Search across projects](#search-across-projects)).
 
 ## When to Use
 
@@ -17,10 +21,9 @@ its own id prefix, state machine, fields, and link kinds) — e.g. a project
 `decisions`, `experiments`, or `incidents` backlog alongside the built-in
 tasks / hypotheses / proposals.
 
-Also reach here for a **cross-project sweep** — registering projects with `rack
-root` (add / list / remove), or listing / reading one backlog across several
-projects (`ls --projects` / `--root`, a `<root_id>:<id>` read). See
-[Cross-project sweep](#cross-project-sweep-registry--search).
+Also reach here for **cross-project work** — registering projects with `rack root`
+([Registry](#registry)) or listing / reading one backlog across several projects
+([Search across projects](#search-across-projects)).
 
 Not this skill when you are:
 
@@ -31,7 +34,7 @@ Not this skill when you are:
 
 The moment you are editing `backlog.yaml` itself (not a `task.yaml`), you are here.
 
-## Procedure
+## Authoring a new backlog
 
 There is **no `rack init` / register verb** — a backlog is drop-a-file. Author
 the definition, place it under `tracker/`, and it mounts on the next `rack` call.
@@ -107,14 +110,13 @@ Once mounted, the definition alone yields (no per-backlog code):
 - Prefix-routed reads/moves: `rack context <ID>`, `rack ls <ID>`, `rack
   transition <ID> <state|edge-name>`, `rack ls --backlog <alias>`.
 
-## Cross-project sweep (registry + search)
+## Registry
 
-List or read **one backlog across several projects** — "hypotheses of all
-projects" in one command (HATS-1081). Two parts: a project registry, and the
-cross-project flags on `ls` / `context`.
-
-**Register the projects you sweep** — a persistent list at `~/.ai-hats/roots.yaml`
-(override the path with `RACK_ROOTS_FILE`):
+To sweep a backlog across projects (below), the projects must be known. Note the
+contrast with [Authoring a new backlog](#authoring-a-new-backlog): a *backlog*
+needs no registration (drop a `backlog.yaml` and it auto-mounts), but a *project*
+is registered explicitly — a persistent list at `~/.ai-hats/roots.yaml` (override
+the path with `RACK_ROOTS_FILE`):
 
 ```bash
 rack root add <path>   # register a project root (must hold .agent/ or ai-hats.yaml)
@@ -124,12 +126,17 @@ rack root rm <path>    # unregister a root by path
 
 `root_id` is the project's **folder name** (no alias). `add` validates the path is
 a project, stores it resolved, and de-dupes (a re-add is a no-op); `rm` takes the
-same path. Registering is optional — `--root` sweeps ad-hoc roots without touching
-the file.
+same path. Registering is optional — `--root` (below) sweeps ad-hoc roots without
+touching the file.
 
-**Search across projects** on the no-id scan (rows gain a `project` marker column /
-`project` json key; the current project is **always** included, roots dedup by real
-path):
+## Search across projects
+
+List or read **one backlog across several projects** — "hypotheses of all
+projects" in one command (HATS-1081) — over the registered roots ([Registry](#registry))
+and/or ad-hoc `--root` paths.
+
+**List** on the no-id scan (rows gain a `project` marker column / `project` json
+key; the current project is **always** included, roots dedup by real path):
 
 ```bash
 rack ls --projects all               # every registered project ∪ the current one
@@ -138,8 +145,8 @@ rack ls --root ../other              # ad-hoc: add a root by path (repeatable)
 rack ls --backlog hyp --projects all # the hyp backlog in EVERY swept project
 ```
 
-**Read across projects** — a bare id is ambiguous when two projects share a prefix,
-so qualify it (or mount an unregistered project by path):
+**Read** — a bare id is ambiguous when two projects share a prefix, so qualify it
+(or mount an unregistered project by path):
 
 ```bash
 rack context projB:HATS-9              # <root_id>:<id> routes into a registered project
