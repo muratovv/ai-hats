@@ -141,6 +141,10 @@ strictly; a transition validates only the fields it touches.
 
 ## Seeds
 
-The shipped HYP / PROP definitions are the reference examples —
-`packages/ai-hats-rack/src/ai_hats_rack/definitions/{hypotheses,proposals}/backlog.yaml`.
-Copy one as a starting point and adapt `name`/`prefix`/`cli_alias`/`fsm`/`fields`.
+The shipped HYP / PROP definitions are the reference examples. Print one from the
+installed package (location-independent — no repo checkout needed) and adapt
+`name`/`prefix`/`cli_alias`/`fsm`/`fields`:
+
+```bash
+python -c "from ai_hats_rack.definition import packaged_definitions, packaged_definition_source as s; print(packaged_definitions()); print(s('hypotheses'))"
+```

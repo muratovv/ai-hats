@@ -39,9 +39,15 @@ the definition, place it under `tracker/`, and it mounts on the next `rack` call
    live). Anywhere under `tracker/` works except inside the tasks catalog.
 3. **Author `backlog.yaml`** at that dir's root. Full key grammar +
    fail-closed invariants: **`references/backlog-yaml-grammar.md`**. Fastest
-   start — copy a shipped definition
-   (`packages/ai-hats-rack/src/ai_hats_rack/definitions/hypotheses/backlog.yaml`)
-   and adapt. Minimum skeleton:
+   start — print a shipped example (HYP / PROP) from the installed package and
+   adapt (works in any project, no repo checkout needed):
+
+   ```bash
+   python -c "from ai_hats_rack.definition import packaged_definition_source as s; print(s('hypotheses'))"  # or: proposals
+   ```
+
+   (If a bare `python` can't import `ai_hats_rack`, use the interpreter that
+   backs `rack`.) Or start from the minimum skeleton:
 
    ```yaml
    name: decisions
