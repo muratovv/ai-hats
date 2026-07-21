@@ -50,3 +50,4 @@ CLAUDE.md
 .agent/ai-hats/
 .cline/skills/
 .cline/plugins/
+.gemini/skills/
