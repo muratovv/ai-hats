@@ -24,6 +24,7 @@ from filelock import FileLock
 
 from ai_hats_core import atomic_write_text
 from ai_hats_rack import Workspace
+from ai_hats_rack.definition import packaged_definition_source
 from ai_hats_rack.resolver import RackRoot
 from ai_hats_rack.workspace import UnknownExtensionError, UnknownPrefixError
 
@@ -38,6 +39,17 @@ def rack_workspace(project_dir: Path) -> Workspace:
     HYP/PROP catalogs under ``<ai_hats_dir>/tracker`` (mounted once migrated)."""
     root = RackRoot(project_dir=project_dir, tasks_dir=tasks_dir(project_dir))
     return Workspace.discover([root])
+
+
+def ensure_backlog(project_dir: Path, definition_name: str) -> None:
+    """Seed a sibling backlog's ``backlog.yaml`` from the packaged definition when
+    absent, so a write path (e.g. ``reflect issue``) can mount HYP/PROP on a
+    project that never had one — parity with the pre-rack auto-create; idempotent."""
+    catalog = tasks_dir(project_dir).parent / definition_name
+    dest = catalog / "backlog.yaml"
+    if not dest.is_file():
+        catalog.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(dest, packaged_definition_source(definition_name))
 
 
 # ----- read views -------------------------------------------------------------

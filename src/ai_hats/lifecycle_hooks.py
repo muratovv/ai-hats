@@ -24,7 +24,12 @@ import yaml
 from ai_hats_core.safe_delete import discard as _safe_discard
 from ai_hats_core.safe_delete import replace as _safe_replace
 
-from .models import ComponentType, SkillMetadata, resolve_namespace
+from .models import (
+    ComponentType,
+    LeftoverSidecarHooksError,
+    SkillMetadata,
+    resolve_namespace,
+)
 from .paths import tracker_dir
 from .resolver import LibraryResolver
 
@@ -65,14 +70,21 @@ def _valid_event_names() -> set[str]:
 
 def _iter_library_skills(library_paths: Sequence[Path]):
     """Yield ``(skill_name, skill_dir, SkillMetadata)`` for EVERY library skill
-    (union scope), deterministically sorted by name; layered shadowing follows
-    the resolver (last layer wins)."""
+    (union scope), deterministically sorted; layered shadowing follows the
+    resolver (last layer wins)."""
     resolver = LibraryResolver(list(library_paths))
     for name in resolver.list_components(ComponentType.SKILL):
         skill_dir = resolver.resolve_skill_dir(name)
         if skill_dir is None:
             continue
-        yield name, skill_dir, SkillMetadata.from_skill_dir(skill_dir)
+        try:
+            metadata = SkillMetadata.from_skill_dir(skill_dir)
+        except LeftoverSidecarHooksError:
+            # Union scan, not the compose-guard: a leftover-sidecar skill (HATS-814)
+            # can't contribute hooks; the assembler diagnostic WARNs it. Raising here
+            # would fail `self update` on a NON-composed orphan (HATS-815 detection-only).
+            continue
+        yield name, skill_dir, metadata
 
 
 def collect_lifecycle_hooks(
