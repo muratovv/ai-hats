@@ -8,6 +8,7 @@ composition:
     - dev_rule_tool_call_hygiene
   skills:
     - hatrack
+    - rack-advanced
     - request-supervisor
     - plan-discipline
     - plan-gate
