@@ -64,10 +64,9 @@ def test_context_json_and_plain(runner, tmp_path):
 
 
 def test_cli_surface_is_exactly_create_ls_context_transition(runner, tmp_path):
-    # HATS-1031 Р11/Р12: one path per action — show folded into context, log
-    # into `transition --log`; the group must not know the dead verbs at all.
-    # HATS-1054: plan-extract joins as a top-level composite verb.
-    assert set(main.commands) == {"create", "ls", "context", "transition", "plan-extract"}
+    # One path per action (HATS-1031 Р11/Р12): show folded into context, log into
+    # `transition --log`. Composite verbs joined: plan-extract (1054), root (1081).
+    assert set(main.commands) == {"create", "ls", "context", "transition", "plan-extract", "root"}
     for verb in ("show", "log"):
         result = runner.invoke(main, [verb, "HATS-001", *_tasks_args(tmp_path)])
         assert result.exit_code == 2

@@ -56,7 +56,7 @@ def _json(result):
 # ----- surface re-pin (R2) ---------------------------------------------------
 
 
-_BASE_VERBS = {"create", "ls", "context", "transition", "plan-extract"}
+_BASE_VERBS = {"create", "ls", "context", "transition", "plan-extract", "root"}
 
 
 def test_base_surface_is_the_base_verbs():
