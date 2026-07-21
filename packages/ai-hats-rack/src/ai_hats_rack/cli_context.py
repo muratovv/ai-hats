@@ -25,6 +25,7 @@ from .cli_common import (
     fail,
     handle_rack_error,
     resolve_error,
+    resolve_roots,
     resolved_root,
 )
 from .composition import build_read_subscribers, stock_factories
@@ -367,7 +368,12 @@ def _cap(items: list, show_all: bool) -> tuple[list, int, bool]:
 
 
 def _emit_scan(
-    rows: list[linked.CardRow], as_json: bool, show_all: bool, *, show_backlog: bool = False
+    rows: list[linked.CardRow],
+    as_json: bool,
+    show_all: bool,
+    *,
+    show_backlog: bool = False,
+    show_project: bool = False,
 ) -> None:
     shown, total, capped = _cap(rows, show_all)
     if as_json:
@@ -383,20 +389,26 @@ def _emit_scan(
     if not rows:
         click.echo("No tasks match.")
         return
-    if show_backlog:
-        table = [[r.backlog, r.id, f"[{r.state}]", r.priority, r.title] for r in shown]
-    else:
-        table = [[r.id, f"[{r.state}]", r.priority, r.title] for r in shown]
-    for line in _columns(table):
+
+    def _cols(r: linked.CardRow) -> list[str]:
+        # marker columns lead (project, then backlog) only when >1 in view (R7)
+        lead = ([r.project] if show_project else []) + ([r.backlog] if show_backlog else [])
+        return [*lead, r.id, f"[{r.state}]", r.priority, r.title]
+
+    for line in _columns([_cols(r) for r in shown]):
         click.echo(line)
     if capped:
         click.echo(
             f"  showing {DEFAULT_LS_LIMIT} of {total} — --all for all, "
             "or narrow with --tag/--state/--parent"
         )
-    elif show_backlog:
-        backlogs = len({r.backlog for r in shown})
-        click.echo(f"  {total} card(s) across {backlogs} backlog(s)")
+    elif show_project or show_backlog:
+        spans = []
+        if show_project:
+            spans.append(f"{len({r.project for r in shown})} project(s)")
+        if show_backlog:
+            spans.append(f"{len({r.backlog for r in shown})} backlog(s)")
+        click.echo(f"  {total} card(s) across {', '.join(spans)}")
     else:
         click.echo(f"  {total} task(s)  tip: rack context <ID> for the full package")
 
@@ -477,6 +489,14 @@ def _emit_walk(
     is_flag=True,
     help="No-id scan: scan every mounted backlog (tasks + siblings) interleaved.",
 )
+@click.option(
+    "--root",
+    "root_flags",
+    multiple=True,
+    help="No-id scan: also scan this project root, added to the current one "
+    "(repeatable, HATS-1081); rows are marked by project. Default is the current "
+    "project only.",
+)
 @TASKS_DIR_OPT
 @JSON_OPT
 def ls_cmd(
@@ -490,6 +510,7 @@ def ls_cmd(
     show_all: bool,
     backlog: tuple[str, ...],
     all_backlogs: bool,
+    root_flags: tuple[str, ...],
     tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
@@ -497,8 +518,12 @@ def ls_cmd(
     if task_id is None and (deep is not None or link_patterns):
         fail(as_json, "invalid_request", "--deep/--link require a task id: rack ls <ID> --deep N")
         return
-    if task_id is not None and (backlog or all_backlogs):
-        fail(as_json, "invalid_request", "--backlog/--all-backlogs apply to the no-id scan only")
+    if task_id is not None and (backlog or all_backlogs or root_flags):
+        fail(
+            as_json,
+            "invalid_request",
+            "--backlog/--all-backlogs/--root apply to the no-id scan only",
+        )
         return
     if backlog and all_backlogs:
         fail(as_json, "invalid_request", "--backlog and --all-backlogs are mutually exclusive")
@@ -506,7 +531,7 @@ def ls_cmd(
     try:
         root = resolved_root(tasks_dir, Path.cwd())
         if task_id is None:
-            workspace = Workspace.discover([root])
+            workspace = Workspace.discover(resolve_roots(tasks_dir, Path.cwd(), root_flags))
             if all_backlogs:
                 selected = list(workspace.instances)
             elif backlog:
@@ -519,9 +544,10 @@ def ls_cmd(
                         selected.append(inst)
             else:
                 selected = [i for i in workspace.instances if i.is_tasks]
-            # Stamp the backlog origin only when the filter is engaged, so the
-            # default `rack ls` output stays annotation-free (R2).
-            feature = bool(backlog or all_backlogs)
+            # Stamp origin only when the matching filter is engaged, so the default
+            # `rack ls` output stays annotation-free (R2, HATS-1080/1081).
+            backlog_feature = bool(backlog or all_backlogs)
+            project_feature = bool(root_flags)
             rows = [
                 row
                 for inst in selected
@@ -531,10 +557,17 @@ def ls_cmd(
                     tag=tag,
                     state=state,
                     parent=parent,
-                    backlog=(inst.definition.cli_alias or inst.name) if feature else "",
+                    backlog=(inst.definition.cli_alias or inst.name) if backlog_feature else "",
+                    project=inst.root_id if project_feature else "",
                 )
             ]
-            _emit_scan(rows, as_json, show_all, show_backlog=len(selected) > 1)
+            _emit_scan(
+                rows,
+                as_json,
+                show_all,
+                show_backlog=len({i.name for i in selected}) > 1,
+                show_project=len({i.root_id for i in selected}) > 1,
+            )
             return
         instance = Workspace.discover([root]).instance_for(task_id)
         neighbors = walk_neighborhood(
