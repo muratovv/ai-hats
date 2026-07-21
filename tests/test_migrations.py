@@ -67,7 +67,7 @@ def _bootstrap_project(tmp_path, migration_step: int) -> Assembler:
     """
     project = tmp_path / "project"
     project.mkdir()
-    cfg = ProjectConfig(provider="gemini", migration_step=migration_step)
+    cfg = ProjectConfig(provider="agy", migration_step=migration_step)
     cfg.save(project / PROJECT_CONFIG)
     return Assembler(project)
 
@@ -253,13 +253,13 @@ def test_run_pending_does_not_emit_banner_when_gated(tmp_path, monkeypatch, caps
 def test_migration_step_defaults_to_zero():
     """Backward-compat: existing yaml without ``migration_step`` loads at 0.
     This is the seed value the registry replays from."""
-    cfg = ProjectConfig(provider="gemini")
+    cfg = ProjectConfig(provider="agy")
     assert cfg.migration_step == 0
 
 
 def test_migration_step_round_trips_through_yaml(tmp_path):
     path = tmp_path / PROJECT_CONFIG
-    cfg = ProjectConfig(provider="gemini", migration_step=4)
+    cfg = ProjectConfig(provider="agy", migration_step=4)
     cfg.save(path)
 
     raw = yaml.safe_load(path.read_text())
@@ -296,7 +296,7 @@ def test_existing_project_without_migration_step_seeds_to_zero(tmp_path):
     (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
         "ai_hats_dir: .agent/ai-hats\n"
-        "provider: gemini\n"
+        "provider: agy\n"
     )
 
     cfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)

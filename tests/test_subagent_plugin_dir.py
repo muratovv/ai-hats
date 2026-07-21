@@ -8,7 +8,7 @@ end-to-end test is rewritten to assert the same behavioural contract on
 the new surface: the plugin entry is built, populated on disk, and
 removed after the attempt finishes. The legacy
 :meth:`ClaudeProvider.materialize_runtime_skills` unit test stays —
-it still covers the same disk layout the Gemini / future-CLI providers
+it still covers the same disk layout the Agy / future-CLI providers
 will keep using.
 """
 
@@ -20,7 +20,8 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.providers import ClaudeProvider, GeminiProvider
+from ai_hats.providers import ClaudeProvider
+from ai_hats_agy.provider import AgyProvider
 from ai_hats.paths import PROJECT_CONFIG
 
 
@@ -106,8 +107,8 @@ def test_claude_materialize_runtime_skills_returns_plugin_dir_arg(tmp_path):
         shutil.rmtree(args[1], ignore_errors=True)
 
 
-def test_gemini_materialize_runtime_skills_is_noop(tmp_path):
-    """Gemini has no plugin-dir analog (HATS-367 follow-up)."""
+def test_agy_materialize_runtime_skills_is_noop(tmp_path):
+    """Agy has no plugin-dir analog (HATS-367 follow-up)."""
     from ai_hats_core import CompositionResult
 
     result = CompositionResult(
@@ -117,7 +118,7 @@ def test_gemini_materialize_runtime_skills_is_noop(tmp_path):
         skills=[],
         injections=[],
     )
-    assert GeminiProvider().materialize_runtime_skills(tmp_path, result, "test-sid") == []
+    assert AgyProvider().materialize_runtime_skills(tmp_path, result, "test-sid") == []
 
 
 def test_subagent_runner_threads_plugin_dir_to_sdk_options(

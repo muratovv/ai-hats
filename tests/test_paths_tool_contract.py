@@ -1,5 +1,5 @@
-"""Tool-layout contract: ``paths.claude`` / ``paths.gemini`` emit the exact
-on-disk literals Claude Code / Gemini CLI use (HATS-908).
+"""Tool-layout contract: ``paths.claude`` / ``paths.agy`` emit the exact
+on-disk literals Claude Code / Agy CLI use (HATS-908).
 
 The ONE place tests may duplicate these literals — every other test builds
 tool paths via the helpers, so a typo in a helper fails here and only here.
@@ -25,7 +25,7 @@ from ai_hats.paths import (
     claude_transcript_path,
     claude_transcripts_dir,
     gemini_md,
-    gemini_skills_dir,
+    agy_skills_dir,
     strip_claude_project_dir,
 )
 
@@ -71,7 +71,7 @@ def test_managed_marker_name():
     assert AI_HATS_MANAGED_MARKER == ".ai-hats-managed"
 
 
-def test_gemini_layout(tmp_path):
+def test_agy_layout(tmp_path):
     assert GEMINI_MD_FILENAME == "GEMINI.md"
     assert gemini_md(tmp_path) == tmp_path / "GEMINI.md"
-    assert gemini_skills_dir(tmp_path) == tmp_path / ".gemini" / "skills"
+    assert agy_skills_dir(tmp_path) == tmp_path / ".agy" / "skills"

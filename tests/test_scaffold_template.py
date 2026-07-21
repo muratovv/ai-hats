@@ -104,11 +104,11 @@ def test_init_preserves_existing_claude_md(tmp_path: Path) -> None:
     assert body.index(PUBLISH_AGGREGATOR_END) < body.index("# my project")
 
 
-def test_init_gemini_no_scaffold(tmp_path: Path) -> None:
+def test_init_agy_no_scaffold(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     project.mkdir()
 
-    Assembler(project).init(provider="gemini")
+    Assembler(project).init(provider="agy")
 
     assert not (project / "GEMINI.md").exists()
     assert not (project / "CLAUDE.md").exists()

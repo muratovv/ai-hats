@@ -105,22 +105,22 @@ def test_bump_after_role_swap_is_byte_stable(project_two_roles: Path) -> None:
     )
 
 
-def test_set_role_gemini_still_inline(tmp_path: Path) -> None:
-    """Gemini path is unchanged — update_system_prompt still runs (no scaffold)."""
+def test_set_role_agy_still_inline(tmp_path: Path) -> None:
+    """Agy path is unchanged — update_system_prompt still runs (no scaffold)."""
     project = tmp_path / "proj"
     project.mkdir()
     lib = project / "libraries"
     role_dir = lib / "roles" / "r1"
     role_dir.mkdir(parents=True)
     (role_dir / "config.yaml").write_text(
-        "name: r1\npriorities:\n  - Reliability\ninjection: |\n  Gemini role text.\n"
+        "name: r1\npriorities:\n  - Reliability\ninjection: |\n  Agy role text.\n"
     )
-    (project / PROJECT_CONFIG).write_text("schema_version: 3\nprovider: gemini\n")
+    (project / PROJECT_CONFIG).write_text("schema_version: 3\nprovider: agy\n")
 
-    Assembler(project).set_role("r1", provider_name="gemini")
+    Assembler(project).set_role("r1", provider_name="agy")
     body = (project / "GEMINI.md").read_text()
-    assert "Gemini role text." in body
-    assert "<!-- AI-HATS:START -->" in body  # legacy markers, used by Gemini path
+    assert "Agy role text." in body
+    assert "<!-- AI-HATS:START -->" in body  # legacy markers, used by Agy path
 
 
 def test_set_role_claude_skips_inline_update(project_two_roles: Path) -> None:

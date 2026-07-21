@@ -80,7 +80,7 @@ def test_resolve_worktree_branches_reads_yaml(repo):
     from ai_hats.wt_config import resolve_worktree_branches
 
     (repo / PROJECT_CONFIG).write_text(
-        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: gemini\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: agy\n"
         "worktree:\n  base_branch: fork-main\n  merge_target: fork-main\n"
     )
     assert resolve_worktree_branches(repo) == ("fork-main", "fork-main")

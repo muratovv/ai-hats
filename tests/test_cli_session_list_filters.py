@@ -50,7 +50,7 @@ def project_dir(tmp_path: Path) -> Path:
         "tags": {"alert_fp": "xyz", "client": "home"},
     })
     _make_session(project_dir=tmp_path, session_id="20260420T090000Z_c3", metrics={
-        "role": "primary", "provider": "gemini",
+        "role": "primary", "provider": "agy",
         "exit_code": 1, "turns": 2, "tool_calls": 3,
         "tokens": {"input": 30, "output": 60, "cache_read": 0, "cache_creation": 0},
         "tags": {"alert_fp": "abc", "client": "work"},

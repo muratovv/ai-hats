@@ -47,7 +47,7 @@ def _project_with_wt_role(tmp_path: Path, *, with_script: bool = True):
         "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
     )
     ProjectConfig(
-        provider="gemini", library_paths=[str(lib)], active_role="wt-role"
+        provider="agy", library_paths=[str(lib)], active_role="wt-role"
     ).save(project / PROJECT_CONFIG)
     return project, lib
 

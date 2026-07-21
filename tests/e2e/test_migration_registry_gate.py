@@ -79,7 +79,7 @@ def _seed_pre_hats471_yaml(project: Path) -> None:
     project.mkdir(parents=True, exist_ok=True)
     (project / PROJECT_CONFIG).write_text(
         "schema_version: 4\n"
-        "provider: gemini\n"
+        "provider: claude\n"
         "ai_hats_dir: .agent/ai-hats\n"
     )
 
@@ -162,7 +162,7 @@ def test_e2e_greenfield_init_seeds_latest_step(installed_launcher, tmp_path):
     project.mkdir()
 
     res = _run(
-        [str(launcher), "self", "init", "-p", "gemini", "--no-wizard"],
+        [str(launcher), "self", "init", "-p", "claude", "--no-wizard"],
         cwd=project, env=env, timeout=120,
     )
 
