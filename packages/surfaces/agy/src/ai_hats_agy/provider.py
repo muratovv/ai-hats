@@ -1,4 +1,30 @@
-"""Agy surface adapter — maps the `agy` CLI to the ai-hats `Provider`."""
+"""Agy surface adapter — maps the `agy` (Antigravity) CLI to the ai-hats `Provider`.
+
+Materialization contract (all driven by ``build_session_prompt`` at session start,
+per session id, into gitignored per-session homes):
+
+- **Role / system prompt** — ``build_system_prompt`` composes PRIORITIES + the
+  merged role/trait injection + always-on RULES (rules are *inlined* here; agy has
+  no separate rules channel). Path placeholders and ``<available_roles>`` are
+  expanded, then the bytes are written to ``.cache/sessions/<sid>/rules/GEMINI.md``.
+- **Skills (and their hooks)** — ``materialize_runtime_skills`` mirrors the role's
+  *composed* skills (``result.skills``) into ``.agy/skills/`` — agy's native
+  workspace skill registry, ref-counted per session, gitignored. Each skill dir
+  carries its own hooks. Skills are NOT dropped: this native registry is their
+  delivery channel (HATS-993), which is exactly why ``build_system_prompt`` passes
+  ``include_skills=False`` — the text index would only duplicate the registry.
+- **Session / startup prompt** — the composed ``GEMINI.md`` is threaded to agy via
+  ``--add-dir <session-rules-dir>``; agy loads ``GEMINI.md`` from added directories
+  at start, so the project's active role reaches the agent WITHOUT touching the
+  repo's own ``./GEMINI.md``. The third return value is the exact prompt bytes
+  (persisted by ``WrapRunner`` for audit, HATS-523).
+- **Params passed to agy** — interactive (HITL): ``get_cli_command`` → ``["agy",
+  --add-dir <dir>]``. Headless (Automate): ``get_run_command`` → ``agy [--model
+  <m>] -p <meta_prompt>`` (no ``--skip-trust`` — not a valid agy flag; headless
+  ``agy -p`` needs no trust grant).
+- **Env dependencies** — ``get_env`` exports ``AI_HATS_DIR`` + ``AI_HATS_PROJECT_DIR``
+  so materialized hooks/tools resolve the project root at runtime.
+"""
 
 from __future__ import annotations
 
