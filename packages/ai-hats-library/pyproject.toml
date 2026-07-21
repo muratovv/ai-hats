@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats-library"
-version = "0.2.1"
+version = "0.3.0"
 description = "The ai-hats agent library — portable skills, roles, traits, and rules as a data-only package. Drop-in for any Claude Code user; the versioned content dependency of the ai-hats integrator."
 readme = "README.md"
 requires-python = ">=3.11"
