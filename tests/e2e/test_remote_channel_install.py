@@ -32,10 +32,13 @@ def test_remote_style_install_resolves_core_with_migrations(tmp_path: Path) -> N
     # install can't resolve it before then. Resolver liveness = the gate. HATS-988.
     from ai_hats.channel import ChannelResolveError, fetch_latest_stable_version
 
-    try:
-        fetch_latest_stable_version("https://pypi.org/pypi/ai-hats-library/json")
-    except ChannelResolveError as exc:
-        pytest.skip(f"ai-hats-library not yet published on PyPI ({exc})")
+    # Both T18 Requires-Dist deps must be on PyPI before a from-index install can
+    # resolve; ai-hats-rack joined the wheel's deps (HATS-1040) and is unpublished.
+    for _dep in ("ai-hats-library", "ai-hats-rack"):
+        try:
+            fetch_latest_stable_version(f"https://pypi.org/pypi/{_dep}/json")
+        except ChannelResolveError as exc:
+            pytest.skip(f"{_dep} not yet published on PyPI ({exc})")
 
     dist = tmp_path / "dist"
     _run(["uv", "build", "--wheel", str(REPO_ROOT), "-o", str(dist)], cwd=tmp_path)

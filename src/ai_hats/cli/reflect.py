@@ -36,6 +36,7 @@ from ..rack_workspace import (
     active_hypotheses,
     append_verdict,
     create_hypothesis,
+    ensure_backlog,
     open_proposals,
     rack_workspace,
     set_proposal_status,
@@ -760,6 +761,8 @@ def reflect_issue_cmd(
         return
 
     project_dir = _project_dir()
+    # reflect issue creates an HYP; mount its backlog on a project that never had one.
+    ensure_backlog(project_dir, "hypotheses")
     ws = rack_workspace(project_dir)
     active = active_hypotheses(ws)
     prompt_text = _build_intake_prompt(text, active)

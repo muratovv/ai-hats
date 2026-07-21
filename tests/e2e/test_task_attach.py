@@ -77,6 +77,17 @@ def test_e2e_task_attach_full_lifecycle(shared_launcher, tmp_path):
         "--task-prefix", "TST",
     )
 
+    # attach + its pre-commit hook are a backlog-manager feature (ADR-0016); the
+    # HATS-1054 flip made `hatrack` the default (no attach hook), so compose the
+    # classic manager explicitly, then re-init to re-materialize hooks under it.
+    ai_hats("config", "customize", "assistant",
+            "--remove-skill", "hatrack", "--add-skill", "backlog-manager")
+    ai_hats(
+        "self", "init",
+        "-r", "assistant", "-p", "claude",
+        "--task-prefix", "TST",
+    )
+
     # ---- 6. hook shipped + executable ----
     hook_path = (
         project / ".githooks" / "pre-commit.d"
