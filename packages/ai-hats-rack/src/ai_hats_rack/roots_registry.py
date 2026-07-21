@@ -41,6 +41,16 @@ def load_registered_roots() -> list[Path]:
     return [Path(p) for p in (data.get("roots") or [])]
 
 
+def registered_root_by_id(root_id: str) -> Path | None:
+    """The registered root whose folder name is ``root_id`` (the `<root>:<id>`
+    qualifier target), or ``None`` — used to resolve a cross-project read without
+    an explicit ``--root`` (HATS-1081)."""
+    for path in load_registered_roots():
+        if path.name == root_id:
+            return path
+    return None
+
+
 def add_registered_root(path: Path) -> Path:
     """Register a project root: expand + resolve, validate it is a project, dedup,
     persist. Returns the stored (resolved) path. Non-project → :class:`NotAProjectError`."""

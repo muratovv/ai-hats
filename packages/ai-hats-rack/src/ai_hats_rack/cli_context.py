@@ -31,6 +31,7 @@ from .cli_common import (
 )
 from .composition import build_read_subscribers, stock_factories
 from .docstore import DocInfo
+from .roots_registry import registered_root_by_id
 from .linked import (
     DEFAULT_MAX_BYTES,
     ContextPackage,
@@ -229,6 +230,13 @@ def _echo_attrs(attrs: tuple[str, ...], payload: dict[str, object]) -> None:
 @click.option("--event", "event_key", default=None, help="--attr audit only: exact event key.")
 @click.option("--since", default=None, help="--attr audit only: ISO-8601 UTC lower bound (incl.).")
 @click.option("--actor", "actor_filter", default=None, help="--attr audit only: exact actor.")
+@click.option(
+    "--root",
+    "root_flags",
+    multiple=True,
+    help="Also mount this project root so a cross-project id resolves (repeatable, "
+    "HATS-1081). A `<root_id>:<id>` qualifier resolves registered roots without it.",
+)
 @TASKS_DIR_OPT
 @JSON_OPT
 def context_cmd(
@@ -239,6 +247,7 @@ def context_cmd(
     event_key: str | None,
     since: str | None,
     actor_filter: str | None,
+    root_flags: tuple[str, ...],
     tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
@@ -270,11 +279,20 @@ def context_cmd(
         fail(as_json, "invalid_request", "provide at least one task id")
         return
 
-    # Resolve the workspace ONCE: the discover walk + stock factories are the
-    # per-invocation setup a batch exists to amortize (HATS-1074). Read
-    # subscribers are memoized per catalog (a viewport is usually one prefix).
+    # Resolve the workspace ONCE (batch amortizes the discover walk, HATS-1074).
+    # Cross-project (HATS-1081): mount CWD ∪ --root ∪ any registered root a
+    # `<root_id>:<id>` qualifier names, so a qualified read routes there.
     try:
-        workspace = Workspace.discover([resolved_root(tasks_dir, Path.cwd())])
+        extra_roots = list(root_flags)
+        for tid in ids:
+            root_id = tid.split(":", 1)[0] if ":" in tid else None
+            if root_id:
+                path = registered_root_by_id(root_id)
+                if path is not None:
+                    extra_roots.append(str(path))
+        workspace = Workspace.discover(
+            resolve_roots(tasks_dir, Path.cwd(), tuple(extra_roots))
+        )
         factories = stock_factories()
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
         handle_rack_error(exc, as_json)
@@ -282,18 +300,19 @@ def context_cmd(
     subs_cache: dict[Path, list] = {}
 
     def _assemble(task_id: str) -> tuple[ContextPackage, dict[str, object], Path]:
-        # Route by the id's prefix (HATS-1044): a tasks-only repo resolves to the
-        # tasks catalog — same registry, same output as before.
+        # Route by the id's prefix / `<root>:<id>` qualifier (HATS-1044/1081); the
+        # card lookup uses the bare id (qualifier stripped).
         instance = workspace.instance_for(task_id)
         catalog = instance.catalog
         defn = instance.definition
+        bare_id = task_id.split(":", 1)[1] if ":" in task_id else task_id
         read_subscribers = subs_cache.get(catalog)
         if read_subscribers is None:
             read_subscribers = build_read_subscribers(defn, catalog, factories)
             subs_cache[catalog] = read_subscribers
         pkg = build_context(
             catalog,
-            task_id,
+            bare_id,
             registry=defn.links_registry,
             with_patterns=with_patterns,
             max_bytes=max_bytes,

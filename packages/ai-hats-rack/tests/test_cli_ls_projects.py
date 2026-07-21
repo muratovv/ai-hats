@@ -8,6 +8,7 @@ Thin CLI layer over `Workspace.discover(roots)` (already multi-root). The defaul
 from __future__ import annotations
 
 import json
+import shutil
 
 import pytest
 from click.testing import CliRunner
@@ -113,3 +114,82 @@ def test_backlog_filter_spans_projects(runner, tmp_path, monkeypatch):
     rows = json.loads(out.output)["tasks"]
     assert {r["project"] for r in rows} == {"projA", "projB"}
     assert all(r["backlog"] == "hyp" and r["id"].startswith("HYP-") for r in rows)
+
+
+def test_projects_all_skips_unreachable_root(runner, tmp_path, monkeypatch):
+    # C3: a registered root that vanished is skipped, non-silently — sweep survives (R5).
+    proj_a, a_tasks = _make_project(tmp_path, "projA")
+    proj_b, b_tasks = _make_project(tmp_path, "projB")
+    _seed_card(a_tasks, "HATS-1", "A")
+    _seed_card(b_tasks, "HATS-1", "B")
+    monkeypatch.setenv("RACK_ROOTS_FILE", str(tmp_path / "reg.yaml"))
+    runner.invoke(main, ["root", "add", str(proj_b)], catch_exceptions=False)
+    shutil.rmtree(proj_b)
+
+    monkeypatch.chdir(proj_a)
+    out = runner.invoke(main, ["ls", "--projects", "all", "--json"], catch_exceptions=False)
+
+    assert out.exit_code == 0, out.output
+    data = json.loads(out.output)
+    assert {r["project"] for r in data["tasks"]} == {"projA"}
+    assert data["skipped"] == ["projB"]
+
+
+def test_root_to_non_project_fails_fast(runner, tmp_path, monkeypatch):
+    # C6: an explicit --root to a non-project is a hard error (not a silent skip).
+    proj_a, a_tasks = _make_project(tmp_path, "projA")
+    _seed_card(a_tasks, "HATS-1", "A")
+    not_proj = tmp_path / "notproj"
+    not_proj.mkdir()
+
+    monkeypatch.chdir(proj_a)
+    out = runner.invoke(main, ["ls", "--root", str(not_proj), "--json"], catch_exceptions=False)
+
+    assert out.exit_code == 1, out.output
+
+
+def test_projects_all_empty_registry_shows_cwd(runner, tmp_path, monkeypatch):
+    # C5: --projects all with an empty registry is just the CWD project, not a crash.
+    proj_a, a_tasks = _make_project(tmp_path, "projA")
+    _seed_card(a_tasks, "HATS-1", "A")
+    monkeypatch.setenv("RACK_ROOTS_FILE", str(tmp_path / "reg.yaml"))
+
+    monkeypatch.chdir(proj_a)
+    out = runner.invoke(main, ["ls", "--projects", "all", "--json"], catch_exceptions=False)
+
+    assert out.exit_code == 0, out.output
+    assert {r["project"] for r in json.loads(out.output)["tasks"]} == {"projA"}
+
+
+def test_context_routes_cross_project_by_qualifier(runner, tmp_path, monkeypatch):
+    # C11 / step 6: `context <root>:<id>` routes a READ to a registered project.
+    proj_a, a_tasks = _make_project(tmp_path, "projA")
+    proj_b, b_tasks = _make_project(tmp_path, "projB")
+    _seed_card(a_tasks, "HATS-1", "A card")
+    _seed_card(b_tasks, "HATS-9", "B card")
+    monkeypatch.setenv("RACK_ROOTS_FILE", str(tmp_path / "reg.yaml"))
+    runner.invoke(main, ["root", "add", str(proj_b)], catch_exceptions=False)
+
+    monkeypatch.chdir(proj_a)
+    out = runner.invoke(main, ["context", "projB:HATS-9", "--json"], catch_exceptions=False)
+
+    assert out.exit_code == 0, out.output
+    assert "B card" in out.output
+
+
+def test_context_cross_project_by_explicit_root(runner, tmp_path, monkeypatch):
+    # --root mounts an unregistered project so a qualified id resolves there.
+    proj_a, a_tasks = _make_project(tmp_path, "projA")
+    proj_b, b_tasks = _make_project(tmp_path, "projB")
+    _seed_card(a_tasks, "HATS-1", "A card")
+    _seed_card(b_tasks, "HATS-9", "B card")
+
+    monkeypatch.chdir(proj_a)
+    out = runner.invoke(
+        main,
+        ["context", "projB:HATS-9", "--root", str(proj_b), "--json"],
+        catch_exceptions=False,
+    )
+
+    assert out.exit_code == 0, out.output
+    assert "B card" in out.output
